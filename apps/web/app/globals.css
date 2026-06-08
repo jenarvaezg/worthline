@@ -1,0 +1,381 @@
+:root {
+  color-scheme: light;
+  --paper: #f4f0e8;
+  --paper-strong: #fffaf0;
+  --ink: #1f211c;
+  --muted: #68695f;
+  --line: #d8d0c0;
+  --line-strong: #9f988b;
+  --green: #006f5f;
+  --blue: #244d72;
+  --red: #b9442f;
+  --gold: #c29a2e;
+  --shadow: 0 22px 70px rgba(31, 33, 28, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background:
+    linear-gradient(rgba(31, 33, 28, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(31, 33, 28, 0.035) 1px, transparent 1px),
+    var(--paper);
+  background-size: 28px 28px;
+  color: var(--ink);
+  font-family:
+    "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+  overflow-x: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin: 0 auto;
+  max-width: 1180px;
+  min-height: 100vh;
+  min-width: 0;
+  padding: 24px;
+  width: 100%;
+}
+
+.topbar,
+.summaryBand,
+.ledgerPanel,
+.liquidityPanel,
+.persistenceBar {
+  background: rgba(255, 250, 240, 0.88);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  min-width: 0;
+}
+
+.topbar {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  min-height: 82px;
+  padding: 14px 16px;
+}
+
+.brand {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+}
+
+.brandMark {
+  align-items: center;
+  background: var(--ink);
+  color: var(--paper-strong);
+  display: inline-flex;
+  font-family: "Iosevka", "SFMono-Regular", monospace;
+  font-size: 15px;
+  font-weight: 800;
+  height: 42px;
+  justify-content: center;
+  letter-spacing: 0;
+  text-transform: lowercase;
+  width: 42px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: clamp(1.7rem, 4vw, 3.4rem);
+  font-weight: 850;
+  letter-spacing: 0;
+  line-height: 0.95;
+}
+
+h2 {
+  font-size: 0.98rem;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.brand p,
+.panelHeader span,
+.scopeRail,
+.topbarMeta,
+.persistenceBar {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.topbarMeta {
+  align-items: center;
+  border-left: 1px solid var(--line);
+  display: flex;
+  gap: 9px;
+  padding-left: 18px;
+  white-space: nowrap;
+}
+
+.statusDot {
+  background: var(--green);
+  box-shadow: 0 0 0 5px rgba(0, 111, 95, 0.12);
+  height: 9px;
+  width: 9px;
+}
+
+.summaryBand {
+  padding: 16px;
+}
+
+.scopeRail {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: space-between;
+  padding-bottom: 12px;
+}
+
+.scopeRail span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.metricsGrid {
+  display: grid;
+  gap: 1px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.metricTile {
+  background: var(--paper-strong);
+  border: 1px solid var(--line);
+  min-height: 132px;
+  padding: 14px;
+}
+
+.metricTile span {
+  color: var(--muted);
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.metricTile strong {
+  display: block;
+  font-family: "Iosevka", "SFMono-Regular", monospace;
+  font-size: clamp(1.45rem, 3.2vw, 2.5rem);
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
+  margin-top: 28px;
+  overflow-wrap: anywhere;
+}
+
+.metricTile.asset {
+  border-top: 4px solid var(--green);
+}
+
+.metricTile.liability {
+  border-top: 4px solid var(--red);
+}
+
+.metricTile.neutral {
+  border-top: 4px solid var(--blue);
+}
+
+.mainGrid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+}
+
+.ledgerPanel,
+.liquidityPanel {
+  padding: 16px;
+}
+
+.panelHeader {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  padding-bottom: 12px;
+}
+
+table {
+  border-collapse: collapse;
+  margin-top: 8px;
+  table-layout: fixed;
+  width: 100%;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--line);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+  padding: 14px 0;
+  text-align: left;
+}
+
+th {
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+td:last-child,
+th:last-child {
+  text-align: right;
+}
+
+.statePill {
+  border: 1px solid var(--line-strong);
+  display: inline-flex;
+  font-size: 0.72rem;
+  font-weight: 800;
+  justify-content: center;
+  min-width: 86px;
+  max-width: 100%;
+  padding: 5px 8px;
+  text-transform: uppercase;
+}
+
+.statePill.empty {
+  color: var(--muted);
+}
+
+.statePill.ready {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.pyramid {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.tier {
+  align-items: center;
+  border: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  min-height: 54px;
+  padding: 0 14px;
+}
+
+.tier span,
+.tier b {
+  font-size: 0.82rem;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.tier b {
+  font-family: "Iosevka", "SFMono-Regular", monospace;
+}
+
+.tier.housing {
+  background: rgba(194, 154, 46, 0.14);
+  margin-inline: 40px;
+}
+
+.tier.locked {
+  background: rgba(36, 77, 114, 0.13);
+  margin-inline: 28px;
+}
+
+.tier.market {
+  background: rgba(0, 111, 95, 0.12);
+  margin-inline: 14px;
+}
+
+.tier.cash {
+  background: rgba(185, 68, 47, 0.1);
+}
+
+.persistenceBar {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: auto;
+  min-height: 46px;
+  padding: 10px 14px;
+}
+
+code {
+  background: rgba(31, 33, 28, 0.06);
+  color: var(--ink);
+  font-family: "Iosevka", "SFMono-Regular", monospace;
+  font-size: 0.78rem;
+  padding: 3px 5px;
+}
+
+@media (max-width: 900px) {
+  .metricsGrid,
+  .mainGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .metricTile {
+    min-height: 112px;
+  }
+}
+
+@media (max-width: 640px) {
+  .workspace {
+    padding: 12px;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .topbarMeta {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    padding-left: 0;
+    padding-top: 12px;
+    width: 100%;
+  }
+
+  .scopeRail {
+    justify-content: flex-start;
+  }
+
+  .scopeRail span:last-child {
+    flex-basis: 100%;
+  }
+
+  .persistenceBar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

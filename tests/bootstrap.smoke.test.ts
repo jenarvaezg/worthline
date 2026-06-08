@@ -1,0 +1,41 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, test } from "vitest";
+
+import { runBootstrapHealthcheck } from "@worthline/db";
+import { createDashboardShell } from "@worthline/domain";
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { force: true, recursive: true });
+  }
+});
+
+describe("worthline bootstrap", () => {
+  test("loads a dashboard shell through domain logic and SQLite persistence", () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "worthline-bootstrap-"));
+    tempDirs.push(dataDir);
+
+    const persistence = runBootstrapHealthcheck({
+      databasePath: join(dataDir, "worthline.sqlite"),
+      now: () => new Date("2026-06-08T12:00:00.000Z"),
+    });
+
+    const dashboard = createDashboardShell({ persistence });
+
+    expect(dashboard.productName).toBe("worthline");
+    expect(dashboard.baseCurrency).toBe("EUR");
+    expect(dashboard.metrics.map((metric) => metric.id)).toEqual([
+      "total-net-worth",
+      "liquid-net-worth",
+      "housing-equity",
+      "gross-assets",
+      "debts",
+    ]);
+    expect(dashboard.persistence.status).toBe("ok");
+    expect(dashboard.persistence.checkValue).toBe("2026-06-08T12:00:00.000Z");
+  });
+});

@@ -1,0 +1,26 @@
+{
+  "name": "@worthline/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@worthline/contracts": "*",
+    "@worthline/db": "*",
+    "@worthline/domain": "*",
+    "@worthline/pricing": "*",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest"
+  },
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev --hostname 127.0.0.1",
+    "lint": "eslint . --max-warnings=0",
+    "start": "next start --hostname 127.0.0.1",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}
