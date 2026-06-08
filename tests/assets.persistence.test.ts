@@ -56,6 +56,50 @@ describe("manual asset persistence", () => {
       }).liquidNetWorth.amountMinor,
     ).toBe(120_000);
   });
+
+  test("keeps ownership attached to the right asset when several coexist", () => {
+    const store = createTestStore();
+
+    store.initializeWorkspace({
+      members: [
+        { id: "member_ana", name: "Ana" },
+        { id: "member_jose", name: "Jose" },
+      ],
+      mode: "household",
+    });
+    store.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 100_000,
+      id: "asset_ana",
+      liquidityTier: "cash",
+      name: "Caja Ana",
+      ownership: [{ memberId: "member_ana", shareBps: 10_000 }],
+      type: "cash",
+    });
+    store.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 200_000,
+      id: "asset_jose",
+      liquidityTier: "cash",
+      name: "Caja Jose",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "cash",
+    });
+
+    const assets = store.readAssets();
+    const workspace = store.readWorkspace()!;
+
+    // Each member's scope sees only the asset they own — proof the batched
+    // ownership read maps shares to the correct asset.
+    expect(
+      calculateNetWorth({ assets, scopeId: "member_ana", workspace }).liquidNetWorth
+        .amountMinor,
+    ).toBe(100_000);
+    expect(
+      calculateNetWorth({ assets, scopeId: "member_jose", workspace }).liquidNetWorth
+        .amountMinor,
+    ).toBe(200_000);
+  });
 });
 
 function createTestStore() {
