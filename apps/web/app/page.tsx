@@ -5,8 +5,11 @@ import {
   calculateNetWorth,
   calculateSnapshotDeltas,
   createDashboardShell,
+  formatMoneyInput,
   formatMoneyMinor,
   listScopeOptions,
+  parseDecimal,
+  parseDecimalToMinor,
   presentNetWorth,
   resolveScopeMemberIds,
 } from "@worthline/domain";
@@ -643,15 +646,11 @@ function parseOwnership(formData: FormData, members: Member[]) {
 }
 
 function parseMoneyToMinor(value: FormDataEntryValue | null): number {
-  return Math.round(parseLocalizedNumber(value) * 100);
+  return parseDecimalToMinor(String(value ?? ""));
 }
 
 function parseLocalizedNumber(value: FormDataEntryValue | null): number {
-  const raw = String(value ?? "0").trim();
-  const normalized = raw.includes(",") ? raw.replace(/\./g, "").replace(",", ".") : raw;
-  const parsed = Number(normalized);
-
-  return Number.isFinite(parsed) ? parsed : 0;
+  return parseDecimal(String(value ?? ""));
 }
 
 function parseAssetType(value: FormDataEntryValue | null): ManualAsset["type"] {
@@ -707,10 +706,6 @@ function normalizeParam(value: string | string[] | undefined): string | undefine
   }
 
   return value;
-}
-
-function formatMoneyInput(amountMinor: number): string {
-  return (amountMinor / 100).toFixed(2).replace(".", ",");
 }
 
 function formatOptionalMoney(value: MoneyMinor | undefined): string {

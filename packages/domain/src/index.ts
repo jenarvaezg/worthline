@@ -5,6 +5,26 @@ import type {
   MoneyMinor,
 } from "@worthline/contracts";
 
+import {
+  addMoney,
+  allocateByBps,
+  assertMinorInteger,
+  money,
+  subtractMoney,
+} from "./money";
+
+export {
+  addMoney,
+  allocateByBps,
+  assertMinorInteger,
+  formatMoneyInput,
+  formatMoneyMinor,
+  money,
+  parseDecimal,
+  parseDecimalToMinor,
+  subtractMoney,
+} from "./money";
+
 export type WorkspaceMode = "individual" | "household";
 
 export interface Member {
@@ -248,7 +268,7 @@ export function createManualAsset(
   input: CreateManualAssetInput,
 ): ManualAsset {
   assertCurrency(input.currency);
-  assertMoneyMinor(input.currentValueMinor);
+  assertMinorInteger(input.currentValueMinor);
   assertOwnership(workspace, input.ownership);
 
   return {
@@ -271,7 +291,7 @@ export function createLiability(
   input: CreateLiabilityInput,
 ): Liability {
   assertCurrency(input.currency);
-  assertMoneyMinor(input.balanceMinor);
+  assertMinorInteger(input.balanceMinor);
   assertOwnership(workspace, input.ownership);
 
   return {
@@ -296,53 +316,60 @@ export function calculateNetWorth(input: {
 }): NetWorthSummary {
   const scopeMemberIds = new Set(resolveScopeMemberIds(input.workspace, input.scopeId));
   const currency = input.workspace.baseCurrency;
+  const zero = money(0, currency);
 
-  let grossAssetsMinor = 0;
-  let liquidAssetsMinor = 0;
-  let housingAssetsMinor = 0;
-  let debtsMinor = 0;
-  let housingDebtsMinor = 0;
-  let liquidDebtsMinor = 0;
+  let grossAssets = zero;
+  let liquidAssets = zero;
+  let housingAssets = zero;
+  let debts = zero;
+  let housingDebts = zero;
+  let liquidDebts = zero;
 
   for (const asset of input.assets) {
-    const scopedValue = allocateOwnedMoneyMinor(asset.currentValue.amountMinor, {
-      ownership: asset.ownership,
-      scopeMemberIds,
-    });
+    const scoped = money(
+      allocateOwnedMoneyMinor(asset.currentValue.amountMinor, {
+        ownership: asset.ownership,
+        scopeMemberIds,
+      }),
+      currency,
+    );
 
-    grossAssetsMinor += scopedValue;
+    grossAssets = addMoney(grossAssets, scoped);
 
     if (isHousingAsset(asset)) {
-      housingAssetsMinor += scopedValue;
+      housingAssets = addMoney(housingAssets, scoped);
     }
 
     if (isLiquidTier(asset.liquidityTier)) {
-      liquidAssetsMinor += scopedValue;
+      liquidAssets = addMoney(liquidAssets, scoped);
     }
   }
 
   for (const liability of input.liabilities ?? []) {
-    const scopedBalance = allocateOwnedMoneyMinor(liability.currentBalance.amountMinor, {
-      ownership: liability.ownership,
-      scopeMemberIds,
-    });
+    const scoped = money(
+      allocateOwnedMoneyMinor(liability.currentBalance.amountMinor, {
+        ownership: liability.ownership,
+        scopeMemberIds,
+      }),
+      currency,
+    );
 
-    debtsMinor += scopedBalance;
+    debts = addMoney(debts, scoped);
 
     if (liability.type === "mortgage") {
-      housingDebtsMinor += scopedBalance;
+      housingDebts = addMoney(housingDebts, scoped);
     } else {
-      liquidDebtsMinor += scopedBalance;
+      liquidDebts = addMoney(liquidDebts, scoped);
     }
   }
 
   return {
-    debts: money(debtsMinor, currency),
-    grossAssets: money(grossAssetsMinor, currency),
-    housingEquity: money(housingAssetsMinor - housingDebtsMinor, currency),
-    liquidNetWorth: money(liquidAssetsMinor - liquidDebtsMinor, currency),
+    debts,
+    grossAssets,
+    housingEquity: subtractMoney(housingAssets, housingDebts),
+    liquidNetWorth: subtractMoney(liquidAssets, liquidDebts),
     scopeId: input.scopeId,
-    totalNetWorth: money(grossAssetsMinor - debtsMinor, currency),
+    totalNetWorth: subtractMoney(grossAssets, debts),
   };
 }
 
@@ -483,12 +510,10 @@ export function buildLiquidityPyramid(input: {
       ownership: asset.ownership,
       scopeMemberIds,
     });
+    const scoped = money(scopedValue, currency);
 
-    breakdown.grossAssets = money(
-      breakdown.grossAssets.amountMinor + scopedValue,
-      currency,
-    );
-    breakdown.netValue = money(breakdown.netValue.amountMinor + scopedValue, currency);
+    breakdown.grossAssets = addMoney(breakdown.grossAssets, scoped);
+    breakdown.netValue = addMoney(breakdown.netValue, scoped);
 
     if (scopedValue !== 0) {
       breakdown.assets.push({
@@ -511,9 +536,10 @@ export function buildLiquidityPyramid(input: {
       ownership: liability.ownership,
       scopeMemberIds,
     });
+    const scoped = money(scopedValue, currency);
 
-    breakdown.debts = money(breakdown.debts.amountMinor + scopedValue, currency);
-    breakdown.netValue = money(breakdown.netValue.amountMinor - scopedValue, currency);
+    breakdown.debts = addMoney(breakdown.debts, scoped);
+    breakdown.netValue = subtractMoney(breakdown.netValue, scoped);
 
     if (scopedValue !== 0) {
       breakdown.liabilities.push({
@@ -530,12 +556,6 @@ export function buildLiquidityPyramid(input: {
 function assertCurrency(currency: CurrencyCode): void {
   if (!currency.trim()) {
     throw new Error("Currency is required.");
-  }
-}
-
-function assertMoneyMinor(amountMinor: number): void {
-  if (!Number.isInteger(amountMinor)) {
-    throw new Error("Money must be stored as integer minor units.");
   }
 }
 
@@ -569,11 +589,7 @@ function allocateOwnedMoneyMinor(
     .filter((share) => input.scopeMemberIds.has(share.memberId))
     .reduce((sum, share) => sum + share.shareBps, 0);
 
-  return allocateMinorByBps(amountMinor, shareBps);
-}
-
-function allocateMinorByBps(amountMinor: number, shareBps: number): number {
-  return Number((BigInt(amountMinor) * BigInt(shareBps) + 5_000n) / 10_000n);
+  return allocateByBps(amountMinor, shareBps);
 }
 
 function isLiquidTier(tier: LiquidityTier): boolean {
@@ -597,21 +613,6 @@ function resolveLiabilityTier(
   }
 
   return liability.type === "mortgage" ? "housing" : "cash";
-}
-
-function money(amountMinor: number, currency: CurrencyCode): MoneyMinor {
-  return { amountMinor, currency };
-}
-
-function subtractMoney(left: MoneyMinor, right: MoneyMinor): MoneyMinor {
-  if (left.currency !== right.currency) {
-    throw new Error("Cannot subtract money with different currencies.");
-  }
-
-  return {
-    amountMinor: left.amountMinor - right.amountMinor,
-    currency: left.currency,
-  };
 }
 
 export type DashboardMetricId =
@@ -670,17 +671,6 @@ export function createDashboardShell(input: {
       module("fire", "FIRE", input.moduleStates),
     ],
   };
-}
-
-export function formatMoneyMinor(value: MoneyMinor): string {
-  const formatter = new Intl.NumberFormat("es-ES", {
-    currency: value.currency,
-    maximumFractionDigits: 0,
-    minimumFractionDigits: 0,
-    style: "currency",
-  });
-
-  return formatter.format(value.amountMinor / 100);
 }
 
 function metric(
