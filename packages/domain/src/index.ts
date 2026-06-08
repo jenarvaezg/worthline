@@ -25,6 +25,22 @@ export {
   subtractMoney,
 } from "./money";
 
+import {
+  isHousing,
+  isHousingAsset,
+  isLiquid,
+  tierOfAsset,
+  tierOfLiability,
+} from "./classification";
+
+export {
+  isHousing,
+  isHousingAsset,
+  isLiquid,
+  tierOfAsset,
+  tierOfLiability,
+} from "./classification";
+
 export type WorkspaceMode = "individual" | "household";
 
 export interface Member {
@@ -317,6 +333,9 @@ export function calculateNetWorth(input: {
   const scopeMemberIds = new Set(resolveScopeMemberIds(input.workspace, input.scopeId));
   const currency = input.workspace.baseCurrency;
   const zero = money(0, currency);
+  const assetTierById = new Map(
+    input.assets.map((asset) => [asset.id, tierOfAsset(asset)]),
+  );
 
   let grossAssets = zero;
   let liquidAssets = zero;
@@ -340,7 +359,7 @@ export function calculateNetWorth(input: {
       housingAssets = addMoney(housingAssets, scoped);
     }
 
-    if (isLiquidTier(asset.liquidityTier)) {
+    if (isLiquid(tierOfAsset(asset))) {
       liquidAssets = addMoney(liquidAssets, scoped);
     }
   }
@@ -356,9 +375,11 @@ export function calculateNetWorth(input: {
 
     debts = addMoney(debts, scoped);
 
-    if (liability.type === "mortgage") {
+    const tier = tierOfLiability(liability, assetTierById);
+
+    if (isHousing(tier)) {
       housingDebts = addMoney(housingDebts, scoped);
-    } else {
+    } else if (isLiquid(tier)) {
       liquidDebts = addMoney(liquidDebts, scoped);
     }
   }
@@ -496,11 +517,11 @@ export function buildLiquidityPyramid(input: {
   }
 
   const assetTierById = new Map(
-    input.assets.map((asset) => [asset.id, asset.liquidityTier]),
+    input.assets.map((asset) => [asset.id, tierOfAsset(asset)]),
   );
 
   for (const asset of input.assets) {
-    const breakdown = tiers.get(asset.liquidityTier);
+    const breakdown = tiers.get(tierOfAsset(asset));
 
     if (!breakdown) {
       continue;
@@ -525,7 +546,7 @@ export function buildLiquidityPyramid(input: {
   }
 
   for (const liability of input.liabilities ?? []) {
-    const tier = resolveLiabilityTier(liability, assetTierById);
+    const tier = tierOfLiability(liability, assetTierById);
     const breakdown = tiers.get(tier);
 
     if (!breakdown) {
@@ -590,29 +611,6 @@ function allocateOwnedMoneyMinor(
     .reduce((sum, share) => sum + share.shareBps, 0);
 
   return allocateByBps(amountMinor, shareBps);
-}
-
-function isLiquidTier(tier: LiquidityTier): boolean {
-  return tier === "cash" || tier === "market";
-}
-
-function isHousingAsset(asset: ManualAsset): boolean {
-  return (
-    asset.type === "real_estate" ||
-    asset.isPrimaryResidence ||
-    asset.liquidityTier === "housing"
-  );
-}
-
-function resolveLiabilityTier(
-  liability: Liability,
-  assetTierById: Map<string, LiquidityTier>,
-): LiquidityTier {
-  if (liability.associatedAssetId) {
-    return assetTierById.get(liability.associatedAssetId) ?? "housing";
-  }
-
-  return liability.type === "mortgage" ? "housing" : "cash";
 }
 
 export type DashboardMetricId =
