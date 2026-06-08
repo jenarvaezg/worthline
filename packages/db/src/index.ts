@@ -528,7 +528,14 @@ function migrate(sqlite: DatabaseConnection): void {
     return;
   }
 
-  sqlite.exec(schemaSql);
+  // IF NOT EXISTS keeps this safe on databases created before user_version
+  // existed (tables already present, version still 0). The generated DDL only
+  // ever opens statements with these two forms.
+  const idempotentSql = schemaSql
+    .replaceAll("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
+    .replaceAll("CREATE UNIQUE INDEX ", "CREATE UNIQUE INDEX IF NOT EXISTS ");
+
+  sqlite.exec(idempotentSql);
   sqlite.pragma(`user_version = ${SCHEMA_VERSION}`);
 }
 
