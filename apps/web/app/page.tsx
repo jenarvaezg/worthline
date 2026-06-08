@@ -27,6 +27,7 @@ import {
   parseSnapshotForm,
   parseViewParam,
   parseWorkspaceInit,
+  validateOwnershipShares,
 } from "./intake";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +38,9 @@ const presentationModes = [
   { id: "gross-debt", label: "Bruto/deuda" },
 ] as const satisfies Array<{ id: NetWorthPresentationMode; label: string }>;
 
+/** Outcome of a write server action: ok signals revalidate, error surfaces to the user. */
+type ActionResult = { ok: boolean; error?: string };
+
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -45,6 +49,8 @@ export default async function DashboardPage({
   const resolvedSearchParams = await searchParams;
   const persistence = runBootstrapHealthcheck();
   const selectedView = parseViewParam(resolvedSearchParams?.view);
+  const errorParam = resolvedSearchParams?.error;
+  const formError = Array.isArray(errorParam) ? errorParam[0] : errorParam;
   const { workspace, assets, liabilities, scopes, selectedScope, snapshots } = withStore(
     (store) => {
       const workspace = store.readWorkspace();
@@ -118,6 +124,12 @@ export default async function DashboardPage({
           SQLite OK
         </div>
       </header>
+
+      {formError ? (
+        <p role="alert" style={{ color: "#c0392b", fontWeight: 600, margin: "0 0 12px" }}>
+          {formError}
+        </p>
+      ) : null}
 
       <section className="summaryBand" aria-label="Resumen patrimonial">
         <div className="scopeRail">
@@ -501,19 +513,30 @@ async function disableMemberAction(formData: FormData) {
 async function createAssetAction(formData: FormData) {
   "use server";
 
-  const created = withStore((store) => {
+  const result = withStore((store): ActionResult => {
     const workspace = store.readWorkspace();
 
     if (!workspace) {
-      return false;
+      return { ok: false };
     }
 
-    store.createManualAsset(parseAssetCommand(formData, workspace.members, Date.now()));
+    const command = parseAssetCommand(formData, workspace.members, Date.now());
+    const ownershipError = validateOwnershipShares(command.ownership);
 
-    return true;
+    if (ownershipError) {
+      return { error: ownershipError, ok: false };
+    }
+
+    store.createManualAsset(command);
+
+    return { ok: true };
   });
 
-  if (created) {
+  if (result.error) {
+    redirect(`/?error=${encodeURIComponent(result.error)}`);
+  }
+
+  if (result.ok) {
     revalidatePath("/");
   }
 }
@@ -536,19 +559,30 @@ async function updateAssetValuationAction(formData: FormData) {
 async function createLiabilityAction(formData: FormData) {
   "use server";
 
-  const created = withStore((store) => {
+  const result = withStore((store): ActionResult => {
     const workspace = store.readWorkspace();
 
     if (!workspace) {
-      return false;
+      return { ok: false };
     }
 
-    store.createLiability(parseLiabilityCommand(formData, workspace.members, Date.now()));
+    const command = parseLiabilityCommand(formData, workspace.members, Date.now());
+    const ownershipError = validateOwnershipShares(command.ownership);
 
-    return true;
+    if (ownershipError) {
+      return { error: ownershipError, ok: false };
+    }
+
+    store.createLiability(command);
+
+    return { ok: true };
   });
 
-  if (created) {
+  if (result.error) {
+    redirect(`/?error=${encodeURIComponent(result.error)}`);
+  }
+
+  if (result.ok) {
     revalidatePath("/");
   }
 }

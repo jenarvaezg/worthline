@@ -91,6 +91,22 @@ export function parseOwnership(formData: FormData, members: Member[]): Ownership
     : [{ memberId: activeMembers[0]?.id ?? "", shareBps: 10_000 }];
 }
 
+/**
+ * Gate ownership shares before they reach the domain. The domain requires shares
+ * to total 10000 bps and throws on violation; this surfaces that rule as a
+ * user-facing message so the web layer can reject the submission gracefully
+ * instead of letting the constructor throw. Returns null when the shares are valid.
+ */
+export function validateOwnershipShares(shares: OwnershipShare[]): string | null {
+  const totalBps = shares.reduce((sum, share) => sum + share.shareBps, 0);
+
+  if (totalBps !== 10_000) {
+    return "Los porcentajes de propiedad deben sumar 100%.";
+  }
+
+  return null;
+}
+
 export function parseAssetCommand(
   formData: FormData,
   members: Member[],

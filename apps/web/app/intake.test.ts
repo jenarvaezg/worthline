@@ -13,6 +13,7 @@ import {
   parseSnapshotForm,
   parseViewParam,
   parseWorkspaceInit,
+  validateOwnershipShares,
 } from "./intake";
 
 const members: Member[] = [
@@ -80,6 +81,35 @@ describe("ownership parsing", () => {
   test("falls back to a single full owner when nothing positive is entered", () => {
     const ownership = parseOwnership(form({}), members);
     expect(ownership).toEqual([{ memberId: "member_ana", shareBps: 10_000 }]);
+  });
+});
+
+describe("ownership validation", () => {
+  test("accepts shares that add up to 100%", () => {
+    expect(
+      validateOwnershipShares([
+        { memberId: "member_ana", shareBps: 2_500 },
+        { memberId: "member_jose", shareBps: 7_500 },
+      ]),
+    ).toBeNull();
+    expect(validateOwnershipShares([{ memberId: "member_ana", shareBps: 10_000 }])).toBeNull();
+  });
+
+  test("rejects shares that do not add up to 100% with a user-facing message", () => {
+    const error = validateOwnershipShares([
+      { memberId: "member_ana", shareBps: 6_000 },
+      { memberId: "member_jose", shareBps: 3_000 },
+    ]);
+    expect(error).toContain("100%");
+  });
+
+  test("rejects shares that exceed 100%", () => {
+    expect(
+      validateOwnershipShares([
+        { memberId: "member_ana", shareBps: 10_000 },
+        { memberId: "member_jose", shareBps: 5_000 },
+      ]),
+    ).toContain("100%");
   });
 });
 
