@@ -471,6 +471,24 @@ export function createWorthlineStore(
   };
 }
 
+/**
+ * Run a unit of work against a freshly opened store and guarantee the SQLite
+ * connection is closed afterwards — even if the callback throws. This is the one
+ * home for the open/use/close lifecycle so callers never leak a connection.
+ */
+export function withStore<T>(
+  run: (store: WorthlineStore) => T,
+  options: WorthlineStoreOptions = {},
+): T {
+  const store = createWorthlineStore(options);
+
+  try {
+    return run(store);
+  } finally {
+    store.close();
+  }
+}
+
 export function resolveDatabasePath(options: BootstrapHealthcheckOptions = {}): string {
   if (options.databasePath) {
     return resolve(options.databasePath);

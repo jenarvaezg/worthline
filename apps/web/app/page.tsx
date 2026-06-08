@@ -1,5 +1,5 @@
 import type { MoneyMinor } from "@worthline/contracts";
-import { createWorthlineStore, runBootstrapHealthcheck } from "@worthline/db";
+import { runBootstrapHealthcheck, withStore } from "@worthline/db";
 import {
   buildLiquidityPyramid,
   calculateNetWorth,
@@ -33,16 +33,25 @@ export default async function DashboardPage({
 }) {
   const resolvedSearchParams = await searchParams;
   const persistence = runBootstrapHealthcheck();
-  const store = createWorthlineStore();
-  const workspace = store.readWorkspace();
-  const assets = store.readAssets();
-  const liabilities = store.readLiabilities();
-  const scopes = workspace ? listScopeOptions(workspace) : [];
-  const selectedScopeId = normalizeParam(resolvedSearchParams?.scope) ?? "household";
-  const selectedScope = scopes.find((scope) => scope.id === selectedScopeId) ?? scopes[0];
   const selectedView = parsePresentationMode(normalizeParam(resolvedSearchParams?.view));
-  const snapshots = selectedScope ? store.readSnapshots(selectedScope.id) : [];
-  store.close();
+  const { workspace, assets, liabilities, scopes, selectedScope, snapshots } = withStore(
+    (store) => {
+      const workspace = store.readWorkspace();
+      const scopes = workspace ? listScopeOptions(workspace) : [];
+      const selectedScopeId = normalizeParam(resolvedSearchParams?.scope) ?? "household";
+      const selectedScope =
+        scopes.find((scope) => scope.id === selectedScopeId) ?? scopes[0];
+
+      return {
+        assets: store.readAssets(),
+        liabilities: store.readLiabilities(),
+        scopes,
+        selectedScope,
+        snapshots: selectedScope ? store.readSnapshots(selectedScope.id) : [],
+        workspace,
+      };
+    },
+  );
 
   const summary =
     workspace && selectedScope
@@ -434,16 +443,16 @@ async function initializeWorkspaceAction(formData: FormData) {
   const mode = formData.get("mode") === "household" ? "household" : "individual";
   const names = parseNames(formData.get("memberNames"));
   const selectedNames = mode === "individual" ? [names[0] ?? "Yo"] : names;
-  const store = createWorthlineStore();
 
-  store.initializeWorkspace({
-    members: selectedNames.map((name, index) => ({
-      id: createStableId("member", name, index),
-      name,
-    })),
-    mode,
-  });
-  store.close();
+  withStore((store) =>
+    store.initializeWorkspace({
+      members: selectedNames.map((name, index) => ({
+        id: createStableId("member", name, index),
+        name,
+      })),
+      mode,
+    }),
+  );
   revalidatePath("/");
   redirect("/?scope=household");
 }
@@ -457,12 +466,12 @@ async function createMemberAction(formData: FormData) {
     return;
   }
 
-  const store = createWorthlineStore();
-  store.createMember({
-    id: createStableId("member", name, Date.now()),
-    name,
-  });
-  store.close();
+  withStore((store) =>
+    store.createMember({
+      id: createStableId("member", name, Date.now()),
+      name,
+    }),
+  );
   revalidatePath("/");
 }
 
@@ -476,9 +485,7 @@ async function updateMemberAction(formData: FormData) {
     return;
   }
 
-  const store = createWorthlineStore();
-  store.updateMember({ id, name });
-  store.close();
+  withStore((store) => store.updateMember({ id, name }));
   revalidatePath("/");
 }
 
@@ -491,36 +498,38 @@ async function disableMemberAction(formData: FormData) {
     return;
   }
 
-  const store = createWorthlineStore();
-  store.disableMember(id, new Date().toISOString());
-  store.close();
+  withStore((store) => store.disableMember(id, new Date().toISOString()));
   revalidatePath("/");
 }
 
 async function createAssetAction(formData: FormData) {
   "use server";
 
-  const store = createWorthlineStore();
-  const workspace = store.readWorkspace();
+  const created = withStore((store) => {
+    const workspace = store.readWorkspace();
 
-  if (!workspace) {
-    store.close();
-    return;
-  }
+    if (!workspace) {
+      return false;
+    }
 
-  const name = String(formData.get("name") ?? "").trim() || "Activo";
-  store.createManualAsset({
-    currency: "EUR",
-    currentValueMinor: parseMoneyToMinor(formData.get("currentValue")),
-    id: createStableId("asset", name, Date.now()),
-    isPrimaryResidence: formData.get("isPrimaryResidence") === "on",
-    liquidityTier: parseLiquidityTier(formData.get("liquidityTier")),
-    name,
-    ownership: parseOwnership(formData, workspace.members),
-    type: parseAssetType(formData.get("type")),
+    const name = String(formData.get("name") ?? "").trim() || "Activo";
+    store.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: parseMoneyToMinor(formData.get("currentValue")),
+      id: createStableId("asset", name, Date.now()),
+      isPrimaryResidence: formData.get("isPrimaryResidence") === "on",
+      liquidityTier: parseLiquidityTier(formData.get("liquidityTier")),
+      name,
+      ownership: parseOwnership(formData, workspace.members),
+      type: parseAssetType(formData.get("type")),
+    });
+
+    return true;
   });
-  store.close();
-  revalidatePath("/");
+
+  if (created) {
+    revalidatePath("/");
+  }
 }
 
 async function updateAssetValuationAction(formData: FormData) {
@@ -532,36 +541,40 @@ async function updateAssetValuationAction(formData: FormData) {
     return;
   }
 
-  const store = createWorthlineStore();
-  store.updateAssetValuation(id, parseMoneyToMinor(formData.get("currentValue")));
-  store.close();
+  withStore((store) =>
+    store.updateAssetValuation(id, parseMoneyToMinor(formData.get("currentValue"))),
+  );
   revalidatePath("/");
 }
 
 async function createLiabilityAction(formData: FormData) {
   "use server";
 
-  const store = createWorthlineStore();
-  const workspace = store.readWorkspace();
+  const created = withStore((store) => {
+    const workspace = store.readWorkspace();
 
-  if (!workspace) {
-    store.close();
-    return;
-  }
+    if (!workspace) {
+      return false;
+    }
 
-  const name = String(formData.get("name") ?? "").trim() || "Deuda";
-  const associatedAssetId = String(formData.get("associatedAssetId") ?? "");
-  store.createLiability({
-    balanceMinor: parseMoneyToMinor(formData.get("balance")),
-    currency: "EUR",
-    id: createStableId("debt", name, Date.now()),
-    name,
-    ownership: parseOwnership(formData, workspace.members),
-    type: formData.get("type") === "debt" ? "debt" : "mortgage",
-    ...(associatedAssetId ? { associatedAssetId } : {}),
+    const name = String(formData.get("name") ?? "").trim() || "Deuda";
+    const associatedAssetId = String(formData.get("associatedAssetId") ?? "");
+    store.createLiability({
+      balanceMinor: parseMoneyToMinor(formData.get("balance")),
+      currency: "EUR",
+      id: createStableId("debt", name, Date.now()),
+      name,
+      ownership: parseOwnership(formData, workspace.members),
+      type: formData.get("type") === "debt" ? "debt" : "mortgage",
+      ...(associatedAssetId ? { associatedAssetId } : {}),
+    });
+
+    return true;
   });
-  store.close();
-  revalidatePath("/");
+
+  if (created) {
+    revalidatePath("/");
+  }
 }
 
 async function updateLiabilityBalanceAction(formData: FormData) {
@@ -573,9 +586,9 @@ async function updateLiabilityBalanceAction(formData: FormData) {
     return;
   }
 
-  const store = createWorthlineStore();
-  store.updateLiabilityBalance(id, parseMoneyToMinor(formData.get("balance")));
-  store.close();
+  withStore((store) =>
+    store.updateLiabilityBalance(id, parseMoneyToMinor(formData.get("balance"))),
+  );
   revalidatePath("/");
 }
 
@@ -583,41 +596,44 @@ async function saveSnapshotAction(formData: FormData) {
   "use server";
 
   const scopeId = String(formData.get("scopeId") ?? "household");
-  const store = createWorthlineStore();
-  const workspace = store.readWorkspace();
+  const saved = withStore((store) => {
+    const workspace = store.readWorkspace();
 
-  if (!workspace) {
-    store.close();
-    return;
-  }
+    if (!workspace) {
+      return false;
+    }
 
-  const scopes = listScopeOptions(workspace);
-  const scope = scopes.find((option) => option.id === scopeId) ?? scopes[0];
+    const scopes = listScopeOptions(workspace);
+    const scope = scopes.find((option) => option.id === scopeId) ?? scopes[0];
 
-  if (!scope) {
-    store.close();
-    return;
-  }
+    if (!scope) {
+      return false;
+    }
 
-  const now = new Date().toISOString();
-  const summary = calculateNetWorth({
-    assets: store.readAssets(),
-    liabilities: store.readLiabilities(),
-    scopeId: scope.id,
-    workspace,
+    const now = new Date().toISOString();
+    const summary = calculateNetWorth({
+      assets: store.readAssets(),
+      liabilities: store.readLiabilities(),
+      scopeId: scope.id,
+      workspace,
+    });
+
+    store.saveSnapshot({
+      capturedAt: now,
+      id: createStableId("snapshot", `${scope.id}_${now.slice(0, 10)}`, Date.now()),
+      isMonthlyClose: formData.get("isMonthlyClose") === "on",
+      replace: formData.get("replace") === "on",
+      scopeId: scope.id,
+      scopeLabel: scope.label,
+      summary,
+    });
+
+    return true;
   });
 
-  store.saveSnapshot({
-    capturedAt: now,
-    id: createStableId("snapshot", `${scope.id}_${now.slice(0, 10)}`, Date.now()),
-    isMonthlyClose: formData.get("isMonthlyClose") === "on",
-    replace: formData.get("replace") === "on",
-    scopeId: scope.id,
-    scopeLabel: scope.label,
-    summary,
-  });
-  store.close();
-  revalidatePath("/");
+  if (saved) {
+    revalidatePath("/");
+  }
 }
 
 function parseNames(value: FormDataEntryValue | null): string[] {
