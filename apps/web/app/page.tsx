@@ -8,8 +8,6 @@ import {
   formatMoneyInput,
   formatMoneyMinor,
   listScopeOptions,
-  parseDecimal,
-  parseDecimalToMinor,
   presentNetWorth,
   resolveScopeMemberIds,
 } from "@worthline/domain";
@@ -17,6 +15,19 @@ import type { ManualAsset, Member, NetWorthPresentationMode } from "@worthline/d
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+
+import {
+  buildSnapshotId,
+  parseAssetCommand,
+  parseEntityId,
+  parseLiabilityCommand,
+  parseMoneyMinorField,
+  parseNewMember,
+  parseScopeParam,
+  parseSnapshotForm,
+  parseViewParam,
+  parseWorkspaceInit,
+} from "./intake";
 
 export const dynamic = "force-dynamic";
 
@@ -33,12 +44,12 @@ export default async function DashboardPage({
 }) {
   const resolvedSearchParams = await searchParams;
   const persistence = runBootstrapHealthcheck();
-  const selectedView = parsePresentationMode(normalizeParam(resolvedSearchParams?.view));
+  const selectedView = parseViewParam(resolvedSearchParams?.view);
   const { workspace, assets, liabilities, scopes, selectedScope, snapshots } = withStore(
     (store) => {
       const workspace = store.readWorkspace();
       const scopes = workspace ? listScopeOptions(workspace) : [];
-      const selectedScopeId = normalizeParam(resolvedSearchParams?.scope) ?? "household";
+      const selectedScopeId = parseScopeParam(resolvedSearchParams?.scope);
       const selectedScope =
         scopes.find((scope) => scope.id === selectedScopeId) ?? scopes[0];
 
@@ -440,19 +451,9 @@ function OwnershipInputs({ members }: { members: Member[] }) {
 async function initializeWorkspaceAction(formData: FormData) {
   "use server";
 
-  const mode = formData.get("mode") === "household" ? "household" : "individual";
-  const names = parseNames(formData.get("memberNames"));
-  const selectedNames = mode === "individual" ? [names[0] ?? "Yo"] : names;
+  const command = parseWorkspaceInit(formData);
 
-  withStore((store) =>
-    store.initializeWorkspace({
-      members: selectedNames.map((name, index) => ({
-        id: createStableId("member", name, index),
-        name,
-      })),
-      mode,
-    }),
-  );
+  withStore((store) => store.initializeWorkspace(command));
   revalidatePath("/");
   redirect("/?scope=household");
 }
@@ -460,25 +461,20 @@ async function initializeWorkspaceAction(formData: FormData) {
 async function createMemberAction(formData: FormData) {
   "use server";
 
-  const name = String(formData.get("name") ?? "").trim();
+  const member = parseNewMember(formData, Date.now());
 
-  if (!name) {
+  if (!member) {
     return;
   }
 
-  withStore((store) =>
-    store.createMember({
-      id: createStableId("member", name, Date.now()),
-      name,
-    }),
-  );
+  withStore((store) => store.createMember(member));
   revalidatePath("/");
 }
 
 async function updateMemberAction(formData: FormData) {
   "use server";
 
-  const id = String(formData.get("id") ?? "");
+  const id = parseEntityId(formData);
   const name = String(formData.get("name") ?? "").trim();
 
   if (!id || !name) {
@@ -492,7 +488,7 @@ async function updateMemberAction(formData: FormData) {
 async function disableMemberAction(formData: FormData) {
   "use server";
 
-  const id = String(formData.get("id") ?? "");
+  const id = parseEntityId(formData);
 
   if (!id) {
     return;
@@ -512,17 +508,7 @@ async function createAssetAction(formData: FormData) {
       return false;
     }
 
-    const name = String(formData.get("name") ?? "").trim() || "Activo";
-    store.createManualAsset({
-      currency: "EUR",
-      currentValueMinor: parseMoneyToMinor(formData.get("currentValue")),
-      id: createStableId("asset", name, Date.now()),
-      isPrimaryResidence: formData.get("isPrimaryResidence") === "on",
-      liquidityTier: parseLiquidityTier(formData.get("liquidityTier")),
-      name,
-      ownership: parseOwnership(formData, workspace.members),
-      type: parseAssetType(formData.get("type")),
-    });
+    store.createManualAsset(parseAssetCommand(formData, workspace.members, Date.now()));
 
     return true;
   });
@@ -535,14 +521,14 @@ async function createAssetAction(formData: FormData) {
 async function updateAssetValuationAction(formData: FormData) {
   "use server";
 
-  const id = String(formData.get("id") ?? "");
+  const id = parseEntityId(formData);
 
   if (!id) {
     return;
   }
 
   withStore((store) =>
-    store.updateAssetValuation(id, parseMoneyToMinor(formData.get("currentValue"))),
+    store.updateAssetValuation(id, parseMoneyMinorField(formData, "currentValue")),
   );
   revalidatePath("/");
 }
@@ -557,17 +543,7 @@ async function createLiabilityAction(formData: FormData) {
       return false;
     }
 
-    const name = String(formData.get("name") ?? "").trim() || "Deuda";
-    const associatedAssetId = String(formData.get("associatedAssetId") ?? "");
-    store.createLiability({
-      balanceMinor: parseMoneyToMinor(formData.get("balance")),
-      currency: "EUR",
-      id: createStableId("debt", name, Date.now()),
-      name,
-      ownership: parseOwnership(formData, workspace.members),
-      type: formData.get("type") === "debt" ? "debt" : "mortgage",
-      ...(associatedAssetId ? { associatedAssetId } : {}),
-    });
+    store.createLiability(parseLiabilityCommand(formData, workspace.members, Date.now()));
 
     return true;
   });
@@ -580,14 +556,14 @@ async function createLiabilityAction(formData: FormData) {
 async function updateLiabilityBalanceAction(formData: FormData) {
   "use server";
 
-  const id = String(formData.get("id") ?? "");
+  const id = parseEntityId(formData);
 
   if (!id) {
     return;
   }
 
   withStore((store) =>
-    store.updateLiabilityBalance(id, parseMoneyToMinor(formData.get("balance"))),
+    store.updateLiabilityBalance(id, parseMoneyMinorField(formData, "balance")),
   );
   revalidatePath("/");
 }
@@ -595,7 +571,7 @@ async function updateLiabilityBalanceAction(formData: FormData) {
 async function saveSnapshotAction(formData: FormData) {
   "use server";
 
-  const scopeId = String(formData.get("scopeId") ?? "household");
+  const { scopeId, isMonthlyClose, replace } = parseSnapshotForm(formData);
   const saved = withStore((store) => {
     const workspace = store.readWorkspace();
 
@@ -620,9 +596,9 @@ async function saveSnapshotAction(formData: FormData) {
 
     store.saveSnapshot({
       capturedAt: now,
-      id: createStableId("snapshot", `${scope.id}_${now.slice(0, 10)}`, Date.now()),
-      isMonthlyClose: formData.get("isMonthlyClose") === "on",
-      replace: formData.get("replace") === "on",
+      id: buildSnapshotId(scope.id, now, Date.now()),
+      isMonthlyClose,
+      replace,
       scopeId: scope.id,
       scopeLabel: scope.label,
       summary,
@@ -634,94 +610,6 @@ async function saveSnapshotAction(formData: FormData) {
   if (saved) {
     revalidatePath("/");
   }
-}
-
-function parseNames(value: FormDataEntryValue | null): string[] {
-  const names = String(value ?? "")
-    .split(/[\n,]/)
-    .map((name) => name.trim())
-    .filter(Boolean);
-
-  return names.length > 0 ? names : ["Yo"];
-}
-
-function parseOwnership(formData: FormData, members: Member[]) {
-  const activeMembers = members.filter((member) => !member.disabledAt);
-  const ownership = activeMembers
-    .map((member) => ({
-      memberId: member.id,
-      shareBps: Math.round(
-        parseLocalizedNumber(formData.get(`owner_${member.id}`)) * 100,
-      ),
-    }))
-    .filter((share) => share.shareBps > 0);
-
-  return ownership.length > 0
-    ? ownership
-    : [{ memberId: activeMembers[0]?.id ?? "", shareBps: 10_000 }];
-}
-
-function parseMoneyToMinor(value: FormDataEntryValue | null): number {
-  return parseDecimalToMinor(String(value ?? ""));
-}
-
-function parseLocalizedNumber(value: FormDataEntryValue | null): number {
-  return parseDecimal(String(value ?? ""));
-}
-
-function parseAssetType(value: FormDataEntryValue | null): ManualAsset["type"] {
-  if (value === "real_estate") {
-    return "real_estate";
-  }
-
-  if (value === "manual") {
-    return "manual";
-  }
-
-  return "cash";
-}
-
-function parseLiquidityTier(
-  value: FormDataEntryValue | null,
-): ManualAsset["liquidityTier"] {
-  if (
-    value === "market" ||
-    value === "retirement" ||
-    value === "illiquid" ||
-    value === "housing"
-  ) {
-    return value;
-  }
-
-  return "cash";
-}
-
-function parsePresentationMode(value: string | undefined): NetWorthPresentationMode {
-  if (value === "housing-inclusive" || value === "gross-debt") {
-    return value;
-  }
-
-  return "liquid";
-}
-
-function createStableId(prefix: string, name: string, index: number): string {
-  const slug =
-    name
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "") || prefix;
-
-  return `${prefix}_${slug}_${index}`;
-}
-
-function normalizeParam(value: string | string[] | undefined): string | undefined {
-  if (Array.isArray(value)) {
-    return value[0];
-  }
-
-  return value;
 }
 
 function formatOptionalMoney(value: MoneyMinor | undefined): string {
