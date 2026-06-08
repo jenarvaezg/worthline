@@ -1,15 +1,15 @@
 :root {
   color-scheme: light;
-  --paper: #f4f0e8;
-  --paper-strong: #fffaf0;
-  --ink: #1f211c;
-  --muted: #68695f;
-  --line: #d8d0c0;
-  --line-strong: #9f988b;
+  --paper: #eef2ef;
+  --paper-strong: #fbfbf4;
+  --ink: #17201e;
+  --muted: #61706b;
+  --line: #cfd8d3;
+  --line-strong: #7f9088;
   --green: #006f5f;
-  --blue: #244d72;
+  --blue: #245177;
   --red: #b9442f;
-  --gold: #c29a2e;
+  --gold: #b3831f;
   --shadow: 0 22px 70px rgba(31, 33, 28, 0.12);
 }
 
@@ -25,13 +25,11 @@ body {
 
 body {
   background:
-    linear-gradient(rgba(31, 33, 28, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(31, 33, 28, 0.035) 1px, transparent 1px),
-    var(--paper);
+    linear-gradient(rgba(23, 32, 30, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23, 32, 30, 0.035) 1px, transparent 1px), var(--paper);
   background-size: 28px 28px;
   color: var(--ink);
-  font-family:
-    "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+  font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
   overflow-x: hidden;
 }
 
@@ -40,6 +38,43 @@ input,
 select,
 textarea {
   font: inherit;
+}
+
+button,
+input,
+select,
+textarea {
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+}
+
+button {
+  background: var(--ink);
+  color: var(--paper-strong);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  min-height: 38px;
+  padding: 0 12px;
+  text-transform: uppercase;
+}
+
+button:hover {
+  background: var(--blue);
+}
+
+input,
+select,
+textarea {
+  background: rgba(255, 250, 240, 0.9);
+  min-height: 38px;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+textarea {
+  resize: vertical;
 }
 
 .workspace {
@@ -56,8 +91,10 @@ textarea {
 
 .topbar,
 .summaryBand,
+.setupPanel,
 .ledgerPanel,
 .liquidityPanel,
+.historyPanel,
 .persistenceBar {
   background: rgba(255, 250, 240, 0.88);
   border: 1px solid var(--line);
@@ -96,6 +133,7 @@ textarea {
 
 h1,
 h2,
+h3,
 p {
   margin: 0;
 }
@@ -109,6 +147,13 @@ h1 {
 
 h2 {
   font-size: 0.98rem;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+h3 {
+  font-size: 0.82rem;
+  font-weight: 850;
   letter-spacing: 0;
   text-transform: uppercase;
 }
@@ -155,6 +200,56 @@ h2 {
 }
 
 .scopeRail span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.scopeTabs,
+.viewTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.scopeTabs a,
+.viewTabs a {
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  font-size: 0.76rem;
+  font-weight: 800;
+  padding: 8px 10px;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.scopeTabs a.active,
+.scopeTabs a:hover,
+.viewTabs a.active,
+.viewTabs a:hover {
+  background: var(--ink);
+  color: var(--paper-strong);
+}
+
+.deltaStrip {
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 14px;
+  padding-top: 12px;
+}
+
+.deltaStrip span,
+.deltaStrip b {
+  font-family: "Iosevka", "SFMono-Regular", monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.deltaStrip span {
+  flex: 1 1 160px;
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -211,8 +306,10 @@ h2 {
   grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
 }
 
+.setupPanel,
 .ledgerPanel,
-.liquidityPanel {
+.liquidityPanel,
+.historyPanel {
   padding: 16px;
 }
 
@@ -273,6 +370,131 @@ th:last-child {
   color: var(--green);
 }
 
+.stackForm {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.stackForm label,
+.ownershipGrid label {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.74rem;
+  font-weight: 800;
+  gap: 6px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.entryGrid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.presentationReadout {
+  background: rgba(23, 32, 30, 0.05);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px;
+}
+
+.presentationReadout > span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.presentationReadout strong {
+  font-family: "Iosevka", "SFMono-Regular", monospace;
+  font-size: clamp(1.4rem, 3vw, 2.2rem);
+  line-height: 1;
+}
+
+.presentationReadout div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.presentationReadout div span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.ownershipGrid {
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  padding: 10px;
+}
+
+.ownershipGrid legend {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+  padding: 0 4px;
+  text-transform: uppercase;
+}
+
+.checkLine {
+  align-items: center;
+  display: flex !important;
+  flex-direction: row;
+  gap: 8px !important;
+}
+
+.checkLine input {
+  min-height: 18px;
+  width: 18px;
+}
+
+.memberGrid {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.memberRow,
+.inlineForm {
+  display: grid;
+  gap: 8px;
+}
+
+.memberRow {
+  align-items: center;
+  grid-template-columns: minmax(140px, 1fr) 90px auto auto;
+}
+
+.memberRow span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.inlineForm {
+  border-top: 1px solid var(--line);
+  grid-template-columns: minmax(160px, 1fr) auto;
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
+.rowForm {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(90px, 1fr) auto;
+}
+
 .pyramid {
   display: grid;
   gap: 10px;
@@ -282,14 +504,27 @@ th:last-child {
 .tier {
   align-items: center;
   border: 1px solid var(--line);
+  display: block;
+  min-height: 54px;
+}
+
+.tier summary {
+  align-items: center;
+  cursor: pointer;
   display: flex;
   justify-content: space-between;
+  list-style: none;
   min-height: 54px;
   padding: 0 14px;
 }
 
+.tier summary::-webkit-details-marker {
+  display: none;
+}
+
 .tier span,
-.tier b {
+.tier b,
+.tier small {
   font-size: 0.82rem;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -318,6 +553,63 @@ th:last-child {
   background: rgba(185, 68, 47, 0.1);
 }
 
+.tierDetails {
+  border-top: 1px solid rgba(23, 32, 30, 0.1);
+  display: grid;
+  gap: 6px;
+  padding: 10px 14px 12px;
+}
+
+.tierDetails span,
+.tierDetails small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.snapshotForm {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.historyBars {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.historyBar {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: 110px minmax(120px, 0.35fr) minmax(120px, 1fr);
+}
+
+.historyBar span,
+.historyBar b,
+.emptyLine {
+  color: var(--muted);
+  font-family: "Iosevka", "SFMono-Regular", monospace;
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.historyBar b {
+  color: var(--ink);
+}
+
+.historyBar i {
+  background: linear-gradient(90deg, var(--green), var(--blue));
+  display: block;
+  height: 14px;
+  margin-top: 2px;
+}
+
 .persistenceBar {
   align-items: center;
   display: flex;
@@ -337,7 +629,10 @@ code {
 }
 
 @media (max-width: 900px) {
+  .entryGrid,
   .metricsGrid,
+  .memberRow,
+  .ownershipGrid,
   .mainGrid {
     grid-template-columns: 1fr;
   }
@@ -374,8 +669,23 @@ code {
     flex-basis: 100%;
   }
 
+  .deltaStrip {
+    display: grid;
+    gap: 8px;
+  }
+
   .persistenceBar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .historyBar,
+  .rowForm,
+  .snapshotForm {
+    grid-template-columns: 1fr;
+  }
+
+  .historyBar {
+    display: grid;
   }
 }

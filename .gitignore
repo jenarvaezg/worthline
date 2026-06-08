@@ -8,6 +8,7 @@ node_modules/
 out/
 dist/
 coverage/
+test-results/
 
 .local/
 .scratch/

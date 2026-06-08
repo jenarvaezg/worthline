@@ -7,12 +7,7 @@ export interface MoneyMinor {
 
 export type DecimalString = string;
 
-export type LiquidityTier =
-  | "cash"
-  | "market"
-  | "retirement"
-  | "illiquid"
-  | "housing";
+export type LiquidityTier = "cash" | "market" | "retirement" | "illiquid" | "housing";
 
 export interface LocalPersistenceStatus {
   status: "ok";

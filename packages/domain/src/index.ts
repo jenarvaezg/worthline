@@ -1,4 +1,618 @@
-import type { LocalPersistenceStatus, MoneyMinor } from "@worthline/contracts";
+import type {
+  CurrencyCode,
+  LocalPersistenceStatus,
+  LiquidityTier,
+  MoneyMinor,
+} from "@worthline/contracts";
+
+export type WorkspaceMode = "individual" | "household";
+
+export interface Member {
+  id: string;
+  name: string;
+  disabledAt?: string;
+}
+
+export interface MemberGroup {
+  id: string;
+  name: string;
+  memberIds: string[];
+}
+
+export interface Workspace {
+  baseCurrency: CurrencyCode;
+  mode: WorkspaceMode;
+  members: Member[];
+  groups: MemberGroup[];
+}
+
+export type ScopeType = "household" | "member" | "group";
+
+export interface ScopeOption {
+  id: string;
+  label: string;
+  type: ScopeType;
+}
+
+export function createWorkspace(input: {
+  mode: WorkspaceMode;
+  members: Member[];
+  groups?: MemberGroup[];
+  baseCurrency?: CurrencyCode;
+}): Workspace {
+  if (input.members.length === 0) {
+    throw new Error("Workspace requires at least one member.");
+  }
+
+  const activeMemberIds = new Set(
+    input.members.filter((member) => !member.disabledAt).map((member) => member.id),
+  );
+
+  for (const group of input.groups ?? []) {
+    for (const memberId of group.memberIds) {
+      if (!activeMemberIds.has(memberId)) {
+        throw new Error(`Group ${group.id} references unknown member ${memberId}.`);
+      }
+    }
+  }
+
+  return {
+    baseCurrency: input.baseCurrency ?? "EUR",
+    groups: input.groups ?? [],
+    members: input.members,
+    mode: input.mode,
+  };
+}
+
+export function listScopeOptions(workspace: Workspace): ScopeOption[] {
+  const members = workspace.members.filter((member) => !member.disabledAt);
+
+  return [
+    { id: "household", label: "Hogar", type: "household" },
+    ...members.map((member) => ({
+      id: member.id,
+      label: member.name,
+      type: "member" as const,
+    })),
+    ...workspace.groups.map((group) => ({
+      id: group.id,
+      label: group.name,
+      type: "group" as const,
+    })),
+  ];
+}
+
+export function resolveScopeMemberIds(workspace: Workspace, scopeId: string): string[] {
+  if (scopeId === "household") {
+    return workspace.members
+      .filter((member) => !member.disabledAt)
+      .map((member) => member.id);
+  }
+
+  const member = workspace.members.find(
+    (candidate) => candidate.id === scopeId && !candidate.disabledAt,
+  );
+
+  if (member) {
+    return [member.id];
+  }
+
+  const group = workspace.groups.find((candidate) => candidate.id === scopeId);
+
+  if (group) {
+    return group.memberIds.filter((memberId) =>
+      workspace.members.some(
+        (candidate) => candidate.id === memberId && !candidate.disabledAt,
+      ),
+    );
+  }
+
+  throw new Error(`Unknown scope ${scopeId}.`);
+}
+
+export type AssetType = "cash" | "manual" | "real_estate";
+
+export interface OwnershipShare {
+  memberId: string;
+  shareBps: number;
+}
+
+export interface ManualAsset {
+  id: string;
+  name: string;
+  type: AssetType;
+  currency: CurrencyCode;
+  currentValue: MoneyMinor;
+  liquidityTier: LiquidityTier;
+  ownership: OwnershipShare[];
+  isPrimaryResidence: boolean;
+}
+
+export type LiabilityType = "mortgage" | "debt";
+
+export interface Liability {
+  id: string;
+  name: string;
+  type: LiabilityType;
+  currency: CurrencyCode;
+  currentBalance: MoneyMinor;
+  ownership: OwnershipShare[];
+  associatedAssetId?: string;
+}
+
+export interface CreateManualAssetInput {
+  id: string;
+  name: string;
+  type: AssetType;
+  currency: CurrencyCode;
+  currentValueMinor: number;
+  liquidityTier: LiquidityTier;
+  ownership: OwnershipShare[];
+  isPrimaryResidence?: boolean;
+}
+
+export interface CreateLiabilityInput {
+  id: string;
+  name: string;
+  type: LiabilityType;
+  currency: CurrencyCode;
+  balanceMinor: number;
+  ownership: OwnershipShare[];
+  associatedAssetId?: string;
+}
+
+export interface NetWorthSummary {
+  scopeId: string;
+  totalNetWorth: MoneyMinor;
+  liquidNetWorth: MoneyMinor;
+  housingEquity: MoneyMinor;
+  grossAssets: MoneyMinor;
+  debts: MoneyMinor;
+}
+
+export type NetWorthPresentationMode = "liquid" | "housing-inclusive" | "gross-debt";
+
+export type NetWorthPresentation =
+  | {
+      mode: "liquid" | "housing-inclusive";
+      label: string;
+      primary: MoneyMinor;
+    }
+  | {
+      mode: "gross-debt";
+      label: string;
+      primary: MoneyMinor;
+      gross: MoneyMinor;
+      debt: MoneyMinor;
+    };
+
+export interface NetWorthSnapshot {
+  id: string;
+  scopeId: string;
+  scopeLabel: string;
+  capturedAt: string;
+  dateKey: string;
+  monthKey: string;
+  isMonthlyClose: boolean;
+  totalNetWorth: MoneyMinor;
+  liquidNetWorth: MoneyMinor;
+  housingEquity: MoneyMinor;
+  grossAssets: MoneyMinor;
+  debts: MoneyMinor;
+  warnings: string[];
+}
+
+export interface CreateNetWorthSnapshotInput {
+  id: string;
+  scopeId: string;
+  scopeLabel: string;
+  capturedAt: string;
+  summary: NetWorthSummary;
+  isMonthlyClose?: boolean;
+  warnings?: string[];
+}
+
+export interface SnapshotDeltas {
+  snapshot: NetWorthSnapshot;
+  previousSnapshot?: NetWorthSnapshot;
+  previousMonthlyClose?: NetWorthSnapshot;
+  changeSincePrevious?: MoneyMinor;
+  changeSinceMonthlyClose?: MoneyMinor;
+}
+
+export interface LiquidityComponent {
+  id: string;
+  name: string;
+  valueMinor: number;
+}
+
+export interface LiquidityTierBreakdown {
+  tier: LiquidityTier;
+  netValue: MoneyMinor;
+  grossAssets: MoneyMinor;
+  debts: MoneyMinor;
+  assets: LiquidityComponent[];
+  liabilities: LiquidityComponent[];
+}
+
+export const defaultLiquidityTierOrder = [
+  "housing",
+  "illiquid",
+  "retirement",
+  "market",
+  "cash",
+] as const satisfies readonly LiquidityTier[];
+
+export function createManualAsset(
+  workspace: Workspace,
+  input: CreateManualAssetInput,
+): ManualAsset {
+  assertCurrency(input.currency);
+  assertMoneyMinor(input.currentValueMinor);
+  assertOwnership(workspace, input.ownership);
+
+  return {
+    currency: input.currency,
+    currentValue: {
+      amountMinor: input.currentValueMinor,
+      currency: input.currency,
+    },
+    id: input.id,
+    isPrimaryResidence: input.isPrimaryResidence ?? false,
+    liquidityTier: input.liquidityTier,
+    name: input.name,
+    ownership: input.ownership,
+    type: input.type,
+  };
+}
+
+export function createLiability(
+  workspace: Workspace,
+  input: CreateLiabilityInput,
+): Liability {
+  assertCurrency(input.currency);
+  assertMoneyMinor(input.balanceMinor);
+  assertOwnership(workspace, input.ownership);
+
+  return {
+    currency: input.currency,
+    currentBalance: {
+      amountMinor: input.balanceMinor,
+      currency: input.currency,
+    },
+    id: input.id,
+    name: input.name,
+    ownership: input.ownership,
+    type: input.type,
+    ...(input.associatedAssetId ? { associatedAssetId: input.associatedAssetId } : {}),
+  };
+}
+
+export function calculateNetWorth(input: {
+  workspace: Workspace;
+  scopeId: string;
+  assets: ManualAsset[];
+  liabilities?: Liability[];
+}): NetWorthSummary {
+  const scopeMemberIds = new Set(resolveScopeMemberIds(input.workspace, input.scopeId));
+  const currency = input.workspace.baseCurrency;
+
+  let grossAssetsMinor = 0;
+  let liquidAssetsMinor = 0;
+  let housingAssetsMinor = 0;
+  let debtsMinor = 0;
+  let housingDebtsMinor = 0;
+  let liquidDebtsMinor = 0;
+
+  for (const asset of input.assets) {
+    const scopedValue = allocateOwnedMoneyMinor(asset.currentValue.amountMinor, {
+      ownership: asset.ownership,
+      scopeMemberIds,
+    });
+
+    grossAssetsMinor += scopedValue;
+
+    if (isHousingAsset(asset)) {
+      housingAssetsMinor += scopedValue;
+    }
+
+    if (isLiquidTier(asset.liquidityTier)) {
+      liquidAssetsMinor += scopedValue;
+    }
+  }
+
+  for (const liability of input.liabilities ?? []) {
+    const scopedBalance = allocateOwnedMoneyMinor(liability.currentBalance.amountMinor, {
+      ownership: liability.ownership,
+      scopeMemberIds,
+    });
+
+    debtsMinor += scopedBalance;
+
+    if (liability.type === "mortgage") {
+      housingDebtsMinor += scopedBalance;
+    } else {
+      liquidDebtsMinor += scopedBalance;
+    }
+  }
+
+  return {
+    debts: money(debtsMinor, currency),
+    grossAssets: money(grossAssetsMinor, currency),
+    housingEquity: money(housingAssetsMinor - housingDebtsMinor, currency),
+    liquidNetWorth: money(liquidAssetsMinor - liquidDebtsMinor, currency),
+    scopeId: input.scopeId,
+    totalNetWorth: money(grossAssetsMinor - debtsMinor, currency),
+  };
+}
+
+export function presentNetWorth(
+  summary: NetWorthSummary,
+  mode: NetWorthPresentationMode,
+): NetWorthPresentation {
+  if (mode === "liquid") {
+    return {
+      label: "Neto liquido",
+      mode,
+      primary: summary.liquidNetWorth,
+    };
+  }
+
+  if (mode === "housing-inclusive") {
+    return {
+      label: "Neto con vivienda",
+      mode,
+      primary: summary.totalNetWorth,
+    };
+  }
+
+  return {
+    debt: summary.debts,
+    gross: summary.grossAssets,
+    label: "Activos brutos y deudas",
+    mode,
+    primary: summary.totalNetWorth,
+  };
+}
+
+export function createNetWorthSnapshot(
+  input: CreateNetWorthSnapshotInput,
+): NetWorthSnapshot {
+  const capturedAt = new Date(input.capturedAt);
+
+  if (Number.isNaN(capturedAt.getTime())) {
+    throw new Error("Snapshot capturedAt must be a valid date.");
+  }
+
+  const dateKey = input.capturedAt.slice(0, 10);
+  const monthKey = dateKey.slice(0, 7);
+
+  return {
+    capturedAt: input.capturedAt,
+    dateKey,
+    debts: { ...input.summary.debts },
+    grossAssets: { ...input.summary.grossAssets },
+    housingEquity: { ...input.summary.housingEquity },
+    id: input.id,
+    isMonthlyClose: input.isMonthlyClose ?? false,
+    liquidNetWorth: { ...input.summary.liquidNetWorth },
+    monthKey,
+    scopeId: input.scopeId,
+    scopeLabel: input.scopeLabel,
+    totalNetWorth: { ...input.summary.totalNetWorth },
+    warnings: input.warnings ?? [],
+  };
+}
+
+export function calculateSnapshotDeltas(
+  snapshots: NetWorthSnapshot[],
+  snapshotId: string,
+): SnapshotDeltas {
+  const snapshot = snapshots.find((candidate) => candidate.id === snapshotId);
+
+  if (!snapshot) {
+    throw new Error(`Unknown snapshot ${snapshotId}.`);
+  }
+
+  const scopedSnapshots = snapshots
+    .filter((candidate) => candidate.scopeId === snapshot.scopeId)
+    .sort((left, right) => left.capturedAt.localeCompare(right.capturedAt));
+  const index = scopedSnapshots.findIndex((candidate) => candidate.id === snapshot.id);
+  const previousSnapshot = index > 0 ? scopedSnapshots[index - 1] : undefined;
+  const previousMonthlyClose = scopedSnapshots
+    .slice(0, index)
+    .reverse()
+    .find((candidate) => candidate.isMonthlyClose);
+
+  return {
+    snapshot,
+    ...(previousSnapshot
+      ? {
+          changeSincePrevious: subtractMoney(
+            snapshot.totalNetWorth,
+            previousSnapshot.totalNetWorth,
+          ),
+          previousSnapshot,
+        }
+      : {}),
+    ...(previousMonthlyClose
+      ? {
+          changeSinceMonthlyClose: subtractMoney(
+            snapshot.totalNetWorth,
+            previousMonthlyClose.totalNetWorth,
+          ),
+          previousMonthlyClose,
+        }
+      : {}),
+  };
+}
+
+export function buildLiquidityPyramid(input: {
+  workspace: Workspace;
+  scopeId: string;
+  assets: ManualAsset[];
+  liabilities?: Liability[];
+}): LiquidityTierBreakdown[] {
+  const scopeMemberIds = new Set(resolveScopeMemberIds(input.workspace, input.scopeId));
+  const currency = input.workspace.baseCurrency;
+  const tiers = new Map<LiquidityTier, LiquidityTierBreakdown>();
+
+  for (const tier of defaultLiquidityTierOrder) {
+    tiers.set(tier, {
+      assets: [],
+      debts: money(0, currency),
+      grossAssets: money(0, currency),
+      liabilities: [],
+      netValue: money(0, currency),
+      tier,
+    });
+  }
+
+  const assetTierById = new Map(
+    input.assets.map((asset) => [asset.id, asset.liquidityTier]),
+  );
+
+  for (const asset of input.assets) {
+    const breakdown = tiers.get(asset.liquidityTier);
+
+    if (!breakdown) {
+      continue;
+    }
+
+    const scopedValue = allocateOwnedMoneyMinor(asset.currentValue.amountMinor, {
+      ownership: asset.ownership,
+      scopeMemberIds,
+    });
+
+    breakdown.grossAssets = money(
+      breakdown.grossAssets.amountMinor + scopedValue,
+      currency,
+    );
+    breakdown.netValue = money(breakdown.netValue.amountMinor + scopedValue, currency);
+
+    if (scopedValue !== 0) {
+      breakdown.assets.push({
+        id: asset.id,
+        name: asset.name,
+        valueMinor: scopedValue,
+      });
+    }
+  }
+
+  for (const liability of input.liabilities ?? []) {
+    const tier = resolveLiabilityTier(liability, assetTierById);
+    const breakdown = tiers.get(tier);
+
+    if (!breakdown) {
+      continue;
+    }
+
+    const scopedValue = allocateOwnedMoneyMinor(liability.currentBalance.amountMinor, {
+      ownership: liability.ownership,
+      scopeMemberIds,
+    });
+
+    breakdown.debts = money(breakdown.debts.amountMinor + scopedValue, currency);
+    breakdown.netValue = money(breakdown.netValue.amountMinor - scopedValue, currency);
+
+    if (scopedValue !== 0) {
+      breakdown.liabilities.push({
+        id: liability.id,
+        name: liability.name,
+        valueMinor: scopedValue,
+      });
+    }
+  }
+
+  return defaultLiquidityTierOrder.map((tier) => tiers.get(tier)!);
+}
+
+function assertCurrency(currency: CurrencyCode): void {
+  if (!currency.trim()) {
+    throw new Error("Currency is required.");
+  }
+}
+
+function assertMoneyMinor(amountMinor: number): void {
+  if (!Number.isInteger(amountMinor)) {
+    throw new Error("Money must be stored as integer minor units.");
+  }
+}
+
+function assertOwnership(workspace: Workspace, ownership: OwnershipShare[]): void {
+  const knownMemberIds = new Set(workspace.members.map((member) => member.id));
+  const totalBps = ownership.reduce((sum, share) => {
+    if (!knownMemberIds.has(share.memberId)) {
+      throw new Error(`Ownership references unknown member ${share.memberId}.`);
+    }
+
+    if (!Number.isInteger(share.shareBps) || share.shareBps <= 0) {
+      throw new Error("Ownership share must be a positive integer bps value.");
+    }
+
+    return sum + share.shareBps;
+  }, 0);
+
+  if (totalBps !== 10_000) {
+    throw new Error("Ownership shares must add up to 10000 bps.");
+  }
+}
+
+function allocateOwnedMoneyMinor(
+  amountMinor: number,
+  input: {
+    ownership: OwnershipShare[];
+    scopeMemberIds: Set<string>;
+  },
+): number {
+  const shareBps = input.ownership
+    .filter((share) => input.scopeMemberIds.has(share.memberId))
+    .reduce((sum, share) => sum + share.shareBps, 0);
+
+  return allocateMinorByBps(amountMinor, shareBps);
+}
+
+function allocateMinorByBps(amountMinor: number, shareBps: number): number {
+  return Number((BigInt(amountMinor) * BigInt(shareBps) + 5_000n) / 10_000n);
+}
+
+function isLiquidTier(tier: LiquidityTier): boolean {
+  return tier === "cash" || tier === "market";
+}
+
+function isHousingAsset(asset: ManualAsset): boolean {
+  return (
+    asset.type === "real_estate" ||
+    asset.isPrimaryResidence ||
+    asset.liquidityTier === "housing"
+  );
+}
+
+function resolveLiabilityTier(
+  liability: Liability,
+  assetTierById: Map<string, LiquidityTier>,
+): LiquidityTier {
+  if (liability.associatedAssetId) {
+    return assetTierById.get(liability.associatedAssetId) ?? "housing";
+  }
+
+  return liability.type === "mortgage" ? "housing" : "cash";
+}
+
+function money(amountMinor: number, currency: CurrencyCode): MoneyMinor {
+  return { amountMinor, currency };
+}
+
+function subtractMoney(left: MoneyMinor, right: MoneyMinor): MoneyMinor {
+  if (left.currency !== right.currency) {
+    throw new Error("Cannot subtract money with different currencies.");
+  }
+
+  return {
+    amountMinor: left.amountMinor - right.amountMinor,
+    currency: left.currency,
+  };
+}
 
 export type DashboardMetricId =
   | "total-net-worth"
@@ -31,25 +645,29 @@ export interface DashboardShell {
 
 export function createDashboardShell(input: {
   persistence: LocalPersistenceStatus;
+  summary?: NetWorthSummary;
+  moduleStates?: Partial<Record<DashboardModule["id"], DashboardModule["state"]>>;
 }): DashboardShell {
+  const summary = input.summary;
+
   return {
     productName: "worthline",
     baseCurrency: "EUR",
     generatedAt: input.persistence.checkedAt,
     persistence: input.persistence,
     metrics: [
-      zeroMetric("total-net-worth", "Neto total", "neutral"),
-      zeroMetric("liquid-net-worth", "Neto liquido", "asset"),
-      zeroMetric("housing-equity", "Vivienda neta", "asset"),
-      zeroMetric("gross-assets", "Activos brutos", "asset"),
-      zeroMetric("debts", "Deudas", "liability"),
+      metric("total-net-worth", "Neto total", "neutral", summary?.totalNetWorth),
+      metric("liquid-net-worth", "Neto liquido", "asset", summary?.liquidNetWorth),
+      metric("housing-equity", "Vivienda neta", "asset", summary?.housingEquity),
+      metric("gross-assets", "Activos brutos", "asset", summary?.grossAssets),
+      metric("debts", "Deudas", "liability", summary?.debts),
     ],
     modules: [
-      { id: "members", label: "Miembros", state: "empty" },
-      { id: "ownership", label: "Ownership", state: "empty" },
-      { id: "liquidity", label: "Piramide de liquidez", state: "empty" },
-      { id: "snapshots", label: "Snapshots", state: "empty" },
-      { id: "fire", label: "FIRE", state: "empty" },
+      module("members", "Miembros", input.moduleStates),
+      module("ownership", "Ownership", input.moduleStates),
+      module("liquidity", "Piramide de liquidez", input.moduleStates),
+      module("snapshots", "Snapshots", input.moduleStates),
+      module("fire", "FIRE", input.moduleStates),
     ],
   };
 }
@@ -65,18 +683,31 @@ export function formatMoneyMinor(value: MoneyMinor): string {
   return formatter.format(value.amountMinor / 100);
 }
 
-function zeroMetric(
+function metric(
   id: DashboardMetricId,
   label: string,
   posture: DashboardMetric["posture"],
+  value?: MoneyMinor,
 ): DashboardMetric {
   return {
     id,
     label,
     posture,
-    value: {
+    value: value ?? {
       amountMinor: 0,
       currency: "EUR",
     },
+  };
+}
+
+function module(
+  id: DashboardModule["id"],
+  label: string,
+  states?: Partial<Record<DashboardModule["id"], DashboardModule["state"]>>,
+): DashboardModule {
+  return {
+    id,
+    label,
+    state: states?.[id] ?? "empty",
   };
 }
