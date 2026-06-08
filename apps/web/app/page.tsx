@@ -20,9 +20,11 @@ import {
   buildSnapshotId,
   parseAssetCommand,
   parseEntityId,
+  parseInvestmentAssetCommand,
   parseLiabilityCommand,
   parseMoneyMinorField,
   parseNewMember,
+  parseOperationCommand,
   parseScopeParam,
   parseSnapshotForm,
   parseViewParam,
@@ -51,8 +53,8 @@ export default async function DashboardPage({
   const selectedView = parseViewParam(resolvedSearchParams?.view);
   const errorParam = resolvedSearchParams?.error;
   const formError = Array.isArray(errorParam) ? errorParam[0] : errorParam;
-  const { workspace, assets, liabilities, scopes, selectedScope, snapshots } = withStore(
-    (store) => {
+  const { workspace, assets, liabilities, positions, scopes, selectedScope, snapshots } =
+    withStore((store) => {
       const workspace = store.readWorkspace();
       const scopes = workspace ? listScopeOptions(workspace) : [];
       const selectedScopeId = parseScopeParam(resolvedSearchParams?.scope);
@@ -62,13 +64,13 @@ export default async function DashboardPage({
       return {
         assets: store.readAssets(),
         liabilities: store.readLiabilities(),
+        positions: selectedScope ? store.readPositions(selectedScope.id) : [],
         scopes,
         selectedScope,
         snapshots: selectedScope ? store.readSnapshots(selectedScope.id) : [],
         workspace,
       };
-    },
-  );
+    });
 
   const summary =
     workspace && selectedScope
@@ -106,6 +108,8 @@ export default async function DashboardPage({
     ...(summary ? { summary } : {}),
   });
   const activeMembers = workspace?.members.filter((member) => !member.disabledAt) ?? [];
+  const investmentAssets = assets.filter((asset) => asset.type === "investment");
+  const today = new Date().toISOString().slice(0, 10);
 
   return (
     <main className="workspace">
@@ -371,6 +375,89 @@ export default async function DashboardPage({
           </table>
         </section>
 
+        <section className="positionsPanel" aria-label="Inversiones y posiciones">
+          <div className="panelHeader">
+            <h2>Inversiones</h2>
+            <span>Unidades, coste medio y P/L</span>
+          </div>
+          <div className="entryGrid">
+            <form action={createInvestmentAssetAction} className="stackForm">
+              <h3>Nueva inversión</h3>
+              <input name="name" placeholder="Nombre" />
+              <input name="unitSymbol" placeholder="Ticker / símbolo" />
+              <input name="isin" placeholder="ISIN (opcional)" />
+              <input
+                inputMode="decimal"
+                name="manualPricePerUnit"
+                placeholder="Precio actual/unidad EUR"
+              />
+              <OwnershipInputs members={activeMembers} />
+              <button type="submit">Añadir inversión</button>
+            </form>
+
+            <form action={recordOperationAction} className="stackForm">
+              <h3>Operación</h3>
+              <select name="assetId" defaultValue="">
+                <option disabled value="">
+                  Selecciona inversión
+                </option>
+                {investmentAssets.map((asset) => (
+                  <option key={asset.id} value={asset.id}>
+                    {asset.name}
+                  </option>
+                ))}
+              </select>
+              <select name="kind" defaultValue="buy">
+                <option value="buy">Compra</option>
+                <option value="sell">Venta</option>
+              </select>
+              <input aria-label="Fecha" defaultValue={today} name="executedAt" type="date" />
+              <input inputMode="decimal" name="units" placeholder="Unidades" />
+              <input inputMode="decimal" name="pricePerUnit" placeholder="Precio/unidad EUR" />
+              <input
+                defaultValue="0"
+                inputMode="decimal"
+                name="fees"
+                placeholder="Comisiones EUR"
+              />
+              <button type="submit">Registrar operación</button>
+            </form>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Inversión</th>
+                <th>Unidades</th>
+                <th>Coste medio</th>
+                <th>Valor</th>
+                <th>P/L</th>
+              </tr>
+            </thead>
+            <tbody>
+              {positions.map((position) => (
+                <tr key={position.assetId}>
+                  <td>
+                    {position.name}
+                    {position.warnings.length > 0 ? " ⚠️" : ""}
+                  </td>
+                  <td>{position.currentUnits}</td>
+                  <td>{position.averageUnitCost}</td>
+                  <td>{position.marketValue ? formatMoneyMinor(position.marketValue) : "—"}</td>
+                  <td>
+                    {position.unrealizedPnl ? formatMoneyMinor(position.unrealizedPnl) : "—"}
+                  </td>
+                </tr>
+              ))}
+              {positions.length === 0 ? (
+                <tr>
+                  <td colSpan={5}>Sin inversiones</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </section>
+
         <section className="liquidityPanel" aria-label="Piramide de liquidez">
           <div className="panelHeader">
             <h2>Liquidez</h2>
@@ -585,6 +672,63 @@ async function createLiabilityAction(formData: FormData) {
   if (result.ok) {
     revalidatePath("/");
   }
+}
+
+async function createInvestmentAssetAction(formData: FormData) {
+  "use server";
+
+  const result = withStore((store): ActionResult => {
+    const workspace = store.readWorkspace();
+
+    if (!workspace) {
+      return { ok: false };
+    }
+
+    const command = parseInvestmentAssetCommand(formData, workspace.members, Date.now());
+    const ownershipError = validateOwnershipShares(command.ownership);
+
+    if (ownershipError) {
+      return { error: ownershipError, ok: false };
+    }
+
+    store.createInvestmentAsset(command);
+
+    return { ok: true };
+  });
+
+  if (result.error) {
+    redirect(`/?error=${encodeURIComponent(result.error)}`);
+  }
+
+  if (result.ok) {
+    revalidatePath("/");
+  }
+}
+
+async function recordOperationAction(formData: FormData) {
+  "use server";
+
+  const command = parseOperationCommand(
+    formData,
+    Date.now(),
+    new Date().toISOString().slice(0, 10),
+  );
+
+  if (!command.assetId) {
+    return;
+  }
+
+  try {
+    withStore((store) => store.recordOperation(command));
+  } catch {
+    redirect(
+      `/?error=${encodeURIComponent(
+        "No se pudo registrar la operación: revisa unidades, precio y comisiones.",
+      )}`,
+    );
+  }
+
+  revalidatePath("/");
 }
 
 async function updateLiabilityBalanceAction(formData: FormData) {
