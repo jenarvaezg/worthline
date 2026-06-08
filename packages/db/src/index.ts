@@ -19,12 +19,26 @@ import {
 } from "@worthline/domain";
 import Database from "better-sqlite3";
 import type { Database as DatabaseConnection } from "better-sqlite3";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
-import { appSettings } from "./schema";
+import {
+  appSettings,
+  assetOwnerships,
+  assets,
+  liabilities,
+  liabilityOwnerships,
+  memberGroupMembers,
+  memberGroups,
+  members,
+  snapshots,
+  workspace as workspaceTable,
+} from "./schema";
+import { schemaSql } from "./schema-sql";
+
+const SCHEMA_VERSION = 1;
 
 const bootstrapKey = "bootstrap.last_healthcheck_at";
 
@@ -502,152 +516,58 @@ export function resolveDatabasePath(options: BootstrapHealthcheckOptions = {}): 
 }
 
 function migrate(sqlite: DatabaseConnection): void {
-  sqlite.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA foreign_keys = ON;
+  // Connection-level pragmas must be set outside any transaction. The schema is
+  // the single source of truth: schemaSql is generated from src/schema.ts via
+  // `npm run db:generate`. user_version makes this idempotent across reopens.
+  sqlite.pragma("journal_mode = WAL");
+  sqlite.pragma("foreign_keys = ON");
 
-    CREATE TABLE IF NOT EXISTS app_settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
+  const version = sqlite.pragma("user_version", { simple: true }) as number;
 
-    CREATE TABLE IF NOT EXISTS workspace (
-      id TEXT PRIMARY KEY CHECK (id = 'default'),
-      mode TEXT NOT NULL CHECK (mode IN ('individual', 'household')),
-      base_currency TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
+  if (version >= SCHEMA_VERSION) {
+    return;
+  }
 
-    CREATE TABLE IF NOT EXISTS members (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      disabled_at TEXT,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS member_groups (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS member_group_members (
-      group_id TEXT NOT NULL REFERENCES member_groups(id) ON DELETE CASCADE,
-      member_id TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
-      sort_order INTEGER NOT NULL,
-      PRIMARY KEY (group_id, member_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS assets (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      currency TEXT NOT NULL,
-      current_value_minor INTEGER NOT NULL,
-      liquidity_tier TEXT NOT NULL,
-      is_primary_residence INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS asset_ownerships (
-      asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
-      member_id TEXT NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
-      share_bps INTEGER NOT NULL,
-      PRIMARY KEY (asset_id, member_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS liabilities (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      currency TEXT NOT NULL,
-      current_balance_minor INTEGER NOT NULL,
-      associated_asset_id TEXT REFERENCES assets(id) ON DELETE SET NULL,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS liability_ownerships (
-      liability_id TEXT NOT NULL REFERENCES liabilities(id) ON DELETE CASCADE,
-      member_id TEXT NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
-      share_bps INTEGER NOT NULL,
-      PRIMARY KEY (liability_id, member_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS snapshots (
-      id TEXT PRIMARY KEY,
-      scope_id TEXT NOT NULL,
-      scope_label TEXT NOT NULL,
-      captured_at TEXT NOT NULL,
-      date_key TEXT NOT NULL,
-      month_key TEXT NOT NULL,
-      is_monthly_close INTEGER NOT NULL DEFAULT 0,
-      currency TEXT NOT NULL,
-      total_net_worth_minor INTEGER NOT NULL,
-      liquid_net_worth_minor INTEGER NOT NULL,
-      housing_equity_minor INTEGER NOT NULL,
-      gross_assets_minor INTEGER NOT NULL,
-      debts_minor INTEGER NOT NULL,
-      warnings_json TEXT NOT NULL DEFAULT '[]',
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE UNIQUE INDEX IF NOT EXISTS snapshots_scope_date_unique
-      ON snapshots(scope_id, date_key);
-  `);
+  sqlite.exec(schemaSql);
+  sqlite.pragma(`user_version = ${SCHEMA_VERSION}`);
 }
 
 function readWorkspace(sqlite: DatabaseConnection): Workspace | null {
-  const workspaceRow = sqlite
-    .prepare(
-      "SELECT mode, base_currency AS baseCurrency FROM workspace WHERE id = 'default'",
-    )
-    .get() as { baseCurrency: string; mode: WorkspaceMode } | undefined;
+  const db = drizzle(sqlite);
+
+  const workspaceRow = db
+    .select({ baseCurrency: workspaceTable.baseCurrency, mode: workspaceTable.mode })
+    .from(workspaceTable)
+    .where(eq(workspaceTable.id, "default"))
+    .get();
 
   if (!workspaceRow) {
     return null;
   }
 
-  const members = sqlite
-    .prepare(
-      `
-      SELECT id, name, disabled_at AS disabledAt
-      FROM members
-      ORDER BY created_at ASC, id ASC
-    `,
-    )
-    .all() as Array<{ disabledAt: string | null; id: string; name: string }>;
+  const memberRows = db
+    .select({ disabledAt: members.disabledAt, id: members.id, name: members.name })
+    .from(members)
+    .orderBy(asc(members.createdAt), asc(members.id))
+    .all();
 
-  const groupRows = sqlite
-    .prepare(
-      `
-      SELECT id, name
-      FROM member_groups
-      ORDER BY created_at ASC, id ASC
-    `,
-    )
-    .all() as Array<{ id: string; name: string }>;
+  const groupRows = db
+    .select({ id: memberGroups.id, name: memberGroups.name })
+    .from(memberGroups)
+    .orderBy(asc(memberGroups.createdAt), asc(memberGroups.id))
+    .all();
 
   const groups = groupRows.map((group) => {
-    const memberIds = sqlite
-      .prepare(
-        `
-        SELECT member_id AS memberId
-        FROM member_group_members
-        WHERE group_id = ?
-        ORDER BY sort_order ASC
-      `,
-      )
-      .all(group.id) as Array<{ memberId: string }>;
+    const groupMembers = db
+      .select({ memberId: memberGroupMembers.memberId })
+      .from(memberGroupMembers)
+      .where(eq(memberGroupMembers.groupId, group.id))
+      .orderBy(asc(memberGroupMembers.sortOrder))
+      .all();
 
     return {
       id: group.id,
-      memberIds: memberIds.map((row) => row.memberId),
+      memberIds: groupMembers.map((row) => row.memberId),
       name: group.name,
     };
   });
@@ -655,7 +575,7 @@ function readWorkspace(sqlite: DatabaseConnection): Workspace | null {
   return createWorkspace({
     baseCurrency: workspaceRow.baseCurrency,
     groups,
-    members: members.map((member) =>
+    members: memberRows.map((member) =>
       member.disabledAt
         ? {
             disabledAt: member.disabledAt,
@@ -667,7 +587,7 @@ function readWorkspace(sqlite: DatabaseConnection): Workspace | null {
             name: member.name,
           },
     ),
-    mode: workspaceRow.mode,
+    mode: workspaceRow.mode as WorkspaceMode,
   });
 }
 
@@ -678,30 +598,19 @@ function readAssets(sqlite: DatabaseConnection): ManualAsset[] {
     return [];
   }
 
-  const rows = sqlite
-    .prepare(
-      `
-      SELECT
-        id,
-        name,
-        type,
-        currency,
-        current_value_minor AS currentValueMinor,
-        liquidity_tier AS liquidityTier,
-        is_primary_residence AS isPrimaryResidence
-      FROM assets
-      ORDER BY created_at ASC, id ASC
-    `,
-    )
-    .all() as Array<{
-    currency: string;
-    currentValueMinor: number;
-    id: string;
-    isPrimaryResidence: 0 | 1;
-    liquidityTier: CreateManualAssetInput["liquidityTier"];
-    name: string;
-    type: CreateManualAssetInput["type"];
-  }>;
+  const rows = drizzle(sqlite)
+    .select({
+      currency: assets.currency,
+      currentValueMinor: assets.currentValueMinor,
+      id: assets.id,
+      isPrimaryResidence: assets.isPrimaryResidence,
+      liquidityTier: assets.liquidityTier,
+      name: assets.name,
+      type: assets.type,
+    })
+    .from(assets)
+    .orderBy(asc(assets.createdAt), asc(assets.id))
+    .all();
 
   return rows.map((row) =>
     createManualAsset(workspace, {
@@ -709,10 +618,10 @@ function readAssets(sqlite: DatabaseConnection): ManualAsset[] {
       currentValueMinor: row.currentValueMinor,
       id: row.id,
       isPrimaryResidence: row.isPrimaryResidence === 1,
-      liquidityTier: row.liquidityTier,
+      liquidityTier: row.liquidityTier as CreateManualAssetInput["liquidityTier"],
       name: row.name,
       ownership: readAssetOwnership(sqlite, row.id),
-      type: row.type,
+      type: row.type as CreateManualAssetInput["type"],
     }),
   );
 }
@@ -721,18 +630,12 @@ function readAssetOwnership(
   sqlite: DatabaseConnection,
   assetId: string,
 ): CreateManualAssetInput["ownership"] {
-  const rows = sqlite
-    .prepare(
-      `
-      SELECT member_id AS memberId, share_bps AS shareBps
-      FROM asset_ownerships
-      WHERE asset_id = ?
-      ORDER BY member_id ASC
-    `,
-    )
-    .all(assetId) as Array<{ memberId: string; shareBps: number }>;
-
-  return rows;
+  return drizzle(sqlite)
+    .select({ memberId: assetOwnerships.memberId, shareBps: assetOwnerships.shareBps })
+    .from(assetOwnerships)
+    .where(eq(assetOwnerships.assetId, assetId))
+    .orderBy(asc(assetOwnerships.memberId))
+    .all();
 }
 
 function readLiabilities(sqlite: DatabaseConnection): Liability[] {
@@ -742,28 +645,18 @@ function readLiabilities(sqlite: DatabaseConnection): Liability[] {
     return [];
   }
 
-  const rows = sqlite
-    .prepare(
-      `
-      SELECT
-        id,
-        name,
-        type,
-        currency,
-        current_balance_minor AS balanceMinor,
-        associated_asset_id AS associatedAssetId
-      FROM liabilities
-      ORDER BY created_at ASC, id ASC
-    `,
-    )
-    .all() as Array<{
-    associatedAssetId: string | null;
-    balanceMinor: number;
-    currency: string;
-    id: string;
-    name: string;
-    type: CreateLiabilityInput["type"];
-  }>;
+  const rows = drizzle(sqlite)
+    .select({
+      associatedAssetId: liabilities.associatedAssetId,
+      balanceMinor: liabilities.currentBalanceMinor,
+      currency: liabilities.currency,
+      id: liabilities.id,
+      name: liabilities.name,
+      type: liabilities.type,
+    })
+    .from(liabilities)
+    .orderBy(asc(liabilities.createdAt), asc(liabilities.id))
+    .all();
 
   return rows.map((row) =>
     createLiability(workspace, {
@@ -772,7 +665,7 @@ function readLiabilities(sqlite: DatabaseConnection): Liability[] {
       id: row.id,
       name: row.name,
       ownership: readLiabilityOwnership(sqlite, row.id),
-      type: row.type,
+      type: row.type as CreateLiabilityInput["type"],
       ...(row.associatedAssetId ? { associatedAssetId: row.associatedAssetId } : {}),
     }),
   );
@@ -782,89 +675,47 @@ function readLiabilityOwnership(
   sqlite: DatabaseConnection,
   liabilityId: string,
 ): CreateLiabilityInput["ownership"] {
-  const rows = sqlite
-    .prepare(
-      `
-      SELECT member_id AS memberId, share_bps AS shareBps
-      FROM liability_ownerships
-      WHERE liability_id = ?
-      ORDER BY member_id ASC
-    `,
-    )
-    .all(liabilityId) as Array<{ memberId: string; shareBps: number }>;
-
-  return rows;
+  return drizzle(sqlite)
+    .select({
+      memberId: liabilityOwnerships.memberId,
+      shareBps: liabilityOwnerships.shareBps,
+    })
+    .from(liabilityOwnerships)
+    .where(eq(liabilityOwnerships.liabilityId, liabilityId))
+    .orderBy(asc(liabilityOwnerships.memberId))
+    .all();
 }
 
 function readSnapshots(sqlite: DatabaseConnection, scopeId?: string): NetWorthSnapshot[] {
+  const db = drizzle(sqlite);
   const rows = scopeId
-    ? sqlite
-        .prepare(
-          `
-          SELECT *
-          FROM snapshots
-          WHERE scope_id = ?
-          ORDER BY captured_at ASC, id ASC
-        `,
-        )
-        .all(scopeId)
-    : sqlite
-        .prepare(
-          `
-          SELECT *
-          FROM snapshots
-          ORDER BY captured_at ASC, id ASC
-        `,
-        )
+    ? db
+        .select()
+        .from(snapshots)
+        .where(eq(snapshots.scopeId, scopeId))
+        .orderBy(asc(snapshots.capturedAt), asc(snapshots.id))
+        .all()
+    : db
+        .select()
+        .from(snapshots)
+        .orderBy(asc(snapshots.capturedAt), asc(snapshots.id))
         .all();
 
-  return (rows as SnapshotRow[]).map((row) => ({
-    capturedAt: row.captured_at,
-    dateKey: row.date_key,
-    debts: {
-      amountMinor: row.debts_minor,
-      currency: row.currency,
-    },
-    grossAssets: {
-      amountMinor: row.gross_assets_minor,
-      currency: row.currency,
-    },
-    housingEquity: {
-      amountMinor: row.housing_equity_minor,
-      currency: row.currency,
-    },
+  return rows.map((row) => ({
+    capturedAt: row.capturedAt,
+    dateKey: row.dateKey,
+    debts: { amountMinor: row.debtsMinor, currency: row.currency },
+    grossAssets: { amountMinor: row.grossAssetsMinor, currency: row.currency },
+    housingEquity: { amountMinor: row.housingEquityMinor, currency: row.currency },
     id: row.id,
-    isMonthlyClose: row.is_monthly_close === 1,
-    liquidNetWorth: {
-      amountMinor: row.liquid_net_worth_minor,
-      currency: row.currency,
-    },
-    monthKey: row.month_key,
-    scopeId: row.scope_id,
-    scopeLabel: row.scope_label,
-    totalNetWorth: {
-      amountMinor: row.total_net_worth_minor,
-      currency: row.currency,
-    },
-    warnings: JSON.parse(row.warnings_json) as string[],
+    isMonthlyClose: row.isMonthlyClose === 1,
+    liquidNetWorth: { amountMinor: row.liquidNetWorthMinor, currency: row.currency },
+    monthKey: row.monthKey,
+    scopeId: row.scopeId,
+    scopeLabel: row.scopeLabel,
+    totalNetWorth: { amountMinor: row.totalNetWorthMinor, currency: row.currency },
+    warnings: JSON.parse(row.warningsJson) as string[],
   }));
-}
-
-interface SnapshotRow {
-  id: string;
-  scope_id: string;
-  scope_label: string;
-  captured_at: string;
-  date_key: string;
-  month_key: string;
-  is_monthly_close: 0 | 1;
-  currency: string;
-  total_net_worth_minor: number;
-  liquid_net_worth_minor: number;
-  housing_equity_minor: number;
-  gross_assets_minor: number;
-  debts_minor: number;
-  warnings_json: string;
 }
 
 export function resolveDataDir(options: BootstrapHealthcheckOptions = {}): string {
