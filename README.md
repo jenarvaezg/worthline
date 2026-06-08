@@ -32,7 +32,6 @@ npm run build
 - `packages/db`: SQLite persistence and local data path handling.
 - `packages/pricing`: price provider contracts and manual fallback placeholder.
 - `packages/contracts`: shared TypeScript contracts for web, domain, db, and future mobile.
-- `.scratch/worthline`: local PRD and implementation issues.
 
 The package boundaries are intentionally mobile-ready: the future Expo app should reuse
 `packages/domain`, `packages/contracts`, and provider contracts instead of copying web logic.

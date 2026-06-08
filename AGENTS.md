@@ -2,11 +2,11 @@
 
 ### Issue tracker
 
-Issues and PRDs are tracked as local markdown files under `.scratch/`. See `docs/agents/issue-tracker.md`.
+Issues and PRDs are tracked in GitHub Issues for `jenarvaezg/worthline`. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-The repo uses the default Matt Pocock skill label vocabulary. See `docs/agents/triage-labels.md`.
+The repo uses the default Matt Pocock skill label vocabulary as GitHub labels. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
