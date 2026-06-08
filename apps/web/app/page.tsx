@@ -1,10 +1,11 @@
 import type { MoneyMinor } from "@worthline/contracts";
-import { createWorthlineStore, runBootstrapHealthcheck } from "@worthline/db";
+import { runBootstrapHealthcheck, withStore } from "@worthline/db";
 import {
   buildLiquidityPyramid,
   calculateNetWorth,
   calculateSnapshotDeltas,
   createDashboardShell,
+  formatMoneyInput,
   formatMoneyMinor,
   listScopeOptions,
   presentNetWorth,
@@ -15,6 +16,20 @@ import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import {
+  buildSnapshotId,
+  parseAssetCommand,
+  parseEntityId,
+  parseLiabilityCommand,
+  parseMoneyMinorField,
+  parseNewMember,
+  parseScopeParam,
+  parseSnapshotForm,
+  parseViewParam,
+  parseWorkspaceInit,
+  validateOwnershipShares,
+} from "./intake";
+
 export const dynamic = "force-dynamic";
 
 const presentationModes = [
@@ -23,6 +38,9 @@ const presentationModes = [
   { id: "gross-debt", label: "Bruto/deuda" },
 ] as const satisfies Array<{ id: NetWorthPresentationMode; label: string }>;
 
+/** Outcome of a write server action: ok signals revalidate, error surfaces to the user. */
+type ActionResult = { ok: boolean; error?: string };
+
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -30,16 +48,27 @@ export default async function DashboardPage({
 }) {
   const resolvedSearchParams = await searchParams;
   const persistence = runBootstrapHealthcheck();
-  const store = createWorthlineStore();
-  const workspace = store.readWorkspace();
-  const assets = store.readAssets();
-  const liabilities = store.readLiabilities();
-  const scopes = workspace ? listScopeOptions(workspace) : [];
-  const selectedScopeId = normalizeParam(resolvedSearchParams?.scope) ?? "household";
-  const selectedScope = scopes.find((scope) => scope.id === selectedScopeId) ?? scopes[0];
-  const selectedView = parsePresentationMode(normalizeParam(resolvedSearchParams?.view));
-  const snapshots = selectedScope ? store.readSnapshots(selectedScope.id) : [];
-  store.close();
+  const selectedView = parseViewParam(resolvedSearchParams?.view);
+  const errorParam = resolvedSearchParams?.error;
+  const formError = Array.isArray(errorParam) ? errorParam[0] : errorParam;
+  const { workspace, assets, liabilities, scopes, selectedScope, snapshots } = withStore(
+    (store) => {
+      const workspace = store.readWorkspace();
+      const scopes = workspace ? listScopeOptions(workspace) : [];
+      const selectedScopeId = parseScopeParam(resolvedSearchParams?.scope);
+      const selectedScope =
+        scopes.find((scope) => scope.id === selectedScopeId) ?? scopes[0];
+
+      return {
+        assets: store.readAssets(),
+        liabilities: store.readLiabilities(),
+        scopes,
+        selectedScope,
+        snapshots: selectedScope ? store.readSnapshots(selectedScope.id) : [],
+        workspace,
+      };
+    },
+  );
 
   const summary =
     workspace && selectedScope
@@ -95,6 +124,12 @@ export default async function DashboardPage({
           SQLite OK
         </div>
       </header>
+
+      {formError ? (
+        <p role="alert" style={{ color: "#c0392b", fontWeight: 600, margin: "0 0 12px" }}>
+          {formError}
+        </p>
+      ) : null}
 
       <section className="summaryBand" aria-label="Resumen patrimonial">
         <div className="scopeRail">
@@ -428,19 +463,9 @@ function OwnershipInputs({ members }: { members: Member[] }) {
 async function initializeWorkspaceAction(formData: FormData) {
   "use server";
 
-  const mode = formData.get("mode") === "household" ? "household" : "individual";
-  const names = parseNames(formData.get("memberNames"));
-  const selectedNames = mode === "individual" ? [names[0] ?? "Yo"] : names;
-  const store = createWorthlineStore();
+  const command = parseWorkspaceInit(formData);
 
-  store.initializeWorkspace({
-    members: selectedNames.map((name, index) => ({
-      id: createStableId("member", name, index),
-      name,
-    })),
-    mode,
-  });
-  store.close();
+  withStore((store) => store.initializeWorkspace(command));
   revalidatePath("/");
   redirect("/?scope=household");
 }
@@ -448,269 +473,177 @@ async function initializeWorkspaceAction(formData: FormData) {
 async function createMemberAction(formData: FormData) {
   "use server";
 
-  const name = String(formData.get("name") ?? "").trim();
+  const member = parseNewMember(formData, Date.now());
 
-  if (!name) {
+  if (!member) {
     return;
   }
 
-  const store = createWorthlineStore();
-  store.createMember({
-    id: createStableId("member", name, Date.now()),
-    name,
-  });
-  store.close();
+  withStore((store) => store.createMember(member));
   revalidatePath("/");
 }
 
 async function updateMemberAction(formData: FormData) {
   "use server";
 
-  const id = String(formData.get("id") ?? "");
+  const id = parseEntityId(formData);
   const name = String(formData.get("name") ?? "").trim();
 
   if (!id || !name) {
     return;
   }
 
-  const store = createWorthlineStore();
-  store.updateMember({ id, name });
-  store.close();
+  withStore((store) => store.updateMember({ id, name }));
   revalidatePath("/");
 }
 
 async function disableMemberAction(formData: FormData) {
   "use server";
 
-  const id = String(formData.get("id") ?? "");
+  const id = parseEntityId(formData);
 
   if (!id) {
     return;
   }
 
-  const store = createWorthlineStore();
-  store.disableMember(id, new Date().toISOString());
-  store.close();
+  withStore((store) => store.disableMember(id, new Date().toISOString()));
   revalidatePath("/");
 }
 
 async function createAssetAction(formData: FormData) {
   "use server";
 
-  const store = createWorthlineStore();
-  const workspace = store.readWorkspace();
+  const result = withStore((store): ActionResult => {
+    const workspace = store.readWorkspace();
 
-  if (!workspace) {
-    store.close();
-    return;
+    if (!workspace) {
+      return { ok: false };
+    }
+
+    const command = parseAssetCommand(formData, workspace.members, Date.now());
+    const ownershipError = validateOwnershipShares(command.ownership);
+
+    if (ownershipError) {
+      return { error: ownershipError, ok: false };
+    }
+
+    store.createManualAsset(command);
+
+    return { ok: true };
+  });
+
+  if (result.error) {
+    redirect(`/?error=${encodeURIComponent(result.error)}`);
   }
 
-  const name = String(formData.get("name") ?? "").trim() || "Activo";
-  store.createManualAsset({
-    currency: "EUR",
-    currentValueMinor: parseMoneyToMinor(formData.get("currentValue")),
-    id: createStableId("asset", name, Date.now()),
-    isPrimaryResidence: formData.get("isPrimaryResidence") === "on",
-    liquidityTier: parseLiquidityTier(formData.get("liquidityTier")),
-    name,
-    ownership: parseOwnership(formData, workspace.members),
-    type: parseAssetType(formData.get("type")),
-  });
-  store.close();
-  revalidatePath("/");
+  if (result.ok) {
+    revalidatePath("/");
+  }
 }
 
 async function updateAssetValuationAction(formData: FormData) {
   "use server";
 
-  const id = String(formData.get("id") ?? "");
+  const id = parseEntityId(formData);
 
   if (!id) {
     return;
   }
 
-  const store = createWorthlineStore();
-  store.updateAssetValuation(id, parseMoneyToMinor(formData.get("currentValue")));
-  store.close();
+  withStore((store) =>
+    store.updateAssetValuation(id, parseMoneyMinorField(formData, "currentValue")),
+  );
   revalidatePath("/");
 }
 
 async function createLiabilityAction(formData: FormData) {
   "use server";
 
-  const store = createWorthlineStore();
-  const workspace = store.readWorkspace();
+  const result = withStore((store): ActionResult => {
+    const workspace = store.readWorkspace();
 
-  if (!workspace) {
-    store.close();
-    return;
+    if (!workspace) {
+      return { ok: false };
+    }
+
+    const command = parseLiabilityCommand(formData, workspace.members, Date.now());
+    const ownershipError = validateOwnershipShares(command.ownership);
+
+    if (ownershipError) {
+      return { error: ownershipError, ok: false };
+    }
+
+    store.createLiability(command);
+
+    return { ok: true };
+  });
+
+  if (result.error) {
+    redirect(`/?error=${encodeURIComponent(result.error)}`);
   }
 
-  const name = String(formData.get("name") ?? "").trim() || "Deuda";
-  const associatedAssetId = String(formData.get("associatedAssetId") ?? "");
-  store.createLiability({
-    balanceMinor: parseMoneyToMinor(formData.get("balance")),
-    currency: "EUR",
-    id: createStableId("debt", name, Date.now()),
-    name,
-    ownership: parseOwnership(formData, workspace.members),
-    type: formData.get("type") === "debt" ? "debt" : "mortgage",
-    ...(associatedAssetId ? { associatedAssetId } : {}),
-  });
-  store.close();
-  revalidatePath("/");
+  if (result.ok) {
+    revalidatePath("/");
+  }
 }
 
 async function updateLiabilityBalanceAction(formData: FormData) {
   "use server";
 
-  const id = String(formData.get("id") ?? "");
+  const id = parseEntityId(formData);
 
   if (!id) {
     return;
   }
 
-  const store = createWorthlineStore();
-  store.updateLiabilityBalance(id, parseMoneyToMinor(formData.get("balance")));
-  store.close();
+  withStore((store) =>
+    store.updateLiabilityBalance(id, parseMoneyMinorField(formData, "balance")),
+  );
   revalidatePath("/");
 }
 
 async function saveSnapshotAction(formData: FormData) {
   "use server";
 
-  const scopeId = String(formData.get("scopeId") ?? "household");
-  const store = createWorthlineStore();
-  const workspace = store.readWorkspace();
+  const { scopeId, isMonthlyClose, replace } = parseSnapshotForm(formData);
+  const saved = withStore((store) => {
+    const workspace = store.readWorkspace();
 
-  if (!workspace) {
-    store.close();
-    return;
-  }
+    if (!workspace) {
+      return false;
+    }
 
-  const scopes = listScopeOptions(workspace);
-  const scope = scopes.find((option) => option.id === scopeId) ?? scopes[0];
+    const scopes = listScopeOptions(workspace);
+    const scope = scopes.find((option) => option.id === scopeId) ?? scopes[0];
 
-  if (!scope) {
-    store.close();
-    return;
-  }
+    if (!scope) {
+      return false;
+    }
 
-  const now = new Date().toISOString();
-  const summary = calculateNetWorth({
-    assets: store.readAssets(),
-    liabilities: store.readLiabilities(),
-    scopeId: scope.id,
-    workspace,
+    const now = new Date().toISOString();
+    const summary = calculateNetWorth({
+      assets: store.readAssets(),
+      liabilities: store.readLiabilities(),
+      scopeId: scope.id,
+      workspace,
+    });
+
+    store.saveSnapshot({
+      capturedAt: now,
+      id: buildSnapshotId(scope.id, now, Date.now()),
+      isMonthlyClose,
+      replace,
+      scopeId: scope.id,
+      scopeLabel: scope.label,
+      summary,
+    });
+
+    return true;
   });
 
-  store.saveSnapshot({
-    capturedAt: now,
-    id: createStableId("snapshot", `${scope.id}_${now.slice(0, 10)}`, Date.now()),
-    isMonthlyClose: formData.get("isMonthlyClose") === "on",
-    replace: formData.get("replace") === "on",
-    scopeId: scope.id,
-    scopeLabel: scope.label,
-    summary,
-  });
-  store.close();
-  revalidatePath("/");
-}
-
-function parseNames(value: FormDataEntryValue | null): string[] {
-  const names = String(value ?? "")
-    .split(/[\n,]/)
-    .map((name) => name.trim())
-    .filter(Boolean);
-
-  return names.length > 0 ? names : ["Yo"];
-}
-
-function parseOwnership(formData: FormData, members: Member[]) {
-  const activeMembers = members.filter((member) => !member.disabledAt);
-  const ownership = activeMembers
-    .map((member) => ({
-      memberId: member.id,
-      shareBps: Math.round(
-        parseLocalizedNumber(formData.get(`owner_${member.id}`)) * 100,
-      ),
-    }))
-    .filter((share) => share.shareBps > 0);
-
-  return ownership.length > 0
-    ? ownership
-    : [{ memberId: activeMembers[0]?.id ?? "", shareBps: 10_000 }];
-}
-
-function parseMoneyToMinor(value: FormDataEntryValue | null): number {
-  return Math.round(parseLocalizedNumber(value) * 100);
-}
-
-function parseLocalizedNumber(value: FormDataEntryValue | null): number {
-  const raw = String(value ?? "0").trim();
-  const normalized = raw.includes(",") ? raw.replace(/\./g, "").replace(",", ".") : raw;
-  const parsed = Number(normalized);
-
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function parseAssetType(value: FormDataEntryValue | null): ManualAsset["type"] {
-  if (value === "real_estate") {
-    return "real_estate";
+  if (saved) {
+    revalidatePath("/");
   }
-
-  if (value === "manual") {
-    return "manual";
-  }
-
-  return "cash";
-}
-
-function parseLiquidityTier(
-  value: FormDataEntryValue | null,
-): ManualAsset["liquidityTier"] {
-  if (
-    value === "market" ||
-    value === "retirement" ||
-    value === "illiquid" ||
-    value === "housing"
-  ) {
-    return value;
-  }
-
-  return "cash";
-}
-
-function parsePresentationMode(value: string | undefined): NetWorthPresentationMode {
-  if (value === "housing-inclusive" || value === "gross-debt") {
-    return value;
-  }
-
-  return "liquid";
-}
-
-function createStableId(prefix: string, name: string, index: number): string {
-  const slug =
-    name
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "") || prefix;
-
-  return `${prefix}_${slug}_${index}`;
-}
-
-function normalizeParam(value: string | string[] | undefined): string | undefined {
-  if (Array.isArray(value)) {
-    return value[0];
-  }
-
-  return value;
-}
-
-function formatMoneyInput(amountMinor: number): string {
-  return (amountMinor / 100).toFixed(2).replace(".", ",");
 }
 
 function formatOptionalMoney(value: MoneyMinor | undefined): string {
