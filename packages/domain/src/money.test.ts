@@ -60,6 +60,26 @@ describe("allocateByBps half-up rounding", () => {
   test("does not drift on large integer minor units", () => {
     expect(allocateByBps(30_000_000, 5_000)).toBe(15_000_000);
   });
+
+  test("a zero share allocates nothing", () => {
+    expect(allocateByBps(123_456, 0)).toBe(0);
+    expect(allocateByBps(0, 5_000)).toBe(0);
+  });
+
+  // The domain only ever allocates non-negative asset values and liability
+  // balances, but the BigInt arithmetic is total. Rounding is half up toward
+  // positive infinity for every sign, and a full 10000 bps share must always
+  // round-trip the whole amount — including negatives.
+  test("rounds negative amounts half up toward positive infinity", () => {
+    expect(allocateByBps(-1, 5_000)).toBe(0); // -0.5 -> 0
+    expect(allocateByBps(-3, 5_000)).toBe(-1); // -1.5 -> -1
+    expect(allocateByBps(-1, 5_001)).toBe(-1); // -0.5001 -> -1
+  });
+
+  test("a full share round-trips the whole amount for any sign", () => {
+    expect(allocateByBps(-123_456, 10_000)).toBe(-123_456);
+    expect(allocateByBps(-1, 10_000)).toBe(-1);
+  });
 });
 
 describe("es-ES localized parsing and formatting", () => {

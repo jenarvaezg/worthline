@@ -40,9 +40,24 @@ export function subtractMoney(left: MoneyMinor, right: MoneyMinor): MoneyMinor {
   };
 }
 
-/** Allocate a minor amount by an ownership share in basis points, rounding half up. */
+/**
+ * Allocate a minor amount by an ownership share in basis points, rounding half
+ * up toward positive infinity. Uses floor division (not BigInt's truncation
+ * toward zero) so the rounding is sign-correct and a full 10000 bps share always
+ * round-trips the whole amount, including negative amounts.
+ */
 export function allocateByBps(amountMinor: number, shareBps: number): number {
-  return Number((BigInt(amountMinor) * BigInt(shareBps) + 5_000n) / 10_000n);
+  const numerator = BigInt(amountMinor) * BigInt(shareBps) + 5_000n;
+
+  return Number(floorDiv(numerator, 10_000n));
+}
+
+/** Floor division for BigInt (truncates toward negative infinity), divisor > 0. */
+function floorDiv(dividend: bigint, divisor: bigint): bigint {
+  const quotient = dividend / divisor;
+  const remainder = dividend % divisor;
+
+  return remainder < 0n ? quotient - 1n : quotient;
 }
 
 /** Render a money value for display: es-ES currency, no decimal cents. */
