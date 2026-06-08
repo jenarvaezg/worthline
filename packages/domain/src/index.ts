@@ -1,5 +1,6 @@
 import type {
   CurrencyCode,
+  DecimalString,
   LocalPersistenceStatus,
   LiquidityTier,
   MoneyMinor,
@@ -40,6 +41,8 @@ export {
   tierOfAsset,
   tierOfLiability,
 } from "./classification";
+
+export { createInvestmentOperation, derivePosition } from "./positions";
 
 export type WorkspaceMode = "individual" | "household";
 
@@ -146,7 +149,7 @@ export function resolveScopeMemberIds(workspace: Workspace, scopeId: string): st
   throw new Error(`Unknown scope ${scopeId}.`);
 }
 
-export type AssetType = "cash" | "manual" | "real_estate";
+export type AssetType = "cash" | "manual" | "real_estate" | "investment";
 
 export interface OwnershipShare {
   memberId: string;
@@ -195,6 +198,43 @@ export interface CreateLiabilityInput {
   balanceMinor: number;
   ownership: OwnershipShare[];
   associatedAssetId?: string;
+}
+
+export type OperationKind = "buy" | "sell";
+
+/** A single buy or sell against a unit-based (investment) asset. */
+export interface InvestmentOperation {
+  id: string;
+  assetId: string;
+  kind: OperationKind;
+  executedAt: string;
+  units: DecimalString;
+  pricePerUnit: DecimalString;
+  currency: CurrencyCode;
+  feesMinor: number;
+}
+
+export interface CreateInvestmentOperationInput {
+  id: string;
+  assetId: string;
+  kind: OperationKind;
+  executedAt: string;
+  units: DecimalString;
+  pricePerUnit: DecimalString;
+  currency: CurrencyCode;
+  feesMinor?: number;
+}
+
+/** Derived state of a unit-based asset after folding its operations. */
+export interface PositionSummary {
+  assetId: string;
+  currency: CurrencyCode;
+  currentUnits: DecimalString;
+  costBasis: MoneyMinor;
+  averageUnitCost: DecimalString;
+  marketValue?: MoneyMinor;
+  unrealizedPnl?: MoneyMinor;
+  warnings: string[];
 }
 
 export interface NetWorthSummary {
