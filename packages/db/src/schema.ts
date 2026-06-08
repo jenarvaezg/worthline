@@ -1,3 +1,5 @@
+import type { LiquidityTier } from "@worthline/contracts";
+import type { AssetType, LiabilityType, WorkspaceMode } from "@worthline/domain";
 import { sql } from "drizzle-orm";
 import {
   check,
@@ -23,7 +25,7 @@ export const workspace = sqliteTable(
   "workspace",
   {
     id: text("id").primaryKey(),
-    mode: text("mode").notNull(),
+    mode: text("mode").$type<WorkspaceMode>().notNull(),
     baseCurrency: text("base_currency").notNull(),
     createdAt: timestamp("created_at"),
     updatedAt: timestamp("updated_at"),
@@ -66,10 +68,10 @@ export const memberGroupMembers = sqliteTable(
 export const assets = sqliteTable("assets", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
-  type: text("type").notNull(),
+  type: text("type").$type<AssetType>().notNull(),
   currency: text("currency").notNull(),
   currentValueMinor: integer("current_value_minor").notNull(),
-  liquidityTier: text("liquidity_tier").notNull(),
+  liquidityTier: text("liquidity_tier").$type<LiquidityTier>().notNull(),
   isPrimaryResidence: integer("is_primary_residence").notNull().default(0),
   createdAt: timestamp("created_at"),
   updatedAt: timestamp("updated_at"),
@@ -92,7 +94,7 @@ export const assetOwnerships = sqliteTable(
 export const liabilities = sqliteTable("liabilities", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
-  type: text("type").notNull(),
+  type: text("type").$type<LiabilityType>().notNull(),
   currency: text("currency").notNull(),
   currentBalanceMinor: integer("current_balance_minor").notNull(),
   associatedAssetId: text("associated_asset_id").references(() => assets.id, {

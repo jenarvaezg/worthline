@@ -8,6 +8,7 @@ import type {
   MemberGroup,
   ManualAsset,
   NetWorthSnapshot,
+  OwnershipShare,
   Workspace,
   WorkspaceMode,
 } from "@worthline/domain";
@@ -140,12 +141,28 @@ export function createWorthlineStore(
   const sqlite = new Database(databasePath);
   migrate(sqlite);
 
+  // Per-unit-of-work workspace cache. readWorkspace, readAssets, and
+  // readLiabilities all need the workspace, but it only changes on membership
+  // writes — so cache it for the store's (short) lifetime and invalidate on
+  // those writes. A single page render then reads it once instead of three times.
+  let cachedWorkspace: Workspace | null | undefined;
+  const getWorkspace = (): Workspace | null => {
+    if (cachedWorkspace === undefined) {
+      cachedWorkspace = readWorkspace(sqlite);
+    }
+
+    return cachedWorkspace;
+  };
+  const invalidateWorkspace = (): void => {
+    cachedWorkspace = undefined;
+  };
+
   return {
     close: () => {
       sqlite.close();
     },
     createLiability: (input) => {
-      const workspace = readWorkspace(sqlite);
+      const workspace = getWorkspace();
 
       if (!workspace) {
         throw new Error("Workspace must be initialized before creating liabilities.");
@@ -200,7 +217,7 @@ export function createWorthlineStore(
       insert();
     },
     createManualAsset: (input) => {
-      const workspace = readWorkspace(sqlite);
+      const workspace = getWorkspace();
 
       if (!workspace) {
         throw new Error("Workspace must be initialized before creating assets.");
@@ -270,6 +287,7 @@ export function createWorthlineStore(
           id: member.id,
           name: member.name,
         });
+      invalidateWorkspace();
     },
     disableMember: (memberId, disabledAt) => {
       sqlite
@@ -281,6 +299,7 @@ export function createWorthlineStore(
         `,
         )
         .run(disabledAt, memberId);
+      invalidateWorkspace();
     },
     initializeWorkspace: (input) => {
       const workspace = createWorkspace({
@@ -344,11 +363,12 @@ export function createWorthlineStore(
       });
 
       initialize();
+      invalidateWorkspace();
     },
-    readAssets: () => readAssets(sqlite),
-    readLiabilities: () => readLiabilities(sqlite),
+    readAssets: () => readAssets(sqlite, getWorkspace()),
+    readLiabilities: () => readLiabilities(sqlite, getWorkspace()),
     readSnapshots: (scopeId) => readSnapshots(sqlite, scopeId),
-    readWorkspace: () => readWorkspace(sqlite),
+    readWorkspace: () => getWorkspace(),
     saveSnapshot: (input) => {
       const snapshot = createNetWorthSnapshot(input);
       const existing = sqlite
@@ -481,6 +501,7 @@ export function createWorthlineStore(
         `,
         )
         .run(member.name, member.id);
+      invalidateWorkspace();
     },
   };
 }
@@ -531,6 +552,10 @@ function migrate(sqlite: DatabaseConnection): void {
   // IF NOT EXISTS keeps this safe on databases created before user_version
   // existed (tables already present, version still 0). The generated DDL only
   // ever opens statements with these two forms.
+  //
+  // NOTE: this CREATES missing tables but does not EVOLVE existing ones. Bumping
+  // SCHEMA_VERSION past 1 will need a real forward-migration path (per-version
+  // ALTER ladder or drizzle journalled migrations) — see docs/adr/0001.
   const idempotentSql = schemaSql
     .replaceAll("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
     .replaceAll("CREATE UNIQUE INDEX ", "CREATE UNIQUE INDEX IF NOT EXISTS ");
@@ -594,13 +619,14 @@ function readWorkspace(sqlite: DatabaseConnection): Workspace | null {
             name: member.name,
           },
     ),
-    mode: workspaceRow.mode as WorkspaceMode,
+    mode: workspaceRow.mode,
   });
 }
 
-function readAssets(sqlite: DatabaseConnection): ManualAsset[] {
-  const workspace = readWorkspace(sqlite);
-
+function readAssets(
+  sqlite: DatabaseConnection,
+  workspace: Workspace | null,
+): ManualAsset[] {
   if (!workspace) {
     return [];
   }
@@ -618,6 +644,7 @@ function readAssets(sqlite: DatabaseConnection): ManualAsset[] {
     .from(assets)
     .orderBy(asc(assets.createdAt), asc(assets.id))
     .all();
+  const ownershipByAsset = readAssetOwnerships(sqlite);
 
   return rows.map((row) =>
     createManualAsset(workspace, {
@@ -625,29 +652,35 @@ function readAssets(sqlite: DatabaseConnection): ManualAsset[] {
       currentValueMinor: row.currentValueMinor,
       id: row.id,
       isPrimaryResidence: row.isPrimaryResidence === 1,
-      liquidityTier: row.liquidityTier as CreateManualAssetInput["liquidityTier"],
+      liquidityTier: row.liquidityTier,
       name: row.name,
-      ownership: readAssetOwnership(sqlite, row.id),
-      type: row.type as CreateManualAssetInput["type"],
+      ownership: ownershipByAsset.get(row.id) ?? [],
+      type: row.type,
     }),
   );
 }
 
-function readAssetOwnership(
+/** All asset ownership rows in one query, grouped by asset id (member order preserved). */
+function readAssetOwnerships(
   sqlite: DatabaseConnection,
-  assetId: string,
-): CreateManualAssetInput["ownership"] {
-  return drizzle(sqlite)
-    .select({ memberId: assetOwnerships.memberId, shareBps: assetOwnerships.shareBps })
+): Map<string, OwnershipShare[]> {
+  const rows = drizzle(sqlite)
+    .select({
+      assetId: assetOwnerships.assetId,
+      memberId: assetOwnerships.memberId,
+      shareBps: assetOwnerships.shareBps,
+    })
     .from(assetOwnerships)
-    .where(eq(assetOwnerships.assetId, assetId))
-    .orderBy(asc(assetOwnerships.memberId))
+    .orderBy(asc(assetOwnerships.assetId), asc(assetOwnerships.memberId))
     .all();
+
+  return groupOwnershipByOwner(rows, (row) => row.assetId);
 }
 
-function readLiabilities(sqlite: DatabaseConnection): Liability[] {
-  const workspace = readWorkspace(sqlite);
-
+function readLiabilities(
+  sqlite: DatabaseConnection,
+  workspace: Workspace | null,
+): Liability[] {
   if (!workspace) {
     return [];
   }
@@ -664,6 +697,7 @@ function readLiabilities(sqlite: DatabaseConnection): Liability[] {
     .from(liabilities)
     .orderBy(asc(liabilities.createdAt), asc(liabilities.id))
     .all();
+  const ownershipByLiability = readLiabilityOwnerships(sqlite);
 
   return rows.map((row) =>
     createLiability(workspace, {
@@ -671,26 +705,50 @@ function readLiabilities(sqlite: DatabaseConnection): Liability[] {
       currency: row.currency,
       id: row.id,
       name: row.name,
-      ownership: readLiabilityOwnership(sqlite, row.id),
-      type: row.type as CreateLiabilityInput["type"],
+      ownership: ownershipByLiability.get(row.id) ?? [],
+      type: row.type,
       ...(row.associatedAssetId ? { associatedAssetId: row.associatedAssetId } : {}),
     }),
   );
 }
 
-function readLiabilityOwnership(
+/** All liability ownership rows in one query, grouped by liability id. */
+function readLiabilityOwnerships(
   sqlite: DatabaseConnection,
-  liabilityId: string,
-): CreateLiabilityInput["ownership"] {
-  return drizzle(sqlite)
+): Map<string, OwnershipShare[]> {
+  const rows = drizzle(sqlite)
     .select({
+      liabilityId: liabilityOwnerships.liabilityId,
       memberId: liabilityOwnerships.memberId,
       shareBps: liabilityOwnerships.shareBps,
     })
     .from(liabilityOwnerships)
-    .where(eq(liabilityOwnerships.liabilityId, liabilityId))
-    .orderBy(asc(liabilityOwnerships.memberId))
+    .orderBy(asc(liabilityOwnerships.liabilityId), asc(liabilityOwnerships.memberId))
     .all();
+
+  return groupOwnershipByOwner(rows, (row) => row.liabilityId);
+}
+
+/** Group flat ownership rows into a map keyed by their owning entity id. */
+function groupOwnershipByOwner<Row extends { memberId: string; shareBps: number }>(
+  rows: Row[],
+  ownerIdOf: (row: Row) => string,
+): Map<string, OwnershipShare[]> {
+  const byOwner = new Map<string, OwnershipShare[]>();
+
+  for (const row of rows) {
+    const ownerId = ownerIdOf(row);
+    const share: OwnershipShare = { memberId: row.memberId, shareBps: row.shareBps };
+    const existing = byOwner.get(ownerId);
+
+    if (existing) {
+      existing.push(share);
+    } else {
+      byOwner.set(ownerId, [share]);
+    }
+  }
+
+  return byOwner;
 }
 
 function readSnapshots(sqlite: DatabaseConnection, scopeId?: string): NetWorthSnapshot[] {
