@@ -41,7 +41,17 @@ export {
 } from "./classification";
 
 export { createInvestmentOperation, derivePosition } from "./positions";
-export { assertNotInvestmentAsset } from "./investment-valuation";
+export type {
+  InvestmentPriceSource,
+  SelectedInvestmentPrice,
+  DeriveInvestmentValuationInput,
+  InvestmentValuation,
+} from "./investment-valuation";
+export {
+  assertNotInvestmentAsset,
+  deriveInvestmentValuation,
+  selectInvestmentPrice,
+} from "./investment-valuation";
 
 export type { AssetPrice, PriceFreshnessState, PriceSource } from "./prices";
 export { getPriceFreshness, PRICE_TTL_DAYS } from "./prices";
