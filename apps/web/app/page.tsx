@@ -8,11 +8,19 @@ import {
   createDashboardShell,
   formatMoneyInput,
   formatMoneyMinor,
+  getPriceFreshness,
   listScopeOptions,
   presentNetWorth,
   resolveScopeMemberIds,
 } from "@worthline/domain";
-import type { FireScopeConfig, ManualAsset, Member, NetWorthPresentationMode } from "@worthline/domain";
+import type {
+  AssetPrice,
+  FireScopeConfig,
+  ManualAsset,
+  Member,
+  NetWorthPresentationMode,
+  PriceFreshnessState,
+} from "@worthline/domain";
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -55,7 +63,7 @@ export default async function DashboardPage({
   const selectedView = parseViewParam(resolvedSearchParams?.view);
   const errorParam = resolvedSearchParams?.error;
   const formError = Array.isArray(errorParam) ? errorParam[0] : errorParam;
-  const { workspace, assets, liabilities, positions, scopes, selectedScope, snapshots, fireConfig } =
+  const { workspace, assets, liabilities, positions, priceCache, scopes, selectedScope, snapshots, fireConfig } =
     withStore((store) => {
       const workspace = store.readWorkspace();
       const scopes = workspace ? listScopeOptions(workspace) : [];
@@ -68,6 +76,7 @@ export default async function DashboardPage({
         fireConfig: store.readFireConfig(),
         liabilities: store.readLiabilities(),
         positions: selectedScope ? store.readPositions(selectedScope.id) : [],
+        priceCache: store.readAllPriceCacheEntries(),
         scopes,
         selectedScope,
         snapshots: selectedScope ? store.readSnapshots(selectedScope.id) : [],
@@ -440,28 +449,54 @@ export default async function DashboardPage({
                 <th>Inversión</th>
                 <th>Unidades</th>
                 <th>Coste medio</th>
+                <th>Precio/u</th>
                 <th>Valor</th>
                 <th>P/L</th>
               </tr>
             </thead>
             <tbody>
-              {positions.map((position) => (
-                <tr key={position.assetId}>
-                  <td>
-                    {position.name}
-                    {position.warnings.length > 0 ? " ⚠️" : ""}
-                  </td>
-                  <td>{position.currentUnits}</td>
-                  <td>{position.averageUnitCost}</td>
-                  <td>{position.marketValue ? formatMoneyMinor(position.marketValue) : "—"}</td>
-                  <td>
-                    {position.unrealizedPnl ? formatMoneyMinor(position.unrealizedPnl) : "—"}
-                  </td>
-                </tr>
-              ))}
+              {positions.map((position) => {
+                const cachedPrice = priceCache.find(
+                  (entry) => entry.assetId === position.assetId,
+                );
+                const freshness = cachedPrice
+                  ? getPriceFreshness(cachedPrice, persistence.checkedAt)
+                  : null;
+
+                return (
+                  <tr key={position.assetId}>
+                    <td>
+                      {position.name}
+                      {position.warnings.length > 0 ? " ⚠" : ""}
+                    </td>
+                    <td>{position.currentUnits}</td>
+                    <td>{position.averageUnitCost}</td>
+                    <td>
+                      {cachedPrice ? (
+                        <>
+                          {cachedPrice.price}{" "}
+                          <small className={`priceStatus ${freshness ?? "unknown"}`}>
+                            {priceFreshnessLabel(freshness)}
+                          </small>
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td>
+                      {position.marketValue ? formatMoneyMinor(position.marketValue) : "—"}
+                    </td>
+                    <td>
+                      {position.unrealizedPnl
+                        ? formatMoneyMinor(position.unrealizedPnl)
+                        : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
               {positions.length === 0 ? (
                 <tr>
-                  <td colSpan={5}>Sin inversiones</td>
+                  <td colSpan={6}>Sin inversiones</td>
                 </tr>
               ) : null}
             </tbody>
@@ -937,6 +972,17 @@ async function saveSnapshotAction(formData: FormData) {
 
 function formatOptionalMoney(value: MoneyMinor | undefined): string {
   return value ? formatMoneyMinor(value) : "sin dato";
+}
+
+function priceFreshnessLabel(freshness: PriceFreshnessState | null): string {
+  if (!freshness) return "—";
+  const labels: Record<PriceFreshnessState, string> = {
+    failed: "Fallido",
+    fresh: "Reciente",
+    manual: "Manual",
+    stale: "Obsoleto",
+  };
+  return labels[freshness];
 }
 
 function tierLabel(tier: ManualAsset["liquidityTier"]): string {

@@ -4,6 +4,7 @@ import type {
   LocalPersistenceStatus,
 } from "@worthline/contracts";
 import type {
+  AssetPrice,
   CreateInvestmentOperationInput,
   CreateLiabilityInput,
   CreateManualAssetInput,
@@ -40,6 +41,7 @@ import {
   appSettings,
   assetOperations,
   assetOwnerships,
+  assetPriceCache,
   assets,
   investmentAssets,
   liabilities,
@@ -52,7 +54,7 @@ import {
 } from "./schema";
 import { schemaSql } from "./schema-sql";
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const bootstrapKey = "bootstrap.last_healthcheck_at";
 
@@ -102,11 +104,13 @@ export interface WorthlineStore {
   createMember: (member: Member) => void;
   disableMember: (memberId: string, disabledAt: string) => void;
   initializeWorkspace: (input: InitializeWorkspaceInput) => void;
+  readAllPriceCacheEntries: () => AssetPrice[];
   readAssets: () => ManualAsset[];
   readFireConfig: () => Record<string, FireScopeConfig>;
   readLiabilities: () => Liability[];
   readOperations: (assetId: string) => InvestmentOperation[];
   readPositions: (scopeId?: string) => PositionView[];
+  readPriceCache: (assetId: string) => AssetPrice | null;
   readSnapshots: (scopeId?: string) => NetWorthSnapshot[];
   readWorkspace: () => Workspace | null;
   recordOperation: (input: CreateInvestmentOperationInput) => void;
@@ -115,6 +119,7 @@ export interface WorthlineStore {
   updateAssetValuation: (assetId: string, currentValueMinor: number) => void;
   updateLiabilityBalance: (liabilityId: string, balanceMinor: number) => void;
   updateMember: (member: Pick<Member, "id" | "name">) => void;
+  upsertPrice: (price: AssetPrice) => void;
 }
 
 export function runBootstrapHealthcheck(
@@ -718,6 +723,73 @@ export function createWorthlineStore(
         .run(member.name, member.id);
       invalidateWorkspace();
     },
+    readPriceCache: (assetId) => {
+      const db = drizzle(sqlite);
+      const row = db
+        .select()
+        .from(assetPriceCache)
+        .where(eq(assetPriceCache.assetId, assetId))
+        .get();
+
+      if (!row) return null;
+
+      return {
+        assetId: row.assetId,
+        currency: row.currency,
+        fetchedAt: row.fetchedAt,
+        freshnessState: row.freshnessState,
+        price: row.price,
+        source: row.source,
+        ...(row.priceDate ? { priceDate: row.priceDate } : {}),
+        ...(row.staleReason ? { staleReason: row.staleReason } : {}),
+      };
+    },
+    readAllPriceCacheEntries: () => {
+      const db = drizzle(sqlite);
+      const rows = db.select().from(assetPriceCache).all();
+
+      return rows.map((row) => ({
+        assetId: row.assetId,
+        currency: row.currency,
+        fetchedAt: row.fetchedAt,
+        freshnessState: row.freshnessState,
+        price: row.price,
+        source: row.source,
+        ...(row.priceDate ? { priceDate: row.priceDate } : {}),
+        ...(row.staleReason ? { staleReason: row.staleReason } : {}),
+      }));
+    },
+    upsertPrice: (price) => {
+      const db = drizzle(sqlite);
+      const now = new Date().toISOString();
+
+      db.insert(assetPriceCache)
+        .values({
+          assetId: price.assetId,
+          currency: price.currency,
+          fetchedAt: price.fetchedAt,
+          freshnessState: price.freshnessState,
+          price: price.price,
+          priceDate: price.priceDate ?? null,
+          source: price.source,
+          staleReason: price.staleReason ?? null,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: assetPriceCache.assetId,
+          set: {
+            currency: price.currency,
+            fetchedAt: price.fetchedAt,
+            freshnessState: price.freshnessState,
+            price: price.price,
+            priceDate: price.priceDate ?? null,
+            source: price.source,
+            staleReason: price.staleReason ?? null,
+            updatedAt: now,
+          },
+        })
+        .run();
+    },
   };
 }
 
@@ -752,31 +824,28 @@ export function resolveDatabasePath(options: BootstrapHealthcheckOptions = {}): 
 }
 
 function migrate(sqlite: DatabaseConnection): void {
-  // Connection-level pragmas must be set outside any transaction. The schema is
-  // the single source of truth: schemaSql is generated from src/schema.ts via
-  // `npm run db:generate`. user_version makes this idempotent across reopens.
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
-
   const version = sqlite.pragma("user_version", { simple: true }) as number;
-
-  if (version >= SCHEMA_VERSION) {
-    return;
+  if (version >= SCHEMA_VERSION) return;
+  if (version < 2) {
+    const sql = schemaSql
+      .replaceAll("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
+      .replaceAll("CREATE UNIQUE INDEX ", "CREATE UNIQUE INDEX IF NOT EXISTS ");
+    sqlite.exec(sql);
+    sqlite.pragma("user_version = 2");
   }
-
-  // IF NOT EXISTS keeps this safe on databases created before user_version
-  // existed (tables already present, version still 0). The generated DDL only
-  // ever opens statements with these two forms.
-  //
-  // NOTE: this CREATES missing tables but does not EVOLVE existing ones. Bumping
-  // SCHEMA_VERSION past 1 will need a real forward-migration path (per-version
-  // ALTER ladder or drizzle journalled migrations) — see docs/adr/0001.
-  const idempotentSql = schemaSql
-    .replaceAll("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
-    .replaceAll("CREATE UNIQUE INDEX ", "CREATE UNIQUE INDEX IF NOT EXISTS ");
-
-  sqlite.exec(idempotentSql);
-  sqlite.pragma(`user_version = ${SCHEMA_VERSION}`);
+  if (version < 3) {
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS asset_price_cache (
+      asset_id TEXT PRIMARY KEY NOT NULL, currency TEXT NOT NULL, price TEXT NOT NULL,
+      source TEXT DEFAULT 'manual' NOT NULL, price_date TEXT, fetched_at TEXT NOT NULL,
+      freshness_state TEXT DEFAULT 'manual' NOT NULL, stale_reason TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      FOREIGN KEY (asset_id) REFERENCES assets(id) ON UPDATE no action ON DELETE cascade
+    );`);
+    sqlite.pragma("user_version = 3");
+  }
 }
 
 function readWorkspace(sqlite: DatabaseConnection): Workspace | null {
@@ -998,6 +1067,7 @@ function readPositions(
   const ownershipByAsset = readAssetOwnerships(sqlite);
   const operationsByAsset = readAllOperations(sqlite);
   const metaByAsset = readInvestmentMeta(sqlite);
+  const priceCacheByAsset = readAllPriceCache(sqlite);
   const scopeMemberIds = scopeId
     ? new Set(resolveScopeMemberIds(workspace, scopeId))
     : null;
@@ -1011,17 +1081,29 @@ function readPositions(
       continue;
     }
 
+    // Price cache takes priority over manual_price_per_unit
+    const cachedPrice = priceCacheByAsset.get(row.id)?.price;
     const manualPrice = metaByAsset.get(row.id)?.manualPricePerUnit;
+    const currentPricePerUnit = cachedPrice ?? manualPrice;
     const position = derivePosition(operationsByAsset.get(row.id) ?? [], {
       assetId: row.id,
       currency: row.currency,
-      ...(manualPrice ? { currentPricePerUnit: manualPrice } : {}),
+      ...(currentPricePerUnit ? { currentPricePerUnit } : {}),
     });
 
     views.push({ ...position, name: row.name });
   }
 
   return views;
+}
+
+function readAllPriceCache(sqlite: DatabaseConnection): Map<string, { price: string }> {
+  const rows = drizzle(sqlite).select().from(assetPriceCache).all();
+
+  return rows.reduce((map, row) => {
+    map.set(row.assetId, { price: row.price });
+    return map;
+  }, new Map<string, { price: string }>());
 }
 
 /** All asset ownership rows in one query, grouped by asset id (member order preserved). */

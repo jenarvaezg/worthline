@@ -3,6 +3,8 @@ import type {
   AssetType,
   LiabilityType,
   OperationKind,
+  PriceFreshnessState,
+  PriceSource,
   WorkspaceMode,
 } from "@worthline/domain";
 import { sql } from "drizzle-orm";
@@ -147,6 +149,24 @@ export const liabilityOwnerships = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.liabilityId, table.memberId] })],
 );
+
+export const assetPriceCache = sqliteTable("asset_price_cache", {
+  assetId: text("asset_id")
+    .primaryKey()
+    .references(() => assets.id, { onDelete: "cascade" }),
+  currency: text("currency").notNull(),
+  price: text("price").notNull(),
+  source: text("source").$type<PriceSource>().notNull().default("manual"),
+  priceDate: text("price_date"),
+  fetchedAt: text("fetched_at").notNull(),
+  freshnessState: text("freshness_state")
+    .$type<PriceFreshnessState>()
+    .notNull()
+    .default("manual"),
+  staleReason: text("stale_reason"),
+  createdAt: timestamp("created_at"),
+  updatedAt: timestamp("updated_at"),
+});
 
 export const snapshots = sqliteTable(
   "snapshots",

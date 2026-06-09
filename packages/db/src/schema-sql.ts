@@ -129,4 +129,18 @@ CREATE TABLE \`investment_assets\` (
 	\`manual_priced_at\` text,
 	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
+--> statement-breakpoint
+CREATE TABLE \`asset_price_cache\` (
+	\`asset_id\` text PRIMARY KEY NOT NULL,
+	\`currency\` text NOT NULL,
+	\`price\` text NOT NULL,
+	\`source\` text DEFAULT 'manual' NOT NULL,
+	\`price_date\` text,
+	\`fetched_at\` text NOT NULL,
+	\`freshness_state\` text DEFAULT 'manual' NOT NULL,
+	\`stale_reason\` text,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
 `;
