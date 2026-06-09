@@ -11,7 +11,9 @@ import { SCOPE_COOKIE_NAME } from "../intake";
  */
 export async function setScopeAction(formData: FormData): Promise<never> {
   const scopeId = String(formData.get("scopeId") ?? "").trim();
-  const returnTo = String(formData.get("returnTo") ?? "/").trim() || "/";
+  const rawReturnTo = String(formData.get("returnTo") ?? "").trim();
+  const returnTo =
+    rawReturnTo.startsWith("/") && !rawReturnTo.startsWith("//") ? rawReturnTo : "/";
 
   if (scopeId) {
     const jar = await cookies();

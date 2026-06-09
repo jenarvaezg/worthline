@@ -1,6 +1,5 @@
 import { runBootstrapHealthcheck, withStore } from "@worthline/db";
 import {
-  calculateSnapshotDeltas,
   deriveMonthlyCloses,
   formatMoneyMinor,
   listScopeOptions,
@@ -50,20 +49,20 @@ export default async function HistoricoPage({
   // Derive which snapshot ids are monthly closes (last snapshot of each calendar month).
   const monthlyCloseIds = new Set(deriveMonthlyCloses(snapshots).values());
 
-  // Build rows: each snapshot annotated with its delta vs the previous snapshot.
-  // Rows are shown newest-first for a readable history.
+  // Build rows in a single ascending pass (O(n)), then reverse for newest-first display.
+  // delta = total − previous total; undefined for the first snapshot (no predecessor).
   const rows = snapshots
-    .slice()
-    .reverse()
-    .map((snapshot, _idx, arr) => {
-      // calculateSnapshotDeltas needs the full original array (ascending order).
-      const deltas = calculateSnapshotDeltas(snapshots, snapshot.id);
-      return {
-        snapshot,
-        delta: deltas.changeSincePrevious,
-        isMonthlyClose: monthlyCloseIds.has(snapshot.id),
-      };
-    });
+    .map((snapshot, idx) => {
+      const prev = snapshots[idx - 1];
+      const delta = prev
+        ? {
+            amountMinor: snapshot.totalNetWorth.amountMinor - prev.totalNetWorth.amountMinor,
+            currency: snapshot.totalNetWorth.currency,
+          }
+        : undefined;
+      return { snapshot, delta, isMonthlyClose: monthlyCloseIds.has(snapshot.id) };
+    })
+    .reverse();
 
   // Collect all per-row deltas for proportional bar scaling.
   const allDeltas = rows.map((row) => row.delta);

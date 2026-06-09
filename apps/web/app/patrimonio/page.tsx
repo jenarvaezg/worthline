@@ -12,7 +12,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import {
-  buildCurrentUrl,
+  buildCurrentUrlFor,
   parseFormError,
   parseScopeCookie,
   resolveOkMessage,
@@ -38,7 +38,7 @@ export default async function PatrimonioPage({
   const persistence = runBootstrapHealthcheck();
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
-  const currentUrl = buildPatrimonioUrl(resolvedSearchParams);
+  const currentUrl = buildCurrentUrlFor("/patrimonio", resolvedSearchParams);
 
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
@@ -81,6 +81,8 @@ export default async function PatrimonioPage({
   const [assetsSection, liabilitiesSection] = projection
     ? projection.sections
     : [{ kind: "assets" as const, rows: [] }, { kind: "liabilities" as const, rows: [] }];
+
+  const liabilityTypeById = new Map(liabilities.map((l) => [l.id, l.type]));
 
   const isHousehold = workspace.mode === "household";
 
@@ -289,9 +291,7 @@ export default async function PatrimonioPage({
                 <tr id={row.id} key={row.id}>
                   <td>{row.name}</td>
                   <td>
-                    {liabilities.find((l) => l.id === row.id)?.type === "mortgage"
-                      ? "Hipoteca"
-                      : "Deuda"}
+                    {liabilityTypeById.get(row.id) === "mortgage" ? "Hipoteca" : "Deuda"}
                   </td>
                   <td>
                     {formatMoneyMinor({
@@ -374,31 +374,3 @@ export default async function PatrimonioPage({
   );
 }
 
-/**
- * Build the canonical return URL for /patrimonio, stripping one-shot feedback
- * params so banners never persist across later navigation.
- */
-function buildPatrimonioUrl(
-  searchParams?: Record<string, string | string[] | undefined>,
-): string {
-  const ONE_SHOT = new Set(["ok", "error", "form", "updated", "failed", "anchor"]);
-  const params = new URLSearchParams();
-
-  if (searchParams) {
-    for (const [key, value] of Object.entries(searchParams)) {
-      if (value === undefined) continue;
-      if (ONE_SHOT.has(key) || key.startsWith("v_")) continue;
-      if (Array.isArray(value)) {
-        for (const item of value) params.append(key, item);
-      } else {
-        params.set(key, value);
-      }
-    }
-  }
-
-  const qs = params.toString();
-  return qs ? `/patrimonio?${qs}` : "/patrimonio";
-}
-
-// Re-export for use in subpages
-export { buildPatrimonioUrl };

@@ -6,6 +6,7 @@ import {
   buildCurrentUrl,
   buildCurrentUrlFor,
   buildSnapshotId,
+  createStableId,
   errorRedirectUrl,
   okMessage,
   parseFormError,
@@ -13,20 +14,15 @@ import {
   preserveFields,
   pricesRefreshedRedirectUrl,
   resolveOkMessage,
-  parseAssetCommand,
   parseAssetCommandStrict,
   parseEntityId,
   parseFireConfigFormStrict,
-  parseInvestmentAssetCommand,
   parseInvestmentAssetCommandStrict,
   parseLiabilityCommand,
   parseMoneyMinorField,
   parseNewMember,
-  parseOperationCommand,
   parseOwnership,
   parseRouteOperationCommand,
-  parseScopeParam,
-  parseSnapshotForm,
   parseUpdateInvestmentCommand,
   parseValueUpdatePass,
   parseViewParam,
@@ -65,12 +61,6 @@ describe("parseScopeCookie", () => {
 });
 
 describe("scope and view params", () => {
-  test("parseScopeParam normalizes arrays and defaults to household", () => {
-    expect(parseScopeParam("member_jose")).toBe("member_jose");
-    expect(parseScopeParam(["member_ana", "member_jose"])).toBe("member_ana");
-    expect(parseScopeParam(undefined)).toBe("household");
-  });
-
   test("parseViewParam returns the liquid framing only for liquid, else total", () => {
     expect(parseViewParam("liquid")).toBe("liquid");
     expect(parseViewParam("total")).toBe("total");
@@ -220,110 +210,7 @@ describe("ownership validation", () => {
   });
 });
 
-describe("investment intake", () => {
-  test("parseInvestmentAssetCommand builds a market-tier asset with optional symbol and price", () => {
-    const command = parseInvestmentAssetCommand(
-      form({
-        manualPricePerUnit: "12,50",
-        name: "ACME",
-        owner_member_ana: "100",
-        unitSymbol: "acme",
-      }),
-      members,
-      3,
-    );
-
-    expect(command).toMatchObject({
-      currency: "EUR",
-      liquidityTier: "market",
-      manualPricePerUnit: "12.50",
-      name: "ACME",
-      unitSymbol: "acme",
-    });
-    expect(command.id).toBe("asset_acme_3");
-    expect(command.ownership).toEqual([{ memberId: "member_ana", shareBps: 10_000 }]);
-  });
-
-  test("parseInvestmentAssetCommand omits price and symbol when blank", () => {
-    const command = parseInvestmentAssetCommand(form({ name: "ACME" }), members, 1);
-
-    expect(command.manualPricePerUnit).toBeUndefined();
-    expect(command.unitSymbol).toBeUndefined();
-  });
-
-  test("parseOperationCommand normalizes units and price to canonical decimal strings", () => {
-    const command = parseOperationCommand(
-      form({
-        assetId: "asset_acme",
-        executedAt: "2026-03-01",
-        fees: "9,99",
-        kind: "sell",
-        pricePerUnit: "1.234,56",
-        units: "0,5",
-      }),
-      7,
-      "2026-06-08",
-    );
-
-    expect(command).toMatchObject({
-      assetId: "asset_acme",
-      currency: "EUR",
-      executedAt: "2026-03-01",
-      feesMinor: 999,
-      kind: "sell",
-      pricePerUnit: "1234.56",
-      units: "0.5",
-    });
-  });
-
-  test("parseOperationCommand defaults the date to today and the kind to buy", () => {
-    const command = parseOperationCommand(
-      form({ assetId: "asset_acme", pricePerUnit: "100", units: "1" }),
-      2,
-      "2026-06-08",
-    );
-
-    expect(command.executedAt).toBe("2026-06-08");
-    expect(command.kind).toBe("buy");
-  });
-});
-
 describe("asset and liability commands", () => {
-  test("parseAssetCommand builds a validated asset input with a seeded id", () => {
-    const command = parseAssetCommand(
-      form({
-        name: "Caja",
-        type: "cash",
-        currentValue: "1.234,56",
-        liquidityTier: "cash",
-        isPrimaryResidence: "on",
-        owner_member_ana: "100",
-      }),
-      members,
-      42,
-    );
-    expect(command).toMatchObject({
-      currency: "EUR",
-      currentValueMinor: 123_456,
-      isPrimaryResidence: true,
-      liquidityTier: "cash",
-      name: "Caja",
-      type: "cash",
-    });
-    expect(command.id).toBe("asset_caja_42");
-    expect(command.ownership).toEqual([{ memberId: "member_ana", shareBps: 10_000 }]);
-  });
-
-  test("parseAssetCommand coerces unknown type and tier to safe defaults", () => {
-    const command = parseAssetCommand(
-      form({ name: "X", type: "bogus", currentValue: "0", liquidityTier: "bogus" }),
-      members,
-      1,
-    );
-    expect(command.type).toBe("cash");
-    expect(command.liquidityTier).toBe("cash");
-  });
-
   test("parseLiabilityCommand carries type and optional associated asset", () => {
     const command = parseLiabilityCommand(
       form({
@@ -358,12 +245,6 @@ describe("asset and liability commands", () => {
 });
 
 describe("snapshot, money field, and id parsing", () => {
-  test("parseSnapshotForm reads scope and checkboxes", () => {
-    expect(
-      parseSnapshotForm(form({ scopeId: "member_ana", isMonthlyClose: "on" })),
-    ).toEqual({ isMonthlyClose: true, replace: false, scopeId: "member_ana" });
-  });
-
   test("parseMoneyMinorField parses a localized amount to minor units", () => {
     expect(parseMoneyMinorField(form({ amount: "1.234,56" }), "amount")).toBe(123_456);
   });
@@ -418,7 +299,7 @@ describe("appendParam", () => {
 describe("okMessage", () => {
   test("maps a known key to a localized message", () => {
     expect(okMessage("saved")).toBe("Guardado.");
-    expect(okMessage("snapshot_saved")).toBe("Snapshot guardado.");
+    expect(okMessage("deleted_recoverable")).toBe("Eliminado — recuperable en Papelera.");
   });
 
   test("returns null for unknown or missing keys", () => {

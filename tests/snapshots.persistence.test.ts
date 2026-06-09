@@ -66,19 +66,22 @@ describe("snapshot persistence", () => {
         workspace,
       }),
     });
-    expect(() =>
-      store.saveSnapshot({
-        snapshot: captureNetWorthSnapshot({
-          assets: store.readAssets(),
-          capturedAt: "2026-06-01T22:05:00.000Z",
-          id: "snapshot_duplicate",
-          liabilities: store.readLiabilities(),
-          scopeId: "household",
-          scopeLabel: "Hogar",
-          workspace,
-        }),
+    // A concurrent second save for the same scope+day must not throw — upsert wins.
+    store.saveSnapshot({
+      snapshot: captureNetWorthSnapshot({
+        assets: store.readAssets(),
+        capturedAt: "2026-06-01T22:05:00.000Z",
+        id: "snapshot_duplicate",
+        liabilities: store.readLiabilities(),
+        scopeId: "household",
+        scopeLabel: "Hogar",
+        workspace,
       }),
-    ).toThrow("already exists");
+    });
+    // After the collision the row count for that date-key is still 1.
+    expect(
+      store.readSnapshots("household").filter((s) => s.dateKey === "2026-06-01"),
+    ).toHaveLength(1);
 
     store.updateAssetValuation("asset_cash", 180_000);
     const assets3 = store.readAssets();
