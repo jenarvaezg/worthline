@@ -4,6 +4,7 @@ import type {
   CreateInvestmentOperationInput,
   CreateLiabilityInput,
   CreateManualAssetInput,
+  DomainViolation,
   FireScopeConfig,
   Member,
   MoneyMinor,
@@ -431,6 +432,21 @@ export function validateOwnershipSharesStrict(shares: OwnershipShare[]): string 
   const actualPct = (totalBps / 100).toFixed(totalBps % 100 === 0 ? 0 : 1);
 
   return `La propiedad suma ${actualPct}% — debe sumar 100%.`;
+}
+
+/**
+ * Map a single domain violation to a localized Spanish user-facing message.
+ * Intake owns the message text; the domain owns the stable code and context.
+ */
+export function mapDomainViolation(violation: DomainViolation): string {
+  switch (violation.code) {
+    case "ownership_split_invalid": {
+      const actualPct = (violation.totalBps / 100).toFixed(
+        violation.totalBps % 100 === 0 ? 0 : 1,
+      );
+      return `La propiedad suma ${actualPct}% — debe sumar 100%.`;
+    }
+  }
 }
 
 /** Result type for strict parse functions that can fail with a user-facing error. */
