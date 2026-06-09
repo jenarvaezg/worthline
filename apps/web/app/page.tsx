@@ -130,6 +130,12 @@ export default async function DashboardPage({
     workspace,
   } = state;
 
+  // Default owner for new holdings: the member whose scope is selected, else the
+  // first active member. The ownership control auto-completes to total 100%.
+  const ownershipScopeMemberId =
+    activeMembers.find((member) => member.id === selectedScope?.id)?.id ??
+    activeMembers[0]?.id;
+
   return (
     <main className="workspace">
       <header className="topbar">
@@ -334,7 +340,7 @@ export default async function DashboardPage({
               <label className="checkLine">
                 <input name="isPrimaryResidence" type="checkbox" /> Vivienda habitual
               </label>
-              <OwnershipInputs members={activeMembers} />
+              <OwnershipInputs members={activeMembers} scopeMemberId={ownershipScopeMemberId} />
               <button type="submit">Añadir activo</button>
             </form>
 
@@ -355,7 +361,7 @@ export default async function DashboardPage({
                   </option>
                 ))}
               </select>
-              <OwnershipInputs members={activeMembers} />
+              <OwnershipInputs members={activeMembers} scopeMemberId={ownershipScopeMemberId} />
               <button type="submit">Añadir deuda</button>
             </form>
           </div>
@@ -457,7 +463,7 @@ export default async function DashboardPage({
                 name="manualPricePerUnit"
                 placeholder="Precio actual/unidad EUR"
               />
-              <OwnershipInputs members={activeMembers} />
+              <OwnershipInputs members={activeMembers} scopeMemberId={ownershipScopeMemberId} />
               <button type="submit">Añadir inversión</button>
             </form>
 
@@ -755,20 +761,48 @@ export default async function DashboardPage({
   );
 }
 
-function OwnershipInputs({ members }: { members: Member[] }) {
+function OwnershipInputs({
+  members,
+  scopeMemberId,
+}: {
+  members: Member[];
+  scopeMemberId?: string | undefined;
+}) {
+  // A single active member implicitly owns 100% — no control needed.
+  if (members.length <= 1) {
+    return null;
+  }
+
+  const scopeMember = members.find((member) => member.id === scopeMemberId) ?? members[0]!;
+
   return (
     <fieldset className="ownershipGrid">
-      <legend>Ownership %</legend>
-      {members.map((member, index) => (
-        <label key={member.id}>
-          {member.name}
-          <input
-            defaultValue={index === 0 ? "100" : "0"}
-            inputMode="decimal"
-            name={`owner_${member.id}`}
-          />
-        </label>
-      ))}
+      <legend>Propiedad</legend>
+      <input name="scopeMemberId" type="hidden" value={scopeMember.id} />
+      <label className="ownerPreset">
+        <input defaultChecked name="ownershipPreset" type="radio" value="scope" />
+        100% {scopeMember.name}
+      </label>
+      <label className="ownerPreset">
+        <input name="ownershipPreset" type="radio" value="even" />
+        Repartir a partes iguales
+      </label>
+      <label className="ownerPreset">
+        <input name="ownershipPreset" type="radio" value="custom" />
+        Personalizado
+      </label>
+      <div className="ownerCustom">
+        {members.map((member, index) => (
+          <label key={member.id}>
+            {member.name}
+            <input
+              defaultValue={index === 0 ? "100" : "0"}
+              inputMode="decimal"
+              name={`owner_${member.id}`}
+            />
+          </label>
+        ))}
+      </div>
     </fieldset>
   );
 }
