@@ -13,11 +13,13 @@
     "build": "npm run build --workspaces --if-present",
     "lint": "eslint apps packages tests --max-warnings=0",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "test:watch": "vitest",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "format": "prettier --check ."
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/better-sqlite3": "latest",
     "@types/node": "latest",
     "drizzle-kit": "^0.31.10",
