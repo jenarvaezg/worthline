@@ -1,6 +1,7 @@
 "use server";
 
-import { withStore } from "@worthline/db";
+import { withStore, type WorthlineStore } from "@worthline/db";
+import { createInvestmentOperationSafe } from "@worthline/domain";
 import { fetchAndCachePrice, stooqProvider } from "@worthline/pricing";
 import { redirect } from "next/navigation";
 
@@ -9,6 +10,7 @@ import {
   appendParam,
   buildCurrentUrlFor,
   errorRedirectUrl,
+  mapDomainViolation,
   parseEntityId,
   parseInvestmentAssetCommandStrict,
   parseOwnership,
@@ -91,6 +93,7 @@ export async function createInvestmentAction(formData: FormData) {
 export async function recordOperationAction(
   routeAssetId: string,
   formData: FormData,
+  _store?: WorthlineStore,
 ) {
   const returnUrl = currentUrlOf(
     formData,
@@ -102,6 +105,9 @@ export async function recordOperationAction(
       message,
       values: preserveFields(formData, OPERATION_FORM_FIELDS),
     });
+
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
 
   const today = new Date().toISOString().slice(0, 10);
   const parsed = parseRouteOperationCommand(
@@ -115,11 +121,13 @@ export async function recordOperationAction(
     redirect(operationErrorUrl(parsed.error));
   }
 
-  try {
-    withStore((store) => store.recordOperation(parsed.command));
-  } catch {
-    redirect(operationErrorUrl("No se pudo registrar la operación."));
+  const domainResult = createInvestmentOperationSafe(parsed.command);
+
+  if (!domainResult.ok) {
+    redirect(operationErrorUrl(mapDomainViolation(domainResult.violations[0])));
   }
+
+  runWith((store) => store.recordOperation(domainResult.value));
 
   redirect(successRedirectUrl(returnUrl, "saved"));
 }
