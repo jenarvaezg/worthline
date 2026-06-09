@@ -13,7 +13,7 @@ import type { LiquidityTier } from "./classification";
 import { tierOfAsset } from "./classification";
 import type { MoneyMinor } from "./money";
 import { money } from "./money";
-import { allocateOwnedMoneyMinor } from "./ownership";
+import { allocateScopedHolding } from "./scope-allocation";
 import type { ScopeOption } from "./scope";
 import { resolveScopeMemberIds } from "./scope";
 import type { Liability, ManualAsset, OwnershipShare, Workspace } from "./index";
@@ -128,9 +128,10 @@ export function projectPortfolio(input: PortfolioProjectionInput): PortfolioProj
   let grossAssetsMinor = 0;
 
   for (const asset of assets) {
-    const shareBps = asset.ownership
-      .filter((share) => scopeMemberIds.has(share.memberId))
-      .reduce((sum, share) => sum + share.shareBps, 0);
+    const { ownedMinor: scopedValue, totalShareBps: shareBps } = allocateScopedHolding(
+      asset.currentValue.amountMinor,
+      { ownership: asset.ownership, scopeMemberIds },
+    );
 
     // Exclude rows where the scope has no ownership stake at all.
     // Zero-value assets that ARE owned by the scope must still appear so
@@ -138,11 +139,6 @@ export function projectPortfolio(input: PortfolioProjectionInput): PortfolioProj
     if (shareBps === 0) {
       continue;
     }
-
-    const scopedValue = allocateOwnedMoneyMinor(asset.currentValue.amountMinor, {
-      ownership: asset.ownership,
-      scopeMemberIds,
-    });
 
     const tier = tierOfAsset(asset);
 
@@ -172,19 +168,15 @@ export function projectPortfolio(input: PortfolioProjectionInput): PortfolioProj
   let debtsMinor = 0;
 
   for (const liability of liabilities) {
-    const scopedValue = allocateOwnedMoneyMinor(liability.currentBalance.amountMinor, {
-      ownership: liability.ownership,
-      scopeMemberIds,
-    });
+    const { ownedMinor: scopedValue, totalShareBps: shareBps } = allocateScopedHolding(
+      liability.currentBalance.amountMinor,
+      { ownership: liability.ownership, scopeMemberIds },
+    );
 
     // Exclude rows where the scope holds 0% of this liability.
     if (scopedValue === 0) {
       continue;
     }
-
-    const shareBps = liability.ownership
-      .filter((share) => scopeMemberIds.has(share.memberId))
-      .reduce((sum, share) => sum + share.shareBps, 0);
 
     const ownership: RowOwnership = {
       shares: liability.ownership,

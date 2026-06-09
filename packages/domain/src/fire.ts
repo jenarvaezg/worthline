@@ -3,7 +3,7 @@ import type { CurrencyCode, MoneyMinor } from "./money";
 import { money } from "./money";
 import type { ManualAsset, Workspace } from "./index";
 import { resolveScopeMemberIds } from "./index";
-import { allocateOwnedMoneyMinor } from "./ownership";
+import { allocateScopedHolding } from "./scope-allocation";
 
 export interface FireScopeConfig {
   monthlySpendingMinor: number;
@@ -84,10 +84,10 @@ export function calculateFireForScope(
   const eligibleAssetsMinor = eligible.reduce((sum, asset) => {
     return (
       sum +
-      allocateOwnedMoneyMinor(asset.currentValue.amountMinor, {
+      allocateScopedHolding(asset.currentValue.amountMinor, {
         ownership: asset.ownership,
         scopeMemberIds,
-      })
+      }).ownedMinor
     );
   }, 0);
 

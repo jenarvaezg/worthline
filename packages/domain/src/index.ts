@@ -62,6 +62,10 @@ import { resolveScopeMemberIds } from "./scope";
 
 export { allocateOwnedMoneyMinor } from "./ownership";
 
+export type { ScopedHolding } from "./scope-allocation";
+export { allocateScopedHolding } from "./scope-allocation";
+import { allocateScopedHolding } from "./scope-allocation";
+
 export type {
   PortfolioProjection,
   PortfolioProjectionInput,
@@ -73,7 +77,6 @@ export type {
   RowOwnership,
 } from "./portfolio-projection";
 export { projectPortfolio } from "./portfolio-projection";
-import { allocateOwnedMoneyMinor } from "./ownership";
 
 export type { DecimalString } from "./decimal";
 
@@ -393,10 +396,10 @@ export function calculateNetWorth(input: {
 
   for (const asset of input.assets) {
     const scoped = money(
-      allocateOwnedMoneyMinor(asset.currentValue.amountMinor, {
+      allocateScopedHolding(asset.currentValue.amountMinor, {
         ownership: asset.ownership,
         scopeMemberIds,
-      }),
+      }).ownedMinor,
       currency,
     );
 
@@ -413,10 +416,10 @@ export function calculateNetWorth(input: {
 
   for (const liability of input.liabilities ?? []) {
     const scoped = money(
-      allocateOwnedMoneyMinor(liability.currentBalance.amountMinor, {
+      allocateScopedHolding(liability.currentBalance.amountMinor, {
         ownership: liability.ownership,
         scopeMemberIds,
-      }),
+      }).ownedMinor,
       currency,
     );
 
@@ -603,10 +606,10 @@ export function buildLiquidityBreakdown(input: {
       continue;
     }
 
-    const scopedValue = allocateOwnedMoneyMinor(asset.currentValue.amountMinor, {
+    const scopedValue = allocateScopedHolding(asset.currentValue.amountMinor, {
       ownership: asset.ownership,
       scopeMemberIds,
-    });
+    }).ownedMinor;
     const scoped = money(scopedValue, currency);
 
     breakdown.grossAssets = addMoney(breakdown.grossAssets, scoped);
@@ -629,10 +632,10 @@ export function buildLiquidityBreakdown(input: {
       continue;
     }
 
-    const scopedValue = allocateOwnedMoneyMinor(liability.currentBalance.amountMinor, {
+    const scopedValue = allocateScopedHolding(liability.currentBalance.amountMinor, {
       ownership: liability.ownership,
       scopeMemberIds,
-    });
+    }).ownedMinor;
     const scoped = money(scopedValue, currency);
 
     breakdown.debts = addMoney(breakdown.debts, scoped);
