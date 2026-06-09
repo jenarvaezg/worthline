@@ -38,6 +38,52 @@ export interface PositionView extends PositionSummary {
   name: string;
 }
 
+/**
+ * Converts an array of raw values (e.g. bps counts) into integer percentages
+ * that sum to exactly 100 using the Largest Remainder Method.
+ * Preserves input order. All-zero inputs return all zeros.
+ */
+export function largestRemainderPercentages(values: number[]): number[] {
+  if (values.length === 0) return [];
+
+  const total = values.reduce((sum, v) => sum + v, 0);
+
+  if (total === 0) return values.map(() => 0);
+
+  const floats = values.map((v) => (v / total) * 100);
+  const floors = floats.map((f) => Math.floor(f));
+  const remainders = floats.map((f, i) => f - floors[i]!);
+  const deficit = 100 - floors.reduce((a, b) => a + b, 0);
+
+  // Sort indices by remainder descending, allocate the deficit 1-by-1.
+  const order = remainders
+    .map((r, i) => ({ i, r }))
+    .sort((a, b) => b.r - a.r)
+    .map((x) => x.i);
+
+  for (let k = 0; k < deficit; k++) {
+    floors[order[k]!]! += 1;
+  }
+
+  return floors;
+}
+
+/**
+ * Scales an array of signed delta amounts (integer minor units) to bar widths
+ * in the range [0, 100], proportional to the absolute maximum value.
+ * Zero deltas produce width 0. Preserves input order and sign information
+ * is kept by the caller (positive/negative class on the bar element).
+ */
+export function signedDeltaBarWidths(deltas: number[]): number[] {
+  if (deltas.length === 0) return [];
+
+  const maxAbs = Math.max(...deltas.map((d) => Math.abs(d)));
+
+  if (maxAbs === 0) return deltas.map(() => 0);
+
+  return deltas.map((d) => Math.round((Math.abs(d) / maxAbs) * 100));
+}
+
 export interface OnboardingStep {
   id: string;
   label: string;
