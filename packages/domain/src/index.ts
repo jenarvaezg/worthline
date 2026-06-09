@@ -5,6 +5,7 @@ import type { LiquidityTier } from "./classification";
 import type { MoneyMinor } from "./money";
 
 import { addMoney, assertMinorInteger, money, subtractMoney } from "./money";
+import { deriveMonthlyCloses } from "./snapshot-policy";
 
 export type { CurrencyCode, MoneyMinor } from "./money";
 export {
@@ -66,6 +67,9 @@ export type { DecimalString } from "./decimal";
 
 export type { DashboardState, LocalPersistenceStatus, OnboardingStep } from "./dashboard";
 export { deriveOnboardingProgress, prepareDashboardState } from "./dashboard";
+
+export type { CaptureDecision, SnapshotPolicyEntry } from "./snapshot-policy";
+export { deriveMonthlyCloses, planSnapshotCapture } from "./snapshot-policy";
 
 export type WorkspaceMode = "individual" | "household";
 
@@ -512,10 +516,19 @@ export function calculateSnapshotDeltas(
     .sort((left, right) => left.capturedAt.localeCompare(right.capturedAt));
   const index = scopedSnapshots.findIndex((candidate) => candidate.id === snapshot.id);
   const previousSnapshot = index > 0 ? scopedSnapshots[index - 1] : undefined;
-  const previousMonthlyClose = scopedSnapshots
+
+  // Monthly closes are derived — the last snapshot of each calendar month wins.
+  // The reference close for delta is the most recent close from a prior month
+  // (different from the current snapshot's month).
+  const priorMonthSnapshots = scopedSnapshots
     .slice(0, index)
+    .filter((candidate) => candidate.monthKey < snapshot.monthKey);
+  const monthlyCloseIds = deriveMonthlyCloses(priorMonthSnapshots);
+  const closedMonthIds = new Set(monthlyCloseIds.values());
+  const previousMonthlyClose = priorMonthSnapshots
+    .slice()
     .reverse()
-    .find((candidate) => candidate.isMonthlyClose);
+    .find((candidate) => closedMonthIds.has(candidate.id));
 
   return {
     snapshot,
