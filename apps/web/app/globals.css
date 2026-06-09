@@ -504,7 +504,7 @@ th:last-child {
   border: 1px solid var(--line);
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   margin: 0;
   padding: 10px;
 }
@@ -515,6 +515,24 @@ th:last-child {
   font-weight: 850;
   padding: 0 4px;
   text-transform: uppercase;
+}
+
+.ownerPreset {
+  align-items: center;
+  display: flex !important;
+  flex-direction: row;
+  gap: 8px !important;
+}
+
+.ownerPreset input {
+  min-height: 18px;
+  width: 18px;
+}
+
+.ownerCustom {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .checkLine {

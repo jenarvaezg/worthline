@@ -78,20 +78,123 @@ export function parseMoneyMinorField(formData: FormData, field: string): number 
   return parseDecimalToMinorStrict(String(formData.get(field) ?? ""));
 }
 
+export type OwnershipPreset = "scope" | "even" | "custom";
+
+/**
+ * Resolve an ownership split that is guaranteed to total 10000 bps, so a create
+ * form can never be rejected for ownership. A single active member always owns
+ * 100%. Presets: "scope" (100% to the active scope member), "even" (split
+ * equally, distributing the remainder deterministically), and "custom" (honor
+ * the entered bps, auto-completing any shortfall across the unset members).
+ */
+export function resolveOwnershipSplit(input: {
+  activeMembers: Member[];
+  scopeMemberId?: string | undefined;
+  preset: OwnershipPreset;
+  customBps?: Record<string, number> | undefined;
+}): OwnershipShare[] {
+  const members = input.activeMembers;
+
+  if (members.length === 0) {
+    return [];
+  }
+
+  if (members.length === 1) {
+    return [{ memberId: members[0]!.id, shareBps: 10_000 }];
+  }
+
+  const scopeMember =
+    members.find((member) => member.id === input.scopeMemberId) ?? members[0]!;
+
+  if (input.preset === "scope") {
+    return [{ memberId: scopeMember.id, shareBps: 10_000 }];
+  }
+
+  if (input.preset === "even") {
+    return evenSplit(members);
+  }
+
+  const customBps = input.customBps ?? {};
+  const entries = members.map((member) => ({
+    memberId: member.id,
+    shareBps: Math.max(0, Math.round(customBps[member.id] ?? 0)),
+  }));
+  const provided = entries.reduce((sum, entry) => sum + entry.shareBps, 0);
+
+  if (provided === 0) {
+    return [{ memberId: scopeMember.id, shareBps: 10_000 }];
+  }
+
+  if (provided < 10_000) {
+    const unset = entries.filter((entry) => entry.shareBps === 0);
+
+    if (unset.length > 0) {
+      distributeRemainder(unset, 10_000 - provided);
+    } else {
+      entries[0]!.shareBps += 10_000 - provided;
+    }
+  } else if (provided > 10_000) {
+    for (const entry of entries) {
+      entry.shareBps = Math.round((entry.shareBps / provided) * 10_000);
+    }
+    const drift = 10_000 - entries.reduce((sum, entry) => sum + entry.shareBps, 0);
+
+    if (drift !== 0) {
+      largestEntry(entries).shareBps += drift;
+    }
+  }
+
+  return entries.filter((entry) => entry.shareBps > 0);
+}
+
+function evenSplit(members: Member[]): OwnershipShare[] {
+  const base = Math.floor(10_000 / members.length);
+  let remainder = 10_000 - base * members.length;
+
+  return members.map((member) => {
+    const extra = remainder > 0 ? 1 : 0;
+    remainder -= extra;
+
+    return { memberId: member.id, shareBps: base + extra };
+  });
+}
+
+function distributeRemainder(
+  entries: Array<{ memberId: string; shareBps: number }>,
+  amount: number,
+): void {
+  const base = Math.floor(amount / entries.length);
+  let remainder = amount - base * entries.length;
+
+  for (const entry of entries) {
+    const extra = remainder > 0 ? 1 : 0;
+    remainder -= extra;
+    entry.shareBps = base + extra;
+  }
+}
+
+function largestEntry<T extends { shareBps: number }>(entries: T[]): T {
+  return entries.reduce((largest, entry) =>
+    entry.shareBps > largest.shareBps ? entry : largest,
+  );
+}
+
 export function parseOwnership(formData: FormData, members: Member[]): OwnershipShare[] {
   const activeMembers = members.filter((member) => !member.disabledAt);
-  const ownership = activeMembers
-    .map((member) => ({
-      memberId: member.id,
-      shareBps: Math.round(
-        parseDecimal(String(formData.get(`owner_${member.id}`) ?? "")) * 100,
-      ),
-    }))
-    .filter((share) => share.shareBps > 0);
+  const preset = parseOwnershipPreset(formData.get("ownershipPreset"));
+  const scopeMemberId = String(formData.get("scopeMemberId") ?? "") || undefined;
+  const customBps = Object.fromEntries(
+    activeMembers.map((member) => [
+      member.id,
+      Math.round(parseDecimal(String(formData.get(`owner_${member.id}`) ?? "")) * 100),
+    ]),
+  );
 
-  return ownership.length > 0
-    ? ownership
-    : [{ memberId: activeMembers[0]?.id ?? "", shareBps: 10_000 }];
+  return resolveOwnershipSplit({ activeMembers, scopeMemberId, preset, customBps });
+}
+
+function parseOwnershipPreset(value: FormDataEntryValue | null): OwnershipPreset {
+  return value === "scope" || value === "even" ? value : "custom";
 }
 
 /**

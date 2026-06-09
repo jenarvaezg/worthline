@@ -15,6 +15,7 @@ import {
   parseSnapshotForm,
   parseViewParam,
   parseWorkspaceInit,
+  resolveOwnershipSplit,
   validateOwnershipShares,
 } from "./intake";
 
@@ -83,6 +84,66 @@ describe("ownership parsing", () => {
   test("falls back to a single full owner when nothing positive is entered", () => {
     const ownership = parseOwnership(form({}), members);
     expect(ownership).toEqual([{ memberId: "member_ana", shareBps: 10_000 }]);
+  });
+});
+
+describe("resolveOwnershipSplit", () => {
+  const ana: Member = { id: "member_ana", name: "Ana" };
+  const jose: Member = { id: "member_jose", name: "Jose" };
+  const lia: Member = { id: "member_lia", name: "Lia" };
+  const total = (shares: { shareBps: number }[]) =>
+    shares.reduce((sum, share) => sum + share.shareBps, 0);
+
+  test("a single active member always owns 100%", () => {
+    expect(resolveOwnershipSplit({ activeMembers: [jose], preset: "even" })).toEqual([
+      { memberId: "member_jose", shareBps: 10_000 },
+    ]);
+  });
+
+  test("the scope preset gives 100% to the active scope member", () => {
+    expect(
+      resolveOwnershipSplit({
+        activeMembers: [ana, jose],
+        scopeMemberId: "member_jose",
+        preset: "scope",
+      }),
+    ).toEqual([{ memberId: "member_jose", shareBps: 10_000 }]);
+  });
+
+  test("the even preset splits equally and totals 100%", () => {
+    expect(resolveOwnershipSplit({ activeMembers: [ana, jose], preset: "even" })).toEqual([
+      { memberId: "member_ana", shareBps: 5_000 },
+      { memberId: "member_jose", shareBps: 5_000 },
+    ]);
+  });
+
+  test("an even split of three distributes the remainder to total exactly 100%", () => {
+    const split = resolveOwnershipSplit({ activeMembers: [ana, jose, lia], preset: "even" });
+    expect(total(split)).toBe(10_000);
+    expect(split.map((share) => share.shareBps)).toEqual([3_334, 3_333, 3_333]);
+  });
+
+  test("the custom preset keeps shares that already total 100%", () => {
+    expect(
+      resolveOwnershipSplit({
+        activeMembers: [ana, jose],
+        preset: "custom",
+        customBps: { member_ana: 3_000, member_jose: 7_000 },
+      }),
+    ).toEqual([
+      { memberId: "member_ana", shareBps: 3_000 },
+      { memberId: "member_jose", shareBps: 7_000 },
+    ]);
+  });
+
+  test("the custom preset auto-completes the remainder for unset members", () => {
+    const split = resolveOwnershipSplit({
+      activeMembers: [ana, jose],
+      preset: "custom",
+      customBps: { member_ana: 3_000 },
+    });
+    expect(total(split)).toBe(10_000);
+    expect(split.find((share) => share.memberId === "member_jose")?.shareBps).toBe(7_000);
   });
 });
 
