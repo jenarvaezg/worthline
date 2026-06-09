@@ -14,6 +14,7 @@ export {
   formatMoneyInput,
   formatMoneyMinor,
   money,
+  moneySign,
   parseDecimal,
   parseDecimalStrict,
   parseDecimalToMinor,
@@ -211,21 +212,36 @@ export interface NetWorthSummary {
   debts: MoneyMinor;
 }
 
-export type NetWorthPresentationMode = "liquid" | "housing-inclusive" | "gross-debt";
+/**
+ * Which figure headlines the dashboard. A framing re-labels the hero number; it
+ * never introduces a new figure (see ADR 0003). "total" = net worth (everything),
+ * "liquid" = liquid net worth (cash + market tiers).
+ */
+export type NetWorthFraming = "total" | "liquid";
 
-export type NetWorthPresentation =
-  | {
-      mode: "liquid" | "housing-inclusive";
-      label: string;
-      primary: MoneyMinor;
-    }
-  | {
-      mode: "gross-debt";
-      label: string;
-      primary: MoneyMinor;
-      gross: MoneyMinor;
-      debt: MoneyMinor;
-    };
+export type NetWorthBreakdownId =
+  | "liquid-net-worth"
+  | "housing-equity"
+  | "gross-assets"
+  | "debts";
+
+export interface NetWorthBreakdownItem {
+  id: NetWorthBreakdownId;
+  label: string;
+  value: MoneyMinor;
+}
+
+/**
+ * The headline figure for the chosen framing plus the always-visible breakdown.
+ * The breakdown is a fixed set, identical across framings — the framing only
+ * decides which figure is the hero.
+ */
+export interface NetWorthPresentation {
+  framing: NetWorthFraming;
+  headlineLabel: string;
+  headline: MoneyMinor;
+  breakdown: NetWorthBreakdownItem[];
+}
 
 export interface NetWorthSnapshot {
   id: string;
@@ -272,6 +288,8 @@ export interface LiquidityTierBreakdown {
   netValue: MoneyMinor;
   grossAssets: MoneyMinor;
   debts: MoneyMinor;
+  /** This tier's share of the scope's total gross assets, in basis points. */
+  shareOfGrossBps: number;
   assets: LiquidityComponent[];
   liabilities: LiquidityComponent[];
 }
@@ -401,30 +419,20 @@ export function calculateNetWorth(input: {
 
 export function presentNetWorth(
   summary: NetWorthSummary,
-  mode: NetWorthPresentationMode,
+  framing: NetWorthFraming,
 ): NetWorthPresentation {
-  if (mode === "liquid") {
-    return {
-      label: "Neto liquido",
-      mode,
-      primary: summary.liquidNetWorth,
-    };
-  }
-
-  if (mode === "housing-inclusive") {
-    return {
-      label: "Neto con vivienda",
-      mode,
-      primary: summary.totalNetWorth,
-    };
-  }
+  const breakdown: NetWorthBreakdownItem[] = [
+    { id: "liquid-net-worth", label: "Neto liquido", value: summary.liquidNetWorth },
+    { id: "housing-equity", label: "Vivienda neta", value: summary.housingEquity },
+    { id: "gross-assets", label: "Activos brutos", value: summary.grossAssets },
+    { id: "debts", label: "Deudas", value: summary.debts },
+  ];
 
   return {
-    debt: summary.debts,
-    gross: summary.grossAssets,
-    label: "Activos brutos y deudas",
-    mode,
-    primary: summary.totalNetWorth,
+    breakdown,
+    framing,
+    headline: framing === "liquid" ? summary.liquidNetWorth : summary.totalNetWorth,
+    headlineLabel: framing === "liquid" ? "Neto liquido" : "Neto total",
   };
 }
 
@@ -529,7 +537,7 @@ export function calculateSnapshotDeltas(
   };
 }
 
-export function buildLiquidityPyramid(input: {
+export function buildLiquidityBreakdown(input: {
   workspace: Workspace;
   scopeId: string;
   assets: ManualAsset[];
@@ -546,6 +554,7 @@ export function buildLiquidityPyramid(input: {
       grossAssets: money(0, currency),
       liabilities: [],
       netValue: money(0, currency),
+      shareOfGrossBps: 0,
       tier,
     });
   }
@@ -605,7 +614,30 @@ export function buildLiquidityPyramid(input: {
     }
   }
 
-  return defaultLiquidityTierOrder.map((tier) => tiers.get(tier)!);
+  const totalGross = defaultLiquidityTierOrder.reduce(
+    (sum, tier) => sum + tiers.get(tier)!.grossAssets.amountMinor,
+    0,
+  );
+
+  for (const tier of defaultLiquidityTierOrder) {
+    const breakdown = tiers.get(tier)!;
+    breakdown.shareOfGrossBps =
+      totalGross > 0
+        ? Math.round((breakdown.grossAssets.amountMinor / totalGross) * 10_000)
+        : 0;
+  }
+
+  // Ordered most→least liquid (cash at the top), so the breakdown reads as a
+  // liquidity ladder ending in the illiquid housing tier.
+  const liquidFirstOrder: LiquidityTier[] = [
+    "cash",
+    "market",
+    "retirement",
+    "illiquid",
+    "housing",
+  ];
+
+  return liquidFirstOrder.map((tier) => tiers.get(tier)!);
 }
 
 function assertCurrency(currency: CurrencyCode): void {

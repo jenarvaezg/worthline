@@ -205,7 +205,8 @@ h3 {
 }
 
 .scopeTabs,
-.viewTabs {
+.viewTabs,
+.framingTabs {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -213,7 +214,8 @@ h3 {
 }
 
 .scopeTabs a,
-.viewTabs a {
+.viewTabs a,
+.framingTabs a {
   border: 1px solid var(--line-strong);
   color: var(--ink);
   font-size: 0.76rem;
@@ -226,9 +228,78 @@ h3 {
 .scopeTabs a.active,
 .scopeTabs a:hover,
 .viewTabs a.active,
-.viewTabs a:hover {
+.viewTabs a:hover,
+.framingTabs a.active,
+.framingTabs a:hover {
   background: var(--ink);
   color: var(--paper-strong);
+}
+
+.headline {
+  margin-top: 16px;
+}
+
+.headline > span {
+  color: var(--muted);
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.headline > strong {
+  display: block;
+  font-family: "Iosevka", "SFMono-Regular", monospace;
+  font-size: clamp(2.2rem, 6vw, 3.6rem);
+  font-weight: 800;
+  line-height: 1;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
+.breakdown {
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 14px;
+  padding-top: 12px;
+}
+
+.breakdown span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.breakdown b {
+  color: var(--ink);
+  font-family: "Iosevka", "SFMono-Regular", monospace;
+}
+
+/* Sign-aware money: gain green, loss red. Paired with the minus sign that
+   formatMoneyMinor already renders, so sign is never color-only. */
+.pos {
+  color: var(--green);
+}
+
+.neg {
+  color: var(--red);
+}
+
+.historyBar b.pos {
+  color: var(--green);
+}
+
+.historyBar b.neg {
+  color: var(--red);
+}
+
+.historyBar.negative i {
+  background: var(--red);
 }
 
 .deltaStrip {
@@ -511,11 +582,30 @@ th:last-child {
 .tier summary {
   align-items: center;
   cursor: pointer;
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(96px, auto) minmax(60px, 1fr) auto 44px;
   list-style: none;
   min-height: 54px;
   padding: 0 14px;
+}
+
+.tierBar {
+  background: rgba(23, 32, 30, 0.07);
+  display: block;
+  height: 10px;
+}
+
+.tierBar i {
+  background: var(--ink);
+  display: block;
+  height: 100%;
+}
+
+.tierShare {
+  color: var(--muted);
+  font-family: "Iosevka", "SFMono-Regular", monospace;
+  text-align: right;
 }
 
 .tier summary::-webkit-details-marker {
@@ -534,23 +624,24 @@ th:last-child {
   font-family: "Iosevka", "SFMono-Regular", monospace;
 }
 
-.tier.housing {
-  background: rgba(194, 154, 46, 0.14);
-  margin-inline: 40px;
-}
-
-.tier.locked {
-  background: rgba(36, 77, 114, 0.13);
-  margin-inline: 28px;
+.tier.cash {
+  background: rgba(185, 68, 47, 0.1);
 }
 
 .tier.market {
   background: rgba(0, 111, 95, 0.12);
-  margin-inline: 14px;
 }
 
-.tier.cash {
-  background: rgba(185, 68, 47, 0.1);
+.tier.retirement {
+  background: rgba(36, 77, 114, 0.13);
+}
+
+.tier.illiquid {
+  background: rgba(127, 144, 136, 0.16);
+}
+
+.tier.housing {
+  background: rgba(194, 154, 46, 0.14);
 }
 
 .tierDetails {

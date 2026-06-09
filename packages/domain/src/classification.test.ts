@@ -9,7 +9,7 @@ import {
   tierOfLiability,
 } from "./classification";
 import {
-  buildLiquidityPyramid,
+  buildLiquidityBreakdown,
   calculateNetWorth,
   createLiability,
   createManualAsset,
@@ -201,7 +201,7 @@ describe("summary and pyramid reconcile on debt classification", () => {
       scopeId: "household",
       workspace,
     });
-    const pyramid = buildLiquidityPyramid({
+    const pyramid = buildLiquidityBreakdown({
       assets,
       liabilities,
       scopeId: "household",

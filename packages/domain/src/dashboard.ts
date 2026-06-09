@@ -12,8 +12,8 @@ import type {
   FireScopeConfig,
   Liability,
   ManualAsset,
+  NetWorthFraming,
   NetWorthPresentation,
-  NetWorthPresentationMode,
   NetWorthSummary,
   PositionSummary,
   ScopeOption,
@@ -23,7 +23,7 @@ import type {
 import type { LiquidityTierBreakdown } from "./index";
 import type { DashboardShell, DomainWarning } from "./index";
 import {
-  buildLiquidityPyramid,
+  buildLiquidityBreakdown,
   calculateFireForScope,
   calculateNetWorth,
   calculateSnapshotDeltas,
@@ -59,7 +59,7 @@ export interface DashboardState {
   investmentAssets: ManualAsset[];
   today: string;
   warnings: DomainWarning[];
-  selectedView: NetWorthPresentationMode;
+  selectedView: NetWorthFraming;
 }
 
 export function prepareDashboardState(input: {
@@ -73,7 +73,7 @@ export function prepareDashboardState(input: {
   selectedScope: ScopeOption | undefined;
   snapshots: import("./index").NetWorthSnapshot[];
   fireConfig: Record<string, FireScopeConfig>;
-  selectedView: NetWorthPresentationMode;
+  selectedView: NetWorthFraming;
 }): DashboardState {
   const { workspace, assets, liabilities, selectedScope, persistence } = input;
 
@@ -103,7 +103,7 @@ export function prepareDashboardState(input: {
 
   const pyramid =
     workspace && selectedScope
-      ? buildLiquidityPyramid({
+      ? buildLiquidityBreakdown({
           assets,
           liabilities,
           scopeId: selectedScope.id,
