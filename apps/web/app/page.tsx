@@ -1,27 +1,24 @@
 import {
-  captureNetWorthSnapshot,
   formatMoneyMinor,
   largestRemainderPercentages,
-  listScopeOptions,
   moneySign,
-  planSnapshotCapture,
-  prepareDashboardState,
   signedDeltaBarWidths,
 } from "@worthline/domain";
-import type { LiquidityTier, ManualAsset, MoneyMinor, NetWorthFraming } from "@worthline/domain";
+import type { LiquidityTier, MoneyMinor, NetWorthFraming } from "@worthline/domain";
 import { refreshStalePrices } from "@worthline/pricing";
-import { runBootstrapHealthcheck, withStore } from "@worthline/db";
+import { createWorthlineStore, runBootstrapHealthcheck } from "@worthline/db";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import {
   buildCurrentUrl,
-  buildSnapshotId,
   parseScopeCookie,
   parseViewParam,
   SCOPE_COOKIE_NAME,
 } from "./intake";
+import { loadDashboard } from "./load-dashboard";
+import type { RefreshPricesResult } from "./load-dashboard";
 import { refreshAndPersistStalePrices } from "./refresh-prices";
 import Shell from "./shell";
 
@@ -61,80 +58,37 @@ export default async function DashboardPage({
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
-  // Auto-refresh stale prices first — before snapshot capture — so the day's
-  // snapshot reflects refreshed prices (ADR 0005 + #52).
-  const investmentAssetsMeta = withStore((store) => store.readInvestmentAssetsWithMeta());
-  const initialPriceCache = withStore((store) => store.readAllPriceCacheEntries());
-  const { priceCache } = await refreshAndPersistStalePrices({
-    cacheEntries: initialPriceCache,
-    assets: investmentAssetsMeta,
-    nowIso: persistence.checkedAt,
-    refreshStalePrices,
-    upsertPrice: (price) => withStore((store) => store.upsertPrice(price)),
-    readCache: () => withStore((store) => store.readAllPriceCacheEntries()),
-  });
+  const now = persistence.checkedAt;
+  const today = now.slice(0, 10);
 
-  const storeData = withStore((store) => {
-    const workspace = store.readWorkspace();
-
-    if (!workspace) {
-      return null;
-    }
-
-    const scopes = listScopeOptions(workspace);
-    const selectedScope =
-      scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
-
-    // Automatic capture-on-load: at most one snapshot per scope per day,
-    // latest wins (ADR 0005). Runs for every scope so all scopes get history.
-    const today = new Date().toISOString().slice(0, 10);
-    const assets = store.readAssets();
-    const liabilities = store.readLiabilities();
-
-    for (const scope of scopes) {
-      const existing = store.readSnapshots(scope.id);
-      const plan = planSnapshotCapture(existing, scope.id, today);
-
-      if (plan.shouldCapture) {
-        const now = new Date().toISOString();
-        const snapshot = captureNetWorthSnapshot({
+  const store = createWorthlineStore();
+  let state;
+  try {
+    state = await loadDashboard({
+      store,
+      persistence,
+      scopeId: cookieScopeId,
+      selectedView,
+      today,
+      now,
+      refreshPrices: async ({ cacheEntries, assets, nowIso }): Promise<RefreshPricesResult> => {
+        return refreshAndPersistStalePrices({
+          cacheEntries,
           assets,
-          capturedAt: now,
-          id: buildSnapshotId(scope.id, now, Date.now()),
-          liabilities,
-          scopeId: scope.id,
-          scopeLabel: scope.label,
-          workspace,
+          nowIso,
+          refreshStalePrices,
+          upsertPrice: (price) => store.upsertPrice(price),
+          readCache: () => store.readAllPriceCacheEntries(),
         });
-        store.saveSnapshot({ snapshot, replace: plan.replacesId !== undefined });
-      }
-    }
-
-    return {
-      assets: store.readAssets(),
-      fireConfig: store.readFireConfig(),
-      liabilities: store.readLiabilities(),
-      positions: selectedScope ? store.readPositions(selectedScope.id) : [],
-      overrides: store.readWarningOverrides(),
-      priceCache: store.readAllPriceCacheEntries(),
-      trash: store.readTrash(),
-      scopes,
-      selectedScope,
-      snapshots: selectedScope ? store.readSnapshots(selectedScope.id) : [],
-      workspace,
-    };
-  });
-
-  if (!storeData) {
-    redirect("/empezar");
+      },
+    });
+  } finally {
+    store.close();
   }
 
-  const state = prepareDashboardState({
-    ...storeData,
-    persistence,
-    priceCache,
-    selectedView,
-  });
+  if (state.needsOnboarding) {
+    redirect("/empezar");
+  }
 
   const {
     dashboard,
