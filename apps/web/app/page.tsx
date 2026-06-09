@@ -103,6 +103,27 @@ export default async function DashboardPage({
   const formOk = resolveOkMessage(resolvedSearchParams);
   const isFireEdit = resolvedSearchParams?.fireEdit === "true";
   const currentUrl = buildCurrentUrl(resolvedSearchParams);
+  // Auto-refresh stale prices first — before snapshot capture — so the day's
+  // snapshot reflects refreshed prices (ADR 0005 + #52). Failures degrade to
+  // "Fallido" labels, never an error page.
+  const investmentAssetsMeta = withStore((store) => store.readInvestmentAssetsWithMeta());
+  const initialPriceCache = withStore((store) => store.readAllPriceCacheEntries());
+  const refreshedPrices = await refreshStalePrices(
+    initialPriceCache,
+    investmentAssetsMeta,
+    persistence.checkedAt,
+  ).catch(() => null);
+
+  // Persist refreshed prices and re-read so capture + render see the latest state.
+  const priceCache = withStore((store) => {
+    if (refreshedPrices) {
+      for (const price of refreshedPrices.refreshed) {
+        store.upsertPrice(price);
+      }
+    }
+    return store.readAllPriceCacheEntries();
+  });
+
   const storeData = withStore((store) => {
     const workspace = store.readWorkspace();
     const scopes = workspace ? listScopeOptions(workspace) : [];
@@ -150,26 +171,6 @@ export default async function DashboardPage({
       snapshots: selectedScope ? store.readSnapshots(selectedScope.id) : [],
       workspace,
     };
-  });
-
-  // Auto-refresh stale prices on every page load without blocking rendering.
-  // Failures degrade to "Fallido" labels — never an error page.
-  // Runs before snapshot capture so auto-snapshot (#49) sees fresh prices.
-  const investmentAssetsMeta = withStore((store) => store.readInvestmentAssetsWithMeta());
-  const refreshedPrices = await refreshStalePrices(
-    storeData.priceCache,
-    investmentAssetsMeta,
-    persistence.checkedAt,
-  ).catch(() => null);
-
-  // Persist refreshed prices and re-read so the render sees the latest state.
-  const priceCache = withStore((store) => {
-    if (refreshedPrices) {
-      for (const price of refreshedPrices.refreshed) {
-        store.upsertPrice(price);
-      }
-    }
-    return store.readAllPriceCacheEntries();
   });
 
   const state = prepareDashboardState({
