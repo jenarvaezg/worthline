@@ -333,7 +333,7 @@ export default async function DashboardPage({
           </div>
           <form action={createMemberAction} className="inlineForm">
             <input name="currentUrl" type="hidden" value={currentUrl} />
-            <input name="name" placeholder="Nuevo miembro" />
+            <input name="name" aria-label="Nuevo miembro" placeholder="Nuevo miembro" />
             <button type="submit">Añadir</button>
           </form>
         </section>
@@ -349,13 +349,13 @@ export default async function DashboardPage({
             <form action={createAssetAction} className="stackForm">
             <input name="currentUrl" type="hidden" value={currentUrl} />
               <h3>Activo</h3>
-              <input name="name" placeholder="Nombre" />
+              <input aria-label="Nombre" name="name" placeholder="Nombre" />
               <select name="type" defaultValue="cash">
                 <option value="cash">Cash</option>
                 <option value="manual">Manual</option>
                 <option value="real_estate">Vivienda</option>
               </select>
-              <input inputMode="decimal" name="currentValue" placeholder="Valor EUR" />
+              <input inputMode="decimal" name="currentValue" aria-label="Valor EUR" placeholder="Valor EUR" />
               <select name="liquidityTier" defaultValue="cash">
                 <option value="cash">Caja</option>
                 <option value="market">Mercado</option>
@@ -373,12 +373,12 @@ export default async function DashboardPage({
             <form action={createLiabilityAction} className="stackForm">
             <input name="currentUrl" type="hidden" value={currentUrl} />
               <h3>Deuda</h3>
-              <input name="name" placeholder="Nombre" />
+              <input aria-label="Nombre" name="name" placeholder="Nombre" />
               <select name="type" defaultValue="mortgage">
                 <option value="mortgage">Hipoteca</option>
                 <option value="debt">Deuda</option>
               </select>
-              <input inputMode="decimal" name="balance" placeholder="Saldo EUR" />
+              <input inputMode="decimal" name="balance" aria-label="Saldo EUR" placeholder="Saldo EUR" />
               <select name="associatedAssetId" defaultValue="">
                 <option value="">Sin activo asociado</option>
                 {assets.map((asset) => (
@@ -481,13 +481,13 @@ export default async function DashboardPage({
             <form action={createInvestmentAssetAction} className="stackForm">
             <input name="currentUrl" type="hidden" value={currentUrl} />
               <h3>Nueva inversión</h3>
-              <input name="name" placeholder="Nombre" />
-              <input name="unitSymbol" placeholder="Ticker / símbolo" />
-              <input name="isin" placeholder="ISIN (opcional)" />
+              <input aria-label="Nombre" name="name" placeholder="Nombre" />
+              <input name="unitSymbol" aria-label="Ticker o símbolo" placeholder="Ticker / símbolo" />
+              <input name="isin" aria-label="ISIN (opcional)" placeholder="ISIN (opcional)" />
               <input
                 inputMode="decimal"
                 name="manualPricePerUnit"
-                placeholder="Precio actual/unidad EUR"
+                aria-label="Precio actual por unidad en EUR" placeholder="Precio actual/unidad EUR"
               />
               <OwnershipInputs members={activeMembers} scopeMemberId={ownershipScopeMemberId} />
               <button type="submit">Añadir inversión</button>
@@ -516,17 +516,17 @@ export default async function DashboardPage({
                 name="executedAt"
                 type="date"
               />
-              <input inputMode="decimal" name="units" placeholder="Unidades" />
+              <input inputMode="decimal" name="units" aria-label="Unidades" placeholder="Unidades" />
               <input
                 inputMode="decimal"
                 name="pricePerUnit"
-                placeholder="Precio/unidad EUR"
+                aria-label="Precio por unidad en EUR" placeholder="Precio/unidad EUR"
               />
               <input
                 defaultValue="0"
                 inputMode="decimal"
                 name="fees"
-                placeholder="Comisiones EUR"
+                aria-label="Comisiones EUR" placeholder="Comisiones EUR"
               />
               <button type="submit">Registrar operación</button>
             </form>
