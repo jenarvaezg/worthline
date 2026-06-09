@@ -446,6 +446,16 @@ export function mapDomainViolation(violation: DomainViolation): string {
       );
       return `La propiedad suma ${actualPct}% — debe sumar 100%.`;
     }
+    case "operation_units_not_positive":
+      return "Las unidades deben ser un número positivo.";
+    case "operation_price_negative":
+      return "El precio por unidad no es válido.";
+    case "operation_fees_negative":
+      return "Las comisiones no son válidas.";
+    case "investment_manual_valuation_rejected":
+      return "El valor de una inversión es siempre calculado — registra una operación o actualiza el precio.";
+    case "value_update_investment_holding":
+      return "Las inversiones no se pueden actualizar en la puesta al día — su valor es siempre calculado.";
   }
 }
 

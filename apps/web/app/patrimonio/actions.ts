@@ -260,9 +260,15 @@ export async function acknowledgeWarningAction(formData: FormData): Promise<neve
   redirect(successRedirectUrl("/patrimonio", "warning_acknowledged", entityId));
 }
 
-export async function updateAssetValuationAction(formData: FormData): Promise<never> {
+export async function updateAssetValuationAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
   const id = parseEntityId(formData);
   const currentValue = parseMoneyMinorField(formData, "currentValue");
+
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -282,7 +288,22 @@ export async function updateAssetValuationAction(formData: FormData): Promise<ne
     );
   }
 
-  withStore((store) => store.updateAssetValuation(id, currentValue));
+  const assetType = runWith((store) => {
+    const assets = store.readAssets();
+    return assets.find((a) => a.id === id)?.type ?? null;
+  });
+
+  if (assetType === "investment") {
+    redirect(
+      errorRedirectUrl(`/patrimonio/${id}/editar`, {
+        formId: "edit",
+        message: mapDomainViolation({ code: "investment_manual_valuation_rejected" }),
+        values: preserveFields(formData, ["currentValue"]),
+      }),
+    );
+  }
+
+  runWith((store) => store.updateAssetValuation(id, currentValue));
   redirect(successRedirectUrl("/patrimonio", "saved", id));
 }
 
@@ -312,15 +333,37 @@ export async function updateLiabilityBalanceAction(formData: FormData): Promise<
   redirect(successRedirectUrl("/patrimonio", "saved", id));
 }
 
-export async function batchValueUpdateAction(formData: FormData): Promise<never> {
-  const result = withStore((store) => {
-    const assets = store.readAssets().filter((a) => a.type !== "investment");
+export async function batchValueUpdateAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  const result = runWith((store) => {
+    const allAssets = store.readAssets();
+    const investmentIds = new Set(
+      allAssets.filter((a) => a.type === "investment").map((a) => a.id),
+    );
+    const manualAssets = allAssets.filter((a) => a.type !== "investment");
     const liabilities = store.readLiabilities();
 
-    // Parse assets
+    // Reject submissions that name an investment holding — their value is derived.
+    for (const [key] of formData.entries()) {
+      if (!key.startsWith("val_")) continue;
+      const assetId = key.slice(4);
+      if (investmentIds.has(assetId)) {
+        return {
+          ok: false,
+          error: mapDomainViolation({ code: "value_update_investment_holding" }),
+        };
+      }
+    }
+
+    // Parse manual assets
     const assetCommands = parseValueUpdatePass(
       formData,
-      assets.map((a) => ({ id: a.id, currentValueMinor: a.currentValue.amountMinor })),
+      manualAssets.map((a) => ({ id: a.id, currentValueMinor: a.currentValue.amountMinor })),
     );
     const liabilityCommands = parseValueUpdatePass(
       formData,
@@ -342,7 +385,7 @@ export async function batchValueUpdateAction(formData: FormData): Promise<never>
     const valid = allCommands.filter(
       (cmd): cmd is { id: string; newValueMinor: number } => "newValueMinor" in cmd,
     );
-    const assetUpdates = valid.filter((cmd) => assets.some((a) => a.id === cmd.id));
+    const assetUpdates = valid.filter((cmd) => manualAssets.some((a) => a.id === cmd.id));
     const liabilityUpdates = valid.filter((cmd) => liabilities.some((l) => l.id === cmd.id));
 
     store.batchApplyAllValueUpdates(assetUpdates, liabilityUpdates);

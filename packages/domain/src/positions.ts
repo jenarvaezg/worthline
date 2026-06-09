@@ -11,6 +11,8 @@ import {
 } from "./decimal";
 import type {
   CreateInvestmentOperationInput,
+  DomainResult,
+  DomainViolation,
   InvestmentOperation,
   PositionSummary,
 } from "./index";
@@ -20,6 +22,9 @@ import { assertMinorInteger, money, subtractMoney } from "./money";
  * Validate and normalize a single investment operation. Units must be positive,
  * price non-negative, fees a non-negative integer minor amount. Throws on
  * violation so invalid operations never reach the ledger.
+ *
+ * Programmer-error paths still throw; only the three bound violations become data.
+ * Prefer `createInvestmentOperationSafe` for user-facing call sites.
  */
 export function createInvestmentOperation(
   input: CreateInvestmentOperationInput,
@@ -48,6 +53,70 @@ export function createInvestmentOperation(
     kind: input.kind,
     pricePerUnit: input.pricePerUnit,
     units: input.units,
+  };
+}
+
+/**
+ * Safe variant of `createInvestmentOperation`: returns a `DomainResult` instead
+ * of throwing when operation bound rules are violated.
+ * The three rule violations (units not positive, price negative, fees negative)
+ * become data with stable machine-readable codes. Programmer errors (non-integer
+ * fees) still throw.
+ */
+export function createInvestmentOperationSafe(
+  input: CreateInvestmentOperationInput,
+): DomainResult<InvestmentOperation> {
+  if (compareUnits(input.units, "0") <= 0) {
+    return {
+      ok: false,
+      violations: [
+        { code: "operation_units_not_positive" } satisfies Extract<
+          DomainViolation,
+          { code: "operation_units_not_positive" }
+        >,
+      ],
+    };
+  }
+
+  if (compareUnits(input.pricePerUnit, "0") < 0) {
+    return {
+      ok: false,
+      violations: [
+        { code: "operation_price_negative" } satisfies Extract<
+          DomainViolation,
+          { code: "operation_price_negative" }
+        >,
+      ],
+    };
+  }
+
+  const feesMinor = input.feesMinor ?? 0;
+  assertMinorInteger(feesMinor);
+
+  if (feesMinor < 0) {
+    return {
+      ok: false,
+      violations: [
+        { code: "operation_fees_negative" } satisfies Extract<
+          DomainViolation,
+          { code: "operation_fees_negative" }
+        >,
+      ],
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      assetId: input.assetId,
+      currency: input.currency,
+      executedAt: input.executedAt,
+      feesMinor,
+      id: input.id,
+      kind: input.kind,
+      pricePerUnit: input.pricePerUnit,
+      units: input.units,
+    },
   };
 }
 
