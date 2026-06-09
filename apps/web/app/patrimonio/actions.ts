@@ -1,11 +1,13 @@
 "use server";
 
 import { withStore, type WorthlineStore } from "@worthline/db";
+import { createManualAssetSafe, createLiabilitySafe } from "@worthline/domain";
 import { redirect } from "next/navigation";
 
 import {
   appendParam,
   errorRedirectUrl,
+  mapDomainViolation,
   parseAssetCommandStrict,
   parseEntityId,
   parseMoneyMinorField,
@@ -80,10 +82,10 @@ export async function createAssetAction(
       return { ok: false, error: parsed.error };
     }
 
-    const ownershipError = validateOwnershipSharesStrict(parsed.command.ownership);
+    const domainResult = createManualAssetSafe(workspace, parsed.command);
 
-    if (ownershipError) {
-      return { ok: false, error: ownershipError };
+    if (!domainResult.ok) {
+      return { ok: false, error: mapDomainViolation(domainResult.violations[0]) };
     }
 
     store.createManualAsset(parsed.command);
@@ -98,7 +100,10 @@ export async function createAssetAction(
   redirect(successRedirectUrl("/patrimonio", "asset_added", result.id!));
 }
 
-export async function createLiabilityAction(formData: FormData): Promise<never> {
+export async function createLiabilityAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
   const returnUrl = baseUrl(formData);
 
   const liabilityErrorUrl = (message: string) =>
@@ -114,7 +119,10 @@ export async function createLiabilityAction(formData: FormData): Promise<never> 
     redirect(liabilityErrorUrl("El saldo de la deuda no es válido."));
   }
 
-  const result = withStore((store) => {
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  const result = runWith((store) => {
     const workspace = store.readWorkspace();
 
     if (!workspace) {
@@ -122,10 +130,10 @@ export async function createLiabilityAction(formData: FormData): Promise<never> 
     }
 
     const command = parseLiabilityCommand(formData, workspace.members, Date.now());
-    const ownershipError = validateOwnershipSharesStrict(command.ownership);
+    const domainResult = createLiabilitySafe(workspace, command);
 
-    if (ownershipError) {
-      return { ok: false, error: ownershipError };
+    if (!domainResult.ok) {
+      return { ok: false, error: mapDomainViolation(domainResult.violations[0]) };
     }
 
     store.createLiability(command);
