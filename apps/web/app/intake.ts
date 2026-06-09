@@ -44,6 +44,37 @@ export function parseViewParam(
   return normalizeParam(value) === "liquid" ? "liquid" : "total";
 }
 
+/** Set or replace a query param on a (possibly relative) URL string. */
+export function appendParam(url: string, key: string, value: string): string {
+  const [path, query = ""] = url.split("?");
+  const params = new URLSearchParams(query);
+  params.set(key, value);
+  const qs = params.toString();
+
+  return qs ? `${path ?? "/"}?${qs}` : (path ?? "/");
+}
+
+/** Map a success-redirect key to a localized confirmation message (null = no banner). */
+export function okMessage(key: string | undefined): string | null {
+  if (!key) {
+    return null;
+  }
+
+  const messages: Record<string, string> = {
+    asset_added: "Activo añadido.",
+    deleted: "Eliminado.",
+    fire_saved: "Configuración FIRE guardada.",
+    investment_added: "Inversión añadida.",
+    liability_added: "Deuda añadida.",
+    prices_refreshed: "Precios actualizados.",
+    saved: "Guardado.",
+    snapshot_saved: "Snapshot guardado.",
+    warning_acknowledged: "Aviso marcado como intencional.",
+  };
+
+  return messages[key] ?? null;
+}
+
 export function parseWorkspaceInit(formData: FormData): WorkspaceInitCommand {
   const mode = formData.get("mode") === "household" ? "household" : "individual";
   const names = parseNames(formData.get("memberNames"));

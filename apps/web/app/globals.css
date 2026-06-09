@@ -186,6 +186,36 @@ h3 {
   width: 9px;
 }
 
+.warningBand,
+.errorBand,
+.successBand {
+  border: 1px solid var(--line);
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin: 0 0 4px;
+  padding: 10px 14px;
+}
+
+.warningBand {
+  background: rgba(179, 131, 31, 0.12);
+  border-color: var(--gold);
+  color: var(--gold);
+  display: grid;
+  gap: 4px;
+}
+
+.errorBand {
+  background: rgba(185, 68, 47, 0.1);
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.successBand {
+  background: rgba(0, 111, 95, 0.1);
+  border-color: var(--green);
+  color: var(--green);
+}
+
 .summaryBand {
   padding: 16px;
 }

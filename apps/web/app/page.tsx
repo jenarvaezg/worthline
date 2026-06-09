@@ -20,7 +20,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import {
+  appendParam,
   buildSnapshotId,
+  okMessage,
   parseAssetCommand,
   parseEntityId,
   parseFireConfigForm,
@@ -46,6 +48,8 @@ function buildCurrentUrl(
   if (searchParams) {
     for (const [key, value] of Object.entries(searchParams)) {
       if (value === undefined) continue;
+      // ok/error are one-shot post-redirect signals — never carry them forward.
+      if (key === "ok" || key === "error") continue;
 
       if (Array.isArray(value)) {
         for (const item of value) {
@@ -60,6 +64,11 @@ function buildCurrentUrl(
   const queryString = params.toString();
 
   return queryString ? `/?${queryString}` : "/";
+}
+
+/** The page URL an action should return to, defaulting to the dashboard root. */
+function currentUrlOf(formData: FormData): string {
+  return (formData.get("currentUrl") as string) || "/";
 }
 
 const framingTabs = [
@@ -80,6 +89,8 @@ export default async function DashboardPage({
   const selectedView = parseViewParam(resolvedSearchParams?.view);
   const errorParam = resolvedSearchParams?.error;
   const formError = Array.isArray(errorParam) ? errorParam[0] : errorParam;
+  const okParam = resolvedSearchParams?.ok;
+  const formOk = okMessage(Array.isArray(okParam) ? okParam[0] : okParam);
   const isFireEdit = resolvedSearchParams?.fireEdit === "true";
   const currentUrl = buildCurrentUrl(resolvedSearchParams);
   const storeData = withStore((store) => {
@@ -156,23 +167,19 @@ export default async function DashboardPage({
       </header>
 
       {formError ? (
-        <p role="alert" style={{ color: "#c0392b", fontWeight: 600, margin: "0 0 12px" }}>
+        <p className="errorBand" role="alert">
           {formError}
         </p>
       ) : null}
 
+      {formOk ? (
+        <p className="successBand" role="status">
+          {formOk}
+        </p>
+      ) : null}
+
       {warnings.length > 0 ? (
-        <div
-          role="alert"
-          style={{
-            background: "#fffbeb",
-            border: "1px solid #f59e0b",
-            borderRadius: 6,
-            color: "#92400e",
-            margin: "0 0 12px",
-            padding: "10px 14px",
-          }}
-        >
+        <div className="warningBand" role="alert">
           {warnings.map((w) => (
             <div
               key={`${w.entityId}-${w.code}`}
@@ -874,7 +881,7 @@ async function createMemberAction(formData: FormData) {
   }
 
   withStore((store) => store.createMember(member));
-  redirect(formData.get("currentUrl") as string || "/");
+  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
 async function updateMemberAction(formData: FormData) {
@@ -888,7 +895,7 @@ async function updateMemberAction(formData: FormData) {
   }
 
   withStore((store) => store.updateMember({ id, name }));
-  redirect(formData.get("currentUrl") as string || "/");
+  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
 async function disableMemberAction(formData: FormData) {
@@ -901,7 +908,7 @@ async function disableMemberAction(formData: FormData) {
   }
 
   withStore((store) => store.disableMember(id, new Date().toISOString()));
-  redirect(formData.get("currentUrl") as string || "/");
+  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
 async function createAssetAction(formData: FormData) {
@@ -910,7 +917,9 @@ async function createAssetAction(formData: FormData) {
   const currentValue = parseMoneyMinorField(formData, "currentValue");
 
   if (currentValue === null) {
-    redirect(`/?error=${encodeURIComponent("El valor del activo no es válido.")}`);
+    redirect(
+      appendParam(currentUrlOf(formData), "error", "El valor del activo no es válido."),
+    );
   }
 
   const result = withStore((store): ActionResult => {
@@ -933,11 +942,11 @@ async function createAssetAction(formData: FormData) {
   });
 
   if (result.error) {
-    redirect(`/?error=${encodeURIComponent(result.error)}`);
+    redirect(appendParam(currentUrlOf(formData), "error", result.error));
   }
 
   if (result.ok) {
-    redirect(formData.get("currentUrl") as string || "/");
+    redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
   }
 }
 
@@ -952,11 +961,13 @@ async function updateAssetValuationAction(formData: FormData) {
   }
 
   if (currentValue === null) {
-    redirect(`/?error=${encodeURIComponent("El valor del activo no es válido.")}`);
+    redirect(
+      appendParam(currentUrlOf(formData), "error", "El valor del activo no es válido."),
+    );
   }
 
   withStore((store) => store.updateAssetValuation(id, currentValue));
-  redirect(formData.get("currentUrl") as string || "/");
+  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
 async function createLiabilityAction(formData: FormData) {
@@ -965,7 +976,9 @@ async function createLiabilityAction(formData: FormData) {
   const balance = parseMoneyMinorField(formData, "balance");
 
   if (balance === null) {
-    redirect(`/?error=${encodeURIComponent("El saldo de la deuda no es válido.")}`);
+    redirect(
+      appendParam(currentUrlOf(formData), "error", "El saldo de la deuda no es válido."),
+    );
   }
 
   const result = withStore((store): ActionResult => {
@@ -988,11 +1001,11 @@ async function createLiabilityAction(formData: FormData) {
   });
 
   if (result.error) {
-    redirect(`/?error=${encodeURIComponent(result.error)}`);
+    redirect(appendParam(currentUrlOf(formData), "error", result.error));
   }
 
   if (result.ok) {
-    redirect(formData.get("currentUrl") as string || "/");
+    redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
   }
 }
 
@@ -1019,11 +1032,11 @@ async function createInvestmentAssetAction(formData: FormData) {
   });
 
   if (result.error) {
-    redirect(`/?error=${encodeURIComponent(result.error)}`);
+    redirect(appendParam(currentUrlOf(formData), "error", result.error));
   }
 
   if (result.ok) {
-    redirect(formData.get("currentUrl") as string || "/");
+    redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
   }
 }
 
@@ -1034,9 +1047,11 @@ async function recordOperationAction(formData: FormData) {
 
   if (fees === null) {
     redirect(
-      `/?error=${encodeURIComponent(
+      appendParam(
+        currentUrlOf(formData),
+        "error",
         "No se pudo registrar la operación: revisa unidades, precio y comisiones.",
-      )}`,
+      ),
     );
   }
 
@@ -1054,13 +1069,15 @@ async function recordOperationAction(formData: FormData) {
     withStore((store) => store.recordOperation(command));
   } catch {
     redirect(
-      `/?error=${encodeURIComponent(
+      appendParam(
+        currentUrlOf(formData),
+        "error",
         "No se pudo registrar la operación: revisa unidades, precio y comisiones.",
-      )}`,
+      ),
     );
   }
 
-  redirect(formData.get("currentUrl") as string || "/");
+  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
 async function updateLiabilityBalanceAction(formData: FormData) {
@@ -1074,11 +1091,13 @@ async function updateLiabilityBalanceAction(formData: FormData) {
   }
 
   if (balance === null) {
-    redirect(`/?error=${encodeURIComponent("El saldo de la deuda no es válido.")}`);
+    redirect(
+      appendParam(currentUrlOf(formData), "error", "El saldo de la deuda no es válido."),
+    );
   }
 
   withStore((store) => store.updateLiabilityBalance(id, balance));
-  redirect(formData.get("currentUrl") as string || "/");
+  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
 async function saveFireConfigAction(formData: FormData) {
@@ -1088,7 +1107,7 @@ async function saveFireConfigAction(formData: FormData) {
   const config = parseFireConfigForm(formData);
 
   withStore((store) => store.saveFireConfig(scopeId, config));
-  redirect(formData.get("currentUrl") as string || "/");
+  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
 async function deleteAssetAction(formData: FormData) {
@@ -1101,7 +1120,7 @@ async function deleteAssetAction(formData: FormData) {
   }
 
   withStore((store) => store.softDeleteAsset(id, new Date().toISOString()));
-  redirect(formData.get("currentUrl") as string || "/");
+  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
 async function deleteLiabilityAction(formData: FormData) {
@@ -1114,7 +1133,7 @@ async function deleteLiabilityAction(formData: FormData) {
   }
 
   withStore((store) => store.softDeleteLiability(id, new Date().toISOString()));
-  redirect(formData.get("currentUrl") as string || "/");
+  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
 async function saveSnapshotAction(formData: FormData) {
@@ -1153,7 +1172,7 @@ async function saveSnapshotAction(formData: FormData) {
   });
 
   if (saved) {
-    redirect(formData.get("currentUrl") as string || "/");
+    redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
   }
 }
 
@@ -1168,7 +1187,7 @@ async function acknowledgeWarningAction(formData: FormData) {
   }
 
   withStore((store) => store.acknowledgeWarning(code, entityId));
-  redirect((formData.get("currentUrl") as string) || "/");
+  redirect(appendParam(currentUrlOf(formData), "ok", "warning_acknowledged"));
 }
 
 async function refreshPricesAction(formData: FormData) {
@@ -1194,7 +1213,7 @@ async function refreshPricesAction(formData: FormData) {
     );
   });
 
-  redirect(formData.get("currentUrl") as string || "/");
+  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
 function formatOptionalMoney(value: MoneyMinor | undefined): string {
