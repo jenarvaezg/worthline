@@ -3,6 +3,8 @@ import type {
   AssetType,
   LiabilityType,
   OperationKind,
+  PriceFreshnessState,
+  PriceSource,
   WorkspaceMode,
 } from "@worthline/domain";
 import { sql } from "drizzle-orm";
@@ -78,6 +80,7 @@ export const assets = sqliteTable("assets", {
   currentValueMinor: integer("current_value_minor").notNull(),
   liquidityTier: text("liquidity_tier").$type<LiquidityTier>().notNull(),
   isPrimaryResidence: integer("is_primary_residence").notNull().default(0),
+  deletedAt: text("deleted_at"),
   createdAt: timestamp("created_at"),
   updatedAt: timestamp("updated_at"),
 });
@@ -130,8 +133,18 @@ export const liabilities = sqliteTable("liabilities", {
   associatedAssetId: text("associated_asset_id").references(() => assets.id, {
     onDelete: "set null",
   }),
+  deletedAt: text("deleted_at"),
   createdAt: timestamp("created_at"),
   updatedAt: timestamp("updated_at"),
+});
+
+export const auditLog = sqliteTable("audit_log", {
+  id: text("id").primaryKey(),
+  action: text("action").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  detailsJson: text("details_json").notNull().default("{}"),
+  createdAt: timestamp("created_at"),
 });
 
 export const liabilityOwnerships = sqliteTable(
@@ -147,6 +160,24 @@ export const liabilityOwnerships = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.liabilityId, table.memberId] })],
 );
+
+export const assetPriceCache = sqliteTable("asset_price_cache", {
+  assetId: text("asset_id")
+    .primaryKey()
+    .references(() => assets.id, { onDelete: "cascade" }),
+  currency: text("currency").notNull(),
+  price: text("price").notNull(),
+  source: text("source").$type<PriceSource>().notNull().default("manual"),
+  priceDate: text("price_date"),
+  fetchedAt: text("fetched_at").notNull(),
+  freshnessState: text("freshness_state")
+    .$type<PriceFreshnessState>()
+    .notNull()
+    .default("manual"),
+  staleReason: text("stale_reason"),
+  createdAt: timestamp("created_at"),
+  updatedAt: timestamp("updated_at"),
+});
 
 export const snapshots = sqliteTable(
   "snapshots",

@@ -4,10 +4,12 @@ import type {
   LocalPersistenceStatus,
 } from "@worthline/contracts";
 import type {
+  AssetPrice,
   CreateInvestmentOperationInput,
   CreateLiabilityInput,
   CreateManualAssetInput,
   CreateNetWorthSnapshotInput,
+  FireScopeConfig,
   InvestmentOperation,
   Liability,
   Member,
@@ -30,8 +32,9 @@ import {
 } from "@worthline/domain";
 import Database from "better-sqlite3";
 import type { Database as DatabaseConnection } from "better-sqlite3";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
@@ -39,7 +42,9 @@ import {
   appSettings,
   assetOperations,
   assetOwnerships,
+  assetPriceCache,
   assets,
+  auditLog,
   investmentAssets,
   liabilities,
   liabilityOwnerships,
@@ -51,7 +56,7 @@ import {
 } from "./schema";
 import { schemaSql } from "./schema-sql";
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 4;
 
 const bootstrapKey = "bootstrap.last_healthcheck_at";
 
@@ -93,6 +98,22 @@ export interface PositionView extends PositionSummary {
   name: string;
 }
 
+export interface AuditLogEntry {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  details: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface InvestmentAssetMeta {
+  id: string;
+  name: string;
+  currency: string;
+  providerSymbol?: string;
+}
+
 export interface WorthlineStore {
   close: () => void;
   createInvestmentAsset: (input: CreateInvestmentAssetInput) => void;
@@ -101,17 +122,28 @@ export interface WorthlineStore {
   createMember: (member: Member) => void;
   disableMember: (memberId: string, disabledAt: string) => void;
   initializeWorkspace: (input: InitializeWorkspaceInput) => void;
+  readAllPriceCacheEntries: () => AssetPrice[];
   readAssets: () => ManualAsset[];
+  readInvestmentAssetsWithMeta: () => InvestmentAssetMeta[];
+  readAuditLog: (filter?: { entityId?: string }) => AuditLogEntry[];
+  readFireConfig: () => Record<string, FireScopeConfig>;
   readLiabilities: () => Liability[];
   readOperations: (assetId: string) => InvestmentOperation[];
   readPositions: (scopeId?: string) => PositionView[];
+  readPriceCache: (assetId: string) => AssetPrice | null;
   readSnapshots: (scopeId?: string) => NetWorthSnapshot[];
   readWorkspace: () => Workspace | null;
   recordOperation: (input: CreateInvestmentOperationInput) => void;
+  restoreAsset: (assetId: string) => void;
+  restoreLiability: (liabilityId: string) => void;
+  saveFireConfig: (scopeId: string, config: FireScopeConfig) => void;
   saveSnapshot: (input: SaveSnapshotInput) => void;
+  softDeleteAsset: (assetId: string, deletedAt: string) => void;
+  softDeleteLiability: (liabilityId: string, deletedAt: string) => void;
   updateAssetValuation: (assetId: string, currentValueMinor: number) => void;
   updateLiabilityBalance: (liabilityId: string, balanceMinor: number) => void;
   updateMember: (member: Pick<Member, "id" | "name">) => void;
+  upsertPrice: (price: AssetPrice) => void;
 }
 
 export function runBootstrapHealthcheck(
@@ -173,6 +205,26 @@ export function createWorthlineStore(
 
   const sqlite = new Database(databasePath);
   migrate(sqlite);
+
+  const writeAuditEntry = (
+    action: string,
+    entityType: string,
+    entityId: string,
+    details: Record<string, unknown> = {},
+  ): void => {
+    sqlite
+      .prepare(
+        `INSERT INTO audit_log (id, action, entity_type, entity_id, details_json)
+         VALUES (@id, @action, @entityType, @entityId, @detailsJson)`,
+      )
+      .run({
+        action,
+        detailsJson: JSON.stringify(details),
+        entityId,
+        entityType,
+        id: randomUUID(),
+      });
+  };
 
   // Per-unit-of-work workspace cache. readWorkspace, readAssets, and
   // readLiabilities all need the workspace, but it only changes on membership
@@ -248,6 +300,7 @@ export function createWorthlineStore(
       });
 
       insert();
+      writeAuditEntry("create_liability", "liability", liability.id);
     },
     createManualAsset: (input) => {
       const workspace = getWorkspace();
@@ -306,6 +359,7 @@ export function createWorthlineStore(
       });
 
       insert();
+      writeAuditEntry("create_asset", "asset", asset.id);
     },
     createInvestmentAsset: (input) => {
       const workspace = getWorkspace();
@@ -501,6 +555,20 @@ export function createWorthlineStore(
       invalidateWorkspace();
     },
     readAssets: () => readAssets(sqlite, getWorkspace()),
+    readFireConfig: () => {
+      const db = drizzle(sqlite);
+      const row = db
+        .select({ value: appSettings.value })
+        .from(appSettings)
+        .where(eq(appSettings.key, "fire.config"))
+        .get();
+
+      if (!row) {
+        return {};
+      }
+
+      return JSON.parse(row.value) as Record<string, FireScopeConfig>;
+    },
     readLiabilities: () => readLiabilities(sqlite, getWorkspace()),
     readOperations: (assetId) => readOperations(sqlite, assetId),
     readPositions: (scopeId) => readPositions(sqlite, getWorkspace(), scopeId),
@@ -544,6 +612,28 @@ export function createWorthlineStore(
           pricePerUnit: operation.pricePerUnit,
           units: operation.units,
         });
+    },
+    saveFireConfig: (scopeId, config) => {
+      const db = drizzle(sqlite);
+      const existing = db
+        .select({ value: appSettings.value })
+        .from(appSettings)
+        .where(eq(appSettings.key, "fire.config"))
+        .get();
+
+      const current: Record<string, FireScopeConfig> = existing
+        ? (JSON.parse(existing.value) as Record<string, FireScopeConfig>)
+        : {};
+      const merged = { ...current, [scopeId]: config };
+      const updatedAt = new Date().toISOString();
+
+      db.insert(appSettings)
+        .values({ key: "fire.config", updatedAt, value: JSON.stringify(merged) })
+        .onConflictDoUpdate({
+          set: { updatedAt, value: JSON.stringify(merged) },
+          target: appSettings.key,
+        })
+        .run();
     },
     saveSnapshot: (input) => {
       const snapshot = createNetWorthSnapshot(input);
@@ -651,6 +741,7 @@ export function createWorthlineStore(
         `,
         )
         .run(currentValueMinor, assetId);
+      writeAuditEntry("update_valuation", "asset", assetId, { currentValueMinor });
     },
     updateLiabilityBalance: (liabilityId, balanceMinor) => {
       if (!Number.isInteger(balanceMinor)) {
@@ -666,6 +757,7 @@ export function createWorthlineStore(
         `,
         )
         .run(balanceMinor, liabilityId);
+      writeAuditEntry("update_balance", "liability", liabilityId, { balanceMinor });
     },
     updateMember: (member) => {
       sqlite
@@ -678,6 +770,143 @@ export function createWorthlineStore(
         )
         .run(member.name, member.id);
       invalidateWorkspace();
+    },
+    readPriceCache: (assetId) => {
+      const db = drizzle(sqlite);
+      const row = db
+        .select()
+        .from(assetPriceCache)
+        .where(eq(assetPriceCache.assetId, assetId))
+        .get();
+
+      if (!row) return null;
+
+      return {
+        assetId: row.assetId,
+        currency: row.currency,
+        fetchedAt: row.fetchedAt,
+        freshnessState: row.freshnessState,
+        price: row.price,
+        source: row.source,
+        ...(row.priceDate ? { priceDate: row.priceDate } : {}),
+        ...(row.staleReason ? { staleReason: row.staleReason } : {}),
+      };
+    },
+    readInvestmentAssetsWithMeta: () => {
+      const db = drizzle(sqlite);
+      const rows = db
+        .select({
+          id: assets.id,
+          name: assets.name,
+          currency: assets.currency,
+          providerSymbol: investmentAssets.providerSymbol,
+        })
+        .from(assets)
+        .innerJoin(investmentAssets, eq(investmentAssets.assetId, assets.id))
+        .where(isNull(assets.deletedAt))
+        .orderBy(asc(assets.createdAt), asc(assets.id))
+        .all();
+
+      return rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        currency: row.currency,
+        ...(row.providerSymbol ? { providerSymbol: row.providerSymbol } : {}),
+      }));
+    },
+    readAllPriceCacheEntries: () => {
+      const db = drizzle(sqlite);
+      const rows = db.select().from(assetPriceCache).all();
+
+      return rows.map((row) => ({
+        assetId: row.assetId,
+        currency: row.currency,
+        fetchedAt: row.fetchedAt,
+        freshnessState: row.freshnessState,
+        price: row.price,
+        source: row.source,
+        ...(row.priceDate ? { priceDate: row.priceDate } : {}),
+        ...(row.staleReason ? { staleReason: row.staleReason } : {}),
+      }));
+    },
+    upsertPrice: (price) => {
+      const db = drizzle(sqlite);
+      const now = new Date().toISOString();
+
+      db.insert(assetPriceCache)
+        .values({
+          assetId: price.assetId,
+          currency: price.currency,
+          fetchedAt: price.fetchedAt,
+          freshnessState: price.freshnessState,
+          price: price.price,
+          priceDate: price.priceDate ?? null,
+          source: price.source,
+          staleReason: price.staleReason ?? null,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: assetPriceCache.assetId,
+          set: {
+            currency: price.currency,
+            fetchedAt: price.fetchedAt,
+            freshnessState: price.freshnessState,
+            price: price.price,
+            priceDate: price.priceDate ?? null,
+            source: price.source,
+            staleReason: price.staleReason ?? null,
+            updatedAt: now,
+          },
+        })
+        .run();
+    },
+    softDeleteAsset: (assetId, deletedAt) => {
+      sqlite
+        .prepare(`UPDATE assets SET deleted_at = ? WHERE id = ?`)
+        .run(deletedAt, assetId);
+      writeAuditEntry("delete_asset", "asset", assetId, { deletedAt });
+    },
+    restoreAsset: (assetId) => {
+      sqlite
+        .prepare(`UPDATE assets SET deleted_at = NULL WHERE id = ?`)
+        .run(assetId);
+      writeAuditEntry("restore_asset", "asset", assetId);
+    },
+    softDeleteLiability: (liabilityId, deletedAt) => {
+      sqlite
+        .prepare(`UPDATE liabilities SET deleted_at = ? WHERE id = ?`)
+        .run(deletedAt, liabilityId);
+      writeAuditEntry("delete_liability", "liability", liabilityId, { deletedAt });
+    },
+    restoreLiability: (liabilityId) => {
+      sqlite
+        .prepare(`UPDATE liabilities SET deleted_at = NULL WHERE id = ?`)
+        .run(liabilityId);
+      writeAuditEntry("restore_liability", "liability", liabilityId);
+    },
+    readAuditLog: (filter) => {
+      const db = drizzle(sqlite);
+      const rows = filter?.entityId
+        ? db
+            .select()
+            .from(auditLog)
+            .where(eq(auditLog.entityId, filter.entityId))
+            .orderBy(asc(auditLog.createdAt))
+            .all()
+        : db
+            .select()
+            .from(auditLog)
+            .orderBy(asc(auditLog.createdAt))
+            .all();
+
+      return rows.map((row) => ({
+        action: row.action,
+        createdAt: row.createdAt,
+        details: JSON.parse(row.detailsJson) as Record<string, unknown>,
+        entityId: row.entityId,
+        entityType: row.entityType,
+        id: row.id,
+      }));
     },
   };
 }
@@ -713,31 +942,39 @@ export function resolveDatabasePath(options: BootstrapHealthcheckOptions = {}): 
 }
 
 function migrate(sqlite: DatabaseConnection): void {
-  // Connection-level pragmas must be set outside any transaction. The schema is
-  // the single source of truth: schemaSql is generated from src/schema.ts via
-  // `npm run db:generate`. user_version makes this idempotent across reopens.
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
-
   const version = sqlite.pragma("user_version", { simple: true }) as number;
-
-  if (version >= SCHEMA_VERSION) {
-    return;
+  if (version >= SCHEMA_VERSION) return;
+  if (version < 2) {
+    const sql = schemaSql
+      .replaceAll("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
+      .replaceAll("CREATE UNIQUE INDEX ", "CREATE UNIQUE INDEX IF NOT EXISTS ");
+    sqlite.exec(sql);
+    sqlite.pragma("user_version = 2");
   }
-
-  // IF NOT EXISTS keeps this safe on databases created before user_version
-  // existed (tables already present, version still 0). The generated DDL only
-  // ever opens statements with these two forms.
-  //
-  // NOTE: this CREATES missing tables but does not EVOLVE existing ones. Bumping
-  // SCHEMA_VERSION past 1 will need a real forward-migration path (per-version
-  // ALTER ladder or drizzle journalled migrations) — see docs/adr/0001.
-  const idempotentSql = schemaSql
-    .replaceAll("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
-    .replaceAll("CREATE UNIQUE INDEX ", "CREATE UNIQUE INDEX IF NOT EXISTS ");
-
-  sqlite.exec(idempotentSql);
-  sqlite.pragma(`user_version = ${SCHEMA_VERSION}`);
+  if (version < 3) {
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS asset_price_cache (
+      asset_id TEXT PRIMARY KEY NOT NULL, currency TEXT NOT NULL, price TEXT NOT NULL,
+      source TEXT DEFAULT 'manual' NOT NULL, price_date TEXT, fetched_at TEXT NOT NULL,
+      freshness_state TEXT DEFAULT 'manual' NOT NULL, stale_reason TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      FOREIGN KEY (asset_id) REFERENCES assets(id) ON UPDATE no action ON DELETE cascade
+    );`);
+    sqlite.pragma("user_version = 3");
+  }
+  if (version < 4) {
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS audit_log (
+      id TEXT PRIMARY KEY NOT NULL, action TEXT NOT NULL,
+      entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
+      details_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+    );`);
+    try { sqlite.exec("ALTER TABLE assets ADD COLUMN deleted_at TEXT"); } catch {}
+    try { sqlite.exec("ALTER TABLE liabilities ADD COLUMN deleted_at TEXT"); } catch {}
+    sqlite.pragma("user_version = 4");
+  }
 }
 
 function readWorkspace(sqlite: DatabaseConnection): Workspace | null {
@@ -818,6 +1055,7 @@ function readAssets(
       type: assets.type,
     })
     .from(assets)
+    .where(isNull(assets.deletedAt))
     .orderBy(asc(assets.createdAt), asc(assets.id))
     .all();
   const ownershipByAsset = readAssetOwnerships(sqlite);
@@ -959,6 +1197,7 @@ function readPositions(
   const ownershipByAsset = readAssetOwnerships(sqlite);
   const operationsByAsset = readAllOperations(sqlite);
   const metaByAsset = readInvestmentMeta(sqlite);
+  const priceCacheByAsset = readAllPriceCache(sqlite);
   const scopeMemberIds = scopeId
     ? new Set(resolveScopeMemberIds(workspace, scopeId))
     : null;
@@ -972,17 +1211,29 @@ function readPositions(
       continue;
     }
 
+    // Price cache takes priority over manual_price_per_unit
+    const cachedPrice = priceCacheByAsset.get(row.id)?.price;
     const manualPrice = metaByAsset.get(row.id)?.manualPricePerUnit;
+    const currentPricePerUnit = cachedPrice ?? manualPrice;
     const position = derivePosition(operationsByAsset.get(row.id) ?? [], {
       assetId: row.id,
       currency: row.currency,
-      ...(manualPrice ? { currentPricePerUnit: manualPrice } : {}),
+      ...(currentPricePerUnit ? { currentPricePerUnit } : {}),
     });
 
     views.push({ ...position, name: row.name });
   }
 
   return views;
+}
+
+function readAllPriceCache(sqlite: DatabaseConnection): Map<string, { price: string }> {
+  const rows = drizzle(sqlite).select().from(assetPriceCache).all();
+
+  return rows.reduce((map, row) => {
+    map.set(row.assetId, { price: row.price });
+    return map;
+  }, new Map<string, { price: string }>());
 }
 
 /** All asset ownership rows in one query, grouped by asset id (member order preserved). */
@@ -1020,6 +1271,7 @@ function readLiabilities(
       type: liabilities.type,
     })
     .from(liabilities)
+    .where(isNull(liabilities.deletedAt))
     .orderBy(asc(liabilities.createdAt), asc(liabilities.id))
     .all();
   const ownershipByLiability = readLiabilityOwnerships(sqlite);

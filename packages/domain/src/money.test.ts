@@ -8,7 +8,9 @@ import {
   formatMoneyMinor,
   money,
   parseDecimal,
+  parseDecimalStrict,
   parseDecimalToMinor,
+  parseDecimalToMinorStrict,
   subtractMoney,
 } from "./money";
 
@@ -108,5 +110,26 @@ describe("es-ES localized parsing and formatting", () => {
     expect(rounded).toContain("€");
     expect(rounded).not.toContain(",");
     expect(rounded).not.toContain("34");
+  });
+});
+
+describe("parseDecimalStrict and parseDecimalToMinorStrict", () => {
+  test("parseDecimalStrict returns null for unparseable input", () => {
+    expect(parseDecimalStrict("abc")).toBeNull();
+    expect(parseDecimalStrict("1,2,3")).toBeNull();
+    expect(parseDecimalStrict("")).toBeNull();
+  });
+
+  test("parseDecimalStrict parses valid es-ES and plain decimals", () => {
+    expect(parseDecimalStrict("1.234,56")).toBeCloseTo(1234.56, 5);
+    expect(parseDecimalStrict("0")).toBe(0);
+  });
+
+  test("parseDecimalToMinorStrict returns null for invalid input", () => {
+    expect(parseDecimalToMinorStrict("abc")).toBeNull();
+  });
+
+  test("parseDecimalToMinorStrict converts valid input to integer minor units", () => {
+    expect(parseDecimalToMinorStrict("1.234,56")).toBe(123_456);
   });
 });
