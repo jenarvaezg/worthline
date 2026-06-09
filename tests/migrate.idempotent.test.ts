@@ -89,7 +89,8 @@ describe("fresh database", () => {
 
     const sqlite = new Database(databasePath);
     try {
-      expect(userVersion(sqlite)).toBe(4);
+      expect(userVersion(sqlite)).toBe(5);
+      expect(tableNames(sqlite)).toContain("warning_overrides");
 
       const tables = tableNames(sqlite);
       for (const expected of [
@@ -154,7 +155,8 @@ describe("forward migration from v2", () => {
 
     const sqlite = new Database(databasePath);
     try {
-      expect(userVersion(sqlite)).toBe(4);
+      expect(userVersion(sqlite)).toBe(5);
+      expect(tableNames(sqlite)).toContain("warning_overrides");
       expect(tableNames(sqlite)).toContain("asset_price_cache");
       expect(tableNames(sqlite)).toContain("audit_log");
       expect(columnNames(sqlite, "assets")).toContain("deleted_at");
@@ -198,7 +200,8 @@ describe("forward migration from v3", () => {
 
     const sqlite = new Database(databasePath);
     try {
-      expect(userVersion(sqlite)).toBe(4);
+      expect(userVersion(sqlite)).toBe(5);
+      expect(tableNames(sqlite)).toContain("warning_overrides");
       expect(tableNames(sqlite)).toContain("audit_log");
       expect(columnNames(sqlite, "assets")).toContain("deleted_at");
       expect(columnNames(sqlite, "liabilities")).toContain("deleted_at");

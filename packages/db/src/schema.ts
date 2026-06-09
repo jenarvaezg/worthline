@@ -147,6 +147,16 @@ export const auditLog = sqliteTable("audit_log", {
   createdAt: timestamp("created_at"),
 });
 
+export const warningOverrides = sqliteTable(
+  "warning_overrides",
+  {
+    code: text("code").notNull(),
+    entityId: text("entity_id").notNull(),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [primaryKey({ columns: [table.code, table.entityId] })],
+);
+
 export const liabilityOwnerships = sqliteTable(
   "liability_ownerships",
   {

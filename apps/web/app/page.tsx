@@ -94,6 +94,7 @@ export default async function DashboardPage({
       fireConfig: store.readFireConfig(),
       liabilities: store.readLiabilities(),
       positions: selectedScope ? store.readPositions(selectedScope.id) : [],
+      overrides: store.readWarningOverrides(),
       priceCache: store.readAllPriceCacheEntries(),
       scopes,
       selectedScope,
@@ -173,9 +174,27 @@ export default async function DashboardPage({
           }}
         >
           {warnings.map((w) => (
-            <p key={`${w.entityId}-${w.code}`} style={{ margin: "2px 0" }}>
-              ⚠ {w.message}
-            </p>
+            <div
+              key={`${w.entityId}-${w.code}`}
+              style={{
+                alignItems: "center",
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 10,
+                margin: "4px 0",
+              }}
+            >
+              <span>⚠ {w.message}</span>
+              <a href={`#${w.entityId}`} style={{ color: "#92400e", fontWeight: 700 }}>
+                Actualizar valor
+              </a>
+              <form action={acknowledgeWarningAction}>
+                <input name="currentUrl" type="hidden" value={currentUrl} />
+                <input name="code" type="hidden" value={w.code} />
+                <input name="entityId" type="hidden" value={w.entityId} />
+                <button type="submit">Es intencional</button>
+              </form>
+            </div>
           ))}
         </div>
       ) : null}
@@ -378,7 +397,7 @@ export default async function DashboardPage({
             </thead>
             <tbody>
               {assets.map((asset) => (
-                <tr key={asset.id}>
+                <tr id={asset.id} key={asset.id}>
                   <td>{asset.name}</td>
                   <td>{asset.liquidityTier}</td>
                   <td>{formatMoneyMinor(asset.currentValue)}</td>
@@ -405,7 +424,7 @@ export default async function DashboardPage({
                 </tr>
               ))}
               {liabilities.map((liability) => (
-                <tr key={liability.id}>
+                <tr id={liability.id} key={liability.id}>
                   <td>{liability.name}</td>
                   <td>{liability.type}</td>
                   <td>{formatMoneyMinor(liability.currentBalance)}</td>
@@ -1107,6 +1126,20 @@ async function saveSnapshotAction(formData: FormData) {
   if (saved) {
     redirect(formData.get("currentUrl") as string || "/");
   }
+}
+
+async function acknowledgeWarningAction(formData: FormData) {
+  "use server";
+
+  const code = String(formData.get("code") ?? "").trim();
+  const entityId = String(formData.get("entityId") ?? "").trim();
+
+  if (!code || !entityId) {
+    return;
+  }
+
+  withStore((store) => store.acknowledgeWarning(code, entityId));
+  redirect((formData.get("currentUrl") as string) || "/");
 }
 
 async function refreshPricesAction(formData: FormData) {

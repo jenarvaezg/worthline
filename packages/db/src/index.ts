@@ -18,6 +18,7 @@ import type {
   NetWorthSnapshot,
   OwnershipShare,
   PositionSummary,
+  WarningOverride,
   Workspace,
   WorkspaceMode,
 } from "@worthline/domain";
@@ -113,6 +114,7 @@ export interface InvestmentAssetMeta {
 }
 
 export interface WorthlineStore {
+  acknowledgeWarning: (code: string, entityId: string) => void;
   close: () => void;
   createInvestmentAsset: (input: CreateInvestmentAssetInput) => void;
   createLiability: (input: CreateLiabilityInput) => void;
@@ -130,8 +132,10 @@ export interface WorthlineStore {
   readPositions: (scopeId?: string) => PositionView[];
   readPriceCache: (assetId: string) => AssetPrice | null;
   readSnapshots: (scopeId?: string) => NetWorthSnapshot[];
+  readWarningOverrides: () => WarningOverride[];
   readWorkspace: () => Workspace | null;
   recordOperation: (input: CreateInvestmentOperationInput) => void;
+  removeWarningOverride: (code: string, entityId: string) => void;
   restoreAsset: (assetId: string) => void;
   restoreLiability: (liabilityId: string) => void;
   saveFireConfig: (scopeId: string, config: FireScopeConfig) => void;
@@ -867,6 +871,28 @@ export function createWorthlineStore(
     restoreAsset: (assetId) => {
       sqlite.prepare(`UPDATE assets SET deleted_at = NULL WHERE id = ?`).run(assetId);
       writeAuditEntry("restore_asset", "asset", assetId);
+    },
+    acknowledgeWarning: (code, entityId) => {
+      sqlite
+        .prepare(
+          `INSERT INTO warning_overrides (code, entity_id) VALUES (?, ?)
+           ON CONFLICT(code, entity_id) DO NOTHING`,
+        )
+        .run(code, entityId);
+      writeAuditEntry("acknowledge_warning", "asset", entityId, { code });
+    },
+    removeWarningOverride: (code, entityId) => {
+      sqlite
+        .prepare(`DELETE FROM warning_overrides WHERE code = ? AND entity_id = ?`)
+        .run(code, entityId);
+      writeAuditEntry("unacknowledge_warning", "asset", entityId, { code });
+    },
+    readWarningOverrides: () => {
+      const rows = sqlite
+        .prepare(`SELECT code, entity_id AS entityId FROM warning_overrides`)
+        .all() as Array<{ code: string; entityId: string }>;
+
+      return rows.map((row) => ({ code: row.code, entityId: row.entityId }));
     },
     softDeleteLiability: (liabilityId, deletedAt) => {
       sqlite

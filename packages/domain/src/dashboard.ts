@@ -18,6 +18,7 @@ import type {
   PositionSummary,
   ScopeOption,
   SnapshotDeltas,
+  WarningOverride,
   Workspace,
 } from "./index";
 import type { LiquidityTierBreakdown } from "./index";
@@ -74,6 +75,7 @@ export function prepareDashboardState(input: {
   snapshots: import("./index").NetWorthSnapshot[];
   fireConfig: Record<string, FireScopeConfig>;
   selectedView: NetWorthFraming;
+  overrides?: WarningOverride[];
 }): DashboardState {
   const { workspace, assets, liabilities, selectedScope, persistence } = input;
 
@@ -130,7 +132,7 @@ export function prepareDashboardState(input: {
   const activeMembers = workspace?.members.filter((member) => !member.disabledAt) ?? [];
   const investmentAssets = assets.filter((asset) => asset.type === "investment");
   const today = new Date().toISOString().slice(0, 10);
-  const warnings = collectWarnings(assets);
+  const warnings = collectWarnings(assets, input.overrides ?? []);
 
   return {
     activeMembers,
