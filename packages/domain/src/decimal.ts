@@ -1,5 +1,6 @@
-import type { DecimalString } from "@worthline/contracts";
 import Big from "big.js";
+
+export type DecimalString = string;
 
 /**
  * The decimal seam. Units and prices are decimal strings (CONTEXT.md), money is

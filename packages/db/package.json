@@ -10,7 +10,6 @@
     }
   },
   "dependencies": {
-    "@worthline/contracts": "*",
     "@worthline/domain": "*",
     "better-sqlite3": "latest",
     "drizzle-orm": "latest"

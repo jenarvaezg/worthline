@@ -1,4 +1,4 @@
-import type { LiquidityTier } from "@worthline/contracts";
+import type { LiquidityTier } from "@worthline/domain";
 import type {
   AssetType,
   LiabilityType,

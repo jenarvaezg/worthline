@@ -1,4 +1,4 @@
-import type { MoneyMinor } from "@worthline/contracts";
+import type { MoneyMinor } from "@worthline/domain";
 import { runBootstrapHealthcheck, withStore } from "@worthline/db";
 import {
   captureNetWorthSnapshot,
@@ -10,6 +10,7 @@ import {
 } from "@worthline/domain";
 import type {
   ManualAsset,
+  Member,
   NetWorthPresentationMode,
   PriceFreshnessState,
 } from "@worthline/domain";
@@ -440,9 +441,18 @@ export default async function DashboardPage({
                 <option value="buy">Compra</option>
                 <option value="sell">Venta</option>
               </select>
-              <input aria-label="Fecha" defaultValue={today} name="executedAt" type="date" />
+              <input
+                aria-label="Fecha"
+                defaultValue={today}
+                name="executedAt"
+                type="date"
+              />
               <input inputMode="decimal" name="units" placeholder="Unidades" />
-              <input inputMode="decimal" name="pricePerUnit" placeholder="Precio/unidad EUR" />
+              <input
+                inputMode="decimal"
+                name="pricePerUnit"
+                placeholder="Precio/unidad EUR"
+              />
               <input
                 defaultValue="0"
                 inputMode="decimal"
@@ -494,7 +504,9 @@ export default async function DashboardPage({
                       )}
                     </td>
                     <td>
-                      {position.marketValue ? formatMoneyMinor(position.marketValue) : "—"}
+                      {position.marketValue
+                        ? formatMoneyMinor(position.marketValue)
+                        : "—"}
                     </td>
                     <td>
                       {position.unrealizedPnl

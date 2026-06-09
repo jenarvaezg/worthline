@@ -1,4 +1,4 @@
-import type { LiquidityTier } from "@worthline/contracts";
+export type LiquidityTier = "cash" | "market" | "retirement" | "illiquid" | "housing";
 
 import type { Liability, ManualAsset } from "./index";
 

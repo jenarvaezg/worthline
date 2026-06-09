@@ -1,4 +1,4 @@
-import type { LiquidityTier } from "@worthline/contracts";
+import type { LiquidityTier } from "./classification";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -25,7 +25,10 @@ const fullOwnership = [{ memberId: "member_jose", shareBps: 10_000 }];
 function asset(
   id: string,
   liquidityTier: LiquidityTier,
-  overrides: { type?: "cash" | "manual" | "real_estate"; isPrimaryResidence?: boolean } = {},
+  overrides: {
+    type?: "cash" | "manual" | "real_estate";
+    isPrimaryResidence?: boolean;
+  } = {},
 ) {
   return createManualAsset(workspace, {
     currency: "EUR",
@@ -39,11 +42,7 @@ function asset(
   });
 }
 
-function liability(
-  id: string,
-  type: "mortgage" | "debt",
-  associatedAssetId?: string,
-) {
+function liability(id: string, type: "mortgage" | "debt", associatedAssetId?: string) {
   return createLiability(workspace, {
     balanceMinor: 1_000,
     currency: "EUR",
@@ -78,7 +77,9 @@ describe("asset classification", () => {
 
   test("isHousingAsset covers real estate, primary residence, and the housing tier", () => {
     expect(isHousingAsset(asset("home", "illiquid", { type: "real_estate" }))).toBe(true);
-    expect(isHousingAsset(asset("flat", "cash", { isPrimaryResidence: true }))).toBe(true);
+    expect(isHousingAsset(asset("flat", "cash", { isPrimaryResidence: true }))).toBe(
+      true,
+    );
     expect(isHousingAsset(asset("plot", "housing"))).toBe(true);
     expect(isHousingAsset(asset("broker", "market"))).toBe(false);
   });
@@ -108,9 +109,9 @@ describe("liability classification", () => {
     expect(tierOfLiability(liability("l1", "debt", "asset_broker"), assetTierById)).toBe(
       "market",
     );
-    expect(
-      tierOfLiability(liability("l2", "debt", "asset_pension"), assetTierById),
-    ).toBe("retirement");
+    expect(tierOfLiability(liability("l2", "debt", "asset_pension"), assetTierById)).toBe(
+      "retirement",
+    );
   });
 
   test("an unknown associated asset falls back to housing", () => {

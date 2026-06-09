@@ -10,7 +10,6 @@
     }
   },
   "dependencies": {
-    "@worthline/contracts": "*",
     "big.js": "^7.0.1"
   },
   "scripts": {
