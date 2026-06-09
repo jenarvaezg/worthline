@@ -46,6 +46,9 @@ export {
 
 export { createInvestmentOperation, derivePosition } from "./positions";
 
+export type { FireScopeConfig, FireResult } from "./fire";
+export { filterFireEligibleAssets, calculateFire, calculateFireForScope } from "./fire";
+
 export type WorkspaceMode = "individual" | "household";
 
 export interface Member {
