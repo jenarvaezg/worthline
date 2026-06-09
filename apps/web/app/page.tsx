@@ -107,6 +107,7 @@ export default async function DashboardPage({
       positions: selectedScope ? store.readPositions(selectedScope.id) : [],
       overrides: store.readWarningOverrides(),
       priceCache: store.readAllPriceCacheEntries(),
+      trash: store.readTrash(),
       scopes,
       selectedScope,
       snapshots: selectedScope ? store.readSnapshots(selectedScope.id) : [],
@@ -425,7 +426,10 @@ export default async function DashboardPage({
                     <form action={deleteAssetAction}>
                       <input name="currentUrl" type="hidden" value={currentUrl} />
                       <input name="id" type="hidden" value={asset.id} />
-                      <button type="submit">Eliminar</button>
+                      <details className="confirmDelete">
+                        <summary>Eliminar</summary>
+                        <button type="submit">Confirmar</button>
+                      </details>
                     </form>
                   </td>
                 </tr>
@@ -454,7 +458,10 @@ export default async function DashboardPage({
                     <form action={deleteLiabilityAction}>
                       <input name="currentUrl" type="hidden" value={currentUrl} />
                       <input name="id" type="hidden" value={liability.id} />
-                      <button type="submit">Eliminar</button>
+                      <details className="confirmDelete">
+                        <summary>Eliminar</summary>
+                        <button type="submit">Confirmar</button>
+                      </details>
                     </form>
                   </td>
                 </tr>
@@ -466,6 +473,36 @@ export default async function DashboardPage({
               ) : null}
             </tbody>
           </table>
+          {storeData.trash.assets.length + storeData.trash.liabilities.length > 0 ? (
+            <details className="trashPanel">
+              <summary>
+                Papelera (
+                {storeData.trash.assets.length + storeData.trash.liabilities.length})
+              </summary>
+              <div className="trashList">
+                {storeData.trash.assets.map((item) => (
+                  <form action={restoreAssetAction} className="trashRow" key={item.id}>
+                    <input name="currentUrl" type="hidden" value={currentUrl} />
+                    <input name="id" type="hidden" value={item.id} />
+                    <span>{item.name}</span>
+                    <button type="submit">Restaurar</button>
+                  </form>
+                ))}
+                {storeData.trash.liabilities.map((item) => (
+                  <form
+                    action={restoreLiabilityAction}
+                    className="trashRow"
+                    key={item.id}
+                  >
+                    <input name="currentUrl" type="hidden" value={currentUrl} />
+                    <input name="id" type="hidden" value={item.id} />
+                    <span>{item.name}</span>
+                    <button type="submit">Restaurar</button>
+                  </form>
+                ))}
+              </div>
+            </details>
+          ) : null}
         </section>
 
         <section className="positionsPanel" aria-label="Inversiones y posiciones">
@@ -1133,6 +1170,32 @@ async function deleteLiabilityAction(formData: FormData) {
   }
 
   withStore((store) => store.softDeleteLiability(id, new Date().toISOString()));
+  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
+}
+
+async function restoreAssetAction(formData: FormData) {
+  "use server";
+
+  const id = parseEntityId(formData);
+
+  if (!id) {
+    return;
+  }
+
+  withStore((store) => store.restoreAsset(id));
+  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
+}
+
+async function restoreLiabilityAction(formData: FormData) {
+  "use server";
+
+  const id = parseEntityId(formData);
+
+  if (!id) {
+    return;
+  }
+
+  withStore((store) => store.restoreLiability(id));
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 

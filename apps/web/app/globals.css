@@ -535,6 +535,55 @@ th:last-child {
   width: 2px;
 }
 
+.confirmDelete summary {
+  color: var(--red);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 800;
+  list-style: none;
+  text-transform: uppercase;
+}
+
+.confirmDelete summary::-webkit-details-marker {
+  display: none;
+}
+
+.confirmDelete button {
+  background: var(--red);
+  margin-top: 6px;
+}
+
+.trashPanel {
+  border-top: 1px solid var(--line);
+  margin-top: 14px;
+  padding-top: 12px;
+}
+
+.trashPanel > summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.trashList {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.trashRow {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr auto;
+}
+
+.trashRow span {
+  overflow-wrap: anywhere;
+}
+
 .stackForm {
   display: grid;
   gap: 12px;

@@ -113,6 +113,11 @@ export interface InvestmentAssetMeta {
   providerSymbol?: string;
 }
 
+export interface TrashView {
+  assets: Array<{ id: string; name: string }>;
+  liabilities: Array<{ id: string; name: string }>;
+}
+
 export interface WorthlineStore {
   acknowledgeWarning: (code: string, entityId: string) => void;
   close: () => void;
@@ -132,6 +137,7 @@ export interface WorthlineStore {
   readPositions: (scopeId?: string) => PositionView[];
   readPriceCache: (assetId: string) => AssetPrice | null;
   readSnapshots: (scopeId?: string) => NetWorthSnapshot[];
+  readTrash: () => TrashView;
   readWarningOverrides: () => WarningOverride[];
   readWorkspace: () => Workspace | null;
   recordOperation: (input: CreateInvestmentOperationInput) => void;
@@ -894,6 +900,18 @@ export function createWorthlineStore(
 
       return rows.map((row) => ({ code: row.code, entityId: row.entityId }));
     },
+    readTrash: () => ({
+      assets: sqlite
+        .prepare(
+          `SELECT id, name FROM assets WHERE deleted_at IS NOT NULL ORDER BY name`,
+        )
+        .all() as Array<{ id: string; name: string }>,
+      liabilities: sqlite
+        .prepare(
+          `SELECT id, name FROM liabilities WHERE deleted_at IS NOT NULL ORDER BY name`,
+        )
+        .all() as Array<{ id: string; name: string }>,
+    }),
     softDeleteLiability: (liabilityId, deletedAt) => {
       sqlite
         .prepare(`UPDATE liabilities SET deleted_at = ? WHERE id = ?`)
