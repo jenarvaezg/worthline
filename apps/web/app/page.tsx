@@ -846,8 +846,11 @@ export default async function DashboardPage({
       </section>
 
       <footer className="persistenceBar">
-        <span>{dashboard.persistence.displayPath}</span>
-        <code>{dashboard.persistence.checkKey}</code>
+        <span>Base de datos · {dashboard.persistence.displayPath}</span>
+        <span>
+          Comprobado{" "}
+          {new Date(dashboard.persistence.checkedAt).toLocaleString("es-ES")}
+        </span>
       </footer>
     </main>
   );

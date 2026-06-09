@@ -168,14 +168,14 @@ h1 {
 
 h2 {
   font-size: 0.98rem;
-  letter-spacing: 0;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 h3 {
   font-size: 0.82rem;
   font-weight: 850;
-  letter-spacing: 0;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -271,6 +271,7 @@ h3 {
   color: var(--ink);
   font-size: 0.76rem;
   font-weight: 800;
+  letter-spacing: 0.04em;
   padding: 8px 10px;
   text-decoration: none;
   text-transform: uppercase;
