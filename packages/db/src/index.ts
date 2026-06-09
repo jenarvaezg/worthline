@@ -115,6 +115,27 @@ export interface InvestmentAssetMeta {
   providerSymbol?: string;
 }
 
+/** Full investment asset record for edit/detail pages. */
+export interface InvestmentAssetFull {
+  id: string;
+  name: string;
+  currency: string;
+  liquidityTier: LiquidityTier;
+  ownership: OwnershipShare[];
+  unitSymbol?: string;
+  isin?: string;
+  providerSymbol?: string;
+  manualPricePerUnit?: DecimalString;
+}
+
+export interface UpdateInvestmentAssetInput {
+  id: string;
+  name: string;
+  unitSymbol?: string;
+  isin?: string;
+  manualPricePerUnit?: DecimalString;
+}
+
 export interface TrashView {
   assets: Array<{ id: string; name: string }>;
   liabilities: Array<{ id: string; name: string }>;
@@ -124,6 +145,8 @@ export interface WorthlineStore {
   acknowledgeWarning: (code: string, entityId: string) => void;
   close: () => void;
   createInvestmentAsset: (input: CreateInvestmentAssetInput) => void;
+  readInvestmentAssetById: (assetId: string) => InvestmentAssetFull | null;
+  updateInvestmentAsset: (input: UpdateInvestmentAssetInput) => void;
   createLiability: (input: CreateLiabilityInput) => void;
   createManualAsset: (input: CreateManualAssetInput) => void;
   createMember: (member: Member) => void;
@@ -255,6 +278,82 @@ export function createWorthlineStore(
   return {
     close: () => {
       sqlite.close();
+    },
+    readInvestmentAssetById: (assetId) => {
+      const db = drizzle(sqlite);
+      const row = db
+        .select({
+          id: assets.id,
+          name: assets.name,
+          currency: assets.currency,
+          liquidityTier: assets.liquidityTier,
+        })
+        .from(assets)
+        .where(eq(assets.id, assetId))
+        .get();
+
+      if (!row) return null;
+
+      const investRow = db
+        .select({
+          unitSymbol: investmentAssets.unitSymbol,
+          isin: investmentAssets.isin,
+          providerSymbol: investmentAssets.providerSymbol,
+          manualPricePerUnit: investmentAssets.manualPricePerUnit,
+        })
+        .from(investmentAssets)
+        .where(eq(investmentAssets.assetId, assetId))
+        .get();
+
+      if (!investRow) return null;
+
+      const ownershipRows = db
+        .select({ memberId: assetOwnerships.memberId, shareBps: assetOwnerships.shareBps })
+        .from(assetOwnerships)
+        .where(eq(assetOwnerships.assetId, assetId))
+        .orderBy(asc(assetOwnerships.memberId))
+        .all();
+
+      return {
+        id: row.id,
+        name: row.name,
+        currency: row.currency,
+        liquidityTier: row.liquidityTier,
+        ownership: ownershipRows,
+        ...(investRow.unitSymbol ? { unitSymbol: investRow.unitSymbol } : {}),
+        ...(investRow.isin ? { isin: investRow.isin } : {}),
+        ...(investRow.providerSymbol ? { providerSymbol: investRow.providerSymbol } : {}),
+        ...(investRow.manualPricePerUnit
+          ? { manualPricePerUnit: investRow.manualPricePerUnit }
+          : {}),
+      };
+    },
+    updateInvestmentAsset: (input) => {
+      const update = sqlite.transaction(() => {
+        sqlite
+          .prepare(
+            `UPDATE assets SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+          )
+          .run(input.name, input.id);
+
+        sqlite
+          .prepare(
+            `UPDATE investment_assets
+             SET unit_symbol = ?, isin = ?, manual_price_per_unit = ?
+             WHERE asset_id = ?`,
+          )
+          .run(
+            input.unitSymbol ?? null,
+            input.isin ?? null,
+            input.manualPricePerUnit ?? null,
+            input.id,
+          );
+      });
+
+      update();
+      writeAuditEntry("update_investment_asset", "asset", input.id, {
+        name: input.name,
+      });
     },
     createLiability: (input) => {
       const workspace = getWorkspace();

@@ -16,6 +16,9 @@ import {
   parseDecimalToMinorStrict,
 } from "@worthline/domain";
 
+// Re-export types needed by #58 inversiones functions
+export type { CreateInvestmentAssetInput };
+
 /**
  * The web intake seam: turns raw HTML form input into validated domain command
  * objects and parses request params. Pure and framework-agnostic (no Next.js),
@@ -801,4 +804,223 @@ function normalizeParam(value: string | string[] | undefined): string | undefine
   }
 
   return value;
+}
+
+// === #58 inversiones ===
+
+/**
+ * buildCurrentUrlFor: like buildCurrentUrl but prepends a fixed basePath so
+ * subpages (/inversiones/nueva, /inversiones/[id]/operacion, etc.) get the
+ * right return URL without knowing the page URL at parse time.
+ */
+export function buildCurrentUrlFor(
+  basePath: string,
+  searchParams?: Record<string, string | string[] | undefined>,
+): string {
+  const params = new URLSearchParams();
+
+  if (searchParams) {
+    for (const [key, value] of Object.entries(searchParams)) {
+      if (value === undefined) continue;
+      if (ONE_SHOT_PARAMS.has(key) || key.startsWith(PRESERVED_VALUE_PREFIX)) continue;
+
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          params.append(key, item);
+        }
+      } else {
+        params.set(key, value);
+      }
+    }
+  }
+
+  const queryString = params.toString();
+
+  return queryString ? `${basePath}?${queryString}` : basePath;
+}
+
+/**
+ * Strict investment asset parser for /inversiones/nueva: requires a name,
+ * rejects a manual price that cannot be parsed (instead of silently dropping
+ * it to 0). Returns an error on first violation.
+ */
+export function parseInvestmentAssetCommandStrict(
+  formData: FormData,
+  members: Member[],
+  seed: number,
+): StrictParseResult<CreateInvestmentAssetInput> {
+  const name = String(formData.get("name") ?? "").trim();
+
+  if (!name) {
+    return { ok: false, error: "El nombre de la inversión es obligatorio." };
+  }
+
+  const manualPriceRaw = String(formData.get("manualPricePerUnit") ?? "").trim();
+  let manualPrice: DecimalString | undefined;
+
+  if (manualPriceRaw) {
+    // Normalize es-ES format then validate — must be a positive number.
+    const normalized = manualPriceRaw.includes(",")
+      ? manualPriceRaw.replace(/\./g, "").replace(",", ".")
+      : manualPriceRaw;
+
+    if (!/^\d+(\.\d+)?$/.test(normalized) || parseFloat(normalized) < 0) {
+      return {
+        ok: false,
+        error: "El precio manual no es válido. Introduce un número positivo o déjalo en blanco.",
+      };
+    }
+
+    if (normalized !== "0") {
+      manualPrice = normalized as DecimalString;
+    }
+  }
+
+  const unitSymbol = String(formData.get("unitSymbol") ?? "").trim();
+  const isin = String(formData.get("isin") ?? "").trim();
+
+  return {
+    ok: true,
+    command: {
+      currency: "EUR",
+      id: createStableIdExported("asset", name, seed),
+      liquidityTier: "market",
+      name,
+      ownership: parseOwnership(formData, members),
+      ...(manualPrice !== undefined ? { manualPricePerUnit: manualPrice } : {}),
+      ...(unitSymbol ? { unitSymbol } : {}),
+      ...(isin ? { isin } : {}),
+    },
+  };
+}
+
+/**
+ * Route-scoped operation parser: the asset id comes from the URL route
+ * (not a dropdown), preventing silent no-op on unselected dropdown.
+ * Never silently swallows a bad units/price/fees field — returns an error
+ * that names the offending field.
+ */
+export function parseRouteOperationCommand(
+  formData: FormData,
+  routeAssetId: string,
+  seed: number,
+  today: string,
+): StrictParseResult<CreateInvestmentOperationInput> {
+  const unitsRaw = String(formData.get("units") ?? "").trim();
+  const priceRaw = String(formData.get("pricePerUnit") ?? "").trim();
+
+  if (!unitsRaw) {
+    return { ok: false, error: "Las unidades son obligatorias." };
+  }
+
+  if (!priceRaw) {
+    return { ok: false, error: "El precio por unidad es obligatorio." };
+  }
+
+  const normalizeDecimal = (raw: string): string => {
+    const trimmed = raw.trim();
+    const normalized = trimmed.includes(",")
+      ? trimmed.replace(/\./g, "").replace(",", ".")
+      : trimmed;
+
+    return /^-?\d+(\.\d+)?$/.test(normalized) ? normalized : "0";
+  };
+
+  const units = normalizeDecimal(unitsRaw) as DecimalString;
+  const pricePerUnit = normalizeDecimal(priceRaw) as DecimalString;
+
+  if (units === "0") {
+    return { ok: false, error: "Las unidades deben ser un número positivo." };
+  }
+
+  if (pricePerUnit === "0" && priceRaw !== "0" && priceRaw !== "0,00") {
+    return { ok: false, error: "El precio por unidad no es válido." };
+  }
+
+  const feesRaw = String(formData.get("fees") ?? "0");
+  const feesMinor = parseDecimalToMinorStrict(feesRaw);
+
+  if (feesMinor === null || feesMinor < 0) {
+    return { ok: false, error: "Las comisiones no son válidas." };
+  }
+
+  const kind: OperationKind = formData.get("kind") === "sell" ? "sell" : "buy";
+  const executedAt = String(formData.get("executedAt") ?? "").trim() || today;
+
+  return {
+    ok: true,
+    command: {
+      assetId: routeAssetId,
+      currency: "EUR",
+      executedAt,
+      feesMinor,
+      id: createStableIdExported("op", `${routeAssetId}_${kind}`, seed),
+      kind,
+      pricePerUnit,
+      units,
+    },
+  };
+}
+
+/**
+ * Edit investment parser: strict name required, manual price rejected when
+ * unparseable (not silently dropped to 0).
+ */
+export function parseUpdateInvestmentCommand(
+  formData: FormData,
+  assetId: string,
+): StrictParseResult<{ id: string; name: string; unitSymbol?: string; isin?: string; manualPricePerUnit?: DecimalString }> {
+  const name = String(formData.get("name") ?? "").trim();
+
+  if (!name) {
+    return { ok: false, error: "El nombre de la inversión es obligatorio." };
+  }
+
+  const manualPriceRaw = String(formData.get("manualPricePerUnit") ?? "").trim();
+  let manualPrice: DecimalString | undefined;
+
+  if (manualPriceRaw) {
+    const normalized = manualPriceRaw.includes(",")
+      ? manualPriceRaw.replace(/\./g, "").replace(",", ".")
+      : manualPriceRaw;
+
+    if (!/^\d+(\.\d+)?$/.test(normalized) || parseFloat(normalized) < 0) {
+      return {
+        ok: false,
+        error: "El precio manual no es válido. Introduce un número positivo o déjalo en blanco.",
+      };
+    }
+
+    if (normalized !== "0") {
+      manualPrice = normalized as DecimalString;
+    }
+  }
+
+  const unitSymbol = String(formData.get("unitSymbol") ?? "").trim();
+  const isin = String(formData.get("isin") ?? "").trim();
+
+  return {
+    ok: true,
+    command: {
+      id: assetId,
+      name,
+      ...(manualPrice !== undefined ? { manualPricePerUnit: manualPrice } : {}),
+      ...(unitSymbol ? { unitSymbol } : {}),
+      ...(isin ? { isin } : {}),
+    },
+  };
+}
+
+// Re-export createStableId for use within this module's new functions above.
+// (The function is private; this thin wrapper avoids duplicating the logic.)
+function createStableIdExported(prefix: string, name: string, seed: number): string {
+  const slug =
+    name
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "") || prefix;
+
+  return `${prefix}_${slug}_${seed}`;
 }

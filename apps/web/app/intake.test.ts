@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import {
   appendParam,
   buildCurrentUrl,
+  buildCurrentUrlFor,
   buildSnapshotId,
   errorRedirectUrl,
   okMessage,
@@ -17,13 +18,16 @@ import {
   parseEntityId,
   parseFireConfigFormStrict,
   parseInvestmentAssetCommand,
+  parseInvestmentAssetCommandStrict,
   parseLiabilityCommand,
   parseMoneyMinorField,
   parseNewMember,
   parseOperationCommand,
   parseOwnership,
+  parseRouteOperationCommand,
   parseScopeParam,
   parseSnapshotForm,
+  parseUpdateInvestmentCommand,
   parseValueUpdatePass,
   parseViewParam,
   parseWorkspaceInit,
@@ -799,5 +803,254 @@ describe("parseFireConfigFormStrict — rejects garbage FIRE input", () => {
       form({ monthlySpending: "abc", safeWithdrawalRate: "4", expectedRealReturn: "7" }),
     );
     expect(result.ok).toBe(false);
+  });
+});
+
+// === #58 inversiones ===
+
+describe("buildCurrentUrlFor — subpage-scoped return URL", () => {
+  test("returns the basePath bare when no persistent params exist", () => {
+    expect(buildCurrentUrlFor("/inversiones")).toBe("/inversiones");
+    expect(buildCurrentUrlFor("/inversiones", { ok: "saved", v_name: "x" })).toBe(
+      "/inversiones",
+    );
+  });
+
+  test("preserves non-one-shot params under the given base path", () => {
+    expect(buildCurrentUrlFor("/inversiones", { scope: "member_jose" })).toBe(
+      "/inversiones?scope=member_jose",
+    );
+  });
+
+  test("strips one-shot feedback params just like buildCurrentUrl does", () => {
+    expect(
+      buildCurrentUrlFor("/inversiones/nueva", {
+        error: "bad",
+        form: "investment",
+        ok: "saved",
+        scope: "household",
+      }),
+    ).toBe("/inversiones/nueva?scope=household");
+  });
+});
+
+describe("parseInvestmentAssetCommandStrict — required name, strict price", () => {
+  test("returns ok command for valid inputs", () => {
+    const result = parseInvestmentAssetCommandStrict(
+      form({ name: "ACME ETF", unitSymbol: "acme.us", manualPricePerUnit: "12,50" }),
+      members,
+      42,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.name).toBe("ACME ETF");
+    expect(result.command.manualPricePerUnit).toBe("12.50");
+    expect(result.command.unitSymbol).toBe("acme.us");
+    expect(result.command.liquidityTier).toBe("market");
+  });
+
+  test("rejects blank name", () => {
+    const result = parseInvestmentAssetCommandStrict(
+      form({ name: "   ", manualPricePerUnit: "10" }),
+      members,
+      1,
+    );
+    expect(result.ok).toBe(false);
+    expect("error" in result && result.error).toContain("nombre");
+  });
+
+  test("rejects missing name", () => {
+    const result = parseInvestmentAssetCommandStrict(form({}), members, 1);
+    expect(result.ok).toBe(false);
+  });
+
+  test("rejects non-numeric manual price", () => {
+    const result = parseInvestmentAssetCommandStrict(
+      form({ name: "ACME", manualPricePerUnit: "abc" }),
+      members,
+      1,
+    );
+    expect(result.ok).toBe(false);
+    expect("error" in result && result.error).toContain("precio");
+  });
+
+  test("rejects negative manual price", () => {
+    const result = parseInvestmentAssetCommandStrict(
+      form({ name: "ACME", manualPricePerUnit: "-5" }),
+      members,
+      1,
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  test("accepts blank manual price (omits it from command)", () => {
+    const result = parseInvestmentAssetCommandStrict(
+      form({ name: "ACME" }),
+      members,
+      1,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.manualPricePerUnit).toBeUndefined();
+  });
+
+  test("omits symbol and isin when blank", () => {
+    const result = parseInvestmentAssetCommandStrict(
+      form({ name: "ACME", unitSymbol: "", isin: "" }),
+      members,
+      1,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.unitSymbol).toBeUndefined();
+    expect(result.command.isin).toBeUndefined();
+  });
+});
+
+describe("parseRouteOperationCommand — asset id from route, strict field errors", () => {
+  test("returns ok command for valid buy", () => {
+    const result = parseRouteOperationCommand(
+      form({ kind: "buy", executedAt: "2026-01-15", units: "5", pricePerUnit: "100", fees: "9,99" }),
+      "asset_acme",
+      7,
+      "2026-06-09",
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.assetId).toBe("asset_acme");
+    expect(result.command.kind).toBe("buy");
+    expect(result.command.units).toBe("5");
+    expect(result.command.pricePerUnit).toBe("100");
+    expect(result.command.feesMinor).toBe(999);
+    expect(result.command.executedAt).toBe("2026-01-15");
+  });
+
+  test("returns ok command for valid sell with es-ES decimal notation", () => {
+    const result = parseRouteOperationCommand(
+      form({ kind: "sell", units: "2,5", pricePerUnit: "1.234,56", fees: "0" }),
+      "asset_acme",
+      8,
+      "2026-06-09",
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.kind).toBe("sell");
+    expect(result.command.units).toBe("2.5");
+    expect(result.command.pricePerUnit).toBe("1234.56");
+  });
+
+  test("defaults date to today and kind to buy when not supplied", () => {
+    const result = parseRouteOperationCommand(
+      form({ units: "1", pricePerUnit: "50" }),
+      "asset_acme",
+      9,
+      "2026-06-09",
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.executedAt).toBe("2026-06-09");
+    expect(result.command.kind).toBe("buy");
+  });
+
+  test("errors when units are missing", () => {
+    const result = parseRouteOperationCommand(
+      form({ pricePerUnit: "100" }),
+      "asset_acme",
+      1,
+      "2026-06-09",
+    );
+    expect(result.ok).toBe(false);
+    expect("error" in result && result.error).toContain("unidades");
+  });
+
+  test("errors when pricePerUnit is missing", () => {
+    const result = parseRouteOperationCommand(
+      form({ units: "1" }),
+      "asset_acme",
+      1,
+      "2026-06-09",
+    );
+    expect(result.ok).toBe(false);
+    expect("error" in result && result.error).toContain("precio");
+  });
+
+  test("errors when units are non-numeric garbage", () => {
+    const result = parseRouteOperationCommand(
+      form({ units: "abc", pricePerUnit: "100" }),
+      "asset_acme",
+      1,
+      "2026-06-09",
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  test("errors when fees are invalid", () => {
+    const result = parseRouteOperationCommand(
+      form({ units: "1", pricePerUnit: "100", fees: "abc" }),
+      "asset_acme",
+      1,
+      "2026-06-09",
+    );
+    expect(result.ok).toBe(false);
+    expect("error" in result && result.error).toContain("comisiones");
+  });
+
+  test("uses the route asset id, not a dropdown field", () => {
+    const result = parseRouteOperationCommand(
+      // assetId field in form is ignored — route wins
+      form({ units: "1", pricePerUnit: "50", assetId: "asset_wrong" }),
+      "asset_correct",
+      2,
+      "2026-06-09",
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.assetId).toBe("asset_correct");
+  });
+});
+
+describe("parseUpdateInvestmentCommand — edit investment fields", () => {
+  test("returns ok command for valid update", () => {
+    const result = parseUpdateInvestmentCommand(
+      form({ name: "ACME Updated", unitSymbol: "acme.us", isin: "US0231351067", manualPricePerUnit: "15,00" }),
+      "asset_acme",
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.id).toBe("asset_acme");
+    expect(result.command.name).toBe("ACME Updated");
+    expect(result.command.manualPricePerUnit).toBe("15.00");
+    expect(result.command.unitSymbol).toBe("acme.us");
+    expect(result.command.isin).toBe("US0231351067");
+  });
+
+  test("rejects blank name", () => {
+    const result = parseUpdateInvestmentCommand(
+      form({ name: "  " }),
+      "asset_acme",
+    );
+    expect(result.ok).toBe(false);
+    expect("error" in result && result.error).toContain("nombre");
+  });
+
+  test("rejects non-numeric price", () => {
+    const result = parseUpdateInvestmentCommand(
+      form({ name: "ACME", manualPricePerUnit: "bad" }),
+      "asset_acme",
+    );
+    expect(result.ok).toBe(false);
+    expect("error" in result && result.error).toContain("precio");
+  });
+
+  test("omits optional fields when blank", () => {
+    const result = parseUpdateInvestmentCommand(
+      form({ name: "ACME", unitSymbol: "", isin: "", manualPricePerUnit: "" }),
+      "asset_acme",
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.unitSymbol).toBeUndefined();
+    expect(result.command.isin).toBeUndefined();
+    expect(result.command.manualPricePerUnit).toBeUndefined();
   });
 });
