@@ -4,6 +4,7 @@ import type {
   CreateInvestmentOperationInput,
   CreateLiabilityInput,
   CreateManualAssetInput,
+  FireScopeConfig,
   Member,
   NetWorthPresentationMode,
   OperationKind,
@@ -210,6 +211,36 @@ function parseDecimalStringInput(raw: string): DecimalString {
     : trimmed;
 
   return /^-?\d+(\.\d+)?$/.test(normalized) ? normalized : "0";
+}
+
+export function parseFireConfigForm(formData: FormData): FireScopeConfig {
+  const monthlySpendingMinor = parseDecimalToMinor(
+    (formData.get("monthlySpending") as string) ?? "0",
+  );
+  const safeWithdrawalRate =
+    parseDecimal((formData.get("safeWithdrawalRate") as string) ?? "4") / 100;
+  const expectedRealReturn =
+    parseDecimal((formData.get("expectedRealReturn") as string) ?? "7") / 100;
+
+  const currentAgeRaw = (formData.get("currentAge") as string | null) ?? "";
+  const currentAgeParsed = parseInt(currentAgeRaw, 10);
+  const currentAge = currentAgeRaw && !Number.isNaN(currentAgeParsed) ? currentAgeParsed : undefined;
+
+  const targetRetirementAgeRaw =
+    (formData.get("targetRetirementAge") as string | null) ?? "";
+  const targetRetirementAgeParsed = parseInt(targetRetirementAgeRaw, 10);
+  const targetRetirementAge = !Number.isNaN(targetRetirementAgeParsed)
+    ? targetRetirementAgeParsed
+    : 65;
+
+  return {
+    excludedAssetIds: [],
+    expectedRealReturn,
+    monthlySpendingMinor,
+    safeWithdrawalRate,
+    targetRetirementAge,
+    ...(currentAge !== undefined ? { currentAge } : {}),
+  };
 }
 
 export function parseSnapshotForm(formData: FormData): SnapshotFormInput {

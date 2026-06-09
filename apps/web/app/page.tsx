@@ -2,6 +2,7 @@ import type { MoneyMinor } from "@worthline/contracts";
 import { runBootstrapHealthcheck, withStore } from "@worthline/db";
 import {
   buildLiquidityPyramid,
+  calculateFireForScope,
   calculateNetWorth,
   calculateSnapshotDeltas,
   createDashboardShell,
@@ -11,7 +12,7 @@ import {
   presentNetWorth,
   resolveScopeMemberIds,
 } from "@worthline/domain";
-import type { ManualAsset, Member, NetWorthPresentationMode } from "@worthline/domain";
+import type { FireScopeConfig, ManualAsset, Member, NetWorthPresentationMode } from "@worthline/domain";
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -20,6 +21,7 @@ import {
   buildSnapshotId,
   parseAssetCommand,
   parseEntityId,
+  parseFireConfigForm,
   parseInvestmentAssetCommand,
   parseLiabilityCommand,
   parseMoneyMinorField,
@@ -53,7 +55,7 @@ export default async function DashboardPage({
   const selectedView = parseViewParam(resolvedSearchParams?.view);
   const errorParam = resolvedSearchParams?.error;
   const formError = Array.isArray(errorParam) ? errorParam[0] : errorParam;
-  const { workspace, assets, liabilities, positions, scopes, selectedScope, snapshots } =
+  const { workspace, assets, liabilities, positions, scopes, selectedScope, snapshots, fireConfig } =
     withStore((store) => {
       const workspace = store.readWorkspace();
       const scopes = workspace ? listScopeOptions(workspace) : [];
@@ -63,6 +65,7 @@ export default async function DashboardPage({
 
       return {
         assets: store.readAssets(),
+        fireConfig: store.readFireConfig(),
         liabilities: store.readLiabilities(),
         positions: selectedScope ? store.readPositions(selectedScope.id) : [],
         scopes,
@@ -82,6 +85,13 @@ export default async function DashboardPage({
         })
       : undefined;
   const presentation = summary ? presentNetWorth(summary, selectedView) : undefined;
+  const fireScopeConfig: FireScopeConfig | null = selectedScope
+    ? (fireConfig[selectedScope.id] ?? null)
+    : null;
+  const fireResult =
+    fireScopeConfig && workspace && selectedScope
+      ? calculateFireForScope(fireScopeConfig, assets, workspace, selectedScope.id)
+      : null;
   const selectedMemberIds =
     workspace && selectedScope ? resolveScopeMemberIds(workspace, selectedScope.id) : [];
   const pyramid =
@@ -521,6 +531,103 @@ export default async function DashboardPage({
         </div>
       </section>
 
+      <section className="firePanel" aria-label="FIRE">
+        <div className="panelHeader">
+          <h2>FIRE</h2>
+          <span>Independencia financiera</span>
+        </div>
+        {!fireScopeConfig ? (
+          selectedScope ? (
+            <form action={saveFireConfigAction} className="stackForm">
+              <input name="scopeId" type="hidden" value={selectedScope.id} />
+              <label>
+                Gasto mensual (EUR)
+                <input inputMode="decimal" name="monthlySpending" placeholder="2000" />
+              </label>
+              <label>
+                Tasa de retirada segura % (por defecto 4)
+                <input defaultValue="4" inputMode="decimal" name="safeWithdrawalRate" />
+              </label>
+              <label>
+                Retorno real esperado % (por defecto 7)
+                <input defaultValue="7" inputMode="decimal" name="expectedRealReturn" />
+              </label>
+              <label>
+                Edad actual (opcional)
+                <input inputMode="numeric" name="currentAge" placeholder="35" />
+              </label>
+              <label>
+                Edad objetivo de jubilación (por defecto 65)
+                <input defaultValue="65" inputMode="numeric" name="targetRetirementAge" />
+              </label>
+              <button type="submit">Guardar configuración FIRE</button>
+            </form>
+          ) : null
+        ) : (
+          <div className="fireResults">
+            <div>
+              <span>Número FIRE</span>
+              <strong>{formatMoneyMinor(fireResult!.fireNumber)}</strong>
+            </div>
+            <div>
+              <span>Activos elegibles</span>
+              <strong>{formatMoneyMinor(fireResult!.eligibleAssets)}</strong>
+            </div>
+            <div>
+              <span>% financiado</span>
+              <strong>{fireResult!.percentFunded.toFixed(1)}%</strong>
+            </div>
+            {fireResult!.coastFireRequired ? (
+              <div>
+                <span>Coast FIRE requerido</span>
+                <strong>{formatMoneyMinor(fireResult!.coastFireRequired)}</strong>
+              </div>
+            ) : null}
+            {fireResult!.coastFireAge !== undefined ? (
+              <div>
+                <span>Edad Coast FIRE</span>
+                <strong>{fireResult!.coastFireAge.toFixed(1)}</strong>
+              </div>
+            ) : null}
+            {selectedScope ? (
+              <form action={saveFireConfigAction} className="inlineForm">
+                <input name="scopeId" type="hidden" value={selectedScope.id} />
+                <input
+                  name="monthlySpending"
+                  type="hidden"
+                  value={(fireScopeConfig.monthlySpendingMinor / 100).toString()}
+                />
+                <input
+                  name="safeWithdrawalRate"
+                  type="hidden"
+                  value={(fireScopeConfig.safeWithdrawalRate * 100).toString()}
+                />
+                <input
+                  name="expectedRealReturn"
+                  type="hidden"
+                  value={(fireScopeConfig.expectedRealReturn * 100).toString()}
+                />
+                {fireScopeConfig.currentAge !== undefined ? (
+                  <input
+                    name="currentAge"
+                    type="hidden"
+                    value={fireScopeConfig.currentAge.toString()}
+                  />
+                ) : null}
+                <input
+                  name="targetRetirementAge"
+                  type="hidden"
+                  value={(fireScopeConfig.targetRetirementAge ?? 65).toString()}
+                />
+                <button formAction={saveFireConfigAction} type="submit">
+                  Reconfigurar
+                </button>
+              </form>
+            ) : null}
+          </div>
+        )}
+      </section>
+
       <footer className="persistenceBar">
         <span>{dashboard.persistence.displayPath}</span>
         <code>{dashboard.persistence.checkKey}</code>
@@ -771,6 +878,16 @@ async function updateLiabilityBalanceAction(formData: FormData) {
   }
 
   withStore((store) => store.updateLiabilityBalance(id, balance));
+  revalidatePath("/");
+}
+
+async function saveFireConfigAction(formData: FormData) {
+  "use server";
+
+  const scopeId = parseScopeParam(formData.get("scopeId") as string | undefined);
+  const config = parseFireConfigForm(formData);
+
+  withStore((store) => store.saveFireConfig(scopeId, config));
   revalidatePath("/");
 }
 

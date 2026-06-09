@@ -8,6 +8,7 @@ import type {
   CreateLiabilityInput,
   CreateManualAssetInput,
   CreateNetWorthSnapshotInput,
+  FireScopeConfig,
   InvestmentOperation,
   Liability,
   Member,
@@ -102,12 +103,14 @@ export interface WorthlineStore {
   disableMember: (memberId: string, disabledAt: string) => void;
   initializeWorkspace: (input: InitializeWorkspaceInput) => void;
   readAssets: () => ManualAsset[];
+  readFireConfig: () => Record<string, FireScopeConfig>;
   readLiabilities: () => Liability[];
   readOperations: (assetId: string) => InvestmentOperation[];
   readPositions: (scopeId?: string) => PositionView[];
   readSnapshots: (scopeId?: string) => NetWorthSnapshot[];
   readWorkspace: () => Workspace | null;
   recordOperation: (input: CreateInvestmentOperationInput) => void;
+  saveFireConfig: (scopeId: string, config: FireScopeConfig) => void;
   saveSnapshot: (input: SaveSnapshotInput) => void;
   updateAssetValuation: (assetId: string, currentValueMinor: number) => void;
   updateLiabilityBalance: (liabilityId: string, balanceMinor: number) => void;
@@ -501,6 +504,20 @@ export function createWorthlineStore(
       invalidateWorkspace();
     },
     readAssets: () => readAssets(sqlite, getWorkspace()),
+    readFireConfig: () => {
+      const db = drizzle(sqlite);
+      const row = db
+        .select({ value: appSettings.value })
+        .from(appSettings)
+        .where(eq(appSettings.key, "fire.config"))
+        .get();
+
+      if (!row) {
+        return {};
+      }
+
+      return JSON.parse(row.value) as Record<string, FireScopeConfig>;
+    },
     readLiabilities: () => readLiabilities(sqlite, getWorkspace()),
     readOperations: (assetId) => readOperations(sqlite, assetId),
     readPositions: (scopeId) => readPositions(sqlite, getWorkspace(), scopeId),
@@ -544,6 +561,28 @@ export function createWorthlineStore(
           pricePerUnit: operation.pricePerUnit,
           units: operation.units,
         });
+    },
+    saveFireConfig: (scopeId, config) => {
+      const db = drizzle(sqlite);
+      const existing = db
+        .select({ value: appSettings.value })
+        .from(appSettings)
+        .where(eq(appSettings.key, "fire.config"))
+        .get();
+
+      const current: Record<string, FireScopeConfig> = existing
+        ? (JSON.parse(existing.value) as Record<string, FireScopeConfig>)
+        : {};
+      const merged = { ...current, [scopeId]: config };
+      const updatedAt = new Date().toISOString();
+
+      db.insert(appSettings)
+        .values({ key: "fire.config", updatedAt, value: JSON.stringify(merged) })
+        .onConflictDoUpdate({
+          set: { updatedAt, value: JSON.stringify(merged) },
+          target: appSettings.key,
+        })
+        .run();
     },
     saveSnapshot: (input) => {
       const snapshot = createNetWorthSnapshot(input);
