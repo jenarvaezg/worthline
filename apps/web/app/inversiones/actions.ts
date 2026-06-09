@@ -17,7 +17,7 @@ import {
   pricesRefreshedRedirectUrl,
   preserveFields,
   successRedirectUrl,
-  validateOwnershipShares,
+  validateOwnershipSharesStrict,
 } from "../intake";
 
 // Field lists for error-preserve round-trips
@@ -68,7 +68,7 @@ export async function createInvestmentAction(formData: FormData) {
       return { ok: false, error: parsed.error };
     }
 
-    const ownershipError = validateOwnershipShares(parsed.command.ownership);
+    const ownershipError = validateOwnershipSharesStrict(parsed.command.ownership);
 
     if (ownershipError) {
       return { ok: false, error: ownershipError };
@@ -161,9 +161,18 @@ export async function deleteInvestmentAction(formData: FormData) {
     );
   }
 
-  withStore((store) =>
+  const changes = withStore((store) =>
     store.softDeleteAsset(id, new Date().toISOString()),
   );
+
+  if (changes === 0) {
+    redirect(
+      errorRedirectUrl(returnUrl, {
+        message: "No se encontró el elemento — puede que ya haya sido eliminado.",
+      }),
+    );
+  }
+
   redirect(successRedirectUrl(returnUrl, "deleted_recoverable", id));
 }
 
@@ -179,7 +188,16 @@ export async function restoreInvestmentAction(formData: FormData) {
     );
   }
 
-  withStore((store) => store.restoreAsset(id));
+  const changes = withStore((store) => store.restoreAsset(id));
+
+  if (changes === 0) {
+    redirect(
+      errorRedirectUrl(returnUrl, {
+        message: "No se encontró el elemento — puede que ya no esté en papelera.",
+      }),
+    );
+  }
+
   redirect(successRedirectUrl(returnUrl, "restored", id));
 }
 

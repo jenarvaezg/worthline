@@ -165,8 +165,9 @@ export interface UpdateLiabilityInput {
 }
 
 export interface WorthlineStore {
-  acknowledgeWarning: (code: string, entityId: string) => void;
+  acknowledgeWarning: (code: string, entityId: string) => number;
   batchApplyValueUpdates: (commands: ValueUpdateCommand[]) => void;
+  batchApplyAllValueUpdates: (assetCommands: ValueUpdateCommand[], liabilityCommands: ValueUpdateCommand[]) => void;
   reactivateMember: (memberId: string) => void;
   close: () => void;
   createInvestmentAsset: (input: CreateInvestmentAssetInput) => void;
@@ -192,12 +193,12 @@ export interface WorthlineStore {
   readWorkspace: () => Workspace | null;
   recordOperation: (input: CreateInvestmentOperationInput) => void;
   removeWarningOverride: (code: string, entityId: string) => void;
-  restoreAsset: (assetId: string) => void;
-  restoreLiability: (liabilityId: string) => void;
+  restoreAsset: (assetId: string) => number;
+  restoreLiability: (liabilityId: string) => number;
   saveFireConfig: (scopeId: string, config: FireScopeConfig) => void;
   saveSnapshot: (input: SaveSnapshotInput) => void;
-  softDeleteAsset: (assetId: string, deletedAt: string) => void;
-  softDeleteLiability: (liabilityId: string, deletedAt: string) => void;
+  softDeleteAsset: (assetId: string, deletedAt: string) => number;
+  softDeleteLiability: (liabilityId: string, deletedAt: string) => number;
   updateAsset: (assetId: string, input: UpdateAssetInput) => void;
   updateAssetValuation: (assetId: string, currentValueMinor: number) => void;
   updateLiability: (liabilityId: string, input: UpdateLiabilityInput) => void;
@@ -785,27 +786,8 @@ export function createWorthlineStore(
     },
     saveSnapshot: (input) => {
       const snapshot = input.snapshot;
-      const existing = sqlite
-        .prepare(
-          `
-          SELECT id
-          FROM snapshots
-          WHERE scope_id = ? AND date_key = ?
-        `,
-        )
-        .get(snapshot.scopeId, snapshot.dateKey) as { id: string } | undefined;
-
-      if (existing && existing.id !== snapshot.id && !input.replace) {
-        throw new Error(
-          `Snapshot already exists for ${snapshot.scopeId} on ${snapshot.dateKey}.`,
-        );
-      }
 
       const save = sqlite.transaction(() => {
-        if (existing && input.replace) {
-          sqlite.prepare("DELETE FROM snapshots WHERE id = ?").run(existing.id);
-        }
-
         if (snapshot.isMonthlyClose) {
           sqlite
             .prepare(
@@ -816,6 +798,20 @@ export function createWorthlineStore(
             `,
             )
             .run(snapshot.scopeId, snapshot.monthKey);
+        }
+
+        // Upsert on (scope_id, date_key): concurrent first-loads degrade
+        // gracefully — the second write updates rather than throwing.
+        // explicit replace flag keeps the old id-based delete path for callers
+        // that need to force a specific snapshot id.
+        if (input.replace) {
+          const existing = sqlite
+            .prepare(`SELECT id FROM snapshots WHERE scope_id = ? AND date_key = ?`)
+            .get(snapshot.scopeId, snapshot.dateKey) as { id: string } | undefined;
+
+          if (existing) {
+            sqlite.prepare("DELETE FROM snapshots WHERE id = ?").run(existing.id);
+          }
         }
 
         sqlite
@@ -853,6 +849,19 @@ export function createWorthlineStore(
               @debtsMinor,
               @warningsJson
             )
+            ON CONFLICT(scope_id, date_key) DO UPDATE SET
+              id = excluded.id,
+              scope_label = excluded.scope_label,
+              captured_at = excluded.captured_at,
+              month_key = excluded.month_key,
+              is_monthly_close = excluded.is_monthly_close,
+              currency = excluded.currency,
+              total_net_worth_minor = excluded.total_net_worth_minor,
+              liquid_net_worth_minor = excluded.liquid_net_worth_minor,
+              housing_equity_minor = excluded.housing_equity_minor,
+              gross_assets_minor = excluded.gross_assets_minor,
+              debts_minor = excluded.debts_minor,
+              warnings_json = excluded.warnings_json
           `,
           )
           .run({
@@ -890,6 +899,41 @@ export function createWorthlineStore(
           update.run(cmd.newValueMinor, cmd.id);
           writeAuditEntry("update_valuation", "asset", cmd.id, {
             currentValueMinor: cmd.newValueMinor,
+          });
+        }
+      });
+
+      applyAll();
+    },
+    batchApplyAllValueUpdates: (assetCommands, liabilityCommands) => {
+      const allCommands = [...assetCommands, ...liabilityCommands];
+      if (allCommands.length === 0) return;
+
+      // Validate ALL amounts before any write.
+      for (const cmd of allCommands) {
+        if (!Number.isInteger(cmd.newValueMinor)) {
+          throw new Error("Money must be stored as integer minor units.");
+        }
+      }
+
+      const applyAll = sqlite.transaction(() => {
+        const updateAsset = sqlite.prepare(
+          `UPDATE assets SET current_value_minor = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        );
+        const updateLiability = sqlite.prepare(
+          `UPDATE liabilities SET current_balance_minor = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        );
+
+        for (const cmd of assetCommands) {
+          updateAsset.run(cmd.newValueMinor, cmd.id);
+          writeAuditEntry("update_valuation", "asset", cmd.id, {
+            currentValueMinor: cmd.newValueMinor,
+          });
+        }
+        for (const cmd of liabilityCommands) {
+          updateLiability.run(cmd.newValueMinor, cmd.id);
+          writeAuditEntry("update_balance", "liability", cmd.id, {
+            balanceMinor: cmd.newValueMinor,
           });
         }
       });
@@ -1159,23 +1203,34 @@ export function createWorthlineStore(
         .run();
     },
     softDeleteAsset: (assetId, deletedAt) => {
-      sqlite
+      const result = sqlite
         .prepare(`UPDATE assets SET deleted_at = ? WHERE id = ?`)
         .run(deletedAt, assetId);
-      writeAuditEntry("delete_asset", "asset", assetId, { deletedAt });
+      if (result.changes > 0) {
+        writeAuditEntry("delete_asset", "asset", assetId, { deletedAt });
+      }
+      return result.changes;
     },
     restoreAsset: (assetId) => {
-      sqlite.prepare(`UPDATE assets SET deleted_at = NULL WHERE id = ?`).run(assetId);
-      writeAuditEntry("restore_asset", "asset", assetId);
+      const result = sqlite
+        .prepare(`UPDATE assets SET deleted_at = NULL WHERE id = ?`)
+        .run(assetId);
+      if (result.changes > 0) {
+        writeAuditEntry("restore_asset", "asset", assetId);
+      }
+      return result.changes;
     },
     acknowledgeWarning: (code, entityId) => {
-      sqlite
+      const result = sqlite
         .prepare(
           `INSERT INTO warning_overrides (code, entity_id) VALUES (?, ?)
            ON CONFLICT(code, entity_id) DO NOTHING`,
         )
         .run(code, entityId);
-      writeAuditEntry("acknowledge_warning", "asset", entityId, { code });
+      if (result.changes > 0) {
+        writeAuditEntry("acknowledge_warning", "asset", entityId, { code });
+      }
+      return result.changes;
     },
     removeWarningOverride: (code, entityId) => {
       sqlite
@@ -1203,16 +1258,22 @@ export function createWorthlineStore(
         .all() as Array<{ id: string; name: string }>,
     }),
     softDeleteLiability: (liabilityId, deletedAt) => {
-      sqlite
+      const result = sqlite
         .prepare(`UPDATE liabilities SET deleted_at = ? WHERE id = ?`)
         .run(deletedAt, liabilityId);
-      writeAuditEntry("delete_liability", "liability", liabilityId, { deletedAt });
+      if (result.changes > 0) {
+        writeAuditEntry("delete_liability", "liability", liabilityId, { deletedAt });
+      }
+      return result.changes;
     },
     restoreLiability: (liabilityId) => {
-      sqlite
+      const result = sqlite
         .prepare(`UPDATE liabilities SET deleted_at = NULL WHERE id = ?`)
         .run(liabilityId);
-      writeAuditEntry("restore_liability", "liability", liabilityId);
+      if (result.changes > 0) {
+        writeAuditEntry("restore_liability", "liability", liabilityId);
+      }
+      return result.changes;
     },
     readAuditLog: (filter) => {
       const db = drizzle(sqlite);

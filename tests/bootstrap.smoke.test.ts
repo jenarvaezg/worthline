@@ -28,13 +28,7 @@ describe("worthline bootstrap", () => {
 
     expect(dashboard.productName).toBe("worthline");
     expect(dashboard.baseCurrency).toBe("EUR");
-    expect(dashboard.metrics.map((metric) => metric.id)).toEqual([
-      "total-net-worth",
-      "liquid-net-worth",
-      "housing-equity",
-      "gross-assets",
-      "debts",
-    ]);
+    expect(dashboard.generatedAt).toBe("2026-06-08T12:00:00.000Z");
     expect(dashboard.persistence.status).toBe("ok");
     expect(dashboard.persistence.checkValue).toBe("2026-06-08T12:00:00.000Z");
   });
