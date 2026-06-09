@@ -61,6 +61,18 @@ export { listScopeOptions, resolveScopeMemberIds } from "./scope";
 import { resolveScopeMemberIds } from "./scope";
 
 export { allocateOwnedMoneyMinor } from "./ownership";
+
+export type {
+  PortfolioProjection,
+  PortfolioProjectionInput,
+  PortfolioSection,
+  AssetsSection,
+  LiabilitiesSection,
+  ProjectedAssetRow,
+  ProjectedLiabilityRow,
+  RowOwnership,
+} from "./portfolio-projection";
+export { projectPortfolio } from "./portfolio-projection";
 import { allocateOwnedMoneyMinor } from "./ownership";
 
 export type { DecimalString } from "./decimal";
