@@ -801,3 +801,95 @@ describe("parseFireConfigFormStrict — rejects garbage FIRE input", () => {
     expect(result.ok).toBe(false);
   });
 });
+
+// === #55 empezar ===
+
+import {
+  parseEmpezarSolo,
+  parseEmpezarHogar,
+} from "./intake";
+
+describe("parseEmpezarSolo — individual path", () => {
+  test("returns ok with a single member from the name field", () => {
+    const result = parseEmpezarSolo(form({ name: "Ana" }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.mode).toBe("individual");
+    expect(result.command.members).toHaveLength(1);
+    expect(result.command.members[0]!.name).toBe("Ana");
+  });
+
+  test("trims whitespace from the name", () => {
+    const result = parseEmpezarSolo(form({ name: "  José  " }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.members[0]!.name).toBe("José");
+  });
+
+  test("rejects a blank name with a user-facing error", () => {
+    const result = parseEmpezarSolo(form({ name: "   " }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBeTruthy();
+  });
+
+  test("rejects a missing name field", () => {
+    const result = parseEmpezarSolo(form({}));
+    expect(result.ok).toBe(false);
+  });
+
+  test("generates a stable deterministic member id", () => {
+    const r1 = parseEmpezarSolo(form({ name: "Ana" }));
+    const r2 = parseEmpezarSolo(form({ name: "Ana" }));
+    expect(r1).toEqual(r2);
+  });
+});
+
+describe("parseEmpezarHogar — household path", () => {
+  test("returns ok with multiple members from one-per-line textarea", () => {
+    const result = parseEmpezarHogar(form({ memberNames: "Ana\nJose\nLuz" }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.mode).toBe("household");
+    expect(result.command.members.map((m) => m.name)).toEqual(["Ana", "Jose", "Luz"]);
+  });
+
+  test("filters blank lines silently", () => {
+    const result = parseEmpezarHogar(form({ memberNames: "Ana\n\nJose\n  \nLuz" }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.members.map((m) => m.name)).toEqual(["Ana", "Jose", "Luz"]);
+  });
+
+  test("trims whitespace from each name", () => {
+    const result = parseEmpezarHogar(form({ memberNames: "  Ana  \n  Jose  " }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.members.map((m) => m.name)).toEqual(["Ana", "Jose"]);
+  });
+
+  test("rejects entirely empty input with a user-facing error", () => {
+    const result = parseEmpezarHogar(form({ memberNames: "" }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBeTruthy();
+  });
+
+  test("rejects input that is only blank lines", () => {
+    const result = parseEmpezarHogar(form({ memberNames: "\n\n   \n" }));
+    expect(result.ok).toBe(false);
+  });
+
+  test("generates stable deterministic member ids", () => {
+    const r1 = parseEmpezarHogar(form({ memberNames: "Ana\nJose" }));
+    const r2 = parseEmpezarHogar(form({ memberNames: "Ana\nJose" }));
+    expect(r1).toEqual(r2);
+  });
+
+  test("accepts a single name (household with one person is valid)", () => {
+    const result = parseEmpezarHogar(form({ memberNames: "Ana" }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.members).toHaveLength(1);
+  });
+});

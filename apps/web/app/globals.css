@@ -1076,3 +1076,71 @@ code {
     display: grid;
   }
 }
+
+/* === #55 empezar === */
+
+.empezarPage {
+  justify-content: flex-start;
+}
+
+.empezarSection {
+  background: rgba(255, 250, 240, 0.88);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  padding: 24px;
+}
+
+.empezarHeader {
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+}
+
+.empezarHeader h2 {
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+}
+
+.empezarTrust {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.empezarPaths {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: 1fr 1fr;
+}
+
+@media (max-width: 640px) {
+  .empezarPaths {
+    grid-template-columns: 1fr;
+  }
+}
+
+.empezarCard {
+  border: 1px solid var(--line);
+  padding: 20px;
+}
+
+.empezarCard.active {
+  border-color: var(--green);
+}
+
+.empezarCard h3 {
+  font-size: 0.9rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  margin: 0 0 6px;
+  text-transform: uppercase;
+}
+
+.empezarCardDesc {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin: 0 0 16px;
+}
