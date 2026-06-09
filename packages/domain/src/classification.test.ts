@@ -82,6 +82,19 @@ describe("asset classification", () => {
     expect(isHousingAsset(asset("plot", "housing"))).toBe(true);
     expect(isHousingAsset(asset("broker", "market"))).toBe(false);
   });
+
+  test("real_estate or primary residence assets normalize to housing tier regardless of declared tier", () => {
+    expect(tierOfAsset(asset("home", "cash", { type: "real_estate" }))).toBe("housing");
+    expect(tierOfAsset(asset("flat", "market", { isPrimaryResidence: true }))).toBe(
+      "housing",
+    );
+  });
+
+  test("a housing asset is never counted as liquid", () => {
+    const home = asset("home", "cash", { type: "real_estate" });
+    expect(isHousingAsset(home)).toBe(true);
+    expect(isLiquid(tierOfAsset(home))).toBe(false);
+  });
 });
 
 describe("liability classification", () => {

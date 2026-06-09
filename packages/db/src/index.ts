@@ -8,7 +8,7 @@ import type {
   CreateInvestmentOperationInput,
   CreateLiabilityInput,
   CreateManualAssetInput,
-  CreateNetWorthSnapshotInput,
+  DomainWarning,
   FireScopeConfig,
   InvestmentOperation,
   Liability,
@@ -25,7 +25,6 @@ import {
   createInvestmentOperation,
   createLiability,
   createManualAsset,
-  createNetWorthSnapshot,
   createWorkspace,
   derivePosition,
   resolveScopeMemberIds,
@@ -77,7 +76,8 @@ export interface InitializeWorkspaceInput {
   groups?: MemberGroup[];
 }
 
-export interface SaveSnapshotInput extends CreateNetWorthSnapshotInput {
+export interface SaveSnapshotInput {
+  snapshot: NetWorthSnapshot;
   replace?: boolean;
 }
 
@@ -636,7 +636,7 @@ export function createWorthlineStore(
         .run();
     },
     saveSnapshot: (input) => {
-      const snapshot = createNetWorthSnapshot(input);
+      const snapshot = input.snapshot;
       const existing = sqlite
         .prepare(
           `
@@ -1066,13 +1066,16 @@ function readAssets(
   const metaByAsset = hasInvestments
     ? readInvestmentMeta(sqlite)
     : new Map<string, InvestmentMeta>();
+  const priceCacheByAsset = hasInvestments
+    ? readAllPriceCache(sqlite)
+    : new Map<string, { price: string }>();
 
   return rows.map((row) =>
     createManualAsset(workspace, {
       currency: row.currency,
       currentValueMinor:
         row.type === "investment"
-          ? investmentValueMinor(row.id, row.currency, operationsByAsset, metaByAsset)
+          ? investmentValueMinor(row.id, row.currency, operationsByAsset, metaByAsset, priceCacheByAsset)
           : row.currentValueMinor,
       id: row.id,
       isPrimaryResidence: row.isPrimaryResidence === 1,
@@ -1095,12 +1098,15 @@ function investmentValueMinor(
   currency: string,
   operationsByAsset: Map<string, InvestmentOperation[]>,
   metaByAsset: Map<string, InvestmentMeta>,
+  priceCacheByAsset: Map<string, { price: string }>,
 ): number {
+  const cachedPrice = priceCacheByAsset.get(assetId)?.price;
   const manualPrice = metaByAsset.get(assetId)?.manualPricePerUnit;
+  const currentPricePerUnit = cachedPrice ?? manualPrice;
   const position = derivePosition(operationsByAsset.get(assetId) ?? [], {
     assetId,
     currency,
-    ...(manualPrice ? { currentPricePerUnit: manualPrice } : {}),
+    ...(currentPricePerUnit ? { currentPricePerUnit } : {}),
   });
 
   return position.marketValue?.amountMinor ?? position.costBasis.amountMinor;
@@ -1356,7 +1362,7 @@ function readSnapshots(sqlite: DatabaseConnection, scopeId?: string): NetWorthSn
     scopeId: row.scopeId,
     scopeLabel: row.scopeLabel,
     totalNetWorth: { amountMinor: row.totalNetWorthMinor, currency: row.currency },
-    warnings: JSON.parse(row.warningsJson) as string[],
+    warnings: JSON.parse(row.warningsJson) as DomainWarning[],
   }));
 }
 
