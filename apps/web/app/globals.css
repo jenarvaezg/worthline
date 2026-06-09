@@ -1076,3 +1076,127 @@ code {
     display: grid;
   }
 }
+
+/* === #59 historico === */
+
+.historicoPanel {
+  background: var(--paper-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  margin: 24px auto;
+  max-width: 900px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.historicoEmpty {
+  padding: 24px;
+}
+
+.historicoTable {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.historicoTable th,
+.historicoTable td {
+  padding: 10px 16px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.historicoTable thead th {
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.historicoTable tbody tr {
+  border-bottom: 1px solid var(--line);
+}
+
+.historicoTable tbody tr:last-child {
+  border-bottom: none;
+}
+
+.historicoTable tbody tr:hover {
+  background: var(--paper);
+}
+
+.historicoTable .numCol {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.historicoTable .barCol {
+  width: 120px;
+}
+
+.historicoTable td.barCol {
+  padding-left: 8px;
+  padding-right: 16px;
+}
+
+.dateCell {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dateKey {
+  font-variant-numeric: tabular-nums;
+}
+
+.monthlyCloseBadge {
+  background: var(--blue);
+  border-radius: 4px;
+  color: var(--paper-strong);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.monthlyCloseRow {
+  background: color-mix(in srgb, var(--blue) 5%, var(--paper-strong));
+}
+
+.deltaBar {
+  border-radius: 2px;
+  display: block;
+  height: 10px;
+  min-width: 4%;
+}
+
+.deltaBar.pos {
+  background: var(--green);
+}
+
+.deltaBar.neg {
+  background: var(--red);
+}
+
+.historicoTable .pos {
+  color: var(--green);
+}
+
+.historicoTable .neg {
+  color: var(--red);
+}
+
+@media (max-width: 640px) {
+  .historicoTable .barCol,
+  .historicoTable th.barCol {
+    display: none;
+  }
+
+  .historicoTable .numCol {
+    font-size: 0.85rem;
+  }
+}
