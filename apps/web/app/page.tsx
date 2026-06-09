@@ -1,98 +1,51 @@
-import type { MoneyMinor } from "@worthline/domain";
-import { runBootstrapHealthcheck, withStore } from "@worthline/db";
 import {
   captureNetWorthSnapshot,
-  formatMoneyInput,
   formatMoneyMinor,
-  getPriceFreshness,
+  largestRemainderPercentages,
   listScopeOptions,
   moneySign,
   planSnapshotCapture,
   prepareDashboardState,
+  signedDeltaBarWidths,
 } from "@worthline/domain";
-import type {
-  ManualAsset,
-  Member,
-  NetWorthFraming,
-  PriceFreshnessState,
-} from "@worthline/domain";
-import { fetchAndCachePrice, refreshStalePrices, stooqProvider } from "@worthline/pricing";
+import type { LiquidityTier, ManualAsset, MoneyMinor, NetWorthFraming } from "@worthline/domain";
+import { fetchAndCachePrice, refreshStalePrices } from "@worthline/pricing";
+import { runBootstrapHealthcheck, withStore } from "@worthline/db";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import type { FormErrorContext } from "./intake";
 import {
-  appendParam,
   buildCurrentUrl,
   buildSnapshotId,
-  errorRedirectUrl,
-  parseAssetCommand,
-  parseEntityId,
-  parseFireConfigForm,
-  parseFormError,
-  parseInvestmentAssetCommand,
-  parseLiabilityCommand,
-  parseMoneyMinorField,
-  parseNewMember,
-  parseOperationCommand,
   parseScopeCookie,
   parseViewParam,
-  preserveFields,
-  pricesRefreshedRedirectUrl,
-  resolveOkMessage,
   SCOPE_COOKIE_NAME,
-  successRedirectUrl,
-  validateOwnershipShares,
 } from "./intake";
 import Shell from "./shell";
 
 export const dynamic = "force-dynamic";
 
-// Typed fields refilled beside each form after a validation error.
-const ASSET_FORM_FIELDS = [
-  "name",
-  "type",
-  "currentValue",
-  "liquidityTier",
-  "isPrimaryResidence",
-  "ownershipPreset",
-];
-const LIABILITY_FORM_FIELDS = [
-  "name",
-  "type",
-  "balance",
-  "associatedAssetId",
-  "ownershipPreset",
-];
-const INVESTMENT_FORM_FIELDS = [
-  "name",
-  "unitSymbol",
-  "isin",
-  "manualPricePerUnit",
-  "ownershipPreset",
-];
-const OPERATION_FORM_FIELDS = [
-  "assetId",
-  "kind",
-  "executedAt",
-  "units",
-  "pricePerUnit",
-  "fees",
-];
-
-/** The page URL an action should return to, defaulting to the dashboard root. */
-function currentUrlOf(formData: FormData): string {
-  return (formData.get("currentUrl") as string) || "/";
-}
-
 const framingTabs = [
-  { id: "total", label: "Total" },
-  { id: "liquid", label: "Liquido" },
-] as const satisfies Array<{ id: NetWorthFraming; label: string }>;
+  { id: "total" as NetWorthFraming, label: "Patrimonio neto" },
+  { id: "liquid" as NetWorthFraming, label: "Líquido" },
+];
 
-/** Outcome of a write server action: ok signals revalidate, error surfaces to the user. */
-type ActionResult = { ok: boolean; error?: string };
+const TIER_LABELS: Record<LiquidityTier, string> = {
+  cash: "Caja",
+  market: "Mercado",
+  retirement: "Jubilación",
+  illiquid: "Ilíquido",
+  housing: "Vivienda",
+};
+
+const ONBOARDING_LINKS: Record<string, string> = {
+  members: "/ajustes",
+  holdings: "/patrimonio/nuevo-activo",
+  investments: "/inversiones/nueva",
+  fire: "/ajustes",
+  snapshot: "/",
+};
 
 export default async function DashboardPage({
   searchParams,
@@ -102,19 +55,13 @@ export default async function DashboardPage({
   const resolvedSearchParams = await searchParams;
   const persistence = runBootstrapHealthcheck();
   const selectedView = parseViewParam(resolvedSearchParams?.view);
-  const formError = parseFormError(resolvedSearchParams);
-  const formOk = resolveOkMessage(resolvedSearchParams);
-  const isFireEdit = resolvedSearchParams?.fireEdit === "true";
   const currentUrl = buildCurrentUrl(resolvedSearchParams);
 
-  // Resolve scope from cookie (persists across pages/restarts), falling back
-  // to the household default. URL ?scope= param no longer used.
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
   // Auto-refresh stale prices first — before snapshot capture — so the day's
-  // snapshot reflects refreshed prices (ADR 0005 + #52). Failures degrade to
-  // "Fallido" labels, never an error page.
+  // snapshot reflects refreshed prices (ADR 0005 + #52).
   const investmentAssetsMeta = withStore((store) => store.readInvestmentAssetsWithMeta());
   const initialPriceCache = withStore((store) => store.readAllPriceCacheEntries());
   const refreshedPrices = await refreshStalePrices(
@@ -123,7 +70,6 @@ export default async function DashboardPage({
     persistence.checkedAt,
   ).catch(() => null);
 
-  // Persist refreshed prices and re-read so capture + render see the latest state.
   const priceCache = withStore((store) => {
     if (refreshedPrices) {
       for (const price of refreshedPrices.refreshed) {
@@ -136,7 +82,6 @@ export default async function DashboardPage({
   const storeData = withStore((store) => {
     const workspace = store.readWorkspace();
 
-    // No workspace → redirect to /empezar for first-run setup.
     if (!workspace) {
       return null;
     }
@@ -185,7 +130,6 @@ export default async function DashboardPage({
     };
   });
 
-  // Redirect to /empezar when no workspace exists.
   if (!storeData) {
     redirect("/empezar");
   }
@@ -198,46 +142,32 @@ export default async function DashboardPage({
   });
 
   const {
-    activeMembers,
-    assets,
     dashboard,
     deltas,
     fireResult,
     fireScopeConfig,
-    investmentAssets,
-    liabilities,
     onboarding,
-    positions,
     presentation,
     pyramid,
     scopes,
-    selectedMemberIds,
     selectedScope,
     snapshots,
-    today,
     warnings,
   } = state;
 
-  // workspace is always non-null here: we redirected to /empezar above when storeData
-  // was null (no workspace). TypeScript cannot infer that redirect() throws, so assert.
   const workspace = state.workspace!;
+  const hasHoldings = state.assets.length + state.liabilities.length > 0;
 
-  // Default owner for new holdings: the member whose scope is selected, else the
-  // first active member. The ownership control auto-completes to total 100%.
-  const ownershipScopeMemberId =
-    activeMembers.find((member) => member.id === selectedScope?.id)?.id ??
-    activeMembers[0]?.id;
+  // Onboarding checklist: show while ANY step is still pending.
+  const anyStepPending = onboarding.some((step) => !step.done);
 
-  // First run: without holdings, zero figures are demoted ("sin datos aún").
-  const hasHoldings = assets.length + liabilities.length > 0;
+  // Liquidity tier percentages — largest-remainder so they sum to 100.
+  const tierBpsValues = pyramid.map((tier) => tier.shareOfGrossBps);
+  const tierPercents = largestRemainderPercentages(tierBpsValues);
 
-  // Typed input preserved for the form that failed validation (empty otherwise).
-  const valuesFor = (formId: string): Record<string, string> =>
-    formError?.formId === formId ? formError.values : {};
-  const assetValues = valuesFor("asset");
-  const liabilityValues = valuesFor("liability");
-  const investmentValues = valuesFor("investment");
-  const operationValues = valuesFor("operation");
+  // Evolution mini: signed delta bars scaled to the absolute max snapshot value.
+  const snapshotAmounts = snapshots.map((s) => s.totalNetWorth.amountMinor);
+  const snapshotBarWidths = signedDeltaBarWidths(snapshotAmounts);
 
   return (
     <Shell
@@ -252,36 +182,9 @@ export default async function DashboardPage({
         message: w.message,
       }))}
     >
-      {formError && !formError.formId ? (
-        <p className="errorBand" role="alert">
-          {formError.message}
-        </p>
-      ) : null}
-
-      {formOk ? (
-        <p className="successBand" role="status">
-          {formOk}
-        </p>
-      ) : null}
-
-      {workspace && !hasHoldings ? (
-        <section className="onboardingChecklist" aria-label="Primeros pasos">
-          <div className="panelHeader">
-            <h2>Primeros pasos</h2>
-            <span>Empieza aquí</span>
-          </div>
-          <ol>
-            {onboarding.map((step) => (
-              <li className={step.done ? "done" : undefined} key={step.id}>
-                {step.done ? "✓" : "○"} {step.label}
-              </li>
-            ))}
-          </ol>
-        </section>
-      ) : null}
-
-      {selectedScope ? (
-        <div className="tabsBar">
+      {/* ── 1. Headline — framing selector visibly labeled beside the hero ── */}
+      <section className="summaryBand" aria-label="Resumen patrimonial">
+        <div className="resumenHeader">
           <nav className="framingTabs" aria-label="Vista de patrimonio">
             {framingTabs.map((tab) => (
               <Link
@@ -295,14 +198,7 @@ export default async function DashboardPage({
             ))}
           </nav>
         </div>
-      ) : null}
 
-      <section className="summaryBand" aria-label="Resumen patrimonial">
-        <div className="scopeRail">
-          <span>{selectedScope?.label ?? "Sin workspace"}</span>
-          <span>{workspace?.baseCurrency ?? "EUR"}</span>
-          <span>{new Date(dashboard.generatedAt).toLocaleString("es-ES")}</span>
-        </div>
         {presentation ? (
           <div className="headline">
             <span>{presentation.headlineLabel}</span>
@@ -310,18 +206,24 @@ export default async function DashboardPage({
               {formatMoneyMinor(presentation.headline)}
               {!hasHoldings ? <small>sin datos aún</small> : null}
             </strong>
-            <div className="breakdown">
-              {presentation.breakdown.map((item) => (
-                <span key={item.id}>
-                  {item.label}{" "}
-                  <b className={hasHoldings ? undefined : "emptyFigure"}>
-                    {formatMoneyMinor(item.value)}
-                  </b>
-                </span>
-              ))}
-            </div>
           </div>
         ) : null}
+
+        {/* ── 2. Breakdown — always visible: Activos brutos · Deudas · Vivienda · Líquido ── */}
+        {presentation ? (
+          <div className="breakdown">
+            {presentation.breakdown.map((item) => (
+              <span key={item.id}>
+                {item.label}{" "}
+                <b className={hasHoldings ? undefined : "emptyFigure"}>
+                  {formatMoneyMinor(item.value)}
+                </b>
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {/* ── Delta strip ── */}
         {deltas ? (
           <div className="deltaStrip" aria-label="Cambios de snapshots">
             <span>
@@ -333,7 +235,9 @@ export default async function DashboardPage({
                     : undefined
                 }
               >
-                {formatOptionalMoney(deltas.changeSincePrevious)}
+                {deltas.changeSincePrevious
+                  ? formatMoneyMinor(deltas.changeSincePrevious)
+                  : "sin dato"}
               </b>
             </span>
             <span>
@@ -345,469 +249,40 @@ export default async function DashboardPage({
                     : undefined
                 }
               >
-                {formatOptionalMoney(deltas.changeSinceMonthlyClose)}
+                {deltas.changeSinceMonthlyClose
+                  ? formatMoneyMinor(deltas.changeSinceMonthlyClose)
+                  : "sin dato"}
               </b>
             </span>
           </div>
         ) : null}
       </section>
 
-      <section className="setupPanel" aria-label="Miembros del workspace">
+      {/* ── 3. Composition — liquidity breakdown, 5 tiers ── */}
+      <section className="liquidityPanel" aria-label="Liquidez por capa">
         <div className="panelHeader">
-          <h2>Miembros</h2>
-          <span>{selectedMemberIds.length} en scope</span>
+          <h2>Liquidez</h2>
+          <span>Por capa · % del bruto</span>
         </div>
-        <div className="memberGrid">
-          {workspace.members.map((member) => (
-            <form action={updateMemberAction} className="memberRow" key={member.id}>
-              <input name="currentUrl" type="hidden" value={currentUrl} />
-              <input name="id" type="hidden" value={member.id} />
-              <input
-                aria-label={`Nombre de ${member.name}`}
-                defaultValue={member.name}
-                disabled={Boolean(member.disabledAt)}
-                name="name"
-              />
-              <span>{member.disabledAt ? "Inactivo" : "Activo"}</span>
-              {!member.disabledAt ? (
-                <>
-                  <button type="submit">Guardar</button>
-                  <button
-                    formAction={disableMemberAction}
-                    type="submit"
-                    value={member.id}
-                  >
-                    Desactivar
-                  </button>
-                </>
-              ) : null}
-            </form>
-          ))}
-        </div>
-        <form action={createMemberAction} className="inlineForm">
-          <input name="currentUrl" type="hidden" value={currentUrl} />
-          <input name="name" aria-label="Nuevo miembro" placeholder="Nuevo miembro" />
-          <button type="submit">Añadir</button>
-        </form>
-      </section>
-
-      <div className="mainGrid">
-        <section className="ledgerPanel" aria-label="Activos y deudas">
-          <div className="panelHeader">
-            <h2>Linea operativa</h2>
-            <span>Activos y deudas</span>
-          </div>
-          <div className="entryGrid">
-            <form action={createAssetAction} className="stackForm">
-              <input name="currentUrl" type="hidden" value={currentUrl} />
-              <h3>Activo</h3>
-              <FormErrorNote error={formError} formId="asset" />
-              <input
-                aria-label="Nombre"
-                defaultValue={assetValues["name"]}
-                name="name"
-                placeholder="Nombre"
-              />
-              <select name="type" defaultValue={assetValues["type"] ?? "cash"}>
-                <option value="cash">Cash</option>
-                <option value="manual">Manual</option>
-                <option value="real_estate">Vivienda</option>
-              </select>
-              <input
-                defaultValue={assetValues["currentValue"]}
-                inputMode="decimal"
-                name="currentValue"
-                aria-label="Valor EUR"
-                placeholder="Valor EUR"
-              />
-              <select
-                name="liquidityTier"
-                defaultValue={assetValues["liquidityTier"] ?? "cash"}
-                title="Capa de liquidez: cómo de rápido puedes convertir el activo en efectivo (caja → mercado → jubilación → ilíquido → vivienda)."
-              >
-                <option value="cash">Caja</option>
-                <option value="market">Mercado</option>
-                <option value="retirement">Jubilacion</option>
-                <option value="illiquid">Iliquido</option>
-                <option value="housing">Vivienda</option>
-              </select>
-              <label className="checkLine">
-                <input
-                  defaultChecked={assetValues["isPrimaryResidence"] === "on"}
-                  name="isPrimaryResidence"
-                  type="checkbox"
-                />{" "}
-                Vivienda habitual
-              </label>
-              <OwnershipInputs
-                members={activeMembers}
-                scopeMemberId={ownershipScopeMemberId}
-                values={assetValues}
-              />
-              <button type="submit">Añadir activo</button>
-            </form>
-
-            <form action={createLiabilityAction} className="stackForm">
-              <input name="currentUrl" type="hidden" value={currentUrl} />
-              <h3>Deuda</h3>
-              <FormErrorNote error={formError} formId="liability" />
-              <input
-                aria-label="Nombre"
-                defaultValue={liabilityValues["name"]}
-                name="name"
-                placeholder="Nombre"
-              />
-              <select name="type" defaultValue={liabilityValues["type"] ?? "mortgage"}>
-                <option value="mortgage">Hipoteca</option>
-                <option value="debt">Deuda</option>
-              </select>
-              <input
-                defaultValue={liabilityValues["balance"]}
-                inputMode="decimal"
-                name="balance"
-                aria-label="Saldo EUR"
-                placeholder="Saldo EUR"
-              />
-              <select
-                name="associatedAssetId"
-                defaultValue={liabilityValues["associatedAssetId"] ?? ""}
-              >
-                <option value="">Sin activo asociado</option>
-                {assets.map((asset) => (
-                  <option key={asset.id} value={asset.id}>
-                    {asset.name}
-                  </option>
-                ))}
-              </select>
-              <OwnershipInputs
-                members={activeMembers}
-                scopeMemberId={ownershipScopeMemberId}
-                values={liabilityValues}
-              />
-              <button type="submit">Añadir deuda</button>
-            </form>
-          </div>
-
-          <div className="tableScroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Registro</th>
-                  <th>Tipo</th>
-                  <th>Valor actual</th>
-                  <th>Actualizar</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {assets.map((asset) => (
-                  <tr id={asset.id} key={asset.id}>
-                    <td>{asset.name}</td>
-                    <td>{asset.liquidityTier}</td>
-                    <td>{formatMoneyMinor(asset.currentValue)}</td>
-                    <td>
-                      {asset.type === "investment" ? (
-                        <span aria-label={`Valor de ${asset.name} (derivado)`}>
-                          {formatMoneyMinor(asset.currentValue)}
-                        </span>
-                      ) : (
-                        <form action={updateAssetValuationAction} className="rowForm">
-                          <input name="currentUrl" type="hidden" value={currentUrl} />
-                          <input name="id" type="hidden" value={asset.id} />
-                          <input
-                            aria-label={`Valor de ${asset.name}`}
-                            defaultValue={
-                              formError?.formId === asset.id
-                                ? formError.values["currentValue"]
-                                : formatMoneyInput(asset.currentValue.amountMinor)
-                            }
-                            inputMode="decimal"
-                            name="currentValue"
-                          />
-                          <button type="submit">OK</button>
-                          <FormErrorNote error={formError} formId={asset.id} />
-                        </form>
-                      )}
-                    </td>
-                    <td>
-                      <form action={deleteAssetAction}>
-                        <input name="currentUrl" type="hidden" value={currentUrl} />
-                        <input name="id" type="hidden" value={asset.id} />
-                        <details className="confirmDelete">
-                          <summary>Eliminar</summary>
-                          <button type="submit">Confirmar</button>
-                        </details>
-                      </form>
-                    </td>
-                  </tr>
-                ))}
-                {liabilities.map((liability) => (
-                  <tr id={liability.id} key={liability.id}>
-                    <td>{liability.name}</td>
-                    <td>{liability.type}</td>
-                    <td>{formatMoneyMinor(liability.currentBalance)}</td>
-                    <td>
-                      <form action={updateLiabilityBalanceAction} className="rowForm">
-                        <input name="currentUrl" type="hidden" value={currentUrl} />
-                        <input name="id" type="hidden" value={liability.id} />
-                        <input
-                          aria-label={`Saldo de ${liability.name}`}
-                          defaultValue={
-                            formError?.formId === liability.id
-                              ? formError.values["balance"]
-                              : formatMoneyInput(liability.currentBalance.amountMinor)
-                          }
-                          inputMode="decimal"
-                          name="balance"
-                        />
-                        <button type="submit">OK</button>
-                        <FormErrorNote error={formError} formId={liability.id} />
-                      </form>
-                    </td>
-                    <td>
-                      <form action={deleteLiabilityAction}>
-                        <input name="currentUrl" type="hidden" value={currentUrl} />
-                        <input name="id" type="hidden" value={liability.id} />
-                        <details className="confirmDelete">
-                          <summary>Eliminar</summary>
-                          <button type="submit">Confirmar</button>
-                        </details>
-                      </form>
-                    </td>
-                  </tr>
-                ))}
-                {assets.length === 0 && liabilities.length === 0 ? (
-                  <tr>
-                    <td colSpan={5}>
-                      Sin registros todavía — añade tu primer activo o deuda con los
-                      formularios de arriba.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-          {storeData.trash.assets.length + storeData.trash.liabilities.length > 0 ? (
-            <details className="trashPanel">
-              <summary>
-                Papelera (
-                {storeData.trash.assets.length + storeData.trash.liabilities.length})
-              </summary>
-              <div className="trashList">
-                {storeData.trash.assets.map((item) => (
-                  <form action={restoreAssetAction} className="trashRow" key={item.id}>
-                    <input name="currentUrl" type="hidden" value={currentUrl} />
-                    <input name="id" type="hidden" value={item.id} />
-                    <span>{item.name}</span>
-                    <button type="submit">Restaurar</button>
-                  </form>
-                ))}
-                {storeData.trash.liabilities.map((item) => (
-                  <form
-                    action={restoreLiabilityAction}
-                    className="trashRow"
-                    key={item.id}
-                  >
-                    <input name="currentUrl" type="hidden" value={currentUrl} />
-                    <input name="id" type="hidden" value={item.id} />
-                    <span>{item.name}</span>
-                    <button type="submit">Restaurar</button>
-                  </form>
-                ))}
-              </div>
-            </details>
-          ) : null}
-        </section>
-
-        <section className="positionsPanel" aria-label="Inversiones y posiciones">
-          <div className="panelHeader">
-            <h2>Inversiones</h2>
-            <span>Unidades, coste medio y P/L</span>
-          </div>
-          <form action={refreshPricesAction} className="inlineForm">
-            <input name="currentUrl" type="hidden" value={currentUrl} />
-            <button type="submit">Actualizar precios</button>
-          </form>
-          <div className="entryGrid">
-            <form action={createInvestmentAssetAction} className="stackForm">
-              <input name="currentUrl" type="hidden" value={currentUrl} />
-              <h3>Nueva inversión</h3>
-              <FormErrorNote error={formError} formId="investment" />
-              <input
-                aria-label="Nombre"
-                defaultValue={investmentValues["name"]}
-                name="name"
-                placeholder="Nombre"
-              />
-              <input
-                defaultValue={investmentValues["unitSymbol"]}
-                name="unitSymbol"
-                aria-label="Ticker o símbolo"
-                placeholder="Ticker / símbolo"
-              />
-              <input
-                defaultValue={investmentValues["isin"]}
-                name="isin"
-                aria-label="ISIN (opcional)"
-                placeholder="ISIN (opcional)"
-              />
-              <input
-                defaultValue={investmentValues["manualPricePerUnit"]}
-                inputMode="decimal"
-                name="manualPricePerUnit"
-                aria-label="Precio actual por unidad en EUR"
-                placeholder="Precio actual/unidad EUR"
-              />
-              <OwnershipInputs
-                members={activeMembers}
-                scopeMemberId={ownershipScopeMemberId}
-                values={investmentValues}
-              />
-              <button type="submit">Añadir inversión</button>
-            </form>
-
-            <form action={recordOperationAction} className="stackForm">
-              <input name="currentUrl" type="hidden" value={currentUrl} />
-              <h3>Operación</h3>
-              <FormErrorNote error={formError} formId="operation" />
-              <select name="assetId" defaultValue={operationValues["assetId"] ?? ""}>
-                <option disabled value="">
-                  Selecciona inversión
-                </option>
-                {investmentAssets.map((asset) => (
-                  <option key={asset.id} value={asset.id}>
-                    {asset.name}
-                  </option>
-                ))}
-              </select>
-              <select name="kind" defaultValue={operationValues["kind"] ?? "buy"}>
-                <option value="buy">Compra</option>
-                <option value="sell">Venta</option>
-              </select>
-              <input
-                aria-label="Fecha"
-                defaultValue={operationValues["executedAt"] ?? today}
-                name="executedAt"
-                type="date"
-              />
-              <input
-                defaultValue={operationValues["units"]}
-                inputMode="decimal"
-                name="units"
-                aria-label="Unidades"
-                placeholder="Unidades"
-              />
-              <input
-                defaultValue={operationValues["pricePerUnit"]}
-                inputMode="decimal"
-                name="pricePerUnit"
-                aria-label="Precio por unidad en EUR"
-                placeholder="Precio/unidad EUR"
-              />
-              <input
-                defaultValue={operationValues["fees"] ?? "0"}
-                inputMode="decimal"
-                name="fees"
-                aria-label="Comisiones EUR"
-                placeholder="Comisiones EUR"
-              />
-              <button type="submit">Registrar operación</button>
-            </form>
-          </div>
-
-          <div className="tableScroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Inversión</th>
-                  <th>Unidades</th>
-                  <th>Coste medio</th>
-                  <th>Precio/u</th>
-                  <th>Valor</th>
-                  <th>P/L</th>
-                </tr>
-              </thead>
-              <tbody>
-                {positions.map((position) => {
-                  const cachedPrice = priceCache.find(
-                    (entry) => entry.assetId === position.assetId,
-                  );
-                  const freshness = cachedPrice
-                    ? getPriceFreshness(cachedPrice, persistence.checkedAt)
-                    : null;
-
-                  return (
-                    <tr key={position.assetId}>
-                      <td>
-                        {position.name}
-                        {position.warnings.length > 0 ? " ⚠" : ""}
-                      </td>
-                      <td>{position.currentUnits}</td>
-                      <td>{position.averageUnitCost}</td>
-                      <td>
-                        {cachedPrice ? (
-                          <>
-                            {cachedPrice.price}{" "}
-                            <small className={`priceStatus ${freshness ?? "unknown"}`}>
-                              {priceFreshnessLabel(freshness)}
-                            </small>
-                          </>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td>
-                        {position.marketValue
-                          ? formatMoneyMinor(position.marketValue)
-                          : "—"}
-                      </td>
-                      <td
-                        className={
-                          position.unrealizedPnl
-                            ? moneySign(position.unrealizedPnl)
-                            : undefined
-                        }
-                      >
-                        {position.unrealizedPnl
-                          ? formatMoneyMinor(position.unrealizedPnl)
-                          : "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
-                {positions.length === 0 ? (
-                  <tr>
-                    <td colSpan={6}>
-                      Sin inversiones todavía — crea una con «Nueva inversión».
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section className="liquidityPanel" aria-label="Liquidez por capa">
-          <div className="panelHeader">
-            <h2>Liquidez</h2>
-            <span>Por capa · % del bruto</span>
-          </div>
-          <div className="pyramid">
-            {pyramid.map((tier) => (
-              <details className={`tier ${tier.tier}`} key={tier.tier} open>
+        <div className="pyramid">
+          {pyramid.map((tier, idx) => {
+            const pct = tierPercents[idx] ?? 0;
+            const isZero = tier.grossAssets.amountMinor === 0;
+            return (
+              <details className={`tier ${tier.tier}`} key={tier.tier}>
                 <summary>
-                  <span className="tierName">{tierLabel(tier.tier)}</span>
+                  <span className="tierName">{TIER_LABELS[tier.tier]}</span>
                   <span className="tierBar" aria-hidden="true">
                     <i
-                      style={{ width: `${Math.max(2, tier.shareOfGrossBps / 100)}%` }}
+                      style={{
+                        width: `${isZero ? 0 : Math.max(2, pct)}%`,
+                      }}
                     />
                   </span>
                   <b className={moneySign(tier.netValue)}>
                     {formatMoneyMinor(tier.netValue)}
                   </b>
-                  <span className="tierShare">
-                    {Math.round(tier.shareOfGrossBps / 100)}%
-                  </span>
+                  <span className="tierShare">{pct}%</span>
                 </summary>
                 <div className="tierDetails">
                   <span>Bruto {formatMoneyMinor(tier.grossAssets)}</span>
@@ -820,33 +295,37 @@ export default async function DashboardPage({
                   ))}
                 </div>
               </details>
-            ))}
-          </div>
-        </section>
-      </div>
+            );
+          })}
+        </div>
+      </section>
 
-      <section className="historyPanel" aria-label="Snapshots">
+      {/* ── 4. Plan — evolution mini + link to historico ── */}
+      <section className="historyPanel" aria-label="Evolución del patrimonio">
         <div className="panelHeader">
-          <h2>Snapshots</h2>
-          <span>{snapshots.length} capturas</span>
+          <h2>Evolución</h2>
+          <Link className="panelAction" href="/historico" scroll={false}>
+            Ver histórico →
+          </Link>
         </div>
         <div className="historyBars">
-          {snapshots.map((snapshot) => (
-            <div
-              className={`historyBar ${moneySign(snapshot.totalNetWorth) === "neg" ? "negative" : ""}`}
-              key={snapshot.id}
-            >
-              <span>{snapshot.dateKey}</span>
-              <b className={moneySign(snapshot.totalNetWorth)}>
-                {formatMoneyMinor(snapshot.totalNetWorth)}
-              </b>
-              <i
-                style={{
-                  width: `${historyWidth(snapshot.totalNetWorth, snapshots)}%`,
-                }}
-              />
-            </div>
-          ))}
+          {snapshots.map((snapshot, idx) => {
+            const barWidth = snapshotBarWidths[idx] ?? 0;
+            const sign = moneySign(snapshot.totalNetWorth);
+            return (
+              <div className="historyBar" key={snapshot.id}>
+                <span>{snapshot.dateKey}</span>
+                <b className={sign}>{formatMoneyMinor(snapshot.totalNetWorth)}</b>
+                <span
+                  className="signedDeltaBar"
+                  aria-hidden="true"
+                  data-sign={sign}
+                >
+                  <i style={{ width: `${barWidth}%` }} />
+                </span>
+              </div>
+            );
+          })}
           {snapshots.length === 0 ? (
             <span className="emptyLine">
               Sin capturas todavía — vuelve mañana para ver tu primera comparativa.
@@ -855,103 +334,38 @@ export default async function DashboardPage({
         </div>
       </section>
 
+      {/* ── 5. FIRE card — read-only, full chrome, link to /ajustes ── */}
       <section className="firePanel" aria-label="FIRE">
         <div className="panelHeader">
           <h2>FIRE</h2>
           <span>Independencia financiera</span>
         </div>
-        {!fireScopeConfig || isFireEdit ? (
-          selectedScope ? (
-            <form action={saveFireConfigAction} className="stackForm">
-              <input name="currentUrl" type="hidden" value={currentUrl} />
-              <input name="scopeId" type="hidden" value={selectedScope.id} />
-              <label>
-                Gasto mensual (EUR)
-                <input
-                  defaultValue={
-                    fireScopeConfig
-                      ? (fireScopeConfig.monthlySpendingMinor / 100).toString()
-                      : undefined
-                  }
-                  inputMode="decimal"
-                  name="monthlySpending"
-                  placeholder="2000"
-                />
-              </label>
-              <label>
-                Tasa de retirada segura % (por defecto 4)
-                <input
-                  defaultValue={
-                    fireScopeConfig
-                      ? (fireScopeConfig.safeWithdrawalRate * 100).toString()
-                      : "4"
-                  }
-                  inputMode="decimal"
-                  name="safeWithdrawalRate"
-                />
-              </label>
-              <label>
-                Retorno real esperado % (por defecto 7)
-                <input
-                  defaultValue={
-                    fireScopeConfig
-                      ? (fireScopeConfig.expectedRealReturn * 100).toString()
-                      : "7"
-                  }
-                  inputMode="decimal"
-                  name="expectedRealReturn"
-                />
-              </label>
-              <label>
-                Edad actual (opcional)
-                <input
-                  defaultValue={fireScopeConfig?.currentAge?.toString()}
-                  inputMode="numeric"
-                  name="currentAge"
-                  placeholder="35"
-                />
-              </label>
-              <label>
-                Edad objetivo de jubilación (por defecto 65)
-                <input
-                  defaultValue={
-                    fireScopeConfig
-                      ? (fireScopeConfig.targetRetirementAge ?? 65).toString()
-                      : "65"
-                  }
-                  inputMode="numeric"
-                  name="targetRetirementAge"
-                />
-              </label>
-              <button type="submit">Guardar configuración FIRE</button>
-            </form>
-          ) : null
-        ) : (
+        {fireScopeConfig && fireResult ? (
           <div className="fireResults">
-            <div>
+            <div className="fireMetric">
               <span>Número FIRE</span>
-              <strong>{formatMoneyMinor(fireResult!.fireNumber)}</strong>
+              <strong>{formatMoneyMinor(fireResult.fireNumber)}</strong>
             </div>
-            <div>
+            <div className="fireMetric">
               <span>Activos elegibles</span>
-              <strong>{formatMoneyMinor(fireResult!.eligibleAssets)}</strong>
+              <strong>{formatMoneyMinor(fireResult.eligibleAssets)}</strong>
             </div>
             <div className="fireProgress">
               <div className="fireProgressTop">
                 <span>% financiado</span>
-                <strong>{fireResult!.percentFunded.toFixed(1)}%</strong>
+                <strong>{fireResult.percentFunded.toFixed(1)}%</strong>
               </div>
               <div className="fireBar">
-                {fireResult!.coastFireRequired &&
-                fireResult!.fireNumber.amountMinor > 0 ? (
+                {fireResult.coastFireRequired &&
+                fireResult.fireNumber.amountMinor > 0 ? (
                   <span
                     aria-hidden="true"
                     className="fireTick"
                     style={{
                       left: `${Math.min(
                         100,
-                        (fireResult!.coastFireRequired.amountMinor /
-                          fireResult!.fireNumber.amountMinor) *
+                        (fireResult.coastFireRequired.amountMinor /
+                          fireResult.fireNumber.amountMinor) *
                           100,
                       )}%`,
                     }}
@@ -959,560 +373,67 @@ export default async function DashboardPage({
                 ) : null}
                 <i
                   style={{
-                    width: `${Math.min(100, Math.max(0, fireResult!.percentFunded))}%`,
+                    width: `${Math.min(100, Math.max(0, fireResult.percentFunded))}%`,
                   }}
                 />
               </div>
-              {fireResult!.percentFunded >= 100 ? (
+              {fireResult.percentFunded >= 100 ? (
                 <span className="statePill ready">FIRE alcanzado</span>
-              ) : fireResult!.isAlreadyAtCoastFire ? (
+              ) : fireResult.isAlreadyAtCoastFire ? (
                 <span className="statePill ready">Coast FIRE alcanzado</span>
               ) : null}
             </div>
-            {fireResult!.coastFireRequired ? (
-              <div>
+            {fireResult.coastFireRequired ? (
+              <div className="fireMetric">
                 <span>Coast FIRE requerido</span>
-                <strong>{formatMoneyMinor(fireResult!.coastFireRequired)}</strong>
+                <strong>{formatMoneyMinor(fireResult.coastFireRequired)}</strong>
               </div>
             ) : null}
-            {fireResult!.coastFireAge !== undefined ? (
-              <div>
+            {fireResult.coastFireAge !== undefined ? (
+              <div className="fireMetric">
                 <span>Edad Coast FIRE</span>
-                <strong>{fireResult!.coastFireAge.toFixed(1)}</strong>
+                <strong>{fireResult.coastFireAge.toFixed(1)}</strong>
               </div>
             ) : null}
-            {selectedScope ? (
-              <Link
-                className="reconfigureButton"
-                href={`/?fireEdit=true`}
-                scroll={false}
-              >
-                Reconfigurar
-              </Link>
-            ) : null}
+            <Link className="panelAction" href="/ajustes">
+              Configurar → Ajustes
+            </Link>
+          </div>
+        ) : (
+          <div className="fireEmpty">
+            <p className="fireEmptyHint">
+              Configura tu número FIRE para ver tu progreso hacia la independencia
+              financiera.
+            </p>
+            <Link className="panelAction" href="/ajustes">
+              Configurar → Ajustes
+            </Link>
           </div>
         )}
       </section>
+
+      {/* ── 6. Onboarding checklist — shown while any step is pending ── */}
+      {anyStepPending ? (
+        <section className="onboardingChecklist" aria-label="Primeros pasos">
+          <div className="panelHeader">
+            <h2>Primeros pasos</h2>
+            <span>Empieza aquí</span>
+          </div>
+          <ol>
+            {onboarding.map((step) => (
+              <li className={step.done ? "done" : undefined} key={step.id}>
+                {step.done ? (
+                  <span>✓ {step.label}</span>
+                ) : (
+                  <Link href={ONBOARDING_LINKS[step.id] ?? "/"}>
+                    ○ {step.label}
+                  </Link>
+                )}
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
     </Shell>
   );
-}
-
-/** The validation error rendered beside the form that produced it. */
-function FormErrorNote({
-  error,
-  formId,
-}: {
-  error: FormErrorContext | null;
-  formId: string;
-}) {
-  if (!error || error.formId !== formId) {
-    return null;
-  }
-
-  return (
-    <p className="formError" role="alert">
-      {error.message}
-    </p>
-  );
-}
-
-function OwnershipInputs({
-  members,
-  scopeMemberId,
-  values = {},
-}: {
-  members: Member[];
-  scopeMemberId?: string | undefined;
-  values?: Record<string, string>;
-}) {
-  // A single active member implicitly owns 100% — no control needed.
-  if (members.length <= 1) {
-    return null;
-  }
-
-  const scopeMember =
-    members.find((member) => member.id === scopeMemberId) ?? members[0]!;
-  const preset = values["ownershipPreset"];
-
-  return (
-    <fieldset className="ownershipGrid">
-      <legend>Propiedad</legend>
-      <input name="scopeMemberId" type="hidden" value={scopeMember.id} />
-      <label className="ownerPreset">
-        <input
-          defaultChecked={!preset || preset === "scope"}
-          name="ownershipPreset"
-          type="radio"
-          value="scope"
-        />
-        100% {scopeMember.name}
-      </label>
-      <label className="ownerPreset">
-        <input
-          defaultChecked={preset === "even"}
-          name="ownershipPreset"
-          type="radio"
-          value="even"
-        />
-        Repartir a partes iguales
-      </label>
-      <label className="ownerPreset">
-        <input
-          defaultChecked={preset === "custom"}
-          name="ownershipPreset"
-          type="radio"
-          value="custom"
-        />
-        Personalizado
-      </label>
-      <div className="ownerCustom">
-        {members.map((member, index) => (
-          <label key={member.id}>
-            {member.name}
-            <input
-              defaultValue={values[`owner_${member.id}`] ?? (index === 0 ? "100" : "0")}
-              inputMode="decimal"
-              name={`owner_${member.id}`}
-            />
-          </label>
-        ))}
-      </div>
-    </fieldset>
-  );
-}
-
-async function createMemberAction(formData: FormData) {
-  "use server";
-
-  const member = parseNewMember(formData, Date.now());
-
-  if (!member) {
-    redirect(
-      errorRedirectUrl(currentUrlOf(formData), {
-        message: "El nombre del miembro es obligatorio.",
-      }),
-    );
-  }
-
-  withStore((store) => store.createMember(member));
-  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
-}
-
-async function updateMemberAction(formData: FormData) {
-  "use server";
-
-  const id = parseEntityId(formData);
-  const name = String(formData.get("name") ?? "").trim();
-
-  if (!id || !name) {
-    redirect(
-      errorRedirectUrl(currentUrlOf(formData), {
-        message: !id
-          ? "Identificador de miembro no encontrado."
-          : "El nombre del miembro es obligatorio.",
-      }),
-    );
-  }
-
-  withStore((store) => store.updateMember({ id, name }));
-  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
-}
-
-async function disableMemberAction(formData: FormData) {
-  "use server";
-
-  const id = parseEntityId(formData);
-
-  if (!id) {
-    redirect(
-      errorRedirectUrl(currentUrlOf(formData), {
-        message: "Identificador de miembro no encontrado.",
-      }),
-    );
-  }
-
-  withStore((store) => store.disableMember(id, new Date().toISOString()));
-  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
-}
-
-async function createAssetAction(formData: FormData) {
-  "use server";
-
-  const assetErrorUrl = (message: string) =>
-    errorRedirectUrl(currentUrlOf(formData), {
-      formId: "asset",
-      message,
-      values: preserveFields(formData, ASSET_FORM_FIELDS, ["owner_"]),
-    });
-  const currentValue = parseMoneyMinorField(formData, "currentValue");
-
-  if (currentValue === null) {
-    redirect(assetErrorUrl("El valor del activo no es válido."));
-  }
-
-  const result = withStore((store): ActionResult => {
-    const workspace = store.readWorkspace();
-
-    if (!workspace) {
-      return { ok: false };
-    }
-
-    const command = parseAssetCommand(formData, workspace.members, Date.now());
-    const ownershipError = validateOwnershipShares(command.ownership);
-
-    if (ownershipError) {
-      return { error: ownershipError, ok: false };
-    }
-
-    store.createManualAsset(command);
-
-    return { ok: true };
-  });
-
-  if (result.error) {
-    redirect(assetErrorUrl(result.error));
-  }
-
-  if (result.ok) {
-    redirect(appendParam(currentUrlOf(formData), "ok", "asset_added"));
-  }
-
-  redirect(
-    errorRedirectUrl(currentUrlOf(formData), {
-      message: "No se pudo añadir el activo: workspace no inicializado.",
-    }),
-  );
-}
-
-async function updateAssetValuationAction(formData: FormData) {
-  "use server";
-
-  const id = parseEntityId(formData);
-  const currentValue = parseMoneyMinorField(formData, "currentValue");
-
-  if (!id) {
-    redirect(
-      errorRedirectUrl(currentUrlOf(formData), {
-        message: "Identificador de activo no encontrado.",
-      }),
-    );
-  }
-
-  if (currentValue === null) {
-    redirect(
-      errorRedirectUrl(currentUrlOf(formData), {
-        formId: id,
-        message: "El valor del activo no es válido.",
-        values: preserveFields(formData, ["currentValue"]),
-      }),
-    );
-  }
-
-  withStore((store) => store.updateAssetValuation(id, currentValue));
-  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
-}
-
-async function createLiabilityAction(formData: FormData) {
-  "use server";
-
-  const liabilityErrorUrl = (message: string) =>
-    errorRedirectUrl(currentUrlOf(formData), {
-      formId: "liability",
-      message,
-      values: preserveFields(formData, LIABILITY_FORM_FIELDS, ["owner_"]),
-    });
-  const balance = parseMoneyMinorField(formData, "balance");
-
-  if (balance === null) {
-    redirect(liabilityErrorUrl("El saldo de la deuda no es válido."));
-  }
-
-  const result = withStore((store): ActionResult => {
-    const workspace = store.readWorkspace();
-
-    if (!workspace) {
-      return { ok: false };
-    }
-
-    const command = parseLiabilityCommand(formData, workspace.members, Date.now());
-    const ownershipError = validateOwnershipShares(command.ownership);
-
-    if (ownershipError) {
-      return { error: ownershipError, ok: false };
-    }
-
-    store.createLiability(command);
-
-    return { ok: true };
-  });
-
-  if (result.error) {
-    redirect(liabilityErrorUrl(result.error));
-  }
-
-  if (result.ok) {
-    redirect(appendParam(currentUrlOf(formData), "ok", "liability_added"));
-  }
-
-  redirect(
-    errorRedirectUrl(currentUrlOf(formData), {
-      message: "No se pudo añadir la deuda: workspace no inicializado.",
-    }),
-  );
-}
-
-async function createInvestmentAssetAction(formData: FormData) {
-  "use server";
-
-  const investmentErrorUrl = (message: string) =>
-    errorRedirectUrl(currentUrlOf(formData), {
-      formId: "investment",
-      message,
-      values: preserveFields(formData, INVESTMENT_FORM_FIELDS, ["owner_"]),
-    });
-  const result = withStore((store): ActionResult => {
-    const workspace = store.readWorkspace();
-
-    if (!workspace) {
-      return { ok: false };
-    }
-
-    const command = parseInvestmentAssetCommand(formData, workspace.members, Date.now());
-    const ownershipError = validateOwnershipShares(command.ownership);
-
-    if (ownershipError) {
-      return { error: ownershipError, ok: false };
-    }
-
-    store.createInvestmentAsset(command);
-
-    return { ok: true };
-  });
-
-  if (result.error) {
-    redirect(investmentErrorUrl(result.error));
-  }
-
-  if (result.ok) {
-    redirect(appendParam(currentUrlOf(formData), "ok", "investment_added"));
-  }
-
-  redirect(
-    errorRedirectUrl(currentUrlOf(formData), {
-      message: "No se pudo añadir la inversión: workspace no inicializado.",
-    }),
-  );
-}
-
-async function recordOperationAction(formData: FormData) {
-  "use server";
-
-  const operationErrorUrl = () =>
-    errorRedirectUrl(currentUrlOf(formData), {
-      formId: "operation",
-      message: "No se pudo registrar la operación: revisa unidades, precio y comisiones.",
-      values: preserveFields(formData, OPERATION_FORM_FIELDS),
-    });
-  const fees = parseMoneyMinorField(formData, "fees");
-
-  if (fees === null) {
-    redirect(operationErrorUrl());
-  }
-
-  const command = parseOperationCommand(
-    formData,
-    Date.now(),
-    new Date().toISOString().slice(0, 10),
-  );
-
-  if (!command.assetId) {
-    redirect(operationErrorUrl());
-  }
-
-  try {
-    withStore((store) => store.recordOperation(command));
-  } catch {
-    redirect(operationErrorUrl());
-  }
-
-  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
-}
-
-async function updateLiabilityBalanceAction(formData: FormData) {
-  "use server";
-
-  const id = parseEntityId(formData);
-  const balance = parseMoneyMinorField(formData, "balance");
-
-  if (!id) {
-    redirect(
-      errorRedirectUrl(currentUrlOf(formData), {
-        message: "Identificador de deuda no encontrado.",
-      }),
-    );
-  }
-
-  if (balance === null) {
-    redirect(
-      errorRedirectUrl(currentUrlOf(formData), {
-        formId: id,
-        message: "El saldo de la deuda no es válido.",
-        values: preserveFields(formData, ["balance"]),
-      }),
-    );
-  }
-
-  withStore((store) => store.updateLiabilityBalance(id, balance));
-  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
-}
-
-async function saveFireConfigAction(formData: FormData) {
-  "use server";
-
-  const scopeId = String(formData.get("scopeId") ?? "").trim() || "household";
-  const config = parseFireConfigForm(formData);
-
-  withStore((store) => store.saveFireConfig(scopeId, config));
-  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
-}
-
-async function deleteAssetAction(formData: FormData) {
-  "use server";
-
-  const id = parseEntityId(formData);
-
-  if (!id) {
-    redirect(
-      errorRedirectUrl(currentUrlOf(formData), {
-        message: "Identificador de activo no encontrado.",
-      }),
-    );
-  }
-
-  withStore((store) => store.softDeleteAsset(id, new Date().toISOString()));
-  redirect(successRedirectUrl(currentUrlOf(formData), "deleted_recoverable", id));
-}
-
-async function deleteLiabilityAction(formData: FormData) {
-  "use server";
-
-  const id = parseEntityId(formData);
-
-  if (!id) {
-    redirect(
-      errorRedirectUrl(currentUrlOf(formData), {
-        message: "Identificador de deuda no encontrado.",
-      }),
-    );
-  }
-
-  withStore((store) => store.softDeleteLiability(id, new Date().toISOString()));
-  redirect(successRedirectUrl(currentUrlOf(formData), "deleted_recoverable", id));
-}
-
-async function restoreAssetAction(formData: FormData) {
-  "use server";
-
-  const id = parseEntityId(formData);
-
-  if (!id) {
-    redirect(
-      errorRedirectUrl(currentUrlOf(formData), {
-        message: "Identificador de activo no encontrado.",
-      }),
-    );
-  }
-
-  withStore((store) => store.restoreAsset(id));
-  redirect(successRedirectUrl(currentUrlOf(formData), "restored", id));
-}
-
-async function restoreLiabilityAction(formData: FormData) {
-  "use server";
-
-  const id = parseEntityId(formData);
-
-  if (!id) {
-    redirect(
-      errorRedirectUrl(currentUrlOf(formData), {
-        message: "Identificador de deuda no encontrado.",
-      }),
-    );
-  }
-
-  withStore((store) => store.restoreLiability(id));
-  redirect(successRedirectUrl(currentUrlOf(formData), "restored", id));
-}
-
-async function refreshPricesAction(formData: FormData) {
-  "use server";
-
-  const nowIso = new Date().toISOString();
-
-  // fetchAndCachePrice never throws: failures come back as freshnessState "failed".
-  const outcome = await withStore(async (store) => {
-    const investmentAssets = store.readInvestmentAssetsWithMeta();
-    const refreshable = investmentAssets.filter((asset) => Boolean(asset.providerSymbol));
-    const results = await Promise.all(
-      refreshable.map(async (asset) => {
-        const price = await fetchAndCachePrice(stooqProvider, {
-          assetId: asset.id,
-          symbol: asset.providerSymbol!,
-          currency: asset.currency,
-          nowIso,
-        });
-        store.upsertPrice(price);
-
-        return { price, symbol: asset.providerSymbol! };
-      }),
-    );
-
-    return {
-      failedSymbols: results
-        .filter((entry) => entry.price.freshnessState === "failed")
-        .map((entry) => entry.symbol),
-      updated: results.filter((entry) => entry.price.freshnessState === "fresh").length,
-    };
-  });
-
-  redirect(pricesRefreshedRedirectUrl(currentUrlOf(formData), outcome));
-}
-
-function formatOptionalMoney(value: MoneyMinor | undefined): string {
-  return value ? formatMoneyMinor(value) : "sin dato";
-}
-
-function priceFreshnessLabel(freshness: PriceFreshnessState | null): string {
-  if (!freshness) return "—";
-  const labels: Record<PriceFreshnessState, string> = {
-    failed: "Fallido",
-    fresh: "Reciente",
-    manual: "Manual",
-    stale: "Obsoleto",
-  };
-  return labels[freshness];
-}
-
-function tierLabel(tier: ManualAsset["liquidityTier"]): string {
-  const labels = {
-    cash: "Caja",
-    housing: "Vivienda",
-    illiquid: "Iliquido",
-    market: "Mercado",
-    retirement: "Jubilacion",
-  } as const;
-
-  return labels[tier];
-}
-
-function historyWidth(
-  value: MoneyMinor,
-  snapshots: Array<{ totalNetWorth: MoneyMinor }>,
-): number {
-  const max = Math.max(
-    1,
-    ...snapshots.map((snapshot) => Math.abs(snapshot.totalNetWorth.amountMinor)),
-  );
-
-  return Math.max(4, Math.round((Math.abs(value.amountMinor) / max) * 100));
 }

@@ -991,6 +991,113 @@ code {
   padding: 3px 5px;
 }
 
+/* === #56 resumen === */
+
+/* Framing selector sits inline above the headline, labeled visibly. */
+.resumenHeader {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-bottom: 4px;
+}
+
+/* firePanel — proper panel chrome matching other panels. */
+.firePanel {
+  background: rgba(255, 250, 240, 0.88);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  min-width: 0;
+  padding: 16px;
+}
+
+/* Read-only FIRE metric rows. */
+.fireResults {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.fireMetric {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.fireMetric span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.fireMetric strong {
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+}
+
+/* FIRE unconfigured state. */
+.fireEmpty {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.fireEmptyHint {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+/* Secondary panel link (Ver histórico, Configurar). */
+.panelAction {
+  color: var(--blue);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.panelAction:hover {
+  text-decoration: underline;
+}
+
+/* Onboarding checklist: pending steps are links, done steps are plain text. */
+.onboardingChecklist ol a {
+  color: var(--blue);
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.onboardingChecklist ol a:hover {
+  text-decoration: underline;
+}
+
+/* Zero-centered signed delta bars for the evolution mini.
+   Positive = green→blue gradient (same as history bars).
+   Negative = red fill. */
+.signedDeltaBar {
+  background: rgba(23, 32, 30, 0.07);
+  display: block;
+  height: 14px;
+  margin-top: 2px;
+}
+
+.signedDeltaBar i {
+  background: linear-gradient(90deg, var(--green), var(--blue));
+  display: block;
+  height: 100%;
+}
+
+.signedDeltaBar[data-sign="neg"] i {
+  background: var(--red);
+}
+
+/* === end #56 resumen === */
+
 @media (max-width: 900px) {
   .entryGrid,
   .memberRow,
