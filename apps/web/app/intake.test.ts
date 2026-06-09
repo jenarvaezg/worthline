@@ -2,7 +2,9 @@ import type { Member } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import {
+  appendParam,
   buildSnapshotId,
+  okMessage,
   parseAssetCommand,
   parseEntityId,
   parseInvestmentAssetCommand,
@@ -346,5 +348,39 @@ describe("snapshot, money field, and id parsing", () => {
     expect(buildSnapshotId("household", "2026-06-08T21:00:00.000Z", 3)).toBe(
       "snapshot_household_2026_06_08_3",
     );
+  });
+});
+
+describe("appendParam", () => {
+  test("adds a param to a bare path", () => {
+    expect(appendParam("/", "ok", "saved")).toBe("/?ok=saved");
+  });
+
+  test("appends to an existing query string", () => {
+    expect(appendParam("/?scope=household&view=total", "ok", "saved")).toBe(
+      "/?scope=household&view=total&ok=saved",
+    );
+  });
+
+  test("replaces an existing value for the same key", () => {
+    expect(appendParam("/?ok=old", "ok", "new")).toBe("/?ok=new");
+  });
+
+  test("url-encodes the value", () => {
+    expect(appendParam("/", "error", "Valor inválido")).toBe(
+      "/?error=Valor+inv%C3%A1lido",
+    );
+  });
+});
+
+describe("okMessage", () => {
+  test("maps a known key to a localized message", () => {
+    expect(okMessage("saved")).toBe("Guardado.");
+    expect(okMessage("snapshot_saved")).toBe("Snapshot guardado.");
+  });
+
+  test("returns null for unknown or missing keys", () => {
+    expect(okMessage("nonsense")).toBeNull();
+    expect(okMessage(undefined)).toBeNull();
   });
 });
