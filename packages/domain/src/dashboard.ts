@@ -65,7 +65,7 @@ export function deriveOnboardingProgress(input: {
     },
     { id: "investments", label: "Registra una inversión", done: input.positionCount > 0 },
     { id: "fire", label: "Configura FIRE", done: input.hasFireConfig },
-    { id: "snapshot", label: "Guarda tu primer snapshot", done: input.snapshotCount > 0 },
+    { id: "snapshot", label: "Tu primer snapshot se captura automáticamente", done: input.snapshotCount > 0 },
   ];
 }
 

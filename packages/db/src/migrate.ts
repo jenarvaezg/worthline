@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export function migrate(sqlite: DatabaseConnection): void {
   sqlite.pragma("journal_mode = WAL");
@@ -54,5 +54,13 @@ export function migrate(sqlite: DatabaseConnection): void {
       PRIMARY KEY (code, entity_id)
     );`);
     sqlite.pragma("user_version = 5");
+  }
+
+  if (version < 6) {
+    // ADR 0005: monthly closes are now derived (last snapshot of each calendar
+    // month), not declared via the is_monthly_close flag. The column is kept for
+    // backward compatibility but derivation wins over any persisted flag.
+    // No structural change needed — bump version to mark the semantic transition.
+    sqlite.pragma("user_version = 6");
   }
 }
