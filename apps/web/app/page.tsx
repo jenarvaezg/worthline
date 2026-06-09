@@ -5,6 +5,7 @@ import {
   calculateFireForScope,
   calculateNetWorth,
   calculateSnapshotDeltas,
+  collectWarnings,
   createDashboardShell,
   formatMoneyInput,
   formatMoneyMinor,
@@ -129,6 +130,7 @@ export default async function DashboardPage({
   const activeMembers = workspace?.members.filter((member) => !member.disabledAt) ?? [];
   const investmentAssets = assets.filter((asset) => asset.type === "investment");
   const today = new Date().toISOString().slice(0, 10);
+  const warnings = collectWarnings(assets, liabilities);
 
   return (
     <main className="workspace">
@@ -152,6 +154,26 @@ export default async function DashboardPage({
         <p role="alert" style={{ color: "#c0392b", fontWeight: 600, margin: "0 0 12px" }}>
           {formError}
         </p>
+      ) : null}
+
+      {warnings.length > 0 ? (
+        <div
+          role="alert"
+          style={{
+            background: "#fffbeb",
+            border: "1px solid #f59e0b",
+            borderRadius: 6,
+            color: "#92400e",
+            margin: "0 0 12px",
+            padding: "10px 14px",
+          }}
+        >
+          {warnings.map((w) => (
+            <p key={`${w.entityId}-${w.code}`} style={{ margin: "2px 0" }}>
+              ⚠ {w.message}
+            </p>
+          ))}
+        </div>
       ) : null}
 
       <section className="summaryBand" aria-label="Resumen patrimonial">
@@ -342,6 +364,7 @@ export default async function DashboardPage({
                 <th>Tipo</th>
                 <th>Valor actual</th>
                 <th>Actualizar</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -360,6 +383,12 @@ export default async function DashboardPage({
                         name="currentValue"
                       />
                       <button type="submit">OK</button>
+                    </form>
+                  </td>
+                  <td>
+                    <form action={deleteAssetAction}>
+                      <input name="id" type="hidden" value={asset.id} />
+                      <button type="submit">Eliminar</button>
                     </form>
                   </td>
                 </tr>
@@ -383,11 +412,17 @@ export default async function DashboardPage({
                       <button type="submit">OK</button>
                     </form>
                   </td>
+                  <td>
+                    <form action={deleteLiabilityAction}>
+                      <input name="id" type="hidden" value={liability.id} />
+                      <button type="submit">Eliminar</button>
+                    </form>
+                  </td>
                 </tr>
               ))}
               {assets.length === 0 && liabilities.length === 0 ? (
                 <tr>
-                  <td colSpan={4}>Sin registros</td>
+                  <td colSpan={5}>Sin registros</td>
                 </tr>
               ) : null}
             </tbody>
@@ -923,6 +958,32 @@ async function saveFireConfigAction(formData: FormData) {
   const config = parseFireConfigForm(formData);
 
   withStore((store) => store.saveFireConfig(scopeId, config));
+  revalidatePath("/");
+}
+
+async function deleteAssetAction(formData: FormData) {
+  "use server";
+
+  const id = parseEntityId(formData);
+
+  if (!id) {
+    return;
+  }
+
+  withStore((store) => store.softDeleteAsset(id, new Date().toISOString()));
+  revalidatePath("/");
+}
+
+async function deleteLiabilityAction(formData: FormData) {
+  "use server";
+
+  const id = parseEntityId(formData);
+
+  if (!id) {
+    return;
+  }
+
+  withStore((store) => store.softDeleteLiability(id, new Date().toISOString()));
   revalidatePath("/");
 }
 

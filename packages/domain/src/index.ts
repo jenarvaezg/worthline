@@ -56,6 +56,9 @@ export { getPriceFreshness, PRICE_TTL_DAYS } from "./prices";
 export type { FireScopeConfig, FireResult } from "./fire";
 export { filterFireEligibleAssets, calculateFire, calculateFireForScope } from "./fire";
 
+export type { WarningSeverity, DomainWarning } from "./warnings";
+export { collectWarnings } from "./warnings";
+
 export type WorkspaceMode = "individual" | "household";
 
 export interface Member {

@@ -143,4 +143,13 @@ CREATE TABLE \`asset_price_cache\` (
 	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
+--> statement-breakpoint
+CREATE TABLE \`audit_log\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`action\` text NOT NULL,
+	\`entity_type\` text NOT NULL,
+	\`entity_id\` text NOT NULL,
+	\`details_json\` text DEFAULT '{}' NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
 `;

@@ -80,6 +80,7 @@ export const assets = sqliteTable("assets", {
   currentValueMinor: integer("current_value_minor").notNull(),
   liquidityTier: text("liquidity_tier").$type<LiquidityTier>().notNull(),
   isPrimaryResidence: integer("is_primary_residence").notNull().default(0),
+  deletedAt: text("deleted_at"),
   createdAt: timestamp("created_at"),
   updatedAt: timestamp("updated_at"),
 });
@@ -132,8 +133,18 @@ export const liabilities = sqliteTable("liabilities", {
   associatedAssetId: text("associated_asset_id").references(() => assets.id, {
     onDelete: "set null",
   }),
+  deletedAt: text("deleted_at"),
   createdAt: timestamp("created_at"),
   updatedAt: timestamp("updated_at"),
+});
+
+export const auditLog = sqliteTable("audit_log", {
+  id: text("id").primaryKey(),
+  action: text("action").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  detailsJson: text("details_json").notNull().default("{}"),
+  createdAt: timestamp("created_at"),
 });
 
 export const liabilityOwnerships = sqliteTable(
