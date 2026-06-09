@@ -5,7 +5,6 @@ import {
   listScopeOptions,
   moneySign,
 } from "@worthline/domain";
-import type { PriceFreshnessState } from "@worthline/domain";
 import { refreshStalePrices } from "@worthline/pricing";
 import { cookies } from "next/headers";
 import Link from "next/link";
@@ -15,6 +14,7 @@ import {
   buildCurrentUrlFor,
   parseFormError,
   parseScopeCookie,
+  priceFreshnessLabel,
   resolveOkMessage,
   SCOPE_COOKIE_NAME,
 } from "../intake";
@@ -243,14 +243,3 @@ export default async function InversionesPage({
   );
 }
 
-function priceFreshnessLabel(freshness: PriceFreshnessState | null): string {
-  if (!freshness) return "—";
-  const labels: Record<PriceFreshnessState, string> = {
-    failed: "Fallido",
-    fresh: "Reciente",
-    manual: "Manual",
-    stale: "Obsoleto",
-  };
-
-  return labels[freshness];
-}
