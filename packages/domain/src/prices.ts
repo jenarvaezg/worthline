@@ -29,3 +29,30 @@ export function getPriceFreshness(
     (new Date(nowIso).getTime() - new Date(price.fetchedAt).getTime()) / 86400000;
   return ageDays <= PRICE_TTL_DAYS[price.source] ? "fresh" : "stale";
 }
+
+/**
+ * Single staleness rule (issue #67): returns cache entries that need refreshing.
+ *
+ * Rules:
+ * - manual quotes (freshnessState === "manual") are never stale — user-controlled,
+ *   no provider to refresh from.
+ * - failed entries are not re-selected — already in error state; manual
+ *   "Actualizar precios" handles retry.
+ * - all other entries are stale when their age exceeds the per-source TTL from
+ *   PRICE_TTL_DAYS (ecb/coingecko/stooq = 1 day, manual tier = 30 days).
+ */
+export function selectStalePrices(
+  cacheEntries: AssetPrice[],
+  nowIso: string,
+): AssetPrice[] {
+  const now = new Date(nowIso).getTime();
+
+  return cacheEntries.filter((entry) => {
+    if (entry.freshnessState === "manual") return false;
+    if (entry.freshnessState === "failed") return false;
+
+    const ttlMs = PRICE_TTL_DAYS[entry.source] * 86400000;
+    const ageMs = now - new Date(entry.fetchedAt).getTime();
+    return ageMs >= ttlMs;
+  });
+}
