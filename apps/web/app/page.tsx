@@ -15,7 +15,6 @@ import type {
   PriceFreshnessState,
 } from "@worthline/domain";
 import { fetchAndCachePrice, stooqProvider } from "@worthline/pricing";
-import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -38,6 +37,30 @@ import {
 
 export const dynamic = "force-dynamic";
 
+function buildCurrentUrl(
+  searchParams?: Record<string, string | string[] | undefined>,
+): string {
+  const params = new URLSearchParams();
+
+  if (searchParams) {
+    for (const [key, value] of Object.entries(searchParams)) {
+      if (value === undefined) continue;
+
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          params.append(key, item);
+        }
+      } else {
+        params.set(key, value);
+      }
+    }
+  }
+
+  const queryString = params.toString();
+
+  return queryString ? `/?${queryString}` : "/";
+}
+
 const presentationModes = [
   { id: "liquid", label: "Liquido" },
   { id: "housing-inclusive", label: "Con vivienda" },
@@ -58,6 +81,7 @@ export default async function DashboardPage({
   const errorParam = resolvedSearchParams?.error;
   const formError = Array.isArray(errorParam) ? errorParam[0] : errorParam;
   const isFireEdit = resolvedSearchParams?.fireEdit === "true";
+  const currentUrl = buildCurrentUrl(resolvedSearchParams);
   const storeData = withStore((store) => {
     const workspace = store.readWorkspace();
     const scopes = workspace ? listScopeOptions(workspace) : [];
@@ -163,6 +187,7 @@ export default async function DashboardPage({
                 className={scope.id === selectedScope?.id ? "active" : undefined}
                 href={`/?scope=${encodeURIComponent(scope.id)}&view=${selectedView}`}
                 key={scope.id}
+                scroll={false}
               >
                 {scope.label}
               </Link>
@@ -196,6 +221,7 @@ export default async function DashboardPage({
             <span>EUR por defecto</span>
           </div>
           <form action={initializeWorkspaceAction} className="stackForm">
+            <input name="currentUrl" type="hidden" value={currentUrl} />
             <label>
               Modo
               <select name="mode" defaultValue="individual">
@@ -224,6 +250,7 @@ export default async function DashboardPage({
           <div className="memberGrid">
             {workspace.members.map((member) => (
               <form action={updateMemberAction} className="memberRow" key={member.id}>
+                <input name="currentUrl" type="hidden" value={currentUrl} />
                 <input name="id" type="hidden" value={member.id} />
                 <input
                   aria-label={`Nombre de ${member.name}`}
@@ -248,6 +275,7 @@ export default async function DashboardPage({
             ))}
           </div>
           <form action={createMemberAction} className="inlineForm">
+            <input name="currentUrl" type="hidden" value={currentUrl} />
             <input name="name" placeholder="Nuevo miembro" />
             <button type="submit">Añadir</button>
           </form>
@@ -267,6 +295,7 @@ export default async function DashboardPage({
                   className={mode.id === selectedView ? "active" : undefined}
                   href={`/?scope=${encodeURIComponent(selectedScope.id)}&view=${mode.id}`}
                   key={mode.id}
+                  scroll={false}
                 >
                   {mode.label}
                 </Link>
@@ -287,6 +316,7 @@ export default async function DashboardPage({
           ) : null}
           <div className="entryGrid">
             <form action={createAssetAction} className="stackForm">
+            <input name="currentUrl" type="hidden" value={currentUrl} />
               <h3>Activo</h3>
               <input name="name" placeholder="Nombre" />
               <select name="type" defaultValue="cash">
@@ -310,6 +340,7 @@ export default async function DashboardPage({
             </form>
 
             <form action={createLiabilityAction} className="stackForm">
+            <input name="currentUrl" type="hidden" value={currentUrl} />
               <h3>Deuda</h3>
               <input name="name" placeholder="Nombre" />
               <select name="type" defaultValue="mortgage">
@@ -348,6 +379,7 @@ export default async function DashboardPage({
                   <td>{formatMoneyMinor(asset.currentValue)}</td>
                   <td>
                     <form action={updateAssetValuationAction} className="rowForm">
+                      <input name="currentUrl" type="hidden" value={currentUrl} />
                       <input name="id" type="hidden" value={asset.id} />
                       <input
                         aria-label={`Valor de ${asset.name}`}
@@ -360,6 +392,7 @@ export default async function DashboardPage({
                   </td>
                   <td>
                     <form action={deleteAssetAction}>
+                      <input name="currentUrl" type="hidden" value={currentUrl} />
                       <input name="id" type="hidden" value={asset.id} />
                       <button type="submit">Eliminar</button>
                     </form>
@@ -373,6 +406,7 @@ export default async function DashboardPage({
                   <td>{formatMoneyMinor(liability.currentBalance)}</td>
                   <td>
                     <form action={updateLiabilityBalanceAction} className="rowForm">
+                      <input name="currentUrl" type="hidden" value={currentUrl} />
                       <input name="id" type="hidden" value={liability.id} />
                       <input
                         aria-label={`Saldo de ${liability.name}`}
@@ -387,6 +421,7 @@ export default async function DashboardPage({
                   </td>
                   <td>
                     <form action={deleteLiabilityAction}>
+                      <input name="currentUrl" type="hidden" value={currentUrl} />
                       <input name="id" type="hidden" value={liability.id} />
                       <button type="submit">Eliminar</button>
                     </form>
@@ -408,10 +443,12 @@ export default async function DashboardPage({
             <span>Unidades, coste medio y P/L</span>
           </div>
           <form action={refreshPricesAction} className="inlineForm">
+            <input name="currentUrl" type="hidden" value={currentUrl} />
             <button type="submit">Actualizar precios</button>
           </form>
           <div className="entryGrid">
             <form action={createInvestmentAssetAction} className="stackForm">
+            <input name="currentUrl" type="hidden" value={currentUrl} />
               <h3>Nueva inversión</h3>
               <input name="name" placeholder="Nombre" />
               <input name="unitSymbol" placeholder="Ticker / símbolo" />
@@ -426,6 +463,7 @@ export default async function DashboardPage({
             </form>
 
             <form action={recordOperationAction} className="stackForm">
+              <input name="currentUrl" type="hidden" value={currentUrl} />
               <h3>Operación</h3>
               <select name="assetId" defaultValue="">
                 <option disabled value="">
@@ -560,6 +598,7 @@ export default async function DashboardPage({
         </div>
         {selectedScope ? (
           <form action={saveSnapshotAction} className="snapshotForm">
+            <input name="currentUrl" type="hidden" value={currentUrl} />
             <input name="scopeId" type="hidden" value={selectedScope.id} />
             <label className="checkLine">
               <input name="isMonthlyClose" type="checkbox" /> Cierre mensual
@@ -596,6 +635,7 @@ export default async function DashboardPage({
         {!fireScopeConfig || isFireEdit ? (
           selectedScope ? (
             <form action={saveFireConfigAction} className="stackForm">
+              <input name="currentUrl" type="hidden" value={currentUrl} />
               <input name="scopeId" type="hidden" value={selectedScope.id} />
               <label>
                 Gasto mensual (EUR)
@@ -690,6 +730,7 @@ export default async function DashboardPage({
               <Link
                 className="reconfigureButton"
                 href={`/?scope=${encodeURIComponent(selectedScope.id)}&fireEdit=true`}
+                scroll={false}
               >
                 Reconfigurar
               </Link>
@@ -730,7 +771,6 @@ async function initializeWorkspaceAction(formData: FormData) {
   const command = parseWorkspaceInit(formData);
 
   withStore((store) => store.initializeWorkspace(command));
-  revalidatePath("/");
   redirect("/?scope=household");
 }
 
@@ -744,7 +784,7 @@ async function createMemberAction(formData: FormData) {
   }
 
   withStore((store) => store.createMember(member));
-  revalidatePath("/");
+  redirect(formData.get("currentUrl") as string || "/");
 }
 
 async function updateMemberAction(formData: FormData) {
@@ -758,7 +798,7 @@ async function updateMemberAction(formData: FormData) {
   }
 
   withStore((store) => store.updateMember({ id, name }));
-  revalidatePath("/");
+  redirect(formData.get("currentUrl") as string || "/");
 }
 
 async function disableMemberAction(formData: FormData) {
@@ -771,7 +811,7 @@ async function disableMemberAction(formData: FormData) {
   }
 
   withStore((store) => store.disableMember(id, new Date().toISOString()));
-  revalidatePath("/");
+  redirect(formData.get("currentUrl") as string || "/");
 }
 
 async function createAssetAction(formData: FormData) {
@@ -807,7 +847,7 @@ async function createAssetAction(formData: FormData) {
   }
 
   if (result.ok) {
-    revalidatePath("/");
+    redirect(formData.get("currentUrl") as string || "/");
   }
 }
 
@@ -826,7 +866,7 @@ async function updateAssetValuationAction(formData: FormData) {
   }
 
   withStore((store) => store.updateAssetValuation(id, currentValue));
-  revalidatePath("/");
+  redirect(formData.get("currentUrl") as string || "/");
 }
 
 async function createLiabilityAction(formData: FormData) {
@@ -862,7 +902,7 @@ async function createLiabilityAction(formData: FormData) {
   }
 
   if (result.ok) {
-    revalidatePath("/");
+    redirect(formData.get("currentUrl") as string || "/");
   }
 }
 
@@ -893,7 +933,7 @@ async function createInvestmentAssetAction(formData: FormData) {
   }
 
   if (result.ok) {
-    revalidatePath("/");
+    redirect(formData.get("currentUrl") as string || "/");
   }
 }
 
@@ -930,7 +970,7 @@ async function recordOperationAction(formData: FormData) {
     );
   }
 
-  revalidatePath("/");
+  redirect(formData.get("currentUrl") as string || "/");
 }
 
 async function updateLiabilityBalanceAction(formData: FormData) {
@@ -948,7 +988,7 @@ async function updateLiabilityBalanceAction(formData: FormData) {
   }
 
   withStore((store) => store.updateLiabilityBalance(id, balance));
-  revalidatePath("/");
+  redirect(formData.get("currentUrl") as string || "/");
 }
 
 async function saveFireConfigAction(formData: FormData) {
@@ -958,7 +998,7 @@ async function saveFireConfigAction(formData: FormData) {
   const config = parseFireConfigForm(formData);
 
   withStore((store) => store.saveFireConfig(scopeId, config));
-  revalidatePath("/");
+  redirect(formData.get("currentUrl") as string || "/");
 }
 
 async function deleteAssetAction(formData: FormData) {
@@ -971,7 +1011,7 @@ async function deleteAssetAction(formData: FormData) {
   }
 
   withStore((store) => store.softDeleteAsset(id, new Date().toISOString()));
-  revalidatePath("/");
+  redirect(formData.get("currentUrl") as string || "/");
 }
 
 async function deleteLiabilityAction(formData: FormData) {
@@ -984,7 +1024,7 @@ async function deleteLiabilityAction(formData: FormData) {
   }
 
   withStore((store) => store.softDeleteLiability(id, new Date().toISOString()));
-  revalidatePath("/");
+  redirect(formData.get("currentUrl") as string || "/");
 }
 
 async function saveSnapshotAction(formData: FormData) {
@@ -1023,11 +1063,11 @@ async function saveSnapshotAction(formData: FormData) {
   });
 
   if (saved) {
-    revalidatePath("/");
+    redirect(formData.get("currentUrl") as string || "/");
   }
 }
 
-async function refreshPricesAction() {
+async function refreshPricesAction(formData: FormData) {
   "use server";
 
   const nowIso = new Date().toISOString();
@@ -1050,7 +1090,7 @@ async function refreshPricesAction() {
     );
   });
 
-  revalidatePath("/");
+  redirect(formData.get("currentUrl") as string || "/");
 }
 
 function formatOptionalMoney(value: MoneyMinor | undefined): string {
