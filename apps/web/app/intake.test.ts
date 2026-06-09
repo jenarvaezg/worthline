@@ -28,6 +28,7 @@ import {
   parseViewParam,
   parseWorkspaceInit,
   resolveOwnershipSplit,
+  scaleSignedBar,
   successRedirectUrl,
   validateOwnershipShares,
   validateOwnershipSharesStrict,
@@ -799,5 +800,45 @@ describe("parseFireConfigFormStrict — rejects garbage FIRE input", () => {
       form({ monthlySpending: "abc", safeWithdrawalRate: "4", expectedRealReturn: "7" }),
     );
     expect(result.ok).toBe(false);
+  });
+});
+
+// === #59 historico ===
+
+function money(amountMinor: number) {
+  return { amountMinor, currency: "EUR" as const };
+}
+
+describe("scaleSignedBar — scales |Δ| relative to max across all deltas", () => {
+  test("returns 0 for undefined delta", () => {
+    const bars = [undefined, money(500), money(-1000)];
+    expect(scaleSignedBar(undefined, bars)).toBe(0);
+  });
+
+  test("returns 100 for the max |Δ|", () => {
+    const bars = [money(500), money(-1000), money(200)];
+    expect(scaleSignedBar(money(-1000), bars)).toBe(100);
+  });
+
+  test("scales proportionally", () => {
+    const bars = [money(500), money(1000)];
+    expect(scaleSignedBar(money(500), bars)).toBe(50);
+  });
+
+  test("handles all-zero deltas without dividing by zero", () => {
+    const bars = [money(0), money(0)];
+    expect(scaleSignedBar(money(0), bars)).toBe(0);
+  });
+
+  test("treats positive and negative symmetrically", () => {
+    const bars = [money(400), money(-400)];
+    expect(scaleSignedBar(money(400), bars)).toBe(100);
+    expect(scaleSignedBar(money(-400), bars)).toBe(100);
+  });
+
+  test("returns minimum 4% for a non-zero delta so the bar is always visible", () => {
+    const bars = [money(1), money(1000)];
+    // 1/1000 = 0.1%, which is below min — clamp to 4
+    expect(scaleSignedBar(money(1), bars)).toBe(4);
   });
 });
