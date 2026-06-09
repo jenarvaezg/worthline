@@ -249,14 +249,30 @@ describe("net worth calculations", () => {
     expect(household.housingEquity.amountMinor).toBe(12_000_000);
     expect(household.liquidNetWorth.amountMinor).toBe(4_000_000);
     expect(ana.totalNetWorth.amountMinor).toBe(6_000_000);
-    expect(presentNetWorth(household, "liquid").primary.amountMinor).toBe(4_000_000);
-    expect(presentNetWorth(household, "housing-inclusive").primary.amountMinor).toBe(
-      16_000_000,
+    const total = presentNetWorth(household, "total");
+    expect(total.framing).toBe("total");
+    expect(total.headlineLabel).toBe("Neto total");
+    expect(total.headline.amountMinor).toBe(16_000_000);
+
+    const liquid = presentNetWorth(household, "liquid");
+    expect(liquid.framing).toBe("liquid");
+    expect(liquid.headlineLabel).toBe("Neto liquido");
+    expect(liquid.headline.amountMinor).toBe(4_000_000);
+
+    // The breakdown is a fixed set, identical regardless of the framing.
+    expect(liquid.breakdown).toEqual(total.breakdown);
+    expect(total.breakdown.map((item) => item.id)).toEqual([
+      "liquid-net-worth",
+      "housing-equity",
+      "gross-assets",
+      "debts",
+    ]);
+    const byId = Object.fromEntries(
+      total.breakdown.map((item) => [item.id, item.value.amountMinor]),
     );
-    expect(presentNetWorth(household, "gross-debt")).toMatchObject({
-      debt: { amountMinor: 18_000_000 },
-      gross: { amountMinor: 34_000_000 },
-      mode: "gross-debt",
-    });
+    expect(byId["liquid-net-worth"]).toBe(4_000_000);
+    expect(byId["housing-equity"]).toBe(12_000_000);
+    expect(byId["gross-assets"]).toBe(34_000_000);
+    expect(byId["debts"]).toBe(18_000_000);
   });
 });

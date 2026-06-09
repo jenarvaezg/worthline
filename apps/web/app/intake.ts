@@ -6,7 +6,7 @@ import type {
   CreateManualAssetInput,
   FireScopeConfig,
   Member,
-  NetWorthPresentationMode,
+  NetWorthFraming,
   OperationKind,
   OwnershipShare,
 } from "@worthline/domain";
@@ -40,14 +40,8 @@ export function parseScopeParam(value: string | string[] | undefined): string {
 
 export function parseViewParam(
   value: string | string[] | undefined,
-): NetWorthPresentationMode {
-  const normalized = normalizeParam(value);
-
-  if (normalized === "housing-inclusive" || normalized === "gross-debt") {
-    return normalized;
-  }
-
-  return "liquid";
+): NetWorthFraming {
+  return normalizeParam(value) === "liquid" ? "liquid" : "total";
 }
 
 export function parseWorkspaceInit(formData: FormData): WorkspaceInitCommand {

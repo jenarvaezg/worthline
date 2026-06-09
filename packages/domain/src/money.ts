@@ -77,6 +77,17 @@ export function formatMoneyMinor(value: MoneyMinor): string {
   return formatter.format(value.amountMinor / 100);
 }
 
+/**
+ * Classify a money value's sign so the UI can color gains/losses without
+ * re-deriving the rule in place. Color must never be the only signal — pair it
+ * with the minus sign that formatMoneyMinor already renders for negatives.
+ */
+export function moneySign(value: MoneyMinor): "pos" | "neg" | "zero" {
+  if (value.amountMinor > 0) return "pos";
+  if (value.amountMinor < 0) return "neg";
+  return "zero";
+}
+
 /** Render a money value for an editable input field: two decimals, comma separator. */
 export function formatMoneyInput(amountMinor: number): string {
   return (amountMinor / 100).toFixed(2).replace(".", ",");

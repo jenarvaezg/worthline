@@ -38,11 +38,11 @@ describe("scope and view params", () => {
     expect(parseScopeParam(undefined)).toBe("household");
   });
 
-  test("parseViewParam accepts known modes and falls back to liquid", () => {
-    expect(parseViewParam("gross-debt")).toBe("gross-debt");
-    expect(parseViewParam("housing-inclusive")).toBe("housing-inclusive");
-    expect(parseViewParam("nonsense")).toBe("liquid");
-    expect(parseViewParam(undefined)).toBe("liquid");
+  test("parseViewParam returns the liquid framing only for liquid, else total", () => {
+    expect(parseViewParam("liquid")).toBe("liquid");
+    expect(parseViewParam("total")).toBe("total");
+    expect(parseViewParam("nonsense")).toBe("total");
+    expect(parseViewParam(undefined)).toBe("total");
   });
 });
 

@@ -1,13 +1,13 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  buildLiquidityPyramid,
+  buildLiquidityBreakdown,
   createLiability,
   createManualAsset,
   createWorkspace,
 } from "./index";
 
-describe("liquidity pyramid", () => {
+describe("liquidity breakdown", () => {
   test("returns empty tiers and groups scoped net, gross, and debt values by liquidity tier", () => {
     const workspace = createWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
@@ -15,18 +15,18 @@ describe("liquidity pyramid", () => {
     });
 
     expect(
-      buildLiquidityPyramid({
+      buildLiquidityBreakdown({
         assets: [],
         liabilities: [],
         scopeId: "household",
         workspace,
       }).map((tier) => [tier.tier, tier.netValue.amountMinor]),
     ).toEqual([
-      ["housing", 0],
-      ["illiquid", 0],
-      ["retirement", 0],
-      ["market", 0],
       ["cash", 0],
+      ["market", 0],
+      ["retirement", 0],
+      ["illiquid", 0],
+      ["housing", 0],
     ]);
 
     const cash = createManualAsset(workspace, {
@@ -38,7 +38,7 @@ describe("liquidity pyramid", () => {
       ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
       type: "cash",
     });
-    const oneTier = buildLiquidityPyramid({
+    const oneTier = buildLiquidityBreakdown({
       assets: [cash],
       liabilities: [],
       scopeId: "household",
@@ -83,7 +83,7 @@ describe("liquidity pyramid", () => {
       type: "mortgage",
     });
 
-    const pyramid = buildLiquidityPyramid({
+    const pyramid = buildLiquidityBreakdown({
       assets: [cash, broker, home],
       liabilities: [mortgage],
       scopeId: "household",
@@ -110,5 +110,12 @@ describe("liquidity pyramid", () => {
     expect(pyramid.find((tier) => tier.tier === "housing")?.liabilities).toEqual([
       { id: "debt_mortgage", name: "Hipoteca", valueMinor: 180_000 },
     ]);
+
+    // shareOfGrossBps is each tier's share of total gross assets
+    // (10_000 + 20_000 + 300_000 = 330_000).
+    expect(pyramid.find((tier) => tier.tier === "cash")?.shareOfGrossBps).toBe(303);
+    expect(pyramid.find((tier) => tier.tier === "market")?.shareOfGrossBps).toBe(606);
+    expect(pyramid.find((tier) => tier.tier === "housing")?.shareOfGrossBps).toBe(9091);
+    expect(pyramid.find((tier) => tier.tier === "retirement")?.shareOfGrossBps).toBe(0);
   });
 });

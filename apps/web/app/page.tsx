@@ -6,12 +6,13 @@ import {
   formatMoneyMinor,
   getPriceFreshness,
   listScopeOptions,
+  moneySign,
   prepareDashboardState,
 } from "@worthline/domain";
 import type {
   ManualAsset,
   Member,
-  NetWorthPresentationMode,
+  NetWorthFraming,
   PriceFreshnessState,
 } from "@worthline/domain";
 import { fetchAndCachePrice, stooqProvider } from "@worthline/pricing";
@@ -61,11 +62,10 @@ function buildCurrentUrl(
   return queryString ? `/?${queryString}` : "/";
 }
 
-const presentationModes = [
+const framingTabs = [
+  { id: "total", label: "Total" },
   { id: "liquid", label: "Liquido" },
-  { id: "housing-inclusive", label: "Con vivienda" },
-  { id: "gross-debt", label: "Bruto/deuda" },
-] as const satisfies Array<{ id: NetWorthPresentationMode; label: string }>;
+] as const satisfies Array<{ id: NetWorthFraming; label: string }>;
 
 /** Outcome of a write server action: ok signals revalidate, error surfaces to the user. */
 type ActionResult = { ok: boolean; error?: string };
@@ -194,21 +194,46 @@ export default async function DashboardPage({
             ))}
           </nav>
         ) : null}
-        <div className="metricsGrid">
-          {dashboard.metrics.map((metric) => (
-            <article className={`metricTile ${metric.posture}`} key={metric.id}>
-              <span>{metric.label}</span>
-              <strong>{formatMoneyMinor(metric.value)}</strong>
-            </article>
-          ))}
-        </div>
+        {selectedScope ? (
+          <nav className="framingTabs" aria-label="Vista de patrimonio">
+            {framingTabs.map((tab) => (
+              <Link
+                className={tab.id === selectedView ? "active" : undefined}
+                href={`/?scope=${encodeURIComponent(selectedScope.id)}&view=${tab.id}`}
+                key={tab.id}
+                scroll={false}
+              >
+                {tab.label}
+              </Link>
+            ))}
+          </nav>
+        ) : null}
+        {presentation ? (
+          <div className="headline">
+            <span>{presentation.headlineLabel}</span>
+            <strong>{formatMoneyMinor(presentation.headline)}</strong>
+            <div className="breakdown">
+              {presentation.breakdown.map((item) => (
+                <span key={item.id}>
+                  {item.label} <b>{formatMoneyMinor(item.value)}</b>
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
         {deltas ? (
           <div className="deltaStrip" aria-label="Cambios de snapshots">
             <span>
-              Snapshot anterior <b>{formatOptionalMoney(deltas.changeSincePrevious)}</b>
+              Snapshot anterior{" "}
+              <b className={deltas.changeSincePrevious ? moneySign(deltas.changeSincePrevious) : undefined}>
+                {formatOptionalMoney(deltas.changeSincePrevious)}
+              </b>
             </span>
             <span>
-              Cierre mensual <b>{formatOptionalMoney(deltas.changeSinceMonthlyClose)}</b>
+              Cierre mensual{" "}
+              <b className={deltas.changeSinceMonthlyClose ? moneySign(deltas.changeSinceMonthlyClose) : undefined}>
+                {formatOptionalMoney(deltas.changeSinceMonthlyClose)}
+              </b>
             </span>
           </div>
         ) : null}
@@ -286,34 +311,8 @@ export default async function DashboardPage({
         <section className="ledgerPanel" aria-label="Activos y deudas">
           <div className="panelHeader">
             <h2>Linea operativa</h2>
-            <span>{presentation?.label ?? "Bootstrap"}</span>
+            <span>Activos y deudas</span>
           </div>
-          {selectedScope ? (
-            <nav className="viewTabs" aria-label="Modo de neto">
-              {presentationModes.map((mode) => (
-                <Link
-                  className={mode.id === selectedView ? "active" : undefined}
-                  href={`/?scope=${encodeURIComponent(selectedScope.id)}&view=${mode.id}`}
-                  key={mode.id}
-                  scroll={false}
-                >
-                  {mode.label}
-                </Link>
-              ))}
-            </nav>
-          ) : null}
-          {presentation ? (
-            <div className="presentationReadout">
-              <span>{presentation.label}</span>
-              <strong>{formatMoneyMinor(presentation.primary)}</strong>
-              {presentation.mode === "gross-debt" ? (
-                <div>
-                  <span>Bruto {formatMoneyMinor(presentation.gross)}</span>
-                  <span>Deuda {formatMoneyMinor(presentation.debt)}</span>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
           <div className="entryGrid">
             <form action={createAssetAction} className="stackForm">
             <input name="currentUrl" type="hidden" value={currentUrl} />
@@ -546,7 +545,7 @@ export default async function DashboardPage({
                         ? formatMoneyMinor(position.marketValue)
                         : "—"}
                     </td>
-                    <td>
+                    <td className={position.unrealizedPnl ? moneySign(position.unrealizedPnl) : undefined}>
                       {position.unrealizedPnl
                         ? formatMoneyMinor(position.unrealizedPnl)
                         : "—"}
@@ -563,17 +562,21 @@ export default async function DashboardPage({
           </table>
         </section>
 
-        <section className="liquidityPanel" aria-label="Piramide de liquidez">
+        <section className="liquidityPanel" aria-label="Liquidez por capa">
           <div className="panelHeader">
             <h2>Liquidez</h2>
-            <span>Neto por capa</span>
+            <span>Por capa · % del bruto</span>
           </div>
           <div className="pyramid">
             {pyramid.map((tier) => (
               <details className={`tier ${tier.tier}`} key={tier.tier} open>
                 <summary>
-                  <span>{tierLabel(tier.tier)}</span>
-                  <b>{formatMoneyMinor(tier.netValue)}</b>
+                  <span className="tierName">{tierLabel(tier.tier)}</span>
+                  <span className="tierBar" aria-hidden="true">
+                    <i style={{ width: `${Math.max(2, tier.shareOfGrossBps / 100)}%` }} />
+                  </span>
+                  <b className={moneySign(tier.netValue)}>{formatMoneyMinor(tier.netValue)}</b>
+                  <span className="tierShare">{Math.round(tier.shareOfGrossBps / 100)}%</span>
                 </summary>
                 <div className="tierDetails">
                   <span>Bruto {formatMoneyMinor(tier.grossAssets)}</span>
@@ -611,9 +614,14 @@ export default async function DashboardPage({
         ) : null}
         <div className="historyBars">
           {snapshots.map((snapshot) => (
-            <div className="historyBar" key={snapshot.id}>
+            <div
+              className={`historyBar ${moneySign(snapshot.totalNetWorth) === "neg" ? "negative" : ""}`}
+              key={snapshot.id}
+            >
               <span>{snapshot.dateKey}</span>
-              <b>{formatMoneyMinor(snapshot.totalNetWorth)}</b>
+              <b className={moneySign(snapshot.totalNetWorth)}>
+                {formatMoneyMinor(snapshot.totalNetWorth)}
+              </b>
               <i
                 style={{
                   width: `${historyWidth(snapshot.totalNetWorth, snapshots)}%`,

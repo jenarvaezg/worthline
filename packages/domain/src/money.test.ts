@@ -7,6 +7,7 @@ import {
   formatMoneyInput,
   formatMoneyMinor,
   money,
+  moneySign,
   parseDecimal,
   parseDecimalStrict,
   parseDecimalToMinor,
@@ -131,5 +132,14 @@ describe("parseDecimalStrict and parseDecimalToMinorStrict", () => {
 
   test("parseDecimalToMinorStrict converts valid input to integer minor units", () => {
     expect(parseDecimalToMinorStrict("1.234,56")).toBe(123_456);
+  });
+});
+
+describe("moneySign", () => {
+  test("classifies positive, negative, and zero amounts", () => {
+    expect(moneySign(money(1, "EUR"))).toBe("pos");
+    expect(moneySign(money(12_345, "EUR"))).toBe("pos");
+    expect(moneySign(money(-1, "EUR"))).toBe("neg");
+    expect(moneySign(money(0, "EUR"))).toBe("zero");
   });
 });
