@@ -743,9 +743,38 @@ export default async function DashboardPage({
               <span>Activos elegibles</span>
               <strong>{formatMoneyMinor(fireResult!.eligibleAssets)}</strong>
             </div>
-            <div>
-              <span>% financiado</span>
-              <strong>{fireResult!.percentFunded.toFixed(1)}%</strong>
+            <div className="fireProgress">
+              <div className="fireProgressTop">
+                <span>% financiado</span>
+                <strong>{fireResult!.percentFunded.toFixed(1)}%</strong>
+              </div>
+              <div className="fireBar">
+                {fireResult!.coastFireRequired &&
+                fireResult!.fireNumber.amountMinor > 0 ? (
+                  <span
+                    aria-hidden="true"
+                    className="fireTick"
+                    style={{
+                      left: `${Math.min(
+                        100,
+                        (fireResult!.coastFireRequired.amountMinor /
+                          fireResult!.fireNumber.amountMinor) *
+                          100,
+                      )}%`,
+                    }}
+                  />
+                ) : null}
+                <i
+                  style={{
+                    width: `${Math.min(100, Math.max(0, fireResult!.percentFunded))}%`,
+                  }}
+                />
+              </div>
+              {fireResult!.percentFunded >= 100 ? (
+                <span className="statePill ready">FIRE alcanzado</span>
+              ) : fireResult!.isAlreadyAtCoastFire ? (
+                <span className="statePill ready">Coast FIRE alcanzado</span>
+              ) : null}
             </div>
             {fireResult!.coastFireRequired ? (
               <div>
