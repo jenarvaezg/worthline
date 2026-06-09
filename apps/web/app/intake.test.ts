@@ -12,7 +12,9 @@ import {
   pricesRefreshedRedirectUrl,
   resolveOkMessage,
   parseAssetCommand,
+  parseAssetCommandStrict,
   parseEntityId,
+  parseFireConfigFormStrict,
   parseInvestmentAssetCommand,
   parseLiabilityCommand,
   parseMoneyMinorField,
@@ -21,10 +23,13 @@ import {
   parseOwnership,
   parseScopeParam,
   parseSnapshotForm,
+  parseValueUpdatePass,
   parseViewParam,
   parseWorkspaceInit,
   resolveOwnershipSplit,
+  successRedirectUrl,
   validateOwnershipShares,
+  validateOwnershipSharesStrict,
 } from "./intake";
 
 const members: Member[] = [
@@ -555,5 +560,230 @@ describe("prices refresh feedback", () => {
     expect(resolveOkMessage({ ok: "prices_refreshed" })).toBe("Precios actualizados.");
     expect(resolveOkMessage({})).toBeNull();
     expect(resolveOkMessage(undefined)).toBeNull();
+  });
+});
+
+// ─── Issue #54: intake v2 ────────────────────────────────────────────────────
+
+describe("validateOwnershipSharesStrict — specific sum in error message", () => {
+  test("returns null when shares total exactly 10000 bps", () => {
+    expect(
+      validateOwnershipSharesStrict([
+        { memberId: "member_ana", shareBps: 2_500 },
+        { memberId: "member_jose", shareBps: 7_500 },
+      ]),
+    ).toBeNull();
+  });
+
+  test("rejects 99.9% (9990 bps) and names the actual sum", () => {
+    const error = validateOwnershipSharesStrict([
+      { memberId: "member_ana", shareBps: 4_995 },
+      { memberId: "member_jose", shareBps: 4_995 },
+    ]);
+    expect(error).toContain("99.9");
+    expect(error).toContain("100%");
+  });
+
+  test("rejects 100.1% (10010 bps) and names the actual sum", () => {
+    const error = validateOwnershipSharesStrict([
+      { memberId: "member_ana", shareBps: 5_005 },
+      { memberId: "member_jose", shareBps: 5_005 },
+    ]);
+    expect(error).toContain("100.1");
+    expect(error).toContain("100%");
+  });
+
+  test("rejects 110% and names the actual sum in the message", () => {
+    const error = validateOwnershipSharesStrict([
+      { memberId: "member_ana", shareBps: 5_500 },
+      { memberId: "member_jose", shareBps: 5_500 },
+    ]);
+    // Message must contain the actual sum percentage
+    expect(error).toContain("110");
+    expect(error).toContain("100%");
+  });
+
+  test("accepts exactly 100% (10000 bps) for a single member", () => {
+    expect(
+      validateOwnershipSharesStrict([{ memberId: "member_ana", shareBps: 10_000 }]),
+    ).toBeNull();
+  });
+});
+
+describe("parseAssetCommandStrict — required name, no ghost defaults", () => {
+  test("returns the parsed command when name is provided", () => {
+    const result = parseAssetCommandStrict(
+      form({ name: "Casa", type: "real_estate", currentValue: "200000", liquidityTier: "housing" }),
+      members,
+      1,
+    );
+    expect(result).toEqual({ ok: true, command: expect.objectContaining({ name: "Casa" }) });
+  });
+
+  test("returns an error when name is blank", () => {
+    const result = parseAssetCommandStrict(
+      form({ name: "   ", type: "cash", currentValue: "100", liquidityTier: "cash" }),
+      members,
+      1,
+    );
+    expect(result.ok).toBe(false);
+    expect("error" in result && result.error).toBeTruthy();
+  });
+
+  test("returns an error when name is missing", () => {
+    const result = parseAssetCommandStrict(
+      form({ type: "cash", currentValue: "100", liquidityTier: "cash" }),
+      members,
+      1,
+    );
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("parseValueUpdatePass — value-update-pass diffing", () => {
+  test("returns update commands only for changed values", () => {
+    const commands = parseValueUpdatePass(
+      form({ "val_asset_a": "1500", "val_asset_b": "2000" }),
+      [
+        { id: "asset_a", currentValueMinor: 150_000 },
+        { id: "asset_b", currentValueMinor: 200_000 },
+      ],
+    );
+    // Neither changed (1500 EUR = 150000 minor, 2000 EUR = 200000 minor)
+    expect(commands).toHaveLength(0);
+  });
+
+  test("emits an update command for each value that changed", () => {
+    const commands = parseValueUpdatePass(
+      form({ "val_asset_a": "1600", "val_asset_b": "2000" }),
+      [
+        { id: "asset_a", currentValueMinor: 150_000 },
+        { id: "asset_b", currentValueMinor: 200_000 },
+      ],
+    );
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toEqual({ id: "asset_a", newValueMinor: 160_000 });
+  });
+
+  test("reports a parse error for rows where the value is invalid", () => {
+    const commands = parseValueUpdatePass(
+      form({ "val_asset_a": "not-a-number", "val_asset_b": "2000" }),
+      [
+        { id: "asset_a", currentValueMinor: 150_000 },
+        { id: "asset_b", currentValueMinor: 200_000 },
+      ],
+    );
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toEqual({ id: "asset_a", error: expect.any(String) });
+  });
+
+  test("emits update commands for all changed values across multiple rows", () => {
+    const commands = parseValueUpdatePass(
+      form({ "val_asset_a": "1600", "val_asset_b": "2500" }),
+      [
+        { id: "asset_a", currentValueMinor: 150_000 },
+        { id: "asset_b", currentValueMinor: 200_000 },
+      ],
+    );
+    expect(commands).toHaveLength(2);
+    expect(commands.find((c) => c.id === "asset_a")).toEqual({ id: "asset_a", newValueMinor: 160_000 });
+    expect(commands.find((c) => c.id === "asset_b")).toEqual({ id: "asset_b", newValueMinor: 250_000 });
+  });
+});
+
+describe("okMessage — specific catalog keys for intake v2", () => {
+  test("asset_added carries the holding name", () => {
+    // The catalog key for a named asset add
+    expect(okMessage("asset_added")).not.toBeNull();
+  });
+
+  test("deleted_recoverable maps to a trash message", () => {
+    expect(okMessage("deleted_recoverable")).not.toBeNull();
+    expect(okMessage("deleted_recoverable")).toContain("Papelera");
+  });
+
+  test("restored maps to a restoration message", () => {
+    expect(okMessage("restored")).not.toBeNull();
+  });
+
+  test("liability_added is present", () => {
+    expect(okMessage("liability_added")).not.toBeNull();
+  });
+
+  test("investment_added is present", () => {
+    expect(okMessage("investment_added")).not.toBeNull();
+  });
+});
+
+describe("successRedirectUrl — anchor-carrying redirects", () => {
+  test("appends an anchor fragment to the ok redirect url", () => {
+    const url = successRedirectUrl("/?scope=household", "asset_added", "asset_abc123");
+    // The URL must carry the ok key
+    expect(url).toContain("ok=asset_added");
+    // And must carry the anchor
+    expect(url).toContain("#asset_abc123");
+  });
+
+  test("works without an anchor (anchor is optional)", () => {
+    const url = successRedirectUrl("/?scope=household", "saved");
+    expect(url).toContain("ok=saved");
+    expect(url).not.toContain("#");
+  });
+
+  test("anchor from errorRedirectUrl is also carried", () => {
+    const url = errorRedirectUrl("/?scope=household", {
+      message: "Error de prueba",
+      formId: "asset",
+      values: {},
+      anchor: "asset_abc123",
+    });
+    expect(url).toContain("#asset_abc123");
+  });
+});
+
+describe("parseFireConfigFormStrict — rejects garbage FIRE input", () => {
+  test("returns ok with config for valid inputs", () => {
+    const result = parseFireConfigFormStrict(
+      form({ monthlySpending: "2000", safeWithdrawalRate: "4", expectedRealReturn: "7" }),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  test("rejects zero monthly spending", () => {
+    const result = parseFireConfigFormStrict(
+      form({ monthlySpending: "0", safeWithdrawalRate: "4", expectedRealReturn: "7" }),
+    );
+    expect(result.ok).toBe(false);
+    expect("error" in result && result.error).toBeTruthy();
+  });
+
+  test("rejects negative monthly spending", () => {
+    const result = parseFireConfigFormStrict(
+      form({ monthlySpending: "-100", safeWithdrawalRate: "4", expectedRealReturn: "7" }),
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  test("rejects zero safe withdrawal rate", () => {
+    const result = parseFireConfigFormStrict(
+      form({ monthlySpending: "2000", safeWithdrawalRate: "0", expectedRealReturn: "7" }),
+    );
+    expect(result.ok).toBe(false);
+    expect("error" in result && result.error).toBeTruthy();
+  });
+
+  test("rejects zero expected real return", () => {
+    const result = parseFireConfigFormStrict(
+      form({ monthlySpending: "2000", safeWithdrawalRate: "4", expectedRealReturn: "0" }),
+    );
+    expect(result.ok).toBe(false);
+    expect("error" in result && result.error).toBeTruthy();
+  });
+
+  test("rejects non-numeric garbage in spending field", () => {
+    const result = parseFireConfigFormStrict(
+      form({ monthlySpending: "abc", safeWithdrawalRate: "4", expectedRealReturn: "7" }),
+    );
+    expect(result.ok).toBe(false);
   });
 });
