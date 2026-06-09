@@ -1,4 +1,4 @@
-import type { DecimalString } from "@worthline/contracts";
+import type { DecimalString } from "@worthline/domain";
 import type { CreateInvestmentAssetInput } from "@worthline/db";
 import type {
   CreateInvestmentOperationInput,
@@ -10,7 +10,11 @@ import type {
   OperationKind,
   OwnershipShare,
 } from "@worthline/domain";
-import { parseDecimal, parseDecimalToMinor, parseDecimalToMinorStrict } from "@worthline/domain";
+import {
+  parseDecimal,
+  parseDecimalToMinor,
+  parseDecimalToMinorStrict,
+} from "@worthline/domain";
 
 /**
  * The web intake seam: turns raw HTML form input into validated domain command
@@ -156,7 +160,9 @@ export function parseInvestmentAssetCommand(
   seed: number,
 ): CreateInvestmentAssetInput {
   const name = String(formData.get("name") ?? "").trim() || "Inversión";
-  const manualPrice = parseDecimalStringInput(String(formData.get("manualPricePerUnit") ?? ""));
+  const manualPrice = parseDecimalStringInput(
+    String(formData.get("manualPricePerUnit") ?? ""),
+  );
   const unitSymbol = String(formData.get("unitSymbol") ?? "").trim();
   const isin = String(formData.get("isin") ?? "").trim();
 
@@ -224,7 +230,8 @@ export function parseFireConfigForm(formData: FormData): FireScopeConfig {
 
   const currentAgeRaw = (formData.get("currentAge") as string | null) ?? "";
   const currentAgeParsed = parseInt(currentAgeRaw, 10);
-  const currentAge = currentAgeRaw && !Number.isNaN(currentAgeParsed) ? currentAgeParsed : undefined;
+  const currentAge =
+    currentAgeRaw && !Number.isNaN(currentAgeParsed) ? currentAgeParsed : undefined;
 
   const targetRetirementAgeRaw =
     (formData.get("targetRetirementAge") as string | null) ?? "";

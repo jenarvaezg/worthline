@@ -4,7 +4,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@worthline/contracts": "*",
     "@worthline/db": "*",
     "@worthline/domain": "*",
     "@worthline/pricing": "*",

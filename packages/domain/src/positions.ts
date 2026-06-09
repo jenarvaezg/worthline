@@ -1,4 +1,5 @@
-import type { CurrencyCode, DecimalString } from "@worthline/contracts";
+import type { CurrencyCode } from "./money";
+import type { DecimalString } from "./decimal";
 
 import {
   addUnits,
