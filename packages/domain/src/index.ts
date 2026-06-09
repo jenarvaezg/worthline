@@ -101,6 +101,29 @@ export {
 export type { CaptureDecision, SnapshotPolicyEntry } from "./snapshot-policy";
 export { deriveMonthlyCloses, planSnapshotCapture } from "./snapshot-policy";
 
+/**
+ * A rule violation reported by a domain constructor — carries a stable
+ * machine-readable `code` plus context fields that callers can use to format
+ * a user-facing message without re-deriving the rule.
+ *
+ * Discriminated by `code` so callers can switch on it exhaustively.
+ */
+export type DomainViolation =
+  | { code: "ownership_split_invalid"; totalBps: number };
+
+/**
+ * Discriminated result returned by safe domain constructors.
+ * `{ ok: true, value }` carries the created entity.
+ * `{ ok: false, violations }` carries a non-empty list of violations with
+ * stable machine-readable codes — no exception is thrown.
+ *
+ * Programmer-error paths (unknown member id, non-integer bps, invalid
+ * currency) still throw — only rule violations become data.
+ */
+export type DomainResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; violations: [DomainViolation, ...DomainViolation[]] };
+
 export type WorkspaceMode = "individual" | "household";
 
 export interface Member {
@@ -382,6 +405,48 @@ export function createLiability(
     type: input.type,
     ...(input.associatedAssetId ? { associatedAssetId: input.associatedAssetId } : {}),
   };
+}
+
+/**
+ * Safe variant of `createManualAsset`: returns a `DomainResult` instead of
+ * throwing when the ownership split does not total 10 000 bps.
+ * Programmer-error paths (unknown member, non-integer bps, bad currency) still
+ * throw — only the ownership-split rule becomes data.
+ */
+export function createManualAssetSafe(
+  workspace: Workspace,
+  input: CreateManualAssetInput,
+): DomainResult<ManualAsset> {
+  assertCurrency(input.currency);
+  assertMinorInteger(input.currentValueMinor);
+
+  const splitViolation = checkOwnershipSplit(workspace, input.ownership);
+
+  if (splitViolation) {
+    return { ok: false, violations: [splitViolation] };
+  }
+
+  return { ok: true, value: createManualAsset(workspace, input) };
+}
+
+/**
+ * Safe variant of `createLiability`: returns a `DomainResult` instead of
+ * throwing when the ownership split does not total 10 000 bps.
+ */
+export function createLiabilitySafe(
+  workspace: Workspace,
+  input: CreateLiabilityInput,
+): DomainResult<Liability> {
+  assertCurrency(input.currency);
+  assertMinorInteger(input.balanceMinor);
+
+  const splitViolation = checkOwnershipSplit(workspace, input.ownership);
+
+  if (splitViolation) {
+    return { ok: false, violations: [splitViolation] };
+  }
+
+  return { ok: true, value: createLiability(workspace, input) };
 }
 
 export function calculateNetWorth(input: {
@@ -692,7 +757,15 @@ function assertCurrency(currency: CurrencyCode): void {
   }
 }
 
-function assertOwnership(workspace: Workspace, ownership: OwnershipShare[]): void {
+/**
+ * Checks the ownership split for the "totals 10 000 bps" rule.
+ * Returns a `DomainViolation` when the split is invalid, `null` when valid.
+ * Programmer errors (unknown member, non-integer bps) still throw.
+ */
+function checkOwnershipSplit(
+  workspace: Workspace,
+  ownership: OwnershipShare[],
+): Extract<DomainViolation, { code: "ownership_split_invalid" }> | null {
   const knownMemberIds = new Set(workspace.members.map((member) => member.id));
   const totalBps = ownership.reduce((sum, share) => {
     if (!knownMemberIds.has(share.memberId)) {
@@ -707,6 +780,16 @@ function assertOwnership(workspace: Workspace, ownership: OwnershipShare[]): voi
   }, 0);
 
   if (totalBps !== 10_000) {
+    return { code: "ownership_split_invalid", totalBps };
+  }
+
+  return null;
+}
+
+function assertOwnership(workspace: Workspace, ownership: OwnershipShare[]): void {
+  const violation = checkOwnershipSplit(workspace, ownership);
+
+  if (violation) {
     throw new Error("Ownership shares must add up to 10000 bps.");
   }
 }
