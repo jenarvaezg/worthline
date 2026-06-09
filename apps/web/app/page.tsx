@@ -7,6 +7,7 @@ import {
   getPriceFreshness,
   listScopeOptions,
   moneySign,
+  planSnapshotCapture,
   prepareDashboardState,
 } from "@worthline/domain";
 import type {
@@ -35,7 +36,6 @@ import {
   parseNewMember,
   parseOperationCommand,
   parseScopeParam,
-  parseSnapshotForm,
   parseViewParam,
   parseWorkspaceInit,
   preserveFields,
@@ -109,6 +109,33 @@ export default async function DashboardPage({
     const selectedScopeId = parseScopeParam(resolvedSearchParams?.scope);
     const selectedScope =
       scopes.find((scope) => scope.id === selectedScopeId) ?? scopes[0];
+
+    // Automatic capture-on-load: at most one snapshot per scope per day,
+    // latest wins (ADR 0005). Runs for every scope so all scopes get history.
+    if (workspace) {
+      const today = new Date().toISOString().slice(0, 10);
+      const assets = store.readAssets();
+      const liabilities = store.readLiabilities();
+
+      for (const scope of scopes) {
+        const existing = store.readSnapshots(scope.id);
+        const plan = planSnapshotCapture(existing, scope.id, today);
+
+        if (plan.shouldCapture) {
+          const now = new Date().toISOString();
+          const snapshot = captureNetWorthSnapshot({
+            assets,
+            capturedAt: now,
+            id: buildSnapshotId(scope.id, now, Date.now()),
+            liabilities,
+            scopeId: scope.id,
+            scopeLabel: scope.label,
+            workspace,
+          });
+          store.saveSnapshot({ snapshot, replace: plan.replacesId !== undefined });
+        }
+      }
+    }
 
     return {
       assets: store.readAssets(),
@@ -839,21 +866,8 @@ export default async function DashboardPage({
         <section className="historyPanel" aria-label="Snapshots">
           <div className="panelHeader">
             <h2>Snapshots</h2>
-            <span>{snapshots.length} guardados</span>
+            <span>{snapshots.length} capturas</span>
           </div>
-          {selectedScope ? (
-            <form action={saveSnapshotAction} className="snapshotForm">
-              <input name="currentUrl" type="hidden" value={currentUrl} />
-              <input name="scopeId" type="hidden" value={selectedScope.id} />
-              <label className="checkLine">
-                <input name="isMonthlyClose" type="checkbox" /> Cierre mensual
-              </label>
-              <label className="checkLine">
-                <input name="replace" type="checkbox" /> Reemplazar hoy
-              </label>
-              <button type="submit">Guardar snapshot</button>
-            </form>
-          ) : null}
           <div className="historyBars">
             {snapshots.map((snapshot) => (
               <div
@@ -873,7 +887,7 @@ export default async function DashboardPage({
             ))}
             {snapshots.length === 0 ? (
               <span className="emptyLine">
-                Sin snapshots — guarda uno para empezar tu histórico.
+                Sin capturas todavía — vuelve mañana para ver tu primera comparativa.
               </span>
             ) : null}
           </div>
@@ -1433,46 +1447,6 @@ async function restoreLiabilityAction(formData: FormData) {
 
   withStore((store) => store.restoreLiability(id));
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
-}
-
-async function saveSnapshotAction(formData: FormData) {
-  "use server";
-
-  const { scopeId, isMonthlyClose, replace } = parseSnapshotForm(formData);
-  const saved = withStore((store) => {
-    const workspace = store.readWorkspace();
-
-    if (!workspace) {
-      return false;
-    }
-
-    const scopes = listScopeOptions(workspace);
-    const scope = scopes.find((option) => option.id === scopeId) ?? scopes[0];
-
-    if (!scope) {
-      return false;
-    }
-
-    const now = new Date().toISOString();
-    const snapshot = captureNetWorthSnapshot({
-      assets: store.readAssets(),
-      capturedAt: now,
-      id: buildSnapshotId(scope.id, now, Date.now()),
-      isMonthlyClose,
-      liabilities: store.readLiabilities(),
-      scopeId: scope.id,
-      scopeLabel: scope.label,
-      workspace,
-    });
-
-    store.saveSnapshot({ replace, snapshot });
-
-    return true;
-  });
-
-  if (saved) {
-    redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
-  }
 }
 
 async function acknowledgeWarningAction(formData: FormData) {
