@@ -9,7 +9,7 @@ import {
   signedDeltaBarWidths,
 } from "@worthline/domain";
 import type { LiquidityTier, ManualAsset, MoneyMinor, NetWorthFraming } from "@worthline/domain";
-import { fetchAndCachePrice, refreshStalePrices } from "@worthline/pricing";
+import { refreshStalePrices } from "@worthline/pricing";
 import { runBootstrapHealthcheck, withStore } from "@worthline/db";
 import { cookies } from "next/headers";
 import Link from "next/link";
@@ -22,6 +22,7 @@ import {
   parseViewParam,
   SCOPE_COOKIE_NAME,
 } from "./intake";
+import { refreshAndPersistStalePrices } from "./refresh-prices";
 import Shell from "./shell";
 
 export const dynamic = "force-dynamic";
@@ -64,19 +65,13 @@ export default async function DashboardPage({
   // snapshot reflects refreshed prices (ADR 0005 + #52).
   const investmentAssetsMeta = withStore((store) => store.readInvestmentAssetsWithMeta());
   const initialPriceCache = withStore((store) => store.readAllPriceCacheEntries());
-  const refreshedPrices = await refreshStalePrices(
-    initialPriceCache,
-    investmentAssetsMeta,
-    persistence.checkedAt,
-  ).catch(() => null);
-
-  const priceCache = withStore((store) => {
-    if (refreshedPrices) {
-      for (const price of refreshedPrices.refreshed) {
-        store.upsertPrice(price);
-      }
-    }
-    return store.readAllPriceCacheEntries();
+  const { priceCache } = await refreshAndPersistStalePrices({
+    cacheEntries: initialPriceCache,
+    assets: investmentAssetsMeta,
+    nowIso: persistence.checkedAt,
+    refreshStalePrices,
+    upsertPrice: (price) => withStore((store) => store.upsertPrice(price)),
+    readCache: () => withStore((store) => store.readAllPriceCacheEntries()),
   });
 
   const storeData = withStore((store) => {
