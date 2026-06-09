@@ -247,3 +247,130 @@ describe("updateAsset — full asset edit", () => {
     store.close();
   });
 });
+
+describe("batchApplyAllValueUpdates — atomic asset+liability pass", () => {
+  test("applies asset and liability updates in a single transaction", () => {
+    const store = setupStore();
+    store.createManualAsset({
+      id: "a_cash",
+      name: "Caja",
+      type: "cash",
+      liquidityTier: "cash",
+      currency: "EUR",
+      currentValueMinor: 10_000,
+      isPrimaryResidence: false,
+      ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
+    });
+    store.createLiability({
+      id: "l_debt",
+      name: "Deuda",
+      type: "debt",
+      currency: "EUR",
+      balanceMinor: 5_000,
+      ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
+    });
+
+    store.batchApplyAllValueUpdates(
+      [{ id: "a_cash", newValueMinor: 20_000 }],
+      [{ id: "l_debt", newValueMinor: 3_000 }],
+    );
+
+    const asset = store.readAssets().find((a) => a.id === "a_cash")!;
+    const liability = store.readLiabilities().find((l) => l.id === "l_debt")!;
+    expect(asset.currentValue.amountMinor).toBe(20_000);
+    expect(liability.currentBalance.amountMinor).toBe(3_000);
+    store.close();
+  });
+
+  test("writes NOTHING when any amount is not an integer (atomicity guard)", () => {
+    const store = setupStore();
+    store.createManualAsset({
+      id: "a_cash",
+      name: "Caja",
+      type: "cash",
+      liquidityTier: "cash",
+      currency: "EUR",
+      currentValueMinor: 10_000,
+      isPrimaryResidence: false,
+      ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
+    });
+    store.createLiability({
+      id: "l_debt",
+      name: "Deuda",
+      type: "debt",
+      currency: "EUR",
+      balanceMinor: 5_000,
+      ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
+    });
+
+    expect(() =>
+      store.batchApplyAllValueUpdates(
+        [{ id: "a_cash", newValueMinor: 20_000 }],
+        [{ id: "l_debt", newValueMinor: 3_000.5 }], // invalid — not integer
+      ),
+    ).toThrow("integer");
+
+    // Validation fires BEFORE any write — the asset must be unchanged.
+    const asset = store.readAssets().find((a) => a.id === "a_cash")!;
+    const liability = store.readLiabilities().find((l) => l.id === "l_debt")!;
+    expect(asset.currentValue.amountMinor).toBe(10_000);
+    expect(liability.currentBalance.amountMinor).toBe(5_000);
+    store.close();
+  });
+
+  test("empty batches are a no-op", () => {
+    const store = setupStore();
+    store.batchApplyAllValueUpdates([], []);
+    store.close();
+  });
+});
+
+describe("softDeleteAsset / restoreAsset — returns affected row count", () => {
+  test("returns 1 when the asset exists", () => {
+    const store = setupStore();
+    store.createManualAsset({
+      id: "a_del",
+      name: "Para borrar",
+      type: "cash",
+      liquidityTier: "cash",
+      currency: "EUR",
+      currentValueMinor: 1_000,
+      isPrimaryResidence: false,
+      ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
+    });
+    expect(store.softDeleteAsset("a_del", new Date().toISOString())).toBe(1);
+    expect(store.restoreAsset("a_del")).toBe(1);
+    store.close();
+  });
+
+  test("returns 0 when the id does not exist", () => {
+    const store = setupStore();
+    expect(store.softDeleteAsset("ghost_id", new Date().toISOString())).toBe(0);
+    expect(store.restoreAsset("ghost_id")).toBe(0);
+    store.close();
+  });
+});
+
+describe("softDeleteLiability / restoreLiability — returns affected row count", () => {
+  test("returns 1 when the liability exists", () => {
+    const store = setupStore();
+    store.createLiability({
+      id: "l_del",
+      name: "Para borrar",
+      type: "debt",
+      currency: "EUR",
+      balanceMinor: 1_000,
+      ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
+    });
+    expect(store.softDeleteLiability("l_del", new Date().toISOString())).toBe(1);
+    expect(store.restoreLiability("l_del")).toBe(1);
+    store.close();
+  });
+
+  test("returns 0 when the id does not exist", () => {
+    const store = setupStore();
+    expect(store.softDeleteLiability("ghost_id", new Date().toISOString())).toBe(0);
+    expect(store.restoreLiability("ghost_id")).toBe(0);
+    store.close();
+  });
+});

@@ -10,6 +10,7 @@ import type {
   NetWorthFraming,
   OperationKind,
   OwnershipShare,
+  PriceFreshnessState,
 } from "@worthline/domain";
 import {
   parseDecimal,
@@ -30,16 +31,6 @@ export type { CreateInvestmentAssetInput };
 export interface WorkspaceInitCommand {
   mode: "individual" | "household";
   members: Member[];
-}
-
-export interface SnapshotFormInput {
-  scopeId: string;
-  isMonthlyClose: boolean;
-  replace: boolean;
-}
-
-export function parseScopeParam(value: string | string[] | undefined): string {
-  return normalizeParam(value) ?? "household";
 }
 
 export function parseViewParam(value: string | string[] | undefined): NetWorthFraming {
@@ -239,7 +230,6 @@ export function okMessage(key: string | undefined): string | null {
 
   const messages: Record<string, string> = {
     asset_added: "Activo añadido.",
-    deleted: "Eliminado.",
     deleted_recoverable: "Eliminado — recuperable en Papelera.",
     fire_saved: "Configuración FIRE guardada.",
     investment_added: "Inversión añadida.",
@@ -247,7 +237,6 @@ export function okMessage(key: string | undefined): string | null {
     prices_refreshed: "Precios actualizados.",
     restored: "Restaurado.",
     saved: "Guardado.",
-    snapshot_saved: "Snapshot guardado.",
     valores_actualizados: "Valores actualizados.",
     warning_acknowledged: "Aviso marcado como intencional.",
   };
@@ -444,25 +433,6 @@ export function validateOwnershipSharesStrict(shares: OwnershipShare[]): string 
   return `La propiedad suma ${actualPct}% — debe sumar 100%.`;
 }
 
-export function parseAssetCommand(
-  formData: FormData,
-  members: Member[],
-  seed: number,
-): CreateManualAssetInput {
-  const name = String(formData.get("name") ?? "").trim() || "Activo";
-
-  return {
-    currency: "EUR",
-    currentValueMinor: parseMoneyMinorField(formData, "currentValue") ?? 0,
-    id: createStableId("asset", name, seed),
-    isPrimaryResidence: formData.get("isPrimaryResidence") === "on",
-    liquidityTier: parseLiquidityTier(formData.get("liquidityTier")),
-    name,
-    ownership: parseOwnership(formData, members),
-    type: parseAssetType(formData.get("type")),
-  };
-}
-
 /** Result type for strict parse functions that can fail with a user-facing error. */
 export type StrictParseResult<T> =
   | { ok: true; command: T }
@@ -514,51 +484,6 @@ export function parseLiabilityCommand(
     ownership: parseOwnership(formData, members),
     type: formData.get("type") === "debt" ? "debt" : "mortgage",
     ...(associatedAssetId ? { associatedAssetId } : {}),
-  };
-}
-
-export function parseInvestmentAssetCommand(
-  formData: FormData,
-  members: Member[],
-  seed: number,
-): CreateInvestmentAssetInput {
-  const name = String(formData.get("name") ?? "").trim() || "Inversión";
-  const manualPrice = parseDecimalStringInput(
-    String(formData.get("manualPricePerUnit") ?? ""),
-  );
-  const unitSymbol = String(formData.get("unitSymbol") ?? "").trim();
-  const isin = String(formData.get("isin") ?? "").trim();
-
-  return {
-    currency: "EUR",
-    id: createStableId("asset", name, seed),
-    liquidityTier: "market",
-    name,
-    ownership: parseOwnership(formData, members),
-    ...(manualPrice !== "0" ? { manualPricePerUnit: manualPrice } : {}),
-    ...(unitSymbol ? { unitSymbol } : {}),
-    ...(isin ? { isin } : {}),
-  };
-}
-
-export function parseOperationCommand(
-  formData: FormData,
-  seed: number,
-  today: string,
-): CreateInvestmentOperationInput {
-  const assetId = String(formData.get("assetId") ?? "");
-  const kind: OperationKind = formData.get("kind") === "sell" ? "sell" : "buy";
-  const executedAt = String(formData.get("executedAt") ?? "").trim() || today;
-
-  return {
-    assetId,
-    currency: "EUR",
-    executedAt,
-    feesMinor: parseMoneyMinorField(formData, "fees") ?? 0,
-    id: createStableId("op", `${assetId}_${kind}`, seed),
-    kind,
-    pricePerUnit: parseDecimalStringInput(String(formData.get("pricePerUnit") ?? "")),
-    units: parseDecimalStringInput(String(formData.get("units") ?? "")),
   };
 }
 
@@ -619,37 +544,6 @@ function parseDecimalStringInput(raw: string): DecimalString {
     : trimmed;
 
   return /^-?\d+(\.\d+)?$/.test(normalized) ? normalized : "0";
-}
-
-export function parseFireConfigForm(formData: FormData): FireScopeConfig {
-  const monthlySpendingMinor = parseDecimalToMinor(
-    (formData.get("monthlySpending") as string) ?? "0",
-  );
-  const safeWithdrawalRate =
-    parseDecimal((formData.get("safeWithdrawalRate") as string) ?? "4") / 100;
-  const expectedRealReturn =
-    parseDecimal((formData.get("expectedRealReturn") as string) ?? "7") / 100;
-
-  const currentAgeRaw = (formData.get("currentAge") as string | null) ?? "";
-  const currentAgeParsed = parseInt(currentAgeRaw, 10);
-  const currentAge =
-    currentAgeRaw && !Number.isNaN(currentAgeParsed) ? currentAgeParsed : undefined;
-
-  const targetRetirementAgeRaw =
-    (formData.get("targetRetirementAge") as string | null) ?? "";
-  const targetRetirementAgeParsed = parseInt(targetRetirementAgeRaw, 10);
-  const targetRetirementAge = !Number.isNaN(targetRetirementAgeParsed)
-    ? targetRetirementAgeParsed
-    : 65;
-
-  return {
-    excludedAssetIds: [],
-    expectedRealReturn,
-    monthlySpendingMinor,
-    safeWithdrawalRate,
-    targetRetirementAge,
-    ...(currentAge !== undefined ? { currentAge } : {}),
-  };
 }
 
 /**
@@ -715,14 +609,6 @@ export function parseFireConfigFormStrict(
   };
 }
 
-export function parseSnapshotForm(formData: FormData): SnapshotFormInput {
-  return {
-    isMonthlyClose: formData.get("isMonthlyClose") === "on",
-    replace: formData.get("replace") === "on",
-    scopeId: String(formData.get("scopeId") ?? "household"),
-  };
-}
-
 export function buildSnapshotId(
   scopeId: string,
   capturedAt: string,
@@ -769,7 +655,7 @@ function parseLiquidityTier(
   return "cash";
 }
 
-function createStableId(prefix: string, name: string, seed: number): string {
+export function createStableId(prefix: string, name: string, seed: number): string {
   const slug =
     name
       .normalize("NFD")
@@ -971,7 +857,7 @@ export function parseInvestmentAssetCommandStrict(
     ok: true,
     command: {
       currency: "EUR",
-      id: createStableIdExported("asset", name, seed),
+      id: createStableId("asset", name, seed),
       liquidityTier: "market",
       name,
       ownership: parseOwnership(formData, members),
@@ -1042,7 +928,7 @@ export function parseRouteOperationCommand(
       currency: "EUR",
       executedAt,
       feesMinor,
-      id: createStableIdExported("op", `${routeAssetId}_${kind}`, seed),
+      id: createStableId("op", `${routeAssetId}_${kind}`, seed),
       kind,
       pricePerUnit,
       units,
@@ -1099,16 +985,15 @@ export function parseUpdateInvestmentCommand(
   };
 }
 
-// Re-export createStableId for use within this module's new functions above.
-// (The function is private; this thin wrapper avoids duplicating the logic.)
-function createStableIdExported(prefix: string, name: string, seed: number): string {
-  const slug =
-    name
-      .normalize("NFD")
-      .replace(/\p{Diacritic}/gu, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "") || prefix;
 
-  return `${prefix}_${slug}_${seed}`;
+/** Map a price freshness state to a localized label (shared by /inversiones pages). */
+export function priceFreshnessLabel(freshness: PriceFreshnessState | null): string {
+  if (!freshness) return "—";
+  const labels: Record<PriceFreshnessState, string> = {
+    failed: "Fallido",
+    fresh: "Reciente",
+    manual: "Manual",
+    stale: "Obsoleto",
+  };
+  return labels[freshness];
 }

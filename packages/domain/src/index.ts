@@ -698,89 +698,22 @@ function assertOwnership(workspace: Workspace, ownership: OwnershipShare[]): voi
   }
 }
 
-export type DashboardMetricId =
-  | "total-net-worth"
-  | "liquid-net-worth"
-  | "housing-equity"
-  | "gross-assets"
-  | "debts";
-
-export interface DashboardMetric {
-  id: DashboardMetricId;
-  label: string;
-  value: MoneyMinor;
-  posture: "neutral" | "asset" | "liability";
-}
-
-export interface DashboardModule {
-  id: string;
-  label: string;
-  state: "empty" | "ready";
-}
-
 export interface DashboardShell {
   productName: "worthline";
   baseCurrency: "EUR";
   generatedAt: string;
   persistence: LocalPersistenceStatus;
-  metrics: DashboardMetric[];
-  modules: DashboardModule[];
 }
 
 export function createDashboardShell(input: {
   persistence: LocalPersistenceStatus;
   summary?: NetWorthSummary;
-  moduleStates?: Partial<Record<DashboardModule["id"], DashboardModule["state"]>>;
+  moduleStates?: Partial<Record<string, "empty" | "ready">>;
 }): DashboardShell {
-  const summary = input.summary;
-
   return {
     productName: "worthline",
     baseCurrency: "EUR",
     generatedAt: input.persistence.checkedAt,
     persistence: input.persistence,
-    metrics: [
-      metric("total-net-worth", "Neto total", "neutral", summary?.totalNetWorth),
-      metric("liquid-net-worth", "Neto liquido", "asset", summary?.liquidNetWorth),
-      metric("housing-equity", "Vivienda neta", "asset", summary?.housingEquity),
-      metric("gross-assets", "Activos brutos", "asset", summary?.grossAssets),
-      metric("debts", "Deudas", "liability", summary?.debts),
-    ],
-    modules: [
-      module("members", "Miembros", input.moduleStates),
-      module("ownership", "Ownership", input.moduleStates),
-      module("liquidity", "Piramide de liquidez", input.moduleStates),
-      module("snapshots", "Snapshots", input.moduleStates),
-      module("fire", "FIRE", input.moduleStates),
-    ],
-  };
-}
-
-function metric(
-  id: DashboardMetricId,
-  label: string,
-  posture: DashboardMetric["posture"],
-  value?: MoneyMinor,
-): DashboardMetric {
-  return {
-    id,
-    label,
-    posture,
-    value: value ?? {
-      amountMinor: 0,
-      currency: "EUR",
-    },
-  };
-}
-
-function module(
-  id: DashboardModule["id"],
-  label: string,
-  states?: Partial<Record<DashboardModule["id"], DashboardModule["state"]>>,
-): DashboardModule {
-  return {
-    id,
-    label,
-    state: states?.[id] ?? "empty",
   };
 }

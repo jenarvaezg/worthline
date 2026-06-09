@@ -145,7 +145,16 @@ export async function deleteAssetAction(formData: FormData): Promise<never> {
     );
   }
 
-  withStore((store) => store.softDeleteAsset(id, new Date().toISOString()));
+  const changes = withStore((store) => store.softDeleteAsset(id, new Date().toISOString()));
+
+  if (changes === 0) {
+    redirect(
+      errorRedirectUrl(baseUrl(formData), {
+        message: "No se encontró el elemento — puede que ya haya sido eliminado.",
+      }),
+    );
+  }
+
   redirect(successRedirectUrl("/patrimonio", "deleted_recoverable"));
 }
 
@@ -160,7 +169,16 @@ export async function deleteLiabilityAction(formData: FormData): Promise<never> 
     );
   }
 
-  withStore((store) => store.softDeleteLiability(id, new Date().toISOString()));
+  const changes = withStore((store) => store.softDeleteLiability(id, new Date().toISOString()));
+
+  if (changes === 0) {
+    redirect(
+      errorRedirectUrl(baseUrl(formData), {
+        message: "No se encontró el elemento — puede que ya haya sido eliminado.",
+      }),
+    );
+  }
+
   redirect(successRedirectUrl("/patrimonio", "deleted_recoverable"));
 }
 
@@ -175,7 +193,16 @@ export async function restoreAssetAction(formData: FormData): Promise<never> {
     );
   }
 
-  withStore((store) => store.restoreAsset(id));
+  const changes = withStore((store) => store.restoreAsset(id));
+
+  if (changes === 0) {
+    redirect(
+      errorRedirectUrl(baseUrl(formData), {
+        message: "No se encontró el elemento — puede que ya no esté en papelera.",
+      }),
+    );
+  }
+
   redirect(successRedirectUrl("/patrimonio", "restored", id));
 }
 
@@ -190,7 +217,16 @@ export async function restoreLiabilityAction(formData: FormData): Promise<never>
     );
   }
 
-  withStore((store) => store.restoreLiability(id));
+  const changes = withStore((store) => store.restoreLiability(id));
+
+  if (changes === 0) {
+    redirect(
+      errorRedirectUrl(baseUrl(formData), {
+        message: "No se encontró el elemento — puede que ya no esté en papelera.",
+      }),
+    );
+  }
+
   redirect(successRedirectUrl("/patrimonio", "restored", id));
 }
 
@@ -224,8 +260,8 @@ export async function updateAssetValuationAction(formData: FormData): Promise<ne
 
   if (currentValue === null) {
     redirect(
-      errorRedirectUrl("/patrimonio/actualizar", {
-        formId: id,
+      errorRedirectUrl(`/patrimonio/${id}/editar`, {
+        formId: "edit",
         message: "El valor del activo no es válido.",
         values: preserveFields(formData, ["currentValue"]),
       }),
@@ -250,8 +286,8 @@ export async function updateLiabilityBalanceAction(formData: FormData): Promise<
 
   if (balance === null) {
     redirect(
-      errorRedirectUrl("/patrimonio/actualizar", {
-        formId: id,
+      errorRedirectUrl(`/patrimonio/${id}/editar`, {
+        formId: "edit",
         message: "El saldo de la deuda no es válido.",
         values: preserveFields(formData, ["balance"]),
       }),
@@ -295,11 +331,7 @@ export async function batchValueUpdateAction(formData: FormData): Promise<never>
     const assetUpdates = valid.filter((cmd) => assets.some((a) => a.id === cmd.id));
     const liabilityUpdates = valid.filter((cmd) => liabilities.some((l) => l.id === cmd.id));
 
-    store.batchApplyValueUpdates(assetUpdates);
-
-    for (const cmd of liabilityUpdates) {
-      store.updateLiabilityBalance(cmd.id, cmd.newValueMinor);
-    }
+    store.batchApplyAllValueUpdates(assetUpdates, liabilityUpdates);
 
     return { ok: true, count: valid.length };
   });
