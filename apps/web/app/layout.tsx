@@ -1,6 +1,35 @@
 import type { Metadata } from "next";
+import localFont from "next/font/local";
 
 import "./globals.css";
+
+// Editorial pairing, served offline (#44): Iosevka for numerals/mono,
+// Source Sans 3 (humanist) for body. OFL licenses live in ./fonts/.
+const sans = localFont({
+  display: "swap",
+  src: [
+    {
+      path: "./fonts/source-sans-3-latin-400-normal.woff2",
+      style: "normal",
+      weight: "400",
+    },
+    {
+      path: "./fonts/source-sans-3-latin-700-normal.woff2",
+      style: "normal",
+      weight: "700",
+    },
+  ],
+  variable: "--font-sans",
+});
+
+const mono = localFont({
+  display: "swap",
+  src: [
+    { path: "./fonts/iosevka-latin-400-normal.woff2", style: "normal", weight: "400" },
+    { path: "./fonts/iosevka-latin-700-normal.woff2", style: "normal", weight: "700" },
+  ],
+  variable: "--font-mono",
+});
 
 export const metadata: Metadata = {
   title: "worthline",
@@ -13,7 +42,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es">
+    <html className={`${sans.variable} ${mono.variable}`} lang="es">
       <body>{children}</body>
     </html>
   );

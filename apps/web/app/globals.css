@@ -4,8 +4,9 @@
   --paper-strong: #fbfbf4;
   --ink: #17201e;
   --muted: #51605b;
-  --line: #aeb9b3;
-  --line-strong: #7f9088;
+  /* ≥3:1 non-text contrast vs --paper/--paper-strong (WCAG 1.4.11, see contrast.test.ts) */
+  --line: #78877f;
+  --line-strong: #5d6c66;
   --green: #006f5f;
   --blue: #245177;
   --red: #b9442f;
@@ -29,7 +30,7 @@ body {
     linear-gradient(90deg, rgba(23, 32, 30, 0.035) 1px, transparent 1px), var(--paper);
   background-size: 28px 28px;
   color: var(--ink);
-  font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+  font-family: var(--font-sans), "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
   overflow-x: hidden;
 }
 
@@ -54,7 +55,7 @@ button {
   cursor: pointer;
   font-size: 0.78rem;
   font-weight: 800;
-  letter-spacing: 0;
+  letter-spacing: 0.04em;
   min-height: 38px;
   padding: 0 12px;
   text-transform: uppercase;
@@ -71,7 +72,6 @@ button:hover {
 
 button:focus-visible,
 .scopeTabs a:focus-visible,
-.viewTabs a:focus-visible,
 .framingTabs a:focus-visible {
   outline-color: var(--gold);
 }
@@ -142,7 +142,7 @@ textarea {
   background: var(--ink);
   color: var(--paper-strong);
   display: inline-flex;
-  font-family: "Iosevka", "SFMono-Regular", monospace;
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
   font-size: 15px;
   font-weight: 800;
   height: 42px;
@@ -187,7 +187,7 @@ h3 {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 700;
-  letter-spacing: 0;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
@@ -237,6 +237,21 @@ h3 {
   color: var(--green);
 }
 
+/* Validation error rendered beside the form that failed — same square,
+   glossary-palette treatment as the page-level bands. */
+.formError {
+  background: rgba(185, 68, 47, 0.1);
+  border: 1px solid var(--red);
+  color: var(--red);
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 8px 10px;
+}
+
+.rowForm .formError {
+  grid-column: 1 / -1;
+}
+
 .summaryBand {
   padding: 16px;
 }
@@ -255,17 +270,31 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+/* Scope + framing tabs live in a sticky bar so they stay reachable while
+   scrolling (#47). Solid paper blend: translucency would ghost scrolled content. */
+.tabsBar {
+  align-items: center;
+  background: #fdf9f0;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  justify-content: space-between;
+  padding: 10px 16px;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
 .scopeTabs,
-.viewTabs,
 .framingTabs {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
 }
 
 .scopeTabs a,
-.viewTabs a,
 .framingTabs a {
   border: 1px solid var(--line-strong);
   color: var(--ink);
@@ -279,8 +308,6 @@ h3 {
 
 .scopeTabs a.active,
 .scopeTabs a:hover,
-.viewTabs a.active,
-.viewTabs a:hover,
 .framingTabs a.active,
 .framingTabs a:hover {
   background: var(--ink);
@@ -296,13 +323,13 @@ h3 {
   display: block;
   font-size: 0.78rem;
   font-weight: 750;
-  letter-spacing: 0;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
 .headline > strong {
   display: block;
-  font-family: "Iosevka", "SFMono-Regular", monospace;
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
   font-size: clamp(2.2rem, 6vw, 3.6rem);
   font-weight: 800;
   line-height: 1;
@@ -323,13 +350,30 @@ h3 {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 700;
-  letter-spacing: 0;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
 .breakdown b {
   color: var(--ink);
-  font-family: "Iosevka", "SFMono-Regular", monospace;
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+}
+
+/* First-run demotion: with no holdings yet, zero figures read as "no data yet"
+   rather than as a real 0 (#46). */
+.emptyFigure {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.headline > strong.emptyFigure small {
+  display: block;
+  font-family: var(--font-sans), "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-top: 6px;
+  text-transform: uppercase;
 }
 
 /* Sign-aware money: gain green, loss red. Paired with the minus sign that
@@ -365,9 +409,9 @@ h3 {
 
 .deltaStrip span,
 .deltaStrip b {
-  font-family: "Iosevka", "SFMono-Regular", monospace;
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
   font-size: 0.78rem;
-  letter-spacing: 0;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -375,52 +419,6 @@ h3 {
   flex: 1 1 160px;
   min-width: 0;
   overflow-wrap: anywhere;
-}
-
-.metricsGrid {
-  display: grid;
-  gap: 1px;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  margin-top: 16px;
-}
-
-.metricTile {
-  background: var(--paper-strong);
-  border: 1px solid var(--line);
-  min-height: 132px;
-  padding: 14px;
-}
-
-.metricTile span {
-  color: var(--muted);
-  display: block;
-  font-size: 0.78rem;
-  font-weight: 750;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.metricTile strong {
-  display: block;
-  font-family: "Iosevka", "SFMono-Regular", monospace;
-  font-size: clamp(1.45rem, 3.2vw, 2.5rem);
-  font-weight: 800;
-  letter-spacing: 0;
-  line-height: 1;
-  margin-top: 28px;
-  overflow-wrap: anywhere;
-}
-
-.metricTile.asset {
-  border-top: 4px solid var(--green);
-}
-
-.metricTile.liability {
-  border-top: 4px solid var(--red);
-}
-
-.metricTile.neutral {
-  border-top: 4px solid var(--blue);
 }
 
 .mainGrid {
@@ -463,7 +461,7 @@ td {
 th {
   color: var(--muted);
   font-size: 0.72rem;
-  letter-spacing: 0;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
@@ -508,12 +506,12 @@ th:last-child {
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 800;
-  letter-spacing: 0;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
 .fireProgressTop strong {
-  font-family: "Iosevka", "SFMono-Regular", monospace;
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
 }
 
 .fireBar {
@@ -628,7 +626,7 @@ th:last-child {
   font-size: 0.74rem;
   font-weight: 800;
   gap: 6px;
-  letter-spacing: 0;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
@@ -656,7 +654,7 @@ th:last-child {
 }
 
 .presentationReadout strong {
-  font-family: "Iosevka", "SFMono-Regular", monospace;
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
   font-size: clamp(1.4rem, 3vw, 2.2rem);
   line-height: 1;
 }
@@ -796,7 +794,7 @@ th:last-child {
 
 .tierShare {
   color: var(--muted);
-  font-family: "Iosevka", "SFMono-Regular", monospace;
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
   text-align: right;
 }
 
@@ -808,12 +806,12 @@ th:last-child {
 .tier b,
 .tier small {
   font-size: 0.82rem;
-  letter-spacing: 0;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .tier b {
-  font-family: "Iosevka", "SFMono-Regular", monospace;
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
 }
 
 .tier.cash {
@@ -875,7 +873,7 @@ th:last-child {
 .historyBar b,
 .emptyLine {
   color: var(--muted);
-  font-family: "Iosevka", "SFMono-Regular", monospace;
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
   font-size: 0.78rem;
   font-style: normal;
   font-weight: 800;
@@ -906,22 +904,17 @@ th:last-child {
 code {
   background: rgba(31, 33, 28, 0.06);
   color: var(--ink);
-  font-family: "Iosevka", "SFMono-Regular", monospace;
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
   font-size: 0.78rem;
   padding: 3px 5px;
 }
 
 @media (max-width: 900px) {
   .entryGrid,
-  .metricsGrid,
   .memberRow,
   .ownershipGrid,
   .mainGrid {
     grid-template-columns: 1fr;
-  }
-
-  .metricTile {
-    min-height: 112px;
   }
 }
 
@@ -954,6 +947,27 @@ code {
 
   .scopeRail {
     justify-content: flex-start;
+  }
+
+  /* 2-up metric grid: the net-worth hero spans, breakdown figures pair up (#47) */
+  .breakdown {
+    border-top: 0;
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding-top: 2px;
+  }
+
+  .breakdown span {
+    background: var(--paper-strong);
+    border: 1px solid var(--line);
+    display: grid;
+    gap: 6px;
+    padding: 10px;
+  }
+
+  .breakdown b {
+    font-size: 1rem;
   }
 
   .scopeRail span:last-child {
