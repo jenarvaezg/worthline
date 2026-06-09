@@ -12,6 +12,7 @@ test-results/
 
 .local/
 .scratch/
+.omc/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
