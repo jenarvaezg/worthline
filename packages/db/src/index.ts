@@ -1,22 +1,32 @@
-import type { LocalPersistenceStatus } from "@worthline/contracts";
 import type {
+  DecimalString,
+  LiquidityTier,
+  LocalPersistenceStatus,
+} from "@worthline/contracts";
+import type {
+  CreateInvestmentOperationInput,
   CreateLiabilityInput,
   CreateManualAssetInput,
   CreateNetWorthSnapshotInput,
+  InvestmentOperation,
   Liability,
   Member,
   MemberGroup,
   ManualAsset,
   NetWorthSnapshot,
   OwnershipShare,
+  PositionSummary,
   Workspace,
   WorkspaceMode,
 } from "@worthline/domain";
 import {
+  createInvestmentOperation,
   createLiability,
   createManualAsset,
   createNetWorthSnapshot,
   createWorkspace,
+  derivePosition,
+  resolveScopeMemberIds,
 } from "@worthline/domain";
 import Database from "better-sqlite3";
 import type { Database as DatabaseConnection } from "better-sqlite3";
@@ -27,8 +37,10 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import {
   appSettings,
+  assetOperations,
   assetOwnerships,
   assets,
+  investmentAssets,
   liabilities,
   liabilityOwnerships,
   memberGroupMembers,
@@ -39,7 +51,7 @@ import {
 } from "./schema";
 import { schemaSql } from "./schema-sql";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const bootstrapKey = "bootstrap.last_healthcheck_at";
 
@@ -64,8 +76,26 @@ export interface SaveSnapshotInput extends CreateNetWorthSnapshotInput {
   replace?: boolean;
 }
 
+export interface CreateInvestmentAssetInput {
+  id: string;
+  name: string;
+  currency: string;
+  ownership: OwnershipShare[];
+  liquidityTier?: LiquidityTier;
+  unitSymbol?: string;
+  isin?: string;
+  providerSymbol?: string;
+  manualPricePerUnit?: DecimalString;
+}
+
+/** A derived position plus the asset name, for the dashboard positions table. */
+export interface PositionView extends PositionSummary {
+  name: string;
+}
+
 export interface WorthlineStore {
   close: () => void;
+  createInvestmentAsset: (input: CreateInvestmentAssetInput) => void;
   createLiability: (input: CreateLiabilityInput) => void;
   createManualAsset: (input: CreateManualAssetInput) => void;
   createMember: (member: Member) => void;
@@ -73,8 +103,11 @@ export interface WorthlineStore {
   initializeWorkspace: (input: InitializeWorkspaceInput) => void;
   readAssets: () => ManualAsset[];
   readLiabilities: () => Liability[];
+  readOperations: (assetId: string) => InvestmentOperation[];
+  readPositions: (scopeId?: string) => PositionView[];
   readSnapshots: (scopeId?: string) => NetWorthSnapshot[];
   readWorkspace: () => Workspace | null;
+  recordOperation: (input: CreateInvestmentOperationInput) => void;
   saveSnapshot: (input: SaveSnapshotInput) => void;
   updateAssetValuation: (assetId: string, currentValueMinor: number) => void;
   updateLiabilityBalance: (liabilityId: string, balanceMinor: number) => void;
@@ -274,6 +307,108 @@ export function createWorthlineStore(
 
       insert();
     },
+    createInvestmentAsset: (input) => {
+      const workspace = getWorkspace();
+
+      if (!workspace) {
+        throw new Error("Workspace must be initialized before creating assets.");
+      }
+
+      // Reuse the manual-asset constructor for ownership/currency validation. A
+      // unit-based asset starts at zero value; its real value is derived from
+      // operations + price on read.
+      const asset = createManualAsset(workspace, {
+        currency: input.currency,
+        currentValueMinor: 0,
+        id: input.id,
+        isPrimaryResidence: false,
+        liquidityTier: input.liquidityTier ?? "market",
+        name: input.name,
+        ownership: input.ownership,
+        type: "investment",
+      });
+      const pricedAt = input.manualPricePerUnit ? new Date().toISOString() : null;
+
+      const insert = sqlite.transaction(() => {
+        sqlite
+          .prepare(
+            `
+            INSERT INTO assets (
+              id,
+              name,
+              type,
+              currency,
+              current_value_minor,
+              liquidity_tier,
+              is_primary_residence
+            )
+            VALUES (
+              @id,
+              @name,
+              @type,
+              @currency,
+              @currentValueMinor,
+              @liquidityTier,
+              @isPrimaryResidence
+            )
+          `,
+          )
+          .run({
+            currency: asset.currency,
+            currentValueMinor: 0,
+            id: asset.id,
+            isPrimaryResidence: 0,
+            liquidityTier: asset.liquidityTier,
+            name: asset.name,
+            type: asset.type,
+          });
+
+        const insertOwnership = sqlite.prepare(`
+          INSERT INTO asset_ownerships (asset_id, member_id, share_bps)
+          VALUES (@assetId, @memberId, @shareBps)
+        `);
+
+        for (const share of asset.ownership) {
+          insertOwnership.run({
+            assetId: asset.id,
+            memberId: share.memberId,
+            shareBps: share.shareBps,
+          });
+        }
+
+        sqlite
+          .prepare(
+            `
+            INSERT INTO investment_assets (
+              asset_id,
+              unit_symbol,
+              isin,
+              provider_symbol,
+              manual_price_per_unit,
+              manual_priced_at
+            )
+            VALUES (
+              @assetId,
+              @unitSymbol,
+              @isin,
+              @providerSymbol,
+              @manualPricePerUnit,
+              @manualPricedAt
+            )
+          `,
+          )
+          .run({
+            assetId: asset.id,
+            isin: input.isin ?? null,
+            manualPricePerUnit: input.manualPricePerUnit ?? null,
+            manualPricedAt: pricedAt,
+            providerSymbol: input.providerSymbol ?? null,
+            unitSymbol: input.unitSymbol ?? null,
+          });
+      });
+
+      insert();
+    },
     createMember: (member) => {
       sqlite
         .prepare(
@@ -367,8 +502,49 @@ export function createWorthlineStore(
     },
     readAssets: () => readAssets(sqlite, getWorkspace()),
     readLiabilities: () => readLiabilities(sqlite, getWorkspace()),
+    readOperations: (assetId) => readOperations(sqlite, assetId),
+    readPositions: (scopeId) => readPositions(sqlite, getWorkspace(), scopeId),
     readSnapshots: (scopeId) => readSnapshots(sqlite, scopeId),
     readWorkspace: () => getWorkspace(),
+    recordOperation: (input) => {
+      const operation = createInvestmentOperation(input);
+
+      sqlite
+        .prepare(
+          `
+          INSERT INTO asset_operations (
+            id,
+            asset_id,
+            kind,
+            executed_at,
+            units,
+            price_per_unit,
+            currency,
+            fees_minor
+          )
+          VALUES (
+            @id,
+            @assetId,
+            @kind,
+            @executedAt,
+            @units,
+            @pricePerUnit,
+            @currency,
+            @feesMinor
+          )
+        `,
+        )
+        .run({
+          assetId: operation.assetId,
+          currency: operation.currency,
+          executedAt: operation.executedAt,
+          feesMinor: operation.feesMinor,
+          id: operation.id,
+          kind: operation.kind,
+          pricePerUnit: operation.pricePerUnit,
+          units: operation.units,
+        });
+    },
     saveSnapshot: (input) => {
       const snapshot = createNetWorthSnapshot(input);
       const existing = sqlite
@@ -645,11 +821,21 @@ function readAssets(
     .orderBy(asc(assets.createdAt), asc(assets.id))
     .all();
   const ownershipByAsset = readAssetOwnerships(sqlite);
+  const hasInvestments = rows.some((row) => row.type === "investment");
+  const operationsByAsset = hasInvestments
+    ? readAllOperations(sqlite)
+    : new Map<string, InvestmentOperation[]>();
+  const metaByAsset = hasInvestments
+    ? readInvestmentMeta(sqlite)
+    : new Map<string, InvestmentMeta>();
 
   return rows.map((row) =>
     createManualAsset(workspace, {
       currency: row.currency,
-      currentValueMinor: row.currentValueMinor,
+      currentValueMinor:
+        row.type === "investment"
+          ? investmentValueMinor(row.id, row.currency, operationsByAsset, metaByAsset)
+          : row.currentValueMinor,
       id: row.id,
       isPrimaryResidence: row.isPrimaryResidence === 1,
       liquidityTier: row.liquidityTier,
@@ -658,6 +844,145 @@ function readAssets(
       type: row.type,
     }),
   );
+}
+
+interface InvestmentMeta {
+  manualPricePerUnit?: DecimalString;
+}
+
+/** The derived current value of an investment asset: market value if a price is
+ *  known, otherwise its remaining cost basis (book value). */
+function investmentValueMinor(
+  assetId: string,
+  currency: string,
+  operationsByAsset: Map<string, InvestmentOperation[]>,
+  metaByAsset: Map<string, InvestmentMeta>,
+): number {
+  const manualPrice = metaByAsset.get(assetId)?.manualPricePerUnit;
+  const position = derivePosition(operationsByAsset.get(assetId) ?? [], {
+    assetId,
+    currency,
+    ...(manualPrice ? { currentPricePerUnit: manualPrice } : {}),
+  });
+
+  return position.marketValue?.amountMinor ?? position.costBasis.amountMinor;
+}
+
+function readAllOperations(
+  sqlite: DatabaseConnection,
+): Map<string, InvestmentOperation[]> {
+  const rows = drizzle(sqlite)
+    .select()
+    .from(assetOperations)
+    .orderBy(asc(assetOperations.executedAt), asc(assetOperations.id))
+    .all();
+
+  return rows.reduce((byAsset, row) => {
+    const operation = toOperation(row);
+    const existing = byAsset.get(row.assetId);
+
+    if (existing) {
+      existing.push(operation);
+    } else {
+      byAsset.set(row.assetId, [operation]);
+    }
+
+    return byAsset;
+  }, new Map<string, InvestmentOperation[]>());
+}
+
+function readOperations(
+  sqlite: DatabaseConnection,
+  assetId: string,
+): InvestmentOperation[] {
+  return drizzle(sqlite)
+    .select()
+    .from(assetOperations)
+    .where(eq(assetOperations.assetId, assetId))
+    .orderBy(asc(assetOperations.executedAt), asc(assetOperations.id))
+    .all()
+    .map(toOperation);
+}
+
+function toOperation(row: typeof assetOperations.$inferSelect): InvestmentOperation {
+  return {
+    assetId: row.assetId,
+    currency: row.currency,
+    executedAt: row.executedAt,
+    feesMinor: row.feesMinor,
+    id: row.id,
+    kind: row.kind,
+    pricePerUnit: row.pricePerUnit,
+    units: row.units,
+  };
+}
+
+function readInvestmentMeta(sqlite: DatabaseConnection): Map<string, InvestmentMeta> {
+  const rows = drizzle(sqlite)
+    .select({
+      assetId: investmentAssets.assetId,
+      manualPricePerUnit: investmentAssets.manualPricePerUnit,
+    })
+    .from(investmentAssets)
+    .all();
+
+  return rows.reduce((byAsset, row) => {
+    byAsset.set(
+      row.assetId,
+      row.manualPricePerUnit ? { manualPricePerUnit: row.manualPricePerUnit } : {},
+    );
+
+    return byAsset;
+  }, new Map<string, InvestmentMeta>());
+}
+
+function readPositions(
+  sqlite: DatabaseConnection,
+  workspace: Workspace | null,
+  scopeId?: string,
+): PositionView[] {
+  if (!workspace) {
+    return [];
+  }
+
+  const rows = drizzle(sqlite)
+    .select({ currency: assets.currency, id: assets.id, name: assets.name })
+    .from(assets)
+    .where(eq(assets.type, "investment"))
+    .orderBy(asc(assets.createdAt), asc(assets.id))
+    .all();
+
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const ownershipByAsset = readAssetOwnerships(sqlite);
+  const operationsByAsset = readAllOperations(sqlite);
+  const metaByAsset = readInvestmentMeta(sqlite);
+  const scopeMemberIds = scopeId
+    ? new Set(resolveScopeMemberIds(workspace, scopeId))
+    : null;
+
+  const views: PositionView[] = [];
+
+  for (const row of rows) {
+    const ownership = ownershipByAsset.get(row.id) ?? [];
+
+    if (scopeMemberIds && !ownership.some((share) => scopeMemberIds.has(share.memberId))) {
+      continue;
+    }
+
+    const manualPrice = metaByAsset.get(row.id)?.manualPricePerUnit;
+    const position = derivePosition(operationsByAsset.get(row.id) ?? [], {
+      assetId: row.id,
+      currency: row.currency,
+      ...(manualPrice ? { currentPricePerUnit: manualPrice } : {}),
+    });
+
+    views.push({ ...position, name: row.name });
+  }
+
+  return views;
 }
 
 /** All asset ownership rows in one query, grouped by asset id (member order preserved). */

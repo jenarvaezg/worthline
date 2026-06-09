@@ -1,8 +1,12 @@
+import type { DecimalString } from "@worthline/contracts";
+import type { CreateInvestmentAssetInput } from "@worthline/db";
 import type {
+  CreateInvestmentOperationInput,
   CreateLiabilityInput,
   CreateManualAssetInput,
   Member,
   NetWorthPresentationMode,
+  OperationKind,
   OwnershipShare,
 } from "@worthline/domain";
 import { parseDecimal, parseDecimalToMinor } from "@worthline/domain";
@@ -143,6 +147,69 @@ export function parseLiabilityCommand(
     type: formData.get("type") === "debt" ? "debt" : "mortgage",
     ...(associatedAssetId ? { associatedAssetId } : {}),
   };
+}
+
+export function parseInvestmentAssetCommand(
+  formData: FormData,
+  members: Member[],
+  seed: number,
+): CreateInvestmentAssetInput {
+  const name = String(formData.get("name") ?? "").trim() || "Inversión";
+  const manualPrice = parseDecimalStringInput(String(formData.get("manualPricePerUnit") ?? ""));
+  const unitSymbol = String(formData.get("unitSymbol") ?? "").trim();
+  const isin = String(formData.get("isin") ?? "").trim();
+
+  return {
+    currency: "EUR",
+    id: createStableId("asset", name, seed),
+    liquidityTier: "market",
+    name,
+    ownership: parseOwnership(formData, members),
+    ...(manualPrice !== "0" ? { manualPricePerUnit: manualPrice } : {}),
+    ...(unitSymbol ? { unitSymbol } : {}),
+    ...(isin ? { isin } : {}),
+  };
+}
+
+export function parseOperationCommand(
+  formData: FormData,
+  seed: number,
+  today: string,
+): CreateInvestmentOperationInput {
+  const assetId = String(formData.get("assetId") ?? "");
+  const kind: OperationKind = formData.get("kind") === "sell" ? "sell" : "buy";
+  const executedAt = String(formData.get("executedAt") ?? "").trim() || today;
+
+  return {
+    assetId,
+    currency: "EUR",
+    executedAt,
+    feesMinor: parseMoneyMinorField(formData, "fees"),
+    id: createStableId("op", `${assetId}_${kind}`, seed),
+    kind,
+    pricePerUnit: parseDecimalStringInput(String(formData.get("pricePerUnit") ?? "")),
+    units: parseDecimalStringInput(String(formData.get("units") ?? "")),
+  };
+}
+
+/**
+ * Normalize a raw decimal field (units or price) to a canonical DecimalString
+ * without going through a float — preserving precision for high-dp values like
+ * crypto units. Accepts es-ES ("1.234,56") and plain ("1234.56") input; anything
+ * unparseable becomes "0", which the domain then rejects.
+ */
+function parseDecimalStringInput(raw: string): DecimalString {
+  const trimmed = raw.trim();
+
+  if (!trimmed) {
+    return "0";
+  }
+
+  const normalized = trimmed.includes(",")
+    ? trimmed.replace(/\./g, "").replace(",", ".")
+    : trimmed;
+
+  return /^-?\d+(\.\d+)?$/.test(normalized) ? normalized : "0";
 }
 
 export function parseSnapshotForm(formData: FormData): SnapshotFormInput {

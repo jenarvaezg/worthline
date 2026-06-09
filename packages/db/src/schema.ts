@@ -1,5 +1,10 @@
 import type { LiquidityTier } from "@worthline/contracts";
-import type { AssetType, LiabilityType, WorkspaceMode } from "@worthline/domain";
+import type {
+  AssetType,
+  LiabilityType,
+  OperationKind,
+  WorkspaceMode,
+} from "@worthline/domain";
 import { sql } from "drizzle-orm";
 import {
   check,
@@ -90,6 +95,31 @@ export const assetOwnerships = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.assetId, table.memberId] })],
 );
+
+export const investmentAssets = sqliteTable("investment_assets", {
+  assetId: text("asset_id")
+    .primaryKey()
+    .references(() => assets.id, { onDelete: "cascade" }),
+  unitSymbol: text("unit_symbol"),
+  isin: text("isin"),
+  providerSymbol: text("provider_symbol"),
+  manualPricePerUnit: text("manual_price_per_unit"),
+  manualPricedAt: text("manual_priced_at"),
+});
+
+export const assetOperations = sqliteTable("asset_operations", {
+  id: text("id").primaryKey(),
+  assetId: text("asset_id")
+    .notNull()
+    .references(() => assets.id, { onDelete: "cascade" }),
+  kind: text("kind").$type<OperationKind>().notNull(),
+  executedAt: text("executed_at").notNull(),
+  units: text("units").notNull(),
+  pricePerUnit: text("price_per_unit").notNull(),
+  currency: text("currency").notNull(),
+  feesMinor: integer("fees_minor").notNull().default(0),
+  createdAt: timestamp("created_at"),
+});
 
 export const liabilities = sqliteTable("liabilities", {
   id: text("id").primaryKey(),

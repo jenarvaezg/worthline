@@ -10,11 +10,15 @@
     }
   },
   "dependencies": {
-    "@worthline/contracts": "*"
+    "@worthline/contracts": "*",
+    "big.js": "^7.0.1"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/big.js": "^7.0.0"
   }
 }
