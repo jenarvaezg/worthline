@@ -164,7 +164,6 @@ export default async function DashboardPage({
     onboarding,
     positions,
     presentation,
-    priceCache,
     pyramid,
     scopes,
     selectedMemberIds,
