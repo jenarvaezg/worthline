@@ -5,9 +5,11 @@ import {
   buildSnapshotId,
   parseAssetCommand,
   parseEntityId,
+  parseInvestmentAssetCommand,
   parseLiabilityCommand,
   parseMoneyMinorField,
   parseNewMember,
+  parseOperationCommand,
   parseOwnership,
   parseScopeParam,
   parseSnapshotForm,
@@ -110,6 +112,74 @@ describe("ownership validation", () => {
         { memberId: "member_jose", shareBps: 5_000 },
       ]),
     ).toContain("100%");
+  });
+});
+
+describe("investment intake", () => {
+  test("parseInvestmentAssetCommand builds a market-tier asset with optional symbol and price", () => {
+    const command = parseInvestmentAssetCommand(
+      form({
+        manualPricePerUnit: "12,50",
+        name: "ACME",
+        owner_member_ana: "100",
+        unitSymbol: "acme",
+      }),
+      members,
+      3,
+    );
+
+    expect(command).toMatchObject({
+      currency: "EUR",
+      liquidityTier: "market",
+      manualPricePerUnit: "12.50",
+      name: "ACME",
+      unitSymbol: "acme",
+    });
+    expect(command.id).toBe("asset_acme_3");
+    expect(command.ownership).toEqual([{ memberId: "member_ana", shareBps: 10_000 }]);
+  });
+
+  test("parseInvestmentAssetCommand omits price and symbol when blank", () => {
+    const command = parseInvestmentAssetCommand(form({ name: "ACME" }), members, 1);
+
+    expect(command.manualPricePerUnit).toBeUndefined();
+    expect(command.unitSymbol).toBeUndefined();
+  });
+
+  test("parseOperationCommand normalizes units and price to canonical decimal strings", () => {
+    const command = parseOperationCommand(
+      form({
+        assetId: "asset_acme",
+        executedAt: "2026-03-01",
+        fees: "9,99",
+        kind: "sell",
+        pricePerUnit: "1.234,56",
+        units: "0,5",
+      }),
+      7,
+      "2026-06-08",
+    );
+
+    expect(command).toMatchObject({
+      assetId: "asset_acme",
+      currency: "EUR",
+      executedAt: "2026-03-01",
+      feesMinor: 999,
+      kind: "sell",
+      pricePerUnit: "1234.56",
+      units: "0.5",
+    });
+  });
+
+  test("parseOperationCommand defaults the date to today and the kind to buy", () => {
+    const command = parseOperationCommand(
+      form({ assetId: "asset_acme", pricePerUnit: "100", units: "1" }),
+      2,
+      "2026-06-08",
+    );
+
+    expect(command.executedAt).toBe("2026-06-08");
+    expect(command.kind).toBe("buy");
   });
 });
 
