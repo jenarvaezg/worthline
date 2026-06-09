@@ -521,22 +521,28 @@ export default async function DashboardPage({
                       <td>{asset.liquidityTier}</td>
                       <td>{formatMoneyMinor(asset.currentValue)}</td>
                       <td>
-                        <form action={updateAssetValuationAction} className="rowForm">
-                          <input name="currentUrl" type="hidden" value={currentUrl} />
-                          <input name="id" type="hidden" value={asset.id} />
-                          <input
-                            aria-label={`Valor de ${asset.name}`}
-                            defaultValue={
-                              formError?.formId === asset.id
-                                ? formError.values["currentValue"]
-                                : formatMoneyInput(asset.currentValue.amountMinor)
-                            }
-                            inputMode="decimal"
-                            name="currentValue"
-                          />
-                          <button type="submit">OK</button>
-                          <FormErrorNote error={formError} formId={asset.id} />
-                        </form>
+                        {asset.type === "investment" ? (
+                          <span aria-label={`Valor de ${asset.name} (derivado)`}>
+                            {formatMoneyMinor(asset.currentValue)}
+                          </span>
+                        ) : (
+                          <form action={updateAssetValuationAction} className="rowForm">
+                            <input name="currentUrl" type="hidden" value={currentUrl} />
+                            <input name="id" type="hidden" value={asset.id} />
+                            <input
+                              aria-label={`Valor de ${asset.name}`}
+                              defaultValue={
+                                formError?.formId === asset.id
+                                  ? formError.values["currentValue"]
+                                  : formatMoneyInput(asset.currentValue.amountMinor)
+                              }
+                              inputMode="decimal"
+                              name="currentValue"
+                            />
+                            <button type="submit">OK</button>
+                            <FormErrorNote error={formError} formId={asset.id} />
+                          </form>
+                        )}
                       </td>
                       <td>
                         <form action={deleteAssetAction}>
