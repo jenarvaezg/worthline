@@ -1,6 +1,6 @@
 "use server";
 
-import { withStore } from "@worthline/db";
+import { withStore, type WorthlineStore } from "@worthline/db";
 import { redirect } from "next/navigation";
 
 import {
@@ -51,7 +51,10 @@ function baseUrl(formData: FormData): string {
   return (formData.get("currentUrl") as string) || "/patrimonio";
 }
 
-export async function createAssetAction(formData: FormData): Promise<never> {
+export async function createAssetAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
   const returnUrl = baseUrl(formData);
 
   const assetErrorUrl = (message: string) =>
@@ -61,7 +64,10 @@ export async function createAssetAction(formData: FormData): Promise<never> {
       values: preserveFields(formData, ASSET_FORM_FIELDS, ["owner_"]),
     });
 
-  const result = withStore((store) => {
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  const result = runWith((store) => {
     const workspace = store.readWorkspace();
 
     if (!workspace) {

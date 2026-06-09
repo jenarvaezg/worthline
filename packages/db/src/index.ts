@@ -258,6 +258,21 @@ export function runBootstrapHealthcheck(
   }
 }
 
+/**
+ * Create a throwaway WorthlineStore backed by an in-memory SQLite database.
+ * The full schema and forward-migration ladder (ADR-0002) are applied on
+ * construction, so the store is immediately usable for testing.
+ *
+ * Each call produces an independent, isolated database — parallel tests are
+ * safe and no files are left behind.  Callers must call store.close() when done
+ * (or use withStore with the store directly).
+ */
+export function createInMemoryStore(): WorthlineStore {
+  const sqlite = new Database(":memory:");
+  migrate(sqlite);
+  return buildStore(sqlite);
+}
+
 export function createWorthlineStore(
   options: WorthlineStoreOptions = {},
 ): WorthlineStore {
@@ -266,7 +281,10 @@ export function createWorthlineStore(
 
   const sqlite = new Database(databasePath);
   migrate(sqlite);
+  return buildStore(sqlite);
+}
 
+function buildStore(sqlite: DatabaseConnection): WorthlineStore {
   const writeAuditEntry = (
     action: string,
     entityType: string,
