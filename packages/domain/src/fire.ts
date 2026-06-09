@@ -1,8 +1,9 @@
 import type { CurrencyCode, MoneyMinor } from "@worthline/contracts";
 
-import { allocateByBps, money } from "./money";
+import { money } from "./money";
 import type { ManualAsset, Workspace } from "./index";
 import { resolveScopeMemberIds } from "./index";
+import { allocateOwnedMoneyMinor } from "./ownership";
 
 export interface FireScopeConfig {
   monthlySpendingMinor: number;
@@ -81,11 +82,13 @@ export function calculateFireForScope(
   const eligible = filterFireEligibleAssets(assets, config.excludedAssetIds);
 
   const eligibleAssetsMinor = eligible.reduce((sum, asset) => {
-    const shareBps = asset.ownership
-      .filter((share) => scopeMemberIds.has(share.memberId))
-      .reduce((acc, share) => acc + share.shareBps, 0);
-
-    return sum + allocateByBps(asset.currentValue.amountMinor, shareBps);
+    return (
+      sum +
+      allocateOwnedMoneyMinor(asset.currentValue.amountMinor, {
+        ownership: asset.ownership,
+        scopeMemberIds,
+      })
+    );
   }, 0);
 
   return calculateFire(config, eligibleAssetsMinor, workspace.baseCurrency);
