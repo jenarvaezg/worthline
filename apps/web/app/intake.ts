@@ -4,12 +4,13 @@ import type {
   CreateInvestmentOperationInput,
   CreateLiabilityInput,
   CreateManualAssetInput,
+  FireScopeConfig,
   Member,
   NetWorthPresentationMode,
   OperationKind,
   OwnershipShare,
 } from "@worthline/domain";
-import { parseDecimal, parseDecimalToMinor } from "@worthline/domain";
+import { parseDecimal, parseDecimalToMinor, parseDecimalToMinorStrict } from "@worthline/domain";
 
 /**
  * The web intake seam: turns raw HTML form input into validated domain command
@@ -75,8 +76,8 @@ export function parseEntityId(formData: FormData, field = "id"): string | null {
   return id || null;
 }
 
-export function parseMoneyMinorField(formData: FormData, field: string): number {
-  return parseDecimalToMinor(String(formData.get(field) ?? ""));
+export function parseMoneyMinorField(formData: FormData, field: string): number | null {
+  return parseDecimalToMinorStrict(String(formData.get(field) ?? ""));
 }
 
 export function parseOwnership(formData: FormData, members: Member[]): OwnershipShare[] {
@@ -120,7 +121,7 @@ export function parseAssetCommand(
 
   return {
     currency: "EUR",
-    currentValueMinor: parseMoneyMinorField(formData, "currentValue"),
+    currentValueMinor: parseMoneyMinorField(formData, "currentValue") ?? 0,
     id: createStableId("asset", name, seed),
     isPrimaryResidence: formData.get("isPrimaryResidence") === "on",
     liquidityTier: parseLiquidityTier(formData.get("liquidityTier")),
@@ -139,7 +140,7 @@ export function parseLiabilityCommand(
   const associatedAssetId = String(formData.get("associatedAssetId") ?? "");
 
   return {
-    balanceMinor: parseMoneyMinorField(formData, "balance"),
+    balanceMinor: parseMoneyMinorField(formData, "balance") ?? 0,
     currency: "EUR",
     id: createStableId("debt", name, seed),
     name,
@@ -184,7 +185,7 @@ export function parseOperationCommand(
     assetId,
     currency: "EUR",
     executedAt,
-    feesMinor: parseMoneyMinorField(formData, "fees"),
+    feesMinor: parseMoneyMinorField(formData, "fees") ?? 0,
     id: createStableId("op", `${assetId}_${kind}`, seed),
     kind,
     pricePerUnit: parseDecimalStringInput(String(formData.get("pricePerUnit") ?? "")),
@@ -210,6 +211,36 @@ function parseDecimalStringInput(raw: string): DecimalString {
     : trimmed;
 
   return /^-?\d+(\.\d+)?$/.test(normalized) ? normalized : "0";
+}
+
+export function parseFireConfigForm(formData: FormData): FireScopeConfig {
+  const monthlySpendingMinor = parseDecimalToMinor(
+    (formData.get("monthlySpending") as string) ?? "0",
+  );
+  const safeWithdrawalRate =
+    parseDecimal((formData.get("safeWithdrawalRate") as string) ?? "4") / 100;
+  const expectedRealReturn =
+    parseDecimal((formData.get("expectedRealReturn") as string) ?? "7") / 100;
+
+  const currentAgeRaw = (formData.get("currentAge") as string | null) ?? "";
+  const currentAgeParsed = parseInt(currentAgeRaw, 10);
+  const currentAge = currentAgeRaw && !Number.isNaN(currentAgeParsed) ? currentAgeParsed : undefined;
+
+  const targetRetirementAgeRaw =
+    (formData.get("targetRetirementAge") as string | null) ?? "";
+  const targetRetirementAgeParsed = parseInt(targetRetirementAgeRaw, 10);
+  const targetRetirementAge = !Number.isNaN(targetRetirementAgeParsed)
+    ? targetRetirementAgeParsed
+    : 65;
+
+  return {
+    excludedAssetIds: [],
+    expectedRealReturn,
+    monthlySpendingMinor,
+    safeWithdrawalRate,
+    targetRetirementAge,
+    ...(currentAge !== undefined ? { currentAge } : {}),
+  };
 }
 
 export function parseSnapshotForm(formData: FormData): SnapshotFormInput {

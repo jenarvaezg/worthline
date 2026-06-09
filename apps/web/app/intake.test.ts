@@ -263,6 +263,11 @@ describe("snapshot, money field, and id parsing", () => {
     expect(parseMoneyMinorField(form({ amount: "1.234,56" }), "amount")).toBe(123_456);
   });
 
+  test("parseMoneyMinorField returns null for invalid input", () => {
+    expect(parseMoneyMinorField(form({ amount: "abc" }), "amount")).toBeNull();
+    expect(parseMoneyMinorField(form({}), "amount")).toBeNull();
+  });
+
   test("parseEntityId returns null when missing", () => {
     expect(parseEntityId(form({ id: "asset_x" }))).toBe("asset_x");
     expect(parseEntityId(form({}))).toBeNull();

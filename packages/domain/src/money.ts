@@ -97,3 +97,33 @@ export function parseDecimal(raw: string): number {
 export function parseDecimalToMinor(raw: string): number {
   return Math.round(parseDecimal(raw) * 100);
 }
+
+/**
+ * Strict variant of parseDecimal: returns null for empty or unparseable input
+ * instead of coercing to 0. Trims, normalises es-ES separators (1.234,56 →
+ * 1234.56), validates with a regex, then converts.
+ */
+export function parseDecimalStrict(raw: string): number | null {
+  const trimmed = raw.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  const normalized = trimmed.includes(",")
+    ? trimmed.replace(/\./g, "").replace(",", ".")
+    : trimmed;
+
+  if (!/^-?\d+(\.\d+)?$/.test(normalized)) {
+    return null;
+  }
+
+  return Number(normalized);
+}
+
+/** Strict variant of parseDecimalToMinor: returns null when input is invalid. */
+export function parseDecimalToMinorStrict(raw: string): number | null {
+  const value = parseDecimalStrict(raw);
+
+  return value === null ? null : Math.round(value * 100);
+}

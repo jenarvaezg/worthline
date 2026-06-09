@@ -2,16 +2,26 @@ import type { MoneyMinor } from "@worthline/contracts";
 import { runBootstrapHealthcheck, withStore } from "@worthline/db";
 import {
   buildLiquidityPyramid,
+  calculateFireForScope,
   calculateNetWorth,
   calculateSnapshotDeltas,
+  collectWarnings,
   createDashboardShell,
   formatMoneyInput,
   formatMoneyMinor,
+  getPriceFreshness,
   listScopeOptions,
   presentNetWorth,
   resolveScopeMemberIds,
 } from "@worthline/domain";
-import type { ManualAsset, Member, NetWorthPresentationMode } from "@worthline/domain";
+import type {
+  FireScopeConfig,
+  ManualAsset,
+  Member,
+  NetWorthPresentationMode,
+  PriceFreshnessState,
+} from "@worthline/domain";
+import { fetchAndCachePrice, stooqProvider } from "@worthline/pricing";
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -20,6 +30,7 @@ import {
   buildSnapshotId,
   parseAssetCommand,
   parseEntityId,
+  parseFireConfigForm,
   parseInvestmentAssetCommand,
   parseLiabilityCommand,
   parseMoneyMinorField,
@@ -53,7 +64,7 @@ export default async function DashboardPage({
   const selectedView = parseViewParam(resolvedSearchParams?.view);
   const errorParam = resolvedSearchParams?.error;
   const formError = Array.isArray(errorParam) ? errorParam[0] : errorParam;
-  const { workspace, assets, liabilities, positions, scopes, selectedScope, snapshots } =
+  const { workspace, assets, liabilities, positions, priceCache, scopes, selectedScope, snapshots, fireConfig } =
     withStore((store) => {
       const workspace = store.readWorkspace();
       const scopes = workspace ? listScopeOptions(workspace) : [];
@@ -63,8 +74,10 @@ export default async function DashboardPage({
 
       return {
         assets: store.readAssets(),
+        fireConfig: store.readFireConfig(),
         liabilities: store.readLiabilities(),
         positions: selectedScope ? store.readPositions(selectedScope.id) : [],
+        priceCache: store.readAllPriceCacheEntries(),
         scopes,
         selectedScope,
         snapshots: selectedScope ? store.readSnapshots(selectedScope.id) : [],
@@ -82,6 +95,13 @@ export default async function DashboardPage({
         })
       : undefined;
   const presentation = summary ? presentNetWorth(summary, selectedView) : undefined;
+  const fireScopeConfig: FireScopeConfig | null = selectedScope
+    ? (fireConfig[selectedScope.id] ?? null)
+    : null;
+  const fireResult =
+    fireScopeConfig && workspace && selectedScope
+      ? calculateFireForScope(fireScopeConfig, assets, workspace, selectedScope.id)
+      : null;
   const selectedMemberIds =
     workspace && selectedScope ? resolveScopeMemberIds(workspace, selectedScope.id) : [];
   const pyramid =
@@ -110,6 +130,7 @@ export default async function DashboardPage({
   const activeMembers = workspace?.members.filter((member) => !member.disabledAt) ?? [];
   const investmentAssets = assets.filter((asset) => asset.type === "investment");
   const today = new Date().toISOString().slice(0, 10);
+  const warnings = collectWarnings(assets);
 
   return (
     <main className="workspace">
@@ -133,6 +154,26 @@ export default async function DashboardPage({
         <p role="alert" style={{ color: "#c0392b", fontWeight: 600, margin: "0 0 12px" }}>
           {formError}
         </p>
+      ) : null}
+
+      {warnings.length > 0 ? (
+        <div
+          role="alert"
+          style={{
+            background: "#fffbeb",
+            border: "1px solid #f59e0b",
+            borderRadius: 6,
+            color: "#92400e",
+            margin: "0 0 12px",
+            padding: "10px 14px",
+          }}
+        >
+          {warnings.map((w) => (
+            <p key={`${w.entityId}-${w.code}`} style={{ margin: "2px 0" }}>
+              ⚠ {w.message}
+            </p>
+          ))}
+        </div>
       ) : null}
 
       <section className="summaryBand" aria-label="Resumen patrimonial">
@@ -323,6 +364,7 @@ export default async function DashboardPage({
                 <th>Tipo</th>
                 <th>Valor actual</th>
                 <th>Actualizar</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -341,6 +383,12 @@ export default async function DashboardPage({
                         name="currentValue"
                       />
                       <button type="submit">OK</button>
+                    </form>
+                  </td>
+                  <td>
+                    <form action={deleteAssetAction}>
+                      <input name="id" type="hidden" value={asset.id} />
+                      <button type="submit">Eliminar</button>
                     </form>
                   </td>
                 </tr>
@@ -364,11 +412,17 @@ export default async function DashboardPage({
                       <button type="submit">OK</button>
                     </form>
                   </td>
+                  <td>
+                    <form action={deleteLiabilityAction}>
+                      <input name="id" type="hidden" value={liability.id} />
+                      <button type="submit">Eliminar</button>
+                    </form>
+                  </td>
                 </tr>
               ))}
               {assets.length === 0 && liabilities.length === 0 ? (
                 <tr>
-                  <td colSpan={4}>Sin registros</td>
+                  <td colSpan={5}>Sin registros</td>
                 </tr>
               ) : null}
             </tbody>
@@ -380,6 +434,9 @@ export default async function DashboardPage({
             <h2>Inversiones</h2>
             <span>Unidades, coste medio y P/L</span>
           </div>
+          <form action={refreshPricesAction} className="inlineForm">
+            <button type="submit">Actualizar precios</button>
+          </form>
           <div className="entryGrid">
             <form action={createInvestmentAssetAction} className="stackForm">
               <h3>Nueva inversión</h3>
@@ -430,28 +487,54 @@ export default async function DashboardPage({
                 <th>Inversión</th>
                 <th>Unidades</th>
                 <th>Coste medio</th>
+                <th>Precio/u</th>
                 <th>Valor</th>
                 <th>P/L</th>
               </tr>
             </thead>
             <tbody>
-              {positions.map((position) => (
-                <tr key={position.assetId}>
-                  <td>
-                    {position.name}
-                    {position.warnings.length > 0 ? " ⚠️" : ""}
-                  </td>
-                  <td>{position.currentUnits}</td>
-                  <td>{position.averageUnitCost}</td>
-                  <td>{position.marketValue ? formatMoneyMinor(position.marketValue) : "—"}</td>
-                  <td>
-                    {position.unrealizedPnl ? formatMoneyMinor(position.unrealizedPnl) : "—"}
-                  </td>
-                </tr>
-              ))}
+              {positions.map((position) => {
+                const cachedPrice = priceCache.find(
+                  (entry) => entry.assetId === position.assetId,
+                );
+                const freshness = cachedPrice
+                  ? getPriceFreshness(cachedPrice, persistence.checkedAt)
+                  : null;
+
+                return (
+                  <tr key={position.assetId}>
+                    <td>
+                      {position.name}
+                      {position.warnings.length > 0 ? " ⚠" : ""}
+                    </td>
+                    <td>{position.currentUnits}</td>
+                    <td>{position.averageUnitCost}</td>
+                    <td>
+                      {cachedPrice ? (
+                        <>
+                          {cachedPrice.price}{" "}
+                          <small className={`priceStatus ${freshness ?? "unknown"}`}>
+                            {priceFreshnessLabel(freshness)}
+                          </small>
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td>
+                      {position.marketValue ? formatMoneyMinor(position.marketValue) : "—"}
+                    </td>
+                    <td>
+                      {position.unrealizedPnl
+                        ? formatMoneyMinor(position.unrealizedPnl)
+                        : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
               {positions.length === 0 ? (
                 <tr>
-                  <td colSpan={5}>Sin inversiones</td>
+                  <td colSpan={6}>Sin inversiones</td>
                 </tr>
               ) : null}
             </tbody>
@@ -519,6 +602,103 @@ export default async function DashboardPage({
             <span className="emptyLine">Sin snapshots</span>
           ) : null}
         </div>
+      </section>
+
+      <section className="firePanel" aria-label="FIRE">
+        <div className="panelHeader">
+          <h2>FIRE</h2>
+          <span>Independencia financiera</span>
+        </div>
+        {!fireScopeConfig ? (
+          selectedScope ? (
+            <form action={saveFireConfigAction} className="stackForm">
+              <input name="scopeId" type="hidden" value={selectedScope.id} />
+              <label>
+                Gasto mensual (EUR)
+                <input inputMode="decimal" name="monthlySpending" placeholder="2000" />
+              </label>
+              <label>
+                Tasa de retirada segura % (por defecto 4)
+                <input defaultValue="4" inputMode="decimal" name="safeWithdrawalRate" />
+              </label>
+              <label>
+                Retorno real esperado % (por defecto 7)
+                <input defaultValue="7" inputMode="decimal" name="expectedRealReturn" />
+              </label>
+              <label>
+                Edad actual (opcional)
+                <input inputMode="numeric" name="currentAge" placeholder="35" />
+              </label>
+              <label>
+                Edad objetivo de jubilación (por defecto 65)
+                <input defaultValue="65" inputMode="numeric" name="targetRetirementAge" />
+              </label>
+              <button type="submit">Guardar configuración FIRE</button>
+            </form>
+          ) : null
+        ) : (
+          <div className="fireResults">
+            <div>
+              <span>Número FIRE</span>
+              <strong>{formatMoneyMinor(fireResult!.fireNumber)}</strong>
+            </div>
+            <div>
+              <span>Activos elegibles</span>
+              <strong>{formatMoneyMinor(fireResult!.eligibleAssets)}</strong>
+            </div>
+            <div>
+              <span>% financiado</span>
+              <strong>{fireResult!.percentFunded.toFixed(1)}%</strong>
+            </div>
+            {fireResult!.coastFireRequired ? (
+              <div>
+                <span>Coast FIRE requerido</span>
+                <strong>{formatMoneyMinor(fireResult!.coastFireRequired)}</strong>
+              </div>
+            ) : null}
+            {fireResult!.coastFireAge !== undefined ? (
+              <div>
+                <span>Edad Coast FIRE</span>
+                <strong>{fireResult!.coastFireAge.toFixed(1)}</strong>
+              </div>
+            ) : null}
+            {selectedScope ? (
+              <form action={saveFireConfigAction} className="inlineForm">
+                <input name="scopeId" type="hidden" value={selectedScope.id} />
+                <input
+                  name="monthlySpending"
+                  type="hidden"
+                  value={(fireScopeConfig.monthlySpendingMinor / 100).toString()}
+                />
+                <input
+                  name="safeWithdrawalRate"
+                  type="hidden"
+                  value={(fireScopeConfig.safeWithdrawalRate * 100).toString()}
+                />
+                <input
+                  name="expectedRealReturn"
+                  type="hidden"
+                  value={(fireScopeConfig.expectedRealReturn * 100).toString()}
+                />
+                {fireScopeConfig.currentAge !== undefined ? (
+                  <input
+                    name="currentAge"
+                    type="hidden"
+                    value={fireScopeConfig.currentAge.toString()}
+                  />
+                ) : null}
+                <input
+                  name="targetRetirementAge"
+                  type="hidden"
+                  value={(fireScopeConfig.targetRetirementAge ?? 65).toString()}
+                />
+                <button formAction={saveFireConfigAction} type="submit">
+                  Reconfigurar
+                </button>
+              </form>
+            ) : null}
+          </div>
+        )}
       </section>
 
       <footer className="persistenceBar">
@@ -600,6 +780,12 @@ async function disableMemberAction(formData: FormData) {
 async function createAssetAction(formData: FormData) {
   "use server";
 
+  const currentValue = parseMoneyMinorField(formData, "currentValue");
+
+  if (currentValue === null) {
+    redirect(`/?error=${encodeURIComponent("El valor del activo no es válido.")}`);
+  }
+
   const result = withStore((store): ActionResult => {
     const workspace = store.readWorkspace();
 
@@ -632,19 +818,28 @@ async function updateAssetValuationAction(formData: FormData) {
   "use server";
 
   const id = parseEntityId(formData);
+  const currentValue = parseMoneyMinorField(formData, "currentValue");
 
   if (!id) {
     return;
   }
 
-  withStore((store) =>
-    store.updateAssetValuation(id, parseMoneyMinorField(formData, "currentValue")),
-  );
+  if (currentValue === null) {
+    redirect(`/?error=${encodeURIComponent("El valor del activo no es válido.")}`);
+  }
+
+  withStore((store) => store.updateAssetValuation(id, currentValue));
   revalidatePath("/");
 }
 
 async function createLiabilityAction(formData: FormData) {
   "use server";
+
+  const balance = parseMoneyMinorField(formData, "balance");
+
+  if (balance === null) {
+    redirect(`/?error=${encodeURIComponent("El saldo de la deuda no es válido.")}`);
+  }
 
   const result = withStore((store): ActionResult => {
     const workspace = store.readWorkspace();
@@ -708,6 +903,16 @@ async function createInvestmentAssetAction(formData: FormData) {
 async function recordOperationAction(formData: FormData) {
   "use server";
 
+  const fees = parseMoneyMinorField(formData, "fees");
+
+  if (fees === null) {
+    redirect(
+      `/?error=${encodeURIComponent(
+        "No se pudo registrar la operación: revisa unidades, precio y comisiones.",
+      )}`,
+    );
+  }
+
   const command = parseOperationCommand(
     formData,
     Date.now(),
@@ -735,14 +940,53 @@ async function updateLiabilityBalanceAction(formData: FormData) {
   "use server";
 
   const id = parseEntityId(formData);
+  const balance = parseMoneyMinorField(formData, "balance");
 
   if (!id) {
     return;
   }
 
-  withStore((store) =>
-    store.updateLiabilityBalance(id, parseMoneyMinorField(formData, "balance")),
-  );
+  if (balance === null) {
+    redirect(`/?error=${encodeURIComponent("El saldo de la deuda no es válido.")}`);
+  }
+
+  withStore((store) => store.updateLiabilityBalance(id, balance));
+  revalidatePath("/");
+}
+
+async function saveFireConfigAction(formData: FormData) {
+  "use server";
+
+  const scopeId = parseScopeParam(formData.get("scopeId") as string | undefined);
+  const config = parseFireConfigForm(formData);
+
+  withStore((store) => store.saveFireConfig(scopeId, config));
+  revalidatePath("/");
+}
+
+async function deleteAssetAction(formData: FormData) {
+  "use server";
+
+  const id = parseEntityId(formData);
+
+  if (!id) {
+    return;
+  }
+
+  withStore((store) => store.softDeleteAsset(id, new Date().toISOString()));
+  revalidatePath("/");
+}
+
+async function deleteLiabilityAction(formData: FormData) {
+  "use server";
+
+  const id = parseEntityId(formData);
+
+  if (!id) {
+    return;
+  }
+
+  withStore((store) => store.softDeleteLiability(id, new Date().toISOString()));
   revalidatePath("/");
 }
 
@@ -790,8 +1034,45 @@ async function saveSnapshotAction(formData: FormData) {
   }
 }
 
+async function refreshPricesAction() {
+  "use server";
+
+  const nowIso = new Date().toISOString();
+
+  await withStore(async (store) => {
+    const investmentAssets = store.readInvestmentAssetsWithMeta();
+
+    await Promise.allSettled(
+      investmentAssets
+        .filter((asset) => Boolean(asset.providerSymbol))
+        .map(async (asset) => {
+          const price = await fetchAndCachePrice(stooqProvider, {
+            assetId: asset.id,
+            symbol: asset.providerSymbol!,
+            currency: asset.currency,
+            nowIso,
+          });
+          store.upsertPrice(price);
+        }),
+    );
+  });
+
+  revalidatePath("/");
+}
+
 function formatOptionalMoney(value: MoneyMinor | undefined): string {
   return value ? formatMoneyMinor(value) : "sin dato";
+}
+
+function priceFreshnessLabel(freshness: PriceFreshnessState | null): string {
+  if (!freshness) return "—";
+  const labels: Record<PriceFreshnessState, string> = {
+    failed: "Fallido",
+    fresh: "Reciente",
+    manual: "Manual",
+    stale: "Obsoleto",
+  };
+  return labels[freshness];
 }
 
 function tierLabel(tier: ManualAsset["liquidityTier"]): string {

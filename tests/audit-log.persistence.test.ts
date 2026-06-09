@@ -1,0 +1,185 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, test } from "vitest";
+
+import { createWorthlineStore } from "@worthline/db";
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { force: true, recursive: true });
+  }
+});
+
+function createTestStore() {
+  const dataDir = mkdtempSync(join(tmpdir(), "worthline-audit-"));
+  tempDirs.push(dataDir);
+
+  return createWorthlineStore({
+    databasePath: join(dataDir, "worthline.sqlite"),
+  });
+}
+
+function setupStore() {
+  const store = createTestStore();
+
+  store.initializeWorkspace({
+    members: [{ id: "member_a", name: "Ana" }],
+    mode: "individual",
+  });
+
+  return store;
+}
+
+describe("soft delete - assets", () => {
+  test("softDeleteAsset hides asset from readAssets()", () => {
+    const store = setupStore();
+
+    store.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 10_000,
+      id: "asset_1",
+      liquidityTier: "cash",
+      name: "Caja",
+      ownership: [{ memberId: "member_a", shareBps: 10_000 }],
+      type: "cash",
+    });
+
+    expect(store.readAssets()).toHaveLength(1);
+
+    store.softDeleteAsset("asset_1", new Date().toISOString());
+
+    expect(store.readAssets()).toHaveLength(0);
+  });
+
+  test("restoreAsset makes it reappear", () => {
+    const store = setupStore();
+
+    store.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 10_000,
+      id: "asset_1",
+      liquidityTier: "cash",
+      name: "Caja",
+      ownership: [{ memberId: "member_a", shareBps: 10_000 }],
+      type: "cash",
+    });
+
+    store.softDeleteAsset("asset_1", new Date().toISOString());
+    expect(store.readAssets()).toHaveLength(0);
+
+    store.restoreAsset("asset_1");
+    expect(store.readAssets()).toHaveLength(1);
+  });
+});
+
+describe("soft delete - liabilities", () => {
+  test("softDeleteLiability hides liability from readLiabilities()", () => {
+    const store = setupStore();
+
+    store.createLiability({
+      balanceMinor: 5_000,
+      currency: "EUR",
+      id: "liab_1",
+      name: "Deuda",
+      ownership: [{ memberId: "member_a", shareBps: 10_000 }],
+      type: "debt",
+    });
+
+    expect(store.readLiabilities()).toHaveLength(1);
+
+    store.softDeleteLiability("liab_1", new Date().toISOString());
+
+    expect(store.readLiabilities()).toHaveLength(0);
+  });
+});
+
+describe("audit log", () => {
+  test("creating an asset records an audit entry with action 'create_asset'", () => {
+    const store = setupStore();
+
+    store.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 10_000,
+      id: "asset_1",
+      liquidityTier: "cash",
+      name: "Caja",
+      ownership: [{ memberId: "member_a", shareBps: 10_000 }],
+      type: "cash",
+    });
+
+    const log = store.readAuditLog();
+    expect(log.some((e) => e.action === "create_asset" && e.entityId === "asset_1")).toBe(
+      true,
+    );
+  });
+
+  test("updateAssetValuation records an audit entry with action 'update_valuation'", () => {
+    const store = setupStore();
+
+    store.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 10_000,
+      id: "asset_1",
+      liquidityTier: "cash",
+      name: "Caja",
+      ownership: [{ memberId: "member_a", shareBps: 10_000 }],
+      type: "cash",
+    });
+    store.updateAssetValuation("asset_1", 20_000);
+
+    const log = store.readAuditLog();
+    expect(
+      log.some((e) => e.action === "update_valuation" && e.entityId === "asset_1"),
+    ).toBe(true);
+  });
+
+  test("softDeleteAsset records audit entry with action 'delete_asset'", () => {
+    const store = setupStore();
+
+    store.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 10_000,
+      id: "asset_1",
+      liquidityTier: "cash",
+      name: "Caja",
+      ownership: [{ memberId: "member_a", shareBps: 10_000 }],
+      type: "cash",
+    });
+    store.softDeleteAsset("asset_1", new Date().toISOString());
+
+    const log = store.readAuditLog();
+    expect(log.some((e) => e.action === "delete_asset" && e.entityId === "asset_1")).toBe(
+      true,
+    );
+  });
+
+  test("readAuditLog filtered by entityId returns only that entity's entries", () => {
+    const store = setupStore();
+
+    store.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 10_000,
+      id: "asset_1",
+      liquidityTier: "cash",
+      name: "Caja",
+      ownership: [{ memberId: "member_a", shareBps: 10_000 }],
+      type: "cash",
+    });
+    store.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 5_000,
+      id: "asset_2",
+      liquidityTier: "market",
+      name: "Fondo",
+      ownership: [{ memberId: "member_a", shareBps: 10_000 }],
+      type: "manual",
+    });
+
+    const log = store.readAuditLog({ entityId: "asset_1" });
+    expect(log.every((e) => e.entityId === "asset_1")).toBe(true);
+    expect(log.length).toBeGreaterThan(0);
+  });
+});
