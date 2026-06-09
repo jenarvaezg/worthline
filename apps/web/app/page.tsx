@@ -15,7 +15,7 @@ import type {
   NetWorthFraming,
   PriceFreshnessState,
 } from "@worthline/domain";
-import { fetchAndCachePrice, stooqProvider } from "@worthline/pricing";
+import { fetchAndCachePrice, refreshStalePrices, stooqProvider } from "@worthline/pricing";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -125,9 +125,30 @@ export default async function DashboardPage({
     };
   });
 
+  // Auto-refresh stale prices on every page load without blocking rendering.
+  // Failures degrade to "Fallido" labels — never an error page.
+  // Runs before snapshot capture so auto-snapshot (#49) sees fresh prices.
+  const investmentAssetsMeta = withStore((store) => store.readInvestmentAssetsWithMeta());
+  const refreshedPrices = await refreshStalePrices(
+    storeData.priceCache,
+    investmentAssetsMeta,
+    persistence.checkedAt,
+  ).catch(() => null);
+
+  // Persist refreshed prices and re-read so the render sees the latest state.
+  const priceCache = withStore((store) => {
+    if (refreshedPrices) {
+      for (const price of refreshedPrices.refreshed) {
+        store.upsertPrice(price);
+      }
+    }
+    return store.readAllPriceCacheEntries();
+  });
+
   const state = prepareDashboardState({
     ...storeData,
     persistence,
+    priceCache,
     selectedView,
   });
 
