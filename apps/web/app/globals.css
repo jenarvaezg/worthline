@@ -585,6 +585,36 @@ th:last-child {
   overflow-wrap: anywhere;
 }
 
+.onboardingChecklist {
+  background: rgba(255, 250, 240, 0.88);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+
+.onboardingChecklist ol {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+}
+
+.onboardingChecklist li {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.onboardingChecklist li.done {
+  color: var(--muted);
+}
+
+.onboardingHint {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-top: 12px;
+}
+
 .stackForm {
   display: grid;
   gap: 12px;

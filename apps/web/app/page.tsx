@@ -130,6 +130,7 @@ export default async function DashboardPage({
     fireScopeConfig,
     investmentAssets,
     liabilities,
+    onboarding,
     positions,
     presentation,
     priceCache,
@@ -207,7 +208,24 @@ export default async function DashboardPage({
         </div>
       ) : null}
 
-      <section className="summaryBand" aria-label="Resumen patrimonial">
+      {workspace && assets.length + liabilities.length === 0 ? (
+        <section className="onboardingChecklist" aria-label="Primeros pasos">
+          <div className="panelHeader">
+            <h2>Primeros pasos</h2>
+            <span>Empieza aquí</span>
+          </div>
+          <ol>
+            {onboarding.map((step) => (
+              <li className={step.done ? "done" : undefined} key={step.id}>
+                {step.done ? "✓" : "○"} {step.label}
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
+
+      {workspace ? (
+        <section className="summaryBand" aria-label="Resumen patrimonial">
         <div className="scopeRail">
           <span>{selectedScope?.label ?? "Sin workspace"}</span>
           <span>{workspace?.baseCurrency ?? "EUR"}</span>
@@ -271,6 +289,7 @@ export default async function DashboardPage({
           </div>
         ) : null}
       </section>
+      ) : null}
 
       {!workspace ? (
         <section className="setupPanel" aria-label="Onboarding local">
@@ -278,6 +297,10 @@ export default async function DashboardPage({
             <h2>Crear workspace local</h2>
             <span>EUR por defecto</span>
           </div>
+          <p className="onboardingHint">
+            Todo se guarda solo en este dispositivo (SQLite local): sin nube, sin cuenta.
+            «Hogar» habilita varios miembros con porcentajes de propiedad compartidos.
+          </p>
           <form action={initializeWorkspaceAction} className="stackForm">
             <input name="currentUrl" type="hidden" value={currentUrl} />
             <label>
@@ -288,7 +311,7 @@ export default async function DashboardPage({
               </select>
             </label>
             <label>
-              Miembros
+              Miembros (un nombre por línea)
               <textarea
                 name="memberNames"
                 defaultValue="Yo"
@@ -357,7 +380,11 @@ export default async function DashboardPage({
                 <option value="real_estate">Vivienda</option>
               </select>
               <input inputMode="decimal" name="currentValue" aria-label="Valor EUR" placeholder="Valor EUR" />
-              <select name="liquidityTier" defaultValue="cash">
+              <select
+                name="liquidityTier"
+                defaultValue="cash"
+                title="Capa de liquidez: cómo de rápido puedes convertir el activo en efectivo (caja → mercado → jubilación → ilíquido → vivienda)."
+              >
                 <option value="cash">Caja</option>
                 <option value="market">Mercado</option>
                 <option value="retirement">Jubilacion</option>
@@ -468,7 +495,10 @@ export default async function DashboardPage({
               ))}
               {assets.length === 0 && liabilities.length === 0 ? (
                 <tr>
-                  <td colSpan={5}>Sin registros</td>
+                  <td colSpan={5}>
+                    Sin registros todavía — añade tu primer activo o deuda con los
+                    formularios de arriba.
+                  </td>
                 </tr>
               ) : null}
             </tbody>
@@ -624,7 +654,9 @@ export default async function DashboardPage({
               })}
               {positions.length === 0 ? (
                 <tr>
-                  <td colSpan={6}>Sin inversiones</td>
+                  <td colSpan={6}>
+                    Sin inversiones todavía — crea una con «Nueva inversión».
+                  </td>
                 </tr>
               ) : null}
             </tbody>
@@ -699,7 +731,9 @@ export default async function DashboardPage({
             </div>
           ))}
           {snapshots.length === 0 ? (
-            <span className="emptyLine">Sin snapshots</span>
+            <span className="emptyLine">
+              Sin snapshots — guarda uno para empezar tu histórico.
+            </span>
           ) : null}
         </div>
       </section>

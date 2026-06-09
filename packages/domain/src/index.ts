@@ -61,8 +61,8 @@ import { allocateOwnedMoneyMinor } from "./ownership";
 
 export type { DecimalString } from "./decimal";
 
-export type { DashboardState, LocalPersistenceStatus } from "./dashboard";
-export { prepareDashboardState } from "./dashboard";
+export type { DashboardState, LocalPersistenceStatus, OnboardingStep } from "./dashboard";
+export { deriveOnboardingProgress, prepareDashboardState } from "./dashboard";
 
 export type WorkspaceMode = "individual" | "household";
 

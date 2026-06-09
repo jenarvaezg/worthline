@@ -38,6 +38,37 @@ export interface PositionView extends PositionSummary {
   name: string;
 }
 
+export interface OnboardingStep {
+  id: string;
+  label: string;
+  done: boolean;
+}
+
+/**
+ * The ordered "first steps" a new workspace should complete, each marked done
+ * from the current counts. Pure — drives the first-run checklist and the
+ * empty-state guidance.
+ */
+export function deriveOnboardingProgress(input: {
+  activeMemberCount: number;
+  holdingCount: number;
+  positionCount: number;
+  hasFireConfig: boolean;
+  snapshotCount: number;
+}): OnboardingStep[] {
+  return [
+    { id: "members", label: "Revisa los miembros", done: input.activeMemberCount > 0 },
+    {
+      id: "holdings",
+      label: "Añade tu primer activo o deuda",
+      done: input.holdingCount > 0,
+    },
+    { id: "investments", label: "Registra una inversión", done: input.positionCount > 0 },
+    { id: "fire", label: "Configura FIRE", done: input.hasFireConfig },
+    { id: "snapshot", label: "Guarda tu primer snapshot", done: input.snapshotCount > 0 },
+  ];
+}
+
 export interface DashboardState {
   persistence: LocalPersistenceStatus;
   workspace: Workspace | null;
@@ -60,6 +91,7 @@ export interface DashboardState {
   investmentAssets: ManualAsset[];
   today: string;
   warnings: DomainWarning[];
+  onboarding: OnboardingStep[];
   selectedView: NetWorthFraming;
 }
 
@@ -133,6 +165,13 @@ export function prepareDashboardState(input: {
   const investmentAssets = assets.filter((asset) => asset.type === "investment");
   const today = new Date().toISOString().slice(0, 10);
   const warnings = collectWarnings(assets, input.overrides ?? []);
+  const onboarding = deriveOnboardingProgress({
+    activeMemberCount: activeMembers.length,
+    holdingCount: assets.length + liabilities.length,
+    positionCount: input.positions.length,
+    hasFireConfig: fireScopeConfig !== null,
+    snapshotCount: input.snapshots.length,
+  });
 
   return {
     activeMembers,
@@ -143,6 +182,7 @@ export function prepareDashboardState(input: {
     fireScopeConfig,
     investmentAssets,
     liabilities,
+    onboarding,
     persistence,
     positions: input.positions,
     presentation,
