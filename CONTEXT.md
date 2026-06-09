@@ -34,6 +34,20 @@ _Avoid_: presentation mode (implementation term).
 The set of members whose holdings a figure covers (the whole household, or one member).
 _Avoid_: account.
 
+**Holding**:
+An asset or a debt in a scope's portfolio — the unit that **ownership splits** and
+(for assets) **liquidity tiers** attach to. The unified list of a scope's holdings
+is the portfolio. UI label for that list: "Patrimonio".
+
+**Investment**:
+An asset whose current value is derived — units held × unit price — never set by
+hand. Units change only through **operations**; the unit price comes from a market
+provider or a manual quote.
+_Avoid_: editing an investment's value directly (it is a derived figure).
+
+**Operation**:
+A buy or a sell against one **investment**: date, units, price per unit, fees.
+
 **Liquidity tier**:
 The accessibility class of a holding — cash, market, retirement, illiquid, or housing.
 
@@ -49,6 +63,18 @@ A member's percentage stake in one holding.
 The full set of **ownership shares** on one holding; always totals 100%.
 _Avoid_: ownership %, share (when the whole set is meant).
 
+**Value update pass**:
+A single pass where the user refreshes the values of every manual holding in one
+form. UI label: "Puesta al día". Investments are excluded — their values are derived.
+
+**Snapshot**:
+A frozen capture of a scope's net worth figures on a date. Captured automatically —
+at most one per scope per day, the day's latest capture winning. Not a user act.
+_Avoid_: "guardar snapshot" as a user-facing action.
+
+**Monthly close**:
+The last **snapshot** of a calendar month. Derived, never declared by the user.
+
 **Warning**:
 A flag the dashboard raises about a holding that may need attention (e.g. an asset
 left at value 0). Carries a severity: **blocking** or **overrideable**.
@@ -63,6 +89,7 @@ which that warning stops surfacing.
 ## Relationships
 
 - **Net worth** decomposes into **gross assets** − **debts**.
+- An **investment** is a kind of **holding**; its value is always derived, never edited directly.
 - **Liquid net worth** and **housing equity** are partial views of **net worth**, sliced by **liquidity tier**.
 - A **framing** chooses which figure headlines; **gross assets**, **debts**, **housing equity**, and **liquid net worth** are always-visible breakdown around it.
 
