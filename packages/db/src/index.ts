@@ -29,7 +29,9 @@ import {
   createLiability,
   createManualAsset,
   createWorkspace,
+  deriveInvestmentValuation,
   derivePosition,
+  selectInvestmentPrice,
   resolveScopeMemberIds,
 } from "@worthline/domain";
 import Database from "better-sqlite3";
@@ -1457,16 +1459,13 @@ function investmentValueMinor(
   metaByAsset: Map<string, InvestmentMeta>,
   priceCacheByAsset: Map<string, { price: string }>,
 ): number {
-  const cachedPrice = priceCacheByAsset.get(assetId)?.price;
-  const manualPrice = metaByAsset.get(assetId)?.manualPricePerUnit;
-  const currentPricePerUnit = cachedPrice ?? manualPrice;
-  const position = derivePosition(operationsByAsset.get(assetId) ?? [], {
+  return deriveInvestmentValuation({
     assetId,
+    cachedPrice: priceCacheByAsset.get(assetId)?.price,
     currency,
-    ...(currentPricePerUnit ? { currentPricePerUnit } : {}),
-  });
-
-  return position.marketValue?.amountMinor ?? position.costBasis.amountMinor;
+    manualPrice: metaByAsset.get(assetId)?.manualPricePerUnit,
+    operations: operationsByAsset.get(assetId) ?? [],
+  }).valueMinor;
 }
 
 function readAllOperations(
@@ -1577,14 +1576,17 @@ function readPositions(
       continue;
     }
 
-    // Price cache takes priority over manual_price_per_unit
-    const cachedPrice = priceCacheByAsset.get(row.id)?.price;
-    const manualPrice = metaByAsset.get(row.id)?.manualPricePerUnit;
-    const currentPricePerUnit = cachedPrice ?? manualPrice;
+    // Price-selection rule is owned by selectInvestmentPrice (ADR 0006).
+    // We need the full PositionSummary for the positions table view, so we call
+    // derivePosition with the price that selectInvestmentPrice picks.
+    const selected = selectInvestmentPrice({
+      cachedPrice: priceCacheByAsset.get(row.id)?.price,
+      manualPrice: metaByAsset.get(row.id)?.manualPricePerUnit,
+    });
     const position = derivePosition(operationsByAsset.get(row.id) ?? [], {
       assetId: row.id,
       currency: row.currency,
-      ...(currentPricePerUnit ? { currentPricePerUnit } : {}),
+      ...(selected ? { currentPricePerUnit: selected.pricePerUnit } : {}),
     });
 
     views.push({ ...position, name: row.name });
