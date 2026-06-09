@@ -122,6 +122,7 @@ export interface TrashView {
 
 export interface WorthlineStore {
   acknowledgeWarning: (code: string, entityId: string) => void;
+  reactivateMember: (memberId: string) => void;
   close: () => void;
   createInvestmentAsset: (input: CreateInvestmentAssetInput) => void;
   createLiability: (input: CreateLiabilityInput) => void;
@@ -498,6 +499,18 @@ export function createWorthlineStore(
         `,
         )
         .run(disabledAt, memberId);
+      invalidateWorkspace();
+    },
+    reactivateMember: (memberId) => {
+      sqlite
+        .prepare(
+          `
+          UPDATE members
+          SET disabled_at = NULL, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `,
+        )
+        .run(memberId);
       invalidateWorkspace();
     },
     initializeWorkspace: (input) => {
