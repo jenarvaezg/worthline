@@ -128,20 +128,23 @@ export function projectPortfolio(input: PortfolioProjectionInput): PortfolioProj
   let grossAssetsMinor = 0;
 
   for (const asset of assets) {
+    const shareBps = asset.ownership
+      .filter((share) => scopeMemberIds.has(share.memberId))
+      .reduce((sum, share) => sum + share.shareBps, 0);
+
+    // Exclude rows where the scope has no ownership stake at all.
+    // Zero-value assets that ARE owned by the scope must still appear so
+    // their warnings (and the "Es intencional" override button) are reachable.
+    if (shareBps === 0) {
+      continue;
+    }
+
     const scopedValue = allocateOwnedMoneyMinor(asset.currentValue.amountMinor, {
       ownership: asset.ownership,
       scopeMemberIds,
     });
 
-    // Exclude rows where the scope holds 0% of this holding.
-    if (scopedValue === 0) {
-      continue;
-    }
-
     const tier = tierOfAsset(asset);
-    const shareBps = asset.ownership
-      .filter((share) => scopeMemberIds.has(share.memberId))
-      .reduce((sum, share) => sum + share.shareBps, 0);
 
     const ownership: RowOwnership = {
       shares: asset.ownership,
