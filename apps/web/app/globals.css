@@ -1076,3 +1076,122 @@ code {
     display: grid;
   }
 }
+
+/* === #60 ajustes === */
+
+.ajustesGrid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ajustesPanel {
+  background: rgba(255, 250, 240, 0.88);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  min-width: 0;
+  padding: 16px;
+}
+
+.ajustesPanel .memberRow {
+  align-items: start;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(140px, 1fr) auto auto;
+}
+
+.memberStatus {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding-top: 10px;
+  text-transform: uppercase;
+}
+
+.memberStatus.inactive {
+  color: var(--red);
+}
+
+.infoList {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0;
+  margin: 14px 0 0;
+  padding: 0;
+}
+
+.infoList dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding-top: 10px;
+  text-transform: uppercase;
+}
+
+.infoList dd {
+  border-bottom: 1px solid var(--line);
+  font-size: 0.88rem;
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  padding-bottom: 10px;
+}
+
+.infoList .dbPath,
+.infoList .mono {
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-size: 0.78rem;
+}
+
+.overrideList {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.overrideRow {
+  align-items: center;
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) auto;
+  padding: 8px 10px;
+}
+
+.overrideCode {
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-size: 0.78rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.overrideEntity {
+  color: var(--muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-top: 12px;
+}
+
+@media (max-width: 900px) {
+  .ajustesGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .ajustesPanel .memberRow {
+    grid-template-columns: 1fr auto;
+  }
+
+  .overrideRow {
+    grid-template-columns: 1fr auto;
+  }
+
+  .overrideEntity {
+    display: none;
+  }
+}
