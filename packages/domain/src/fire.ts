@@ -1,4 +1,4 @@
-import type { CurrencyCode, MoneyMinor } from "@worthline/contracts";
+import type { CurrencyCode, MoneyMinor } from "./money";
 
 import { money } from "./money";
 import type { ManualAsset, Workspace } from "./index";

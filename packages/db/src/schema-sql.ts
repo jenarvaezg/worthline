@@ -29,6 +29,7 @@ CREATE TABLE \`assets\` (
 	\`current_value_minor\` integer NOT NULL,
 	\`liquidity_tier\` text NOT NULL,
 	\`is_primary_residence\` integer DEFAULT 0 NOT NULL,
+	\`deleted_at\` text,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
@@ -40,6 +41,7 @@ CREATE TABLE \`liabilities\` (
 	\`currency\` text NOT NULL,
 	\`current_balance_minor\` integer NOT NULL,
 	\`associated_asset_id\` text,
+	\`deleted_at\` text,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	FOREIGN KEY (\`associated_asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE set null

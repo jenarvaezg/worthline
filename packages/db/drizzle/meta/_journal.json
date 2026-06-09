@@ -15,6 +15,13 @@
       "when": 1780953675795,
       "tag": "0001_abnormal_silver_samurai",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1781010547313,
+      "tag": "0002_aspiring_ted_forrester",
+      "breakpoints": true
     }
   ]
 }

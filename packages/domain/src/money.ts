@@ -1,4 +1,9 @@
-import type { CurrencyCode, MoneyMinor } from "@worthline/contracts";
+export type CurrencyCode = "EUR" | (string & {});
+
+export interface MoneyMinor {
+  amountMinor: number;
+  currency: CurrencyCode;
+}
 
 /**
  * The single home for every `MoneyMinor` operation. Money is stored as integer

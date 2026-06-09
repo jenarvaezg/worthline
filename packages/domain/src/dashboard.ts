@@ -1,6 +1,13 @@
-import type { LocalPersistenceStatus } from "@worthline/contracts";
-
 import type { AssetPrice } from "./prices";
+
+export interface LocalPersistenceStatus {
+  status: "ok";
+  databasePath: string;
+  displayPath: string;
+  checkedAt: string;
+  checkKey: string;
+  checkValue: string;
+}
 import type {
   FireScopeConfig,
   Liability,
@@ -80,9 +87,7 @@ export function prepareDashboardState(input: {
         })
       : undefined;
 
-  const presentation = summary
-    ? presentNetWorth(summary, input.selectedView)
-    : undefined;
+  const presentation = summary ? presentNetWorth(summary, input.selectedView) : undefined;
 
   const fireScopeConfig: FireScopeConfig | null = selectedScope
     ? (input.fireConfig[selectedScope.id] ?? null)
@@ -94,9 +99,7 @@ export function prepareDashboardState(input: {
       : null;
 
   const selectedMemberIds =
-    workspace && selectedScope
-      ? resolveScopeMemberIds(workspace, selectedScope.id)
-      : [];
+    workspace && selectedScope ? resolveScopeMemberIds(workspace, selectedScope.id) : [];
 
   const pyramid =
     workspace && selectedScope
@@ -124,8 +127,7 @@ export function prepareDashboardState(input: {
     ...(summary ? { summary } : {}),
   });
 
-  const activeMembers =
-    workspace?.members.filter((member) => !member.disabledAt) ?? [];
+  const activeMembers = workspace?.members.filter((member) => !member.disabledAt) ?? [];
   const investmentAssets = assets.filter((asset) => asset.type === "investment");
   const today = new Date().toISOString().slice(0, 10);
   const warnings = collectWarnings(assets);
