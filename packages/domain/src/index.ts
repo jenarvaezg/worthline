@@ -47,7 +47,7 @@ export { getPriceFreshness, PRICE_TTL_DAYS } from "./prices";
 export type { FireScopeConfig, FireResult } from "./fire";
 export { filterFireEligibleAssets, calculateFire, calculateFireForScope } from "./fire";
 
-export type { WarningSeverity, DomainWarning } from "./warnings";
+export type { WarningSeverity, DomainWarning, WarningOverride } from "./warnings";
 export { collectWarnings } from "./warnings";
 import { collectWarnings } from "./warnings";
 import type { DomainWarning } from "./warnings";

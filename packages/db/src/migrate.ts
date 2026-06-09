@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export function migrate(sqlite: DatabaseConnection): void {
   sqlite.pragma("journal_mode = WAL");
@@ -45,5 +45,14 @@ export function migrate(sqlite: DatabaseConnection): void {
       sqlite.exec("ALTER TABLE liabilities ADD COLUMN deleted_at TEXT");
     } catch {}
     sqlite.pragma("user_version = 4");
+  }
+
+  if (version < 5) {
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS warning_overrides (
+      code TEXT NOT NULL, entity_id TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      PRIMARY KEY (code, entity_id)
+    );`);
+    sqlite.pragma("user_version = 5");
   }
 }

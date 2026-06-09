@@ -10,7 +10,22 @@ export interface DomainWarning {
   message: string;
 }
 
-export function collectWarnings(assets: ManualAsset[]): DomainWarning[] {
+/** A persisted acknowledgement that an overrideable warning is intentional. */
+export interface WarningOverride {
+  code: string;
+  entityId: string;
+}
+
+/**
+ * Collect the warnings to surface for a set of assets. Overrideable warnings with
+ * a matching override are suppressed (the user marked them intentional); blocking
+ * warnings are never suppressed.
+ */
+export function collectWarnings(
+  assets: ManualAsset[],
+  overrides: WarningOverride[] = [],
+): DomainWarning[] {
+  const overridden = new Set(overrides.map((o) => `${o.code}:${o.entityId}`));
   const warnings: DomainWarning[] = [];
 
   for (const a of assets) {
@@ -24,5 +39,7 @@ export function collectWarnings(assets: ManualAsset[]): DomainWarning[] {
       });
   }
 
-  return warnings;
+  return warnings.filter(
+    (w) => w.severity === 'blocking' || !overridden.has(`${w.code}:${w.entityId}`),
+  );
 }
