@@ -39,4 +39,28 @@ describe("workspace scopes", () => {
       "member_jose",
     ]);
   });
+
+  test("disabled members are excluded from household scope", () => {
+    const workspace = createWorkspace({
+      mode: "household",
+      members: [
+        { id: "member_ana", name: "Ana" },
+        { disabledAt: "2026-01-01", id: "member_jose", name: "Jose" },
+        { id: "member_luz", name: "Luz" },
+      ],
+    });
+
+    expect(listScopeOptions(workspace).map((s) => s.id)).toEqual([
+      "household",
+      "member_ana",
+      "member_luz",
+    ]);
+    expect(resolveScopeMemberIds(workspace, "household")).toEqual([
+      "member_ana",
+      "member_luz",
+    ]);
+    expect(() => resolveScopeMemberIds(workspace, "member_jose")).toThrow(
+      "Unknown scope",
+    );
+  });
 });

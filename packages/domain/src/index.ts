@@ -8,7 +8,6 @@ import type {
 
 import {
   addMoney,
-  allocateByBps,
   assertMinorInteger,
   money,
   subtractMoney,
@@ -58,6 +57,18 @@ export { filterFireEligibleAssets, calculateFire, calculateFireForScope } from "
 
 export type { WarningSeverity, DomainWarning } from "./warnings";
 export { collectWarnings } from "./warnings";
+import { collectWarnings } from "./warnings";
+import type { DomainWarning } from "./warnings";
+
+export type { ScopeType, ScopeOption } from "./scope";
+export { listScopeOptions, resolveScopeMemberIds } from "./scope";
+import { resolveScopeMemberIds } from "./scope";
+
+export { allocateOwnedMoneyMinor } from "./ownership";
+import { allocateOwnedMoneyMinor } from "./ownership";
+
+export type { DashboardState } from "./dashboard";
+export { prepareDashboardState } from "./dashboard";
 
 export type WorkspaceMode = "individual" | "household";
 
@@ -78,14 +89,6 @@ export interface Workspace {
   mode: WorkspaceMode;
   members: Member[];
   groups: MemberGroup[];
-}
-
-export type ScopeType = "household" | "member" | "group";
-
-export interface ScopeOption {
-  id: string;
-  label: string;
-  type: ScopeType;
 }
 
 export function createWorkspace(input: {
@@ -116,52 +119,6 @@ export function createWorkspace(input: {
     members: input.members,
     mode: input.mode,
   };
-}
-
-export function listScopeOptions(workspace: Workspace): ScopeOption[] {
-  const members = workspace.members.filter((member) => !member.disabledAt);
-
-  return [
-    { id: "household", label: "Hogar", type: "household" },
-    ...members.map((member) => ({
-      id: member.id,
-      label: member.name,
-      type: "member" as const,
-    })),
-    ...workspace.groups.map((group) => ({
-      id: group.id,
-      label: group.name,
-      type: "group" as const,
-    })),
-  ];
-}
-
-export function resolveScopeMemberIds(workspace: Workspace, scopeId: string): string[] {
-  if (scopeId === "household") {
-    return workspace.members
-      .filter((member) => !member.disabledAt)
-      .map((member) => member.id);
-  }
-
-  const member = workspace.members.find(
-    (candidate) => candidate.id === scopeId && !candidate.disabledAt,
-  );
-
-  if (member) {
-    return [member.id];
-  }
-
-  const group = workspace.groups.find((candidate) => candidate.id === scopeId);
-
-  if (group) {
-    return group.memberIds.filter((memberId) =>
-      workspace.members.some(
-        (candidate) => candidate.id === memberId && !candidate.disabledAt,
-      ),
-    );
-  }
-
-  throw new Error(`Unknown scope ${scopeId}.`);
 }
 
 export type AssetType = "cash" | "manual" | "real_estate" | "investment";
@@ -290,7 +247,7 @@ export interface NetWorthSnapshot {
   housingEquity: MoneyMinor;
   grossAssets: MoneyMinor;
   debts: MoneyMinor;
-  warnings: string[];
+  warnings: DomainWarning[];
 }
 
 export interface CreateNetWorthSnapshotInput {
@@ -300,7 +257,7 @@ export interface CreateNetWorthSnapshotInput {
   capturedAt: string;
   summary: NetWorthSummary;
   isMonthlyClose?: boolean;
-  warnings?: string[];
+  warnings?: DomainWarning[];
 }
 
 export interface SnapshotDeltas {
@@ -507,6 +464,35 @@ export function createNetWorthSnapshot(
   };
 }
 
+export function captureNetWorthSnapshot(input: {
+  workspace: Workspace;
+  scopeId: string;
+  scopeLabel: string;
+  assets: ManualAsset[];
+  liabilities?: Liability[];
+  capturedAt: string;
+  id: string;
+  isMonthlyClose?: boolean;
+}): NetWorthSnapshot {
+  const summary = calculateNetWorth({
+    workspace: input.workspace,
+    scopeId: input.scopeId,
+    assets: input.assets,
+    ...(input.liabilities ? { liabilities: input.liabilities } : {}),
+  });
+  const warnings = collectWarnings(input.assets);
+
+  return createNetWorthSnapshot({
+    capturedAt: input.capturedAt,
+    id: input.id,
+    ...(input.isMonthlyClose ? { isMonthlyClose: input.isMonthlyClose } : {}),
+    scopeId: input.scopeId,
+    scopeLabel: input.scopeLabel,
+    summary,
+    warnings,
+  });
+}
+
 export function calculateSnapshotDeltas(
   snapshots: NetWorthSnapshot[],
   snapshotId: string,
@@ -652,20 +638,6 @@ function assertOwnership(workspace: Workspace, ownership: OwnershipShare[]): voi
   if (totalBps !== 10_000) {
     throw new Error("Ownership shares must add up to 10000 bps.");
   }
-}
-
-function allocateOwnedMoneyMinor(
-  amountMinor: number,
-  input: {
-    ownership: OwnershipShare[];
-    scopeMemberIds: Set<string>;
-  },
-): number {
-  const shareBps = input.ownership
-    .filter((share) => input.scopeMemberIds.has(share.memberId))
-    .reduce((sum, share) => sum + share.shareBps, 0);
-
-  return allocateByBps(amountMinor, shareBps);
 }
 
 export type DashboardMetricId =

@@ -126,4 +126,45 @@ describe("investment position persistence", () => {
       }),
     ).toThrow("units");
   });
+
+  test("fetched price takes priority over manual price in net worth", () => {
+    const store = createTestStore();
+    seedWorkspace(store);
+    store.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset_acme",
+      manualPricePerUnit: "130",
+      name: "ACME",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    });
+    store.recordOperation({
+      assetId: "asset_acme",
+      currency: "EUR",
+      executedAt: "2026-01-01",
+      id: "op1",
+      kind: "buy",
+      pricePerUnit: "100",
+      units: "10",
+    });
+
+    store.upsertPrice({
+      assetId: "asset_acme",
+      currency: "EUR",
+      fetchedAt: "2026-06-01T12:00:00.000Z",
+      freshnessState: "fresh",
+      price: "150",
+      source: "stooq",
+    });
+
+    const summary = calculateNetWorth({
+      assets: store.readAssets(),
+      scopeId: "member_jose",
+      workspace: store.readWorkspace()!,
+    });
+
+    expect(summary.liquidNetWorth.amountMinor).toBe(150_000);
+
+    const positions = store.readPositions("member_jose");
+    expect(positions[0]!.marketValue?.amountMinor).toBe(150_000);
+  });
 });

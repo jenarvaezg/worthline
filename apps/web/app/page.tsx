@@ -1,23 +1,15 @@
 import type { MoneyMinor } from "@worthline/contracts";
 import { runBootstrapHealthcheck, withStore } from "@worthline/db";
 import {
-  buildLiquidityPyramid,
-  calculateFireForScope,
-  calculateNetWorth,
-  calculateSnapshotDeltas,
-  collectWarnings,
-  createDashboardShell,
+  captureNetWorthSnapshot,
   formatMoneyInput,
   formatMoneyMinor,
   getPriceFreshness,
   listScopeOptions,
-  presentNetWorth,
-  resolveScopeMemberIds,
+  prepareDashboardState,
 } from "@worthline/domain";
 import type {
-  FireScopeConfig,
   ManualAsset,
-  Member,
   NetWorthPresentationMode,
   PriceFreshnessState,
 } from "@worthline/domain";
@@ -64,73 +56,53 @@ export default async function DashboardPage({
   const selectedView = parseViewParam(resolvedSearchParams?.view);
   const errorParam = resolvedSearchParams?.error;
   const formError = Array.isArray(errorParam) ? errorParam[0] : errorParam;
-  const { workspace, assets, liabilities, positions, priceCache, scopes, selectedScope, snapshots, fireConfig } =
-    withStore((store) => {
-      const workspace = store.readWorkspace();
-      const scopes = workspace ? listScopeOptions(workspace) : [];
-      const selectedScopeId = parseScopeParam(resolvedSearchParams?.scope);
-      const selectedScope =
-        scopes.find((scope) => scope.id === selectedScopeId) ?? scopes[0];
+  const storeData = withStore((store) => {
+    const workspace = store.readWorkspace();
+    const scopes = workspace ? listScopeOptions(workspace) : [];
+    const selectedScopeId = parseScopeParam(resolvedSearchParams?.scope);
+    const selectedScope =
+      scopes.find((scope) => scope.id === selectedScopeId) ?? scopes[0];
 
-      return {
-        assets: store.readAssets(),
-        fireConfig: store.readFireConfig(),
-        liabilities: store.readLiabilities(),
-        positions: selectedScope ? store.readPositions(selectedScope.id) : [],
-        priceCache: store.readAllPriceCacheEntries(),
-        scopes,
-        selectedScope,
-        snapshots: selectedScope ? store.readSnapshots(selectedScope.id) : [],
-        workspace,
-      };
-    });
-
-  const summary =
-    workspace && selectedScope
-      ? calculateNetWorth({
-          assets,
-          liabilities,
-          scopeId: selectedScope.id,
-          workspace,
-        })
-      : undefined;
-  const presentation = summary ? presentNetWorth(summary, selectedView) : undefined;
-  const fireScopeConfig: FireScopeConfig | null = selectedScope
-    ? (fireConfig[selectedScope.id] ?? null)
-    : null;
-  const fireResult =
-    fireScopeConfig && workspace && selectedScope
-      ? calculateFireForScope(fireScopeConfig, assets, workspace, selectedScope.id)
-      : null;
-  const selectedMemberIds =
-    workspace && selectedScope ? resolveScopeMemberIds(workspace, selectedScope.id) : [];
-  const pyramid =
-    workspace && selectedScope
-      ? buildLiquidityPyramid({
-          assets,
-          liabilities,
-          scopeId: selectedScope.id,
-          workspace,
-        })
-      : [];
-  const latestSnapshot = snapshots.at(-1);
-  const deltas = latestSnapshot
-    ? calculateSnapshotDeltas(snapshots, latestSnapshot.id)
-    : undefined;
-  const dashboard = createDashboardShell({
-    moduleStates: {
-      liquidity: workspace ? "ready" : "empty",
-      members: workspace ? "ready" : "empty",
-      ownership: assets.length > 0 || liabilities.length > 0 ? "ready" : "empty",
-      snapshots: snapshots.length > 0 ? "ready" : "empty",
-    },
-    persistence,
-    ...(summary ? { summary } : {}),
+    return {
+      assets: store.readAssets(),
+      fireConfig: store.readFireConfig(),
+      liabilities: store.readLiabilities(),
+      positions: selectedScope ? store.readPositions(selectedScope.id) : [],
+      priceCache: store.readAllPriceCacheEntries(),
+      scopes,
+      selectedScope,
+      snapshots: selectedScope ? store.readSnapshots(selectedScope.id) : [],
+      workspace,
+    };
   });
-  const activeMembers = workspace?.members.filter((member) => !member.disabledAt) ?? [];
-  const investmentAssets = assets.filter((asset) => asset.type === "investment");
-  const today = new Date().toISOString().slice(0, 10);
-  const warnings = collectWarnings(assets);
+
+  const state = prepareDashboardState({
+    ...storeData,
+    persistence,
+    selectedView,
+  });
+
+  const {
+    activeMembers,
+    assets,
+    dashboard,
+    deltas,
+    fireResult,
+    fireScopeConfig,
+    investmentAssets,
+    liabilities,
+    positions,
+    presentation,
+    priceCache,
+    pyramid,
+    scopes,
+    selectedMemberIds,
+    selectedScope,
+    snapshots,
+    today,
+    warnings,
+    workspace,
+  } = state;
 
   return (
     <main className="workspace">
@@ -1009,22 +981,18 @@ async function saveSnapshotAction(formData: FormData) {
     }
 
     const now = new Date().toISOString();
-    const summary = calculateNetWorth({
+    const snapshot = captureNetWorthSnapshot({
       assets: store.readAssets(),
-      liabilities: store.readLiabilities(),
-      scopeId: scope.id,
-      workspace,
-    });
-
-    store.saveSnapshot({
       capturedAt: now,
       id: buildSnapshotId(scope.id, now, Date.now()),
       isMonthlyClose,
-      replace,
+      liabilities: store.readLiabilities(),
       scopeId: scope.id,
       scopeLabel: scope.label,
-      summary,
+      workspace,
     });
+
+    store.saveSnapshot({ replace, snapshot });
 
     return true;
   });
