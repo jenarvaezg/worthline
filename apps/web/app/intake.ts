@@ -53,7 +53,7 @@ export function appendParam(url: string, key: string, value: string): string {
 }
 
 /** One-shot post-redirect feedback params — never carried forward in currentUrl. */
-const ONE_SHOT_PARAMS = new Set(["ok", "error", "form", "updated", "failed"]);
+const ONE_SHOT_PARAMS = new Set(["ok", "error", "form", "updated", "failed", "anchor"]);
 const PRESERVED_VALUE_PREFIX = "v_";
 
 /**
@@ -96,10 +96,11 @@ export interface FormErrorContext {
 /**
  * Build an error redirect that remembers which form failed and what was typed,
  * so the page can render the error beside that form and refill its fields.
+ * Optional `anchor` appends a fragment (#id) so the browser scrolls to the row.
  */
 export function errorRedirectUrl(
   currentUrl: string,
-  error: { message: string; formId?: string; values?: Record<string, string> },
+  error: { message: string; formId?: string; values?: Record<string, string>; anchor?: string },
 ): string {
   let url = appendParam(currentUrl, "error", error.message);
 
@@ -111,7 +112,22 @@ export function errorRedirectUrl(
     url = appendParam(url, `${PRESERVED_VALUE_PREFIX}${field}`, value);
   }
 
+  if (error.anchor) {
+    url = `${url}#${error.anchor}`;
+  }
+
   return url;
+}
+
+/**
+ * Build a success redirect with a specific ok-key and an optional anchor fragment.
+ * Use this instead of appendParam(currentUrl, "ok", key) when the operation
+ * affected a specific row and the user should land at that row.
+ */
+export function successRedirectUrl(currentUrl: string, okKey: string, anchor?: string): string {
+  const url = appendParam(currentUrl, "ok", okKey);
+
+  return anchor ? `${url}#${anchor}` : url;
 }
 
 /** Parse the error/form/v_* params of an error redirect back into context. */
@@ -220,10 +236,12 @@ export function okMessage(key: string | undefined): string | null {
   const messages: Record<string, string> = {
     asset_added: "Activo añadido.",
     deleted: "Eliminado.",
+    deleted_recoverable: "Eliminado — recuperable en Papelera.",
     fire_saved: "Configuración FIRE guardada.",
     investment_added: "Inversión añadida.",
     liability_added: "Deuda añadida.",
     prices_refreshed: "Precios actualizados.",
+    restored: "Restaurado.",
     saved: "Guardado.",
     snapshot_saved: "Snapshot guardado.",
     warning_acknowledged: "Aviso marcado como intencional.",
@@ -401,6 +419,24 @@ export function validateOwnershipShares(shares: OwnershipShare[]): string | null
   return null;
 }
 
+/**
+ * Strict ownership validation: returns the actual sum as a percentage in the
+ * error message so the user can see exactly how far off they are.
+ * «La propiedad suma 110% — debe sumar 100%»
+ * Returns null when the shares total exactly 100%.
+ */
+export function validateOwnershipSharesStrict(shares: OwnershipShare[]): string | null {
+  const totalBps = shares.reduce((sum, share) => sum + share.shareBps, 0);
+
+  if (totalBps === 10_000) {
+    return null;
+  }
+
+  const actualPct = (totalBps / 100).toFixed(totalBps % 100 === 0 ? 0 : 1);
+
+  return `La propiedad suma ${actualPct}% — debe sumar 100%.`;
+}
+
 export function parseAssetCommand(
   formData: FormData,
   members: Member[],
@@ -417,6 +453,41 @@ export function parseAssetCommand(
     name,
     ownership: parseOwnership(formData, members),
     type: parseAssetType(formData.get("type")),
+  };
+}
+
+/** Result type for strict parse functions that can fail with a user-facing error. */
+export type StrictParseResult<T> =
+  | { ok: true; command: T }
+  | { ok: false; error: string };
+
+/**
+ * Strict asset command parser: rejects blank names instead of coercing them
+ * to "Activo". The caller must redirect on error.
+ */
+export function parseAssetCommandStrict(
+  formData: FormData,
+  members: Member[],
+  seed: number,
+): StrictParseResult<CreateManualAssetInput> {
+  const name = String(formData.get("name") ?? "").trim();
+
+  if (!name) {
+    return { ok: false, error: "El nombre del activo es obligatorio." };
+  }
+
+  return {
+    ok: true,
+    command: {
+      currency: "EUR",
+      currentValueMinor: parseMoneyMinorField(formData, "currentValue") ?? 0,
+      id: createStableId("asset", name, seed),
+      isPrimaryResidence: formData.get("isPrimaryResidence") === "on",
+      liquidityTier: parseLiquidityTier(formData.get("liquidityTier")),
+      name,
+      ownership: parseOwnership(formData, members),
+      type: parseAssetType(formData.get("type")),
+    },
   };
 }
 
@@ -484,6 +555,45 @@ export function parseOperationCommand(
   };
 }
 
+/** One row in a value-update-pass: either a diff to apply or a parse error. */
+export type ValueUpdateCommand =
+  | { id: string; newValueMinor: number }
+  | { id: string; error: string };
+
+/**
+ * Value-update-pass parser: reads a prefilled "puesta al día" form where each
+ * row is named `val_<id>`, diffs against the current values, and returns batch
+ * update commands only for changed rows. Invalid values produce per-row errors.
+ * Investment assets (derived values) should not appear in the form.
+ */
+export function parseValueUpdatePass(
+  formData: FormData,
+  currentAssets: Array<{ id: string; currentValueMinor: number }>,
+): ValueUpdateCommand[] {
+  const commands: ValueUpdateCommand[] = [];
+
+  for (const asset of currentAssets) {
+    const raw = formData.get(`val_${asset.id}`);
+
+    if (raw === null) {
+      continue;
+    }
+
+    const newValueMinor = parseDecimalToMinorStrict(String(raw));
+
+    if (newValueMinor === null) {
+      commands.push({ id: asset.id, error: `Valor inválido para ${asset.id}.` });
+      continue;
+    }
+
+    if (newValueMinor !== asset.currentValueMinor) {
+      commands.push({ id: asset.id, newValueMinor });
+    }
+  }
+
+  return commands;
+}
+
 /**
  * Normalize a raw decimal field (units or price) to a canonical DecimalString
  * without going through a float — preserving precision for high-dp values like
@@ -532,6 +642,69 @@ export function parseFireConfigForm(formData: FormData): FireScopeConfig {
     safeWithdrawalRate,
     targetRetirementAge,
     ...(currentAge !== undefined ? { currentAge } : {}),
+  };
+}
+
+/**
+ * Strict FIRE config parser: rejects garbage inputs (zero/negative spending,
+ * zero rates) instead of silently producing a config that yields "FIRE alcanzado"
+ * from invalid data. Returns an error describing the first invalid field.
+ */
+export function parseFireConfigFormStrict(
+  formData: FormData,
+): StrictParseResult<FireScopeConfig> {
+  const monthlySpendingRaw = (formData.get("monthlySpending") as string) ?? "";
+  const monthlySpendingMinor = parseDecimalToMinorStrict(monthlySpendingRaw);
+
+  if (monthlySpendingMinor === null || monthlySpendingMinor <= 0) {
+    return {
+      ok: false,
+      error: "El gasto mensual debe ser un número positivo.",
+    };
+  }
+
+  const safeWithdrawalRateRaw = (formData.get("safeWithdrawalRate") as string) ?? "";
+  const safeWithdrawalRatePct = parseDecimal(safeWithdrawalRateRaw);
+
+  if (!safeWithdrawalRatePct || safeWithdrawalRatePct <= 0) {
+    return {
+      ok: false,
+      error: "La tasa de retirada segura debe ser un número positivo.",
+    };
+  }
+
+  const expectedRealReturnRaw = (formData.get("expectedRealReturn") as string) ?? "";
+  const expectedRealReturnPct = parseDecimal(expectedRealReturnRaw);
+
+  if (!expectedRealReturnPct || expectedRealReturnPct <= 0) {
+    return {
+      ok: false,
+      error: "El retorno real esperado debe ser un número positivo.",
+    };
+  }
+
+  const currentAgeRaw = (formData.get("currentAge") as string | null) ?? "";
+  const currentAgeParsed = parseInt(currentAgeRaw, 10);
+  const currentAge =
+    currentAgeRaw && !Number.isNaN(currentAgeParsed) ? currentAgeParsed : undefined;
+
+  const targetRetirementAgeRaw =
+    (formData.get("targetRetirementAge") as string | null) ?? "";
+  const targetRetirementAgeParsed = parseInt(targetRetirementAgeRaw, 10);
+  const targetRetirementAge = !Number.isNaN(targetRetirementAgeParsed)
+    ? targetRetirementAgeParsed
+    : 65;
+
+  return {
+    ok: true,
+    command: {
+      excludedAssetIds: [],
+      expectedRealReturn: expectedRealReturnPct / 100,
+      monthlySpendingMinor,
+      safeWithdrawalRate: safeWithdrawalRatePct / 100,
+      targetRetirementAge,
+      ...(currentAge !== undefined ? { currentAge } : {}),
+    },
   };
 }
 
