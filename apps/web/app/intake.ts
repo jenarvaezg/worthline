@@ -6,6 +6,7 @@ import type {
   CreateManualAssetInput,
   FireScopeConfig,
   Member,
+  MoneyMinor,
   NetWorthFraming,
   OperationKind,
   OwnershipShare,
@@ -851,4 +852,38 @@ export function parseEmpezarHogar(formData: FormData): StrictParseResult<Workspa
       })),
     },
   };
+}
+
+// === #59 historico ===
+
+/**
+ * Returns the bar width (0–100, minimum 4 when non-zero) for a signed delta,
+ * scaled relative to the maximum absolute delta across the provided set.
+ *
+ * Used by /historico to render zero-centered green/red bars whose width is
+ * proportional to the magnitude of each row's Δ, not to its absolute net worth.
+ *
+ * @param delta - The delta for this row (undefined → 0).
+ * @param allDeltas - All row deltas (including undefined) to derive the max from.
+ */
+export function scaleSignedBar(
+  delta: MoneyMinor | undefined,
+  allDeltas: Array<MoneyMinor | undefined>,
+): number {
+  if (!delta || delta.amountMinor === 0) {
+    return 0;
+  }
+
+  const max = Math.max(
+    0,
+    ...allDeltas
+      .filter((d): d is MoneyMinor => d !== undefined)
+      .map((d) => Math.abs(d.amountMinor)),
+  );
+
+  if (max === 0) {
+    return 0;
+  }
+
+  return Math.max(4, Math.round((Math.abs(delta.amountMinor) / max) * 100));
 }
