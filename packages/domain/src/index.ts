@@ -54,9 +54,7 @@ export {
 } from "./investment-valuation";
 
 export type { AssetPrice, PriceFreshnessState, PriceSource } from "./prices";
-export { getPriceFreshness, PRICE_TTL_DAYS } from "./prices";
-
-export { selectStalePrices } from "./price-staleness";
+export { getPriceFreshness, PRICE_TTL_DAYS, selectStalePrices } from "./prices";
 
 export type { FireScopeConfig, FireResult } from "./fire";
 export { filterFireEligibleAssets, calculateFire, calculateFireForScope } from "./fire";
