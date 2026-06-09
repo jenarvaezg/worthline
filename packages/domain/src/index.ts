@@ -78,7 +78,12 @@ import { allocateOwnedMoneyMinor } from "./ownership";
 export type { DecimalString } from "./decimal";
 
 export type { DashboardState, LocalPersistenceStatus, OnboardingStep } from "./dashboard";
-export { deriveOnboardingProgress, prepareDashboardState } from "./dashboard";
+export {
+  deriveOnboardingProgress,
+  largestRemainderPercentages,
+  prepareDashboardState,
+  signedDeltaBarWidths,
+} from "./dashboard";
 
 export type { CaptureDecision, SnapshotPolicyEntry } from "./snapshot-policy";
 export { deriveMonthlyCloses, planSnapshotCapture } from "./snapshot-policy";
