@@ -765,7 +765,7 @@ function assertCurrency(currency: CurrencyCode): void {
  * Returns a `DomainViolation` when the split is invalid, `null` when valid.
  * Programmer errors (unknown member, non-integer bps) still throw.
  */
-function checkOwnershipSplit(
+export function checkOwnershipSplit(
   workspace: Workspace,
   ownership: OwnershipShare[],
 ): Extract<DomainViolation, { code: "ownership_split_invalid" }> | null {

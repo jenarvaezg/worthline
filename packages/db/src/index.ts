@@ -1233,7 +1233,9 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
     },
     restoreAsset: (assetId) => {
       const result = sqlite
-        .prepare(`UPDATE assets SET deleted_at = NULL WHERE id = ?`)
+        .prepare(
+          `UPDATE assets SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL`,
+        )
         .run(assetId);
       if (result.changes > 0) {
         writeAuditEntry("restore_asset", "asset", assetId);
@@ -1288,7 +1290,9 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
     },
     restoreLiability: (liabilityId) => {
       const result = sqlite
-        .prepare(`UPDATE liabilities SET deleted_at = NULL WHERE id = ?`)
+        .prepare(
+          `UPDATE liabilities SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL`,
+        )
         .run(liabilityId);
       if (result.changes > 0) {
         writeAuditEntry("restore_liability", "liability", liabilityId);

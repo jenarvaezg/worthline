@@ -1,6 +1,6 @@
 "use server";
 
-import { withStore } from "@worthline/db";
+import { withStore, type WorthlineStore } from "@worthline/db";
 import { redirect } from "next/navigation";
 
 import {
@@ -17,9 +17,13 @@ function currentUrlOf(formData: FormData): string {
   return (formData.get("currentUrl") as string) || BASE;
 }
 
+function runWith<T>(fn: (store: WorthlineStore) => T, _store?: WorthlineStore): T {
+  return _store ? fn(_store) : withStore(fn);
+}
+
 // === Member actions ===
 
-export async function createMemberAction(formData: FormData) {
+export async function createMemberAction(formData: FormData, _store?: WorthlineStore) {
   const member = parseNewMember(formData, Date.now());
 
   if (!member) {
@@ -31,11 +35,11 @@ export async function createMemberAction(formData: FormData) {
     );
   }
 
-  withStore((store) => store.createMember(member));
+  runWith((store) => store.createMember(member), _store);
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
-export async function updateMemberAction(formData: FormData) {
+export async function updateMemberAction(formData: FormData, _store?: WorthlineStore) {
   const id = parseEntityId(formData);
   const name = String(formData.get("name") ?? "").trim();
 
@@ -49,11 +53,11 @@ export async function updateMemberAction(formData: FormData) {
     );
   }
 
-  withStore((store) => store.updateMember({ id, name }));
+  runWith((store) => store.updateMember({ id, name }), _store);
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
-export async function disableMemberAction(formData: FormData) {
+export async function disableMemberAction(formData: FormData, _store?: WorthlineStore) {
   const id = parseEntityId(formData);
 
   if (!id) {
@@ -64,11 +68,11 @@ export async function disableMemberAction(formData: FormData) {
     );
   }
 
-  withStore((store) => store.disableMember(id, new Date().toISOString()));
+  runWith((store) => store.disableMember(id, new Date().toISOString()), _store);
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
-export async function reactivateMemberAction(formData: FormData) {
+export async function reactivateMemberAction(formData: FormData, _store?: WorthlineStore) {
   const id = parseEntityId(formData);
 
   if (!id) {
@@ -79,13 +83,13 @@ export async function reactivateMemberAction(formData: FormData) {
     );
   }
 
-  withStore((store) => store.reactivateMember(id));
+  runWith((store) => store.reactivateMember(id), _store);
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
 // === FIRE config action ===
 
-export async function saveFireConfigAction(formData: FormData) {
+export async function saveFireConfigAction(formData: FormData, _store?: WorthlineStore) {
   const scopeId = String(formData.get("scopeId") ?? "").trim() || "household";
   const result = parseFireConfigFormStrict(formData);
 
@@ -98,13 +102,13 @@ export async function saveFireConfigAction(formData: FormData) {
     );
   }
 
-  withStore((store) => store.saveFireConfig(scopeId, result.command));
+  runWith((store) => store.saveFireConfig(scopeId, result.command), _store);
   redirect(appendParam(currentUrlOf(formData), "ok", "fire_saved"));
 }
 
 // === Warning override retract action ===
 
-export async function retractWarningOverrideAction(formData: FormData) {
+export async function retractWarningOverrideAction(formData: FormData, _store?: WorthlineStore) {
   const code = String(formData.get("code") ?? "").trim();
   const entityId = String(formData.get("entityId") ?? "").trim();
 
@@ -116,6 +120,6 @@ export async function retractWarningOverrideAction(formData: FormData) {
     );
   }
 
-  withStore((store) => store.removeWarningOverride(code, entityId));
+  runWith((store) => store.removeWarningOverride(code, entityId), _store);
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
