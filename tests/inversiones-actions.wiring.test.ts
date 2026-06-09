@@ -1,0 +1,315 @@
+/**
+ * Wiring suite: inversiones server actions
+ * (createInvestmentAction, updateInvestmentAction,
+ *  deleteInvestmentAction, restoreInvestmentAction).
+ *
+ * recordOperationAction is covered by operation-bounds-invariant.wiring.test.ts.
+ * refreshPricesAction depends on an external network provider and is excluded
+ * from this isolated suite.
+ *
+ * FormData in → redirect-or-error out, real in-memory store.
+ */
+
+import { vi, describe, test, expect, afterEach } from "vitest";
+
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+
+import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
+import {
+  createInvestmentAction,
+  updateInvestmentAction,
+  deleteInvestmentAction,
+  restoreInvestmentAction,
+} from "../apps/web/app/inversiones/actions";
+
+// ------------------------------------------------------------------ helpers --
+
+function catchRedirect(fn: () => Promise<unknown>): Promise<string> {
+  return fn().then(
+    () => {
+      throw new Error("Expected redirect but action returned normally");
+    },
+    (err: unknown) => {
+      if (err instanceof Error && (err.message === "NEXT_REDIRECT" || "digest" in err)) {
+        const digest = (err as { digest?: string }).digest ?? "";
+        const parts = digest.split(";");
+        return parts[2] ?? digest;
+      }
+      throw err;
+    },
+  );
+}
+
+function fd(fields: Record<string, string>): FormData {
+  const form = new FormData();
+  form.set("currentUrl", "/inversiones");
+  for (const [k, v] of Object.entries(fields)) form.set(k, v);
+  return form;
+}
+
+// ------------------------------------------------------------- test fixtures --
+
+let store: WorthlineStore;
+
+const MEMBER_ID = "member_yo";
+const INVESTMENT_ID = "asset_fund_001";
+
+afterEach(() => {
+  store?.close();
+});
+
+function setupStore() {
+  store = createInMemoryStore();
+  store.initializeWorkspace({
+    members: [{ id: MEMBER_ID, name: "Yo" }],
+    mode: "individual",
+  });
+  return store;
+}
+
+function setupStoreWithInvestment() {
+  setupStore();
+  store.createInvestmentAsset({
+    id: INVESTMENT_ID,
+    name: "Index Fund",
+    currency: "EUR",
+    liquidityTier: "market",
+    ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
+  });
+  return store;
+}
+
+// =========================================================== createInvestmentAction
+
+describe("createInvestmentAction wiring", () => {
+  test("happy path: investment created and redirected to investment_added", async () => {
+    setupStore();
+
+    const url = await catchRedirect(() =>
+      createInvestmentAction(
+        fd({
+          name: "MSCI World ETF",
+          ownershipPreset: "custom",
+          [`owner_${MEMBER_ID}`]: "100",
+        }),
+        store,
+      ),
+    );
+
+    expect(url).toContain("ok=investment_added");
+    const investments = store.readInvestmentAssetsWithMeta();
+    expect(investments).toHaveLength(1);
+    expect(investments[0]!.name).toBe("MSCI World ETF");
+  });
+
+  test("happy path with manual price: price stored on asset", async () => {
+    setupStore();
+
+    const url = await catchRedirect(() =>
+      createInvestmentAction(
+        fd({
+          name: "Fondo Manual",
+          manualPricePerUnit: "12.50",
+          ownershipPreset: "custom",
+          [`owner_${MEMBER_ID}`]: "100",
+        }),
+        store,
+      ),
+    );
+
+    expect(url).toContain("ok=investment_added");
+    const investments = store.readInvestmentAssetsWithMeta();
+    expect(investments).toHaveLength(1);
+    // manualPricePerUnit is exposed by the by-id read path, not the meta list.
+    const created = store.readInvestmentAssetById(investments[0]!.id);
+    expect(created?.manualPricePerUnit).toBe("12.50");
+  });
+
+  test("blank name: error redirect, store unchanged", async () => {
+    setupStore();
+
+    const url = await catchRedirect(() =>
+      createInvestmentAction(
+        fd({
+          name: "",
+          ownershipPreset: "custom",
+          [`owner_${MEMBER_ID}`]: "100",
+        }),
+        store,
+      ),
+    );
+
+    expect(url).toContain("error=");
+    expect(decodeURIComponent(url)).toMatch(/nombre/i);
+    expect(store.readInvestmentAssetsWithMeta()).toHaveLength(0);
+  });
+
+  test("invalid manual price: error redirect", async () => {
+    setupStore();
+
+    const url = await catchRedirect(() =>
+      createInvestmentAction(
+        fd({
+          name: "Fondo",
+          manualPricePerUnit: "not-a-number",
+          ownershipPreset: "custom",
+          [`owner_${MEMBER_ID}`]: "100",
+        }),
+        store,
+      ),
+    );
+
+    expect(url).toContain("error=");
+    expect(decodeURIComponent(url)).toMatch(/precio/i);
+    expect(store.readInvestmentAssetsWithMeta()).toHaveLength(0);
+  });
+});
+
+// ========================================================== updateInvestmentAction
+
+describe("updateInvestmentAction wiring", () => {
+  test("happy path: name updated", async () => {
+    setupStoreWithInvestment();
+
+    const url = await catchRedirect(() =>
+      updateInvestmentAction(
+        INVESTMENT_ID,
+        fd({
+          currentUrl: `/inversiones/${INVESTMENT_ID}/editar`,
+          name: "MSCI World Renamed",
+        }),
+        store,
+      ),
+    );
+
+    expect(url).toContain("ok=saved");
+    const asset = store.readInvestmentAssetById(INVESTMENT_ID);
+    expect(asset?.name).toBe("MSCI World Renamed");
+  });
+
+  test("happy path: ticker symbol updated", async () => {
+    setupStoreWithInvestment();
+
+    const url = await catchRedirect(() =>
+      updateInvestmentAction(
+        INVESTMENT_ID,
+        fd({
+          name: "Index Fund",
+          unitSymbol: "VWRL.UK",
+        }),
+        store,
+      ),
+    );
+
+    expect(url).toContain("ok=saved");
+    const asset = store.readInvestmentAssetById(INVESTMENT_ID);
+    expect(asset?.unitSymbol).toBe("VWRL.UK");
+  });
+
+  test("blank name: error redirect, asset unchanged", async () => {
+    setupStoreWithInvestment();
+
+    const url = await catchRedirect(() =>
+      updateInvestmentAction(
+        INVESTMENT_ID,
+        fd({ name: "" }),
+        store,
+      ),
+    );
+
+    expect(url).toContain("error=");
+    expect(decodeURIComponent(url)).toMatch(/nombre/i);
+    expect(store.readInvestmentAssetById(INVESTMENT_ID)?.name).toBe("Index Fund");
+  });
+
+  test("invalid manual price: error redirect", async () => {
+    setupStoreWithInvestment();
+
+    const url = await catchRedirect(() =>
+      updateInvestmentAction(
+        INVESTMENT_ID,
+        fd({ name: "Index Fund", manualPricePerUnit: "abc" }),
+        store,
+      ),
+    );
+
+    expect(url).toContain("error=");
+    expect(decodeURIComponent(url)).toMatch(/precio/i);
+  });
+});
+
+// ========================================================== deleteInvestmentAction
+
+describe("deleteInvestmentAction wiring", () => {
+  test("happy path: investment soft-deleted, redirect to deleted_recoverable", async () => {
+    setupStoreWithInvestment();
+
+    const url = await catchRedirect(() =>
+      deleteInvestmentAction(fd({ id: INVESTMENT_ID }), store),
+    );
+
+    expect(url).toContain("ok=deleted_recoverable");
+    const trash = store.readTrash();
+    expect(trash.assets.some((a) => a.id === INVESTMENT_ID)).toBe(true);
+  });
+
+  test("missing id: error redirect", async () => {
+    setupStoreWithInvestment();
+
+    const url = await catchRedirect(() =>
+      deleteInvestmentAction(fd({ id: "" }), store),
+    );
+
+    expect(url).toContain("error=");
+    expect(decodeURIComponent(url)).toMatch(/identificador/i);
+  });
+
+  test("unknown id (changes=0): error redirect", async () => {
+    setupStoreWithInvestment();
+
+    const url = await catchRedirect(() =>
+      deleteInvestmentAction(fd({ id: "asset_nonexistent" }), store),
+    );
+
+    expect(url).toContain("error=");
+    expect(decodeURIComponent(url)).toMatch(/eliminado/i);
+  });
+});
+
+// ========================================================= restoreInvestmentAction
+
+describe("restoreInvestmentAction wiring", () => {
+  test("happy path: soft-deleted investment is restored", async () => {
+    setupStoreWithInvestment();
+    store.softDeleteAsset(INVESTMENT_ID, new Date().toISOString());
+
+    const url = await catchRedirect(() =>
+      restoreInvestmentAction(fd({ id: INVESTMENT_ID }), store),
+    );
+
+    expect(url).toContain("ok=restored");
+    expect(store.readInvestmentAssetsWithMeta()).toHaveLength(1);
+    expect(store.readTrash().assets).toHaveLength(0);
+  });
+
+  test("missing id: error redirect", async () => {
+    setupStoreWithInvestment();
+
+    const url = await catchRedirect(() =>
+      restoreInvestmentAction(fd({ id: "" }), store),
+    );
+
+    expect(url).toContain("error=");
+  });
+
+  test("investment not in trash (changes=0): error redirect", async () => {
+    setupStoreWithInvestment();
+
+    const url = await catchRedirect(() =>
+      restoreInvestmentAction(fd({ id: INVESTMENT_ID }), store),
+    );
+
+    expect(url).toContain("error=");
+    expect(decodeURIComponent(url)).toMatch(/papelera/i);
+  });
+});

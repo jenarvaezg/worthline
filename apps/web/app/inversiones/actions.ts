@@ -1,7 +1,7 @@
 "use server";
 
 import { withStore, type WorthlineStore } from "@worthline/db";
-import { createInvestmentOperationSafe } from "@worthline/domain";
+import { checkOwnershipSplit, createInvestmentOperationSafe } from "@worthline/domain";
 import { fetchAndCachePrice, stooqProvider } from "@worthline/pricing";
 import { redirect } from "next/navigation";
 
@@ -19,7 +19,6 @@ import {
   pricesRefreshedRedirectUrl,
   preserveFields,
   successRedirectUrl,
-  validateOwnershipSharesStrict,
 } from "../intake";
 
 // Field lists for error-preserve round-trips
@@ -44,7 +43,7 @@ function currentUrlOf(formData: FormData, fallback = "/inversiones"): string {
   return (formData.get("currentUrl") as string) || fallback;
 }
 
-export async function createInvestmentAction(formData: FormData) {
+export async function createInvestmentAction(formData: FormData, _store?: WorthlineStore) {
   const returnUrl = currentUrlOf(formData, "/inversiones");
   const investmentErrorUrl = (message: string) =>
     errorRedirectUrl(returnUrl, {
@@ -53,7 +52,10 @@ export async function createInvestmentAction(formData: FormData) {
       values: preserveFields(formData, INVESTMENT_FORM_FIELDS, ["owner_"]),
     });
 
-  const result = withStore((store) => {
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  const result = runWith((store) => {
     const workspace = store.readWorkspace();
 
     if (!workspace) {
@@ -70,10 +72,10 @@ export async function createInvestmentAction(formData: FormData) {
       return { ok: false, error: parsed.error };
     }
 
-    const ownershipError = validateOwnershipSharesStrict(parsed.command.ownership);
+    const splitViolation = checkOwnershipSplit(workspace, parsed.command.ownership);
 
-    if (ownershipError) {
-      return { ok: false, error: ownershipError };
+    if (splitViolation) {
+      return { ok: false, error: mapDomainViolation(splitViolation) };
     }
 
     store.createInvestmentAsset(parsed.command);
@@ -135,6 +137,7 @@ export async function recordOperationAction(
 export async function updateInvestmentAction(
   routeAssetId: string,
   formData: FormData,
+  _store?: WorthlineStore,
 ) {
   const returnUrl = currentUrlOf(
     formData,
@@ -147,19 +150,24 @@ export async function updateInvestmentAction(
       values: preserveFields(formData, EDIT_INVESTMENT_FIELDS),
     });
 
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
   const parsed = parseUpdateInvestmentCommand(formData, routeAssetId);
 
   if (!parsed.ok) {
     redirect(editErrorUrl(parsed.error));
   }
 
-  withStore((store) => store.updateInvestmentAsset(parsed.command));
+  runWith((store) => store.updateInvestmentAsset(parsed.command));
   redirect(successRedirectUrl(returnUrl, "saved"));
 }
 
-export async function deleteInvestmentAction(formData: FormData) {
+export async function deleteInvestmentAction(formData: FormData, _store?: WorthlineStore) {
   const id = parseEntityId(formData);
   const returnUrl = currentUrlOf(formData, "/inversiones");
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -169,7 +177,7 @@ export async function deleteInvestmentAction(formData: FormData) {
     );
   }
 
-  const changes = withStore((store) =>
+  const changes = runWith((store) =>
     store.softDeleteAsset(id, new Date().toISOString()),
   );
 
@@ -184,9 +192,11 @@ export async function deleteInvestmentAction(formData: FormData) {
   redirect(successRedirectUrl(returnUrl, "deleted_recoverable", id));
 }
 
-export async function restoreInvestmentAction(formData: FormData) {
+export async function restoreInvestmentAction(formData: FormData, _store?: WorthlineStore) {
   const id = parseEntityId(formData);
   const returnUrl = currentUrlOf(formData, "/inversiones");
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -196,7 +206,7 @@ export async function restoreInvestmentAction(formData: FormData) {
     );
   }
 
-  const changes = withStore((store) => store.restoreAsset(id));
+  const changes = runWith((store) => store.restoreAsset(id));
 
   if (changes === 0) {
     redirect(
