@@ -930,6 +930,14 @@ code {
     padding: 12px;
   }
 
+  .tableScroll {
+    overflow-x: auto;
+  }
+
+  .tableScroll table {
+    min-width: 520px;
+  }
+
   .topbar {
     align-items: flex-start;
     flex-direction: column;
