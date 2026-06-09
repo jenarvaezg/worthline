@@ -126,9 +126,91 @@ textarea {
 .topbar {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
   justify-content: space-between;
   min-height: 82px;
   padding: 14px 16px;
+}
+
+/* Shell topnav — 5 section links inline with the brand. */
+.topNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.topNav a {
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 6px 10px;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.topNav a:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.topNav a.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper-strong);
+}
+
+/* Demote the brand name h1 inside the topbar — smaller than the hero h1. */
+.topbar .brandName {
+  font-size: 1.1rem;
+  font-weight: 850;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+/* Scope tab POST buttons — match the link-tab style from .scopeTabs a. */
+.scopeTabBtn {
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  min-height: 36px;
+  padding: 6px 10px;
+  text-transform: uppercase;
+}
+
+.scopeTabBtn:hover,
+.scopeTabBtn.active {
+  background: var(--ink);
+  color: var(--paper-strong);
+}
+
+/* Warnings rail — compact count + item list. */
+.warningCount {
+  color: var(--gold);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.warningItem {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.warningLink {
+  color: #92400e;
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .brand {

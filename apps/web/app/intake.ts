@@ -774,6 +774,27 @@ function createStableId(prefix: string, name: string, seed: number): string {
   return `${prefix}_${slug}_${seed}`;
 }
 
+/**
+ * The name of the HTTP cookie that persists the active scope across pages and
+ * sessions. Value is a raw scope ID string (member ID or "household").
+ */
+export const SCOPE_COOKIE_NAME = "wl_scope";
+
+/**
+ * Parse the scope cookie value to a scope ID string.
+ * Returns undefined when the cookie is absent or blank so callers can fall
+ * back to the household/first-scope default.
+ */
+export function parseScopeCookie(cookieValue: string | undefined): string | undefined {
+  if (!cookieValue) {
+    return undefined;
+  }
+
+  const trimmed = cookieValue.trim();
+
+  return trimmed || undefined;
+}
+
 function normalizeParam(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) {
     return value[0];

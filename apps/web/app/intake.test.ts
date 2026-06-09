@@ -8,6 +8,7 @@ import {
   errorRedirectUrl,
   okMessage,
   parseFormError,
+  parseScopeCookie,
   preserveFields,
   pricesRefreshedRedirectUrl,
   resolveOkMessage,
@@ -44,6 +45,19 @@ function form(entries: Record<string, string>): FormData {
   }
   return data;
 }
+
+describe("parseScopeCookie", () => {
+  test("returns the cookie value trimmed", () => {
+    expect(parseScopeCookie("member_jose")).toBe("member_jose");
+    expect(parseScopeCookie("  household  ")).toBe("household");
+  });
+
+  test("returns undefined for blank or missing values", () => {
+    expect(parseScopeCookie(undefined)).toBeUndefined();
+    expect(parseScopeCookie("")).toBeUndefined();
+    expect(parseScopeCookie("   ")).toBeUndefined();
+  });
+});
 
 describe("scope and view params", () => {
   test("parseScopeParam normalizes arrays and defaults to household", () => {
