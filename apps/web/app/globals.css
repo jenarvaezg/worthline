@@ -3,8 +3,8 @@
   --paper: #eef2ef;
   --paper-strong: #fbfbf4;
   --ink: #17201e;
-  --muted: #61706b;
-  --line: #cfd8d3;
+  --muted: #51605b;
+  --line: #aeb9b3;
   --line-strong: #7f9088;
   --green: #006f5f;
   --blue: #245177;
@@ -62,6 +62,27 @@ button {
 
 button:hover {
   background: var(--blue);
+}
+
+:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+.scopeTabs a:focus-visible,
+.viewTabs a:focus-visible,
+.framingTabs a:focus-visible {
+  outline-color: var(--gold);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 input,
