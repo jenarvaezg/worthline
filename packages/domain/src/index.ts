@@ -40,7 +40,7 @@ export {
   tierOfLiability,
 } from "./classification";
 
-export { createInvestmentOperation, derivePosition } from "./positions";
+export { createInvestmentOperation, createInvestmentOperationSafe, derivePosition } from "./positions";
 export type {
   InvestmentPriceSource,
   SelectedInvestmentPrice,
@@ -107,7 +107,12 @@ export { deriveMonthlyCloses, planSnapshotCapture } from "./snapshot-policy";
  * Discriminated by `code` so callers can switch on it exhaustively.
  */
 export type DomainViolation =
-  | { code: "ownership_split_invalid"; totalBps: number };
+  | { code: "ownership_split_invalid"; totalBps: number }
+  | { code: "operation_units_not_positive" }
+  | { code: "operation_price_negative" }
+  | { code: "operation_fees_negative" }
+  | { code: "investment_manual_valuation_rejected" }
+  | { code: "value_update_investment_holding" };
 
 /**
  * Discriminated result returned by safe domain constructors.
