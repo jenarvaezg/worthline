@@ -44,6 +44,8 @@ export { createInvestmentOperation, derivePosition } from "./positions";
 export type { AssetPrice, PriceFreshnessState, PriceSource } from "./prices";
 export { getPriceFreshness, PRICE_TTL_DAYS } from "./prices";
 
+export { selectStalePrices } from "./price-staleness";
+
 export type { FireScopeConfig, FireResult } from "./fire";
 export { filterFireEligibleAssets, calculateFire, calculateFireForScope } from "./fire";
 
