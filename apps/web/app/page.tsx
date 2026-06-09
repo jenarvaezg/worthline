@@ -420,6 +420,7 @@ export default async function DashboardPage({
             </form>
           </div>
 
+          <div className="tableScroll">
           <table>
             <thead>
               <tr>
@@ -503,6 +504,7 @@ export default async function DashboardPage({
               ) : null}
             </tbody>
           </table>
+          </div>
           {storeData.trash.assets.length + storeData.trash.liabilities.length > 0 ? (
             <details className="trashPanel">
               <summary>
@@ -599,6 +601,7 @@ export default async function DashboardPage({
             </form>
           </div>
 
+          <div className="tableScroll">
           <table>
             <thead>
               <tr>
@@ -661,6 +664,7 @@ export default async function DashboardPage({
               ) : null}
             </tbody>
           </table>
+          </div>
         </section>
 
         <section className="liquidityPanel" aria-label="Liquidez por capa">
