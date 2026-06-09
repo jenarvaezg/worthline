@@ -1,4 +1,4 @@
-import type { ManualAsset, Liability } from './index';
+import type { ManualAsset } from './index';
 
 export type WarningSeverity = 'blocking' | 'overrideable';
 
@@ -10,7 +10,7 @@ export interface DomainWarning {
   message: string;
 }
 
-export function collectWarnings(assets: ManualAsset[], liabilities: Liability[]): DomainWarning[] {
+export function collectWarnings(assets: ManualAsset[]): DomainWarning[] {
   const warnings: DomainWarning[] = [];
 
   for (const a of assets) {

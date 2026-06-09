@@ -15,7 +15,6 @@ import {
   resolveScopeMemberIds,
 } from "@worthline/domain";
 import type {
-  AssetPrice,
   FireScopeConfig,
   ManualAsset,
   Member,
@@ -131,7 +130,7 @@ export default async function DashboardPage({
   const activeMembers = workspace?.members.filter((member) => !member.disabledAt) ?? [];
   const investmentAssets = assets.filter((asset) => asset.type === "investment");
   const today = new Date().toISOString().slice(0, 10);
-  const warnings = collectWarnings(assets, liabilities);
+  const warnings = collectWarnings(assets);
 
   return (
     <main className="workspace">

@@ -971,8 +971,8 @@ function migrate(sqlite: DatabaseConnection): void {
       details_json TEXT NOT NULL DEFAULT '{}',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
     );`);
-    try { sqlite.exec("ALTER TABLE assets ADD COLUMN deleted_at TEXT"); } catch (_e) {}
-    try { sqlite.exec("ALTER TABLE liabilities ADD COLUMN deleted_at TEXT"); } catch (_e) {}
+    try { sqlite.exec("ALTER TABLE assets ADD COLUMN deleted_at TEXT"); } catch {}
+    try { sqlite.exec("ALTER TABLE liabilities ADD COLUMN deleted_at TEXT"); } catch {}
     sqlite.pragma("user_version = 4");
   }
 }
