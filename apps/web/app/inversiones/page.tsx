@@ -18,6 +18,7 @@ import {
   resolveOkMessage,
   SCOPE_COOKIE_NAME,
 } from "../intake";
+import { refreshAndPersistStalePrices } from "../refresh-prices";
 import Shell from "../shell";
 import { refreshPricesAction, restoreInvestmentAction } from "./actions";
 
@@ -44,20 +45,13 @@ export default async function InversionesPage({
   const initialPriceCache = withStore((store) =>
     store.readAllPriceCacheEntries(),
   );
-  const refreshedPrices = await refreshStalePrices(
-    initialPriceCache,
-    investmentAssetsMeta,
-    persistence.checkedAt,
-  ).catch(() => null);
-
-  const priceCache = withStore((store) => {
-    if (refreshedPrices) {
-      for (const price of refreshedPrices.refreshed) {
-        store.upsertPrice(price);
-      }
-    }
-
-    return store.readAllPriceCacheEntries();
+  const { priceCache } = await refreshAndPersistStalePrices({
+    cacheEntries: initialPriceCache,
+    assets: investmentAssetsMeta,
+    nowIso: persistence.checkedAt,
+    refreshStalePrices,
+    upsertPrice: (price) => withStore((store) => store.upsertPrice(price)),
+    readCache: () => withStore((store) => store.readAllPriceCacheEntries()),
   });
 
   const storeData = withStore((store) => {
