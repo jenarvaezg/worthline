@@ -1,7 +1,11 @@
 "use server";
 
 import { withStore, type WorthlineStore } from "@worthline/db";
-import { createManualAssetSafe, createLiabilitySafe } from "@worthline/domain";
+import {
+  checkOwnershipSplit,
+  createManualAssetSafe,
+  createLiabilitySafe,
+} from "@worthline/domain";
 import { redirect } from "next/navigation";
 
 import {
@@ -16,7 +20,6 @@ import {
   parseValueUpdatePass,
   preserveFields,
   successRedirectUrl,
-  validateOwnershipSharesStrict,
 } from "../intake";
 
 /**
@@ -148,8 +151,10 @@ export async function createLiabilityAction(
   redirect(successRedirectUrl("/patrimonio", "liability_added", result.id!));
 }
 
-export async function deleteAssetAction(formData: FormData): Promise<never> {
+export async function deleteAssetAction(formData: FormData, _store?: WorthlineStore): Promise<never> {
   const id = parseEntityId(formData);
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -159,7 +164,7 @@ export async function deleteAssetAction(formData: FormData): Promise<never> {
     );
   }
 
-  const changes = withStore((store) => store.softDeleteAsset(id, new Date().toISOString()));
+  const changes = runWith((store) => store.softDeleteAsset(id, new Date().toISOString()));
 
   if (changes === 0) {
     redirect(
@@ -172,8 +177,10 @@ export async function deleteAssetAction(formData: FormData): Promise<never> {
   redirect(successRedirectUrl("/patrimonio", "deleted_recoverable"));
 }
 
-export async function deleteLiabilityAction(formData: FormData): Promise<never> {
+export async function deleteLiabilityAction(formData: FormData, _store?: WorthlineStore): Promise<never> {
   const id = parseEntityId(formData);
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -183,7 +190,7 @@ export async function deleteLiabilityAction(formData: FormData): Promise<never> 
     );
   }
 
-  const changes = withStore((store) => store.softDeleteLiability(id, new Date().toISOString()));
+  const changes = runWith((store) => store.softDeleteLiability(id, new Date().toISOString()));
 
   if (changes === 0) {
     redirect(
@@ -196,8 +203,10 @@ export async function deleteLiabilityAction(formData: FormData): Promise<never> 
   redirect(successRedirectUrl("/patrimonio", "deleted_recoverable"));
 }
 
-export async function restoreAssetAction(formData: FormData): Promise<never> {
+export async function restoreAssetAction(formData: FormData, _store?: WorthlineStore): Promise<never> {
   const id = parseEntityId(formData);
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -207,7 +216,7 @@ export async function restoreAssetAction(formData: FormData): Promise<never> {
     );
   }
 
-  const changes = withStore((store) => store.restoreAsset(id));
+  const changes = runWith((store) => store.restoreAsset(id));
 
   if (changes === 0) {
     redirect(
@@ -220,8 +229,10 @@ export async function restoreAssetAction(formData: FormData): Promise<never> {
   redirect(successRedirectUrl("/patrimonio", "restored", id));
 }
 
-export async function restoreLiabilityAction(formData: FormData): Promise<never> {
+export async function restoreLiabilityAction(formData: FormData, _store?: WorthlineStore): Promise<never> {
   const id = parseEntityId(formData);
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -231,7 +242,7 @@ export async function restoreLiabilityAction(formData: FormData): Promise<never>
     );
   }
 
-  const changes = withStore((store) => store.restoreLiability(id));
+  const changes = runWith((store) => store.restoreLiability(id));
 
   if (changes === 0) {
     redirect(
@@ -244,9 +255,11 @@ export async function restoreLiabilityAction(formData: FormData): Promise<never>
   redirect(successRedirectUrl("/patrimonio", "restored", id));
 }
 
-export async function acknowledgeWarningAction(formData: FormData): Promise<never> {
+export async function acknowledgeWarningAction(formData: FormData, _store?: WorthlineStore): Promise<never> {
   const code = String(formData.get("code") ?? "").trim();
   const entityId = parseEntityId(formData, "entityId");
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
 
   if (!code || !entityId) {
     redirect(
@@ -256,7 +269,7 @@ export async function acknowledgeWarningAction(formData: FormData): Promise<neve
     );
   }
 
-  withStore((store) => store.acknowledgeWarning(code, entityId));
+  runWith((store) => store.acknowledgeWarning(code, entityId));
   redirect(successRedirectUrl("/patrimonio", "warning_acknowledged", entityId));
 }
 
@@ -307,9 +320,11 @@ export async function updateAssetValuationAction(
   redirect(successRedirectUrl("/patrimonio", "saved", id));
 }
 
-export async function updateLiabilityBalanceAction(formData: FormData): Promise<never> {
+export async function updateLiabilityBalanceAction(formData: FormData, _store?: WorthlineStore): Promise<never> {
   const id = parseEntityId(formData);
   const balance = parseMoneyMinorField(formData, "balance");
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -329,7 +344,7 @@ export async function updateLiabilityBalanceAction(formData: FormData): Promise<
     );
   }
 
-  withStore((store) => store.updateLiabilityBalance(id, balance));
+  runWith((store) => store.updateLiabilityBalance(id, balance));
   redirect(successRedirectUrl("/patrimonio", "saved", id));
 }
 
@@ -404,9 +419,11 @@ export async function batchValueUpdateAction(
   redirect(appendParam("/patrimonio", "ok", result.count === 0 ? "saved" : "valores_actualizados"));
 }
 
-export async function editAssetAction(formData: FormData): Promise<never> {
+export async function editAssetAction(formData: FormData, _store?: WorthlineStore): Promise<never> {
   const id = parseEntityId(formData);
   const isLiability = formData.get("isLiability") === "true";
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -436,7 +453,7 @@ export async function editAssetAction(formData: FormData): Promise<never> {
   }
 
   if (isLiability) {
-    const result = withStore((store) => {
+    const result = runWith((store) => {
       const workspace = store.readWorkspace();
 
       if (!workspace) {
@@ -444,10 +461,10 @@ export async function editAssetAction(formData: FormData): Promise<never> {
       }
 
       const ownership = parseOwnership(formData, workspace.members);
-      const ownershipError = validateOwnershipSharesStrict(ownership);
+      const splitViolation = checkOwnershipSplit(workspace, ownership);
 
-      if (ownershipError) {
-        return { ok: false, error: ownershipError };
+      if (splitViolation) {
+        return { ok: false, error: mapDomainViolation(splitViolation) };
       }
 
       const liabilityType =
@@ -466,7 +483,7 @@ export async function editAssetAction(formData: FormData): Promise<never> {
     redirect(successRedirectUrl("/patrimonio", "saved", id));
   }
 
-  const result = withStore((store) => {
+  const result = runWith((store) => {
     const workspace = store.readWorkspace();
 
     if (!workspace) {
@@ -478,10 +495,10 @@ export async function editAssetAction(formData: FormData): Promise<never> {
     const isPrimaryResidence = formData.get("isPrimaryResidence") === "on";
 
     const ownership = parseOwnership(formData, workspace.members);
-    const ownershipError = validateOwnershipSharesStrict(ownership);
+    const splitViolation = checkOwnershipSplit(workspace, ownership);
 
-    if (ownershipError) {
-      return { ok: false, error: ownershipError };
+    if (splitViolation) {
+      return { ok: false, error: mapDomainViolation(splitViolation) };
     }
 
     store.updateAsset(id, { name, type, liquidityTier, isPrimaryResidence, ownership });

@@ -1,15 +1,11 @@
 import { withStore } from "@worthline/db";
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import {
-  SCOPE_COOKIE_NAME,
   buildCurrentUrl,
-  errorRedirectUrl,
-  parseEmpezarHogar,
-  parseEmpezarSolo,
   parseFormError,
 } from "../intake";
+import { initHogarAction, initSoloAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -140,62 +136,4 @@ export default async function EmpezarPage({ searchParams }: EmpezarPageProps) {
       </section>
     </main>
   );
-}
-
-async function initSoloAction(formData: FormData): Promise<never> {
-  "use server";
-
-  const currentUrl = "/empezar?path=solo";
-  const result = parseEmpezarSolo(formData);
-
-  if (!result.ok) {
-    redirect(
-      errorRedirectUrl(currentUrl, {
-        message: result.error,
-        formId: "solo",
-        values: { name: String(formData.get("name") ?? "") },
-      }),
-    );
-  }
-
-  const { command } = result;
-
-  withStore((store) => store.initializeWorkspace(command));
-
-  const firstMemberId = command.members[0]?.id;
-
-  if (firstMemberId) {
-    const jar = await cookies();
-    jar.set(SCOPE_COOKIE_NAME, firstMemberId, {
-      httpOnly: true,
-      path: "/",
-      sameSite: "lax",
-    });
-  }
-
-  redirect("/");
-}
-
-async function initHogarAction(formData: FormData): Promise<never> {
-  "use server";
-
-  const currentUrl = "/empezar?path=hogar";
-  const result = parseEmpezarHogar(formData);
-
-  if (!result.ok) {
-    redirect(
-      errorRedirectUrl(currentUrl, {
-        message: result.error,
-        formId: "hogar",
-        values: { memberNames: String(formData.get("memberNames") ?? "") },
-      }),
-    );
-  }
-
-  const { command } = result;
-
-  withStore((store) => store.initializeWorkspace(command));
-
-  // Leave the scope cookie unset — / will fall back to the first scope.
-  redirect("/");
 }
