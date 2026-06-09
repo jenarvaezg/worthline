@@ -1076,3 +1076,413 @@ code {
     display: grid;
   }
 }
+
+/* === #57 patrimonio === */
+
+.patrimonioHeader {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px 24px;
+  background: var(--paper-strong);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  margin-bottom: 0;
+}
+
+.patrimonioHeader .panelHeader {
+  flex: 1;
+  margin: 0;
+  border: none;
+  padding: 0;
+}
+
+.patrimonioActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.patrimonioActions span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.actionLink {
+  color: var(--blue);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: none;
+  padding: 4px 8px;
+  border: 1px solid var(--blue);
+  border-radius: 2px;
+}
+
+.actionLink:hover {
+  background: var(--blue);
+  color: var(--paper-strong);
+}
+
+.actionLinkMuted {
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+
+.actionLinkMuted:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.actionDivider {
+  color: var(--line);
+}
+
+.patrimonioSection {
+  background: var(--paper-strong);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  margin-top: 16px;
+  overflow: hidden;
+}
+
+.patrimonioSectionHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.patrimonioSectionHeader h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.patrimonioSectionHeader strong {
+  font-size: 1.1rem;
+}
+
+.patrimonioTable {
+  width: 100%;
+}
+
+.patrimonioTable th,
+.patrimonioTable td {
+  padding: 10px 16px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.patrimonioTable th {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.02);
+  border-bottom: 1px solid var(--line);
+}
+
+.patrimonioTable tbody tr:not(:last-child) td {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.patrimonioTable tbody tr:hover td {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.emptyRow {
+  color: var(--muted);
+  font-style: italic;
+  text-align: center !important;
+  padding: 24px !important;
+}
+
+.ownershipCell {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.readOnlyValue small {
+  font-size: 0.75rem;
+  color: var(--muted);
+  display: block;
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.btnSmall {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border: 1px solid var(--line-strong);
+  text-decoration: none;
+  color: var(--ink);
+  background: transparent;
+  cursor: pointer;
+  min-height: unset;
+}
+
+.btnSmall:hover {
+  background: var(--ink);
+  color: var(--paper-strong);
+}
+
+.btnWarning {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.btnWarning:hover {
+  background: var(--gold);
+  color: var(--paper-strong);
+}
+
+.warningBadge {
+  color: var(--gold);
+  font-size: 0.85rem;
+}
+
+.papelera {
+  margin-top: 16px;
+}
+
+/* Puesta al día ───────────────────────────────────────────────────────── */
+
+.puestaAlDia {
+  background: var(--paper-strong);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 20px 24px;
+}
+
+.puestaFieldset {
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.puestaFieldset legend {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  padding: 0 6px;
+}
+
+.puestaRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+  align-items: start;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.puestaRow:last-child {
+  border-bottom: none;
+}
+
+.puestaName {
+  font-weight: 600;
+  display: block;
+}
+
+.puestaTier {
+  color: var(--muted);
+  font-size: 0.78rem;
+  display: block;
+  margin-top: 2px;
+}
+
+.puestaInput input {
+  width: 100%;
+}
+
+.puestaCurrent {
+  color: var(--muted);
+  font-size: 0.78rem;
+  display: block;
+  margin-top: 4px;
+}
+
+.puestaFooter {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.puestaFooter a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.puestaFooter a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+/* Form pages (nuevo-activo, nueva-deuda, editar) ──────────────────────── */
+
+.formPage {
+  background: var(--paper-strong);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 20px 24px;
+  max-width: 640px;
+}
+
+.formPage .panelHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+
+.formPage .panelHeader a {
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.formPage .panelHeader a:hover {
+  color: var(--ink);
+}
+
+.formPageNote {
+  font-size: 0.875rem;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+}
+
+.formPageNote a {
+  color: var(--blue);
+}
+
+.infoNote {
+  font-size: 0.875rem;
+  color: var(--muted);
+  font-style: italic;
+  margin: 8px 0;
+}
+
+.formActions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.formActions a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.formActions a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.tierHelp {
+  margin: 6px 0 8px;
+  font-size: 0.85rem;
+}
+
+.tierHelp summary {
+  cursor: pointer;
+  color: var(--blue);
+  font-size: 0.8rem;
+}
+
+.tierHelp dl {
+  margin: 8px 0 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid var(--line);
+  padding: 10px;
+  border-radius: 3px;
+}
+
+.tierHelp dt {
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+.tierHelp dd {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.ownerCustomDetails {
+  margin-top: 6px;
+}
+
+.ownerCustomDetails summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+/* Danger zone ─────────────────────────────────────────────────────────── */
+
+.dangerZone {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 2px solid var(--red);
+}
+
+.dangerZone h3 {
+  color: var(--red);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 12px;
+}
+
+.blockingNote {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.updateValueForm {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 640px) {
+  .puestaRow {
+    grid-template-columns: 1fr;
+  }
+
+  .patrimonioHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
