@@ -22,7 +22,9 @@ export {
   formatMoneyMinor,
   money,
   parseDecimal,
+  parseDecimalStrict,
   parseDecimalToMinor,
+  parseDecimalToMinorStrict,
   subtractMoney,
 } from "./money";
 

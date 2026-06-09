@@ -9,7 +9,7 @@ import type {
   OperationKind,
   OwnershipShare,
 } from "@worthline/domain";
-import { parseDecimal, parseDecimalToMinor } from "@worthline/domain";
+import { parseDecimal, parseDecimalToMinor, parseDecimalToMinorStrict } from "@worthline/domain";
 
 /**
  * The web intake seam: turns raw HTML form input into validated domain command
@@ -75,8 +75,8 @@ export function parseEntityId(formData: FormData, field = "id"): string | null {
   return id || null;
 }
 
-export function parseMoneyMinorField(formData: FormData, field: string): number {
-  return parseDecimalToMinor(String(formData.get(field) ?? ""));
+export function parseMoneyMinorField(formData: FormData, field: string): number | null {
+  return parseDecimalToMinorStrict(String(formData.get(field) ?? ""));
 }
 
 export function parseOwnership(formData: FormData, members: Member[]): OwnershipShare[] {
@@ -120,7 +120,7 @@ export function parseAssetCommand(
 
   return {
     currency: "EUR",
-    currentValueMinor: parseMoneyMinorField(formData, "currentValue"),
+    currentValueMinor: parseMoneyMinorField(formData, "currentValue") ?? 0,
     id: createStableId("asset", name, seed),
     isPrimaryResidence: formData.get("isPrimaryResidence") === "on",
     liquidityTier: parseLiquidityTier(formData.get("liquidityTier")),
@@ -139,7 +139,7 @@ export function parseLiabilityCommand(
   const associatedAssetId = String(formData.get("associatedAssetId") ?? "");
 
   return {
-    balanceMinor: parseMoneyMinorField(formData, "balance"),
+    balanceMinor: parseMoneyMinorField(formData, "balance") ?? 0,
     currency: "EUR",
     id: createStableId("debt", name, seed),
     name,
@@ -184,7 +184,7 @@ export function parseOperationCommand(
     assetId,
     currency: "EUR",
     executedAt,
-    feesMinor: parseMoneyMinorField(formData, "fees"),
+    feesMinor: parseMoneyMinorField(formData, "fees") ?? 0,
     id: createStableId("op", `${assetId}_${kind}`, seed),
     kind,
     pricePerUnit: parseDecimalStringInput(String(formData.get("pricePerUnit") ?? "")),

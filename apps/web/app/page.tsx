@@ -600,6 +600,12 @@ async function disableMemberAction(formData: FormData) {
 async function createAssetAction(formData: FormData) {
   "use server";
 
+  const currentValue = parseMoneyMinorField(formData, "currentValue");
+
+  if (currentValue === null) {
+    redirect(`/?error=${encodeURIComponent("El valor del activo no es válido.")}`);
+  }
+
   const result = withStore((store): ActionResult => {
     const workspace = store.readWorkspace();
 
@@ -632,19 +638,28 @@ async function updateAssetValuationAction(formData: FormData) {
   "use server";
 
   const id = parseEntityId(formData);
+  const currentValue = parseMoneyMinorField(formData, "currentValue");
 
   if (!id) {
     return;
   }
 
-  withStore((store) =>
-    store.updateAssetValuation(id, parseMoneyMinorField(formData, "currentValue")),
-  );
+  if (currentValue === null) {
+    redirect(`/?error=${encodeURIComponent("El valor del activo no es válido.")}`);
+  }
+
+  withStore((store) => store.updateAssetValuation(id, currentValue));
   revalidatePath("/");
 }
 
 async function createLiabilityAction(formData: FormData) {
   "use server";
+
+  const balance = parseMoneyMinorField(formData, "balance");
+
+  if (balance === null) {
+    redirect(`/?error=${encodeURIComponent("El saldo de la deuda no es válido.")}`);
+  }
 
   const result = withStore((store): ActionResult => {
     const workspace = store.readWorkspace();
@@ -708,6 +723,16 @@ async function createInvestmentAssetAction(formData: FormData) {
 async function recordOperationAction(formData: FormData) {
   "use server";
 
+  const fees = parseMoneyMinorField(formData, "fees");
+
+  if (fees === null) {
+    redirect(
+      `/?error=${encodeURIComponent(
+        "No se pudo registrar la operación: revisa unidades, precio y comisiones.",
+      )}`,
+    );
+  }
+
   const command = parseOperationCommand(
     formData,
     Date.now(),
@@ -735,14 +760,17 @@ async function updateLiabilityBalanceAction(formData: FormData) {
   "use server";
 
   const id = parseEntityId(formData);
+  const balance = parseMoneyMinorField(formData, "balance");
 
   if (!id) {
     return;
   }
 
-  withStore((store) =>
-    store.updateLiabilityBalance(id, parseMoneyMinorField(formData, "balance")),
-  );
+  if (balance === null) {
+    redirect(`/?error=${encodeURIComponent("El saldo de la deuda no es válido.")}`);
+  }
+
+  withStore((store) => store.updateLiabilityBalance(id, balance));
   revalidatePath("/");
 }
 
