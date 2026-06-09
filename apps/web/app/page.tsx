@@ -41,6 +41,7 @@ import {
   preserveFields,
   pricesRefreshedRedirectUrl,
   resolveOkMessage,
+  successRedirectUrl,
   validateOwnershipShares,
 } from "./intake";
 
@@ -1175,7 +1176,11 @@ async function createMemberAction(formData: FormData) {
   const member = parseNewMember(formData, Date.now());
 
   if (!member) {
-    return;
+    redirect(
+      errorRedirectUrl(currentUrlOf(formData), {
+        message: "El nombre del miembro es obligatorio.",
+      }),
+    );
   }
 
   withStore((store) => store.createMember(member));
@@ -1189,7 +1194,13 @@ async function updateMemberAction(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
 
   if (!id || !name) {
-    return;
+    redirect(
+      errorRedirectUrl(currentUrlOf(formData), {
+        message: !id
+          ? "Identificador de miembro no encontrado."
+          : "El nombre del miembro es obligatorio.",
+      }),
+    );
   }
 
   withStore((store) => store.updateMember({ id, name }));
@@ -1202,7 +1213,11 @@ async function disableMemberAction(formData: FormData) {
   const id = parseEntityId(formData);
 
   if (!id) {
-    return;
+    redirect(
+      errorRedirectUrl(currentUrlOf(formData), {
+        message: "Identificador de miembro no encontrado.",
+      }),
+    );
   }
 
   withStore((store) => store.disableMember(id, new Date().toISOString()));
@@ -1248,8 +1263,14 @@ async function createAssetAction(formData: FormData) {
   }
 
   if (result.ok) {
-    redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
+    redirect(appendParam(currentUrlOf(formData), "ok", "asset_added"));
   }
+
+  redirect(
+    errorRedirectUrl(currentUrlOf(formData), {
+      message: "No se pudo añadir el activo: workspace no inicializado.",
+    }),
+  );
 }
 
 async function updateAssetValuationAction(formData: FormData) {
@@ -1259,7 +1280,11 @@ async function updateAssetValuationAction(formData: FormData) {
   const currentValue = parseMoneyMinorField(formData, "currentValue");
 
   if (!id) {
-    return;
+    redirect(
+      errorRedirectUrl(currentUrlOf(formData), {
+        message: "Identificador de activo no encontrado.",
+      }),
+    );
   }
 
   if (currentValue === null) {
@@ -1315,8 +1340,14 @@ async function createLiabilityAction(formData: FormData) {
   }
 
   if (result.ok) {
-    redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
+    redirect(appendParam(currentUrlOf(formData), "ok", "liability_added"));
   }
+
+  redirect(
+    errorRedirectUrl(currentUrlOf(formData), {
+      message: "No se pudo añadir la deuda: workspace no inicializado.",
+    }),
+  );
 }
 
 async function createInvestmentAssetAction(formData: FormData) {
@@ -1352,8 +1383,14 @@ async function createInvestmentAssetAction(formData: FormData) {
   }
 
   if (result.ok) {
-    redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
+    redirect(appendParam(currentUrlOf(formData), "ok", "investment_added"));
   }
+
+  redirect(
+    errorRedirectUrl(currentUrlOf(formData), {
+      message: "No se pudo añadir la inversión: workspace no inicializado.",
+    }),
+  );
 }
 
 async function recordOperationAction(formData: FormData) {
@@ -1378,7 +1415,7 @@ async function recordOperationAction(formData: FormData) {
   );
 
   if (!command.assetId) {
-    return;
+    redirect(operationErrorUrl());
   }
 
   try {
@@ -1397,7 +1434,11 @@ async function updateLiabilityBalanceAction(formData: FormData) {
   const balance = parseMoneyMinorField(formData, "balance");
 
   if (!id) {
-    return;
+    redirect(
+      errorRedirectUrl(currentUrlOf(formData), {
+        message: "Identificador de deuda no encontrado.",
+      }),
+    );
   }
 
   if (balance === null) {
@@ -1430,11 +1471,15 @@ async function deleteAssetAction(formData: FormData) {
   const id = parseEntityId(formData);
 
   if (!id) {
-    return;
+    redirect(
+      errorRedirectUrl(currentUrlOf(formData), {
+        message: "Identificador de activo no encontrado.",
+      }),
+    );
   }
 
   withStore((store) => store.softDeleteAsset(id, new Date().toISOString()));
-  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
+  redirect(successRedirectUrl(currentUrlOf(formData), "deleted_recoverable", id));
 }
 
 async function deleteLiabilityAction(formData: FormData) {
@@ -1443,11 +1488,15 @@ async function deleteLiabilityAction(formData: FormData) {
   const id = parseEntityId(formData);
 
   if (!id) {
-    return;
+    redirect(
+      errorRedirectUrl(currentUrlOf(formData), {
+        message: "Identificador de deuda no encontrado.",
+      }),
+    );
   }
 
   withStore((store) => store.softDeleteLiability(id, new Date().toISOString()));
-  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
+  redirect(successRedirectUrl(currentUrlOf(formData), "deleted_recoverable", id));
 }
 
 async function restoreAssetAction(formData: FormData) {
@@ -1456,11 +1505,15 @@ async function restoreAssetAction(formData: FormData) {
   const id = parseEntityId(formData);
 
   if (!id) {
-    return;
+    redirect(
+      errorRedirectUrl(currentUrlOf(formData), {
+        message: "Identificador de activo no encontrado.",
+      }),
+    );
   }
 
   withStore((store) => store.restoreAsset(id));
-  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
+  redirect(successRedirectUrl(currentUrlOf(formData), "restored", id));
 }
 
 async function restoreLiabilityAction(formData: FormData) {
@@ -1469,11 +1522,15 @@ async function restoreLiabilityAction(formData: FormData) {
   const id = parseEntityId(formData);
 
   if (!id) {
-    return;
+    redirect(
+      errorRedirectUrl(currentUrlOf(formData), {
+        message: "Identificador de deuda no encontrado.",
+      }),
+    );
   }
 
   withStore((store) => store.restoreLiability(id));
-  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
+  redirect(successRedirectUrl(currentUrlOf(formData), "restored", id));
 }
 
 async function acknowledgeWarningAction(formData: FormData) {
@@ -1483,7 +1540,11 @@ async function acknowledgeWarningAction(formData: FormData) {
   const entityId = String(formData.get("entityId") ?? "").trim();
 
   if (!code || !entityId) {
-    return;
+    redirect(
+      errorRedirectUrl(currentUrlOf(formData), {
+        message: "Datos de aviso incompletos.",
+      }),
+    );
   }
 
   withStore((store) => store.acknowledgeWarning(code, entityId));
