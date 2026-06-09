@@ -401,40 +401,6 @@ function parseOwnershipPreset(value: FormDataEntryValue | null): OwnershipPreset
 }
 
 /**
- * Gate ownership shares before they reach the domain. The domain requires shares
- * to total 10000 bps and throws on violation; this surfaces that rule as a
- * user-facing message so the web layer can reject the submission gracefully
- * instead of letting the constructor throw. Returns null when the shares are valid.
- */
-export function validateOwnershipShares(shares: OwnershipShare[]): string | null {
-  const totalBps = shares.reduce((sum, share) => sum + share.shareBps, 0);
-
-  if (totalBps !== 10_000) {
-    return "Los porcentajes de propiedad deben sumar 100%.";
-  }
-
-  return null;
-}
-
-/**
- * Strict ownership validation: returns the actual sum as a percentage in the
- * error message so the user can see exactly how far off they are.
- * «La propiedad suma 110% — debe sumar 100%»
- * Returns null when the shares total exactly 100%.
- */
-export function validateOwnershipSharesStrict(shares: OwnershipShare[]): string | null {
-  const totalBps = shares.reduce((sum, share) => sum + share.shareBps, 0);
-
-  if (totalBps === 10_000) {
-    return null;
-  }
-
-  const actualPct = (totalBps / 100).toFixed(totalBps % 100 === 0 ? 0 : 1);
-
-  return `La propiedad suma ${actualPct}% — debe sumar 100%.`;
-}
-
-/**
  * Map a single domain violation to a localized Spanish user-facing message.
  * Intake owns the message text; the domain owns the stable code and context.
  */

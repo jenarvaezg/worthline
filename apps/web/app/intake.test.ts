@@ -1,4 +1,4 @@
-import type { Member } from "@worthline/domain";
+import { checkOwnershipSplit, type Member, type Workspace } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -27,11 +27,10 @@ import {
   parseValueUpdatePass,
   parseViewParam,
   parseWorkspaceInit,
+  mapDomainViolation,
   resolveOwnershipSplit,
   scaleSignedBar,
   successRedirectUrl,
-  validateOwnershipShares,
-  validateOwnershipSharesStrict,
 } from "./intake";
 
 const members: Member[] = [
@@ -179,21 +178,31 @@ describe("resolveOwnershipSplit", () => {
   });
 });
 
-describe("ownership validation", () => {
+describe("ownership validation (domain checkOwnershipSplit + intake message map)", () => {
+  const workspace: Workspace = {
+    baseCurrency: "EUR",
+    mode: "household",
+    members,
+    groups: [],
+  };
+
+  function splitError(shares: Parameters<typeof checkOwnershipSplit>[1]): string | null {
+    const violation = checkOwnershipSplit(workspace, shares);
+    return violation ? mapDomainViolation(violation) : null;
+  }
+
   test("accepts shares that add up to 100%", () => {
     expect(
-      validateOwnershipShares([
+      splitError([
         { memberId: "member_ana", shareBps: 2_500 },
         { memberId: "member_jose", shareBps: 7_500 },
       ]),
     ).toBeNull();
-    expect(
-      validateOwnershipShares([{ memberId: "member_ana", shareBps: 10_000 }]),
-    ).toBeNull();
+    expect(splitError([{ memberId: "member_ana", shareBps: 10_000 }])).toBeNull();
   });
 
   test("rejects shares that do not add up to 100% with a user-facing message", () => {
-    const error = validateOwnershipShares([
+    const error = splitError([
       { memberId: "member_ana", shareBps: 6_000 },
       { memberId: "member_jose", shareBps: 3_000 },
     ]);
@@ -202,7 +211,7 @@ describe("ownership validation", () => {
 
   test("rejects shares that exceed 100%", () => {
     expect(
-      validateOwnershipShares([
+      splitError([
         { memberId: "member_ana", shareBps: 10_000 },
         { memberId: "member_jose", shareBps: 5_000 },
       ]),
@@ -465,10 +474,22 @@ describe("prices refresh feedback", () => {
 
 // ─── Issue #54: intake v2 ────────────────────────────────────────────────────
 
-describe("validateOwnershipSharesStrict — specific sum in error message", () => {
+describe("ownership split violation message — specific sum named", () => {
+  const workspace: Workspace = {
+    baseCurrency: "EUR",
+    mode: "household",
+    members,
+    groups: [],
+  };
+
+  function splitError(shares: Parameters<typeof checkOwnershipSplit>[1]): string | null {
+    const violation = checkOwnershipSplit(workspace, shares);
+    return violation ? mapDomainViolation(violation) : null;
+  }
+
   test("returns null when shares total exactly 10000 bps", () => {
     expect(
-      validateOwnershipSharesStrict([
+      splitError([
         { memberId: "member_ana", shareBps: 2_500 },
         { memberId: "member_jose", shareBps: 7_500 },
       ]),
@@ -476,7 +497,7 @@ describe("validateOwnershipSharesStrict — specific sum in error message", () =
   });
 
   test("rejects 99.9% (9990 bps) and names the actual sum", () => {
-    const error = validateOwnershipSharesStrict([
+    const error = splitError([
       { memberId: "member_ana", shareBps: 4_995 },
       { memberId: "member_jose", shareBps: 4_995 },
     ]);
@@ -485,7 +506,7 @@ describe("validateOwnershipSharesStrict — specific sum in error message", () =
   });
 
   test("rejects 100.1% (10010 bps) and names the actual sum", () => {
-    const error = validateOwnershipSharesStrict([
+    const error = splitError([
       { memberId: "member_ana", shareBps: 5_005 },
       { memberId: "member_jose", shareBps: 5_005 },
     ]);
@@ -494,7 +515,7 @@ describe("validateOwnershipSharesStrict — specific sum in error message", () =
   });
 
   test("rejects 110% and names the actual sum in the message", () => {
-    const error = validateOwnershipSharesStrict([
+    const error = splitError([
       { memberId: "member_ana", shareBps: 5_500 },
       { memberId: "member_jose", shareBps: 5_500 },
     ]);
@@ -504,9 +525,7 @@ describe("validateOwnershipSharesStrict — specific sum in error message", () =
   });
 
   test("accepts exactly 100% (10000 bps) for a single member", () => {
-    expect(
-      validateOwnershipSharesStrict([{ memberId: "member_ana", shareBps: 10_000 }]),
-    ).toBeNull();
+    expect(splitError([{ memberId: "member_ana", shareBps: 10_000 }])).toBeNull();
   });
 });
 
