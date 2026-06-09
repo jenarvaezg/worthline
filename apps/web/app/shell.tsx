@@ -92,8 +92,8 @@ export default function Shell({
 
       {/* ── Scope bar (hidden for single-member workspaces) ─────────── */}
       {scopes.length > 1 ? (
-        <div className="tabsBar" aria-label="Selector de scope">
-          <nav className="scopeTabs">
+        <div className="tabsBar">
+          <nav aria-label="Selector de scope" className="scopeTabs">
             {scopes.map((scope) => (
               <form action={setScopeAction} key={scope.id}>
                 <input name="returnTo" type="hidden" value={currentPageUrl} />

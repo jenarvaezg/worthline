@@ -36,8 +36,11 @@ test("scope consistency: switch member scope → reconciled views → survives r
   const secondTab = scopeButtons.nth(count > 1 ? 1 : 0);
   await secondTab.click();
 
-  // 4. Should still be on / (redirect back to current page)
-  await expect(page).toHaveURL(/^\//);
+  // 4. Should land back on / (redirect to the posting page) with the
+  //    clicked scope now active. toHaveURL matches the FULL absolute URL,
+  //    so anchor on the trailing path instead of a leading slash.
+  await expect(page).toHaveURL(/\/$/);
+  await expect(scopeTabs.locator(".scopeTabBtn.active")).toBeVisible();
 
   // 5. Headline is now visible (may differ from before)
   await expect(page.locator(".headline strong")).toBeVisible();
@@ -52,7 +55,9 @@ test("scope consistency: switch member scope → reconciled views → survives r
   await page.goto("/inversiones");
   await expect(page.getByRole("heading", { name: "Inversiones" })).toBeVisible();
 
-  // 8. Reload / — scope cookie still set (scope-sensitive views still load)
+  // 8. Back on / and reload — scope cookie still set (scope-sensitive views
+  //    still load). The reload must happen on /, where .headline renders.
+  await page.goto("/");
   await page.reload();
   await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
   await expect(page.locator(".headline strong")).toBeVisible();
