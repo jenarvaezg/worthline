@@ -141,8 +141,32 @@ export interface TrashView {
   liabilities: Array<{ id: string; name: string }>;
 }
 
+/** One confirmed value change from a value-update pass. */
+export interface ValueUpdateCommand {
+  id: string;
+  newValueMinor: number;
+}
+
+/** Fields that can be changed when editing an existing manual asset. */
+export interface UpdateAssetInput {
+  name?: string;
+  type?: ManualAsset["type"];
+  liquidityTier?: LiquidityTier;
+  isPrimaryResidence?: boolean;
+  ownership?: OwnershipShare[];
+}
+
+/** Fields that can be changed when editing an existing liability. */
+export interface UpdateLiabilityInput {
+  name?: string;
+  type?: "mortgage" | "debt";
+  associatedAssetId?: string | null;
+  ownership?: OwnershipShare[];
+}
+
 export interface WorthlineStore {
   acknowledgeWarning: (code: string, entityId: string) => void;
+  batchApplyValueUpdates: (commands: ValueUpdateCommand[]) => void;
   reactivateMember: (memberId: string) => void;
   close: () => void;
   createInvestmentAsset: (input: CreateInvestmentAssetInput) => void;
@@ -174,7 +198,9 @@ export interface WorthlineStore {
   saveSnapshot: (input: SaveSnapshotInput) => void;
   softDeleteAsset: (assetId: string, deletedAt: string) => void;
   softDeleteLiability: (liabilityId: string, deletedAt: string) => void;
+  updateAsset: (assetId: string, input: UpdateAssetInput) => void;
   updateAssetValuation: (assetId: string, currentValueMinor: number) => void;
+  updateLiability: (liabilityId: string, input: UpdateLiabilityInput) => void;
   updateLiabilityBalance: (liabilityId: string, balanceMinor: number) => void;
   updateMember: (member: Pick<Member, "id" | "name">) => void;
   upsertPrice: (price: AssetPrice) => void;
@@ -849,6 +875,83 @@ export function createWorthlineStore(
 
       save();
     },
+    batchApplyValueUpdates: (commands) => {
+      if (commands.length === 0) return;
+
+      const applyAll = sqlite.transaction(() => {
+        const update = sqlite.prepare(
+          `UPDATE assets SET current_value_minor = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        );
+
+        for (const cmd of commands) {
+          if (!Number.isInteger(cmd.newValueMinor)) {
+            throw new Error("Money must be stored as integer minor units.");
+          }
+          update.run(cmd.newValueMinor, cmd.id);
+          writeAuditEntry("update_valuation", "asset", cmd.id, {
+            currentValueMinor: cmd.newValueMinor,
+          });
+        }
+      });
+
+      applyAll();
+    },
+    updateAsset: (assetId, input) => {
+      const updates: string[] = [];
+      const params: unknown[] = [];
+
+      if (input.name !== undefined) {
+        updates.push("name = ?");
+        params.push(input.name);
+      }
+
+      if (input.type !== undefined) {
+        updates.push("type = ?");
+        params.push(input.type);
+      }
+
+      if (input.liquidityTier !== undefined) {
+        updates.push("liquidity_tier = ?");
+        params.push(input.liquidityTier);
+      }
+
+      if (input.isPrimaryResidence !== undefined) {
+        updates.push("is_primary_residence = ?");
+        params.push(input.isPrimaryResidence ? 1 : 0);
+      }
+
+      const editAsset = sqlite.transaction(() => {
+        if (updates.length > 0) {
+          updates.push("updated_at = CURRENT_TIMESTAMP");
+          params.push(assetId);
+          sqlite
+            .prepare(`UPDATE assets SET ${updates.join(", ")} WHERE id = ?`)
+            .run(...params);
+        }
+
+        if (input.ownership !== undefined) {
+          sqlite
+            .prepare(`DELETE FROM asset_ownerships WHERE asset_id = ?`)
+            .run(assetId);
+
+          const insertOwnership = sqlite.prepare(`
+            INSERT INTO asset_ownerships (asset_id, member_id, share_bps)
+            VALUES (@assetId, @memberId, @shareBps)
+          `);
+
+          for (const share of input.ownership) {
+            insertOwnership.run({
+              assetId,
+              memberId: share.memberId,
+              shareBps: share.shareBps,
+            });
+          }
+        }
+      });
+
+      editAsset();
+      writeAuditEntry("update_asset", "asset", assetId, { ...input, ownership: undefined });
+    },
     updateAssetValuation: (assetId, currentValueMinor) => {
       if (!Number.isInteger(currentValueMinor)) {
         throw new Error("Money must be stored as integer minor units.");
@@ -883,6 +986,60 @@ export function createWorthlineStore(
         )
         .run(currentValueMinor, assetId);
       writeAuditEntry("update_valuation", "asset", assetId, { currentValueMinor });
+    },
+    updateLiability: (liabilityId, input) => {
+      const updates: string[] = [];
+      const params: unknown[] = [];
+
+      if (input.name !== undefined) {
+        updates.push("name = ?");
+        params.push(input.name);
+      }
+
+      if (input.type !== undefined) {
+        updates.push("type = ?");
+        params.push(input.type);
+      }
+
+      if (input.associatedAssetId !== undefined) {
+        updates.push("associated_asset_id = ?");
+        params.push(input.associatedAssetId);
+      }
+
+      const editLiability = sqlite.transaction(() => {
+        if (updates.length > 0) {
+          updates.push("updated_at = CURRENT_TIMESTAMP");
+          params.push(liabilityId);
+          sqlite
+            .prepare(`UPDATE liabilities SET ${updates.join(", ")} WHERE id = ?`)
+            .run(...params);
+        }
+
+        if (input.ownership !== undefined) {
+          sqlite
+            .prepare(`DELETE FROM liability_ownerships WHERE liability_id = ?`)
+            .run(liabilityId);
+
+          const insertOwnership = sqlite.prepare(`
+            INSERT INTO liability_ownerships (liability_id, member_id, share_bps)
+            VALUES (@liabilityId, @memberId, @shareBps)
+          `);
+
+          for (const share of input.ownership) {
+            insertOwnership.run({
+              liabilityId,
+              memberId: share.memberId,
+              shareBps: share.shareBps,
+            });
+          }
+        }
+      });
+
+      editLiability();
+      writeAuditEntry("update_liability", "liability", liabilityId, {
+        ...input,
+        ownership: undefined,
+      });
     },
     updateLiabilityBalance: (liabilityId, balanceMinor) => {
       if (!Number.isInteger(balanceMinor)) {

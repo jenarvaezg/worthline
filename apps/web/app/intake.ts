@@ -248,8 +248,11 @@ export function okMessage(key: string | undefined): string | null {
     restored: "Restaurado.",
     saved: "Guardado.",
     snapshot_saved: "Snapshot guardado.",
+    valores_actualizados: "Valores actualizados.",
     warning_acknowledged: "Aviso marcado como intencional.",
   };
+
+  // === #57 patrimonio ===
 
   return messages[key] ?? null;
 }
