@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 
 import type { FormErrorContext } from "../intake";
 import {
-  buildCurrentUrl,
+  buildCurrentUrlFor,
   parseFormError,
   parseScopeCookie,
   resolveOkMessage,
@@ -35,7 +35,7 @@ export default async function AjustesPage({
   const persistence = runBootstrapHealthcheck();
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
-  const currentUrl = buildCurrentUrl(resolvedSearchParams);
+  const currentUrl = buildCurrentUrlFor("/ajustes", resolvedSearchParams);
 
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
