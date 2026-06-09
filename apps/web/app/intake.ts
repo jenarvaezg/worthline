@@ -38,9 +38,7 @@ export function parseScopeParam(value: string | string[] | undefined): string {
   return normalizeParam(value) ?? "household";
 }
 
-export function parseViewParam(
-  value: string | string[] | undefined,
-): NetWorthFraming {
+export function parseViewParam(value: string | string[] | undefined): NetWorthFraming {
   return normalizeParam(value) === "liquid" ? "liquid" : "total";
 }
 
@@ -52,6 +50,165 @@ export function appendParam(url: string, key: string, value: string): string {
   const qs = params.toString();
 
   return qs ? `${path ?? "/"}?${qs}` : (path ?? "/");
+}
+
+/** One-shot post-redirect feedback params — never carried forward in currentUrl. */
+const ONE_SHOT_PARAMS = new Set(["ok", "error", "form", "updated", "failed"]);
+const PRESERVED_VALUE_PREFIX = "v_";
+
+/**
+ * The canonical "return here" URL for a server action, rebuilt from the page's
+ * search params with every one-shot feedback param stripped so banners and
+ * preserved form values never persist across later navigation.
+ */
+export function buildCurrentUrl(
+  searchParams?: Record<string, string | string[] | undefined>,
+): string {
+  const params = new URLSearchParams();
+
+  if (searchParams) {
+    for (const [key, value] of Object.entries(searchParams)) {
+      if (value === undefined) continue;
+      if (ONE_SHOT_PARAMS.has(key) || key.startsWith(PRESERVED_VALUE_PREFIX)) continue;
+
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          params.append(key, item);
+        }
+      } else {
+        params.set(key, value);
+      }
+    }
+  }
+
+  const queryString = params.toString();
+
+  return queryString ? `/?${queryString}` : "/";
+}
+
+/** A validation failure tied to the form that produced it, with the typed input. */
+export interface FormErrorContext {
+  message: string;
+  formId: string | null;
+  values: Record<string, string>;
+}
+
+/**
+ * Build an error redirect that remembers which form failed and what was typed,
+ * so the page can render the error beside that form and refill its fields.
+ */
+export function errorRedirectUrl(
+  currentUrl: string,
+  error: { message: string; formId?: string; values?: Record<string, string> },
+): string {
+  let url = appendParam(currentUrl, "error", error.message);
+
+  if (error.formId) {
+    url = appendParam(url, "form", error.formId);
+  }
+
+  for (const [field, value] of Object.entries(error.values ?? {})) {
+    url = appendParam(url, `${PRESERVED_VALUE_PREFIX}${field}`, value);
+  }
+
+  return url;
+}
+
+/** Parse the error/form/v_* params of an error redirect back into context. */
+export function parseFormError(
+  searchParams?: Record<string, string | string[] | undefined>,
+): FormErrorContext | null {
+  const message = normalizeParam(searchParams?.["error"]);
+
+  if (!message) {
+    return null;
+  }
+
+  const values: Record<string, string> = {};
+
+  for (const [key, raw] of Object.entries(searchParams ?? {})) {
+    if (!key.startsWith(PRESERVED_VALUE_PREFIX)) continue;
+    const value = normalizeParam(raw);
+
+    if (value !== undefined) {
+      values[key.slice(PRESERVED_VALUE_PREFIX.length)] = value;
+    }
+  }
+
+  return {
+    formId: normalizeParam(searchParams?.["form"]) ?? null,
+    message,
+    values,
+  };
+}
+
+/** Collect the user-typed fields worth refilling after a validation error. */
+export function preserveFields(
+  formData: FormData,
+  fields: string[],
+  prefixes: string[] = [],
+): Record<string, string> {
+  const values: Record<string, string> = {};
+
+  for (const [key, raw] of formData.entries()) {
+    if (typeof raw !== "string") continue;
+
+    if (fields.includes(key) || prefixes.some((prefix) => key.startsWith(prefix))) {
+      values[key] = raw;
+    }
+  }
+
+  return values;
+}
+
+/** Encode a price-refresh outcome (count + failing symbols) into the redirect. */
+export function pricesRefreshedRedirectUrl(
+  currentUrl: string,
+  outcome: { updated: number; failedSymbols: string[] },
+): string {
+  let url = appendParam(currentUrl, "ok", "prices_refreshed");
+  url = appendParam(url, "updated", String(outcome.updated));
+
+  if (outcome.failedSymbols.length > 0) {
+    url = appendParam(url, "failed", outcome.failedSymbols.join(","));
+  }
+
+  return url;
+}
+
+/**
+ * Resolve the success banner for the current request. Plain keys map through
+ * okMessage; a price refresh reports its outcome (how many updated, which failed).
+ */
+export function resolveOkMessage(
+  searchParams?: Record<string, string | string[] | undefined>,
+): string | null {
+  const key = normalizeParam(searchParams?.["ok"]);
+
+  if (key !== "prices_refreshed") {
+    return okMessage(key);
+  }
+
+  const updatedRaw = normalizeParam(searchParams?.["updated"]);
+
+  if (updatedRaw === undefined) {
+    return okMessage(key);
+  }
+
+  const updated = Number.parseInt(updatedRaw, 10) || 0;
+  const failedSymbols = (normalizeParam(searchParams?.["failed"]) ?? "")
+    .split(",")
+    .map((symbol) => symbol.trim())
+    .filter(Boolean);
+
+  if (updated === 0 && failedSymbols.length === 0) {
+    return "Sin inversiones con símbolo que actualizar.";
+  }
+
+  const failedPart =
+    failedSymbols.length > 0 ? ` Con error: ${failedSymbols.join(", ")}.` : "";
+
+  return `Precios actualizados: ${updated}.${failedPart}`;
 }
 
 /** Map a success-redirect key to a localized confirmation message (null = no banner). */

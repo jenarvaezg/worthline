@@ -3,8 +3,14 @@ import { describe, expect, test } from "vitest";
 
 import {
   appendParam,
+  buildCurrentUrl,
   buildSnapshotId,
+  errorRedirectUrl,
   okMessage,
+  parseFormError,
+  preserveFields,
+  pricesRefreshedRedirectUrl,
+  resolveOkMessage,
   parseAssetCommand,
   parseEntityId,
   parseInvestmentAssetCommand,
@@ -51,7 +57,9 @@ describe("scope and view params", () => {
 
 describe("workspace init", () => {
   test("individual mode keeps only the first member", () => {
-    const command = parseWorkspaceInit(form({ mode: "individual", memberNames: "Ana\nJose" }));
+    const command = parseWorkspaceInit(
+      form({ mode: "individual", memberNames: "Ana\nJose" }),
+    );
     expect(command.mode).toBe("individual");
     expect(command.members.map((member) => member.name)).toEqual(["Ana"]);
   });
@@ -63,9 +71,9 @@ describe("workspace init", () => {
     expect(command.mode).toBe("household");
     expect(command.members.map((member) => member.name)).toEqual(["Ana", "Jose", "Luz"]);
     // Ids are deterministic from name + position, so a re-parse matches.
-    expect(parseWorkspaceInit(form({ mode: "household", memberNames: "Ana, Jose\nLuz" }))).toEqual(
-      command,
-    );
+    expect(
+      parseWorkspaceInit(form({ mode: "household", memberNames: "Ana, Jose\nLuz" })),
+    ).toEqual(command);
   });
 
   test("empty member names default to a single member", () => {
@@ -76,7 +84,10 @@ describe("workspace init", () => {
 
 describe("ownership parsing", () => {
   test("converts percentages to basis points", () => {
-    const ownership = parseOwnership(form({ owner_member_ana: "25", owner_member_jose: "75" }), members);
+    const ownership = parseOwnership(
+      form({ owner_member_ana: "25", owner_member_jose: "75" }),
+      members,
+    );
     expect(ownership).toEqual([
       { memberId: "member_ana", shareBps: 2_500 },
       { memberId: "member_jose", shareBps: 7_500 },
@@ -113,14 +124,19 @@ describe("resolveOwnershipSplit", () => {
   });
 
   test("the even preset splits equally and totals 100%", () => {
-    expect(resolveOwnershipSplit({ activeMembers: [ana, jose], preset: "even" })).toEqual([
-      { memberId: "member_ana", shareBps: 5_000 },
-      { memberId: "member_jose", shareBps: 5_000 },
-    ]);
+    expect(resolveOwnershipSplit({ activeMembers: [ana, jose], preset: "even" })).toEqual(
+      [
+        { memberId: "member_ana", shareBps: 5_000 },
+        { memberId: "member_jose", shareBps: 5_000 },
+      ],
+    );
   });
 
   test("an even split of three distributes the remainder to total exactly 100%", () => {
-    const split = resolveOwnershipSplit({ activeMembers: [ana, jose, lia], preset: "even" });
+    const split = resolveOwnershipSplit({
+      activeMembers: [ana, jose, lia],
+      preset: "even",
+    });
     expect(total(split)).toBe(10_000);
     expect(split.map((share) => share.shareBps)).toEqual([3_334, 3_333, 3_333]);
   });
@@ -157,7 +173,9 @@ describe("ownership validation", () => {
         { memberId: "member_jose", shareBps: 7_500 },
       ]),
     ).toBeNull();
-    expect(validateOwnershipShares([{ memberId: "member_ana", shareBps: 10_000 }])).toBeNull();
+    expect(
+      validateOwnershipShares([{ memberId: "member_ana", shareBps: 10_000 }]),
+    ).toBeNull();
   });
 
   test("rejects shares that do not add up to 100% with a user-facing message", () => {
@@ -382,5 +400,160 @@ describe("okMessage", () => {
   test("returns null for unknown or missing keys", () => {
     expect(okMessage("nonsense")).toBeNull();
     expect(okMessage(undefined)).toBeNull();
+  });
+});
+
+/** Decode a redirect URL's query into the searchParams record Next.js hands the page. */
+function searchParamsOf(url: string): Record<string, string | string[]> {
+  const params: Record<string, string | string[]> = {};
+
+  for (const [key, value] of new URLSearchParams(url.split("?")[1] ?? "")) {
+    const existing = params[key];
+    params[key] = existing
+      ? [...(Array.isArray(existing) ? existing : [existing]), value]
+      : value;
+  }
+
+  return params;
+}
+
+describe("buildCurrentUrl", () => {
+  test("keeps navigation params like scope, view and fireEdit", () => {
+    expect(
+      buildCurrentUrl({ scope: "member_ana", view: "liquid", fireEdit: "true" }),
+    ).toBe("/?scope=member_ana&view=liquid&fireEdit=true");
+  });
+
+  test("strips one-shot feedback params so banners never persist", () => {
+    expect(
+      buildCurrentUrl({
+        error: "Valor inválido",
+        failed: "ACME",
+        form: "asset",
+        ok: "saved",
+        scope: "household",
+        updated: "2",
+        v_currentValue: "abc",
+        v_name: "Caja",
+      }),
+    ).toBe("/?scope=household");
+  });
+
+  test("returns the root when nothing survives stripping", () => {
+    expect(buildCurrentUrl({ ok: "saved", v_name: "x" })).toBe("/");
+    expect(buildCurrentUrl(undefined)).toBe("/");
+  });
+});
+
+describe("error redirect round-trip", () => {
+  test("errorRedirectUrl carries message, form id and typed values", () => {
+    const url = errorRedirectUrl("/?scope=household", {
+      formId: "asset",
+      message: "El valor del activo no es válido.",
+      values: { currentValue: "12,3,4", name: "Caja fuerte" },
+    });
+    const params = searchParamsOf(url);
+
+    expect(params["error"]).toBe("El valor del activo no es válido.");
+    expect(params["form"]).toBe("asset");
+    expect(params["v_currentValue"]).toBe("12,3,4");
+    expect(params["v_name"]).toBe("Caja fuerte");
+    expect(params["scope"]).toBe("household");
+  });
+
+  test("parseFormError reconstructs the failing form and its typed values", () => {
+    const url = errorRedirectUrl("/?scope=household", {
+      formId: "liability",
+      message: "El saldo de la deuda no es válido.",
+      values: { balance: "no-num", name: "Hipoteca" },
+    });
+    const context = parseFormError(searchParamsOf(url));
+
+    expect(context).toEqual({
+      formId: "liability",
+      message: "El saldo de la deuda no es válido.",
+      values: { balance: "no-num", name: "Hipoteca" },
+    });
+  });
+
+  test("parseFormError handles errors without form context", () => {
+    expect(parseFormError({ error: "Algo falló" })).toEqual({
+      formId: null,
+      message: "Algo falló",
+      values: {},
+    });
+    expect(parseFormError({ scope: "household" })).toBeNull();
+    expect(parseFormError(undefined)).toBeNull();
+  });
+});
+
+describe("preserveFields", () => {
+  test("keeps listed fields and prefixed fields, ignoring the rest", () => {
+    const values = preserveFields(
+      form({
+        currentUrl: "/?scope=household",
+        currentValue: "abc",
+        name: "Caja",
+        owner_member_ana: "60",
+        owner_member_jose: "40",
+        ownershipPreset: "custom",
+      }),
+      ["name", "currentValue", "ownershipPreset"],
+      ["owner_"],
+    );
+
+    expect(values).toEqual({
+      currentValue: "abc",
+      name: "Caja",
+      owner_member_ana: "60",
+      owner_member_jose: "40",
+      ownershipPreset: "custom",
+    });
+  });
+});
+
+describe("prices refresh feedback", () => {
+  test("pricesRefreshedRedirectUrl encodes the outcome", () => {
+    const url = pricesRefreshedRedirectUrl("/?scope=household", {
+      failedSymbols: ["ACME", "FOO"],
+      updated: 2,
+    });
+    const params = searchParamsOf(url);
+
+    expect(params["ok"]).toBe("prices_refreshed");
+    expect(params["updated"]).toBe("2");
+    expect(params["failed"]).toBe("ACME,FOO");
+  });
+
+  test("resolveOkMessage reports the updated count and which symbols failed", () => {
+    const url = pricesRefreshedRedirectUrl("/", { failedSymbols: ["ACME"], updated: 2 });
+
+    expect(resolveOkMessage(searchParamsOf(url))).toBe(
+      "Precios actualizados: 2. Con error: ACME.",
+    );
+    expect(
+      resolveOkMessage(
+        searchParamsOf(
+          pricesRefreshedRedirectUrl("/", { failedSymbols: [], updated: 3 }),
+        ),
+      ),
+    ).toBe("Precios actualizados: 3.");
+  });
+
+  test("resolveOkMessage explains when there was nothing to refresh", () => {
+    expect(
+      resolveOkMessage(
+        searchParamsOf(
+          pricesRefreshedRedirectUrl("/", { failedSymbols: [], updated: 0 }),
+        ),
+      ),
+    ).toBe("Sin inversiones con símbolo que actualizar.");
+  });
+
+  test("resolveOkMessage falls back to the static ok map", () => {
+    expect(resolveOkMessage({ ok: "saved" })).toBe("Guardado.");
+    expect(resolveOkMessage({ ok: "prices_refreshed" })).toBe("Precios actualizados.");
+    expect(resolveOkMessage({})).toBeNull();
+    expect(resolveOkMessage(undefined)).toBeNull();
   });
 });
