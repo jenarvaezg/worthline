@@ -107,6 +107,13 @@ export interface AuditLogEntry {
   createdAt: string;
 }
 
+export interface InvestmentAssetMeta {
+  id: string;
+  name: string;
+  currency: string;
+  providerSymbol?: string;
+}
+
 export interface WorthlineStore {
   close: () => void;
   createInvestmentAsset: (input: CreateInvestmentAssetInput) => void;
@@ -117,6 +124,7 @@ export interface WorthlineStore {
   initializeWorkspace: (input: InitializeWorkspaceInput) => void;
   readAllPriceCacheEntries: () => AssetPrice[];
   readAssets: () => ManualAsset[];
+  readInvestmentAssetsWithMeta: () => InvestmentAssetMeta[];
   readAuditLog: (filter?: { entityId?: string }) => AuditLogEntry[];
   readFireConfig: () => Record<string, FireScopeConfig>;
   readLiabilities: () => Liability[];
@@ -783,6 +791,28 @@ export function createWorthlineStore(
         ...(row.priceDate ? { priceDate: row.priceDate } : {}),
         ...(row.staleReason ? { staleReason: row.staleReason } : {}),
       };
+    },
+    readInvestmentAssetsWithMeta: () => {
+      const db = drizzle(sqlite);
+      const rows = db
+        .select({
+          id: assets.id,
+          name: assets.name,
+          currency: assets.currency,
+          providerSymbol: investmentAssets.providerSymbol,
+        })
+        .from(assets)
+        .innerJoin(investmentAssets, eq(investmentAssets.assetId, assets.id))
+        .where(isNull(assets.deletedAt))
+        .orderBy(asc(assets.createdAt), asc(assets.id))
+        .all();
+
+      return rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        currency: row.currency,
+        ...(row.providerSymbol ? { providerSymbol: row.providerSymbol } : {}),
+      }));
     },
     readAllPriceCacheEntries: () => {
       const db = drizzle(sqlite);

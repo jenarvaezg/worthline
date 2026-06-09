@@ -22,6 +22,7 @@ import type {
   NetWorthPresentationMode,
   PriceFreshnessState,
 } from "@worthline/domain";
+import { fetchAndCachePrice, stooqProvider } from "@worthline/pricing";
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -434,6 +435,9 @@ export default async function DashboardPage({
             <h2>Inversiones</h2>
             <span>Unidades, coste medio y P/L</span>
           </div>
+          <form action={refreshPricesAction} className="inlineForm">
+            <button type="submit">Actualizar precios</button>
+          </form>
           <div className="entryGrid">
             <form action={createInvestmentAssetAction} className="stackForm">
               <h3>Nueva inversión</h3>
@@ -1029,6 +1033,32 @@ async function saveSnapshotAction(formData: FormData) {
   if (saved) {
     revalidatePath("/");
   }
+}
+
+async function refreshPricesAction() {
+  "use server";
+
+  const nowIso = new Date().toISOString();
+
+  await withStore(async (store) => {
+    const investmentAssets = store.readInvestmentAssetsWithMeta();
+
+    await Promise.allSettled(
+      investmentAssets
+        .filter((asset) => Boolean(asset.providerSymbol))
+        .map(async (asset) => {
+          const price = await fetchAndCachePrice(stooqProvider, {
+            assetId: asset.id,
+            symbol: asset.providerSymbol!,
+            currency: asset.currency,
+            nowIso,
+          });
+          store.upsertPrice(price);
+        }),
+    );
+  });
+
+  revalidatePath("/");
 }
 
 function formatOptionalMoney(value: MoneyMinor | undefined): string {

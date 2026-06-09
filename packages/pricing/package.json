@@ -10,7 +10,8 @@
     }
   },
   "dependencies": {
-    "@worthline/contracts": "*"
+    "@worthline/contracts": "*",
+    "@worthline/domain": "*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
