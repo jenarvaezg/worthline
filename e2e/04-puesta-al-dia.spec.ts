@@ -58,4 +58,11 @@ test("puesta al dia: batch update two assets → values persist → headline cha
   expect(headlineAfter).toBeTruthy();
   // We can't assert exact values since formatting differs, but the headline exists
   expect(headlineBefore !== headlineAfter || headlineAfter!.includes("€")).toBe(true);
+
+  // 9. Liquidity section renders the tier donut with at least one segment
+  const liquidityRegion = page.getByRole("region", { name: "Liquidez por capa" });
+  await expect(liquidityRegion.locator(".tierDonut")).toBeVisible();
+  expect(
+    await liquidityRegion.locator(".tierDonut .donutSegment").count(),
+  ).toBeGreaterThanOrEqual(1);
 });
