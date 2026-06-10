@@ -5,6 +5,7 @@ import type {
   OperationKind,
   PriceFreshnessState,
   PriceSource,
+  SnapshotHoldingKind,
   WorkspaceMode,
 } from "@worthline/domain";
 import { sql } from "drizzle-orm";
@@ -210,5 +211,39 @@ export const snapshots = sqliteTable(
   },
   (table) => [
     uniqueIndex("snapshots_scope_date_unique").on(table.scopeId, table.dateKey),
+  ],
+);
+
+/**
+ * One frozen holding row behind a snapshot's figures (ADR 0008).
+ *
+ * Label and liquidity tier are denormalized at capture time on purpose: a
+ * snapshot is frozen, so later renames, re-tierings, or deletions of a holding
+ * must never alter what a past snapshot captured. `holding_id` is informational
+ * — there is intentionally NO foreign key into assets/liabilities. The only FK
+ * points at the owning snapshot row.
+ */
+export const snapshotHoldings = sqliteTable(
+  "snapshot_holdings",
+  {
+    id: text("id").primaryKey(),
+    snapshotId: text("snapshot_id")
+      .notNull()
+      .references(() => snapshots.id, { onDelete: "cascade" }),
+    holdingId: text("holding_id").notNull(),
+    kind: text("kind").$type<SnapshotHoldingKind>().notNull(),
+    label: text("label").notNull(),
+    liquidityTier: text("liquidity_tier").$type<LiquidityTier>(),
+    valueMinor: integer("value_minor").notNull(),
+    units: text("units"),
+    unitPrice: text("unit_price"),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    uniqueIndex("snapshot_holdings_snapshot_kind_holding_unique").on(
+      table.snapshotId,
+      table.kind,
+      table.holdingId,
+    ),
   ],
 );

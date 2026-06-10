@@ -7,7 +7,7 @@
  * - Compute dashboard state via prepareDashboardState
  * - Pricing failures degrade to last-known values with an explicit signal
  */
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 
 import { createInMemoryStore } from "@worthline/db";
 import type { WorthlineStore } from "@worthline/db";
@@ -155,6 +155,127 @@ describe("loadDashboard — snapshot capture policy", () => {
     const snapshots = store.readSnapshots(scopeId);
     const todaySnapshots = snapshots.filter((s) => s.dateKey === "2026-06-10");
     expect(todaySnapshots).toHaveLength(1);
+
+    store.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Snapshot holding rows (ADR 0008, issue #72)
+// ---------------------------------------------------------------------------
+
+describe("loadDashboard — snapshot holding rows", () => {
+  test("captures holding rows alongside the snapshot for every scope", async () => {
+    const store = createInMemoryStore();
+    makeWorkspace(store);
+    makeAsset(store);
+
+    await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    // Every scope captured its rows, not just the viewed one.
+    for (const scopeId of ["household", "member_jose"]) {
+      const snapshots = store.readSnapshots(scopeId);
+      expect(snapshots).toHaveLength(1);
+
+      const rows = store.readSnapshotHoldings({ scopeId });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        holdingId: "asset_cash",
+        kind: "asset",
+        label: "Caja",
+        liquidityTier: "cash",
+        snapshotId: snapshots[0]!.id,
+        valueMinor: 100_000_00,
+      });
+    }
+
+    store.close();
+  });
+
+  test("same-day reload replaces the holding rows (latest wins)", async () => {
+    const store = createInMemoryStore();
+    makeWorkspace(store);
+    makeAsset(store);
+
+    await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-10",
+      now: "2026-06-10T08:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    store.updateAssetValuation("asset_cash", 120_000_00);
+    await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-10",
+      now: "2026-06-10T18:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    const rows = store.readSnapshotHoldings({ scopeId: "household" });
+    // At most one set of rows per scope per day.
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.valueMinor).toBe(120_000_00);
+
+    store.close();
+  });
+
+  test("captures investment units and unit price on dashboard load", async () => {
+    const store = createInMemoryStore();
+    makeWorkspace(store);
+    store.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset_fund",
+      name: "Fondo",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    });
+    store.recordOperation({
+      assetId: "asset_fund",
+      currency: "EUR",
+      executedAt: "2026-06-01T10:00:00.000Z",
+      id: "op_1",
+      kind: "buy",
+      pricePerUnit: "100",
+      units: "10.5",
+    });
+    store.upsertPrice({
+      assetId: "asset_fund",
+      currency: "EUR",
+      fetchedAt: "2026-06-10T09:00:00.000Z",
+      freshnessState: "fresh",
+      price: "110.40",
+      source: "stooq",
+    });
+
+    await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    const rows = store.readSnapshotHoldings({ scopeId: "household" });
+    const fundRow = rows.find((row) => row.holdingId === "asset_fund");
+    expect(fundRow?.units).toBe("10.5");
+    expect(fundRow?.unitPrice).toBe("110.40");
+    expect(fundRow?.valueMinor).toBe(115_920);
 
     store.close();
   });

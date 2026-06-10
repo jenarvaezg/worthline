@@ -15,9 +15,13 @@
  */
 
 import type { WorthlineStore } from "@worthline/db";
-import type { AssetPrice, NetWorthFraming } from "@worthline/domain";
+import type {
+  AssetPrice,
+  InvestmentCaptureDetail,
+  NetWorthFraming,
+} from "@worthline/domain";
 import {
-  captureNetWorthSnapshot,
+  captureValuedNetWorthSnapshot,
   listScopeOptions,
   planSnapshotCapture,
   prepareDashboardState,
@@ -113,24 +117,43 @@ export async function loadDashboard(
   const scopes = listScopeOptions(workspace);
   const selectedScope = scopes.find((s) => s.id === scopeId) ?? scopes[0];
 
-  // ── 3. Snapshot capture (ADR 0005) ────────────────────────────────────────
+  // ── 3. Snapshot capture (ADR 0005, ADR 0008) ──────────────────────────────
   // Runs for every scope so all scopes accumulate history, not just the
-  // currently viewed one.
+  // currently viewed one. Each capture persists the valued portfolio behind
+  // its figures — one frozen row per holding — atomically with the snapshot.
+  // Investments additionally freeze units and the unit price used that day.
+  const investmentDetails = new Map<string, InvestmentCaptureDetail>(
+    store.readPositions().map((position) => [
+      position.assetId,
+      {
+        units: position.currentUnits,
+        ...(position.currentPricePerUnit
+          ? { unitPrice: position.currentPricePerUnit }
+          : {}),
+      },
+    ]),
+  );
+
   for (const scope of scopes) {
     const existing = store.readSnapshots(scope.id);
     const plan = planSnapshotCapture(existing, scope.id, today);
 
     if (plan.shouldCapture) {
-      const snapshot = captureNetWorthSnapshot({
+      const { snapshot, holdings } = captureValuedNetWorthSnapshot({
         assets,
         capturedAt: now,
         id: buildSnapshotId(scope.id, now, Date.now()),
+        investmentDetails,
         liabilities,
         scopeId: scope.id,
         scopeLabel: scope.label,
         workspace,
       });
-      store.saveSnapshot({ snapshot, replace: plan.replacesId !== undefined });
+      store.saveSnapshot({
+        holdings,
+        replace: plan.replacesId !== undefined,
+        snapshot,
+      });
     }
   }
 
