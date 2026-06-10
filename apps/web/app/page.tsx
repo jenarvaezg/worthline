@@ -1,4 +1,5 @@
 import {
+  donutArcSegments,
   formatMoneyMinor,
   largestRemainderPercentages,
   moneySign,
@@ -36,6 +37,9 @@ const TIER_LABELS: Record<LiquidityTier, string> = {
   illiquid: "Ilíquido",
   housing: "Vivienda",
 };
+
+// Donut ring geometry in viewBox units (viewBox 0 0 100 100).
+const TIER_DONUT_GEOMETRY = { cx: 50, cy: 50, innerRadius: 27, outerRadius: 45 };
 
 const ONBOARDING_LINKS: Record<string, string> = {
   members: "/ajustes",
@@ -113,6 +117,10 @@ export default async function DashboardPage({
   // Liquidity tier percentages — largest-remainder so they sum to 100.
   const tierBpsValues = pyramid.map((tier) => tier.shareOfGrossBps);
   const tierPercents = largestRemainderPercentages(tierBpsValues);
+
+  // Tier donut: arc segments over the same percentages the rows display,
+  // so the visual summary and the row text always agree.
+  const donutSegments = donutArcSegments(tierPercents, TIER_DONUT_GEOMETRY);
 
   // Evolution mini: signed delta bars scaled to the absolute max snapshot value.
   const snapshotAmounts = snapshots.map((s) => s.totalNetWorth.amountMinor);
@@ -213,21 +221,39 @@ export default async function DashboardPage({
           <h2>Liquidez</h2>
           <span>Por capa · % del bruto</span>
         </div>
+        <svg
+          className="tierDonut"
+          viewBox="0 0 100 100"
+          role="img"
+          aria-label="Distribución por capa de liquidez"
+        >
+          <circle
+            className="donutTrack"
+            cx={TIER_DONUT_GEOMETRY.cx}
+            cy={TIER_DONUT_GEOMETRY.cy}
+            r={(TIER_DONUT_GEOMETRY.outerRadius + TIER_DONUT_GEOMETRY.innerRadius) / 2}
+            strokeWidth={TIER_DONUT_GEOMETRY.outerRadius - TIER_DONUT_GEOMETRY.innerRadius}
+          />
+          {donutSegments.map((segment) => {
+            const tier = pyramid[segment.index]!;
+            return (
+              <path
+                className={`donutSegment ${tier.tier}`}
+                d={segment.path}
+                key={tier.tier}
+              >
+                <title>{`${TIER_LABELS[tier.tier]} · ${segment.share}%`}</title>
+              </path>
+            );
+          })}
+        </svg>
         <div className="pyramid">
           {pyramid.map((tier, idx) => {
             const pct = tierPercents[idx] ?? 0;
-            const isZero = tier.grossAssets.amountMinor === 0;
             return (
               <details className={`tier ${tier.tier}`} key={tier.tier}>
                 <summary>
                   <span className="tierName">{TIER_LABELS[tier.tier]}</span>
-                  <span className="tierBar" aria-hidden="true">
-                    <i
-                      style={{
-                        width: `${isZero ? 0 : Math.max(2, pct)}%`,
-                      }}
-                    />
-                  </span>
                   <b className={moneySign(tier.netValue)}>
                     {formatMoneyMinor(tier.netValue)}
                   </b>
