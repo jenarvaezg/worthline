@@ -376,6 +376,64 @@ describe("loadDashboard — liquid drilldown", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Rest and housing drilldowns (#77)
+// ---------------------------------------------------------------------------
+
+describe("loadDashboard — rest and housing drilldowns", () => {
+  test("drill=housing over two days → housing key, no stack, per-property entries", async () => {
+    const store = createInMemoryStore();
+    makeWorkspace(store);
+    store.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 300_000_00,
+      id: "asset_piso",
+      liquidityTier: "housing",
+      name: "Piso",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "real_estate",
+    });
+
+    // Day 1 capture
+    await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-09",
+      now: "2026-06-09T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    // Day 2: revaluation, drill requested
+    store.updateAssetValuation("asset_piso", 320_000_00);
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      drill: "housing",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    expect(result.drilldown).not.toBeNull();
+    expect(result.drilldown!.key).toBe("housing");
+    // Housing is a single tier — no stacked chart, ever.
+    expect(result.drilldown!.stack).toBeNull();
+    expect(result.drilldown!.holdings).toHaveLength(1);
+    expect(result.drilldown!.holdings[0]).toMatchObject({
+      currentValueMinor: 320_000_00,
+      holdingId: "asset_piso",
+      label: "Piso",
+      tier: "housing",
+    });
+
+    store.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Deltas vs previous snapshot and vs monthly close
 // ---------------------------------------------------------------------------
 

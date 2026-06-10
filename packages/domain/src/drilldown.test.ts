@@ -12,7 +12,9 @@ import { describe, expect, test } from "vitest";
 
 import type { DatedSnapshotHoldingRow } from "./drilldown";
 import {
+  buildHousingDrilldown,
   buildLiquidDrilldown,
+  buildRestDrilldown,
   DRILL_SPARKLINE_HEIGHT,
   DRILL_SPARKLINE_INSET_X,
   DRILL_SPARKLINE_WIDTH,
@@ -210,5 +212,105 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
     const state = buildLiquidDrilldown({ currentHoldingIds: [], rows });
 
     expect(state.holdings.map((h) => h.label)).toEqual(["Alfa", "Zeta"]);
+  });
+});
+
+describe("buildRestDrilldown — group resolution (#77)", () => {
+  test("only retirement and illiquid rows participate; other tiers are excluded", () => {
+    const rows = [
+      row({ dateKey: "2026-06-01", holdingId: "a_pension", tier: "retirement", valueMinor: 100 }),
+      row({ dateKey: "2026-06-01", holdingId: "a_art", tier: "illiquid", valueMinor: 50 }),
+      row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 999 }),
+      row({ dateKey: "2026-06-01", holdingId: "a_house", tier: "housing", valueMinor: 999 }),
+      row({ dateKey: "2026-06-01", holdingId: "l_loan", tier: null, valueMinor: 999, kind: "liability" }),
+      row({ dateKey: "2026-06-02", holdingId: "a_pension", tier: "retirement", valueMinor: 120 }),
+      row({ dateKey: "2026-06-02", holdingId: "a_art", tier: "illiquid", valueMinor: 50 }),
+      row({ dateKey: "2026-06-02", holdingId: "a_cash", tier: "cash", valueMinor: 999 }),
+    ];
+
+    const state = buildRestDrilldown({ currentHoldingIds: ["a_pension", "a_art"], rows });
+
+    expect(state.key).toBe("rest");
+    expect(state.stack).not.toBeNull();
+    expect(state.stack!.bands.map((b) => b.band)).toEqual(["retirement", "illiquid"]);
+    expect(state.holdings.map((h) => h.holdingId)).toEqual(["a_art", "a_pension"]);
+  });
+
+  test("stacks retirement and illiquid nets with the deterministic stack→lines fallback", () => {
+    const rows = [
+      row({ dateKey: "2026-06-01", holdingId: "a_pension", tier: "retirement", valueMinor: 100_00 }),
+      row({ dateKey: "2026-06-01", holdingId: "a_art", tier: "illiquid", valueMinor: 50_00 }),
+      row({ dateKey: "2026-06-02", holdingId: "a_pension", tier: "retirement", valueMinor: 110_00 }),
+      row({ dateKey: "2026-06-02", holdingId: "l_art_loan", tier: "illiquid", valueMinor: 70_00, kind: "liability" }),
+      row({ dateKey: "2026-06-02", holdingId: "a_art", tier: "illiquid", valueMinor: 50_00 }),
+    ];
+
+    // Illiquid net dips below zero on day 2 → the whole window becomes lines.
+    const state = buildRestDrilldown({ currentHoldingIds: [], rows });
+
+    expect(state.stack).not.toBeNull();
+    expect(state.stack!.mode).toBe("lines");
+    for (const band of state.stack!.bands) {
+      expect(band.areaPoints).toBeNull();
+    }
+  });
+
+  test("returns null stack below the two-point placeholder threshold", () => {
+    const rows = [
+      row({ dateKey: "2026-06-10", holdingId: "a_pension", tier: "retirement", valueMinor: 100 }),
+    ];
+
+    const state = buildRestDrilldown({ currentHoldingIds: ["a_pension"], rows });
+
+    expect(state.stack).toBeNull();
+    expect(state.holdings).toEqual([]);
+  });
+});
+
+describe("buildHousingDrilldown — single-tier group (#77)", () => {
+  test("only housing rows participate and the key is housing", () => {
+    const rows = [
+      row({ dateKey: "2026-06-01", holdingId: "a_piso", tier: "housing", valueMinor: 300_000_00, label: "Piso" }),
+      row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 999 }),
+      row({ dateKey: "2026-06-01", holdingId: "a_pension", tier: "retirement", valueMinor: 999 }),
+      row({ dateKey: "2026-06-02", holdingId: "a_piso", tier: "housing", valueMinor: 320_000_00, label: "Piso" }),
+    ];
+
+    const state = buildHousingDrilldown({ currentHoldingIds: ["a_piso"], rows });
+
+    expect(state.key).toBe("housing");
+    expect(state.holdings.map((h) => h.holdingId)).toEqual(["a_piso"]);
+  });
+
+  test("never builds a stack, even with multi-day data", () => {
+    const rows = [
+      row({ dateKey: "2026-06-01", holdingId: "a_piso", tier: "housing", valueMinor: 300_000_00 }),
+      row({ dateKey: "2026-06-02", holdingId: "a_piso", tier: "housing", valueMinor: 320_000_00 }),
+    ];
+
+    const state = buildHousingDrilldown({ currentHoldingIds: ["a_piso"], rows });
+
+    expect(state.stack).toBeNull();
+  });
+
+  test("per-property small multiples answer which property revalued more", () => {
+    const rows = [
+      row({ dateKey: "2026-06-01", holdingId: "a_piso", tier: "housing", valueMinor: 300_000_00, label: "Piso" }),
+      row({ dateKey: "2026-06-01", holdingId: "a_atico", tier: "housing", valueMinor: 200_000_00, label: "Ático" }),
+      row({ dateKey: "2026-06-02", holdingId: "a_piso", tier: "housing", valueMinor: 320_000_00, label: "Piso" }),
+      row({ dateKey: "2026-06-02", holdingId: "a_atico", tier: "housing", valueMinor: 200_000_00, label: "Ático" }),
+    ];
+
+    const state = buildHousingDrilldown({ currentHoldingIds: ["a_piso", "a_atico"], rows });
+
+    expect(state.holdings.map((h) => h.label)).toEqual(["Ático", "Piso"]);
+    expect(state.holdings.map((h) => h.currentValueMinor)).toEqual([
+      200_000_00,
+      320_000_00,
+    ]);
+    for (const holding of state.holdings) {
+      expect(holding.tier).toBe("housing");
+      expect(holding.sparkline.linePoints.length).toBeGreaterThan(0);
+    }
   });
 });

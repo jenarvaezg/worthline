@@ -1056,7 +1056,11 @@ th:last-child {
 }
 
 .decompositionBand.liquid:hover,
-svg a:hover .decompositionBand.liquid {
+svg a:hover .decompositionBand.liquid,
+.decompositionBand.housing:hover,
+svg a:hover .decompositionBand.housing,
+.decompositionBand.rest:hover,
+svg a:hover .decompositionBand.rest {
   filter: brightness(1.08);
 }
 
@@ -1157,6 +1161,46 @@ svg a:hover .decompositionBand.liquid {
 
 .drillSparkline.market polyline {
   stroke: rgb(0, 111, 95);
+}
+
+/* === #77 rest and housing drilldowns === */
+
+/* Retirement, illiquid and housing reuse their page-wide tier hues
+   (.donutSegment/.tier), exactly like cash and market above. */
+.decompositionLegend .retirement i {
+  background: rgb(36, 77, 114);
+}
+
+.decompositionLegend .illiquid i {
+  background: rgb(127, 144, 136);
+}
+
+.drillBand.retirement {
+  fill: rgb(36, 77, 114);
+}
+
+.drillBand.illiquid {
+  fill: rgb(127, 144, 136);
+}
+
+.drillLine.retirement {
+  stroke: rgb(36, 77, 114);
+}
+
+.drillLine.illiquid {
+  stroke: rgb(127, 144, 136);
+}
+
+.drillSparkline.retirement polyline {
+  stroke: rgb(36, 77, 114);
+}
+
+.drillSparkline.illiquid polyline {
+  stroke: rgb(127, 144, 136);
+}
+
+.drillSparkline.housing polyline {
+  stroke: rgb(194, 154, 46);
 }
 
 .persistenceBar {
