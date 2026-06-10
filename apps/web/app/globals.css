@@ -971,6 +971,73 @@ th:last-child {
   margin-top: 14px;
 }
 
+/* Decomposition chart (#75) — net worth split into liquid (green), housing
+   (gold) and rest (blue) bands under the evolution chart. Any band crossing
+   zero renders the window as three plain lines instead of a stack. The
+   legend names the bands with the page-wide color semantics. */
+.decompositionLegend {
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.decompositionLegend span {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.decompositionLegend i {
+  display: inline-block;
+  height: 10px;
+  width: 10px;
+}
+
+.decompositionLegend .liquid i {
+  background: var(--green);
+}
+
+.decompositionLegend .housing i {
+  background: var(--gold);
+}
+
+.decompositionLegend .rest i {
+  background: var(--blue);
+}
+
+.decompositionChart {
+  display: block;
+  height: 160px;
+  margin-top: 8px;
+  width: 100%;
+}
+
+.decompositionBand.liquid {
+  fill: var(--green);
+}
+
+.decompositionBand.housing {
+  fill: var(--gold);
+}
+
+.decompositionBand.rest {
+  fill: var(--blue);
+}
+
+.decompositionLine.liquid {
+  stroke: var(--green);
+}
+
+.decompositionLine.housing {
+  stroke: var(--gold);
+}
+
+.decompositionLine.rest {
+  stroke: var(--blue);
+}
+
 .persistenceBar {
   align-items: center;
   display: flex;

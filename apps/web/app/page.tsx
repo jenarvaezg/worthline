@@ -19,6 +19,7 @@ import {
 } from "./intake";
 import { loadDashboard } from "./load-dashboard";
 import type { RefreshPricesResult } from "./load-dashboard";
+import DecompositionChart from "./decomposition-chart";
 import EvolutionChart from "./evolution-chart";
 import { refreshAndPersistStalePrices } from "./refresh-prices";
 import Shell from "./shell";
@@ -219,6 +220,9 @@ export default async function DashboardPage({
           </Link>
         </div>
         <EvolutionChart framing={selectedView} snapshots={snapshots} />
+        {/* Decomposition — always splits NET WORTH (framing-invariant):
+            liquid (green), housing (gold), rest (blue). */}
+        <DecompositionChart snapshots={snapshots} />
       </section>
 
       {/* ── 4. Composition — liquidity breakdown, 5 tiers ── */}
