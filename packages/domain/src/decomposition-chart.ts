@@ -42,8 +42,15 @@ export interface DecompositionBandsPoint {
   restMinor: number;
 }
 
-export interface DecompositionBandGeometry {
-  band: DecompositionBandId;
+/** One named value series of a stacked chart, in stacking order. */
+export interface StackedSeriesInput<Id extends string> {
+  band: Id;
+  /** One value per date key, aligned by index. */
+  values: number[];
+}
+
+export interface StackedBandGeometry<Id extends string> {
+  band: Id;
   /**
    * Stacked mode: closed polygon between the band's lower and upper stack
    * edges (upper edge left→right, then lower edge right→left). `null` in
@@ -57,16 +64,20 @@ export interface DecompositionBandGeometry {
   linePoints: string;
 }
 
-export interface DecompositionChartGeometry {
+export interface StackedChartGeometry<Id extends string> {
   mode: "stacked" | "lines";
   width: number;
   height: number;
-  /** Bands in stacking order from the baseline up: liquid, housing, rest. */
-  bands: DecompositionBandGeometry[];
+  /** Bands in stacking order from the baseline up. */
+  bands: Array<StackedBandGeometry<Id>>;
   /** Value domain (minor units) the y scale maps from. */
   yMin: number;
   yMax: number;
 }
+
+export type DecompositionBandGeometry = StackedBandGeometry<DecompositionBandId>;
+
+export type DecompositionChartGeometry = StackedChartGeometry<DecompositionBandId>;
 
 /**
  * Splits each snapshot's net worth into the three decomposition bands:
@@ -95,28 +106,20 @@ function toAreaString(xs: number[], upperYs: number[], lowerYs: number[]): strin
 }
 
 /**
- * Builds the decomposition chart geometry, or `null` when there is no chart
- * to draw — same rule as the evolution chart: fewer than two points (the
- * placeholder threshold) or a degenerate zero-length time span.
+ * Generic stacked-chart geometry shared by the decomposition chart and the
+ * drilldown per-tier stack (#76): named series in stacking order over a date
+ * series. Stacked polygons when every series stays ≥ 0 across the window;
+ * the whole window falls back to plain lines otherwise. Returns `null` below
+ * the two-point placeholder threshold or for a degenerate time span.
  */
-export function buildDecompositionChartGeometry(
-  points: DecompositionSeriesPoint[],
-): DecompositionChartGeometry | null {
-  if (points.length < 2) return null;
+export function buildStackedChartGeometry<Id extends string>(
+  dateKeys: string[],
+  series: Array<StackedSeriesInput<Id>>,
+): StackedChartGeometry<Id> | null {
+  if (dateKeys.length < 2) return null;
 
-  const xs = timeProportionalXs(
-    points.map((p) => p.dateKey),
-    EVOLUTION_CHART_WIDTH,
-    EVOLUTION_CHART_INSET_X,
-  );
+  const xs = timeProportionalXs(dateKeys, EVOLUTION_CHART_WIDTH, EVOLUTION_CHART_INSET_X);
   if (!xs) return null;
-
-  const bands = deriveDecompositionBands(points);
-  const series: Array<{ band: DecompositionBandId; values: number[] }> = [
-    { band: "liquid", values: bands.map((b) => b.liquidMinor) },
-    { band: "housing", values: bands.map((b) => b.housingMinor) },
-    { band: "rest", values: bands.map((b) => b.restMinor) },
-  ];
 
   const stackable = series.every((s) => s.values.every((v) => v >= 0));
 
@@ -145,7 +148,7 @@ export function buildDecompositionChartGeometry(
   // baseline so the stack visibly grows from zero.
   const edges = series.reduce<number[][]>(
     (acc, s) => [...acc, acc.at(-1)!.map((sum, i) => sum + s.values[i]!)],
-    [points.map(() => 0)],
+    [dateKeys.map(() => 0)],
   );
   const { yMin, yMax } = paddedValueDomain([0, ...edges.at(-1)!]);
   const edgeYs = edges.map((edge) =>
@@ -164,4 +167,24 @@ export function buildDecompositionChartGeometry(
     yMax,
     yMin,
   };
+}
+
+/**
+ * Builds the decomposition chart geometry, or `null` when there is no chart
+ * to draw — same rule as the evolution chart: fewer than two points (the
+ * placeholder threshold) or a degenerate zero-length time span.
+ */
+export function buildDecompositionChartGeometry(
+  points: DecompositionSeriesPoint[],
+): DecompositionChartGeometry | null {
+  const bands = deriveDecompositionBands(points);
+
+  return buildStackedChartGeometry<DecompositionBandId>(
+    points.map((p) => p.dateKey),
+    [
+      { band: "liquid", values: bands.map((b) => b.liquidMinor) },
+      { band: "housing", values: bands.map((b) => b.housingMinor) },
+      { band: "rest", values: bands.map((b) => b.restMinor) },
+    ],
+  );
 }

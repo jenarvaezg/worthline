@@ -12,7 +12,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import {
+  appendParam,
   buildCurrentUrl,
+  parseDrillParam,
   parseScopeCookie,
   parseViewParam,
   SCOPE_COOKIE_NAME,
@@ -20,6 +22,7 @@ import {
 import { loadDashboard } from "./load-dashboard";
 import type { RefreshPricesResult } from "./load-dashboard";
 import DecompositionChart from "./decomposition-chart";
+import DrilldownPanel from "./drilldown-panel";
 import EvolutionChart from "./evolution-chart";
 import { refreshAndPersistStalePrices } from "./refresh-prices";
 import Shell from "./shell";
@@ -58,7 +61,12 @@ export default async function DashboardPage({
   const resolvedSearchParams = await searchParams;
   const persistence = runBootstrapHealthcheck();
   const selectedView = parseViewParam(resolvedSearchParams?.view);
+  const selectedDrill = parseDrillParam(resolvedSearchParams?.drill);
   const currentUrl = buildCurrentUrl(resolvedSearchParams);
+
+  // Drill navigation (#76): both URLs preserve the selected Vista.
+  const viewHomeUrl = selectedView === "total" ? "/" : `/?view=${selectedView}`;
+  const liquidDrillHref = appendParam(viewHomeUrl, "drill", "liquid");
 
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
@@ -74,6 +82,7 @@ export default async function DashboardPage({
       persistence,
       scopeId: cookieScopeId,
       selectedView,
+      drill: selectedDrill,
       today,
       now,
       refreshPrices: async ({ cacheEntries, assets, nowIso }): Promise<RefreshPricesResult> => {
@@ -141,7 +150,11 @@ export default async function DashboardPage({
             {framingTabs.map((tab) => (
               <Link
                 className={tab.id === selectedView ? "active" : undefined}
-                href={`/?view=${tab.id}`}
+                href={
+                  selectedDrill
+                    ? appendParam(`/?view=${tab.id}`, "drill", selectedDrill)
+                    : `/?view=${tab.id}`
+                }
                 key={tab.id}
                 scroll={false}
               >
@@ -221,8 +234,21 @@ export default async function DashboardPage({
         </div>
         <EvolutionChart framing={selectedView} snapshots={snapshots} />
         {/* Decomposition — always splits NET WORTH (framing-invariant):
-            liquid (green), housing (gold), rest (blue). */}
-        <DecompositionChart snapshots={snapshots} />
+            liquid (green), housing (gold), rest (blue). When a drill is
+            active (#76) the drill panel renders in its place, with a
+            breadcrumb back that preserves the Vista. */}
+        {selectedDrill && state.drilldown ? (
+          <DrilldownPanel
+            backHref={viewHomeUrl}
+            currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
+            drilldown={state.drilldown}
+          />
+        ) : (
+          <DecompositionChart
+            liquidDrillHref={liquidDrillHref}
+            snapshots={snapshots}
+          />
+        )}
       </section>
 
       {/* ── 4. Composition — liquidity breakdown, 5 tiers ── */}

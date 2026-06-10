@@ -282,6 +282,100 @@ describe("loadDashboard — snapshot holding rows", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Drilldown resolution (#76)
+// ---------------------------------------------------------------------------
+
+describe("loadDashboard — liquid drilldown", () => {
+  test("no drill param → drilldown is null", async () => {
+    const store = createInMemoryStore();
+    makeWorkspace(store);
+    makeAsset(store);
+
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    expect(result.drilldown).toBeNull();
+
+    store.close();
+  });
+
+  test("drill=liquid with single-day rows → placeholder state (null stack, no holdings)", async () => {
+    const store = createInMemoryStore();
+    makeWorkspace(store);
+    makeAsset(store);
+
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      drill: "liquid",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    expect(result.drilldown).toEqual({ holdings: [], key: "liquid", stack: null });
+
+    store.close();
+  });
+
+  test("drill=liquid over two days → stack and per-holding entries from the scope's rows", async () => {
+    const store = createInMemoryStore();
+    makeWorkspace(store);
+    makeAsset(store);
+
+    // Day 1 capture
+    await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-09",
+      now: "2026-06-09T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    // Day 2: value changed, drill requested
+    store.updateAssetValuation("asset_cash", 120_000_00);
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      drill: "liquid",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    expect(result.drilldown).not.toBeNull();
+    expect(result.drilldown!.key).toBe("liquid");
+    expect(result.drilldown!.stack).not.toBeNull();
+    expect(result.drilldown!.stack!.bands.map((b) => b.band)).toEqual([
+      "cash",
+      "market",
+    ]);
+    expect(result.drilldown!.holdings).toHaveLength(1);
+    expect(result.drilldown!.holdings[0]).toMatchObject({
+      currentValueMinor: 120_000_00,
+      holdingId: "asset_cash",
+      label: "Caja",
+      tier: "cash",
+    });
+
+    store.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Deltas vs previous snapshot and vs monthly close
 // ---------------------------------------------------------------------------
 
