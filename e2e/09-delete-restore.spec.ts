@@ -6,7 +6,7 @@
  * active assets table.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test("delete → papelera → restore round-trip", async ({ page }) => {
   // 1. Create a dedicated asset for this test

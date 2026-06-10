@@ -6,7 +6,7 @@
  * and is retractable.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test("warning lifecycle: zero asset → warning badge → override → listed in ajustes → retractable", async ({
   page,

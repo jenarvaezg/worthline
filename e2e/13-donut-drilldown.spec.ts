@@ -8,7 +8,7 @@
  * With no holdings the donut is not drawn — the drill URLs stay bookmarkable.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 /** Mirror of the domain's DRILL_GROUP_BY_TIER (#79). */
 const DRILL_BY_TIER: Record<string, string> = {

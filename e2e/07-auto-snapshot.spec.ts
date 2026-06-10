@@ -6,7 +6,7 @@
  * derived monthly close (first and only snapshot of the month).
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test("auto-snapshot: / load captures snapshot → deltas → historico shows entry", async ({
   page,
