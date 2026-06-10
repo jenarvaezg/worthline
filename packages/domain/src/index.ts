@@ -131,6 +131,18 @@ export {
   EVOLUTION_CHART_WIDTH,
 } from "./evolution-chart";
 
+export type {
+  DecompositionBandGeometry,
+  DecompositionBandId,
+  DecompositionBandsPoint,
+  DecompositionChartGeometry,
+  DecompositionSeriesPoint,
+} from "./decomposition-chart";
+export {
+  buildDecompositionChartGeometry,
+  deriveDecompositionBands,
+} from "./decomposition-chart";
+
 /**
  * A rule violation reported by a domain constructor — carries a stable
  * machine-readable `code` plus context fields that callers can use to format

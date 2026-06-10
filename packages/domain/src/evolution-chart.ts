@@ -52,6 +52,50 @@ function round2(value: number): number {
 }
 
 /**
+ * Time-proportional x positions for a date series: capture gaps appear as
+ * longer segments. Returns `null` for a degenerate zero-length time span or
+ * unparseable dates.
+ */
+export function timeProportionalXs(
+  dateKeys: string[],
+  width: number,
+  insetX: number,
+): number[] | null {
+  const times = dateKeys.map((d) => Date.parse(`${d}T00:00:00Z`));
+  const t0 = Math.min(...times);
+  const span = Math.max(...times) - t0;
+
+  if (span <= 0 || times.some((t) => Number.isNaN(t))) return null;
+
+  const innerWidth = width - 2 * insetX;
+  return times.map((t) => round2(insetX + ((t - t0) / span) * innerWidth));
+}
+
+/**
+ * Value domain fitted to the data range with ~10% padding on both sides
+ * (never anchored at zero). Flat series still get headroom so the line sits
+ * mid-chart instead of on an edge; the fallback pad scales with the value.
+ */
+export function paddedValueDomain(values: number[]): { yMin: number; yMax: number } {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min;
+  const pad =
+    range > 0 ? range * Y_PADDING_RATIO : Math.max(Math.abs(max), 1) * Y_PADDING_RATIO;
+  return { yMax: max + pad, yMin: min - pad };
+}
+
+/** Maps a minor-unit value into viewBox y space (top = yMax, bottom = yMin). */
+export function valueToY(
+  value: number,
+  yMin: number,
+  yMax: number,
+  height: number,
+): number {
+  return round2(height - ((value - yMin) / (yMax - yMin)) * height);
+}
+
+/**
  * Builds the chart geometry for a snapshot series, or `null` when there is
  * no chart to draw: fewer than two points (the placeholder threshold) or a
  * degenerate zero-length time span.
@@ -61,31 +105,18 @@ export function buildEvolutionChartGeometry(
 ): EvolutionChartGeometry | null {
   if (points.length < 2) return null;
 
-  const times = points.map((p) => Date.parse(`${p.dateKey}T00:00:00Z`));
-  const t0 = Math.min(...times);
-  const span = Math.max(...times) - t0;
+  const xs = timeProportionalXs(
+    points.map((p) => p.dateKey),
+    EVOLUTION_CHART_WIDTH,
+    EVOLUTION_CHART_INSET_X,
+  );
+  if (!xs) return null;
 
-  if (span <= 0 || times.some((t) => Number.isNaN(t))) return null;
-
-  const values = points.map((p) => p.valueMinor);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min;
-  // Flat series still get headroom so the line sits mid-chart instead of on
-  // an edge; scale the fallback to the magnitude of the value.
-  const pad =
-    range > 0 ? range * Y_PADDING_RATIO : Math.max(Math.abs(max), 1) * Y_PADDING_RATIO;
-  const yMin = min - pad;
-  const yMax = max + pad;
-
-  const innerWidth = EVOLUTION_CHART_WIDTH - 2 * EVOLUTION_CHART_INSET_X;
+  const { yMin, yMax } = paddedValueDomain(points.map((p) => p.valueMinor));
 
   const coords = points.map((p, i) => ({
-    x: round2(EVOLUTION_CHART_INSET_X + ((times[i]! - t0) / span) * innerWidth),
-    y: round2(
-      EVOLUTION_CHART_HEIGHT -
-        ((p.valueMinor - yMin) / (yMax - yMin)) * EVOLUTION_CHART_HEIGHT,
-    ),
+    x: xs[i]!,
+    y: valueToY(p.valueMinor, yMin, yMax, EVOLUTION_CHART_HEIGHT),
   }));
 
   const linePoints = coords.map(({ x, y }) => `${x},${y}`).join(" ");
