@@ -1,0 +1,334 @@
+/**
+ * Snapshot holding rows (ADR 0008, issue #72).
+ *
+ * Every capture records the valued portfolio behind its figures: one row per
+ * holding, with label and liquidity tier denormalized at capture time and the
+ * scope-weighted value in integer minor units. Investments additionally carry
+ * units and unit price as decimal strings. At capture time the rows must sum
+ * exactly to the headline gross assets and debts or the capture fails loudly.
+ */
+import { describe, expect, test } from "vitest";
+
+import type { InvestmentCaptureDetail, Liability, ManualAsset, Workspace } from "./index";
+import {
+  assertSnapshotHoldingsReconcile,
+  buildSnapshotHoldingRows,
+  captureValuedNetWorthSnapshot,
+  createLiability,
+  createManualAsset,
+  createWorkspace,
+} from "./index";
+
+function makeWorkspace(): Workspace {
+  return createWorkspace({
+    baseCurrency: "EUR",
+    members: [
+      { id: "member_jose", name: "Jose" },
+      { id: "member_ana", name: "Ana" },
+    ],
+    mode: "household",
+  });
+}
+
+function makeAssets(workspace: Workspace): ManualAsset[] {
+  return [
+    createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 50_000_00,
+      id: "asset_cash",
+      liquidityTier: "cash",
+      name: "Cuenta corriente",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "cash",
+    }),
+    createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 300_000_00,
+      id: "asset_home",
+      isPrimaryResidence: true,
+      // tier is denormalized via tierOfAsset: primary residence → housing,
+      // regardless of the stored liquidityTier.
+      liquidityTier: "illiquid",
+      name: "Piso",
+      ownership: [
+        { memberId: "member_jose", shareBps: 5_000 },
+        { memberId: "member_ana", shareBps: 5_000 },
+      ],
+      type: "real_estate",
+    }),
+    createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 13_000_00,
+      id: "asset_fund",
+      liquidityTier: "market",
+      name: "Fondo indexado",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "investment",
+    }),
+    createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 7_000_00,
+      id: "asset_ana_only",
+      liquidityTier: "cash",
+      name: "Cuenta de Ana",
+      ownership: [{ memberId: "member_ana", shareBps: 10_000 }],
+      type: "cash",
+    }),
+  ];
+}
+
+function makeLiabilities(workspace: Workspace): Liability[] {
+  return [
+    createLiability(workspace, {
+      associatedAssetId: "asset_home",
+      balanceMinor: 120_000_00,
+      currency: "EUR",
+      id: "liability_mortgage",
+      name: "Hipoteca",
+      ownership: [
+        { memberId: "member_jose", shareBps: 5_000 },
+        { memberId: "member_ana", shareBps: 5_000 },
+      ],
+      type: "mortgage",
+    }),
+    createLiability(workspace, {
+      balanceMinor: 3_000_00,
+      currency: "EUR",
+      id: "liability_loan",
+      name: "Prestamo personal",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "debt",
+    }),
+  ];
+}
+
+describe("buildSnapshotHoldingRows — row production and denormalization", () => {
+  test("produces one row per holding with label and tier frozen at capture time", () => {
+    const workspace = makeWorkspace();
+    const rows = buildSnapshotHoldingRows({
+      assets: makeAssets(workspace),
+      liabilities: makeLiabilities(workspace),
+      scopeId: "household",
+      workspace,
+    });
+
+    const cashRow = rows.find((row) => row.holdingId === "asset_cash");
+    expect(cashRow).toMatchObject({
+      kind: "asset",
+      label: "Cuenta corriente",
+      liquidityTier: "cash",
+      valueMinor: 50_000_00,
+    });
+
+    // Primary residence resolves to the housing tier (tierOfAsset), not the
+    // stored liquidityTier.
+    const homeRow = rows.find((row) => row.holdingId === "asset_home");
+    expect(homeRow).toMatchObject({
+      kind: "asset",
+      label: "Piso",
+      liquidityTier: "housing",
+      valueMinor: 300_000_00,
+    });
+  });
+
+  test("liability secured by an asset freezes that asset's tier; unsecured tier is null", () => {
+    const workspace = makeWorkspace();
+    const rows = buildSnapshotHoldingRows({
+      assets: makeAssets(workspace),
+      liabilities: makeLiabilities(workspace),
+      scopeId: "household",
+      workspace,
+    });
+
+    const mortgageRow = rows.find((row) => row.holdingId === "liability_mortgage");
+    expect(mortgageRow).toMatchObject({
+      kind: "liability",
+      label: "Hipoteca",
+      liquidityTier: "housing",
+      valueMinor: 120_000_00,
+    });
+
+    const loanRow = rows.find((row) => row.holdingId === "liability_loan");
+    expect(loanRow).toMatchObject({
+      kind: "liability",
+      label: "Prestamo personal",
+      liquidityTier: null,
+      valueMinor: 3_000_00,
+    });
+  });
+
+  test("scope-weights values by ownership and omits holdings outside the scope", () => {
+    const workspace = makeWorkspace();
+    const rows = buildSnapshotHoldingRows({
+      assets: makeAssets(workspace),
+      liabilities: makeLiabilities(workspace),
+      scopeId: "member_jose",
+      workspace,
+    });
+
+    // Jose's own account: full value.
+    expect(rows.find((row) => row.holdingId === "asset_cash")?.valueMinor).toBe(
+      50_000_00,
+    );
+    // Shared home: half of it.
+    expect(rows.find((row) => row.holdingId === "asset_home")?.valueMinor).toBe(
+      150_000_00,
+    );
+    // Shared mortgage: half of it.
+    expect(
+      rows.find((row) => row.holdingId === "liability_mortgage")?.valueMinor,
+    ).toBe(60_000_00);
+    // Ana's account is not in Jose's scope — no row at all.
+    expect(rows.some((row) => row.holdingId === "asset_ana_only")).toBe(false);
+  });
+
+  test("investment rows carry units and unit price as decimal strings", () => {
+    const workspace = makeWorkspace();
+    const investmentDetails = new Map<string, InvestmentCaptureDetail>([
+      ["asset_fund", { unitPrice: "130.25", units: "99.8123" }],
+    ]);
+    const rows = buildSnapshotHoldingRows({
+      assets: makeAssets(workspace),
+      investmentDetails,
+      liabilities: makeLiabilities(workspace),
+      scopeId: "household",
+      workspace,
+    });
+
+    const fundRow = rows.find((row) => row.holdingId === "asset_fund");
+    expect(fundRow?.units).toBe("99.8123");
+    expect(fundRow?.unitPrice).toBe("130.25");
+
+    // Non-investments never carry units or unit price.
+    const cashRow = rows.find((row) => row.holdingId === "asset_cash");
+    expect(cashRow?.units).toBeUndefined();
+    expect(cashRow?.unitPrice).toBeUndefined();
+  });
+});
+
+describe("captureValuedNetWorthSnapshot — reconciliation invariant", () => {
+  test("asset rows sum exactly to headline gross assets and liability rows to debts", () => {
+    const workspace = makeWorkspace();
+    // Uneven splits force per-holding rounding — the invariant must still hold
+    // exactly because rows and headline figures round the same way.
+    const assets = [
+      createManualAsset(workspace, {
+        currency: "EUR",
+        currentValueMinor: 33_333,
+        id: "asset_odd",
+        liquidityTier: "cash",
+        name: "Cuenta impar",
+        ownership: [
+          { memberId: "member_jose", shareBps: 3_333 },
+          { memberId: "member_ana", shareBps: 6_667 },
+        ],
+        type: "cash",
+      }),
+    ];
+    const liabilities = [
+      createLiability(workspace, {
+        balanceMinor: 11_111,
+        currency: "EUR",
+        id: "liability_odd",
+        name: "Deuda impar",
+        ownership: [
+          { memberId: "member_jose", shareBps: 3_333 },
+          { memberId: "member_ana", shareBps: 6_667 },
+        ],
+        type: "debt",
+      }),
+    ];
+
+    for (const scopeId of ["household", "member_jose", "member_ana"]) {
+      const { holdings, snapshot } = captureValuedNetWorthSnapshot({
+        assets,
+        capturedAt: "2026-06-10T10:00:00.000Z",
+        id: `snapshot_${scopeId}`,
+        liabilities,
+        scopeId,
+        scopeLabel: scopeId,
+        workspace,
+      });
+
+      const assetSum = holdings
+        .filter((row) => row.kind === "asset")
+        .reduce((sum, row) => sum + row.valueMinor, 0);
+      const liabilitySum = holdings
+        .filter((row) => row.kind === "liability")
+        .reduce((sum, row) => sum + row.valueMinor, 0);
+
+      expect(assetSum).toBe(snapshot.grossAssets.amountMinor);
+      expect(liabilitySum).toBe(snapshot.debts.amountMinor);
+    }
+  });
+
+  test("returns the snapshot with the same headline figures as captureNetWorthSnapshot", () => {
+    const workspace = makeWorkspace();
+    const { snapshot } = captureValuedNetWorthSnapshot({
+      assets: makeAssets(workspace),
+      capturedAt: "2026-06-10T10:00:00.000Z",
+      id: "snapshot_household",
+      liabilities: makeLiabilities(workspace),
+      scopeId: "household",
+      scopeLabel: "Hogar",
+      workspace,
+    });
+
+    expect(snapshot.grossAssets.amountMinor).toBe(370_000_00);
+    expect(snapshot.debts.amountMinor).toBe(123_000_00);
+    expect(snapshot.totalNetWorth.amountMinor).toBe(247_000_00);
+  });
+});
+
+describe("assertSnapshotHoldingsReconcile — both sides of the invariant", () => {
+  const reconciledRows = [
+    {
+      holdingId: "asset_a",
+      kind: "asset" as const,
+      label: "A",
+      liquidityTier: "cash" as const,
+      valueMinor: 70_00,
+    },
+    {
+      holdingId: "asset_b",
+      kind: "asset" as const,
+      label: "B",
+      liquidityTier: "market" as const,
+      valueMinor: 30_00,
+    },
+    {
+      holdingId: "liability_c",
+      kind: "liability" as const,
+      label: "C",
+      liquidityTier: null,
+      valueMinor: 25_00,
+    },
+  ];
+
+  test("passes silently when rows sum exactly to the headline figures", () => {
+    expect(() =>
+      assertSnapshotHoldingsReconcile(reconciledRows, {
+        debtsMinor: 25_00,
+        grossAssetsMinor: 100_00,
+      }),
+    ).not.toThrow();
+  });
+
+  test("fails loudly when asset rows do not sum to gross assets", () => {
+    expect(() =>
+      assertSnapshotHoldingsReconcile(reconciledRows, {
+        debtsMinor: 25_00,
+        grossAssetsMinor: 99_99,
+      }),
+    ).toThrow(/gross assets/i);
+  });
+
+  test("fails loudly when liability rows do not sum to debts", () => {
+    expect(() =>
+      assertSnapshotHoldingsReconcile(reconciledRows, {
+        debtsMinor: 26_00,
+        grossAssetsMinor: 100_00,
+      }),
+    ).toThrow(/debts/i);
+  });
+});

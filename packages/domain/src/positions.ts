@@ -192,6 +192,7 @@ export function derivePosition(
 
   return {
     ...summary,
+    currentPricePerUnit: options.currentPricePerUnit,
     marketValue,
     unrealizedPnl: subtractMoney(marketValue, summary.costBasis),
   };

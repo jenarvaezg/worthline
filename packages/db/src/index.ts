@@ -19,12 +19,15 @@ import type {
   NetWorthSnapshot,
   OwnershipShare,
   PositionSummary,
+  SnapshotHoldingKind,
+  SnapshotHoldingRow,
   WarningOverride,
   Workspace,
   WorkspaceMode,
 } from "@worthline/domain";
 import {
   assertNotInvestmentAsset,
+  assertSnapshotHoldingsReconcile,
   createInvestmentOperation,
   createLiability,
   createManualAsset,
@@ -82,6 +85,28 @@ export interface InitializeWorkspaceInput {
 export interface SaveSnapshotInput {
   snapshot: NetWorthSnapshot;
   replace?: boolean;
+  /**
+   * The valued portfolio behind the snapshot's figures (ADR 0008) — saved
+   * atomically with the snapshot row. Must reconcile exactly with the
+   * snapshot's headline gross assets and debts or the save throws and
+   * persists nothing.
+   */
+  holdings?: SnapshotHoldingRow[];
+}
+
+/** Filter for reading frozen holding rows: by scope and optional date-key window (inclusive). */
+export interface SnapshotHoldingQuery {
+  scopeId?: string;
+  from?: string;
+  to?: string;
+}
+
+/** A frozen holding row joined with its snapshot's identity and date. */
+export interface SnapshotHoldingRecord extends SnapshotHoldingRow {
+  snapshotId: string;
+  scopeId: string;
+  dateKey: string;
+  capturedAt: string;
 }
 
 export interface CreateInvestmentAssetInput {
@@ -189,6 +214,7 @@ export interface WorthlineStore {
   readOperations: (assetId: string) => InvestmentOperation[];
   readPositions: (scopeId?: string) => PositionView[];
   readPriceCache: (assetId: string) => AssetPrice | null;
+  readSnapshotHoldings: (query?: SnapshotHoldingQuery) => SnapshotHoldingRecord[];
   readSnapshots: (scopeId?: string) => NetWorthSnapshot[];
   readTrash: () => TrashView;
   readWarningOverrides: () => WarningOverride[];
@@ -807,6 +833,15 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
     saveSnapshot: (input) => {
       const snapshot = input.snapshot;
 
+      // Reconciliation invariant (ADR 0008): verify before ANY write so a
+      // capture whose rows contradict its own figures persists nothing.
+      if (input.holdings) {
+        assertSnapshotHoldingsReconcile(input.holdings, {
+          debtsMinor: snapshot.debts.amountMinor,
+          grossAssetsMinor: snapshot.grossAssets.amountMinor,
+        });
+      }
+
       const save = sqlite.transaction(() => {
         if (snapshot.isMonthlyClose) {
           sqlite
@@ -824,12 +859,21 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         // gracefully — the second write updates rather than throwing.
         // explicit replace flag keeps the old id-based delete path for callers
         // that need to force a specific snapshot id.
-        if (input.replace) {
-          const existing = sqlite
-            .prepare(`SELECT id FROM snapshots WHERE scope_id = ? AND date_key = ?`)
-            .get(snapshot.scopeId, snapshot.dateKey) as { id: string } | undefined;
+        //
+        // Either way the same-day snapshot is superseded, so its holding rows
+        // go with it — at most one set of rows per scope per day. The delete
+        // must run before the upsert because the upsert rewrites the parent
+        // snapshot id that the rows' foreign key points at.
+        const existing = sqlite
+          .prepare(`SELECT id FROM snapshots WHERE scope_id = ? AND date_key = ?`)
+          .get(snapshot.scopeId, snapshot.dateKey) as { id: string } | undefined;
 
-          if (existing) {
+        if (existing) {
+          sqlite
+            .prepare(`DELETE FROM snapshot_holdings WHERE snapshot_id = ?`)
+            .run(existing.id);
+
+          if (input.replace) {
             sqlite.prepare("DELETE FROM snapshots WHERE id = ?").run(existing.id);
           }
         }
@@ -900,10 +944,52 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
             totalNetWorthMinor: snapshot.totalNetWorth.amountMinor,
             warningsJson: JSON.stringify(snapshot.warnings),
           });
+
+        if (input.holdings && input.holdings.length > 0) {
+          const insertHolding = sqlite.prepare(`
+            INSERT INTO snapshot_holdings (
+              id,
+              snapshot_id,
+              holding_id,
+              kind,
+              label,
+              liquidity_tier,
+              value_minor,
+              units,
+              unit_price
+            )
+            VALUES (
+              @id,
+              @snapshotId,
+              @holdingId,
+              @kind,
+              @label,
+              @liquidityTier,
+              @valueMinor,
+              @units,
+              @unitPrice
+            )
+          `);
+
+          for (const row of input.holdings) {
+            insertHolding.run({
+              holdingId: row.holdingId,
+              id: randomUUID(),
+              kind: row.kind,
+              label: row.label,
+              liquidityTier: row.liquidityTier,
+              snapshotId: snapshot.id,
+              unitPrice: row.unitPrice ?? null,
+              units: row.units ?? null,
+              valueMinor: row.valueMinor,
+            });
+          }
+        }
       });
 
       save();
     },
+    readSnapshotHoldings: (query) => readSnapshotHoldings(sqlite, query),
     batchApplyValueUpdates: (commands) => {
       if (commands.length === 0) return;
 
@@ -1745,6 +1831,87 @@ function readSnapshots(sqlite: DatabaseConnection, scopeId?: string): NetWorthSn
     scopeLabel: row.scopeLabel,
     totalNetWorth: { amountMinor: row.totalNetWorthMinor, currency: row.currency },
     warnings: JSON.parse(row.warningsJson) as DomainWarning[],
+  }));
+}
+
+interface SnapshotHoldingDbRow {
+  capturedAt: string;
+  dateKey: string;
+  holdingId: string;
+  kind: SnapshotHoldingKind;
+  label: string;
+  liquidityTier: LiquidityTier | null;
+  scopeId: string;
+  snapshotId: string;
+  unitPrice: string | null;
+  units: string | null;
+  valueMinor: number;
+}
+
+/**
+ * Read frozen holding rows (ADR 0008), optionally filtered by scope and by an
+ * inclusive date-key window. Rows are joined with their snapshot for identity
+ * and ordering — chronological, then assets before liabilities, then by the
+ * frozen label for a stable presentation order.
+ */
+function readSnapshotHoldings(
+  sqlite: DatabaseConnection,
+  query: SnapshotHoldingQuery = {},
+): SnapshotHoldingRecord[] {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (query.scopeId !== undefined) {
+    conditions.push("s.scope_id = ?");
+    params.push(query.scopeId);
+  }
+
+  if (query.from !== undefined) {
+    conditions.push("s.date_key >= ?");
+    params.push(query.from);
+  }
+
+  if (query.to !== undefined) {
+    conditions.push("s.date_key <= ?");
+    params.push(query.to);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const rows = sqlite
+    .prepare(
+      `
+      SELECT
+        h.snapshot_id AS snapshotId,
+        s.scope_id AS scopeId,
+        s.date_key AS dateKey,
+        s.captured_at AS capturedAt,
+        h.holding_id AS holdingId,
+        h.kind AS kind,
+        h.label AS label,
+        h.liquidity_tier AS liquidityTier,
+        h.value_minor AS valueMinor,
+        h.units AS units,
+        h.unit_price AS unitPrice
+      FROM snapshot_holdings h
+      JOIN snapshots s ON s.id = h.snapshot_id
+      ${where}
+      ORDER BY s.date_key ASC, s.scope_id ASC, h.kind ASC, h.label ASC, h.holding_id ASC
+    `,
+    )
+    .all(...params) as SnapshotHoldingDbRow[];
+
+  return rows.map((row) => ({
+    capturedAt: row.capturedAt,
+    dateKey: row.dateKey,
+    holdingId: row.holdingId,
+    kind: row.kind,
+    label: row.label,
+    liquidityTier: row.liquidityTier,
+    scopeId: row.scopeId,
+    snapshotId: row.snapshotId,
+    valueMinor: row.valueMinor,
+    ...(row.units !== null ? { units: row.units } : {}),
+    ...(row.unitPrice !== null ? { unitPrice: row.unitPrice } : {}),
   }));
 }
 

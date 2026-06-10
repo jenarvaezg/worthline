@@ -1,0 +1,285 @@
+/**
+ * Snapshot holding rows persistence (ADR 0008, issue #72).
+ *
+ * Holding rows are saved atomically with their snapshot: a capture that fails
+ * the reconciliation invariant persists nothing, and a same-day recapture
+ * replaces the previous rows — at most one set of rows per scope per day.
+ */
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, test } from "vitest";
+
+import { createWorthlineStore } from "@worthline/db";
+import type { WorthlineStore } from "@worthline/db";
+import { captureValuedNetWorthSnapshot } from "@worthline/domain";
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { force: true, recursive: true });
+  }
+});
+
+function createTestStore(): WorthlineStore {
+  const dataDir = mkdtempSync(join(tmpdir(), "worthline-snapshot-holdings-"));
+  tempDirs.push(dataDir);
+
+  return createWorthlineStore({
+    databasePath: join(dataDir, "worthline.sqlite"),
+  });
+}
+
+function seedPortfolio(store: WorthlineStore): void {
+  store.initializeWorkspace({
+    members: [{ id: "member_jose", name: "Jose" }],
+    mode: "individual",
+  });
+  store.createManualAsset({
+    currency: "EUR",
+    currentValueMinor: 100_000_00,
+    id: "asset_cash",
+    liquidityTier: "cash",
+    name: "Caja",
+    ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    type: "cash",
+  });
+  store.createLiability({
+    balanceMinor: 40_000_00,
+    currency: "EUR",
+    id: "liability_loan",
+    name: "Prestamo",
+    ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    type: "debt",
+  });
+}
+
+function captureFor(store: WorthlineStore, id: string, capturedAt: string) {
+  return captureValuedNetWorthSnapshot({
+    assets: store.readAssets(),
+    capturedAt,
+    id,
+    liabilities: store.readLiabilities(),
+    scopeId: "household",
+    scopeLabel: "Hogar",
+    workspace: store.readWorkspace()!,
+  });
+}
+
+describe("snapshot holding rows persistence", () => {
+  test("saves holding rows atomically with the snapshot and reads them back by scope", () => {
+    const store = createTestStore();
+    seedPortfolio(store);
+
+    const { holdings, snapshot } = captureFor(store, "snap_1", "2026-06-10T10:00:00.000Z");
+    store.saveSnapshot({ holdings, snapshot });
+
+    const rows = store.readSnapshotHoldings({ scopeId: "household" });
+    expect(rows).toHaveLength(2);
+
+    const assetRow = rows.find((row) => row.holdingId === "asset_cash");
+    expect(assetRow).toMatchObject({
+      dateKey: "2026-06-10",
+      kind: "asset",
+      label: "Caja",
+      liquidityTier: "cash",
+      scopeId: "household",
+      snapshotId: "snap_1",
+      valueMinor: 100_000_00,
+    });
+
+    const liabilityRow = rows.find((row) => row.holdingId === "liability_loan");
+    expect(liabilityRow).toMatchObject({
+      kind: "liability",
+      label: "Prestamo",
+      liquidityTier: null,
+      valueMinor: 40_000_00,
+    });
+
+    store.close();
+  });
+
+  test("rejects rows that do not reconcile with the snapshot — persists nothing", () => {
+    const store = createTestStore();
+    seedPortfolio(store);
+
+    const { holdings, snapshot } = captureFor(store, "snap_bad", "2026-06-10T10:00:00.000Z");
+    // Doctor a copy of the rows so the asset sum no longer matches the headline.
+    const doctored = holdings.map((row) =>
+      row.holdingId === "asset_cash" ? { ...row, valueMinor: row.valueMinor + 1 } : row,
+    );
+
+    expect(() => store.saveSnapshot({ holdings: doctored, snapshot })).toThrow(
+      /gross assets/i,
+    );
+
+    // Nothing persisted: no snapshot, no rows.
+    expect(store.readSnapshots("household")).toHaveLength(0);
+    expect(store.readSnapshotHoldings({ scopeId: "household" })).toHaveLength(0);
+
+    store.close();
+  });
+
+  test("same-day recapture replaces the previous rows — at most one set per scope per day", () => {
+    const store = createTestStore();
+    seedPortfolio(store);
+
+    const first = captureFor(store, "snap_morning", "2026-06-10T08:00:00.000Z");
+    store.saveSnapshot({ holdings: first.holdings, snapshot: first.snapshot });
+
+    store.updateAssetValuation("asset_cash", 120_000_00);
+    const second = captureFor(store, "snap_evening", "2026-06-10T18:00:00.000Z");
+    store.saveSnapshot({
+      holdings: second.holdings,
+      replace: true,
+      snapshot: second.snapshot,
+    });
+
+    const rows = store.readSnapshotHoldings({ scopeId: "household" });
+    // Still exactly one set of rows for the day (one asset + one liability).
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.snapshotId === "snap_evening")).toBe(true);
+    expect(rows.find((row) => row.holdingId === "asset_cash")?.valueMinor).toBe(
+      120_000_00,
+    );
+
+    store.close();
+  });
+
+  test("same-day upsert without explicit replace also replaces the rows", () => {
+    const store = createTestStore();
+    seedPortfolio(store);
+
+    const first = captureFor(store, "snap_a", "2026-06-10T08:00:00.000Z");
+    store.saveSnapshot({ holdings: first.holdings, snapshot: first.snapshot });
+
+    const second = captureFor(store, "snap_b", "2026-06-10T09:00:00.000Z");
+    store.saveSnapshot({ holdings: second.holdings, snapshot: second.snapshot });
+
+    const rows = store.readSnapshotHoldings({ scopeId: "household" });
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.snapshotId === "snap_b")).toBe(true);
+
+    store.close();
+  });
+
+  test("captures investment units and unit price as decimal strings", () => {
+    const store = createTestStore();
+    store.initializeWorkspace({
+      members: [{ id: "member_jose", name: "Jose" }],
+      mode: "individual",
+    });
+    store.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset_fund",
+      name: "Fondo",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    });
+    store.recordOperation({
+      assetId: "asset_fund",
+      currency: "EUR",
+      executedAt: "2026-06-01T10:00:00.000Z",
+      id: "op_1",
+      kind: "buy",
+      pricePerUnit: "100",
+      units: "10.5",
+    });
+    store.upsertPrice({
+      assetId: "asset_fund",
+      currency: "EUR",
+      fetchedAt: "2026-06-10T09:00:00.000Z",
+      freshnessState: "fresh",
+      price: "110.40",
+      source: "stooq",
+    });
+
+    const positions = store.readPositions();
+    const details = new Map(
+      positions.map((position) => [
+        position.assetId,
+        {
+          units: position.currentUnits,
+          ...(position.currentPricePerUnit
+            ? { unitPrice: position.currentPricePerUnit }
+            : {}),
+        },
+      ]),
+    );
+
+    const { holdings, snapshot } = captureValuedNetWorthSnapshot({
+      assets: store.readAssets(),
+      capturedAt: "2026-06-10T10:00:00.000Z",
+      id: "snap_inv",
+      investmentDetails: details,
+      liabilities: store.readLiabilities(),
+      scopeId: "household",
+      scopeLabel: "Hogar",
+      workspace: store.readWorkspace()!,
+    });
+    store.saveSnapshot({ holdings, snapshot });
+
+    const rows = store.readSnapshotHoldings({ scopeId: "household" });
+    const fundRow = rows.find((row) => row.holdingId === "asset_fund");
+    expect(fundRow?.units).toBe("10.5");
+    expect(fundRow?.unitPrice).toBe("110.40");
+    // 10.5 units × 110.40 = 1159.20 € — scope-weighted value in minor units.
+    expect(fundRow?.valueMinor).toBe(115_920);
+
+    store.close();
+  });
+
+  test("reads filter by scope and by time window", () => {
+    const store = createTestStore();
+    seedPortfolio(store);
+
+    for (const [id, capturedAt] of [
+      ["snap_d1", "2026-06-08T10:00:00.000Z"],
+      ["snap_d2", "2026-06-09T10:00:00.000Z"],
+      ["snap_d3", "2026-06-10T10:00:00.000Z"],
+    ] as const) {
+      const { holdings, snapshot } = captureFor(store, id, capturedAt);
+      store.saveSnapshot({ holdings, snapshot });
+    }
+
+    // By scope: all three days, two rows each.
+    expect(store.readSnapshotHoldings({ scopeId: "household" })).toHaveLength(6);
+    // Unknown scope: nothing.
+    expect(store.readSnapshotHoldings({ scopeId: "member_jose" })).toHaveLength(0);
+
+    // Time window (inclusive date keys).
+    const windowed = store.readSnapshotHoldings({
+      from: "2026-06-09",
+      scopeId: "household",
+      to: "2026-06-09",
+    });
+    expect(windowed).toHaveLength(2);
+    expect(windowed.every((row) => row.dateKey === "2026-06-09")).toBe(true);
+
+    const openEnded = store.readSnapshotHoldings({
+      from: "2026-06-09",
+      scopeId: "household",
+    });
+    expect(openEnded).toHaveLength(4);
+
+    store.close();
+  });
+
+  test("frozen rows survive renaming, re-tiering, and deleting the holding", () => {
+    const store = createTestStore();
+    seedPortfolio(store);
+
+    const { holdings, snapshot } = captureFor(store, "snap_frozen", "2026-06-10T10:00:00.000Z");
+    store.saveSnapshot({ holdings, snapshot });
+
+    store.updateAsset("asset_cash", { liquidityTier: "illiquid", name: "Renombrada" });
+    store.softDeleteAsset("asset_cash", "2026-06-11T10:00:00.000Z");
+
+    const rows = store.readSnapshotHoldings({ scopeId: "household" });
+    const assetRow = rows.find((row) => row.holdingId === "asset_cash");
+    expect(assetRow?.label).toBe("Caja");
+    expect(assetRow?.liquidityTier).toBe("cash");
+
+    store.close();
+  });
+});

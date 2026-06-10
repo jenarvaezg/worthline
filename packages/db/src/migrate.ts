@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export function migrate(sqlite: DatabaseConnection): void {
   sqlite.pragma("journal_mode = WAL");
@@ -62,5 +62,29 @@ export function migrate(sqlite: DatabaseConnection): void {
     // backward compatibility but derivation wins over any persisted flag.
     // No structural change needed — bump version to mark the semantic transition.
     sqlite.pragma("user_version = 6");
+  }
+
+  if (version < 7) {
+    // ADR 0008: snapshots capture the valued portfolio holding by holding.
+    // Label and tier are denormalized on purpose (frozen history) — the only
+    // foreign key points at the owning snapshot row, never into holdings.
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS snapshot_holdings (
+      id TEXT PRIMARY KEY NOT NULL,
+      snapshot_id TEXT NOT NULL,
+      holding_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      label TEXT NOT NULL,
+      liquidity_tier TEXT,
+      value_minor INTEGER NOT NULL,
+      units TEXT,
+      unit_price TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      FOREIGN KEY (snapshot_id) REFERENCES snapshots(id) ON UPDATE no action ON DELETE cascade
+    );`);
+    sqlite.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS snapshot_holdings_snapshot_kind_holding_unique
+       ON snapshot_holdings (snapshot_id, kind, holding_id);`,
+    );
+    sqlite.pragma("user_version = 7");
   }
 }

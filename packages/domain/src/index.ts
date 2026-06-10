@@ -75,6 +75,23 @@ export { allocateScopedHolding } from "./scope-allocation";
 import { allocateScopedHolding } from "./scope-allocation";
 
 export type {
+  BuildSnapshotHoldingRowsInput,
+  InvestmentCaptureDetail,
+  SnapshotHoldingKind,
+  SnapshotHoldingRow,
+  SnapshotReconciliationTotals,
+} from "./snapshot-holdings";
+export {
+  assertSnapshotHoldingsReconcile,
+  buildSnapshotHoldingRows,
+} from "./snapshot-holdings";
+import {
+  assertSnapshotHoldingsReconcile,
+  buildSnapshotHoldingRows,
+} from "./snapshot-holdings";
+import type { InvestmentCaptureDetail, SnapshotHoldingRow } from "./snapshot-holdings";
+
+export type {
   PortfolioProjection,
   PortfolioProjectionInput,
   PortfolioSection,
@@ -263,6 +280,8 @@ export interface PositionSummary {
   averageUnitCost: DecimalString;
   marketValue?: MoneyMinor;
   unrealizedPnl?: MoneyMinor;
+  /** The price per unit used to derive the market value, when one was known. */
+  currentPricePerUnit?: DecimalString;
   warnings: string[];
 }
 
@@ -597,6 +616,50 @@ export function captureNetWorthSnapshot(input: {
     summary,
     warnings,
   });
+}
+
+/** A snapshot plus the valued portfolio behind its figures (ADR 0008). */
+export interface ValuedNetWorthSnapshot {
+  snapshot: NetWorthSnapshot;
+  holdings: SnapshotHoldingRow[];
+}
+
+/**
+ * Capture a snapshot together with its holding rows (ADR 0008).
+ *
+ * Produces the same five headline figures as `captureNetWorthSnapshot` plus one
+ * frozen row per holding behind them, scope-weighted identically. Enforces the
+ * reconciliation invariant before returning: if the rows do not sum exactly to
+ * the headline gross assets and debts, the capture fails loudly so nothing
+ * partial can be persisted.
+ */
+export function captureValuedNetWorthSnapshot(input: {
+  workspace: Workspace;
+  scopeId: string;
+  scopeLabel: string;
+  assets: ManualAsset[];
+  liabilities?: Liability[];
+  capturedAt: string;
+  id: string;
+  isMonthlyClose?: boolean;
+  /** Per-investment units and unit price, keyed by asset id. */
+  investmentDetails?: ReadonlyMap<string, InvestmentCaptureDetail>;
+}): ValuedNetWorthSnapshot {
+  const snapshot = captureNetWorthSnapshot(input);
+  const holdings = buildSnapshotHoldingRows({
+    assets: input.assets,
+    scopeId: input.scopeId,
+    workspace: input.workspace,
+    ...(input.liabilities ? { liabilities: input.liabilities } : {}),
+    ...(input.investmentDetails ? { investmentDetails: input.investmentDetails } : {}),
+  });
+
+  assertSnapshotHoldingsReconcile(holdings, {
+    debtsMinor: snapshot.debts.amountMinor,
+    grossAssetsMinor: snapshot.grossAssets.amountMinor,
+  });
+
+  return { holdings, snapshot };
 }
 
 export function calculateSnapshotDeltas(
