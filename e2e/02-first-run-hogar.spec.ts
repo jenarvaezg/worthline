@@ -13,7 +13,7 @@
  * This spec documents that behavior and tests the hogar path via /ajustes (add member).
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test("hogar: add second member via ajustes → ownership presets appear on asset form", async ({
   page,

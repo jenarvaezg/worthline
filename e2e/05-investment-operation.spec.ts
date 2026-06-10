@@ -5,7 +5,7 @@
  * Uses MANUAL price (no ticker) to avoid any network calls to stooq.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test("investment: create with manual price → buy operation → P/L visible", async ({
   page,

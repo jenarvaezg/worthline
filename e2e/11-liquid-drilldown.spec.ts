@@ -9,7 +9,7 @@
  * bookmarkable, and the drill charts show the one-line placeholders.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test("liquid drilldown: band/legend link → drill panel → breadcrumb back", async ({
   page,

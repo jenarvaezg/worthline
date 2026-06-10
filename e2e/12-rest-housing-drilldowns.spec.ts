@@ -10,7 +10,7 @@
  * bookmarkable, and the drill panels show their placeholders.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test("rest drilldown: band/legend link → stack panel → breadcrumb back", async ({
   page,

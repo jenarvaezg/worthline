@@ -6,7 +6,7 @@
  * positions all reconcile; scope survives navigation (cookie present after reload).
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test("scope consistency: switch member scope → reconciled views → survives reload", async ({
   page,

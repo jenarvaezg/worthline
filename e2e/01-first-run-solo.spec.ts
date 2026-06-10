@@ -6,7 +6,7 @@
  * checklist links are present and navigable.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test("first run solo: empezar → / with valid scope and onboarding checklist", async ({
   page,

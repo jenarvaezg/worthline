@@ -11,7 +11,7 @@
  * Requires at least 2 active members (from journey 2).
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test("ownership: custom split auto-normalised and asset visible in both scopes", async ({
   page,

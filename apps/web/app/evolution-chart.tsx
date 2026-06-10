@@ -76,9 +76,10 @@ export default function EvolutionChart({
           key={marker.dateKey}
           r="3.5"
         >
+          {/* React requires <title> children to be ONE string — an array of
+              text nodes hydrates differently than it server-renders. */}
           <title>
-            {marker.dateKey} ·{" "}
-            {formatMoneyMinor({ amountMinor: marker.valueMinor, currency })}
+            {`${marker.dateKey} · ${formatMoneyMinor({ amountMinor: marker.valueMinor, currency })}`}
           </title>
         </circle>
       ))}

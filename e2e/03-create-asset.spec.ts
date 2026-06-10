@@ -2,7 +2,7 @@
  * Journey 3: Create asset → success lands at /patrimonio#<id> with success message
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test("create asset: form → success banner → anchored row in /patrimonio", async ({
   page,

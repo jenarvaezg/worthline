@@ -5,7 +5,7 @@
  * Adds a second asset here so there are two values to update in one batch.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test("puesta al dia: batch update two assets → values persist → headline changes", async ({
   page,
