@@ -2,9 +2,8 @@ import {
   formatMoneyMinor,
   largestRemainderPercentages,
   moneySign,
-  signedDeltaBarWidths,
 } from "@worthline/domain";
-import type { LiquidityTier, MoneyMinor, NetWorthFraming } from "@worthline/domain";
+import type { LiquidityTier, NetWorthFraming } from "@worthline/domain";
 import { refreshStalePrices } from "@worthline/pricing";
 import { createWorthlineStore, runBootstrapHealthcheck } from "@worthline/db";
 import { cookies } from "next/headers";
@@ -19,6 +18,7 @@ import {
 } from "./intake";
 import { loadDashboard } from "./load-dashboard";
 import type { RefreshPricesResult } from "./load-dashboard";
+import EvolutionChart from "./evolution-chart";
 import { refreshAndPersistStalePrices } from "./refresh-prices";
 import Shell from "./shell";
 
@@ -104,7 +104,6 @@ export default async function DashboardPage({
     warnings,
   } = state;
 
-  const workspace = state.workspace!;
   const hasHoldings = state.assets.length + state.liabilities.length > 0;
 
   // Onboarding checklist: show while ANY step is still pending.
@@ -113,10 +112,6 @@ export default async function DashboardPage({
   // Liquidity tier percentages — largest-remainder so they sum to 100.
   const tierBpsValues = pyramid.map((tier) => tier.shareOfGrossBps);
   const tierPercents = largestRemainderPercentages(tierBpsValues);
-
-  // Evolution mini: signed delta bars scaled to the absolute max snapshot value.
-  const snapshotAmounts = snapshots.map((s) => s.totalNetWorth.amountMinor);
-  const snapshotBarWidths = signedDeltaBarWidths(snapshotAmounts);
 
   return (
     <Shell
@@ -207,7 +202,19 @@ export default async function DashboardPage({
         ) : null}
       </section>
 
-      {/* ── 3. Composition — liquidity breakdown, 5 tiers ── */}
+      {/* ── 3. Evolution — server-rendered SVG area chart of the headline
+             figure; the delta strip above acts as its numeric legend ── */}
+      <section className="historyPanel" aria-label="Evolución del patrimonio">
+        <div className="panelHeader">
+          <h2>Evolución</h2>
+          <Link className="panelAction" href="/historico" scroll={false}>
+            Ver histórico →
+          </Link>
+        </div>
+        <EvolutionChart framing={selectedView} snapshots={snapshots} />
+      </section>
+
+      {/* ── 4. Composition — liquidity breakdown, 5 tiers ── */}
       <section className="liquidityPanel" aria-label="Liquidez por capa">
         <div className="panelHeader">
           <h2>Liquidez</h2>
@@ -246,40 +253,6 @@ export default async function DashboardPage({
               </details>
             );
           })}
-        </div>
-      </section>
-
-      {/* ── 4. Plan — evolution mini + link to historico ── */}
-      <section className="historyPanel" aria-label="Evolución del patrimonio">
-        <div className="panelHeader">
-          <h2>Evolución</h2>
-          <Link className="panelAction" href="/historico" scroll={false}>
-            Ver histórico →
-          </Link>
-        </div>
-        <div className="historyBars">
-          {snapshots.map((snapshot, idx) => {
-            const barWidth = snapshotBarWidths[idx] ?? 0;
-            const sign = moneySign(snapshot.totalNetWorth);
-            return (
-              <div className="historyBar" key={snapshot.id}>
-                <span>{snapshot.dateKey}</span>
-                <b className={sign}>{formatMoneyMinor(snapshot.totalNetWorth)}</b>
-                <span
-                  className="signedDeltaBar"
-                  aria-hidden="true"
-                  data-sign={sign}
-                >
-                  <i style={{ width: `${barWidth}%` }} />
-                </span>
-              </div>
-            );
-          })}
-          {snapshots.length === 0 ? (
-            <span className="emptyLine">
-              Sin capturas todavía — vuelve mañana para ver tu primera comparativa.
-            </span>
-          ) : null}
         </div>
       </section>
 
