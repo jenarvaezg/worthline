@@ -113,6 +113,9 @@ export {
   signedDeltaBarWidths,
 } from "./dashboard";
 
+export type { DonutArcSegment, DonutGeometry } from "./donut";
+export { donutArcSegments } from "./donut";
+
 export type { CaptureDecision, SnapshotPolicyEntry } from "./snapshot-policy";
 export { deriveMonthlyCloses, planSnapshotCapture } from "./snapshot-policy";
 
