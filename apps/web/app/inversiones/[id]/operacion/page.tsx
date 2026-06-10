@@ -16,7 +16,7 @@ import {
   SCOPE_COOKIE_NAME,
 } from "../../../intake";
 import Shell from "../../../shell";
-import { recordOperationAction } from "../../actions";
+import { deleteOperationAction, recordOperationAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -92,10 +92,15 @@ export default async function OperacionPage({
   const operationValues =
     formError?.formId === "operation" ? formError.values : {};
 
-  // Bind the route asset id to the server action
+  // Bind the route asset id to the server actions
   async function boundRecordOperationAction(formData: FormData) {
     "use server";
     await recordOperationAction(assetId, formData);
+  }
+
+  async function boundDeleteOperationAction(formData: FormData) {
+    "use server";
+    await deleteOperationAction(assetId, formData);
   }
 
   return (
@@ -237,6 +242,7 @@ export default async function OperacionPage({
                     <th>Unidades</th>
                     <th>Precio/u</th>
                     <th>Comisiones</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -256,6 +262,16 @@ export default async function OperacionPage({
                                 currency: op.currency,
                               })
                             : "—"}
+                        </td>
+                        <td className="rowActions">
+                          <form action={boundDeleteOperationAction}>
+                            <input name="currentUrl" type="hidden" value={currentUrl} />
+                            <input name="operationId" type="hidden" value={op.id} />
+                            <details className="confirmDelete">
+                              <summary>Eliminar</summary>
+                              <button type="submit">Confirmar</button>
+                            </details>
+                          </form>
                         </td>
                       </tr>
                     ))}

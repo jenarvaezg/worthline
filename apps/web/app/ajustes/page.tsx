@@ -18,7 +18,9 @@ import Shell from "../shell";
 import {
   createMemberAction,
   disableMemberAction,
+  hardDeleteMemberAction,
   reactivateMemberAction,
+  resetWorkspaceAction,
   retractWarningOverrideAction,
   saveFireConfigAction,
   updateMemberAction,
@@ -152,11 +154,21 @@ export default async function AjustesPage({
                     </details>
                   </form>
                 ) : (
-                  <form action={reactivateMemberAction}>
-                    <input name="currentUrl" type="hidden" value={currentUrl} />
-                    <input name="id" type="hidden" value={member.id} />
-                    <button type="submit">Reactivar</button>
-                  </form>
+                  <>
+                    <form action={reactivateMemberAction}>
+                      <input name="currentUrl" type="hidden" value={currentUrl} />
+                      <input name="id" type="hidden" value={member.id} />
+                      <button type="submit">Reactivar</button>
+                    </form>
+                    <form action={hardDeleteMemberAction}>
+                      <input name="currentUrl" type="hidden" value={currentUrl} />
+                      <input name="id" type="hidden" value={member.id} />
+                      <details className="confirmDelete">
+                        <summary>Eliminar definitivamente</summary>
+                        <button type="submit">Confirmar borrado definitivo</button>
+                      </details>
+                    </form>
+                  </>
                 )}
               </div>
             ))}
@@ -328,6 +340,43 @@ export default async function AjustesPage({
         </section>
 
       </div>
+
+      {/* ── Zona de peligro ──────────────────────────────────────────── */}
+      <section className="dangerZone" aria-label="Zona de peligro">
+        <div className="panelHeader">
+          <h2>Zona de peligro</h2>
+          <span>Acciones irreversibles</span>
+        </div>
+
+        {formError?.formId === "reset" ? (
+          <p className="formError" role="alert">
+            {formError.message}
+          </p>
+        ) : null}
+
+        <p className="dangerExplain">
+          Borrar todo elimina el workspace entero —miembros, patrimonio, inversiones,
+          operaciones, histórico y ajustes— y devuelve la app al inicio. No se puede
+          deshacer.
+        </p>
+
+        <form action={resetWorkspaceAction} className="stackForm">
+          <input name="currentUrl" type="hidden" value={currentUrl} />
+          <details className="confirmDelete">
+            <summary>Borrar todo</summary>
+            <label>
+              Escribe <strong>borrar todo</strong> para confirmar
+              <input
+                aria-label="Frase de confirmación de borrado total"
+                autoComplete="off"
+                name="confirmation"
+                placeholder="borrar todo"
+              />
+            </label>
+            <button type="submit">Borrar todo definitivamente</button>
+          </details>
+        </form>
+      </section>
     </Shell>
   );
 }
