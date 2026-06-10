@@ -37,13 +37,18 @@ test("auto-snapshot: / load captures snapshot → deltas → historico shows ent
   //    is automatically the monthly close
   await expect(page.getByText("Cierre de mes").first()).toBeVisible();
 
-  // 6. Back on /, the Evolución panel shows the captured snapshot
+  // 6. Back on /, the Evolución panel reflects the captured snapshot:
+  //    with two or more snapshots it renders the SVG area chart; with a
+  //    single capture (this journey) it shows the one-line placeholder
+  //    explaining that the evolution appears as captures accumulate.
   await page.goto("/");
   await expect(
     page.getByRole("region", { name: "Evolución del patrimonio" }),
   ).toBeVisible();
-  // At least one bar entry or the snapshot caption is visible
-  const historyBars = page.locator(".historyBar");
-  const barCount = await historyBars.count();
-  expect(barCount).toBeGreaterThanOrEqual(1);
+  await expect(
+    page
+      .locator("svg.evolutionChart")
+      .or(page.locator(".evolutionEmpty"))
+      .first(),
+  ).toBeVisible();
 });
