@@ -68,8 +68,11 @@ A single pass where the user refreshes the values of every manual holding in one
 form. UI label: "Puesta al día". Investments are excluded — their values are derived.
 
 **Snapshot**:
-A frozen capture of a scope's net worth figures on a date. Captured automatically —
-at most one per scope per day, the day's latest capture winning. Not a user act.
+A frozen capture, on a date, of a scope's net worth figures and of each holding's
+value behind them (for investments, also units and unit price). Captured
+automatically — at most one per scope per day, the day's latest capture winning.
+Not a user act. Frozen means frozen: later edits, renames, or deletions of a
+holding never alter what a past snapshot captured.
 _Avoid_: "guardar snapshot" as a user-facing action.
 
 **Monthly close**:
@@ -96,7 +99,7 @@ which that warning stops surfacing.
 ## Flagged ambiguities
 
 - "total net worth" vs "housing-inclusive net worth" — were listed as distinct concepts but are the **same** figure (all assets incl. home equity, minus all debts). Resolved: canonical term is **net worth**; "housing-inclusive net worth" is retired.
-- "liquidity pyramid" — the pyramid shape implied a ranked/proportional form it never had (only 3 of 5 tiers were even styled). Resolved: retired in favor of **liquidity breakdown**, where bar width encodes each tier's share of **gross assets**.
+- "liquidity pyramid" — the pyramid shape implied a ranked/proportional form it never had (only 3 of 5 tiers were even styled). Resolved: retired in favor of **liquidity breakdown**, where each tier's visual size encodes its share of **gross assets** (the specific encoding — bars, donut — is presentation, not language).
 
 ## Current Architecture
 
