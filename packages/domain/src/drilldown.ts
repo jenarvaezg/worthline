@@ -45,6 +45,20 @@ export const HOUSING_DRILL_TIERS = ["housing"] as const;
 
 export type HousingDrillTier = (typeof HOUSING_DRILL_TIERS)[number];
 
+/**
+ * The drill group each liquidity tier resolves to (#79): the inverse of the
+ * group tier constants above, shared by every surface that links a tier to
+ * its drill view (the home's tier donut today) so destinations stay coherent
+ * with the decomposition bands.
+ */
+export const DRILL_GROUP_BY_TIER: Record<LiquidityTier, DrilldownKey> = {
+  cash: "liquid",
+  housing: "housing",
+  illiquid: "rest",
+  market: "liquid",
+  retirement: "rest",
+} as const;
+
 /** A frozen holding row plus the calendar day of its capture. */
 export interface DatedSnapshotHoldingRow extends SnapshotHoldingRow {
   /** Calendar day of the capture, YYYY-MM-DD. */
