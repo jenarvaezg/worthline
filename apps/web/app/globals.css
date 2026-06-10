@@ -1203,6 +1203,23 @@ svg a:hover .decompositionBand.rest {
   stroke: rgb(194, 154, 46);
 }
 
+/* === #78 no-longer-held holdings: dimmed, marked, history intact === */
+
+.drillMultiple.noLongerHeld {
+  opacity: 0.55;
+}
+
+.drillMultiple.noLongerHeld .drillSparkline polyline {
+  stroke: var(--muted);
+}
+
+.drillMultipleGone {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-style: italic;
+  letter-spacing: 0.02em;
+}
+
 .persistenceBar {
   align-items: center;
   display: flex;
