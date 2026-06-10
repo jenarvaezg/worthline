@@ -17,10 +17,13 @@
 import type { WorthlineStore } from "@worthline/db";
 import type {
   AssetPrice,
+  DrilldownKey,
   InvestmentCaptureDetail,
+  LiquidDrilldownState,
   NetWorthFraming,
 } from "@worthline/domain";
 import {
+  buildLiquidDrilldown,
   captureValuedNetWorthSnapshot,
   listScopeOptions,
   planSnapshotCapture,
@@ -46,6 +49,12 @@ export interface LoadDashboardInput {
   scopeId: string | undefined;
   /** Which framing to headline with. */
   selectedView: NetWorthFraming;
+  /**
+   * Active drilldown (#76), parsed from the `drill=` query param.
+   * When set, the result carries the drill view state built from the scope's
+   * frozen snapshot holding rows. Absent/null = no drill.
+   */
+  drill?: DrilldownKey | null;
   /**
    * "Today" as YYYY-MM-DD for the snapshot capture policy.
    * Accepted as a parameter so tests can control the date without freezing
@@ -80,12 +89,18 @@ export interface LoadDashboardResult extends DashboardState {
    * Never undefined — always an array so the page can conditionally render.
    */
   pricingErrors: string[];
+  /**
+   * Drill view state (#76) when a drill was requested — built from the
+   * scope's frozen snapshot holding rows. `null` when no drill is active.
+   */
+  drilldown: LiquidDrilldownState | null;
 }
 
 export async function loadDashboard(
   input: LoadDashboardInput,
 ): Promise<LoadDashboardResult> {
-  const { store, persistence, scopeId, selectedView, today, now, refreshPrices } = input;
+  const { store, persistence, scopeId, selectedView, drill, today, now, refreshPrices } =
+    input;
 
   // ── 1. Refresh stale prices ───────────────────────────────────────────────
   const investmentAssets = store.readInvestmentAssetsWithMeta();
@@ -163,6 +178,18 @@ export async function loadDashboard(
   const fireConfig = store.readFireConfig();
   const snapshots = selectedScope ? store.readSnapshots(selectedScope.id) : [];
 
+  // ── 4b. Drilldown (#76) — drill view state from frozen holding rows ──────
+  const drilldown =
+    drill === "liquid" && selectedScope
+      ? buildLiquidDrilldown({
+          currentHoldingIds: [
+            ...assets.map((asset) => asset.id),
+            ...liabilities.map((liability) => liability.id),
+          ],
+          rows: store.readSnapshotHoldings({ scopeId: selectedScope.id }),
+        })
+      : null;
+
   // ── 5. Compute dashboard state ────────────────────────────────────────────
   const state = prepareDashboardState({
     assets,
@@ -181,6 +208,7 @@ export async function loadDashboard(
 
   return {
     ...state,
+    drilldown,
     needsOnboarding: false,
     pricingErrors,
   };
@@ -213,6 +241,7 @@ function buildEmptyResult(
 
   return {
     ...state,
+    drilldown: null,
     needsOnboarding: true,
     pricingErrors,
   };

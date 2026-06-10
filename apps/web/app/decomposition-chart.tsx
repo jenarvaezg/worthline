@@ -16,8 +16,15 @@ const BAND_LABELS: Record<DecompositionBandId, string> = {
 };
 
 export default function DecompositionChart({
+  liquidDrillHref,
   snapshots,
 }: {
+  /**
+   * Drill URL for the liquid band (#76). When set, the liquid band and its
+   * legend entry render as native SVG/HTML anchors to the drill view.
+   * Housing/rest stay plain (#77).
+   */
+  liquidDrillHref?: string;
   snapshots: NetWorthSnapshot[];
 }) {
   const geometry = buildDecompositionChartGeometry(
@@ -36,12 +43,19 @@ export default function DecompositionChart({
   return (
     <>
       <div className="decompositionLegend" aria-label="Bandas de composición">
-        {geometry.bands.map((band) => (
-          <span className={band.band} key={band.band}>
-            <i aria-hidden="true" />
-            {BAND_LABELS[band.band]}
-          </span>
-        ))}
+        {geometry.bands.map((band) =>
+          band.band === "liquid" && liquidDrillHref ? (
+            <a className={band.band} href={liquidDrillHref} key={band.band}>
+              <i aria-hidden="true" />
+              {BAND_LABELS[band.band]}
+            </a>
+          ) : (
+            <span className={band.band} key={band.band}>
+              <i aria-hidden="true" />
+              {BAND_LABELS[band.band]}
+            </span>
+          ),
+        )}
       </div>
       <svg
         className="decompositionChart"
@@ -51,27 +65,55 @@ export default function DecompositionChart({
         preserveAspectRatio="none"
       >
         {geometry.mode === "stacked"
-          ? geometry.bands.map((band) => (
-              <polygon
-                className={`decompositionBand ${band.band}`}
-                key={band.band}
-                points={band.areaPoints!}
-              >
-                <title>{BAND_LABELS[band.band]}</title>
-              </polygon>
-            ))
-          : geometry.bands.map((band) => (
-              <polyline
-                className={`decompositionLine ${band.band}`}
-                fill="none"
-                key={band.band}
-                points={band.linePoints}
-                strokeWidth="1.5"
-                vectorEffect="non-scaling-stroke"
-              >
-                <title>{BAND_LABELS[band.band]}</title>
-              </polyline>
-            ))}
+          ? geometry.bands.map((band) => {
+              const polygon = (
+                <polygon
+                  className={`decompositionBand ${band.band}`}
+                  points={band.areaPoints!}
+                >
+                  <title>{BAND_LABELS[band.band]}</title>
+                </polygon>
+              );
+
+              // Native SVG anchor — drilldown navigation with zero client JS
+              // (ADR 0009). Only the liquid band drills for now (#77).
+              return band.band === "liquid" && liquidDrillHref ? (
+                <a
+                  aria-label="Ver desglose del líquido"
+                  href={liquidDrillHref}
+                  key={band.band}
+                >
+                  {polygon}
+                </a>
+              ) : (
+                <g key={band.band}>{polygon}</g>
+              );
+            })
+          : geometry.bands.map((band) => {
+              const polyline = (
+                <polyline
+                  className={`decompositionLine ${band.band}`}
+                  fill="none"
+                  points={band.linePoints}
+                  strokeWidth="1.5"
+                  vectorEffect="non-scaling-stroke"
+                >
+                  <title>{BAND_LABELS[band.band]}</title>
+                </polyline>
+              );
+
+              return band.band === "liquid" && liquidDrillHref ? (
+                <a
+                  aria-label="Ver desglose del líquido"
+                  href={liquidDrillHref}
+                  key={band.band}
+                >
+                  {polyline}
+                </a>
+              ) : (
+                <g key={band.band}>{polyline}</g>
+              );
+            })}
       </svg>
     </>
   );

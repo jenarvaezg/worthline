@@ -5,6 +5,7 @@ import type {
   CreateLiabilityInput,
   CreateManualAssetInput,
   DomainViolation,
+  DrilldownKey,
   FireScopeConfig,
   Member,
   MoneyMinor,
@@ -36,6 +37,16 @@ export interface WorkspaceInitCommand {
 
 export function parseViewParam(value: string | string[] | undefined): NetWorthFraming {
   return normalizeParam(value) === "liquid" ? "liquid" : "total";
+}
+
+/**
+ * Parse the `drill=` query param (#76). Only known drill keys activate a
+ * drill view — anything else means no drill. Composable with `view=`.
+ */
+export function parseDrillParam(
+  value: string | string[] | undefined,
+): DrilldownKey | null {
+  return normalizeParam(value) === "liquid" ? "liquid" : null;
 }
 
 /** Set or replace a query param on a (possibly relative) URL string. */

@@ -24,6 +24,7 @@ import {
   parseOwnership,
   parseRouteOperationCommand,
   parseUpdateInvestmentCommand,
+  parseDrillParam,
   parseValueUpdatePass,
   parseViewParam,
   parseWorkspaceInit,
@@ -65,6 +66,14 @@ describe("scope and view params", () => {
     expect(parseViewParam("total")).toBe("total");
     expect(parseViewParam("nonsense")).toBe("total");
     expect(parseViewParam(undefined)).toBe("total");
+  });
+
+  test("parseDrillParam accepts only known drill keys, else no drill", () => {
+    expect(parseDrillParam("liquid")).toBe("liquid");
+    expect(parseDrillParam(["liquid", "other"])).toBe("liquid");
+    expect(parseDrillParam("housing")).toBeNull();
+    expect(parseDrillParam("nonsense")).toBeNull();
+    expect(parseDrillParam(undefined)).toBeNull();
   });
 });
 

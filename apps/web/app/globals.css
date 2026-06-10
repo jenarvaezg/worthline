@@ -1038,6 +1038,127 @@ th:last-child {
   stroke: var(--blue);
 }
 
+/* === #76 liquid drilldown === */
+
+/* The legend's liquid entry doubles as the drill link — same layout as the
+   plain span entries, underlined to read as navigation. */
+.decompositionLegend a {
+  align-items: center;
+  color: inherit;
+  display: inline-flex;
+  gap: 6px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.decompositionLegend a:hover {
+  color: var(--green);
+}
+
+.decompositionBand.liquid:hover,
+svg a:hover .decompositionBand.liquid {
+  filter: brightness(1.08);
+}
+
+.drillHeader {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.drillHeader h3 {
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.drillBreadcrumb {
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.drillBreadcrumb:hover {
+  color: var(--ink);
+}
+
+/* Cash and market reuse their page-wide tier hues (.donutSegment/.tier). */
+.decompositionLegend .cash i {
+  background: rgb(185, 68, 47);
+}
+
+.decompositionLegend .market i {
+  background: rgb(0, 111, 95);
+}
+
+.drillChart {
+  display: block;
+  height: 160px;
+  margin-top: 8px;
+  width: 100%;
+}
+
+.drillBand.cash {
+  fill: rgb(185, 68, 47);
+}
+
+.drillBand.market {
+  fill: rgb(0, 111, 95);
+}
+
+.drillLine.cash {
+  stroke: rgb(185, 68, 47);
+}
+
+.drillLine.market {
+  stroke: rgb(0, 111, 95);
+}
+
+.drillMultiples {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  margin-top: 16px;
+}
+
+.drillMultiple {
+  display: grid;
+  gap: 4px;
+}
+
+.drillMultipleLabel {
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.drillMultiple b {
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-size: 0.82rem;
+}
+
+.drillSparkline {
+  display: block;
+  height: 36px;
+  width: 100%;
+}
+
+.drillSparkline.cash polyline {
+  stroke: rgb(185, 68, 47);
+}
+
+.drillSparkline.market polyline {
+  stroke: rgb(0, 111, 95);
+}
+
 .persistenceBar {
   align-items: center;
   display: flex;

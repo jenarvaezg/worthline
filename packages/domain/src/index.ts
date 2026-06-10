@@ -137,11 +137,32 @@ export type {
   DecompositionBandsPoint,
   DecompositionChartGeometry,
   DecompositionSeriesPoint,
+  StackedBandGeometry,
+  StackedChartGeometry,
+  StackedSeriesInput,
 } from "./decomposition-chart";
 export {
   buildDecompositionChartGeometry,
+  buildStackedChartGeometry,
   deriveDecompositionBands,
 } from "./decomposition-chart";
+
+export type {
+  DatedSnapshotHoldingRow,
+  DrillHoldingMultiple,
+  DrillSparklineGeometry,
+  DrilldownKey,
+  LiquidDrillTier,
+  LiquidDrilldownInput,
+  LiquidDrilldownState,
+} from "./drilldown";
+export {
+  buildLiquidDrilldown,
+  DRILL_SPARKLINE_HEIGHT,
+  DRILL_SPARKLINE_INSET_X,
+  DRILL_SPARKLINE_WIDTH,
+  LIQUID_DRILL_TIERS,
+} from "./drilldown";
 
 /**
  * A rule violation reported by a domain constructor — carries a stable
