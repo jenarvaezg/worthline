@@ -70,8 +70,9 @@ describe("scope and view params", () => {
 
   test("parseDrillParam accepts only known drill keys, else no drill", () => {
     expect(parseDrillParam("liquid")).toBe("liquid");
+    expect(parseDrillParam("rest")).toBe("rest");
+    expect(parseDrillParam("housing")).toBe("housing");
     expect(parseDrillParam(["liquid", "other"])).toBe("liquid");
-    expect(parseDrillParam("housing")).toBeNull();
     expect(parseDrillParam("nonsense")).toBeNull();
     expect(parseDrillParam(undefined)).toBeNull();
   });

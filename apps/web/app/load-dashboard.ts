@@ -18,12 +18,12 @@ import type { WorthlineStore } from "@worthline/db";
 import type {
   AssetPrice,
   DrilldownKey,
+  DrilldownState,
   InvestmentCaptureDetail,
-  LiquidDrilldownState,
   NetWorthFraming,
 } from "@worthline/domain";
 import {
-  buildLiquidDrilldown,
+  buildDrilldown,
   captureValuedNetWorthSnapshot,
   listScopeOptions,
   planSnapshotCapture,
@@ -90,10 +90,10 @@ export interface LoadDashboardResult extends DashboardState {
    */
   pricingErrors: string[];
   /**
-   * Drill view state (#76) when a drill was requested — built from the
+   * Drill view state (#76, #77) when a drill was requested — built from the
    * scope's frozen snapshot holding rows. `null` when no drill is active.
    */
-  drilldown: LiquidDrilldownState | null;
+  drilldown: DrilldownState | null;
 }
 
 export async function loadDashboard(
@@ -178,10 +178,10 @@ export async function loadDashboard(
   const fireConfig = store.readFireConfig();
   const snapshots = selectedScope ? store.readSnapshots(selectedScope.id) : [];
 
-  // ── 4b. Drilldown (#76) — drill view state from frozen holding rows ──────
+  // ── 4b. Drilldown (#76, #77) — drill view state from frozen holding rows ─
   const drilldown =
-    drill === "liquid" && selectedScope
-      ? buildLiquidDrilldown({
+    drill && selectedScope
+      ? buildDrilldown(drill, {
           currentHoldingIds: [
             ...assets.map((asset) => asset.id),
             ...liabilities.map((liability) => liability.id),

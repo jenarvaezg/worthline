@@ -151,17 +151,29 @@ export type {
   DatedSnapshotHoldingRow,
   DrillHoldingMultiple,
   DrillSparklineGeometry,
+  DrilldownInput,
   DrilldownKey,
+  DrilldownState,
+  GroupDrilldownState,
+  HousingDrillTier,
+  HousingDrilldownState,
   LiquidDrillTier,
   LiquidDrilldownInput,
   LiquidDrilldownState,
+  RestDrillTier,
+  RestDrilldownState,
 } from "./drilldown";
 export {
+  buildDrilldown,
+  buildHousingDrilldown,
   buildLiquidDrilldown,
+  buildRestDrilldown,
   DRILL_SPARKLINE_HEIGHT,
   DRILL_SPARKLINE_INSET_X,
   DRILL_SPARKLINE_WIDTH,
+  HOUSING_DRILL_TIERS,
   LIQUID_DRILL_TIERS,
+  REST_DRILL_TIERS,
 } from "./drilldown";
 
 /**

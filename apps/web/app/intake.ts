@@ -40,13 +40,15 @@ export function parseViewParam(value: string | string[] | undefined): NetWorthFr
 }
 
 /**
- * Parse the `drill=` query param (#76). Only known drill keys activate a
+ * Parse the `drill=` query param (#76, #77). Only known drill keys activate a
  * drill view — anything else means no drill. Composable with `view=`.
  */
 export function parseDrillParam(
   value: string | string[] | undefined,
 ): DrilldownKey | null {
-  return normalizeParam(value) === "liquid" ? "liquid" : null;
+  const raw = normalizeParam(value);
+
+  return raw === "liquid" || raw === "rest" || raw === "housing" ? raw : null;
 }
 
 /** Set or replace a query param on a (possibly relative) URL string. */

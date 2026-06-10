@@ -64,9 +64,13 @@ export default async function DashboardPage({
   const selectedDrill = parseDrillParam(resolvedSearchParams?.drill);
   const currentUrl = buildCurrentUrl(resolvedSearchParams);
 
-  // Drill navigation (#76): both URLs preserve the selected Vista.
+  // Drill navigation (#76, #77): every URL preserves the selected Vista.
   const viewHomeUrl = selectedView === "total" ? "/" : `/?view=${selectedView}`;
-  const liquidDrillHref = appendParam(viewHomeUrl, "drill", "liquid");
+  const drillHrefs = {
+    housing: appendParam(viewHomeUrl, "drill", "housing"),
+    liquid: appendParam(viewHomeUrl, "drill", "liquid"),
+    rest: appendParam(viewHomeUrl, "drill", "rest"),
+  };
 
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
@@ -235,7 +239,7 @@ export default async function DashboardPage({
         <EvolutionChart framing={selectedView} snapshots={snapshots} />
         {/* Decomposition — always splits NET WORTH (framing-invariant):
             liquid (green), housing (gold), rest (blue). When a drill is
-            active (#76) the drill panel renders in its place, with a
+            active (#76, #77) the drill panel renders in its place, with a
             breadcrumb back that preserves the Vista. */}
         {selectedDrill && state.drilldown ? (
           <DrilldownPanel
@@ -244,10 +248,7 @@ export default async function DashboardPage({
             drilldown={state.drilldown}
           />
         ) : (
-          <DecompositionChart
-            liquidDrillHref={liquidDrillHref}
-            snapshots={snapshots}
-          />
+          <DecompositionChart drillHrefs={drillHrefs} snapshots={snapshots} />
         )}
       </section>
 
