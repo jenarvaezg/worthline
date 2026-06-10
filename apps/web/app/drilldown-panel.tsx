@@ -84,19 +84,27 @@ export default function DrilldownPanel({
       {holdings.length > 0 ? (
         <div className="drillMultiples" aria-label="Posiciones del grupo líquido">
           {holdings.map((holding) => (
-            <div className="drillMultiple" key={holding.holdingId}>
+            <div
+              className={
+                holding.noLongerHeld ? "drillMultiple noLongerHeld" : "drillMultiple"
+              }
+              key={holding.holdingId}
+            >
               <span className="drillMultipleLabel">{holding.label}</span>
-              <b>
-                {holding.currentValueMinor !== null
-                  ? formatMoneyMinor({
-                      amountMinor:
-                        holding.kind === "liability"
-                          ? -holding.currentValueMinor
-                          : holding.currentValueMinor,
-                      currency,
-                    })
-                  : "—"}
-              </b>
+              {holding.noLongerHeld || holding.currentValueMinor === null ? (
+                // Frozen means frozen: the history stays, only the present is gone.
+                <span className="drillMultipleGone">Ya no en cartera</span>
+              ) : (
+                <b>
+                  {formatMoneyMinor({
+                    amountMinor:
+                      holding.kind === "liability"
+                        ? -holding.currentValueMinor
+                        : holding.currentValueMinor,
+                    currency,
+                  })}
+                </b>
+              )}
               <svg
                 className={`drillSparkline ${holding.tier}`}
                 viewBox={`0 0 ${holding.sparkline.width} ${holding.sparkline.height}`}
