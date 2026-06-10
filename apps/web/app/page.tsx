@@ -1,10 +1,11 @@
 import {
+  DRILL_GROUP_BY_TIER,
   donutArcSegments,
   formatMoneyMinor,
   largestRemainderPercentages,
   moneySign,
 } from "@worthline/domain";
-import type { LiquidityTier, NetWorthFraming } from "@worthline/domain";
+import type { DrilldownKey, LiquidityTier, NetWorthFraming } from "@worthline/domain";
 import { refreshStalePrices } from "@worthline/pricing";
 import { createWorthlineStore, runBootstrapHealthcheck } from "@worthline/db";
 import { cookies } from "next/headers";
@@ -44,6 +45,14 @@ const TIER_LABELS: Record<LiquidityTier, string> = {
 
 // Donut ring geometry in viewBox units (viewBox 0 0 100 100).
 const TIER_DONUT_GEOMETRY = { cx: 50, cy: 50, innerRadius: 27, outerRadius: 45 };
+
+// Drill destinations phrased like the decomposition band anchors (#79), so a
+// donut segment and its band read the same to assistive tech.
+const DRILL_DESTINATION_LABELS: Record<DrilldownKey, string> = {
+  housing: "ver desglose de la vivienda",
+  liquid: "ver desglose del líquido",
+  rest: "ver desglose del resto",
+};
 
 const ONBOARDING_LINKS: Record<string, string> = {
   members: "/ajustes",
@@ -273,14 +282,20 @@ export default async function DashboardPage({
           />
           {donutSegments.map((segment) => {
             const tier = pyramid[segment.index]!;
+            const drillKey = DRILL_GROUP_BY_TIER[tier.tier];
+            // Native SVG anchor to the segment's drill group (#79) — same
+            // destinations as the decomposition bands, Vista preserved, zero
+            // client JS (ADR 0009).
             return (
-              <path
-                className={`donutSegment ${tier.tier}`}
-                d={segment.path}
+              <a
+                aria-label={`${TIER_LABELS[tier.tier]}: ${DRILL_DESTINATION_LABELS[drillKey]}`}
+                href={drillHrefs[drillKey]}
                 key={tier.tier}
               >
-                <title>{`${TIER_LABELS[tier.tier]} · ${segment.share}%`}</title>
-              </path>
+                <path className={`donutSegment ${tier.tier}`} d={segment.path}>
+                  <title>{`${TIER_LABELS[tier.tier]} · ${segment.share}%`}</title>
+                </path>
+              </a>
             );
           })}
         </svg>

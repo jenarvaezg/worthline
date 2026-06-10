@@ -168,6 +168,7 @@ export {
   buildHousingDrilldown,
   buildLiquidDrilldown,
   buildRestDrilldown,
+  DRILL_GROUP_BY_TIER,
   DRILL_SPARKLINE_HEIGHT,
   DRILL_SPARKLINE_INSET_X,
   DRILL_SPARKLINE_WIDTH,

@@ -18,9 +18,13 @@ import {
   buildHousingDrilldown,
   buildLiquidDrilldown,
   buildRestDrilldown,
+  DRILL_GROUP_BY_TIER,
   DRILL_SPARKLINE_HEIGHT,
   DRILL_SPARKLINE_INSET_X,
   DRILL_SPARKLINE_WIDTH,
+  HOUSING_DRILL_TIERS,
+  LIQUID_DRILL_TIERS,
+  REST_DRILL_TIERS,
 } from "./drilldown";
 import type { LiquidityTier } from "./classification";
 import type { SnapshotHoldingKind } from "./snapshot-holdings";
@@ -396,5 +400,29 @@ describe("buildLiquidDrilldown — no-longer-held holdings (#78)", () => {
       "a_gone_a",
       "a_gone_b",
     ]);
+  });
+});
+
+describe("DRILL_GROUP_BY_TIER — tier → drill group mapping (#79)", () => {
+  test("maps each liquidity tier to its drill group", () => {
+    expect(DRILL_GROUP_BY_TIER).toEqual({
+      cash: "liquid",
+      market: "liquid",
+      retirement: "rest",
+      illiquid: "rest",
+      housing: "housing",
+    });
+  });
+
+  test("is consistent with the group tier constants", () => {
+    const tiersByGroup = {
+      housing: HOUSING_DRILL_TIERS,
+      liquid: LIQUID_DRILL_TIERS,
+      rest: REST_DRILL_TIERS,
+    } as const;
+
+    for (const [tier, group] of Object.entries(DRILL_GROUP_BY_TIER)) {
+      expect(tiersByGroup[group]).toContain(tier);
+    }
   });
 });
