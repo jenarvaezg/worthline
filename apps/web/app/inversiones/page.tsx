@@ -20,7 +20,11 @@ import {
 } from "../intake";
 import { refreshAndPersistStalePrices } from "../refresh-prices";
 import Shell from "../shell";
-import { refreshPricesAction, restoreInvestmentAction } from "./actions";
+import {
+  hardDeleteInvestmentAction,
+  refreshPricesAction,
+  restoreInvestmentAction,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -218,16 +222,24 @@ export default async function InversionesPage({
             <summary>Papelera ({trashedInvestments.length})</summary>
             <div className="trashList">
               {trashedInvestments.map((item) => (
-                <form
-                  action={restoreInvestmentAction}
-                  className="trashRow"
-                  key={item.id}
-                >
-                  <input name="currentUrl" type="hidden" value={currentUrl} />
-                  <input name="id" type="hidden" value={item.id} />
+                <div className="trashRow" key={item.id}>
                   <span>{item.name}</span>
-                  <button type="submit">Restaurar</button>
-                </form>
+                  <div className="trashRowActions">
+                    <form action={restoreInvestmentAction}>
+                      <input name="currentUrl" type="hidden" value={currentUrl} />
+                      <input name="id" type="hidden" value={item.id} />
+                      <button type="submit">Restaurar</button>
+                    </form>
+                    <form action={hardDeleteInvestmentAction}>
+                      <input name="currentUrl" type="hidden" value={currentUrl} />
+                      <input name="id" type="hidden" value={item.id} />
+                      <details className="confirmDelete">
+                        <summary>Eliminar definitivamente</summary>
+                        <button type="submit">Confirmar borrado definitivo</button>
+                      </details>
+                    </form>
+                  </div>
+                </div>
               ))}
             </div>
           </details>

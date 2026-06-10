@@ -23,6 +23,9 @@ import {
   acknowledgeWarningAction,
   deleteAssetAction,
   deleteLiabilityAction,
+  emptyTrashAction,
+  hardDeleteAssetAction,
+  hardDeleteLiabilityAction,
   restoreAssetAction,
   restoreLiabilityAction,
 } from "./actions";
@@ -344,30 +347,55 @@ export default async function PatrimonioPage({
               <span className="emptyLine">La papelera está vacía.</span>
             ) : null}
             {trash.assets.map((item) => (
-              <form
-                action={restoreAssetAction}
-                className="trashRow"
-                key={item.id}
-              >
-                <input name="currentUrl" type="hidden" value={currentUrl} />
-                <input name="id" type="hidden" value={item.id} />
+              <div className="trashRow" key={item.id}>
                 <span>{item.name}</span>
-                <button type="submit">Restaurar</button>
-              </form>
+                <div className="trashRowActions">
+                  <form action={restoreAssetAction}>
+                    <input name="currentUrl" type="hidden" value={currentUrl} />
+                    <input name="id" type="hidden" value={item.id} />
+                    <button type="submit">Restaurar</button>
+                  </form>
+                  <form action={hardDeleteAssetAction}>
+                    <input name="currentUrl" type="hidden" value={currentUrl} />
+                    <input name="id" type="hidden" value={item.id} />
+                    <details className="confirmDelete">
+                      <summary>Eliminar definitivamente</summary>
+                      <button type="submit">Confirmar borrado definitivo</button>
+                    </details>
+                  </form>
+                </div>
+              </div>
             ))}
             {trash.liabilities.map((item) => (
-              <form
-                action={restoreLiabilityAction}
-                className="trashRow"
-                key={item.id}
-              >
-                <input name="currentUrl" type="hidden" value={currentUrl} />
-                <input name="id" type="hidden" value={item.id} />
+              <div className="trashRow" key={item.id}>
                 <span>{item.name}</span>
-                <button type="submit">Restaurar</button>
-              </form>
+                <div className="trashRowActions">
+                  <form action={restoreLiabilityAction}>
+                    <input name="currentUrl" type="hidden" value={currentUrl} />
+                    <input name="id" type="hidden" value={item.id} />
+                    <button type="submit">Restaurar</button>
+                  </form>
+                  <form action={hardDeleteLiabilityAction}>
+                    <input name="currentUrl" type="hidden" value={currentUrl} />
+                    <input name="id" type="hidden" value={item.id} />
+                    <details className="confirmDelete">
+                      <summary>Eliminar definitivamente</summary>
+                      <button type="submit">Confirmar borrado definitivo</button>
+                    </details>
+                  </form>
+                </div>
+              </div>
             ))}
           </div>
+          {trash.assets.length + trash.liabilities.length > 0 ? (
+            <form action={emptyTrashAction} className="trashEmptyAll">
+              <input name="currentUrl" type="hidden" value={currentUrl} />
+              <details className="confirmDelete">
+                <summary>Vaciar papelera</summary>
+                <button type="submit">Confirmar vaciado de papelera</button>
+              </details>
+            </form>
+          ) : null}
         </details>
       </section>
     </Shell>

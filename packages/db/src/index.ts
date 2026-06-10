@@ -191,6 +191,12 @@ export interface UpdateLiabilityInput {
   ownership?: OwnershipShare[];
 }
 
+/** Holdings a member still owns a share of — blocks the member's hard delete. */
+export interface MemberOwnerships {
+  assets: Array<{ id: string; name: string }>;
+  liabilities: Array<{ id: string; name: string }>;
+}
+
 export interface WorthlineStore {
   acknowledgeWarning: (code: string, entityId: string) => number;
   batchApplyValueUpdates: (commands: ValueUpdateCommand[]) => void;
@@ -203,7 +209,20 @@ export interface WorthlineStore {
   createLiability: (input: CreateLiabilityInput) => void;
   createManualAsset: (input: CreateManualAssetInput) => void;
   createMember: (member: Member) => void;
+  deleteOperation: (operationId: string) => number;
   disableMember: (memberId: string, disabledAt: string) => void;
+  /** Hard-delete a trashed asset (live data + overrides; snapshots untouched). Returns 1 if removed, 0 if not found or not in trash. */
+  hardDeleteAsset: (assetId: string) => number;
+  /** Hard-delete a trashed liability. Returns 1 if removed, 0 if not found or not in trash. */
+  hardDeleteLiability: (liabilityId: string) => number;
+  /** Hard-delete every trashed holding atomically. Returns how many of each kind were removed. */
+  emptyTrash: () => { assets: number; liabilities: number };
+  /** Holdings (live or trashed) the member owns a share of. Empty ⇒ the member may be hard-deleted. */
+  readMemberOwnerships: (memberId: string) => MemberOwnerships;
+  /** Hard-delete a member. Returns 0 (no-op) unless the member is disabled and owns no share of any holding. */
+  hardDeleteMember: (memberId: string) => number;
+  /** Empty every table in one transaction, returning the workspace to onboarding. */
+  resetWorkspace: () => void;
   initializeWorkspace: (input: InitializeWorkspaceInput) => void;
   readAllPriceCacheEntries: () => AssetPrice[];
   readAssets: () => ManualAsset[];
@@ -331,6 +350,84 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         entityType,
         id: randomUUID(),
       });
+  };
+
+  // Hard-delete one trashed asset in the caller's transaction. Captures the
+  // entity's key data for the audit trail BEFORE destroying it; FK cascades
+  // take ownerships, investment metadata, operations, and the price cache, and
+  // we clear the warning overrides by hand (no FK points at them). Frozen
+  // snapshot_holdings are intentionally never touched (ADR 0008): history stays
+  // intact, so the holding keeps appearing in past captures. Returns the number
+  // of asset rows removed (0 when the id is unknown or not in the trash).
+  const hardDeleteAssetTx = (assetId: string): number => {
+    const row = sqlite
+      .prepare(
+        `SELECT name, type, deleted_at AS deletedAt FROM assets WHERE id = ?`,
+      )
+      .get(assetId) as { name: string; type: string; deletedAt: string | null } | undefined;
+
+    // Hard delete is reachable only from the trash: refuse a live holding.
+    if (!row || row.deletedAt === null) {
+      return 0;
+    }
+
+    const ownership = sqlite
+      .prepare(
+        `SELECT member_id AS memberId, share_bps AS shareBps FROM asset_ownerships WHERE asset_id = ?`,
+      )
+      .all(assetId);
+    const operations =
+      row.type === "investment"
+        ? sqlite
+            .prepare(
+              `SELECT id, kind, executed_at AS executedAt, units, price_per_unit AS pricePerUnit, currency, fees_minor AS feesMinor
+               FROM asset_operations WHERE asset_id = ?`,
+            )
+            .all(assetId)
+        : [];
+
+    sqlite.prepare(`DELETE FROM warning_overrides WHERE entity_id = ?`).run(assetId);
+    const result = sqlite.prepare(`DELETE FROM assets WHERE id = ?`).run(assetId);
+
+    writeAuditEntry("hard_delete_asset", "asset", assetId, {
+      name: row.name,
+      operations,
+      ownership,
+      type: row.type,
+    });
+
+    return result.changes;
+  };
+
+  // Hard-delete one trashed liability in the caller's transaction. FK cascade
+  // takes its ownerships; snapshots stay frozen. Returns rows removed.
+  const hardDeleteLiabilityTx = (liabilityId: string): number => {
+    const row = sqlite
+      .prepare(
+        `SELECT name, type, deleted_at AS deletedAt FROM liabilities WHERE id = ?`,
+      )
+      .get(liabilityId) as { name: string; type: string; deletedAt: string | null } | undefined;
+
+    if (!row || row.deletedAt === null) {
+      return 0;
+    }
+
+    const ownership = sqlite
+      .prepare(
+        `SELECT member_id AS memberId, share_bps AS shareBps FROM liability_ownerships WHERE liability_id = ?`,
+      )
+      .all(liabilityId);
+
+    sqlite.prepare(`DELETE FROM warning_overrides WHERE entity_id = ?`).run(liabilityId);
+    const result = sqlite.prepare(`DELETE FROM liabilities WHERE id = ?`).run(liabilityId);
+
+    writeAuditEntry("hard_delete_liability", "liability", liabilityId, {
+      name: row.name,
+      ownership,
+      type: row.type,
+    });
+
+    return result.changes;
   };
 
   // Per-unit-of-work workspace cache. readWorkspace, readAssets, and
@@ -1384,6 +1481,147 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         writeAuditEntry("restore_liability", "liability", liabilityId);
       }
       return result.changes;
+    },
+    hardDeleteAsset: (assetId) =>
+      sqlite.transaction(() => hardDeleteAssetTx(assetId))(),
+    hardDeleteLiability: (liabilityId) =>
+      sqlite.transaction(() => hardDeleteLiabilityTx(liabilityId))(),
+    emptyTrash: () =>
+      sqlite.transaction(() => {
+        const trashedAssets = sqlite
+          .prepare(`SELECT id FROM assets WHERE deleted_at IS NOT NULL`)
+          .all() as Array<{ id: string }>;
+        const trashedLiabilities = sqlite
+          .prepare(`SELECT id FROM liabilities WHERE deleted_at IS NOT NULL`)
+          .all() as Array<{ id: string }>;
+
+        let assets = 0;
+        let liabilities = 0;
+        for (const row of trashedAssets) assets += hardDeleteAssetTx(row.id);
+        for (const row of trashedLiabilities) liabilities += hardDeleteLiabilityTx(row.id);
+
+        return { assets, liabilities };
+      })(),
+    deleteOperation: (operationId) => {
+      const row = sqlite
+        .prepare(
+          `SELECT asset_id AS assetId, kind, executed_at AS executedAt, units,
+                  price_per_unit AS pricePerUnit, currency, fees_minor AS feesMinor
+           FROM asset_operations WHERE id = ?`,
+        )
+        .get(operationId) as
+        | {
+            assetId: string;
+            kind: string;
+            executedAt: string;
+            units: string;
+            pricePerUnit: string;
+            currency: string;
+            feesMinor: number;
+          }
+        | undefined;
+
+      if (!row) {
+        return 0;
+      }
+
+      const result = sqlite
+        .prepare(`DELETE FROM asset_operations WHERE id = ?`)
+        .run(operationId);
+
+      // Audit against the owning asset so the deletion shows in its history;
+      // the full operation is recorded, making manual re-entry a de facto undo.
+      writeAuditEntry("delete_operation", "asset", row.assetId, {
+        currency: row.currency,
+        executedAt: row.executedAt,
+        feesMinor: row.feesMinor,
+        kind: row.kind,
+        operationId,
+        pricePerUnit: row.pricePerUnit,
+        units: row.units,
+      });
+
+      return result.changes;
+    },
+    readMemberOwnerships: (memberId) => ({
+      assets: sqlite
+        .prepare(
+          `SELECT a.id, a.name FROM asset_ownerships o
+           JOIN assets a ON a.id = o.asset_id
+           WHERE o.member_id = ? ORDER BY a.name`,
+        )
+        .all(memberId) as Array<{ id: string; name: string }>,
+      liabilities: sqlite
+        .prepare(
+          `SELECT l.id, l.name FROM liability_ownerships o
+           JOIN liabilities l ON l.id = o.liability_id
+           WHERE o.member_id = ? ORDER BY l.name`,
+        )
+        .all(memberId) as Array<{ id: string; name: string }>,
+    }),
+    hardDeleteMember: (memberId) => {
+      const member = sqlite
+        .prepare(`SELECT name, disabled_at AS disabledAt FROM members WHERE id = ?`)
+        .get(memberId) as { name: string; disabledAt: string | null } | undefined;
+
+      // Only a disabled member owning no share of any holding (trashed ones
+      // included) may be destroyed — mirrors the FK `restrict` as a domain rule
+      // instead of letting the constraint throw.
+      if (!member || member.disabledAt === null) {
+        return 0;
+      }
+
+      const owned = sqlite
+        .prepare(
+          `SELECT
+             (SELECT COUNT(*) FROM asset_ownerships WHERE member_id = @id)
+           + (SELECT COUNT(*) FROM liability_ownerships WHERE member_id = @id) AS n`,
+        )
+        .get({ id: memberId }) as { n: number };
+
+      if (owned.n > 0) {
+        return 0;
+      }
+
+      const result = sqlite.prepare(`DELETE FROM members WHERE id = ?`).run(memberId);
+
+      if (result.changes > 0) {
+        writeAuditEntry("hard_delete_member", "member", memberId, { name: member.name });
+        invalidateWorkspace();
+      }
+
+      return result.changes;
+    },
+    resetWorkspace: () => {
+      // Children before parents so FK constraints hold mid-transaction. The
+      // file and schema survive; the next read finds no workspace and the app
+      // falls back to onboarding. Unlike a hard delete, the reset erases history.
+      const tables = [
+        "snapshot_holdings",
+        "snapshots",
+        "asset_operations",
+        "asset_price_cache",
+        "investment_assets",
+        "asset_ownerships",
+        "liability_ownerships",
+        "warning_overrides",
+        "audit_log",
+        "liabilities",
+        "assets",
+        "member_group_members",
+        "member_groups",
+        "members",
+        "workspace",
+        "app_settings",
+      ];
+
+      sqlite.transaction(() => {
+        for (const table of tables) {
+          sqlite.prepare(`DELETE FROM ${table}`).run();
+        }
+      })();
+
+      invalidateWorkspace();
     },
     readAuditLog: (filter) => {
       const db = drizzle(sqlite);
