@@ -7,6 +7,9 @@
  *   tier), with the deterministic stack→lines fallback and the <2 points rule
  * - per-holding sparkline entries for holdings with ≥2 captured points,
  *   carrying the frozen label and the current value when still held
+ * - the no-longer-held rule (#78): sold/removed holdings keep their history,
+ *   truncated at their last capture on the window's shared time axis, flagged
+ *   and ordered after the currently-held ones
  */
 import { describe, expect, test } from "vitest";
 
@@ -201,6 +204,18 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
     expect(state.holdings[0]!.tier).toBe("market");
   });
 
+  test("a held holding is not flagged and keeps its current value", () => {
+    const rows = [
+      row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 100 }),
+      row({ dateKey: "2026-06-02", holdingId: "a_cash", tier: "cash", valueMinor: 250 }),
+    ];
+
+    const state = buildLiquidDrilldown({ currentHoldingIds: ["a_cash"], rows });
+
+    expect(state.holdings[0]!.noLongerHeld).toBe(false);
+    expect(state.holdings[0]!.currentValueMinor).toBe(250);
+  });
+
   test("holdings are ordered by label for a stable presentation", () => {
     const rows = [
       row({ dateKey: "2026-06-01", holdingId: "a_z", tier: "market", valueMinor: 1, label: "Zeta" }),
@@ -312,5 +327,74 @@ describe("buildHousingDrilldown — single-tier group (#77)", () => {
       expect(holding.tier).toBe("housing");
       expect(holding.sparkline.linePoints.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("buildLiquidDrilldown — no-longer-held holdings (#78)", () => {
+  test("a holding sold mid-window stays in the grid, flagged, with its series truncated at its last capture", () => {
+    const rows = [
+      // Held holding spans the whole window: 2026-06-01 → 2026-06-05.
+      row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 100, label: "Cuenta" }),
+      row({ dateKey: "2026-06-05", holdingId: "a_cash", tier: "cash", valueMinor: 200, label: "Cuenta" }),
+      // Sold holding's last capture is mid-window (2026-06-03).
+      row({ dateKey: "2026-06-01", holdingId: "a_sold", tier: "market", valueMinor: 100, label: "Vendida" }),
+      row({ dateKey: "2026-06-03", holdingId: "a_sold", tier: "market", valueMinor: 200, label: "Vendida" }),
+    ];
+
+    const state = buildLiquidDrilldown({ currentHoldingIds: ["a_cash"], rows });
+
+    const sold = state.holdings.find((h) => h.holdingId === "a_sold")!;
+    expect(sold.noLongerHeld).toBe(true);
+    expect(sold.currentValueMinor).toBeNull();
+
+    // Sparkline xs live on the window's shared time axis (4-day span over
+    // innerWidth 116): the sold series ends at 06-03 → x = 2 + (2/4)·116 = 60,
+    // NOT at the right edge. ys: padded domain [90, 210] over height 36.
+    const inset = DRILL_SPARKLINE_INSET_X;
+    expect(sold.sparkline.linePoints).toBe(`${inset},33 60,3`);
+
+    // The held holding's series does reach the right edge of the axis.
+    const held = state.holdings.find((h) => h.holdingId === "a_cash")!;
+    expect(held.noLongerHeld).toBe(false);
+    expect(held.sparkline.linePoints).toBe(
+      `${inset},33 ${DRILL_SPARKLINE_WIDTH - inset},3`,
+    );
+  });
+
+  test("a no-longer-held holding with fewer than two captured points stays excluded", () => {
+    const rows = [
+      row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 100 }),
+      row({ dateKey: "2026-06-05", holdingId: "a_cash", tier: "cash", valueMinor: 200 }),
+      row({ dateKey: "2026-06-02", holdingId: "a_sold", tier: "market", valueMinor: 500 }),
+    ];
+
+    const state = buildLiquidDrilldown({ currentHoldingIds: ["a_cash"], rows });
+
+    expect(state.holdings.map((h) => h.holdingId)).toEqual(["a_cash"]);
+  });
+
+  test("currently-held holdings sort before no-longer-held ones, alphabetically within each group", () => {
+    const rows = [
+      row({ dateKey: "2026-06-01", holdingId: "a_gone_a", tier: "market", valueMinor: 1, label: "Alfa" }),
+      row({ dateKey: "2026-06-02", holdingId: "a_gone_a", tier: "market", valueMinor: 2, label: "Alfa" }),
+      row({ dateKey: "2026-06-01", holdingId: "a_held_z", tier: "cash", valueMinor: 1, label: "Zeta" }),
+      row({ dateKey: "2026-06-02", holdingId: "a_held_z", tier: "cash", valueMinor: 2, label: "Zeta" }),
+      row({ dateKey: "2026-06-01", holdingId: "a_held_m", tier: "cash", valueMinor: 1, label: "Media" }),
+      row({ dateKey: "2026-06-02", holdingId: "a_held_m", tier: "cash", valueMinor: 2, label: "Media" }),
+      row({ dateKey: "2026-06-01", holdingId: "a_gone_b", tier: "market", valueMinor: 1, label: "Beta" }),
+      row({ dateKey: "2026-06-02", holdingId: "a_gone_b", tier: "market", valueMinor: 2, label: "Beta" }),
+    ];
+
+    const state = buildLiquidDrilldown({
+      currentHoldingIds: ["a_held_z", "a_held_m"],
+      rows,
+    });
+
+    expect(state.holdings.map((h) => h.holdingId)).toEqual([
+      "a_held_m",
+      "a_held_z",
+      "a_gone_a",
+      "a_gone_b",
+    ]);
   });
 });

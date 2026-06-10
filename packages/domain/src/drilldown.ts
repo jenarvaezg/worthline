@@ -1,5 +1,5 @@
 /**
- * Drilldown state module (#76, #77) — pure domain math behind the
+ * Drilldown state module (#76, #77, #78) — pure domain math behind the
  * server-rendered drill view that replaces the decomposition chart.
  *
  * A drill key resolves a group of liquidity tiers: "liquid" (cash + market),
@@ -11,6 +11,12 @@
  * plus per-holding sparkline entries for the small-multiples grid. Housing is
  * a single tier, so its drill skips the stack and goes straight to the
  * per-property multiples. No React, no SVG — just numbers and strings.
+ *
+ * Frozen means frozen (#78): a holding that has left the portfolio — sold,
+ * written off, deleted, with or without losses — keeps its captured history.
+ * Its small multiple stays in the grid, truncated at its last capture on the
+ * group window's shared time axis, flagged as no longer held, and ordered
+ * after the currently-held holdings.
  */
 
 import type { LiquidityTier } from "./classification";
@@ -18,7 +24,7 @@ import {
   buildStackedChartGeometry,
   type StackedChartGeometry,
 } from "./decomposition-chart";
-import { paddedValueDomain, timeProportionalXs, valueToY } from "./evolution-chart";
+import { paddedValueDomain, valueToY } from "./evolution-chart";
 import type { SnapshotHoldingKind, SnapshotHoldingRow } from "./snapshot-holdings";
 
 /** The drill keys the home understands (#76 liquid, #77 rest + housing). */
@@ -78,10 +84,11 @@ export interface DrillHoldingMultiple {
   sparkline: DrillSparklineGeometry;
   /**
    * The holding's latest captured scoped value when it is still in the
-   * portfolio; `null` when no longer held (finer presentation of sold
-   * holdings is #78).
+   * portfolio; `null` when no longer held.
    */
   currentValueMinor: number | null;
+  /** True when the holding has left the portfolio (sold, written off, deleted). */
+  noLongerHeld: boolean;
 }
 
 /** The drill view state of one tier group (#77 generalizes #76's liquid shape). */
@@ -96,7 +103,10 @@ export interface GroupDrilldownState<
    * groups (housing), which skip the stack by design.
    */
   stack: StackedChartGeometry<Tier> | null;
-  /** Small-multiple entries, ordered by label for a stable presentation. */
+  /**
+   * Small-multiple entries: currently-held holdings first, no-longer-held
+   * ones at the end, each group ordered by label for a stable presentation.
+   */
   holdings: DrillHoldingMultiple[];
 }
 
@@ -112,6 +122,9 @@ export type DrilldownState =
   | RestDrilldownState
   | HousingDrilldownState;
 
+/** A drill group row: a dated holding row whose frozen tier resolved into the group. */
+export type DrillGroupRow = DatedSnapshotHoldingRow & { liquidityTier: LiquidityTier };
+
 /** A group row: a dated holding row whose frozen tier belongs to the drill group. */
 type GroupRow<Tier extends LiquidityTier> = DatedSnapshotHoldingRow & {
   liquidityTier: Tier;
@@ -122,19 +135,46 @@ function signedValueMinor(row: DatedSnapshotHoldingRow): number {
   return row.kind === "liability" ? -row.valueMinor : row.valueMinor;
 }
 
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function parseDateKey(dateKey: string): number {
+  return Date.parse(`${dateKey}T00:00:00Z`);
+}
+
+/**
+ * Sparkline geometry for one holding. The xs live on the GROUP WINDOW's
+ * shared time axis (not the holding's own span): a series whose last capture
+ * predates the window's end simply stops there instead of stretching to the
+ * right edge — that truncation is how a no-longer-held holding reads (#78).
+ */
 function buildSparkline(
   dateKeys: string[],
   valuesMinor: number[],
+  windowStartMs: number,
+  windowSpanMs: number,
 ): DrillSparklineGeometry | null {
-  const xs = timeProportionalXs(dateKeys, DRILL_SPARKLINE_WIDTH, DRILL_SPARKLINE_INSET_X);
-  if (!xs) return null;
+  const times = dateKeys.map(parseDateKey);
 
+  if (
+    !Number.isFinite(windowSpanMs) ||
+    windowSpanMs <= 0 ||
+    times.some((t) => Number.isNaN(t)) ||
+    new Set(dateKeys).size < 2
+  ) {
+    return null;
+  }
+
+  const innerWidth = DRILL_SPARKLINE_WIDTH - 2 * DRILL_SPARKLINE_INSET_X;
   const { yMin, yMax } = paddedValueDomain(valuesMinor);
-  const linePoints = xs
-    .map(
-      (x, i) =>
-        `${x},${valueToY(valuesMinor[i]!, yMin, yMax, DRILL_SPARKLINE_HEIGHT)}`,
-    )
+  const linePoints = times
+    .map((t, i) => {
+      const x = round2(
+        DRILL_SPARKLINE_INSET_X + ((t - windowStartMs) / windowSpanMs) * innerWidth,
+      );
+      return `${x},${valueToY(valuesMinor[i]!, yMin, yMax, DRILL_SPARKLINE_HEIGHT)}`;
+    })
     .join(" ");
 
   return {
@@ -142,6 +182,67 @@ function buildSparkline(
     linePoints,
     width: DRILL_SPARKLINE_WIDTH,
   };
+}
+
+/**
+ * Builds the per-holding small-multiple entries of a drill group from its
+ * frozen rows. Shared by every drill key so all groups inherit the rules:
+ * a holding needs ≥2 captured points in the window to appear, but it appears
+ * even when it has left the portfolio — its series truncated at its last
+ * capture, flagged as no longer held, and ordered after the currently-held
+ * holdings (stable by label within each group).
+ */
+export function buildDrillHoldingMultiples(
+  groupRows: readonly DrillGroupRow[],
+  currentHoldingIds: readonly string[],
+): DrillHoldingMultiple[] {
+  const sortedRows = [...groupRows].sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+
+  if (sortedRows.length === 0) return [];
+
+  const windowStartMs = parseDateKey(sortedRows[0]!.dateKey);
+  const windowSpanMs = parseDateKey(sortedRows.at(-1)!.dateKey) - windowStartMs;
+
+  const rowsByHolding = new Map<string, DrillGroupRow[]>();
+
+  for (const row of sortedRows) {
+    rowsByHolding.set(row.holdingId, [...(rowsByHolding.get(row.holdingId) ?? []), row]);
+  }
+
+  const heldIds = new Set(currentHoldingIds);
+
+  return [...rowsByHolding.entries()]
+    .flatMap(([holdingId, rows]) => {
+      const sparkline = buildSparkline(
+        rows.map((row) => row.dateKey),
+        rows.map((row) => row.valueMinor),
+        windowStartMs,
+        windowSpanMs,
+      );
+
+      if (rows.length < 2 || !sparkline) return [];
+
+      const latest = rows.at(-1)!;
+      const noLongerHeld = !heldIds.has(holdingId);
+
+      return [
+        {
+          currentValueMinor: noLongerHeld ? null : latest.valueMinor,
+          holdingId,
+          kind: latest.kind,
+          label: latest.label,
+          noLongerHeld,
+          sparkline,
+          tier: latest.liquidityTier,
+        } satisfies DrillHoldingMultiple,
+      ];
+    })
+    .sort(
+      (a, b) =>
+        Number(a.noLongerHeld) - Number(b.noLongerHeld) ||
+        a.label.localeCompare(b.label) ||
+        a.holdingId.localeCompare(b.holdingId),
+    );
 }
 
 /** Per-tier stacked series: one point per capture day of the group. */
@@ -194,39 +295,8 @@ function buildGroupDrilldown<Key extends DrilldownKey, Tier extends LiquidityTie
 
   const stack = options.withStack ? buildGroupStack(groupRows, tiers) : null;
 
-  // ── Per-holding small multiples: holdings with ≥2 captured points ────────
-  const rowsByHolding = new Map<string, Array<GroupRow<Tier>>>();
-
-  for (const row of groupRows) {
-    rowsByHolding.set(row.holdingId, [...(rowsByHolding.get(row.holdingId) ?? []), row]);
-  }
-
-  const heldIds = new Set(input.currentHoldingIds);
-  const holdings = [...rowsByHolding.entries()]
-    .flatMap(([holdingId, rows]) => {
-      const sparkline = buildSparkline(
-        rows.map((row) => row.dateKey),
-        rows.map((row) => row.valueMinor),
-      );
-
-      if (rows.length < 2 || !sparkline) return [];
-
-      const latest = rows.at(-1)!;
-
-      return [
-        {
-          currentValueMinor: heldIds.has(holdingId) ? latest.valueMinor : null,
-          holdingId,
-          kind: latest.kind,
-          label: latest.label,
-          sparkline,
-          tier: latest.liquidityTier,
-        } satisfies DrillHoldingMultiple,
-      ];
-    })
-    .sort(
-      (a, b) => a.label.localeCompare(b.label) || a.holdingId.localeCompare(b.holdingId),
-    );
+  // ── Per-holding small multiples: shared rule across drill groups ─────────
+  const holdings = buildDrillHoldingMultiples(groupRows, input.currentHoldingIds);
 
   return { holdings, key, stack };
 }
