@@ -468,18 +468,6 @@ h3 {
   color: var(--red);
 }
 
-.historyBar b.pos {
-  color: var(--green);
-}
-
-.historyBar b.neg {
-  color: var(--red);
-}
-
-.historyBar.negative i {
-  background: var(--red);
-}
-
 .deltaStrip {
   border-top: 1px solid var(--line);
   display: flex;
@@ -939,20 +927,6 @@ th:last-child {
   margin-top: 14px;
 }
 
-.historyBars {
-  display: grid;
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.historyBar {
-  display: grid;
-  gap: 6px;
-  grid-template-columns: 110px minmax(120px, 0.35fr) minmax(120px, 1fr);
-}
-
-.historyBar span,
-.historyBar b,
 .emptyLine {
   color: var(--muted);
   font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
@@ -962,15 +936,18 @@ th:last-child {
   text-transform: uppercase;
 }
 
-.historyBar b {
-  color: var(--ink);
+/* Evolution chart — server-rendered SVG area of the headline figure (#73).
+   Ink line over a gradient fill to transparent; monthly closes are solid
+   points whose native <title> exposes date and value. */
+.evolutionChart {
+  display: block;
+  height: 160px;
+  margin-top: 14px;
+  width: 100%;
 }
 
-.historyBar i {
-  background: linear-gradient(90deg, var(--green), var(--blue));
-  display: block;
-  height: 14px;
-  margin-top: 2px;
+.evolutionEmpty {
+  margin-top: 14px;
 }
 
 .persistenceBar {
@@ -1076,26 +1053,6 @@ code {
   text-decoration: underline;
 }
 
-/* Zero-centered signed delta bars for the evolution mini.
-   Positive = green→blue gradient (same as history bars).
-   Negative = red fill. */
-.signedDeltaBar {
-  background: rgba(23, 32, 30, 0.07);
-  display: block;
-  height: 14px;
-  margin-top: 2px;
-}
-
-.signedDeltaBar i {
-  background: linear-gradient(90deg, var(--green), var(--blue));
-  display: block;
-  height: 100%;
-}
-
-.signedDeltaBar[data-sign="neg"] i {
-  background: var(--red);
-}
-
 /* === end #56 resumen === */
 
 @media (max-width: 900px) {
@@ -1173,14 +1130,9 @@ code {
     flex-direction: column;
   }
 
-  .historyBar,
   .rowForm,
   .snapshotForm {
     grid-template-columns: 1fr;
-  }
-
-  .historyBar {
-    display: grid;
   }
 }
 

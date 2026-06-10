@@ -99,6 +99,18 @@ export {
 export type { CaptureDecision, SnapshotPolicyEntry } from "./snapshot-policy";
 export { deriveMonthlyCloses, planSnapshotCapture } from "./snapshot-policy";
 
+export type {
+  EvolutionChartGeometry,
+  EvolutionMarker,
+  EvolutionSeriesPoint,
+} from "./evolution-chart";
+export {
+  buildEvolutionChartGeometry,
+  EVOLUTION_CHART_HEIGHT,
+  EVOLUTION_CHART_INSET_X,
+  EVOLUTION_CHART_WIDTH,
+} from "./evolution-chart";
+
 /**
  * A rule violation reported by a domain constructor — carries a stable
  * machine-readable `code` plus context fields that callers can use to format
