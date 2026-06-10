@@ -653,6 +653,25 @@ th:last-child {
   overflow-wrap: anywhere;
 }
 
+.trashRowActions {
+  align-items: start;
+  display: flex;
+  gap: 12px;
+}
+
+.trashEmptyAll {
+  border-top: 1px dashed var(--line);
+  margin-top: 12px;
+  padding-top: 10px;
+}
+
+.dangerExplain {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 8px 0 12px;
+  max-width: 60ch;
+}
+
 .onboardingChecklist {
   background: rgba(255, 250, 240, 0.88);
   border: 1px solid var(--line);

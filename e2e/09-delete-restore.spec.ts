@@ -35,9 +35,10 @@ test("delete → papelera → restore round-trip", async ({ page }) => {
   // 5. Asset no longer in the active table
   await expect(page.getByRole("cell", { name: "Activo Para Borrar" })).not.toBeVisible();
 
-  // 6. Open the Papelera section
+  // 6. Open the Papelera section (its own summary — the trash now also nests
+  //    per-row "Eliminar definitivamente" and a "Vaciar papelera" summary).
   const trashPanel = page.locator("details.trashPanel");
-  await trashPanel.locator("summary").click();
+  await trashPanel.locator("> summary").click();
   await expect(page.getByText("Activo Para Borrar")).toBeVisible();
 
   // 7. Restore the asset

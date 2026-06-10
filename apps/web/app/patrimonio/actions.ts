@@ -203,6 +203,76 @@ export async function deleteLiabilityAction(formData: FormData, _store?: Worthli
   redirect(successRedirectUrl("/patrimonio", "deleted_recoverable"));
 }
 
+export async function hardDeleteAssetAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const id = parseEntityId(formData);
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id) {
+    redirect(
+      errorRedirectUrl(baseUrl(formData), {
+        message: "Identificador de activo no encontrado.",
+      }),
+    );
+  }
+
+  const changes = runWith((store) => store.hardDeleteAsset(id));
+
+  if (changes === 0) {
+    redirect(
+      errorRedirectUrl(baseUrl(formData), {
+        message: "No se encontró el elemento en la papelera.",
+      }),
+    );
+  }
+
+  redirect(successRedirectUrl("/patrimonio", "hard_deleted"));
+}
+
+export async function hardDeleteLiabilityAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const id = parseEntityId(formData);
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id) {
+    redirect(
+      errorRedirectUrl(baseUrl(formData), {
+        message: "Identificador de deuda no encontrado.",
+      }),
+    );
+  }
+
+  const changes = runWith((store) => store.hardDeleteLiability(id));
+
+  if (changes === 0) {
+    redirect(
+      errorRedirectUrl(baseUrl(formData), {
+        message: "No se encontró el elemento en la papelera.",
+      }),
+    );
+  }
+
+  redirect(successRedirectUrl("/patrimonio", "hard_deleted"));
+}
+
+export async function emptyTrashAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  runWith((store) => store.emptyTrash());
+
+  redirect(successRedirectUrl("/patrimonio", "trash_emptied"));
+}
+
 export async function restoreAssetAction(formData: FormData, _store?: WorthlineStore): Promise<never> {
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>

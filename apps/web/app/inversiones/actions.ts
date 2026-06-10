@@ -219,6 +219,70 @@ export async function restoreInvestmentAction(formData: FormData, _store?: Worth
   redirect(successRedirectUrl(returnUrl, "restored", id));
 }
 
+export async function hardDeleteInvestmentAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+) {
+  const id = parseEntityId(formData);
+  const returnUrl = currentUrlOf(formData, "/inversiones");
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id) {
+    redirect(
+      errorRedirectUrl(returnUrl, {
+        message: "Identificador de inversión no encontrado.",
+      }),
+    );
+  }
+
+  const changes = runWith((store) => store.hardDeleteAsset(id));
+
+  if (changes === 0) {
+    redirect(
+      errorRedirectUrl(returnUrl, {
+        message: "No se encontró el elemento en la papelera.",
+      }),
+    );
+  }
+
+  redirect(successRedirectUrl(returnUrl, "hard_deleted"));
+}
+
+export async function deleteOperationAction(
+  routeAssetId: string,
+  formData: FormData,
+  _store?: WorthlineStore,
+) {
+  const operationId = parseEntityId(formData, "operationId");
+  const returnUrl = currentUrlOf(
+    formData,
+    `/inversiones/${routeAssetId}/operacion`,
+  );
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!operationId) {
+    redirect(
+      errorRedirectUrl(returnUrl, {
+        message: "Identificador de operación no encontrado.",
+      }),
+    );
+  }
+
+  const changes = runWith((store) => store.deleteOperation(operationId));
+
+  if (changes === 0) {
+    redirect(
+      errorRedirectUrl(returnUrl, {
+        message: "No se encontró la operación — puede que ya se haya eliminado.",
+      }),
+    );
+  }
+
+  redirect(successRedirectUrl(returnUrl, "operation_deleted"));
+}
+
 export async function refreshPricesAction(formData: FormData) {
   const returnUrl = currentUrlOf(formData, "/inversiones");
   const nowIso = new Date().toISOString();

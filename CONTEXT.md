@@ -89,6 +89,26 @@ A **warning** the user can mark intentional. A **blocking** warning cannot be di
 A persisted acknowledgement that an **overrideable warning** is intentional, after
 which that warning stops surfacing.
 
+**Trash**:
+Where deleted **holdings** wait, fully recoverable, until restored or
+**hard-deleted**. Deleting a holding always lands it here first — the trash is
+the only doorway to destroying one. UI label: "Papelera".
+
+**Hard delete**:
+The irreversible destruction of an entity's live data. Frozen **snapshots** are
+never touched: history stays intact, so a hard-deleted holding still appears in
+past captures. A **holding** hard-deletes only from the **trash**; a member only
+while disabled and owning no share of any holding (trashed ones included); an
+**operation** deletes directly with confirmation — it is small and re-enterable,
+so it gets no trash. The audit trail of the destroyed entity is kept.
+UI label: "Eliminar definitivamente".
+_Avoid_: purge (suggests history is rewritten — it never is).
+
+**Reset**:
+The single act that empties the entire workspace — every holding, member,
+snapshot, override, audit entry, and setting — returning the app to onboarding.
+Unlike **hard delete**, the reset does erase history. UI label: "Borrar todo".
+
 ## Relationships
 
 - **Net worth** decomposes into **gross assets** − **debts**.
