@@ -85,6 +85,8 @@ export type {
   WorkspaceExportData,
 } from "./workspace-transfer";
 export { EXPORT_VERSION, serializeWorkspaceExport } from "./workspace-transfer";
+export type { ParseWorkspaceExportResult } from "./workspace-transfer-parse";
+export { parseWorkspaceExport } from "./workspace-transfer-parse";
 
 export type {
   BuildSnapshotHoldingRowsInput,

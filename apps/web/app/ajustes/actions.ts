@@ -1,6 +1,8 @@
 "use server";
 
 import { withStore, type WorthlineStore } from "@worthline/db";
+import { parseWorkspaceExport } from "@worthline/domain";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import {
@@ -9,6 +11,7 @@ import {
   parseEntityId,
   parseFireConfigFormStrict,
   parseNewMember,
+  SCOPE_COOKIE_NAME,
 } from "../intake";
 
 const BASE = "/ajustes";
@@ -161,6 +164,75 @@ export async function resetWorkspaceAction(formData: FormData, _store?: Worthlin
 
   // No workspace left → the app belongs at onboarding.
   redirect("/empezar");
+}
+
+// === Workspace import action ===
+
+/**
+ * Import a workspace export file (ADR 0010, #103): validate the uploaded JSON
+ * with parseWorkspaceExport and, only when fully valid, atomically replace the
+ * entire workspace with the file's contents.
+ */
+export async function confirmImportAction(formData: FormData, _store?: WorthlineStore) {
+  const file = formData.get("file");
+
+  if (!(file instanceof File) || file.size === 0) {
+    redirect(
+      errorRedirectUrl(currentUrlOf(formData), {
+        message: "Selecciona un archivo de exportación (.json) para importar.",
+        formId: "import",
+      }),
+    );
+  }
+
+  const text = await file.text();
+  let raw: unknown;
+
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    redirect(
+      errorRedirectUrl(currentUrlOf(formData), {
+        message: "El archivo no contiene JSON válido y no se puede importar.",
+        formId: "import",
+      }),
+    );
+  }
+
+  const result = parseWorkspaceExport(raw);
+
+  if (!result.ok) {
+    const shown = result.errors.slice(0, 3).join(" · ");
+    const remaining = result.errors.length - 3;
+    const suffix = remaining > 0 ? ` (y ${remaining} errores más)` : "";
+
+    redirect(
+      errorRedirectUrl(currentUrlOf(formData), {
+        message: `No se pudo importar: ${shown}${suffix}`,
+        formId: "import",
+      }),
+    );
+  }
+
+  runWith((store) => store.importWorkspace(result.value), _store);
+
+  // The previous workspace is gone — point the scope cookie at the imported
+  // file's first member so the dashboard never resolves a stale member id.
+  const firstMemberId = result.value.members[0]?.id;
+  const jar = await cookies();
+
+  if (firstMemberId) {
+    jar.set(SCOPE_COOKIE_NAME, firstMemberId, {
+      httpOnly: true,
+      path: "/",
+      sameSite: "lax",
+    });
+  } else {
+    jar.delete(SCOPE_COOKIE_NAME);
+  }
+
+  // A valid import always yields a workspace — land on the dashboard.
+  redirect("/");
 }
 
 // === FIRE config action ===

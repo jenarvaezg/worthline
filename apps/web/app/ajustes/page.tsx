@@ -15,6 +15,7 @@ import {
 } from "../intake";
 import Shell from "../shell";
 import {
+  confirmImportAction,
   createMemberAction,
   disableMemberAction,
   hardDeleteMemberAction,
@@ -384,6 +385,26 @@ export default async function AjustesPage({
             </label>
             <button type="submit">Borrar todo definitivamente</button>
           </details>
+        </form>
+
+        {formError?.formId === "import" ? (
+          <p className="formError" role="alert">
+            {formError.message}
+          </p>
+        ) : null}
+
+        <p className="dangerExplain">
+          Importar un archivo de exportación reemplaza por completo el workspace
+          actual; nada de lo que existe ahora se conserva.
+        </p>
+
+        <form action={confirmImportAction} className="stackForm">
+          <input name="currentUrl" type="hidden" value={currentUrl} />
+          <label>
+            Archivo de exportación (.json)
+            <input accept="application/json,.json" name="file" required type="file" />
+          </label>
+          <button type="submit">Importar</button>
         </form>
       </section>
     </Shell>
