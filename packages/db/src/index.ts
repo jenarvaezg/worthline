@@ -70,6 +70,31 @@ import { migrate } from "./migrate";
 
 const bootstrapKey = "bootstrap.last_healthcheck_at";
 
+/**
+ * Every workspace table, children before parents so FK constraints hold
+ * mid-transaction. Shared by resetWorkspace and importWorkspace — the two
+ * full-replace paths — so the delete list can never drift between them.
+ * Includes audit_log and app_settings: a full replace erases history too.
+ */
+const WORKSPACE_TABLES = [
+  "snapshot_holdings",
+  "snapshots",
+  "asset_operations",
+  "asset_price_cache",
+  "investment_assets",
+  "asset_ownerships",
+  "liability_ownerships",
+  "warning_overrides",
+  "audit_log",
+  "liabilities",
+  "assets",
+  "member_group_members",
+  "member_groups",
+  "members",
+  "workspace",
+  "app_settings",
+] as const;
+
 export interface BootstrapHealthcheckOptions {
   databasePath?: string;
   dataDir?: string;
@@ -236,6 +261,13 @@ export interface WorthlineStore {
   /** Empty every table in one transaction, returning the workspace to onboarding. */
   resetWorkspace: () => void;
   initializeWorkspace: (input: InitializeWorkspaceInput) => void;
+  /**
+   * Atomically replace the entire workspace with an already-validated export
+   * document (ADR 0010, #103): every table is emptied and the file's sections
+   * are bulk-inserted with their ids preserved. Callers must validate the
+   * document with parseWorkspaceExport first — this method does not re-parse.
+   */
+  importWorkspace: (doc: WorkspaceExport) => void;
   readAllPriceCacheEntries: () => AssetPrice[];
   readAssets: () => ManualAsset[];
   readInvestmentAssetsWithMeta: () => InvestmentAssetMeta[];
@@ -1606,34 +1638,333 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
       return result.changes;
     },
     resetWorkspace: () => {
-      // Children before parents so FK constraints hold mid-transaction. The
-      // file and schema survive; the next read finds no workspace and the app
-      // falls back to onboarding. Unlike a hard delete, the reset erases history.
-      const tables = [
-        "snapshot_holdings",
-        "snapshots",
-        "asset_operations",
-        "asset_price_cache",
-        "investment_assets",
-        "asset_ownerships",
-        "liability_ownerships",
-        "warning_overrides",
-        "audit_log",
-        "liabilities",
-        "assets",
-        "member_group_members",
-        "member_groups",
-        "members",
-        "workspace",
-        "app_settings",
-      ];
-
+      // WORKSPACE_TABLES is ordered children before parents so FK constraints
+      // hold mid-transaction. The file and schema survive; the next read finds
+      // no workspace and the app falls back to onboarding. Unlike a hard
+      // delete, the reset erases history.
       sqlite.transaction(() => {
-        for (const table of tables) {
+        for (const table of WORKSPACE_TABLES) {
           sqlite.prepare(`DELETE FROM ${table}`).run();
         }
       })();
 
+      invalidateWorkspace();
+    },
+    importWorkspace: (doc) => {
+      const importAll = sqlite.transaction(() => {
+        // Full replace (ADR 0010): same wipe as resetWorkspace, then the
+        // file's sections are bulk-inserted with their ids preserved — raw
+        // INSERTs on purpose, never the domain constructors that mint ids.
+        for (const table of WORKSPACE_TABLES) {
+          sqlite.prepare(`DELETE FROM ${table}`).run();
+        }
+
+        sqlite
+          .prepare(
+            `INSERT INTO workspace (id, mode, base_currency)
+             VALUES ('default', @mode, @baseCurrency)`,
+          )
+          .run({
+            baseCurrency: doc.workspace.baseCurrency,
+            mode: doc.workspace.mode,
+          });
+
+        const insertMember = sqlite.prepare(`
+          INSERT INTO members (id, name, disabled_at)
+          VALUES (@id, @name, @disabledAt)
+        `);
+
+        for (const member of doc.members) {
+          insertMember.run({
+            disabledAt: member.disabledAt ?? null,
+            id: member.id,
+            name: member.name,
+          });
+        }
+
+        const insertGroup = sqlite.prepare(`
+          INSERT INTO member_groups (id, name)
+          VALUES (@id, @name)
+        `);
+        const insertGroupMember = sqlite.prepare(`
+          INSERT INTO member_group_members (group_id, member_id, sort_order)
+          VALUES (@groupId, @memberId, @sortOrder)
+        `);
+
+        for (const group of doc.groups) {
+          insertGroup.run({ id: group.id, name: group.name });
+
+          group.memberIds.forEach((memberId, sortOrder) => {
+            insertGroupMember.run({ groupId: group.id, memberId, sortOrder });
+          });
+        }
+
+        const insertAsset = sqlite.prepare(`
+          INSERT INTO assets (
+            id, name, type, currency, current_value_minor,
+            liquidity_tier, is_primary_residence, deleted_at
+          )
+          VALUES (
+            @id, @name, @type, @currency, @currentValueMinor,
+            @liquidityTier, @isPrimaryResidence, @deletedAt
+          )
+        `);
+        const insertAssetOwnership = sqlite.prepare(`
+          INSERT INTO asset_ownerships (asset_id, member_id, share_bps)
+          VALUES (@assetId, @memberId, @shareBps)
+        `);
+        const insertInvestmentMeta = sqlite.prepare(`
+          INSERT INTO investment_assets (
+            asset_id, unit_symbol, isin, provider_symbol,
+            manual_price_per_unit, manual_priced_at
+          )
+          VALUES (
+            @assetId, @unitSymbol, @isin, @providerSymbol,
+            @manualPricePerUnit, @manualPricedAt
+          )
+        `);
+
+        const writeAsset = (asset: ExportedAsset): void => {
+          insertAsset.run({
+            currency: asset.currency,
+            // Investments are stored at zero like createInvestmentAsset does:
+            // their value is derived from operations and prices on read, never
+            // stored (ADR 0006). Hand-valued kinds carry the file's value.
+            currentValueMinor:
+              asset.type === "investment"
+                ? 0
+                : (asset.currentValue?.amountMinor ?? 0),
+            deletedAt: asset.deletedAt ?? null,
+            id: asset.id,
+            isPrimaryResidence: asset.isPrimaryResidence ? 1 : 0,
+            liquidityTier: asset.liquidityTier,
+            name: asset.name,
+            type: asset.type,
+          });
+
+          for (const share of asset.ownership) {
+            insertAssetOwnership.run({
+              assetId: asset.id,
+              memberId: share.memberId,
+              shareBps: share.shareBps,
+            });
+          }
+
+          // Every investment gets its metadata row (all-null when the file
+          // carries none) — read paths expect the row to exist.
+          if (asset.type === "investment") {
+            insertInvestmentMeta.run({
+              assetId: asset.id,
+              isin: asset.investment?.isin ?? null,
+              manualPricePerUnit: asset.investment?.manualPricePerUnit ?? null,
+              manualPricedAt: asset.investment?.manualPricedAt ?? null,
+              providerSymbol: asset.investment?.providerSymbol ?? null,
+              unitSymbol: asset.investment?.unitSymbol ?? null,
+            });
+          }
+        };
+
+        // Trash entries land in the same tables with deleted_at set. All
+        // assets go in before liabilities so associated_asset_id can point at
+        // a trashed asset without tripping the FK.
+        for (const asset of doc.assets) writeAsset(asset);
+        for (const asset of doc.trash.assets) writeAsset(asset);
+
+        const insertLiability = sqlite.prepare(`
+          INSERT INTO liabilities (
+            id, name, type, currency, current_balance_minor,
+            associated_asset_id, deleted_at
+          )
+          VALUES (
+            @id, @name, @type, @currency, @currentBalanceMinor,
+            @associatedAssetId, @deletedAt
+          )
+        `);
+        const insertLiabilityOwnership = sqlite.prepare(`
+          INSERT INTO liability_ownerships (liability_id, member_id, share_bps)
+          VALUES (@liabilityId, @memberId, @shareBps)
+        `);
+
+        const writeLiability = (liability: ExportedLiability): void => {
+          insertLiability.run({
+            associatedAssetId: liability.associatedAssetId ?? null,
+            currency: liability.currency,
+            currentBalanceMinor: liability.currentBalance.amountMinor,
+            deletedAt: liability.deletedAt ?? null,
+            id: liability.id,
+            name: liability.name,
+            type: liability.type,
+          });
+
+          for (const share of liability.ownership) {
+            insertLiabilityOwnership.run({
+              liabilityId: liability.id,
+              memberId: share.memberId,
+              shareBps: share.shareBps,
+            });
+          }
+        };
+
+        for (const liability of doc.liabilities) writeLiability(liability);
+        for (const liability of doc.trash.liabilities) writeLiability(liability);
+
+        const insertOperation = sqlite.prepare(`
+          INSERT INTO asset_operations (
+            id, asset_id, kind, executed_at, units,
+            price_per_unit, currency, fees_minor
+          )
+          VALUES (
+            @id, @assetId, @kind, @executedAt, @units,
+            @pricePerUnit, @currency, @feesMinor
+          )
+        `);
+
+        for (const operation of doc.operations) {
+          insertOperation.run({
+            assetId: operation.assetId,
+            currency: operation.currency,
+            executedAt: operation.executedAt,
+            feesMinor: operation.feesMinor,
+            id: operation.id,
+            kind: operation.kind,
+            pricePerUnit: operation.pricePerUnit,
+            units: operation.units,
+          });
+        }
+
+        const insertOverride = sqlite.prepare(`
+          INSERT INTO warning_overrides (code, entity_id)
+          VALUES (@code, @entityId)
+        `);
+
+        for (const override of doc.warningOverrides) {
+          insertOverride.run({ code: override.code, entityId: override.entityId });
+        }
+
+        // The whole fire config record lands in the single app_settings row
+        // exactly as saveFireConfig leaves it.
+        if (Object.keys(doc.fireConfig).length > 0) {
+          sqlite
+            .prepare(
+              `INSERT INTO app_settings (key, value, updated_at)
+               VALUES ('fire.config', @value, @updatedAt)`,
+            )
+            .run({
+              updatedAt: new Date().toISOString(),
+              value: JSON.stringify(doc.fireConfig),
+            });
+        }
+
+        const insertSnapshot = sqlite.prepare(`
+          INSERT INTO snapshots (
+            id, scope_id, scope_label, captured_at, date_key, month_key,
+            is_monthly_close, currency, total_net_worth_minor,
+            liquid_net_worth_minor, housing_equity_minor, gross_assets_minor,
+            debts_minor, warnings_json
+          )
+          VALUES (
+            @id, @scopeId, @scopeLabel, @capturedAt, @dateKey, @monthKey,
+            @isMonthlyClose, @currency, @totalNetWorthMinor,
+            @liquidNetWorthMinor, @housingEquityMinor, @grossAssetsMinor,
+            @debtsMinor, @warningsJson
+          )
+        `);
+        const insertHolding = sqlite.prepare(`
+          INSERT INTO snapshot_holdings (
+            id, snapshot_id, holding_id, kind, label,
+            liquidity_tier, value_minor, units, unit_price
+          )
+          VALUES (
+            @id, @snapshotId, @holdingId, @kind, @label,
+            @liquidityTier, @valueMinor, @units, @unitPrice
+          )
+        `);
+
+        for (const snapshot of doc.snapshots) {
+          // Defence in depth (ADR 0008): the parser already checked this, but
+          // a capture whose rows contradict its own figures must never persist.
+          if (snapshot.holdings.length > 0) {
+            assertSnapshotHoldingsReconcile(snapshot.holdings, {
+              debtsMinor: snapshot.debts.amountMinor,
+              grossAssetsMinor: snapshot.grossAssets.amountMinor,
+            });
+          }
+
+          insertSnapshot.run({
+            capturedAt: snapshot.capturedAt,
+            currency: snapshot.totalNetWorth.currency,
+            dateKey: snapshot.dateKey,
+            debtsMinor: snapshot.debts.amountMinor,
+            grossAssetsMinor: snapshot.grossAssets.amountMinor,
+            housingEquityMinor: snapshot.housingEquity.amountMinor,
+            id: snapshot.id,
+            isMonthlyClose: snapshot.isMonthlyClose ? 1 : 0,
+            liquidNetWorthMinor: snapshot.liquidNetWorth.amountMinor,
+            monthKey: snapshot.monthKey,
+            scopeId: snapshot.scopeId,
+            scopeLabel: snapshot.scopeLabel,
+            totalNetWorthMinor: snapshot.totalNetWorth.amountMinor,
+            warningsJson: JSON.stringify(snapshot.warnings),
+          });
+
+          // The file's holding rows carry no row ids — mint fresh ones.
+          for (const row of snapshot.holdings) {
+            insertHolding.run({
+              holdingId: row.holdingId,
+              id: randomUUID(),
+              kind: row.kind,
+              label: row.label,
+              liquidityTier: row.liquidityTier,
+              snapshotId: snapshot.id,
+              unitPrice: row.unitPrice ?? null,
+              units: row.units ?? null,
+              valueMinor: row.valueMinor,
+            });
+          }
+        }
+
+        const insertPrice = sqlite.prepare(`
+          INSERT INTO asset_price_cache (
+            asset_id, currency, price, source, price_date,
+            fetched_at, freshness_state, stale_reason
+          )
+          VALUES (
+            @assetId, @currency, @price, @source, @priceDate,
+            @fetchedAt, @freshnessState, @staleReason
+          )
+        `);
+
+        for (const price of doc.priceCache) {
+          insertPrice.run({
+            assetId: price.assetId,
+            currency: price.currency,
+            fetchedAt: price.fetchedAt,
+            freshnessState: price.freshnessState,
+            price: price.price,
+            priceDate: price.priceDate ?? null,
+            source: price.source,
+            staleReason: price.staleReason ?? null,
+          });
+        }
+
+        // One audit entry inside the transaction: a failed import leaves no
+        // trace, a successful one starts the fresh log with its section counts.
+        writeAuditEntry("import_workspace", "workspace", "default", {
+          assets: doc.assets.length,
+          fireScopes: Object.keys(doc.fireConfig).length,
+          groups: doc.groups.length,
+          liabilities: doc.liabilities.length,
+          members: doc.members.length,
+          operations: doc.operations.length,
+          priceCache: doc.priceCache.length,
+          snapshots: doc.snapshots.length,
+          trashAssets: doc.trash.assets.length,
+          trashLiabilities: doc.trash.liabilities.length,
+          warningOverrides: doc.warningOverrides.length,
+        });
+      });
+
+      importAll();
       invalidateWorkspace();
     },
     readAuditLog: (filter) => {

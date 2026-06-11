@@ -1,0 +1,512 @@
+/**
+ * Validation of an untrusted workspace export document (ADR 0010).
+ *
+ * `parseWorkspaceExport` is the single gate between a user-supplied JSON file
+ * and `importWorkspace`: it checks the version stamp, the structure (via zod),
+ * and the domain invariants (ownership splits, ADR 0006 investment valuation,
+ * ADR 0008 snapshot reconciliation, referential integrity, id uniqueness) and
+ * normalizes absent sections to empty so callers always receive a COMPLETE
+ * `WorkspaceExport`. Error messages are Spanish — they surface in the UI.
+ */
+
+import { z } from "zod";
+
+import type { OwnershipShare, Workspace } from "./index";
+import { checkOwnershipSplit } from "./index";
+import { assertSnapshotHoldingsReconcile } from "./snapshot-holdings";
+import type {
+  ExportedAsset,
+  ExportedLiability,
+  WorkspaceExport,
+} from "./workspace-transfer";
+import { EXPORT_VERSION } from "./workspace-transfer";
+
+export type ParseWorkspaceExportResult =
+  | { ok: true; value: WorkspaceExport }
+  | { ok: false; errors: [string, ...string[]] };
+
+// ── Structure schema (mirrors the workspace-transfer contract) ──────────────
+
+const nonEmptyString = z.string().min(1);
+
+const moneyMinorSchema = z.object({
+  // Integer minor units — the assertMinorInteger invariant at the file boundary.
+  amountMinor: z.number().int(),
+  currency: nonEmptyString,
+});
+
+const ownershipShareSchema = z.object({
+  memberId: nonEmptyString,
+  shareBps: z.number().int().positive(),
+});
+
+const memberSchema = z.object({
+  id: nonEmptyString,
+  name: nonEmptyString,
+  disabledAt: nonEmptyString.optional(),
+});
+
+const groupSchema = z.object({
+  id: nonEmptyString,
+  name: nonEmptyString,
+  memberIds: z.array(nonEmptyString),
+});
+
+const liquidityTierSchema = z.enum([
+  "cash",
+  "market",
+  "retirement",
+  "illiquid",
+  "housing",
+]);
+
+const investmentMetaSchema = z.object({
+  unitSymbol: nonEmptyString.optional(),
+  isin: nonEmptyString.optional(),
+  providerSymbol: nonEmptyString.optional(),
+  manualPricePerUnit: nonEmptyString.optional(),
+  manualPricedAt: nonEmptyString.optional(),
+});
+
+const assetSchema = z.object({
+  id: nonEmptyString,
+  name: nonEmptyString,
+  type: z.enum(["cash", "manual", "real_estate", "investment"]),
+  currency: nonEmptyString,
+  currentValue: moneyMinorSchema.optional(),
+  liquidityTier: liquidityTierSchema,
+  isPrimaryResidence: z.boolean().optional(),
+  ownership: z.array(ownershipShareSchema),
+  investment: investmentMetaSchema.optional(),
+  deletedAt: nonEmptyString.optional(),
+});
+
+const liabilitySchema = z.object({
+  id: nonEmptyString,
+  name: nonEmptyString,
+  type: z.enum(["mortgage", "debt"]),
+  currency: nonEmptyString,
+  currentBalance: moneyMinorSchema,
+  ownership: z.array(ownershipShareSchema),
+  associatedAssetId: nonEmptyString.optional(),
+  deletedAt: nonEmptyString.optional(),
+});
+
+const operationSchema = z.object({
+  id: nonEmptyString,
+  assetId: nonEmptyString,
+  kind: z.enum(["buy", "sell"]),
+  executedAt: nonEmptyString,
+  units: nonEmptyString,
+  pricePerUnit: nonEmptyString,
+  currency: nonEmptyString,
+  feesMinor: z.number().int(),
+});
+
+const warningOverrideSchema = z.object({
+  code: nonEmptyString,
+  entityId: nonEmptyString,
+});
+
+const fireScopeConfigSchema = z.object({
+  monthlySpendingMinor: z.number().int(),
+  safeWithdrawalRate: z.number(),
+  expectedRealReturn: z.number(),
+  currentAge: z.number().optional(),
+  targetRetirementAge: z.number().optional(),
+  excludedAssetIds: z.array(nonEmptyString).optional(),
+});
+
+const domainWarningSchema = z.object({
+  code: nonEmptyString,
+  severity: z.enum(["blocking", "overrideable"]),
+  entityType: z.enum(["asset", "liability"]),
+  entityId: nonEmptyString,
+  message: z.string(),
+});
+
+const snapshotHoldingSchema = z.object({
+  holdingId: nonEmptyString,
+  kind: z.enum(["asset", "liability"]),
+  label: nonEmptyString,
+  liquidityTier: liquidityTierSchema.nullable(),
+  valueMinor: z.number().int(),
+  units: nonEmptyString.optional(),
+  unitPrice: nonEmptyString.optional(),
+});
+
+const snapshotSchema = z.object({
+  id: nonEmptyString,
+  scopeId: nonEmptyString,
+  scopeLabel: nonEmptyString,
+  capturedAt: nonEmptyString,
+  dateKey: nonEmptyString,
+  monthKey: nonEmptyString,
+  isMonthlyClose: z.boolean(),
+  totalNetWorth: moneyMinorSchema,
+  liquidNetWorth: moneyMinorSchema,
+  housingEquity: moneyMinorSchema,
+  grossAssets: moneyMinorSchema,
+  debts: moneyMinorSchema,
+  warnings: z.array(domainWarningSchema).default([]),
+  holdings: z.array(snapshotHoldingSchema).default([]),
+});
+
+const priceSchema = z.object({
+  assetId: nonEmptyString,
+  currency: nonEmptyString,
+  price: nonEmptyString,
+  source: z.enum(["manual", "ecb", "coingecko", "stooq"]),
+  priceDate: nonEmptyString.optional(),
+  fetchedAt: nonEmptyString,
+  freshnessState: z.enum(["fresh", "stale", "failed", "manual"]),
+  staleReason: nonEmptyString.optional(),
+});
+
+const documentSchema = z.object({
+  version: z.literal(EXPORT_VERSION),
+  workspace: z.object({
+    mode: z.enum(["individual", "household"]),
+    baseCurrency: nonEmptyString,
+  }),
+  members: z.array(memberSchema).min(1),
+  groups: z.array(groupSchema).default([]),
+  assets: z.array(assetSchema).default([]),
+  liabilities: z.array(liabilitySchema).default([]),
+  operations: z.array(operationSchema).default([]),
+  warningOverrides: z.array(warningOverrideSchema).default([]),
+  fireConfig: z.record(z.string(), fireScopeConfigSchema).default({}),
+  snapshots: z.array(snapshotSchema).default([]),
+  trash: z
+    .object({
+      assets: z.array(assetSchema).default([]),
+      liabilities: z.array(liabilitySchema).default([]),
+    })
+    .default({ assets: [], liabilities: [] }),
+  priceCache: z.array(priceSchema).default([]),
+});
+
+// ── Entry point ──────────────────────────────────────────────────────────────
+
+export function parseWorkspaceExport(input: unknown): ParseWorkspaceExportResult {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return fail([
+      "El archivo no contiene un documento de exportación válido (se esperaba un objeto JSON).",
+    ]);
+  }
+
+  // Version first, independent of any structural problem: there is
+  // intentionally no format-migration ladder (ADR 0010).
+  const version = (input as Record<string, unknown>)["version"];
+
+  if (version !== EXPORT_VERSION) {
+    return fail([
+      version === undefined
+        ? `El archivo no indica la versión del formato; esta app solo importa la versión ${EXPORT_VERSION}.`
+        : `El archivo usa la versión ${String(version)}; esta app solo importa la versión ${EXPORT_VERSION}.`,
+    ]);
+  }
+
+  const parsed = documentSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return fail(parsed.error.issues.map(describeIssue));
+  }
+
+  // zod has stripped unknown keys and filled the section defaults, so at
+  // runtime `parsed.data` IS a complete WorkspaceExport. The cast only bridges
+  // exactOptionalPropertyTypes (zod types optional fields as `T | undefined`).
+  const value = parsed.data as WorkspaceExport;
+  const errors = collectDomainErrors(value);
+
+  if (errors.length > 0) {
+    return fail(errors);
+  }
+
+  return { ok: true, value };
+}
+
+function fail(errors: string[]): { ok: false; errors: [string, ...string[]] } {
+  const [first, ...rest] = errors;
+
+  return {
+    errors: [first ?? "El documento de exportación no es válido.", ...rest],
+    ok: false,
+  };
+}
+
+// ── Zod issues → Spanish messages with their JSON path ──────────────────────
+
+function describePath(path: ReadonlyArray<PropertyKey>): string {
+  if (path.length === 0) {
+    return "documento";
+  }
+
+  let out = "";
+
+  for (const segment of path) {
+    out +=
+      typeof segment === "number"
+        ? `[${segment}]`
+        : out
+          ? `.${String(segment)}`
+          : String(segment);
+  }
+
+  return out;
+}
+
+function describeExpectedType(expected: string): string {
+  switch (expected) {
+    case "int":
+      return "un número entero";
+    case "number":
+      return "un número";
+    case "string":
+      return "una cadena de texto";
+    case "boolean":
+      return "un valor booleano";
+    case "object":
+      return "un objeto";
+    case "array":
+      return "una lista";
+    default:
+      return `un valor de tipo ${expected}`;
+  }
+}
+
+function describeIssue(issue: z.core.$ZodIssue): string {
+  const at = describePath(issue.path);
+
+  switch (issue.code) {
+    case "invalid_type":
+      return `${at}: se esperaba ${describeExpectedType(issue.expected)}.`;
+    case "invalid_value":
+      return `${at}: valor no admitido; se esperaba uno de ${issue.values
+        .map((value) => JSON.stringify(value))
+        .join(", ")}.`;
+    case "too_small":
+      if (issue.origin === "string") {
+        return `${at}: no puede estar vacío.`;
+      }
+
+      if (issue.origin === "array") {
+        return `${at}: debe contener al menos ${String(issue.minimum)} elemento(s).`;
+      }
+
+      return `${at}: el valor es demasiado pequeño (mínimo ${String(issue.minimum)}).`;
+    default:
+      return `${at}: ${issue.message}`;
+  }
+}
+
+// ── Domain invariants (all errors collected, not just the first) ────────────
+
+function collectDomainErrors(doc: WorkspaceExport): string[] {
+  const errors: string[] = [];
+
+  if (doc.workspace.baseCurrency !== "EUR") {
+    errors.push(
+      `La divisa base del archivo es "${doc.workspace.baseCurrency}"; esta app solo admite EUR.`,
+    );
+  }
+
+  const allAssets = [...doc.assets, ...doc.trash.assets];
+  const allLiabilities = [...doc.liabilities, ...doc.trash.liabilities];
+
+  collectDuplicateIdErrors(errors, "miembro", doc.members.map((member) => member.id));
+  collectDuplicateIdErrors(errors, "grupo", doc.groups.map((group) => group.id));
+  collectDuplicateIdErrors(errors, "activo", allAssets.map((asset) => asset.id));
+  collectDuplicateIdErrors(
+    errors,
+    "pasivo",
+    allLiabilities.map((liability) => liability.id),
+  );
+  collectDuplicateIdErrors(
+    errors,
+    "operación",
+    doc.operations.map((operation) => operation.id),
+  );
+  collectDuplicateIdErrors(
+    errors,
+    "instantánea",
+    doc.snapshots.map((snapshot) => snapshot.id),
+  );
+
+  collectOwnershipErrors(errors, doc, allAssets, allLiabilities);
+  collectInvestmentValuationErrors(errors, allAssets);
+  collectReferentialIntegrityErrors(errors, doc, allAssets, allLiabilities);
+  collectSnapshotReconciliationErrors(errors, doc);
+
+  return errors;
+}
+
+function collectDuplicateIdErrors(
+  errors: string[],
+  kind: string,
+  ids: string[],
+): void {
+  const seen = new Set<string>();
+  const reported = new Set<string>();
+
+  for (const id of ids) {
+    if (seen.has(id) && !reported.has(id)) {
+      errors.push(`Id de ${kind} duplicado: ${id}.`);
+      reported.add(id);
+    }
+
+    seen.add(id);
+  }
+}
+
+function collectOwnershipErrors(
+  errors: string[],
+  doc: WorkspaceExport,
+  allAssets: ExportedAsset[],
+  allLiabilities: ExportedLiability[],
+): void {
+  // checkOwnershipSplit needs a Workspace; build one straight from the file.
+  const workspace: Workspace = {
+    baseCurrency: doc.workspace.baseCurrency,
+    groups: doc.groups,
+    members: doc.members,
+    mode: doc.workspace.mode,
+  };
+  const memberIds = new Set(doc.members.map((member) => member.id));
+
+  const check = (
+    kind: string,
+    entity: { id: string; name: string; ownership: OwnershipShare[] },
+  ): void => {
+    const dangling = entity.ownership.filter(
+      (share) => !memberIds.has(share.memberId),
+    );
+
+    if (dangling.length > 0) {
+      for (const share of dangling) {
+        errors.push(
+          `La titularidad de "${entity.name}" (${kind} ${entity.id}) referencia un miembro inexistente: ${share.memberId}.`,
+        );
+      }
+
+      // checkOwnershipSplit throws on unknown members — already reported above.
+      return;
+    }
+
+    const violation = checkOwnershipSplit(workspace, entity.ownership);
+
+    if (violation) {
+      errors.push(
+        `El reparto de titularidad de "${entity.name}" (${kind} ${entity.id}) suma ${violation.totalBps} puntos básicos; debe sumar 10000.`,
+      );
+    }
+  };
+
+  for (const asset of allAssets) {
+    check("activo", asset);
+  }
+
+  for (const liability of allLiabilities) {
+    check("pasivo", liability);
+  }
+}
+
+function collectInvestmentValuationErrors(
+  errors: string[],
+  allAssets: ExportedAsset[],
+): void {
+  for (const asset of allAssets) {
+    if (asset.type === "investment") {
+      // ADR 0006 at the file boundary (assertNotInvestmentAsset's invariant):
+      // an investment's value is always derived from operations and prices,
+      // never hand-valued — a stored currentValue would smuggle one in.
+      if (asset.currentValue !== undefined) {
+        errors.push(
+          `El activo de inversión "${asset.name}" (${asset.id}) no puede llevar un valor manual (currentValue): su valor se deriva de operaciones y precios (ADR 0006).`,
+        );
+      }
+
+      continue;
+    }
+
+    if (asset.currentValue === undefined) {
+      errors.push(
+        `El activo "${asset.name}" (${asset.id}) no es de inversión y debe llevar currentValue.`,
+      );
+    }
+
+    if (asset.investment !== undefined) {
+      errors.push(
+        `El activo "${asset.name}" (${asset.id}) lleva metadatos de inversión pero su tipo es "${asset.type}".`,
+      );
+    }
+  }
+}
+
+function collectReferentialIntegrityErrors(
+  errors: string[],
+  doc: WorkspaceExport,
+  allAssets: ExportedAsset[],
+  allLiabilities: ExportedLiability[],
+): void {
+  const assetById = new Map(allAssets.map((asset) => [asset.id, asset]));
+
+  for (const liability of allLiabilities) {
+    if (
+      liability.associatedAssetId !== undefined &&
+      !assetById.has(liability.associatedAssetId)
+    ) {
+      errors.push(
+        `El pasivo "${liability.name}" (${liability.id}) referencia un activo inexistente: ${liability.associatedAssetId}.`,
+      );
+    }
+  }
+
+  for (const operation of doc.operations) {
+    const target = assetById.get(operation.assetId);
+
+    if (!target) {
+      errors.push(
+        `La operación ${operation.id} referencia un activo inexistente: ${operation.assetId}.`,
+      );
+    } else if (target.type !== "investment") {
+      errors.push(
+        `La operación ${operation.id} referencia el activo "${target.name}" (${target.id}), que no es de inversión.`,
+      );
+    }
+  }
+
+  for (const price of doc.priceCache) {
+    if (!assetById.has(price.assetId)) {
+      errors.push(
+        `La caché de precios referencia un activo inexistente: ${price.assetId}.`,
+      );
+    }
+  }
+
+  // Snapshot holdings' holdingId is deliberately NOT checked: snapshot rows are
+  // frozen history with no live foreign key into holdings (ADR 0008).
+}
+
+function collectSnapshotReconciliationErrors(
+  errors: string[],
+  doc: WorkspaceExport,
+): void {
+  for (const snapshot of doc.snapshots) {
+    // Empty/absent holdings are legacy pre-ADR-0008 captures — accepted as-is.
+    if (snapshot.holdings.length === 0) {
+      continue;
+    }
+
+    try {
+      assertSnapshotHoldingsReconcile(snapshot.holdings, {
+        debtsMinor: snapshot.debts.amountMinor,
+        grossAssetsMinor: snapshot.grossAssets.amountMinor,
+      });
+    } catch {
+      errors.push(
+        `Las posiciones de la instantánea "${snapshot.id}" (${snapshot.dateKey}) no cuadran con sus cifras de cabecera (ADR 0008).`,
+      );
+    }
+  }
+}
