@@ -24,8 +24,15 @@ test("danger zone: wrong phrase aborts, exact phrase resets to onboarding", asyn
   await page.getByLabel("Frase de confirmación de borrado total").fill("nope");
   await page.getByRole("button", { name: "Borrar todo definitivamente" }).click();
 
-  await expect(page).toHaveURL(/\/ajustes/);
-  await expect(dangerZone.getByText(/Escribe .* para confirmar/)).toBeVisible();
+  // Wait for the post-redirect page, not the still-interactive pre-submit DOM:
+  // the old page also matches /\/ajustes/ and its open <details> label matches
+  // /Escribe .* para confirmar/, so asserting those raced the redirect and the
+  // next summary click could toggle the OLD page's details closed. The error
+  // query param and the top error band only exist after the redirect lands.
+  await expect(page).toHaveURL(/\/ajustes\?.*error=/);
+  await expect(
+    page.getByRole("alert").filter({ hasText: /Escribe .* para confirmar/ }),
+  ).toBeVisible();
 
   // 2. Exact phrase → reset and redirect to onboarding
   await dangerZone.locator("details.confirmDelete > summary").click();
