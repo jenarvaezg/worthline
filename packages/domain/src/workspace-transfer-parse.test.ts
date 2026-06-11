@@ -15,7 +15,7 @@ function makeExportData(): WorkspaceExportData {
       { id: "m1", name: "Alice" },
       { id: "m2", name: "Bob", disabledAt: "2026-05-01T10:00:00.000Z" },
     ],
-    groups: [{ id: "g1", name: "Pareja", memberIds: ["m1", "m2"] }],
+    groups: [{ id: "g1", name: "Pareja", memberIds: ["m1"] }],
     assets: [
       {
         id: "a1",
@@ -339,6 +339,41 @@ describe("parseWorkspaceExport — domain invariants", () => {
     expectRejection(document, "ghost");
   });
 
+  test("a group pointing at an unknown member is rejected before import", () => {
+    const document = makeDocument((doc) => {
+      doc.groups[0]!.memberIds = ["m1", "ghost"];
+    });
+
+    expectRejection(document, /grupo.*ghost/);
+  });
+
+  test("a group pointing at a disabled member is rejected before import", () => {
+    const document = makeDocument((doc) => {
+      doc.groups[0]!.memberIds = ["m1", "m2"];
+    });
+
+    expectRejection(document, /grupo.*m2.*inactivo/);
+  });
+
+  test("duplicate group members are rejected before hitting the DB primary key", () => {
+    const document = makeDocument((doc) => {
+      doc.groups[0]!.memberIds = ["m1", "m1"];
+    });
+
+    expectRejection(document, /grupo.*m1.*duplicado/);
+  });
+
+  test("duplicate ownership shares for the same member are rejected before import", () => {
+    const document = makeDocument((doc) => {
+      doc.assets[0]!.ownership = [
+        { memberId: "m1", shareBps: 5000 },
+        { memberId: "m1", shareBps: 5000 },
+      ];
+    });
+
+    expectRejection(document, /titularidad.*m1.*duplicad/);
+  });
+
   test("an investment asset carrying currentValue is rejected (ADR 0006)", () => {
     const document = makeDocument((doc) => {
       doc.assets[1]!.currentValue = { amountMinor: 5000, currency: "EUR" };
@@ -395,12 +430,50 @@ describe("parseWorkspaceExport — domain invariants", () => {
     expectRejection(document, /no es de inversión/);
   });
 
+  test("operation bounds follow the same domain rules as normal entry", () => {
+    const document = makeDocument((doc) => {
+      doc.operations = [
+        { ...doc.operations[0]!, id: "op_zero_units", units: "0" },
+        { ...doc.operations[0]!, id: "op_negative_price", pricePerUnit: "-1" },
+        { ...doc.operations[0]!, id: "op_negative_fees", feesMinor: -1 },
+        { ...doc.operations[0]!, id: "op_bad_decimal", units: "abc" },
+      ];
+    });
+
+    const result = parseWorkspaceExport(document);
+
+    expect(result.ok).toBe(false);
+
+    if (!result.ok) {
+      expect(result.errors.join(" | ")).toContain("op_zero_units");
+      expect(result.errors.join(" | ")).toContain("op_negative_price");
+      expect(result.errors.join(" | ")).toContain("op_negative_fees");
+      expect(result.errors.join(" | ")).toContain("op_bad_decimal");
+    }
+  });
+
   test("a price cache entry pointing at an asset not present in the file is rejected", () => {
     const document = makeDocument((doc) => {
       doc.priceCache[0]!.assetId = "nope";
     });
 
     expectRejection(document, /caché de precios/);
+  });
+
+  test("invalid investment and cached price decimals are rejected", () => {
+    const document = makeDocument((doc) => {
+      doc.assets[1]!.investment = { manualPricePerUnit: "-1" };
+      doc.priceCache[0]!.price = "abc";
+    });
+
+    const result = parseWorkspaceExport(document);
+
+    expect(result.ok).toBe(false);
+
+    if (!result.ok) {
+      expect(result.errors.join(" | ")).toContain("precio manual");
+      expect(result.errors.join(" | ")).toContain("caché de precios");
+    }
   });
 
   test("duplicate member ids are rejected", () => {
@@ -468,6 +541,36 @@ describe("parseWorkspaceExport — domain invariants", () => {
     });
 
     expectRejection(document, /instantánea.*s1/);
+  });
+
+  test("duplicate single-row DB keys are rejected before confirm import", () => {
+    const document = makeDocument((doc) => {
+      doc.warningOverrides = [
+        { code: "ZERO_VALUE_ASSET", entityId: "a1" },
+        { code: "ZERO_VALUE_ASSET", entityId: "a1" },
+      ];
+      doc.priceCache = [...doc.priceCache, { ...doc.priceCache[0]! }];
+      doc.snapshots = [
+        ...doc.snapshots,
+        { ...doc.snapshots[0]!, id: "s2" },
+      ];
+      doc.snapshots[0]!.holdings = [
+        ...doc.snapshots[0]!.holdings,
+        { ...doc.snapshots[0]!.holdings[0]! },
+      ];
+    });
+
+    const result = parseWorkspaceExport(document);
+
+    expect(result.ok).toBe(false);
+
+    if (!result.ok) {
+      const text = result.errors.join(" | ");
+      expect(text).toContain("override");
+      expect(text).toContain("precio");
+      expect(text).toContain("scope/date");
+      expect(text).toContain("posición");
+    }
   });
 
   test("multiple independent violations are all collected", () => {
