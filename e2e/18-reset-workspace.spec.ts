@@ -1,10 +1,12 @@
 /**
- * Journey 18: Full workspace reset (issue #83) — MUST RUN LAST.
+ * Journey 18: Full workspace reset (issue #83).
  *
- * The danger zone in /ajustes empties the entire workspace. This journey runs
- * last on purpose: it wipes the shared serial e2e database, so no later journey
- * may depend on the prior state. A wrong phrase aborts harmlessly; the exact
- * phrase resets and lands on onboarding (/empezar).
+ * The danger zone in /ajustes empties the entire workspace. This journey must
+ * still run after 01–17, which build the shared serial e2e state it wipes.
+ * Journeys numbered 19+ bootstrap their own workspace through the UI, so they
+ * may run after it — they just must never depend on pre-reset state. A wrong
+ * phrase aborts harmlessly; the exact phrase resets and lands on onboarding
+ * (/empezar).
  */
 
 import { test, expect } from "./fixtures";

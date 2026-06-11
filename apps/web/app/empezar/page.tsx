@@ -1,10 +1,7 @@
 import { withStore } from "@worthline/db";
 import { redirect } from "next/navigation";
 
-import {
-  buildCurrentUrl,
-  parseFormError,
-} from "../intake";
+import { parseFormError } from "../intake";
 import { initHogarAction, initSoloAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -42,7 +39,6 @@ export default async function EmpezarPage({ searchParams }: EmpezarPageProps) {
   const params = await searchParams;
   const activePath = params.path === "hogar" ? "hogar" : "solo";
   const errorCtx = parseFormError(params as Record<string, string | undefined>);
-  const currentUrl = buildCurrentUrl({ path: activePath });
 
   const soloError = errorCtx?.formId === "solo" ? errorCtx.message : null;
   const hogarError = errorCtx?.formId === "hogar" ? errorCtx.message : null;

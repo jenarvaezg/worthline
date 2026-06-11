@@ -7,13 +7,10 @@ import { redirect } from "next/navigation";
 
 import type { FormErrorContext } from "../intake";
 import {
-  appendParam,
-  buildCurrentUrlFor,
   errorRedirectUrl,
   mapDomainViolation,
   parseEntityId,
   parseInvestmentAssetCommandStrict,
-  parseOwnership,
   parseRouteOperationCommand,
   parseUpdateInvestmentCommand,
   pricesRefreshedRedirectUrl,

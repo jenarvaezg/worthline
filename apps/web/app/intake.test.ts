@@ -6,7 +6,6 @@ import {
   buildCurrentUrl,
   buildCurrentUrlFor,
   buildSnapshotId,
-  createStableId,
   errorRedirectUrl,
   okMessage,
   parseFormError,

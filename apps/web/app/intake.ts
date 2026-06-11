@@ -14,11 +14,7 @@ import type {
   OwnershipShare,
   PriceFreshnessState,
 } from "@worthline/domain";
-import {
-  parseDecimal,
-  parseDecimalToMinor,
-  parseDecimalToMinorStrict,
-} from "@worthline/domain";
+import { parseDecimal, parseDecimalToMinorStrict } from "@worthline/domain";
 
 // Re-export types needed by #58 inversiones functions
 export type { CreateInvestmentAssetInput };
@@ -533,26 +529,6 @@ export function parseValueUpdatePass(
   }
 
   return commands;
-}
-
-/**
- * Normalize a raw decimal field (units or price) to a canonical DecimalString
- * without going through a float — preserving precision for high-dp values like
- * crypto units. Accepts es-ES ("1.234,56") and plain ("1234.56") input; anything
- * unparseable becomes "0", which the domain then rejects.
- */
-function parseDecimalStringInput(raw: string): DecimalString {
-  const trimmed = raw.trim();
-
-  if (!trimmed) {
-    return "0";
-  }
-
-  const normalized = trimmed.includes(",")
-    ? trimmed.replace(/\./g, "").replace(",", ".")
-    : trimmed;
-
-  return /^-?\d+(\.\d+)?$/.test(normalized) ? normalized : "0";
 }
 
 /**

@@ -6,7 +6,6 @@ import {
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import type { FormErrorContext } from "../intake";
 import {
   buildCurrentUrlFor,
   parseFormError,
@@ -305,6 +304,16 @@ export default async function AjustesPage({
               </span>
             </dd>
           </dl>
+          <p className="muted">
+            Exportar descarga una copia completa del workspace en un archivo
+            JSON: miembros, patrimonio, operaciones, snapshots y papelera
+            incluidos.
+          </p>
+          {/* Plain anchor on purpose: the route responds with Content-Disposition
+              attachment, so the browser downloads instead of navigating. */}
+          <a className="panelAction" href="/ajustes/export">
+            Exportar
+          </a>
         </section>
 
         {/* ── Overrides de avisos ──────────────────────────────────── */}
