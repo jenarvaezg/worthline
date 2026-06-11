@@ -74,6 +74,41 @@ describe("investment position persistence", () => {
     expect(store.readOperations("asset_acme")).toHaveLength(2);
   });
 
+  test("soft-deleted investment assets are excluded from live positions and return after restore", () => {
+    const store = createTestStore();
+    seedWorkspace(store);
+    store.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset_acme",
+      manualPricePerUnit: "130",
+      name: "ACME",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    });
+    store.recordOperation({
+      assetId: "asset_acme",
+      currency: "EUR",
+      executedAt: "2026-01-01",
+      id: "op1",
+      kind: "buy",
+      pricePerUnit: "100",
+      units: "10",
+    });
+
+    expect(store.readPositions("member_jose").map((position) => position.assetId)).toEqual([
+      "asset_acme",
+    ]);
+
+    store.softDeleteAsset("asset_acme", "2026-06-11T10:00:00.000Z");
+
+    expect(store.readPositions("member_jose")).toEqual([]);
+
+    store.restoreAsset("asset_acme");
+
+    expect(store.readPositions("member_jose").map((position) => position.assetId)).toEqual([
+      "asset_acme",
+    ]);
+  });
+
   test("an investment asset contributes its derived market value to net worth", () => {
     const store = createTestStore();
     seedWorkspace(store);

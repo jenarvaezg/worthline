@@ -44,7 +44,7 @@ import {
 } from "@worthline/domain";
 import Database from "better-sqlite3";
 import type { Database as DatabaseConnection } from "better-sqlite3";
-import { asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
@@ -2238,7 +2238,7 @@ function readPositions(
   const rows = drizzle(sqlite)
     .select({ currency: assets.currency, id: assets.id, name: assets.name })
     .from(assets)
-    .where(eq(assets.type, "investment"))
+    .where(and(eq(assets.type, "investment"), isNull(assets.deletedAt)))
     .orderBy(asc(assets.createdAt), asc(assets.id))
     .all();
 
