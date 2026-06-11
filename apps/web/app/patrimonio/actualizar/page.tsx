@@ -63,7 +63,7 @@ export default async function PuestaAlDiaPage({
     redirect("/empezar");
   }
 
-  const { assets, liabilities, scopes, selectedScope, workspace } = storeData;
+  const { assets, liabilities, scopes, selectedScope } = storeData;
 
   return (
     <Shell

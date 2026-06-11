@@ -10,6 +10,9 @@ import type {
   CreateLiabilityInput,
   CreateManualAssetInput,
   DomainWarning,
+  ExportedAsset,
+  ExportedLiability,
+  ExportedSnapshot,
   FireScopeConfig,
   InvestmentOperation,
   Liability,
@@ -23,6 +26,7 @@ import type {
   SnapshotHoldingRow,
   WarningOverride,
   Workspace,
+  WorkspaceExport,
   WorkspaceMode,
 } from "@worthline/domain";
 import {
@@ -36,6 +40,7 @@ import {
   derivePosition,
   selectInvestmentPrice,
   resolveScopeMemberIds,
+  serializeWorkspaceExport,
 } from "@worthline/domain";
 import Database from "better-sqlite3";
 import type { Database as DatabaseConnection } from "better-sqlite3";
@@ -217,6 +222,13 @@ export interface WorthlineStore {
   hardDeleteLiability: (liabilityId: string) => number;
   /** Hard-delete every trashed holding atomically. Returns how many of each kind were removed. */
   emptyTrash: () => { assets: number; liabilities: number };
+  /**
+   * Serialize the entire workspace into the versioned export document
+   * (ADR 0010): live state, snapshot history, the papelera, and the price
+   * cache. Read-only — exporting never writes. The audit log is not a section.
+   * Throws when no workspace has been initialized.
+   */
+  exportWorkspace: () => WorkspaceExport;
   /** Holdings (live or trashed) the member owns a share of. Empty ⇒ the member may be hard-deleted. */
   readMemberOwnerships: (memberId: string) => MemberOwnerships;
   /** Hard-delete a member. Returns 0 (no-op) unless the member is disabled and owns no share of any holding. */
@@ -1087,6 +1099,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
       save();
     },
     readSnapshotHoldings: (query) => readSnapshotHoldings(sqlite, query),
+    exportWorkspace: () => buildWorkspaceExport(sqlite, getWorkspace()),
     batchApplyValueUpdates: (commands) => {
       if (commands.length === 0) return;
 
@@ -2151,6 +2164,225 @@ function readSnapshotHoldings(
     ...(row.units !== null ? { units: row.units } : {}),
     ...(row.unitPrice !== null ? { unitPrice: row.unitPrice } : {}),
   }));
+}
+
+/**
+ * Serialize the entire workspace into the versioned export document
+ * (ADR 0010). Strictly read-only: every section is read from the tables and
+ * the final assembly is delegated to the domain's serializeWorkspaceExport.
+ * The audit log is deliberately not a section.
+ */
+function buildWorkspaceExport(
+  sqlite: DatabaseConnection,
+  workspace: Workspace | null,
+): WorkspaceExport {
+  if (!workspace) {
+    throw new Error("Workspace must be initialized before exporting.");
+  }
+
+  const db = drizzle(sqlite);
+
+  // Assets — live and trashed — with ownership and investment metadata.
+  const assetRows = db
+    .select()
+    .from(assets)
+    .orderBy(asc(assets.createdAt), asc(assets.id))
+    .all();
+  const ownershipByAsset = readAssetOwnerships(sqlite);
+  const investmentMetaByAsset = new Map(
+    db
+      .select()
+      .from(investmentAssets)
+      .all()
+      .map((row) => [row.assetId, row] as const),
+  );
+
+  const toExportedAsset = (row: typeof assets.$inferSelect): ExportedAsset => {
+    const meta = investmentMetaByAsset.get(row.id);
+
+    return {
+      id: row.id,
+      name: row.name,
+      type: row.type,
+      currency: row.currency,
+      // Investments never carry a hand value — theirs is derived from
+      // operations and prices (ADR 0006), so the file omits currentValue.
+      ...(row.type === "investment"
+        ? {}
+        : { currentValue: { amountMinor: row.currentValueMinor, currency: row.currency } }),
+      liquidityTier: row.liquidityTier,
+      isPrimaryResidence: row.isPrimaryResidence === 1,
+      ownership: ownershipByAsset.get(row.id) ?? [],
+      ...(row.type === "investment" && meta
+        ? {
+            investment: {
+              ...(meta.unitSymbol ? { unitSymbol: meta.unitSymbol } : {}),
+              ...(meta.isin ? { isin: meta.isin } : {}),
+              ...(meta.providerSymbol ? { providerSymbol: meta.providerSymbol } : {}),
+              ...(meta.manualPricePerUnit
+                ? { manualPricePerUnit: meta.manualPricePerUnit }
+                : {}),
+              ...(meta.manualPricedAt ? { manualPricedAt: meta.manualPricedAt } : {}),
+            },
+          }
+        : {}),
+      ...(row.deletedAt ? { deletedAt: row.deletedAt } : {}),
+    };
+  };
+
+  // Liabilities — live and trashed — with ownership.
+  const liabilityRows = db
+    .select()
+    .from(liabilities)
+    .orderBy(asc(liabilities.createdAt), asc(liabilities.id))
+    .all();
+  const ownershipByLiability = readLiabilityOwnerships(sqlite);
+
+  const toExportedLiability = (
+    row: typeof liabilities.$inferSelect,
+  ): ExportedLiability => ({
+    id: row.id,
+    name: row.name,
+    type: row.type,
+    currency: row.currency,
+    currentBalance: { amountMinor: row.currentBalanceMinor, currency: row.currency },
+    ownership: ownershipByLiability.get(row.id) ?? [],
+    ...(row.associatedAssetId ? { associatedAssetId: row.associatedAssetId } : {}),
+    ...(row.deletedAt ? { deletedAt: row.deletedAt } : {}),
+  });
+
+  // Operations for every investment asset — including trashed ones, so a
+  // restore after import keeps their history.
+  const operations = db
+    .select()
+    .from(assetOperations)
+    .orderBy(asc(assetOperations.executedAt), asc(assetOperations.id))
+    .all()
+    .map(toOperation);
+
+  const warningOverrideRows = sqlite
+    .prepare(
+      `SELECT code, entity_id AS entityId FROM warning_overrides ORDER BY code, entity_id`,
+    )
+    .all() as Array<{ code: string; entityId: string }>;
+
+  const fireRow = db
+    .select({ value: appSettings.value })
+    .from(appSettings)
+    .where(eq(appSettings.key, "fire.config"))
+    .get();
+  const fireConfig = fireRow
+    ? (JSON.parse(fireRow.value) as Record<string, FireScopeConfig>)
+    : {};
+
+  // Snapshots across all scopes, each carrying its frozen holding rows.
+  const holdingsBySnapshot = readHoldingRowsBySnapshot(sqlite);
+  const exportedSnapshots: ExportedSnapshot[] = readSnapshots(sqlite).map(
+    (snapshot) => ({
+      ...snapshot,
+      holdings: holdingsBySnapshot.get(snapshot.id) ?? [],
+    }),
+  );
+
+  const priceCache: AssetPrice[] = db
+    .select()
+    .from(assetPriceCache)
+    .orderBy(asc(assetPriceCache.assetId))
+    .all()
+    .map((row) => ({
+      assetId: row.assetId,
+      currency: row.currency,
+      fetchedAt: row.fetchedAt,
+      freshnessState: row.freshnessState,
+      price: row.price,
+      source: row.source,
+      ...(row.priceDate ? { priceDate: row.priceDate } : {}),
+      ...(row.staleReason ? { staleReason: row.staleReason } : {}),
+    }));
+
+  return serializeWorkspaceExport({
+    workspace: { baseCurrency: workspace.baseCurrency, mode: workspace.mode },
+    members: workspace.members,
+    groups: workspace.groups,
+    assets: assetRows.filter((row) => row.deletedAt === null).map(toExportedAsset),
+    liabilities: liabilityRows
+      .filter((row) => row.deletedAt === null)
+      .map(toExportedLiability),
+    operations,
+    warningOverrides: warningOverrideRows.map((row) => ({
+      code: row.code,
+      entityId: row.entityId,
+    })),
+    fireConfig,
+    snapshots: exportedSnapshots,
+    trash: {
+      assets: assetRows.filter((row) => row.deletedAt !== null).map(toExportedAsset),
+      liabilities: liabilityRows
+        .filter((row) => row.deletedAt !== null)
+        .map(toExportedLiability),
+    },
+    priceCache,
+  });
+}
+
+interface ExportHoldingDbRow {
+  holdingId: string;
+  kind: SnapshotHoldingKind;
+  label: string;
+  liquidityTier: LiquidityTier | null;
+  snapshotId: string;
+  unitPrice: string | null;
+  units: string | null;
+  valueMinor: number;
+}
+
+/**
+ * Every frozen holding row grouped by its owning snapshot, in insertion
+ * (rowid) order — the deterministic order the rows were captured in.
+ */
+function readHoldingRowsBySnapshot(
+  sqlite: DatabaseConnection,
+): Map<string, SnapshotHoldingRow[]> {
+  const rows = sqlite
+    .prepare(
+      `
+      SELECT
+        snapshot_id AS snapshotId,
+        holding_id AS holdingId,
+        kind,
+        label,
+        liquidity_tier AS liquidityTier,
+        value_minor AS valueMinor,
+        units,
+        unit_price AS unitPrice
+      FROM snapshot_holdings
+      ORDER BY rowid ASC
+    `,
+    )
+    .all() as ExportHoldingDbRow[];
+
+  const bySnapshot = new Map<string, SnapshotHoldingRow[]>();
+
+  for (const row of rows) {
+    const holding: SnapshotHoldingRow = {
+      holdingId: row.holdingId,
+      kind: row.kind,
+      label: row.label,
+      liquidityTier: row.liquidityTier,
+      valueMinor: row.valueMinor,
+      ...(row.units !== null ? { units: row.units } : {}),
+      ...(row.unitPrice !== null ? { unitPrice: row.unitPrice } : {}),
+    };
+    const existing = bySnapshot.get(row.snapshotId);
+
+    if (existing) {
+      existing.push(holding);
+    } else {
+      bySnapshot.set(row.snapshotId, [holding]);
+    }
+  }
+
+  return bySnapshot;
 }
 
 export function resolveDataDir(options: BootstrapHealthcheckOptions = {}): string {

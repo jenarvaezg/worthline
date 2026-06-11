@@ -71,7 +71,7 @@ export default async function EditarInversionPage({
     notFound();
   }
 
-  const { asset, operations, position, scopes, selectedScope } = storeData;
+  const { asset, operations, scopes, selectedScope } = storeData;
 
   const editValues =
     formError?.formId === "edit" ? formError.values : {};
