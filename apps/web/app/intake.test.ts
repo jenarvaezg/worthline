@@ -185,6 +185,32 @@ describe("resolveOwnershipSplit", () => {
     expect(total(split)).toBe(10_000);
     expect(split.find((share) => share.memberId === "member_jose")?.shareBps).toBe(7_000);
   });
+
+  test("the custom preset preserves an explicit split below 100%", () => {
+    const split = resolveOwnershipSplit({
+      activeMembers: [ana, jose],
+      preset: "custom",
+      customBps: { member_ana: 3_000, member_jose: 4_000 },
+    });
+
+    expect(split).toEqual([
+      { memberId: "member_ana", shareBps: 3_000 },
+      { memberId: "member_jose", shareBps: 4_000 },
+    ]);
+  });
+
+  test("the custom preset preserves an explicit split above 100%", () => {
+    const split = resolveOwnershipSplit({
+      activeMembers: [ana, jose],
+      preset: "custom",
+      customBps: { member_ana: 6_000, member_jose: 6_000 },
+    });
+
+    expect(split).toEqual([
+      { memberId: "member_ana", shareBps: 6_000 },
+      { memberId: "member_jose", shareBps: 6_000 },
+    ]);
+  });
 });
 
 describe("ownership validation (domain checkOwnershipSplit + intake message map)", () => {
@@ -620,9 +646,8 @@ describe("parseValueUpdatePass — value-update-pass diffing", () => {
 });
 
 describe("okMessage — specific catalog keys for intake v2", () => {
-  test("asset_added carries the holding name", () => {
-    // The catalog key for a named asset add
-    expect(okMessage("asset_added")).not.toBeNull();
+  test("asset_added maps to the static asset-created message", () => {
+    expect(okMessage("asset_added")).toBe("Activo añadido.");
   });
 
   test("deleted_recoverable maps to a trash message", () => {

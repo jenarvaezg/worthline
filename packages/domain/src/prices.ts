@@ -24,10 +24,12 @@ export function getPriceFreshness(
   nowIso: string,
 ): PriceFreshnessState {
   if (price.freshnessState === "failed") return "failed";
-  if (price.source === "manual") return "manual";
-  const ageDays =
-    (new Date(nowIso).getTime() - new Date(price.fetchedAt).getTime()) / 86400000;
-  return ageDays <= PRICE_TTL_DAYS[price.source] ? "fresh" : "stale";
+  if (price.freshnessState === "manual") return "manual";
+
+  const ttlMs = PRICE_TTL_DAYS[price.source] * 86400000;
+  const ageMs = new Date(nowIso).getTime() - new Date(price.fetchedAt).getTime();
+
+  return ageMs >= ttlMs ? "stale" : "fresh";
 }
 
 /**
@@ -38,7 +40,7 @@ export function getPriceFreshness(
  *   no provider to refresh from.
  * - failed entries are not re-selected — already in error state; manual
  *   "Actualizar precios" handles retry.
- * - all other entries are stale when their age exceeds the per-source TTL from
+ * - all other entries are stale when their age reaches the per-source TTL from
  *   PRICE_TTL_DAYS (ecb/coingecko/stooq = 1 day, manual tier = 30 days).
  */
 export function selectStalePrices(

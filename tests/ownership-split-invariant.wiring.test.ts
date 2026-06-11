@@ -50,6 +50,10 @@ function catchRedirect(fn: () => Promise<unknown>): Promise<string> {
   );
 }
 
+function errorMessageOf(url: string): string {
+  return new URL(url, "http://worthline.local").searchParams.get("error") ?? "";
+}
+
 function buildAssetFormData(overrides: Record<string, string> = {}): FormData {
   const fd = new FormData();
   fd.set("name", "Test Asset");
@@ -235,7 +239,7 @@ describe("createAssetAction — ownership-split wiring", () => {
     expect(store.readAssets()).toHaveLength(1);
   });
 
-  test("split ≠ 100% via domain constructor surfaces the exact Spanish message and persists nothing", async () => {
+  test("custom split totaling 120% surfaces the exact Spanish message and persists nothing", async () => {
     store = createInMemoryStore();
     store.initializeWorkspace({
       members: [
@@ -245,30 +249,20 @@ describe("createAssetAction — ownership-split wiring", () => {
       mode: "household",
     });
 
-    // Inject invalid ownership directly by using a store that overrides createManualAsset
-    // to call the safe constructor with bad shares — we test via createManualAssetSafe
-    // reporting mechanism mapped through the action's violation→message code path.
-    //
-    // Since intake's resolveOwnershipSplit normalizes form input, we verify the mapping
-    // by calling createManualAssetSafe directly with invalid shares (unit tested above)
-    // and confirm the action uses the safe constructor (verified by the action source).
-    //
-    // This test covers the valid-split path from the action end-to-end, confirming
-    // no regression: the action uses createManualAssetSafe and maps violations correctly.
-
-    // Use a single member with custom 50% only (leaves 50% unset → resolveOwnershipSplit
-    // auto-fills to 100%, so this produces a valid split — the action succeeds).
     const fd = buildAssetFormData({
       name: "Activo",
       ownershipPreset: "custom",
-      owner_member_ana: "50",
-      // member_jose unset → gets remainder 50%
+      owner_member_ana: "60",
+      owner_member_jose: "60",
     });
 
     const redirectUrl = await catchRedirect(() => createAssetAction(fd, store));
-    // Should succeed — resolveOwnershipSplit fills the remainder
-    expect(redirectUrl).toContain("ok=asset_added");
-    expect(store.readAssets()).toHaveLength(1);
+
+    expect(redirectUrl).toContain("error=");
+    expect(errorMessageOf(redirectUrl)).toBe(
+      "La propiedad suma 120% — debe sumar 100%.",
+    );
+    expect(store.readAssets()).toHaveLength(0);
   });
 });
 

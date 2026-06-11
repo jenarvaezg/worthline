@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
+import Database from "better-sqlite3";
 import type { WorthlineStore } from "@worthline/db";
 import { createWorthlineStore } from "@worthline/db";
 import { calculateNetWorth } from "@worthline/domain";
@@ -16,10 +17,18 @@ afterEach(() => {
 });
 
 function createTestStore(): WorthlineStore {
+  return createTestStoreWithPath().store;
+}
+
+function createTestStoreWithPath(): {
+  databasePath: string;
+  store: WorthlineStore;
+} {
   const dataDir = mkdtempSync(join(tmpdir(), "worthline-positions-"));
   tempDirs.push(dataDir);
+  const databasePath = join(dataDir, "worthline.sqlite");
 
-  return createWorthlineStore({ databasePath: join(dataDir, "worthline.sqlite") });
+  return { databasePath, store: createWorthlineStore({ databasePath }) };
 }
 
 function seedWorkspace(store: WorthlineStore): void {
@@ -109,8 +118,8 @@ describe("investment position persistence", () => {
     ]);
   });
 
-  test("an investment asset contributes its derived market value to net worth", () => {
-    const store = createTestStore();
+  test("an investment asset contributes its derived market value to net worth, not the stored stale value", () => {
+    const { databasePath, store } = createTestStoreWithPath();
     seedWorkspace(store);
     store.createInvestmentAsset({
       currency: "EUR",
@@ -129,6 +138,12 @@ describe("investment position persistence", () => {
       units: "10",
     });
 
+    const sqlite = new Database(databasePath);
+    sqlite
+      .prepare("UPDATE assets SET current_value_minor = ? WHERE id = ?")
+      .run(42_00, "asset_acme");
+    sqlite.close();
+
     const summary = calculateNetWorth({
       assets: store.readAssets(),
       scopeId: "member_jose",
@@ -136,6 +151,7 @@ describe("investment position persistence", () => {
     });
 
     // Investment assets default to the "market" tier (liquid); value = 10 × 130.
+    // If readAssets used the stale stored row value, this would be 42 EUR.
     expect(summary.liquidNetWorth.amountMinor).toBe(130_000);
   });
 

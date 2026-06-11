@@ -96,12 +96,13 @@ describe("largestRemainderPercentages", () => {
     expect(result.reduce((a, b) => a + b, 0)).toBe(100);
   });
 
-  test("uneven split sums to exactly 100 via largest remainder", () => {
-    // Three equal bps values — naive floor gives 33+33+33=99, remainder fixes it.
-    const result = largestRemainderPercentages([10_000, 10_000, 10_000]);
+  test("uneven split gives the leftover point to the largest distinct remainder", () => {
+    // 33.2%, 33.3%, 33.5% — naive floor gives 33+33+33=99.
+    // The leftover 1% must go to the third value; an inverted comparator would
+    // give it to the first.
+    const result = largestRemainderPercentages([332, 333, 335]);
     expect(result.reduce((a, b) => a + b, 0)).toBe(100);
-    // Largest remainder allocates the leftover 1% to the first group.
-    expect(result).toEqual([34, 33, 33]);
+    expect(result).toEqual([33, 33, 34]);
   });
 
   test("zero values get 0% with no division by zero", () => {
