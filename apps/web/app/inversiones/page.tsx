@@ -13,6 +13,7 @@ import { redirect } from "next/navigation";
 import {
   buildCurrentUrlFor,
   parseFormError,
+  parseScopeParam,
   parseScopeCookie,
   priceFreshnessLabel,
   resolveOkMessage,
@@ -40,6 +41,7 @@ export default async function InversionesPage({
   const currentUrl = buildCurrentUrlFor("/inversiones", resolvedSearchParams);
 
   const jar = await cookies();
+  const queryScopeId = parseScopeParam(resolvedSearchParams?.scope);
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
   // Auto-refresh stale prices on load (same pattern as /)
@@ -64,8 +66,9 @@ export default async function InversionesPage({
     if (!workspace) return null;
 
     const scopes = listScopeOptions(workspace);
+    const selectedScopeId = queryScopeId ?? cookieScopeId;
     const selectedScope =
-      scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
+      scopes.find((scope) => scope.id === selectedScopeId) ?? scopes[0];
 
     // Collect live investment asset ids so we can filter the trash to only
     // show deleted investment assets (not cash/manual/real_estate).
@@ -248,4 +251,3 @@ export default async function InversionesPage({
     </Shell>
   );
 }
-

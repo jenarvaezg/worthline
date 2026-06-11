@@ -1,15 +1,13 @@
 import type { ScopeOption } from "@worthline/domain";
 import Link from "next/link";
 
-import { setScopeAction } from "./actions/scope";
-
 /**
  * App shell — the topnav, scope bar, warnings rail, and persistence footer
  * that every page renders through. Each page instantiates this directly
  * (not via a layout) so it can pass the active section as a prop.
  *
- * Zero client JS: scope switching is a POST that sets a cookie via server
- * action, then redirects back; active-link state is a prop, not router state.
+ * Zero client JS: scope switching is a POST that sets a cookie, then redirects
+ * back; active-link state is a prop, not router state.
  */
 
 export type AppSection = "resumen" | "patrimonio" | "inversiones" | "historico" | "ajustes";
@@ -95,7 +93,7 @@ export default function Shell({
         <div className="tabsBar">
           <nav aria-label="Selector de scope" className="scopeTabs">
             {scopes.map((scope) => (
-              <form action={setScopeAction} key={scope.id}>
+              <form action="/scope" key={scope.id} method="post">
                 <input name="returnTo" type="hidden" value={currentPageUrl} />
                 <input name="scopeId" type="hidden" value={scope.id} />
                 <button

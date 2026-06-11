@@ -16,6 +16,7 @@ import {
   appendParam,
   buildCurrentUrl,
   parseDrillParam,
+  parseScopeParam,
   parseScopeCookie,
   parseViewParam,
   SCOPE_COOKIE_NAME,
@@ -82,6 +83,7 @@ export default async function DashboardPage({
   };
 
   const jar = await cookies();
+  const queryScopeId = parseScopeParam(resolvedSearchParams?.scope);
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
   const now = persistence.checkedAt;
@@ -93,7 +95,7 @@ export default async function DashboardPage({
     state = await loadDashboard({
       store,
       persistence,
-      scopeId: cookieScopeId,
+      scopeId: queryScopeId ?? cookieScopeId,
       selectedView,
       drill: selectedDrill,
       today,
