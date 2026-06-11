@@ -35,6 +35,13 @@ export function parseViewParam(value: string | string[] | undefined): NetWorthFr
   return normalizeParam(value) === "liquid" ? "liquid" : "total";
 }
 
+export function parseScopeParam(value: string | string[] | undefined): string | undefined {
+  const raw = normalizeParam(value);
+  const trimmed = raw?.trim();
+
+  return trimmed || undefined;
+}
+
 /**
  * Parse the `drill=` query param (#76, #77). Only known drill keys activate a
  * drill view — anything else means no drill. Composable with `view=`.

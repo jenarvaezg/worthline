@@ -13,6 +13,7 @@ import { redirect } from "next/navigation";
 import {
   buildCurrentUrlFor,
   parseFormError,
+  parseScopeParam,
   parseScopeCookie,
   resolveOkMessage,
   SCOPE_COOKIE_NAME,
@@ -43,6 +44,7 @@ export default async function PatrimonioPage({
   const currentUrl = buildCurrentUrlFor("/patrimonio", resolvedSearchParams);
 
   const jar = await cookies();
+  const queryScopeId = parseScopeParam(resolvedSearchParams?.scope);
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
   const storeData = withStore((store) => {
@@ -53,8 +55,9 @@ export default async function PatrimonioPage({
     }
 
     const scopes = listScopeOptions(workspace);
+    const selectedScopeId = queryScopeId ?? cookieScopeId;
     const selectedScope =
-      scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
+      scopes.find((scope) => scope.id === selectedScopeId) ?? scopes[0];
 
     return {
       assets: store.readAssets(),
@@ -400,4 +403,3 @@ export default async function PatrimonioPage({
     </Shell>
   );
 }
-

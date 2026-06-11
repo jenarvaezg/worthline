@@ -22,6 +22,7 @@ import {
   parseNewMember,
   parseOwnership,
   parseRouteOperationCommand,
+  parseScopeParam,
   parseUpdateInvestmentCommand,
   parseDrillParam,
   parseValueUpdatePass,
@@ -60,6 +61,14 @@ describe("parseScopeCookie", () => {
 });
 
 describe("scope and view params", () => {
+  test("parseScopeParam returns a trimmed explicit scope override", () => {
+    expect(parseScopeParam("member_jose")).toBe("member_jose");
+    expect(parseScopeParam("  household  ")).toBe("household");
+    expect(parseScopeParam(["member_ana", "member_jose"])).toBe("member_ana");
+    expect(parseScopeParam("")).toBeUndefined();
+    expect(parseScopeParam(undefined)).toBeUndefined();
+  });
+
   test("parseViewParam returns the liquid framing only for liquid, else total", () => {
     expect(parseViewParam("liquid")).toBe("liquid");
     expect(parseViewParam("total")).toBe("total");
