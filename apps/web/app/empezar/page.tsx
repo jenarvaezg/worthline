@@ -1,6 +1,7 @@
 import { withStore } from "@worthline/db";
 import { redirect } from "next/navigation";
 
+import ImportWorkspaceForm from "../import-workspace-form";
 import { parseFormError } from "../intake";
 import { initHogarAction, initSoloAction } from "./actions";
 
@@ -21,9 +22,12 @@ interface EmpezarPageProps {
 /**
  * /empezar — workspace creation route.
  *
- * Two explicit paths:
+ * Three explicit paths:
  *   «Empezar solo»  — single name field (individual mode)
  *   «Crear hogar»   — one-name-per-line textarea (household mode)
+ *   «Importar»      — restore a backup or externally-prepared file (#105),
+ *                     reusing the shared import flow. No data-loss warning
+ *                     here: there is no workspace yet, nothing to lose.
  *
  * Replaces the conditional panel swap on / from the prior placeholder.
  * Uses the intake v2 pattern: formId + v_* params to preserve typed values
@@ -42,6 +46,7 @@ export default async function EmpezarPage({ searchParams }: EmpezarPageProps) {
 
   const soloError = errorCtx?.formId === "solo" ? errorCtx.message : null;
   const hogarError = errorCtx?.formId === "hogar" ? errorCtx.message : null;
+  const importError = errorCtx?.formId === "import" ? errorCtx.message : null;
   const preservedName = errorCtx?.values?.["name"] ?? "";
   const preservedMemberNames = errorCtx?.values?.["memberNames"] ?? "";
 
@@ -129,6 +134,25 @@ export default async function EmpezarPage({ searchParams }: EmpezarPageProps) {
             </form>
           </div>
         </div>
+      </section>
+
+      {/* ── Import path (#105) ─────────────────────────────────────── */}
+      <section className="empezarSection" aria-label="Importar una copia">
+        <div className="empezarHeader">
+          <h2>¿Ya tienes una copia de worthline?</h2>
+          <p className="empezarTrust">
+            Restaura una copia exportada desde la app o un archivo preparado
+            externamente: su contenido se convierte en tu workspace.
+          </p>
+        </div>
+
+        {importError ? (
+          <p className="formError" role="alert">
+            {importError}
+          </p>
+        ) : null}
+
+        <ImportWorkspaceForm currentUrl="/empezar" showDataLossWarning={false} />
       </section>
     </main>
   );
