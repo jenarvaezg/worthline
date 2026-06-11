@@ -1,0 +1,95 @@
+/**
+ * Journey 20: Import workspace — validate and atomically full-replace (#103).
+ *
+ * Self-sufficient: if the shared DB has no workspace yet (fresh server), the
+ * spec completes solo onboarding via the real UI first. It then guarantees
+ * pre-existing data by creating an asset, imports a valid export document from
+ * the danger zone (full replace, lands on the dashboard), and finally verifies
+ * that an invalid file (wrong version) is rejected with a clear error while
+ * leaving the workspace untouched.
+ */
+
+import { test, expect } from "./fixtures";
+
+/** A valid version-1 export document, built inline (plain object literal). */
+const importedDoc = {
+  version: 1,
+  workspace: { mode: "individual", baseCurrency: "EUR" },
+  members: [{ id: "member-ana-importada", name: "Ana Importada" }],
+  assets: [
+    {
+      id: "asset-cuenta-importada",
+      name: "Cuenta importada",
+      type: "cash",
+      currency: "EUR",
+      currentValue: { amountMinor: 4242400, currency: "EUR" },
+      liquidityTier: "cash",
+      isPrimaryResidence: false,
+      ownership: [{ memberId: "member-ana-importada", shareBps: 10000 }],
+    },
+  ],
+};
+
+test("import replaces the whole workspace; an invalid file changes nothing", async ({
+  page,
+}) => {
+  // ── Self-sufficient setup: onboard via the real UI when the DB is fresh ──
+  await page.goto("/");
+
+  if (page.url().includes("/empezar")) {
+    await expect(page.getByRole("heading", { name: "Empezar solo" })).toBeVisible();
+    await page.getByLabel("Tu nombre").fill("TestUser");
+    await page.getByRole("button", { name: "Empezar solo" }).click();
+    await expect(page).toHaveURL("/");
+  }
+
+  // Guarantee pre-existing data: create one asset through the UI.
+  await page.goto("/patrimonio/nuevo-activo");
+  await expect(page.getByRole("heading", { name: "Nuevo activo" })).toBeVisible();
+  await page.getByLabel("Nombre del activo").fill("Activo preexistente 20");
+  await page.getByLabel("Valor actual en EUR").fill("1234");
+  await page.getByRole("button", { name: "Añadir activo" }).click();
+  await expect(page).toHaveURL(/\/patrimonio/);
+  await expect(
+    page.getByRole("cell", { name: "Activo preexistente 20" }),
+  ).toBeVisible();
+
+  // ── Happy path: upload a valid export in the danger zone ─────────────────
+  await page.goto("/ajustes");
+  await page.locator('input[name="file"]').setInputFiles({
+    name: "worthline-export.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(importedDoc)),
+  });
+  await page.getByRole("button", { name: "Importar" }).click();
+
+  // Lands on the dashboard — never onboarding.
+  await expect(page).toHaveURL("/");
+
+  // The imported asset replaced the pre-existing one.
+  await page.goto("/patrimonio");
+  await expect(page.getByRole("cell", { name: "Cuenta importada" })).toBeVisible();
+  await expect(
+    page.getByRole("cell", { name: "Activo preexistente 20" }),
+  ).not.toBeVisible();
+
+  // ── Failure path: a wrong-version file is rejected, workspace unchanged ──
+  await page.goto("/ajustes");
+  await page.locator('input[name="file"]').setInputFiles({
+    name: "bad-export.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({ ...importedDoc, version: 99 })),
+  });
+  await page.getByRole("button", { name: "Importar" }).click();
+
+  // Back on /ajustes with a clear, specific error. (Filtered because Next's
+  // route announcer is an empty role="alert" element too.)
+  await expect(
+    page.getByRole("alert").filter({ hasText: "No se pudo importar" }),
+  ).toContainText("versión 99");
+  await expect(page).toHaveURL(/\/ajustes/);
+
+  // The previously imported workspace is fully intact.
+  await page.goto("/patrimonio");
+  await expect(page.getByRole("cell", { name: "Cuenta importada" })).toBeVisible();
+});
