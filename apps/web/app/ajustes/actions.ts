@@ -1,7 +1,11 @@
 "use server";
 
 import { withStore, type WorthlineStore } from "@worthline/db";
-import { parseWorkspaceExport } from "@worthline/domain";
+import {
+  parseWorkspaceExport,
+  summarizeWorkspaceExport,
+  type WorkspaceExportSummary,
+} from "@worthline/domain";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -166,7 +170,57 @@ export async function resetWorkspaceAction(formData: FormData, _store?: Worthlin
   redirect("/empezar");
 }
 
-// === Workspace import action ===
+// === Workspace import actions ===
+
+/**
+ * Serializable result of previewing an import file (#104), shaped for
+ * `useActionState`: idle before any submit, a per-section content summary for
+ * a valid file, or the validation errors for an invalid one.
+ */
+export type ImportPreviewState =
+  | { status: "idle" }
+  | { status: "error"; errors: string[] }
+  | { status: "summary"; summary: WorkspaceExportSummary };
+
+/**
+ * Preview an import file (#104): read the uploaded JSON, validate it with
+ * parseWorkspaceExport, and summarize what it contains. Pure read of the
+ * uploaded file — performs NO DB access and writes nothing; the actual
+ * replacement only happens later in confirmImportAction, which re-validates.
+ */
+export async function previewImportAction(
+  _prevState: ImportPreviewState,
+  formData: FormData,
+): Promise<ImportPreviewState> {
+  const file = formData.get("file");
+
+  if (!(file instanceof File) || file.size === 0) {
+    return {
+      status: "error",
+      errors: ["Selecciona un archivo de exportación (.json) para ver su contenido."],
+    };
+  }
+
+  const text = await file.text();
+  let raw: unknown;
+
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return {
+      status: "error",
+      errors: ["El archivo no contiene JSON válido y no se puede importar."],
+    };
+  }
+
+  const result = parseWorkspaceExport(raw);
+
+  if (!result.ok) {
+    return { status: "error", errors: result.errors };
+  }
+
+  return { status: "summary", summary: summarizeWorkspaceExport(result.value) };
+}
 
 /**
  * Import a workspace export file (ADR 0010, #103): validate the uploaded JSON

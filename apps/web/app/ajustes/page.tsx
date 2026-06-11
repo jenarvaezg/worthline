@@ -13,9 +13,9 @@ import {
   resolveOkMessage,
   SCOPE_COOKIE_NAME,
 } from "../intake";
+import ImportWorkspaceForm from "../import-workspace-form";
 import Shell from "../shell";
 import {
-  confirmImportAction,
   createMemberAction,
   disableMemberAction,
   hardDeleteMemberAction,
@@ -398,14 +398,7 @@ export default async function AjustesPage({
           actual; nada de lo que existe ahora se conserva.
         </p>
 
-        <form action={confirmImportAction} className="stackForm">
-          <input name="currentUrl" type="hidden" value={currentUrl} />
-          <label>
-            Archivo de exportación (.json)
-            <input accept="application/json,.json" name="file" required type="file" />
-          </label>
-          <button type="submit">Importar</button>
-        </form>
+        <ImportWorkspaceForm currentUrl={currentUrl} showDataLossWarning />
       </section>
     </Shell>
   );

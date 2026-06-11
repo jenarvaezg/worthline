@@ -83,8 +83,13 @@ export type {
   ExportedWorkspaceConfig,
   WorkspaceExport,
   WorkspaceExportData,
+  WorkspaceExportSummary,
 } from "./workspace-transfer";
-export { EXPORT_VERSION, serializeWorkspaceExport } from "./workspace-transfer";
+export {
+  EXPORT_VERSION,
+  serializeWorkspaceExport,
+  summarizeWorkspaceExport,
+} from "./workspace-transfer";
 export type { ParseWorkspaceExportResult } from "./workspace-transfer-parse";
 export { parseWorkspaceExport } from "./workspace-transfer-parse";
 
