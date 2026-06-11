@@ -11,6 +11,7 @@
 
 import { z } from "zod";
 
+import { compareUnits } from "./decimal";
 import type { OwnershipShare, Workspace } from "./index";
 import { checkOwnershipSplit } from "./index";
 import { assertSnapshotHoldingsReconcile } from "./snapshot-holdings";
@@ -333,9 +334,13 @@ function collectDomainErrors(doc: WorkspaceExport): string[] {
     doc.snapshots.map((snapshot) => snapshot.id),
   );
 
+  collectGroupErrors(errors, doc);
   collectOwnershipErrors(errors, doc, allAssets, allLiabilities);
   collectInvestmentValuationErrors(errors, allAssets);
+  collectOperationErrors(errors, doc);
+  collectDecimalStringErrors(errors, doc, allAssets);
   collectReferentialIntegrityErrors(errors, doc, allAssets, allLiabilities);
+  collectDatabaseKeyErrors(errors, doc);
   collectSnapshotReconciliationErrors(errors, doc);
 
   return errors;
@@ -359,6 +364,61 @@ function collectDuplicateIdErrors(
   }
 }
 
+function collectDuplicateKeyErrors<T>(
+  errors: string[],
+  kind: string,
+  items: T[],
+  keyOf: (item: T) => string,
+  displayOf: (item: T) => string,
+): void {
+  const seen = new Set<string>();
+  const reported = new Set<string>();
+
+  for (const item of items) {
+    const key = keyOf(item);
+
+    if (seen.has(key) && !reported.has(key)) {
+      errors.push(`${kind} duplicado: ${displayOf(item)}.`);
+      reported.add(key);
+    }
+
+    seen.add(key);
+  }
+}
+
+function collectGroupErrors(errors: string[], doc: WorkspaceExport): void {
+  const memberIds = new Set(doc.members.map((member) => member.id));
+  const activeMemberIds = new Set(
+    doc.members.filter((member) => !member.disabledAt).map((member) => member.id),
+  );
+
+  for (const group of doc.groups) {
+    const seen = new Set<string>();
+    const duplicateMembers = new Set<string>();
+
+    for (const memberId of group.memberIds) {
+      if (seen.has(memberId) && !duplicateMembers.has(memberId)) {
+        errors.push(
+          `El grupo "${group.name}" (${group.id}) contiene el miembro ${memberId} duplicado.`,
+        );
+        duplicateMembers.add(memberId);
+      }
+
+      seen.add(memberId);
+
+      if (!memberIds.has(memberId)) {
+        errors.push(
+          `El grupo "${group.name}" (${group.id}) referencia un miembro inexistente: ${memberId}.`,
+        );
+      } else if (!activeMemberIds.has(memberId)) {
+        errors.push(
+          `El grupo "${group.name}" (${group.id}) referencia el miembro ${memberId}, que está inactivo; los grupos solo pueden contener miembros activos.`,
+        );
+      }
+    }
+  }
+}
+
 function collectOwnershipErrors(
   errors: string[],
   doc: WorkspaceExport,
@@ -378,6 +438,23 @@ function collectOwnershipErrors(
     kind: string,
     entity: { id: string; name: string; ownership: OwnershipShare[] },
   ): void => {
+    const seenShareMembers = new Set<string>();
+    const duplicateShareMembers = new Set<string>();
+
+    for (const share of entity.ownership) {
+      if (
+        seenShareMembers.has(share.memberId) &&
+        !duplicateShareMembers.has(share.memberId)
+      ) {
+        errors.push(
+          `La titularidad de "${entity.name}" (${kind} ${entity.id}) contiene el miembro ${share.memberId} duplicado.`,
+        );
+        duplicateShareMembers.add(share.memberId);
+      }
+
+      seenShareMembers.add(share.memberId);
+    }
+
     const dangling = entity.ownership.filter(
       (share) => !memberIds.has(share.memberId),
     );
@@ -443,6 +520,77 @@ function collectInvestmentValuationErrors(
   }
 }
 
+function collectOperationErrors(errors: string[], doc: WorkspaceExport): void {
+  for (const operation of doc.operations) {
+    collectDecimalBoundError(errors, {
+      label: `Las unidades de la operación ${operation.id}`,
+      min: "positive",
+      value: operation.units,
+    });
+    collectDecimalBoundError(errors, {
+      label: `El precio por unidad de la operación ${operation.id}`,
+      min: "nonNegative",
+      value: operation.pricePerUnit,
+    });
+
+    if (operation.feesMinor < 0) {
+      errors.push(
+        `Las comisiones de la operación ${operation.id} no pueden ser negativas.`,
+      );
+    }
+  }
+}
+
+function collectDecimalStringErrors(
+  errors: string[],
+  doc: WorkspaceExport,
+  allAssets: ExportedAsset[],
+): void {
+  for (const asset of allAssets) {
+    if (asset.investment?.manualPricePerUnit !== undefined) {
+      collectDecimalBoundError(errors, {
+        label: `El precio manual de la inversión "${asset.name}" (${asset.id})`,
+        min: "positive",
+        value: asset.investment.manualPricePerUnit,
+      });
+    }
+  }
+
+  for (const price of doc.priceCache) {
+    collectDecimalBoundError(errors, {
+      label: `El precio de la caché de precios para ${price.assetId}`,
+      min: "nonNegative",
+      value: price.price,
+    });
+  }
+}
+
+function collectDecimalBoundError(
+  errors: string[],
+  input: {
+    label: string;
+    min: "positive" | "nonNegative";
+    value: string;
+  },
+): void {
+  let comparison: number;
+
+  try {
+    comparison = compareUnits(input.value, "0");
+  } catch {
+    errors.push(`${input.label} debe ser un número decimal válido.`);
+    return;
+  }
+
+  if (input.min === "positive" && comparison <= 0) {
+    errors.push(`${input.label} debe ser mayor que 0.`);
+  }
+
+  if (input.min === "nonNegative" && comparison < 0) {
+    errors.push(`${input.label} no puede ser negativo.`);
+  }
+}
+
 function collectReferentialIntegrityErrors(
   errors: string[],
   doc: WorkspaceExport,
@@ -486,6 +634,42 @@ function collectReferentialIntegrityErrors(
 
   // Snapshot holdings' holdingId is deliberately NOT checked: snapshot rows are
   // frozen history with no live foreign key into holdings (ADR 0008).
+}
+
+function collectDatabaseKeyErrors(errors: string[], doc: WorkspaceExport): void {
+  collectDuplicateKeyErrors(
+    errors,
+    "override de aviso",
+    doc.warningOverrides,
+    (override) => `${override.code}\0${override.entityId}`,
+    (override) => `${override.code}/${override.entityId}`,
+  );
+
+  collectDuplicateKeyErrors(
+    errors,
+    "precio en caché",
+    doc.priceCache,
+    (price) => price.assetId,
+    (price) => price.assetId,
+  );
+
+  collectDuplicateKeyErrors(
+    errors,
+    "scope/date de instantánea",
+    doc.snapshots,
+    (snapshot) => `${snapshot.scopeId}\0${snapshot.dateKey}`,
+    (snapshot) => `${snapshot.scopeId}/${snapshot.dateKey}`,
+  );
+
+  for (const snapshot of doc.snapshots) {
+    collectDuplicateKeyErrors(
+      errors,
+      `posición de la instantánea ${snapshot.id}`,
+      snapshot.holdings,
+      (holding) => `${holding.kind}\0${holding.holdingId}`,
+      (holding) => `${holding.kind}/${holding.holdingId}`,
+    );
+  }
 }
 
 function collectSnapshotReconciliationErrors(
