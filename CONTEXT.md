@@ -109,12 +109,28 @@ The single act that empties the entire workspace — every holding, member,
 snapshot, override, audit entry, and setting — returning the app to onboarding.
 Unlike **hard delete**, the reset does erase history. UI label: "Borrar todo".
 
+**Export**:
+A portable, human-readable text capture of the entire workspace at a moment in
+time — every live holding, member, ownership split, override, and setting, plus
+the frozen **snapshot** history behind the figures. The manual stand-in for
+backup and for moving between machines in an app with no sync. The audit trail is
+deliberately left out. UI label: "Exportar".
+
+**Import**:
+Replacing the entire workspace with the contents of an **export**. Like a
+**reset** it first erases everything — live data and history alike — but instead
+of returning to onboarding it repopulates from the file, preserving the original
+identities so the restored workspace is the same one, not a copy. All-or-nothing:
+an export that fails validation changes nothing. UI label: "Importar".
+_Avoid_: "pisar"; merge (an import never blends with existing data — it replaces).
+
 ## Relationships
 
 - **Net worth** decomposes into **gross assets** − **debts**.
 - An **investment** is a kind of **holding**; its value is always derived, never edited directly.
 - **Liquid net worth** and **housing equity** are partial views of **net worth**, sliced by **liquidity tier**.
 - A **framing** chooses which figure headlines; **gross assets**, **debts**, **housing equity**, and **liquid net worth** are always-visible breakdown around it.
+- An **import** is a **reset** followed by loading an **export**: both erase the whole workspace, but a reset ends at onboarding while an import ends in a populated dashboard.
 
 ## Flagged ambiguities
 
