@@ -6,7 +6,6 @@ import {
   moneySign,
   projectPortfolio,
 } from "@worthline/domain";
-import type { ManualAsset, Member } from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
