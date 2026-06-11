@@ -22,6 +22,11 @@ import { join } from "node:path";
 const e2eDbDir = mkdtempSync(join(tmpdir(), "worthline-e2e-"));
 const e2eDbPath = join(e2eDbDir, "test.sqlite");
 
+// Overridable so concurrent checkouts (e.g. agent worktrees) can run the suite
+// side by side without colliding on the same port.
+const e2ePort = Number(process.env.E2E_PORT ?? 3001);
+const e2eBaseUrl = `http://127.0.0.1:${e2ePort}`;
+
 export default defineConfig({
   testDir: "./e2e",
   // Serial: one worker, no parallelism. All tests share the same server + DB.
@@ -30,7 +35,7 @@ export default defineConfig({
   retries: 0,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
-    baseURL: "http://127.0.0.1:3001",
+    baseURL: e2eBaseUrl,
     // Server-rendered HTML — no JS navigation, so we wait for full page loads.
     actionTimeout: 10_000,
     navigationTimeout: 15_000,
@@ -47,8 +52,8 @@ export default defineConfig({
   webServer: {
     // next dev reads --port from CLI args; pass it explicitly so it doesn't
     // collide with the developer's default :3000 server.
-    command: `npm run dev --workspace @worthline/web -- --port 3001`,
-    url: "http://127.0.0.1:3001",
+    command: `npm run dev --workspace @worthline/web -- --port ${e2ePort}`,
+    url: e2eBaseUrl,
     reuseExistingServer: false,
     env: {
       WORTHLINE_DB_PATH: e2eDbPath,
