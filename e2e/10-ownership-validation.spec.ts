@@ -1,19 +1,18 @@
 /**
- * Journey 10: Ownership split validation and auto-normalisation
+ * Journey 10: Ownership split validation
  *
- * The server-side resolveOwnershipSplit() always normalises the submitted
- * percentages to exactly 100 % before storing. This journey verifies:
- *   1. Submitting custom values that do not sum to 100 % is accepted (no error).
- *   2. The stored ownership is normalised — the asset appears in the table for
- *      both members' scopes.
- *   3. The "even split" preset creates an asset visible in both scopes.
+ * The server-side resolveOwnershipSplit() preserves explicit custom
+ * percentages, while validation rejects totals different from exactly 100 %.
+ * This journey verifies:
+ *   1. Submitting custom values that sum to 100 % is accepted (no error).
+ *   2. The stored ownership appears in the table for both members' scopes.
  *
  * Requires at least 2 active members (from journey 2).
  */
 
 import { test, expect } from "./fixtures";
 
-test("ownership: custom split auto-normalised and asset visible in both scopes", async ({
+test("ownership: valid custom split is accepted and asset visible in both scopes", async ({
   page,
 }) => {
   await page.goto("/patrimonio/nuevo-activo");
@@ -43,7 +42,7 @@ test("ownership: custom split auto-normalised and asset visible in both scopes",
   });
   expect(ownerInputNames.length).toBeGreaterThanOrEqual(2);
 
-  // 3. Set custom values 60 + 20 = 80% (server will normalise to 100%)
+  // 3. Set custom values 60 + 40 = 100%
   //    and select the custom radio — all via JS to avoid toggling <details>.
   await page.evaluate((names) => {
     const radioEl = document.querySelector<HTMLInputElement>(
@@ -53,7 +52,7 @@ test("ownership: custom split auto-normalised and asset visible in both scopes",
       radioEl.checked = true;
       radioEl.dispatchEvent(new Event("change", { bubbles: true }));
     }
-    const values = ["60", "20"];
+    const values = ["60", "40"];
     for (const [idx, name] of names.entries()) {
       const el = document.querySelector<HTMLInputElement>(`input[name="${name}"]`);
       if (!el) continue;
@@ -63,7 +62,7 @@ test("ownership: custom split auto-normalised and asset visible in both scopes",
     }
   }, ownerInputNames);
 
-  // 4. Submit — the server normalises to 100% so this must succeed
+  // 4. Submit — the custom split totals 100%, so this must succeed.
   await page.getByRole("button", { name: "Añadir activo" }).click();
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toHaveText("Activo añadido.");
@@ -76,7 +75,7 @@ test("ownership: custom split auto-normalised and asset visible in both scopes",
   await expect(page.locator(`#${assetId}`)).toBeVisible();
 
   // 6. Switch to second member's scope — asset should still be visible
-  //    because the normalised split gives both members some ownership.
+  //    because both members have explicit ownership.
   const scopeNav = page.locator("[aria-label='Selector de scope']");
   const scopeButtons = scopeNav.getByRole("button");
   const scopeCount = await scopeButtons.count();

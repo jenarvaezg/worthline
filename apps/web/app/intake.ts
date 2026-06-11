@@ -297,11 +297,10 @@ export function parseMoneyMinorField(formData: FormData, field: string): number 
 export type OwnershipPreset = "scope" | "even" | "custom";
 
 /**
- * Resolve an ownership split that is guaranteed to total 10000 bps, so a create
- * form can never be rejected for ownership. A single active member always owns
+ * Resolve an ownership split from form input. A single active member always owns
  * 100%. Presets: "scope" (100% to the active scope member), "even" (split
  * equally, distributing the remainder deterministically), and "custom" (honor
- * the entered bps, auto-completing any shortfall across the unset members).
+ * entered bps, auto-completing shortfalls only across unset members).
  */
 export function resolveOwnershipSplit(input: {
   activeMembers: Member[];
@@ -346,17 +345,6 @@ export function resolveOwnershipSplit(input: {
 
     if (unset.length > 0) {
       distributeRemainder(unset, 10_000 - provided);
-    } else {
-      entries[0]!.shareBps += 10_000 - provided;
-    }
-  } else if (provided > 10_000) {
-    for (const entry of entries) {
-      entry.shareBps = Math.round((entry.shareBps / provided) * 10_000);
-    }
-    const drift = 10_000 - entries.reduce((sum, entry) => sum + entry.shareBps, 0);
-
-    if (drift !== 0) {
-      largestEntry(entries).shareBps += drift;
     }
   }
 
@@ -387,12 +375,6 @@ function distributeRemainder(
     remainder -= extra;
     entry.shareBps = base + extra;
   }
-}
-
-function largestEntry<T extends { shareBps: number }>(entries: T[]): T {
-  return entries.reduce((largest, entry) =>
-    entry.shareBps > largest.shareBps ? entry : largest,
-  );
 }
 
 export function parseOwnership(formData: FormData, members: Member[]): OwnershipShare[] {

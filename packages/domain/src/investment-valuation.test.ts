@@ -56,10 +56,8 @@ function makeInvestmentAsset(
 // ---------------------------------------------------------------------------
 
 describe("investment — derived value in net worth", () => {
-  test("net worth uses the derived figure, not any stale manual value", () => {
+  test("net worth consumes the investment figure already derived by persistence", () => {
     const workspace = makeWorkspace();
-    // Imagine the DB row has current_value_minor = 0 (old stale stored value)
-    // but the store derives 15_000 from units × price and passes that in.
     const inv = makeInvestmentAsset(workspace, 15_000);
 
     const summary = calculateNetWorth({

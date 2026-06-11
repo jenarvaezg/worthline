@@ -1,17 +1,13 @@
 /**
  * Wiring suite: operation bounds invariants (issue #68).
  *
- * Verifies end-to-end that:
- *  - units ≤ 0 → domain safe constructor returns violation code
- *    `operation_units_not_positive`; action surfaces the existing Spanish message
- *    and persists nothing.
- *  - price < 0 → domain safe constructor returns violation code
- *    `operation_price_negative`; action surfaces the existing Spanish message
- *    and persists nothing.
- *  - fees < 0 → domain safe constructor returns violation code
- *    `operation_fees_negative`; action surfaces the existing Spanish message
- *    and persists nothing.
- *  - valid inputs → operation persisted, success redirect.
+ * Verifies both rejection layers:
+ *  - parser-level form errors (empty/zero units, invalid fees) redirect with the
+ *    existing Spanish messages and persist nothing.
+ *  - domain-constructor errors that survive parsing (negative units, negative
+ *    price) return stable violation codes, are mapped to the existing Spanish
+ *    messages, and persist nothing.
+ *  - valid inputs persist and redirect to success.
  *
  * Follows the same pattern as ownership-split-invariant.wiring.test.ts: real
  * in-memory store, next/cache stubbed, NEXT_REDIRECT digest parsed.
@@ -44,6 +40,10 @@ function catchRedirect(fn: () => Promise<unknown>): Promise<string> {
       throw err;
     },
   );
+}
+
+function errorMessageOf(url: string): string {
+  return new URL(url, "http://worthline.local").searchParams.get("error") ?? "";
 }
 
 function buildOperationFormData(overrides: Record<string, string> = {}): FormData {
@@ -178,7 +178,7 @@ describe("recordOperationAction — operation bounds wiring", () => {
     expect(store.readOperations(ASSET_ID)).toHaveLength(1);
   });
 
-  test("zero units → error redirect, nothing persisted", async () => {
+  test("parser rejection: zero units redirects with the positive-units message and persists nothing", async () => {
     setupStoreWithInvestment();
 
     const fd = buildOperationFormData({ units: "0" });
@@ -188,12 +188,29 @@ describe("recordOperationAction — operation bounds wiring", () => {
     );
 
     expect(redirectUrl).toContain("error=");
-    const decoded = decodeURIComponent(redirectUrl);
-    expect(decoded).toContain("positiv");
+    expect(errorMessageOf(redirectUrl)).toBe(
+      "Las unidades deben ser un número positivo.",
+    );
     expect(store.readOperations(ASSET_ID)).toHaveLength(0);
   });
 
-  test("negative price → error redirect, nothing persisted", async () => {
+  test("domain rejection: negative units redirects with the positive-units message and persists nothing", async () => {
+    setupStoreWithInvestment();
+
+    const fd = buildOperationFormData({ units: "-5" });
+
+    const redirectUrl = await catchRedirect(() =>
+      recordOperationAction(ASSET_ID, fd, store),
+    );
+
+    expect(redirectUrl).toContain("error=");
+    expect(errorMessageOf(redirectUrl)).toBe(
+      "Las unidades deben ser un número positivo.",
+    );
+    expect(store.readOperations(ASSET_ID)).toHaveLength(0);
+  });
+
+  test("domain rejection: negative price redirects with the invalid-price message and persists nothing", async () => {
     setupStoreWithInvestment();
 
     const fd = buildOperationFormData({ pricePerUnit: "-1" });
@@ -203,10 +220,11 @@ describe("recordOperationAction — operation bounds wiring", () => {
     );
 
     expect(redirectUrl).toContain("error=");
+    expect(errorMessageOf(redirectUrl)).toBe("El precio por unidad no es válido.");
     expect(store.readOperations(ASSET_ID)).toHaveLength(0);
   });
 
-  test("negative fees → error redirect, nothing persisted", async () => {
+  test("parser rejection: negative fees redirects with the invalid-fees message and persists nothing", async () => {
     setupStoreWithInvestment();
 
     const fd = buildOperationFormData({ fees: "-5" });
@@ -216,6 +234,7 @@ describe("recordOperationAction — operation bounds wiring", () => {
     );
 
     expect(redirectUrl).toContain("error=");
+    expect(errorMessageOf(redirectUrl)).toBe("Las comisiones no son válidas.");
     expect(store.readOperations(ASSET_ID)).toHaveLength(0);
   });
 });

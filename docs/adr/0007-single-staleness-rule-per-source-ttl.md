@@ -36,8 +36,8 @@ The fixed-constant approach would require updating two independent thresholds.
 
 ## Consequences
 
-- `packages/domain/src/price-staleness.ts` is now a re-export shim (deprecated).
-  It will be removed once `packages/pricing` migrates its import.
 - `packages/domain/src/index.ts` re-exports `selectStalePrices` from `prices`.
+- The old `packages/domain/src/price-staleness.ts` re-export shim has been removed;
+  import the canonical rule from `prices` or the package root.
 - The refresh orchestration (determine stale → fetch → persist) is extracted
   into `apps/web/app/refresh-prices.ts`; both consuming pages delegate to it.

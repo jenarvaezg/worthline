@@ -7,6 +7,21 @@
 
 import { test, expect } from "./fixtures";
 
+function parseEuroMinor(text: string | null): number {
+  expect(text).toBeTruthy();
+
+  const normalized = text!
+    .replace(/\u00a0/g, " ")
+    .replace(/[^\d,.-]/g, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
+  const value = Number(normalized);
+
+  expect(Number.isFinite(value)).toBe(true);
+
+  return Math.round(value * 100);
+}
+
 test("puesta al dia: batch update two assets → values persist → headline changes", async ({
   page,
 }) => {
@@ -20,21 +35,18 @@ test("puesta al dia: batch update two assets → values persist → headline cha
 
   // 2. Note the headline before update
   await page.goto("/");
-  const headlineBefore = await page.locator(".headline strong").textContent();
+  const headlineBeforeMinor = parseEuroMinor(
+    await page.locator(".headline strong").textContent(),
+  );
+  expect(headlineBeforeMinor).toBe(8000_00);
 
   // 3. Open the "Puesta al día" form
   await page.goto("/patrimonio/actualizar");
   await expect(page.getByRole("heading", { name: "Puesta al día" })).toBeVisible();
 
   // 4. Fill in new values for both assets
-  const inputs = page.getByRole("textbox");
-  const count = await inputs.count();
-  expect(count).toBeGreaterThanOrEqual(2);
-
-  // Update all visible inputs to new values
-  for (let i = 0; i < Math.min(count, 2); i++) {
-    await inputs.nth(i).fill(i === 0 ? "8000" : "4000");
-  }
+  await page.getByLabel("Valor de Cuenta ING en EUR").fill("8000");
+  await page.getByLabel("Valor de Fondo Monetario en EUR").fill("4000");
 
   // 5. Submit the form
   await page.getByRole("button", { name: "Guardar todo" }).click();
@@ -43,23 +55,24 @@ test("puesta al dia: batch update two assets → values persist → headline cha
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toContainText("Valores actualizados");
 
-  // 7. Verify changes persist — navigate to /patrimonio/actualizar and check values
-  await page.goto("/patrimonio/actualizar");
-  // At least one input should have the updated value
-  const updatedInputs = page.getByRole("textbox");
-  const firstValue = await updatedInputs.first().inputValue();
-  // The value should reflect what we entered (stored as formatted EUR)
-  expect(firstValue).toBeTruthy();
-
-  // 8. Back on /, headline should now differ from before (assets increased)
+  // 7. Back on /, headline should show the exact updated net worth
   await page.goto("/");
-  const headlineAfter = await page.locator(".headline strong").textContent();
-  // Both should be non-null and differ (or headline changed)
-  expect(headlineAfter).toBeTruthy();
-  // We can't assert exact values since formatting differs, but the headline exists
-  expect(headlineBefore !== headlineAfter || headlineAfter!.includes("€")).toBe(true);
+  const headlineAfterMinor = parseEuroMinor(
+    await page.locator(".headline strong").textContent(),
+  );
+  expect(headlineAfterMinor).toBe(12000_00);
+  expect(headlineAfterMinor).toBeGreaterThan(headlineBeforeMinor);
+
+  // 8. Verify changes persist after a full reload of the form
+  await page.goto("/patrimonio/actualizar");
+  await page.reload();
+  await expect(page.getByLabel("Valor de Cuenta ING en EUR")).toHaveValue("8000,00");
+  await expect(page.getByLabel("Valor de Fondo Monetario en EUR")).toHaveValue(
+    "4000,00",
+  );
 
   // 9. Liquidity section renders the tier donut with at least one segment
+  await page.goto("/");
   const liquidityRegion = page.getByRole("region", { name: "Liquidez por capa" });
   await expect(liquidityRegion.locator(".tierDonut")).toBeVisible();
   expect(

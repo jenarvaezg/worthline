@@ -65,6 +65,16 @@ describe("selectStalePrices (per-source TTL)", () => {
     expect(selectStalePrices([entry], "2026-06-09T10:00:00Z")).toEqual([]);
   });
 
+  test("manual source respects its 30-day TTL tier: older than 30 days is stale", () => {
+    const entry = makeEntry({
+      source: "manual",
+      freshnessState: "fresh",
+      fetchedAt: "2026-05-09T10:00:00Z",
+    });
+
+    expect(selectStalePrices([entry], "2026-06-09T10:00:00Z")).toEqual([entry]);
+  });
+
   test("failed entries are never selected (already in error state)", () => {
     const entry = makeEntry({
       fetchedAt: "2020-01-01T00:00:00Z",
@@ -106,19 +116,44 @@ describe("getPriceFreshness", () => {
     ).toBe("manual");
   });
 
-  test("stooq price fetched within TTL returns 'fresh'", () => {
+  test("stooq price one second under its 1-day TTL returns 'fresh'", () => {
+    expect(
+      getPriceFreshness(
+        { fetchedAt: "2026-06-08T10:00:01Z", freshnessState: "fresh", source: "stooq" },
+        "2026-06-09T10:00:00Z",
+      ),
+    ).toBe("fresh");
+  });
+
+  test("stooq price exactly at its 1-day TTL returns 'stale'", () => {
     expect(
       getPriceFreshness(
         { fetchedAt: "2026-06-08T10:00:00Z", freshnessState: "fresh", source: "stooq" },
-        "2026-06-08T22:00:00Z",
+        "2026-06-09T10:00:00Z",
       ),
-    ).toBe("fresh");
+    ).toBe("stale");
   });
 
   test("stooq price older than 1 day returns 'stale'", () => {
     expect(
       getPriceFreshness(
         { fetchedAt: "2026-06-07T10:00:00Z", freshnessState: "fresh", source: "stooq" },
+        "2026-06-09T10:00:00Z",
+      ),
+    ).toBe("stale");
+  });
+
+  test("manual source with fresh state follows its 30-day TTL when labeled", () => {
+    expect(
+      getPriceFreshness(
+        { fetchedAt: "2026-05-10T10:00:01Z", freshnessState: "fresh", source: "manual" },
+        "2026-06-09T10:00:00Z",
+      ),
+    ).toBe("fresh");
+
+    expect(
+      getPriceFreshness(
+        { fetchedAt: "2026-05-09T10:00:00Z", freshnessState: "fresh", source: "manual" },
         "2026-06-09T10:00:00Z",
       ),
     ).toBe("stale");
