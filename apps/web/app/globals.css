@@ -2204,6 +2204,31 @@ code {
   margin: 0 0 12px;
 }
 
+/* Import preview (#104): file content summary + errors before confirm. */
+.importPreview {
+  display: grid;
+  gap: 12px;
+}
+
+.importPreview p {
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.importPreviewSummary,
+.importPreviewErrors {
+  display: grid;
+  gap: 6px;
+  font-size: 0.85rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.importPreviewErrors {
+  margin-top: 6px;
+}
+
 .blockingNote {
   font-size: 0.78rem;
   color: var(--muted);

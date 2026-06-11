@@ -1,12 +1,14 @@
 /**
- * Journey 20: Import workspace — validate and atomically full-replace (#103).
+ * Journey 20: Import workspace — validate and atomically full-replace (#103),
+ * through the preview → confirm flow (#104).
  *
  * Self-sufficient: if the shared DB has no workspace yet (fresh server), the
  * spec completes solo onboarding via the real UI first. It then guarantees
  * pre-existing data by creating an asset, imports a valid export document from
- * the danger zone (full replace, lands on the dashboard), and finally verifies
- * that an invalid file (wrong version) is rejected with a clear error while
- * leaving the workspace untouched.
+ * the danger zone (preview, then confirm — full replace, lands on the
+ * dashboard), and finally verifies that an invalid file (wrong version) is
+ * rejected at the PREVIEW step — inline error, no confirm button offered —
+ * while leaving the workspace untouched.
  */
 
 import { test, expect } from "./fixtures";
@@ -54,14 +56,22 @@ test("import replaces the whole workspace; an invalid file changes nothing", asy
     page.getByRole("cell", { name: "Activo preexistente 20" }),
   ).toBeVisible();
 
-  // ── Happy path: upload a valid export in the danger zone ─────────────────
+  // ── Happy path: preview, then confirm, in the danger zone ────────────────
   await page.goto("/ajustes");
-  await page.locator('input[name="file"]').setInputFiles({
+  const dangerZone = page.getByRole("region", { name: "Zona de peligro" });
+  await dangerZone.locator('input[name="file"]').setInputFiles({
     name: "worthline-export.json",
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify(importedDoc)),
   });
-  await page.getByRole("button", { name: "Importar" }).click();
+  await dangerZone.getByRole("button", { name: "Ver contenido del archivo" }).click();
+
+  // The preview shows the file's content summary before anything is written.
+  await expect(dangerZone.getByText("1 miembro", { exact: true })).toBeVisible();
+  await expect(dangerZone.getByText("1 activo", { exact: true })).toBeVisible();
+
+  // Confirm: the same form (same chosen file) posts to the import action.
+  await dangerZone.getByRole("button", { name: "Importar y reemplazar" }).click();
 
   // Lands on the dashboard — never onboarding.
   await expect(page).toHaveURL("/");
@@ -73,20 +83,22 @@ test("import replaces the whole workspace; an invalid file changes nothing", asy
     page.getByRole("cell", { name: "Activo preexistente 20" }),
   ).not.toBeVisible();
 
-  // ── Failure path: a wrong-version file is rejected, workspace unchanged ──
+  // ── Failure path: a wrong-version file is rejected at the preview step ───
   await page.goto("/ajustes");
-  await page.locator('input[name="file"]').setInputFiles({
+  await dangerZone.locator('input[name="file"]').setInputFiles({
     name: "bad-export.json",
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify({ ...importedDoc, version: 99 })),
   });
-  await page.getByRole("button", { name: "Importar" }).click();
+  await dangerZone.getByRole("button", { name: "Ver contenido del archivo" }).click();
 
-  // Back on /ajustes with a clear, specific error. (Filtered because Next's
-  // route announcer is an empty role="alert" element too.)
+  // Inline error, clear and specific — and no confirm button is offered.
   await expect(
-    page.getByRole("alert").filter({ hasText: "No se pudo importar" }),
+    dangerZone.getByRole("alert").filter({ hasText: "No se puede importar" }),
   ).toContainText("versión 99");
+  await expect(
+    dangerZone.getByRole("button", { name: "Importar y reemplazar" }),
+  ).not.toBeVisible();
   await expect(page).toHaveURL(/\/ajustes/);
 
   // The previously imported workspace is fully intact.

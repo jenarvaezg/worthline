@@ -114,6 +114,41 @@ export interface WorkspaceExport extends WorkspaceExportData {
   version: typeof EXPORT_VERSION;
 }
 
+/**
+ * Per-section counts of an export document, for the import preview: what the
+ * user is about to replace their workspace with, before anything is written.
+ */
+export interface WorkspaceExportSummary {
+  members: number;
+  groups: number;
+  assets: number;
+  liabilities: number;
+  operations: number;
+  snapshots: number;
+  trashedAssets: number;
+  trashedLiabilities: number;
+  warningOverrides: number;
+  priceCacheEntries: number;
+  fireConfigScopes: number;
+}
+
+/** Count every section of an (already validated) export document. */
+export function summarizeWorkspaceExport(doc: WorkspaceExport): WorkspaceExportSummary {
+  return {
+    members: doc.members.length,
+    groups: doc.groups.length,
+    assets: doc.assets.length,
+    liabilities: doc.liabilities.length,
+    operations: doc.operations.length,
+    snapshots: doc.snapshots.length,
+    trashedAssets: doc.trash.assets.length,
+    trashedLiabilities: doc.trash.liabilities.length,
+    warningOverrides: doc.warningOverrides.length,
+    priceCacheEntries: doc.priceCache.length,
+    fireConfigScopes: Object.keys(doc.fireConfig).length,
+  };
+}
+
 /** Build the versioned export document from the in-memory section data. */
 export function serializeWorkspaceExport(data: WorkspaceExportData): WorkspaceExport {
   return {

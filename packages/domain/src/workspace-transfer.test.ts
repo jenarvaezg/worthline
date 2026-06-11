@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   EXPORT_VERSION,
   serializeWorkspaceExport,
+  summarizeWorkspaceExport,
   type WorkspaceExportData,
 } from "./workspace-transfer";
 
@@ -223,5 +224,55 @@ describe("serializeWorkspaceExport", () => {
 
     expect("auditLog" in doc).toBe(false);
     expect("audit_log" in doc).toBe(false);
+  });
+});
+
+describe("summarizeWorkspaceExport", () => {
+  test("counts every section of a rich document exactly", () => {
+    const doc = serializeWorkspaceExport(makeExportData());
+
+    expect(summarizeWorkspaceExport(doc)).toEqual({
+      members: 2,
+      groups: 1,
+      assets: 2,
+      liabilities: 1,
+      operations: 1,
+      snapshots: 1,
+      trashedAssets: 1,
+      trashedLiabilities: 0,
+      warningOverrides: 1,
+      priceCacheEntries: 1,
+      fireConfigScopes: 1,
+    });
+  });
+
+  test("a minimal live-state-only document yields zeros for absent sections", () => {
+    const doc = serializeWorkspaceExport({
+      workspace: { mode: "individual", baseCurrency: "EUR" },
+      members: [{ id: "m1", name: "Solo" }],
+      groups: [],
+      assets: [],
+      liabilities: [],
+      operations: [],
+      warningOverrides: [],
+      fireConfig: {},
+      snapshots: [],
+      trash: { assets: [], liabilities: [] },
+      priceCache: [],
+    });
+
+    expect(summarizeWorkspaceExport(doc)).toEqual({
+      members: 1,
+      groups: 0,
+      assets: 0,
+      liabilities: 0,
+      operations: 0,
+      snapshots: 0,
+      trashedAssets: 0,
+      trashedLiabilities: 0,
+      warningOverrides: 0,
+      priceCacheEntries: 0,
+      fireConfigScopes: 0,
+    });
   });
 });
