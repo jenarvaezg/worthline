@@ -75,6 +75,18 @@ export { allocateScopedHolding } from "./scope-allocation";
 import { allocateScopedHolding } from "./scope-allocation";
 
 export type {
+  ExportedAsset,
+  ExportedInvestmentMeta,
+  ExportedLiability,
+  ExportedSnapshot,
+  ExportedTrash,
+  ExportedWorkspaceConfig,
+  WorkspaceExport,
+  WorkspaceExportData,
+} from "./workspace-transfer";
+export { EXPORT_VERSION, serializeWorkspaceExport } from "./workspace-transfer";
+
+export type {
   BuildSnapshotHoldingRowsInput,
   InvestmentCaptureDetail,
   SnapshotHoldingKind,
