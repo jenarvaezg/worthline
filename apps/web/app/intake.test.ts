@@ -572,9 +572,10 @@ describe("parseAssetCommandStrict — required name, no ghost defaults", () => {
   test("returns the parsed command when name is provided", () => {
     const result = parseAssetCommandStrict(
       form({
+        acquisitionDate: "2024-01-01",
+        acquisitionValue: "200000",
         name: "Casa",
         type: "real_estate",
-        currentValue: "200000",
         liquidityTier: "housing",
       }),
       members,
@@ -583,6 +584,53 @@ describe("parseAssetCommandStrict — required name, no ghost defaults", () => {
     expect(result).toEqual({
       ok: true,
       command: expect.objectContaining({ name: "Casa" }),
+    });
+  });
+
+  test("uses acquisition price as the base value for real estate", () => {
+    const result = parseAssetCommandStrict(
+      form({
+        acquisitionDate: "2020-05-10",
+        acquisitionValue: "180000",
+        currentValue: "999999",
+        initialAdjustsPriorCurve: "on",
+        initialValuationDate: "2024-03-15",
+        initialValuationValue: "210000",
+        name: "Casa",
+        rate: "3",
+        type: "real_estate",
+      }),
+      members,
+      1,
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      command: expect.objectContaining({
+        acquisitionDate: "2020-05-10",
+        acquisitionValueMinor: 18_000_000,
+        annualAppreciationRate: "0.03",
+        currentValueMinor: 18_000_000,
+        initialValuation: {
+          adjustsPriorCurve: true,
+          valuationDate: "2024-03-15",
+          valueMinor: 21_000_000,
+        },
+        name: "Casa",
+      }),
+    });
+  });
+
+  test("requires acquisition date and price for real estate", () => {
+    const result = parseAssetCommandStrict(
+      form({ name: "Casa", type: "real_estate" }),
+      members,
+      1,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: "La fecha y el precio de adquisición son obligatorios para un inmueble.",
     });
   });
 

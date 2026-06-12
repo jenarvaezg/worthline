@@ -11,6 +11,7 @@ import { redirect } from "next/navigation";
 
 import {
   appendParam,
+  createStableId,
   errorRedirectUrl,
   mapDomainViolation,
   parseAppreciationRateStrict,
@@ -38,6 +39,12 @@ const ASSET_FORM_FIELDS = [
   "liquidityTier",
   "isPrimaryResidence",
   "ownershipPreset",
+  "acquisitionDate",
+  "acquisitionValue",
+  "rate",
+  "initialValuationDate",
+  "initialValuationValue",
+  "initialAdjustsPriorCurve",
 ];
 const LIABILITY_FORM_FIELDS = [
   "name",
@@ -88,15 +95,56 @@ export async function createAssetAction(
       return { ok: false, error: parsed.error };
     }
 
-    const domainResult = createManualAssetSafe(workspace, parsed.command);
+    const {
+      acquisitionDate,
+      acquisitionValueMinor,
+      annualAppreciationRate,
+      initialValuation,
+      ...assetCommand
+    } = parsed.command;
+
+    const domainResult = createManualAssetSafe(workspace, assetCommand);
 
     if (!domainResult.ok) {
       return { ok: false, error: mapDomainViolation(domainResult.violations[0]) };
     }
 
-    store.assets.createManualAsset(parsed.command);
+    store.assets.createManualAsset(assetCommand);
 
-    return { ok: true, id: parsed.command.id };
+    if (
+      assetCommand.type === "real_estate" &&
+      acquisitionDate &&
+      acquisitionValueMinor
+    ) {
+      store.assets.addValuationAnchor({
+        adjustsPriorCurve: true,
+        assetId: assetCommand.id,
+        id: createStableId("anchor", `${assetCommand.id}_acquisition`, Date.now()),
+        valuationDate: acquisitionDate,
+        valueMinor: acquisitionValueMinor,
+      });
+      store.assets.setAnnualAppreciationRate(assetCommand.id, annualAppreciationRate ?? null);
+
+      if (initialValuation) {
+        store.assets.addValuationAnchor({
+          ...initialValuation,
+          assetId: assetCommand.id,
+          id: createStableId(
+            "anchor",
+            `${assetCommand.id}_initial`,
+            Date.now() + 1,
+          ),
+        });
+      }
+
+      store.rippleHistoricalSnapshotsForValuation({
+        assetId: assetCommand.id,
+        fromDateKey: acquisitionDate,
+        today: new Date().toISOString().slice(0, 10),
+      });
+    }
+
+    return { ok: true, id: assetCommand.id };
   });
 
   if (!result.ok) {

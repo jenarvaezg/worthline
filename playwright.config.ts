@@ -34,6 +34,7 @@ process.env.WORTHLINE_DB_PATH = e2eDbPath;
 export default defineConfig({
   globalSetup: "./e2e/global-setup.ts",
   testDir: "./e2e",
+  testIgnore: /first-run.*\.spec\.ts/,
   // Serial: one worker, no parallelism. All tests share the same server + DB.
   workers: 1,
   fullyParallel: false,

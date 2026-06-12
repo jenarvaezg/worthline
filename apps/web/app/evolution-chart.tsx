@@ -93,8 +93,9 @@ export default function EvolutionChart({
     { length: Y_TICKS },
     (_, i) => yMin + ((i + 0.5) / Y_TICKS) * (yMax - yMin),
   );
-  // X ticks: first, middle, last — orientation without clutter.
-  const xTickIndexes = [0, Math.floor((points.length - 1) / 2), points.length - 1];
+  // X ticks: first, middle, last — deduplicated to avoid React key warnings
+  // when few points exist (e.g. 2 points → [0, 0, 1] would duplicate key 0).
+  const xTickIndexes = [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])];
 
   const line = points.map(
     (point, i) => `${x(i).toFixed(1)},${y(point.valueMinor).toFixed(1)}`,

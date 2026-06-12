@@ -50,11 +50,22 @@ test("investment: create with manual price → buy operation → P/L visible", a
   await expect(priceInput).toHaveValue("105,50");
 
   // 10. Now fill units correctly and submit
-  await unitsInput.fill("10");
-  await page.getByRole("button", { name: "Registrar operación" }).click();
+  const operationForm = page.locator("form.inversionesForm");
+  await operationForm.getByLabel("Unidades").fill("10");
+  await expect(operationForm.getByLabel("Unidades")).toHaveValue("10");
+  await expect
+    .poll(
+      async () =>
+        operationForm.evaluate((form) =>
+          String(new FormData(form as HTMLFormElement).get("units") ?? ""),
+        ),
+      { message: "the operation form submits the filled units value" },
+    )
+    .toBe("10");
+  await operationForm.getByRole("button", { name: "Registrar operación" }).click();
 
   // 11. Success redirect — back on the operacion page with ok banner
-  await expect(page.getByRole("status")).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText("Guardado.");
 
   // 12. Navigate to /inversiones — P/L column should now render a value
   // (the locator from step 6 is lazy, so it re-resolves on the fresh page)

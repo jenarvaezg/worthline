@@ -20,7 +20,8 @@ test("housing valuation: rate, anchor CRUD, future rejected, past snapshot in hi
   await page.goto("/patrimonio/nuevo-activo");
   await page.getByLabel("Nombre del activo").fill("Piso Centro");
   await page.getByLabel("Tipo").selectOption("real_estate");
-  await page.getByLabel("Valor actual en EUR").fill("200000");
+  await page.getByLabel("Fecha de adquisición").fill("2020-05-10");
+  await page.getByLabel("Precio de adquisición en EUR").fill("200000");
   await page.getByRole("button", { name: "Añadir activo" }).click();
 
   await expect(page).toHaveURL(/\/patrimonio/);
@@ -53,8 +54,10 @@ test("housing valuation: rate, anchor CRUD, future rejected, past snapshot in hi
   await page.getByRole("button", { name: "Registrar tasación" }).click();
   await expect(page.getByRole("status")).toHaveText("Tasación registrada.");
 
-  // 5. The anchor is listed with its date and value.
+  // 5. The acquisition anchor and the added anchor are listed with dates/values.
   const anchorTable = page.getByRole("table", { name: "Tasaciones" });
+  await expect(anchorTable.getByText("2020-05-10")).toBeVisible();
+  await expect(anchorTable.getByText(/200\.000/)).toBeVisible();
   await expect(anchorTable.getByText("2024-03-15")).toBeVisible();
   await expect(anchorTable.getByText(/180\.000/)).toBeVisible();
 
@@ -73,7 +76,7 @@ test("housing valuation: rate, anchor CRUD, future rejected, past snapshot in hi
   expect(await futureDate.evaluate((el: HTMLInputElement) => el.validity.valid)).toBe(
     false,
   );
-  await expect(anchorTable.getByRole("row")).toHaveCount(2); // header + 1 anchor
+  await expect(anchorTable.getByRole("row")).toHaveCount(3); // header + acquisition + 1 anchor
 
   // 7. Edit the existing anchor's value via its inline edit form. The edit
   //    affordance is a <summary>; click it by text to open the inline form.

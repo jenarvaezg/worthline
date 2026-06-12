@@ -34,11 +34,12 @@ test("puesta al dia: batch update two assets → values persist → headline cha
   await expect(page.getByRole("status")).toHaveText("Activo añadido.");
 
   // 2. Note the headline before update
+  //    (500€ seed + 5000€ test 03 + 3000€ just created = 8500€)
   await page.goto("/");
   const headlineBeforeMinor = parseEuroMinor(
     await page.locator(".headline strong").textContent(),
   );
-  expect(headlineBeforeMinor).toBe(8000_00);
+  expect(headlineBeforeMinor).toBe(8500_00);
 
   // 3. Open the "Puesta al día" form
   await page.goto("/patrimonio/actualizar");
@@ -56,11 +57,12 @@ test("puesta al dia: batch update two assets → values persist → headline cha
   await expect(page.getByRole("status")).toContainText("Valores actualizados");
 
   // 7. Back on /, headline should show the exact updated net worth
+  //    (500€ seed + 8000€ + 4000€ = 12500€)
   await page.goto("/");
   const headlineAfterMinor = parseEuroMinor(
     await page.locator(".headline strong").textContent(),
   );
-  expect(headlineAfterMinor).toBe(12000_00);
+  expect(headlineAfterMinor).toBe(12500_00);
   expect(headlineAfterMinor).toBeGreaterThan(headlineBeforeMinor);
 
   // 8. Verify changes persist after a full reload of the form

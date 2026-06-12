@@ -10,8 +10,11 @@ export default async function globalSetup(): Promise<void> {
   const store = createWorthlineStore({ databasePath });
 
   store.workspace.initializeWorkspace({
-    mode: "individual",
-    members: [{ id: "member_seed", name: "Seed" }],
+    mode: "household",
+    members: [
+      { id: "member_seed", name: "Seed" },
+      { id: "member_socio", name: "Socio" },
+    ],
   });
 
   store.assets.createManualAsset({
@@ -21,7 +24,10 @@ export default async function globalSetup(): Promise<void> {
     currency: "EUR",
     currentValueMinor: 50_000,
     liquidityTier: "cash",
-    ownership: [{ memberId: "member_seed", shareBps: 10_000 }],
+    ownership: [
+      { memberId: "member_seed", shareBps: 5000 },
+      { memberId: "member_socio", shareBps: 5000 },
+    ],
   });
 
   const yesterday = new Date();

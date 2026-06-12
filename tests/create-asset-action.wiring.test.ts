@@ -111,4 +111,51 @@ describe("createAssetAction wiring", () => {
     // Store state: nothing persisted
     expect(store.assets.readAssets()).toHaveLength(0);
   });
+
+  test("real estate creation persists acquisition anchor, optional rate and initial valuation", async () => {
+    store = createInMemoryStore();
+    store.workspace.initializeWorkspace({
+      members: [{ id: "member_yo", name: "Yo" }],
+      mode: "individual",
+    });
+
+    const fd = buildAssetFormData({
+      acquisitionDate: "2020-05-10",
+      acquisitionValue: "180000",
+      currentValue: "999999",
+      initialAdjustsPriorCurve: "on",
+      initialValuationDate: "2024-03-15",
+      initialValuationValue: "210000",
+      name: "Piso Centro",
+      rate: "3",
+      type: "real_estate",
+    });
+
+    const redirectUrl = await catchRedirect(() => createAssetAction(fd, store));
+
+    expect(redirectUrl).toContain("ok=asset_added");
+
+    const [asset] = store.assets.readAssets();
+    expect(asset).toMatchObject({
+      currentValue: { amountMinor: 18_000_000, currency: "EUR" },
+      liquidityTier: "housing",
+      name: "Piso Centro",
+      type: "real_estate",
+    });
+
+    const anchors = store.assets.readValuationAnchors(asset!.id);
+    expect(anchors).toEqual([
+      expect.objectContaining({
+        adjustsPriorCurve: true,
+        valuationDate: "2020-05-10",
+        valueMinor: 18_000_000,
+      }),
+      expect.objectContaining({
+        adjustsPriorCurve: true,
+        valuationDate: "2024-03-15",
+        valueMinor: 21_000_000,
+      }),
+    ]);
+    expect(store.assets.readAnnualAppreciationRate(asset!.id)).toBe("0.03");
+  });
 });

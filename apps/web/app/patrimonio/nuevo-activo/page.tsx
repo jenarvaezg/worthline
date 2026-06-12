@@ -115,34 +115,18 @@ export default async function NuevoActivoPage({
           </label>
 
           <label>
-            Valor actual (EUR)
-            <input
-              aria-label="Valor actual en EUR"
-              defaultValue={values["currentValue"]}
-              inputMode="decimal"
-              name="currentValue"
-              placeholder="p.ej. 12500,00"
-            />
-            <small>Usa coma como separador decimal: 12.500,00</small>
-          </label>
-
-          <label>
             Capa de liquidez
             <details className="tierHelp">
               <summary>¿Qué es la capa de liquidez?</summary>
               <dl>
                 <dt>Caja</dt>
-                <dd>
-                  Efectivo, cuentas corrientes y de ahorro. Disponible de inmediato.
-                </dd>
+                <dd>Efectivo, cuentas corrientes y de ahorro. Disponible de inmediato.</dd>
                 <dt>Mercado</dt>
                 <dd>Acciones, fondos, ETFs y similares. Liquidable en días.</dd>
                 <dt>Jubilación</dt>
                 <dd>Planes de pensiones y activos con restricciones de retirada.</dd>
                 <dt>Ilíquido</dt>
-                <dd>
-                  Arte, vehículos, participaciones privadas. Difícil de vender rápido.
-                </dd>
+                <dd>Arte, vehículos, participaciones privadas. Difícil de vender rápido.</dd>
                 <dt>Vivienda</dt>
                 <dd>Inmuebles residenciales. Incluye vivienda habitual.</dd>
               </dl>
@@ -156,6 +140,20 @@ export default async function NuevoActivoPage({
             </select>
           </label>
 
+          <label>
+            Valor actual (EUR)
+            <input
+              aria-label="Valor actual en EUR"
+              defaultValue={values["currentValue"]}
+              inputMode="decimal"
+              name="currentValue"
+              placeholder="p.ej. 12500,00"
+            />
+            <small>
+              Para inmuebles se usa el precio de adquisición como valor base.
+            </small>
+          </label>
+
           <label className="checkLine">
             <input
               defaultChecked={values["isPrimaryResidence"] === "on"}
@@ -164,6 +162,85 @@ export default async function NuevoActivoPage({
             />{" "}
             Vivienda habitual
           </label>
+
+          <fieldset className="ownershipGrid">
+            <legend>Datos de inmueble</legend>
+            <p className="infoNote">
+              Si el tipo es Inmueble, la fecha y el precio de adquisición crean
+              la primera tasación de mercado y sustituyen al valor actual como
+              base inicial.
+            </p>
+            <label>
+              Fecha de adquisición
+              <input
+                aria-label="Fecha de adquisición"
+                defaultValue={values["acquisitionDate"]}
+                max={new Date().toISOString().slice(0, 10)}
+                name="acquisitionDate"
+                type="date"
+              />
+            </label>
+            <label>
+              Precio de adquisición (EUR)
+              <input
+                aria-label="Precio de adquisición en EUR"
+                defaultValue={values["acquisitionValue"]}
+                inputMode="decimal"
+                name="acquisitionValue"
+                placeholder="p.ej. 180.000,00"
+              />
+            </label>
+            <label>
+              Tasa de revalorización anual (%)
+              <input
+                aria-label="Tasa de revalorización anual (%)"
+                defaultValue={values["rate"]}
+                inputMode="decimal"
+                name="rate"
+                placeholder="3"
+              />
+              <small>Déjalo en blanco para no aplicar revalorización entre tasaciones.</small>
+            </label>
+            <details className="valuationDetails">
+              <summary>Añadir tasación inicial</summary>
+              <div className="ownerCustom">
+                <label>
+                  Fecha de la tasación
+                  <input
+                    aria-label="Fecha de la tasación"
+                    defaultValue={values["initialValuationDate"]}
+                    max={new Date().toISOString().slice(0, 10)}
+                    name="initialValuationDate"
+                    type="date"
+                  />
+                </label>
+                <label>
+                  Valor de la tasación (EUR)
+                  <input
+                    aria-label="Valor de la tasación en EUR"
+                    defaultValue={values["initialValuationValue"]}
+                    inputMode="decimal"
+                    name="initialValuationValue"
+                    placeholder="p.ej. 210.000,00"
+                  />
+                </label>
+                <label className="checkLine">
+                  <input
+                    defaultChecked={values["initialAdjustsPriorCurve"] === "on"}
+                    name="initialAdjustsPriorCurve"
+                    type="checkbox"
+                  />{" "}
+                  Es una tasación de mercado
+                </label>
+                <p className="infoNote">
+                  <strong>Tasación de mercado:</strong> una valoración real del
+                  inmueble que recalibra toda la curva previa.{" "}
+                  <strong>Mejora:</strong> una inversión que se suma al valor
+                  existente sin reemplazar las tasaciones anteriores.
+                </p>
+              </div>
+            </details>
+          </fieldset>
 
           <OwnershipInputs
             members={activeMembers}
