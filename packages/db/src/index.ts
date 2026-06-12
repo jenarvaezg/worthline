@@ -10,7 +10,6 @@ import type {
   CreateInvestmentOperationInput,
   CreateLiabilityInput,
   CreateManualAssetInput,
-  DomainWarning,
   ExportedAsset,
   ExportedLiability,
   ExportedSnapshot,
@@ -23,7 +22,6 @@ import type {
   ManualAsset,
   NetWorthSnapshot,
   OwnershipShare,
-  PositionSummary,
   SnapshotHoldingKind,
   SnapshotHoldingRow,
   WarningOverride,
@@ -41,17 +39,14 @@ import {
   createWorkspace,
   defaultInvestmentPriceProvider,
   deriveInvestmentValuation,
-  derivePosition,
   historicalCapturedAt,
   listScopeOptions,
   recalculateSnapshotForAsset,
-  selectInvestmentPrice,
-  resolveScopeMemberIds,
   serializeWorkspaceExport,
 } from "@worthline/domain";
 import Database from "better-sqlite3";
 import type { Database as DatabaseConnection } from "better-sqlite3";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { asc, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
@@ -70,10 +65,37 @@ import {
   memberGroupMembers,
   memberGroups,
   members,
-  snapshots,
   workspace as workspaceTable,
 } from "./schema";
 import { migrate } from "./migrate";
+import {
+  createSnapshotStore,
+  readSnapshotHoldings,
+  readSnapshots,
+  type PositionView,
+  type SaveSnapshotInput,
+  type SnapshotHoldingQuery,
+  type SnapshotHoldingRecord,
+  type SnapshotStore,
+} from "./snapshot-store";
+import {
+  createStoreContext,
+  groupOwnershipByOwner,
+  readAllOperations,
+  readAllPriceCache,
+  readAssetOwnerships,
+  readInvestmentMeta,
+  toOperation,
+  type InvestmentMeta,
+} from "./store-context";
+
+export type {
+  PositionView,
+  SaveSnapshotInput,
+  SnapshotHoldingQuery,
+  SnapshotHoldingRecord,
+  SnapshotStore,
+} from "./snapshot-store";
 
 const bootstrapKey = "bootstrap.last_healthcheck_at";
 
@@ -119,33 +141,6 @@ export interface InitializeWorkspaceInput {
   groups?: MemberGroup[];
 }
 
-export interface SaveSnapshotInput {
-  snapshot: NetWorthSnapshot;
-  replace?: boolean;
-  /**
-   * The valued portfolio behind the snapshot's figures (ADR 0008) — saved
-   * atomically with the snapshot row. Must reconcile exactly with the
-   * snapshot's headline gross assets and debts or the save throws and
-   * persists nothing.
-   */
-  holdings?: SnapshotHoldingRow[];
-}
-
-/** Filter for reading frozen holding rows: by scope and optional date-key window (inclusive). */
-export interface SnapshotHoldingQuery {
-  scopeId?: string;
-  from?: string;
-  to?: string;
-}
-
-/** A frozen holding row joined with its snapshot's identity and date. */
-export interface SnapshotHoldingRecord extends SnapshotHoldingRow {
-  snapshotId: string;
-  scopeId: string;
-  dateKey: string;
-  capturedAt: string;
-}
-
 export interface CreateInvestmentAssetInput {
   id: string;
   name: string;
@@ -157,11 +152,6 @@ export interface CreateInvestmentAssetInput {
   priceProvider?: InvestmentPriceProvider;
   providerSymbol?: string;
   manualPricePerUnit?: DecimalString;
-}
-
-/** A derived position plus the asset name, for the dashboard positions table. */
-export interface PositionView extends PositionSummary {
-  name: string;
 }
 
 export interface AuditLogEntry {
@@ -329,6 +319,9 @@ export interface WorthlineStore {
   restoreLiability: (liabilityId: string) => number;
   saveFireConfig: (scopeId: string, config: FireScopeConfig) => void;
   saveSnapshot: (input: SaveSnapshotInput) => void;
+  /** Focused snapshot & position store (Slice R1). The legacy saveSnapshot,
+   *  readSnapshots, readSnapshotHoldings, and readPositions methods delegate here. */
+  snapshots: SnapshotStore;
   softDeleteAsset: (assetId: string, deletedAt: string) => number;
   softDeleteLiability: (liabilityId: string, deletedAt: string) => number;
   updateAsset: (assetId: string, input: UpdateAssetInput) => void;
@@ -417,25 +410,12 @@ export function createWorthlineStore(
 }
 
 function buildStore(sqlite: DatabaseConnection): WorthlineStore {
-  const writeAuditEntry = (
-    action: string,
-    entityType: string,
-    entityId: string,
-    details: Record<string, unknown> = {},
-  ): void => {
-    sqlite
-      .prepare(
-        `INSERT INTO audit_log (id, action, entity_type, entity_id, details_json)
-         VALUES (@id, @action, @entityType, @entityId, @detailsJson)`,
-      )
-      .run({
-        action,
-        detailsJson: JSON.stringify(details),
-        entityId,
-        entityType,
-        id: randomUUID(),
-      });
-  };
+  // Shared substrate for the extracted *-Store slices (R1–R5, PRD #120): the
+  // connection, id generation, transaction wrapping, audit logging, and the
+  // per-unit-of-work workspace cache all live in one place.
+  const ctx = createStoreContext(sqlite, readWorkspace);
+  const { writeAuditEntry } = ctx;
+  const snapshotStore = createSnapshotStore(ctx);
 
   // Hard-delete one trashed asset in the caller's transaction. Captures the
   // entity's key data for the audit trail BEFORE destroying it; FK cascades
@@ -517,21 +497,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
     return result.changes;
   };
 
-  // Per-unit-of-work workspace cache. readWorkspace, readAssets, and
-  // readLiabilities all need the workspace, but it only changes on membership
-  // writes — so cache it for the store's (short) lifetime and invalidate on
-  // those writes. A single page render then reads it once instead of three times.
-  let cachedWorkspace: Workspace | null | undefined;
-  const getWorkspace = (): Workspace | null => {
-    if (cachedWorkspace === undefined) {
-      cachedWorkspace = readWorkspace(sqlite);
-    }
-
-    return cachedWorkspace;
-  };
-  const invalidateWorkspace = (): void => {
-    cachedWorkspace = undefined;
-  };
+  const { getWorkspace, invalidateWorkspace } = ctx;
 
   const store: WorthlineStore = {
     close: () => {
@@ -970,8 +936,9 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
     },
     readLiabilities: () => readLiabilities(sqlite, getWorkspace()),
     readOperations: (assetId) => readOperations(sqlite, assetId),
-    readPositions: (scopeId) => readPositions(sqlite, getWorkspace(), scopeId),
-    readSnapshots: (scopeId) => readSnapshots(sqlite, scopeId),
+    readPositions: (scopeId) => snapshotStore.readPositions(scopeId),
+    readSnapshots: (scopeId) => snapshotStore.readSnapshots(scopeId),
+    snapshots: snapshotStore,
     readWorkspace: () => getWorkspace(),
     recordOperation: (input) => {
       const operation = createInvestmentOperation(input);
@@ -1034,166 +1001,8 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         })
         .run();
     },
-    saveSnapshot: (input) => {
-      const snapshot = input.snapshot;
-
-      // Reconciliation invariant (ADR 0008): verify before ANY write so a
-      // capture whose rows contradict its own figures persists nothing.
-      if (input.holdings) {
-        assertSnapshotHoldingsReconcile(input.holdings, {
-          debtsMinor: snapshot.debts.amountMinor,
-          grossAssetsMinor: snapshot.grossAssets.amountMinor,
-        });
-      }
-
-      const save = sqlite.transaction(() => {
-        if (snapshot.isMonthlyClose) {
-          sqlite
-            .prepare(
-              `
-              UPDATE snapshots
-              SET is_monthly_close = 0
-              WHERE scope_id = ? AND month_key = ?
-            `,
-            )
-            .run(snapshot.scopeId, snapshot.monthKey);
-        }
-
-        // Upsert on (scope_id, date_key): concurrent first-loads degrade
-        // gracefully — the second write updates rather than throwing.
-        // explicit replace flag keeps the old id-based delete path for callers
-        // that need to force a specific snapshot id.
-        //
-        // Either way the same-day snapshot is superseded, so its holding rows
-        // go with it — at most one set of rows per scope per day. The delete
-        // must run before the upsert because the upsert rewrites the parent
-        // snapshot id that the rows' foreign key points at.
-        const existing = sqlite
-          .prepare(`SELECT id FROM snapshots WHERE scope_id = ? AND date_key = ?`)
-          .get(snapshot.scopeId, snapshot.dateKey) as { id: string } | undefined;
-
-        if (existing) {
-          sqlite
-            .prepare(`DELETE FROM snapshot_holdings WHERE snapshot_id = ?`)
-            .run(existing.id);
-
-          if (input.replace) {
-            sqlite.prepare("DELETE FROM snapshots WHERE id = ?").run(existing.id);
-          }
-        }
-
-        sqlite
-          .prepare(
-            `
-            INSERT INTO snapshots (
-              id,
-              scope_id,
-              scope_label,
-              captured_at,
-              date_key,
-              month_key,
-              is_monthly_close,
-              currency,
-              total_net_worth_minor,
-              liquid_net_worth_minor,
-              housing_equity_minor,
-              gross_assets_minor,
-              debts_minor,
-              warnings_json
-            )
-            VALUES (
-              @id,
-              @scopeId,
-              @scopeLabel,
-              @capturedAt,
-              @dateKey,
-              @monthKey,
-              @isMonthlyClose,
-              @currency,
-              @totalNetWorthMinor,
-              @liquidNetWorthMinor,
-              @housingEquityMinor,
-              @grossAssetsMinor,
-              @debtsMinor,
-              @warningsJson
-            )
-            ON CONFLICT(scope_id, date_key) DO UPDATE SET
-              id = excluded.id,
-              scope_label = excluded.scope_label,
-              captured_at = excluded.captured_at,
-              month_key = excluded.month_key,
-              is_monthly_close = excluded.is_monthly_close,
-              currency = excluded.currency,
-              total_net_worth_minor = excluded.total_net_worth_minor,
-              liquid_net_worth_minor = excluded.liquid_net_worth_minor,
-              housing_equity_minor = excluded.housing_equity_minor,
-              gross_assets_minor = excluded.gross_assets_minor,
-              debts_minor = excluded.debts_minor,
-              warnings_json = excluded.warnings_json
-          `,
-          )
-          .run({
-            capturedAt: snapshot.capturedAt,
-            currency: snapshot.totalNetWorth.currency,
-            dateKey: snapshot.dateKey,
-            debtsMinor: snapshot.debts.amountMinor,
-            grossAssetsMinor: snapshot.grossAssets.amountMinor,
-            housingEquityMinor: snapshot.housingEquity.amountMinor,
-            id: snapshot.id,
-            isMonthlyClose: snapshot.isMonthlyClose ? 1 : 0,
-            liquidNetWorthMinor: snapshot.liquidNetWorth.amountMinor,
-            monthKey: snapshot.monthKey,
-            scopeId: snapshot.scopeId,
-            scopeLabel: snapshot.scopeLabel,
-            totalNetWorthMinor: snapshot.totalNetWorth.amountMinor,
-            warningsJson: JSON.stringify(snapshot.warnings),
-          });
-
-        if (input.holdings && input.holdings.length > 0) {
-          const insertHolding = sqlite.prepare(`
-            INSERT INTO snapshot_holdings (
-              id,
-              snapshot_id,
-              holding_id,
-              kind,
-              label,
-              liquidity_tier,
-              value_minor,
-              units,
-              unit_price
-            )
-            VALUES (
-              @id,
-              @snapshotId,
-              @holdingId,
-              @kind,
-              @label,
-              @liquidityTier,
-              @valueMinor,
-              @units,
-              @unitPrice
-            )
-          `);
-
-          for (const row of input.holdings) {
-            insertHolding.run({
-              holdingId: row.holdingId,
-              id: randomUUID(),
-              kind: row.kind,
-              label: row.label,
-              liquidityTier: row.liquidityTier,
-              snapshotId: snapshot.id,
-              unitPrice: row.unitPrice ?? null,
-              units: row.units ?? null,
-              valueMinor: row.valueMinor,
-            });
-          }
-        }
-      });
-
-      save();
-    },
-    readSnapshotHoldings: (query) => readSnapshotHoldings(sqlite, query),
+    saveSnapshot: (input) => snapshotStore.saveSnapshot(input),
+    readSnapshotHoldings: (query) => snapshotStore.readSnapshotHoldings(query),
     exportWorkspace: () => buildWorkspaceExport(sqlite, getWorkspace()),
     batchApplyValueUpdates: (commands) => {
       if (commands.length === 0) return;
@@ -2508,10 +2317,6 @@ function readAssets(
   );
 }
 
-interface InvestmentMeta {
-  manualPricePerUnit?: DecimalString;
-}
-
 /** The derived current value of an investment asset: market value if a price is
  *  known, otherwise its remaining cost basis (book value). */
 function investmentValueMinor(
@@ -2530,29 +2335,6 @@ function investmentValueMinor(
   }).valueMinor;
 }
 
-function readAllOperations(
-  sqlite: DatabaseConnection,
-): Map<string, InvestmentOperation[]> {
-  const rows = drizzle(sqlite)
-    .select()
-    .from(assetOperations)
-    .orderBy(asc(assetOperations.executedAt), asc(assetOperations.id))
-    .all();
-
-  return rows.reduce((byAsset, row) => {
-    const operation = toOperation(row);
-    const existing = byAsset.get(row.assetId);
-
-    if (existing) {
-      existing.push(operation);
-    } else {
-      byAsset.set(row.assetId, [operation]);
-    }
-
-    return byAsset;
-  }, new Map<string, InvestmentOperation[]>());
-}
-
 function readOperations(
   sqlite: DatabaseConnection,
   assetId: string,
@@ -2564,121 +2346,6 @@ function readOperations(
     .orderBy(asc(assetOperations.executedAt), asc(assetOperations.id))
     .all()
     .map(toOperation);
-}
-
-function toOperation(row: typeof assetOperations.$inferSelect): InvestmentOperation {
-  return {
-    assetId: row.assetId,
-    currency: row.currency,
-    executedAt: row.executedAt,
-    feesMinor: row.feesMinor,
-    id: row.id,
-    kind: row.kind,
-    pricePerUnit: row.pricePerUnit,
-    units: row.units,
-  };
-}
-
-function readInvestmentMeta(sqlite: DatabaseConnection): Map<string, InvestmentMeta> {
-  const rows = drizzle(sqlite)
-    .select({
-      assetId: investmentAssets.assetId,
-      manualPricePerUnit: investmentAssets.manualPricePerUnit,
-    })
-    .from(investmentAssets)
-    .all();
-
-  return rows.reduce((byAsset, row) => {
-    byAsset.set(
-      row.assetId,
-      row.manualPricePerUnit ? { manualPricePerUnit: row.manualPricePerUnit } : {},
-    );
-
-    return byAsset;
-  }, new Map<string, InvestmentMeta>());
-}
-
-function readPositions(
-  sqlite: DatabaseConnection,
-  workspace: Workspace | null,
-  scopeId?: string,
-): PositionView[] {
-  if (!workspace) {
-    return [];
-  }
-
-  const rows = drizzle(sqlite)
-    .select({ currency: assets.currency, id: assets.id, name: assets.name })
-    .from(assets)
-    .where(and(eq(assets.type, "investment"), isNull(assets.deletedAt)))
-    .orderBy(asc(assets.createdAt), asc(assets.id))
-    .all();
-
-  if (rows.length === 0) {
-    return [];
-  }
-
-  const ownershipByAsset = readAssetOwnerships(sqlite);
-  const operationsByAsset = readAllOperations(sqlite);
-  const metaByAsset = readInvestmentMeta(sqlite);
-  const priceCacheByAsset = readAllPriceCache(sqlite);
-  const scopeMemberIds = scopeId
-    ? new Set(resolveScopeMemberIds(workspace, scopeId))
-    : null;
-
-  const views: PositionView[] = [];
-
-  for (const row of rows) {
-    const ownership = ownershipByAsset.get(row.id) ?? [];
-
-    if (
-      scopeMemberIds &&
-      !ownership.some((share) => scopeMemberIds.has(share.memberId))
-    ) {
-      continue;
-    }
-
-    // Price-selection rule is owned by selectInvestmentPrice (ADR 0006).
-    // We need the full PositionSummary for the positions table view, so we call
-    // derivePosition with the price that selectInvestmentPrice picks.
-    const selected = selectInvestmentPrice({
-      cachedPrice: priceCacheByAsset.get(row.id)?.price,
-      manualPrice: metaByAsset.get(row.id)?.manualPricePerUnit,
-    });
-    const position = derivePosition(operationsByAsset.get(row.id) ?? [], {
-      assetId: row.id,
-      currency: row.currency,
-      ...(selected ? { currentPricePerUnit: selected.pricePerUnit } : {}),
-    });
-
-    views.push({ ...position, name: row.name });
-  }
-
-  return views;
-}
-
-function readAllPriceCache(sqlite: DatabaseConnection): Map<string, { price: string }> {
-  const rows = drizzle(sqlite).select().from(assetPriceCache).all();
-
-  return rows.reduce((map, row) => {
-    map.set(row.assetId, { price: row.price });
-    return map;
-  }, new Map<string, { price: string }>());
-}
-
-/** All asset ownership rows in one query, grouped by asset id (member order preserved). */
-function readAssetOwnerships(sqlite: DatabaseConnection): Map<string, OwnershipShare[]> {
-  const rows = drizzle(sqlite)
-    .select({
-      assetId: assetOwnerships.assetId,
-      memberId: assetOwnerships.memberId,
-      shareBps: assetOwnerships.shareBps,
-    })
-    .from(assetOwnerships)
-    .orderBy(asc(assetOwnerships.assetId), asc(assetOwnerships.memberId))
-    .all();
-
-  return groupOwnershipByOwner(rows, (row) => row.assetId);
 }
 
 function readLiabilities(
@@ -2732,141 +2399,6 @@ function readLiabilityOwnerships(
     .all();
 
   return groupOwnershipByOwner(rows, (row) => row.liabilityId);
-}
-
-/** Group flat ownership rows into a map keyed by their owning entity id. */
-function groupOwnershipByOwner<Row extends { memberId: string; shareBps: number }>(
-  rows: Row[],
-  ownerIdOf: (row: Row) => string,
-): Map<string, OwnershipShare[]> {
-  const byOwner = new Map<string, OwnershipShare[]>();
-
-  for (const row of rows) {
-    const ownerId = ownerIdOf(row);
-    const share: OwnershipShare = { memberId: row.memberId, shareBps: row.shareBps };
-    const existing = byOwner.get(ownerId);
-
-    if (existing) {
-      existing.push(share);
-    } else {
-      byOwner.set(ownerId, [share]);
-    }
-  }
-
-  return byOwner;
-}
-
-function readSnapshots(sqlite: DatabaseConnection, scopeId?: string): NetWorthSnapshot[] {
-  const db = drizzle(sqlite);
-  const rows = scopeId
-    ? db
-        .select()
-        .from(snapshots)
-        .where(eq(snapshots.scopeId, scopeId))
-        .orderBy(asc(snapshots.capturedAt), asc(snapshots.id))
-        .all()
-    : db
-        .select()
-        .from(snapshots)
-        .orderBy(asc(snapshots.capturedAt), asc(snapshots.id))
-        .all();
-
-  return rows.map((row) => ({
-    capturedAt: row.capturedAt,
-    dateKey: row.dateKey,
-    debts: { amountMinor: row.debtsMinor, currency: row.currency },
-    grossAssets: { amountMinor: row.grossAssetsMinor, currency: row.currency },
-    housingEquity: { amountMinor: row.housingEquityMinor, currency: row.currency },
-    id: row.id,
-    isMonthlyClose: row.isMonthlyClose === 1,
-    liquidNetWorth: { amountMinor: row.liquidNetWorthMinor, currency: row.currency },
-    monthKey: row.monthKey,
-    scopeId: row.scopeId,
-    scopeLabel: row.scopeLabel,
-    totalNetWorth: { amountMinor: row.totalNetWorthMinor, currency: row.currency },
-    warnings: JSON.parse(row.warningsJson) as DomainWarning[],
-  }));
-}
-
-interface SnapshotHoldingDbRow {
-  capturedAt: string;
-  dateKey: string;
-  holdingId: string;
-  kind: SnapshotHoldingKind;
-  label: string;
-  liquidityTier: LiquidityTier | null;
-  scopeId: string;
-  snapshotId: string;
-  unitPrice: string | null;
-  units: string | null;
-  valueMinor: number;
-}
-
-/**
- * Read frozen holding rows (ADR 0008), optionally filtered by scope and by an
- * inclusive date-key window. Rows are joined with their snapshot for identity
- * and ordering — chronological, then assets before liabilities, then by the
- * frozen label for a stable presentation order.
- */
-function readSnapshotHoldings(
-  sqlite: DatabaseConnection,
-  query: SnapshotHoldingQuery = {},
-): SnapshotHoldingRecord[] {
-  const conditions: string[] = [];
-  const params: unknown[] = [];
-
-  if (query.scopeId !== undefined) {
-    conditions.push("s.scope_id = ?");
-    params.push(query.scopeId);
-  }
-
-  if (query.from !== undefined) {
-    conditions.push("s.date_key >= ?");
-    params.push(query.from);
-  }
-
-  if (query.to !== undefined) {
-    conditions.push("s.date_key <= ?");
-    params.push(query.to);
-  }
-
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-  const rows = sqlite
-    .prepare(
-      `
-      SELECT
-        h.snapshot_id AS snapshotId,
-        s.scope_id AS scopeId,
-        s.date_key AS dateKey,
-        s.captured_at AS capturedAt,
-        h.holding_id AS holdingId,
-        h.kind AS kind,
-        h.label AS label,
-        h.liquidity_tier AS liquidityTier,
-        h.value_minor AS valueMinor,
-        h.units AS units,
-        h.unit_price AS unitPrice
-      FROM snapshot_holdings h
-      JOIN snapshots s ON s.id = h.snapshot_id
-      ${where}
-      ORDER BY s.date_key ASC, s.scope_id ASC, h.kind ASC, h.label ASC, h.holding_id ASC
-    `,
-    )
-    .all(...params) as SnapshotHoldingDbRow[];
-
-  return rows.map((row) => ({
-    capturedAt: row.capturedAt,
-    dateKey: row.dateKey,
-    holdingId: row.holdingId,
-    kind: row.kind,
-    label: row.label,
-    liquidityTier: row.liquidityTier,
-    scopeId: row.scopeId,
-    snapshotId: row.snapshotId,
-    valueMinor: row.valueMinor,
-    ...(row.units !== null ? { units: row.units } : {}),
-    ...(row.unitPrice !== null ? { unitPrice: row.unitPrice } : {}),
-  }));
 }
 
 /**
