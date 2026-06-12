@@ -18,7 +18,6 @@ import type {
   MemberGroup,
   ManualAsset,
   NetWorthSnapshot,
-  OwnershipShare,
   SnapshotHoldingKind,
   SnapshotHoldingRow,
   WarningOverride,
@@ -30,7 +29,6 @@ import {
   assertSnapshotHoldingsReconcile,
   buildSnapshotAtDate,
   createInvestmentOperation,
-  createLiability,
   createWorkspace,
   historicalCapturedAt,
   listScopeOptions,
@@ -39,7 +37,7 @@ import {
 } from "@worthline/domain";
 import Database from "better-sqlite3";
 import type { Database as DatabaseConnection } from "better-sqlite3";
-import { asc, eq, isNull } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
@@ -54,7 +52,6 @@ import {
   auditLog,
   investmentAssets,
   liabilities,
-  liabilityOwnerships,
   memberGroupMembers,
   memberGroups,
   members,
@@ -71,6 +68,11 @@ import {
 } from "./asset-store";
 import { migrate } from "./migrate";
 import {
+  createLiabilityStore,
+  type LiabilityStore,
+  type UpdateLiabilityInput,
+} from "./liability-store";
+import {
   createSnapshotStore,
   readSnapshotHoldings,
   readSnapshots,
@@ -82,11 +84,13 @@ import {
 } from "./snapshot-store";
 import {
   createStoreContext,
-  groupOwnershipByOwner,
   hardDeleteAssetTx,
+  hardDeleteLiabilityTx,
   readAllOperations,
   readAssetOwnerships,
   readAssets,
+  readLiabilities,
+  readLiabilityOwnerships,
   toOperation,
 } from "./store-context";
 
@@ -98,6 +102,7 @@ export type {
   UpdateAssetInput,
   UpdateInvestmentAssetInput,
 } from "./asset-store";
+export type { LiabilityStore, UpdateLiabilityInput } from "./liability-store";
 export type {
   PositionView,
   SaveSnapshotInput,
@@ -168,14 +173,6 @@ export interface TrashView {
 export interface ValueUpdateCommand {
   id: string;
   newValueMinor: number;
-}
-
-/** Fields that can be changed when editing an existing liability. */
-export interface UpdateLiabilityInput {
-  name?: string;
-  type?: "mortgage" | "debt";
-  associatedAssetId?: string | null;
-  ownership?: OwnershipShare[];
 }
 
 /** Holdings a member still owns a share of — blocks the member's hard delete. */
@@ -281,6 +278,11 @@ export interface WorthlineStore {
    *  updateInvestmentAsset, softDeleteAsset, restoreAsset, and hardDeleteAsset
    *  methods delegate here. */
   assets: AssetStore;
+  /** Focused liability store (Slice R3). The legacy createLiability,
+   *  readLiabilities, updateLiability, updateLiabilityBalance,
+   *  softDeleteLiability, restoreLiability, and hardDeleteLiability methods
+   *  delegate here. */
+  liabilities: LiabilityStore;
   softDeleteAsset: (assetId: string, deletedAt: string) => number;
   softDeleteLiability: (liabilityId: string, deletedAt: string) => number;
   updateAsset: (assetId: string, input: UpdateAssetInput) => void;
@@ -376,39 +378,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
   const { writeAuditEntry } = ctx;
   const snapshotStore = createSnapshotStore(ctx);
   const assetStore = createAssetStore(ctx);
-
-  // Hard-delete one trashed liability in the caller's transaction. FK cascade
-  // takes its ownerships; snapshots stay frozen. Returns rows removed.
-  const hardDeleteLiabilityTx = (liabilityId: string): number => {
-    const row = sqlite
-      .prepare(`SELECT name, type, deleted_at AS deletedAt FROM liabilities WHERE id = ?`)
-      .get(liabilityId) as
-      | { name: string; type: string; deletedAt: string | null }
-      | undefined;
-
-    if (!row || row.deletedAt === null) {
-      return 0;
-    }
-
-    const ownership = sqlite
-      .prepare(
-        `SELECT member_id AS memberId, share_bps AS shareBps FROM liability_ownerships WHERE liability_id = ?`,
-      )
-      .all(liabilityId);
-
-    sqlite.prepare(`DELETE FROM warning_overrides WHERE entity_id = ?`).run(liabilityId);
-    const result = sqlite
-      .prepare(`DELETE FROM liabilities WHERE id = ?`)
-      .run(liabilityId);
-
-    writeAuditEntry("hard_delete_liability", "liability", liabilityId, {
-      name: row.name,
-      ownership,
-      type: row.type,
-    });
-
-    return result.changes;
-  };
+  const liabilityStore = createLiabilityStore(ctx);
 
   const { getWorkspace, invalidateWorkspace } = ctx;
 
@@ -418,62 +388,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
     },
     readInvestmentAssetById: (assetId) => assetStore.readInvestmentAssetById(assetId),
     updateInvestmentAsset: (input) => assetStore.updateInvestmentAsset(input),
-    createLiability: (input) => {
-      const workspace = getWorkspace();
-
-      if (!workspace) {
-        throw new Error("Workspace must be initialized before creating liabilities.");
-      }
-
-      const liability = createLiability(workspace, input);
-      const insert = sqlite.transaction(() => {
-        sqlite
-          .prepare(
-            `
-            INSERT INTO liabilities (
-              id,
-              name,
-              type,
-              currency,
-              current_balance_minor,
-              associated_asset_id
-            )
-            VALUES (
-              @id,
-              @name,
-              @type,
-              @currency,
-              @currentBalanceMinor,
-              @associatedAssetId
-            )
-          `,
-          )
-          .run({
-            associatedAssetId: liability.associatedAssetId ?? null,
-            currency: liability.currency,
-            currentBalanceMinor: liability.currentBalance.amountMinor,
-            id: liability.id,
-            name: liability.name,
-            type: liability.type,
-          });
-
-        const insertOwnership = sqlite.prepare(`
-          INSERT INTO liability_ownerships (liability_id, member_id, share_bps)
-          VALUES (@liabilityId, @memberId, @shareBps)
-        `);
-
-        for (const share of liability.ownership) {
-          insertOwnership.run({
-            liabilityId: liability.id,
-            memberId: share.memberId,
-            shareBps: share.shareBps,
-          });
-        }
-      });
-
-      insert();
-      writeAuditEntry("create_liability", "liability", liability.id);
-    },
+    createLiability: (input) => liabilityStore.createLiability(input),
     createManualAsset: (input) => assetStore.createManualAsset(input),
     createInvestmentAsset: (input) => assetStore.createInvestmentAsset(input),
     createMember: (member) => {
@@ -595,7 +510,8 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
 
       return JSON.parse(row.value) as Record<string, FireScopeConfig>;
     },
-    readLiabilities: () => readLiabilities(sqlite, getWorkspace()),
+    readLiabilities: () => liabilityStore.readLiabilities(),
+    liabilities: liabilityStore,
     readOperations: (assetId) => readOperations(sqlite, assetId),
     readPositions: (scopeId) => snapshotStore.readPositions(scopeId),
     readSnapshots: (scopeId) => snapshotStore.readSnapshots(scopeId),
@@ -724,76 +640,10 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
     updateAsset: (assetId, input) => assetStore.updateAsset(assetId, input),
     updateAssetValuation: (assetId, currentValueMinor) =>
       assetStore.updateAssetValuation(assetId, currentValueMinor),
-    updateLiability: (liabilityId, input) => {
-      const updates: string[] = [];
-      const params: unknown[] = [];
-
-      if (input.name !== undefined) {
-        updates.push("name = ?");
-        params.push(input.name);
-      }
-
-      if (input.type !== undefined) {
-        updates.push("type = ?");
-        params.push(input.type);
-      }
-
-      if (input.associatedAssetId !== undefined) {
-        updates.push("associated_asset_id = ?");
-        params.push(input.associatedAssetId);
-      }
-
-      const editLiability = sqlite.transaction(() => {
-        if (updates.length > 0) {
-          updates.push("updated_at = CURRENT_TIMESTAMP");
-          params.push(liabilityId);
-          sqlite
-            .prepare(`UPDATE liabilities SET ${updates.join(", ")} WHERE id = ?`)
-            .run(...params);
-        }
-
-        if (input.ownership !== undefined) {
-          sqlite
-            .prepare(`DELETE FROM liability_ownerships WHERE liability_id = ?`)
-            .run(liabilityId);
-
-          const insertOwnership = sqlite.prepare(`
-            INSERT INTO liability_ownerships (liability_id, member_id, share_bps)
-            VALUES (@liabilityId, @memberId, @shareBps)
-          `);
-
-          for (const share of input.ownership) {
-            insertOwnership.run({
-              liabilityId,
-              memberId: share.memberId,
-              shareBps: share.shareBps,
-            });
-          }
-        }
-      });
-
-      editLiability();
-      writeAuditEntry("update_liability", "liability", liabilityId, {
-        ...input,
-        ownership: undefined,
-      });
-    },
-    updateLiabilityBalance: (liabilityId, balanceMinor) => {
-      if (!Number.isInteger(balanceMinor)) {
-        throw new Error("Money must be stored as integer minor units.");
-      }
-
-      sqlite
-        .prepare(
-          `
-          UPDATE liabilities
-          SET current_balance_minor = ?, updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `,
-        )
-        .run(balanceMinor, liabilityId);
-      writeAuditEntry("update_balance", "liability", liabilityId, { balanceMinor });
-    },
+    updateLiability: (liabilityId, input) =>
+      liabilityStore.updateLiability(liabilityId, input),
+    updateLiabilityBalance: (liabilityId, balanceMinor) =>
+      liabilityStore.updateLiabilityBalance(liabilityId, balanceMinor),
     updateMember: (member) => {
       sqlite
         .prepare(
@@ -911,29 +761,11 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         )
         .all() as Array<{ id: string; name: string }>,
     }),
-    softDeleteLiability: (liabilityId, deletedAt) => {
-      const result = sqlite
-        .prepare(`UPDATE liabilities SET deleted_at = ? WHERE id = ?`)
-        .run(deletedAt, liabilityId);
-      if (result.changes > 0) {
-        writeAuditEntry("delete_liability", "liability", liabilityId, { deletedAt });
-      }
-      return result.changes;
-    },
-    restoreLiability: (liabilityId) => {
-      const result = sqlite
-        .prepare(
-          `UPDATE liabilities SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL`,
-        )
-        .run(liabilityId);
-      if (result.changes > 0) {
-        writeAuditEntry("restore_liability", "liability", liabilityId);
-      }
-      return result.changes;
-    },
+    softDeleteLiability: (liabilityId, deletedAt) =>
+      liabilityStore.softDeleteLiability(liabilityId, deletedAt),
+    restoreLiability: (liabilityId) => liabilityStore.restoreLiability(liabilityId),
     hardDeleteAsset: (assetId) => assetStore.hardDeleteAsset(assetId),
-    hardDeleteLiability: (liabilityId) =>
-      sqlite.transaction(() => hardDeleteLiabilityTx(liabilityId))(),
+    hardDeleteLiability: (liabilityId) => liabilityStore.hardDeleteLiability(liabilityId),
     emptyTrash: () =>
       sqlite.transaction(() => {
         const trashedAssets = sqlite
@@ -947,7 +779,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         let liabilities = 0;
         for (const row of trashedAssets) assets += hardDeleteAssetTx(ctx, row.id);
         for (const row of trashedLiabilities)
-          liabilities += hardDeleteLiabilityTx(row.id);
+          liabilities += hardDeleteLiabilityTx(ctx, row.id);
 
         return { assets, liabilities };
       })(),
@@ -1799,59 +1631,6 @@ function readOperations(
     .orderBy(asc(assetOperations.executedAt), asc(assetOperations.id))
     .all()
     .map(toOperation);
-}
-
-function readLiabilities(
-  sqlite: DatabaseConnection,
-  workspace: Workspace | null,
-): Liability[] {
-  if (!workspace) {
-    return [];
-  }
-
-  const rows = drizzle(sqlite)
-    .select({
-      associatedAssetId: liabilities.associatedAssetId,
-      balanceMinor: liabilities.currentBalanceMinor,
-      currency: liabilities.currency,
-      id: liabilities.id,
-      name: liabilities.name,
-      type: liabilities.type,
-    })
-    .from(liabilities)
-    .where(isNull(liabilities.deletedAt))
-    .orderBy(asc(liabilities.createdAt), asc(liabilities.id))
-    .all();
-  const ownershipByLiability = readLiabilityOwnerships(sqlite);
-
-  return rows.map((row) =>
-    createLiability(workspace, {
-      balanceMinor: row.balanceMinor,
-      currency: row.currency,
-      id: row.id,
-      name: row.name,
-      ownership: ownershipByLiability.get(row.id) ?? [],
-      type: row.type,
-      ...(row.associatedAssetId ? { associatedAssetId: row.associatedAssetId } : {}),
-    }),
-  );
-}
-
-/** All liability ownership rows in one query, grouped by liability id. */
-function readLiabilityOwnerships(
-  sqlite: DatabaseConnection,
-): Map<string, OwnershipShare[]> {
-  const rows = drizzle(sqlite)
-    .select({
-      liabilityId: liabilityOwnerships.liabilityId,
-      memberId: liabilityOwnerships.memberId,
-      shareBps: liabilityOwnerships.shareBps,
-    })
-    .from(liabilityOwnerships)
-    .orderBy(asc(liabilityOwnerships.liabilityId), asc(liabilityOwnerships.memberId))
-    .all();
-
-  return groupOwnershipByOwner(rows, (row) => row.liabilityId);
 }
 
 /**

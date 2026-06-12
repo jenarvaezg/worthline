@@ -1,11 +1,16 @@
 import type {
   DecimalString,
   InvestmentOperation,
+  Liability,
   ManualAsset,
   OwnershipShare,
   Workspace,
 } from "@worthline/domain";
-import { createManualAsset, deriveInvestmentValuation } from "@worthline/domain";
+import {
+  createLiability,
+  createManualAsset,
+  deriveInvestmentValuation,
+} from "@worthline/domain";
 import type { Database as DatabaseConnection } from "better-sqlite3";
 import { asc, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
@@ -17,6 +22,8 @@ import {
   assetPriceCache,
   assets,
   investmentAssets,
+  liabilities,
+  liabilityOwnerships,
 } from "./schema";
 
 /**
@@ -345,6 +352,105 @@ export function hardDeleteAssetTx(ctx: StoreContext, assetId: string): number {
   ctx.writeAuditEntry("hard_delete_asset", "asset", assetId, {
     name: row.name,
     operations,
+    ownership,
+    type: row.type,
+  });
+
+  return result.changes;
+}
+
+/** All liability ownership rows in one query, grouped by liability id. Shared by
+ *  the LiabilityStore (R3) and the monolith's export/historical reconstruction. */
+export function readLiabilityOwnerships(
+  sqlite: DatabaseConnection,
+): Map<string, OwnershipShare[]> {
+  const rows = drizzle(sqlite)
+    .select({
+      liabilityId: liabilityOwnerships.liabilityId,
+      memberId: liabilityOwnerships.memberId,
+      shareBps: liabilityOwnerships.shareBps,
+    })
+    .from(liabilityOwnerships)
+    .orderBy(asc(liabilityOwnerships.liabilityId), asc(liabilityOwnerships.memberId))
+    .all();
+
+  return groupOwnershipByOwner(rows, (row) => row.liabilityId);
+}
+
+/**
+ * Read every live (non-trashed) liability as a domain Liability. Shared by the
+ * LiabilityStore (R3) and the monolith's historical-snapshot reconstruction and
+ * export, so it lives here — the one shared-concerns home — rather than being
+ * duplicated across the slices.
+ */
+export function readLiabilities(
+  sqlite: DatabaseConnection,
+  workspace: Workspace | null,
+): Liability[] {
+  if (!workspace) {
+    return [];
+  }
+
+  const rows = drizzle(sqlite)
+    .select({
+      associatedAssetId: liabilities.associatedAssetId,
+      balanceMinor: liabilities.currentBalanceMinor,
+      currency: liabilities.currency,
+      id: liabilities.id,
+      name: liabilities.name,
+      type: liabilities.type,
+    })
+    .from(liabilities)
+    .where(isNull(liabilities.deletedAt))
+    .orderBy(asc(liabilities.createdAt), asc(liabilities.id))
+    .all();
+  const ownershipByLiability = readLiabilityOwnerships(sqlite);
+
+  return rows.map((row) =>
+    createLiability(workspace, {
+      balanceMinor: row.balanceMinor,
+      currency: row.currency,
+      id: row.id,
+      name: row.name,
+      ownership: ownershipByLiability.get(row.id) ?? [],
+      type: row.type,
+      ...(row.associatedAssetId ? { associatedAssetId: row.associatedAssetId } : {}),
+    }),
+  );
+}
+
+/**
+ * Hard-delete one trashed liability in the caller's transaction. FK cascade
+ * takes its ownerships; snapshots stay frozen (ADR 0008). Returns the number of
+ * liability rows removed (0 when the id is unknown or not in the trash).
+ *
+ * Shared here because both the LiabilityStore (R3, via hardDeleteLiability) and
+ * the monolith's emptyTrash run it — so the trash-delete semantics can never
+ * drift.
+ */
+export function hardDeleteLiabilityTx(ctx: StoreContext, liabilityId: string): number {
+  const { sqlite } = ctx;
+  const row = sqlite
+    .prepare(`SELECT name, type, deleted_at AS deletedAt FROM liabilities WHERE id = ?`)
+    .get(liabilityId) as
+    | { name: string; type: string; deletedAt: string | null }
+    | undefined;
+
+  if (!row || row.deletedAt === null) {
+    return 0;
+  }
+
+  const ownership = sqlite
+    .prepare(
+      `SELECT member_id AS memberId, share_bps AS shareBps FROM liability_ownerships WHERE liability_id = ?`,
+    )
+    .all(liabilityId);
+
+  sqlite.prepare(`DELETE FROM warning_overrides WHERE entity_id = ?`).run(liabilityId);
+  const result = sqlite.prepare(`DELETE FROM liabilities WHERE id = ?`).run(liabilityId);
+
+  ctx.writeAuditEntry("hard_delete_liability", "liability", liabilityId, {
+    name: row.name,
     ownership,
     type: row.type,
   });
