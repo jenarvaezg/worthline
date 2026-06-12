@@ -29,7 +29,7 @@ export default async function PuestaAlDiaPage({
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
   const storeData = withStore((store) => {
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
 
     if (!workspace) {
       return null;
@@ -41,13 +41,13 @@ export default async function PuestaAlDiaPage({
     return {
       // Only manual (non-investment) assets, sorted stalest first via updatedAt
       assets: store
-        .readAssets()
+        .assets.readAssets()
         .filter((a) => a.type !== "investment")
         .sort((a, b) => {
           // Stable fallback: sort by id alphabetically for determinism
           return a.id.localeCompare(b.id);
         }),
-      liabilities: store.readLiabilities(),
+      liabilities: store.liabilities.readLiabilities(),
       scopes,
       selectedScope,
       workspace,

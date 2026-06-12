@@ -182,8 +182,8 @@ export default async function DashboardPage({
           assets,
           nowIso,
           refreshStalePrices,
-          upsertPrice: (price) => store.upsertPrice(price),
-          readCache: () => store.readAllPriceCacheEntries(),
+          upsertPrice: (price) => store.operations.upsertPrice(price),
+          readCache: () => store.operations.readAllPriceCacheEntries(),
         });
       },
     });

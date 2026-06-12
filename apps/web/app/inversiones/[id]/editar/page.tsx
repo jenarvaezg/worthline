@@ -43,19 +43,19 @@ export default async function EditarInversionPage({
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
   const storeData = withStore((store) => {
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
 
     if (!workspace) return null;
 
-    const asset = store.readInvestmentAssetById(assetId);
+    const asset = store.assets.readInvestmentAssetById(assetId);
 
     if (!asset) return null;
 
     const scopes = listScopeOptions(workspace);
     const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
 
-    const operations = store.readOperations(assetId);
-    const positions = store.readPositions();
+    const operations = store.operations.readOperations(assetId);
+    const positions = store.snapshots.readPositions();
     const position = positions.find((p) => p.assetId === assetId);
 
     return {
@@ -68,7 +68,7 @@ export default async function EditarInversionPage({
   });
 
   if (!storeData) {
-    const workspace = withStore((store) => store.readWorkspace());
+    const workspace = withStore((store) => store.workspace.readWorkspace());
 
     if (!workspace) {
       redirect("/empezar");

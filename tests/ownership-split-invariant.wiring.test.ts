@@ -197,7 +197,7 @@ describe("createLiabilitySafe — ownership-split invariant", () => {
 describe("createAssetAction — ownership-split wiring", () => {
   test("valid split (100%) persists the holding and redirects to success", async () => {
     store = createInMemoryStore();
-    store.initializeWorkspace({
+    store.workspace.initializeWorkspace({
       members: [
         { id: "member_ana", name: "Ana" },
         { id: "member_jose", name: "Jose" },
@@ -215,12 +215,12 @@ describe("createAssetAction — ownership-split wiring", () => {
     const redirectUrl = await catchRedirect(() => createAssetAction(fd, store));
 
     expect(redirectUrl).toContain("ok=asset_added");
-    expect(store.readAssets()).toHaveLength(1);
+    expect(store.assets.readAssets()).toHaveLength(1);
   });
 
   test("custom split totaling 120% surfaces the exact Spanish message and persists nothing", async () => {
     store = createInMemoryStore();
-    store.initializeWorkspace({
+    store.workspace.initializeWorkspace({
       members: [
         { id: "member_ana", name: "Ana" },
         { id: "member_jose", name: "Jose" },
@@ -239,14 +239,14 @@ describe("createAssetAction — ownership-split wiring", () => {
 
     expect(redirectUrl).toContain("error=");
     expect(errorMessageOf(redirectUrl)).toBe("La propiedad suma 120% — debe sumar 100%.");
-    expect(store.readAssets()).toHaveLength(0);
+    expect(store.assets.readAssets()).toHaveLength(0);
   });
 });
 
 describe("createLiabilityAction — ownership-split wiring", () => {
   test("valid split (100%) persists the liability and redirects to success", async () => {
     store = createInMemoryStore();
-    store.initializeWorkspace({
+    store.workspace.initializeWorkspace({
       members: [
         { id: "member_ana", name: "Ana" },
         { id: "member_jose", name: "Jose" },
@@ -265,6 +265,6 @@ describe("createLiabilityAction — ownership-split wiring", () => {
     const redirectUrl = await catchRedirect(() => createLiabilityAction(fd, store));
 
     expect(redirectUrl).toContain("ok=liability_added");
-    expect(store.readLiabilities()).toHaveLength(1);
+    expect(store.liabilities.readLiabilities()).toHaveLength(1);
   });
 });

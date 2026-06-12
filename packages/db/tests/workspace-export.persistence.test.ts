@@ -13,7 +13,7 @@ import type { WorthlineStore } from "../src/index";
  * (incl. a trashed investment), and price-cache entries.
  */
 function seedFullWorkspace(store: WorthlineStore): void {
-  store.initializeWorkspace({
+  store.workspace.initializeWorkspace({
     groups: [{ id: "g1", memberIds: ["m1", "m2"], name: "Familia" }],
     members: [
       { id: "m1", name: "Alice" },
@@ -21,10 +21,10 @@ function seedFullWorkspace(store: WorthlineStore): void {
     ],
     mode: "household",
   });
-  store.createMember({ id: "m3", name: "Carol" });
-  store.disableMember("m3", "2026-01-15T00:00:00.000Z");
+  store.workspace.createMember({ id: "m3", name: "Carol" });
+  store.workspace.disableMember("m3", "2026-01-15T00:00:00.000Z");
 
-  store.createManualAsset({
+  store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 500000,
     id: "a_cash",
@@ -33,7 +33,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
     ownership: [{ memberId: "m1", shareBps: 10000 }],
     type: "cash",
   });
-  store.createManualAsset({
+  store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 30000000,
     id: "a_home",
@@ -46,7 +46,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
     ],
     type: "real_estate",
   });
-  store.createInvestmentAsset({
+  store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "a_inv",
     isin: "IE00BK5BQT80",
@@ -60,7 +60,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
     providerSymbol: "VWCE.DE",
     unitSymbol: "VWCE",
   });
-  store.recordOperation({
+  store.operations.recordOperation({
     assetId: "a_inv",
     currency: "EUR",
     executedAt: "2026-01-10T00:00:00.000Z",
@@ -71,7 +71,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
     units: "10",
   });
 
-  store.createLiability({
+  store.liabilities.createLiability({
     associatedAssetId: "a_home",
     balanceMinor: 12000000,
     currency: "EUR",
@@ -106,7 +106,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
     totalNetWorth: { amountMinor: 485500, currency: "EUR" },
     warnings: [],
   };
-  store.saveSnapshot({
+  store.snapshots.saveSnapshot({
     holdings: [
       {
         holdingId: "a_cash",
@@ -137,7 +137,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
 
   // A trashed hand-valued asset, a trashed investment (metadata + operations
   // must survive in the export), and a trashed liability.
-  store.createManualAsset({
+  store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 75000,
     id: "a_old",
@@ -146,16 +146,16 @@ function seedFullWorkspace(store: WorthlineStore): void {
     ownership: [{ memberId: "m2", shareBps: 10000 }],
     type: "manual",
   });
-  store.softDeleteAsset("a_old", "2026-03-01T00:00:00.000Z");
+  store.assets.softDeleteAsset("a_old", "2026-03-01T00:00:00.000Z");
 
-  store.createInvestmentAsset({
+  store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "a_inv2",
     name: "Cripto vieja",
     ownership: [{ memberId: "m1", shareBps: 10000 }],
     unitSymbol: "BTC",
   });
-  store.recordOperation({
+  store.operations.recordOperation({
     assetId: "a_inv2",
     currency: "EUR",
     executedAt: "2026-02-20T00:00:00.000Z",
@@ -164,9 +164,9 @@ function seedFullWorkspace(store: WorthlineStore): void {
     pricePerUnit: "50000",
     units: "0.1",
   });
-  store.softDeleteAsset("a_inv2", "2026-04-01T00:00:00.000Z");
+  store.assets.softDeleteAsset("a_inv2", "2026-04-01T00:00:00.000Z");
 
-  store.createLiability({
+  store.liabilities.createLiability({
     balanceMinor: 30000,
     currency: "EUR",
     id: "l_old",
@@ -174,9 +174,9 @@ function seedFullWorkspace(store: WorthlineStore): void {
     ownership: [{ memberId: "m1", shareBps: 10000 }],
     type: "debt",
   });
-  store.softDeleteLiability("l_old", "2026-04-02T00:00:00.000Z");
+  store.liabilities.softDeleteLiability("l_old", "2026-04-02T00:00:00.000Z");
 
-  store.upsertPrice({
+  store.operations.upsertPrice({
     assetId: "a_inv",
     currency: "EUR",
     fetchedAt: "2026-06-10T18:00:00.000Z",
@@ -185,7 +185,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
     priceDate: "2026-06-10",
     source: "stooq",
   });
-  store.upsertPrice({
+  store.operations.upsertPrice({
     assetId: "a_inv2",
     currency: "EUR",
     fetchedAt: "2026-05-01T00:00:00.000Z",
@@ -201,7 +201,7 @@ describe("exportWorkspace", () => {
     const store = createInMemoryStore();
     seedFullWorkspace(store);
 
-    const doc = store.exportWorkspace();
+    const doc = store.workspace.exportWorkspace();
 
     expect(doc.version).toBe(EXPORT_VERSION);
     expect(doc.workspace).toEqual({ baseCurrency: "EUR", mode: "household" });
@@ -369,20 +369,20 @@ describe("exportWorkspace", () => {
     seedFullWorkspace(store);
 
     const auditBefore = store.readAuditLog();
-    const assetsBefore = store.readAssets();
-    const liabilitiesBefore = store.readLiabilities();
-    const snapshotsBefore = store.readSnapshots();
-    const pricesBefore = store.readAllPriceCacheEntries();
+    const assetsBefore = store.assets.readAssets();
+    const liabilitiesBefore = store.liabilities.readLiabilities();
+    const snapshotsBefore = store.snapshots.readSnapshots();
+    const pricesBefore = store.operations.readAllPriceCacheEntries();
 
-    const first = store.exportWorkspace();
-    const second = store.exportWorkspace();
+    const first = store.workspace.exportWorkspace();
+    const second = store.workspace.exportWorkspace();
 
     expect(second).toEqual(first);
     expect(store.readAuditLog()).toEqual(auditBefore);
-    expect(store.readAssets()).toEqual(assetsBefore);
-    expect(store.readLiabilities()).toEqual(liabilitiesBefore);
-    expect(store.readSnapshots()).toEqual(snapshotsBefore);
-    expect(store.readAllPriceCacheEntries()).toEqual(pricesBefore);
+    expect(store.assets.readAssets()).toEqual(assetsBefore);
+    expect(store.liabilities.readLiabilities()).toEqual(liabilitiesBefore);
+    expect(store.snapshots.readSnapshots()).toEqual(snapshotsBefore);
+    expect(store.operations.readAllPriceCacheEntries()).toEqual(pricesBefore);
 
     store.close();
   });

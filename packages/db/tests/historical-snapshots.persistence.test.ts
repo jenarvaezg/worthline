@@ -15,11 +15,11 @@ import type { WorthlineStore } from "../src/index";
 const TODAY = "2026-06-12";
 
 function seed(store: WorthlineStore): void {
-  store.initializeWorkspace({
+  store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jose" }],
     mode: "individual",
   });
-  store.createInvestmentAsset({
+  store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "fund",
     liquidityTier: "market",
@@ -34,7 +34,7 @@ function recordBuy(
   units: string,
   pricePerUnit: string,
 ): void {
-  store.recordOperation({
+  store.operations.recordOperation({
     assetId: "fund",
     currency: "EUR",
     executedAt,
@@ -54,7 +54,7 @@ function recordBuy(
 
 function grossAt(store: WorthlineStore, dateKey: string): number | undefined {
   return store
-    .readSnapshots()
+    .snapshots.readSnapshots()
     .find((snap) => snap.dateKey === dateKey)
     ?.grossAssets.amountMinor;
 }
@@ -96,7 +96,7 @@ describe("historical snapshots from operations", () => {
     recordBuy(store, TODAY, "3", "100");
     recordBuy(store, "2099-01-01", "3", "100");
 
-    expect(store.readSnapshots()).toHaveLength(0);
+    expect(store.snapshots.readSnapshots()).toHaveLength(0);
     store.close();
   });
 
@@ -104,7 +104,7 @@ describe("historical snapshots from operations", () => {
     const store = createInMemoryStore();
     seed(store);
     // A cash asset keeps every snapshot non-empty after the fund is removed.
-    store.createManualAsset({
+    store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 1_000_00,
       id: "cash",
@@ -121,9 +121,9 @@ describe("historical snapshots from operations", () => {
     expect(grossAt(store, "2024-03-01")).toBe(15 * 200_00 + 1_000_00);
 
     // Delete the 2024-01-10 buy.
-    const ops = store.readOperations("fund");
+    const ops = store.operations.readOperations("fund");
     const target = ops.find((op) => op.executedAt === "2024-01-10")!;
-    const deleted = store.deleteOperation(target.id);
+    const deleted = store.operations.deleteOperation(target.id);
     expect(deleted).not.toBeNull();
     store.rippleHistoricalSnapshotsForOperation({
       assetId: "fund",
@@ -147,7 +147,7 @@ describe("historical snapshots from imported operations (gap-fill)", () => {
     recordBuy(source, "2024-01-10", "10", "100");
     recordBuy(source, "2024-03-01", "5", "200");
 
-    const doc = source.exportWorkspace();
+    const doc = source.workspace.exportWorkspace();
     const marchSnapshot = doc.snapshots.find((s) => s.dateKey === "2024-03-01")!;
     // Simulate a file missing the 2024-01-10 snapshot (a gap) but carrying the
     // 2024-03-01 one — which import must restore intact, never recalculate.
@@ -155,7 +155,7 @@ describe("historical snapshots from imported operations (gap-fill)", () => {
     source.close();
 
     const target = createInMemoryStore();
-    target.importWorkspace(doc);
+    target.workspace.importWorkspace(doc);
 
     // Gap at 2024-01-10 is regenerated.
     expect(grossAt(target, "2024-01-10")).toBe(10 * 100_00);
@@ -170,7 +170,7 @@ describe("ripple preserves frozen history (ADR 0012)", () => {
   test("a ripple never drops a holding that was later trashed", () => {
     const store = createInMemoryStore();
     seed(store);
-    store.createManualAsset({
+    store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 1_000_00,
       id: "cash",
@@ -185,7 +185,7 @@ describe("ripple preserves frozen history (ADR 0012)", () => {
     expect(grossAt(store, "2024-03-01")).toBe(5 * 200_00 + 1_000_00);
 
     // Trash the cash account — a present-state edit; frozen snapshots must not move.
-    store.softDeleteAsset("cash", "2026-06-10T00:00:00.000Z");
+    store.assets.softDeleteAsset("cash", "2026-06-10T00:00:00.000Z");
 
     // A backdated fund operation ripples 2024-03-01. The fund row updates; the
     // (now trashed) cash row must survive in that frozen snapshot.
@@ -202,8 +202,8 @@ describe("ripple preserves frozen history (ADR 0012)", () => {
     recordBuy(store, "2024-01-10", "10", "100");
     expect(grossAt(store, "2024-01-10")).toBe(10 * 100_00);
 
-    const op = store.readOperations("fund").find((o) => o.executedAt === "2024-01-10")!;
-    store.deleteOperation(op.id);
+    const op = store.operations.readOperations("fund").find((o) => o.executedAt === "2024-01-10")!;
+    store.operations.deleteOperation(op.id);
     store.rippleHistoricalSnapshotsForOperation({
       assetId: "fund",
       mode: "delete",
@@ -218,14 +218,14 @@ describe("ripple preserves frozen history (ADR 0012)", () => {
 
   test("generates scope-weighted snapshots for every affected scope (household)", () => {
     const store = createInMemoryStore();
-    store.initializeWorkspace({
+    store.workspace.initializeWorkspace({
       members: [
         { id: "mJ", name: "Jose" },
         { id: "mA", name: "Ana" },
       ],
       mode: "household",
     });
-    store.createInvestmentAsset({
+    store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "fund",
       liquidityTier: "market",
@@ -238,7 +238,7 @@ describe("ripple preserves frozen history (ADR 0012)", () => {
 
     recordBuy(store, "2024-01-10", "10", "100"); // full value 1000.00, split 50/50
 
-    const at = store.readSnapshots().filter((s) => s.dateKey === "2024-01-10");
+    const at = store.snapshots.readSnapshots().filter((s) => s.dateKey === "2024-01-10");
     const grosses = at.map((s) => s.grossAssets.amountMinor).sort((a, b) => b - a);
 
     // More than one scope captured (household + members).

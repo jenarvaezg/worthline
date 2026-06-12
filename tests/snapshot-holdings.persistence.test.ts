@@ -14,11 +14,11 @@ import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 afterEach(cleanupTempDirs);
 
 function seedPortfolio(store: WorthlineStore): void {
-  store.initializeWorkspace({
+  store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
   });
-  store.createManualAsset({
+  store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 100_000_00,
     id: "asset_cash",
@@ -27,7 +27,7 @@ function seedPortfolio(store: WorthlineStore): void {
     ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
     type: "cash",
   });
-  store.createLiability({
+  store.liabilities.createLiability({
     balanceMinor: 40_000_00,
     currency: "EUR",
     id: "liability_loan",
@@ -39,13 +39,13 @@ function seedPortfolio(store: WorthlineStore): void {
 
 function captureFor(store: WorthlineStore, id: string, capturedAt: string) {
   return captureValuedNetWorthSnapshot({
-    assets: store.readAssets(),
+    assets: store.assets.readAssets(),
     capturedAt,
     id,
-    liabilities: store.readLiabilities(),
+    liabilities: store.liabilities.readLiabilities(),
     scopeId: "household",
     scopeLabel: "Hogar",
-    workspace: store.readWorkspace()!,
+    workspace: store.workspace.readWorkspace()!,
   });
 }
 
@@ -59,9 +59,9 @@ describe("snapshot holding rows persistence", () => {
       "snap_1",
       "2026-06-10T10:00:00.000Z",
     );
-    store.saveSnapshot({ holdings, snapshot });
+    store.snapshots.saveSnapshot({ holdings, snapshot });
 
-    const rows = store.readSnapshotHoldings({ scopeId: "household" });
+    const rows = store.snapshots.readSnapshotHoldings({ scopeId: "household" });
     expect(rows).toHaveLength(2);
 
     const assetRow = rows.find((row) => row.holdingId === "asset_cash");
@@ -100,13 +100,13 @@ describe("snapshot holding rows persistence", () => {
       row.holdingId === "asset_cash" ? { ...row, valueMinor: row.valueMinor + 1 } : row,
     );
 
-    expect(() => store.saveSnapshot({ holdings: doctored, snapshot })).toThrow(
+    expect(() => store.snapshots.saveSnapshot({ holdings: doctored, snapshot })).toThrow(
       /gross assets/i,
     );
 
     // Nothing persisted: no snapshot, no rows.
-    expect(store.readSnapshots("household")).toHaveLength(0);
-    expect(store.readSnapshotHoldings({ scopeId: "household" })).toHaveLength(0);
+    expect(store.snapshots.readSnapshots("household")).toHaveLength(0);
+    expect(store.snapshots.readSnapshotHoldings({ scopeId: "household" })).toHaveLength(0);
 
     store.close();
   });
@@ -116,17 +116,17 @@ describe("snapshot holding rows persistence", () => {
     seedPortfolio(store);
 
     const first = captureFor(store, "snap_morning", "2026-06-10T08:00:00.000Z");
-    store.saveSnapshot({ holdings: first.holdings, snapshot: first.snapshot });
+    store.snapshots.saveSnapshot({ holdings: first.holdings, snapshot: first.snapshot });
 
-    store.updateAssetValuation("asset_cash", 120_000_00);
+    store.assets.updateAssetValuation("asset_cash", 120_000_00);
     const second = captureFor(store, "snap_evening", "2026-06-10T18:00:00.000Z");
-    store.saveSnapshot({
+    store.snapshots.saveSnapshot({
       holdings: second.holdings,
       replace: true,
       snapshot: second.snapshot,
     });
 
-    const rows = store.readSnapshotHoldings({ scopeId: "household" });
+    const rows = store.snapshots.readSnapshotHoldings({ scopeId: "household" });
     // Still exactly one set of rows for the day (one asset + one liability).
     expect(rows).toHaveLength(2);
     expect(rows.every((row) => row.snapshotId === "snap_evening")).toBe(true);
@@ -142,12 +142,12 @@ describe("snapshot holding rows persistence", () => {
     seedPortfolio(store);
 
     const first = captureFor(store, "snap_a", "2026-06-10T08:00:00.000Z");
-    store.saveSnapshot({ holdings: first.holdings, snapshot: first.snapshot });
+    store.snapshots.saveSnapshot({ holdings: first.holdings, snapshot: first.snapshot });
 
     const second = captureFor(store, "snap_b", "2026-06-10T09:00:00.000Z");
-    store.saveSnapshot({ holdings: second.holdings, snapshot: second.snapshot });
+    store.snapshots.saveSnapshot({ holdings: second.holdings, snapshot: second.snapshot });
 
-    const rows = store.readSnapshotHoldings({ scopeId: "household" });
+    const rows = store.snapshots.readSnapshotHoldings({ scopeId: "household" });
     expect(rows).toHaveLength(2);
     expect(rows.every((row) => row.snapshotId === "snap_b")).toBe(true);
 
@@ -156,17 +156,17 @@ describe("snapshot holding rows persistence", () => {
 
   test("captures investment units and unit price as decimal strings", () => {
     const store = createFileBackedStore("worthline-snapshot-holdings-");
-    store.initializeWorkspace({
+    store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
-    store.createInvestmentAsset({
+    store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "asset_fund",
       name: "Fondo",
       ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
     });
-    store.recordOperation({
+    store.operations.recordOperation({
       assetId: "asset_fund",
       currency: "EUR",
       executedAt: "2026-06-01T10:00:00.000Z",
@@ -175,7 +175,7 @@ describe("snapshot holding rows persistence", () => {
       pricePerUnit: "100",
       units: "10.5",
     });
-    store.upsertPrice({
+    store.operations.upsertPrice({
       assetId: "asset_fund",
       currency: "EUR",
       fetchedAt: "2026-06-10T09:00:00.000Z",
@@ -184,7 +184,7 @@ describe("snapshot holding rows persistence", () => {
       source: "stooq",
     });
 
-    const positions = store.readPositions();
+    const positions = store.snapshots.readPositions();
     const details = new Map(
       positions.map((position) => [
         position.assetId,
@@ -198,18 +198,18 @@ describe("snapshot holding rows persistence", () => {
     );
 
     const { holdings, snapshot } = captureValuedNetWorthSnapshot({
-      assets: store.readAssets(),
+      assets: store.assets.readAssets(),
       capturedAt: "2026-06-10T10:00:00.000Z",
       id: "snap_inv",
       investmentDetails: details,
-      liabilities: store.readLiabilities(),
+      liabilities: store.liabilities.readLiabilities(),
       scopeId: "household",
       scopeLabel: "Hogar",
-      workspace: store.readWorkspace()!,
+      workspace: store.workspace.readWorkspace()!,
     });
-    store.saveSnapshot({ holdings, snapshot });
+    store.snapshots.saveSnapshot({ holdings, snapshot });
 
-    const rows = store.readSnapshotHoldings({ scopeId: "household" });
+    const rows = store.snapshots.readSnapshotHoldings({ scopeId: "household" });
     const fundRow = rows.find((row) => row.holdingId === "asset_fund");
     expect(fundRow?.units).toBe("10.5");
     expect(fundRow?.unitPrice).toBe("110.40");
@@ -229,16 +229,16 @@ describe("snapshot holding rows persistence", () => {
       ["snap_d3", "2026-06-10T10:00:00.000Z"],
     ] as const) {
       const { holdings, snapshot } = captureFor(store, id, capturedAt);
-      store.saveSnapshot({ holdings, snapshot });
+      store.snapshots.saveSnapshot({ holdings, snapshot });
     }
 
     // By scope: all three days, two rows each.
-    expect(store.readSnapshotHoldings({ scopeId: "household" })).toHaveLength(6);
+    expect(store.snapshots.readSnapshotHoldings({ scopeId: "household" })).toHaveLength(6);
     // Unknown scope: nothing.
-    expect(store.readSnapshotHoldings({ scopeId: "member_jose" })).toHaveLength(0);
+    expect(store.snapshots.readSnapshotHoldings({ scopeId: "member_jose" })).toHaveLength(0);
 
     // Time window (inclusive date keys).
-    const windowed = store.readSnapshotHoldings({
+    const windowed = store.snapshots.readSnapshotHoldings({
       from: "2026-06-09",
       scopeId: "household",
       to: "2026-06-09",
@@ -246,7 +246,7 @@ describe("snapshot holding rows persistence", () => {
     expect(windowed).toHaveLength(2);
     expect(windowed.every((row) => row.dateKey === "2026-06-09")).toBe(true);
 
-    const openEnded = store.readSnapshotHoldings({
+    const openEnded = store.snapshots.readSnapshotHoldings({
       from: "2026-06-09",
       scopeId: "household",
     });
@@ -264,12 +264,12 @@ describe("snapshot holding rows persistence", () => {
       "snap_frozen",
       "2026-06-10T10:00:00.000Z",
     );
-    store.saveSnapshot({ holdings, snapshot });
+    store.snapshots.saveSnapshot({ holdings, snapshot });
 
-    store.updateAsset("asset_cash", { liquidityTier: "illiquid", name: "Renombrada" });
-    store.softDeleteAsset("asset_cash", "2026-06-11T10:00:00.000Z");
+    store.assets.updateAsset("asset_cash", { liquidityTier: "illiquid", name: "Renombrada" });
+    store.assets.softDeleteAsset("asset_cash", "2026-06-11T10:00:00.000Z");
 
-    const rows = store.readSnapshotHoldings({ scopeId: "household" });
+    const rows = store.snapshots.readSnapshotHoldings({ scopeId: "household" });
     const assetRow = rows.find((row) => row.holdingId === "asset_cash");
     expect(assetRow?.label).toBe("Caja");
     expect(assetRow?.liquidityTier).toBe("cash");

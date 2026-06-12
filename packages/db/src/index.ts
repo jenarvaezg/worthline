@@ -1,19 +1,12 @@
 import type { LocalPersistenceStatus } from "@worthline/domain";
 import type {
-  AssetPrice,
-  CreateInvestmentOperationInput,
-  CreateLiabilityInput,
-  CreateManualAssetInput,
   FireScopeConfig,
   InvestmentOperation,
   Liability,
   ManualValuePoint,
-  Member,
   ManualAsset,
-  NetWorthSnapshot,
   WarningOverride,
   Workspace,
-  WorkspaceExport,
 } from "@worthline/domain";
 import {
   buildSnapshotAtDate,
@@ -37,31 +30,21 @@ import {
 import {
   createAssetStore,
   type AssetStore,
-  type CreateInvestmentAssetInput,
-  type InvestmentAssetFull,
-  type InvestmentAssetMeta,
-  type UpdateAssetInput,
-  type UpdateInvestmentAssetInput,
 } from "./asset-store";
 import { migrate } from "./migrate";
 import {
   createLiabilityStore,
   type LiabilityStore,
-  type UpdateLiabilityInput,
 } from "./liability-store";
 import {
   createOperationsStore,
   type OperationsStore,
-  type ValueUpdateCommand,
 } from "./operations-store";
 import {
   createSnapshotStore,
   readSnapshotHoldings,
   readSnapshots,
-  type PositionView,
   type SaveSnapshotInput,
-  type SnapshotHoldingQuery,
-  type SnapshotHoldingRecord,
   type SnapshotStore,
 } from "./snapshot-store";
 import {
@@ -75,8 +58,6 @@ import {
 import {
   createWorkspaceStore,
   readWorkspace,
-  type InitializeWorkspaceInput,
-  type MemberOwnerships,
   type WorkspaceStore,
 } from "./workspace-store";
 
@@ -130,66 +111,38 @@ export interface TrashView {
   liabilities: Array<{ id: string; name: string }>;
 }
 
+/**
+ * The WorthlineStore is a pure composite (Slice R6, PRD #120): the five focused
+ * sub-stores expose every per-domain operation, and the store itself owns only
+ * the cross-cutting concerns that span domains or have no natural home in a
+ * single sub-store (the connection lifecycle, the papelera, warning overrides,
+ * the audit log, FIRE config, and the cross-domain historical-snapshot
+ * machinery). All per-domain work goes through `store.<domain>.<method>`.
+ */
 export interface WorthlineStore {
-  acknowledgeWarning: (code: string, entityId: string) => number;
-  batchApplyValueUpdates: (commands: ValueUpdateCommand[]) => void;
-  batchApplyAllValueUpdates: (
-    assetCommands: ValueUpdateCommand[],
-    liabilityCommands: ValueUpdateCommand[],
-  ) => void;
-  reactivateMember: (memberId: string) => void;
+  /** Focused snapshot & position store (Slice R1). */
+  snapshots: SnapshotStore;
+  /** Focused asset store (Slice R2). */
+  assets: AssetStore;
+  /** Focused liability store (Slice R3). */
+  liabilities: LiabilityStore;
+  /** Focused operations & price-cache store (Slice R4). */
+  operations: OperationsStore;
+  /** Focused workspace lifecycle & member store (Slice R5). */
+  workspace: WorkspaceStore;
+
+  // ── Cross-cutting (no per-domain home) ──────────────────────────────────────
+
   close: () => void;
-  createInvestmentAsset: (input: CreateInvestmentAssetInput) => void;
-  readInvestmentAssetById: (assetId: string) => InvestmentAssetFull | null;
-  updateInvestmentAsset: (input: UpdateInvestmentAssetInput) => void;
-  createLiability: (input: CreateLiabilityInput) => void;
-  createManualAsset: (input: CreateManualAssetInput) => void;
-  createMember: (member: Member) => void;
-  /** Delete an operation. Returns the deleted operation's asset id and date, or null if not found. */
-  deleteOperation: (operationId: string) => { assetId: string; executedAt: string } | null;
-  disableMember: (memberId: string, disabledAt: string) => void;
-  /** Hard-delete a trashed asset (live data + overrides; snapshots untouched). Returns 1 if removed, 0 if not found or not in trash. */
-  hardDeleteAsset: (assetId: string) => number;
-  /** Hard-delete a trashed liability. Returns 1 if removed, 0 if not found or not in trash. */
-  hardDeleteLiability: (liabilityId: string) => number;
+  acknowledgeWarning: (code: string, entityId: string) => number;
+  removeWarningOverride: (code: string, entityId: string) => void;
+  readWarningOverrides: () => WarningOverride[];
+  readTrash: () => TrashView;
   /** Hard-delete every trashed holding atomically. Returns how many of each kind were removed. */
   emptyTrash: () => { assets: number; liabilities: number };
-  /**
-   * Serialize the entire workspace into the versioned export document
-   * (ADR 0010): live state, snapshot history, the papelera, and the price
-   * cache. Read-only — exporting never writes. The audit log is not a section.
-   * Throws when no workspace has been initialized.
-   */
-  exportWorkspace: () => WorkspaceExport;
-  /** Holdings (live or trashed) the member owns a share of. Empty ⇒ the member may be hard-deleted. */
-  readMemberOwnerships: (memberId: string) => MemberOwnerships;
-  /** Hard-delete a member. Returns 0 (no-op) unless the member is disabled and owns no share of any holding. */
-  hardDeleteMember: (memberId: string) => number;
-  /** Empty every table in one transaction, returning the workspace to onboarding. */
-  resetWorkspace: () => void;
-  initializeWorkspace: (input: InitializeWorkspaceInput) => void;
-  /**
-   * Atomically replace the entire workspace with an already-validated export
-   * document (ADR 0010, #103): every table is emptied and the file's sections
-   * are bulk-inserted with their ids preserved. Callers must validate the
-   * document with parseWorkspaceExport first — this method does not re-parse.
-   */
-  importWorkspace: (doc: WorkspaceExport) => void;
-  readAllPriceCacheEntries: () => AssetPrice[];
-  readAssets: () => ManualAsset[];
-  readInvestmentAssetsWithMeta: () => InvestmentAssetMeta[];
   readAuditLog: (filter?: { entityId?: string }) => AuditLogEntry[];
   readFireConfig: () => Record<string, FireScopeConfig>;
-  readLiabilities: () => Liability[];
-  readOperations: (assetId: string) => InvestmentOperation[];
-  readPositions: (scopeId?: string) => PositionView[];
-  readPriceCache: (assetId: string) => AssetPrice | null;
-  readSnapshotHoldings: (query?: SnapshotHoldingQuery) => SnapshotHoldingRecord[];
-  readSnapshots: (scopeId?: string) => NetWorthSnapshot[];
-  readTrash: () => TrashView;
-  readWarningOverrides: () => WarningOverride[];
-  readWorkspace: () => Workspace | null;
-  recordOperation: (input: CreateInvestmentOperationInput) => void;
+  saveFireConfig: (scopeId: string, config: FireScopeConfig) => void;
   /**
    * Generate/recalculate historical snapshots after a backdated operation
    * change to one investment (ADR 0012, PRD #107). record(D) generates a fresh
@@ -213,44 +166,6 @@ export interface WorthlineStore {
    * `today` defaults to the current date; pass it to control the cut-off in tests.
    */
   backfillHistoricalSnapshots: (today?: string) => void;
-  removeWarningOverride: (code: string, entityId: string) => void;
-  restoreAsset: (assetId: string) => number;
-  restoreLiability: (liabilityId: string) => number;
-  saveFireConfig: (scopeId: string, config: FireScopeConfig) => void;
-  saveSnapshot: (input: SaveSnapshotInput) => void;
-  /** Focused snapshot & position store (Slice R1). The legacy saveSnapshot,
-   *  readSnapshots, readSnapshotHoldings, and readPositions methods delegate here. */
-  snapshots: SnapshotStore;
-  /** Focused asset store (Slice R2). The legacy createManualAsset,
-   *  createInvestmentAsset, readAssets, readInvestmentAssetById,
-   *  readInvestmentAssetsWithMeta, updateAsset, updateAssetValuation,
-   *  updateInvestmentAsset, softDeleteAsset, restoreAsset, and hardDeleteAsset
-   *  methods delegate here. */
-  assets: AssetStore;
-  /** Focused liability store (Slice R3). The legacy createLiability,
-   *  readLiabilities, updateLiability, updateLiabilityBalance,
-   *  softDeleteLiability, restoreLiability, and hardDeleteLiability methods
-   *  delegate here. */
-  liabilities: LiabilityStore;
-  /** Focused operations & price-cache store (Slice R4). The legacy
-   *  recordOperation, readOperations, deleteOperation, batchApplyValueUpdates,
-   *  batchApplyAllValueUpdates, upsertPrice, readPriceCache, and
-   *  readAllPriceCacheEntries methods delegate here. */
-  operations: OperationsStore;
-  /** Focused workspace lifecycle & member store (Slice R5). The legacy
-   *  initializeWorkspace, resetWorkspace, readWorkspace, exportWorkspace,
-   *  importWorkspace, createMember, updateMember, disableMember,
-   *  reactivateMember, hardDeleteMember, and readMemberOwnerships methods
-   *  delegate here. */
-  workspace: WorkspaceStore;
-  softDeleteAsset: (assetId: string, deletedAt: string) => number;
-  softDeleteLiability: (liabilityId: string, deletedAt: string) => number;
-  updateAsset: (assetId: string, input: UpdateAssetInput) => void;
-  updateAssetValuation: (assetId: string, currentValueMinor: number) => void;
-  updateLiability: (liabilityId: string, input: UpdateLiabilityInput) => void;
-  updateLiabilityBalance: (liabilityId: string, balanceMinor: number) => void;
-  updateMember: (member: Pick<Member, "id" | "name">) => void;
-  upsertPrice: (price: AssetPrice) => void;
 }
 
 export function runBootstrapHealthcheck(
@@ -342,32 +257,25 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
   const operationsStore = createOperationsStore(ctx);
   // importWorkspace's post-import gap-fill spans every domain and the snapshot
   // save path, so it stays in the monolith and is injected into the workspace
-  // store as a dependency. The arrow defers reading store.saveSnapshot until
+  // store as a dependency. The arrow defers reading store.snapshots.saveSnapshot until
   // call-time, by which point store is fully constructed (same forward-
   // reference pattern as rippleHistoricalSnapshotsForOperation).
   const workspaceStore = createWorkspaceStore(ctx, {
     gapFillHistoricalSnapshots: (workspace, today) =>
-      gapFillHistoricalSnapshots(sqlite, workspace, store.saveSnapshot, today),
+      gapFillHistoricalSnapshots(sqlite, workspace, store.snapshots.saveSnapshot, today),
   });
 
   const { getWorkspace } = ctx;
 
   const store: WorthlineStore = {
+    snapshots: snapshotStore,
+    assets: assetStore,
+    liabilities: liabilityStore,
+    operations: operationsStore,
+    workspace: workspaceStore,
     close: () => {
       sqlite.close();
     },
-    readInvestmentAssetById: (assetId) => assetStore.readInvestmentAssetById(assetId),
-    updateInvestmentAsset: (input) => assetStore.updateInvestmentAsset(input),
-    createLiability: (input) => liabilityStore.createLiability(input),
-    createManualAsset: (input) => assetStore.createManualAsset(input),
-    createInvestmentAsset: (input) => assetStore.createInvestmentAsset(input),
-    createMember: (member) => workspaceStore.createMember(member),
-    disableMember: (memberId, disabledAt) =>
-      workspaceStore.disableMember(memberId, disabledAt),
-    reactivateMember: (memberId) => workspaceStore.reactivateMember(memberId),
-    initializeWorkspace: (input) => workspaceStore.initializeWorkspace(input),
-    readAssets: () => assetStore.readAssets(),
-    assets: assetStore,
     readFireConfig: () => {
       const db = drizzle(sqlite);
       const row = db
@@ -382,15 +290,6 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
 
       return JSON.parse(row.value) as Record<string, FireScopeConfig>;
     },
-    readLiabilities: () => liabilityStore.readLiabilities(),
-    liabilities: liabilityStore,
-    readOperations: (assetId) => operationsStore.readOperations(assetId),
-    readPositions: (scopeId) => snapshotStore.readPositions(scopeId),
-    readSnapshots: (scopeId) => snapshotStore.readSnapshots(scopeId),
-    snapshots: snapshotStore,
-    readWorkspace: () => workspaceStore.readWorkspace(),
-    workspace: workspaceStore,
-    recordOperation: (input) => operationsStore.recordOperation(input),
     saveFireConfig: (scopeId, config) => {
       const db = drizzle(sqlite);
       const existing = db
@@ -413,27 +312,6 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         })
         .run();
     },
-    saveSnapshot: (input) => snapshotStore.saveSnapshot(input),
-    readSnapshotHoldings: (query) => snapshotStore.readSnapshotHoldings(query),
-    exportWorkspace: () => workspaceStore.exportWorkspace(),
-    batchApplyValueUpdates: (commands) => operationsStore.batchApplyValueUpdates(commands),
-    batchApplyAllValueUpdates: (assetCommands, liabilityCommands) =>
-      operationsStore.batchApplyAllValueUpdates(assetCommands, liabilityCommands),
-    updateAsset: (assetId, input) => assetStore.updateAsset(assetId, input),
-    updateAssetValuation: (assetId, currentValueMinor) =>
-      assetStore.updateAssetValuation(assetId, currentValueMinor),
-    updateLiability: (liabilityId, input) =>
-      liabilityStore.updateLiability(liabilityId, input),
-    updateLiabilityBalance: (liabilityId, balanceMinor) =>
-      liabilityStore.updateLiabilityBalance(liabilityId, balanceMinor),
-    updateMember: (member) => workspaceStore.updateMember(member),
-    readPriceCache: (assetId) => operationsStore.readPriceCache(assetId),
-    readInvestmentAssetsWithMeta: () => assetStore.readInvestmentAssetsWithMeta(),
-    readAllPriceCacheEntries: () => operationsStore.readAllPriceCacheEntries(),
-    upsertPrice: (price) => operationsStore.upsertPrice(price),
-    operations: operationsStore,
-    softDeleteAsset: (assetId, deletedAt) => assetStore.softDeleteAsset(assetId, deletedAt),
-    restoreAsset: (assetId) => assetStore.restoreAsset(assetId),
     acknowledgeWarning: (code, entityId) => {
       const result = sqlite
         .prepare(
@@ -469,11 +347,6 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         )
         .all() as Array<{ id: string; name: string }>,
     }),
-    softDeleteLiability: (liabilityId, deletedAt) =>
-      liabilityStore.softDeleteLiability(liabilityId, deletedAt),
-    restoreLiability: (liabilityId) => liabilityStore.restoreLiability(liabilityId),
-    hardDeleteAsset: (assetId) => assetStore.hardDeleteAsset(assetId),
-    hardDeleteLiability: (liabilityId) => liabilityStore.hardDeleteLiability(liabilityId),
     emptyTrash: () =>
       sqlite.transaction(() => {
         const trashedAssets = sqlite
@@ -491,11 +364,6 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
 
         return { assets, liabilities };
       })(),
-    deleteOperation: (operationId) => operationsStore.deleteOperation(operationId),
-    readMemberOwnerships: (memberId) => workspaceStore.readMemberOwnerships(memberId),
-    hardDeleteMember: (memberId) => workspaceStore.hardDeleteMember(memberId),
-    resetWorkspace: () => workspaceStore.resetWorkspace(),
-    importWorkspace: (doc) => workspaceStore.importWorkspace(doc),
     readAuditLog: (filter) => {
       const db = drizzle(sqlite);
       const rows = filter?.entityId
@@ -519,7 +387,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
     rippleHistoricalSnapshotsForOperation: (params) => {
       const workspace = getWorkspace();
       if (!workspace) return;
-      rippleHistoricalSnapshots(sqlite, workspace, store.saveSnapshot, params);
+      rippleHistoricalSnapshots(sqlite, workspace, store.snapshots.saveSnapshot, params);
     },
     backfillHistoricalSnapshots: (today) => {
       const workspace = getWorkspace();
@@ -527,7 +395,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
       gapFillHistoricalSnapshots(
         sqlite,
         workspace,
-        store.saveSnapshot,
+        store.snapshots.saveSnapshot,
         today ?? new Date().toISOString().slice(0, 10),
       );
     },

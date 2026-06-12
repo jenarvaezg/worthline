@@ -11,12 +11,12 @@ describe("withStore unit-of-work", () => {
 
     const mode = withStore(
       (store) => {
-        store.initializeWorkspace({
+        store.workspace.initializeWorkspace({
           members: [{ id: "member_jose", name: "Jose" }],
           mode: "individual",
         });
 
-        return store.readWorkspace()?.mode;
+        return store.workspace.readWorkspace()?.mode;
       },
       { databasePath },
     );
@@ -39,7 +39,7 @@ describe("withStore unit-of-work", () => {
     ).toThrow("boom");
 
     // The connection must be closed despite the throw: using it now fails.
-    expect(() => captured?.readWorkspace()).toThrow();
+    expect(() => captured?.workspace.readWorkspace()).toThrow();
   });
 
   test("closes the connection on the happy path", () => {
@@ -53,6 +53,6 @@ describe("withStore unit-of-work", () => {
       { databasePath },
     );
 
-    expect(() => captured?.readWorkspace()).toThrow();
+    expect(() => captured?.workspace.readWorkspace()).toThrow();
   });
 });

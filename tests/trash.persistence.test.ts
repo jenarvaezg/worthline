@@ -6,7 +6,7 @@ afterEach(cleanupTempDirs);
 
 function setupStore() {
   const store = createFileBackedStore("worthline-trash-");
-  store.initializeWorkspace({
+  store.workspace.initializeWorkspace({
     members: [{ id: "m", name: "Yo" }],
     mode: "individual",
   });
@@ -17,7 +17,7 @@ function setupStore() {
 describe("trash (soft-deleted records)", () => {
   test("a soft-deleted asset appears in the trash and leaves it on restore", () => {
     const store = setupStore();
-    store.createManualAsset({
+    store.assets.createManualAsset({
       id: "a1",
       name: "Cuenta",
       type: "cash",
@@ -30,13 +30,13 @@ describe("trash (soft-deleted records)", () => {
 
     expect(store.readTrash().assets).toEqual([]);
 
-    store.softDeleteAsset("a1", "2026-06-09T00:00:00.000Z");
+    store.assets.softDeleteAsset("a1", "2026-06-09T00:00:00.000Z");
     expect(store.readTrash().assets).toEqual([{ id: "a1", name: "Cuenta" }]);
-    expect(store.readAssets().some((asset) => asset.id === "a1")).toBe(false);
+    expect(store.assets.readAssets().some((asset) => asset.id === "a1")).toBe(false);
 
-    store.restoreAsset("a1");
+    store.assets.restoreAsset("a1");
     expect(store.readTrash().assets).toEqual([]);
-    expect(store.readAssets().some((asset) => asset.id === "a1")).toBe(true);
+    expect(store.assets.readAssets().some((asset) => asset.id === "a1")).toBe(true);
     store.close();
   });
 });

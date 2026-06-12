@@ -30,7 +30,7 @@ export default async function NuevoActivoPage({
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
   const storeData = withStore((store) => {
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
 
     if (!workspace) {
       return null;

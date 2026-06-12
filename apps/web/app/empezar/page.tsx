@@ -34,7 +34,7 @@ interface EmpezarPageProps {
  * on validation error so nothing the user typed is silently lost.
  */
 export default async function EmpezarPage({ searchParams }: EmpezarPageProps) {
-  const workspace = withStore((store) => store.readWorkspace());
+  const workspace = withStore((store) => store.workspace.readWorkspace());
 
   if (workspace) {
     redirect("/");

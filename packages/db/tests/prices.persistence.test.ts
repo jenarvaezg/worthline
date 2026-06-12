@@ -23,11 +23,11 @@ function createTestStore(): WorthlineStore {
 }
 
 function seedWorkspaceAndAsset(store: WorthlineStore, assetId: string): void {
-  store.initializeWorkspace({
+  store.workspace.initializeWorkspace({
     members: [{ id: "m1", name: "Alice" }],
     mode: "individual",
   });
-  store.createInvestmentAsset({
+  store.assets.createInvestmentAsset({
     currency: "EUR",
     id: assetId,
     name: "Test Asset",
@@ -49,8 +49,8 @@ describe("price cache persistence", () => {
       source: "stooq",
     };
 
-    store.upsertPrice(price);
-    const result = store.readPriceCache("asset_1");
+    store.operations.upsertPrice(price);
+    const result = store.operations.readPriceCache("asset_1");
 
     expect(result).not.toBeNull();
     expect(result!.assetId).toBe("asset_1");
@@ -67,7 +67,7 @@ describe("price cache persistence", () => {
     const store = createTestStore();
     seedWorkspaceAndAsset(store, "asset_1");
 
-    expect(store.readPriceCache("nonexistent")).toBeNull();
+    expect(store.operations.readPriceCache("nonexistent")).toBeNull();
 
     store.close();
   });
@@ -93,10 +93,10 @@ describe("price cache persistence", () => {
       source: "stooq",
     };
 
-    store.upsertPrice(first);
-    store.upsertPrice(second);
+    store.operations.upsertPrice(first);
+    store.operations.upsertPrice(second);
 
-    const result = store.readPriceCache("asset_1");
+    const result = store.operations.readPriceCache("asset_1");
     expect(result!.price).toBe("200.00");
     expect(result!.freshnessState).toBe("stale");
     expect(result!.fetchedAt).toBe("2026-06-08T10:00:00Z");
@@ -108,12 +108,12 @@ describe("price cache persistence", () => {
 describe("investment price provider metadata", () => {
   test("readInvestmentAssetsWithMeta applies provider defaults and preserves overrides", () => {
     const store = createTestStore();
-    store.initializeWorkspace({
+    store.workspace.initializeWorkspace({
       members: [{ id: "m1", name: "Alice" }],
       mode: "individual",
     });
 
-    store.createInvestmentAsset({
+    store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "asset_market",
       liquidityTier: "market",
@@ -121,7 +121,7 @@ describe("investment price provider metadata", () => {
       ownership: [{ memberId: "m1", shareBps: 10000 }],
       providerSymbol: "VUSA.L",
     });
-    store.createInvestmentAsset({
+    store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "asset_pension",
       liquidityTier: "retirement",
@@ -129,7 +129,7 @@ describe("investment price provider metadata", () => {
       ownership: [{ memberId: "m1", shareBps: 10000 }],
       providerSymbol: "N5394",
     });
-    store.createInvestmentAsset({
+    store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "asset_stooq",
       liquidityTier: "market",
@@ -140,7 +140,7 @@ describe("investment price provider metadata", () => {
     });
 
     const byId = new Map(
-      store.readInvestmentAssetsWithMeta().map((asset) => [asset.id, asset]),
+      store.assets.readInvestmentAssetsWithMeta().map((asset) => [asset.id, asset]),
     );
 
     expect(byId.get("asset_market")).toMatchObject({

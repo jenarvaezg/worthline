@@ -30,7 +30,7 @@ export default async function NuevaDeudaPage({
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
   const storeData = withStore((store) => {
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
 
     if (!workspace) {
       return null;
@@ -41,7 +41,7 @@ export default async function NuevaDeudaPage({
 
     return {
       activeMembers: workspace.members.filter((m) => !m.disabledAt),
-      assets: store.readAssets().filter((a) => a.type !== "investment"),
+      assets: store.assets.readAssets().filter((a) => a.type !== "investment"),
       scopes,
       selectedScope,
       workspace,

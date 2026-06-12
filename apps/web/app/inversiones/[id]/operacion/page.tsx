@@ -37,22 +37,22 @@ export default async function OperacionPage({
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
   const storeData = withStore((store) => {
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
 
     if (!workspace) return null;
 
-    const asset = store.readInvestmentAssetById(assetId);
+    const asset = store.assets.readInvestmentAssetById(assetId);
 
     if (!asset) return null;
 
     const scopes = listScopeOptions(workspace);
     const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
 
-    const operations = store.readOperations(assetId);
-    const priceCache = store.readPriceCache(assetId);
+    const operations = store.operations.readOperations(assetId);
+    const priceCache = store.operations.readPriceCache(assetId);
 
     // Latest position: re-derive from operations + price
-    const positions = store.readPositions();
+    const positions = store.snapshots.readPositions();
     const position = positions.find((p) => p.assetId === assetId);
 
     return {
@@ -67,7 +67,7 @@ export default async function OperacionPage({
 
   if (!storeData) {
     // workspace missing → empezar; asset missing → 404
-    const workspace = withStore((store) => store.readWorkspace());
+    const workspace = withStore((store) => store.workspace.readWorkspace());
 
     if (!workspace) {
       redirect("/empezar");

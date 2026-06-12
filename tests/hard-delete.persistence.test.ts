@@ -20,7 +20,7 @@ afterEach(cleanupTempDirs);
 
 function setupStore(): WorthlineStore {
   const store = createFileBackedStore("worthline-hard-delete-");
-  store.initializeWorkspace({
+  store.workspace.initializeWorkspace({
     members: [{ id: "m", name: "Yo" }],
     mode: "individual",
   });
@@ -28,7 +28,7 @@ function setupStore(): WorthlineStore {
 }
 
 function seedAsset(store: WorthlineStore, id = "a1", name = "Cuenta"): void {
-  store.createManualAsset({
+  store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 1000,
     id,
@@ -41,14 +41,14 @@ function seedAsset(store: WorthlineStore, id = "a1", name = "Cuenta"): void {
 }
 
 function seedInvestmentWithOps(store: WorthlineStore, id = "inv1"): void {
-  store.createInvestmentAsset({
+  store.assets.createInvestmentAsset({
     currency: "EUR",
     id,
     liquidityTier: "market",
     name: "ETF",
     ownership: [{ memberId: "m", shareBps: 10_000 }],
   });
-  store.recordOperation({
+  store.operations.recordOperation({
     assetId: id,
     currency: "EUR",
     executedAt: "2026-01-10",
@@ -58,7 +58,7 @@ function seedInvestmentWithOps(store: WorthlineStore, id = "inv1"): void {
     pricePerUnit: "100",
     units: "10",
   });
-  store.recordOperation({
+  store.operations.recordOperation({
     assetId: id,
     currency: "EUR",
     executedAt: "2026-02-10",
@@ -102,7 +102,7 @@ function captureSnapshot(
       valueMinor,
     },
   ];
-  store.saveSnapshot({ holdings, snapshot });
+  store.snapshots.saveSnapshot({ holdings, snapshot });
 }
 
 describe("hardDeleteAsset", () => {
@@ -110,8 +110,8 @@ describe("hardDeleteAsset", () => {
     const store = setupStore();
     seedAsset(store);
 
-    expect(store.hardDeleteAsset("a1")).toBe(0);
-    expect(store.readAssets().some((a) => a.id === "a1")).toBe(true);
+    expect(store.assets.hardDeleteAsset("a1")).toBe(0);
+    expect(store.assets.readAssets().some((a) => a.id === "a1")).toBe(true);
     store.close();
   });
 
@@ -119,14 +119,14 @@ describe("hardDeleteAsset", () => {
     const store = setupStore();
     seedAsset(store);
     store.acknowledgeWarning("zero_value_asset", "a1");
-    store.softDeleteAsset("a1", "2026-06-09T00:00:00.000Z");
+    store.assets.softDeleteAsset("a1", "2026-06-09T00:00:00.000Z");
 
-    expect(store.hardDeleteAsset("a1")).toBe(1);
+    expect(store.assets.hardDeleteAsset("a1")).toBe(1);
 
     expect(store.readTrash().assets).toEqual([]);
     expect(store.readWarningOverrides()).toEqual([]);
     // Idempotent: a second hard delete finds nothing.
-    expect(store.hardDeleteAsset("a1")).toBe(0);
+    expect(store.assets.hardDeleteAsset("a1")).toBe(0);
 
     const audit = store.readAuditLog({ entityId: "a1" });
     expect(audit.some((e) => e.action === "hard_delete_asset")).toBe(true);
@@ -139,11 +139,11 @@ describe("hardDeleteAsset", () => {
   test("an investment hard delete cascades its operations away", () => {
     const store = setupStore();
     seedInvestmentWithOps(store);
-    store.softDeleteAsset("inv1", "2026-06-09T00:00:00.000Z");
+    store.assets.softDeleteAsset("inv1", "2026-06-09T00:00:00.000Z");
 
-    expect(store.hardDeleteAsset("inv1")).toBe(1);
-    expect(store.readOperations("inv1")).toEqual([]);
-    expect(store.readInvestmentAssetById("inv1")).toBeNull();
+    expect(store.assets.hardDeleteAsset("inv1")).toBe(1);
+    expect(store.operations.readOperations("inv1")).toEqual([]);
+    expect(store.assets.readInvestmentAssetById("inv1")).toBeNull();
 
     // The audit entry carries the destroyed operations for manual recovery.
     const entry = store
@@ -159,13 +159,13 @@ describe("hardDeleteAsset", () => {
     seedAsset(store, "a1", "Piso");
     captureSnapshot(store, "a1", "Piso", 1000);
 
-    const before = store.readSnapshotHoldings();
+    const before = store.snapshots.readSnapshotHoldings();
     expect(before).toHaveLength(1);
 
-    store.softDeleteAsset("a1", "2026-06-09T00:00:00.000Z");
-    expect(store.hardDeleteAsset("a1")).toBe(1);
+    store.assets.softDeleteAsset("a1", "2026-06-09T00:00:00.000Z");
+    expect(store.assets.hardDeleteAsset("a1")).toBe(1);
 
-    const after = store.readSnapshotHoldings();
+    const after = store.snapshots.readSnapshotHoldings();
     expect(after).toHaveLength(1);
     expect(after[0]!.label).toBe("Piso");
     expect(after[0]!.holdingId).toBe("a1");
@@ -176,7 +176,7 @@ describe("hardDeleteAsset", () => {
 describe("hardDeleteLiability", () => {
   test("refuses a live liability, destroys a trashed one", () => {
     const store = setupStore();
-    store.createLiability({
+    store.liabilities.createLiability({
       balanceMinor: 5000,
       currency: "EUR",
       id: "l1",
@@ -185,10 +185,10 @@ describe("hardDeleteLiability", () => {
       type: "debt",
     });
 
-    expect(store.hardDeleteLiability("l1")).toBe(0);
+    expect(store.liabilities.hardDeleteLiability("l1")).toBe(0);
 
-    store.softDeleteLiability("l1", "2026-06-09T00:00:00.000Z");
-    expect(store.hardDeleteLiability("l1")).toBe(1);
+    store.liabilities.softDeleteLiability("l1", "2026-06-09T00:00:00.000Z");
+    expect(store.liabilities.hardDeleteLiability("l1")).toBe(1);
     expect(store.readTrash().liabilities).toEqual([]);
     expect(
       store
@@ -205,7 +205,7 @@ describe("emptyTrash", () => {
     seedAsset(store, "a1", "Borrar 1");
     seedAsset(store, "a2", "Borrar 2");
     seedAsset(store, "a3", "Vivo");
-    store.createLiability({
+    store.liabilities.createLiability({
       balanceMinor: 5000,
       currency: "EUR",
       id: "l1",
@@ -214,13 +214,13 @@ describe("emptyTrash", () => {
       type: "debt",
     });
 
-    store.softDeleteAsset("a1", "2026-06-09T00:00:00.000Z");
-    store.softDeleteAsset("a2", "2026-06-09T00:00:00.000Z");
-    store.softDeleteLiability("l1", "2026-06-09T00:00:00.000Z");
+    store.assets.softDeleteAsset("a1", "2026-06-09T00:00:00.000Z");
+    store.assets.softDeleteAsset("a2", "2026-06-09T00:00:00.000Z");
+    store.liabilities.softDeleteLiability("l1", "2026-06-09T00:00:00.000Z");
 
     expect(store.emptyTrash()).toEqual({ assets: 2, liabilities: 1 });
     expect(store.readTrash()).toEqual({ assets: [], liabilities: [] });
-    expect(store.readAssets().map((a) => a.id)).toEqual(["a3"]);
+    expect(store.assets.readAssets().map((a) => a.id)).toEqual(["a3"]);
     store.close();
   });
 
@@ -228,7 +228,7 @@ describe("emptyTrash", () => {
     const store = setupStore();
     seedAsset(store, "a3", "Vivo");
     expect(store.emptyTrash()).toEqual({ assets: 0, liabilities: 0 });
-    expect(store.readAssets()).toHaveLength(1);
+    expect(store.assets.readAssets()).toHaveLength(1);
     store.close();
   });
 });
@@ -238,15 +238,15 @@ describe("deleteOperation", () => {
     const store = setupStore();
     seedInvestmentWithOps(store);
 
-    const ops = store.readOperations("inv1");
+    const ops = store.operations.readOperations("inv1");
     expect(ops).toHaveLength(2);
     const buy = ops.find((o) => o.kind === "buy")!;
 
-    expect(store.deleteOperation(buy.id)).toEqual({
+    expect(store.operations.deleteOperation(buy.id)).toEqual({
       assetId: "inv1",
       executedAt: buy.executedAt,
     });
-    expect(store.readOperations("inv1")).toHaveLength(1);
+    expect(store.operations.readOperations("inv1")).toHaveLength(1);
 
     const entry = store
       .readAuditLog({ entityId: "inv1" })
@@ -261,11 +261,11 @@ describe("deleteOperation", () => {
     const store = setupStore();
     seedInvestmentWithOps(store); // buy 10, sell 4 → 6 units
 
-    const buy = store.readOperations("inv1").find((o) => o.kind === "buy")!;
+    const buy = store.operations.readOperations("inv1").find((o) => o.kind === "buy")!;
     // Removing the buy leaves only a sell of 4 → oversold (negative units).
-    expect(store.deleteOperation(buy.id)).not.toBeNull();
+    expect(store.operations.deleteOperation(buy.id)).not.toBeNull();
 
-    const position = store.readPositions().find((p) => p.assetId === "inv1");
+    const position = store.snapshots.readPositions().find((p) => p.assetId === "inv1");
     expect(position).toBeTruthy();
     expect(position!.warnings.length).toBeGreaterThan(0);
     store.close();
@@ -273,7 +273,7 @@ describe("deleteOperation", () => {
 
   test("unknown operation id is a no-op", () => {
     const store = setupStore();
-    expect(store.deleteOperation("nope")).toBeNull();
+    expect(store.operations.deleteOperation("nope")).toBeNull();
     store.close();
   });
 });
@@ -282,30 +282,30 @@ describe("member hard delete", () => {
   test("readMemberOwnerships lists holdings the member shares, trashed included", () => {
     const store = setupStore();
     seedAsset(store, "a1", "Cuenta");
-    store.softDeleteAsset("a1", "2026-06-09T00:00:00.000Z");
+    store.assets.softDeleteAsset("a1", "2026-06-09T00:00:00.000Z");
 
-    const owned = store.readMemberOwnerships("m");
+    const owned = store.workspace.readMemberOwnerships("m");
     expect(owned.assets).toEqual([{ id: "a1", name: "Cuenta" }]);
     store.close();
   });
 
   test("refuses an active member and one with ownerships; allows a clean disabled one", () => {
     const store = setupStore();
-    store.createMember({ id: "tmp", name: "Temporal" });
+    store.workspace.createMember({ id: "tmp", name: "Temporal" });
 
     // Active → refused.
-    expect(store.hardDeleteMember("tmp")).toBe(0);
+    expect(store.workspace.hardDeleteMember("tmp")).toBe(0);
 
     // Disabled but owning a holding → refused.
     seedAsset(store, "a1", "Cuenta");
-    store.updateAsset("a1", { ownership: [{ memberId: "tmp", shareBps: 10_000 }] });
-    store.disableMember("tmp", "2026-06-09T00:00:00.000Z");
-    expect(store.hardDeleteMember("tmp")).toBe(0);
+    store.assets.updateAsset("a1", { ownership: [{ memberId: "tmp", shareBps: 10_000 }] });
+    store.workspace.disableMember("tmp", "2026-06-09T00:00:00.000Z");
+    expect(store.workspace.hardDeleteMember("tmp")).toBe(0);
 
     // Reassign the holding away, then the disabled member deletes cleanly.
-    store.updateAsset("a1", { ownership: [{ memberId: "m", shareBps: 10_000 }] });
-    expect(store.hardDeleteMember("tmp")).toBe(1);
-    expect(store.readWorkspace()!.members.some((mem) => mem.id === "tmp")).toBe(false);
+    store.assets.updateAsset("a1", { ownership: [{ memberId: "m", shareBps: 10_000 }] });
+    expect(store.workspace.hardDeleteMember("tmp")).toBe(1);
+    expect(store.workspace.readWorkspace()!.members.some((mem) => mem.id === "tmp")).toBe(false);
     expect(
       store
         .readAuditLog({ entityId: "tmp" })
@@ -323,22 +323,22 @@ describe("resetWorkspace", () => {
     captureSnapshot(store, "a1", "Cuenta", 1000);
     store.acknowledgeWarning("zero_value_asset", "a1");
 
-    store.resetWorkspace();
+    store.workspace.resetWorkspace();
 
-    expect(store.readWorkspace()).toBeNull();
-    expect(store.readAssets()).toEqual([]);
-    expect(store.readLiabilities()).toEqual([]);
-    expect(store.readSnapshots()).toEqual([]);
-    expect(store.readSnapshotHoldings()).toEqual([]);
+    expect(store.workspace.readWorkspace()).toBeNull();
+    expect(store.assets.readAssets()).toEqual([]);
+    expect(store.liabilities.readLiabilities()).toEqual([]);
+    expect(store.snapshots.readSnapshots()).toEqual([]);
+    expect(store.snapshots.readSnapshotHoldings()).toEqual([]);
     expect(store.readWarningOverrides()).toEqual([]);
     expect(store.readAuditLog()).toEqual([]);
 
     // A fresh workspace can be initialized on the same file afterwards.
-    store.initializeWorkspace({
+    store.workspace.initializeWorkspace({
       members: [{ id: "m2", name: "Otro" }],
       mode: "individual",
     });
-    expect(store.readWorkspace()!.members.map((mem) => mem.name)).toEqual(["Otro"]);
+    expect(store.workspace.readWorkspace()!.members.map((mem) => mem.name)).toEqual(["Otro"]);
     store.close();
   });
 });
