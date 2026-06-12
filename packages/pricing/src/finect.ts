@@ -27,6 +27,53 @@ export const finectProvider: PriceProvider = {
   },
 };
 
+/**
+ * Resolve a Finect pension-plan symbol (the slug after
+ * `/planes-pensiones/`, e.g. `N5394-Myinvestor`) to its plan name and current
+ * NAV. Returns null for a missing plan or Finect's `Producto no disponible`
+ * soft-404 page (HTTP 200 with no NAV) — the absence of a parseable NAV is the
+ * signal that the symbol does not resolve to a real plan.
+ */
+export async function resolveFinectPlan(symbol: string): Promise<{
+  symbol: string;
+  name: string;
+  price: string;
+  priceDate?: string;
+} | null> {
+  const res = await fetch(FINECT_BASE_URL + encodeURIComponent(symbol), {
+    signal: AbortSignal.timeout(8000),
+  });
+
+  if (!res.ok) return null;
+
+  const html = await res.text();
+  const price = parseFinectNavPrice(html);
+
+  if (!price) return null;
+
+  const priceDate = parseFinectNavDate(html);
+
+  return {
+    symbol,
+    name: parseFinectName(html) ?? symbol,
+    price,
+    ...(priceDate ? { priceDate } : {}),
+  };
+}
+
+function parseFinectName(html: string): string | null {
+  const match = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+
+  if (!match?.[1]) return null;
+
+  const name = match[1]
+    .replace(/&amp;/g, "&")
+    .replace(/\s*[-|]\s*Finect\s*$/i, "")
+    .trim();
+
+  return name || null;
+}
+
 function parseFinectNavPrice(html: string): string | null {
   const text = toPlainText(html);
   const match = text.match(/(\d+(?:\.\d{3})*,\d+|\d+\.\d+|\d+)\s*(?:\u20ac|EUR)/i);

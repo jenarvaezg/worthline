@@ -13,6 +13,13 @@ import {
 } from "../../intake";
 import Shell from "../../shell";
 import { createInvestmentAction } from "../actions";
+import SymbolSearch from "../symbol-search";
+
+function pickParam(value: string | string[] | undefined): string | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const trimmed = raw?.trim();
+  return trimmed || undefined;
+}
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +63,13 @@ export default async function NuevaInversionPage({
 
   const investmentValues = formError?.formId === "investment" ? formError.values : {};
 
+  // Symbol-search prefill (#138): a picked candidate fills name/symbol/provider
+  // via pf* params; these take precedence over the error-echo values.
+  const symbolQuery = pickParam(resolvedSearchParams?.["symbolq"]);
+  const prefillName = pickParam(resolvedSearchParams?.["pfName"]);
+  const prefillSymbol = pickParam(resolvedSearchParams?.["pfSymbol"]);
+  const prefillProvider = pickParam(resolvedSearchParams?.["pfProvider"]);
+
   return (
     <Shell
       activeSection="inversiones"
@@ -83,6 +97,12 @@ export default async function NuevaInversionPage({
           </p>
         ) : null}
 
+        <SymbolSearch
+          basePath="/inversiones/nueva"
+          pickedSymbol={prefillSymbol}
+          query={symbolQuery}
+        />
+
         <form action={createInvestmentAction} className="stackForm inversionesForm">
           <input name="currentUrl" type="hidden" value={currentUrl} />
 
@@ -91,7 +111,7 @@ export default async function NuevaInversionPage({
             <input
               aria-label="Nombre de la inversión"
               aria-required="true"
-              defaultValue={investmentValues["name"]}
+              defaultValue={prefillName ?? investmentValues["name"]}
               name="name"
               placeholder="Fondo Vanguard, MSCI World ETF…"
               required
@@ -117,7 +137,9 @@ export default async function NuevaInversionPage({
             Proveedor de precios
             <select
               aria-label="Proveedor de precios"
-              defaultValue={investmentValues["priceProvider"] ?? "yahoo"}
+              defaultValue={
+                prefillProvider ?? investmentValues["priceProvider"] ?? "yahoo"
+              }
               name="priceProvider"
             >
               <option value="yahoo">Yahoo Finance</option>
@@ -140,7 +162,7 @@ export default async function NuevaInversionPage({
             Símbolo del proveedor <small>(SAN.MC, VUSA.L, N5394)</small>
             <input
               aria-label="Símbolo del proveedor"
-              defaultValue={investmentValues["providerSymbol"]}
+              defaultValue={prefillSymbol ?? investmentValues["providerSymbol"]}
               name="providerSymbol"
               placeholder="SAN.MC"
             />

@@ -12,6 +12,13 @@ import {
 } from "../../../intake";
 import Shell from "../../../shell";
 import { deleteInvestmentAction, updateInvestmentAction } from "../../actions";
+import SymbolSearch from "../../symbol-search";
+
+function pickParam(value: string | string[] | undefined): string | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const trimmed = raw?.trim();
+  return trimmed || undefined;
+}
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +81,13 @@ export default async function EditarInversionPage({
 
   const editValues = formError?.formId === "edit" ? formError.values : {};
 
+  // Symbol-search prefill (#138): a picked candidate fills name/symbol/provider
+  // via pf* params; these take precedence over the asset's stored values.
+  const symbolQuery = pickParam(resolvedSearchParams?.["symbolq"]);
+  const prefillName = pickParam(resolvedSearchParams?.["pfName"]);
+  const prefillSymbol = pickParam(resolvedSearchParams?.["pfSymbol"]);
+  const prefillProvider = pickParam(resolvedSearchParams?.["pfProvider"]);
+
   // Bind asset id to the server actions
   async function boundUpdateInvestmentAction(formData: FormData) {
     "use server";
@@ -107,6 +121,12 @@ export default async function EditarInversionPage({
           </p>
         ) : null}
 
+        <SymbolSearch
+          basePath={`/inversiones/${assetId}/editar`}
+          pickedSymbol={prefillSymbol}
+          query={symbolQuery}
+        />
+
         <form action={boundUpdateInvestmentAction} className="stackForm inversionesForm">
           <input name="currentUrl" type="hidden" value={currentUrl} />
 
@@ -115,7 +135,7 @@ export default async function EditarInversionPage({
             <input
               aria-label="Nombre de la inversión"
               aria-required="true"
-              defaultValue={editValues["name"] ?? asset.name}
+              defaultValue={prefillName ?? editValues["name"] ?? asset.name}
               name="name"
               required
             />
@@ -140,7 +160,9 @@ export default async function EditarInversionPage({
             Proveedor de precios
             <select
               aria-label="Proveedor de precios"
-              defaultValue={editValues["priceProvider"] ?? asset.priceProvider}
+              defaultValue={
+                prefillProvider ?? editValues["priceProvider"] ?? asset.priceProvider
+              }
               name="priceProvider"
             >
               <option value="yahoo">Yahoo Finance</option>
@@ -163,7 +185,9 @@ export default async function EditarInversionPage({
             Símbolo del proveedor <small>(SAN.MC, VUSA.L, N5394)</small>
             <input
               aria-label="Símbolo del proveedor"
-              defaultValue={editValues["providerSymbol"] ?? asset.providerSymbol ?? ""}
+              defaultValue={
+                prefillSymbol ?? editValues["providerSymbol"] ?? asset.providerSymbol ?? ""
+              }
               name="providerSymbol"
               placeholder="SAN.MC"
             />

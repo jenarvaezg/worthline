@@ -69,7 +69,21 @@ export function appendParam(url: string, key: string, value: string): string {
 }
 
 /** One-shot post-redirect feedback params — never carried forward in currentUrl. */
-const ONE_SHOT_PARAMS = new Set(["ok", "error", "form", "updated", "failed", "anchor"]);
+const ONE_SHOT_PARAMS = new Set([
+  "ok",
+  "error",
+  "form",
+  "updated",
+  "failed",
+  "anchor",
+  // Symbol-search state (#138): the query and the picked candidate's prefill
+  // live in the URL only while the user is choosing — never carried into the
+  // action return URL.
+  "symbolq",
+  "pfName",
+  "pfSymbol",
+  "pfProvider",
+]);
 const PRESERVED_VALUE_PREFIX = "v_";
 
 /**
