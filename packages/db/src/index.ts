@@ -277,7 +277,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
       sqlite.close();
     },
     readFireConfig: () => {
-      const db = drizzle(sqlite);
+      const { db } = ctx;
       const row = db
         .select({ value: appSettings.value })
         .from(appSettings)
@@ -291,7 +291,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
       return JSON.parse(row.value) as Record<string, FireScopeConfig>;
     },
     saveFireConfig: (scopeId, config) => {
-      const db = drizzle(sqlite);
+      const { db } = ctx;
       const existing = db
         .select({ value: appSettings.value })
         .from(appSettings)

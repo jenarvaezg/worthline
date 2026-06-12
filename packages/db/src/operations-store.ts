@@ -22,10 +22,11 @@ export interface ValueUpdateCommand {
  * (and liability) valuations in one transaction, and the asset_price_cache
  * (upsert / read).
  *
- * NOTE (PRD #120 candidate 4, R11–R12): the query patterns are deliberately
- * left mixed — upsertPrice / readPriceCache / readAllPriceCacheEntries use
- * drizzle, recordOperation / deleteOperation use raw SQL — exactly as the
- * monolith had them. A later slice owns unifying them.
+ * NOTE (PRD #120 candidate 4, R11–R12): the simple writes are on drizzle
+ * (recordOperation, upsertPrice) alongside the reads. deleteOperation and the
+ * batch value-update passes stay on raw SQL — deleteOperation reads the row
+ * back for its audit entry, and the batch passes share one prepared statement
+ * across many rows; a later slice (R12) owns migrating those complex writes.
  *
  * The historical-snapshot ripple (ADR 0012, PRD #107) is NOT part of this
  * store: recordOperation and deleteOperation are pure persistence, and the
@@ -62,35 +63,13 @@ export function createOperationsStore(ctx: StoreContext): OperationsStore {
 }
 
 function recordOperation(ctx: StoreContext, input: CreateInvestmentOperationInput): void {
-  const { sqlite } = ctx;
   const operation = createInvestmentOperation(input);
 
-  sqlite
-    .prepare(
-      `
-      INSERT INTO asset_operations (
-        id,
-        asset_id,
-        kind,
-        executed_at,
-        units,
-        price_per_unit,
-        currency,
-        fees_minor
-      )
-      VALUES (
-        @id,
-        @assetId,
-        @kind,
-        @executedAt,
-        @units,
-        @pricePerUnit,
-        @currency,
-        @feesMinor
-      )
-    `,
-    )
-    .run({
+  // fees_minor has a DB default of 0; the domain constructor always supplies it,
+  // matching the raw INSERT which also always passed @feesMinor.
+  ctx.db
+    .insert(assetOperations)
+    .values({
       assetId: operation.assetId,
       currency: operation.currency,
       executedAt: operation.executedAt,
@@ -99,12 +78,12 @@ function recordOperation(ctx: StoreContext, input: CreateInvestmentOperationInpu
       kind: operation.kind,
       pricePerUnit: operation.pricePerUnit,
       units: operation.units,
-    });
+    })
+    .run();
 }
 
 function readOperations(ctx: StoreContext, assetId: string): InvestmentOperation[] {
-  return ctx
-    .db()
+  return ctx.db
     .select()
     .from(assetOperations)
     .where(eq(assetOperations.assetId, assetId))
@@ -223,7 +202,7 @@ function batchApplyAllValueUpdates(
 }
 
 function upsertPrice(ctx: StoreContext, price: AssetPrice): void {
-  const db = ctx.db();
+  const db = ctx.db;
   const now = new Date().toISOString();
 
   db.insert(assetPriceCache)
@@ -255,8 +234,7 @@ function upsertPrice(ctx: StoreContext, price: AssetPrice): void {
 }
 
 function readPriceCache(ctx: StoreContext, assetId: string): AssetPrice | null {
-  const row = ctx
-    .db()
+  const row = ctx.db
     .select()
     .from(assetPriceCache)
     .where(eq(assetPriceCache.assetId, assetId))
@@ -277,7 +255,7 @@ function readPriceCache(ctx: StoreContext, assetId: string): AssetPrice | null {
 }
 
 function readAllPriceCacheEntries(ctx: StoreContext): AssetPrice[] {
-  const rows = ctx.db().select().from(assetPriceCache).all();
+  const rows = ctx.db.select().from(assetPriceCache).all();
 
   return rows.map((row) => ({
     assetId: row.assetId,
