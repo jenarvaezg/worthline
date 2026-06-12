@@ -1,6 +1,7 @@
 import type {
   CreateManualAssetInput,
   DecimalString,
+  HousingValuationAnchor,
   InvestmentPriceProvider,
   LiquidityTier,
   ManualAsset,
@@ -9,10 +10,11 @@ import type {
 import {
   createManualAsset,
   defaultInvestmentPriceProvider,
+  valueHousingAtDate,
 } from "@worthline/domain";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
-import { assetOwnerships, assets, investmentAssets } from "./schema";
+import { assetOwnerships, assets, assetValuations, investmentAssets } from "./schema";
 import {
   hardDeleteAssetTx,
   readAssets,
@@ -66,6 +68,31 @@ export interface UpdateInvestmentAssetInput {
   manualPricePerUnit?: DecimalString;
 }
 
+/** Input for a single housing valuation anchor (PRD #108, slice 4). */
+export interface AddValuationAnchorInput {
+  id: string;
+  assetId: string;
+  /** Integer minor units. TOTAL when adjustsPriorCurve, INCREMENT otherwise. */
+  valueMinor: number;
+  /** YYYY-MM-DD. */
+  valuationDate: string;
+  /** True for a market appraisal (total truth), false for an improvement. */
+  adjustsPriorCurve: boolean;
+}
+
+/** A stored housing valuation anchor as read back from the store. */
+export interface ValuationAnchorRecord extends HousingValuationAnchor {
+  id: string;
+  assetId: string;
+}
+
+/** Fields that can be patched on an existing housing valuation anchor. */
+export interface UpdateValuationAnchorInput {
+  valueMinor?: number;
+  valuationDate?: string;
+  adjustsPriorCurve?: boolean;
+}
+
 /** Fields that can be changed when editing an existing manual asset. */
 export interface UpdateAssetInput {
   name?: string;
@@ -97,6 +124,28 @@ export interface AssetStore {
   restoreAsset: (assetId: string) => number;
   /** Hard-delete a trashed asset (live data + overrides; snapshots untouched). Returns 1 if removed, 0 if not found or not in trash. */
   hardDeleteAsset: (assetId: string) => number;
+  /** Add a housing valuation anchor (market appraisal or improvement). */
+  addValuationAnchor: (input: AddValuationAnchorInput) => void;
+  /** Read an asset's valuation anchors, ordered ascending by date. */
+  readValuationAnchors: (assetId: string) => ValuationAnchorRecord[];
+  /** Delete a valuation anchor by id. Returns 1 if removed, 0 if not found. */
+  deleteValuationAnchor: (anchorId: string) => number;
+  /**
+   * Update an existing housing valuation anchor in place. Validates data types
+   * and respects the (asset_id, valuation_date) unique index — changing the date
+   * to one already occupied throws. Returns 1 if updated, 0 if not found.
+   */
+  updateValuationAnchor: (anchorId: string, input: UpdateValuationAnchorInput) => number;
+  /** Set (or clear, with null) an asset's annual appreciation rate (decimal string). */
+  setAnnualAppreciationRate: (assetId: string, rate: DecimalString | null) => void;
+  /** Read an asset's annual appreciation rate, or null if unset. */
+  readAnnualAppreciationRate: (assetId: string) => DecimalString | null;
+  /**
+   * Value a real-estate asset on `targetDate` (YYYY-MM-DD): reads its anchors +
+   * rate + current value and delegates to the pure domain curve. `today` is a
+   * parameter so the calculation stays deterministic.
+   */
+  valueHousingAtDate: (assetId: string, targetDate: string, today: string) => number;
 }
 
 export function createAssetStore(ctx: StoreContext): AssetStore {
@@ -114,7 +163,204 @@ export function createAssetStore(ctx: StoreContext): AssetStore {
     restoreAsset: (assetId) => restoreAsset(ctx, assetId),
     hardDeleteAsset: (assetId) =>
       ctx.sqlite.transaction(() => hardDeleteAssetTx(ctx, assetId))(),
+    addValuationAnchor: (input) => addValuationAnchor(ctx, input),
+    readValuationAnchors: (assetId) => readValuationAnchors(ctx, assetId),
+    deleteValuationAnchor: (anchorId) => deleteValuationAnchor(ctx, anchorId),
+    updateValuationAnchor: (anchorId, input) => updateValuationAnchor(ctx, anchorId, input),
+    setAnnualAppreciationRate: (assetId, rate) =>
+      setAnnualAppreciationRate(ctx, assetId, rate),
+    readAnnualAppreciationRate: (assetId) => readAnnualAppreciationRate(ctx, assetId),
+    valueHousingAtDate: (assetId, targetDate, today) =>
+      valueHousingAtDateFor(ctx, assetId, targetDate, today),
   };
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function assertValuationDate(valuationDate: string): void {
+  if (!ISO_DATE.test(valuationDate)) {
+    throw new Error(
+      `Valuation date must be in YYYY-MM-DD format, got "${valuationDate}".`,
+    );
+  }
+}
+
+function addValuationAnchor(ctx: StoreContext, input: AddValuationAnchorInput): void {
+  if (!Number.isInteger(input.valueMinor)) {
+    throw new Error("Money must be stored as integer minor units.");
+  }
+  assertValuationDate(input.valuationDate);
+
+  ctx.db
+    .insert(assetValuations)
+    .values({
+      adjustsPriorCurve: input.adjustsPriorCurve ? 1 : 0,
+      assetId: input.assetId,
+      id: input.id,
+      valuationDate: input.valuationDate,
+      valueMinor: input.valueMinor,
+    })
+    .run();
+
+  ctx.writeAuditEntry("add_valuation_anchor", "asset", input.assetId, {
+    adjustsPriorCurve: input.adjustsPriorCurve,
+    anchorId: input.id,
+    valuationDate: input.valuationDate,
+    valueMinor: input.valueMinor,
+  });
+}
+
+function readValuationAnchors(
+  ctx: StoreContext,
+  assetId: string,
+): ValuationAnchorRecord[] {
+  const rows = ctx.db
+    .select()
+    .from(assetValuations)
+    .where(eq(assetValuations.assetId, assetId))
+    .orderBy(asc(assetValuations.valuationDate), asc(assetValuations.id))
+    .all();
+
+  return rows.map((row) => ({
+    adjustsPriorCurve: row.adjustsPriorCurve === 1,
+    assetId: row.assetId,
+    id: row.id,
+    valuationDate: row.valuationDate,
+    valueMinor: row.valueMinor,
+  }));
+}
+
+function deleteValuationAnchor(ctx: StoreContext, anchorId: string): number {
+  const row = ctx.db
+    .select({ assetId: assetValuations.assetId })
+    .from(assetValuations)
+    .where(eq(assetValuations.id, anchorId))
+    .get();
+
+  if (!row) return 0;
+
+  const result = ctx.db
+    .delete(assetValuations)
+    .where(eq(assetValuations.id, anchorId))
+    .run();
+
+  if (result.changes > 0) {
+    ctx.writeAuditEntry("delete_valuation_anchor", "asset", row.assetId, { anchorId });
+  }
+  return result.changes;
+}
+
+function updateValuationAnchor(
+  ctx: StoreContext,
+  anchorId: string,
+  input: UpdateValuationAnchorInput,
+): number {
+  if (input.valueMinor !== undefined && !Number.isInteger(input.valueMinor)) {
+    throw new Error("Money must be stored as integer minor units.");
+  }
+  if (input.valuationDate !== undefined) {
+    assertValuationDate(input.valuationDate);
+  }
+
+  const existing = ctx.db
+    .select({ assetId: assetValuations.assetId })
+    .from(assetValuations)
+    .where(eq(assetValuations.id, anchorId))
+    .get();
+
+  if (!existing) return 0;
+
+  const fields: Partial<typeof assetValuations.$inferInsert> = {};
+  if (input.valueMinor !== undefined) fields.valueMinor = input.valueMinor;
+  if (input.valuationDate !== undefined) fields.valuationDate = input.valuationDate;
+  if (input.adjustsPriorCurve !== undefined) {
+    fields.adjustsPriorCurve = input.adjustsPriorCurve ? 1 : 0;
+  }
+
+  const result = ctx.db
+    .update(assetValuations)
+    .set(fields)
+    .where(eq(assetValuations.id, anchorId))
+    .run();
+
+  if (result.changes > 0) {
+    ctx.writeAuditEntry("update_valuation_anchor", "asset", existing.assetId, {
+      anchorId,
+      ...input,
+    });
+  }
+  return result.changes;
+}
+
+const DECIMAL_STRING = /^-?\d+(\.\d+)?$/;
+
+function setAnnualAppreciationRate(
+  ctx: StoreContext,
+  assetId: string,
+  rate: DecimalString | null,
+): void {
+  if (rate !== null && !DECIMAL_STRING.test(rate)) {
+    throw new Error(
+      `Annual appreciation rate must be a decimal string (e.g. "0.03"), got "${rate}".`,
+    );
+  }
+
+  ctx.db
+    .update(assets)
+    .set({ annualAppreciationRate: rate, updatedAt: sql`CURRENT_TIMESTAMP` })
+    .where(eq(assets.id, assetId))
+    .run();
+
+  ctx.writeAuditEntry("set_appreciation_rate", "asset", assetId, { rate });
+}
+
+function readAnnualAppreciationRate(
+  ctx: StoreContext,
+  assetId: string,
+): DecimalString | null {
+  const row = ctx.db
+    .select({ annualAppreciationRate: assets.annualAppreciationRate })
+    .from(assets)
+    .where(eq(assets.id, assetId))
+    .get();
+
+  return row?.annualAppreciationRate ?? null;
+}
+
+function valueHousingAtDateFor(
+  ctx: StoreContext,
+  assetId: string,
+  targetDate: string,
+  today: string,
+): number {
+  const row = ctx.db
+    .select({
+      annualAppreciationRate: assets.annualAppreciationRate,
+      currentValueMinor: assets.currentValueMinor,
+    })
+    .from(assets)
+    .where(eq(assets.id, assetId))
+    .get();
+
+  if (!row) {
+    throw new Error(`Asset "${assetId}" not found.`);
+  }
+
+  const anchors: HousingValuationAnchor[] = readValuationAnchors(ctx, assetId).map(
+    (anchor) => ({
+      adjustsPriorCurve: anchor.adjustsPriorCurve,
+      valuationDate: anchor.valuationDate,
+      valueMinor: anchor.valueMinor,
+    }),
+  );
+
+  return valueHousingAtDate({
+    anchors,
+    annualAppreciationRate: row.annualAppreciationRate,
+    currentValueMinor: row.currentValueMinor,
+    targetDate,
+    today,
+  });
 }
 
 function createManualAssetRecord(ctx: StoreContext, input: CreateManualAssetInput): void {

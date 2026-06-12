@@ -182,6 +182,12 @@ export { projectPortfolio } from "./portfolio-projection";
 
 export type { DecimalString } from "./decimal";
 
+export type {
+  HousingValuationAnchor,
+  ValueHousingAtDateInput,
+} from "./housing-valuation";
+export { valueHousingAtDate } from "./housing-valuation";
+
 export type { DashboardState, LocalPersistenceStatus, OnboardingStep } from "./dashboard";
 export {
   deriveOnboardingProgress,

@@ -93,6 +93,8 @@ const KEY_EXPORTS = [
   // drilldown
   "buildDrilldown",
   "buildLiquidDrilldown",
+  // housing-valuation
+  "valueHousingAtDate",
 ] as const;
 
 describe("@worthline/domain barrel", () => {

@@ -82,10 +82,48 @@ export const assets = sqliteTable("assets", {
   currentValueMinor: integer("current_value_minor").notNull(),
   liquidityTier: text("liquidity_tier").$type<LiquidityTier>().notNull(),
   isPrimaryResidence: integer("is_primary_residence").notNull().default(0),
+  /**
+   * Decimal-string annual appreciation rate (e.g. "0.03") used to drift a
+   * real-estate asset's value between/beyond its valuation anchors. Null means
+   * no drift. Only meaningful for real_estate assets — the guard lives in the
+   * domain/caller, not as a SQL constraint (PRD #108, slice 4 / pattern R9).
+   */
+  annualAppreciationRate: text("annual_appreciation_rate"),
   deletedAt: text("deleted_at"),
   createdAt: timestamp("created_at"),
   updatedAt: timestamp("updated_at"),
 });
+
+/**
+ * Manual valuation anchors for a real-estate asset (PRD #108, slice 4). Each row
+ * is either a market appraisal or an improvement, distinguished by
+ * `adjusts_prior_curve`:
+ *  - true  (market appraisal): `value_minor` is the TOTAL value on that date.
+ *  - false (improvement/reform): `value_minor` is the INCREMENT added from that
+ *    date onward.
+ *
+ * The `asset_id → real_estate` invariant is enforced by the domain/caller (R9),
+ * not by a SQL constraint. The unique index keeps one anchor per asset per date.
+ */
+export const assetValuations = sqliteTable(
+  "asset_valuations",
+  {
+    id: text("id").primaryKey(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    valueMinor: integer("value_minor").notNull(),
+    valuationDate: text("valuation_date").notNull(),
+    adjustsPriorCurve: integer("adjusts_prior_curve").notNull(),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    uniqueIndex("asset_valuations_asset_date_unique").on(
+      table.assetId,
+      table.valuationDate,
+    ),
+  ],
+);
 
 export const assetOwnerships = sqliteTable(
   "asset_ownerships",
