@@ -39,7 +39,7 @@ export interface LiabilityStore {
 export function createLiabilityStore(ctx: StoreContext): LiabilityStore {
   return {
     createLiability: (input) => createLiabilityRecord(ctx, input),
-    readLiabilities: () => readLiabilities(ctx.sqlite, ctx.getWorkspace()),
+    readLiabilities: () => readLiabilities(ctx.db, ctx.getWorkspace()),
     updateLiability: (liabilityId, input) => updateLiability(ctx, liabilityId, input),
     updateLiabilityBalance: (liabilityId, balanceMinor) =>
       updateLiabilityBalance(ctx, liabilityId, balanceMinor),

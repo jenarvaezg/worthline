@@ -16,7 +16,7 @@ import {
 } from "@worthline/domain";
 import Database from "better-sqlite3";
 import type { Database as DatabaseConnection } from "better-sqlite3";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -26,6 +26,9 @@ import {
   assetOwnerships,
   assets,
   auditLog,
+  liabilities,
+  snapshots,
+  warningOverrides,
 } from "./schema";
 import {
   createAssetStore,
@@ -54,6 +57,8 @@ import {
   readAllOperations,
   readAssets,
   readLiabilities,
+  type StoreContext,
+  type StoreDb,
 } from "./store-context";
 import {
   createWorkspaceStore,
@@ -262,7 +267,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
   // reference pattern as rippleHistoricalSnapshotsForOperation).
   const workspaceStore = createWorkspaceStore(ctx, {
     gapFillHistoricalSnapshots: (workspace, today) =>
-      gapFillHistoricalSnapshots(sqlite, workspace, store.snapshots.saveSnapshot, today),
+      gapFillHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, today),
   });
 
   const { getWorkspace } = ctx;
@@ -313,59 +318,69 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         .run();
     },
     acknowledgeWarning: (code, entityId) => {
-      const result = sqlite
-        .prepare(
-          `INSERT INTO warning_overrides (code, entity_id) VALUES (?, ?)
-           ON CONFLICT(code, entity_id) DO NOTHING`,
-        )
-        .run(code, entityId);
+      const result = ctx.db
+        .insert(warningOverrides)
+        .values({ code, entityId })
+        .onConflictDoNothing({
+          target: [warningOverrides.code, warningOverrides.entityId],
+        })
+        .run();
       if (result.changes > 0) {
         writeAuditEntry("acknowledge_warning", "asset", entityId, { code });
       }
       return result.changes;
     },
     removeWarningOverride: (code, entityId) => {
-      sqlite
-        .prepare(`DELETE FROM warning_overrides WHERE code = ? AND entity_id = ?`)
-        .run(code, entityId);
+      ctx.db
+        .delete(warningOverrides)
+        .where(
+          and(eq(warningOverrides.code, code), eq(warningOverrides.entityId, entityId)),
+        )
+        .run();
       writeAuditEntry("unacknowledge_warning", "asset", entityId, { code });
     },
-    readWarningOverrides: () => {
-      const rows = sqlite
-        .prepare(`SELECT code, entity_id AS entityId FROM warning_overrides`)
-        .all() as Array<{ code: string; entityId: string }>;
-
-      return rows.map((row) => ({ code: row.code, entityId: row.entityId }));
-    },
+    readWarningOverrides: () =>
+      ctx.db
+        .select({ code: warningOverrides.code, entityId: warningOverrides.entityId })
+        .from(warningOverrides)
+        .all(),
     readTrash: () => ({
-      assets: sqlite
-        .prepare(`SELECT id, name FROM assets WHERE deleted_at IS NOT NULL ORDER BY name`)
-        .all() as Array<{ id: string; name: string }>,
-      liabilities: sqlite
-        .prepare(
-          `SELECT id, name FROM liabilities WHERE deleted_at IS NOT NULL ORDER BY name`,
-        )
-        .all() as Array<{ id: string; name: string }>,
+      assets: ctx.db
+        .select({ id: assets.id, name: assets.name })
+        .from(assets)
+        .where(isNotNull(assets.deletedAt))
+        .orderBy(asc(assets.name))
+        .all(),
+      liabilities: ctx.db
+        .select({ id: liabilities.id, name: liabilities.name })
+        .from(liabilities)
+        .where(isNotNull(liabilities.deletedAt))
+        .orderBy(asc(liabilities.name))
+        .all(),
     }),
     emptyTrash: () =>
-      sqlite.transaction(() => {
-        const trashedAssets = sqlite
-          .prepare(`SELECT id FROM assets WHERE deleted_at IS NOT NULL`)
-          .all() as Array<{ id: string }>;
-        const trashedLiabilities = sqlite
-          .prepare(`SELECT id FROM liabilities WHERE deleted_at IS NOT NULL`)
-          .all() as Array<{ id: string }>;
+      ctx.transaction(() => {
+        const trashedAssets = ctx.db
+          .select({ id: assets.id })
+          .from(assets)
+          .where(isNotNull(assets.deletedAt))
+          .all();
+        const trashedLiabilities = ctx.db
+          .select({ id: liabilities.id })
+          .from(liabilities)
+          .where(isNotNull(liabilities.deletedAt))
+          .all();
 
-        let assets = 0;
-        let liabilities = 0;
-        for (const row of trashedAssets) assets += hardDeleteAssetTx(ctx, row.id);
+        let assetsRemoved = 0;
+        let liabilitiesRemoved = 0;
+        for (const row of trashedAssets) assetsRemoved += hardDeleteAssetTx(ctx, row.id);
         for (const row of trashedLiabilities)
-          liabilities += hardDeleteLiabilityTx(ctx, row.id);
+          liabilitiesRemoved += hardDeleteLiabilityTx(ctx, row.id);
 
-        return { assets, liabilities };
-      })(),
+        return { assets: assetsRemoved, liabilities: liabilitiesRemoved };
+      }),
     readAuditLog: (filter) => {
-      const db = drizzle(sqlite);
+      const { db } = ctx;
       const rows = filter?.entityId
         ? db
             .select()
@@ -387,13 +402,13 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
     rippleHistoricalSnapshotsForOperation: (params) => {
       const workspace = getWorkspace();
       if (!workspace) return;
-      rippleHistoricalSnapshots(sqlite, workspace, store.snapshots.saveSnapshot, params);
+      rippleHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, params);
     },
     backfillHistoricalSnapshots: (today) => {
       const workspace = getWorkspace();
       if (!workspace) return;
       gapFillHistoricalSnapshots(
-        sqlite,
+        ctx,
         workspace,
         store.snapshots.saveSnapshot,
         today ?? new Date().toISOString().slice(0, 10),
@@ -416,14 +431,14 @@ interface HistoricalSnapshotDeps {
 }
 
 function buildHistoricalSnapshotDeps(
-  sqlite: DatabaseConnection,
+  db: StoreDb,
   workspace: Workspace,
 ): HistoricalSnapshotDeps {
   return {
-    assets: readAssets(sqlite, workspace),
-    liabilities: readLiabilities(sqlite, workspace),
-    manualValueHistory: readManualValueHistory(sqlite),
-    operationsByAsset: readAllOperations(sqlite),
+    assets: readAssets(db, workspace),
+    liabilities: readLiabilities(db, workspace),
+    manualValueHistory: readManualValueHistory(db),
+    operationsByAsset: readAllOperations(db),
     scopes: listScopeOptions(workspace),
   };
 }
@@ -436,9 +451,9 @@ function buildHistoricalSnapshotDeps(
  * value point. The entry's `created_at` date is when the value became known.
  */
 function readManualValueHistory(
-  sqlite: DatabaseConnection,
+  db: StoreDb,
 ): Map<string, ManualValuePoint[]> {
-  const rows = drizzle(sqlite)
+  const rows = db
     .select()
     .from(auditLog)
     .orderBy(asc(auditLog.createdAt))
@@ -491,7 +506,7 @@ function readManualValueHistory(
  * from a snapshot falls back to the last known operation price ≤ its date.
  */
 function rippleHistoricalSnapshots(
-  sqlite: DatabaseConnection,
+  ctx: StoreContext,
   workspace: Workspace,
   saveSnapshot: (input: SaveSnapshotInput) => void,
   params: {
@@ -501,19 +516,18 @@ function rippleHistoricalSnapshots(
     today: string;
   },
 ): void {
+  const { db } = ctx;
   const { assetId, mode, operationDateKey, today } = params;
 
   // The operated asset's identity — read including trashed, since it existed on
   // the snapshot dates even if it was trashed afterwards (ADR 0012).
-  const asset = readInvestmentIdentity(sqlite, assetId);
+  const asset = readInvestmentIdentity(db, assetId);
   if (!asset) return;
-  const operations = readAllOperations(sqlite).get(assetId) ?? [];
+  const operations = readAllOperations(db).get(assetId) ?? [];
 
-  const deleteSnapshotById = sqlite.prepare("DELETE FROM snapshots WHERE id = ?");
-
-  const apply = sqlite.transaction(() => {
+  ctx.transaction(() => {
     for (const scope of listScopeOptions(workspace)) {
-      const existing = readSnapshots(sqlite, scope.id);
+      const existing = readSnapshots(db, scope.id);
       const existingByDate = new Map(existing.map((snap) => [snap.dateKey, snap]));
 
       // Generate a fresh whole-portfolio snapshot at the operation date when
@@ -523,7 +537,7 @@ function rippleHistoricalSnapshots(
         operationDateKey < today &&
         !existingByDate.has(operationDateKey)
       ) {
-        const deps = buildHistoricalSnapshotDeps(sqlite, workspace);
+        const deps = buildHistoricalSnapshotDeps(db, workspace);
         const built = buildSnapshotAtDate({
           assets: deps.assets,
           capturedAt: historicalCapturedAt(operationDateKey),
@@ -548,7 +562,7 @@ function rippleHistoricalSnapshots(
       for (const snap of existing) {
         if (snap.dateKey < operationDateKey) continue;
 
-        const frozenHoldings = readSnapshotHoldings(sqlite, {
+        const frozenHoldings = readSnapshotHoldings(db, {
           scopeId: scope.id,
           from: snap.dateKey,
           to: snap.dateKey,
@@ -575,13 +589,11 @@ function rippleHistoricalSnapshots(
         } else {
           // No holdings remain (e.g. the deleted operation was the only basis):
           // drop the snapshot rather than leave it showing stale values.
-          deleteSnapshotById.run(snap.id);
+          db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
         }
       }
     }
   });
-
-  apply();
 }
 
 /**
@@ -590,10 +602,10 @@ function rippleHistoricalSnapshots(
  * holdings that existed on past dates even if they were trashed since.
  */
 function readInvestmentIdentity(
-  sqlite: DatabaseConnection,
+  db: StoreDb,
   assetId: string,
 ): ManualAsset | null {
-  const row = drizzle(sqlite)
+  const row = db
     .select({
       id: assets.id,
       name: assets.name,
@@ -608,7 +620,7 @@ function readInvestmentIdentity(
 
   if (!row) return null;
 
-  const ownership = drizzle(sqlite)
+  const ownership = db
     .select({ memberId: assetOwnerships.memberId, shareBps: assetOwnerships.shareBps })
     .from(assetOwnerships)
     .where(eq(assetOwnerships.assetId, assetId))
@@ -633,12 +645,12 @@ function readInvestmentIdentity(
  * operation ripple — each date is reconstructed once from all operations ≤ it.
  */
 function gapFillHistoricalSnapshots(
-  sqlite: DatabaseConnection,
+  ctx: StoreContext,
   workspace: Workspace,
   saveSnapshot: (input: SaveSnapshotInput) => void,
   today: string,
 ): void {
-  const deps = buildHistoricalSnapshotDeps(sqlite, workspace);
+  const deps = buildHistoricalSnapshotDeps(ctx.db, workspace);
 
   const eventDates = new Set<string>();
   for (const operations of deps.operationsByAsset.values()) {
@@ -651,7 +663,7 @@ function gapFillHistoricalSnapshots(
 
   for (const scope of deps.scopes) {
     const existingDates = new Set(
-      readSnapshots(sqlite, scope.id).map((snap) => snap.dateKey),
+      readSnapshots(ctx.db, scope.id).map((snap) => snap.dateKey),
     );
 
     for (const dateKey of sortedDates) {

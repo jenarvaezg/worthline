@@ -4,9 +4,9 @@ import type {
   InvestmentOperation,
 } from "@worthline/domain";
 import { createInvestmentOperation } from "@worthline/domain";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 
-import { assetOperations, assetPriceCache } from "./schema";
+import { assetOperations, assetPriceCache, assets, liabilities } from "./schema";
 import { toOperation, type StoreContext } from "./store-context";
 
 /** One confirmed value change from a value-update pass. */
@@ -22,11 +22,11 @@ export interface ValueUpdateCommand {
  * (and liability) valuations in one transaction, and the asset_price_cache
  * (upsert / read).
  *
- * NOTE (PRD #120 candidate 4, R11–R12): the simple writes are on drizzle
- * (recordOperation, upsertPrice) alongside the reads. deleteOperation and the
- * batch value-update passes stay on raw SQL — deleteOperation reads the row
- * back for its audit entry, and the batch passes share one prepared statement
- * across many rows; a later slice (R12) owns migrating those complex writes.
+ * NOTE (PRD #120 candidate 4, completed in R12): every method here is on
+ * Drizzle — recordOperation / upsertPrice (R11) plus deleteOperation and the
+ * batch value-update passes (R12). The batch passes run one Drizzle UPDATE per
+ * row inside ctx.transaction; the audit-entry and validation ordering match the
+ * old prepared-statement loop exactly.
  *
  * The historical-snapshot ripple (ADR 0012, PRD #107) is NOT part of this
  * store: recordOperation and deleteOperation are pure persistence, and the
@@ -96,30 +96,26 @@ function deleteOperation(
   ctx: StoreContext,
   operationId: string,
 ): { assetId: string; executedAt: string } | null {
-  const { sqlite } = ctx;
-  const row = sqlite
-    .prepare(
-      `SELECT asset_id AS assetId, kind, executed_at AS executedAt, units,
-              price_per_unit AS pricePerUnit, currency, fees_minor AS feesMinor
-       FROM asset_operations WHERE id = ?`,
-    )
-    .get(operationId) as
-    | {
-        assetId: string;
-        kind: string;
-        executedAt: string;
-        units: string;
-        pricePerUnit: string;
-        currency: string;
-        feesMinor: number;
-      }
-    | undefined;
+  const { db } = ctx;
+  const row = db
+    .select({
+      assetId: assetOperations.assetId,
+      kind: assetOperations.kind,
+      executedAt: assetOperations.executedAt,
+      units: assetOperations.units,
+      pricePerUnit: assetOperations.pricePerUnit,
+      currency: assetOperations.currency,
+      feesMinor: assetOperations.feesMinor,
+    })
+    .from(assetOperations)
+    .where(eq(assetOperations.id, operationId))
+    .get();
 
   if (!row) {
     return null;
   }
 
-  sqlite.prepare(`DELETE FROM asset_operations WHERE id = ?`).run(operationId);
+  db.delete(assetOperations).where(eq(assetOperations.id, operationId)).run();
 
   // Audit against the owning asset so the deletion shows in its history;
   // the full operation is recorded, making manual re-entry a de facto undo.
@@ -139,24 +135,21 @@ function deleteOperation(
 function batchApplyValueUpdates(ctx: StoreContext, commands: ValueUpdateCommand[]): void {
   if (commands.length === 0) return;
 
-  const { sqlite, writeAuditEntry } = ctx;
-  const applyAll = sqlite.transaction(() => {
-    const update = sqlite.prepare(
-      `UPDATE assets SET current_value_minor = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-    );
-
+  const { db, writeAuditEntry } = ctx;
+  ctx.transaction(() => {
     for (const cmd of commands) {
       if (!Number.isInteger(cmd.newValueMinor)) {
         throw new Error("Money must be stored as integer minor units.");
       }
-      update.run(cmd.newValueMinor, cmd.id);
+      db.update(assets)
+        .set({ currentValueMinor: cmd.newValueMinor, updatedAt: sql`CURRENT_TIMESTAMP` })
+        .where(eq(assets.id, cmd.id))
+        .run();
       writeAuditEntry("update_valuation", "asset", cmd.id, {
         currentValueMinor: cmd.newValueMinor,
       });
     }
   });
-
-  applyAll();
 }
 
 function batchApplyAllValueUpdates(
@@ -167,7 +160,7 @@ function batchApplyAllValueUpdates(
   const allCommands = [...assetCommands, ...liabilityCommands];
   if (allCommands.length === 0) return;
 
-  const { sqlite, writeAuditEntry } = ctx;
+  const { db, writeAuditEntry } = ctx;
 
   // Validate ALL amounts before any write.
   for (const cmd of allCommands) {
@@ -176,29 +169,29 @@ function batchApplyAllValueUpdates(
     }
   }
 
-  const applyAll = sqlite.transaction(() => {
-    const updateAsset = sqlite.prepare(
-      `UPDATE assets SET current_value_minor = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-    );
-    const updateLiability = sqlite.prepare(
-      `UPDATE liabilities SET current_balance_minor = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-    );
-
+  ctx.transaction(() => {
     for (const cmd of assetCommands) {
-      updateAsset.run(cmd.newValueMinor, cmd.id);
+      db.update(assets)
+        .set({ currentValueMinor: cmd.newValueMinor, updatedAt: sql`CURRENT_TIMESTAMP` })
+        .where(eq(assets.id, cmd.id))
+        .run();
       writeAuditEntry("update_valuation", "asset", cmd.id, {
         currentValueMinor: cmd.newValueMinor,
       });
     }
     for (const cmd of liabilityCommands) {
-      updateLiability.run(cmd.newValueMinor, cmd.id);
+      db.update(liabilities)
+        .set({
+          currentBalanceMinor: cmd.newValueMinor,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(liabilities.id, cmd.id))
+        .run();
       writeAuditEntry("update_balance", "liability", cmd.id, {
         balanceMinor: cmd.newValueMinor,
       });
     }
   });
-
-  applyAll();
 }
 
 function upsertPrice(ctx: StoreContext, price: AssetPrice): void {

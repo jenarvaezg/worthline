@@ -6,33 +6,34 @@ import type {
   FireScopeConfig,
   Member,
   MemberGroup,
-  SnapshotHoldingKind,
   SnapshotHoldingRow,
   Workspace,
   WorkspaceExport,
   WorkspaceMode,
-  LiquidityTier,
 } from "@worthline/domain";
 import {
   assertSnapshotHoldingsReconcile,
   createWorkspace,
   serializeWorkspaceExport,
 } from "@worthline/domain";
-import type { Database as DatabaseConnection } from "better-sqlite3";
-import { asc, eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import { asc, count, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 import {
   appSettings,
   assetOperations,
+  assetOwnerships,
   assetPriceCache,
   assets,
-  investmentAssets,
   liabilities,
+  liabilityOwnerships,
+  investmentAssets,
   memberGroupMembers,
   memberGroups,
   members,
+  snapshotHoldings,
+  snapshots,
+  warningOverrides,
   workspace as workspaceTable,
 } from "./schema";
 import { readSnapshots } from "./snapshot-store";
@@ -41,6 +42,7 @@ import {
   readLiabilityOwnerships,
   toOperation,
   type StoreContext,
+  type StoreDb,
 } from "./store-context";
 
 export interface InitializeWorkspaceInput {
@@ -141,7 +143,7 @@ export function createWorkspaceStore(
     initializeWorkspace: (input) => initializeWorkspace(ctx, input),
     resetWorkspace: () => resetWorkspace(ctx),
     readWorkspace: () => ctx.getWorkspace(),
-    exportWorkspace: () => buildWorkspaceExport(ctx.sqlite, ctx.getWorkspace()),
+    exportWorkspace: () => buildWorkspaceExport(ctx.db, ctx.getWorkspace()),
     importWorkspace: (doc) => importWorkspace(ctx, deps, doc),
     createMember: (member) => createMember(ctx, member),
     updateMember: (member) => updateMember(ctx, member),
@@ -158,9 +160,7 @@ export function createWorkspaceStore(
  * cache can be seeded with it without a cycle: index.ts injects this into
  * createStoreContext, and every reader goes through the memoized getWorkspace.
  */
-export function readWorkspace(sqlite: DatabaseConnection): Workspace | null {
-  const db = drizzle(sqlite);
-
+export function readWorkspace(db: StoreDb): Workspace | null {
   const workspaceRow = db
     .select({ baseCurrency: workspaceTable.baseCurrency, mode: workspaceTable.mode })
     .from(workspaceTable)
@@ -218,7 +218,7 @@ export function readWorkspace(sqlite: DatabaseConnection): Workspace | null {
 }
 
 function initializeWorkspace(ctx: StoreContext, input: InitializeWorkspaceInput): void {
-  const { sqlite } = ctx;
+  const { db } = ctx;
   const workspace = createWorkspace({
     baseCurrency: "EUR",
     members: input.members,
@@ -226,60 +226,49 @@ function initializeWorkspace(ctx: StoreContext, input: InitializeWorkspaceInput)
     ...(input.groups ? { groups: input.groups } : {}),
   });
 
-  const initialize = sqlite.transaction(() => {
-    sqlite.prepare("DELETE FROM member_group_members").run();
-    sqlite.prepare("DELETE FROM member_groups").run();
-    sqlite.prepare("DELETE FROM members").run();
-    sqlite.prepare("DELETE FROM workspace").run();
+  ctx.transaction(() => {
+    db.delete(memberGroupMembers).run();
+    db.delete(memberGroups).run();
+    db.delete(members).run();
+    db.delete(workspaceTable).run();
 
-    sqlite
-      .prepare(
-        `
-        INSERT INTO workspace (id, mode, base_currency)
-        VALUES ('default', @mode, @baseCurrency)
-      `,
-      )
-      .run({
+    db.insert(workspaceTable)
+      .values({
         baseCurrency: workspace.baseCurrency,
+        id: "default",
         mode: workspace.mode,
-      });
+      })
+      .run();
 
-    const insertMember = sqlite.prepare(`
-      INSERT INTO members (id, name, disabled_at)
-      VALUES (@id, @name, @disabledAt)
-    `);
-
-    for (const member of workspace.members) {
-      insertMember.run({
-        disabledAt: member.disabledAt ?? null,
-        id: member.id,
-        name: member.name,
-      });
+    if (workspace.members.length > 0) {
+      db.insert(members)
+        .values(
+          workspace.members.map((member) => ({
+            disabledAt: member.disabledAt ?? null,
+            id: member.id,
+            name: member.name,
+          })),
+        )
+        .run();
     }
 
-    const insertGroup = sqlite.prepare(`
-      INSERT INTO member_groups (id, name)
-      VALUES (@id, @name)
-    `);
-    const insertGroupMember = sqlite.prepare(`
-      INSERT INTO member_group_members (group_id, member_id, sort_order)
-      VALUES (@groupId, @memberId, @sortOrder)
-    `);
-
     for (const group of workspace.groups) {
-      insertGroup.run({ id: group.id, name: group.name });
+      db.insert(memberGroups).values({ id: group.id, name: group.name }).run();
 
-      group.memberIds.forEach((memberId, sortOrder) => {
-        insertGroupMember.run({
-          groupId: group.id,
-          memberId,
-          sortOrder,
-        });
-      });
+      if (group.memberIds.length > 0) {
+        db.insert(memberGroupMembers)
+          .values(
+            group.memberIds.map((memberId, sortOrder) => ({
+              groupId: group.id,
+              memberId,
+              sortOrder,
+            })),
+          )
+          .run();
+      }
     }
   });
 
-  initialize();
   ctx.invalidateWorkspace();
 }
 
@@ -290,75 +279,65 @@ function resetWorkspace(ctx: StoreContext): void {
   // hold mid-transaction. The file and schema survive; the next read finds
   // no workspace and the app falls back to onboarding. Unlike a hard
   // delete, the reset erases history.
-  sqlite.transaction(() => {
+  //
+  // STORE-RULE EXCEPTION (R12): this is a DELETE over a runtime list of table
+  // *names*, which Drizzle's typed builder cannot express — so it stays on raw
+  // SQL on purpose. importWorkspace shares the same wipe for the same reason.
+  ctx.transaction(() => {
     for (const table of WORKSPACE_TABLES) {
       sqlite.prepare(`DELETE FROM ${table}`).run();
     }
-  })();
+  });
 
   ctx.invalidateWorkspace();
 }
 
 function createMember(ctx: StoreContext, member: Member): void {
-  ctx.sqlite
-    .prepare(
-      `
-      INSERT INTO members (id, name, disabled_at)
-      VALUES (@id, @name, @disabledAt)
-    `,
-    )
-    .run({
+  ctx.db
+    .insert(members)
+    .values({
       disabledAt: member.disabledAt ?? null,
       id: member.id,
       name: member.name,
-    });
+    })
+    .run();
   ctx.invalidateWorkspace();
 }
 
 function updateMember(ctx: StoreContext, member: Pick<Member, "id" | "name">): void {
-  ctx.sqlite
-    .prepare(
-      `
-      UPDATE members
-      SET name = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `,
-    )
-    .run(member.name, member.id);
+  ctx.db
+    .update(members)
+    .set({ name: member.name, updatedAt: sql`CURRENT_TIMESTAMP` })
+    .where(eq(members.id, member.id))
+    .run();
   ctx.invalidateWorkspace();
 }
 
 function disableMember(ctx: StoreContext, memberId: string, disabledAt: string): void {
-  ctx.sqlite
-    .prepare(
-      `
-      UPDATE members
-      SET disabled_at = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `,
-    )
-    .run(disabledAt, memberId);
+  ctx.db
+    .update(members)
+    .set({ disabledAt, updatedAt: sql`CURRENT_TIMESTAMP` })
+    .where(eq(members.id, memberId))
+    .run();
   ctx.invalidateWorkspace();
 }
 
 function reactivateMember(ctx: StoreContext, memberId: string): void {
-  ctx.sqlite
-    .prepare(
-      `
-      UPDATE members
-      SET disabled_at = NULL, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `,
-    )
-    .run(memberId);
+  ctx.db
+    .update(members)
+    .set({ disabledAt: null, updatedAt: sql`CURRENT_TIMESTAMP` })
+    .where(eq(members.id, memberId))
+    .run();
   ctx.invalidateWorkspace();
 }
 
 function hardDeleteMember(ctx: StoreContext, memberId: string): number {
-  const { sqlite } = ctx;
-  const member = sqlite
-    .prepare(`SELECT name, disabled_at AS disabledAt FROM members WHERE id = ?`)
-    .get(memberId) as { name: string; disabledAt: string | null } | undefined;
+  const { db } = ctx;
+  const member = db
+    .select({ name: members.name, disabledAt: members.disabledAt })
+    .from(members)
+    .where(eq(members.id, memberId))
+    .get();
 
   // Only a disabled member owning no share of any holding (trashed ones
   // included) may be destroyed — mirrors the FK `restrict` as a domain rule
@@ -367,19 +346,24 @@ function hardDeleteMember(ctx: StoreContext, memberId: string): number {
     return 0;
   }
 
-  const owned = sqlite
-    .prepare(
-      `SELECT
-         (SELECT COUNT(*) FROM asset_ownerships WHERE member_id = @id)
-       + (SELECT COUNT(*) FROM liability_ownerships WHERE member_id = @id) AS n`,
-    )
-    .get({ id: memberId }) as { n: number };
+  const assetCount =
+    db
+      .select({ n: count() })
+      .from(assetOwnerships)
+      .where(eq(assetOwnerships.memberId, memberId))
+      .get()?.n ?? 0;
+  const liabilityCount =
+    db
+      .select({ n: count() })
+      .from(liabilityOwnerships)
+      .where(eq(liabilityOwnerships.memberId, memberId))
+      .get()?.n ?? 0;
 
-  if (owned.n > 0) {
+  if (assetCount + liabilityCount > 0) {
     return 0;
   }
 
-  const result = sqlite.prepare(`DELETE FROM members WHERE id = ?`).run(memberId);
+  const result = db.delete(members).where(eq(members.id, memberId)).run();
 
   if (result.changes > 0) {
     ctx.writeAuditEntry("hard_delete_member", "member", memberId, { name: member.name });
@@ -390,23 +374,23 @@ function hardDeleteMember(ctx: StoreContext, memberId: string): number {
 }
 
 function readMemberOwnerships(ctx: StoreContext, memberId: string): MemberOwnerships {
-  const { sqlite } = ctx;
+  const { db } = ctx;
 
   return {
-    assets: sqlite
-      .prepare(
-        `SELECT a.id, a.name FROM asset_ownerships o
-         JOIN assets a ON a.id = o.asset_id
-         WHERE o.member_id = ? ORDER BY a.name`,
-      )
-      .all(memberId) as Array<{ id: string; name: string }>,
-    liabilities: sqlite
-      .prepare(
-        `SELECT l.id, l.name FROM liability_ownerships o
-         JOIN liabilities l ON l.id = o.liability_id
-         WHERE o.member_id = ? ORDER BY l.name`,
-      )
-      .all(memberId) as Array<{ id: string; name: string }>,
+    assets: db
+      .select({ id: assets.id, name: assets.name })
+      .from(assetOwnerships)
+      .innerJoin(assets, eq(assets.id, assetOwnerships.assetId))
+      .where(eq(assetOwnerships.memberId, memberId))
+      .orderBy(asc(assets.name))
+      .all(),
+    liabilities: db
+      .select({ id: liabilities.id, name: liabilities.name })
+      .from(liabilityOwnerships)
+      .innerJoin(liabilities, eq(liabilities.id, liabilityOwnerships.liabilityId))
+      .where(eq(liabilityOwnerships.memberId, memberId))
+      .orderBy(asc(liabilities.name))
+      .all(),
   };
 }
 
@@ -415,117 +399,98 @@ function importWorkspace(
   deps: WorkspaceStoreDeps,
   doc: WorkspaceExport,
 ): void {
-  const { sqlite } = ctx;
+  const { db, sqlite } = ctx;
 
-  const importAll = sqlite.transaction(() => {
-    // Full replace (ADR 0010): same wipe as resetWorkspace, then the
-    // file's sections are bulk-inserted with their ids preserved — raw
-    // INSERTs on purpose, never the domain constructors that mint ids.
+  ctx.transaction(() => {
+    // Full replace (ADR 0010): same wipe as resetWorkspace — a DELETE over a
+    // runtime list of table *names*, which Drizzle's typed builder cannot
+    // express, so it stays on raw SQL (the one store-rule exception, R12).
+    // Then the file's sections are bulk-inserted with their ids preserved via
+    // Drizzle — raw values on purpose, never the domain constructors that mint ids.
     for (const table of WORKSPACE_TABLES) {
       sqlite.prepare(`DELETE FROM ${table}`).run();
     }
 
-    sqlite
-      .prepare(
-        `INSERT INTO workspace (id, mode, base_currency)
-         VALUES ('default', @mode, @baseCurrency)`,
-      )
-      .run({
+    db.insert(workspaceTable)
+      .values({
         baseCurrency: doc.workspace.baseCurrency,
+        id: "default",
         mode: doc.workspace.mode,
-      });
+      })
+      .run();
 
-    const insertMember = sqlite.prepare(`
-      INSERT INTO members (id, name, disabled_at)
-      VALUES (@id, @name, @disabledAt)
-    `);
-
-    for (const member of doc.members) {
-      insertMember.run({
-        disabledAt: member.disabledAt ?? null,
-        id: member.id,
-        name: member.name,
-      });
+    if (doc.members.length > 0) {
+      db.insert(members)
+        .values(
+          doc.members.map((member) => ({
+            disabledAt: member.disabledAt ?? null,
+            id: member.id,
+            name: member.name,
+          })),
+        )
+        .run();
     }
-
-    const insertGroup = sqlite.prepare(`
-      INSERT INTO member_groups (id, name)
-      VALUES (@id, @name)
-    `);
-    const insertGroupMember = sqlite.prepare(`
-      INSERT INTO member_group_members (group_id, member_id, sort_order)
-      VALUES (@groupId, @memberId, @sortOrder)
-    `);
 
     for (const group of doc.groups) {
-      insertGroup.run({ id: group.id, name: group.name });
+      db.insert(memberGroups).values({ id: group.id, name: group.name }).run();
 
-      group.memberIds.forEach((memberId, sortOrder) => {
-        insertGroupMember.run({ groupId: group.id, memberId, sortOrder });
-      });
+      if (group.memberIds.length > 0) {
+        db.insert(memberGroupMembers)
+          .values(
+            group.memberIds.map((memberId, sortOrder) => ({
+              groupId: group.id,
+              memberId,
+              sortOrder,
+            })),
+          )
+          .run();
+      }
     }
 
-    const insertAsset = sqlite.prepare(`
-      INSERT INTO assets (
-        id, name, type, currency, current_value_minor,
-        liquidity_tier, is_primary_residence, deleted_at
-      )
-      VALUES (
-        @id, @name, @type, @currency, @currentValueMinor,
-        @liquidityTier, @isPrimaryResidence, @deletedAt
-      )
-    `);
-    const insertAssetOwnership = sqlite.prepare(`
-      INSERT INTO asset_ownerships (asset_id, member_id, share_bps)
-      VALUES (@assetId, @memberId, @shareBps)
-    `);
-    const insertInvestmentMeta = sqlite.prepare(`
-      INSERT INTO investment_assets (
-        asset_id, unit_symbol, isin, price_provider, provider_symbol,
-        manual_price_per_unit, manual_priced_at
-      )
-      VALUES (
-        @assetId, @unitSymbol, @isin, @priceProvider, @providerSymbol,
-        @manualPricePerUnit, @manualPricedAt
-      )
-    `);
-
     const writeAsset = (asset: ExportedAsset): void => {
-      insertAsset.run({
-        currency: asset.currency,
-        // Investments are stored at zero like createInvestmentAsset does:
-        // their value is derived from operations and prices on read, never
-        // stored (ADR 0006). Hand-valued kinds carry the file's value.
-        currentValueMinor:
-          asset.type === "investment" ? 0 : (asset.currentValue?.amountMinor ?? 0),
-        deletedAt: asset.deletedAt ?? null,
-        id: asset.id,
-        isPrimaryResidence: asset.isPrimaryResidence ? 1 : 0,
-        liquidityTier: asset.liquidityTier,
-        name: asset.name,
-        type: asset.type,
-      });
+      db.insert(assets)
+        .values({
+          currency: asset.currency,
+          // Investments are stored at zero like createInvestmentAsset does:
+          // their value is derived from operations and prices on read, never
+          // stored (ADR 0006). Hand-valued kinds carry the file's value.
+          currentValueMinor:
+            asset.type === "investment" ? 0 : (asset.currentValue?.amountMinor ?? 0),
+          deletedAt: asset.deletedAt ?? null,
+          id: asset.id,
+          isPrimaryResidence: asset.isPrimaryResidence ? 1 : 0,
+          liquidityTier: asset.liquidityTier,
+          name: asset.name,
+          type: asset.type,
+        })
+        .run();
 
-      for (const share of asset.ownership) {
-        insertAssetOwnership.run({
-          assetId: asset.id,
-          memberId: share.memberId,
-          shareBps: share.shareBps,
-        });
+      if (asset.ownership.length > 0) {
+        db.insert(assetOwnerships)
+          .values(
+            asset.ownership.map((share) => ({
+              assetId: asset.id,
+              memberId: share.memberId,
+              shareBps: share.shareBps,
+            })),
+          )
+          .run();
       }
 
       // Every investment gets its metadata row (all-null when the file
       // carries none) — read paths expect the row to exist.
       if (asset.type === "investment") {
-        insertInvestmentMeta.run({
-          assetId: asset.id,
-          isin: asset.investment?.isin ?? null,
-          manualPricePerUnit: asset.investment?.manualPricePerUnit ?? null,
-          manualPricedAt: asset.investment?.manualPricedAt ?? null,
-          priceProvider: asset.investment?.priceProvider ?? null,
-          providerSymbol: asset.investment?.providerSymbol ?? null,
-          unitSymbol: asset.investment?.unitSymbol ?? null,
-        });
+        db.insert(investmentAssets)
+          .values({
+            assetId: asset.id,
+            isin: asset.investment?.isin ?? null,
+            manualPricePerUnit: asset.investment?.manualPricePerUnit ?? null,
+            manualPricedAt: asset.investment?.manualPricedAt ?? null,
+            priceProvider: asset.investment?.priceProvider ?? null,
+            providerSymbol: asset.investment?.providerSymbol ?? null,
+            unitSymbol: asset.investment?.unitSymbol ?? null,
+          })
+          .run();
       }
     };
 
@@ -535,115 +500,74 @@ function importWorkspace(
     for (const asset of doc.assets) writeAsset(asset);
     for (const asset of doc.trash.assets) writeAsset(asset);
 
-    const insertLiability = sqlite.prepare(`
-      INSERT INTO liabilities (
-        id, name, type, currency, current_balance_minor,
-        associated_asset_id, deleted_at
-      )
-      VALUES (
-        @id, @name, @type, @currency, @currentBalanceMinor,
-        @associatedAssetId, @deletedAt
-      )
-    `);
-    const insertLiabilityOwnership = sqlite.prepare(`
-      INSERT INTO liability_ownerships (liability_id, member_id, share_bps)
-      VALUES (@liabilityId, @memberId, @shareBps)
-    `);
-
     const writeLiability = (liability: ExportedLiability): void => {
-      insertLiability.run({
-        associatedAssetId: liability.associatedAssetId ?? null,
-        currency: liability.currency,
-        currentBalanceMinor: liability.currentBalance.amountMinor,
-        deletedAt: liability.deletedAt ?? null,
-        id: liability.id,
-        name: liability.name,
-        type: liability.type,
-      });
+      db.insert(liabilities)
+        .values({
+          associatedAssetId: liability.associatedAssetId ?? null,
+          currency: liability.currency,
+          currentBalanceMinor: liability.currentBalance.amountMinor,
+          deletedAt: liability.deletedAt ?? null,
+          id: liability.id,
+          name: liability.name,
+          type: liability.type,
+        })
+        .run();
 
-      for (const share of liability.ownership) {
-        insertLiabilityOwnership.run({
-          liabilityId: liability.id,
-          memberId: share.memberId,
-          shareBps: share.shareBps,
-        });
+      if (liability.ownership.length > 0) {
+        db.insert(liabilityOwnerships)
+          .values(
+            liability.ownership.map((share) => ({
+              liabilityId: liability.id,
+              memberId: share.memberId,
+              shareBps: share.shareBps,
+            })),
+          )
+          .run();
       }
     };
 
     for (const liability of doc.liabilities) writeLiability(liability);
     for (const liability of doc.trash.liabilities) writeLiability(liability);
 
-    const insertOperation = sqlite.prepare(`
-      INSERT INTO asset_operations (
-        id, asset_id, kind, executed_at, units,
-        price_per_unit, currency, fees_minor
-      )
-      VALUES (
-        @id, @assetId, @kind, @executedAt, @units,
-        @pricePerUnit, @currency, @feesMinor
-      )
-    `);
-
-    for (const operation of doc.operations) {
-      insertOperation.run({
-        assetId: operation.assetId,
-        currency: operation.currency,
-        executedAt: operation.executedAt,
-        feesMinor: operation.feesMinor,
-        id: operation.id,
-        kind: operation.kind,
-        pricePerUnit: operation.pricePerUnit,
-        units: operation.units,
-      });
+    if (doc.operations.length > 0) {
+      db.insert(assetOperations)
+        .values(
+          doc.operations.map((operation) => ({
+            assetId: operation.assetId,
+            currency: operation.currency,
+            executedAt: operation.executedAt,
+            feesMinor: operation.feesMinor,
+            id: operation.id,
+            kind: operation.kind,
+            pricePerUnit: operation.pricePerUnit,
+            units: operation.units,
+          })),
+        )
+        .run();
     }
 
-    const insertOverride = sqlite.prepare(`
-      INSERT INTO warning_overrides (code, entity_id)
-      VALUES (@code, @entityId)
-    `);
-
-    for (const override of doc.warningOverrides) {
-      insertOverride.run({ code: override.code, entityId: override.entityId });
+    if (doc.warningOverrides.length > 0) {
+      db.insert(warningOverrides)
+        .values(
+          doc.warningOverrides.map((override) => ({
+            code: override.code,
+            entityId: override.entityId,
+          })),
+        )
+        .run();
     }
 
     // The whole fire config record lands in the single app_settings row
     // exactly as saveFireConfig leaves it.
     if (Object.keys(doc.fireConfig).length > 0) {
-      sqlite
-        .prepare(
-          `INSERT INTO app_settings (key, value, updated_at)
-           VALUES ('fire.config', @value, @updatedAt)`,
-        )
-        .run({
+      db.insert(appSettings)
+        .values({
+          key: "fire.config",
           updatedAt: new Date().toISOString(),
           value: JSON.stringify(doc.fireConfig),
-        });
+        })
+        .run();
     }
-
-    const insertSnapshot = sqlite.prepare(`
-      INSERT INTO snapshots (
-        id, scope_id, scope_label, captured_at, date_key, month_key,
-        is_monthly_close, currency, total_net_worth_minor,
-        liquid_net_worth_minor, housing_equity_minor, gross_assets_minor,
-        debts_minor, warnings_json
-      )
-      VALUES (
-        @id, @scopeId, @scopeLabel, @capturedAt, @dateKey, @monthKey,
-        @isMonthlyClose, @currency, @totalNetWorthMinor,
-        @liquidNetWorthMinor, @housingEquityMinor, @grossAssetsMinor,
-        @debtsMinor, @warningsJson
-      )
-    `);
-    const insertHolding = sqlite.prepare(`
-      INSERT INTO snapshot_holdings (
-        id, snapshot_id, holding_id, kind, label,
-        liquidity_tier, value_minor, units, unit_price
-      )
-      VALUES (
-        @id, @snapshotId, @holdingId, @kind, @label,
-        @liquidityTier, @valueMinor, @units, @unitPrice
-      )
-    `);
 
     for (const snapshot of doc.snapshots) {
       // Defence in depth (ADR 0008): the parser already checked this, but
@@ -655,61 +579,60 @@ function importWorkspace(
         });
       }
 
-      insertSnapshot.run({
-        capturedAt: snapshot.capturedAt,
-        currency: snapshot.totalNetWorth.currency,
-        dateKey: snapshot.dateKey,
-        debtsMinor: snapshot.debts.amountMinor,
-        grossAssetsMinor: snapshot.grossAssets.amountMinor,
-        housingEquityMinor: snapshot.housingEquity.amountMinor,
-        id: snapshot.id,
-        isMonthlyClose: snapshot.isMonthlyClose ? 1 : 0,
-        liquidNetWorthMinor: snapshot.liquidNetWorth.amountMinor,
-        monthKey: snapshot.monthKey,
-        scopeId: snapshot.scopeId,
-        scopeLabel: snapshot.scopeLabel,
-        totalNetWorthMinor: snapshot.totalNetWorth.amountMinor,
-        warningsJson: JSON.stringify(snapshot.warnings),
-      });
+      db.insert(snapshots)
+        .values({
+          capturedAt: snapshot.capturedAt,
+          currency: snapshot.totalNetWorth.currency,
+          dateKey: snapshot.dateKey,
+          debtsMinor: snapshot.debts.amountMinor,
+          grossAssetsMinor: snapshot.grossAssets.amountMinor,
+          housingEquityMinor: snapshot.housingEquity.amountMinor,
+          id: snapshot.id,
+          isMonthlyClose: snapshot.isMonthlyClose ? 1 : 0,
+          liquidNetWorthMinor: snapshot.liquidNetWorth.amountMinor,
+          monthKey: snapshot.monthKey,
+          scopeId: snapshot.scopeId,
+          scopeLabel: snapshot.scopeLabel,
+          totalNetWorthMinor: snapshot.totalNetWorth.amountMinor,
+          warningsJson: JSON.stringify(snapshot.warnings),
+        })
+        .run();
 
       // The file's holding rows carry no row ids — mint fresh ones.
-      for (const row of snapshot.holdings) {
-        insertHolding.run({
-          holdingId: row.holdingId,
-          id: randomUUID(),
-          kind: row.kind,
-          label: row.label,
-          liquidityTier: row.liquidityTier,
-          snapshotId: snapshot.id,
-          unitPrice: row.unitPrice ?? null,
-          units: row.units ?? null,
-          valueMinor: row.valueMinor,
-        });
+      if (snapshot.holdings.length > 0) {
+        db.insert(snapshotHoldings)
+          .values(
+            snapshot.holdings.map((row) => ({
+              holdingId: row.holdingId,
+              id: randomUUID(),
+              kind: row.kind,
+              label: row.label,
+              liquidityTier: row.liquidityTier,
+              snapshotId: snapshot.id,
+              unitPrice: row.unitPrice ?? null,
+              units: row.units ?? null,
+              valueMinor: row.valueMinor,
+            })),
+          )
+          .run();
       }
     }
 
-    const insertPrice = sqlite.prepare(`
-      INSERT INTO asset_price_cache (
-        asset_id, currency, price, source, price_date,
-        fetched_at, freshness_state, stale_reason
-      )
-      VALUES (
-        @assetId, @currency, @price, @source, @priceDate,
-        @fetchedAt, @freshnessState, @staleReason
-      )
-    `);
-
-    for (const price of doc.priceCache) {
-      insertPrice.run({
-        assetId: price.assetId,
-        currency: price.currency,
-        fetchedAt: price.fetchedAt,
-        freshnessState: price.freshnessState,
-        price: price.price,
-        priceDate: price.priceDate ?? null,
-        source: price.source,
-        staleReason: price.staleReason ?? null,
-      });
+    if (doc.priceCache.length > 0) {
+      db.insert(assetPriceCache)
+        .values(
+          doc.priceCache.map((price) => ({
+            assetId: price.assetId,
+            currency: price.currency,
+            fetchedAt: price.fetchedAt,
+            freshnessState: price.freshnessState,
+            price: price.price,
+            priceDate: price.priceDate ?? null,
+            source: price.source,
+            staleReason: price.staleReason ?? null,
+          })),
+        )
+        .run();
     }
 
     // One audit entry inside the transaction: a failed import leaves no
@@ -729,7 +652,6 @@ function importWorkspace(
     });
   });
 
-  importAll();
   ctx.invalidateWorkspace();
 
   // Gap-fill historical snapshots (ADR 0012, Slice 3 / #112): generate
@@ -758,14 +680,12 @@ function importWorkspace(
  * The audit log is deliberately not a section.
  */
 function buildWorkspaceExport(
-  sqlite: DatabaseConnection,
+  db: StoreDb,
   workspace: Workspace | null,
 ): WorkspaceExport {
   if (!workspace) {
     throw new Error("Workspace must be initialized before exporting.");
   }
-
-  const db = drizzle(sqlite);
 
   // Assets — live and trashed — with ownership and investment metadata.
   const assetRows = db
@@ -773,7 +693,7 @@ function buildWorkspaceExport(
     .from(assets)
     .orderBy(asc(assets.createdAt), asc(assets.id))
     .all();
-  const ownershipByAsset = readAssetOwnerships(sqlite);
+  const ownershipByAsset = readAssetOwnerships(db);
   const investmentMetaByAsset = new Map(
     db
       .select()
@@ -824,7 +744,7 @@ function buildWorkspaceExport(
     .from(liabilities)
     .orderBy(asc(liabilities.createdAt), asc(liabilities.id))
     .all();
-  const ownershipByLiability = readLiabilityOwnerships(sqlite);
+  const ownershipByLiability = readLiabilityOwnerships(db);
 
   const toExportedLiability = (
     row: typeof liabilities.$inferSelect,
@@ -848,11 +768,11 @@ function buildWorkspaceExport(
     .all()
     .map(toOperation);
 
-  const warningOverrideRows = sqlite
-    .prepare(
-      `SELECT code, entity_id AS entityId FROM warning_overrides ORDER BY code, entity_id`,
-    )
-    .all() as Array<{ code: string; entityId: string }>;
+  const warningOverrideRows = db
+    .select({ code: warningOverrides.code, entityId: warningOverrides.entityId })
+    .from(warningOverrides)
+    .orderBy(asc(warningOverrides.code), asc(warningOverrides.entityId))
+    .all();
 
   const fireRow = db
     .select({ value: appSettings.value })
@@ -864,8 +784,8 @@ function buildWorkspaceExport(
     : {};
 
   // Snapshots across all scopes, each carrying its frozen holding rows.
-  const holdingsBySnapshot = readHoldingRowsBySnapshot(sqlite);
-  const exportedSnapshots: ExportedSnapshot[] = readSnapshots(sqlite).map((snapshot) => ({
+  const holdingsBySnapshot = readHoldingRowsBySnapshot(db);
+  const exportedSnapshots: ExportedSnapshot[] = readSnapshots(db).map((snapshot) => ({
     ...snapshot,
     holdings: holdingsBySnapshot.get(snapshot.id) ?? [],
   }));
@@ -911,41 +831,29 @@ function buildWorkspaceExport(
   });
 }
 
-interface ExportHoldingDbRow {
-  holdingId: string;
-  kind: SnapshotHoldingKind;
-  label: string;
-  liquidityTier: LiquidityTier | null;
-  snapshotId: string;
-  unitPrice: string | null;
-  units: string | null;
-  valueMinor: number;
-}
-
 /**
  * Every frozen holding row grouped by its owning snapshot, in insertion
- * (rowid) order — the deterministic order the rows were captured in.
+ * (rowid) order — the deterministic order the rows were captured in. SQLite's
+ * implicit rowid has no schema column, so the ORDER BY drops to a raw `sql`
+ * fragment inside the otherwise-Drizzle query.
  */
 function readHoldingRowsBySnapshot(
-  sqlite: DatabaseConnection,
+  db: StoreDb,
 ): Map<string, SnapshotHoldingRow[]> {
-  const rows = sqlite
-    .prepare(
-      `
-      SELECT
-        snapshot_id AS snapshotId,
-        holding_id AS holdingId,
-        kind,
-        label,
-        liquidity_tier AS liquidityTier,
-        value_minor AS valueMinor,
-        units,
-        unit_price AS unitPrice
-      FROM snapshot_holdings
-      ORDER BY rowid ASC
-    `,
-    )
-    .all() as ExportHoldingDbRow[];
+  const rows = db
+    .select({
+      snapshotId: snapshotHoldings.snapshotId,
+      holdingId: snapshotHoldings.holdingId,
+      kind: snapshotHoldings.kind,
+      label: snapshotHoldings.label,
+      liquidityTier: snapshotHoldings.liquidityTier,
+      valueMinor: snapshotHoldings.valueMinor,
+      units: snapshotHoldings.units,
+      unitPrice: snapshotHoldings.unitPrice,
+    })
+    .from(snapshotHoldings)
+    .orderBy(sql`rowid ASC`)
+    .all();
 
   const bySnapshot = new Map<string, SnapshotHoldingRow[]>();
 
