@@ -1,11 +1,13 @@
 import type {
   DecimalString,
   InvestmentOperation,
+  ManualAsset,
   OwnershipShare,
   Workspace,
 } from "@worthline/domain";
+import { createManualAsset, deriveInvestmentValuation } from "@worthline/domain";
 import type { Database as DatabaseConnection } from "better-sqlite3";
-import { asc } from "drizzle-orm";
+import { asc, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { randomUUID } from "node:crypto";
 
@@ -13,6 +15,7 @@ import {
   assetOperations,
   assetOwnerships,
   assetPriceCache,
+  assets,
   investmentAssets,
 } from "./schema";
 
@@ -208,4 +211,143 @@ export function readAssetOwnerships(
     .all();
 
   return groupOwnershipByOwner(rows, (row) => row.assetId);
+}
+
+/**
+ * Read every live (non-trashed) asset as a domain ManualAsset. Investment
+ * assets get their value derived from operations + price on read (ADR 0006);
+ * hand-valued kinds carry their stored value. Shared by the AssetStore (R2) and
+ * the monolith's historical-snapshot reconstruction, so it lives here — the one
+ * shared-concerns home — rather than being duplicated across the slices.
+ *
+ * NOTE (PRD #120 candidate 3, R9–R10): the call into the domain constructors and
+ * deriveInvestmentValuation is intentionally left here as-is; a later slice owns
+ * moving that computation out of the data-access layer.
+ */
+export function readAssets(
+  sqlite: DatabaseConnection,
+  workspace: Workspace | null,
+): ManualAsset[] {
+  if (!workspace) {
+    return [];
+  }
+
+  const rows = drizzle(sqlite)
+    .select({
+      currency: assets.currency,
+      currentValueMinor: assets.currentValueMinor,
+      id: assets.id,
+      isPrimaryResidence: assets.isPrimaryResidence,
+      liquidityTier: assets.liquidityTier,
+      name: assets.name,
+      type: assets.type,
+    })
+    .from(assets)
+    .where(isNull(assets.deletedAt))
+    .orderBy(asc(assets.createdAt), asc(assets.id))
+    .all();
+  const ownershipByAsset = readAssetOwnerships(sqlite);
+  const hasInvestments = rows.some((row) => row.type === "investment");
+  const operationsByAsset = hasInvestments
+    ? readAllOperations(sqlite)
+    : new Map<string, InvestmentOperation[]>();
+  const metaByAsset = hasInvestments
+    ? readInvestmentMeta(sqlite)
+    : new Map<string, InvestmentMeta>();
+  const priceCacheByAsset = hasInvestments
+    ? readAllPriceCache(sqlite)
+    : new Map<string, { price: string }>();
+
+  return rows.map((row) =>
+    createManualAsset(workspace, {
+      currency: row.currency,
+      currentValueMinor:
+        row.type === "investment"
+          ? investmentValueMinor(
+              row.id,
+              row.currency,
+              operationsByAsset,
+              metaByAsset,
+              priceCacheByAsset,
+            )
+          : row.currentValueMinor,
+      id: row.id,
+      isPrimaryResidence: row.isPrimaryResidence === 1,
+      liquidityTier: row.liquidityTier,
+      name: row.name,
+      ownership: ownershipByAsset.get(row.id) ?? [],
+      type: row.type,
+    }),
+  );
+}
+
+/** The derived current value of an investment asset: market value if a price is
+ *  known, otherwise its remaining cost basis (book value). */
+function investmentValueMinor(
+  assetId: string,
+  currency: string,
+  operationsByAsset: Map<string, InvestmentOperation[]>,
+  metaByAsset: Map<string, InvestmentMeta>,
+  priceCacheByAsset: Map<string, { price: string }>,
+): number {
+  return deriveInvestmentValuation({
+    assetId,
+    cachedPrice: priceCacheByAsset.get(assetId)?.price,
+    currency,
+    manualPrice: metaByAsset.get(assetId)?.manualPricePerUnit,
+    operations: operationsByAsset.get(assetId) ?? [],
+  }).valueMinor;
+}
+
+/**
+ * Hard-delete one trashed asset in the caller's transaction. Captures the
+ * entity's key data for the audit trail BEFORE destroying it; FK cascades take
+ * ownerships, investment metadata, operations, and the price cache, and we clear
+ * the warning overrides by hand (no FK points at them). Frozen snapshot_holdings
+ * are intentionally never touched (ADR 0008): history stays intact, so the
+ * holding keeps appearing in past captures. Returns the number of asset rows
+ * removed (0 when the id is unknown or not in the trash).
+ *
+ * Shared here because both the AssetStore (R2, via hardDeleteAsset) and the
+ * monolith's emptyTrash run it — so the trash-delete semantics can never drift.
+ */
+export function hardDeleteAssetTx(ctx: StoreContext, assetId: string): number {
+  const { sqlite } = ctx;
+  const row = sqlite
+    .prepare(`SELECT name, type, deleted_at AS deletedAt FROM assets WHERE id = ?`)
+    .get(assetId) as
+    | { name: string; type: string; deletedAt: string | null }
+    | undefined;
+
+  // Hard delete is reachable only from the trash: refuse a live holding.
+  if (!row || row.deletedAt === null) {
+    return 0;
+  }
+
+  const ownership = sqlite
+    .prepare(
+      `SELECT member_id AS memberId, share_bps AS shareBps FROM asset_ownerships WHERE asset_id = ?`,
+    )
+    .all(assetId);
+  const operations =
+    row.type === "investment"
+      ? sqlite
+          .prepare(
+            `SELECT id, kind, executed_at AS executedAt, units, price_per_unit AS pricePerUnit, currency, fees_minor AS feesMinor
+             FROM asset_operations WHERE asset_id = ?`,
+          )
+          .all(assetId)
+      : [];
+
+  sqlite.prepare(`DELETE FROM warning_overrides WHERE entity_id = ?`).run(assetId);
+  const result = sqlite.prepare(`DELETE FROM assets WHERE id = ?`).run(assetId);
+
+  ctx.writeAuditEntry("hard_delete_asset", "asset", assetId, {
+    name: row.name,
+    operations,
+    ownership,
+    type: row.type,
+  });
+
+  return result.changes;
 }
