@@ -24,10 +24,8 @@ import type {
 } from "@worthline/domain";
 import {
   buildDrilldown,
-  buildSnapshotId,
-  captureValuedNetWorthSnapshot,
+  captureSnapshotForScope,
   listScopeOptions,
-  planSnapshotCapture,
   prepareDashboardState,
 } from "@worthline/domain";
 import type { DashboardState, LocalPersistenceStatus } from "@worthline/domain";
@@ -55,9 +53,9 @@ export interface LoadDashboardInput {
    */
   drill?: DrilldownKey | null;
   /**
-   * "Today" as YYYY-MM-DD for the snapshot capture policy.
-   * Accepted as a parameter so tests can control the date without freezing
-   * global time (matches the pattern used elsewhere in the codebase).
+   * "Today" as YYYY-MM-DD. Retained for API compatibility: the snapshot
+   * capture policy now derives its date from `now` inside
+   * captureSnapshotForScope, and callers already pass `today = now.slice(0, 10)`.
    */
   today: string;
   /**
@@ -98,8 +96,7 @@ export interface LoadDashboardResult extends DashboardState {
 export async function loadDashboard(
   input: LoadDashboardInput,
 ): Promise<LoadDashboardResult> {
-  const { store, persistence, scopeId, selectedView, drill, today, now, refreshPrices } =
-    input;
+  const { store, persistence, scopeId, selectedView, drill, now, refreshPrices } = input;
 
   // ── 1. Refresh stale prices ───────────────────────────────────────────────
   const investmentAssets = store.assets.readInvestmentAssetsWithMeta();
@@ -153,24 +150,21 @@ export async function loadDashboard(
   );
 
   for (const scope of scopes) {
-    const existing = store.snapshots.readSnapshots(scope.id);
-    const plan = planSnapshotCapture(existing, scope.id, today);
+    const capture = captureSnapshotForScope({
+      assets,
+      capturedAt: now,
+      existingSnapshots: store.snapshots.readSnapshots(scope.id),
+      investmentDetails,
+      liabilities,
+      scope,
+      workspace,
+    });
 
-    if (plan.shouldCapture) {
-      const { snapshot, holdings } = captureValuedNetWorthSnapshot({
-        assets,
-        capturedAt: now,
-        id: buildSnapshotId(scope.id, now, Date.now()),
-        investmentDetails,
-        liabilities,
-        scopeId: scope.id,
-        scopeLabel: scope.label,
-        workspace,
-      });
+    if (capture) {
       store.snapshots.saveSnapshot({
-        holdings,
-        replace: plan.replacesId !== undefined,
-        snapshot,
+        holdings: capture.holdings,
+        replace: capture.replace,
+        snapshot: capture.snapshot,
       });
     }
   }
