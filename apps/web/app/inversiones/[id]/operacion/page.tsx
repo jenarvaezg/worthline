@@ -215,7 +215,7 @@ export default async function OperacionPage({
 
         {operations.length > 0 ? (
           <details className="recentOpsPanel" open>
-            <summary>Operaciones recientes ({operations.length})</summary>
+            <summary>Todas las operaciones ({operations.length})</summary>
             <div className="tableScroll">
               <table>
                 <thead>
@@ -231,7 +231,6 @@ export default async function OperacionPage({
                 <tbody>
                   {[...operations]
                     .sort((a, b) => b.executedAt.localeCompare(a.executedAt))
-                    .slice(0, 10)
                     .map((op) => (
                       <tr key={op.id}>
                         <td>{op.executedAt}</td>
