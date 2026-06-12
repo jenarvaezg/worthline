@@ -1,5 +1,6 @@
 import type {
   DecimalString,
+  InvestmentPriceProvider,
   LiquidityTier,
   LocalPersistenceStatus,
 } from "@worthline/domain";
@@ -36,6 +37,7 @@ import {
   createLiability,
   createManualAsset,
   createWorkspace,
+  defaultInvestmentPriceProvider,
   deriveInvestmentValuation,
   derivePosition,
   selectInvestmentPrice,
@@ -147,6 +149,7 @@ export interface CreateInvestmentAssetInput {
   liquidityTier?: LiquidityTier;
   unitSymbol?: string;
   isin?: string;
+  priceProvider?: InvestmentPriceProvider;
   providerSymbol?: string;
   manualPricePerUnit?: DecimalString;
 }
@@ -169,6 +172,8 @@ export interface InvestmentAssetMeta {
   id: string;
   name: string;
   currency: string;
+  liquidityTier: LiquidityTier;
+  priceProvider: InvestmentPriceProvider;
   providerSymbol?: string;
 }
 
@@ -181,6 +186,7 @@ export interface InvestmentAssetFull {
   ownership: OwnershipShare[];
   unitSymbol?: string;
   isin?: string;
+  priceProvider: InvestmentPriceProvider;
   providerSymbol?: string;
   manualPricePerUnit?: DecimalString;
 }
@@ -188,8 +194,11 @@ export interface InvestmentAssetFull {
 export interface UpdateInvestmentAssetInput {
   id: string;
   name: string;
+  liquidityTier?: LiquidityTier;
   unitSymbol?: string;
   isin?: string;
+  priceProvider?: InvestmentPriceProvider;
+  providerSymbol?: string;
   manualPricePerUnit?: DecimalString;
 }
 
@@ -518,6 +527,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         .select({
           unitSymbol: investmentAssets.unitSymbol,
           isin: investmentAssets.isin,
+          priceProvider: investmentAssets.priceProvider,
           providerSymbol: investmentAssets.providerSymbol,
           manualPricePerUnit: investmentAssets.manualPricePerUnit,
         })
@@ -543,6 +553,8 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         currency: row.currency,
         liquidityTier: row.liquidityTier,
         ownership: ownershipRows,
+        priceProvider:
+          investRow.priceProvider ?? defaultInvestmentPriceProvider(row.liquidityTier),
         ...(investRow.unitSymbol ? { unitSymbol: investRow.unitSymbol } : {}),
         ...(investRow.isin ? { isin: investRow.isin } : {}),
         ...(investRow.providerSymbol ? { providerSymbol: investRow.providerSymbol } : {}),
@@ -559,15 +571,26 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
           )
           .run(input.name, input.id);
 
+        if (input.liquidityTier) {
+          sqlite
+            .prepare(
+              `UPDATE assets SET liquidity_tier = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            )
+            .run(input.liquidityTier, input.id);
+        }
+
         sqlite
           .prepare(
             `UPDATE investment_assets
-             SET unit_symbol = ?, isin = ?, manual_price_per_unit = ?
+             SET unit_symbol = ?, isin = ?, price_provider = ?, provider_symbol = ?,
+                 manual_price_per_unit = ?
              WHERE asset_id = ?`,
           )
           .run(
             input.unitSymbol ?? null,
             input.isin ?? null,
+            input.priceProvider ?? null,
+            input.providerSymbol ?? null,
             input.manualPricePerUnit ?? null,
             input.id,
           );
@@ -769,6 +792,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
               asset_id,
               unit_symbol,
               isin,
+              price_provider,
               provider_symbol,
               manual_price_per_unit,
               manual_priced_at
@@ -777,6 +801,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
               @assetId,
               @unitSymbol,
               @isin,
+              @priceProvider,
               @providerSymbol,
               @manualPricePerUnit,
               @manualPricedAt
@@ -788,6 +813,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
             isin: input.isin ?? null,
             manualPricePerUnit: input.manualPricePerUnit ?? null,
             manualPricedAt: pricedAt,
+            priceProvider: input.priceProvider ?? null,
             providerSymbol: input.providerSymbol ?? null,
             unitSymbol: input.unitSymbol ?? null,
           });
@@ -1398,6 +1424,8 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
           id: assets.id,
           name: assets.name,
           currency: assets.currency,
+          liquidityTier: assets.liquidityTier,
+          priceProvider: investmentAssets.priceProvider,
           providerSymbol: investmentAssets.providerSymbol,
         })
         .from(assets)
@@ -1410,6 +1438,9 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         id: row.id,
         name: row.name,
         currency: row.currency,
+        liquidityTier: row.liquidityTier,
+        priceProvider:
+          row.priceProvider ?? defaultInvestmentPriceProvider(row.liquidityTier),
         ...(row.providerSymbol ? { providerSymbol: row.providerSymbol } : {}),
       }));
     },
@@ -1722,11 +1753,11 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         `);
         const insertInvestmentMeta = sqlite.prepare(`
           INSERT INTO investment_assets (
-            asset_id, unit_symbol, isin, provider_symbol,
+            asset_id, unit_symbol, isin, price_provider, provider_symbol,
             manual_price_per_unit, manual_priced_at
           )
           VALUES (
-            @assetId, @unitSymbol, @isin, @providerSymbol,
+            @assetId, @unitSymbol, @isin, @priceProvider, @providerSymbol,
             @manualPricePerUnit, @manualPricedAt
           )
         `);
@@ -1763,6 +1794,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
               isin: asset.investment?.isin ?? null,
               manualPricePerUnit: asset.investment?.manualPricePerUnit ?? null,
               manualPricedAt: asset.investment?.manualPricedAt ?? null,
+              priceProvider: asset.investment?.priceProvider ?? null,
               providerSymbol: asset.investment?.providerSymbol ?? null,
               unitSymbol: asset.investment?.unitSymbol ?? null,
             });
@@ -2556,6 +2588,7 @@ function buildWorkspaceExport(
             investment: {
               ...(meta.unitSymbol ? { unitSymbol: meta.unitSymbol } : {}),
               ...(meta.isin ? { isin: meta.isin } : {}),
+              ...(meta.priceProvider ? { priceProvider: meta.priceProvider } : {}),
               ...(meta.providerSymbol ? { providerSymbol: meta.providerSymbol } : {}),
               ...(meta.manualPricePerUnit
                 ? { manualPricePerUnit: meta.manualPricePerUnit }

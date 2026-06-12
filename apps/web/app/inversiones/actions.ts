@@ -1,10 +1,17 @@
 "use server";
 
 import { withStore, type WorthlineStore } from "@worthline/db";
-import { checkOwnershipSplit, createInvestmentOperationSafe } from "@worthline/domain";
+import {
+  checkOwnershipSplit,
+  createInvestmentOperationSafe,
+  defaultInvestmentPriceProvider,
+} from "@worthline/domain";
+import type { InvestmentPriceProvider, LiquidityTier } from "@worthline/domain";
 import {
   fetchAndCachePrice,
+  refreshStalePrices,
   stooqProvider,
+  yahooProvider,
   type PriceProvider,
 } from "@worthline/pricing";
 import { redirect } from "next/navigation";
@@ -25,18 +32,80 @@ import {
 // Field lists for error-preserve round-trips
 const INVESTMENT_FORM_FIELDS = [
   "name",
+  "liquidityTier",
   "unitSymbol",
   "isin",
+  "priceProvider",
+  "providerSymbol",
   "manualPricePerUnit",
   "ownershipPreset",
 ];
 
 const OPERATION_FORM_FIELDS = ["kind", "executedAt", "units", "pricePerUnit", "fees"];
 
-const EDIT_INVESTMENT_FIELDS = ["name", "unitSymbol", "isin", "manualPricePerUnit"];
+const EDIT_INVESTMENT_FIELDS = [
+  "name",
+  "liquidityTier",
+  "unitSymbol",
+  "isin",
+  "priceProvider",
+  "providerSymbol",
+  "manualPricePerUnit",
+];
 
 function currentUrlOf(formData: FormData, fallback = "/inversiones"): string {
   return (formData.get("currentUrl") as string) || fallback;
+}
+
+async function validateInvestmentProviderSymbol(input: {
+  assetId: string;
+  currency: string;
+  liquidityTier: LiquidityTier;
+  priceProvider?: InvestmentPriceProvider | undefined;
+  providerSymbol?: string | undefined;
+}): Promise<string | null> {
+  if (!input.providerSymbol) return null;
+
+  const priceProvider =
+    input.priceProvider ?? defaultInvestmentPriceProvider(input.liquidityTier);
+
+  // Finect NAVs can lag or disappear temporarily; per issue #106, Finect
+  // validation is non-blocking at save time.
+  if (priceProvider === "finect") return null;
+
+  const provider = providerForValidation(priceProvider);
+  const price = await fetchAndCachePrice(provider, {
+    assetId: input.assetId,
+    currency: input.currency,
+    nowIso: new Date().toISOString(),
+    symbol: input.providerSymbol,
+  });
+
+  if (price.freshnessState === "fresh") return null;
+
+  return `El símbolo no existe en ${providerLabel(priceProvider)}.`;
+}
+
+function providerForValidation(
+  provider: Exclude<InvestmentPriceProvider, "finect">,
+): PriceProvider {
+  switch (provider) {
+    case "stooq":
+      return stooqProvider;
+    case "yahoo":
+      return yahooProvider;
+  }
+}
+
+function providerLabel(provider: InvestmentPriceProvider): string {
+  switch (provider) {
+    case "stooq":
+      return "Stooq";
+    case "yahoo":
+      return "Yahoo Finance";
+    case "finect":
+      return "Finect";
+  }
 }
 
 export async function createInvestmentAction(
@@ -58,7 +127,7 @@ export async function createInvestmentAction(
     const workspace = store.readWorkspace();
 
     if (!workspace) {
-      return { ok: false, error: "Workspace no inicializado." };
+      return { ok: false as const, error: "Workspace no inicializado." };
     }
 
     const parsed = parseInvestmentAssetCommandStrict(
@@ -68,23 +137,35 @@ export async function createInvestmentAction(
     );
 
     if (!parsed.ok) {
-      return { ok: false, error: parsed.error };
+      return { ok: false as const, error: parsed.error };
     }
 
     const splitViolation = checkOwnershipSplit(workspace, parsed.command.ownership);
 
     if (splitViolation) {
-      return { ok: false, error: mapDomainViolation(splitViolation) };
+      return { ok: false as const, error: mapDomainViolation(splitViolation) };
     }
 
-    store.createInvestmentAsset(parsed.command);
-
-    return { ok: true, id: parsed.command.id };
+    return { ok: true as const, command: parsed.command, id: parsed.command.id };
   });
 
   if (!result.ok) {
     redirect(investmentErrorUrl(result.error ?? "No se pudo crear la inversión."));
   }
+
+  const validationError = await validateInvestmentProviderSymbol({
+    assetId: result.id,
+    currency: result.command.currency,
+    liquidityTier: result.command.liquidityTier ?? "market",
+    priceProvider: result.command.priceProvider,
+    providerSymbol: result.command.providerSymbol,
+  });
+
+  if (validationError) {
+    redirect(investmentErrorUrl(validationError));
+  }
+
+  runWith((store) => store.createInvestmentAsset(result.command));
 
   redirect(successRedirectUrl(returnUrl, "investment_added", result.id));
 }
@@ -143,6 +224,19 @@ export async function updateInvestmentAction(
 
   if (!parsed.ok) {
     redirect(editErrorUrl(parsed.error));
+  }
+
+  const existing = runWith((store) => store.readInvestmentAssetById(routeAssetId));
+  const validationError = await validateInvestmentProviderSymbol({
+    assetId: routeAssetId,
+    currency: existing?.currency ?? "EUR",
+    liquidityTier: parsed.command.liquidityTier ?? existing?.liquidityTier ?? "market",
+    priceProvider: parsed.command.priceProvider ?? existing?.priceProvider,
+    providerSymbol: parsed.command.providerSymbol,
+  });
+
+  if (validationError) {
+    redirect(editErrorUrl(validationError));
   }
 
   runWith((store) => store.updateInvestmentAsset(parsed.command));
@@ -277,35 +371,57 @@ export async function refreshPricesAction(
 ) {
   const returnUrl = currentUrlOf(formData, "/inversiones");
   const nowIso = new Date().toISOString();
-  const provider = _provider ?? stooqProvider;
 
-  const runWith = <T>(fn: (store: WorthlineStore) => T | Promise<T>): T | Promise<T> =>
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
     _store ? fn(_store) : withStore(fn);
 
-  const outcome = await runWith(async (store) => {
-    const investmentAssets = store.readInvestmentAssetsWithMeta();
-    const refreshable = investmentAssets.filter((asset) => Boolean(asset.providerSymbol));
-    const results = await Promise.all(
-      refreshable.map(async (asset) => {
-        const price = await fetchAndCachePrice(provider, {
-          assetId: asset.id,
-          symbol: asset.providerSymbol!,
-          currency: asset.currency,
-          nowIso,
-        });
-        store.upsertPrice(price);
+  const investmentAssets = runWith((store) => store.readInvestmentAssetsWithMeta());
+  const refreshable = investmentAssets.filter((asset) => Boolean(asset.providerSymbol));
 
-        return { price, symbol: asset.providerSymbol! };
-      }),
-    );
+  const outcome = await (async () => {
+    if (_provider) {
+      const provider = _provider;
+      const results = await Promise.all(
+        refreshable.map(async (asset) => {
+          const price = await fetchAndCachePrice(provider, {
+            assetId: asset.id,
+            symbol: asset.providerSymbol!,
+            currency: asset.currency,
+            nowIso,
+          });
+          runWith((store) => store.upsertPrice(price));
+
+          return { price, symbol: asset.providerSymbol! };
+        }),
+      );
+
+      return {
+        failedSymbols: results
+          .filter((entry) => entry.price.freshnessState === "failed")
+          .map((entry) => entry.symbol),
+        updated: results.filter((entry) => entry.price.freshnessState === "fresh").length,
+      };
+    }
+
+    const forcedStaleCache = refreshable.map((asset) => ({
+      assetId: asset.id,
+      currency: asset.currency,
+      fetchedAt: "1970-01-01T00:00:00.000Z",
+      freshnessState: "fresh" as const,
+      price: "0",
+      source: "stooq" as const,
+    }));
+    const result = await refreshStalePrices(forcedStaleCache, investmentAssets, nowIso);
+
+    for (const price of result.refreshed) {
+      runWith((store) => store.upsertPrice(price));
+    }
 
     return {
-      failedSymbols: results
-        .filter((entry) => entry.price.freshnessState === "failed")
-        .map((entry) => entry.symbol),
-      updated: results.filter((entry) => entry.price.freshnessState === "fresh").length,
+      failedSymbols: result.failedSymbols,
+      updated: result.updated,
     };
-  });
+  })();
 
   redirect(pricesRefreshedRedirectUrl(returnUrl, outcome));
 }

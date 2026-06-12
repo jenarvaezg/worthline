@@ -1,6 +1,7 @@
 import type { LiquidityTier } from "@worthline/domain";
 import type {
   AssetType,
+  InvestmentPriceProvider,
   LiabilityType,
   OperationKind,
   PriceFreshnessState,
@@ -106,6 +107,7 @@ export const investmentAssets = sqliteTable("investment_assets", {
     .references(() => assets.id, { onDelete: "cascade" }),
   unitSymbol: text("unit_symbol"),
   isin: text("isin"),
+  priceProvider: text("price_provider").$type<InvestmentPriceProvider>(),
   providerSymbol: text("provider_symbol"),
   manualPricePerUnit: text("manual_price_per_unit"),
   manualPricedAt: text("manual_priced_at"),

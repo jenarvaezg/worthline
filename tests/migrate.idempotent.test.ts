@@ -89,7 +89,7 @@ describe("fresh database", () => {
 
     const sqlite = new Database(databasePath);
     try {
-      expect(userVersion(sqlite)).toBe(7);
+      expect(userVersion(sqlite)).toBe(8);
       expect(tableNames(sqlite)).toContain("warning_overrides");
 
       const tables = tableNames(sqlite);
@@ -118,6 +118,9 @@ describe("fresh database", () => {
 
       const liabilityColumns = columnNames(sqlite, "liabilities");
       expect(liabilityColumns).toContain("deleted_at");
+
+      const investmentColumns = columnNames(sqlite, "investment_assets");
+      expect(investmentColumns).toContain("price_provider");
     } finally {
       sqlite.close();
     }
@@ -156,13 +159,14 @@ describe("forward migration from v2", () => {
 
     const sqlite = new Database(databasePath);
     try {
-      expect(userVersion(sqlite)).toBe(7);
+      expect(userVersion(sqlite)).toBe(8);
       expect(tableNames(sqlite)).toContain("warning_overrides");
       expect(tableNames(sqlite)).toContain("asset_price_cache");
       expect(tableNames(sqlite)).toContain("audit_log");
       expect(tableNames(sqlite)).toContain("snapshot_holdings");
       expect(columnNames(sqlite, "assets")).toContain("deleted_at");
       expect(columnNames(sqlite, "liabilities")).toContain("deleted_at");
+      expect(columnNames(sqlite, "investment_assets")).toContain("price_provider");
     } finally {
       sqlite.close();
     }
@@ -202,12 +206,13 @@ describe("forward migration from v3", () => {
 
     const sqlite = new Database(databasePath);
     try {
-      expect(userVersion(sqlite)).toBe(7);
+      expect(userVersion(sqlite)).toBe(8);
       expect(tableNames(sqlite)).toContain("warning_overrides");
       expect(tableNames(sqlite)).toContain("audit_log");
       expect(tableNames(sqlite)).toContain("snapshot_holdings");
       expect(columnNames(sqlite, "assets")).toContain("deleted_at");
       expect(columnNames(sqlite, "liabilities")).toContain("deleted_at");
+      expect(columnNames(sqlite, "investment_assets")).toContain("price_provider");
     } finally {
       sqlite.close();
     }

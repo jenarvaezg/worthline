@@ -122,12 +122,50 @@ export default async function EditarInversionPage({
           </label>
 
           <label>
-            Ticker / símbolo <small>(formato Stooq, p.ej. VWRL.UK)</small>
+            Liquidez
+            <select
+              aria-label="Liquidez de la inversión"
+              defaultValue={editValues["liquidityTier"] ?? asset.liquidityTier}
+              name="liquidityTier"
+            >
+              <option value="market">Mercado</option>
+              <option value="retirement">Jubilación</option>
+              <option value="illiquid">Ilíquido</option>
+              <option value="cash">Caja</option>
+              <option value="housing">Vivienda</option>
+            </select>
+          </label>
+
+          <label>
+            Proveedor de precios
+            <select
+              aria-label="Proveedor de precios"
+              defaultValue={editValues["priceProvider"] ?? asset.priceProvider}
+              name="priceProvider"
+            >
+              <option value="yahoo">Yahoo Finance</option>
+              <option value="stooq">Stooq</option>
+              <option value="finect">Finect</option>
+            </select>
+          </label>
+
+          <label>
+            Símbolo visible <small>(unidad, p.ej. VWCE)</small>
             <input
-              aria-label="Ticker o símbolo"
+              aria-label="Símbolo visible de la inversión"
               defaultValue={editValues["unitSymbol"] ?? asset.unitSymbol ?? ""}
               name="unitSymbol"
-              placeholder="VWRL.UK"
+              placeholder="VWCE"
+            />
+          </label>
+
+          <label>
+            Símbolo del proveedor <small>(SAN.MC, VUSA.L, N5394)</small>
+            <input
+              aria-label="Símbolo del proveedor"
+              defaultValue={editValues["providerSymbol"] ?? asset.providerSymbol ?? ""}
+              name="providerSymbol"
+              placeholder="SAN.MC"
             />
           </label>
 

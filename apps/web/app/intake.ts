@@ -7,6 +7,8 @@ import type {
   DomainViolation,
   DrilldownKey,
   FireScopeConfig,
+  InvestmentPriceProvider,
+  LiquidityTier,
   Member,
   MoneyMinor,
   NetWorthFraming,
@@ -842,18 +844,31 @@ export function parseInvestmentAssetCommandStrict(
 
   const unitSymbol = String(formData.get("unitSymbol") ?? "").trim();
   const isin = String(formData.get("isin") ?? "").trim();
+  const liquidityTier = parseCreateInvestmentLiquidityTier(formData.get("liquidityTier"));
+  const priceProvider = parseInvestmentPriceProvider(formData.get("priceProvider"));
+  const providerSymbol = String(formData.get("providerSymbol") ?? "").trim();
+
+  if (!liquidityTier) {
+    return { ok: false, error: "La liquidez de la inversión no es válida." };
+  }
+
+  if (priceProvider === null) {
+    return { ok: false, error: "El proveedor de precios no es válido." };
+  }
 
   return {
     ok: true,
     command: {
       currency: "EUR",
       id: createStableId("asset", name, seed),
-      liquidityTier: "market",
+      liquidityTier,
       name,
       ownership: parseOwnership(formData, members),
       ...(manualPrice !== undefined ? { manualPricePerUnit: manualPrice } : {}),
       ...(unitSymbol ? { unitSymbol } : {}),
       ...(isin ? { isin } : {}),
+      ...(priceProvider ? { priceProvider } : {}),
+      ...(providerSymbol ? { providerSymbol } : {}),
     },
   };
 }
@@ -936,8 +951,11 @@ export function parseUpdateInvestmentCommand(
 ): StrictParseResult<{
   id: string;
   name: string;
+  liquidityTier?: LiquidityTier;
   unitSymbol?: string;
   isin?: string;
+  priceProvider?: InvestmentPriceProvider;
+  providerSymbol?: string;
   manualPricePerUnit?: DecimalString;
 }> {
   const name = String(formData.get("name") ?? "").trim();
@@ -969,17 +987,68 @@ export function parseUpdateInvestmentCommand(
 
   const unitSymbol = String(formData.get("unitSymbol") ?? "").trim();
   const isin = String(formData.get("isin") ?? "").trim();
+  const liquidityTier = parseUpdateInvestmentLiquidityTier(formData.get("liquidityTier"));
+  const priceProvider = parseInvestmentPriceProvider(formData.get("priceProvider"));
+  const providerSymbol = String(formData.get("providerSymbol") ?? "").trim();
+
+  if (liquidityTier === null) {
+    return { ok: false, error: "La liquidez de la inversión no es válida." };
+  }
+
+  if (priceProvider === null) {
+    return { ok: false, error: "El proveedor de precios no es válido." };
+  }
 
   return {
     ok: true,
     command: {
       id: assetId,
       name,
+      ...(liquidityTier ? { liquidityTier } : {}),
       ...(manualPrice !== undefined ? { manualPricePerUnit: manualPrice } : {}),
       ...(unitSymbol ? { unitSymbol } : {}),
       ...(isin ? { isin } : {}),
+      ...(priceProvider ? { priceProvider } : {}),
+      ...(providerSymbol ? { providerSymbol } : {}),
     },
   };
+}
+
+function parseCreateInvestmentLiquidityTier(
+  value: FormDataEntryValue | null,
+): LiquidityTier | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "market";
+
+  return isLiquidityTier(raw) ? raw : null;
+}
+
+function parseUpdateInvestmentLiquidityTier(
+  value: FormDataEntryValue | null,
+): LiquidityTier | null | undefined {
+  const raw = String(value ?? "").trim();
+  if (!raw) return undefined;
+
+  return isLiquidityTier(raw) ? raw : null;
+}
+
+function isLiquidityTier(value: string): value is LiquidityTier {
+  return (
+    value === "cash" ||
+    value === "market" ||
+    value === "retirement" ||
+    value === "illiquid" ||
+    value === "housing"
+  );
+}
+
+function parseInvestmentPriceProvider(
+  value: FormDataEntryValue | null,
+): InvestmentPriceProvider | null | undefined {
+  const raw = String(value ?? "").trim();
+  if (!raw) return undefined;
+
+  return raw === "yahoo" || raw === "stooq" || raw === "finect" ? raw : null;
 }
 
 /** Map a price freshness state to a localized label (shared by /inversiones pages). */

@@ -32,6 +32,7 @@ const INVESTMENT_ID = "asset_fund_001";
 
 afterEach(() => {
   store?.close();
+  vi.unstubAllGlobals();
 });
 
 function setupStore() {
@@ -151,6 +152,39 @@ describe("createInvestmentAction wiring", () => {
     expect(decodeURIComponent(url)).toMatch(/precio/i);
     expect(store.readInvestmentAssetsWithMeta()).toHaveLength(0);
   });
+
+  test("invalid Yahoo provider symbol: error redirect, store unchanged", async () => {
+    setupStore();
+    const stooqNoData =
+      "Symbol,Date,Time,Open,High,Low,Close,Volume\nBAD,N/D,N/D,N/D,N/D,N/D,N/D,0";
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false } as Response)
+        .mockResolvedValueOnce({ ok: true, text: async () => stooqNoData } as Response),
+    );
+
+    const url = await catchRedirect(() =>
+      createInvestmentAction(
+        fd(
+          {
+            name: "Ticker malo",
+            ownershipPreset: "custom",
+            priceProvider: "yahoo",
+            providerSymbol: "BAD.MC",
+            [`owner_${MEMBER_ID}`]: "100",
+          },
+          "/inversiones",
+        ),
+        store,
+      ),
+    );
+
+    expect(url).toContain("error=");
+    expect(decodeURIComponent(url)).toMatch(/símbolo/i);
+    expect(store.readInvestmentAssetsWithMeta()).toHaveLength(0);
+  });
 });
 
 // ========================================================== updateInvestmentAction
@@ -222,6 +256,38 @@ describe("updateInvestmentAction wiring", () => {
 
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/precio/i);
+  });
+
+  test("invalid Yahoo provider symbol: error redirect, asset unchanged", async () => {
+    setupStoreWithInvestment();
+    const stooqNoData =
+      "Symbol,Date,Time,Open,High,Low,Close,Volume\nBAD,N/D,N/D,N/D,N/D,N/D,N/D,0";
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false } as Response)
+        .mockResolvedValueOnce({ ok: true, text: async () => stooqNoData } as Response),
+    );
+
+    const url = await catchRedirect(() =>
+      updateInvestmentAction(
+        INVESTMENT_ID,
+        fd(
+          {
+            name: "Index Fund Renamed",
+            priceProvider: "yahoo",
+            providerSymbol: "BAD.MC",
+          },
+          "/inversiones",
+        ),
+        store,
+      ),
+    );
+
+    expect(url).toContain("error=");
+    expect(decodeURIComponent(url)).toMatch(/símbolo/i);
+    expect(store.readInvestmentAssetById(INVESTMENT_ID)?.name).toBe("Index Fund");
   });
 });
 

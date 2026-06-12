@@ -1,0 +1,1 @@
+ALTER TABLE `investment_assets` ADD `price_provider` text;

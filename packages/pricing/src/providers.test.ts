@@ -2,8 +2,10 @@ import type { AssetPrice } from "@worthline/domain";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { coingeckoProvider } from "./coingecko";
+import { finectProvider } from "./finect";
 import { fetchAndCachePrice } from "./index";
 import { stooqProvider } from "./stooq";
+import { yahooProvider } from "./yahoo";
 
 const baseCtx = {
   assetId: "asset-1",
@@ -107,6 +109,150 @@ describe("stooqProvider", () => {
     const result = await stooqProvider.fetchPrice({ ...baseCtx, symbol: "aapl.us" });
 
     expect(result).toBeNull();
+  });
+});
+
+describe("yahooProvider", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("parses the latest regular market price from Yahoo chart responses", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        chart: {
+          result: [
+            {
+              meta: {
+                currency: "EUR",
+                regularMarketPrice: 123.45,
+              },
+            },
+          ],
+        },
+      }),
+    } as Response);
+
+    const result = await yahooProvider.fetchPrice({ ...baseCtx, symbol: "SAN.MC" });
+
+    expect(result).toEqual({ price: "123.45", currency: "EUR" });
+  });
+
+  it("converts non-EUR Yahoo prices to EUR through ECB rates", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          chart: {
+            result: [
+              {
+                meta: {
+                  currency: "USD",
+                  regularMarketPrice: 100,
+                },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          dataSets: [
+            {
+              series: {
+                "0:0:0:0:0": {
+                  observations: {
+                    "0": [1.25],
+                  },
+                },
+              },
+            },
+          ],
+        }),
+      } as Response);
+
+    const result = await yahooProvider.fetchPrice({ ...baseCtx, symbol: "AAPL" });
+
+    expect(result).toEqual({ price: "80", currency: "EUR" });
+  });
+
+  it("falls back to Stooq and records Stooq as the source when Yahoo has no price", async () => {
+    const csv =
+      "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2024-01-15,16:00:00,4.10,4.30,4.05,4.25,55000000";
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({ ok: false } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => csv,
+      } as Response);
+
+    const result = await fetchAndCachePrice(yahooProvider, {
+      ...baseCtx,
+      symbol: "SAN.MC",
+    });
+
+    expect(result.freshnessState).toBe("fresh");
+    expect(result.price).toBe("4.25");
+    expect(result.source).toBe("stooq");
+  });
+
+  it("falls back to Stooq when the Yahoo request throws", async () => {
+    const csv =
+      "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2024-01-15,16:00:00,4.10,4.30,4.05,4.25,55000000";
+    vi.mocked(fetch)
+      .mockRejectedValueOnce(new Error("timeout"))
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => csv,
+      } as Response);
+
+    const result = await fetchAndCachePrice(yahooProvider, {
+      ...baseCtx,
+      symbol: "SAN.MC",
+    });
+
+    expect(result.freshnessState).toBe("fresh");
+    expect(result.source).toBe("stooq");
+  });
+});
+
+describe("finectProvider", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("parses the pension plan NAV and valuation date from server-rendered HTML", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      text: async () => `
+        <html>
+          <body>
+            <h1>MyInvestor Indexado S&P 500 PP</h1>
+            <p>Valor liquidativo</p>
+            <strong>20,63 €</strong>
+            <span>Fecha de valor liquidativo: 10/06/2026</span>
+          </body>
+        </html>
+      `,
+    } as Response);
+
+    const result = await finectProvider.fetchPrice({ ...baseCtx, symbol: "N5394" });
+
+    expect(result).toEqual({
+      price: "20.63",
+      currency: "EUR",
+      priceDate: "2026-06-10",
+    });
   });
 });
 

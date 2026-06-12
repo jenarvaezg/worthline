@@ -56,6 +56,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
       { memberId: "m1", shareBps: 5000 },
       { memberId: "m2", shareBps: 5000 },
     ],
+    priceProvider: "stooq",
     providerSymbol: "VWCE.DE",
     unitSymbol: "VWCE",
   });
@@ -241,6 +242,7 @@ describe("exportWorkspace", () => {
     expect(inv.investment).toBeDefined();
     expect(inv.investment!.unitSymbol).toBe("VWCE");
     expect(inv.investment!.isin).toBe("IE00BK5BQT80");
+    expect(inv.investment!.priceProvider).toBe("stooq");
     expect(inv.investment!.providerSymbol).toBe("VWCE.DE");
     expect(inv.investment!.manualPricePerUnit).toBe("105.5");
     expect(typeof inv.investment!.manualPricedAt).toBe("string");

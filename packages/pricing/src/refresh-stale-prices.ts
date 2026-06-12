@@ -1,12 +1,20 @@
-import type { AssetPrice } from "@worthline/domain";
-import { selectStalePrices } from "@worthline/domain";
+import type {
+  AssetPrice,
+  InvestmentPriceProvider,
+  LiquidityTier,
+} from "@worthline/domain";
+import { defaultInvestmentPriceProvider, selectStalePrices } from "@worthline/domain";
 
+import { finectProvider } from "./finect";
 import { fetchAndCachePrice } from "./index";
 import { stooqProvider } from "./stooq";
+import { yahooProvider } from "./yahoo";
 
 export interface InvestmentAssetRef {
   id: string;
   currency: string;
+  liquidityTier?: LiquidityTier;
+  priceProvider?: InvestmentPriceProvider;
   providerSymbol?: string | undefined;
 }
 
@@ -48,7 +56,8 @@ export async function refreshStalePrices(
 
   const results = await Promise.all(
     refreshable.map(async (asset) => {
-      const price = await fetchAndCachePrice(stooqProvider, {
+      const provider = resolveInvestmentPriceProvider(asset);
+      const price = await fetchAndCachePrice(provider, {
         assetId: asset.id,
         symbol: asset.providerSymbol!,
         currency: asset.currency,
@@ -66,4 +75,19 @@ export async function refreshStalePrices(
       .filter((r) => r.price.freshnessState === "failed")
       .map((r) => r.symbol),
   };
+}
+
+function resolveInvestmentPriceProvider(asset: InvestmentAssetRef) {
+  const providerName =
+    asset.priceProvider ??
+    defaultInvestmentPriceProvider(asset.liquidityTier ?? "market");
+
+  switch (providerName) {
+    case "finect":
+      return finectProvider;
+    case "stooq":
+      return stooqProvider;
+    case "yahoo":
+      return yahooProvider;
+  }
 }
