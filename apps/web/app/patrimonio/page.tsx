@@ -48,7 +48,7 @@ export default async function PatrimonioPage({
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
   const storeData = withStore((store) => {
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
 
     if (!workspace) {
       return null;
@@ -60,8 +60,8 @@ export default async function PatrimonioPage({
       scopes.find((scope) => scope.id === selectedScopeId) ?? scopes[0];
 
     return {
-      assets: store.readAssets(),
-      liabilities: store.readLiabilities(),
+      assets: store.assets.readAssets(),
+      liabilities: store.liabilities.readLiabilities(),
       overrides: store.readWarningOverrides(),
       scopes,
       selectedScope,

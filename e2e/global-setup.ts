@@ -9,12 +9,12 @@ export default async function globalSetup(): Promise<void> {
 
   const store = createWorthlineStore({ databasePath });
 
-  store.initializeWorkspace({
+  store.workspace.initializeWorkspace({
     mode: "individual",
     members: [{ id: "member_seed", name: "Seed" }],
   });
 
-  store.createManualAsset({
+  store.assets.createManualAsset({
     id: "asset_seed",
     name: "Caja seed",
     type: "cash",
@@ -28,12 +28,12 @@ export default async function globalSetup(): Promise<void> {
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayIso = yesterday.toISOString();
 
-  const workspace = store.readWorkspace();
+  const workspace = store.workspace.readWorkspace();
   if (!workspace) {
     throw new Error("Workspace not initialized");
   }
 
-  const assets = store.readAssets();
+  const assets = store.assets.readAssets();
 
   const snapshot = captureNetWorthSnapshot({
     workspace,
@@ -44,7 +44,7 @@ export default async function globalSetup(): Promise<void> {
     id: "snapshot_seed_yesterday",
   });
 
-  store.saveSnapshot({ snapshot });
+  store.snapshots.saveSnapshot({ snapshot });
 
   store.close();
 }

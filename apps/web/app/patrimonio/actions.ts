@@ -73,7 +73,7 @@ export async function createAssetAction(
     _store ? fn(_store) : withStore(fn);
 
   const result = runWith((store) => {
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
 
     if (!workspace) {
       return { ok: false, error: "Workspace no inicializado." };
@@ -91,7 +91,7 @@ export async function createAssetAction(
       return { ok: false, error: mapDomainViolation(domainResult.violations[0]) };
     }
 
-    store.createManualAsset(parsed.command);
+    store.assets.createManualAsset(parsed.command);
 
     return { ok: true, id: parsed.command.id };
   });
@@ -126,7 +126,7 @@ export async function createLiabilityAction(
     _store ? fn(_store) : withStore(fn);
 
   const result = runWith((store) => {
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
 
     if (!workspace) {
       return { ok: false, error: "Workspace no inicializado." };
@@ -139,7 +139,7 @@ export async function createLiabilityAction(
       return { ok: false, error: mapDomainViolation(domainResult.violations[0]) };
     }
 
-    store.createLiability(command);
+    store.liabilities.createLiability(command);
 
     return { ok: true, id: command.id };
   });
@@ -167,7 +167,7 @@ export async function deleteAssetAction(
     );
   }
 
-  const changes = runWith((store) => store.softDeleteAsset(id, new Date().toISOString()));
+  const changes = runWith((store) => store.assets.softDeleteAsset(id, new Date().toISOString()));
 
   if (changes === 0) {
     redirect(
@@ -197,7 +197,7 @@ export async function deleteLiabilityAction(
   }
 
   const changes = runWith((store) =>
-    store.softDeleteLiability(id, new Date().toISOString()),
+    store.liabilities.softDeleteLiability(id, new Date().toISOString()),
   );
 
   if (changes === 0) {
@@ -227,7 +227,7 @@ export async function hardDeleteAssetAction(
     );
   }
 
-  const changes = runWith((store) => store.hardDeleteAsset(id));
+  const changes = runWith((store) => store.assets.hardDeleteAsset(id));
 
   if (changes === 0) {
     redirect(
@@ -256,7 +256,7 @@ export async function hardDeleteLiabilityAction(
     );
   }
 
-  const changes = runWith((store) => store.hardDeleteLiability(id));
+  const changes = runWith((store) => store.liabilities.hardDeleteLiability(id));
 
   if (changes === 0) {
     redirect(
@@ -297,7 +297,7 @@ export async function restoreAssetAction(
     );
   }
 
-  const changes = runWith((store) => store.restoreAsset(id));
+  const changes = runWith((store) => store.assets.restoreAsset(id));
 
   if (changes === 0) {
     redirect(
@@ -326,7 +326,7 @@ export async function restoreLiabilityAction(
     );
   }
 
-  const changes = runWith((store) => store.restoreLiability(id));
+  const changes = runWith((store) => store.liabilities.restoreLiability(id));
 
   if (changes === 0) {
     redirect(
@@ -389,7 +389,7 @@ export async function updateAssetValuationAction(
   }
 
   const assetType = runWith((store) => {
-    const assets = store.readAssets();
+    const assets = store.assets.readAssets();
     return assets.find((a) => a.id === id)?.type ?? null;
   });
 
@@ -403,7 +403,7 @@ export async function updateAssetValuationAction(
     );
   }
 
-  runWith((store) => store.updateAssetValuation(id, currentValue));
+  runWith((store) => store.assets.updateAssetValuation(id, currentValue));
   redirect(successRedirectUrl("/patrimonio", "saved", id));
 }
 
@@ -434,7 +434,7 @@ export async function updateLiabilityBalanceAction(
     );
   }
 
-  runWith((store) => store.updateLiabilityBalance(id, balance));
+  runWith((store) => store.liabilities.updateLiabilityBalance(id, balance));
   redirect(successRedirectUrl("/patrimonio", "saved", id));
 }
 
@@ -446,12 +446,12 @@ export async function batchValueUpdateAction(
     _store ? fn(_store) : withStore(fn);
 
   const result = runWith((store) => {
-    const allAssets = store.readAssets();
+    const allAssets = store.assets.readAssets();
     const investmentIds = new Set(
       allAssets.filter((a) => a.type === "investment").map((a) => a.id),
     );
     const manualAssets = allAssets.filter((a) => a.type !== "investment");
-    const liabilities = store.readLiabilities();
+    const liabilities = store.liabilities.readLiabilities();
 
     // Reject submissions that name an investment holding — their value is derived.
     for (const [key] of formData.entries()) {
@@ -498,7 +498,7 @@ export async function batchValueUpdateAction(
       liabilities.some((l) => l.id === cmd.id),
     );
 
-    store.batchApplyAllValueUpdates(assetUpdates, liabilityUpdates);
+    store.operations.batchApplyAllValueUpdates(assetUpdates, liabilityUpdates);
 
     return { ok: true, count: valid.length };
   });
@@ -560,7 +560,7 @@ export async function editAssetAction(
 
   if (isLiability) {
     const result = runWith((store) => {
-      const workspace = store.readWorkspace();
+      const workspace = store.workspace.readWorkspace();
 
       if (!workspace) {
         return { ok: false, error: "Workspace no inicializado." };
@@ -578,7 +578,7 @@ export async function editAssetAction(
       const associatedAssetId =
         String(formData.get("associatedAssetId") ?? "").trim() || null;
 
-      store.updateLiability(id, {
+      store.liabilities.updateLiability(id, {
         name,
         type: liabilityType,
         associatedAssetId,
@@ -596,7 +596,7 @@ export async function editAssetAction(
   }
 
   const result = runWith((store) => {
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
 
     if (!workspace) {
       return { ok: false, error: "Workspace no inicializado." };
@@ -613,7 +613,7 @@ export async function editAssetAction(
       return { ok: false, error: mapDomainViolation(splitViolation) };
     }
 
-    store.updateAsset(id, { name, type, liquidityTier, isPrimaryResidence, ownership });
+    store.assets.updateAsset(id, { name, type, liquidityTier, isPrimaryResidence, ownership });
 
     return { ok: true };
   });

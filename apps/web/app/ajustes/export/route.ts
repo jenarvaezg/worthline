@@ -21,7 +21,7 @@ function localDateStamp(now: Date): string {
 
 export function GET(): Response {
   const doc = withStore((store) =>
-    store.readWorkspace() === null ? null : store.exportWorkspace(),
+    store.workspace.readWorkspace() === null ? null : store.workspace.exportWorkspace(),
   );
 
   if (!doc) {

@@ -40,7 +40,7 @@ export default async function AjustesPage({
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
   const storeData = withStore((store) => {
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
 
     if (!workspace) {
       return null;
@@ -70,7 +70,7 @@ export default async function AjustesPage({
 
   // Build warnings for the shell rail (read from full store to be accurate).
   const warnings = withStore((store) => {
-    const assets = store.readAssets();
+    const assets = store.assets.readAssets();
     const warningOverrides = store.readWarningOverrides();
     return collectWarnings(assets, warningOverrides);
   });

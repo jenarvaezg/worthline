@@ -124,7 +124,7 @@ export async function createInvestmentAction(
     _store ? fn(_store) : withStore(fn);
 
   const result = runWith((store) => {
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
 
     if (!workspace) {
       return { ok: false as const, error: "Workspace no inicializado." };
@@ -165,7 +165,7 @@ export async function createInvestmentAction(
     redirect(investmentErrorUrl(validationError));
   }
 
-  runWith((store) => store.createInvestmentAsset(result.command));
+  runWith((store) => store.assets.createInvestmentAsset(result.command));
 
   redirect(successRedirectUrl(returnUrl, "investment_added", result.id));
 }
@@ -201,7 +201,7 @@ export async function recordOperationAction(
 
   const operationDateKey = domainResult.value.executedAt.slice(0, 10);
   runWith((store) => {
-    store.recordOperation(domainResult.value);
+    store.operations.recordOperation(domainResult.value);
     // Backdated operation → reconstruct/ripple historical snapshots (PRD #107).
     store.rippleHistoricalSnapshotsForOperation({
       assetId: domainResult.value.assetId,
@@ -236,7 +236,7 @@ export async function updateInvestmentAction(
     redirect(editErrorUrl(parsed.error));
   }
 
-  const existing = runWith((store) => store.readInvestmentAssetById(routeAssetId));
+  const existing = runWith((store) => store.assets.readInvestmentAssetById(routeAssetId));
   const validationError = await validateInvestmentProviderSymbol({
     assetId: routeAssetId,
     currency: existing?.currency ?? "EUR",
@@ -249,7 +249,7 @@ export async function updateInvestmentAction(
     redirect(editErrorUrl(validationError));
   }
 
-  runWith((store) => store.updateInvestmentAsset(parsed.command));
+  runWith((store) => store.assets.updateInvestmentAsset(parsed.command));
   redirect(successRedirectUrl(returnUrl, "saved"));
 }
 
@@ -270,7 +270,7 @@ export async function deleteInvestmentAction(
     );
   }
 
-  const changes = runWith((store) => store.softDeleteAsset(id, new Date().toISOString()));
+  const changes = runWith((store) => store.assets.softDeleteAsset(id, new Date().toISOString()));
 
   if (changes === 0) {
     redirect(
@@ -300,7 +300,7 @@ export async function restoreInvestmentAction(
     );
   }
 
-  const changes = runWith((store) => store.restoreAsset(id));
+  const changes = runWith((store) => store.assets.restoreAsset(id));
 
   if (changes === 0) {
     redirect(
@@ -330,7 +330,7 @@ export async function hardDeleteInvestmentAction(
     );
   }
 
-  const changes = runWith((store) => store.hardDeleteAsset(id));
+  const changes = runWith((store) => store.assets.hardDeleteAsset(id));
 
   if (changes === 0) {
     redirect(
@@ -363,7 +363,7 @@ export async function deleteOperationAction(
 
   const today = new Date().toISOString().slice(0, 10);
   const deleted = runWith((store) => {
-    const result = store.deleteOperation(operationId);
+    const result = store.operations.deleteOperation(operationId);
     if (result) {
       // Deleting a backdated operation ripples snapshots ≥ its date (PRD #107).
       store.rippleHistoricalSnapshotsForOperation({
@@ -398,7 +398,7 @@ export async function refreshPricesAction(
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
     _store ? fn(_store) : withStore(fn);
 
-  const investmentAssets = runWith((store) => store.readInvestmentAssetsWithMeta());
+  const investmentAssets = runWith((store) => store.assets.readInvestmentAssetsWithMeta());
   const refreshable = investmentAssets.filter((asset) => Boolean(asset.providerSymbol));
 
   const outcome = await (async () => {
@@ -412,7 +412,7 @@ export async function refreshPricesAction(
             currency: asset.currency,
             nowIso,
           });
-          runWith((store) => store.upsertPrice(price));
+          runWith((store) => store.operations.upsertPrice(price));
 
           return { price, symbol: asset.providerSymbol! };
         }),
@@ -437,7 +437,7 @@ export async function refreshPricesAction(
     const result = await refreshStalePrices(forcedStaleCache, investmentAssets, nowIso);
 
     for (const price of result.refreshed) {
-      runWith((store) => store.upsertPrice(price));
+      runWith((store) => store.operations.upsertPrice(price));
     }
 
     return {

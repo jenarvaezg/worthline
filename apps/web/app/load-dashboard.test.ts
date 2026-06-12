@@ -20,14 +20,14 @@ import { loadDashboard } from "./load-dashboard";
 // ---------------------------------------------------------------------------
 
 function makeWorkspace(store: WorthlineStore): void {
-  store.initializeWorkspace({
+  store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
   });
 }
 
 function makeAsset(store: WorthlineStore): void {
-  store.createManualAsset({
+  store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 100_000_00,
     id: "asset_cash",
@@ -78,7 +78,7 @@ describe("loadDashboard — snapshot capture policy", () => {
     // A snapshot should have been captured for the household scope (which is
     // the default scope for an individual workspace)
     const scopeId = result.selectedScope?.id ?? "household";
-    const snapshots = store.readSnapshots(scopeId);
+    const snapshots = store.snapshots.readSnapshots(scopeId);
     expect(snapshots.length).toBeGreaterThanOrEqual(1);
     expect(snapshots.some((s) => s.dateKey === "2026-06-10")).toBe(true);
 
@@ -102,12 +102,12 @@ describe("loadDashboard — snapshot capture policy", () => {
     });
 
     const scopeId = firstResult.selectedScope!.id;
-    const snapshotsAfterFirst = store.readSnapshots(scopeId);
+    const snapshotsAfterFirst = store.snapshots.readSnapshots(scopeId);
     expect(snapshotsAfterFirst.filter((s) => s.dateKey === "2026-06-10")).toHaveLength(1);
     const firstId = snapshotsAfterFirst[0]!.id;
 
     // Update value then reload at 18:00
-    store.updateAssetValuation("asset_cash", 120_000_00);
+    store.assets.updateAssetValuation("asset_cash", 120_000_00);
     await loadDashboard({
       store,
       persistence: makePersistence(),
@@ -118,7 +118,7 @@ describe("loadDashboard — snapshot capture policy", () => {
       refreshPrices: noOpRefresh,
     });
 
-    const snapshotsAfterSecond = store.readSnapshots(scopeId);
+    const snapshotsAfterSecond = store.snapshots.readSnapshots(scopeId);
     // Still exactly one snapshot for today per scope
     const todaySnapshots = snapshotsAfterSecond.filter((s) => s.dateKey === "2026-06-10");
     expect(todaySnapshots).toHaveLength(1);
@@ -152,7 +152,7 @@ describe("loadDashboard — snapshot capture policy", () => {
     }
 
     // Per scope: exactly one snapshot for today (latest wins)
-    const snapshots = store.readSnapshots(scopeId);
+    const snapshots = store.snapshots.readSnapshots(scopeId);
     const todaySnapshots = snapshots.filter((s) => s.dateKey === "2026-06-10");
     expect(todaySnapshots).toHaveLength(1);
 
@@ -182,10 +182,10 @@ describe("loadDashboard — snapshot holding rows", () => {
 
     // Every scope captured its rows, not just the viewed one.
     for (const scopeId of ["household", "member_jose"]) {
-      const snapshots = store.readSnapshots(scopeId);
+      const snapshots = store.snapshots.readSnapshots(scopeId);
       expect(snapshots).toHaveLength(1);
 
-      const rows = store.readSnapshotHoldings({ scopeId });
+      const rows = store.snapshots.readSnapshotHoldings({ scopeId });
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({
         holdingId: "asset_cash",
@@ -215,7 +215,7 @@ describe("loadDashboard — snapshot holding rows", () => {
       refreshPrices: noOpRefresh,
     });
 
-    store.updateAssetValuation("asset_cash", 120_000_00);
+    store.assets.updateAssetValuation("asset_cash", 120_000_00);
     await loadDashboard({
       store,
       persistence: makePersistence(),
@@ -226,7 +226,7 @@ describe("loadDashboard — snapshot holding rows", () => {
       refreshPrices: noOpRefresh,
     });
 
-    const rows = store.readSnapshotHoldings({ scopeId: "household" });
+    const rows = store.snapshots.readSnapshotHoldings({ scopeId: "household" });
     // At most one set of rows per scope per day.
     expect(rows).toHaveLength(1);
     expect(rows[0]!.valueMinor).toBe(120_000_00);
@@ -237,13 +237,13 @@ describe("loadDashboard — snapshot holding rows", () => {
   test("captures investment units and unit price on dashboard load", async () => {
     const store = createInMemoryStore();
     makeWorkspace(store);
-    store.createInvestmentAsset({
+    store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "asset_fund",
       name: "Fondo",
       ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
     });
-    store.recordOperation({
+    store.operations.recordOperation({
       assetId: "asset_fund",
       currency: "EUR",
       executedAt: "2026-06-01T10:00:00.000Z",
@@ -252,7 +252,7 @@ describe("loadDashboard — snapshot holding rows", () => {
       pricePerUnit: "100",
       units: "10.5",
     });
-    store.upsertPrice({
+    store.operations.upsertPrice({
       assetId: "asset_fund",
       currency: "EUR",
       fetchedAt: "2026-06-10T09:00:00.000Z",
@@ -271,7 +271,7 @@ describe("loadDashboard — snapshot holding rows", () => {
       refreshPrices: noOpRefresh,
     });
 
-    const rows = store.readSnapshotHoldings({ scopeId: "household" });
+    const rows = store.snapshots.readSnapshotHoldings({ scopeId: "household" });
     const fundRow = rows.find((row) => row.holdingId === "asset_fund");
     expect(fundRow?.units).toBe("10.5");
     expect(fundRow?.unitPrice).toBe("110.40");
@@ -344,7 +344,7 @@ describe("loadDashboard — liquid drilldown", () => {
     });
 
     // Day 2: value changed, drill requested
-    store.updateAssetValuation("asset_cash", 120_000_00);
+    store.assets.updateAssetValuation("asset_cash", 120_000_00);
     const result = await loadDashboard({
       store,
       persistence: makePersistence(),
@@ -380,7 +380,7 @@ describe("loadDashboard — rest and housing drilldowns", () => {
   test("drill=housing over two days → housing key, no stack, per-property entries", async () => {
     const store = createInMemoryStore();
     makeWorkspace(store);
-    store.createManualAsset({
+    store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 300_000_00,
       id: "asset_piso",
@@ -402,7 +402,7 @@ describe("loadDashboard — rest and housing drilldowns", () => {
     });
 
     // Day 2: revaluation, drill requested
-    store.updateAssetValuation("asset_piso", 320_000_00);
+    store.assets.updateAssetValuation("asset_piso", 320_000_00);
     const result = await loadDashboard({
       store,
       persistence: makePersistence(),
@@ -452,7 +452,7 @@ describe("loadDashboard — deltas", () => {
     });
 
     // Day 2: 110 000 €
-    store.updateAssetValuation("asset_cash", 110_000_00);
+    store.assets.updateAssetValuation("asset_cash", 110_000_00);
     const result = await loadDashboard({
       store,
       persistence: makePersistence(),
@@ -487,7 +487,7 @@ describe("loadDashboard — deltas", () => {
     });
 
     // June: 115 000 €
-    store.updateAssetValuation("asset_cash", 115_000_00);
+    store.assets.updateAssetValuation("asset_cash", 115_000_00);
     const result = await loadDashboard({
       store,
       persistence: makePersistence(),

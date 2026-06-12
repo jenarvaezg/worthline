@@ -45,7 +45,7 @@ describe("initSoloAction wiring", () => {
 
     expect(url).toBe("/");
 
-    const ws = s.readWorkspace()!;
+    const ws = s.workspace.readWorkspace()!;
     expect(ws.mode).toBe("individual");
     expect(ws.members).toHaveLength(1);
     expect(ws.members[0].name).toBe("Ana");
@@ -69,13 +69,13 @@ describe("initSoloAction wiring", () => {
     expect(errorMessageOf(url)).toBe("El nombre es obligatorio.");
     expect(url).toContain("v_name=");
 
-    expect(s.readWorkspace()).toBeNull();
+    expect(s.workspace.readWorkspace()).toBeNull();
     expect(cookieSetMock).not.toHaveBeenCalled();
   });
 
   test("already-initialized workspace: overwrites without error", async () => {
     const s = freshStore();
-    s.initializeWorkspace({
+    s.workspace.initializeWorkspace({
       members: [{ id: "old", name: "Viejo" }],
       mode: "individual",
     });
@@ -86,7 +86,7 @@ describe("initSoloAction wiring", () => {
 
     expect(url).toBe("/");
 
-    const ws = s.readWorkspace()!;
+    const ws = s.workspace.readWorkspace()!;
     expect(ws.members).toHaveLength(1);
     expect(ws.members[0].name).toBe("Nuevo");
   });
@@ -104,7 +104,7 @@ describe("initHogarAction wiring", () => {
 
     expect(url).toBe("/");
 
-    const ws = s.readWorkspace()!;
+    const ws = s.workspace.readWorkspace()!;
     expect(ws.mode).toBe("household");
     expect(ws.members).toHaveLength(3);
     expect(ws.members.map((m) => m.name)).toEqual(["Ana", "Jose", "Pedro"]);
@@ -123,7 +123,7 @@ describe("initHogarAction wiring", () => {
     expect(errorMessageOf(url)).toBe("Añade al menos un nombre.");
     expect(url).toContain("v_memberNames=");
 
-    expect(s.readWorkspace()).toBeNull();
+    expect(s.workspace.readWorkspace()).toBeNull();
   });
 
   test("blank lines only → error redirect", async () => {
@@ -134,12 +134,12 @@ describe("initHogarAction wiring", () => {
     );
 
     expect(errorMessageOf(url)).toBe("Añade al menos un nombre.");
-    expect(s.readWorkspace()).toBeNull();
+    expect(s.workspace.readWorkspace()).toBeNull();
   });
 
   test("already-initialized workspace: overwrites without error", async () => {
     const s = freshStore();
-    s.initializeWorkspace({
+    s.workspace.initializeWorkspace({
       members: [{ id: "old", name: "Viejo" }],
       mode: "individual",
     });
@@ -150,7 +150,7 @@ describe("initHogarAction wiring", () => {
 
     expect(url).toBe("/");
 
-    const ws = s.readWorkspace()!;
+    const ws = s.workspace.readWorkspace()!;
     expect(ws.mode).toBe("household");
     expect(ws.members).toHaveLength(2);
     expect(ws.members.map((m) => m.name)).toEqual(["Ana", "Jose"]);

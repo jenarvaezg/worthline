@@ -37,11 +37,11 @@ afterEach(() => {
 
 function setupStore() {
   store = createInMemoryStore();
-  store.initializeWorkspace({
+  store.workspace.initializeWorkspace({
     members: [{ id: MEMBER_ID, name: "Yo" }],
     mode: "individual",
   });
-  store.createManualAsset({
+  store.assets.createManualAsset({
     id: ASSET_ID,
     name: "Cuenta corriente",
     type: "cash",
@@ -50,7 +50,7 @@ function setupStore() {
     liquidityTier: "cash",
     ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
   });
-  store.createLiability({
+  store.liabilities.createLiability({
     id: LIABILITY_ID,
     name: "Hipoteca",
     type: "mortgage",
@@ -81,7 +81,7 @@ describe("deleteAssetAction wiring", () => {
 
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/identificador/i);
-    expect(store.readAssets()).toHaveLength(1);
+    expect(store.assets.readAssets()).toHaveLength(1);
   });
 
   test("unknown id (changes=0): error redirect", async () => {
@@ -117,7 +117,7 @@ describe("deleteLiabilityAction wiring", () => {
     const url = await catchRedirect(() => deleteLiabilityAction(fd({ id: "" }), store));
 
     expect(url).toContain("error=");
-    expect(store.readLiabilities()).toHaveLength(1);
+    expect(store.liabilities.readLiabilities()).toHaveLength(1);
   });
 
   test("unknown id: error redirect", async () => {
@@ -137,14 +137,14 @@ describe("deleteLiabilityAction wiring", () => {
 describe("restoreAssetAction wiring", () => {
   test("happy path: soft-deleted asset is restored", async () => {
     setupStore();
-    store.softDeleteAsset(ASSET_ID, new Date().toISOString());
+    store.assets.softDeleteAsset(ASSET_ID, new Date().toISOString());
 
     const url = await catchRedirect(() =>
       restoreAssetAction(fd({ id: ASSET_ID }), store),
     );
 
     expect(url).toContain("ok=restored");
-    expect(store.readAssets()).toHaveLength(1);
+    expect(store.assets.readAssets()).toHaveLength(1);
     expect(store.readTrash().assets).toHaveLength(0);
   });
 
@@ -174,14 +174,14 @@ describe("restoreAssetAction wiring", () => {
 describe("restoreLiabilityAction wiring", () => {
   test("happy path: soft-deleted liability is restored", async () => {
     setupStore();
-    store.softDeleteLiability(LIABILITY_ID, new Date().toISOString());
+    store.liabilities.softDeleteLiability(LIABILITY_ID, new Date().toISOString());
 
     const url = await catchRedirect(() =>
       restoreLiabilityAction(fd({ id: LIABILITY_ID }), store),
     );
 
     expect(url).toContain("ok=restored");
-    expect(store.readLiabilities()).toHaveLength(1);
+    expect(store.liabilities.readLiabilities()).toHaveLength(1);
     expect(store.readTrash().liabilities).toHaveLength(0);
   });
 
@@ -258,7 +258,7 @@ describe("updateLiabilityBalanceAction wiring", () => {
     );
 
     expect(url).toContain("ok=saved");
-    const liabilities = store.readLiabilities();
+    const liabilities = store.liabilities.readLiabilities();
     expect(liabilities[0]!.currentBalance.amountMinor).toBe(20_000);
   });
 
@@ -286,7 +286,7 @@ describe("updateLiabilityBalanceAction wiring", () => {
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/saldo/i);
     // Balance unchanged
-    expect(store.readLiabilities()[0]!.currentBalance.amountMinor).toBe(100_000);
+    expect(store.liabilities.readLiabilities()[0]!.currentBalance.amountMinor).toBe(100_000);
   });
 });
 
@@ -313,7 +313,7 @@ describe("editAssetAction wiring", () => {
     );
 
     expect(url).toContain("ok=saved");
-    const asset = store.readAssets().find((a) => a.id === ASSET_ID);
+    const asset = store.assets.readAssets().find((a) => a.id === ASSET_ID);
     expect(asset?.name).toBe("Cuenta Ahorro");
   });
 
@@ -335,7 +335,7 @@ describe("editAssetAction wiring", () => {
     );
 
     expect(url).toContain("ok=saved");
-    const liability = store.readLiabilities().find((l) => l.id === LIABILITY_ID);
+    const liability = store.liabilities.readLiabilities().find((l) => l.id === LIABILITY_ID);
     expect(liability?.name).toBe("Hipoteca Renovada");
   });
 
@@ -369,7 +369,7 @@ describe("editAssetAction wiring", () => {
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/nombre/i);
     // Name unchanged
-    expect(store.readAssets().find((a) => a.id === ASSET_ID)?.name).toBe(
+    expect(store.assets.readAssets().find((a) => a.id === ASSET_ID)?.name).toBe(
       "Cuenta corriente",
     );
   });

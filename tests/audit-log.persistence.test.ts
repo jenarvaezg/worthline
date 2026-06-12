@@ -7,7 +7,7 @@ afterEach(cleanupTempDirs);
 function setupStore() {
   const store = createFileBackedStore("worthline-audit-");
 
-  store.initializeWorkspace({
+  store.workspace.initializeWorkspace({
     members: [{ id: "member_a", name: "Ana" }],
     mode: "individual",
   });
@@ -19,7 +19,7 @@ describe("soft delete - assets", () => {
   test("softDeleteAsset hides asset from readAssets()", () => {
     const store = setupStore();
 
-    store.createManualAsset({
+    store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000,
       id: "asset_1",
@@ -29,17 +29,17 @@ describe("soft delete - assets", () => {
       type: "cash",
     });
 
-    expect(store.readAssets()).toHaveLength(1);
+    expect(store.assets.readAssets()).toHaveLength(1);
 
-    store.softDeleteAsset("asset_1", new Date().toISOString());
+    store.assets.softDeleteAsset("asset_1", new Date().toISOString());
 
-    expect(store.readAssets()).toHaveLength(0);
+    expect(store.assets.readAssets()).toHaveLength(0);
   });
 
   test("restoreAsset makes it reappear", () => {
     const store = setupStore();
 
-    store.createManualAsset({
+    store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000,
       id: "asset_1",
@@ -49,11 +49,11 @@ describe("soft delete - assets", () => {
       type: "cash",
     });
 
-    store.softDeleteAsset("asset_1", new Date().toISOString());
-    expect(store.readAssets()).toHaveLength(0);
+    store.assets.softDeleteAsset("asset_1", new Date().toISOString());
+    expect(store.assets.readAssets()).toHaveLength(0);
 
-    store.restoreAsset("asset_1");
-    expect(store.readAssets()).toHaveLength(1);
+    store.assets.restoreAsset("asset_1");
+    expect(store.assets.readAssets()).toHaveLength(1);
   });
 });
 
@@ -61,7 +61,7 @@ describe("soft delete - liabilities", () => {
   test("softDeleteLiability hides liability from readLiabilities()", () => {
     const store = setupStore();
 
-    store.createLiability({
+    store.liabilities.createLiability({
       balanceMinor: 5_000,
       currency: "EUR",
       id: "liab_1",
@@ -70,11 +70,11 @@ describe("soft delete - liabilities", () => {
       type: "debt",
     });
 
-    expect(store.readLiabilities()).toHaveLength(1);
+    expect(store.liabilities.readLiabilities()).toHaveLength(1);
 
-    store.softDeleteLiability("liab_1", new Date().toISOString());
+    store.liabilities.softDeleteLiability("liab_1", new Date().toISOString());
 
-    expect(store.readLiabilities()).toHaveLength(0);
+    expect(store.liabilities.readLiabilities()).toHaveLength(0);
   });
 });
 
@@ -82,7 +82,7 @@ describe("audit log", () => {
   test("creating an asset records an audit entry with action 'create_asset'", () => {
     const store = setupStore();
 
-    store.createManualAsset({
+    store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000,
       id: "asset_1",
@@ -101,7 +101,7 @@ describe("audit log", () => {
   test("updateAssetValuation records an audit entry with action 'update_valuation'", () => {
     const store = setupStore();
 
-    store.createManualAsset({
+    store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000,
       id: "asset_1",
@@ -110,7 +110,7 @@ describe("audit log", () => {
       ownership: [{ memberId: "member_a", shareBps: 10_000 }],
       type: "cash",
     });
-    store.updateAssetValuation("asset_1", 20_000);
+    store.assets.updateAssetValuation("asset_1", 20_000);
 
     const log = store.readAuditLog();
     expect(
@@ -121,7 +121,7 @@ describe("audit log", () => {
   test("softDeleteAsset records audit entry with action 'delete_asset'", () => {
     const store = setupStore();
 
-    store.createManualAsset({
+    store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000,
       id: "asset_1",
@@ -130,7 +130,7 @@ describe("audit log", () => {
       ownership: [{ memberId: "member_a", shareBps: 10_000 }],
       type: "cash",
     });
-    store.softDeleteAsset("asset_1", new Date().toISOString());
+    store.assets.softDeleteAsset("asset_1", new Date().toISOString());
 
     const log = store.readAuditLog();
     expect(log.some((e) => e.action === "delete_asset" && e.entityId === "asset_1")).toBe(
@@ -141,7 +141,7 @@ describe("audit log", () => {
   test("readAuditLog filtered by entityId returns only that entity's entries", () => {
     const store = setupStore();
 
-    store.createManualAsset({
+    store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000,
       id: "asset_1",
@@ -150,7 +150,7 @@ describe("audit log", () => {
       ownership: [{ memberId: "member_a", shareBps: 10_000 }],
       type: "cash",
     });
-    store.createManualAsset({
+    store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 5_000,
       id: "asset_2",

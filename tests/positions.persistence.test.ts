@@ -9,7 +9,7 @@ import { createFileBackedStore, tempDatabasePath, cleanupTempDirs } from "./help
 afterEach(cleanupTempDirs);
 
 function seedWorkspace(store: WorthlineStore): void {
-  store.initializeWorkspace({
+  store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
   });
@@ -19,7 +19,7 @@ describe("investment position persistence", () => {
   test("derives units, average cost, market value and P/L from recorded operations", () => {
     const store = createFileBackedStore("worthline-positions-");
     seedWorkspace(store);
-    store.createInvestmentAsset({
+    store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "asset_acme",
       manualPricePerUnit: "130",
@@ -27,7 +27,7 @@ describe("investment position persistence", () => {
       ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
       unitSymbol: "ACME",
     });
-    store.recordOperation({
+    store.operations.recordOperation({
       assetId: "asset_acme",
       currency: "EUR",
       executedAt: "2026-01-01",
@@ -36,7 +36,7 @@ describe("investment position persistence", () => {
       pricePerUnit: "100",
       units: "10",
     });
-    store.recordOperation({
+    store.operations.recordOperation({
       assetId: "asset_acme",
       currency: "EUR",
       executedAt: "2026-02-01",
@@ -46,7 +46,7 @@ describe("investment position persistence", () => {
       units: "4",
     });
 
-    const positions = store.readPositions("member_jose");
+    const positions = store.snapshots.readPositions("member_jose");
     expect(positions).toHaveLength(1);
 
     const position = positions[0]!;
@@ -57,20 +57,20 @@ describe("investment position persistence", () => {
     expect(position.marketValue).toEqual({ amountMinor: 78_000, currency: "EUR" }); // 6 × 130
     expect(position.unrealizedPnl).toEqual({ amountMinor: 18_000, currency: "EUR" }); // 780 − 600
 
-    expect(store.readOperations("asset_acme")).toHaveLength(2);
+    expect(store.operations.readOperations("asset_acme")).toHaveLength(2);
   });
 
   test("soft-deleted investment assets are excluded from live positions and return after restore", () => {
     const store = createFileBackedStore("worthline-positions-");
     seedWorkspace(store);
-    store.createInvestmentAsset({
+    store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "asset_acme",
       manualPricePerUnit: "130",
       name: "ACME",
       ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
     });
-    store.recordOperation({
+    store.operations.recordOperation({
       assetId: "asset_acme",
       currency: "EUR",
       executedAt: "2026-01-01",
@@ -81,17 +81,17 @@ describe("investment position persistence", () => {
     });
 
     expect(
-      store.readPositions("member_jose").map((position) => position.assetId),
+      store.snapshots.readPositions("member_jose").map((position) => position.assetId),
     ).toEqual(["asset_acme"]);
 
-    store.softDeleteAsset("asset_acme", "2026-06-11T10:00:00.000Z");
+    store.assets.softDeleteAsset("asset_acme", "2026-06-11T10:00:00.000Z");
 
-    expect(store.readPositions("member_jose")).toEqual([]);
+    expect(store.snapshots.readPositions("member_jose")).toEqual([]);
 
-    store.restoreAsset("asset_acme");
+    store.assets.restoreAsset("asset_acme");
 
     expect(
-      store.readPositions("member_jose").map((position) => position.assetId),
+      store.snapshots.readPositions("member_jose").map((position) => position.assetId),
     ).toEqual(["asset_acme"]);
   });
 
@@ -99,14 +99,14 @@ describe("investment position persistence", () => {
     const databasePath = tempDatabasePath("worthline-positions-");
     const store = createWorthlineStore({ databasePath });
     seedWorkspace(store);
-    store.createInvestmentAsset({
+    store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "asset_acme",
       manualPricePerUnit: "130",
       name: "ACME",
       ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
     });
-    store.recordOperation({
+    store.operations.recordOperation({
       assetId: "asset_acme",
       currency: "EUR",
       executedAt: "2026-01-01",
@@ -123,9 +123,9 @@ describe("investment position persistence", () => {
     sqlite.close();
 
     const summary = calculateNetWorth({
-      assets: store.readAssets(),
+      assets: store.assets.readAssets(),
       scopeId: "member_jose",
-      workspace: store.readWorkspace()!,
+      workspace: store.workspace.readWorkspace()!,
     });
 
     // Investment assets default to the "market" tier (liquid); value = 10 × 130.
@@ -136,7 +136,7 @@ describe("investment position persistence", () => {
   test("rejects an operation with non-positive units", () => {
     const store = createFileBackedStore("worthline-positions-");
     seedWorkspace(store);
-    store.createInvestmentAsset({
+    store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "asset_acme",
       name: "ACME",
@@ -144,7 +144,7 @@ describe("investment position persistence", () => {
     });
 
     expect(() =>
-      store.recordOperation({
+      store.operations.recordOperation({
         assetId: "asset_acme",
         currency: "EUR",
         executedAt: "2026-01-01",
@@ -159,14 +159,14 @@ describe("investment position persistence", () => {
   test("fetched price takes priority over manual price in net worth", () => {
     const store = createFileBackedStore("worthline-positions-");
     seedWorkspace(store);
-    store.createInvestmentAsset({
+    store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "asset_acme",
       manualPricePerUnit: "130",
       name: "ACME",
       ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
     });
-    store.recordOperation({
+    store.operations.recordOperation({
       assetId: "asset_acme",
       currency: "EUR",
       executedAt: "2026-01-01",
@@ -176,7 +176,7 @@ describe("investment position persistence", () => {
       units: "10",
     });
 
-    store.upsertPrice({
+    store.operations.upsertPrice({
       assetId: "asset_acme",
       currency: "EUR",
       fetchedAt: "2026-06-01T12:00:00.000Z",
@@ -186,14 +186,14 @@ describe("investment position persistence", () => {
     });
 
     const summary = calculateNetWorth({
-      assets: store.readAssets(),
+      assets: store.assets.readAssets(),
       scopeId: "member_jose",
-      workspace: store.readWorkspace()!,
+      workspace: store.workspace.readWorkspace()!,
     });
 
     expect(summary.liquidNetWorth.amountMinor).toBe(150_000);
 
-    const positions = store.readPositions("member_jose");
+    const positions = store.snapshots.readPositions("member_jose");
     expect(positions[0]!.marketValue?.amountMinor).toBe(150_000);
   });
 });

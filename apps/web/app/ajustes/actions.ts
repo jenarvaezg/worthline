@@ -42,7 +42,7 @@ export async function createMemberAction(formData: FormData, _store?: WorthlineS
     );
   }
 
-  runWith((store) => store.createMember(member), _store);
+  runWith((store) => store.workspace.createMember(member), _store);
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
@@ -60,7 +60,7 @@ export async function updateMemberAction(formData: FormData, _store?: WorthlineS
     );
   }
 
-  runWith((store) => store.updateMember({ id, name }), _store);
+  runWith((store) => store.workspace.updateMember({ id, name }), _store);
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
@@ -75,7 +75,7 @@ export async function disableMemberAction(formData: FormData, _store?: Worthline
     );
   }
 
-  runWith((store) => store.disableMember(id, new Date().toISOString()), _store);
+  runWith((store) => store.workspace.disableMember(id, new Date().toISOString()), _store);
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
@@ -93,7 +93,7 @@ export async function reactivateMemberAction(
     );
   }
 
-  runWith((store) => store.reactivateMember(id), _store);
+  runWith((store) => store.workspace.reactivateMember(id), _store);
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
@@ -112,7 +112,7 @@ export async function hardDeleteMemberAction(
   }
 
   const result = runWith((store) => {
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
     const member = workspace?.members.find((m) => m.id === id);
 
     if (!member) {
@@ -126,7 +126,7 @@ export async function hardDeleteMemberAction(
       };
     }
 
-    const owned = store.readMemberOwnerships(id);
+    const owned = store.workspace.readMemberOwnerships(id);
     const holdings = [...owned.assets, ...owned.liabilities];
 
     if (holdings.length > 0) {
@@ -137,7 +137,7 @@ export async function hardDeleteMemberAction(
       };
     }
 
-    const changes = store.hardDeleteMember(id);
+    const changes = store.workspace.hardDeleteMember(id);
 
     if (changes === 0) {
       return { ok: false as const, error: "No se pudo borrar el miembro." };
@@ -170,7 +170,7 @@ export async function resetWorkspaceAction(formData: FormData, _store?: Worthlin
     );
   }
 
-  runWith((store) => store.resetWorkspace(), _store);
+  runWith((store) => store.workspace.resetWorkspace(), _store);
 
   // No workspace left → the app belongs at onboarding.
   redirect("/empezar");
@@ -274,7 +274,7 @@ export async function confirmImportAction(formData: FormData, _store?: Worthline
     );
   }
 
-  runWith((store) => store.importWorkspace(result.value), _store);
+  runWith((store) => store.workspace.importWorkspace(result.value), _store);
 
   // The previous workspace is gone — point the scope cookie at the imported
   // file's first member so the dashboard never resolves a stale member id.

@@ -13,11 +13,11 @@ describe("snapshot-policy persistence", () => {
   test("capture on fresh day: upsert with no replacesId inserts a new snapshot", () => {
     const store = createFileBackedStore("worthline-policy-");
 
-    store.initializeWorkspace({
+    store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
-    store.createManualAsset({
+    store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 100_000,
       id: "asset_cash",
@@ -27,10 +27,10 @@ describe("snapshot-policy persistence", () => {
       type: "cash",
     });
 
-    const workspace = store.readWorkspace()!;
-    const assets = store.readAssets();
-    const liabilities = store.readLiabilities();
-    const existingSnapshots = store.readSnapshots("household");
+    const workspace = store.workspace.readWorkspace()!;
+    const assets = store.assets.readAssets();
+    const liabilities = store.liabilities.readLiabilities();
+    const existingSnapshots = store.snapshots.readSnapshots("household");
 
     const plan = planSnapshotCapture(existingSnapshots, "household", "2026-06-09");
     expect(plan.shouldCapture).toBe(true);
@@ -46,9 +46,9 @@ describe("snapshot-policy persistence", () => {
       workspace,
     });
 
-    store.saveSnapshot({ snapshot });
+    store.snapshots.saveSnapshot({ snapshot });
 
-    const snapshots = store.readSnapshots("household");
+    const snapshots = store.snapshots.readSnapshots("household");
     expect(snapshots).toHaveLength(1);
     expect(snapshots[0]!.id).toBe("snapshot_day1");
     expect(snapshots[0]!.totalNetWorth.amountMinor).toBe(100_000);
@@ -57,11 +57,11 @@ describe("snapshot-policy persistence", () => {
   test("same-day recapture: upsert with replacesId replaces the earlier snapshot", () => {
     const store = createFileBackedStore("worthline-policy-");
 
-    store.initializeWorkspace({
+    store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
-    store.createManualAsset({
+    store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 100_000,
       id: "asset_cash",
@@ -71,38 +71,38 @@ describe("snapshot-policy persistence", () => {
       type: "cash",
     });
 
-    const workspace = store.readWorkspace()!;
+    const workspace = store.workspace.readWorkspace()!;
     const snapshot1 = captureNetWorthSnapshot({
-      assets: store.readAssets(),
+      assets: store.assets.readAssets(),
       capturedAt: "2026-06-09T10:00:00.000Z",
       id: "snapshot_morning",
-      liabilities: store.readLiabilities(),
+      liabilities: store.liabilities.readLiabilities(),
       scopeId: "household",
       scopeLabel: "Hogar",
       workspace,
     });
-    store.saveSnapshot({ snapshot: snapshot1 });
+    store.snapshots.saveSnapshot({ snapshot: snapshot1 });
 
     // Update asset value and recapture same day.
-    store.updateAssetValuation("asset_cash", 110_000);
-    const existingSnapshots = store.readSnapshots("household");
+    store.assets.updateAssetValuation("asset_cash", 110_000);
+    const existingSnapshots = store.snapshots.readSnapshots("household");
     const plan = planSnapshotCapture(existingSnapshots, "household", "2026-06-09");
 
     expect(plan.shouldCapture).toBe(true);
     expect(plan.replacesId).toBe("snapshot_morning");
 
     const snapshot2 = captureNetWorthSnapshot({
-      assets: store.readAssets(),
+      assets: store.assets.readAssets(),
       capturedAt: "2026-06-09T18:00:00.000Z",
       id: "snapshot_evening",
-      liabilities: store.readLiabilities(),
+      liabilities: store.liabilities.readLiabilities(),
       scopeId: "household",
       scopeLabel: "Hogar",
       workspace,
     });
-    store.saveSnapshot({ snapshot: snapshot2, replace: true });
+    store.snapshots.saveSnapshot({ snapshot: snapshot2, replace: true });
 
-    const snapshots = store.readSnapshots("household");
+    const snapshots = store.snapshots.readSnapshots("household");
     expect(snapshots).toHaveLength(1);
     expect(snapshots[0]!.id).toBe("snapshot_evening");
     expect(snapshots[0]!.totalNetWorth.amountMinor).toBe(110_000);
@@ -111,11 +111,11 @@ describe("snapshot-policy persistence", () => {
   test("deriveMonthlyCloses identifies the last snapshot of each calendar month", () => {
     const store = createFileBackedStore("worthline-policy-");
 
-    store.initializeWorkspace({
+    store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
-    store.createManualAsset({
+    store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 100_000,
       id: "asset_cash",
@@ -125,27 +125,27 @@ describe("snapshot-policy persistence", () => {
       type: "cash",
     });
 
-    const workspace = store.readWorkspace()!;
+    const workspace = store.workspace.readWorkspace()!;
 
     const makeSnapshot = (id: string, date: string, valueMinor: number) => {
-      store.updateAssetValuation("asset_cash", valueMinor);
+      store.assets.updateAssetValuation("asset_cash", valueMinor);
       return captureNetWorthSnapshot({
-        assets: store.readAssets(),
+        assets: store.assets.readAssets(),
         capturedAt: `${date}T12:00:00.000Z`,
         id,
-        liabilities: store.readLiabilities(),
+        liabilities: store.liabilities.readLiabilities(),
         scopeId: "household",
         scopeLabel: "Hogar",
         workspace,
       });
     };
 
-    store.saveSnapshot({ snapshot: makeSnapshot("snap_may_a", "2026-05-15", 90_000) });
-    store.saveSnapshot({ snapshot: makeSnapshot("snap_may_b", "2026-05-31", 95_000) });
-    store.saveSnapshot({ snapshot: makeSnapshot("snap_jun_a", "2026-06-01", 100_000) });
-    store.saveSnapshot({ snapshot: makeSnapshot("snap_jun_b", "2026-06-09", 105_000) });
+    store.snapshots.saveSnapshot({ snapshot: makeSnapshot("snap_may_a", "2026-05-15", 90_000) });
+    store.snapshots.saveSnapshot({ snapshot: makeSnapshot("snap_may_b", "2026-05-31", 95_000) });
+    store.snapshots.saveSnapshot({ snapshot: makeSnapshot("snap_jun_a", "2026-06-01", 100_000) });
+    store.snapshots.saveSnapshot({ snapshot: makeSnapshot("snap_jun_b", "2026-06-09", 105_000) });
 
-    const snapshots = store.readSnapshots("household");
+    const snapshots = store.snapshots.readSnapshots("household");
     const closes = deriveMonthlyCloses(snapshots);
 
     expect(closes.get("2026-05")).toBe("snap_may_b");

@@ -31,7 +31,7 @@ export default async function HistoricoPage({
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
   const storeData = withStore((store) => {
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
 
     if (!workspace) {
       return null;
@@ -39,7 +39,7 @@ export default async function HistoricoPage({
 
     const scopes = listScopeOptions(workspace);
     const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
-    const snapshots = selectedScope ? store.readSnapshots(selectedScope.id) : [];
+    const snapshots = selectedScope ? store.snapshots.readSnapshots(selectedScope.id) : [];
 
     return { scopes, selectedScope, snapshots };
   });

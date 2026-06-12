@@ -50,7 +50,7 @@ afterEach(() => {
 describe("createAssetAction wiring", () => {
   test("happy path: persists holding with ownership split and redirects to success URL", async () => {
     store = createInMemoryStore();
-    store.initializeWorkspace({
+    store.workspace.initializeWorkspace({
       members: [
         { id: "member_ana", name: "Ana" },
         { id: "member_jose", name: "Jose" },
@@ -75,7 +75,7 @@ describe("createAssetAction wiring", () => {
     expect(redirectUrl).toContain("ok=asset_added");
 
     // Store state: one holding persisted with the correct ownership split
-    const assets = store.readAssets();
+    const assets = store.assets.readAssets();
     expect(assets).toHaveLength(1);
 
     const [asset] = assets;
@@ -95,7 +95,7 @@ describe("createAssetAction wiring", () => {
 
   test("invalid submission: blank name produces error redirect, store unchanged", async () => {
     store = createInMemoryStore();
-    store.initializeWorkspace({
+    store.workspace.initializeWorkspace({
       members: [{ id: "member_yo", name: "Yo" }],
       mode: "individual",
     });
@@ -109,6 +109,6 @@ describe("createAssetAction wiring", () => {
     expect(decodeURIComponent(redirectUrl)).toContain("obligatorio");
 
     // Store state: nothing persisted
-    expect(store.readAssets()).toHaveLength(0);
+    expect(store.assets.readAssets()).toHaveLength(0);
   });
 });

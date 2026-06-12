@@ -6,7 +6,7 @@ afterEach(cleanupTempDirs);
 
 function setupStore() {
   const store = createFileBackedStore("worthline-patrimonio-");
-  store.initializeWorkspace({
+  store.workspace.initializeWorkspace({
     members: [
       { id: "m_ana", name: "Ana" },
       { id: "m_jose", name: "Jose" },
@@ -19,7 +19,7 @@ function setupStore() {
 describe("batchApplyValueUpdates — value-update-pass persistence", () => {
   test("applies changed values only, skipping unchanged rows", () => {
     const store = setupStore();
-    store.createManualAsset({
+    store.assets.createManualAsset({
       id: "a_cash",
       name: "Caja",
       type: "cash",
@@ -29,7 +29,7 @@ describe("batchApplyValueUpdates — value-update-pass persistence", () => {
       isPrimaryResidence: false,
       ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
     });
-    store.createManualAsset({
+    store.assets.createManualAsset({
       id: "a_manual",
       name: "Piso",
       type: "real_estate",
@@ -44,9 +44,9 @@ describe("batchApplyValueUpdates — value-update-pass persistence", () => {
     });
 
     // Apply batch: only a_cash changes, a_manual stays at 200_000
-    store.batchApplyValueUpdates([{ id: "a_cash", newValueMinor: 110_000 }]);
+    store.operations.batchApplyValueUpdates([{ id: "a_cash", newValueMinor: 110_000 }]);
 
-    const assets = store.readAssets();
+    const assets = store.assets.readAssets();
     const cash = assets.find((a) => a.id === "a_cash")!;
     const piso = assets.find((a) => a.id === "a_manual")!;
 
@@ -57,7 +57,7 @@ describe("batchApplyValueUpdates — value-update-pass persistence", () => {
 
   test("applies multiple updates in a single transaction", () => {
     const store = setupStore();
-    store.createManualAsset({
+    store.assets.createManualAsset({
       id: "a1",
       name: "Activo 1",
       type: "cash",
@@ -67,7 +67,7 @@ describe("batchApplyValueUpdates — value-update-pass persistence", () => {
       isPrimaryResidence: false,
       ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
     });
-    store.createManualAsset({
+    store.assets.createManualAsset({
       id: "a2",
       name: "Activo 2",
       type: "manual",
@@ -78,12 +78,12 @@ describe("batchApplyValueUpdates — value-update-pass persistence", () => {
       ownership: [{ memberId: "m_jose", shareBps: 10_000 }],
     });
 
-    store.batchApplyValueUpdates([
+    store.operations.batchApplyValueUpdates([
       { id: "a1", newValueMinor: 1_500 },
       { id: "a2", newValueMinor: 2_500 },
     ]);
 
-    const assets = store.readAssets();
+    const assets = store.assets.readAssets();
     expect(assets.find((a) => a.id === "a1")!.currentValue.amountMinor).toBe(1_500);
     expect(assets.find((a) => a.id === "a2")!.currentValue.amountMinor).toBe(2_500);
     store.close();
@@ -91,7 +91,7 @@ describe("batchApplyValueUpdates — value-update-pass persistence", () => {
 
   test("empty batch is a no-op", () => {
     const store = setupStore();
-    store.createManualAsset({
+    store.assets.createManualAsset({
       id: "a_only",
       name: "Solo",
       type: "cash",
@@ -102,10 +102,10 @@ describe("batchApplyValueUpdates — value-update-pass persistence", () => {
       ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
     });
 
-    store.batchApplyValueUpdates([]);
+    store.operations.batchApplyValueUpdates([]);
 
     expect(
-      store.readAssets().find((a) => a.id === "a_only")!.currentValue.amountMinor,
+      store.assets.readAssets().find((a) => a.id === "a_only")!.currentValue.amountMinor,
     ).toBe(5_000);
     store.close();
   });
@@ -114,7 +114,7 @@ describe("batchApplyValueUpdates — value-update-pass persistence", () => {
 describe("updateLiability — full liability edit", () => {
   test("updates name, type, and associated asset", () => {
     const store = setupStore();
-    store.createManualAsset({
+    store.assets.createManualAsset({
       id: "a_house",
       name: "Casa",
       type: "real_estate",
@@ -124,7 +124,7 @@ describe("updateLiability — full liability edit", () => {
       isPrimaryResidence: true,
       ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
     });
-    store.createLiability({
+    store.liabilities.createLiability({
       id: "l_hip",
       name: "Hipoteca vieja",
       type: "mortgage",
@@ -133,13 +133,13 @@ describe("updateLiability — full liability edit", () => {
       ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
     });
 
-    store.updateLiability("l_hip", {
+    store.liabilities.updateLiability("l_hip", {
       name: "Hipoteca nueva",
       type: "debt",
       associatedAssetId: "a_house",
     });
 
-    const liabilities = store.readLiabilities();
+    const liabilities = store.liabilities.readLiabilities();
     const updated = liabilities.find((l) => l.id === "l_hip")!;
     expect(updated.name).toBe("Hipoteca nueva");
     expect(updated.type).toBe("debt");
@@ -149,7 +149,7 @@ describe("updateLiability — full liability edit", () => {
 
   test("updates ownership split for a liability", () => {
     const store = setupStore();
-    store.createLiability({
+    store.liabilities.createLiability({
       id: "l_own",
       name: "Deuda compartida",
       type: "debt",
@@ -158,14 +158,14 @@ describe("updateLiability — full liability edit", () => {
       ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
     });
 
-    store.updateLiability("l_own", {
+    store.liabilities.updateLiability("l_own", {
       ownership: [
         { memberId: "m_ana", shareBps: 7_000 },
         { memberId: "m_jose", shareBps: 3_000 },
       ],
     });
 
-    const liability = store.readLiabilities().find((l) => l.id === "l_own")!;
+    const liability = store.liabilities.readLiabilities().find((l) => l.id === "l_own")!;
     const anaShare = liability.ownership.find((s) => s.memberId === "m_ana")!;
     const joseShare = liability.ownership.find((s) => s.memberId === "m_jose")!;
     expect(anaShare.shareBps).toBe(7_000);
@@ -177,7 +177,7 @@ describe("updateLiability — full liability edit", () => {
 describe("updateAsset — full asset edit", () => {
   test("updates name, type, tier, and isPrimaryResidence", () => {
     const store = setupStore();
-    store.createManualAsset({
+    store.assets.createManualAsset({
       id: "a_edit",
       name: "Old Name",
       type: "cash",
@@ -188,14 +188,14 @@ describe("updateAsset — full asset edit", () => {
       ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
     });
 
-    store.updateAsset("a_edit", {
+    store.assets.updateAsset("a_edit", {
       name: "New Name",
       type: "real_estate",
       liquidityTier: "housing",
       isPrimaryResidence: true,
     });
 
-    const asset = store.readAssets().find((a) => a.id === "a_edit")!;
+    const asset = store.assets.readAssets().find((a) => a.id === "a_edit")!;
     expect(asset.name).toBe("New Name");
     expect(asset.type).toBe("real_estate");
     expect(asset.liquidityTier).toBe("housing");
@@ -207,7 +207,7 @@ describe("updateAsset — full asset edit", () => {
 
   test("updates ownership split for an asset", () => {
     const store = setupStore();
-    store.createManualAsset({
+    store.assets.createManualAsset({
       id: "a_own",
       name: "Shared",
       type: "manual",
@@ -219,14 +219,14 @@ describe("updateAsset — full asset edit", () => {
     });
 
     // Transfer half to Jose
-    store.updateAsset("a_own", {
+    store.assets.updateAsset("a_own", {
       ownership: [
         { memberId: "m_ana", shareBps: 5_000 },
         { memberId: "m_jose", shareBps: 5_000 },
       ],
     });
 
-    const asset = store.readAssets().find((a) => a.id === "a_own")!;
+    const asset = store.assets.readAssets().find((a) => a.id === "a_own")!;
     const anaShare = asset.ownership.find((s) => s.memberId === "m_ana")!;
     const joseShare = asset.ownership.find((s) => s.memberId === "m_jose")!;
     expect(anaShare.shareBps).toBe(5_000);
@@ -238,7 +238,7 @@ describe("updateAsset — full asset edit", () => {
 describe("batchApplyAllValueUpdates — atomic asset+liability pass", () => {
   test("applies asset and liability updates in a single transaction", () => {
     const store = setupStore();
-    store.createManualAsset({
+    store.assets.createManualAsset({
       id: "a_cash",
       name: "Caja",
       type: "cash",
@@ -248,7 +248,7 @@ describe("batchApplyAllValueUpdates — atomic asset+liability pass", () => {
       isPrimaryResidence: false,
       ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
     });
-    store.createLiability({
+    store.liabilities.createLiability({
       id: "l_debt",
       name: "Deuda",
       type: "debt",
@@ -257,13 +257,13 @@ describe("batchApplyAllValueUpdates — atomic asset+liability pass", () => {
       ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
     });
 
-    store.batchApplyAllValueUpdates(
+    store.operations.batchApplyAllValueUpdates(
       [{ id: "a_cash", newValueMinor: 20_000 }],
       [{ id: "l_debt", newValueMinor: 3_000 }],
     );
 
-    const asset = store.readAssets().find((a) => a.id === "a_cash")!;
-    const liability = store.readLiabilities().find((l) => l.id === "l_debt")!;
+    const asset = store.assets.readAssets().find((a) => a.id === "a_cash")!;
+    const liability = store.liabilities.readLiabilities().find((l) => l.id === "l_debt")!;
     expect(asset.currentValue.amountMinor).toBe(20_000);
     expect(liability.currentBalance.amountMinor).toBe(3_000);
     store.close();
@@ -271,7 +271,7 @@ describe("batchApplyAllValueUpdates — atomic asset+liability pass", () => {
 
   test("writes NOTHING when any amount is not an integer (atomicity guard)", () => {
     const store = setupStore();
-    store.createManualAsset({
+    store.assets.createManualAsset({
       id: "a_cash",
       name: "Caja",
       type: "cash",
@@ -281,7 +281,7 @@ describe("batchApplyAllValueUpdates — atomic asset+liability pass", () => {
       isPrimaryResidence: false,
       ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
     });
-    store.createLiability({
+    store.liabilities.createLiability({
       id: "l_debt",
       name: "Deuda",
       type: "debt",
@@ -291,15 +291,15 @@ describe("batchApplyAllValueUpdates — atomic asset+liability pass", () => {
     });
 
     expect(() =>
-      store.batchApplyAllValueUpdates(
+      store.operations.batchApplyAllValueUpdates(
         [{ id: "a_cash", newValueMinor: 20_000 }],
         [{ id: "l_debt", newValueMinor: 3_000.5 }], // invalid — not integer
       ),
     ).toThrow("integer");
 
     // Validation fires BEFORE any write — the asset must be unchanged.
-    const asset = store.readAssets().find((a) => a.id === "a_cash")!;
-    const liability = store.readLiabilities().find((l) => l.id === "l_debt")!;
+    const asset = store.assets.readAssets().find((a) => a.id === "a_cash")!;
+    const liability = store.liabilities.readLiabilities().find((l) => l.id === "l_debt")!;
     expect(asset.currentValue.amountMinor).toBe(10_000);
     expect(liability.currentBalance.amountMinor).toBe(5_000);
     store.close();
@@ -307,7 +307,7 @@ describe("batchApplyAllValueUpdates — atomic asset+liability pass", () => {
 
   test("empty batches are a no-op", () => {
     const store = setupStore();
-    store.batchApplyAllValueUpdates([], []);
+    store.operations.batchApplyAllValueUpdates([], []);
     store.close();
   });
 });
@@ -315,7 +315,7 @@ describe("batchApplyAllValueUpdates — atomic asset+liability pass", () => {
 describe("softDeleteAsset / restoreAsset — returns affected row count", () => {
   test("returns 1 when the asset exists", () => {
     const store = setupStore();
-    store.createManualAsset({
+    store.assets.createManualAsset({
       id: "a_del",
       name: "Para borrar",
       type: "cash",
@@ -325,15 +325,15 @@ describe("softDeleteAsset / restoreAsset — returns affected row count", () => 
       isPrimaryResidence: false,
       ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
     });
-    expect(store.softDeleteAsset("a_del", new Date().toISOString())).toBe(1);
-    expect(store.restoreAsset("a_del")).toBe(1);
+    expect(store.assets.softDeleteAsset("a_del", new Date().toISOString())).toBe(1);
+    expect(store.assets.restoreAsset("a_del")).toBe(1);
     store.close();
   });
 
   test("returns 0 when the id does not exist", () => {
     const store = setupStore();
-    expect(store.softDeleteAsset("ghost_id", new Date().toISOString())).toBe(0);
-    expect(store.restoreAsset("ghost_id")).toBe(0);
+    expect(store.assets.softDeleteAsset("ghost_id", new Date().toISOString())).toBe(0);
+    expect(store.assets.restoreAsset("ghost_id")).toBe(0);
     store.close();
   });
 });
@@ -341,7 +341,7 @@ describe("softDeleteAsset / restoreAsset — returns affected row count", () => 
 describe("softDeleteLiability / restoreLiability — returns affected row count", () => {
   test("returns 1 when the liability exists", () => {
     const store = setupStore();
-    store.createLiability({
+    store.liabilities.createLiability({
       id: "l_del",
       name: "Para borrar",
       type: "debt",
@@ -349,15 +349,15 @@ describe("softDeleteLiability / restoreLiability — returns affected row count"
       balanceMinor: 1_000,
       ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
     });
-    expect(store.softDeleteLiability("l_del", new Date().toISOString())).toBe(1);
-    expect(store.restoreLiability("l_del")).toBe(1);
+    expect(store.liabilities.softDeleteLiability("l_del", new Date().toISOString())).toBe(1);
+    expect(store.liabilities.restoreLiability("l_del")).toBe(1);
     store.close();
   });
 
   test("returns 0 when the id does not exist", () => {
     const store = setupStore();
-    expect(store.softDeleteLiability("ghost_id", new Date().toISOString())).toBe(0);
-    expect(store.restoreLiability("ghost_id")).toBe(0);
+    expect(store.liabilities.softDeleteLiability("ghost_id", new Date().toISOString())).toBe(0);
+    expect(store.liabilities.restoreLiability("ghost_id")).toBe(0);
     store.close();
   });
 });

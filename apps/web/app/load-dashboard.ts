@@ -103,8 +103,8 @@ export async function loadDashboard(
     input;
 
   // ── 1. Refresh stale prices ───────────────────────────────────────────────
-  const investmentAssets = store.readInvestmentAssetsWithMeta();
-  const initialCache = store.readAllPriceCacheEntries();
+  const investmentAssets = store.assets.readInvestmentAssetsWithMeta();
+  const initialCache = store.operations.readAllPriceCacheEntries();
 
   const { priceCache, errors: pricingErrors } = await refreshPrices({
     cacheEntries: initialCache,
@@ -119,20 +119,20 @@ export async function loadDashboard(
         (c) => c.assetId !== price.assetId || c.fetchedAt !== price.fetchedAt,
       )
     ) {
-      store.upsertPrice(price);
+      store.operations.upsertPrice(price);
     }
   }
 
   // ── 2. Read workspace — redirect signal if absent ─────────────────────────
-  const workspace = store.readWorkspace();
+  const workspace = store.workspace.readWorkspace();
 
   if (!workspace) {
     // Return a minimal result that signals the page to redirect.
     return buildEmptyResult(persistence, pricingErrors);
   }
 
-  const assets = store.readAssets();
-  const liabilities = store.readLiabilities();
+  const assets = store.assets.readAssets();
+  const liabilities = store.liabilities.readLiabilities();
   const scopes = listScopeOptions(workspace);
   const selectedScope = scopes.find((s) => s.id === scopeId) ?? scopes[0];
 
@@ -142,7 +142,7 @@ export async function loadDashboard(
   // its figures — one frozen row per holding — atomically with the snapshot.
   // Investments additionally freeze units and the unit price used that day.
   const investmentDetails = new Map<string, InvestmentCaptureDetail>(
-    store.readPositions().map((position) => [
+    store.snapshots.readPositions().map((position) => [
       position.assetId,
       {
         units: position.currentUnits,
@@ -154,7 +154,7 @@ export async function loadDashboard(
   );
 
   for (const scope of scopes) {
-    const existing = store.readSnapshots(scope.id);
+    const existing = store.snapshots.readSnapshots(scope.id);
     const plan = planSnapshotCapture(existing, scope.id, today);
 
     if (plan.shouldCapture) {
@@ -168,7 +168,7 @@ export async function loadDashboard(
         scopeLabel: scope.label,
         workspace,
       });
-      store.saveSnapshot({
+      store.snapshots.saveSnapshot({
         holdings,
         replace: plan.replacesId !== undefined,
         snapshot,
@@ -177,10 +177,10 @@ export async function loadDashboard(
   }
 
   // ── 4. Collect remaining data for state assembly ─────────────────────────
-  const positions = selectedScope ? store.readPositions(selectedScope.id) : [];
+  const positions = selectedScope ? store.snapshots.readPositions(selectedScope.id) : [];
   const overrides = store.readWarningOverrides();
   const fireConfig = store.readFireConfig();
-  const snapshots = selectedScope ? store.readSnapshots(selectedScope.id) : [];
+  const snapshots = selectedScope ? store.snapshots.readSnapshots(selectedScope.id) : [];
 
   // ── 4b. Drilldown (#76, #77) — drill view state from frozen holding rows ─
   const drilldown =
@@ -190,7 +190,7 @@ export async function loadDashboard(
             ...assets.map((asset) => asset.id),
             ...liabilities.map((liability) => liability.id),
           ],
-          rows: store.readSnapshotHoldings({ scopeId: selectedScope.id }),
+          rows: store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id }),
         })
       : null;
 

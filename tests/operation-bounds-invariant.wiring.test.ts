@@ -45,11 +45,11 @@ const ASSET_ID = "asset_test_123";
 
 function setupStoreWithInvestment(): WorthlineStore {
   store = createInMemoryStore();
-  store.initializeWorkspace({
+  store.workspace.initializeWorkspace({
     members: [{ id: "member_yo", name: "Yo" }],
     mode: "individual",
   });
-  store.createInvestmentAsset({
+  store.assets.createInvestmentAsset({
     id: ASSET_ID,
     name: "Test Fund",
     currency: "EUR",
@@ -151,7 +151,7 @@ describe("recordOperationAction — operation bounds wiring", () => {
     );
 
     expect(redirectUrl).toContain("ok=saved");
-    expect(store.readOperations(ASSET_ID)).toHaveLength(1);
+    expect(store.operations.readOperations(ASSET_ID)).toHaveLength(1);
   });
 
   test("parser rejection: zero units redirects with the positive-units message and persists nothing", async () => {
@@ -167,7 +167,7 @@ describe("recordOperationAction — operation bounds wiring", () => {
     expect(errorMessageOf(redirectUrl)).toBe(
       "Las unidades deben ser un número positivo.",
     );
-    expect(store.readOperations(ASSET_ID)).toHaveLength(0);
+    expect(store.operations.readOperations(ASSET_ID)).toHaveLength(0);
   });
 
   test("domain rejection: negative units redirects with the positive-units message and persists nothing", async () => {
@@ -183,7 +183,7 @@ describe("recordOperationAction — operation bounds wiring", () => {
     expect(errorMessageOf(redirectUrl)).toBe(
       "Las unidades deben ser un número positivo.",
     );
-    expect(store.readOperations(ASSET_ID)).toHaveLength(0);
+    expect(store.operations.readOperations(ASSET_ID)).toHaveLength(0);
   });
 
   test("domain rejection: negative price redirects with the invalid-price message and persists nothing", async () => {
@@ -197,7 +197,7 @@ describe("recordOperationAction — operation bounds wiring", () => {
 
     expect(redirectUrl).toContain("error=");
     expect(errorMessageOf(redirectUrl)).toBe("El precio por unidad no es válido.");
-    expect(store.readOperations(ASSET_ID)).toHaveLength(0);
+    expect(store.operations.readOperations(ASSET_ID)).toHaveLength(0);
   });
 
   test("parser rejection: negative fees redirects with the invalid-fees message and persists nothing", async () => {
@@ -211,6 +211,6 @@ describe("recordOperationAction — operation bounds wiring", () => {
 
     expect(redirectUrl).toContain("error=");
     expect(errorMessageOf(redirectUrl)).toBe("Las comisiones no son válidas.");
-    expect(store.readOperations(ASSET_ID)).toHaveLength(0);
+    expect(store.operations.readOperations(ASSET_ID)).toHaveLength(0);
   });
 });

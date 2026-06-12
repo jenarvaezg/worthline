@@ -9,11 +9,11 @@ const eur = (amountMinor: number): MoneyMinor => ({ amountMinor, currency: "EUR"
 
 /** Seed workspace A through the public store API (member mA, asset, liability, snapshot, fire, override, trash). */
 function seedWorkspaceA(store: WorthlineStore): void {
-  store.initializeWorkspace({
+  store.workspace.initializeWorkspace({
     members: [{ id: "mA", name: "Alice A" }],
     mode: "individual",
   });
-  store.createManualAsset({
+  store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 100000,
     id: "a-A1",
@@ -22,7 +22,7 @@ function seedWorkspaceA(store: WorthlineStore): void {
     ownership: [{ memberId: "mA", shareBps: 10000 }],
     type: "cash",
   });
-  store.createManualAsset({
+  store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 5000,
     id: "a-A2",
@@ -31,7 +31,7 @@ function seedWorkspaceA(store: WorthlineStore): void {
     ownership: [{ memberId: "mA", shareBps: 10000 }],
     type: "manual",
   });
-  store.createLiability({
+  store.liabilities.createLiability({
     balanceMinor: 30000,
     currency: "EUR",
     id: "l-A1",
@@ -45,7 +45,7 @@ function seedWorkspaceA(store: WorthlineStore): void {
     safeWithdrawalRate: 0.04,
   });
   store.acknowledgeWarning("ZERO_VALUE_ASSET", "a-A1");
-  store.softDeleteAsset("a-A2", "2026-06-01T10:00:00.000Z");
+  store.assets.softDeleteAsset("a-A2", "2026-06-01T10:00:00.000Z");
 
   const snapshot: NetWorthSnapshot = {
     capturedAt: "2026-06-01T20:00:00.000Z",
@@ -63,7 +63,7 @@ function seedWorkspaceA(store: WorthlineStore): void {
     warnings: [],
   };
 
-  store.saveSnapshot({
+  store.snapshots.saveSnapshot({
     holdings: [
       {
         holdingId: "a-A1",
@@ -261,9 +261,9 @@ describe("importWorkspace", () => {
     seedWorkspaceA(store);
 
     const docB = makeDocumentB();
-    store.importWorkspace(docB);
+    store.workspace.importWorkspace(docB);
 
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
     expect(workspace).not.toBeNull();
     expect(workspace!.mode).toBe("household");
     expect(workspace!.members.map((m) => ({ id: m.id, name: m.name }))).toEqual([
@@ -274,7 +274,7 @@ describe("importWorkspace", () => {
       { id: "b-g1", memberIds: ["b-m1", "b-m2"], name: "Pareja" },
     ]);
 
-    const assets = store.readAssets();
+    const assets = store.assets.readAssets();
     expect(assets.map((a) => a.id)).toEqual(["b-a1", "b-a2"]);
     expect(assets[0]!.name).toBe("Cuenta B");
     expect(assets[0]!.currentValue).toEqual(eur(200000));
@@ -282,12 +282,12 @@ describe("importWorkspace", () => {
     // (2 units × 110 = 220.00 €), never stored (ADR 0006).
     expect(assets[1]!.currentValue).toEqual(eur(22000));
 
-    const liabilities = store.readLiabilities();
+    const liabilities = store.liabilities.readLiabilities();
     expect(liabilities.map((l) => l.id)).toEqual(["b-l1"]);
     expect(liabilities[0]!.currentBalance).toEqual(eur(50000));
     expect(liabilities[0]!.associatedAssetId).toBe("b-a1");
 
-    const snapshots = store.readSnapshots();
+    const snapshots = store.snapshots.readSnapshots();
     // b-s1 is restored intact; import also gap-fills the operation date (ADR
     // 0012, #112), so extra B-scoped snapshots may appear. No A snapshot leaks.
     expect(snapshots.some((s) => s.id === "snap-A")).toBe(false);
@@ -299,11 +299,11 @@ describe("importWorkspace", () => {
 
     // b-s1's own frozen holdings are untouched by gap-fill.
     const b1Holdings = store
-      .readSnapshotHoldings()
+      .snapshots.readSnapshotHoldings()
       .filter((h) => h.snapshotId === "b-s1");
     expect(b1Holdings.map((h) => h.holdingId).sort()).toEqual(["b-a1", "b-l1"]);
 
-    const operations = store.readOperations("b-a2");
+    const operations = store.operations.readOperations("b-a2");
     expect(operations).toEqual([
       {
         assetId: "b-a2",
@@ -317,11 +317,11 @@ describe("importWorkspace", () => {
       },
     ]);
 
-    const price = store.readPriceCache("b-a2");
+    const price = store.operations.readPriceCache("b-a2");
     expect(price).not.toBeNull();
     expect(price!.price).toBe("110");
     expect(price!.source).toBe("stooq");
-    expect(store.readPriceCache("a-A1")).toBeNull();
+    expect(store.operations.readPriceCache("a-A1")).toBeNull();
 
     expect(store.readFireConfig()).toEqual(docB.fireConfig);
     expect(store.readWarningOverrides()).toEqual([
@@ -334,7 +334,7 @@ describe("importWorkspace", () => {
     });
 
     // Investment metadata round-trips for edit pages.
-    const investment = store.readInvestmentAssetById("b-a2");
+    const investment = store.assets.readInvestmentAssetById("b-a2");
     expect(investment).not.toBeNull();
     expect(investment!.unitSymbol).toBe("VWCE");
     expect(investment!.isin).toBe("IE00BK5BQT80");
@@ -346,7 +346,7 @@ describe("importWorkspace", () => {
     expect(assets.some((a) => a.id.startsWith("a-A"))).toBe(false);
     expect(snapshots.some((s) => s.id === "snap-A")).toBe(false);
     expect(
-      store.readSnapshotHoldings().some((h) => h.holdingId.startsWith("a-A")),
+      store.snapshots.readSnapshotHoldings().some((h) => h.holdingId.startsWith("a-A")),
     ).toBe(false);
     expect(workspace!.members.some((m) => m.id === "mA")).toBe(false);
 
@@ -355,10 +355,10 @@ describe("importWorkspace", () => {
 
   test("ids are preserved: a snapshot holding's holdingId still matches the imported asset id", () => {
     const store = createInMemoryStore();
-    store.importWorkspace(makeDocumentB());
+    store.workspace.importWorkspace(makeDocumentB());
 
-    const assetIds = new Set(store.readAssets().map((a) => a.id));
-    const assetHolding = store.readSnapshotHoldings().find((row) => row.kind === "asset");
+    const assetIds = new Set(store.assets.readAssets().map((a) => a.id));
+    const assetHolding = store.snapshots.readSnapshotHoldings().find((row) => row.kind === "asset");
 
     expect(assetHolding).toBeDefined();
     expect(assetHolding!.holdingId).toBe("b-a1");
@@ -384,13 +384,13 @@ describe("importWorkspace", () => {
       snapshots: [{ ...doc.snapshots[0]!, holdings: [] }, clash],
     };
 
-    expect(() => store.importWorkspace(broken)).toThrow();
+    expect(() => store.workspace.importWorkspace(broken)).toThrow();
 
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
     expect(workspace!.members.map((m) => m.id)).toEqual(["mA"]);
-    expect(store.readAssets().map((a) => a.id)).toEqual(["a-A1"]);
-    expect(store.readLiabilities().map((l) => l.id)).toEqual(["l-A1"]);
-    expect(store.readSnapshots().map((s) => s.id)).toEqual(["snap-A"]);
+    expect(store.assets.readAssets().map((a) => a.id)).toEqual(["a-A1"]);
+    expect(store.liabilities.readLiabilities().map((l) => l.id)).toEqual(["l-A1"]);
+    expect(store.snapshots.readSnapshots().map((s) => s.id)).toEqual(["snap-A"]);
     expect(store.readTrash().assets).toEqual([{ id: "a-A2", name: "Trasto A" }]);
     expect(store.readWarningOverrides()).toEqual([
       { code: "ZERO_VALUE_ASSET", entityId: "a-A1" },
@@ -410,7 +410,7 @@ describe("importWorkspace", () => {
     seedWorkspaceA(store);
     expect(store.readAuditLog().length).toBeGreaterThan(0);
 
-    store.importWorkspace(makeDocumentB());
+    store.workspace.importWorkspace(makeDocumentB());
 
     const audit = store.readAuditLog();
     expect(audit).toHaveLength(1);
@@ -433,10 +433,10 @@ describe("importWorkspace", () => {
   test("importing into a brand-new empty store works", () => {
     const store = createInMemoryStore();
 
-    store.importWorkspace(makeDocumentB());
+    store.workspace.importWorkspace(makeDocumentB());
 
-    expect(store.readWorkspace()).not.toBeNull();
-    expect(store.readAssets().map((a) => a.id)).toEqual(["b-a1", "b-a2"]);
+    expect(store.workspace.readWorkspace()).not.toBeNull();
+    expect(store.assets.readAssets().map((a) => a.id)).toEqual(["b-a1", "b-a2"]);
     expect(store.readAuditLog().map((e) => e.action)).toEqual(["import_workspace"]);
 
     store.close();
@@ -446,14 +446,14 @@ describe("importWorkspace", () => {
     const store = createInMemoryStore();
     seedWorkspaceA(store);
 
-    store.importWorkspace(makeLiveOnlyDocument());
+    store.workspace.importWorkspace(makeLiveOnlyDocument());
 
-    expect(store.readWorkspace()!.members.map((m) => m.id)).toEqual(["c-m1"]);
-    expect(store.readAssets().map((a) => a.id)).toEqual(["c-a1"]);
-    expect(store.readSnapshots()).toEqual([]);
-    expect(store.readSnapshotHoldings()).toEqual([]);
+    expect(store.workspace.readWorkspace()!.members.map((m) => m.id)).toEqual(["c-m1"]);
+    expect(store.assets.readAssets().map((a) => a.id)).toEqual(["c-a1"]);
+    expect(store.snapshots.readSnapshots()).toEqual([]);
+    expect(store.snapshots.readSnapshotHoldings()).toEqual([]);
     expect(store.readTrash()).toEqual({ assets: [], liabilities: [] });
-    expect(store.readAllPriceCacheEntries()).toEqual([]);
+    expect(store.operations.readAllPriceCacheEntries()).toEqual([]);
     expect(store.readFireConfig()).toEqual({});
     expect(store.readWarningOverrides()).toEqual([]);
 

@@ -18,7 +18,7 @@ afterEach(() => {
 
 function setupStore() {
   store = createInMemoryStore();
-  store.initializeWorkspace({
+  store.workspace.initializeWorkspace({
     members: [{ id: MEMBER_ID, name: "Yo" }],
     mode: "individual",
   });
@@ -48,7 +48,7 @@ function throwingProvider(): PriceProvider {
 describe("refreshPricesAction wiring", () => {
   test("success: fresh price cached and redirect reports updated=1", async () => {
     setupStore();
-    store.createInvestmentAsset({
+    store.assets.createInvestmentAsset({
       id: "asset_1",
       name: "Test ETF",
       currency: "EUR",
@@ -67,7 +67,7 @@ describe("refreshPricesAction wiring", () => {
     expect(url).toContain("updated=1");
     expect(url).not.toContain("failed=");
 
-    const cached = store.readPriceCache("asset_1");
+    const cached = store.operations.readPriceCache("asset_1");
     expect(cached).not.toBeNull();
     expect(cached!.price).toBe("42.50");
     expect(cached!.freshnessState).toBe("fresh");
@@ -75,7 +75,7 @@ describe("refreshPricesAction wiring", () => {
 
   test("partial failure: one fresh, one null → updated=1 and failed=FAIL.WA", async () => {
     setupStore();
-    store.createInvestmentAsset({
+    store.assets.createInvestmentAsset({
       id: "asset_ok",
       name: "Good ETF",
       currency: "EUR",
@@ -83,7 +83,7 @@ describe("refreshPricesAction wiring", () => {
       ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
       providerSymbol: "GOOD.WA",
     });
-    store.createInvestmentAsset({
+    store.assets.createInvestmentAsset({
       id: "asset_bad",
       name: "Bad ETF",
       currency: "EUR",
@@ -108,7 +108,7 @@ describe("refreshPricesAction wiring", () => {
 
   test("total failure (provider throws): updated=0, failed symbol listed, no throw", async () => {
     setupStore();
-    store.createInvestmentAsset({
+    store.assets.createInvestmentAsset({
       id: "asset_err",
       name: "Broken ETF",
       currency: "EUR",
@@ -130,7 +130,7 @@ describe("refreshPricesAction wiring", () => {
 
   test("no refreshable assets: updated=0, no failed param", async () => {
     setupStore();
-    store.createInvestmentAsset({
+    store.assets.createInvestmentAsset({
       id: "asset_no_sym",
       name: "Manual Fund",
       currency: "EUR",
@@ -151,7 +151,7 @@ describe("refreshPricesAction wiring", () => {
 
   test("real routing path refreshes retirement investments through Finect", async () => {
     setupStore();
-    store.createInvestmentAsset({
+    store.assets.createInvestmentAsset({
       id: "asset_pension",
       name: "Pension Plan",
       currency: "EUR",
@@ -177,7 +177,7 @@ describe("refreshPricesAction wiring", () => {
 
     expect(url).toContain("ok=prices_refreshed");
     expect(url).toContain("updated=1");
-    expect(store.readPriceCache("asset_pension")).toMatchObject({
+    expect(store.operations.readPriceCache("asset_pension")).toMatchObject({
       price: "20.63",
       source: "finect",
     });

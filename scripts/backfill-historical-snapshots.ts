@@ -20,19 +20,19 @@ import { withStore } from "@worthline/db";
 const today = new Date().toISOString().slice(0, 10);
 
 withStore((store) => {
-  const workspace = store.readWorkspace();
+  const workspace = store.workspace.readWorkspace();
   if (!workspace) {
     console.error("No workspace found — nothing to backfill.");
     process.exitCode = 1;
     return;
   }
 
-  const before = store.readSnapshots();
+  const before = store.snapshots.readSnapshots();
   console.log(`Snapshots before backfill: ${before.length}`);
 
   store.backfillHistoricalSnapshots(today);
 
-  const after = store.readSnapshots();
+  const after = store.snapshots.readSnapshots();
   const created = after.length - before.length;
   console.log(`Snapshots after backfill:  ${after.length}  (+${created})`);
 

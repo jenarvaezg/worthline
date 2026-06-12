@@ -37,7 +37,7 @@ afterEach(() => {
 
 function setupStore() {
   store = createInMemoryStore();
-  store.initializeWorkspace({
+  store.workspace.initializeWorkspace({
     members: [{ id: MEMBER_ID, name: "Yo" }],
     mode: "individual",
   });
@@ -46,7 +46,7 @@ function setupStore() {
 
 function setupStoreWithInvestment() {
   setupStore();
-  store.createInvestmentAsset({
+  store.assets.createInvestmentAsset({
     id: INVESTMENT_ID,
     name: "Index Fund",
     currency: "EUR",
@@ -77,7 +77,7 @@ describe("createInvestmentAction wiring", () => {
     );
 
     expect(url).toContain("ok=investment_added");
-    const investments = store.readInvestmentAssetsWithMeta();
+    const investments = store.assets.readInvestmentAssetsWithMeta();
     expect(investments).toHaveLength(1);
     expect(investments[0]!.name).toBe("MSCI World ETF");
   });
@@ -101,10 +101,10 @@ describe("createInvestmentAction wiring", () => {
     );
 
     expect(url).toContain("ok=investment_added");
-    const investments = store.readInvestmentAssetsWithMeta();
+    const investments = store.assets.readInvestmentAssetsWithMeta();
     expect(investments).toHaveLength(1);
     // manualPricePerUnit is exposed by the by-id read path, not the meta list.
-    const created = store.readInvestmentAssetById(investments[0]!.id);
+    const created = store.assets.readInvestmentAssetById(investments[0]!.id);
     expect(created?.manualPricePerUnit).toBe("12.50");
   });
 
@@ -127,7 +127,7 @@ describe("createInvestmentAction wiring", () => {
 
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/nombre/i);
-    expect(store.readInvestmentAssetsWithMeta()).toHaveLength(0);
+    expect(store.assets.readInvestmentAssetsWithMeta()).toHaveLength(0);
   });
 
   test("invalid manual price: error redirect", async () => {
@@ -150,7 +150,7 @@ describe("createInvestmentAction wiring", () => {
 
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/precio/i);
-    expect(store.readInvestmentAssetsWithMeta()).toHaveLength(0);
+    expect(store.assets.readInvestmentAssetsWithMeta()).toHaveLength(0);
   });
 
   test("invalid Yahoo provider symbol: error redirect, store unchanged", async () => {
@@ -183,7 +183,7 @@ describe("createInvestmentAction wiring", () => {
 
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/símbolo/i);
-    expect(store.readInvestmentAssetsWithMeta()).toHaveLength(0);
+    expect(store.assets.readInvestmentAssetsWithMeta()).toHaveLength(0);
   });
 });
 
@@ -205,7 +205,7 @@ describe("updateInvestmentAction wiring", () => {
     );
 
     expect(url).toContain("ok=saved");
-    const asset = store.readInvestmentAssetById(INVESTMENT_ID);
+    const asset = store.assets.readInvestmentAssetById(INVESTMENT_ID);
     expect(asset?.name).toBe("MSCI World Renamed");
   });
 
@@ -227,7 +227,7 @@ describe("updateInvestmentAction wiring", () => {
     );
 
     expect(url).toContain("ok=saved");
-    const asset = store.readInvestmentAssetById(INVESTMENT_ID);
+    const asset = store.assets.readInvestmentAssetById(INVESTMENT_ID);
     expect(asset?.unitSymbol).toBe("VWRL.UK");
   });
 
@@ -240,7 +240,7 @@ describe("updateInvestmentAction wiring", () => {
 
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/nombre/i);
-    expect(store.readInvestmentAssetById(INVESTMENT_ID)?.name).toBe("Index Fund");
+    expect(store.assets.readInvestmentAssetById(INVESTMENT_ID)?.name).toBe("Index Fund");
   });
 
   test("invalid manual price: error redirect", async () => {
@@ -287,7 +287,7 @@ describe("updateInvestmentAction wiring", () => {
 
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/símbolo/i);
-    expect(store.readInvestmentAssetById(INVESTMENT_ID)?.name).toBe("Index Fund");
+    expect(store.assets.readInvestmentAssetById(INVESTMENT_ID)?.name).toBe("Index Fund");
   });
 });
 
@@ -334,14 +334,14 @@ describe("deleteInvestmentAction wiring", () => {
 describe("restoreInvestmentAction wiring", () => {
   test("happy path: soft-deleted investment is restored", async () => {
     setupStoreWithInvestment();
-    store.softDeleteAsset(INVESTMENT_ID, new Date().toISOString());
+    store.assets.softDeleteAsset(INVESTMENT_ID, new Date().toISOString());
 
     const url = await catchRedirect(() =>
       restoreInvestmentAction(fd({ id: INVESTMENT_ID }, "/inversiones"), store),
     );
 
     expect(url).toContain("ok=restored");
-    expect(store.readInvestmentAssetsWithMeta()).toHaveLength(1);
+    expect(store.assets.readInvestmentAssetsWithMeta()).toHaveLength(1);
     expect(store.readTrash().assets).toHaveLength(0);
   });
 

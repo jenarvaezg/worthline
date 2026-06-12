@@ -31,7 +31,7 @@ afterEach(() => {
 
 function setupStore() {
   store = createInMemoryStore();
-  store.initializeWorkspace({
+  store.workspace.initializeWorkspace({
     members: [{ id: "member_ana", name: "Ana" }],
     mode: "individual",
   });
@@ -50,14 +50,14 @@ describe("createMemberAction wiring", () => {
 
     expect(url).toContain("ok=saved");
 
-    const ws = store.readWorkspace()!;
+    const ws = store.workspace.readWorkspace()!;
     const names = ws.members.map((m) => m.name);
     expect(names).toContain("Jose");
   });
 
   test("blank name: error redirect, store unchanged", async () => {
     setupStore();
-    const before = store.readWorkspace()!.members.length;
+    const before = store.workspace.readWorkspace()!.members.length;
 
     const url = await catchRedirect(() =>
       createMemberAction(fd({ name: "" }, "/ajustes"), store),
@@ -65,7 +65,7 @@ describe("createMemberAction wiring", () => {
 
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/obligatorio/i);
-    expect(store.readWorkspace()!.members.length).toBe(before);
+    expect(store.workspace.readWorkspace()!.members.length).toBe(before);
   });
 });
 
@@ -80,7 +80,7 @@ describe("updateMemberAction wiring", () => {
     );
 
     expect(url).toContain("ok=saved");
-    const ws = store.readWorkspace()!;
+    const ws = store.workspace.readWorkspace()!;
     expect(ws.members.find((m) => m.id === "member_ana")?.name).toBe("Ana García");
   });
 
@@ -105,7 +105,7 @@ describe("updateMemberAction wiring", () => {
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/obligatorio/i);
     // Name unchanged
-    expect(store.readWorkspace()!.members.find((m) => m.id === "member_ana")?.name).toBe(
+    expect(store.workspace.readWorkspace()!.members.find((m) => m.id === "member_ana")?.name).toBe(
       "Ana",
     );
   });
@@ -122,7 +122,7 @@ describe("disableMemberAction wiring", () => {
     );
 
     expect(url).toContain("ok=saved");
-    const member = store.readWorkspace()!.members.find((m) => m.id === "member_ana");
+    const member = store.workspace.readWorkspace()!.members.find((m) => m.id === "member_ana");
     expect(member?.disabledAt).toBeTruthy();
   });
 
@@ -137,7 +137,7 @@ describe("disableMemberAction wiring", () => {
     expect(decodeURIComponent(url)).toMatch(/identificador/i);
     // Member still active
     expect(
-      store.readWorkspace()!.members.find((m) => m.id === "member_ana")?.disabledAt,
+      store.workspace.readWorkspace()!.members.find((m) => m.id === "member_ana")?.disabledAt,
     ).toBeFalsy();
   });
 });
@@ -147,14 +147,14 @@ describe("disableMemberAction wiring", () => {
 describe("reactivateMemberAction wiring", () => {
   test("happy path: reactivates a disabled member", async () => {
     setupStore();
-    store.disableMember("member_ana", new Date().toISOString());
+    store.workspace.disableMember("member_ana", new Date().toISOString());
 
     const url = await catchRedirect(() =>
       reactivateMemberAction(fd({ id: "member_ana" }, "/ajustes"), store),
     );
 
     expect(url).toContain("ok=saved");
-    const member = store.readWorkspace()!.members.find((m) => m.id === "member_ana");
+    const member = store.workspace.readWorkspace()!.members.find((m) => m.id === "member_ana");
     expect(member?.disabledAt).toBeFalsy();
   });
 

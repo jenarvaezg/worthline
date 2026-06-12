@@ -45,19 +45,19 @@ export default async function InversionesPage({
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
   // Auto-refresh stale prices on load (same pattern as /)
-  const investmentAssetsMeta = withStore((store) => store.readInvestmentAssetsWithMeta());
-  const initialPriceCache = withStore((store) => store.readAllPriceCacheEntries());
+  const investmentAssetsMeta = withStore((store) => store.assets.readInvestmentAssetsWithMeta());
+  const initialPriceCache = withStore((store) => store.operations.readAllPriceCacheEntries());
   const { priceCache } = await refreshAndPersistStalePrices({
     cacheEntries: initialPriceCache,
     assets: investmentAssetsMeta,
     nowIso: persistence.checkedAt,
     refreshStalePrices,
-    upsertPrice: (price) => withStore((store) => store.upsertPrice(price)),
-    readCache: () => withStore((store) => store.readAllPriceCacheEntries()),
+    upsertPrice: (price) => withStore((store) => store.operations.upsertPrice(price)),
+    readCache: () => withStore((store) => store.operations.readAllPriceCacheEntries()),
   });
 
   const storeData = withStore((store) => {
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
 
     if (!workspace) return null;
 
@@ -68,12 +68,12 @@ export default async function InversionesPage({
 
     // Collect live investment asset ids so we can filter the trash to only
     // show deleted investment assets (not cash/manual/real_estate).
-    const investmentMeta = store.readInvestmentAssetsWithMeta();
+    const investmentMeta = store.assets.readInvestmentAssetsWithMeta();
     const investmentIds = new Set(investmentMeta.map((a) => a.id));
     const trash = store.readTrash();
 
     return {
-      positions: selectedScope ? store.readPositions(selectedScope.id) : [],
+      positions: selectedScope ? store.snapshots.readPositions(selectedScope.id) : [],
       trashedInvestments: trash.assets.filter((a) => investmentIds.has(a.id)),
       scopes,
       selectedScope,

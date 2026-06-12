@@ -31,12 +31,12 @@ const MANUAL_ASSET_ID = "asset_cash_456";
 
 function setupStore(): WorthlineStore {
   store = createInMemoryStore();
-  store.initializeWorkspace({
+  store.workspace.initializeWorkspace({
     members: [{ id: "member_yo", name: "Yo" }],
     mode: "individual",
   });
   // Create an investment asset (derived value — must never be hand-edited)
-  store.createInvestmentAsset({
+  store.assets.createInvestmentAsset({
     id: INVESTMENT_ID,
     name: "Index Fund",
     currency: "EUR",
@@ -44,7 +44,7 @@ function setupStore(): WorthlineStore {
     ownership: [{ memberId: "member_yo", shareBps: 10_000 }],
   });
   // Create a manual asset (fine to update value by hand)
-  store.createManualAsset({
+  store.assets.createManualAsset({
     id: MANUAL_ASSET_ID,
     name: "Cash Account",
     type: "cash",
@@ -74,7 +74,7 @@ describe("updateAssetValuationAction — investment manual valuation guard", () 
     const redirectUrl = await catchRedirect(() => updateAssetValuationAction(fd, store));
 
     expect(redirectUrl).toContain("ok=saved");
-    const assets = store.readAssets();
+    const assets = store.assets.readAssets();
     const manual = assets.find((a) => a.id === MANUAL_ASSET_ID);
     expect(manual!.currentValue.amountMinor).toBe(20_000);
   });
@@ -83,7 +83,7 @@ describe("updateAssetValuationAction — investment manual valuation guard", () 
     setupStore();
 
     // Record an operation so the investment has a known value
-    store.recordOperation({
+    store.operations.recordOperation({
       id: "op_1",
       assetId: INVESTMENT_ID,
       kind: "buy",
@@ -121,7 +121,7 @@ describe("batchValueUpdateAction — investment holding rejection", () => {
     const redirectUrl = await catchRedirect(() => batchValueUpdateAction(fd, store));
 
     expect(redirectUrl).toContain("ok=");
-    const assets = store.readAssets();
+    const assets = store.assets.readAssets();
     const manual = assets.find((a) => a.id === MANUAL_ASSET_ID);
     expect(manual!.currentValue.amountMinor).toBe(30_000);
   });
@@ -142,7 +142,7 @@ describe("batchValueUpdateAction — investment holding rejection", () => {
     expect(decoded).toMatch(/invers/i);
 
     // Manual asset must not have been updated either (nothing persisted)
-    const assets = store.readAssets();
+    const assets = store.assets.readAssets();
     const manual = assets.find((a) => a.id === MANUAL_ASSET_ID);
     expect(manual!.currentValue.amountMinor).toBe(100_000); // unchanged
   });

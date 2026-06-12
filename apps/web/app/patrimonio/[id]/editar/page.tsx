@@ -47,7 +47,7 @@ export default async function EditarPage({
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
   const storeData = withStore((store) => {
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
 
     if (!workspace) {
       return null;
@@ -56,8 +56,8 @@ export default async function EditarPage({
     const scopes = listScopeOptions(workspace);
     const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
 
-    const assets = store.readAssets();
-    const liabilities = store.readLiabilities();
+    const assets = store.assets.readAssets();
+    const liabilities = store.liabilities.readLiabilities();
     const overrides = store.readWarningOverrides();
 
     const asset = assets.find((a) => a.id === id) ?? null;

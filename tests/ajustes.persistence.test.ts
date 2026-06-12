@@ -12,7 +12,7 @@ describe("member reactivate persistence", () => {
   test("reactivates a disabled member — clears disabledAt", () => {
     const store = createFileBackedStore("worthline-ajustes-");
 
-    store.initializeWorkspace({
+    store.workspace.initializeWorkspace({
       members: [
         { id: "member_ana", name: "Ana" },
         { id: "member_jose", name: "Jose" },
@@ -20,16 +20,16 @@ describe("member reactivate persistence", () => {
       mode: "household",
     });
 
-    store.disableMember("member_ana", "2026-06-01T10:00:00.000Z");
+    store.workspace.disableMember("member_ana", "2026-06-01T10:00:00.000Z");
 
-    const afterDisable = store.readWorkspace();
+    const afterDisable = store.workspace.readWorkspace();
     expect(afterDisable?.members.find((m) => m.id === "member_ana")?.disabledAt).toBe(
       "2026-06-01T10:00:00.000Z",
     );
 
-    store.reactivateMember("member_ana");
+    store.workspace.reactivateMember("member_ana");
 
-    const afterReactivate = store.readWorkspace();
+    const afterReactivate = store.workspace.readWorkspace();
     expect(
       afterReactivate?.members.find((m) => m.id === "member_ana")?.disabledAt,
     ).toBeUndefined();
@@ -38,15 +38,15 @@ describe("member reactivate persistence", () => {
   test("reactivating an already-active member is a no-op", () => {
     const store = createFileBackedStore("worthline-ajustes-");
 
-    store.initializeWorkspace({
+    store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
 
     // Should not throw
-    store.reactivateMember("member_jose");
+    store.workspace.reactivateMember("member_jose");
 
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
     expect(
       workspace?.members.find((m) => m.id === "member_jose")?.disabledAt,
     ).toBeUndefined();
@@ -55,7 +55,7 @@ describe("member reactivate persistence", () => {
   test("disable → reactivate → disable cycle persists correctly", () => {
     const store = createFileBackedStore("worthline-ajustes-");
 
-    store.initializeWorkspace({
+    store.workspace.initializeWorkspace({
       members: [
         { id: "member_ana", name: "Ana" },
         { id: "member_jose", name: "Jose" },
@@ -63,11 +63,11 @@ describe("member reactivate persistence", () => {
       mode: "household",
     });
 
-    store.disableMember("member_ana", "2026-06-01T10:00:00.000Z");
-    store.reactivateMember("member_ana");
-    store.disableMember("member_ana", "2026-06-09T08:00:00.000Z");
+    store.workspace.disableMember("member_ana", "2026-06-01T10:00:00.000Z");
+    store.workspace.reactivateMember("member_ana");
+    store.workspace.disableMember("member_ana", "2026-06-09T08:00:00.000Z");
 
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
     expect(workspace?.members.find((m) => m.id === "member_ana")?.disabledAt).toBe(
       "2026-06-09T08:00:00.000Z",
     );
@@ -78,7 +78,7 @@ describe("warning override retract persistence", () => {
   test("retracting a specific override removes only that one", () => {
     const store = createFileBackedStore("worthline-ajustes-");
 
-    store.initializeWorkspace({
+    store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
@@ -99,7 +99,7 @@ describe("warning override retract persistence", () => {
   test("retracting a non-existent override is a no-op", () => {
     const store = createFileBackedStore("worthline-ajustes-");
 
-    store.initializeWorkspace({
+    store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });

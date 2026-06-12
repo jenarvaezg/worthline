@@ -45,7 +45,7 @@ describe("migrate idempotency", () => {
 
     withStore(
       (store) => {
-        store.initializeWorkspace({
+        store.workspace.initializeWorkspace({
           members: [{ id: "member_jose", name: "Jose" }],
           mode: "individual",
         });
@@ -54,7 +54,7 @@ describe("migrate idempotency", () => {
     );
 
     expect(() =>
-      withStore((store) => store.readWorkspace()?.mode, { databasePath }),
+      withStore((store) => store.workspace.readWorkspace()?.mode, { databasePath }),
     ).not.toThrow();
   });
 
@@ -68,7 +68,7 @@ describe("migrate idempotency", () => {
     legacy.close();
 
     expect(() =>
-      withStore((store) => store.readWorkspace(), { databasePath }),
+      withStore((store) => store.workspace.readWorkspace(), { databasePath }),
     ).not.toThrow();
   });
 });
@@ -79,7 +79,7 @@ describe("fresh database", () => {
 
     withStore(
       (store) => {
-        store.initializeWorkspace({
+        store.workspace.initializeWorkspace({
           members: [{ id: "member_jose", name: "Jose" }],
           mode: "individual",
         });
@@ -152,7 +152,7 @@ describe("forward migration from v2", () => {
 
     withStore(
       (store) => {
-        expect(store.readWorkspace()).toBeNull();
+        expect(store.workspace.readWorkspace()).toBeNull();
       },
       { databasePath },
     );
@@ -199,7 +199,7 @@ describe("forward migration from v3", () => {
 
     withStore(
       (store) => {
-        expect(store.readWorkspace()).toBeNull();
+        expect(store.workspace.readWorkspace()).toBeNull();
       },
       { databasePath },
     );

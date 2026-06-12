@@ -9,12 +9,12 @@ describe("local workspace persistence", () => {
   test("initializes an individual EUR workspace with one member", () => {
     const store = createFileBackedStore("worthline-workspace-");
 
-    store.initializeWorkspace({
+    store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
 
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
 
     expect(workspace?.baseCurrency).toBe("EUR");
     expect(workspace?.mode).toBe("individual");
@@ -27,7 +27,7 @@ describe("local workspace persistence", () => {
   test("persists household members, groups, edits, and soft-disabled members", () => {
     const store = createFileBackedStore("worthline-workspace-");
 
-    store.initializeWorkspace({
+    store.workspace.initializeWorkspace({
       groups: [
         {
           id: "scope_adults",
@@ -43,11 +43,11 @@ describe("local workspace persistence", () => {
       mode: "household",
     });
 
-    store.createMember({ id: "member_noa", name: "Noa" });
-    store.updateMember({ id: "member_luz", name: "Lucia" });
-    store.disableMember("member_noa", "2026-06-08T20:00:00.000Z");
+    store.workspace.createMember({ id: "member_noa", name: "Noa" });
+    store.workspace.updateMember({ id: "member_luz", name: "Lucia" });
+    store.workspace.disableMember("member_noa", "2026-06-08T20:00:00.000Z");
 
-    const workspace = store.readWorkspace();
+    const workspace = store.workspace.readWorkspace();
 
     expect(workspace?.members).toMatchObject([
       { id: "member_ana", name: "Ana" },
