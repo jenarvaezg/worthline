@@ -17,6 +17,7 @@ import type {
   FireScopeConfig,
   InvestmentOperation,
   Liability,
+  ManualValuePoint,
   Member,
   MemberGroup,
   ManualAsset,
@@ -33,6 +34,7 @@ import type {
 import {
   assertNotInvestmentAsset,
   assertSnapshotHoldingsReconcile,
+  buildSnapshotAtDate,
   createInvestmentOperation,
   createLiability,
   createManualAsset,
@@ -40,6 +42,8 @@ import {
   defaultInvestmentPriceProvider,
   deriveInvestmentValuation,
   derivePosition,
+  historicalCapturedAt,
+  listScopeOptions,
   selectInvestmentPrice,
   resolveScopeMemberIds,
   serializeWorkspaceExport,
@@ -251,7 +255,8 @@ export interface WorthlineStore {
   createLiability: (input: CreateLiabilityInput) => void;
   createManualAsset: (input: CreateManualAssetInput) => void;
   createMember: (member: Member) => void;
-  deleteOperation: (operationId: string) => number;
+  /** Delete an operation. Returns the deleted operation's asset id and date, or null if not found. */
+  deleteOperation: (operationId: string) => { assetId: string; executedAt: string } | null;
   disableMember: (memberId: string, disabledAt: string) => void;
   /** Hard-delete a trashed asset (live data + overrides; snapshots untouched). Returns 1 if removed, 0 if not found or not in trash. */
   hardDeleteAsset: (assetId: string) => number;
@@ -295,6 +300,24 @@ export interface WorthlineStore {
   readWarningOverrides: () => WarningOverride[];
   readWorkspace: () => Workspace | null;
   recordOperation: (input: CreateInvestmentOperationInput) => void;
+  /**
+   * Generate/recalculate historical snapshots after a backdated operation
+   * change (ADR 0012, PRD #107). record(D) generates the snapshot at D and
+   * ripples snapshots > D; delete(D) ripples snapshots ≥ D. A no-op when the
+   * operation date is today or in the future.
+   */
+  rippleHistoricalSnapshotsForOperation: (params: {
+    mode: "record" | "delete";
+    operationDateKey: string;
+    today: string;
+  }) => void;
+  /**
+   * One-shot backfill (ADR 0012, PRD #107): generate a historical snapshot for
+   * every past operation date that has no snapshot yet, across all scopes.
+   * Existing snapshots are never recalculated — only gaps are filled. Idempotent.
+   * `today` defaults to the current date; pass it to control the cut-off in tests.
+   */
+  backfillHistoricalSnapshots: (today?: string) => void;
   removeWarningOverride: (code: string, entityId: string) => void;
   restoreAsset: (assetId: string) => number;
   restoreLiability: (liabilityId: string) => number;
@@ -504,7 +527,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
     cachedWorkspace = undefined;
   };
 
-  return {
+  const store: WorthlineStore = {
     close: () => {
       sqlite.close();
     },
@@ -1605,12 +1628,10 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         | undefined;
 
       if (!row) {
-        return 0;
+        return null;
       }
 
-      const result = sqlite
-        .prepare(`DELETE FROM asset_operations WHERE id = ?`)
-        .run(operationId);
+      sqlite.prepare(`DELETE FROM asset_operations WHERE id = ?`).run(operationId);
 
       // Audit against the owning asset so the deletion shows in its history;
       // the full operation is recorded, making manual re-entry a de facto undo.
@@ -1624,7 +1645,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         units: row.units,
       });
 
-      return result.changes;
+      return { assetId: row.assetId, executedAt: row.executedAt };
     },
     readMemberOwnerships: (memberId) => ({
       assets: sqlite
@@ -2003,6 +2024,17 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
 
       importAll();
       invalidateWorkspace();
+
+      // Gap-fill historical snapshots (ADR 0012, Slice 3 / #112): generate
+      // snapshots for imported operation dates that have no snapshot in the
+      // file. Imported snapshots are restored intact and never recalculated —
+      // they were captured with real contemporaneous data. Runs outside the
+      // import transaction so each save owns its own transaction.
+      const importedWorkspace = getWorkspace();
+      if (importedWorkspace) {
+        const today = new Date().toISOString().slice(0, 10);
+        gapFillHistoricalSnapshots(sqlite, importedWorkspace, store.saveSnapshot, today);
+      }
     },
     readAuditLog: (filter) => {
       const db = drizzle(sqlite);
@@ -2024,7 +2056,239 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         id: row.id,
       }));
     },
+    rippleHistoricalSnapshotsForOperation: (params) => {
+      const workspace = getWorkspace();
+      if (!workspace) return;
+      rippleHistoricalSnapshots(sqlite, workspace, store.saveSnapshot, params);
+    },
+    backfillHistoricalSnapshots: (today) => {
+      const workspace = getWorkspace();
+      if (!workspace) return;
+      gapFillHistoricalSnapshots(
+        sqlite,
+        workspace,
+        store.saveSnapshot,
+        today ?? new Date().toISOString().slice(0, 10),
+      );
+    },
   };
+
+  return store;
+}
+
+// ── Historical snapshots (ADR 0012, PRD #107) ────────────────────────────────
+
+/** Inputs shared by every historical-snapshot reconstruction for a workspace. */
+interface HistoricalSnapshotDeps {
+  scopes: ReturnType<typeof listScopeOptions>;
+  assets: ManualAsset[];
+  liabilities: Liability[];
+  operationsByAsset: Map<string, InvestmentOperation[]>;
+  manualValueHistory: Map<string, ManualValuePoint[]>;
+}
+
+function buildHistoricalSnapshotDeps(
+  sqlite: DatabaseConnection,
+  workspace: Workspace,
+): HistoricalSnapshotDeps {
+  return {
+    assets: readAssets(sqlite, workspace),
+    liabilities: readLiabilities(sqlite, workspace),
+    manualValueHistory: readManualValueHistory(sqlite),
+    operationsByAsset: readAllOperations(sqlite),
+    scopes: listScopeOptions(workspace),
+  };
+}
+
+/**
+ * Reconstruct the audit history of manual values/balances, keyed by holding id.
+ *
+ * The "last known value" basis for cash/housing/debts in a historical snapshot
+ * (PRD #107): each `update_valuation` / `update_balance` audit entry is a dated
+ * value point. The entry's `created_at` date is when the value became known.
+ */
+function readManualValueHistory(
+  sqlite: DatabaseConnection,
+): Map<string, ManualValuePoint[]> {
+  const rows = drizzle(sqlite)
+    .select()
+    .from(auditLog)
+    .orderBy(asc(auditLog.createdAt))
+    .all();
+
+  const history = new Map<string, ManualValuePoint[]>();
+
+  for (const row of rows) {
+    if (row.action !== "update_valuation" && row.action !== "update_balance") {
+      continue;
+    }
+
+    const details = JSON.parse(row.detailsJson) as Record<string, unknown>;
+    const value =
+      row.action === "update_valuation"
+        ? details["currentValueMinor"]
+        : details["balanceMinor"];
+
+    if (typeof value !== "number") continue;
+
+    const dateKey = (row.createdAt ?? "").slice(0, 10);
+    if (!dateKey) continue;
+
+    const points = history.get(row.entityId) ?? [];
+    points.push({ dateKey, valueMinor: value });
+    history.set(row.entityId, points);
+  }
+
+  return history;
+}
+
+/** Unit prices captured for each asset in a scope's existing snapshot on a date. */
+function capturedUnitPricesAtDate(
+  sqlite: DatabaseConnection,
+  scopeId: string,
+  dateKey: string,
+): Map<string, string> {
+  const prices = new Map<string, string>();
+
+  for (const row of readSnapshotHoldings(sqlite, { scopeId, from: dateKey, to: dateKey })) {
+    if (row.kind === "asset" && row.unitPrice !== undefined) {
+      prices.set(row.holdingId, row.unitPrice);
+    }
+  }
+
+  return prices;
+}
+
+/**
+ * Ripple effect (ADR 0012): a backdated operation change regenerates the
+ * snapshot at its date and recalculates the existing snapshots it affects.
+ *
+ * - record(D), D in the past: generate/overwrite the snapshot at D (the new
+ *   operation supplies its own best price), then recalculate existing
+ *   snapshots dated > D.
+ * - delete(D): recalculate existing snapshots dated ≥ D (the snapshot at D was
+ *   itself derived from the operation that just disappeared).
+ *
+ * Operations dated today or in the future never generate history — the daily
+ * capture covers today and the future is not history. Recalculations honor the
+ * unit price each snapshot already captured for an asset; only an asset absent
+ * from a snapshot falls back to the last known operation price ≤ its date.
+ */
+function rippleHistoricalSnapshots(
+  sqlite: DatabaseConnection,
+  workspace: Workspace,
+  saveSnapshot: (input: SaveSnapshotInput) => void,
+  params: { mode: "record" | "delete"; operationDateKey: string; today: string },
+): void {
+  const deps = buildHistoricalSnapshotDeps(sqlite, workspace);
+  const { mode, operationDateKey, today } = params;
+
+  for (const scope of deps.scopes) {
+    const existing = readSnapshots(sqlite, scope.id);
+    const existingByDate = new Map(existing.map((snap) => [snap.dateKey, snap]));
+
+    if (mode === "record" && operationDateKey < today) {
+      const at = existingByDate.get(operationDateKey);
+      const built = buildSnapshotAtDate({
+        assets: deps.assets,
+        capturedAt: at ? at.capturedAt : historicalCapturedAt(operationDateKey),
+        id: at ? at.id : `histsnap_${scope.id}_${operationDateKey}`,
+        liabilities: deps.liabilities,
+        manualValueHistory: deps.manualValueHistory,
+        operationsByAsset: deps.operationsByAsset,
+        scopeId: scope.id,
+        scopeLabel: scope.label,
+        targetDate: operationDateKey,
+        workspace,
+      });
+
+      if (built) {
+        saveSnapshot({
+          holdings: built.holdings,
+          replace: at !== undefined,
+          snapshot: built.snapshot,
+        });
+      }
+    }
+
+    for (const snap of existing) {
+      const affected =
+        mode === "delete"
+          ? snap.dateKey >= operationDateKey
+          : snap.dateKey > operationDateKey;
+      if (!affected) continue;
+
+      const built = buildSnapshotAtDate({
+        assets: deps.assets,
+        capturedAt: snap.capturedAt,
+        capturedUnitPrices: capturedUnitPricesAtDate(sqlite, scope.id, snap.dateKey),
+        id: snap.id,
+        liabilities: deps.liabilities,
+        manualValueHistory: deps.manualValueHistory,
+        operationsByAsset: deps.operationsByAsset,
+        scopeId: scope.id,
+        scopeLabel: scope.label,
+        targetDate: snap.dateKey,
+        workspace,
+      });
+
+      if (built) {
+        saveSnapshot({ holdings: built.holdings, replace: true, snapshot: built.snapshot });
+      }
+    }
+  }
+}
+
+/**
+ * Fill historical-snapshot gaps after an import (ADR 0012, Slice 3 / #112):
+ * generate a snapshot for each past operation date that has no snapshot in the
+ * imported file. Imported snapshots are never touched. One pass, no per-
+ * operation ripple — each date is reconstructed once from all operations ≤ it.
+ */
+function gapFillHistoricalSnapshots(
+  sqlite: DatabaseConnection,
+  workspace: Workspace,
+  saveSnapshot: (input: SaveSnapshotInput) => void,
+  today: string,
+): void {
+  const deps = buildHistoricalSnapshotDeps(sqlite, workspace);
+
+  const eventDates = new Set<string>();
+  for (const operations of deps.operationsByAsset.values()) {
+    for (const operation of operations) {
+      const dateKey = operation.executedAt.slice(0, 10);
+      if (dateKey < today) eventDates.add(dateKey);
+    }
+  }
+  const sortedDates = [...eventDates].sort();
+
+  for (const scope of deps.scopes) {
+    const existingDates = new Set(
+      readSnapshots(sqlite, scope.id).map((snap) => snap.dateKey),
+    );
+
+    for (const dateKey of sortedDates) {
+      if (existingDates.has(dateKey)) continue; // imported snapshot stays intact
+
+      const built = buildSnapshotAtDate({
+        assets: deps.assets,
+        capturedAt: historicalCapturedAt(dateKey),
+        id: `histsnap_${scope.id}_${dateKey}`,
+        liabilities: deps.liabilities,
+        manualValueHistory: deps.manualValueHistory,
+        operationsByAsset: deps.operationsByAsset,
+        scopeId: scope.id,
+        scopeLabel: scope.label,
+        targetDate: dateKey,
+        workspace,
+      });
+
+      if (built) {
+        saveSnapshot({ holdings: built.holdings, replace: false, snapshot: built.snapshot });
+        existingDates.add(dateKey);
+      }
+    }
+  }
 }
 
 /**

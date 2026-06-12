@@ -199,7 +199,16 @@ export async function recordOperationAction(
     redirect(operationErrorUrl(mapDomainViolation(domainResult.violations[0])));
   }
 
-  runWith((store) => store.recordOperation(domainResult.value));
+  const operationDateKey = domainResult.value.executedAt.slice(0, 10);
+  runWith((store) => {
+    store.recordOperation(domainResult.value);
+    // Backdated operation → reconstruct/ripple historical snapshots (PRD #107).
+    store.rippleHistoricalSnapshotsForOperation({
+      mode: "record",
+      operationDateKey,
+      today,
+    });
+  });
 
   redirect(successRedirectUrl(returnUrl, "saved"));
 }
@@ -351,9 +360,21 @@ export async function deleteOperationAction(
     );
   }
 
-  const changes = runWith((store) => store.deleteOperation(operationId));
+  const today = new Date().toISOString().slice(0, 10);
+  const deleted = runWith((store) => {
+    const result = store.deleteOperation(operationId);
+    if (result) {
+      // Deleting a backdated operation ripples snapshots ≥ its date (PRD #107).
+      store.rippleHistoricalSnapshotsForOperation({
+        mode: "delete",
+        operationDateKey: result.executedAt.slice(0, 10),
+        today,
+      });
+    }
+    return result;
+  });
 
-  if (changes === 0) {
+  if (!deleted) {
     redirect(
       errorRedirectUrl(returnUrl, {
         message: "No se encontró la operación — puede que ya se haya eliminado.",
