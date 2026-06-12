@@ -659,6 +659,12 @@ function AnchorFields({
         />{" "}
         Es una tasación de mercado
       </label>
+      <p className="infoNote">
+        <strong>Tasación de mercado:</strong> una valoración real del inmueble que
+        recalibra toda la curva de valoraciones previas.{" "}
+        <strong>Mejora:</strong> una inversión (reforma, ampliación) que se suma al
+        valor existente sin reemplazar las tasaciones anteriores.
+      </p>
     </>
   );
 }

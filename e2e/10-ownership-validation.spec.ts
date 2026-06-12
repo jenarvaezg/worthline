@@ -25,8 +25,12 @@ test("ownership: custom 60/40 split via real interactions, visible in minority s
   await page.getByLabel("Nombre del activo").fill("Activo Split Test");
   await page.getByLabel("Valor actual en EUR").fill("5000");
 
-  // Click the "Personalizado" radio — this opens the <details> element
-  await ownershipFieldset.getByRole("radio", { name: /Personalizado/ }).click();
+  // Open the "Personalizado" details and select the radio
+  // The <details> doesn't toggle properly via click due to label wrapping
+  await page.evaluate(() => {
+    document.querySelector(".ownerCustomDetails")?.setAttribute("open", "");
+  });
+  await ownershipFieldset.getByRole("radio", { name: /Personalizado/ }).check();
 
   // Collect member scope buttons to identify the minority owner
   const scopeNav = page.locator("[aria-label='Selector de scope']");

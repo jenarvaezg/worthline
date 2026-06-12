@@ -466,29 +466,197 @@ export type StrictParseResult<T> =
 /**
  * Strict asset command parser: rejects blank names instead of coercing them
  * to "Activo". The caller must redirect on error.
+ * For real_estate assets, also parses optional acquisition data (date + value)
+ * to create an initial valuation anchor.
  */
 export function parseAssetCommandStrict(
   formData: FormData,
   members: Member[],
   seed: number,
-): StrictParseResult<CreateManualAssetInput> {
+): StrictParseResult<CreateManualAssetInput & HousingCreationData> {
   const name = String(formData.get("name") ?? "").trim();
 
   if (!name) {
     return { ok: false, error: "El nombre del activo es obligatorio." };
   }
 
+  const type = parseAssetType(formData.get("type"));
+  const liquidityTier =
+    type === "real_estate" ? "housing" : parseLiquidityTier(formData.get("liquidityTier"));
+
+  const housingData = parseHousingCreationData(formData, type);
+
+  if (!housingData.ok) {
+    return { ok: false, error: housingData.error };
+  }
+
   return {
     ok: true,
     command: {
       currency: "EUR",
-      currentValueMinor: parseMoneyMinorField(formData, "currentValue") ?? 0,
+      currentValueMinor:
+        type === "real_estate" && housingData.data.acquisitionValueMinor !== undefined
+          ? housingData.data.acquisitionValueMinor
+          : (parseMoneyMinorField(formData, "currentValue") ?? 0),
       id: createStableId("asset", name, seed),
       isPrimaryResidence: formData.get("isPrimaryResidence") === "on",
-      liquidityTier: parseLiquidityTier(formData.get("liquidityTier")),
+      liquidityTier,
       name,
       ownership: parseOwnership(formData, members),
-      type: parseAssetType(formData.get("type")),
+      type,
+      ...(housingData.data.acquisitionDate
+        ? { acquisitionDate: housingData.data.acquisitionDate }
+        : {}),
+      ...(housingData.data.acquisitionValueMinor !== undefined
+        ? { acquisitionValueMinor: housingData.data.acquisitionValueMinor }
+        : {}),
+      ...(housingData.data.annualAppreciationRate !== undefined
+        ? { annualAppreciationRate: housingData.data.annualAppreciationRate }
+        : {}),
+      ...(housingData.data.initialValuation
+        ? { initialValuation: housingData.data.initialValuation }
+        : {}),
+    },
+  };
+}
+
+/** Creation-only housing fields that are persisted after the asset exists. */
+export interface HousingCreationData {
+  acquisitionDate?: string;
+  acquisitionValueMinor?: number;
+  annualAppreciationRate?: DecimalString | null;
+  initialValuation?: {
+    adjustsPriorCurve: boolean;
+    valuationDate: string;
+    valueMinor: number;
+  };
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseHousingCreationData(
+  formData: FormData,
+  type: CreateManualAssetInput["type"],
+): { ok: true; data: HousingCreationData } | { ok: false; error: string } {
+  if (type !== "real_estate") {
+    return { ok: true, data: {} };
+  }
+
+  const date = String(formData.get("acquisitionDate") ?? "").trim();
+  const valueRaw = formData.get("acquisitionValue");
+
+  if (!date && !valueRaw) {
+    return {
+      ok: false,
+      error: "La fecha y el precio de adquisición son obligatorios para un inmueble.",
+    };
+  }
+
+  if (date && !valueRaw) {
+    return { ok: false, error: "Si indicas la fecha de adquisición, también debes indicar el precio." };
+  }
+
+  if (!date && valueRaw) {
+    return { ok: false, error: "Si indicas el precio de adquisición, también debes indicar la fecha." };
+  }
+
+  if (!ISO_DATE.test(date)) {
+    return { ok: false, error: "La fecha de adquisición no es válida." };
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  if (date > today) {
+    return { ok: false, error: "La fecha de adquisición no puede ser futura." };
+  }
+
+  const valueMinor = parseMoneyMinorField(formData, "acquisitionValue");
+  if (valueMinor === null || valueMinor <= 0) {
+    return { ok: false, error: "El precio de adquisición debe ser un número positivo." };
+  }
+
+  const rate = parseAppreciationRateStrict(formData);
+
+  if (!rate.ok) {
+    return { ok: false, error: rate.error };
+  }
+
+  const initialValuation = parseInitialValuation(formData, date, today);
+
+  if (!initialValuation.ok) {
+    return { ok: false, error: initialValuation.error };
+  }
+
+  return {
+    ok: true,
+    data: {
+      acquisitionDate: date,
+      acquisitionValueMinor: valueMinor,
+      annualAppreciationRate: rate.rate,
+      ...(initialValuation.valuation
+        ? { initialValuation: initialValuation.valuation }
+        : {}),
+    },
+  };
+}
+
+function parseInitialValuation(
+  formData: FormData,
+  acquisitionDate: string,
+  today: string,
+):
+  | { ok: true; valuation?: HousingCreationData["initialValuation"] }
+  | { ok: false; error: string } {
+  const valuationDate = String(formData.get("initialValuationDate") ?? "").trim();
+  const valueRaw = formData.get("initialValuationValue");
+
+  if (!valuationDate && !valueRaw) {
+    return { ok: true };
+  }
+
+  if (valuationDate && !valueRaw) {
+    return {
+      ok: false,
+      error: "Si indicas la fecha de la tasación inicial, también debes indicar el valor.",
+    };
+  }
+
+  if (!valuationDate && valueRaw) {
+    return {
+      ok: false,
+      error: "Si indicas el valor de la tasación inicial, también debes indicar la fecha.",
+    };
+  }
+
+  if (!ISO_DATE.test(valuationDate)) {
+    return { ok: false, error: "La fecha de la tasación inicial no es válida." };
+  }
+
+  if (valuationDate > today) {
+    return { ok: false, error: "La fecha de la tasación inicial no puede ser futura." };
+  }
+
+  if (valuationDate === acquisitionDate) {
+    return {
+      ok: false,
+      error: "La tasación inicial debe tener una fecha distinta a la adquisición.",
+    };
+  }
+
+  const valueMinor = parseMoneyMinorField(formData, "initialValuationValue");
+
+  if (valueMinor === null || valueMinor <= 0) {
+    return {
+      ok: false,
+      error: "El valor de la tasación inicial debe ser un número positivo.",
+    };
+  }
+
+  return {
+    ok: true,
+    valuation: {
+      adjustsPriorCurve: formData.get("initialAdjustsPriorCurve") === "on",
+      valuationDate,
+      valueMinor,
     },
   };
 }
@@ -511,8 +679,6 @@ export function parseLiabilityCommand(
     ...(associatedAssetId ? { associatedAssetId } : {}),
   };
 }
-
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Strict housing valuation anchor parser (PRD #108, slice 6). Builds an
