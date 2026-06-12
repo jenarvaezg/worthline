@@ -1768,6 +1768,81 @@ code {
   color: var(--ink-muted, #4a524e);
 }
 
+/* ── Symbol search (#138) ──────────────────────────────────────────────── */
+.symbolSearch {
+  margin-bottom: 20px;
+  max-width: 480px;
+}
+
+.symbolSearchForm label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.875rem;
+  font-weight: 500;
+  gap: 4px;
+}
+
+.symbolSearchForm small {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--ink-muted, #4a524e);
+}
+
+.symbolSearchRow {
+  display: flex;
+  gap: 8px;
+}
+
+.symbolSearchRow input {
+  flex: 1;
+  min-width: 0;
+}
+
+.symbolSearchResults {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.symbolResult {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  display: grid;
+  gap: 0 12px;
+  grid-template-columns: max-content 1fr;
+  padding: 8px 12px;
+  text-decoration: none;
+}
+
+.symbolResult:hover,
+.symbolResult:focus-visible {
+  background: var(--paper-strong);
+}
+
+.symbolResultPicked {
+  border-color: var(--ink, #1a1a1a);
+  background: var(--paper-strong);
+}
+
+.symbolResultSymbol {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.symbolResultName {
+  color: var(--ink, #1a1a1a);
+}
+
+.symbolResultMeta {
+  color: var(--ink-muted, #4a524e);
+  font-size: 0.75rem;
+  grid-column: 1 / -1;
+  margin-top: 2px;
+}
+
 .operacionContext {
   background: var(--paper-strong);
   border: 1px solid var(--line);
