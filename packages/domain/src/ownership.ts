@@ -1,5 +1,5 @@
 import { allocateByBps } from "./money";
-import type { OwnershipShare } from "./index";
+import type { OwnershipShare } from "./workspace-types";
 
 export function allocateOwnedMoneyMinor(
   amountMinor: number,

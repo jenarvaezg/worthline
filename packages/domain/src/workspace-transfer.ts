@@ -18,17 +18,17 @@ import type { CurrencyCode, MoneyMinor } from "./money";
 import type { AssetPrice, InvestmentPriceProvider } from "./prices";
 import type { SnapshotHoldingRow } from "./snapshot-holdings";
 import type { WarningOverride } from "./warnings";
+import type { FireScopeConfig } from "./fire";
+import type { InvestmentOperation } from "./investment-types";
+import type { NetWorthSnapshot } from "./snapshot-types";
 import type {
   AssetType,
-  FireScopeConfig,
-  InvestmentOperation,
   LiabilityType,
   Member,
   MemberGroup,
-  NetWorthSnapshot,
   OwnershipShare,
   WorkspaceMode,
-} from "./index";
+} from "./workspace-types";
 
 export const EXPORT_VERSION = 1;
 

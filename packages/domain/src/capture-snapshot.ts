@@ -11,8 +11,9 @@
  * deterministic and testable in isolation. The caller persists the result.
  */
 
-import type { Liability, ManualAsset, NetWorthSnapshot, Workspace } from "./index";
-import { captureValuedNetWorthSnapshot } from "./index";
+import type { Liability, ManualAsset, Workspace } from "./workspace-types";
+import type { NetWorthSnapshot } from "./snapshot-types";
+import { captureValuedNetWorthSnapshot } from "./snapshot-types";
 import type { ScopeOption } from "./scope";
 import type { InvestmentCaptureDetail, SnapshotHoldingRow } from "./snapshot-holdings";
 import { planSnapshotCapture } from "./snapshot-policy";

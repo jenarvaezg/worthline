@@ -1,14 +1,13 @@
 import type { LiquidityTier } from "./classification";
 import type { DecimalString } from "./decimal";
+import type { InvestmentOperation, PositionSummary } from "./investment-types";
 import type {
   AssetType,
-  InvestmentOperation,
   ManualAsset,
   OwnershipShare,
-  PositionSummary,
   Workspace,
-} from "./index";
-import { createManualAsset } from "./index";
+} from "./workspace-types";
+import { createManualAsset } from "./workspace-types";
 import { deriveInvestmentValuation, selectInvestmentPrice } from "./investment-valuation";
 import { derivePosition } from "./positions";
 import { resolveScopeMemberIds } from "./scope";

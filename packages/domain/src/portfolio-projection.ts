@@ -16,7 +16,7 @@ import { money } from "./money";
 import { allocateScopedHolding } from "./scope-allocation";
 import type { ScopeOption } from "./scope";
 import { resolveScopeMemberIds } from "./scope";
-import type { Liability, ManualAsset, OwnershipShare, Workspace } from "./index";
+import type { Liability, ManualAsset, OwnershipShare, Workspace } from "./workspace-types";
 
 // ── Tier label translation ───────────────────────────────────────────────────
 

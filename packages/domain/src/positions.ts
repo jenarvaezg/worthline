@@ -9,13 +9,12 @@ import {
   proportionMinor,
   subtractUnits,
 } from "./decimal";
+import type { DomainResult, DomainViolation } from "./domain-result";
 import type {
   CreateInvestmentOperationInput,
-  DomainResult,
-  DomainViolation,
   InvestmentOperation,
   PositionSummary,
-} from "./index";
+} from "./investment-types";
 import { assertMinorInteger, money, subtractMoney } from "./money";
 
 /**
