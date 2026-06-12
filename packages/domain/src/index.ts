@@ -152,6 +152,13 @@ export { donutArcSegments } from "./donut";
 export type { CaptureDecision, SnapshotPolicyEntry } from "./snapshot-policy";
 export { deriveMonthlyCloses, planSnapshotCapture } from "./snapshot-policy";
 
+export type { BuildSnapshotAtDateInput, ManualValuePoint } from "./historical-snapshot";
+export {
+  buildSnapshotAtDate,
+  historicalCapturedAt,
+  lastKnownValueAtDate,
+} from "./historical-snapshot";
+
 export type {
   EvolutionChartGeometry,
   EvolutionMarker,
