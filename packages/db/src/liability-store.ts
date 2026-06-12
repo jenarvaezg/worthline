@@ -1,6 +1,8 @@
 import type { CreateLiabilityInput, Liability, OwnershipShare } from "@worthline/domain";
 import { createLiability } from "@worthline/domain";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 
+import { liabilities, liabilityOwnerships } from "./schema";
 import {
   hardDeleteLiabilityTx,
   readLiabilities,
@@ -50,7 +52,7 @@ export function createLiabilityStore(ctx: StoreContext): LiabilityStore {
 }
 
 function createLiabilityRecord(ctx: StoreContext, input: CreateLiabilityInput): void {
-  const { sqlite } = ctx;
+  const { db } = ctx;
   const workspace = ctx.getWorkspace();
 
   if (!workspace) {
@@ -58,52 +60,31 @@ function createLiabilityRecord(ctx: StoreContext, input: CreateLiabilityInput): 
   }
 
   const liability = createLiability(workspace, input);
-  const insert = sqlite.transaction(() => {
-    sqlite
-      .prepare(
-        `
-        INSERT INTO liabilities (
-          id,
-          name,
-          type,
-          currency,
-          current_balance_minor,
-          associated_asset_id
-        )
-        VALUES (
-          @id,
-          @name,
-          @type,
-          @currency,
-          @currentBalanceMinor,
-          @associatedAssetId
-        )
-      `,
-      )
-      .run({
+  ctx.transaction(() => {
+    db.insert(liabilities)
+      .values({
         associatedAssetId: liability.associatedAssetId ?? null,
         currency: liability.currency,
         currentBalanceMinor: liability.currentBalance.amountMinor,
         id: liability.id,
         name: liability.name,
         type: liability.type,
-      });
+      })
+      .run();
 
-    const insertOwnership = sqlite.prepare(`
-      INSERT INTO liability_ownerships (liability_id, member_id, share_bps)
-      VALUES (@liabilityId, @memberId, @shareBps)
-    `);
-
-    for (const share of liability.ownership) {
-      insertOwnership.run({
-        liabilityId: liability.id,
-        memberId: share.memberId,
-        shareBps: share.shareBps,
-      });
+    if (liability.ownership.length > 0) {
+      db.insert(liabilityOwnerships)
+        .values(
+          liability.ownership.map((share) => ({
+            liabilityId: liability.id,
+            memberId: share.memberId,
+            shareBps: share.shareBps,
+          })),
+        )
+        .run();
     }
   });
 
-  insert();
   ctx.writeAuditEntry("create_liability", "liability", liability.id);
 }
 
@@ -112,55 +93,48 @@ function updateLiability(
   liabilityId: string,
   input: UpdateLiabilityInput,
 ): void {
-  const { sqlite } = ctx;
-  const updates: string[] = [];
-  const params: unknown[] = [];
+  const { db } = ctx;
+  const fields: Partial<typeof liabilities.$inferInsert> = {};
 
   if (input.name !== undefined) {
-    updates.push("name = ?");
-    params.push(input.name);
+    fields.name = input.name;
   }
 
   if (input.type !== undefined) {
-    updates.push("type = ?");
-    params.push(input.type);
+    fields.type = input.type;
   }
 
   if (input.associatedAssetId !== undefined) {
-    updates.push("associated_asset_id = ?");
-    params.push(input.associatedAssetId);
+    fields.associatedAssetId = input.associatedAssetId;
   }
 
-  const editLiability = sqlite.transaction(() => {
-    if (updates.length > 0) {
-      updates.push("updated_at = CURRENT_TIMESTAMP");
-      params.push(liabilityId);
-      sqlite
-        .prepare(`UPDATE liabilities SET ${updates.join(", ")} WHERE id = ?`)
-        .run(...params);
+  ctx.transaction(() => {
+    if (Object.keys(fields).length > 0) {
+      db.update(liabilities)
+        .set({ ...fields, updatedAt: sql`CURRENT_TIMESTAMP` })
+        .where(eq(liabilities.id, liabilityId))
+        .run();
     }
 
     if (input.ownership !== undefined) {
-      sqlite
-        .prepare(`DELETE FROM liability_ownerships WHERE liability_id = ?`)
-        .run(liabilityId);
+      db.delete(liabilityOwnerships)
+        .where(eq(liabilityOwnerships.liabilityId, liabilityId))
+        .run();
 
-      const insertOwnership = sqlite.prepare(`
-        INSERT INTO liability_ownerships (liability_id, member_id, share_bps)
-        VALUES (@liabilityId, @memberId, @shareBps)
-      `);
-
-      for (const share of input.ownership) {
-        insertOwnership.run({
-          liabilityId,
-          memberId: share.memberId,
-          shareBps: share.shareBps,
-        });
+      if (input.ownership.length > 0) {
+        db.insert(liabilityOwnerships)
+          .values(
+            input.ownership.map((share) => ({
+              liabilityId,
+              memberId: share.memberId,
+              shareBps: share.shareBps,
+            })),
+          )
+          .run();
       }
     }
   });
 
-  editLiability();
   ctx.writeAuditEntry("update_liability", "liability", liabilityId, {
     ...input,
     ownership: undefined,
@@ -172,21 +146,16 @@ function updateLiabilityBalance(
   liabilityId: string,
   balanceMinor: number,
 ): void {
-  const { sqlite } = ctx;
+  const { db } = ctx;
 
   if (!Number.isInteger(balanceMinor)) {
     throw new Error("Money must be stored as integer minor units.");
   }
 
-  sqlite
-    .prepare(
-      `
-      UPDATE liabilities
-      SET current_balance_minor = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `,
-    )
-    .run(balanceMinor, liabilityId);
+  db.update(liabilities)
+    .set({ currentBalanceMinor: balanceMinor, updatedAt: sql`CURRENT_TIMESTAMP` })
+    .where(eq(liabilities.id, liabilityId))
+    .run();
   ctx.writeAuditEntry("update_balance", "liability", liabilityId, { balanceMinor });
 }
 
@@ -195,10 +164,11 @@ function softDeleteLiability(
   liabilityId: string,
   deletedAt: string,
 ): number {
-  const { sqlite } = ctx;
-  const result = sqlite
-    .prepare(`UPDATE liabilities SET deleted_at = ? WHERE id = ?`)
-    .run(deletedAt, liabilityId);
+  const result = ctx.db
+    .update(liabilities)
+    .set({ deletedAt })
+    .where(eq(liabilities.id, liabilityId))
+    .run();
   if (result.changes > 0) {
     ctx.writeAuditEntry("delete_liability", "liability", liabilityId, { deletedAt });
   }
@@ -206,12 +176,11 @@ function softDeleteLiability(
 }
 
 function restoreLiability(ctx: StoreContext, liabilityId: string): number {
-  const { sqlite } = ctx;
-  const result = sqlite
-    .prepare(
-      `UPDATE liabilities SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL`,
-    )
-    .run(liabilityId);
+  const result = ctx.db
+    .update(liabilities)
+    .set({ deletedAt: null })
+    .where(and(eq(liabilities.id, liabilityId), isNotNull(liabilities.deletedAt)))
+    .run();
   if (result.changes > 0) {
     ctx.writeAuditEntry("restore_liability", "liability", liabilityId);
   }

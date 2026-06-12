@@ -36,8 +36,9 @@ export interface StoreContext {
   /** The raw better-sqlite3 connection — for prepared statements and as the
    *  transaction owner. Shared so every store writes through the same handle. */
   readonly sqlite: DatabaseConnection;
-  /** A drizzle query builder bound to the shared connection. */
-  db: () => ReturnType<typeof drizzle>;
+  /** A drizzle query builder bound to the shared connection. Built once per
+   *  store lifetime and shared, so every slice writes through one instance. */
+  readonly db: ReturnType<typeof drizzle>;
   /** Id generator (randomUUID), injectable so slices never import crypto twice. */
   newId: () => string;
   /** Wrap a unit of work in a SQLite transaction and run it immediately. */
@@ -69,9 +70,12 @@ export function createStoreContext(
   // those writes. A single page render then reads it once instead of many times.
   let cachedWorkspace: Workspace | null | undefined;
 
+  // One drizzle instance per store lifetime, bound to the shared connection.
+  const db = drizzle(sqlite);
+
   return {
     sqlite,
-    db: () => drizzle(sqlite),
+    db,
     newId: () => randomUUID(),
     transaction: (work) => sqlite.transaction(work)(),
     writeAuditEntry: (action, entityType, entityId, details = {}) => {

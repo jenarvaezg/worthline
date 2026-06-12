@@ -10,8 +10,7 @@ import {
   createManualAsset,
   defaultInvestmentPriceProvider,
 } from "@worthline/domain";
-import { asc, eq, isNull } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { assetOwnerships, assets, investmentAssets } from "./schema";
 import {
@@ -105,8 +104,8 @@ export function createAssetStore(ctx: StoreContext): AssetStore {
     createManualAsset: (input) => createManualAssetRecord(ctx, input),
     createInvestmentAsset: (input) => createInvestmentAsset(ctx, input),
     readAssets: () => readAssets(ctx.sqlite, ctx.getWorkspace()),
-    readInvestmentAssetById: (assetId) => readInvestmentAssetById(ctx.sqlite, assetId),
-    readInvestmentAssetsWithMeta: () => readInvestmentAssetsWithMeta(ctx.sqlite),
+    readInvestmentAssetById: (assetId) => readInvestmentAssetById(ctx, assetId),
+    readInvestmentAssetsWithMeta: () => readInvestmentAssetsWithMeta(ctx),
     updateAsset: (assetId, input) => updateAsset(ctx, assetId, input),
     updateAssetValuation: (assetId, currentValueMinor) =>
       updateAssetValuation(ctx, assetId, currentValueMinor),
@@ -119,7 +118,7 @@ export function createAssetStore(ctx: StoreContext): AssetStore {
 }
 
 function createManualAssetRecord(ctx: StoreContext, input: CreateManualAssetInput): void {
-  const { sqlite } = ctx;
+  const { db } = ctx;
   const workspace = ctx.getWorkspace();
 
   if (!workspace) {
@@ -127,31 +126,9 @@ function createManualAssetRecord(ctx: StoreContext, input: CreateManualAssetInpu
   }
 
   const asset = createManualAsset(workspace, input);
-  const insert = sqlite.transaction(() => {
-    sqlite
-      .prepare(
-        `
-        INSERT INTO assets (
-          id,
-          name,
-          type,
-          currency,
-          current_value_minor,
-          liquidity_tier,
-          is_primary_residence
-        )
-        VALUES (
-          @id,
-          @name,
-          @type,
-          @currency,
-          @currentValueMinor,
-          @liquidityTier,
-          @isPrimaryResidence
-        )
-      `,
-      )
-      .run({
+  ctx.transaction(() => {
+    db.insert(assets)
+      .values({
         currency: asset.currency,
         currentValueMinor: asset.currentValue.amountMinor,
         id: asset.id,
@@ -159,28 +136,27 @@ function createManualAssetRecord(ctx: StoreContext, input: CreateManualAssetInpu
         liquidityTier: asset.liquidityTier,
         name: asset.name,
         type: asset.type,
-      });
+      })
+      .run();
 
-    const insertOwnership = sqlite.prepare(`
-      INSERT INTO asset_ownerships (asset_id, member_id, share_bps)
-      VALUES (@assetId, @memberId, @shareBps)
-    `);
-
-    for (const share of asset.ownership) {
-      insertOwnership.run({
-        assetId: asset.id,
-        memberId: share.memberId,
-        shareBps: share.shareBps,
-      });
+    if (asset.ownership.length > 0) {
+      db.insert(assetOwnerships)
+        .values(
+          asset.ownership.map((share) => ({
+            assetId: asset.id,
+            memberId: share.memberId,
+            shareBps: share.shareBps,
+          })),
+        )
+        .run();
     }
   });
 
-  insert();
   ctx.writeAuditEntry("create_asset", "asset", asset.id);
 }
 
 function createInvestmentAsset(ctx: StoreContext, input: CreateInvestmentAssetInput): void {
-  const { sqlite } = ctx;
+  const { db } = ctx;
   const workspace = ctx.getWorkspace();
 
   if (!workspace) {
@@ -202,31 +178,9 @@ function createInvestmentAsset(ctx: StoreContext, input: CreateInvestmentAssetIn
   });
   const pricedAt = input.manualPricePerUnit ? new Date().toISOString() : null;
 
-  const insert = sqlite.transaction(() => {
-    sqlite
-      .prepare(
-        `
-        INSERT INTO assets (
-          id,
-          name,
-          type,
-          currency,
-          current_value_minor,
-          liquidity_tier,
-          is_primary_residence
-        )
-        VALUES (
-          @id,
-          @name,
-          @type,
-          @currency,
-          @currentValueMinor,
-          @liquidityTier,
-          @isPrimaryResidence
-        )
-      `,
-      )
-      .run({
+  ctx.transaction(() => {
+    db.insert(assets)
+      .values({
         currency: asset.currency,
         currentValueMinor: 0,
         id: asset.id,
@@ -234,45 +188,23 @@ function createInvestmentAsset(ctx: StoreContext, input: CreateInvestmentAssetIn
         liquidityTier: asset.liquidityTier,
         name: asset.name,
         type: asset.type,
-      });
+      })
+      .run();
 
-    const insertOwnership = sqlite.prepare(`
-      INSERT INTO asset_ownerships (asset_id, member_id, share_bps)
-      VALUES (@assetId, @memberId, @shareBps)
-    `);
-
-    for (const share of asset.ownership) {
-      insertOwnership.run({
-        assetId: asset.id,
-        memberId: share.memberId,
-        shareBps: share.shareBps,
-      });
+    if (asset.ownership.length > 0) {
+      db.insert(assetOwnerships)
+        .values(
+          asset.ownership.map((share) => ({
+            assetId: asset.id,
+            memberId: share.memberId,
+            shareBps: share.shareBps,
+          })),
+        )
+        .run();
     }
 
-    sqlite
-      .prepare(
-        `
-        INSERT INTO investment_assets (
-          asset_id,
-          unit_symbol,
-          isin,
-          price_provider,
-          provider_symbol,
-          manual_price_per_unit,
-          manual_priced_at
-        )
-        VALUES (
-          @assetId,
-          @unitSymbol,
-          @isin,
-          @priceProvider,
-          @providerSymbol,
-          @manualPricePerUnit,
-          @manualPricedAt
-        )
-      `,
-      )
-      .run({
+    db.insert(investmentAssets)
+      .values({
         assetId: asset.id,
         isin: input.isin ?? null,
         manualPricePerUnit: input.manualPricePerUnit ?? null,
@@ -280,17 +212,16 @@ function createInvestmentAsset(ctx: StoreContext, input: CreateInvestmentAssetIn
         priceProvider: input.priceProvider ?? null,
         providerSymbol: input.providerSymbol ?? null,
         unitSymbol: input.unitSymbol ?? null,
-      });
+      })
+      .run();
   });
-
-  insert();
 }
 
 function readInvestmentAssetById(
-  sqlite: StoreContext["sqlite"],
+  ctx: StoreContext,
   assetId: string,
 ): InvestmentAssetFull | null {
-  const db = drizzle(sqlite);
+  const { db } = ctx;
   const row = db
     .select({
       id: assets.id,
@@ -345,10 +276,8 @@ function readInvestmentAssetById(
   };
 }
 
-function readInvestmentAssetsWithMeta(
-  sqlite: StoreContext["sqlite"],
-): InvestmentAssetMeta[] {
-  const db = drizzle(sqlite);
+function readInvestmentAssetsWithMeta(ctx: StoreContext): InvestmentAssetMeta[] {
+  const { db } = ctx;
   const rows = db
     .select({
       id: assets.id,
@@ -376,58 +305,50 @@ function readInvestmentAssetsWithMeta(
 }
 
 function updateAsset(ctx: StoreContext, assetId: string, input: UpdateAssetInput): void {
-  const { sqlite } = ctx;
-  const updates: string[] = [];
-  const params: unknown[] = [];
+  const { db } = ctx;
+  const fields: Partial<typeof assets.$inferInsert> = {};
 
   if (input.name !== undefined) {
-    updates.push("name = ?");
-    params.push(input.name);
+    fields.name = input.name;
   }
 
   if (input.type !== undefined) {
-    updates.push("type = ?");
-    params.push(input.type);
+    fields.type = input.type;
   }
 
   if (input.liquidityTier !== undefined) {
-    updates.push("liquidity_tier = ?");
-    params.push(input.liquidityTier);
+    fields.liquidityTier = input.liquidityTier;
   }
 
   if (input.isPrimaryResidence !== undefined) {
-    updates.push("is_primary_residence = ?");
-    params.push(input.isPrimaryResidence ? 1 : 0);
+    fields.isPrimaryResidence = input.isPrimaryResidence ? 1 : 0;
   }
 
-  const editAsset = sqlite.transaction(() => {
-    if (updates.length > 0) {
-      updates.push("updated_at = CURRENT_TIMESTAMP");
-      params.push(assetId);
-      sqlite
-        .prepare(`UPDATE assets SET ${updates.join(", ")} WHERE id = ?`)
-        .run(...params);
+  ctx.transaction(() => {
+    if (Object.keys(fields).length > 0) {
+      db.update(assets)
+        .set({ ...fields, updatedAt: sql`CURRENT_TIMESTAMP` })
+        .where(eq(assets.id, assetId))
+        .run();
     }
 
     if (input.ownership !== undefined) {
-      sqlite.prepare(`DELETE FROM asset_ownerships WHERE asset_id = ?`).run(assetId);
+      db.delete(assetOwnerships).where(eq(assetOwnerships.assetId, assetId)).run();
 
-      const insertOwnership = sqlite.prepare(`
-        INSERT INTO asset_ownerships (asset_id, member_id, share_bps)
-        VALUES (@assetId, @memberId, @shareBps)
-      `);
-
-      for (const share of input.ownership) {
-        insertOwnership.run({
-          assetId,
-          memberId: share.memberId,
-          shareBps: share.shareBps,
-        });
+      if (input.ownership.length > 0) {
+        db.insert(assetOwnerships)
+          .values(
+            input.ownership.map((share) => ({
+              assetId,
+              memberId: share.memberId,
+              shareBps: share.shareBps,
+            })),
+          )
+          .run();
       }
     }
   });
 
-  editAsset();
   ctx.writeAuditEntry("update_asset", "asset", assetId, {
     ...input,
     ownership: undefined,
@@ -439,7 +360,7 @@ function updateAssetValuation(
   assetId: string,
   currentValueMinor: number,
 ): void {
-  const { sqlite } = ctx;
+  const { db } = ctx;
 
   if (!Number.isInteger(currentValueMinor)) {
     throw new Error("Money must be stored as integer minor units.");
@@ -448,15 +369,10 @@ function updateAssetValuation(
   // The "investments are never valued by hand" invariant (ADR 0006) is enforced
   // by the caller via assertNotInvestmentAsset before it reaches the store
   // (PRD #120 candidate 3 — domain invariants live outside the store layer).
-  sqlite
-    .prepare(
-      `
-      UPDATE assets
-      SET current_value_minor = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `,
-    )
-    .run(currentValueMinor, assetId);
+  db.update(assets)
+    .set({ currentValueMinor, updatedAt: sql`CURRENT_TIMESTAMP` })
+    .where(eq(assets.id, assetId))
+    .run();
   ctx.writeAuditEntry("update_valuation", "asset", assetId, { currentValueMinor });
 }
 
@@ -501,10 +417,11 @@ function updateInvestmentAsset(ctx: StoreContext, input: UpdateInvestmentAssetIn
 }
 
 function softDeleteAsset(ctx: StoreContext, assetId: string, deletedAt: string): number {
-  const { sqlite } = ctx;
-  const result = sqlite
-    .prepare(`UPDATE assets SET deleted_at = ? WHERE id = ?`)
-    .run(deletedAt, assetId);
+  const result = ctx.db
+    .update(assets)
+    .set({ deletedAt })
+    .where(eq(assets.id, assetId))
+    .run();
   if (result.changes > 0) {
     ctx.writeAuditEntry("delete_asset", "asset", assetId, { deletedAt });
   }
@@ -512,12 +429,11 @@ function softDeleteAsset(ctx: StoreContext, assetId: string, deletedAt: string):
 }
 
 function restoreAsset(ctx: StoreContext, assetId: string): number {
-  const { sqlite } = ctx;
-  const result = sqlite
-    .prepare(
-      `UPDATE assets SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL`,
-    )
-    .run(assetId);
+  const result = ctx.db
+    .update(assets)
+    .set({ deletedAt: null })
+    .where(and(eq(assets.id, assetId), isNotNull(assets.deletedAt)))
+    .run();
   if (result.changes > 0) {
     ctx.writeAuditEntry("restore_asset", "asset", assetId);
   }
