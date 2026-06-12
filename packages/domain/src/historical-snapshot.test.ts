@@ -103,7 +103,6 @@ describe("buildSnapshotAtDate", () => {
     const result = buildSnapshotAtDate({
       ...BASE,
       assets: [fund],
-      capturedUnitPrices: undefined,
       liabilities: [],
       manualValueHistory: new Map(),
       operationsByAsset,

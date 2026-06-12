@@ -45,6 +45,7 @@ function recordBuy(
     units,
   });
   store.rippleHistoricalSnapshotsForOperation({
+    assetId: "fund",
     mode: "record",
     operationDateKey: executedAt,
     today: TODAY,
@@ -125,6 +126,7 @@ describe("historical snapshots from operations", () => {
     const deleted = store.deleteOperation(target.id);
     expect(deleted).not.toBeNull();
     store.rippleHistoricalSnapshotsForOperation({
+      assetId: "fund",
       mode: "delete",
       operationDateKey: "2024-01-10",
       today: TODAY,
@@ -161,5 +163,89 @@ describe("historical snapshots from imported operations (gap-fill)", () => {
     expect(grossAt(target, "2024-03-01")).toBe(marchSnapshot.grossAssets.amountMinor);
     expect(grossAt(target, "2024-03-01")).toBe(15 * 200_00);
     target.close();
+  });
+});
+
+describe("ripple preserves frozen history (ADR 0012)", () => {
+  test("a ripple never drops a holding that was later trashed", () => {
+    const store = createInMemoryStore();
+    seed(store);
+    store.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 1_000_00,
+      id: "cash",
+      liquidityTier: "cash",
+      name: "Cuenta",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "cash",
+    });
+
+    // A snapshot at 2024-03-01 captures the fund AND cash.
+    recordBuy(store, "2024-03-01", "5", "200");
+    expect(grossAt(store, "2024-03-01")).toBe(5 * 200_00 + 1_000_00);
+
+    // Trash the cash account — a present-state edit; frozen snapshots must not move.
+    store.softDeleteAsset("cash", "2026-06-10T00:00:00.000Z");
+
+    // A backdated fund operation ripples 2024-03-01. The fund row updates; the
+    // (now trashed) cash row must survive in that frozen snapshot.
+    recordBuy(store, "2024-01-10", "10", "100");
+
+    expect(grossAt(store, "2024-03-01")).toBe(15 * 200_00 + 1_000_00);
+    store.close();
+  });
+
+  test("deleting the only basis of a snapshot removes it instead of leaving it stale", () => {
+    const store = createInMemoryStore();
+    seed(store); // fund only, no manual holdings
+
+    recordBuy(store, "2024-01-10", "10", "100");
+    expect(grossAt(store, "2024-01-10")).toBe(10 * 100_00);
+
+    const op = store.readOperations("fund").find((o) => o.executedAt === "2024-01-10")!;
+    store.deleteOperation(op.id);
+    store.rippleHistoricalSnapshotsForOperation({
+      assetId: "fund",
+      mode: "delete",
+      operationDateKey: "2024-01-10",
+      today: TODAY,
+    });
+
+    // Nothing remains on that date → the snapshot is gone, not stale at 100000.
+    expect(grossAt(store, "2024-01-10")).toBeUndefined();
+    store.close();
+  });
+
+  test("generates scope-weighted snapshots for every affected scope (household)", () => {
+    const store = createInMemoryStore();
+    store.initializeWorkspace({
+      members: [
+        { id: "mJ", name: "Jose" },
+        { id: "mA", name: "Ana" },
+      ],
+      mode: "household",
+    });
+    store.createInvestmentAsset({
+      currency: "EUR",
+      id: "fund",
+      liquidityTier: "market",
+      name: "Fondo compartido",
+      ownership: [
+        { memberId: "mJ", shareBps: 5_000 },
+        { memberId: "mA", shareBps: 5_000 },
+      ],
+    });
+
+    recordBuy(store, "2024-01-10", "10", "100"); // full value 1000.00, split 50/50
+
+    const at = store.readSnapshots().filter((s) => s.dateKey === "2024-01-10");
+    const grosses = at.map((s) => s.grossAssets.amountMinor).sort((a, b) => b - a);
+
+    // More than one scope captured (household + members).
+    expect(at.length).toBeGreaterThan(1);
+    // The household scope sees the full value; a 50% member scope sees half.
+    expect(grosses[0]).toBe(10 * 100_00);
+    expect(grosses).toContain((10 * 100_00) / 2);
+    store.close();
   });
 });

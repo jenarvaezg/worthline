@@ -204,6 +204,7 @@ export async function recordOperationAction(
     store.recordOperation(domainResult.value);
     // Backdated operation → reconstruct/ripple historical snapshots (PRD #107).
     store.rippleHistoricalSnapshotsForOperation({
+      assetId: domainResult.value.assetId,
       mode: "record",
       operationDateKey,
       today,
@@ -366,6 +367,7 @@ export async function deleteOperationAction(
     if (result) {
       // Deleting a backdated operation ripples snapshots ≥ its date (PRD #107).
       store.rippleHistoricalSnapshotsForOperation({
+        assetId: result.assetId,
         mode: "delete",
         operationDateKey: result.executedAt.slice(0, 10),
         today,
