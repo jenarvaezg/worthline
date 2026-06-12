@@ -145,9 +145,23 @@ form. UI label: "Puesta al día". Investments are excluded — their values are 
 A frozen capture, on a date, of a scope's net worth figures and of each holding's
 value behind them (for investments, also units and unit price). Captured
 automatically — at most one per scope per day, the day's latest capture winning.
-Not a user act. Frozen means frozen: later edits, renames, or deletions of a
-holding never alter what a past snapshot captured.
+Not a user act. Frozen means frozen against edits to the present: later edits,
+renames, or deletions of a holding never alter what a past snapshot captured.
+Declaring a dated fact about the past — a backdated **operation**, a
+**valuation anchor**, a **balance anchor** — is new information, not an edit:
+it generates the snapshot for that date and triggers a **ripple recalculation**
+(ADR 0012).
 _Avoid_: "guardar snapshot" as a user-facing action.
+
+**Ripple recalculation**:
+The re-derivation of existing **snapshots** after a dated fact about the past
+is declared, modified, or deleted. Declaring at date D overwrites the snapshot
+at D and recalculates the ones after D; modifying or deleting recalculates from
+D inclusive. Only existing snapshots are re-derived — no new dates are
+backfilled. A snapshot generated for a past date is an ordinary **snapshot**,
+not a special kind. See ADR 0012.
+_Avoid_: treating it as an exception to frozen snapshots (it incorporates new
+information about the past; edits to the present still never touch history).
 
 **Monthly close**:
 The last **snapshot** of a calendar month. Derived, never declared by the user.
@@ -209,6 +223,7 @@ _Avoid_: "pisar"; merge (an import never blends with existing data — it replac
 - An **amortization plan** belongs to an **amortizable** liability; **interest rate revisions** modify the plan from a date forward.
 - A **balance anchor** attaches to a **revolving** or **informal** liability at a date.
 - A **debt model** determines how a liability's historical balance is calculated: from an **amortization plan**, from **balance anchors**, or from a step function of anchors.
+- A backdated **operation**, **valuation anchor**, or **balance anchor** triggers a **ripple recalculation** of existing **snapshots**; an **import** restores exported snapshots as-is and only fills gaps (ADR 0012).
 
 ## Flagged ambiguities
 
