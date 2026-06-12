@@ -126,6 +126,7 @@ CREATE TABLE \`investment_assets\` (
 	\`asset_id\` text PRIMARY KEY NOT NULL,
 	\`unit_symbol\` text,
 	\`isin\` text,
+	\`price_provider\` text,
 	\`provider_symbol\` text,
 	\`manual_price_per_unit\` text,
 	\`manual_priced_at\` text,

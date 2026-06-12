@@ -13,6 +13,7 @@ const MEMBER_ID = "member_yo";
 
 afterEach(() => {
   store?.close();
+  vi.unstubAllGlobals();
 });
 
 function setupStore() {
@@ -146,5 +147,39 @@ describe("refreshPricesAction wiring", () => {
     expect(url).toContain("ok=prices_refreshed");
     expect(url).toContain("updated=0");
     expect(url).not.toContain("failed=");
+  });
+
+  test("real routing path refreshes retirement investments through Finect", async () => {
+    setupStore();
+    store.createInvestmentAsset({
+      id: "asset_pension",
+      name: "Pension Plan",
+      currency: "EUR",
+      liquidityTier: "retirement",
+      ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
+      providerSymbol: "N5394",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce({
+        ok: true,
+        text: async () => `
+          <p>Valor liquidativo</p>
+          <strong>20,63 €</strong>
+          <span>Fecha de valor liquidativo: 10/06/2026</span>
+        `,
+      } as Response),
+    );
+
+    const url = await catchRedirect(() =>
+      refreshPricesAction(fd({}, "/inversiones"), store),
+    );
+
+    expect(url).toContain("ok=prices_refreshed");
+    expect(url).toContain("updated=1");
+    expect(store.readPriceCache("asset_pension")).toMatchObject({
+      price: "20.63",
+      source: "finect",
+    });
   });
 });

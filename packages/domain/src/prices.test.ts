@@ -44,6 +44,24 @@ describe("selectStalePrices (per-source TTL)", () => {
     expect(selectStalePrices([entry], "2026-06-09T10:00:00Z")).toEqual([entry]);
   });
 
+  test("yahoo and finect entries share the 1-day provider TTL", () => {
+    const yahoo = makeEntry({
+      assetId: "asset-yahoo",
+      source: "yahoo",
+      fetchedAt: "2026-06-08T10:00:00Z",
+    });
+    const finect = makeEntry({
+      assetId: "asset-finect",
+      source: "finect",
+      fetchedAt: "2026-06-08T10:00:00Z",
+    });
+
+    expect(selectStalePrices([yahoo, finect], "2026-06-09T10:00:00Z")).toEqual([
+      yahoo,
+      finect,
+    ]);
+  });
+
   test("manual source entries are never stale (manual quotes are permanent)", () => {
     const entry = makeEntry({
       source: "manual",
@@ -122,6 +140,8 @@ describe("selectStalePrices (per-source TTL)", () => {
     expect(PRICE_TTL_DAYS.ecb).toBe(1);
     expect(PRICE_TTL_DAYS.coingecko).toBe(1);
     expect(PRICE_TTL_DAYS.stooq).toBe(1);
+    expect(PRICE_TTL_DAYS.yahoo).toBe(1);
+    expect(PRICE_TTL_DAYS.finect).toBe(1);
   });
 });
 

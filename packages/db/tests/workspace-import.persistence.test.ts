@@ -117,6 +117,7 @@ function makeDocumentB(): WorkspaceExport {
         investment: {
           unitSymbol: "VWCE",
           isin: "IE00BK5BQT80",
+          priceProvider: "stooq",
           providerSymbol: "VWCE.DE",
           manualPricePerUnit: "100",
           manualPricedAt: "2026-06-01T08:00:00.000Z",
@@ -331,6 +332,7 @@ describe("importWorkspace", () => {
     expect(investment).not.toBeNull();
     expect(investment!.unitSymbol).toBe("VWCE");
     expect(investment!.isin).toBe("IE00BK5BQT80");
+    expect(investment!.priceProvider).toBe("stooq");
     expect(investment!.providerSymbol).toBe("VWCE.DE");
     expect(investment!.manualPricePerUnit).toBe("100");
 

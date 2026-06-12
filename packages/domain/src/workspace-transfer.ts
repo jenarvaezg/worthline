@@ -15,7 +15,7 @@
 import type { LiquidityTier } from "./classification";
 import type { DecimalString } from "./decimal";
 import type { CurrencyCode, MoneyMinor } from "./money";
-import type { AssetPrice } from "./prices";
+import type { AssetPrice, InvestmentPriceProvider } from "./prices";
 import type { SnapshotHoldingRow } from "./snapshot-holdings";
 import type { WarningOverride } from "./warnings";
 import type {
@@ -43,6 +43,7 @@ export interface ExportedWorkspaceConfig {
 export interface ExportedInvestmentMeta {
   unitSymbol?: string;
   isin?: string;
+  priceProvider?: InvestmentPriceProvider;
   providerSymbol?: string;
   manualPricePerUnit?: DecimalString;
   manualPricedAt?: string;

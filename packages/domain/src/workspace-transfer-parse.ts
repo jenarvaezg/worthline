@@ -64,6 +64,7 @@ const liquidityTierSchema = z.enum([
 const investmentMetaSchema = z.object({
   unitSymbol: nonEmptyString.optional(),
   isin: nonEmptyString.optional(),
+  priceProvider: z.enum(["yahoo", "stooq", "finect"]).optional(),
   providerSymbol: nonEmptyString.optional(),
   manualPricePerUnit: nonEmptyString.optional(),
   manualPricedAt: nonEmptyString.optional(),
@@ -157,7 +158,7 @@ const priceSchema = z.object({
   assetId: nonEmptyString,
   currency: nonEmptyString,
   price: nonEmptyString,
-  source: z.enum(["manual", "ecb", "coingecko", "stooq"]),
+  source: z.enum(["manual", "ecb", "coingecko", "stooq", "yahoo", "finect"]),
   priceDate: nonEmptyString.optional(),
   fetchedAt: nonEmptyString,
   freshnessState: z.enum(["fresh", "stale", "failed", "manual"]),

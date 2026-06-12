@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 export function migrate(sqlite: DatabaseConnection): void {
   sqlite.pragma("journal_mode = WAL");
@@ -86,5 +86,12 @@ export function migrate(sqlite: DatabaseConnection): void {
        ON snapshot_holdings (snapshot_id, kind, holding_id);`,
     );
     sqlite.pragma("user_version = 7");
+  }
+
+  if (version < 8) {
+    try {
+      sqlite.exec("ALTER TABLE investment_assets ADD COLUMN price_provider TEXT");
+    } catch {}
+    sqlite.pragma("user_version = 8");
   }
 }

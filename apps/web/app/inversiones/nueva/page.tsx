@@ -99,12 +99,50 @@ export default async function NuevaInversionPage({
           </label>
 
           <label>
-            Ticker / símbolo <small>(formato Stooq, p.ej. VWRL.UK)</small>
+            Liquidez
+            <select
+              aria-label="Liquidez de la inversión"
+              defaultValue={investmentValues["liquidityTier"] ?? "market"}
+              name="liquidityTier"
+            >
+              <option value="market">Mercado</option>
+              <option value="retirement">Jubilación</option>
+              <option value="illiquid">Ilíquido</option>
+              <option value="cash">Caja</option>
+              <option value="housing">Vivienda</option>
+            </select>
+          </label>
+
+          <label>
+            Proveedor de precios
+            <select
+              aria-label="Proveedor de precios"
+              defaultValue={investmentValues["priceProvider"] ?? "yahoo"}
+              name="priceProvider"
+            >
+              <option value="yahoo">Yahoo Finance</option>
+              <option value="stooq">Stooq</option>
+              <option value="finect">Finect</option>
+            </select>
+          </label>
+
+          <label>
+            Símbolo visible <small>(unidad, p.ej. VWCE)</small>
             <input
-              aria-label="Ticker o símbolo en formato Stooq"
+              aria-label="Símbolo visible de la inversión"
               defaultValue={investmentValues["unitSymbol"]}
               name="unitSymbol"
-              placeholder="VWRL.UK"
+              placeholder="VWCE"
+            />
+          </label>
+
+          <label>
+            Símbolo del proveedor <small>(SAN.MC, VUSA.L, N5394)</small>
+            <input
+              aria-label="Símbolo del proveedor"
+              defaultValue={investmentValues["providerSymbol"]}
+              name="providerSymbol"
+              placeholder="SAN.MC"
             />
           </label>
 

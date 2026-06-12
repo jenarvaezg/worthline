@@ -1,4 +1,7 @@
-export type PriceSource = "manual" | "ecb" | "coingecko" | "stooq";
+import type { LiquidityTier } from "./classification";
+
+export type PriceSource = "manual" | "ecb" | "coingecko" | "stooq" | "yahoo" | "finect";
+export type InvestmentPriceProvider = "yahoo" | "stooq" | "finect";
 export type PriceFreshnessState = "fresh" | "stale" | "failed" | "manual";
 
 export interface AssetPrice {
@@ -17,7 +20,15 @@ export const PRICE_TTL_DAYS: Record<PriceSource, number> = {
   ecb: 1,
   coingecko: 1,
   stooq: 1,
+  yahoo: 1,
+  finect: 1,
 };
+
+export function defaultInvestmentPriceProvider(
+  liquidityTier: LiquidityTier,
+): InvestmentPriceProvider {
+  return liquidityTier === "retirement" ? "finect" : "yahoo";
+}
 
 export function getPriceFreshness(
   price: Pick<AssetPrice, "source" | "fetchedAt" | "freshnessState">,

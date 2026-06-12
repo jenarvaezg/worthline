@@ -104,3 +104,58 @@ describe("price cache persistence", () => {
     store.close();
   });
 });
+
+describe("investment price provider metadata", () => {
+  test("readInvestmentAssetsWithMeta applies provider defaults and preserves overrides", () => {
+    const store = createTestStore();
+    store.initializeWorkspace({
+      members: [{ id: "m1", name: "Alice" }],
+      mode: "individual",
+    });
+
+    store.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset_market",
+      liquidityTier: "market",
+      name: "Market ETF",
+      ownership: [{ memberId: "m1", shareBps: 10000 }],
+      providerSymbol: "VUSA.L",
+    });
+    store.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset_pension",
+      liquidityTier: "retirement",
+      name: "Pension Plan",
+      ownership: [{ memberId: "m1", shareBps: 10000 }],
+      providerSymbol: "N5394",
+    });
+    store.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset_stooq",
+      liquidityTier: "market",
+      name: "Stooq ETF",
+      ownership: [{ memberId: "m1", shareBps: 10000 }],
+      priceProvider: "stooq",
+      providerSymbol: "VUSA.L",
+    });
+
+    const byId = new Map(
+      store.readInvestmentAssetsWithMeta().map((asset) => [asset.id, asset]),
+    );
+
+    expect(byId.get("asset_market")).toMatchObject({
+      liquidityTier: "market",
+      priceProvider: "yahoo",
+    });
+    expect(byId.get("asset_pension")).toMatchObject({
+      liquidityTier: "retirement",
+      priceProvider: "finect",
+    });
+    expect(byId.get("asset_stooq")).toMatchObject({
+      liquidityTier: "market",
+      priceProvider: "stooq",
+    });
+
+    store.close();
+  });
+});

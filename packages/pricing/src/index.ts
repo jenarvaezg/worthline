@@ -1,6 +1,6 @@
-import type { AssetPrice, PriceSource } from "@worthline/domain";
+import type { AssetPrice, InvestmentPriceProvider, PriceSource } from "@worthline/domain";
 
-export type { AssetPrice, PriceSource };
+export type { AssetPrice, InvestmentPriceProvider, PriceSource };
 
 export interface PriceProviderContext {
   assetId: string;
@@ -13,6 +13,7 @@ export interface PriceProviderResult {
   price: string;
   priceDate?: string;
   currency: string;
+  source?: PriceSource;
 }
 
 export interface PriceProvider {
@@ -42,7 +43,7 @@ export async function fetchAndCachePrice(
       assetId: ctx.assetId,
       currency: result.currency,
       price: result.price,
-      source: provider.name,
+      source: result.source ?? provider.name,
       fetchedAt: ctx.nowIso,
       freshnessState: "fresh",
       ...(result.priceDate ? { priceDate: result.priceDate } : {}),
@@ -62,7 +63,9 @@ export async function fetchAndCachePrice(
 
 export { coingeckoProvider } from "./coingecko";
 export { ecbProvider } from "./ecb";
+export { finectProvider } from "./finect";
 export { stooqProvider } from "./stooq";
+export { yahooProvider } from "./yahoo";
 export { refreshStalePrices } from "./refresh-stale-prices";
 export type {
   InvestmentAssetRef,

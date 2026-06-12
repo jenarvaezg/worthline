@@ -988,6 +988,25 @@ describe("parseInvestmentAssetCommandStrict — required name, strict price", ()
     expect(result.command.unitSymbol).toBeUndefined();
     expect(result.command.isin).toBeUndefined();
   });
+
+  test("parses provider symbol, provider, and liquidity tier for pension plans", () => {
+    const result = parseInvestmentAssetCommandStrict(
+      form({
+        liquidityTier: "retirement",
+        name: "MyInvestor S&P 500 PP",
+        priceProvider: "finect",
+        providerSymbol: "N5394",
+      }),
+      members,
+      1,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.liquidityTier).toBe("retirement");
+    expect(result.command.priceProvider).toBe("finect");
+    expect(result.command.providerSymbol).toBe("N5394");
+  });
 });
 
 describe("parseRouteOperationCommand — asset id from route, strict field errors", () => {
@@ -1143,5 +1162,23 @@ describe("parseUpdateInvestmentCommand — edit investment fields", () => {
     expect(result.command.unitSymbol).toBeUndefined();
     expect(result.command.isin).toBeUndefined();
     expect(result.command.manualPricePerUnit).toBeUndefined();
+  });
+
+  test("parses provider symbol, provider, and liquidity tier", () => {
+    const result = parseUpdateInvestmentCommand(
+      form({
+        liquidityTier: "retirement",
+        name: "Plan renombrado",
+        priceProvider: "finect",
+        providerSymbol: "N5394",
+      }),
+      "asset_plan",
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.liquidityTier).toBe("retirement");
+    expect(result.command.priceProvider).toBe("finect");
+    expect(result.command.providerSymbol).toBe("N5394");
   });
 });
