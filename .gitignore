@@ -21,3 +21,4 @@ playwright-report-first-run/
 *.tsbuildinfo
 
 transcript.txt
+.playwright-mcp/

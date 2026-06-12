@@ -115,7 +115,7 @@ export default async function InversionesPage({
           </Link>
         </div>
 
-        <form action={refreshPricesAction} className="inlineForm">
+        <form action={refreshPricesAction} className="refreshRow">
           <input name="currentUrl" type="hidden" value={currentUrl} />
           <button type="submit">Actualizar precios</button>
         </form>
