@@ -41,12 +41,86 @@ is the portfolio. UI label for that list: "Patrimonio".
 
 **Investment**:
 An asset whose current value is derived — units held × unit price — never set by
-hand. Units change only through **operations**; the unit price comes from a market
-provider or a manual quote.
+hand. Units change only through **operations**; the unit price comes from a
+**price provider** or a manual quote.
 _Avoid_: editing an investment's value directly (it is a derived figure).
+
+**Price provider**:
+A service that supplies unit prices for investments. Each provider implements
+the `PriceProvider` contract (`canFetch` + `fetchPrice`). Wired providers:
+Stooq (market tickers), CoinGecko (crypto), ECB (FX rates). Decided but not
+yet wired (ADR 0011, issue #106): Yahoo Finance (market tickers, primary once
+wired), Finect (pension plan NAVs).
+_Avoid_: data source, feed, API.
+
+**Price source**:
+The label recorded in the price cache to identify which **price provider**
+supplied a given price (e.g. `"stooq"`, `"yahoo"`, `"finect"`, `"manual"`).
+One provider maps to one source; fallback chains record the provider that
+actually delivered the price, not the one that was tried first.
+
+**Provider symbol**:
+The lookup key sent to a **price provider** to fetch a price. For market
+providers (Yahoo, Stooq) this is a ticker in Yahoo-format (e.g. `SAN.MC`,
+`VUSA.L`). For Finect it is the plan code (e.g. `N5394`). Stored in
+`investment_assets.provider_symbol`.
+_Avoid_: ticker (too narrow — Finect codes are not tickers).
+
+**ISIN**:
+The International Securities Identification Number of an investment. Stored as
+reference metadata only — it does not participate in price fetching. The
+**provider symbol** is the sole lookup key.
 
 **Operation**:
 A buy or a sell against one **investment**: date, units, price per unit, fees.
+
+**Valuation anchor**:
+A declared value of a **holding** at a specific date. Used to reconstruct historical
+values for **snapshots**. Two kinds: **market appraisal** (reflects market movement,
+adjusts the interpolation curve) and **improvement** (discrete value increment such
+as a renovation, does not alter the underlying appreciation rate).
+_Avoid_: price point, historical value (too vague).
+
+**Market appraisal**:
+A **valuation anchor** that reflects what the market actually pays for the asset on
+that date. When present, it becomes a control point for linear interpolation between
+appraisals, overriding the declared **appreciation rate** in that segment. The
+appraised value is the total truth — it already includes any prior **improvements**.
+UI label: "Tasación de mercado".
+
+**Improvement**:
+A **valuation anchor** that represents a discrete value increment (e.g. a renovation
+adding €10k to a house). Does not alter the interpolation curve or the
+**appreciation rate** — it is a step-up on top of the market curve.
+UI label: "Mejora".
+
+**Appreciation rate**:
+An annual percentage declared by the user to extrapolate a holding's value where no
+**market appraisal** exists (before the first appraisal or after the last). Between
+two appraisals, linear interpolation takes precedence. UI label: "Revalorización anual".
+
+**Debt model**:
+The calculation method for a liability's historical balance. Three kinds:
+**amortizable** (French amortization schedule from declared conditions),
+**revolving** (manual balance with **balance anchors**, linear interpolation between
+them), and **informal** (partial payments as balance anchors, step function — no
+interpolation). Stored on the liability.
+
+**Amortization plan**:
+The declared conditions of an **amortizable** debt: initial capital, annual interest
+rate, term in months, and start date. The system derives the French amortization
+schedule and can calculate the outstanding balance at any date. Supports
+**interest rate revisions** for variable-rate loans.
+
+**Interest rate revision**:
+A declared change to the annual interest rate of an **amortization plan** at a
+specific date. The system recalculates the monthly payment from that date forward
+with the new rate and remaining term.
+
+**Balance anchor**:
+A declared outstanding balance of a **revolving** or **informal** debt at a specific
+date. For revolving debts the system interpolates linearly between anchors; for
+informal debts the balance stays constant until the next anchor (step function).
 
 **Liquidity tier**:
 The accessibility class of a holding — cash, market, retirement, illiquid, or housing.
@@ -131,6 +205,10 @@ _Avoid_: "pisar"; merge (an import never blends with existing data — it replac
 - **Liquid net worth** and **housing equity** are partial views of **net worth**, sliced by **liquidity tier**.
 - A **framing** chooses which figure headlines; **gross assets**, **debts**, **housing equity**, and **liquid net worth** are always-visible breakdown around it.
 - An **import** is a **reset** followed by loading an **export**: both erase the whole workspace, but a reset ends at onboarding while an import ends in a populated dashboard.
+- A **valuation anchor** attaches to a **holding** at a date; **market appraisals** define the interpolation curve, **improvements** are step-ups on top.
+- An **amortization plan** belongs to an **amortizable** liability; **interest rate revisions** modify the plan from a date forward.
+- A **balance anchor** attaches to a **revolving** or **informal** liability at a date.
+- A **debt model** determines how a liability's historical balance is calculated: from an **amortization plan**, from **balance anchors**, or from a step function of anchors.
 
 ## Flagged ambiguities
 
