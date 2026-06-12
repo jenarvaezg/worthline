@@ -37,8 +37,8 @@ export default async function globalSetup(): Promise<void> {
 
   const snapshot = captureNetWorthSnapshot({
     workspace,
-    scopeId: "total",
-    scopeLabel: "Total",
+    scopeId: "household",
+    scopeLabel: "Hogar",
     assets,
     capturedAt: yesterdayIso,
     id: "snapshot_seed_yesterday",

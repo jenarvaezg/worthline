@@ -72,12 +72,15 @@ import {
 } from "./workspace-store";
 
 export type {
+  AddValuationAnchorInput,
   AssetStore,
   CreateInvestmentAssetInput,
   InvestmentAssetFull,
   InvestmentAssetMeta,
   UpdateAssetInput,
   UpdateInvestmentAssetInput,
+  UpdateValuationAnchorInput,
+  ValuationAnchorRecord,
 } from "./asset-store";
 export type { LiabilityStore, UpdateLiabilityInput } from "./liability-store";
 export type { OperationsStore, ValueUpdateCommand } from "./operations-store";

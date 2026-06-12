@@ -1,5 +1,5 @@
 import type { DecimalString } from "@worthline/domain";
-import type { CreateInvestmentAssetInput } from "@worthline/db";
+import type { AddValuationAnchorInput, CreateInvestmentAssetInput } from "@worthline/db";
 import type {
   CreateInvestmentOperationInput,
   CreateLiabilityInput,
@@ -16,7 +16,7 @@ import type {
   OwnershipShare,
   PriceFreshnessState,
 } from "@worthline/domain";
-import { parseDecimal, parseDecimalToMinorStrict } from "@worthline/domain";
+import { parseDecimal, parseDecimalStrict, parseDecimalToMinorStrict } from "@worthline/domain";
 
 // Re-export types needed by #58 inversiones functions
 export type { CreateInvestmentAssetInput };
@@ -273,6 +273,9 @@ export function okMessage(key: string | undefined): string | null {
   }
 
   const messages: Record<string, string> = {
+    anchor_added: "Tasación registrada.",
+    anchor_deleted: "Tasación eliminada.",
+    anchor_saved: "Tasación actualizada.",
     asset_added: "Activo añadido.",
     deleted_recoverable: "Eliminado — recuperable en Papelera.",
     fire_saved: "Configuración FIRE guardada.",
@@ -282,6 +285,7 @@ export function okMessage(key: string | undefined): string | null {
     member_deleted: "Miembro borrado definitivamente.",
     operation_deleted: "Operación eliminada.",
     prices_refreshed: "Precios actualizados.",
+    rate_saved: "Tasa de revalorización guardada.",
     restored: "Restaurado.",
     saved: "Guardado.",
     trash_emptied: "Papelera vaciada.",
@@ -506,6 +510,91 @@ export function parseLiabilityCommand(
     type: formData.get("type") === "debt" ? "debt" : "mortgage",
     ...(associatedAssetId ? { associatedAssetId } : {}),
   };
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Strict housing valuation anchor parser (PRD #108, slice 6). Builds an
+ * AddValuationAnchorInput from the «declarar tasación / mejora» form. Validates
+ * server-side: the date is present, ISO YYYY-MM-DD, and not in the future
+ * (future anchors generate no history, so we reject them outright); the value
+ * is a positive amount. The `adjustsPriorCurve` checkbox distinguishes a market
+ * appraisal (total truth) from an improvement (increment). The caller redirects
+ * on error.
+ */
+export function parseValuationAnchorStrict(
+  formData: FormData,
+  assetId: string,
+  seed: number,
+  today: string,
+): StrictParseResult<AddValuationAnchorInput> {
+  const valuationDate = String(formData.get("valuationDate") ?? "").trim();
+
+  if (!valuationDate) {
+    return { ok: false, error: "La fecha de la tasación es obligatoria." };
+  }
+
+  if (!ISO_DATE.test(valuationDate)) {
+    return { ok: false, error: "La fecha de la tasación no es válida." };
+  }
+
+  if (valuationDate > today) {
+    return { ok: false, error: "La fecha no puede ser futura." };
+  }
+
+  const valueMinor = parseMoneyMinorField(formData, "anchorValue");
+
+  if (valueMinor === null || valueMinor <= 0) {
+    return { ok: false, error: "El valor debe ser un número positivo." };
+  }
+
+  return {
+    ok: true,
+    command: {
+      adjustsPriorCurve: formData.get("adjustsPriorCurve") === "on",
+      assetId,
+      id: createStableId("anchor", assetId, seed),
+      valuationDate,
+      valueMinor,
+    },
+  };
+}
+
+/** Result of parsing the appreciation-rate form: ok with the decimal rate (or null = clear). */
+export type AppreciationRateResult =
+  | { ok: true; rate: DecimalString | null }
+  | { ok: false; error: string };
+
+/**
+ * Strict appreciation-rate parser (PRD #108, slice 6). The user types an annual
+ * percentage (e.g. "3" for 3 %, es-ES "2,5" for 2.5 %); we persist it as a
+ * decimal string ("0.03", "0.025"). A blank input clears the rate (null). The
+ * rate must be non-negative. The caller redirects on error.
+ */
+export function parseAppreciationRateStrict(formData: FormData): AppreciationRateResult {
+  const raw = String(formData.get("rate") ?? "").trim();
+
+  if (!raw) {
+    return { ok: true, rate: null };
+  }
+
+  const pct = parseDecimalStrict(raw);
+
+  if (pct === null) {
+    return { ok: false, error: "La tasa de revalorización no es válida." };
+  }
+
+  if (pct < 0) {
+    return { ok: false, error: "La tasa de revalorización no puede ser negativa." };
+  }
+
+  // Convert percent → decimal, then trim trailing-zero/float noise to a clean
+  // decimal string the store accepts (e.g. 2.5 % → "0.025", 3 % → "0.03").
+  const decimal = pct / 100;
+  const rate = (Number.isInteger(decimal) ? String(decimal) : decimal.toString()) as DecimalString;
+
+  return { ok: true, rate };
 }
 
 /** One row in a value-update-pass: either a diff to apply or a parse error. */

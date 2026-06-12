@@ -2363,6 +2363,37 @@ td.rowActions > * {
   border-top: 1px solid var(--line);
 }
 
+/* Housing valuation editor (PRD #108): rate + anchors on /patrimonio/[id]/editar. */
+.housingValuation {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 16px;
+}
+
+.housingValuation h3 {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 0;
+}
+
+.housingValuation .anchorEdit {
+  margin-bottom: 8px;
+}
+
+.housingValuation .anchorEdit > summary {
+  cursor: pointer;
+  color: var(--blue);
+  font-size: 0.82rem;
+}
+
+.housingValuation .anchorEdit[open] > summary {
+  margin-bottom: 8px;
+}
+
 @media (max-width: 640px) {
   .puestaRow {
     grid-template-columns: 1fr;
