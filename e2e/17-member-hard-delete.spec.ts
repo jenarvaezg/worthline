@@ -37,9 +37,7 @@ test("disable then hard-delete a member with no holdings", async ({ page }) => {
   // 4. Now hard-delete it (two-step confirm)
   const disabledRow = rowByName();
   await disabledRow.getByText("Eliminar definitivamente").click();
-  await disabledRow
-    .getByRole("button", { name: "Confirmar borrado definitivo" })
-    .click();
+  await disabledRow.getByRole("button", { name: "Confirmar borrado definitivo" }).click();
 
   // 5. Success banner and the member is gone
   await expect(page.getByRole("status")).toContainText("borrado");

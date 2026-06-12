@@ -21,31 +21,7 @@ import {
   updateLiabilityBalanceAction,
   editAssetAction,
 } from "../apps/web/app/patrimonio/actions";
-
-// ------------------------------------------------------------------ helpers --
-
-function catchRedirect(fn: () => Promise<unknown>): Promise<string> {
-  return fn().then(
-    () => {
-      throw new Error("Expected redirect but action returned normally");
-    },
-    (err: unknown) => {
-      if (err instanceof Error && (err.message === "NEXT_REDIRECT" || "digest" in err)) {
-        const digest = (err as { digest?: string }).digest ?? "";
-        const parts = digest.split(";");
-        return parts[2] ?? digest;
-      }
-      throw err;
-    },
-  );
-}
-
-function fd(fields: Record<string, string>): FormData {
-  const form = new FormData();
-  form.set("currentUrl", "/patrimonio");
-  for (const [k, v] of Object.entries(fields)) form.set(k, v);
-  return form;
-}
+import { catchRedirect, fd } from "./helpers";
 
 // ------------------------------------------------------------- test fixtures --
 
@@ -91,9 +67,7 @@ describe("deleteAssetAction wiring", () => {
   test("happy path: asset soft-deleted, redirect to deleted_recoverable", async () => {
     setupStore();
 
-    const url = await catchRedirect(() =>
-      deleteAssetAction(fd({ id: ASSET_ID }), store),
-    );
+    const url = await catchRedirect(() => deleteAssetAction(fd({ id: ASSET_ID }), store));
 
     expect(url).toContain("ok=deleted_recoverable");
     const trash = store.readTrash();
@@ -103,9 +77,7 @@ describe("deleteAssetAction wiring", () => {
   test("missing id: error redirect, store unchanged", async () => {
     setupStore();
 
-    const url = await catchRedirect(() =>
-      deleteAssetAction(fd({ id: "" }), store),
-    );
+    const url = await catchRedirect(() => deleteAssetAction(fd({ id: "" }), store));
 
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/identificador/i);
@@ -142,9 +114,7 @@ describe("deleteLiabilityAction wiring", () => {
   test("missing id: error redirect", async () => {
     setupStore();
 
-    const url = await catchRedirect(() =>
-      deleteLiabilityAction(fd({ id: "" }), store),
-    );
+    const url = await catchRedirect(() => deleteLiabilityAction(fd({ id: "" }), store));
 
     expect(url).toContain("error=");
     expect(store.readLiabilities()).toHaveLength(1);
@@ -181,9 +151,7 @@ describe("restoreAssetAction wiring", () => {
   test("missing id: error redirect", async () => {
     setupStore();
 
-    const url = await catchRedirect(() =>
-      restoreAssetAction(fd({ id: "" }), store),
-    );
+    const url = await catchRedirect(() => restoreAssetAction(fd({ id: "" }), store));
 
     expect(url).toContain("error=");
   });
@@ -220,9 +188,7 @@ describe("restoreLiabilityAction wiring", () => {
   test("missing id: error redirect", async () => {
     setupStore();
 
-    const url = await catchRedirect(() =>
-      restoreLiabilityAction(fd({ id: "" }), store),
-    );
+    const url = await catchRedirect(() => restoreLiabilityAction(fd({ id: "" }), store));
 
     expect(url).toContain("error=");
   });
@@ -253,17 +219,16 @@ describe("acknowledgeWarningAction wiring", () => {
 
     expect(url).toContain("ok=warning_acknowledged");
     const overrides = store.readWarningOverrides();
-    expect(overrides.some((o) => o.code === "zero_value_asset" && o.entityId === ASSET_ID)).toBe(true);
+    expect(
+      overrides.some((o) => o.code === "zero_value_asset" && o.entityId === ASSET_ID),
+    ).toBe(true);
   });
 
   test("missing code: error redirect, nothing persisted", async () => {
     setupStore();
 
     const url = await catchRedirect(() =>
-      acknowledgeWarningAction(
-        fd({ code: "", entityId: ASSET_ID }),
-        store,
-      ),
+      acknowledgeWarningAction(fd({ code: "", entityId: ASSET_ID }), store),
     );
 
     expect(url).toContain("error=");
@@ -274,10 +239,7 @@ describe("acknowledgeWarningAction wiring", () => {
     setupStore();
 
     const url = await catchRedirect(() =>
-      acknowledgeWarningAction(
-        fd({ code: "zero_value_asset", entityId: "" }),
-        store,
-      ),
+      acknowledgeWarningAction(fd({ code: "zero_value_asset", entityId: "" }), store),
     );
 
     expect(url).toContain("error=");
@@ -292,10 +254,7 @@ describe("updateLiabilityBalanceAction wiring", () => {
     setupStore();
 
     const url = await catchRedirect(() =>
-      updateLiabilityBalanceAction(
-        fd({ id: LIABILITY_ID, balance: "200" }),
-        store,
-      ),
+      updateLiabilityBalanceAction(fd({ id: LIABILITY_ID, balance: "200" }), store),
     );
 
     expect(url).toContain("ok=saved");
@@ -410,7 +369,9 @@ describe("editAssetAction wiring", () => {
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/nombre/i);
     // Name unchanged
-    expect(store.readAssets().find((a) => a.id === ASSET_ID)?.name).toBe("Cuenta corriente");
+    expect(store.readAssets().find((a) => a.id === ASSET_ID)?.name).toBe(
+      "Cuenta corriente",
+    );
   });
 
   test("blank name (liability): error redirect", async () => {

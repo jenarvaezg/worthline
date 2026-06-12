@@ -20,27 +20,7 @@ import {
   updateAssetValuationAction,
   batchValueUpdateAction,
 } from "../apps/web/app/patrimonio/actions";
-
-// ------------------------------------------------------------------ helpers --
-
-function catchRedirect(fn: () => Promise<unknown>): Promise<string> {
-  return fn().then(
-    () => {
-      throw new Error("Expected redirect but action returned normally");
-    },
-    (err: unknown) => {
-      if (
-        err instanceof Error &&
-        (err.message === "NEXT_REDIRECT" || "digest" in err)
-      ) {
-        const digest = (err as { digest?: string }).digest ?? "";
-        const parts = digest.split(";");
-        return parts[2] ?? digest;
-      }
-      throw err;
-    },
-  );
-}
+import { catchRedirect } from "./helpers";
 
 // ------------------------------------------------------------- test fixtures --
 
@@ -91,9 +71,7 @@ describe("updateAssetValuationAction — investment manual valuation guard", () 
     fd.set("currentValue", "200");
     fd.set("currentUrl", "/patrimonio");
 
-    const redirectUrl = await catchRedirect(() =>
-      updateAssetValuationAction(fd, store),
-    );
+    const redirectUrl = await catchRedirect(() => updateAssetValuationAction(fd, store));
 
     expect(redirectUrl).toContain("ok=saved");
     const assets = store.readAssets();
@@ -121,9 +99,7 @@ describe("updateAssetValuationAction — investment manual valuation guard", () 
     fd.set("currentValue", "99999");
     fd.set("currentUrl", "/patrimonio");
 
-    const redirectUrl = await catchRedirect(() =>
-      updateAssetValuationAction(fd, store),
-    );
+    const redirectUrl = await catchRedirect(() => updateAssetValuationAction(fd, store));
 
     expect(redirectUrl).toContain("error=");
     const decoded = decodeURIComponent(redirectUrl);
@@ -142,9 +118,7 @@ describe("batchValueUpdateAction — investment holding rejection", () => {
     fd.set(`val_${MANUAL_ASSET_ID}`, "300");
     fd.set("currentUrl", "/patrimonio/actualizar");
 
-    const redirectUrl = await catchRedirect(() =>
-      batchValueUpdateAction(fd, store),
-    );
+    const redirectUrl = await catchRedirect(() => batchValueUpdateAction(fd, store));
 
     expect(redirectUrl).toContain("ok=");
     const assets = store.readAssets();
@@ -160,9 +134,7 @@ describe("batchValueUpdateAction — investment holding rejection", () => {
     fd.set(`val_${INVESTMENT_ID}`, "99999"); // explicitly naming the investment
     fd.set("currentUrl", "/patrimonio/actualizar");
 
-    const redirectUrl = await catchRedirect(() =>
-      batchValueUpdateAction(fd, store),
-    );
+    const redirectUrl = await catchRedirect(() => batchValueUpdateAction(fd, store));
 
     expect(redirectUrl).toContain("error=");
     const decoded = decodeURIComponent(redirectUrl);

@@ -85,7 +85,10 @@ export default async function PatrimonioPage({
 
   const [assetsSection, liabilitiesSection] = projection
     ? projection.sections
-    : [{ kind: "assets" as const, rows: [] }, { kind: "liabilities" as const, rows: [] }];
+    : [
+        { kind: "assets" as const, rows: [] },
+        { kind: "liabilities" as const, rows: [] },
+      ];
 
   const liabilityTypeById = new Map(liabilities.map((l) => [l.id, l.type]));
 
@@ -189,7 +192,8 @@ export default async function PatrimonioPage({
                       )}
                       {rowWarnings.length > 0 ? (
                         <span className="warningBadge" title={rowWarnings[0]!.message}>
-                          {" "}⚠
+                          {" "}
+                          ⚠
                         </span>
                       ) : null}
                     </td>
@@ -213,21 +217,13 @@ export default async function PatrimonioPage({
                     <td className="rowActions">
                       {overrideableWarning ? (
                         <form action={acknowledgeWarningAction}>
-                          <input
-                            name="currentUrl"
-                            type="hidden"
-                            value={currentUrl}
-                          />
+                          <input name="currentUrl" type="hidden" value={currentUrl} />
                           <input
                             name="code"
                             type="hidden"
                             value={overrideableWarning.code}
                           />
-                          <input
-                            name="entityId"
-                            type="hidden"
-                            value={row.id}
-                          />
+                          <input name="entityId" type="hidden" value={row.id} />
                           <button className="btnSmall btnWarning" type="submit">
                             Es intencional
                           </button>
@@ -240,11 +236,7 @@ export default async function PatrimonioPage({
                       ) : null}
                       {!row.isReadOnly ? (
                         <form action={deleteAssetAction}>
-                          <input
-                            name="currentUrl"
-                            type="hidden"
-                            value={currentUrl}
-                          />
+                          <input name="currentUrl" type="hidden" value={currentUrl} />
                           <input name="id" type="hidden" value={row.id} />
                           <details className="confirmDelete">
                             <summary>Eliminar</summary>
@@ -312,18 +304,11 @@ export default async function PatrimonioPage({
                     </td>
                   ) : null}
                   <td className="rowActions">
-                    <Link
-                      className="btnSmall"
-                      href={`/patrimonio/${row.id}/editar`}
-                    >
+                    <Link className="btnSmall" href={`/patrimonio/${row.id}/editar`}>
                       Editar
                     </Link>
                     <form action={deleteLiabilityAction}>
-                      <input
-                        name="currentUrl"
-                        type="hidden"
-                        value={currentUrl}
-                      />
+                      <input name="currentUrl" type="hidden" value={currentUrl} />
                       <input name="id" type="hidden" value={row.id} />
                       <details className="confirmDelete">
                         <summary>Eliminar</summary>
@@ -341,9 +326,7 @@ export default async function PatrimonioPage({
       {/* ── Papelera ────────────────────────────────────────────────── */}
       <section className="papelera" aria-label="Papelera">
         <details className="trashPanel">
-          <summary>
-            Papelera ({trash.assets.length + trash.liabilities.length})
-          </summary>
+          <summary>Papelera ({trash.assets.length + trash.liabilities.length})</summary>
           <div className="trashList">
             {trash.assets.length === 0 && trash.liabilities.length === 0 ? (
               <span className="emptyLine">La papelera está vacía.</span>

@@ -151,7 +151,10 @@ export async function createLiabilityAction(
   redirect(successRedirectUrl("/patrimonio", "liability_added", result.id!));
 }
 
-export async function deleteAssetAction(formData: FormData, _store?: WorthlineStore): Promise<never> {
+export async function deleteAssetAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
     _store ? fn(_store) : withStore(fn);
@@ -177,7 +180,10 @@ export async function deleteAssetAction(formData: FormData, _store?: WorthlineSt
   redirect(successRedirectUrl("/patrimonio", "deleted_recoverable"));
 }
 
-export async function deleteLiabilityAction(formData: FormData, _store?: WorthlineStore): Promise<never> {
+export async function deleteLiabilityAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
     _store ? fn(_store) : withStore(fn);
@@ -190,7 +196,9 @@ export async function deleteLiabilityAction(formData: FormData, _store?: Worthli
     );
   }
 
-  const changes = runWith((store) => store.softDeleteLiability(id, new Date().toISOString()));
+  const changes = runWith((store) =>
+    store.softDeleteLiability(id, new Date().toISOString()),
+  );
 
   if (changes === 0) {
     redirect(
@@ -273,7 +281,10 @@ export async function emptyTrashAction(
   redirect(successRedirectUrl("/patrimonio", "trash_emptied"));
 }
 
-export async function restoreAssetAction(formData: FormData, _store?: WorthlineStore): Promise<never> {
+export async function restoreAssetAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
     _store ? fn(_store) : withStore(fn);
@@ -299,7 +310,10 @@ export async function restoreAssetAction(formData: FormData, _store?: WorthlineS
   redirect(successRedirectUrl("/patrimonio", "restored", id));
 }
 
-export async function restoreLiabilityAction(formData: FormData, _store?: WorthlineStore): Promise<never> {
+export async function restoreLiabilityAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
     _store ? fn(_store) : withStore(fn);
@@ -325,7 +339,10 @@ export async function restoreLiabilityAction(formData: FormData, _store?: Worthl
   redirect(successRedirectUrl("/patrimonio", "restored", id));
 }
 
-export async function acknowledgeWarningAction(formData: FormData, _store?: WorthlineStore): Promise<never> {
+export async function acknowledgeWarningAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
   const code = String(formData.get("code") ?? "").trim();
   const entityId = parseEntityId(formData, "entityId");
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
@@ -390,7 +407,10 @@ export async function updateAssetValuationAction(
   redirect(successRedirectUrl("/patrimonio", "saved", id));
 }
 
-export async function updateLiabilityBalanceAction(formData: FormData, _store?: WorthlineStore): Promise<never> {
+export async function updateLiabilityBalanceAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
   const id = parseEntityId(formData);
   const balance = parseMoneyMinorField(formData, "balance");
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
@@ -448,7 +468,10 @@ export async function batchValueUpdateAction(
     // Parse manual assets
     const assetCommands = parseValueUpdatePass(
       formData,
-      manualAssets.map((a) => ({ id: a.id, currentValueMinor: a.currentValue.amountMinor })),
+      manualAssets.map((a) => ({
+        id: a.id,
+        currentValueMinor: a.currentValue.amountMinor,
+      })),
     );
     const liabilityCommands = parseValueUpdatePass(
       formData,
@@ -459,8 +482,8 @@ export async function batchValueUpdateAction(
     );
 
     const allCommands = [...assetCommands, ...liabilityCommands];
-    const errors = allCommands.filter((cmd): cmd is { id: string; error: string } =>
-      "error" in cmd,
+    const errors = allCommands.filter(
+      (cmd): cmd is { id: string; error: string } => "error" in cmd,
     );
 
     if (errors.length > 0) {
@@ -471,7 +494,9 @@ export async function batchValueUpdateAction(
       (cmd): cmd is { id: string; newValueMinor: number } => "newValueMinor" in cmd,
     );
     const assetUpdates = valid.filter((cmd) => manualAssets.some((a) => a.id === cmd.id));
-    const liabilityUpdates = valid.filter((cmd) => liabilities.some((l) => l.id === cmd.id));
+    const liabilityUpdates = valid.filter((cmd) =>
+      liabilities.some((l) => l.id === cmd.id),
+    );
 
     store.batchApplyAllValueUpdates(assetUpdates, liabilityUpdates);
 
@@ -486,10 +511,19 @@ export async function batchValueUpdateAction(
     );
   }
 
-  redirect(appendParam("/patrimonio", "ok", result.count === 0 ? "saved" : "valores_actualizados"));
+  redirect(
+    appendParam(
+      "/patrimonio",
+      "ok",
+      result.count === 0 ? "saved" : "valores_actualizados",
+    ),
+  );
 }
 
-export async function editAssetAction(formData: FormData, _store?: WorthlineStore): Promise<never> {
+export async function editAssetAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
   const id = parseEntityId(formData);
   const isLiability = formData.get("isLiability") === "true";
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
@@ -505,9 +539,11 @@ export async function editAssetAction(formData: FormData, _store?: WorthlineStor
     errorRedirectUrl(`/patrimonio/${id}/editar`, {
       formId: "edit",
       message,
-      values: preserveFields(formData, [...EDIT_ASSET_FIELDS, "type", "associatedAssetId"], [
-        "owner_",
-      ]),
+      values: preserveFields(
+        formData,
+        [...EDIT_ASSET_FIELDS, "type", "associatedAssetId"],
+        ["owner_"],
+      ),
     });
 
   const name = String(formData.get("name") ?? "").trim();
@@ -539,9 +575,15 @@ export async function editAssetAction(formData: FormData, _store?: WorthlineStor
 
       const liabilityType =
         formData.get("type") === "debt" ? ("debt" as const) : ("mortgage" as const);
-      const associatedAssetId = String(formData.get("associatedAssetId") ?? "").trim() || null;
+      const associatedAssetId =
+        String(formData.get("associatedAssetId") ?? "").trim() || null;
 
-      store.updateLiability(id, { name, type: liabilityType, associatedAssetId, ownership });
+      store.updateLiability(id, {
+        name,
+        type: liabilityType,
+        associatedAssetId,
+        ownership,
+      });
 
       return { ok: true };
     });

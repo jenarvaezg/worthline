@@ -315,9 +315,21 @@ function collectDomainErrors(doc: WorkspaceExport): string[] {
   const allAssets = [...doc.assets, ...doc.trash.assets];
   const allLiabilities = [...doc.liabilities, ...doc.trash.liabilities];
 
-  collectDuplicateIdErrors(errors, "miembro", doc.members.map((member) => member.id));
-  collectDuplicateIdErrors(errors, "grupo", doc.groups.map((group) => group.id));
-  collectDuplicateIdErrors(errors, "activo", allAssets.map((asset) => asset.id));
+  collectDuplicateIdErrors(
+    errors,
+    "miembro",
+    doc.members.map((member) => member.id),
+  );
+  collectDuplicateIdErrors(
+    errors,
+    "grupo",
+    doc.groups.map((group) => group.id),
+  );
+  collectDuplicateIdErrors(
+    errors,
+    "activo",
+    allAssets.map((asset) => asset.id),
+  );
   collectDuplicateIdErrors(
     errors,
     "pasivo",
@@ -346,11 +358,7 @@ function collectDomainErrors(doc: WorkspaceExport): string[] {
   return errors;
 }
 
-function collectDuplicateIdErrors(
-  errors: string[],
-  kind: string,
-  ids: string[],
-): void {
+function collectDuplicateIdErrors(errors: string[], kind: string, ids: string[]): void {
   const seen = new Set<string>();
   const reported = new Set<string>();
 
@@ -455,9 +463,7 @@ function collectOwnershipErrors(
       seenShareMembers.add(share.memberId);
     }
 
-    const dangling = entity.ownership.filter(
-      (share) => !memberIds.has(share.memberId),
-    );
+    const dangling = entity.ownership.filter((share) => !memberIds.has(share.memberId));
 
     if (dangling.length > 0) {
       for (const share of dangling) {

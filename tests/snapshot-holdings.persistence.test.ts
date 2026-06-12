@@ -5,31 +5,13 @@
  * the reconciliation invariant persists nothing, and a same-day recapture
  * replaces the previous rows — at most one set of rows per scope per day.
  */
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { createWorthlineStore } from "@worthline/db";
 import type { WorthlineStore } from "@worthline/db";
 import { captureValuedNetWorthSnapshot } from "@worthline/domain";
+import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 
-const tempDirs: string[] = [];
-
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { force: true, recursive: true });
-  }
-});
-
-function createTestStore(): WorthlineStore {
-  const dataDir = mkdtempSync(join(tmpdir(), "worthline-snapshot-holdings-"));
-  tempDirs.push(dataDir);
-
-  return createWorthlineStore({
-    databasePath: join(dataDir, "worthline.sqlite"),
-  });
-}
+afterEach(cleanupTempDirs);
 
 function seedPortfolio(store: WorthlineStore): void {
   store.initializeWorkspace({
@@ -69,10 +51,14 @@ function captureFor(store: WorthlineStore, id: string, capturedAt: string) {
 
 describe("snapshot holding rows persistence", () => {
   test("saves holding rows atomically with the snapshot and reads them back by scope", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-snapshot-holdings-");
     seedPortfolio(store);
 
-    const { holdings, snapshot } = captureFor(store, "snap_1", "2026-06-10T10:00:00.000Z");
+    const { holdings, snapshot } = captureFor(
+      store,
+      "snap_1",
+      "2026-06-10T10:00:00.000Z",
+    );
     store.saveSnapshot({ holdings, snapshot });
 
     const rows = store.readSnapshotHoldings({ scopeId: "household" });
@@ -101,10 +87,14 @@ describe("snapshot holding rows persistence", () => {
   });
 
   test("rejects rows that do not reconcile with the snapshot — persists nothing", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-snapshot-holdings-");
     seedPortfolio(store);
 
-    const { holdings, snapshot } = captureFor(store, "snap_bad", "2026-06-10T10:00:00.000Z");
+    const { holdings, snapshot } = captureFor(
+      store,
+      "snap_bad",
+      "2026-06-10T10:00:00.000Z",
+    );
     // Doctor a copy of the rows so the asset sum no longer matches the headline.
     const doctored = holdings.map((row) =>
       row.holdingId === "asset_cash" ? { ...row, valueMinor: row.valueMinor + 1 } : row,
@@ -122,7 +112,7 @@ describe("snapshot holding rows persistence", () => {
   });
 
   test("same-day recapture replaces the previous rows — at most one set per scope per day", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-snapshot-holdings-");
     seedPortfolio(store);
 
     const first = captureFor(store, "snap_morning", "2026-06-10T08:00:00.000Z");
@@ -148,7 +138,7 @@ describe("snapshot holding rows persistence", () => {
   });
 
   test("same-day upsert without explicit replace also replaces the rows", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-snapshot-holdings-");
     seedPortfolio(store);
 
     const first = captureFor(store, "snap_a", "2026-06-10T08:00:00.000Z");
@@ -165,7 +155,7 @@ describe("snapshot holding rows persistence", () => {
   });
 
   test("captures investment units and unit price as decimal strings", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-snapshot-holdings-");
     store.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -230,7 +220,7 @@ describe("snapshot holding rows persistence", () => {
   });
 
   test("reads filter by scope and by time window", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-snapshot-holdings-");
     seedPortfolio(store);
 
     for (const [id, capturedAt] of [
@@ -266,10 +256,14 @@ describe("snapshot holding rows persistence", () => {
   });
 
   test("frozen rows survive renaming, re-tiering, and deleting the holding", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-snapshot-holdings-");
     seedPortfolio(store);
 
-    const { holdings, snapshot } = captureFor(store, "snap_frozen", "2026-06-10T10:00:00.000Z");
+    const { holdings, snapshot } = captureFor(
+      store,
+      "snap_frozen",
+      "2026-06-10T10:00:00.000Z",
+    );
     store.saveSnapshot({ holdings, snapshot });
 
     store.updateAsset("asset_cash", { liquidityTier: "illiquid", name: "Renombrada" });

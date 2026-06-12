@@ -13,7 +13,10 @@ function asset(id: string, name: string, amountMinor: number): ManualAsset {
 
 describe("collectWarnings", () => {
   test("flags zero-value assets as overrideable", () => {
-    const warnings = collectWarnings([asset("a1", "Cuenta", 0), asset("a2", "Piso", 100)]);
+    const warnings = collectWarnings([
+      asset("a1", "Cuenta", 0),
+      asset("a2", "Piso", 100),
+    ]);
 
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toMatchObject({
@@ -25,21 +28,26 @@ describe("collectWarnings", () => {
   });
 
   test("suppresses an overrideable warning that has a matching override", () => {
-    const warnings = collectWarnings([asset("a1", "Cuenta", 0)], [
-      { code: "ZERO_VALUE_ASSET", entityId: "a1" },
-    ]);
+    const warnings = collectWarnings(
+      [asset("a1", "Cuenta", 0)],
+      [{ code: "ZERO_VALUE_ASSET", entityId: "a1" }],
+    );
 
     expect(warnings).toEqual([]);
   });
 
   test("an override for a different entity or code does not suppress the warning", () => {
     expect(
-      collectWarnings([asset("a1", "Cuenta", 0)], [
-        { code: "ZERO_VALUE_ASSET", entityId: "other" },
-      ]),
+      collectWarnings(
+        [asset("a1", "Cuenta", 0)],
+        [{ code: "ZERO_VALUE_ASSET", entityId: "other" }],
+      ),
     ).toHaveLength(1);
     expect(
-      collectWarnings([asset("a1", "Cuenta", 0)], [{ code: "OTHER_CODE", entityId: "a1" }]),
+      collectWarnings(
+        [asset("a1", "Cuenta", 0)],
+        [{ code: "OTHER_CODE", entityId: "a1" }],
+      ),
     ).toHaveLength(1);
   });
 });

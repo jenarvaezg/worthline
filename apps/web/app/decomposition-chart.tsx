@@ -87,11 +87,7 @@ export default function DecompositionChart({
               // Native SVG anchor — drilldown navigation with zero client JS
               // (ADR 0009).
               return href ? (
-                <a
-                  aria-label={DRILL_ARIA_LABELS[band.band]}
-                  href={href}
-                  key={band.band}
-                >
+                <a aria-label={DRILL_ARIA_LABELS[band.band]} href={href} key={band.band}>
                   {polygon}
                 </a>
               ) : (
@@ -113,11 +109,7 @@ export default function DecompositionChart({
               );
 
               return href ? (
-                <a
-                  aria-label={DRILL_ARIA_LABELS[band.band]}
-                  href={href}
-                  key={band.band}
-                >
+                <a aria-label={DRILL_ARIA_LABELS[band.band]} href={href} key={band.band}>
                   {polyline}
                 </a>
               ) : (

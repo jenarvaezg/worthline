@@ -10,26 +10,16 @@
  *  - a member hard-deletes only while disabled and owning no share of anything
  *  - the reset empties every table, returning the workspace to onboarding
  */
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { createWorthlineStore, type WorthlineStore } from "@worthline/db";
+import type { WorthlineStore } from "@worthline/db";
 import type { NetWorthSnapshot, SnapshotHoldingRow } from "@worthline/domain";
+import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 
-const tempDirs: string[] = [];
-
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { force: true, recursive: true });
-  }
-});
+afterEach(cleanupTempDirs);
 
 function setupStore(): WorthlineStore {
-  const dir = mkdtempSync(join(tmpdir(), "worthline-hard-delete-"));
-  tempDirs.push(dir);
-  const store = createWorthlineStore({ databasePath: join(dir, "worthline.sqlite") });
+  const store = createFileBackedStore("worthline-hard-delete-");
   store.initializeWorkspace({
     members: [{ id: "m", name: "Yo" }],
     mode: "individual",

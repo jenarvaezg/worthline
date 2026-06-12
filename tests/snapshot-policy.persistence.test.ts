@@ -1,26 +1,17 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { createWorthlineStore } from "@worthline/db";
 import {
   captureNetWorthSnapshot,
   planSnapshotCapture,
   deriveMonthlyCloses,
 } from "@worthline/domain";
+import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 
-const tempDirs: string[] = [];
-
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { force: true, recursive: true });
-  }
-});
+afterEach(cleanupTempDirs);
 
 describe("snapshot-policy persistence", () => {
   test("capture on fresh day: upsert with no replacesId inserts a new snapshot", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-policy-");
 
     store.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
@@ -64,7 +55,7 @@ describe("snapshot-policy persistence", () => {
   });
 
   test("same-day recapture: upsert with replacesId replaces the earlier snapshot", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-policy-");
 
     store.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
@@ -118,7 +109,7 @@ describe("snapshot-policy persistence", () => {
   });
 
   test("deriveMonthlyCloses identifies the last snapshot of each calendar month", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-policy-");
 
     store.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
@@ -162,12 +153,3 @@ describe("snapshot-policy persistence", () => {
     expect(closes.size).toBe(2);
   });
 });
-
-function createTestStore() {
-  const dataDir = mkdtempSync(join(tmpdir(), "worthline-policy-"));
-  tempDirs.push(dataDir);
-
-  return createWorthlineStore({
-    databasePath: join(dataDir, "worthline.sqlite"),
-  });
-}

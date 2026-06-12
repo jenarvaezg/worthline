@@ -15,15 +15,15 @@ splits to reconcile, duplicate snapshots — for a personal MVP. "Pisar" means r
 
 The file carries a `version`. We considered mirroring the database's forward-migration ladder
 (ADR 0002) so old export files would be auto-upgraded on import. We chose the opposite for the
-*export format*: a version **mismatch is rejected** with a clear message, with no migration ladder.
+_export format_: a version **mismatch is rejected** with a clear message, with no migration ladder.
 The two layers have different economics — the database migration ladder exists because a user's
 live `.sqlite` cannot be recreated and must survive schema evolution in place; an export file, by
 contrast, is regenerated on demand from a workspace the user still has, and both ends of the format
 are controlled here. Building a format-migration ladder before any second version exists is
 speculative (YAGNI). Reject-on-mismatch keeps the importer honest about what it can faithfully load.
 
-The export **omits the audit log**. The audit trail is operational history of *actions*, not the
-state of the workspace; a faithful restore of *state* does not need it, and carrying it bloats the
+The export **omits the audit log**. The audit trail is operational history of _actions_, not the
+state of the workspace; a faithful restore of _state_ does not need it, and carrying it bloats the
 file. Instead, a successful import writes a single `import_workspace` audit entry, so the restored
 workspace's history starts with "imported on X" rather than empty.
 

@@ -49,8 +49,7 @@ const GROUP_COPY: Record<
     multiplesAria: "Posiciones del grupo resto",
     stackCopy: {
       chartAria: "Evolución del resto: jubilación e ilíquido",
-      empty:
-        "La evolución de jubilación e ilíquido aparecerá cuando haya más capturas.",
+      empty: "La evolución de jubilación e ilíquido aparecerá cuando haya más capturas.",
       legendAria: "Capas del grupo resto",
     },
     title: "Resto · jubilación e ilíquido",

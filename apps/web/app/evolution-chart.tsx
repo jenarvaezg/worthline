@@ -3,10 +3,7 @@ import {
   deriveMonthlyCloses,
   formatMoneyMinor,
 } from "@worthline/domain";
-import type {
-  NetWorthFraming,
-  NetWorthSnapshot,
-} from "@worthline/domain";
+import type { NetWorthFraming, NetWorthSnapshot } from "@worthline/domain";
 
 /**
  * Server-rendered SVG area chart of the headline figure over the snapshot
@@ -42,8 +39,7 @@ export default function EvolutionChart({
 
   // A geometry implies >= 2 snapshots, so the first one exists.
   const currency = snapshots[0]!.totalNetWorth.currency;
-  const seriesLabel =
-    framing === "liquid" ? "patrimonio líquido" : "patrimonio neto";
+  const seriesLabel = framing === "liquid" ? "patrimonio líquido" : "patrimonio neto";
 
   return (
     <svg

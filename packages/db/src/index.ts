@@ -230,7 +230,10 @@ export interface MemberOwnerships {
 export interface WorthlineStore {
   acknowledgeWarning: (code: string, entityId: string) => number;
   batchApplyValueUpdates: (commands: ValueUpdateCommand[]) => void;
-  batchApplyAllValueUpdates: (assetCommands: ValueUpdateCommand[], liabilityCommands: ValueUpdateCommand[]) => void;
+  batchApplyAllValueUpdates: (
+    assetCommands: ValueUpdateCommand[],
+    liabilityCommands: ValueUpdateCommand[],
+  ) => void;
   reactivateMember: (memberId: string) => void;
   close: () => void;
   createInvestmentAsset: (input: CreateInvestmentAssetInput) => void;
@@ -405,10 +408,10 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
   // of asset rows removed (0 when the id is unknown or not in the trash).
   const hardDeleteAssetTx = (assetId: string): number => {
     const row = sqlite
-      .prepare(
-        `SELECT name, type, deleted_at AS deletedAt FROM assets WHERE id = ?`,
-      )
-      .get(assetId) as { name: string; type: string; deletedAt: string | null } | undefined;
+      .prepare(`SELECT name, type, deleted_at AS deletedAt FROM assets WHERE id = ?`)
+      .get(assetId) as
+      | { name: string; type: string; deletedAt: string | null }
+      | undefined;
 
     // Hard delete is reachable only from the trash: refuse a live holding.
     if (!row || row.deletedAt === null) {
@@ -447,10 +450,10 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
   // takes its ownerships; snapshots stay frozen. Returns rows removed.
   const hardDeleteLiabilityTx = (liabilityId: string): number => {
     const row = sqlite
-      .prepare(
-        `SELECT name, type, deleted_at AS deletedAt FROM liabilities WHERE id = ?`,
-      )
-      .get(liabilityId) as { name: string; type: string; deletedAt: string | null } | undefined;
+      .prepare(`SELECT name, type, deleted_at AS deletedAt FROM liabilities WHERE id = ?`)
+      .get(liabilityId) as
+      | { name: string; type: string; deletedAt: string | null }
+      | undefined;
 
     if (!row || row.deletedAt === null) {
       return 0;
@@ -463,7 +466,9 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
       .all(liabilityId);
 
     sqlite.prepare(`DELETE FROM warning_overrides WHERE entity_id = ?`).run(liabilityId);
-    const result = sqlite.prepare(`DELETE FROM liabilities WHERE id = ?`).run(liabilityId);
+    const result = sqlite
+      .prepare(`DELETE FROM liabilities WHERE id = ?`)
+      .run(liabilityId);
 
     writeAuditEntry("hard_delete_liability", "liability", liabilityId, {
       name: row.name,
@@ -523,7 +528,10 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
       if (!investRow) return null;
 
       const ownershipRows = db
-        .select({ memberId: assetOwnerships.memberId, shareBps: assetOwnerships.shareBps })
+        .select({
+          memberId: assetOwnerships.memberId,
+          shareBps: assetOwnerships.shareBps,
+        })
         .from(assetOwnerships)
         .where(eq(assetOwnerships.assetId, assetId))
         .orderBy(asc(assetOwnerships.memberId))
@@ -1222,9 +1230,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         }
 
         if (input.ownership !== undefined) {
-          sqlite
-            .prepare(`DELETE FROM asset_ownerships WHERE asset_id = ?`)
-            .run(assetId);
+          sqlite.prepare(`DELETE FROM asset_ownerships WHERE asset_id = ?`).run(assetId);
 
           const insertOwnership = sqlite.prepare(`
             INSERT INTO asset_ownerships (asset_id, member_id, share_bps)
@@ -1242,7 +1248,10 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
       });
 
       editAsset();
-      writeAuditEntry("update_asset", "asset", assetId, { ...input, ownership: undefined });
+      writeAuditEntry("update_asset", "asset", assetId, {
+        ...input,
+        ownership: undefined,
+      });
     },
     updateAssetValuation: (assetId, currentValueMinor) => {
       if (!Number.isInteger(currentValueMinor)) {
@@ -1497,9 +1506,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
     },
     readTrash: () => ({
       assets: sqlite
-        .prepare(
-          `SELECT id, name FROM assets WHERE deleted_at IS NOT NULL ORDER BY name`,
-        )
+        .prepare(`SELECT id, name FROM assets WHERE deleted_at IS NOT NULL ORDER BY name`)
         .all() as Array<{ id: string; name: string }>,
       liabilities: sqlite
         .prepare(
@@ -1527,8 +1534,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
       }
       return result.changes;
     },
-    hardDeleteAsset: (assetId) =>
-      sqlite.transaction(() => hardDeleteAssetTx(assetId))(),
+    hardDeleteAsset: (assetId) => sqlite.transaction(() => hardDeleteAssetTx(assetId))(),
     hardDeleteLiability: (liabilityId) =>
       sqlite.transaction(() => hardDeleteLiabilityTx(liabilityId))(),
     emptyTrash: () =>
@@ -1543,7 +1549,8 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         let assets = 0;
         let liabilities = 0;
         for (const row of trashedAssets) assets += hardDeleteAssetTx(row.id);
-        for (const row of trashedLiabilities) liabilities += hardDeleteLiabilityTx(row.id);
+        for (const row of trashedLiabilities)
+          liabilities += hardDeleteLiabilityTx(row.id);
 
         return { assets, liabilities };
       })(),
@@ -1731,9 +1738,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
             // their value is derived from operations and prices on read, never
             // stored (ADR 0006). Hand-valued kinds carry the file's value.
             currentValueMinor:
-              asset.type === "investment"
-                ? 0
-                : (asset.currentValue?.amountMinor ?? 0),
+              asset.type === "investment" ? 0 : (asset.currentValue?.amountMinor ?? 0),
             deletedAt: asset.deletedAt ?? null,
             id: asset.id,
             isPrimaryResidence: asset.isPrimaryResidence ? 1 : 0,
@@ -2540,7 +2545,9 @@ function buildWorkspaceExport(
       // operations and prices (ADR 0006), so the file omits currentValue.
       ...(row.type === "investment"
         ? {}
-        : { currentValue: { amountMinor: row.currentValueMinor, currency: row.currency } }),
+        : {
+            currentValue: { amountMinor: row.currentValueMinor, currency: row.currency },
+          }),
       liquidityTier: row.liquidityTier,
       isPrimaryResidence: row.isPrimaryResidence === 1,
       ownership: ownershipByAsset.get(row.id) ?? [],
@@ -2608,12 +2615,10 @@ function buildWorkspaceExport(
 
   // Snapshots across all scopes, each carrying its frozen holding rows.
   const holdingsBySnapshot = readHoldingRowsBySnapshot(sqlite);
-  const exportedSnapshots: ExportedSnapshot[] = readSnapshots(sqlite).map(
-    (snapshot) => ({
-      ...snapshot,
-      holdings: holdingsBySnapshot.get(snapshot.id) ?? [],
-    }),
-  );
+  const exportedSnapshots: ExportedSnapshot[] = readSnapshots(sqlite).map((snapshot) => ({
+    ...snapshot,
+    holdings: holdingsBySnapshot.get(snapshot.id) ?? [],
+  }));
 
   const priceCache: AssetPrice[] = db
     .select()

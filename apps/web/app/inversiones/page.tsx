@@ -45,12 +45,8 @@ export default async function InversionesPage({
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
   // Auto-refresh stale prices on load (same pattern as /)
-  const investmentAssetsMeta = withStore((store) =>
-    store.readInvestmentAssetsWithMeta(),
-  );
-  const initialPriceCache = withStore((store) =>
-    store.readAllPriceCacheEntries(),
-  );
+  const investmentAssetsMeta = withStore((store) => store.readInvestmentAssetsWithMeta());
+  const initialPriceCache = withStore((store) => store.readAllPriceCacheEntries());
   const { priceCache } = await refreshAndPersistStalePrices({
     cacheEntries: initialPriceCache,
     assets: investmentAssetsMeta,
@@ -77,9 +73,7 @@ export default async function InversionesPage({
     const trash = store.readTrash();
 
     return {
-      positions: selectedScope
-        ? store.readPositions(selectedScope.id)
-        : [],
+      positions: selectedScope ? store.readPositions(selectedScope.id) : [],
       trashedInvestments: trash.assets.filter((a) => investmentIds.has(a.id)),
       scopes,
       selectedScope,
@@ -133,9 +127,7 @@ export default async function InversionesPage({
                 <th>Inversión</th>
                 <th>Unidades</th>
                 <th>Coste medio</th>
-                <th>
-                  Precio/u · Frescura
-                </th>
+                <th>Precio/u · Frescura</th>
                 <th>Valor</th>
                 <th>P/L</th>
                 <th></th>
@@ -155,10 +147,7 @@ export default async function InversionesPage({
                     <td>
                       {position.name}
                       {position.warnings.length > 0 ? (
-                        <span
-                          className="warnBadge"
-                          title={position.warnings.join("; ")}
-                        >
+                        <span className="warnBadge" title={position.warnings.join("; ")}>
                           {" "}
                           ⚠
                         </span>
@@ -170,9 +159,7 @@ export default async function InversionesPage({
                       {cachedPrice ? (
                         <>
                           {cachedPrice.price}{" "}
-                          <small
-                            className={`priceStatus ${freshness ?? "unknown"}`}
-                          >
+                          <small className={`priceStatus ${freshness ?? "unknown"}`}>
                             {priceFreshnessLabel(freshness)}
                           </small>
                         </>
@@ -201,9 +188,7 @@ export default async function InversionesPage({
                         Operar
                       </Link>
                       {" · "}
-                      <Link href={`/inversiones/${position.assetId}/editar`}>
-                        Editar
-                      </Link>
+                      <Link href={`/inversiones/${position.assetId}/editar`}>Editar</Link>
                     </td>
                   </tr>
                 );

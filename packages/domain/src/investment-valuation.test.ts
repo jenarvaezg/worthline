@@ -144,9 +144,7 @@ describe("assertNotInvestmentAsset — rejects manual valuation for investments"
     const workspace = makeWorkspace();
     const inv = makeInvestmentAsset(workspace, 10_000);
 
-    expect(() => assertNotInvestmentAsset(inv)).toThrow(
-      "investment",
-    );
+    expect(() => assertNotInvestmentAsset(inv)).toThrow("investment");
   });
 
   test("does not throw for a manual (non-investment) asset", () => {

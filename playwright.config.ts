@@ -27,7 +27,12 @@ const e2eDbPath = join(e2eDbDir, "test.sqlite");
 const e2ePort = Number(process.env.E2E_PORT ?? 3001);
 const e2eBaseUrl = `http://127.0.0.1:${e2ePort}`;
 
+// Expose the DB path so the globalSetup script can seed a historical snapshot
+// before the webServer boots (the decomposition legend needs ≥2 calendar days).
+process.env.WORTHLINE_DB_PATH = e2eDbPath;
+
 export default defineConfig({
+  globalSetup: "./e2e/global-setup.ts",
   testDir: "./e2e",
   // Serial: one worker, no parallelism. All tests share the same server + DB.
   workers: 1,

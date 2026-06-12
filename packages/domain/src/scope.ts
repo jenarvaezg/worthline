@@ -26,10 +26,7 @@ export function listScopeOptions(workspace: Workspace): ScopeOption[] {
   ];
 }
 
-export function resolveScopeMemberIds(
-  workspace: Workspace,
-  scopeId: string,
-): string[] {
+export function resolveScopeMemberIds(workspace: Workspace, scopeId: string): string[] {
   if (scopeId === "household") {
     return activeMemberIds(workspace.members);
   }

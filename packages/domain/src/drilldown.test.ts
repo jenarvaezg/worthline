@@ -51,12 +51,38 @@ describe("buildLiquidDrilldown — group resolution", () => {
   test("only cash and market rows participate; other tiers are excluded", () => {
     const rows = [
       row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 100 }),
-      row({ dateKey: "2026-06-01", holdingId: "a_house", tier: "housing", valueMinor: 999 }),
-      row({ dateKey: "2026-06-01", holdingId: "a_pension", tier: "retirement", valueMinor: 999 }),
-      row({ dateKey: "2026-06-01", holdingId: "a_art", tier: "illiquid", valueMinor: 999 }),
-      row({ dateKey: "2026-06-01", holdingId: "l_loan", tier: null, valueMinor: 999, kind: "liability" }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_house",
+        tier: "housing",
+        valueMinor: 999,
+      }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_pension",
+        tier: "retirement",
+        valueMinor: 999,
+      }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_art",
+        tier: "illiquid",
+        valueMinor: 999,
+      }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "l_loan",
+        tier: null,
+        valueMinor: 999,
+        kind: "liability",
+      }),
       row({ dateKey: "2026-06-02", holdingId: "a_cash", tier: "cash", valueMinor: 200 }),
-      row({ dateKey: "2026-06-02", holdingId: "a_house", tier: "housing", valueMinor: 999 }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_house",
+        tier: "housing",
+        valueMinor: 999,
+      }),
     ];
 
     const state = buildLiquidDrilldown({ currentHoldingIds: ["a_cash"], rows });
@@ -72,7 +98,12 @@ describe("buildLiquidDrilldown — per-tier stacked series", () => {
   test("returns null stack below the two-point placeholder threshold", () => {
     const rows = [
       row({ dateKey: "2026-06-10", holdingId: "a_cash", tier: "cash", valueMinor: 100 }),
-      row({ dateKey: "2026-06-10", holdingId: "a_fund", tier: "market", valueMinor: 200 }),
+      row({
+        dateKey: "2026-06-10",
+        holdingId: "a_fund",
+        tier: "market",
+        valueMinor: 200,
+      }),
     ];
 
     const state = buildLiquidDrilldown({ currentHoldingIds: ["a_cash", "a_fund"], rows });
@@ -83,12 +114,44 @@ describe("buildLiquidDrilldown — per-tier stacked series", () => {
 
   test("stacks cash and market nets (assets − liabilities per frozen tier)", () => {
     const rows = [
-      row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 100_00 }),
-      row({ dateKey: "2026-06-01", holdingId: "l_margin", tier: "cash", valueMinor: 40_00, kind: "liability" }),
-      row({ dateKey: "2026-06-01", holdingId: "a_fund", tier: "market", valueMinor: 100_00 }),
-      row({ dateKey: "2026-06-02", holdingId: "a_cash", tier: "cash", valueMinor: 120_00 }),
-      row({ dateKey: "2026-06-02", holdingId: "l_margin", tier: "cash", valueMinor: 40_00, kind: "liability" }),
-      row({ dateKey: "2026-06-02", holdingId: "a_fund", tier: "market", valueMinor: 100_00 }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_cash",
+        tier: "cash",
+        valueMinor: 100_00,
+      }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "l_margin",
+        tier: "cash",
+        valueMinor: 40_00,
+        kind: "liability",
+      }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_fund",
+        tier: "market",
+        valueMinor: 100_00,
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_cash",
+        tier: "cash",
+        valueMinor: 120_00,
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "l_margin",
+        tier: "cash",
+        valueMinor: 40_00,
+        kind: "liability",
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_fund",
+        tier: "market",
+        valueMinor: 100_00,
+      }),
     ];
 
     const state = buildLiquidDrilldown({ currentHoldingIds: [], rows });
@@ -107,11 +170,37 @@ describe("buildLiquidDrilldown — per-tier stacked series", () => {
 
   test("falls back to lines for the whole window when a tier net crosses zero", () => {
     const rows = [
-      row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 100_00 }),
-      row({ dateKey: "2026-06-01", holdingId: "a_fund", tier: "market", valueMinor: 50_00 }),
-      row({ dateKey: "2026-06-02", holdingId: "a_cash", tier: "cash", valueMinor: 100_00 }),
-      row({ dateKey: "2026-06-02", holdingId: "l_margin", tier: "market", valueMinor: 70_00, kind: "liability" }),
-      row({ dateKey: "2026-06-02", holdingId: "a_fund", tier: "market", valueMinor: 50_00 }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_cash",
+        tier: "cash",
+        valueMinor: 100_00,
+      }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_fund",
+        tier: "market",
+        valueMinor: 50_00,
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_cash",
+        tier: "cash",
+        valueMinor: 100_00,
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "l_margin",
+        tier: "market",
+        valueMinor: 70_00,
+        kind: "liability",
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_fund",
+        tier: "market",
+        valueMinor: 50_00,
+      }),
     ];
 
     const state = buildLiquidDrilldown({ currentHoldingIds: [], rows });
@@ -126,8 +215,18 @@ describe("buildLiquidDrilldown — per-tier stacked series", () => {
 
   test("a tier with no rows still gets a band with zero values", () => {
     const rows = [
-      row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 100_00 }),
-      row({ dateKey: "2026-06-02", holdingId: "a_cash", tier: "cash", valueMinor: 200_00 }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_cash",
+        tier: "cash",
+        valueMinor: 100_00,
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_cash",
+        tier: "cash",
+        valueMinor: 200_00,
+      }),
     ];
 
     const state = buildLiquidDrilldown({ currentHoldingIds: [], rows });
@@ -140,9 +239,27 @@ describe("buildLiquidDrilldown — per-tier stacked series", () => {
 describe("buildLiquidDrilldown — per-holding small multiples", () => {
   test("one entry per holding with ≥2 captured points; single-point holdings are excluded", () => {
     const rows = [
-      row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 100, label: "Cuenta" }),
-      row({ dateKey: "2026-06-02", holdingId: "a_cash", tier: "cash", valueMinor: 200, label: "Cuenta" }),
-      row({ dateKey: "2026-06-02", holdingId: "a_fund", tier: "market", valueMinor: 500, label: "Fondo" }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_cash",
+        tier: "cash",
+        valueMinor: 100,
+        label: "Cuenta",
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_cash",
+        tier: "cash",
+        valueMinor: 200,
+        label: "Cuenta",
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_fund",
+        tier: "market",
+        valueMinor: 500,
+        label: "Fondo",
+      }),
     ];
 
     const state = buildLiquidDrilldown({ currentHoldingIds: ["a_cash", "a_fund"], rows });
@@ -169,9 +286,7 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
     expect(sparkline.height).toBe(DRILL_SPARKLINE_HEIGHT);
     // xs: inset → width − inset. ys: padded domain [90, 210] over height 36.
     const inset = DRILL_SPARKLINE_INSET_X;
-    expect(sparkline.linePoints).toBe(
-      `${inset},33 ${DRILL_SPARKLINE_WIDTH - inset},3`,
-    );
+    expect(sparkline.linePoints).toBe(`${inset},33 ${DRILL_SPARKLINE_WIDTH - inset},3`);
   });
 
   test("current value comes from the latest capture when the holding is still held", () => {
@@ -187,8 +302,18 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
 
   test("a holding no longer in the portfolio has no current value", () => {
     const rows = [
-      row({ dateKey: "2026-06-01", holdingId: "a_sold", tier: "market", valueMinor: 100 }),
-      row({ dateKey: "2026-06-02", holdingId: "a_sold", tier: "market", valueMinor: 120 }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_sold",
+        tier: "market",
+        valueMinor: 100,
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_sold",
+        tier: "market",
+        valueMinor: 120,
+      }),
     ];
 
     const state = buildLiquidDrilldown({ currentHoldingIds: [], rows });
@@ -198,8 +323,20 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
 
   test("frozen label and tier come from the latest capture of the holding", () => {
     const rows = [
-      row({ dateKey: "2026-06-01", holdingId: "a_x", tier: "cash", valueMinor: 100, label: "Vieja" }),
-      row({ dateKey: "2026-06-02", holdingId: "a_x", tier: "market", valueMinor: 120, label: "Nueva" }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_x",
+        tier: "cash",
+        valueMinor: 100,
+        label: "Vieja",
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_x",
+        tier: "market",
+        valueMinor: 120,
+        label: "Nueva",
+      }),
     ];
 
     const state = buildLiquidDrilldown({ currentHoldingIds: ["a_x"], rows });
@@ -222,10 +359,34 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
 
   test("holdings are ordered by label for a stable presentation", () => {
     const rows = [
-      row({ dateKey: "2026-06-01", holdingId: "a_z", tier: "market", valueMinor: 1, label: "Zeta" }),
-      row({ dateKey: "2026-06-02", holdingId: "a_z", tier: "market", valueMinor: 2, label: "Zeta" }),
-      row({ dateKey: "2026-06-01", holdingId: "a_a", tier: "cash", valueMinor: 1, label: "Alfa" }),
-      row({ dateKey: "2026-06-02", holdingId: "a_a", tier: "cash", valueMinor: 2, label: "Alfa" }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_z",
+        tier: "market",
+        valueMinor: 1,
+        label: "Zeta",
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_z",
+        tier: "market",
+        valueMinor: 2,
+        label: "Zeta",
+      }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_a",
+        tier: "cash",
+        valueMinor: 1,
+        label: "Alfa",
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_a",
+        tier: "cash",
+        valueMinor: 2,
+        label: "Alfa",
+      }),
     ];
 
     const state = buildLiquidDrilldown({ currentHoldingIds: [], rows });
@@ -237,13 +398,44 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
 describe("buildRestDrilldown — group resolution (#77)", () => {
   test("only retirement and illiquid rows participate; other tiers are excluded", () => {
     const rows = [
-      row({ dateKey: "2026-06-01", holdingId: "a_pension", tier: "retirement", valueMinor: 100 }),
-      row({ dateKey: "2026-06-01", holdingId: "a_art", tier: "illiquid", valueMinor: 50 }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_pension",
+        tier: "retirement",
+        valueMinor: 100,
+      }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_art",
+        tier: "illiquid",
+        valueMinor: 50,
+      }),
       row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 999 }),
-      row({ dateKey: "2026-06-01", holdingId: "a_house", tier: "housing", valueMinor: 999 }),
-      row({ dateKey: "2026-06-01", holdingId: "l_loan", tier: null, valueMinor: 999, kind: "liability" }),
-      row({ dateKey: "2026-06-02", holdingId: "a_pension", tier: "retirement", valueMinor: 120 }),
-      row({ dateKey: "2026-06-02", holdingId: "a_art", tier: "illiquid", valueMinor: 50 }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_house",
+        tier: "housing",
+        valueMinor: 999,
+      }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "l_loan",
+        tier: null,
+        valueMinor: 999,
+        kind: "liability",
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_pension",
+        tier: "retirement",
+        valueMinor: 120,
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_art",
+        tier: "illiquid",
+        valueMinor: 50,
+      }),
       row({ dateKey: "2026-06-02", holdingId: "a_cash", tier: "cash", valueMinor: 999 }),
     ];
 
@@ -257,11 +449,37 @@ describe("buildRestDrilldown — group resolution (#77)", () => {
 
   test("stacks retirement and illiquid nets with the deterministic stack→lines fallback", () => {
     const rows = [
-      row({ dateKey: "2026-06-01", holdingId: "a_pension", tier: "retirement", valueMinor: 100_00 }),
-      row({ dateKey: "2026-06-01", holdingId: "a_art", tier: "illiquid", valueMinor: 50_00 }),
-      row({ dateKey: "2026-06-02", holdingId: "a_pension", tier: "retirement", valueMinor: 110_00 }),
-      row({ dateKey: "2026-06-02", holdingId: "l_art_loan", tier: "illiquid", valueMinor: 70_00, kind: "liability" }),
-      row({ dateKey: "2026-06-02", holdingId: "a_art", tier: "illiquid", valueMinor: 50_00 }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_pension",
+        tier: "retirement",
+        valueMinor: 100_00,
+      }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_art",
+        tier: "illiquid",
+        valueMinor: 50_00,
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_pension",
+        tier: "retirement",
+        valueMinor: 110_00,
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "l_art_loan",
+        tier: "illiquid",
+        valueMinor: 70_00,
+        kind: "liability",
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_art",
+        tier: "illiquid",
+        valueMinor: 50_00,
+      }),
     ];
 
     // Illiquid net dips below zero on day 2 → the whole window becomes lines.
@@ -276,7 +494,12 @@ describe("buildRestDrilldown — group resolution (#77)", () => {
 
   test("returns null stack below the two-point placeholder threshold", () => {
     const rows = [
-      row({ dateKey: "2026-06-10", holdingId: "a_pension", tier: "retirement", valueMinor: 100 }),
+      row({
+        dateKey: "2026-06-10",
+        holdingId: "a_pension",
+        tier: "retirement",
+        valueMinor: 100,
+      }),
     ];
 
     const state = buildRestDrilldown({ currentHoldingIds: ["a_pension"], rows });
@@ -289,10 +512,27 @@ describe("buildRestDrilldown — group resolution (#77)", () => {
 describe("buildHousingDrilldown — single-tier group (#77)", () => {
   test("only housing rows participate and the key is housing", () => {
     const rows = [
-      row({ dateKey: "2026-06-01", holdingId: "a_piso", tier: "housing", valueMinor: 300_000_00, label: "Piso" }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_piso",
+        tier: "housing",
+        valueMinor: 300_000_00,
+        label: "Piso",
+      }),
       row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 999 }),
-      row({ dateKey: "2026-06-01", holdingId: "a_pension", tier: "retirement", valueMinor: 999 }),
-      row({ dateKey: "2026-06-02", holdingId: "a_piso", tier: "housing", valueMinor: 320_000_00, label: "Piso" }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_pension",
+        tier: "retirement",
+        valueMinor: 999,
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_piso",
+        tier: "housing",
+        valueMinor: 320_000_00,
+        label: "Piso",
+      }),
     ];
 
     const state = buildHousingDrilldown({ currentHoldingIds: ["a_piso"], rows });
@@ -303,8 +543,18 @@ describe("buildHousingDrilldown — single-tier group (#77)", () => {
 
   test("never builds a stack, even with multi-day data", () => {
     const rows = [
-      row({ dateKey: "2026-06-01", holdingId: "a_piso", tier: "housing", valueMinor: 300_000_00 }),
-      row({ dateKey: "2026-06-02", holdingId: "a_piso", tier: "housing", valueMinor: 320_000_00 }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_piso",
+        tier: "housing",
+        valueMinor: 300_000_00,
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_piso",
+        tier: "housing",
+        valueMinor: 320_000_00,
+      }),
     ];
 
     const state = buildHousingDrilldown({ currentHoldingIds: ["a_piso"], rows });
@@ -314,18 +564,44 @@ describe("buildHousingDrilldown — single-tier group (#77)", () => {
 
   test("per-property small multiples answer which property revalued more", () => {
     const rows = [
-      row({ dateKey: "2026-06-01", holdingId: "a_piso", tier: "housing", valueMinor: 300_000_00, label: "Piso" }),
-      row({ dateKey: "2026-06-01", holdingId: "a_atico", tier: "housing", valueMinor: 200_000_00, label: "Ático" }),
-      row({ dateKey: "2026-06-02", holdingId: "a_piso", tier: "housing", valueMinor: 320_000_00, label: "Piso" }),
-      row({ dateKey: "2026-06-02", holdingId: "a_atico", tier: "housing", valueMinor: 200_000_00, label: "Ático" }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_piso",
+        tier: "housing",
+        valueMinor: 300_000_00,
+        label: "Piso",
+      }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_atico",
+        tier: "housing",
+        valueMinor: 200_000_00,
+        label: "Ático",
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_piso",
+        tier: "housing",
+        valueMinor: 320_000_00,
+        label: "Piso",
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_atico",
+        tier: "housing",
+        valueMinor: 200_000_00,
+        label: "Ático",
+      }),
     ];
 
-    const state = buildHousingDrilldown({ currentHoldingIds: ["a_piso", "a_atico"], rows });
+    const state = buildHousingDrilldown({
+      currentHoldingIds: ["a_piso", "a_atico"],
+      rows,
+    });
 
     expect(state.holdings.map((h) => h.label)).toEqual(["Ático", "Piso"]);
     expect(state.holdings.map((h) => h.currentValueMinor)).toEqual([
-      200_000_00,
-      320_000_00,
+      200_000_00, 320_000_00,
     ]);
     for (const holding of state.holdings) {
       expect(holding.tier).toBe("housing");
@@ -338,11 +614,35 @@ describe("buildLiquidDrilldown — no-longer-held holdings (#78)", () => {
   test("a holding sold mid-window stays in the grid, flagged, with its series truncated at its last capture", () => {
     const rows = [
       // Held holding spans the whole window: 2026-06-01 → 2026-06-05.
-      row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 100, label: "Cuenta" }),
-      row({ dateKey: "2026-06-05", holdingId: "a_cash", tier: "cash", valueMinor: 200, label: "Cuenta" }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_cash",
+        tier: "cash",
+        valueMinor: 100,
+        label: "Cuenta",
+      }),
+      row({
+        dateKey: "2026-06-05",
+        holdingId: "a_cash",
+        tier: "cash",
+        valueMinor: 200,
+        label: "Cuenta",
+      }),
       // Sold holding's last capture is mid-window (2026-06-03).
-      row({ dateKey: "2026-06-01", holdingId: "a_sold", tier: "market", valueMinor: 100, label: "Vendida" }),
-      row({ dateKey: "2026-06-03", holdingId: "a_sold", tier: "market", valueMinor: 200, label: "Vendida" }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_sold",
+        tier: "market",
+        valueMinor: 100,
+        label: "Vendida",
+      }),
+      row({
+        dateKey: "2026-06-03",
+        holdingId: "a_sold",
+        tier: "market",
+        valueMinor: 200,
+        label: "Vendida",
+      }),
     ];
 
     const state = buildLiquidDrilldown({ currentHoldingIds: ["a_cash"], rows });
@@ -369,7 +669,12 @@ describe("buildLiquidDrilldown — no-longer-held holdings (#78)", () => {
     const rows = [
       row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 100 }),
       row({ dateKey: "2026-06-05", holdingId: "a_cash", tier: "cash", valueMinor: 200 }),
-      row({ dateKey: "2026-06-02", holdingId: "a_sold", tier: "market", valueMinor: 500 }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_sold",
+        tier: "market",
+        valueMinor: 500,
+      }),
     ];
 
     const state = buildLiquidDrilldown({ currentHoldingIds: ["a_cash"], rows });
@@ -379,14 +684,62 @@ describe("buildLiquidDrilldown — no-longer-held holdings (#78)", () => {
 
   test("currently-held holdings sort before no-longer-held ones, alphabetically within each group", () => {
     const rows = [
-      row({ dateKey: "2026-06-01", holdingId: "a_gone_a", tier: "market", valueMinor: 1, label: "Alfa" }),
-      row({ dateKey: "2026-06-02", holdingId: "a_gone_a", tier: "market", valueMinor: 2, label: "Alfa" }),
-      row({ dateKey: "2026-06-01", holdingId: "a_held_z", tier: "cash", valueMinor: 1, label: "Zeta" }),
-      row({ dateKey: "2026-06-02", holdingId: "a_held_z", tier: "cash", valueMinor: 2, label: "Zeta" }),
-      row({ dateKey: "2026-06-01", holdingId: "a_held_m", tier: "cash", valueMinor: 1, label: "Media" }),
-      row({ dateKey: "2026-06-02", holdingId: "a_held_m", tier: "cash", valueMinor: 2, label: "Media" }),
-      row({ dateKey: "2026-06-01", holdingId: "a_gone_b", tier: "market", valueMinor: 1, label: "Beta" }),
-      row({ dateKey: "2026-06-02", holdingId: "a_gone_b", tier: "market", valueMinor: 2, label: "Beta" }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_gone_a",
+        tier: "market",
+        valueMinor: 1,
+        label: "Alfa",
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_gone_a",
+        tier: "market",
+        valueMinor: 2,
+        label: "Alfa",
+      }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_held_z",
+        tier: "cash",
+        valueMinor: 1,
+        label: "Zeta",
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_held_z",
+        tier: "cash",
+        valueMinor: 2,
+        label: "Zeta",
+      }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_held_m",
+        tier: "cash",
+        valueMinor: 1,
+        label: "Media",
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_held_m",
+        tier: "cash",
+        valueMinor: 2,
+        label: "Media",
+      }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_gone_b",
+        tier: "market",
+        valueMinor: 1,
+        label: "Beta",
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_gone_b",
+        tier: "market",
+        valueMinor: 2,
+        label: "Beta",
+      }),
     ];
 
     const state = buildLiquidDrilldown({

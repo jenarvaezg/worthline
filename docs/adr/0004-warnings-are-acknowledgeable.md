@@ -13,7 +13,7 @@ needs valuation history we don't keep).
 ## Consequences
 
 - Honoring overrides adds persisted state — an override store keyed by warning code
-  + entity. This is a schema decision and follows the forward-migration approach in
-  [ADR 0002](./0002-forward-migration-with-drizzle.md).
+  - entity. This is a schema decision and follows the forward-migration approach in
+    [ADR 0002](./0002-forward-migration-with-drizzle.md).
 - The warning channel becomes trustworthy: a surfaced warning is either actionable or
   a deliberate, acknowledged state — never permanent noise.

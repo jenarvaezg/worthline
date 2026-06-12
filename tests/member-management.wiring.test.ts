@@ -19,31 +19,7 @@ import {
   saveFireConfigAction,
   retractWarningOverrideAction,
 } from "../apps/web/app/ajustes/actions";
-
-// ------------------------------------------------------------------ helpers --
-
-function catchRedirect(fn: () => Promise<unknown>): Promise<string> {
-  return fn().then(
-    () => {
-      throw new Error("Expected redirect but action returned normally");
-    },
-    (err: unknown) => {
-      if (err instanceof Error && (err.message === "NEXT_REDIRECT" || "digest" in err)) {
-        const digest = (err as { digest?: string }).digest ?? "";
-        const parts = digest.split(";");
-        return parts[2] ?? digest;
-      }
-      throw err;
-    },
-  );
-}
-
-function fd(fields: Record<string, string>): FormData {
-  const form = new FormData();
-  form.set("currentUrl", "/ajustes");
-  for (const [k, v] of Object.entries(fields)) form.set(k, v);
-  return form;
-}
+import { catchRedirect, fd } from "./helpers";
 
 // ------------------------------------------------------------- test fixtures --
 
@@ -69,7 +45,7 @@ describe("createMemberAction wiring", () => {
     setupStore();
 
     const url = await catchRedirect(() =>
-      createMemberAction(fd({ name: "Jose" }), store),
+      createMemberAction(fd({ name: "Jose" }, "/ajustes"), store),
     );
 
     expect(url).toContain("ok=saved");
@@ -84,7 +60,7 @@ describe("createMemberAction wiring", () => {
     const before = store.readWorkspace()!.members.length;
 
     const url = await catchRedirect(() =>
-      createMemberAction(fd({ name: "" }), store),
+      createMemberAction(fd({ name: "" }, "/ajustes"), store),
     );
 
     expect(url).toContain("error=");
@@ -100,7 +76,7 @@ describe("updateMemberAction wiring", () => {
     setupStore();
 
     const url = await catchRedirect(() =>
-      updateMemberAction(fd({ id: "member_ana", name: "Ana García" }), store),
+      updateMemberAction(fd({ id: "member_ana", name: "Ana García" }, "/ajustes"), store),
     );
 
     expect(url).toContain("ok=saved");
@@ -112,7 +88,7 @@ describe("updateMemberAction wiring", () => {
     setupStore();
 
     const url = await catchRedirect(() =>
-      updateMemberAction(fd({ id: "", name: "Ana García" }), store),
+      updateMemberAction(fd({ id: "", name: "Ana García" }, "/ajustes"), store),
     );
 
     expect(url).toContain("error=");
@@ -123,13 +99,15 @@ describe("updateMemberAction wiring", () => {
     setupStore();
 
     const url = await catchRedirect(() =>
-      updateMemberAction(fd({ id: "member_ana", name: "" }), store),
+      updateMemberAction(fd({ id: "member_ana", name: "" }, "/ajustes"), store),
     );
 
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/obligatorio/i);
     // Name unchanged
-    expect(store.readWorkspace()!.members.find((m) => m.id === "member_ana")?.name).toBe("Ana");
+    expect(store.readWorkspace()!.members.find((m) => m.id === "member_ana")?.name).toBe(
+      "Ana",
+    );
   });
 });
 
@@ -140,7 +118,7 @@ describe("disableMemberAction wiring", () => {
     setupStore();
 
     const url = await catchRedirect(() =>
-      disableMemberAction(fd({ id: "member_ana" }), store),
+      disableMemberAction(fd({ id: "member_ana" }, "/ajustes"), store),
     );
 
     expect(url).toContain("ok=saved");
@@ -152,13 +130,15 @@ describe("disableMemberAction wiring", () => {
     setupStore();
 
     const url = await catchRedirect(() =>
-      disableMemberAction(fd({ id: "" }), store),
+      disableMemberAction(fd({ id: "" }, "/ajustes"), store),
     );
 
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/identificador/i);
     // Member still active
-    expect(store.readWorkspace()!.members.find((m) => m.id === "member_ana")?.disabledAt).toBeFalsy();
+    expect(
+      store.readWorkspace()!.members.find((m) => m.id === "member_ana")?.disabledAt,
+    ).toBeFalsy();
   });
 });
 
@@ -170,7 +150,7 @@ describe("reactivateMemberAction wiring", () => {
     store.disableMember("member_ana", new Date().toISOString());
 
     const url = await catchRedirect(() =>
-      reactivateMemberAction(fd({ id: "member_ana" }), store),
+      reactivateMemberAction(fd({ id: "member_ana" }, "/ajustes"), store),
     );
 
     expect(url).toContain("ok=saved");
@@ -182,7 +162,7 @@ describe("reactivateMemberAction wiring", () => {
     setupStore();
 
     const url = await catchRedirect(() =>
-      reactivateMemberAction(fd({ id: "" }), store),
+      reactivateMemberAction(fd({ id: "" }, "/ajustes"), store),
     );
 
     expect(url).toContain("error=");
@@ -197,13 +177,16 @@ describe("saveFireConfigAction wiring", () => {
 
     const url = await catchRedirect(() =>
       saveFireConfigAction(
-        fd({
-          scopeId: "household",
-          monthlySpending: "2000",
-          safeWithdrawalRate: "4",
-          expectedRealReturn: "5",
-          targetRetirementAge: "55",
-        }),
+        fd(
+          {
+            scopeId: "household",
+            monthlySpending: "2000",
+            safeWithdrawalRate: "4",
+            expectedRealReturn: "5",
+            targetRetirementAge: "55",
+          },
+          "/ajustes",
+        ),
         store,
       ),
     );
@@ -219,11 +202,14 @@ describe("saveFireConfigAction wiring", () => {
 
     const url = await catchRedirect(() =>
       saveFireConfigAction(
-        fd({
-          monthlySpending: "0",
-          safeWithdrawalRate: "4",
-          expectedRealReturn: "5",
-        }),
+        fd(
+          {
+            monthlySpending: "0",
+            safeWithdrawalRate: "4",
+            expectedRealReturn: "5",
+          },
+          "/ajustes",
+        ),
         store,
       ),
     );
@@ -238,11 +224,14 @@ describe("saveFireConfigAction wiring", () => {
 
     const url = await catchRedirect(() =>
       saveFireConfigAction(
-        fd({
-          monthlySpending: "2000",
-          safeWithdrawalRate: "0",
-          expectedRealReturn: "5",
-        }),
+        fd(
+          {
+            monthlySpending: "2000",
+            safeWithdrawalRate: "0",
+            expectedRealReturn: "5",
+          },
+          "/ajustes",
+        ),
         store,
       ),
     );
@@ -263,7 +252,7 @@ describe("retractWarningOverrideAction wiring", () => {
 
     const url = await catchRedirect(() =>
       retractWarningOverrideAction(
-        fd({ code: "zero_value_asset", entityId: "asset_test_1" }),
+        fd({ code: "zero_value_asset", entityId: "asset_test_1" }, "/ajustes"),
         store,
       ),
     );
@@ -278,7 +267,7 @@ describe("retractWarningOverrideAction wiring", () => {
 
     const url = await catchRedirect(() =>
       retractWarningOverrideAction(
-        fd({ code: "", entityId: "asset_test_1" }),
+        fd({ code: "", entityId: "asset_test_1" }, "/ajustes"),
         store,
       ),
     );
@@ -292,7 +281,7 @@ describe("retractWarningOverrideAction wiring", () => {
 
     const url = await catchRedirect(() =>
       retractWarningOverrideAction(
-        fd({ code: "zero_value_asset", entityId: "" }),
+        fd({ code: "zero_value_asset", entityId: "" }, "/ajustes"),
         store,
       ),
     );

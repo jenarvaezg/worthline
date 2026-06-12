@@ -84,12 +84,31 @@ describe("selectStalePrices (per-source TTL)", () => {
   });
 
   test("selects only stale entries from a mixed list", () => {
-    const stale = makeEntry({ assetId: "asset-stale", source: "stooq", fetchedAt: "2026-06-07T00:00:00Z" });
-    const fresh = makeEntry({ assetId: "asset-fresh", source: "stooq", fetchedAt: "2026-06-09T09:00:00Z" });
-    const manual = makeEntry({ assetId: "asset-manual", source: "manual", freshnessState: "manual", fetchedAt: "2020-01-01T00:00:00Z" });
-    const failed = makeEntry({ assetId: "asset-failed", fetchedAt: "2020-01-01T00:00:00Z", freshnessState: "failed" });
+    const stale = makeEntry({
+      assetId: "asset-stale",
+      source: "stooq",
+      fetchedAt: "2026-06-07T00:00:00Z",
+    });
+    const fresh = makeEntry({
+      assetId: "asset-fresh",
+      source: "stooq",
+      fetchedAt: "2026-06-09T09:00:00Z",
+    });
+    const manual = makeEntry({
+      assetId: "asset-manual",
+      source: "manual",
+      freshnessState: "manual",
+      fetchedAt: "2020-01-01T00:00:00Z",
+    });
+    const failed = makeEntry({
+      assetId: "asset-failed",
+      fetchedAt: "2020-01-01T00:00:00Z",
+      freshnessState: "failed",
+    });
 
-    expect(selectStalePrices([stale, fresh, manual, failed], "2026-06-09T10:00:00Z")).toEqual([stale]);
+    expect(
+      selectStalePrices([stale, fresh, manual, failed], "2026-06-09T10:00:00Z"),
+    ).toEqual([stale]);
   });
 
   test("entry just under 1-day TTL is not stale", () => {

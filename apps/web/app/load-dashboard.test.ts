@@ -359,10 +359,7 @@ describe("loadDashboard — liquid drilldown", () => {
     expect(result.drilldown).not.toBeNull();
     expect(result.drilldown!.key).toBe("liquid");
     expect(result.drilldown!.stack).not.toBeNull();
-    expect(result.drilldown!.stack!.bands.map((b) => b.band)).toEqual([
-      "cash",
-      "market",
-    ]);
+    expect(result.drilldown!.stack!.bands.map((b) => b.band)).toEqual(["cash", "market"]);
     expect(result.drilldown!.holdings).toHaveLength(1);
     expect(result.drilldown!.holdings[0]).toMatchObject({
       currentValueMinor: 120_000_00,
@@ -653,4 +650,3 @@ describe("loadDashboard — no workspace", () => {
     store.close();
   });
 });
-

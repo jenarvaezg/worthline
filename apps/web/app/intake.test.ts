@@ -576,11 +576,19 @@ describe("ownership split violation message — specific sum named", () => {
 describe("parseAssetCommandStrict — required name, no ghost defaults", () => {
   test("returns the parsed command when name is provided", () => {
     const result = parseAssetCommandStrict(
-      form({ name: "Casa", type: "real_estate", currentValue: "200000", liquidityTier: "housing" }),
+      form({
+        name: "Casa",
+        type: "real_estate",
+        currentValue: "200000",
+        liquidityTier: "housing",
+      }),
       members,
       1,
     );
-    expect(result).toEqual({ ok: true, command: expect.objectContaining({ name: "Casa" }) });
+    expect(result).toEqual({
+      ok: true,
+      command: expect.objectContaining({ name: "Casa" }),
+    });
   });
 
   test("returns an error when name is blank", () => {
@@ -606,7 +614,7 @@ describe("parseAssetCommandStrict — required name, no ghost defaults", () => {
 describe("parseValueUpdatePass — value-update-pass diffing", () => {
   test("returns update commands only for changed values", () => {
     const commands = parseValueUpdatePass(
-      form({ "val_asset_a": "1500", "val_asset_b": "2000" }),
+      form({ val_asset_a: "1500", val_asset_b: "2000" }),
       [
         { id: "asset_a", currentValueMinor: 150_000 },
         { id: "asset_b", currentValueMinor: 200_000 },
@@ -618,7 +626,7 @@ describe("parseValueUpdatePass — value-update-pass diffing", () => {
 
   test("emits an update command for each value that changed", () => {
     const commands = parseValueUpdatePass(
-      form({ "val_asset_a": "1600", "val_asset_b": "2000" }),
+      form({ val_asset_a: "1600", val_asset_b: "2000" }),
       [
         { id: "asset_a", currentValueMinor: 150_000 },
         { id: "asset_b", currentValueMinor: 200_000 },
@@ -630,7 +638,7 @@ describe("parseValueUpdatePass — value-update-pass diffing", () => {
 
   test("reports a parse error for rows where the value is invalid", () => {
     const commands = parseValueUpdatePass(
-      form({ "val_asset_a": "not-a-number", "val_asset_b": "2000" }),
+      form({ val_asset_a: "not-a-number", val_asset_b: "2000" }),
       [
         { id: "asset_a", currentValueMinor: 150_000 },
         { id: "asset_b", currentValueMinor: 200_000 },
@@ -642,15 +650,21 @@ describe("parseValueUpdatePass — value-update-pass diffing", () => {
 
   test("emits update commands for all changed values across multiple rows", () => {
     const commands = parseValueUpdatePass(
-      form({ "val_asset_a": "1600", "val_asset_b": "2500" }),
+      form({ val_asset_a: "1600", val_asset_b: "2500" }),
       [
         { id: "asset_a", currentValueMinor: 150_000 },
         { id: "asset_b", currentValueMinor: 200_000 },
       ],
     );
     expect(commands).toHaveLength(2);
-    expect(commands.find((c) => c.id === "asset_a")).toEqual({ id: "asset_a", newValueMinor: 160_000 });
-    expect(commands.find((c) => c.id === "asset_b")).toEqual({ id: "asset_b", newValueMinor: 250_000 });
+    expect(commands.find((c) => c.id === "asset_a")).toEqual({
+      id: "asset_a",
+      newValueMinor: 160_000,
+    });
+    expect(commands.find((c) => c.id === "asset_b")).toEqual({
+      id: "asset_b",
+      newValueMinor: 250_000,
+    });
   });
 });
 
@@ -752,10 +766,7 @@ describe("parseFireConfigFormStrict — rejects garbage FIRE input", () => {
 
 // === #55 empezar ===
 
-import {
-  parseEmpezarSolo,
-  parseEmpezarHogar,
-} from "./intake";
+import { parseEmpezarSolo, parseEmpezarHogar } from "./intake";
 
 describe("parseEmpezarSolo — individual path", () => {
   test("returns ok with a single member from the name field", () => {
@@ -960,11 +971,7 @@ describe("parseInvestmentAssetCommandStrict — required name, strict price", ()
   });
 
   test("accepts blank manual price (omits it from command)", () => {
-    const result = parseInvestmentAssetCommandStrict(
-      form({ name: "ACME" }),
-      members,
-      1,
-    );
+    const result = parseInvestmentAssetCommandStrict(form({ name: "ACME" }), members, 1);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.command.manualPricePerUnit).toBeUndefined();
@@ -986,7 +993,13 @@ describe("parseInvestmentAssetCommandStrict — required name, strict price", ()
 describe("parseRouteOperationCommand — asset id from route, strict field errors", () => {
   test("returns ok command for valid buy", () => {
     const result = parseRouteOperationCommand(
-      form({ kind: "buy", executedAt: "2026-01-15", units: "5", pricePerUnit: "100", fees: "9,99" }),
+      form({
+        kind: "buy",
+        executedAt: "2026-01-15",
+        units: "5",
+        pricePerUnit: "100",
+        fees: "9,99",
+      }),
       "asset_acme",
       7,
       "2026-06-09",
@@ -1088,7 +1101,12 @@ describe("parseRouteOperationCommand — asset id from route, strict field error
 describe("parseUpdateInvestmentCommand — edit investment fields", () => {
   test("returns ok command for valid update", () => {
     const result = parseUpdateInvestmentCommand(
-      form({ name: "ACME Updated", unitSymbol: "acme.us", isin: "US0231351067", manualPricePerUnit: "15,00" }),
+      form({
+        name: "ACME Updated",
+        unitSymbol: "acme.us",
+        isin: "US0231351067",
+        manualPricePerUnit: "15,00",
+      }),
       "asset_acme",
     );
     expect(result.ok).toBe(true);
@@ -1101,10 +1119,7 @@ describe("parseUpdateInvestmentCommand — edit investment fields", () => {
   });
 
   test("rejects blank name", () => {
-    const result = parseUpdateInvestmentCommand(
-      form({ name: "  " }),
-      "asset_acme",
-    );
+    const result = parseUpdateInvestmentCommand(form({ name: "  " }), "asset_acme");
     expect(result.ok).toBe(false);
     expect("error" in result && result.error).toContain("nombre");
   });

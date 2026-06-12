@@ -56,9 +56,7 @@ describe("POST /scope", () => {
     const response = await POST(request({ returnTo: "/inversiones", scopeId: "" }));
 
     expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe(
-      "http://worthline.local/inversiones",
-    );
+    expect(response.headers.get("location")).toBe("http://worthline.local/inversiones");
     expect(response.headers.get("set-cookie")).toBeNull();
   });
 

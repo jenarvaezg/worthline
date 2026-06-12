@@ -21,31 +21,7 @@ import {
   deleteInvestmentAction,
   restoreInvestmentAction,
 } from "../apps/web/app/inversiones/actions";
-
-// ------------------------------------------------------------------ helpers --
-
-function catchRedirect(fn: () => Promise<unknown>): Promise<string> {
-  return fn().then(
-    () => {
-      throw new Error("Expected redirect but action returned normally");
-    },
-    (err: unknown) => {
-      if (err instanceof Error && (err.message === "NEXT_REDIRECT" || "digest" in err)) {
-        const digest = (err as { digest?: string }).digest ?? "";
-        const parts = digest.split(";");
-        return parts[2] ?? digest;
-      }
-      throw err;
-    },
-  );
-}
-
-function fd(fields: Record<string, string>): FormData {
-  const form = new FormData();
-  form.set("currentUrl", "/inversiones");
-  for (const [k, v] of Object.entries(fields)) form.set(k, v);
-  return form;
-}
+import { catchRedirect, fd } from "./helpers";
 
 // ------------------------------------------------------------- test fixtures --
 
@@ -87,11 +63,14 @@ describe("createInvestmentAction wiring", () => {
 
     const url = await catchRedirect(() =>
       createInvestmentAction(
-        fd({
-          name: "MSCI World ETF",
-          ownershipPreset: "custom",
-          [`owner_${MEMBER_ID}`]: "100",
-        }),
+        fd(
+          {
+            name: "MSCI World ETF",
+            ownershipPreset: "custom",
+            [`owner_${MEMBER_ID}`]: "100",
+          },
+          "/inversiones",
+        ),
         store,
       ),
     );
@@ -107,12 +86,15 @@ describe("createInvestmentAction wiring", () => {
 
     const url = await catchRedirect(() =>
       createInvestmentAction(
-        fd({
-          name: "Fondo Manual",
-          manualPricePerUnit: "12.50",
-          ownershipPreset: "custom",
-          [`owner_${MEMBER_ID}`]: "100",
-        }),
+        fd(
+          {
+            name: "Fondo Manual",
+            manualPricePerUnit: "12.50",
+            ownershipPreset: "custom",
+            [`owner_${MEMBER_ID}`]: "100",
+          },
+          "/inversiones",
+        ),
         store,
       ),
     );
@@ -130,11 +112,14 @@ describe("createInvestmentAction wiring", () => {
 
     const url = await catchRedirect(() =>
       createInvestmentAction(
-        fd({
-          name: "",
-          ownershipPreset: "custom",
-          [`owner_${MEMBER_ID}`]: "100",
-        }),
+        fd(
+          {
+            name: "",
+            ownershipPreset: "custom",
+            [`owner_${MEMBER_ID}`]: "100",
+          },
+          "/inversiones",
+        ),
         store,
       ),
     );
@@ -149,12 +134,15 @@ describe("createInvestmentAction wiring", () => {
 
     const url = await catchRedirect(() =>
       createInvestmentAction(
-        fd({
-          name: "Fondo",
-          manualPricePerUnit: "not-a-number",
-          ownershipPreset: "custom",
-          [`owner_${MEMBER_ID}`]: "100",
-        }),
+        fd(
+          {
+            name: "Fondo",
+            manualPricePerUnit: "not-a-number",
+            ownershipPreset: "custom",
+            [`owner_${MEMBER_ID}`]: "100",
+          },
+          "/inversiones",
+        ),
         store,
       ),
     );
@@ -193,10 +181,13 @@ describe("updateInvestmentAction wiring", () => {
     const url = await catchRedirect(() =>
       updateInvestmentAction(
         INVESTMENT_ID,
-        fd({
-          name: "Index Fund",
-          unitSymbol: "VWRL.UK",
-        }),
+        fd(
+          {
+            name: "Index Fund",
+            unitSymbol: "VWRL.UK",
+          },
+          "/inversiones",
+        ),
         store,
       ),
     );
@@ -210,11 +201,7 @@ describe("updateInvestmentAction wiring", () => {
     setupStoreWithInvestment();
 
     const url = await catchRedirect(() =>
-      updateInvestmentAction(
-        INVESTMENT_ID,
-        fd({ name: "" }),
-        store,
-      ),
+      updateInvestmentAction(INVESTMENT_ID, fd({ name: "" }, "/inversiones"), store),
     );
 
     expect(url).toContain("error=");
@@ -228,7 +215,7 @@ describe("updateInvestmentAction wiring", () => {
     const url = await catchRedirect(() =>
       updateInvestmentAction(
         INVESTMENT_ID,
-        fd({ name: "Index Fund", manualPricePerUnit: "abc" }),
+        fd({ name: "Index Fund", manualPricePerUnit: "abc" }, "/inversiones"),
         store,
       ),
     );
@@ -245,7 +232,7 @@ describe("deleteInvestmentAction wiring", () => {
     setupStoreWithInvestment();
 
     const url = await catchRedirect(() =>
-      deleteInvestmentAction(fd({ id: INVESTMENT_ID }), store),
+      deleteInvestmentAction(fd({ id: INVESTMENT_ID }, "/inversiones"), store),
     );
 
     expect(url).toContain("ok=deleted_recoverable");
@@ -257,7 +244,7 @@ describe("deleteInvestmentAction wiring", () => {
     setupStoreWithInvestment();
 
     const url = await catchRedirect(() =>
-      deleteInvestmentAction(fd({ id: "" }), store),
+      deleteInvestmentAction(fd({ id: "" }, "/inversiones"), store),
     );
 
     expect(url).toContain("error=");
@@ -268,7 +255,7 @@ describe("deleteInvestmentAction wiring", () => {
     setupStoreWithInvestment();
 
     const url = await catchRedirect(() =>
-      deleteInvestmentAction(fd({ id: "asset_nonexistent" }), store),
+      deleteInvestmentAction(fd({ id: "asset_nonexistent" }, "/inversiones"), store),
     );
 
     expect(url).toContain("error=");
@@ -284,7 +271,7 @@ describe("restoreInvestmentAction wiring", () => {
     store.softDeleteAsset(INVESTMENT_ID, new Date().toISOString());
 
     const url = await catchRedirect(() =>
-      restoreInvestmentAction(fd({ id: INVESTMENT_ID }), store),
+      restoreInvestmentAction(fd({ id: INVESTMENT_ID }, "/inversiones"), store),
     );
 
     expect(url).toContain("ok=restored");
@@ -296,7 +283,7 @@ describe("restoreInvestmentAction wiring", () => {
     setupStoreWithInvestment();
 
     const url = await catchRedirect(() =>
-      restoreInvestmentAction(fd({ id: "" }), store),
+      restoreInvestmentAction(fd({ id: "" }, "/inversiones"), store),
     );
 
     expect(url).toContain("error=");
@@ -306,7 +293,7 @@ describe("restoreInvestmentAction wiring", () => {
     setupStoreWithInvestment();
 
     const url = await catchRedirect(() =>
-      restoreInvestmentAction(fd({ id: INVESTMENT_ID }), store),
+      restoreInvestmentAction(fd({ id: INVESTMENT_ID }, "/inversiones"), store),
     );
 
     expect(url).toContain("error=");

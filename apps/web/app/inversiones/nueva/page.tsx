@@ -36,8 +36,7 @@ export default async function NuevaInversionPage({
     if (!workspace) return null;
 
     const scopes = listScopeOptions(workspace);
-    const selectedScope =
-      scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
+    const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
 
     return {
       activeMembers: workspace.members.filter((m) => !m.disabledAt),
@@ -53,11 +52,9 @@ export default async function NuevaInversionPage({
   const { activeMembers, scopes, selectedScope } = storeData;
 
   const ownershipScopeMemberId =
-    activeMembers.find((m) => m.id === selectedScope?.id)?.id ??
-    activeMembers[0]?.id;
+    activeMembers.find((m) => m.id === selectedScope?.id)?.id ?? activeMembers[0]?.id;
 
-  const investmentValues =
-    formError?.formId === "investment" ? formError.values : {};
+  const investmentValues = formError?.formId === "investment" ? formError.values : {};
 
   return (
     <Shell
@@ -102,8 +99,7 @@ export default async function NuevaInversionPage({
           </label>
 
           <label>
-            Ticker / símbolo{" "}
-            <small>(formato Stooq, p.ej. VWRL.UK)</small>
+            Ticker / símbolo <small>(formato Stooq, p.ej. VWRL.UK)</small>
             <input
               aria-label="Ticker o símbolo en formato Stooq"
               defaultValue={investmentValues["unitSymbol"]}
@@ -113,8 +109,7 @@ export default async function NuevaInversionPage({
           </label>
 
           <label>
-            ISIN{" "}
-            <small>(opcional)</small>
+            ISIN <small>(opcional)</small>
             <input
               aria-label="ISIN"
               defaultValue={investmentValues["isin"]}
@@ -162,8 +157,7 @@ function OwnershipInputs({
   scopeMemberId?: string | undefined;
   values?: Record<string, string>;
 }) {
-  const scopeMember =
-    members.find((m) => m.id === scopeMemberId) ?? members[0]!;
+  const scopeMember = members.find((m) => m.id === scopeMemberId) ?? members[0]!;
   const preset = values["ownershipPreset"];
 
   return (
@@ -202,9 +196,7 @@ function OwnershipInputs({
           <label key={member.id}>
             {member.name}
             <input
-              defaultValue={
-                values[`owner_${member.id}`] ?? (index === 0 ? "100" : "0")
-              }
+              defaultValue={values[`owner_${member.id}`] ?? (index === 0 ? "100" : "0")}
               inputMode="decimal"
               name={`owner_${member.id}`}
             />

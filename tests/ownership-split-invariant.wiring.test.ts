@@ -22,37 +22,16 @@ import { vi, describe, test, expect, afterEach } from "vitest";
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
-import { createAssetAction, createLiabilityAction } from "../apps/web/app/patrimonio/actions";
+import {
+  createAssetAction,
+  createLiabilityAction,
+} from "../apps/web/app/patrimonio/actions";
 import {
   createManualAssetSafe,
   createLiabilitySafe,
   createWorkspace,
 } from "@worthline/domain";
-
-// ------------------------------------------------------------------ helpers --
-
-function catchRedirect(fn: () => Promise<unknown>): Promise<string> {
-  return fn().then(
-    () => {
-      throw new Error("Expected redirect but action returned normally");
-    },
-    (err: unknown) => {
-      if (
-        err instanceof Error &&
-        (err.message === "NEXT_REDIRECT" || "digest" in err)
-      ) {
-        const digest = (err as { digest?: string }).digest ?? "";
-        const parts = digest.split(";");
-        return parts[2] ?? digest;
-      }
-      throw err;
-    },
-  );
-}
-
-function errorMessageOf(url: string): string {
-  return new URL(url, "http://worthline.local").searchParams.get("error") ?? "";
-}
+import { catchRedirect, errorMessageOf } from "./helpers";
 
 function buildAssetFormData(overrides: Record<string, string> = {}): FormData {
   const fd = new FormData();
@@ -259,9 +238,7 @@ describe("createAssetAction — ownership-split wiring", () => {
     const redirectUrl = await catchRedirect(() => createAssetAction(fd, store));
 
     expect(redirectUrl).toContain("error=");
-    expect(errorMessageOf(redirectUrl)).toBe(
-      "La propiedad suma 120% — debe sumar 100%.",
-    );
+    expect(errorMessageOf(redirectUrl)).toBe("La propiedad suma 120% — debe sumar 100%.");
     expect(store.readAssets()).toHaveLength(0);
   });
 });

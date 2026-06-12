@@ -79,7 +79,9 @@ export default async function EmpezarPage({ searchParams }: EmpezarPageProps) {
             id="solo"
           >
             <h3>Empezar solo</h3>
-            <p className="empezarCardDesc">Un único miembro. Seguimiento individual de patrimonio.</p>
+            <p className="empezarCardDesc">
+              Un único miembro. Seguimiento individual de patrimonio.
+            </p>
 
             {soloError ? (
               <p className="formError" role="alert">
@@ -141,8 +143,8 @@ export default async function EmpezarPage({ searchParams }: EmpezarPageProps) {
         <div className="empezarHeader">
           <h2>¿Ya tienes una copia de worthline?</h2>
           <p className="empezarTrust">
-            Restaura una copia exportada desde la app o un archivo preparado
-            externamente: su contenido se convierte en tu workspace.
+            Restaura una copia exportada desde la app o un archivo preparado externamente:
+            su contenido se convierte en tu workspace.
           </p>
         </div>
 

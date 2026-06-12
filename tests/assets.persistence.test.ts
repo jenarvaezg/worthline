@@ -1,22 +1,13 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { createWorthlineStore } from "@worthline/db";
 import { calculateNetWorth } from "@worthline/domain";
+import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 
-const tempDirs: string[] = [];
-
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { force: true, recursive: true });
-  }
-});
+afterEach(cleanupTempDirs);
 
 describe("manual asset persistence", () => {
   test("creates manual liquid assets with ownership and updates current valuation", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-assets-");
 
     store.initializeWorkspace({
       members: [
@@ -58,7 +49,7 @@ describe("manual asset persistence", () => {
   });
 
   test("keeps ownership attached to the right asset when several coexist", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-assets-");
 
     store.initializeWorkspace({
       members: [
@@ -101,12 +92,3 @@ describe("manual asset persistence", () => {
     ).toBe(200_000);
   });
 });
-
-function createTestStore() {
-  const dataDir = mkdtempSync(join(tmpdir(), "worthline-assets-"));
-  tempDirs.push(dataDir);
-
-  return createWorthlineStore({
-    databasePath: join(dataDir, "worthline.sqlite"),
-  });
-}

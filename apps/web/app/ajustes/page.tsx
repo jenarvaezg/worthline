@@ -1,8 +1,5 @@
 import { runBootstrapHealthcheck, withStore } from "@worthline/db";
-import {
-  collectWarnings,
-  listScopeOptions,
-} from "@worthline/domain";
+import { collectWarnings, listScopeOptions } from "@worthline/domain";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -50,8 +47,7 @@ export default async function AjustesPage({
     }
 
     const scopes = listScopeOptions(workspace);
-    const selectedScope =
-      scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
+    const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
 
     return {
       fireConfig: store.readFireConfig(),
@@ -110,7 +106,6 @@ export default async function AjustesPage({
       ) : null}
 
       <div className="ajustesGrid">
-
         {/* ── Miembros ─────────────────────────────────────────────── */}
         <section className="ajustesPanel" aria-label="Miembros">
           <div className="panelHeader">
@@ -136,12 +131,14 @@ export default async function AjustesPage({
                     disabled={Boolean(member.disabledAt)}
                     name="name"
                   />
-                  <span className={member.disabledAt ? "memberStatus inactive" : "memberStatus active"}>
+                  <span
+                    className={
+                      member.disabledAt ? "memberStatus inactive" : "memberStatus active"
+                    }
+                  >
                     {member.disabledAt ? "Inactivo" : "Activo"}
                   </span>
-                  {!member.disabledAt ? (
-                    <button type="submit">Guardar</button>
-                  ) : null}
+                  {!member.disabledAt ? <button type="submit">Guardar</button> : null}
                 </form>
 
                 {!member.disabledAt ? (
@@ -300,15 +297,16 @@ export default async function AjustesPage({
             <dd className="mono">{persistence.checkValue}</dd>
             <dt>Estado</dt>
             <dd>
-              <span className={`statePill ${persistence.status === "ok" ? "ready" : "error"}`}>
+              <span
+                className={`statePill ${persistence.status === "ok" ? "ready" : "error"}`}
+              >
                 {persistence.status === "ok" ? "OK" : "Error"}
               </span>
             </dd>
           </dl>
           <p className="muted">
-            Exportar descarga una copia completa del workspace en un archivo
-            JSON: miembros, patrimonio, operaciones, snapshots y papelera
-            incluidos.
+            Exportar descarga una copia completa del workspace en un archivo JSON:
+            miembros, patrimonio, operaciones, snapshots y papelera incluidos.
           </p>
           {/* Plain anchor on purpose: the route responds with Content-Disposition
               attachment, so the browser downloads instead of navigating. */}
@@ -321,7 +319,9 @@ export default async function AjustesPage({
         <section className="ajustesPanel" aria-label="Overrides de avisos">
           <div className="panelHeader">
             <h2>Avisos marcados como intencionales</h2>
-            <span>{overrides.length} {overrides.length === 1 ? "override" : "overrides"}</span>
+            <span>
+              {overrides.length} {overrides.length === 1 ? "override" : "overrides"}
+            </span>
           </div>
 
           {overrides.length === 0 ? (
@@ -348,7 +348,6 @@ export default async function AjustesPage({
             </div>
           )}
         </section>
-
       </div>
 
       {/* ── Zona de peligro ──────────────────────────────────────────── */}
@@ -394,8 +393,8 @@ export default async function AjustesPage({
         ) : null}
 
         <p className="dangerExplain">
-          Importar un archivo de exportación reemplaza por completo el workspace
-          actual; nada de lo que existe ahora se conserva.
+          Importar un archivo de exportación reemplaza por completo el workspace actual;
+          nada de lo que existe ahora se conserva.
         </p>
 
         <ImportWorkspaceForm currentUrl={currentUrl} showDataLossWarning />

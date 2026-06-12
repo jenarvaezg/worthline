@@ -1,11 +1,11 @@
-import type { ManualAsset } from './index';
+import type { ManualAsset } from "./index";
 
-export type WarningSeverity = 'blocking' | 'overrideable';
+export type WarningSeverity = "blocking" | "overrideable";
 
 export interface DomainWarning {
   code: string;
   severity: WarningSeverity;
-  entityType: 'asset' | 'liability';
+  entityType: "asset" | "liability";
   entityId: string;
   message: string;
 }
@@ -31,15 +31,15 @@ export function collectWarnings(
   for (const a of assets) {
     if (a.currentValue.amountMinor === 0)
       warnings.push({
-        code: 'ZERO_VALUE_ASSET',
-        severity: 'overrideable',
-        entityType: 'asset',
+        code: "ZERO_VALUE_ASSET",
+        severity: "overrideable",
+        entityType: "asset",
         entityId: a.id,
         message: `"${a.name}" tiene valor 0.`,
       });
   }
 
   return warnings.filter(
-    (w) => w.severity === 'blocking' || !overridden.has(`${w.code}:${w.entityId}`),
+    (w) => w.severity === "blocking" || !overridden.has(`${w.code}:${w.entityId}`),
   );
 }

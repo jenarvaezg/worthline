@@ -12,7 +12,7 @@ as decimal strings.
 We considered capturing only per-tier aggregates (10 figures, enough for the
 tier-level drilldown that prompted this) but chose per-holding capture: the data
 volume is irrelevant in a local SQLite app, holding-level history is the only level
-that answers "how much did *this* asset hold at *that* time", and every day not
+that answers "how much did _this_ asset hold at _that_ time", and every day not
 captured is history lost forever — arriving early beats arriving perfect.
 
 ## Consequences

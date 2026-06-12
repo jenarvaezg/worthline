@@ -266,15 +266,15 @@ function buildGroupStack<Tier extends LiquidityTier>(
 ): StackedChartGeometry<Tier> | null {
   const dateKeys = [...new Set(groupRows.map((row) => row.dateKey))];
   const netByTierByDate = new Map<string, Map<Tier, number>>(
-    dateKeys.map((dateKey) => [
-      dateKey,
-      new Map(tiers.map((tier) => [tier, 0])),
-    ]),
+    dateKeys.map((dateKey) => [dateKey, new Map(tiers.map((tier) => [tier, 0]))]),
   );
 
   for (const row of groupRows) {
     const tierNets = netByTierByDate.get(row.dateKey)!;
-    tierNets.set(row.liquidityTier, tierNets.get(row.liquidityTier)! + signedValueMinor(row));
+    tierNets.set(
+      row.liquidityTier,
+      tierNets.get(row.liquidityTier)! + signedValueMinor(row),
+    );
   }
 
   return buildStackedChartGeometry<Tier>(

@@ -42,3 +42,25 @@ describe("decimal to integer minor units", () => {
     expect(averageUnitCost(0, "0")).toBe("0");
   });
 });
+
+describe("exact .5 rounding boundary", () => {
+  test("multiplyToMinor rounds exact .5 up (not down or even)", () => {
+    // 0.5 * 1 * 100 = 50 exactly — half-up must give 50
+    // But the interesting case is when the minor result sits on .5:
+    // 1 * 0.005 * 100 = 0.5 → round half-up → 1
+    expect(multiplyToMinor("1", "0.005")).toBe(1);
+    // 3 * 0.005 * 100 = 1.5 → round half-up → 2
+    expect(multiplyToMinor("3", "0.005")).toBe(2);
+    // 1 * 0.015 * 100 = 1.5 → round half-up → 2
+    expect(multiplyToMinor("1", "0.015")).toBe(2);
+  });
+
+  test("proportionMinor rounds exact .5 up", () => {
+    // 5 * 1 / 2 = 2.5 → round half-up → 3
+    expect(proportionMinor(5, "1", "2")).toBe(3);
+    // 15 * 1 / 2 = 7.5 → round half-up → 8
+    expect(proportionMinor(15, "1", "2")).toBe(8);
+    // 1 * 1 / 2 = 0.5 → round half-up → 1
+    expect(proportionMinor(1, "1", "2")).toBe(1);
+  });
+});

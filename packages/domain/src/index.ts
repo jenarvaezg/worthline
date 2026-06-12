@@ -40,7 +40,11 @@ export {
   tierOfLiability,
 } from "./classification";
 
-export { createInvestmentOperation, createInvestmentOperationSafe, derivePosition } from "./positions";
+export {
+  createInvestmentOperation,
+  createInvestmentOperationSafe,
+  derivePosition,
+} from "./positions";
 export type {
   InvestmentPriceSource,
   SelectedInvestmentPrice,

@@ -28,9 +28,7 @@ describe("donutArcSegments", () => {
 
     // Top of the ring (50, 5) clockwise to the right (95, 50), then back
     // along the inner radius counterclockwise.
-    expect(first!.path).toBe(
-      "M 50 5 A 45 45 0 0 1 95 50 L 77 50 A 27 27 0 0 0 50 23 Z",
-    );
+    expect(first!.path).toBe("M 50 5 A 45 45 0 0 1 95 50 L 77 50 A 27 27 0 0 0 50 23 Z");
   });
 
   test("keeps sweeps proportional and summing to a full circle", () => {

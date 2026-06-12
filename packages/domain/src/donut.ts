@@ -32,7 +32,11 @@ function round(value: number): number {
 }
 
 /** Maps a clockwise-from-12-o'clock angle in degrees to a point on a circle. */
-function pointAt(geometry: DonutGeometry, radius: number, angle: number): { x: number; y: number } {
+function pointAt(
+  geometry: DonutGeometry,
+  radius: number,
+  angle: number,
+): { x: number; y: number } {
   const radians = ((angle - 90) * Math.PI) / 180;
   return {
     x: round(geometry.cx + radius * Math.cos(radians)),
@@ -41,7 +45,11 @@ function pointAt(geometry: DonutGeometry, radius: number, angle: number): { x: n
 }
 
 /** An annular wedge: outer arc clockwise, inner arc back counterclockwise. */
-function wedgePath(geometry: DonutGeometry, startAngle: number, endAngle: number): string {
+function wedgePath(
+  geometry: DonutGeometry,
+  startAngle: number,
+  endAngle: number,
+): string {
   const { innerRadius, outerRadius } = geometry;
   const largeArc = endAngle - startAngle > 180 ? 1 : 0;
   const outerStart = pointAt(geometry, outerRadius, startAngle);

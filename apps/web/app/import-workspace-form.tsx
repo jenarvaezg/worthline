@@ -132,9 +132,8 @@ export default function ImportWorkspaceForm({
 
           {showDataLossWarning ? (
             <p className="dangerExplain">
-              Al confirmar, el workspace actual se reemplazará por completo y se
-              perderá; nada de lo que existe ahora se conserva. Si quieres
-              conservar una copia,{" "}
+              Al confirmar, el workspace actual se reemplazará por completo y se perderá;
+              nada de lo que existe ahora se conserva. Si quieres conservar una copia,{" "}
               <a className="panelAction" href="/ajustes/export">
                 Exportar
               </a>{" "}

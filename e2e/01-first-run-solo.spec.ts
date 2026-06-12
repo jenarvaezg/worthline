@@ -29,14 +29,10 @@ test("first run solo: empezar → / with valid scope and onboarding checklist", 
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("worthline");
 
   // 6. Onboarding checklist section should appear (some steps still pending)
-  await expect(
-    page.getByRole("region", { name: "Primeros pasos" }),
-  ).toBeVisible();
+  await expect(page.getByRole("region", { name: "Primeros pasos" })).toBeVisible();
 
   // 7. "Primeros pasos" heading present
-  await expect(
-    page.getByRole("heading", { name: "Primeros pasos" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Primeros pasos" })).toBeVisible();
 
   // 8. At least one checklist link should be navigable (holdings step → /patrimonio/nuevo-activo)
   const holdingsLink = page

@@ -16,7 +16,10 @@ import { refreshAndPersistStalePrices } from "./refresh-prices";
 // Helpers / stubs
 // ---------------------------------------------------------------------------
 
-function makePrice(assetId: string, state: AssetPrice["freshnessState"] = "fresh"): AssetPrice {
+function makePrice(
+  assetId: string,
+  state: AssetPrice["freshnessState"] = "fresh",
+): AssetPrice {
   return {
     assetId,
     currency: "EUR",
@@ -39,7 +42,11 @@ describe("refreshAndPersistStalePrices", () => {
   test("calls refreshStalePrices with cache, assets, and nowIso", async () => {
     const price = makePrice("asset-1");
     const asset = makeAssetRef("asset-1");
-    const refreshResult: RefreshStalePricesResult = { refreshed: [price], updated: 1, failedSymbols: [] };
+    const refreshResult: RefreshStalePricesResult = {
+      refreshed: [price],
+      updated: 1,
+      failedSymbols: [],
+    };
 
     const refreshStalePrices = vi.fn().mockResolvedValue(refreshResult);
     const upsertPrice = vi.fn();
@@ -69,7 +76,11 @@ describe("refreshAndPersistStalePrices", () => {
 
   test("returns empty errors and current cache when nothing is stale", async () => {
     const price = makePrice("asset-1");
-    const refreshResult: RefreshStalePricesResult = { refreshed: [], updated: 0, failedSymbols: [] };
+    const refreshResult: RefreshStalePricesResult = {
+      refreshed: [],
+      updated: 0,
+      failedSymbols: [],
+    };
 
     const refreshStalePrices = vi.fn().mockResolvedValue(refreshResult);
     const upsertPrice = vi.fn();
@@ -145,7 +156,11 @@ describe("refreshAndPersistStalePrices", () => {
   });
 
   test("does not call upsertPrice when refreshed list is empty", async () => {
-    const refreshResult: RefreshStalePricesResult = { refreshed: [], updated: 0, failedSymbols: [] };
+    const refreshResult: RefreshStalePricesResult = {
+      refreshed: [],
+      updated: 0,
+      failedSymbols: [],
+    };
     const refreshStalePrices = vi.fn().mockResolvedValue(refreshResult);
     const upsertPrice = vi.fn();
     const readCache = vi.fn().mockReturnValue([]);

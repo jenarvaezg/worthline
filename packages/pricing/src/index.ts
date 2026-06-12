@@ -64,4 +64,7 @@ export { coingeckoProvider } from "./coingecko";
 export { ecbProvider } from "./ecb";
 export { stooqProvider } from "./stooq";
 export { refreshStalePrices } from "./refresh-stale-prices";
-export type { InvestmentAssetRef, RefreshStalePricesResult } from "./refresh-stale-prices";
+export type {
+  InvestmentAssetRef,
+  RefreshStalePricesResult,
+} from "./refresh-stale-prices";

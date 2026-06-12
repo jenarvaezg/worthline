@@ -18,7 +18,7 @@ the existing snapshots it affects. PRDs #107 (operations), #108 (housing),
 the present**. Renaming, revaluing, trashing, or hard-deleting a holding never
 alters what a past snapshot captured. A backdated fact is neither of those —
 it is new information about what the portfolio actually was on a past date.
-Re-deriving the affected snapshots makes history *more* true, not less frozen.
+Re-deriving the affected snapshots makes history _more_ true, not less frozen.
 
 ## Ripple recalculation
 

@@ -10,7 +10,12 @@ import Link from "next/link";
  * back; active-link state is a prop, not router state.
  */
 
-export type AppSection = "resumen" | "patrimonio" | "inversiones" | "historico" | "ajustes";
+export type AppSection =
+  | "resumen"
+  | "patrimonio"
+  | "inversiones"
+  | "historico"
+  | "ajustes";
 
 const NAV_SECTIONS: Array<{ id: AppSection; label: string; href: string }> = [
   { id: "resumen", label: "Resumen", href: "/" },

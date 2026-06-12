@@ -1,21 +1,12 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { createWorthlineStore } from "@worthline/db";
+import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 
-const tempDirs: string[] = [];
-
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { force: true, recursive: true });
-  }
-});
+afterEach(cleanupTempDirs);
 
 describe("FIRE config persistence", () => {
   test("saveFireConfig then readFireConfig round-trips the config", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-fire-");
 
     const config = {
       monthlySpendingMinor: 200_000,
@@ -33,7 +24,7 @@ describe("FIRE config persistence", () => {
   });
 
   test("saving scope2 config does not overwrite scope1 config", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-fire-");
 
     const config1 = {
       monthlySpendingMinor: 150_000,
@@ -57,17 +48,8 @@ describe("FIRE config persistence", () => {
   });
 
   test("readFireConfig returns {} when nothing stored", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-fire-");
 
     expect(store.readFireConfig()).toEqual({});
   });
 });
-
-function createTestStore() {
-  const dataDir = mkdtempSync(join(tmpdir(), "worthline-fire-"));
-  tempDirs.push(dataDir);
-
-  return createWorthlineStore({
-    databasePath: join(dataDir, "worthline.sqlite"),
-  });
-}
