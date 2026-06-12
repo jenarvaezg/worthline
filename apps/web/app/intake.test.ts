@@ -5,7 +5,6 @@ import {
   appendParam,
   buildCurrentUrl,
   buildCurrentUrlFor,
-  buildSnapshotId,
   errorRedirectUrl,
   okMessage,
   parseFormError,
@@ -318,12 +317,6 @@ describe("snapshot, money field, and id parsing", () => {
       name: "Noa",
     });
     expect(parseNewMember(form({ name: "   " }), 5)).toBeNull();
-  });
-
-  test("buildSnapshotId is deterministic from scope and capture date", () => {
-    expect(buildSnapshotId("household", "2026-06-08T21:00:00.000Z", 3)).toBe(
-      "snapshot_household_2026_06_08_3",
-    );
   });
 });
 

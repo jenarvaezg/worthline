@@ -610,14 +610,6 @@ export function parseFireConfigFormStrict(
   };
 }
 
-export function buildSnapshotId(
-  scopeId: string,
-  capturedAt: string,
-  seed: number,
-): string {
-  return createStableId("snapshot", `${scopeId}_${capturedAt.slice(0, 10)}`, seed);
-}
-
 function parseNames(value: FormDataEntryValue | null): string[] {
   const names = String(value ?? "")
     .split(/[\n,]/)

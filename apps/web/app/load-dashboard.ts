@@ -24,14 +24,13 @@ import type {
 } from "@worthline/domain";
 import {
   buildDrilldown,
+  buildSnapshotId,
   captureValuedNetWorthSnapshot,
   listScopeOptions,
   planSnapshotCapture,
   prepareDashboardState,
 } from "@worthline/domain";
 import type { DashboardState, LocalPersistenceStatus } from "@worthline/domain";
-
-import { buildSnapshotId } from "./intake";
 
 export interface RefreshPricesResult {
   /** Price cache after refresh (always populated — stale cache on failure). */
