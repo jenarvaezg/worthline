@@ -1,6 +1,7 @@
-export type LiquidityTier = "cash" | "market" | "retirement" | "illiquid" | "housing";
-
+import type { LiquidityTier } from "./liquidity-tier";
 import type { Liability, ManualAsset } from "./workspace-types";
+
+export type { LiquidityTier };
 
 export function tierOfAsset(asset: ManualAsset): LiquidityTier {
   if (

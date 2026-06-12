@@ -1,6 +1,6 @@
 import type { CurrencyCode, MoneyMinor } from "./money";
 import { assertMinorInteger } from "./money";
-import type { LiquidityTier } from "./classification";
+import type { LiquidityTier } from "./liquidity-tier";
 import type { DomainResult, DomainViolation } from "./domain-result";
 
 export type WorkspaceMode = "individual" | "household";

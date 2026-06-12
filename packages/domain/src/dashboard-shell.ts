@@ -1,4 +1,4 @@
-import type { LocalPersistenceStatus } from "./dashboard";
+import type { LocalPersistenceStatus } from "./persistence";
 import type { NetWorthSummary } from "./net-worth";
 
 export interface DashboardShell {
