@@ -10,6 +10,7 @@ import {
   buildSnapshotAtDate,
   lastKnownValueAtDate,
   recalculateSnapshotForAsset,
+  recalculateSnapshotForHousing,
   type ManualValuePoint,
 } from "./historical-snapshot";
 import type {
@@ -50,6 +51,18 @@ function cash(workspace: Workspace, id: string, valueMinor: number): ManualAsset
     name: "Cuenta",
     ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
     type: "cash",
+  });
+}
+
+function housing(workspace: Workspace, id: string, valueMinor: number): ManualAsset {
+  return createManualAsset(workspace, {
+    currency: "EUR",
+    currentValueMinor: valueMinor,
+    id,
+    liquidityTier: "housing",
+    name: "Piso",
+    ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    type: "real_estate",
   });
 }
 
@@ -262,6 +275,208 @@ describe("buildSnapshotAtDate", () => {
 
     // asset_cash: no history → current value 9999.00; asset_cash_2: last ≤ date = 2000.00
     expect(result!.snapshot.grossAssets.amountMinor).toBe(9_999_00 + 2_000_00);
+  });
+
+  test("values a real_estate asset from its curve when it has anchors (PRD #108)", () => {
+    const workspace = makeWorkspace();
+    const piso = housing(workspace, "asset_piso", 130_000_00);
+
+    const result = buildSnapshotAtDate({
+      ...BASE,
+      assets: [piso],
+      capturedAt: "2024-10-01T12:00:00.000Z",
+      housingValuationByAsset: new Map([
+        [
+          "asset_piso",
+          {
+            anchors: [
+              { adjustsPriorCurve: true, valuationDate: "2024-01-01", valueMinor: 100_000_00 },
+              { adjustsPriorCurve: false, valuationDate: "2024-07-01", valueMinor: 10_000_00 },
+              { adjustsPriorCurve: true, valuationDate: "2025-01-01", valueMinor: 120_000_00 },
+            ],
+            annualAppreciationRate: "0.03",
+            currentValueMinor: 130_000_00,
+          },
+        ],
+      ]),
+      liabilities: [],
+      manualValueHistory: new Map(),
+      operationsByAsset: new Map(),
+      targetDate: "2024-10-01",
+      today: "2026-06-12",
+      workspace,
+    });
+
+    // PRD pinned example: 2024-10-01 → 117.486,34 €.
+    expect(result!.snapshot.grossAssets.amountMinor).toBe(117_486_34);
+    expect(result!.snapshot.housingEquity.amountMinor).toBe(117_486_34);
+  });
+
+  test("a real_estate asset with no anchors and no rate keeps last-known-value (no regression)", () => {
+    const workspace = makeWorkspace();
+    const piso = housing(workspace, "asset_piso", 200_000_00);
+
+    const result = buildSnapshotAtDate({
+      ...BASE,
+      assets: [piso],
+      // No housingValuationByAsset entry → behaves like any manual holding.
+      liabilities: [],
+      manualValueHistory: new Map([
+        ["asset_piso", [{ dateKey: "2024-01-01", valueMinor: 180_000_00 }]],
+      ]),
+      operationsByAsset: new Map(),
+      targetDate: "2024-06-01",
+      workspace,
+    });
+
+    // Falls back to last known manual value ≤ date, not any curve.
+    expect(result!.snapshot.grossAssets.amountMinor).toBe(180_000_00);
+  });
+});
+
+describe("recalculateSnapshotForHousing", () => {
+  const eur = (amountMinor: number) => ({ amountMinor, currency: "EUR" });
+
+  function housingRow(valueMinor: number): SnapshotHoldingRow {
+    return {
+      holdingId: "asset_piso",
+      kind: "asset",
+      label: "Piso",
+      liquidityTier: "housing",
+      valueMinor,
+    };
+  }
+
+  function snapshotWithHousing(grossMinor: number): NetWorthSnapshot {
+    return {
+      capturedAt: "2024-10-01T12:00:00.000Z",
+      dateKey: "2024-10-01",
+      debts: eur(0),
+      grossAssets: eur(grossMinor),
+      housingEquity: eur(grossMinor),
+      id: "snap_h",
+      isMonthlyClose: false,
+      liquidNetWorth: eur(0),
+      monthKey: "2024-10",
+      scopeId: "member_jose",
+      scopeLabel: "Jose",
+      totalNetWorth: eur(grossMinor),
+      warnings: [],
+    };
+  }
+
+  test("recomputes the housing row from the curve and adjusts housing figures", () => {
+    const workspace = makeWorkspace();
+    const piso = housing(workspace, "asset_piso", 130_000_00);
+
+    const result = recalculateSnapshotForHousing({
+      asset: piso,
+      curve: {
+        anchors: [
+          { adjustsPriorCurve: true, valuationDate: "2024-01-01", valueMinor: 100_000_00 },
+          { adjustsPriorCurve: false, valuationDate: "2024-07-01", valueMinor: 10_000_00 },
+          { adjustsPriorCurve: true, valuationDate: "2025-01-01", valueMinor: 120_000_00 },
+        ],
+        annualAppreciationRate: "0.03",
+        currentValueMinor: 130_000_00,
+      },
+      frozenHoldings: [housingRow(100_000_00)],
+      snapshot: snapshotWithHousing(100_000_00),
+      today: "2026-06-12",
+      workspace,
+    })!;
+
+    // 2024-10-01 → 117.486,34 €; the delta moves gross + housingEquity together.
+    expect(result.snapshot.grossAssets.amountMinor).toBe(117_486_34);
+    expect(result.snapshot.housingEquity.amountMinor).toBe(117_486_34);
+    expect(result.snapshot.liquidNetWorth.amountMinor).toBe(0);
+  });
+
+  test("preserves other frozen rows verbatim", () => {
+    const workspace = makeWorkspace();
+    const piso = housing(workspace, "asset_piso", 130_000_00);
+    const cashRow: SnapshotHoldingRow = {
+      holdingId: "asset_cash",
+      kind: "asset",
+      label: "Cuenta",
+      liquidityTier: "cash",
+      valueMinor: 5_000_00,
+    };
+
+    const result = recalculateSnapshotForHousing({
+      asset: piso,
+      curve: {
+        anchors: [
+          { adjustsPriorCurve: true, valuationDate: "2024-01-01", valueMinor: 100_000_00 },
+          { adjustsPriorCurve: false, valuationDate: "2024-07-01", valueMinor: 10_000_00 },
+          { adjustsPriorCurve: true, valuationDate: "2025-01-01", valueMinor: 120_000_00 },
+        ],
+        annualAppreciationRate: "0.03",
+        currentValueMinor: 130_000_00,
+      },
+      frozenHoldings: [housingRow(100_000_00), cashRow],
+      snapshot: {
+        ...snapshotWithHousing(105_000_00),
+        liquidNetWorth: eur(5_000_00),
+      },
+      today: "2026-06-12",
+      workspace,
+    })!;
+
+    const cash = result.holdings.find((h) => h.holdingId === "asset_cash");
+    expect(cash).toEqual(cashRow);
+    expect(result.snapshot.grossAssets.amountMinor).toBe(117_486_34 + 5_000_00);
+    expect(result.snapshot.liquidNetWorth.amountMinor).toBe(5_000_00);
+  });
+
+  test("falls back to last-known-value when the curve is empty (no anchors, no rate)", () => {
+    // Scenario: user deletes the last anchor of a housing asset that had a
+    // manual value history. The curve becomes {anchors:[], rate:null}.
+    // recalculateSnapshotForHousing must use last-known-value at the snapshot
+    // date (same as buildSnapshotAtDate does for an asset without a curve),
+    // NOT flat currentValue from valueHousingAtDate with no anchors.
+    const workspace = makeWorkspace();
+    const piso = housing(workspace, "asset_piso", 200_000_00); // currentValue is 200k
+
+    const result = recalculateSnapshotForHousing({
+      asset: piso,
+      // Empty curve — last anchor was deleted.
+      curve: { anchors: [], annualAppreciationRate: null, currentValueMinor: 200_000_00 },
+      frozenHoldings: [housingRow(150_000_00)], // snapshot was frozen at 150k
+      // The manual value history recorded 170k on 2024-06-01, before the snapshot date.
+      manualValueHistory: new Map([
+        ["asset_piso", [{ dateKey: "2024-06-01", valueMinor: 170_000_00 }]],
+      ]),
+      snapshot: snapshotWithHousing(150_000_00), // snapshot date is 2024-10-01
+      today: "2026-06-12",
+      workspace,
+    })!;
+
+    // Must use last-known-value at 2024-10-01 → 170k (NOT flat currentValue 200k).
+    expect(result.snapshot.grossAssets.amountMinor).toBe(170_000_00);
+    expect(result.snapshot.housingEquity.amountMinor).toBe(170_000_00);
+  });
+
+  test("falls back to currentValue when curve is empty and no manual history reaches that date", () => {
+    const workspace = makeWorkspace();
+    const piso = housing(workspace, "asset_piso", 200_000_00);
+
+    const result = recalculateSnapshotForHousing({
+      asset: piso,
+      curve: { anchors: [], annualAppreciationRate: null, currentValueMinor: 200_000_00 },
+      frozenHoldings: [housingRow(150_000_00)],
+      // No manual history that reaches back to 2024-10-01.
+      manualValueHistory: new Map([
+        ["asset_piso", [{ dateKey: "2025-01-01", valueMinor: 190_000_00 }]],
+      ]),
+      snapshot: snapshotWithHousing(150_000_00),
+      today: "2026-06-12",
+      workspace,
+    })!;
+
+    // No history reaches back → falls through to currentValue (the accepted
+    // approximation, same as buildSnapshotAtDate for manual holdings).
+    expect(result.snapshot.grossAssets.amountMinor).toBe(200_000_00);
   });
 });
 

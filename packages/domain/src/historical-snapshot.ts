@@ -20,9 +20,11 @@
  * and the five headline figures stay identical to the daily-capture path.
  */
 
-import { isHousing, isLiquid, tierOfAsset } from "./classification";
+import { isHousing, isHousingAsset, isLiquid, tierOfAsset } from "./classification";
 import type { DecimalString } from "./decimal";
 import { compareUnits } from "./decimal";
+import type { HousingValuationAnchor } from "./housing-valuation";
+import { valueHousingAtDate } from "./housing-valuation";
 import type { InvestmentOperation } from "./investment-types";
 import type { Liability, ManualAsset, Workspace } from "./workspace-types";
 import type { NetWorthSnapshot, ValuedNetWorthSnapshot } from "./snapshot-types";
@@ -44,6 +46,51 @@ export interface ManualValuePoint {
   valueMinor: number;
 }
 
+/**
+ * The curve inputs of one real-estate asset (PRD #108): its valuation anchors,
+ * its annual appreciation rate, and its current stored value. When an asset has
+ * an entry here AND at least an anchor or a rate, historical reconstruction
+ * values it on the snapshot's date via the pure housing curve instead of the
+ * manual last-known-value basis.
+ */
+export interface HousingCurveInputs {
+  anchors: readonly HousingValuationAnchor[];
+  annualAppreciationRate?: DecimalString | null;
+  currentValueMinor: number;
+}
+
+/**
+ * True when an asset is a housing holding (real_estate / primary residence /
+ * housing tier) AND carries a curve worth evaluating — at least one anchor or a
+ * declared rate. A housing asset with neither falls back to the last-known-value
+ * basis (no regression for assets without anchors, PRD #108).
+ */
+function hasHousingCurve(
+  asset: ManualAsset,
+  curve: HousingCurveInputs | undefined,
+): curve is HousingCurveInputs {
+  if (!curve || !isHousingAsset(asset)) return false;
+  return (
+    curve.anchors.length > 0 ||
+    (curve.annualAppreciationRate != null && curve.annualAppreciationRate !== "")
+  );
+}
+
+/** Resolve a housing asset's curve value on the target date, in minor units. */
+function housingCurveValueMinor(
+  curve: HousingCurveInputs,
+  targetDate: string,
+  today: string,
+): number {
+  return valueHousingAtDate({
+    anchors: curve.anchors,
+    annualAppreciationRate: curve.annualAppreciationRate ?? null,
+    currentValueMinor: curve.currentValueMinor,
+    targetDate,
+    today,
+  });
+}
+
 export interface BuildSnapshotAtDateInput {
   workspace: Workspace;
   scopeId: string;
@@ -56,6 +103,19 @@ export interface BuildSnapshotAtDateInput {
   operationsByAsset: ReadonlyMap<string, InvestmentOperation[]>;
   /** Audit history of manual values/balances, keyed by holding id (sorted asc by date). */
   manualValueHistory: ReadonlyMap<string, ManualValuePoint[]>;
+  /**
+   * Curve inputs of every real-estate asset, keyed by asset id (PRD #108). A
+   * housing asset present here with an anchor or a rate is valued via the pure
+   * housing curve on the target date; one absent (or with neither) keeps the
+   * manual last-known-value basis (no regression).
+   */
+  housingValuationByAsset?: ReadonlyMap<string, HousingCurveInputs>;
+  /**
+   * "Today" as YYYY-MM-DD — forwarded to the housing curve for forward
+   * extrapolation. Defaults to the target date when omitted (a target ≤ today
+   * never extrapolates forward past it, so the default is harmless).
+   */
+  today?: string;
   /** Target date as YYYY-MM-DD. */
   targetDate: string;
   /** ISO timestamp to stamp the snapshot's capturedAt (its dateKey must equal targetDate). */
@@ -154,6 +214,20 @@ export function buildSnapshotAtDate(
         units: position.currentUnits,
         ...(price !== undefined ? { unitPrice: price } : {}),
       });
+      continue;
+    }
+
+    // Housing valued from its curve (PRD #108): a real-estate asset with anchors
+    // or a rate is worth its curve value on the target date, not the last manual
+    // value. Without a curve it falls through to the manual last-known basis.
+    const curve = input.housingValuationByAsset?.get(asset.id);
+    if (hasHousingCurve(asset, curve)) {
+      const valueMinor = housingCurveValueMinor(
+        curve,
+        input.targetDate,
+        input.today ?? input.targetDate,
+      );
+      historicalAssets.push({ ...asset, currentValue: money(valueMinor, asset.currency) });
       continue;
     }
 
@@ -280,6 +354,145 @@ export function recalculateSnapshotForAsset(
 
   // Apply only the operated asset's delta to the frozen figures. The asset is
   // always an investment (an asset, never a liability), so debts never move.
+  const deltaMinor = (newRow?.valueMinor ?? 0) - (existingRow?.valueMinor ?? 0);
+  const tier = existingRow?.liquidityTier ?? newRow?.liquidityTier ?? null;
+
+  const summary = {
+    debts: { amountMinor: input.snapshot.debts.amountMinor, currency },
+    grossAssets: {
+      amountMinor: input.snapshot.grossAssets.amountMinor + deltaMinor,
+      currency,
+    },
+    housingEquity: {
+      amountMinor:
+        input.snapshot.housingEquity.amountMinor +
+        (tier && isHousing(tier) ? deltaMinor : 0),
+      currency,
+    },
+    liquidNetWorth: {
+      amountMinor:
+        input.snapshot.liquidNetWorth.amountMinor +
+        (tier && isLiquid(tier) ? deltaMinor : 0),
+      currency,
+    },
+    scopeId: input.snapshot.scopeId,
+    totalNetWorth: {
+      amountMinor: input.snapshot.totalNetWorth.amountMinor + deltaMinor,
+      currency,
+    },
+  };
+
+  const snapshot = createNetWorthSnapshot({
+    capturedAt: input.snapshot.capturedAt,
+    id: input.snapshot.id,
+    isMonthlyClose: input.snapshot.isMonthlyClose,
+    scopeId: input.snapshot.scopeId,
+    scopeLabel: input.snapshot.scopeLabel,
+    summary,
+    warnings: input.snapshot.warnings,
+  });
+
+  assertSnapshotHoldingsReconcile(rows, {
+    debtsMinor: summary.debts.amountMinor,
+    grossAssetsMinor: summary.grossAssets.amountMinor,
+  });
+
+  return { holdings: rows, snapshot };
+}
+
+export interface RecalculateHousingSnapshotInput {
+  /** The existing snapshot to recalculate (its id, scope, date, capturedAt are preserved). */
+  snapshot: NetWorthSnapshot;
+  /** The snapshot's currently frozen holding rows. */
+  frozenHoldings: SnapshotHoldingRow[];
+  /** The identity of the single real-estate asset whose curve changed. */
+  asset: ManualAsset;
+  /**
+   * That asset's curve inputs (anchors + rate + current value). When the curve
+   * has neither anchors nor a rate (e.g. the last anchor was deleted), the
+   * housing row falls back to the last-known-value / currentValue basis from
+   * `manualValueHistory` — matching the `buildSnapshotAtDate` manual-holding
+   * path so both paths stay consistent.
+   */
+  curve: HousingCurveInputs;
+  /**
+   * Audit history of manual values for this asset, keyed by asset id. Used
+   * when the curve is empty (no anchors, no rate) to resolve the last-known
+   * value at the snapshot date via the same basis as `buildSnapshotAtDate`.
+   * Omit (or pass an empty map) when the curve is guaranteed non-empty.
+   */
+  manualValueHistory?: ReadonlyMap<string, ManualValuePoint[]>;
+  workspace: Workspace;
+  /** "Today" as YYYY-MM-DD — forwarded to the curve for forward extrapolation. */
+  today: string;
+}
+
+/**
+ * Recalculate an existing snapshot after one real-estate asset's valuation
+ * curve changed (PRD #108 ripple) — a declared/edited/deleted anchor or a
+ * changed rate. The housing asset's row is recomputed from the curve at the
+ * snapshot's date; every other frozen row is preserved verbatim, exactly like
+ * the operation ripple. Figures are adjusted by the housing asset's value delta
+ * against the snapshot's own frozen figures (a housing tier, so gross + housing
+ * equity + total move; liquid does not), so the frozen tier classification of
+ * every untouched holding survives.
+ *
+ * Returns null when no holdings remain (the caller drops the snapshot). The
+ * housing asset is scope-weighted with the same allocation the headline figures
+ * use, so the reconciliation invariant holds by construction.
+ */
+export function recalculateSnapshotForHousing(
+  input: RecalculateHousingSnapshotInput,
+): ValuedNetWorthSnapshot | null {
+  const targetDate = input.snapshot.dateKey;
+  const currency = input.workspace.baseCurrency;
+  const scopeMemberIds = new Set(
+    resolveScopeMemberIds(input.workspace, input.snapshot.scopeId),
+  );
+
+  const existingRow = input.frozenHoldings.find(
+    (row) => row.holdingId === input.asset.id && row.kind === "asset",
+  );
+  const rows = input.frozenHoldings.filter((row) => row.holdingId !== input.asset.id);
+
+  // When the curve is empty (last anchor deleted, no rate) use the same
+  // last-known-value / currentValue basis that buildSnapshotAtDate uses for
+  // manual holdings — so both paths stay consistent (fix 1, PRD #108).
+  // We cannot reuse hasHousingCurve here because input.curve is always a
+  // HousingCurveInputs (not undefined), so the type guard would narrow the
+  // else-branch to never. Instead check the curve's content directly.
+  const curveIsActive =
+    input.curve.anchors.length > 0 ||
+    (input.curve.annualAppreciationRate != null &&
+      input.curve.annualAppreciationRate !== "");
+  let fullValueMinor: number;
+  if (curveIsActive) {
+    fullValueMinor = housingCurveValueMinor(input.curve, targetDate, input.today);
+  } else {
+    const points = input.manualValueHistory?.get(input.asset.id);
+    const known = lastKnownValueAtDate(points, targetDate);
+    fullValueMinor = known !== undefined ? known : input.curve.currentValueMinor;
+  }
+
+  const { ownedMinor, totalShareBps } = allocateScopedHolding(fullValueMinor, {
+    ownership: input.asset.ownership,
+    scopeMemberIds,
+  });
+
+  let newRow: SnapshotHoldingRow | undefined;
+  if (totalShareBps > 0) {
+    newRow = {
+      holdingId: input.asset.id,
+      kind: "asset",
+      label: existingRow?.label ?? input.asset.name,
+      liquidityTier: existingRow?.liquidityTier ?? tierOfAsset(input.asset),
+      valueMinor: ownedMinor,
+    };
+    rows.push(newRow);
+  }
+
+  if (rows.length === 0) return null;
+
   const deltaMinor = (newRow?.valueMinor ?? 0) - (existingRow?.valueMinor ?? 0);
   const tier = existingRow?.liquidityTier ?? newRow?.liquidityTier ?? null;
 

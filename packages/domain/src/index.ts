@@ -207,7 +207,9 @@ export { buildSnapshotId, captureSnapshotForScope } from "./capture-snapshot";
 
 export type {
   BuildSnapshotAtDateInput,
+  HousingCurveInputs,
   ManualValuePoint,
+  RecalculateHousingSnapshotInput,
   RecalculateSnapshotInput,
 } from "./historical-snapshot";
 export {
@@ -215,6 +217,7 @@ export {
   historicalCapturedAt,
   lastKnownValueAtDate,
   recalculateSnapshotForAsset,
+  recalculateSnapshotForHousing,
 } from "./historical-snapshot";
 
 export type {

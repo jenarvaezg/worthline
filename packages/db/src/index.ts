@@ -1,6 +1,8 @@
 import type { LocalPersistenceStatus } from "@worthline/domain";
 import type {
+  DecimalString,
   FireScopeConfig,
+  HousingCurveInputs,
   InvestmentOperation,
   Liability,
   ManualValuePoint,
@@ -11,8 +13,10 @@ import type {
 import {
   buildSnapshotAtDate,
   historicalCapturedAt,
+  isHousingAsset,
   listScopeOptions,
   recalculateSnapshotForAsset,
+  recalculateSnapshotForHousing,
 } from "@worthline/domain";
 import Database from "better-sqlite3";
 import type { Database as DatabaseConnection } from "better-sqlite3";
@@ -25,6 +29,7 @@ import {
   appSettings,
   assetOwnerships,
   assets,
+  assetValuations,
   auditLog,
   liabilities,
   snapshots,
@@ -162,6 +167,23 @@ export interface WorthlineStore {
     assetId: string;
     mode: "record" | "delete";
     operationDateKey: string;
+    today: string;
+  }) => void;
+  /**
+   * Generate/recalculate historical snapshots after a housing valuation change
+   * (PRD #108): a declared/edited/deleted valuation anchor with a past date, or
+   * a changed appreciation rate. Generates a fresh snapshot at `fromDateKey`
+   * when it is in the past and none exists there (valuing the housing asset from
+   * its current curve), then recalculates every existing snapshot dated ≥
+   * `fromDateKey` by re-evaluating only the housing asset's row from the curve.
+   * For a rate change, pass the first anchor's date as `fromDateKey`. A
+   * `fromDateKey` today or in the future generates no history (future anchors
+   * produce no snapshot). Skips legacy captures with no holding rows. A no-op
+   * when the asset is not housing or has no curve.
+   */
+  rippleHistoricalSnapshotsForValuation: (params: {
+    assetId: string;
+    fromDateKey: string;
     today: string;
   }) => void;
   /**
@@ -404,6 +426,16 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
       if (!workspace) return;
       rippleHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, params);
     },
+    rippleHistoricalSnapshotsForValuation: (params) => {
+      const workspace = getWorkspace();
+      if (!workspace) return;
+      rippleHistoricalSnapshotsForValuation(
+        ctx,
+        workspace,
+        store.snapshots.saveSnapshot,
+        params,
+      );
+    },
     backfillHistoricalSnapshots: (today) => {
       const workspace = getWorkspace();
       if (!workspace) return;
@@ -428,19 +460,69 @@ interface HistoricalSnapshotDeps {
   liabilities: Liability[];
   operationsByAsset: Map<string, InvestmentOperation[]>;
   manualValueHistory: Map<string, ManualValuePoint[]>;
+  /** Curve inputs (anchors + rate + current value) of every real-estate asset (PRD #108). */
+  housingValuationByAsset: Map<string, HousingCurveInputs>;
 }
 
 function buildHistoricalSnapshotDeps(
   db: StoreDb,
   workspace: Workspace,
 ): HistoricalSnapshotDeps {
+  const reconstructedAssets = readAssets(db, workspace);
   return {
-    assets: readAssets(db, workspace),
+    assets: reconstructedAssets,
+    housingValuationByAsset: readHousingCurveInputs(db, reconstructedAssets),
     liabilities: readLiabilities(db, workspace),
     manualValueHistory: readManualValueHistory(db),
     operationsByAsset: readAllOperations(db),
     scopes: listScopeOptions(workspace),
   };
+}
+
+/**
+ * Read the housing valuation curve inputs for every live real-estate asset
+ * (PRD #108): its anchors, its annual appreciation rate, and its current value.
+ * Keyed by asset id; only housing assets are included, and the domain decides
+ * (via the anchors/rate presence) whether to value from the curve or fall back
+ * to the last-known-value basis. `currentValue` comes from the already-read
+ * assets so the curve uses the same value the live read derived.
+ */
+function readHousingCurveInputs(
+  db: StoreDb,
+  liveAssets: readonly ManualAsset[],
+): Map<string, HousingCurveInputs> {
+  const housingAssets = liveAssets.filter((asset) => isHousingAsset(asset));
+  const inputs = new Map<string, HousingCurveInputs>();
+  if (housingAssets.length === 0) return inputs;
+
+  const valuationRows = db.select().from(assetValuations).all();
+  const anchorsByAsset = new Map<string, HousingCurveInputs["anchors"][number][]>();
+  for (const row of valuationRows) {
+    const list = anchorsByAsset.get(row.assetId) ?? [];
+    list.push({
+      adjustsPriorCurve: row.adjustsPriorCurve === 1,
+      valuationDate: row.valuationDate,
+      valueMinor: row.valueMinor,
+    });
+    anchorsByAsset.set(row.assetId, list);
+  }
+
+  const rateRows = db
+    .select({ id: assets.id, rate: assets.annualAppreciationRate })
+    .from(assets)
+    .all();
+  const rateByAsset = new Map<string, DecimalString | null>();
+  for (const row of rateRows) rateByAsset.set(row.id, row.rate);
+
+  for (const asset of housingAssets) {
+    inputs.set(asset.id, {
+      anchors: anchorsByAsset.get(asset.id) ?? [],
+      annualAppreciationRate: rateByAsset.get(asset.id) ?? null,
+      currentValueMinor: asset.currentValue.amountMinor,
+    });
+  }
+
+  return inputs;
 }
 
 /**
@@ -541,6 +623,7 @@ function rippleHistoricalSnapshots(
         const built = buildSnapshotAtDate({
           assets: deps.assets,
           capturedAt: historicalCapturedAt(operationDateKey),
+          housingValuationByAsset: deps.housingValuationByAsset,
           id: `histsnap_${scope.id}_${operationDateKey}`,
           liabilities: deps.liabilities,
           manualValueHistory: deps.manualValueHistory,
@@ -548,6 +631,7 @@ function rippleHistoricalSnapshots(
           scopeId: scope.id,
           scopeLabel: scope.label,
           targetDate: operationDateKey,
+          today,
           workspace,
         });
         if (built) {
@@ -589,6 +673,117 @@ function rippleHistoricalSnapshots(
         } else {
           // No holdings remain (e.g. the deleted operation was the only basis):
           // drop the snapshot rather than leave it showing stale values.
+          db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
+        }
+      }
+    }
+  });
+}
+
+/**
+ * Ripple effect for housing valuation curves (PRD #108): declaring, editing, or
+ * deleting a valuation anchor — or changing the appreciation rate — regenerates
+ * the snapshot at the change date and recalculates the existing snapshots it
+ * affects.
+ *
+ * - `fromDateKey` in the past: generate/overwrite the snapshot at that date
+ *   (valuing the housing asset from its now-current curve), then recalculate
+ *   every existing snapshot dated > fromDateKey by re-evaluating only the
+ *   housing asset's row from the curve.
+ * - For a rate change, pass the first anchor's date as `fromDateKey` so every
+ *   snapshot after it is recalculated (the rate only affects extrapolation
+ *   before the first / after the last appraisal).
+ * - `fromDateKey` today or in the future never generates history — the daily
+ *   capture owns today and the future is not history. Future anchors thus
+ *   produce no snapshot.
+ *
+ * Only the housing asset's row in each snapshot is recomputed; every other
+ * frozen row is preserved, and legacy captures with no holding rows are skipped.
+ */
+function rippleHistoricalSnapshotsForValuation(
+  ctx: StoreContext,
+  workspace: Workspace,
+  saveSnapshot: (input: SaveSnapshotInput) => void,
+  params: {
+    assetId: string;
+    fromDateKey: string;
+    today: string;
+  },
+): void {
+  const { db } = ctx;
+  const { assetId, fromDateKey, today } = params;
+
+  // The housing asset's identity — read including trashed, since it existed on
+  // the snapshot dates even if it was trashed afterwards.
+  const asset = readInvestmentIdentity(db, assetId);
+  if (!asset || !isHousingAsset(asset)) return;
+
+  // Build deps once — they are the same for every scope (Fix 2: was per-scope).
+  const deps = buildHistoricalSnapshotDeps(db, workspace);
+  const curve = deps.housingValuationByAsset.get(assetId);
+  // No map entry means the asset is not housing or has been trashed with no
+  // remaining live record — nothing to ripple.
+  if (!curve) return;
+
+  ctx.transaction(() => {
+    for (const scope of listScopeOptions(workspace)) {
+      const existing = readSnapshots(db, scope.id);
+      const existingByDate = new Map(existing.map((snap) => [snap.dateKey, snap]));
+
+      // Generate a fresh whole-portfolio snapshot at the change date when it is
+      // in the past and none exists there yet.
+      if (fromDateKey < today && !existingByDate.has(fromDateKey)) {
+        const built = buildSnapshotAtDate({
+          assets: deps.assets,
+          capturedAt: historicalCapturedAt(fromDateKey),
+          housingValuationByAsset: deps.housingValuationByAsset,
+          id: `histsnap_${scope.id}_${fromDateKey}`,
+          liabilities: deps.liabilities,
+          manualValueHistory: deps.manualValueHistory,
+          operationsByAsset: deps.operationsByAsset,
+          scopeId: scope.id,
+          scopeLabel: scope.label,
+          targetDate: fromDateKey,
+          today,
+          workspace,
+        });
+        if (built) {
+          saveSnapshot({ holdings: built.holdings, replace: false, snapshot: built.snapshot });
+        }
+      }
+
+      // Recalculate every existing snapshot on or after the change date by
+      // re-evaluating only the housing asset's row from the curve (or
+      // last-known-value when the curve is now empty — Fix 1).
+      for (const snap of existing) {
+        if (snap.dateKey < fromDateKey) continue;
+
+        const frozenHoldings = readSnapshotHoldings(db, {
+          scopeId: scope.id,
+          from: snap.dateKey,
+          to: snap.dateKey,
+        });
+
+        // A legacy capture predating holdings (ADR 0008) has nothing to recompute.
+        if (frozenHoldings.length === 0) continue;
+
+        const recalculated = recalculateSnapshotForHousing({
+          asset,
+          curve,
+          frozenHoldings,
+          manualValueHistory: deps.manualValueHistory,
+          snapshot: snap,
+          today,
+          workspace,
+        });
+
+        if (recalculated) {
+          saveSnapshot({
+            holdings: recalculated.holdings,
+            replace: true,
+            snapshot: recalculated.snapshot,
+          });
+        } else {
           db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
         }
       }
@@ -672,6 +867,7 @@ function gapFillHistoricalSnapshots(
       const built = buildSnapshotAtDate({
         assets: deps.assets,
         capturedAt: historicalCapturedAt(dateKey),
+        housingValuationByAsset: deps.housingValuationByAsset,
         id: `histsnap_${scope.id}_${dateKey}`,
         liabilities: deps.liabilities,
         manualValueHistory: deps.manualValueHistory,
@@ -679,6 +875,7 @@ function gapFillHistoricalSnapshots(
         scopeId: scope.id,
         scopeLabel: scope.label,
         targetDate: dateKey,
+        today,
         workspace,
       });
 
