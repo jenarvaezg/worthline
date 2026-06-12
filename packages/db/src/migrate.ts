@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 export function migrate(sqlite: DatabaseConnection): void {
   sqlite.pragma("journal_mode = WAL");
@@ -93,5 +93,28 @@ export function migrate(sqlite: DatabaseConnection): void {
       sqlite.exec("ALTER TABLE investment_assets ADD COLUMN price_provider TEXT");
     } catch {}
     sqlite.pragma("user_version = 8");
+  }
+
+  if (version < 9) {
+    // PRD #108 slice 4: housing valuation anchors + an appreciation rate on the
+    // owning asset. The anchor→real_estate invariant is a domain/caller guard,
+    // not a SQL constraint (R9).
+    try {
+      sqlite.exec("ALTER TABLE assets ADD COLUMN annual_appreciation_rate TEXT");
+    } catch {}
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS asset_valuations (
+      id TEXT PRIMARY KEY NOT NULL,
+      asset_id TEXT NOT NULL,
+      value_minor INTEGER NOT NULL,
+      valuation_date TEXT NOT NULL,
+      adjusts_prior_curve INTEGER NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      FOREIGN KEY (asset_id) REFERENCES assets(id) ON UPDATE no action ON DELETE cascade
+    );`);
+    sqlite.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS asset_valuations_asset_date_unique
+       ON asset_valuations (asset_id, valuation_date);`,
+    );
+    sqlite.pragma("user_version = 9");
   }
 }
