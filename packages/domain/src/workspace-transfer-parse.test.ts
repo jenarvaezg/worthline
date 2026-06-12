@@ -534,10 +534,7 @@ describe("parseWorkspaceExport — domain invariants", () => {
 
   test("duplicate snapshot ids are rejected", () => {
     const document = makeDocument((doc) => {
-      doc.snapshots = [
-        ...doc.snapshots,
-        { ...doc.snapshots[0]!, dateKey: "2026-06-02" },
-      ];
+      doc.snapshots = [...doc.snapshots, { ...doc.snapshots[0]!, dateKey: "2026-06-02" }];
     });
 
     expectRejection(document, /instantánea.*s1/);
@@ -550,10 +547,7 @@ describe("parseWorkspaceExport — domain invariants", () => {
         { code: "ZERO_VALUE_ASSET", entityId: "a1" },
       ];
       doc.priceCache = [...doc.priceCache, { ...doc.priceCache[0]! }];
-      doc.snapshots = [
-        ...doc.snapshots,
-        { ...doc.snapshots[0]!, id: "s2" },
-      ];
+      doc.snapshots = [...doc.snapshots, { ...doc.snapshots[0]!, id: "s2" }];
       doc.snapshots[0]!.holdings = [
         ...doc.snapshots[0]!.holdings,
         { ...doc.snapshots[0]!.holdings[0]! },

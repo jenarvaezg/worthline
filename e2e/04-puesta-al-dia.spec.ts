@@ -67,9 +67,7 @@ test("puesta al dia: batch update two assets → values persist → headline cha
   await page.goto("/patrimonio/actualizar");
   await page.reload();
   await expect(page.getByLabel("Valor de Cuenta ING en EUR")).toHaveValue("8000,00");
-  await expect(page.getByLabel("Valor de Fondo Monetario en EUR")).toHaveValue(
-    "4000,00",
-  );
+  await expect(page.getByLabel("Valor de Fondo Monetario en EUR")).toHaveValue("4000,00");
 
   // 9. Liquidity section renders the tier donut with at least one segment
   await page.goto("/");

@@ -1,35 +1,12 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
 import Database from "better-sqlite3";
 import type { WorthlineStore } from "@worthline/db";
 import { createWorthlineStore } from "@worthline/db";
 import { calculateNetWorth } from "@worthline/domain";
+import { createFileBackedStore, tempDatabasePath, cleanupTempDirs } from "./helpers";
 
-const tempDirs: string[] = [];
-
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { force: true, recursive: true });
-  }
-});
-
-function createTestStore(): WorthlineStore {
-  return createTestStoreWithPath().store;
-}
-
-function createTestStoreWithPath(): {
-  databasePath: string;
-  store: WorthlineStore;
-} {
-  const dataDir = mkdtempSync(join(tmpdir(), "worthline-positions-"));
-  tempDirs.push(dataDir);
-  const databasePath = join(dataDir, "worthline.sqlite");
-
-  return { databasePath, store: createWorthlineStore({ databasePath }) };
-}
+afterEach(cleanupTempDirs);
 
 function seedWorkspace(store: WorthlineStore): void {
   store.initializeWorkspace({
@@ -40,7 +17,7 @@ function seedWorkspace(store: WorthlineStore): void {
 
 describe("investment position persistence", () => {
   test("derives units, average cost, market value and P/L from recorded operations", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-positions-");
     seedWorkspace(store);
     store.createInvestmentAsset({
       currency: "EUR",
@@ -84,7 +61,7 @@ describe("investment position persistence", () => {
   });
 
   test("soft-deleted investment assets are excluded from live positions and return after restore", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-positions-");
     seedWorkspace(store);
     store.createInvestmentAsset({
       currency: "EUR",
@@ -103,9 +80,9 @@ describe("investment position persistence", () => {
       units: "10",
     });
 
-    expect(store.readPositions("member_jose").map((position) => position.assetId)).toEqual([
-      "asset_acme",
-    ]);
+    expect(
+      store.readPositions("member_jose").map((position) => position.assetId),
+    ).toEqual(["asset_acme"]);
 
     store.softDeleteAsset("asset_acme", "2026-06-11T10:00:00.000Z");
 
@@ -113,13 +90,14 @@ describe("investment position persistence", () => {
 
     store.restoreAsset("asset_acme");
 
-    expect(store.readPositions("member_jose").map((position) => position.assetId)).toEqual([
-      "asset_acme",
-    ]);
+    expect(
+      store.readPositions("member_jose").map((position) => position.assetId),
+    ).toEqual(["asset_acme"]);
   });
 
   test("an investment asset contributes its derived market value to net worth, not the stored stale value", () => {
-    const { databasePath, store } = createTestStoreWithPath();
+    const databasePath = tempDatabasePath("worthline-positions-");
+    const store = createWorthlineStore({ databasePath });
     seedWorkspace(store);
     store.createInvestmentAsset({
       currency: "EUR",
@@ -156,7 +134,7 @@ describe("investment position persistence", () => {
   });
 
   test("rejects an operation with non-positive units", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-positions-");
     seedWorkspace(store);
     store.createInvestmentAsset({
       currency: "EUR",
@@ -179,7 +157,7 @@ describe("investment position persistence", () => {
   });
 
   test("fetched price takes priority over manual price in net worth", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-positions-");
     seedWorkspace(store);
     store.createInvestmentAsset({
       currency: "EUR",

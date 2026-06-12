@@ -1,49 +1,52 @@
 /**
- * Journey 2: First run hogar — two members → ownership presets appear on create forms
+ * First-run hogar onboarding (isolated DB project)
  *
- * NOTE: This spec runs AFTER 01-first-run-solo.spec.ts which already initialized
- * the workspace. Since the DB is shared and workspace already exists, /empezar
- * will redirect to /. This spec therefore verifies household mode separately by
- * checking that after setup the ownership presets appear — but since we can't
- * reinit in the same DB, we verify the ownership UI through the asset create form
- * which is sensitive to workspace mode (household shows preset radios for multiple members).
+ * Fresh database → /empezar renders → fill the Crear hogar form →
+ * workspace is created with 2+ members → dashboard renders with the
+ * household scope.
  *
- * For a true hogar test, we navigate to /patrimonio/nuevo-activo and check
- * ownership inputs — the solo workspace has 1 member so no ownership grid is shown.
- * This spec documents that behavior and tests the hogar path via /ajustes (add member).
+ * This spec runs in its own Playwright project with an isolated database,
+ * so /empezar is reachable (no redirect to /).
  */
 
 import { test, expect } from "./fixtures";
 
-test("hogar: add second member via ajustes → ownership presets appear on asset form", async ({
+test("hogar onboarding: /empezar → Crear hogar → dashboard with household", async ({
   page,
 }) => {
-  // 1. Go to ajustes to add a second member.
-  // The shell h1 is always "worthline"; the first section heading is "Miembros".
-  await page.goto("/ajustes");
-  await expect(page.getByRole("heading", { name: "Miembros" })).toBeVisible();
+  // 1. Navigate to /empezar — fresh DB, so the onboarding page renders
+  await page.goto("/empezar");
+  await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
 
-  // 2. Add a second member "Socio"
-  await page.getByLabel("Nuevo miembro").fill("Socio");
-  await page.getByRole("button", { name: "Añadir" }).click();
+  // 2. The Crear hogar form is present with a textarea for member names
+  const memberNamesInput = page.getByLabel("Miembros (un nombre por línea)");
+  await expect(memberNamesInput).toBeVisible();
 
-  // 3. Should still be on /ajustes (redirect back) with member listed
-  await expect(page).toHaveURL(/ajustes/);
+  // 3. Fill the household members
+  await memberNamesInput.fill("Ana\nJose\nLuz");
 
-  // 4. Now navigate to nuevo-activo — with 2+ members, ownership presets must appear
+  // 4. Submit the Crear hogar form
+  await page.getByRole("button", { name: "Crear hogar" }).click();
+
+  // 5. Redirected to / — the dashboard renders
+  await expect(page).toHaveURL(/\//);
+  await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
+
+  // 6. The scope selector shows household + individual member scopes
+  const scopeNav = page.locator("[aria-label='Selector de scope']");
+  await expect(scopeNav).toBeVisible();
+  const scopeButtons = scopeNav.getByRole("button");
+  // household scope + 3 individual members = 4 buttons
+  await expect(scopeButtons).toHaveCount(4);
+
+  // 7. Navigate to nuevo-activo — ownership presets must appear (2+ members)
   await page.goto("/patrimonio/nuevo-activo");
   await expect(page.getByRole("heading", { name: "Nuevo activo" })).toBeVisible();
 
-  // 5. Ownership fieldset must be visible with at least one preset radio
   const ownershipFieldset = page.getByRole("group", { name: "Propiedad" });
   await expect(ownershipFieldset).toBeVisible();
 
-  // 6. The "100% ..." preset (scope member preset) is checked by default
-  const scopePreset = ownershipFieldset.getByRole("radio", { name: /100%/ });
-  await expect(scopePreset).toBeVisible();
-  await expect(scopePreset).toBeChecked();
-
-  // 7. "Repartir a partes iguales" preset is also present
+  // "Repartir a partes iguales" preset is present
   await expect(
     ownershipFieldset.getByRole("radio", { name: /partes iguales/i }),
   ).toBeVisible();

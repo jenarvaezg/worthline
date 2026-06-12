@@ -37,8 +37,7 @@ export default async function NuevoActivoPage({
     }
 
     const scopes = listScopeOptions(workspace);
-    const selectedScope =
-      scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
+    const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
 
     return {
       activeMembers: workspace.members.filter((m) => !m.disabledAt),
@@ -133,21 +132,22 @@ export default async function NuevoActivoPage({
               <summary>¿Qué es la capa de liquidez?</summary>
               <dl>
                 <dt>Caja</dt>
-                <dd>Efectivo, cuentas corrientes y de ahorro. Disponible de inmediato.</dd>
+                <dd>
+                  Efectivo, cuentas corrientes y de ahorro. Disponible de inmediato.
+                </dd>
                 <dt>Mercado</dt>
                 <dd>Acciones, fondos, ETFs y similares. Liquidable en días.</dd>
                 <dt>Jubilación</dt>
                 <dd>Planes de pensiones y activos con restricciones de retirada.</dd>
                 <dt>Ilíquido</dt>
-                <dd>Arte, vehículos, participaciones privadas. Difícil de vender rápido.</dd>
+                <dd>
+                  Arte, vehículos, participaciones privadas. Difícil de vender rápido.
+                </dd>
                 <dt>Vivienda</dt>
                 <dd>Inmuebles residenciales. Incluye vivienda habitual.</dd>
               </dl>
             </details>
-            <select
-              defaultValue={values["liquidityTier"] ?? "cash"}
-              name="liquidityTier"
-            >
+            <select defaultValue={values["liquidityTier"] ?? "cash"} name="liquidityTier">
               <option value="cash">Caja</option>
               <option value="market">Mercado</option>
               <option value="retirement">Jubilación</option>
@@ -194,8 +194,7 @@ function OwnershipInputs({
     return null;
   }
 
-  const scopeMember =
-    members.find((m) => m.id === scopeMemberId) ?? members[0]!;
+  const scopeMember = members.find((m) => m.id === scopeMemberId) ?? members[0]!;
   const preset = values["ownershipPreset"];
 
   return (
@@ -237,9 +236,7 @@ function OwnershipInputs({
             <label key={member.id}>
               {member.name}
               <input
-                defaultValue={
-                  values[`owner_${member.id}`] ?? (index === 0 ? "100" : "0")
-                }
+                defaultValue={values[`owner_${member.id}`] ?? (index === 0 ? "100" : "0")}
                 inputMode="decimal"
                 name={`owner_${member.id}`}
                 aria-label={`Porcentaje de ${member.name}`}

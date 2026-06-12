@@ -17,7 +17,9 @@ test("danger zone: wrong phrase aborts, exact phrase resets to onboarding", asyn
   await page.goto("/ajustes");
 
   const dangerZone = page.locator("section.dangerZone");
-  await expect(dangerZone.getByRole("heading", { name: "Zona de peligro" })).toBeVisible();
+  await expect(
+    dangerZone.getByRole("heading", { name: "Zona de peligro" }),
+  ).toBeVisible();
 
   // 1. Wrong phrase → harmless abort, still on /ajustes with an error
   await dangerZone.locator("details.confirmDelete > summary").click();

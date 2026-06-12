@@ -45,8 +45,7 @@ export default async function EditarInversionPage({
     if (!asset) return null;
 
     const scopes = listScopeOptions(workspace);
-    const selectedScope =
-      scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
+    const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
 
     const operations = store.readOperations(assetId);
     const positions = store.readPositions();
@@ -73,8 +72,7 @@ export default async function EditarInversionPage({
 
   const { asset, operations, scopes, selectedScope } = storeData;
 
-  const editValues =
-    formError?.formId === "edit" ? formError.values : {};
+  const editValues = formError?.formId === "edit" ? formError.values : {};
 
   // Bind asset id to the server actions
   async function boundUpdateInvestmentAction(formData: FormData) {
@@ -91,10 +89,7 @@ export default async function EditarInversionPage({
       selectedScopeId={selectedScope?.id}
       warnings={[]}
     >
-      <section
-        className="inversionesSubpage"
-        aria-label={`Editar ${asset.name}`}
-      >
+      <section className="inversionesSubpage" aria-label={`Editar ${asset.name}`}>
         <div className="panelHeader">
           <h2>Editar inversión</h2>
           <a href="/inversiones">← Inversiones</a>
@@ -112,10 +107,7 @@ export default async function EditarInversionPage({
           </p>
         ) : null}
 
-        <form
-          action={boundUpdateInvestmentAction}
-          className="stackForm inversionesForm"
-        >
+        <form action={boundUpdateInvestmentAction} className="stackForm inversionesForm">
           <input name="currentUrl" type="hidden" value={currentUrl} />
 
           <label>
@@ -130,8 +122,7 @@ export default async function EditarInversionPage({
           </label>
 
           <label>
-            Ticker / símbolo{" "}
-            <small>(formato Stooq, p.ej. VWRL.UK)</small>
+            Ticker / símbolo <small>(formato Stooq, p.ej. VWRL.UK)</small>
             <input
               aria-label="Ticker o símbolo"
               defaultValue={editValues["unitSymbol"] ?? asset.unitSymbol ?? ""}
@@ -141,8 +132,7 @@ export default async function EditarInversionPage({
           </label>
 
           <label>
-            ISIN{" "}
-            <small>(opcional)</small>
+            ISIN <small>(opcional)</small>
             <input
               aria-label="ISIN"
               defaultValue={editValues["isin"] ?? asset.isin ?? ""}
@@ -160,9 +150,7 @@ export default async function EditarInversionPage({
             <input
               aria-label="Precio actual por unidad en EUR"
               defaultValue={
-                editValues["manualPricePerUnit"] ??
-                asset.manualPricePerUnit ??
-                ""
+                editValues["manualPricePerUnit"] ?? asset.manualPricePerUnit ?? ""
               }
               inputMode="decimal"
               name="manualPricePerUnit"
@@ -221,8 +209,8 @@ export default async function EditarInversionPage({
             <details className="confirmDelete">
               <summary>Eliminar inversión</summary>
               <p>
-                Eliminar moverá esta inversión a la Papelera; podrás
-                restaurarla desde /inversiones.
+                Eliminar moverá esta inversión a la Papelera; podrás restaurarla desde
+                /inversiones.
               </p>
               <button type="submit">Confirmar eliminación</button>
             </details>

@@ -14,39 +14,11 @@
 
 import { vi, describe, test, expect, afterEach } from "vitest";
 
-// Stub next/cache before importing the action (server actions import it at
-// module level).  next/navigation is NOT stubbed — the real `redirect()` throws
-// a NEXT_REDIRECT error which we catch below.
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
 import { createAssetAction } from "../apps/web/app/patrimonio/actions";
-
-// ------------------------------------------------------------------ helpers --
-
-/** Catch the NEXT_REDIRECT thrown by next/navigation's `redirect()`. */
-function catchRedirect(fn: () => Promise<unknown>): Promise<string> {
-  return fn().then(
-    () => {
-      throw new Error("Expected redirect but action returned normally");
-    },
-    (err: unknown) => {
-      if (
-        err instanceof Error &&
-        (err.message === "NEXT_REDIRECT" ||
-          // Next.js encodes the destination on the error object
-          "digest" in err)
-      ) {
-        // Next.js redirect errors carry the url as `err.digest` in the format
-        // "NEXT_REDIRECT;<type>;<url>;<statusCode>;" — url is at index 2.
-        const digest = (err as { digest?: string }).digest ?? "";
-        const parts = digest.split(";");
-        return parts[2] ?? digest;
-      }
-      throw err;
-    },
-  );
-}
+import { catchRedirect } from "./helpers";
 
 /** Build a minimal FormData for the create-asset form. */
 function buildAssetFormData(overrides: Record<string, string> = {}): FormData {
@@ -97,9 +69,7 @@ describe("createAssetAction wiring", () => {
       [`owner_member_jose`]: "75",
     });
 
-    const redirectUrl = await catchRedirect(() =>
-      createAssetAction(fd, store),
-    );
+    const redirectUrl = await catchRedirect(() => createAssetAction(fd, store));
 
     // Redirect should signal success
     expect(redirectUrl).toContain("ok=asset_added");
@@ -132,9 +102,7 @@ describe("createAssetAction wiring", () => {
 
     const fd = buildAssetFormData({ name: "" }); // blank name — should fail validation
 
-    const redirectUrl = await catchRedirect(() =>
-      createAssetAction(fd, store),
-    );
+    const redirectUrl = await catchRedirect(() => createAssetAction(fd, store));
 
     // Redirect should signal an error
     expect(redirectUrl).toContain("error=");

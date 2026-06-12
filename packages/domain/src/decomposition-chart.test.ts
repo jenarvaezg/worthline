@@ -36,8 +36,7 @@ function parseCoords(points: string): Array<{ x: number; y: number }> {
 /** Maps a minor-unit value through the geometry's own y domain. */
 function yFor(value: number, yMin: number, yMax: number): number {
   return (
-    EVOLUTION_CHART_HEIGHT -
-    ((value - yMin) / (yMax - yMin)) * EVOLUTION_CHART_HEIGHT
+    EVOLUTION_CHART_HEIGHT - ((value - yMin) / (yMax - yMin)) * EVOLUTION_CHART_HEIGHT
   );
 }
 

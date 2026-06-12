@@ -1,9 +1,5 @@
 import { runBootstrapHealthcheck, withStore } from "@worthline/db";
-import {
-  formatMoneyInput,
-  formatMoneyMinor,
-  listScopeOptions,
-} from "@worthline/domain";
+import { formatMoneyInput, formatMoneyMinor, listScopeOptions } from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -40,8 +36,7 @@ export default async function PuestaAlDiaPage({
     }
 
     const scopes = listScopeOptions(workspace);
-    const selectedScope =
-      scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
+    const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
 
     return {
       // Only manual (non-investment) assets, sorted stalest first via updatedAt

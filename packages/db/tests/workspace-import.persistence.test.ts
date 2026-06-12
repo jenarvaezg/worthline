@@ -348,9 +348,7 @@ describe("importWorkspace", () => {
     store.importWorkspace(makeDocumentB());
 
     const assetIds = new Set(store.readAssets().map((a) => a.id));
-    const assetHolding = store
-      .readSnapshotHoldings()
-      .find((row) => row.kind === "asset");
+    const assetHolding = store.readSnapshotHoldings().find((row) => row.kind === "asset");
 
     expect(assetHolding).toBeDefined();
     expect(assetHolding!.holdingId).toBe("b-a1");

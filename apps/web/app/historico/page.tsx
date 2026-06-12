@@ -8,7 +8,12 @@ import {
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { buildCurrentUrl, parseScopeCookie, scaleSignedBar, SCOPE_COOKIE_NAME } from "../intake";
+import {
+  buildCurrentUrl,
+  parseScopeCookie,
+  scaleSignedBar,
+  SCOPE_COOKIE_NAME,
+} from "../intake";
 import Shell from "../shell";
 
 export const dynamic = "force-dynamic";
@@ -33,8 +38,7 @@ export default async function HistoricoPage({
     }
 
     const scopes = listScopeOptions(workspace);
-    const selectedScope =
-      scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
+    const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
     const snapshots = selectedScope ? store.readSnapshots(selectedScope.id) : [];
 
     return { scopes, selectedScope, snapshots };
@@ -56,7 +60,8 @@ export default async function HistoricoPage({
       const prev = snapshots[idx - 1];
       const delta = prev
         ? {
-            amountMinor: snapshot.totalNetWorth.amountMinor - prev.totalNetWorth.amountMinor,
+            amountMinor:
+              snapshot.totalNetWorth.amountMinor - prev.totalNetWorth.amountMinor,
             currency: snapshot.totalNetWorth.currency,
           }
         : undefined;
@@ -71,7 +76,10 @@ export default async function HistoricoPage({
     <Shell
       activeSection="historico"
       currentPageUrl={currentUrl}
-      persistence={{ displayPath: persistence.displayPath, checkedAt: persistence.checkedAt }}
+      persistence={{
+        displayPath: persistence.displayPath,
+        checkedAt: persistence.checkedAt,
+      }}
       scopes={scopes}
       selectedScopeId={selectedScope?.id}
       warnings={[]}
@@ -104,7 +112,10 @@ export default async function HistoricoPage({
                   const deltaSign = delta ? moneySign(delta) : undefined;
 
                   return (
-                    <tr key={snapshot.id} className={isMonthlyClose ? "monthlyCloseRow" : undefined}>
+                    <tr
+                      key={snapshot.id}
+                      className={isMonthlyClose ? "monthlyCloseRow" : undefined}
+                    >
                       <td className="dateCell">
                         <span className="dateKey">{snapshot.dateKey}</span>
                         {isMonthlyClose ? (

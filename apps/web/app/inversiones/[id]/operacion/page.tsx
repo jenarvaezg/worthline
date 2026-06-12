@@ -1,9 +1,5 @@
 import { runBootstrapHealthcheck, withStore } from "@worthline/db";
-import {
-  formatMoneyMinor,
-  getPriceFreshness,
-  listScopeOptions,
-} from "@worthline/domain";
+import { formatMoneyMinor, getPriceFreshness, listScopeOptions } from "@worthline/domain";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 
@@ -50,8 +46,7 @@ export default async function OperacionPage({
     if (!asset) return null;
 
     const scopes = listScopeOptions(workspace);
-    const selectedScope =
-      scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
+    const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
 
     const operations = store.readOperations(assetId);
     const priceCache = store.readPriceCache(assetId);
@@ -81,16 +76,14 @@ export default async function OperacionPage({
     notFound();
   }
 
-  const { asset, operations, position, priceCache, scopes, selectedScope } =
-    storeData;
+  const { asset, operations, position, priceCache, scopes, selectedScope } = storeData;
 
   const today = new Date().toISOString().slice(0, 10);
   const freshness = priceCache
     ? getPriceFreshness(priceCache, persistence.checkedAt)
     : null;
 
-  const operationValues =
-    formError?.formId === "operation" ? formError.values : {};
+  const operationValues = formError?.formId === "operation" ? formError.values : {};
 
   // Bind the route asset id to the server actions
   async function boundRecordOperationAction(formData: FormData) {
@@ -131,9 +124,7 @@ export default async function OperacionPage({
                   <span className="contextLabel">Último precio</span>
                   <span>
                     {priceCache.price}{" "}
-                    <small
-                      className={`priceStatus ${freshness ?? "unknown"}`}
-                    >
+                    <small className={`priceStatus ${freshness ?? "unknown"}`}>
                       {priceFreshnessLabel(freshness)}
                     </small>
                   </span>
@@ -163,18 +154,12 @@ export default async function OperacionPage({
           </p>
         ) : null}
 
-        <form
-          action={boundRecordOperationAction}
-          className="stackForm inversionesForm"
-        >
+        <form action={boundRecordOperationAction} className="stackForm inversionesForm">
           <input name="currentUrl" type="hidden" value={currentUrl} />
 
           <label>
             Tipo
-            <select
-              defaultValue={operationValues["kind"] ?? "buy"}
-              name="kind"
-            >
+            <select defaultValue={operationValues["kind"] ?? "buy"} name="kind">
               <option value="buy">Compra</option>
               <option value="sell">Venta</option>
             </select>
@@ -230,9 +215,7 @@ export default async function OperacionPage({
 
         {operations.length > 0 ? (
           <details className="recentOpsPanel" open>
-            <summary>
-              Operaciones recientes ({operations.length})
-            </summary>
+            <summary>Operaciones recientes ({operations.length})</summary>
             <div className="tableScroll">
               <table>
                 <thead>
@@ -284,4 +267,3 @@ export default async function OperacionPage({
     </Shell>
   );
 }
-

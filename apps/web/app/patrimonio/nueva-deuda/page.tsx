@@ -37,8 +37,7 @@ export default async function NuevaDeudaPage({
     }
 
     const scopes = listScopeOptions(workspace);
-    const selectedScope =
-      scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
+    const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
 
     return {
       activeMembers: workspace.members.filter((m) => !m.disabledAt),
@@ -165,8 +164,7 @@ function OwnershipInputs({
     return null;
   }
 
-  const scopeMember =
-    members.find((m) => m.id === scopeMemberId) ?? members[0]!;
+  const scopeMember = members.find((m) => m.id === scopeMemberId) ?? members[0]!;
   const preset = values["ownershipPreset"];
 
   return (
@@ -208,9 +206,7 @@ function OwnershipInputs({
             <label key={member.id}>
               {member.name}
               <input
-                defaultValue={
-                  values[`owner_${member.id}`] ?? (index === 0 ? "100" : "0")
-                }
+                defaultValue={values[`owner_${member.id}`] ?? (index === 0 ? "100" : "0")}
                 inputMode="decimal"
                 name={`owner_${member.id}`}
                 aria-label={`Porcentaje de ${member.name}`}

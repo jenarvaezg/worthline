@@ -33,9 +33,7 @@ test("vaciar papelera removes every trashed holding at once", async ({ page }) =
   // Empty the whole trash (two-step confirm)
   const emptyAll = page.locator("form.trashEmptyAll details.confirmDelete");
   await emptyAll.locator("summary").click();
-  await emptyAll
-    .getByRole("button", { name: "Confirmar vaciado de papelera" })
-    .click();
+  await emptyAll.getByRole("button", { name: "Confirmar vaciado de papelera" }).click();
 
   // Success banner and an empty trash — assert on the DOM count and the panel
   // label so the check does not depend on the (collapsed) panel being reopened.

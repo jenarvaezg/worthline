@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ManualAsset, Workspace } from "./index";
-import {
-  calculateFire,
-  calculateFireForScope,
-  filterFireEligibleAssets,
-} from "./fire";
+import { calculateFire, calculateFireForScope, filterFireEligibleAssets } from "./fire";
 
 const workspace: Workspace = {
   baseCurrency: "EUR",
@@ -55,10 +51,7 @@ describe("filterFireEligibleAssets", () => {
   });
 
   it("excludes explicitly-named asset IDs", () => {
-    const assets = [
-      makeAsset("pension", 80_000_00),
-      makeAsset("stocks", 100_000_00),
-    ];
+    const assets = [makeAsset("pension", 80_000_00), makeAsset("stocks", 100_000_00)];
 
     const result = filterFireEligibleAssets(assets, ["pension"]);
 
@@ -66,10 +59,7 @@ describe("filterFireEligibleAssets", () => {
   });
 
   it("includes regular non-primary-residence assets", () => {
-    const assets = [
-      makeAsset("stocks", 100_000_00),
-      makeAsset("cash", 20_000_00),
-    ];
+    const assets = [makeAsset("stocks", 100_000_00), makeAsset("cash", 20_000_00)];
 
     const result = filterFireEligibleAssets(assets);
 
@@ -162,9 +152,7 @@ describe("calculateFireForScope", () => {
   it("scopes down by member ownership correctly", () => {
     // alice owns 100% of asset worth 200000 minor; bob owns 0%
     const assets = [
-      makeAsset("etf", 200_000, false, [
-        { memberId: "alice", shareBps: 10_000 },
-      ]),
+      makeAsset("etf", 200_000, false, [{ memberId: "alice", shareBps: 10_000 }]),
       // second asset split evenly
       makeAsset("bonds", 100_000, false, [
         { memberId: "alice", shareBps: 5_000 },

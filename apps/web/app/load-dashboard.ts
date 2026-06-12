@@ -114,7 +114,11 @@ export async function loadDashboard(
 
   // Persist refreshed prices back to the store
   for (const price of priceCache) {
-    if (initialCache.every((c) => c.assetId !== price.assetId || c.fetchedAt !== price.fetchedAt)) {
+    if (
+      initialCache.every(
+        (c) => c.assetId !== price.assetId || c.fetchedAt !== price.fetchedAt,
+      )
+    ) {
       store.upsertPrice(price);
     }
   }

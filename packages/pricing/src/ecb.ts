@@ -12,9 +12,11 @@ export const ecbProvider: PriceProvider = {
     if (!res.ok) return null;
     const data = (await res.json()) as Record<string, unknown>;
     const obs = (
-      data?.dataSets as Array<{
-        series?: Record<string, { observations?: Record<string, unknown[]> }>;
-      }> | undefined
+      data?.dataSets as
+        | Array<{
+            series?: Record<string, { observations?: Record<string, unknown[]> }>;
+          }>
+        | undefined
     )?.[0]?.series?.["0:0:0:0:0"]?.observations?.["0"];
     if (!obs?.[0]) return null;
     return { price: String(1 / Number(obs[0])), currency: "EUR" };

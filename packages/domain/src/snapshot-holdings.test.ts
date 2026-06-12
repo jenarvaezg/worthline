@@ -175,9 +175,9 @@ describe("buildSnapshotHoldingRows — row production and denormalization", () =
       150_000_00,
     );
     // Shared mortgage: half of it.
-    expect(
-      rows.find((row) => row.holdingId === "liability_mortgage")?.valueMinor,
-    ).toBe(60_000_00);
+    expect(rows.find((row) => row.holdingId === "liability_mortgage")?.valueMinor).toBe(
+      60_000_00,
+    );
     // Ana's account is not in Jose's scope — no row at all.
     expect(rows.some((row) => row.holdingId === "asset_ana_only")).toBe(false);
   });

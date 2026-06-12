@@ -143,3 +143,45 @@ describe("moneySign", () => {
     expect(moneySign(money(0, "EUR"))).toBe("zero");
   });
 });
+
+describe("negative amount parsing", () => {
+  test("parseDecimal handles negative es-ES input", () => {
+    expect(parseDecimal("-1.234,56")).toBeCloseTo(-1234.56, 5);
+    expect(parseDecimal("-100")).toBeCloseTo(-100, 5);
+  });
+
+  test("parseDecimalStrict handles negative input", () => {
+    expect(parseDecimalStrict("-1.234,56")).toBeCloseTo(-1234.56, 5);
+    expect(parseDecimalStrict("-100")).toBe(-100);
+    expect(parseDecimalStrict("-0.5")).toBe(-0.5);
+  });
+
+  test("parseDecimalToMinorStrict handles negative input", () => {
+    expect(parseDecimalToMinorStrict("-100")).toBe(-10_000);
+    expect(parseDecimalToMinorStrict("-1.234,56")).toBe(-123_456);
+  });
+
+  test("formatMoneyInput handles negative amounts", () => {
+    expect(formatMoneyInput(-10_000)).toBe("-100,00");
+    expect(formatMoneyInput(-123_456)).toBe("-1234,56");
+  });
+});
+
+describe("dot-only ambiguity in es-ES parsing", () => {
+  test("parseDecimal treats '1.234' (no comma) as 1.234, not 1234", () => {
+    // Without a comma, dots are NOT treated as thousands separators.
+    // "1.234" is parsed as the plain decimal 1.234.
+    expect(parseDecimal("1.234")).toBeCloseTo(1.234, 5);
+  });
+
+  test("parseDecimal treats '1.234.567' (no comma) as NaN → 0", () => {
+    // Multiple dots without comma produce an invalid Number → 0.
+    expect(parseDecimal("1.234.567")).toBe(0);
+  });
+
+  test("parseDecimalStrict rejects '1.234' with no comma as plain decimal", () => {
+    // The strict parser normalises only when comma is present.
+    // "1.234" without comma passes the regex as a plain decimal.
+    expect(parseDecimalStrict("1.234")).toBeCloseTo(1.234, 5);
+  });
+});

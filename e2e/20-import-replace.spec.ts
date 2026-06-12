@@ -52,9 +52,7 @@ test("import replaces the whole workspace; an invalid file changes nothing", asy
   await page.getByLabel("Valor actual en EUR").fill("1234");
   await page.getByRole("button", { name: "Añadir activo" }).click();
   await expect(page).toHaveURL(/\/patrimonio/);
-  await expect(
-    page.getByRole("cell", { name: "Activo preexistente 20" }),
-  ).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Activo preexistente 20" })).toBeVisible();
 
   // ── Happy path: preview, then confirm, in the danger zone ────────────────
   await page.goto("/ajustes");

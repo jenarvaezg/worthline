@@ -54,8 +54,7 @@ export default async function EditarPage({
     }
 
     const scopes = listScopeOptions(workspace);
-    const selectedScope =
-      scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
+    const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
 
     const assets = store.readAssets();
     const liabilities = store.readLiabilities();
@@ -167,11 +166,7 @@ export default async function EditarPage({
           <h3>Zona de peligro</h3>
           {asset ? (
             <form action={deleteAssetAction}>
-              <input
-                name="currentUrl"
-                type="hidden"
-                value={`/patrimonio/${id}/editar`}
-              />
+              <input name="currentUrl" type="hidden" value={`/patrimonio/${id}/editar`} />
               <input name="id" type="hidden" value={id} />
               <details className="confirmDelete">
                 <summary>Eliminar activo</summary>
@@ -181,11 +176,7 @@ export default async function EditarPage({
             </form>
           ) : (
             <form action={deleteLiabilityAction}>
-              <input
-                name="currentUrl"
-                type="hidden"
-                value={`/patrimonio/${id}/editar`}
-              />
+              <input name="currentUrl" type="hidden" value={`/patrimonio/${id}/editar`} />
               <input name="id" type="hidden" value={id} />
               <details className="confirmDelete">
                 <summary>Eliminar deuda</summary>
@@ -240,10 +231,7 @@ function AssetEditForm({
           <>
             <label>
               Tipo
-              <select
-                defaultValue={values["type"] ?? asset.type}
-                name="type"
-              >
+              <select defaultValue={values["type"] ?? asset.type} name="type">
                 <option value="cash">Cash</option>
                 <option value="manual">Manual</option>
                 <option value="real_estate">Inmueble</option>
@@ -432,8 +420,7 @@ function OwnershipInputs({
     return null;
   }
 
-  const scopeMember =
-    members.find((m) => m.id === scopeMemberId) ?? members[0]!;
+  const scopeMember = members.find((m) => m.id === scopeMemberId) ?? members[0]!;
   const preset = values["ownershipPreset"] ?? "custom";
 
   const currentBpsFor = (memberId: string): string => {

@@ -1,22 +1,13 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { createWorthlineStore } from "@worthline/db";
 import { listScopeOptions, resolveScopeMemberIds } from "@worthline/domain";
+import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 
-const tempDirs: string[] = [];
-
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { force: true, recursive: true });
-  }
-});
+afterEach(cleanupTempDirs);
 
 describe("local workspace persistence", () => {
   test("initializes an individual EUR workspace with one member", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-workspace-");
 
     store.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
@@ -34,7 +25,7 @@ describe("local workspace persistence", () => {
   });
 
   test("persists household members, groups, edits, and soft-disabled members", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-workspace-");
 
     store.initializeWorkspace({
       groups: [
@@ -79,12 +70,3 @@ describe("local workspace persistence", () => {
     ]);
   });
 });
-
-function createTestStore() {
-  const dataDir = mkdtempSync(join(tmpdir(), "worthline-workspace-"));
-  tempDirs.push(dataDir);
-
-  return createWorthlineStore({
-    databasePath: join(dataDir, "worthline.sqlite"),
-  });
-}

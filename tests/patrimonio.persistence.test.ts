@@ -1,22 +1,11 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { createWorthlineStore } from "@worthline/db";
+import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 
-const tempDirs: string[] = [];
-
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { force: true, recursive: true });
-  }
-});
+afterEach(cleanupTempDirs);
 
 function setupStore() {
-  const dir = mkdtempSync(join(tmpdir(), "worthline-patrimonio-"));
-  tempDirs.push(dir);
-  const store = createWorthlineStore({ databasePath: join(dir, "worthline.sqlite") });
+  const store = createFileBackedStore("worthline-patrimonio-");
   store.initializeWorkspace({
     members: [
       { id: "m_ana", name: "Ana" },
@@ -55,9 +44,7 @@ describe("batchApplyValueUpdates — value-update-pass persistence", () => {
     });
 
     // Apply batch: only a_cash changes, a_manual stays at 200_000
-    store.batchApplyValueUpdates([
-      { id: "a_cash", newValueMinor: 110_000 },
-    ]);
+    store.batchApplyValueUpdates([{ id: "a_cash", newValueMinor: 110_000 }]);
 
     const assets = store.readAssets();
     const cash = assets.find((a) => a.id === "a_cash")!;

@@ -214,9 +214,7 @@ describe("exportWorkspace", () => {
     });
     expect("disabledAt" in doc.members[0]!).toBe(false);
 
-    expect(doc.groups).toEqual([
-      { id: "g1", memberIds: ["m1", "m2"], name: "Familia" },
-    ]);
+    expect(doc.groups).toEqual([{ id: "g1", memberIds: ["m1", "m2"], name: "Familia" }]);
 
     // Live assets only — trashed ones must not appear here.
     expect(doc.assets.map((a) => a.id)).toEqual(["a_cash", "a_home", "a_inv"]);

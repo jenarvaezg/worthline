@@ -79,7 +79,10 @@ export async function disableMemberAction(formData: FormData, _store?: Worthline
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
-export async function reactivateMemberAction(formData: FormData, _store?: WorthlineStore) {
+export async function reactivateMemberAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+) {
   const id = parseEntityId(formData);
 
   if (!id) {
@@ -94,7 +97,10 @@ export async function reactivateMemberAction(formData: FormData, _store?: Worthl
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
-export async function hardDeleteMemberAction(formData: FormData, _store?: WorthlineStore) {
+export async function hardDeleteMemberAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+) {
   const id = parseEntityId(formData);
 
   if (!id) {
@@ -310,7 +316,10 @@ export async function saveFireConfigAction(formData: FormData, _store?: Worthlin
 
 // === Warning override retract action ===
 
-export async function retractWarningOverrideAction(formData: FormData, _store?: WorthlineStore) {
+export async function retractWarningOverrideAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+) {
   const code = String(formData.get("code") ?? "").trim();
   const entityId = String(formData.get("entityId") ?? "").trim();
 

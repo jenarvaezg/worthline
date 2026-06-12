@@ -45,7 +45,10 @@ test("warning lifecycle: zero asset → warning badge → override → listed in
 
   // 6. Acknowledge the warning on that specific row
   await page.goto("/patrimonio");
-  await page.locator(`#${assetId}`).getByRole("button", { name: "Es intencional" }).click();
+  await page
+    .locator(`#${assetId}`)
+    .getByRole("button", { name: "Es intencional" })
+    .click();
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toBeVisible();
 
@@ -61,17 +64,16 @@ test("warning lifecycle: zero asset → warning badge → override → listed in
   const ourOverride = page.locator(".overrideRow").filter({ hasText: assetId });
   await expect(ourOverride).toBeVisible();
   // Force-open the <details> via JS so the submit button is reachable
-  await ourOverride.locator("details.confirmDelete").evaluate((el: HTMLDetailsElement) => {
-    el.open = true;
-  });
+  await ourOverride
+    .locator("details.confirmDelete")
+    .evaluate((el: HTMLDetailsElement) => {
+      el.open = true;
+    });
   // Wait until the button is visible (details is open)
   const confirmBtn = ourOverride.locator("details.confirmDelete button[type='submit']");
   await expect(confirmBtn).toBeVisible();
   // Click and wait for the navigation that the server action triggers
-  await Promise.all([
-    page.waitForURL(/\/ajustes\?ok=saved/),
-    confirmBtn.click(),
-  ]);
+  await Promise.all([page.waitForURL(/\/ajustes\?ok=saved/), confirmBtn.click()]);
 
   // 9. Verify we landed on the success URL
   await expect(page).toHaveURL(/\/ajustes\?ok=saved/);

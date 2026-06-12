@@ -29,21 +29,17 @@ test("trash → eliminar definitivamente → gone for good", async ({ page }) =>
   const trashRow = page.locator(".trashRow", { hasText: "Activo Borrado Duro" });
   const hardDelete = trashRow.locator("details.confirmDelete");
   await hardDelete.locator("summary").click();
-  await hardDelete
-    .getByRole("button", { name: "Confirmar borrado definitivo" })
-    .click();
+  await hardDelete.getByRole("button", { name: "Confirmar borrado definitivo" }).click();
 
   // 4. Success banner and the item is gone from the trash entirely
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toContainText("definitivamente");
 
   await page.locator("details.trashPanel").locator("summary").first().click();
-  await expect(
-    page.locator(".trashRow", { hasText: "Activo Borrado Duro" }),
-  ).toHaveCount(0);
+  await expect(page.locator(".trashRow", { hasText: "Activo Borrado Duro" })).toHaveCount(
+    0,
+  );
 
   // 5. And it is not in the active table either
-  await expect(
-    page.getByRole("cell", { name: "Activo Borrado Duro" }),
-  ).not.toBeVisible();
+  await expect(page.getByRole("cell", { name: "Activo Borrado Duro" })).not.toBeVisible();
 });

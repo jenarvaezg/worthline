@@ -1,22 +1,13 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { createWorthlineStore } from "@worthline/db";
 import { calculateNetWorth } from "@worthline/domain";
+import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 
-const tempDirs: string[] = [];
-
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { force: true, recursive: true });
-  }
-});
+afterEach(cleanupTempDirs);
 
 describe("housing and debt persistence", () => {
   test("persists real estate and mortgage as separate net worth components", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-housing-");
 
     store.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
@@ -55,12 +46,3 @@ describe("housing and debt persistence", () => {
     expect(summary.liquidNetWorth.amountMinor).toBe(0);
   });
 });
-
-function createTestStore() {
-  const dataDir = mkdtempSync(join(tmpdir(), "worthline-housing-"));
-  tempDirs.push(dataDir);
-
-  return createWorthlineStore({
-    databasePath: join(dataDir, "worthline.sqlite"),
-  });
-}

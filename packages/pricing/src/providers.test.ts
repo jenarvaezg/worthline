@@ -76,7 +76,8 @@ describe("stooqProvider", () => {
   });
 
   it("parses valid CSV with header + data line", async () => {
-    const csv = "Symbol,Date,Time,Open,High,Low,Close,Volume\nAAPL,2024-01-15,16:00:00,180.00,182.50,179.50,181.25,55000000";
+    const csv =
+      "Symbol,Date,Time,Open,High,Low,Close,Volume\nAAPL,2024-01-15,16:00:00,180.00,182.50,179.50,181.25,55000000";
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
       text: async () => csv,
@@ -88,7 +89,8 @@ describe("stooqProvider", () => {
   });
 
   it("returns null when close price is N/D", async () => {
-    const csv = "Symbol,Date,Time,Open,High,Low,Close,Volume\nAAPL,2024-01-15,16:00:00,N/D,N/D,N/D,N/D,0";
+    const csv =
+      "Symbol,Date,Time,Open,High,Low,Close,Volume\nAAPL,2024-01-15,16:00:00,N/D,N/D,N/D,N/D,0";
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
       text: async () => csv,
@@ -143,7 +145,11 @@ describe("fetchAndCachePrice", () => {
     const provider = {
       name: "stooq" as const,
       canFetch: () => true,
-      fetchPrice: async () => ({ price: "42.50", currency: "EUR", priceDate: "2024-01-15" }),
+      fetchPrice: async () => ({
+        price: "42.50",
+        currency: "EUR",
+        priceDate: "2024-01-15",
+      }),
     };
 
     const result: AssetPrice = await fetchAndCachePrice(provider, baseCtx);

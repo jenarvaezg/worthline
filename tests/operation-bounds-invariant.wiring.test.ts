@@ -20,31 +20,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
 import { recordOperationAction } from "../apps/web/app/inversiones/actions";
 import { createInvestmentOperationSafe } from "@worthline/domain";
-
-// ------------------------------------------------------------------ helpers --
-
-function catchRedirect(fn: () => Promise<unknown>): Promise<string> {
-  return fn().then(
-    () => {
-      throw new Error("Expected redirect but action returned normally");
-    },
-    (err: unknown) => {
-      if (
-        err instanceof Error &&
-        (err.message === "NEXT_REDIRECT" || "digest" in err)
-      ) {
-        const digest = (err as { digest?: string }).digest ?? "";
-        const parts = digest.split(";");
-        return parts[2] ?? digest;
-      }
-      throw err;
-    },
-  );
-}
-
-function errorMessageOf(url: string): string {
-  return new URL(url, "http://worthline.local").searchParams.get("error") ?? "";
-}
+import { catchRedirect, errorMessageOf } from "./helpers";
 
 function buildOperationFormData(overrides: Record<string, string> = {}): FormData {
   const fd = new FormData();

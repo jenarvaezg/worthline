@@ -35,7 +35,9 @@ export function parseViewParam(value: string | string[] | undefined): NetWorthFr
   return normalizeParam(value) === "liquid" ? "liquid" : "total";
 }
 
-export function parseScopeParam(value: string | string[] | undefined): string | undefined {
+export function parseScopeParam(
+  value: string | string[] | undefined,
+): string | undefined {
   const raw = normalizeParam(value);
   const trimmed = raw?.trim();
 
@@ -112,7 +114,12 @@ export interface FormErrorContext {
  */
 export function errorRedirectUrl(
   currentUrl: string,
-  error: { message: string; formId?: string; values?: Record<string, string>; anchor?: string },
+  error: {
+    message: string;
+    formId?: string;
+    values?: Record<string, string>;
+    anchor?: string;
+  },
 ): string {
   let url = appendParam(currentUrl, "error", error.message);
 
@@ -136,7 +143,11 @@ export function errorRedirectUrl(
  * Use this instead of appendParam(currentUrl, "ok", key) when the operation
  * affected a specific row and the user should land at that row.
  */
-export function successRedirectUrl(currentUrl: string, okKey: string, anchor?: string): string {
+export function successRedirectUrl(
+  currentUrl: string,
+  okKey: string,
+  anchor?: string,
+): string {
   const url = appendParam(currentUrl, "ok", okKey);
 
   return anchor ? `${url}#${anchor}` : url;
@@ -677,7 +688,9 @@ function normalizeParam(value: string | string[] | undefined): string | undefine
  * Expects a single `name` field. Rejects blank names so the error is visible
  * and the typed value can be preserved via the intake v2 redirect pattern.
  */
-export function parseEmpezarSolo(formData: FormData): StrictParseResult<WorkspaceInitCommand> {
+export function parseEmpezarSolo(
+  formData: FormData,
+): StrictParseResult<WorkspaceInitCommand> {
   const name = String(formData.get("name") ?? "").trim();
 
   if (!name) {
@@ -698,7 +711,9 @@ export function parseEmpezarSolo(formData: FormData): StrictParseResult<Workspac
  * Expects a `memberNames` textarea with one name per line. Blank lines are
  * filtered silently. Rejects if no non-blank names remain.
  */
-export function parseEmpezarHogar(formData: FormData): StrictParseResult<WorkspaceInitCommand> {
+export function parseEmpezarHogar(
+  formData: FormData,
+): StrictParseResult<WorkspaceInitCommand> {
   const names = String(formData.get("memberNames") ?? "")
     .split("\n")
     .map((n) => n.trim())
@@ -815,7 +830,8 @@ export function parseInvestmentAssetCommandStrict(
     if (!/^\d+(\.\d+)?$/.test(normalized) || parseFloat(normalized) < 0) {
       return {
         ok: false,
-        error: "El precio manual no es válido. Introduce un número positivo o déjalo en blanco.",
+        error:
+          "El precio manual no es válido. Introduce un número positivo o déjalo en blanco.",
       };
     }
 
@@ -917,7 +933,13 @@ export function parseRouteOperationCommand(
 export function parseUpdateInvestmentCommand(
   formData: FormData,
   assetId: string,
-): StrictParseResult<{ id: string; name: string; unitSymbol?: string; isin?: string; manualPricePerUnit?: DecimalString }> {
+): StrictParseResult<{
+  id: string;
+  name: string;
+  unitSymbol?: string;
+  isin?: string;
+  manualPricePerUnit?: DecimalString;
+}> {
   const name = String(formData.get("name") ?? "").trim();
 
   if (!name) {
@@ -935,7 +957,8 @@ export function parseUpdateInvestmentCommand(
     if (!/^\d+(\.\d+)?$/.test(normalized) || parseFloat(normalized) < 0) {
       return {
         ok: false,
-        error: "El precio manual no es válido. Introduce un número positivo o déjalo en blanco.",
+        error:
+          "El precio manual no es válido. Introduce un número positivo o déjalo en blanco.",
       };
     }
 
@@ -958,7 +981,6 @@ export function parseUpdateInvestmentCommand(
     },
   };
 }
-
 
 /** Map a price freshness state to a localized label (shared by /inversiones pages). */
 export function priceFreshnessLabel(freshness: PriceFreshnessState | null): string {

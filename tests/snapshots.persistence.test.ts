@@ -1,26 +1,17 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { createWorthlineStore } from "@worthline/db";
 import {
   calculateSnapshotDeltas,
   captureNetWorthSnapshot,
   type DomainWarning,
 } from "@worthline/domain";
+import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 
-const tempDirs: string[] = [];
-
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { force: true, recursive: true });
-  }
-});
+afterEach(cleanupTempDirs);
 
 describe("snapshot persistence", () => {
   test("freezes daily snapshots, prevents accidental duplicates, and calculates deltas", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-snapshots-");
 
     store.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
@@ -109,7 +100,7 @@ describe("snapshot persistence", () => {
   });
 
   test("freezes domain warnings present at capture time", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-snapshots-");
 
     store.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
@@ -147,12 +138,3 @@ describe("snapshot persistence", () => {
     expect(warnings[0]!.severity).toBe("overrideable");
   });
 });
-
-function createTestStore() {
-  const dataDir = mkdtempSync(join(tmpdir(), "worthline-snapshots-"));
-  tempDirs.push(dataDir);
-
-  return createWorthlineStore({
-    databasePath: join(dataDir, "worthline.sqlite"),
-  });
-}

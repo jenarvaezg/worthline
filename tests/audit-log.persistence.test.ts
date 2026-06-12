@@ -1,29 +1,11 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { createWorthlineStore } from "@worthline/db";
+import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 
-const tempDirs: string[] = [];
-
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { force: true, recursive: true });
-  }
-});
-
-function createTestStore() {
-  const dataDir = mkdtempSync(join(tmpdir(), "worthline-audit-"));
-  tempDirs.push(dataDir);
-
-  return createWorthlineStore({
-    databasePath: join(dataDir, "worthline.sqlite"),
-  });
-}
+afterEach(cleanupTempDirs);
 
 function setupStore() {
-  const store = createTestStore();
+  const store = createFileBackedStore("worthline-audit-");
 
   store.initializeWorkspace({
     members: [{ id: "member_a", name: "Ana" }],

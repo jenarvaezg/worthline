@@ -10,6 +10,7 @@ dist/
 coverage/
 test-results/
 playwright-report/
+playwright-report-first-run/
 
 .local/
 .scratch/

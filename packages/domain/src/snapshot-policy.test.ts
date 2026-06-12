@@ -1,9 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import {
-  deriveMonthlyCloses,
-  planSnapshotCapture,
-} from "./snapshot-policy";
+import { deriveMonthlyCloses, planSnapshotCapture } from "./snapshot-policy";
 
 // Minimal snapshot shape — only the fields the policy cares about.
 function snap(id: string, dateKey: string, scopeId = "household") {
@@ -93,10 +90,7 @@ describe("deriveMonthlyCloses", () => {
   });
 
   test("handles year boundary correctly", () => {
-    const snapshots = [
-      snap("s1", "2025-12-31"),
-      snap("s2", "2026-01-01"),
-    ];
+    const snapshots = [snap("s1", "2025-12-31"), snap("s2", "2026-01-01")];
     const closes = deriveMonthlyCloses(snapshots);
 
     expect(closes.get("2025-12")).toBe("s1");

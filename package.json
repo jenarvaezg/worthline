@@ -14,6 +14,7 @@
     "lint": "eslint apps packages tests --max-warnings=0",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:first-run": "playwright test --config playwright.first-run.config.ts",
     "test:watch": "vitest",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "format": "prettier --check ."

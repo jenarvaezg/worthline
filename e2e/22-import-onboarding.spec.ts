@@ -83,9 +83,7 @@ test("fresh install imports a live-state-only file from /empezar and lands on th
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify(liveStateOnlyDoc)),
   });
-  await importSection
-    .getByRole("button", { name: "Ver contenido del archivo" })
-    .click();
+  await importSection.getByRole("button", { name: "Ver contenido del archivo" }).click();
 
   // Content summary, per section — absent sections counted as empty.
   await expect(importSection.getByText("1 miembro", { exact: true })).toBeVisible();

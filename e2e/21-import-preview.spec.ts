@@ -69,9 +69,7 @@ test("import preview: summary + data-loss warning for a valid file; inline error
   await page.getByLabel("Valor actual en EUR").fill("777");
   await page.getByRole("button", { name: "Añadir activo" }).click();
   await expect(page).toHaveURL(/\/patrimonio/);
-  await expect(
-    page.getByRole("cell", { name: "Activo preexistente 21" }),
-  ).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Activo preexistente 21" })).toBeVisible();
 
   // ── Valid file: preview shows summary, warning, reminder, then confirm ──
   await page.goto("/ajustes");
@@ -134,7 +132,5 @@ test("import preview: summary + data-loss warning for a valid file; inline error
 
   // Nothing was imported: the pre-existing workspace is intact.
   await page.goto("/patrimonio");
-  await expect(
-    page.getByRole("cell", { name: "Activo preexistente 21" }),
-  ).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Activo preexistente 21" })).toBeVisible();
 });

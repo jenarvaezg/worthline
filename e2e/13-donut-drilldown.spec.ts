@@ -19,9 +19,7 @@ const DRILL_BY_TIER: Record<string, string> = {
   housing: "housing",
 };
 
-test("every donut segment links to its tier's drill group", async ({
-  page,
-}) => {
+test("every donut segment links to its tier's drill group", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
 
@@ -29,6 +27,10 @@ test("every donut segment links to its tier's drill group", async ({
   // its tier — the same mapping the decomposition bands use.
   const segmentLinks = page.locator(".tierDonut a");
   const count = await segmentLinks.count();
+
+  // By this point in the serial run, holdings exist in at least one tier,
+  // so the donut must render at least one segment link.
+  expect(count).toBeGreaterThanOrEqual(1);
 
   for (let i = 0; i < count; i += 1) {
     const link = segmentLinks.nth(i);
@@ -58,10 +60,7 @@ test("donut segment click lands in the drill view, preserving the Vista", async 
 
   if ((await segmentLink.count()) > 0) {
     await expect(segmentLink).toHaveAttribute("href", /view=liquid/);
-    await expect(segmentLink).toHaveAttribute(
-      "href",
-      /drill=(liquid|rest|housing)/,
-    );
+    await expect(segmentLink).toHaveAttribute("href", /drill=(liquid|rest|housing)/);
     // A thin annular wedge has no reliable bounding-box center to aim a
     // pointer at; a dispatched click activates the native anchor the same
     // way (no client JS involved either way).
@@ -77,8 +76,5 @@ test("donut segment click lands in the drill view, preserving the Vista", async 
   await expect(page.locator(".drillPanel")).toBeVisible();
 
   // And the breadcrumb back keeps preserving it (same contract as #76/#77).
-  await expect(page.locator(".drillBreadcrumb")).toHaveAttribute(
-    "href",
-    /view=liquid/,
-  );
+  await expect(page.locator(".drillBreadcrumb")).toHaveAttribute("href", /view=liquid/);
 });

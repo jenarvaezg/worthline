@@ -22,31 +22,7 @@ import {
   hardDeleteMemberAction,
   resetWorkspaceAction,
 } from "../apps/web/app/ajustes/actions";
-
-// ------------------------------------------------------------------ helpers --
-
-function catchRedirect(fn: () => Promise<unknown>): Promise<string> {
-  return fn().then(
-    () => {
-      throw new Error("Expected redirect but action returned normally");
-    },
-    (err: unknown) => {
-      if (err instanceof Error && (err.message === "NEXT_REDIRECT" || "digest" in err)) {
-        const digest = (err as { digest?: string }).digest ?? "";
-        const parts = digest.split(";");
-        return parts[2] ?? digest;
-      }
-      throw err;
-    },
-  );
-}
-
-function fd(fields: Record<string, string>, currentUrl = "/patrimonio"): FormData {
-  const form = new FormData();
-  form.set("currentUrl", currentUrl);
-  for (const [k, v] of Object.entries(fields)) form.set(k, v);
-  return form;
-}
+import { catchRedirect, fd } from "./helpers";
 
 let store: WorthlineStore;
 

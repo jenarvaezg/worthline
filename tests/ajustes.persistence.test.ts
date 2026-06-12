@@ -2,33 +2,15 @@
  * TDD tests for #60 ajustes — member reactivate and warning override retract.
  * Prior art: tests/workspace.persistence.test.ts
  */
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { createWorthlineStore } from "@worthline/db";
+import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 
-const tempDirs: string[] = [];
-
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { force: true, recursive: true });
-  }
-});
-
-function createTestStore() {
-  const dataDir = mkdtempSync(join(tmpdir(), "worthline-ajustes-"));
-  tempDirs.push(dataDir);
-
-  return createWorthlineStore({
-    databasePath: join(dataDir, "worthline.sqlite"),
-  });
-}
+afterEach(cleanupTempDirs);
 
 describe("member reactivate persistence", () => {
   test("reactivates a disabled member — clears disabledAt", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-ajustes-");
 
     store.initializeWorkspace({
       members: [
@@ -54,7 +36,7 @@ describe("member reactivate persistence", () => {
   });
 
   test("reactivating an already-active member is a no-op", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-ajustes-");
 
     store.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
@@ -65,11 +47,13 @@ describe("member reactivate persistence", () => {
     store.reactivateMember("member_jose");
 
     const workspace = store.readWorkspace();
-    expect(workspace?.members.find((m) => m.id === "member_jose")?.disabledAt).toBeUndefined();
+    expect(
+      workspace?.members.find((m) => m.id === "member_jose")?.disabledAt,
+    ).toBeUndefined();
   });
 
   test("disable → reactivate → disable cycle persists correctly", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-ajustes-");
 
     store.initializeWorkspace({
       members: [
@@ -92,7 +76,7 @@ describe("member reactivate persistence", () => {
 
 describe("warning override retract persistence", () => {
   test("retracting a specific override removes only that one", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-ajustes-");
 
     store.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
@@ -113,7 +97,7 @@ describe("warning override retract persistence", () => {
   });
 
   test("retracting a non-existent override is a no-op", () => {
-    const store = createTestStore();
+    const store = createFileBackedStore("worthline-ajustes-");
 
     store.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],

@@ -2,7 +2,7 @@
 
 worthline shows a single headline figure — **net worth** (all assets minus all
 debts, home equity included) — with an optional **Liquid** framing that only
-changes *which* figure is the hero. Gross assets, debts, housing equity, and
+changes _which_ figure is the hero. Gross assets, debts, housing equity, and
 liquid net worth are always-visible breakdown around it, not separate "views".
 
 We considered keeping five equal-weight metric tiles, and keeping the three

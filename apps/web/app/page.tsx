@@ -100,7 +100,11 @@ export default async function DashboardPage({
       drill: selectedDrill,
       today,
       now,
-      refreshPrices: async ({ cacheEntries, assets, nowIso }): Promise<RefreshPricesResult> => {
+      refreshPrices: async ({
+        cacheEntries,
+        assets,
+        nowIso,
+      }): Promise<RefreshPricesResult> => {
         return refreshAndPersistStalePrices({
           cacheEntries,
           assets,
@@ -280,7 +284,9 @@ export default async function DashboardPage({
             cx={TIER_DONUT_GEOMETRY.cx}
             cy={TIER_DONUT_GEOMETRY.cy}
             r={(TIER_DONUT_GEOMETRY.outerRadius + TIER_DONUT_GEOMETRY.innerRadius) / 2}
-            strokeWidth={TIER_DONUT_GEOMETRY.outerRadius - TIER_DONUT_GEOMETRY.innerRadius}
+            strokeWidth={
+              TIER_DONUT_GEOMETRY.outerRadius - TIER_DONUT_GEOMETRY.innerRadius
+            }
           />
           {donutSegments.map((segment) => {
             const tier = pyramid[segment.index]!;
@@ -351,8 +357,7 @@ export default async function DashboardPage({
                 <strong>{fireResult.percentFunded.toFixed(1)}%</strong>
               </div>
               <div className="fireBar">
-                {fireResult.coastFireRequired &&
-                fireResult.fireNumber.amountMinor > 0 ? (
+                {fireResult.coastFireRequired && fireResult.fireNumber.amountMinor > 0 ? (
                   <span
                     aria-hidden="true"
                     className="fireTick"
@@ -420,9 +425,7 @@ export default async function DashboardPage({
                 {step.done ? (
                   <span>✓ {step.label}</span>
                 ) : (
-                  <Link href={ONBOARDING_LINKS[step.id] ?? "/"}>
-                    ○ {step.label}
-                  </Link>
+                  <Link href={ONBOARDING_LINKS[step.id] ?? "/"}>○ {step.label}</Link>
                 )}
               </li>
             ))}

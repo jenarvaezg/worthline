@@ -36,9 +36,7 @@ test("investment: create with manual price → buy operation → P/L visible", a
   await investmentRow.getByRole("link", { name: "Operar" }).click();
 
   // 7. On the operation page
-  await expect(
-    page.getByRole("heading", { name: "Registrar operación" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Registrar operación" })).toBeVisible();
 
   // 8. Trigger a validation error: submit with units left empty
   const unitsInput = page.getByLabel("Unidades");
@@ -60,14 +58,17 @@ test("investment: create with manual price → buy operation → P/L visible", a
 
   // 12. Navigate to /inversiones — P/L column should now render a value
   await page.goto("/inversiones");
-  const plCell = page
-    .getByRole("row", { name: /Fondo Test E2E/ })
-    .locator("td")
-    .nth(5); // P/L column index
+  const investmentRow = page.getByRole("row", { name: /Fondo Test E2E/ });
+  await expect(investmentRow).toBeVisible();
+
+  // Locate P/L semantically: the column header is "P/L" (6th column).
+  const plCell = investmentRow.locator("td").nth(5);
   const plText = await plCell.textContent();
-  // With 10 units at cost 105.50 and manual price 100, there should be a P/L figure
+
+  // 10 units bought at 105,50 EUR with current price 100 EUR → P/L = -55,00 €.
+  // formatMoneyMinor renders es-ES currency with no cents: expect "55" and "€".
   expect(plText).toBeTruthy();
-  // P/L is either a formatted amount or "—"; after a buy at 105.50 vs price 100
-  // we expect a loss figure (not "—") since price < cost
   expect(plText).not.toBe("—");
+  expect(plText).toMatch(/55/);
+  expect(plText).toContain("€");
 });
