@@ -8,7 +8,6 @@ import type {
   Workspace,
 } from "@worthline/domain";
 import {
-  assertSnapshotHoldingsReconcile,
   derivePosition,
   resolveScopeMemberIds,
   selectInvestmentPrice,
@@ -32,8 +31,9 @@ export interface SaveSnapshotInput {
   /**
    * The valued portfolio behind the snapshot's figures (ADR 0008) — saved
    * atomically with the snapshot row. Must reconcile exactly with the
-   * snapshot's headline gross assets and debts or the save throws and
-   * persists nothing.
+   * snapshot's headline gross assets and debts; callers guarantee this by
+   * building holdings through the reconciling capture functions (ADR 0008),
+   * so the store no longer re-checks the invariant.
    */
   holdings?: SnapshotHoldingRow[];
 }
@@ -84,15 +84,11 @@ function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): void {
   const { sqlite } = ctx;
   const snapshot = input.snapshot;
 
-  // Reconciliation invariant (ADR 0008): verify before ANY write so a
-  // capture whose rows contradict its own figures persists nothing.
-  if (input.holdings) {
-    assertSnapshotHoldingsReconcile(input.holdings, {
-      debtsMinor: snapshot.debts.amountMinor,
-      grossAssetsMinor: snapshot.grossAssets.amountMinor,
-    });
-  }
-
+  // The reconciliation invariant (ADR 0008) is enforced by the callers before
+  // they reach the store: every path that supplies holdings builds them through
+  // captureValuedNetWorthSnapshot / buildSnapshotAtDate / recalculateSnapshotForAsset,
+  // each of which asserts assertSnapshotHoldingsReconcile by construction
+  // (PRD #120 candidate 3 — domain invariants live outside the store layer).
   ctx.transaction(() => {
     if (snapshot.isMonthlyClose) {
       sqlite

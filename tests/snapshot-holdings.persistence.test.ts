@@ -8,7 +8,10 @@
 import { afterEach, describe, expect, test } from "vitest";
 
 import type { WorthlineStore } from "@worthline/db";
-import { captureValuedNetWorthSnapshot } from "@worthline/domain";
+import {
+  assertSnapshotHoldingsReconcile,
+  captureValuedNetWorthSnapshot,
+} from "@worthline/domain";
 import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 
 afterEach(cleanupTempDirs);
@@ -86,7 +89,11 @@ describe("snapshot holding rows persistence", () => {
     store.close();
   });
 
-  test("rejects rows that do not reconcile with the snapshot — persists nothing", () => {
+  test("the reconciliation invariant rejects rows that contradict the snapshot's figures", () => {
+    // The guard now lives outside the store layer (PRD #120 candidate 3): the
+    // capture functions assert reconciliation by construction, so a doctored
+    // set of rows never makes it as far as a saveSnapshot call. This exercises
+    // that boundary — the same invariant the store used to re-check inline.
     const store = createFileBackedStore("worthline-snapshot-holdings-");
     seedPortfolio(store);
 
@@ -100,13 +107,12 @@ describe("snapshot holding rows persistence", () => {
       row.holdingId === "asset_cash" ? { ...row, valueMinor: row.valueMinor + 1 } : row,
     );
 
-    expect(() => store.snapshots.saveSnapshot({ holdings: doctored, snapshot })).toThrow(
-      /gross assets/i,
-    );
-
-    // Nothing persisted: no snapshot, no rows.
-    expect(store.snapshots.readSnapshots("household")).toHaveLength(0);
-    expect(store.snapshots.readSnapshotHoldings({ scopeId: "household" })).toHaveLength(0);
+    expect(() =>
+      assertSnapshotHoldingsReconcile(doctored, {
+        debtsMinor: snapshot.debts.amountMinor,
+        grossAssetsMinor: snapshot.grossAssets.amountMinor,
+      }),
+    ).toThrow(/gross assets/i);
 
     store.close();
   });

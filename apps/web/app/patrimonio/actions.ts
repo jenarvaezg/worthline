@@ -2,6 +2,7 @@
 
 import { withStore, type WorthlineStore } from "@worthline/db";
 import {
+  assertNotInvestmentAsset,
   checkOwnershipSplit,
   createManualAssetSafe,
   createLiabilitySafe,
@@ -388,19 +389,26 @@ export async function updateAssetValuationAction(
     );
   }
 
-  const assetType = runWith((store) => {
-    const assets = store.assets.readAssets();
-    return assets.find((a) => a.id === id)?.type ?? null;
-  });
+  const asset = runWith((store) =>
+    store.assets.readAssets().find((a) => a.id === id) ?? null,
+  );
 
-  if (assetType === "investment") {
-    redirect(
-      errorRedirectUrl(`/patrimonio/${id}/editar`, {
-        formId: "edit",
-        message: mapDomainViolation({ code: "investment_manual_valuation_rejected" }),
-        values: preserveFields(formData, ["currentValue"]),
-      }),
-    );
+  // Domain guard (ADR 0006): an investment's value is always derived and must
+  // never be hand-edited. Enforced here, at the caller, before the store write
+  // (PRD #120 candidate 3). assertNotInvestmentAsset throws on an investment; we
+  // map that to a user-facing Spanish message rather than letting it surface.
+  if (asset) {
+    try {
+      assertNotInvestmentAsset(asset);
+    } catch {
+      redirect(
+        errorRedirectUrl(`/patrimonio/${id}/editar`, {
+          formId: "edit",
+          message: mapDomainViolation({ code: "investment_manual_valuation_rejected" }),
+          values: preserveFields(formData, ["currentValue"]),
+        }),
+      );
+    }
   }
 
   runWith((store) => store.assets.updateAssetValuation(id, currentValue));

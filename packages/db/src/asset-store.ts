@@ -7,11 +7,9 @@ import type {
   OwnershipShare,
 } from "@worthline/domain";
 import {
-  assertNotInvestmentAsset,
   createManualAsset,
   defaultInvestmentPriceProvider,
 } from "@worthline/domain";
-import type { AssetType } from "@worthline/domain";
 import { asc, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 
@@ -447,25 +445,9 @@ function updateAssetValuation(
     throw new Error("Money must be stored as integer minor units.");
   }
 
-  // Domain guard: investment assets have a derived value (units × price)
-  // and must never be valued by hand (ADR 0006).
-  const assetRow = sqlite
-    .prepare(`SELECT type FROM assets WHERE id = ?`)
-    .get(assetId) as { type: string } | undefined;
-
-  if (assetRow) {
-    assertNotInvestmentAsset({
-      id: assetId,
-      type: assetRow.type as AssetType,
-      name: assetId,
-      currency: "EUR",
-      currentValue: { amountMinor: 0, currency: "EUR" },
-      liquidityTier: "market",
-      ownership: [],
-      isPrimaryResidence: false,
-    });
-  }
-
+  // The "investments are never valued by hand" invariant (ADR 0006) is enforced
+  // by the caller via assertNotInvestmentAsset before it reaches the store
+  // (PRD #120 candidate 3 — domain invariants live outside the store layer).
   sqlite
     .prepare(
       `
