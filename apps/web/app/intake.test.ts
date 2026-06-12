@@ -24,6 +24,8 @@ import {
   parseScopeParam,
   parseUpdateInvestmentCommand,
   parseDrillParam,
+  parseValuationAnchorStrict,
+  parseAppreciationRateStrict,
   parseValueUpdatePass,
   parseViewParam,
   parseWorkspaceInit,
@@ -1173,5 +1175,170 @@ describe("parseUpdateInvestmentCommand — edit investment fields", () => {
     expect(result.command.liquidityTier).toBe("retirement");
     expect(result.command.priceProvider).toBe("finect");
     expect(result.command.providerSymbol).toBe("N5394");
+  });
+});
+
+describe("parseValuationAnchorStrict", () => {
+  const TODAY = "2026-06-12";
+
+  test("parses a valid past market-appraisal anchor", () => {
+    const result = parseValuationAnchorStrict(
+      form({
+        adjustsPriorCurve: "on",
+        valuationDate: "2024-01-01",
+        anchorValue: "100000",
+      }),
+      "piso",
+      42,
+      TODAY,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.assetId).toBe("piso");
+    expect(result.command.valuationDate).toBe("2024-01-01");
+    expect(result.command.valueMinor).toBe(100_000_00);
+    expect(result.command.adjustsPriorCurve).toBe(true);
+    expect(result.command.id).toContain("anchor_");
+  });
+
+  test("treats a missing adjustsPriorCurve checkbox as an improvement", () => {
+    const result = parseValuationAnchorStrict(
+      form({ valuationDate: "2024-06-01", anchorValue: "10000" }),
+      "piso",
+      1,
+      TODAY,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.adjustsPriorCurve).toBe(false);
+  });
+
+  test("rejects a missing date", () => {
+    const result = parseValuationAnchorStrict(
+      form({ anchorValue: "100000" }),
+      "piso",
+      1,
+      TODAY,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("fecha");
+  });
+
+  test("rejects a malformed date", () => {
+    const result = parseValuationAnchorStrict(
+      form({ valuationDate: "01/01/2024", anchorValue: "100000" }),
+      "piso",
+      1,
+      TODAY,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("fecha");
+  });
+
+  test("rejects a future date", () => {
+    const result = parseValuationAnchorStrict(
+      form({ valuationDate: "2026-12-31", anchorValue: "100000" }),
+      "piso",
+      1,
+      TODAY,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("futura");
+  });
+
+  test("accepts today's date as non-future", () => {
+    const result = parseValuationAnchorStrict(
+      form({ valuationDate: TODAY, anchorValue: "100000" }),
+      "piso",
+      1,
+      TODAY,
+    );
+
+    expect(result.ok).toBe(true);
+  });
+
+  test("rejects a non-positive value", () => {
+    const zero = parseValuationAnchorStrict(
+      form({ valuationDate: "2024-01-01", anchorValue: "0" }),
+      "piso",
+      1,
+      TODAY,
+    );
+    expect(zero.ok).toBe(false);
+    if (zero.ok) return;
+    expect(zero.error).toContain("valor");
+
+    const negative = parseValuationAnchorStrict(
+      form({ valuationDate: "2024-01-01", anchorValue: "-5" }),
+      "piso",
+      1,
+      TODAY,
+    );
+    expect(negative.ok).toBe(false);
+  });
+
+  test("rejects an unparseable value", () => {
+    const result = parseValuationAnchorStrict(
+      form({ valuationDate: "2024-01-01", anchorValue: "abc" }),
+      "piso",
+      1,
+      TODAY,
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  test("parses an es-ES localized value", () => {
+    const result = parseValuationAnchorStrict(
+      form({ valuationDate: "2024-01-01", anchorValue: "120.000,50" }),
+      "piso",
+      1,
+      TODAY,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.valueMinor).toBe(120_000_50);
+  });
+});
+
+describe("parseAppreciationRateStrict", () => {
+  test("converts a whole percent to a decimal string", () => {
+    const result = parseAppreciationRateStrict(form({ rate: "3" }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.rate).toBe("0.03");
+  });
+
+  test("converts a fractional percent to a decimal string", () => {
+    const result = parseAppreciationRateStrict(form({ rate: "2,5" }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.rate).toBe("0.025");
+  });
+
+  test("treats a blank rate as a clear (null)", () => {
+    const result = parseAppreciationRateStrict(form({ rate: "" }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.rate).toBeNull();
+  });
+
+  test("rejects a negative rate", () => {
+    const result = parseAppreciationRateStrict(form({ rate: "-1" }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("tasa");
+  });
+
+  test("rejects a non-numeric rate", () => {
+    const result = parseAppreciationRateStrict(form({ rate: "abc" }));
+    expect(result.ok).toBe(false);
   });
 });

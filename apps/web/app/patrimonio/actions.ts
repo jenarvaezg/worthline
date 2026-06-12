@@ -13,11 +13,13 @@ import {
   appendParam,
   errorRedirectUrl,
   mapDomainViolation,
+  parseAppreciationRateStrict,
   parseAssetCommandStrict,
   parseEntityId,
   parseMoneyMinorField,
   parseOwnership,
   parseLiabilityCommand,
+  parseValuationAnchorStrict,
   parseValueUpdatePass,
   preserveFields,
   successRedirectUrl,
@@ -631,6 +633,250 @@ export async function editAssetAction(
   }
 
   redirect(successRedirectUrl("/patrimonio", "saved", id));
+}
+
+/**
+ * Housing valuation editing (PRD #108, slice 6). All mutations of an asset's
+ * appreciation rate and valuation anchors flow through these server actions.
+ * Domain guard (R9): only a real_estate asset can carry a rate or anchors —
+ * any other type is rejected with a Spanish message. After every mutation with
+ * a past `fromDateKey` we ripple historical snapshots so /historico reflects the
+ * recomputed curve (slice 4/5 wiring; the #114 E2E acceptance lives here).
+ */
+
+/** The editar page URL for a given holding — where every housing action returns. */
+function editUrl(id: string): string {
+  return `/patrimonio/${id}/editar`;
+}
+
+/** Read an asset by id, or null. Shared by the housing actions for the R9 guard. */
+function findAsset(store: WorthlineStore, id: string) {
+  return store.assets.readAssets().find((a) => a.id === id) ?? null;
+}
+
+export async function setAppreciationRateAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const id = parseEntityId(formData);
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id) {
+    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador de activo no encontrado." }));
+  }
+
+  const parsed = parseAppreciationRateStrict(formData);
+
+  if (!parsed.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        formId: "rate",
+        message: parsed.error,
+        values: preserveFields(formData, ["rate"]),
+      }),
+    );
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const result = runWith((store) => {
+    const asset = findAsset(store, id);
+
+    if (!asset) {
+      return { ok: false, error: "No se encontró el activo." };
+    }
+
+    if (asset.type !== "real_estate") {
+      return { ok: false, error: "Solo los inmuebles pueden tener una tasa de revalorización." };
+    }
+
+    store.assets.setAnnualAppreciationRate(id, parsed.rate);
+
+    // A rate change ripples from the first anchor's date (PRD #108): re-evaluate
+    // every snapshot on/after it from the new curve. No anchors → nothing to ripple.
+    const anchors = store.assets.readValuationAnchors(id);
+    const firstAnchorDate = anchors[0]?.valuationDate;
+
+    if (firstAnchorDate && firstAnchorDate <= today) {
+      store.rippleHistoricalSnapshotsForValuation({
+        assetId: id,
+        fromDateKey: firstAnchorDate,
+        today,
+      });
+    }
+
+    return { ok: true };
+  });
+
+  if (!result.ok) {
+    redirect(errorRedirectUrl(editUrl(id), { formId: "rate", message: result.error! }));
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "rate_saved", id));
+}
+
+export async function addValuationAnchorAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const id = parseEntityId(formData);
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id) {
+    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador de activo no encontrado." }));
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const parsed = parseValuationAnchorStrict(formData, id, Date.now(), today);
+
+  if (!parsed.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        formId: "anchor",
+        message: parsed.error,
+        values: preserveFields(formData, ["valuationDate", "anchorValue", "adjustsPriorCurve"]),
+      }),
+    );
+  }
+
+  const result = runWith((store) => {
+    const asset = findAsset(store, id);
+
+    if (!asset) {
+      return { ok: false, error: "No se encontró el activo." };
+    }
+
+    if (asset.type !== "real_estate") {
+      return { ok: false, error: "Solo los inmuebles pueden tener tasaciones." };
+    }
+
+    store.assets.addValuationAnchor(parsed.command);
+    store.rippleHistoricalSnapshotsForValuation({
+      assetId: id,
+      fromDateKey: parsed.command.valuationDate,
+      today,
+    });
+
+    return { ok: true };
+  });
+
+  if (!result.ok) {
+    redirect(errorRedirectUrl(editUrl(id), { formId: "anchor", message: result.error! }));
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "anchor_added", id));
+}
+
+export async function updateValuationAnchorAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const id = parseEntityId(formData);
+  const anchorId = parseEntityId(formData, "anchorId");
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id || !anchorId) {
+    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador de tasación no encontrado." }));
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const parsed = parseValuationAnchorStrict(formData, id, Date.now(), today);
+
+  if (!parsed.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        formId: `anchor-${anchorId}`,
+        message: parsed.error,
+        values: preserveFields(formData, ["valuationDate", "anchorValue", "adjustsPriorCurve"]),
+      }),
+    );
+  }
+
+  const result = runWith((store) => {
+    const asset = findAsset(store, id);
+
+    if (!asset || asset.type !== "real_estate") {
+      return { ok: false, error: "Solo los inmuebles pueden tener tasaciones." };
+    }
+
+    // The new date may differ from the old one; ripple from the earlier of the
+    // two so every snapshot the edit could affect is recomputed.
+    const previous = store.assets.readValuationAnchors(id).find((a) => a.id === anchorId);
+    const changes = store.assets.updateValuationAnchor(anchorId, {
+      adjustsPriorCurve: parsed.command.adjustsPriorCurve,
+      valuationDate: parsed.command.valuationDate,
+      valueMinor: parsed.command.valueMinor,
+    });
+
+    if (changes === 0) {
+      return { ok: false, error: "No se encontró la tasación — puede que ya se haya eliminado." };
+    }
+
+    const fromDateKey =
+      previous && previous.valuationDate < parsed.command.valuationDate
+        ? previous.valuationDate
+        : parsed.command.valuationDate;
+
+    if (fromDateKey <= today) {
+      store.rippleHistoricalSnapshotsForValuation({ assetId: id, fromDateKey, today });
+    }
+
+    return { ok: true };
+  });
+
+  if (!result.ok) {
+    redirect(errorRedirectUrl(editUrl(id), { formId: `anchor-${anchorId}`, message: result.error! }));
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "anchor_saved", id));
+}
+
+export async function deleteValuationAnchorAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const id = parseEntityId(formData);
+  const anchorId = parseEntityId(formData, "anchorId");
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id || !anchorId) {
+    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador de tasación no encontrado." }));
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const result = runWith((store) => {
+    const asset = findAsset(store, id);
+
+    if (!asset || asset.type !== "real_estate") {
+      return { ok: false, error: "Solo los inmuebles pueden tener tasaciones." };
+    }
+
+    const removed = store.assets.readValuationAnchors(id).find((a) => a.id === anchorId);
+    const changes = store.assets.deleteValuationAnchor(anchorId);
+
+    if (changes === 0) {
+      return { ok: false, error: "No se encontró la tasación — puede que ya se haya eliminado." };
+    }
+
+    if (removed && removed.valuationDate <= today) {
+      store.rippleHistoricalSnapshotsForValuation({
+        assetId: id,
+        fromDateKey: removed.valuationDate,
+        today,
+      });
+    }
+
+    return { ok: true };
+  });
+
+  if (!result.ok) {
+    redirect(errorRedirectUrl(editUrl(id), { message: result.error! }));
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "anchor_deleted", id));
 }
 
 function parseAssetType(value: FormDataEntryValue | null) {

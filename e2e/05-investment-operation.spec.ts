@@ -57,8 +57,8 @@ test("investment: create with manual price → buy operation → P/L visible", a
   await expect(page.getByRole("status")).toBeVisible();
 
   // 12. Navigate to /inversiones — P/L column should now render a value
+  // (the locator from step 6 is lazy, so it re-resolves on the fresh page)
   await page.goto("/inversiones");
-  const investmentRow = page.getByRole("row", { name: /Fondo Test E2E/ });
   await expect(investmentRow).toBeVisible();
 
   // Locate P/L semantically: the column header is "P/L" (6th column).
