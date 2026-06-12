@@ -11,3 +11,7 @@ The repo uses the default Matt Pocock skill label vocabulary as GitHub labels. S
 ### Domain docs
 
 This is a single-context repo with domain docs rooted at `CONTEXT.md` and ADRs under `docs/adr/`. See `docs/agents/domain.md`.
+
+### Design system
+
+Any UI change must follow the style guide in `docs/design-system.md` (tokens, typographic hierarchy, color semantics, component rules). Tokens live in `apps/web/app/globals.css`.

@@ -19,7 +19,7 @@ export type AppSection =
 
 const NAV_SECTIONS: Array<{ id: AppSection; label: string; href: string }> = [
   { id: "resumen", label: "Resumen", href: "/" },
-  { id: "patrimonio", label: "Activos y deudas", href: "/patrimonio" },
+  { id: "patrimonio", label: "Patrimonio", href: "/patrimonio" },
   { id: "inversiones", label: "Inversiones", href: "/inversiones" },
   { id: "historico", label: "Histórico", href: "/historico" },
   { id: "ajustes", label: "Ajustes", href: "/ajustes" },

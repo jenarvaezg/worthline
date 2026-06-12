@@ -2,16 +2,38 @@
   color-scheme: light;
   --paper: #eef2ef;
   --paper-strong: #fbfbf4;
+  /* Card surface — warmer and brighter than the page paper. */
+  --panel: #fffdf7;
   --ink: #17201e;
+  /* Dark ink panel (hero) and its on-dark text/muted/semantic colors. */
+  --ink-panel: #1d2724;
+  --ink-panel-text: #e8ece7;
+  --ink-panel-muted: #9fb0a9;
+  --pos-on-dark: #5ad4ae;
+  --neg-on-dark: #f0907b;
   --muted: #51605b;
   /* ≥3:1 non-text contrast vs --paper/--paper-strong (WCAG 1.4.11, see contrast.test.ts) */
   --line: #78877f;
   --line-strong: #5d6c66;
+  /* Decorative card borders and row hairlines — intentionally below the WCAG
+     non-text floor; never the sole boundary of a meaningful control (form
+     controls and focus states keep --line-strong). */
+  --line-soft: #d9ded7;
+  --hairline: #e4e8e2;
   --green: #006f5f;
   --blue: #245177;
   --red: #b9442f;
   --gold: #b3831f;
-  --shadow: 0 22px 70px rgba(31, 33, 28, 0.12);
+  /* Liquidity tier identity — liquid family in greens, "rest" in blues,
+     housing in gold. Green/red elsewhere stay reserved for deltas and P/L. */
+  --tier-cash: #0d7a64;
+  --tier-market: #2aa188;
+  --tier-retirement: #2f5e8d;
+  --tier-illiquid: #6b86a3;
+  --tier-housing: #b3831f;
+  --radius: 14px;
+  --radius-sm: 8px;
+  --shadow: 0 1px 2px rgba(23, 32, 30, 0.05), 0 10px 30px rgba(23, 32, 30, 0.06);
 }
 
 * {
@@ -26,8 +48,8 @@ body {
 
 body {
   background:
-    linear-gradient(rgba(23, 32, 30, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(23, 32, 30, 0.035) 1px, transparent 1px), var(--paper);
+    linear-gradient(rgba(23, 32, 30, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23, 32, 30, 0.016) 1px, transparent 1px), var(--paper);
   background-size: 28px 28px;
   color: var(--ink);
   font-family: var(--font-sans), "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
@@ -51,14 +73,14 @@ textarea {
 
 button {
   background: var(--ink);
+  border-radius: var(--radius-sm);
   color: var(--paper-strong);
   cursor: pointer;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
+  font-size: 0.82rem;
+  font-weight: 650;
+  letter-spacing: 0;
   min-height: 38px;
-  padding: 0 12px;
-  text-transform: uppercase;
+  padding: 0 14px;
 }
 
 button:hover {
@@ -89,6 +111,7 @@ input,
 select,
 textarea {
   background: rgba(255, 250, 240, 0.9);
+  border-radius: var(--radius-sm);
   min-height: 38px;
   padding: 8px 10px;
   width: 100%;
@@ -115,10 +138,10 @@ textarea {
 .setupPanel,
 .ledgerPanel,
 .liquidityPanel,
-.historyPanel,
-.persistenceBar {
-  background: rgba(255, 250, 240, 0.88);
-  border: 1px solid var(--line);
+.historyPanel {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
   box-shadow: var(--shadow);
   min-width: 0;
 }
@@ -142,17 +165,17 @@ textarea {
 
 .topNav a {
   border: 1px solid transparent;
+  border-radius: 999px;
   color: var(--muted);
-  font-size: 0.76rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  padding: 6px 10px;
+  font-size: 0.82rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  padding: 6px 13px;
   text-decoration: none;
-  text-transform: uppercase;
 }
 
 .topNav a:hover {
-  border-color: var(--line-strong);
+  border-color: var(--line-soft);
   color: var(--ink);
 }
 
@@ -173,15 +196,15 @@ textarea {
 /* Scope tab POST buttons — match the link-tab style from .scopeTabs a. */
 .scopeTabBtn {
   background: transparent;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
   color: var(--ink);
   cursor: pointer;
-  font-size: 0.76rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  min-height: 36px;
-  padding: 6px 10px;
-  text-transform: uppercase;
+  font-size: 0.8rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  min-height: 34px;
+  padding: 6px 14px;
 }
 
 .scopeTabBtn:hover,
@@ -249,9 +272,9 @@ h1 {
 }
 
 h2 {
-  font-size: 0.98rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: 0;
 }
 
 h3 {
@@ -268,9 +291,8 @@ h3 {
 .persistenceBar {
   color: var(--muted);
   font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .topbarMeta {
@@ -293,6 +315,7 @@ h3 {
 .errorBand,
 .successBand {
   border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   font-size: 0.82rem;
   font-weight: 700;
   margin: 0 0 4px;
@@ -356,8 +379,9 @@ h3 {
    scrolling (#47). Solid paper blend: translucency would ghost scrolled content. */
 .tabsBar {
   align-items: center;
-  background: #fdf9f0;
-  border: 1px solid var(--line);
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
   box-shadow: var(--shadow);
   display: flex;
   flex-wrap: wrap;
@@ -378,14 +402,14 @@ h3 {
 
 .scopeTabs a,
 .framingTabs a {
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
   color: var(--ink);
-  font-size: 0.76rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  padding: 8px 10px;
+  font-size: 0.8rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  padding: 7px 14px;
   text-decoration: none;
-  text-transform: uppercase;
 }
 
 .scopeTabs a.active,
@@ -411,10 +435,11 @@ h3 {
 
 .headline > strong {
   display: block;
-  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
-  font-size: clamp(2.2rem, 6vw, 3.6rem);
-  font-weight: 800;
-  line-height: 1;
+  font-size: clamp(2.6rem, 5.5vw, 3.8rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
   margin-top: 6px;
   overflow-wrap: anywhere;
 }
@@ -506,7 +531,7 @@ h3 {
 
 .panelHeader {
   align-items: center;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--hairline);
   display: flex;
   justify-content: space-between;
   padding-bottom: 12px;
@@ -521,11 +546,15 @@ table {
 
 th,
 td {
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--hairline);
   font-size: 0.9rem;
   overflow-wrap: anywhere;
   padding: 14px 0;
   text-align: left;
+}
+
+td {
+  font-variant-numeric: tabular-nums;
 }
 
 th {
@@ -542,14 +571,14 @@ th:last-child {
 
 .statePill {
   border: 1px solid var(--line-strong);
+  border-radius: 999px;
   display: inline-flex;
-  font-size: 0.72rem;
-  font-weight: 800;
+  font-size: 0.74rem;
+  font-weight: 700;
   justify-content: center;
   min-width: 86px;
   max-width: 100%;
-  padding: 5px 8px;
-  text-transform: uppercase;
+  padding: 5px 12px;
 }
 
 .statePill.empty {
@@ -608,9 +637,8 @@ th:last-child {
   color: var(--red);
   cursor: pointer;
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 650;
   list-style: none;
-  text-transform: uppercase;
 }
 
 .confirmDelete summary::-webkit-details-marker {
@@ -673,8 +701,9 @@ th:last-child {
 }
 
 .onboardingChecklist {
-  background: rgba(255, 250, 240, 0.88);
-  border: 1px solid var(--line);
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 16px;
 }
@@ -853,9 +882,11 @@ th:last-child {
 
 .tier {
   align-items: center;
-  border: 1px solid var(--line);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
   display: block;
   min-height: 54px;
+  overflow: hidden;
 }
 
 .tier summary {
@@ -883,23 +914,23 @@ th:last-child {
 
 /* Tier hues — same identity as the rows below, at full opacity. */
 .donutSegment.cash {
-  fill: rgb(185, 68, 47);
+  fill: var(--tier-cash);
 }
 
 .donutSegment.market {
-  fill: rgb(0, 111, 95);
+  fill: var(--tier-market);
 }
 
 .donutSegment.retirement {
-  fill: rgb(36, 77, 114);
+  fill: var(--tier-retirement);
 }
 
 .donutSegment.illiquid {
-  fill: rgb(127, 144, 136);
+  fill: var(--tier-illiquid);
 }
 
 .donutSegment.housing {
-  fill: rgb(194, 154, 46);
+  fill: var(--tier-housing);
 }
 
 .tierShare {
@@ -915,33 +946,33 @@ th:last-child {
 .tier span,
 .tier b,
 .tier small {
-  font-size: 0.82rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 0.85rem;
+  letter-spacing: 0;
 }
 
 .tier b {
-  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
 }
 
 .tier.cash {
-  background: rgba(185, 68, 47, 0.1);
+  background: rgba(13, 122, 100, 0.07);
 }
 
 .tier.market {
-  background: rgba(0, 111, 95, 0.12);
+  background: rgba(42, 161, 136, 0.09);
 }
 
 .tier.retirement {
-  background: rgba(36, 77, 114, 0.13);
+  background: rgba(47, 94, 141, 0.08);
 }
 
 .tier.illiquid {
-  background: rgba(127, 144, 136, 0.16);
+  background: rgba(107, 134, 163, 0.1);
 }
 
 .tier.housing {
-  background: rgba(194, 154, 46, 0.14);
+  background: rgba(179, 131, 31, 0.08);
 }
 
 .tierDetails {
@@ -969,11 +1000,9 @@ th:last-child {
 
 .emptyLine {
   color: var(--muted);
-  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   font-style: normal;
-  font-weight: 800;
-  text-transform: uppercase;
+  font-weight: 600;
 }
 
 /* Evolution chart — server-rendered SVG area of the headline figure (#73).
@@ -981,7 +1010,7 @@ th:last-child {
    points whose native <title> exposes date and value. */
 .evolutionChart {
   display: block;
-  height: 160px;
+  height: auto;
   margin-top: 14px;
   width: 100%;
 }
@@ -1111,11 +1140,11 @@ svg a:hover .decompositionBand.rest {
 
 /* Cash and market reuse their page-wide tier hues (.donutSegment/.tier). */
 .decompositionLegend .cash i {
-  background: rgb(185, 68, 47);
+  background: var(--tier-cash);
 }
 
 .decompositionLegend .market i {
-  background: rgb(0, 111, 95);
+  background: var(--tier-market);
 }
 
 .drillChart {
@@ -1126,19 +1155,19 @@ svg a:hover .decompositionBand.rest {
 }
 
 .drillBand.cash {
-  fill: rgb(185, 68, 47);
+  fill: var(--tier-cash);
 }
 
 .drillBand.market {
-  fill: rgb(0, 111, 95);
+  fill: var(--tier-market);
 }
 
 .drillLine.cash {
-  stroke: rgb(185, 68, 47);
+  stroke: var(--tier-cash);
 }
 
 .drillLine.market {
-  stroke: rgb(0, 111, 95);
+  stroke: var(--tier-market);
 }
 
 .drillMultiples {
@@ -1175,11 +1204,11 @@ svg a:hover .decompositionBand.rest {
 }
 
 .drillSparkline.cash polyline {
-  stroke: rgb(185, 68, 47);
+  stroke: var(--tier-cash);
 }
 
 .drillSparkline.market polyline {
-  stroke: rgb(0, 111, 95);
+  stroke: var(--tier-market);
 }
 
 /* === #77 rest and housing drilldowns === */
@@ -1187,39 +1216,39 @@ svg a:hover .decompositionBand.rest {
 /* Retirement, illiquid and housing reuse their page-wide tier hues
    (.donutSegment/.tier), exactly like cash and market above. */
 .decompositionLegend .retirement i {
-  background: rgb(36, 77, 114);
+  background: var(--tier-retirement);
 }
 
 .decompositionLegend .illiquid i {
-  background: rgb(127, 144, 136);
+  background: var(--tier-illiquid);
 }
 
 .drillBand.retirement {
-  fill: rgb(36, 77, 114);
+  fill: var(--tier-retirement);
 }
 
 .drillBand.illiquid {
-  fill: rgb(127, 144, 136);
+  fill: var(--tier-illiquid);
 }
 
 .drillLine.retirement {
-  stroke: rgb(36, 77, 114);
+  stroke: var(--tier-retirement);
 }
 
 .drillLine.illiquid {
-  stroke: rgb(127, 144, 136);
+  stroke: var(--tier-illiquid);
 }
 
 .drillSparkline.retirement polyline {
-  stroke: rgb(36, 77, 114);
+  stroke: var(--tier-retirement);
 }
 
 .drillSparkline.illiquid polyline {
-  stroke: rgb(127, 144, 136);
+  stroke: var(--tier-illiquid);
 }
 
 .drillSparkline.housing polyline {
-  stroke: rgb(194, 154, 46);
+  stroke: var(--tier-housing);
 }
 
 /* === #78 no-longer-held holdings: dimmed, marked, history intact === */
@@ -1239,14 +1268,18 @@ svg a:hover .decompositionBand.rest {
   letter-spacing: 0.02em;
 }
 
+/* Persistence footer — quiet status line, no card chrome: it must never
+   compete visually with the data panels above it. */
 .persistenceBar {
   align-items: center;
+  color: var(--muted);
   display: flex;
+  font-size: 0.72rem;
   gap: 12px;
   justify-content: space-between;
   margin-top: auto;
-  min-height: 46px;
-  padding: 10px 14px;
+  min-height: 38px;
+  padding: 8px 6px 0;
 }
 
 code {
@@ -1271,8 +1304,9 @@ code {
 
 /* firePanel — proper panel chrome matching other panels. */
 .firePanel {
-  background: rgba(255, 250, 240, 0.88);
-  border: 1px solid var(--line);
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
   box-shadow: var(--shadow);
   min-width: 0;
   padding: 16px;
@@ -1301,7 +1335,7 @@ code {
 }
 
 .fireMetric strong {
-  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-variant-numeric: tabular-nums;
 }
 
 /* FIRE unconfigured state. */
@@ -1432,8 +1466,9 @@ code {
 }
 
 .empezarSection {
-  background: rgba(255, 250, 240, 0.88);
-  border: 1px solid var(--line);
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 24px;
 }
@@ -1496,8 +1531,9 @@ code {
 /* === #59 historico === */
 
 .historicoPanel {
-  background: var(--paper-strong);
-  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
   box-shadow: var(--shadow);
   margin: 24px auto;
   max-width: 900px;
@@ -1626,8 +1662,9 @@ code {
 }
 
 .ajustesPanel {
-  background: rgba(255, 250, 240, 0.88);
-  border: 1px solid var(--line);
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
   box-shadow: var(--shadow);
   min-width: 0;
   padding: 16px;
@@ -1900,9 +1937,10 @@ code {
   flex-wrap: wrap;
   gap: 12px;
   padding: 16px 24px;
-  background: var(--paper-strong);
-  border: 1px solid var(--line);
-  border-radius: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
   margin-bottom: 0;
 }
 
@@ -1928,11 +1966,11 @@ code {
 .actionLink {
   color: var(--blue);
   font-size: 0.85rem;
-  font-weight: 700;
+  font-weight: 650;
   text-decoration: none;
-  padding: 4px 8px;
+  padding: 5px 12px;
   border: 1px solid var(--blue);
-  border-radius: 2px;
+  border-radius: 999px;
 }
 
 .actionLink:hover {
@@ -1956,9 +1994,10 @@ code {
 }
 
 .patrimonioSection {
-  background: var(--paper-strong);
-  border: 1px solid var(--line);
-  border-radius: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
   margin-top: 16px;
   overflow: hidden;
 }
@@ -2029,21 +2068,27 @@ code {
   display: block;
 }
 
-.rowActions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+/* Action cells stay real table cells — display:flex on a <td> breaks row
+   height and staggers the row borders. Children space out inline instead. */
+td.rowActions {
+  text-align: right;
+  vertical-align: middle;
+}
+
+td.rowActions > * {
+  display: inline-flex;
+  margin-left: 6px;
+  vertical-align: middle;
 }
 
 .btnSmall {
   display: inline-block;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 4px 8px;
+  font-size: 0.76rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  padding: 4px 10px;
   border: 1px solid var(--line-strong);
+  border-radius: 999px;
   text-decoration: none;
   color: var(--ink);
   background: transparent;
@@ -2078,9 +2123,10 @@ code {
 /* Puesta al día ───────────────────────────────────────────────────────── */
 
 .puestaAlDia {
-  background: var(--paper-strong);
-  border: 1px solid var(--line);
-  border-radius: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
   padding: 20px 24px;
 }
 
@@ -2156,9 +2202,10 @@ code {
 /* Form pages (nuevo-activo, nueva-deuda, editar) ──────────────────────── */
 
 .formPage {
-  background: var(--paper-strong);
-  border: 1px solid var(--line);
-  border-radius: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
   padding: 20px 24px;
   max-width: 640px;
 }
@@ -2325,4 +2372,281 @@ code {
     flex-direction: column;
     align-items: flex-start;
   }
+}
+
+/* === Rediseño «mix» (bento + denso) — dashboard y tablas ================ */
+/* Decisión: prototipo app/prototype (2026-06-12) — bento de 12 columnas con
+   hero en panel oscuro de tinta y filas de liquidez densas con barra embebida.
+   Guía completa: docs/design-system.md */
+
+.dashGrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(12, 1fr);
+}
+
+.dashGrid > .summaryBand {
+  grid-column: span 8;
+}
+
+.dashGrid > .liquidityPanel {
+  display: flex;
+  flex-direction: column;
+  grid-column: span 4;
+}
+
+.dashGrid > .historyPanel {
+  grid-column: span 8;
+}
+
+.dashGrid > .firePanel {
+  grid-column: span 4;
+}
+
+.dashGrid > .onboardingChecklist {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 900px) {
+  .dashGrid > .summaryBand,
+  .dashGrid > .liquidityPanel,
+  .dashGrid > .historyPanel,
+  .dashGrid > .firePanel {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Hero — the one dark ink panel of the app; the headline figure dominates. */
+.summaryBand.heroPanel {
+  background: var(--ink-panel);
+  border-color: var(--ink-panel);
+  color: var(--ink-panel-text);
+  padding: 22px 24px;
+}
+
+.heroPanel .headline > span {
+  color: var(--ink-panel-muted);
+}
+
+.heroPanel .resumenHeader {
+  justify-content: flex-start;
+  margin-bottom: 12px;
+}
+
+/* Vista toggle on dark — segmented pill. */
+.heroPanel .framingTabs {
+  background: rgba(232, 236, 231, 0.1);
+  border-radius: 999px;
+  gap: 2px;
+  padding: 3px;
+}
+
+.heroPanel .framingTabs a {
+  border: 0;
+  color: var(--ink-panel-muted);
+  font-size: 0.78rem;
+  padding: 5px 13px;
+}
+
+.heroPanel .framingTabs a.active,
+.heroPanel .framingTabs a:hover {
+  background: var(--ink-panel-text);
+  color: var(--ink);
+}
+
+/* Delta chips — sign-colored pills with amount and percent. */
+.deltaChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.deltaChip {
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  padding: 4px 12px;
+}
+
+.deltaChip.pos {
+  background: rgba(90, 212, 174, 0.16);
+  color: var(--pos-on-dark);
+}
+
+.deltaChip.neg {
+  background: rgba(240, 144, 123, 0.16);
+  color: var(--neg-on-dark);
+}
+
+.deltaChip.zero {
+  background: rgba(232, 236, 231, 0.12);
+  color: var(--ink-panel-muted);
+}
+
+/* Breakdown stats — quiet 4-up strip under the hero figure. */
+.heroStats {
+  border-top: 1px solid rgba(232, 236, 231, 0.14);
+  display: grid;
+  gap: 0;
+  grid-template-columns: repeat(4, 1fr);
+  margin-top: 20px;
+  padding-top: 14px;
+}
+
+.heroStat {
+  border-left: 1px solid rgba(232, 236, 231, 0.14);
+  min-width: 0;
+  padding: 0 14px;
+}
+
+.heroStat:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.heroStat span {
+  color: var(--ink-panel-muted);
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+.heroStat b {
+  display: block;
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.heroStat b.emptyFigure {
+  color: var(--ink-panel-muted);
+}
+
+@media (max-width: 640px) {
+  .heroStats {
+    grid-template-columns: repeat(2, 1fr);
+    row-gap: 14px;
+  }
+
+  .heroStat:nth-child(odd) {
+    border-left: 0;
+    padding-left: 0;
+  }
+}
+
+/* Liquidity rows — embedded per-tier bar inside each summary. */
+.tier summary {
+  grid-template-rows: auto auto;
+  padding-bottom: 10px;
+  padding-top: 10px;
+}
+
+.tierBar {
+  background: rgba(23, 32, 30, 0.07);
+  border-radius: 3px;
+  grid-column: 1 / -1;
+  height: 5px;
+  overflow: hidden;
+}
+
+.tierBar i {
+  display: block;
+  height: 100%;
+}
+
+.tier.cash .tierBar i {
+  background: var(--tier-cash);
+}
+
+.tier.market .tierBar i {
+  background: var(--tier-market);
+}
+
+.tier.retirement .tierBar i {
+  background: var(--tier-retirement);
+}
+
+.tier.illiquid .tierBar i {
+  background: var(--tier-illiquid);
+}
+
+.tier.housing .tierBar i {
+  background: var(--tier-housing);
+}
+
+.dashGrid .tierDonut {
+  height: 120px;
+  width: 120px;
+}
+
+/* FIRE — big funded percent over a thick rounded bar. */
+.fireBig {
+  font-size: 1.8rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+  margin-top: 14px;
+}
+
+.firePanel .fireBar {
+  border-radius: 999px;
+  height: 10px;
+  margin-top: 10px;
+  overflow: hidden;
+}
+
+.firePanel .fireBar i {
+  background: var(--green);
+  border-radius: 999px;
+}
+
+/* Tables — financial discipline: numbers right-aligned, tabular. */
+.inversionesSection table th:not(:first-child):not(:last-child),
+.inversionesSection table td:not(:first-child):not(:last-child) {
+  text-align: right;
+}
+
+.patrimonioTable {
+  table-layout: auto;
+}
+
+
+/* Secondary action row (e.g. «Actualizar precios») — quiet outline button. */
+.refreshRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.refreshRow button {
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--ink);
+  min-height: 34px;
+}
+
+.refreshRow button:hover {
+  background: var(--ink);
+  color: var(--paper-strong);
+}
+
+/* Hero stretches with the right column — pin the breakdown stats to the
+   bottom so the empty space reads as intentional breathing room. */
+.summaryBand.heroPanel {
+  display: flex;
+  flex-direction: column;
+}
+
+.heroPanel .heroStats {
+  margin-top: auto;
+}
+
+.heroPanel .headline {
+  margin-bottom: 14px;
 }

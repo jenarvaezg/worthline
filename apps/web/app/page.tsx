@@ -5,7 +5,13 @@ import {
   largestRemainderPercentages,
   moneySign,
 } from "@worthline/domain";
-import type { DrilldownKey, LiquidityTier, NetWorthFraming } from "@worthline/domain";
+import type {
+  DrilldownKey,
+  LiquidityTier,
+  MoneyMinor,
+  NetWorthFraming,
+  NetWorthSnapshot,
+} from "@worthline/domain";
 import { refreshStalePrices } from "@worthline/pricing";
 import { createWorthlineStore, runBootstrapHealthcheck } from "@worthline/db";
 import { cookies } from "next/headers";
@@ -62,6 +68,72 @@ const ONBOARDING_LINKS: Record<string, string> = {
   fire: "/ajustes",
   snapshot: "/",
 };
+
+/** Headline value of a snapshot under the active framing. */
+function snapshotValueMinor(
+  snapshot: NetWorthSnapshot,
+  framing: NetWorthFraming,
+): number {
+  return framing === "liquid"
+    ? snapshot.liquidNetWorth.amountMinor
+    : snapshot.totalNetWorth.amountMinor;
+}
+
+interface DeltaWithPct {
+  change: MoneyMinor;
+  /** Percent vs the base snapshot; null when the base value is zero. */
+  pct: number | null;
+}
+
+/** Delta of the current snapshot vs a base one, in the active framing. */
+function deltaWithPct(
+  current: NetWorthSnapshot | undefined,
+  base: NetWorthSnapshot | undefined,
+  framing: NetWorthFraming,
+): DeltaWithPct | null {
+  if (!current || !base) return null;
+
+  const currentMinor = snapshotValueMinor(current, framing);
+  const baseMinor = snapshotValueMinor(base, framing);
+
+  return {
+    change: {
+      amountMinor: currentMinor - baseMinor,
+      currency: current.totalNetWorth.currency,
+    },
+    pct: baseMinor === 0 ? null : ((currentMinor - baseMinor) / Math.abs(baseMinor)) * 100,
+  };
+}
+
+/** "+3,6 %" with es-ES decimal comma; sign always explicit. */
+function formatPct(pct: number): string {
+  const sign = pct > 0 ? "+" : pct < 0 ? "−" : "";
+
+  return `${sign}${Math.abs(pct).toFixed(1).replace(".", ",")} %`;
+}
+
+/** Sign-colored delta pill: amount, percent and period label. */
+function DeltaChip({ delta, label }: { delta: DeltaWithPct | null; label: string }) {
+  if (!delta) {
+    return (
+      <span className="deltaChip zero">
+        {label}: sin dato
+      </span>
+    );
+  }
+
+  const sign = moneySign(delta.change);
+  const arrow = sign === "pos" ? "▲" : sign === "neg" ? "▼" : "•";
+  const prefix = delta.change.amountMinor > 0 ? "+" : "";
+
+  return (
+    <span className={`deltaChip ${sign}`}>
+      {arrow} {prefix}
+      {formatMoneyMinor(delta.change)}
+      {delta.pct !== null ? ` (${formatPct(delta.pct)})` : ""} {label}
+    </span>
+  );
+}
 
 export default async function DashboardPage({
   searchParams,
@@ -149,101 +221,166 @@ export default async function DashboardPage({
   // Tier donut: arc segments over the same percentages the rows display,
   // so the visual summary and the row text always agree.
   const donutSegments = donutArcSegments(tierPercents, TIER_DONUT_GEOMETRY);
+
+  const shellProps = {
+    activeSection: "resumen" as const,
+    currentPageUrl: currentUrl,
+    persistence: dashboard.persistence,
+    scopes,
+    selectedScopeId: selectedScope?.id,
+    warnings: warnings.map((w) => ({
+      code: w.code,
+      entityId: w.entityId,
+      message: w.message,
+    })),
+  };
+
+  // Hero delta chips — change vs previous snapshot and vs monthly close,
+  // with percent, in the active framing.
+  const vsPrevious = deltaWithPct(
+    deltas?.snapshot,
+    deltas?.previousSnapshot,
+    selectedView,
+  );
+  const vsMonthlyClose = deltaWithPct(
+    deltas?.snapshot,
+    deltas?.previousMonthlyClose,
+    selectedView,
+  );
+
   return (
-    <Shell
-      activeSection="resumen"
-      currentPageUrl={currentUrl}
-      persistence={dashboard.persistence}
-      scopes={scopes}
-      selectedScopeId={selectedScope?.id}
-      warnings={warnings.map((w) => ({
-        code: w.code,
-        entityId: w.entityId,
-        message: w.message,
-      }))}
-    >
-      {/* ── 1. Headline — framing selector visibly labeled beside the hero ── */}
-      <section className="summaryBand" aria-label="Resumen patrimonial">
-        <div className="resumenHeader">
-          <nav className="framingTabs" aria-label="Vista de patrimonio">
-            {framingTabs.map((tab) => (
-              <Link
-                className={tab.id === selectedView ? "active" : undefined}
-                href={
-                  selectedDrill
-                    ? appendParam(`/?view=${tab.id}`, "drill", selectedDrill)
-                    : `/?view=${tab.id}`
-                }
-                key={tab.id}
-                scroll={false}
-              >
-                {tab.label}
-              </Link>
-            ))}
-          </nav>
-        </div>
-
-        {presentation ? (
-          <div className="headline">
-            <span>{presentation.headlineLabel}</span>
-            <strong className={hasHoldings ? undefined : "emptyFigure"}>
-              {formatMoneyMinor(presentation.headline)}
-              {!hasHoldings ? <small>sin datos aún</small> : null}
-            </strong>
+    <Shell {...shellProps}>
+      <div className="dashGrid">
+        {/* ── 1. Hero — the one dark ink panel: framing selector, headline,
+               delta chips with %, breakdown stats (docs/design-system.md) ── */}
+        <section className="summaryBand heroPanel" aria-label="Resumen patrimonial">
+          <div className="resumenHeader">
+            <nav className="framingTabs" aria-label="Vista de patrimonio">
+              {framingTabs.map((tab) => (
+                <Link
+                  className={tab.id === selectedView ? "active" : undefined}
+                  href={
+                    selectedDrill
+                      ? appendParam(`/?view=${tab.id}`, "drill", selectedDrill)
+                      : `/?view=${tab.id}`
+                  }
+                  key={tab.id}
+                  scroll={false}
+                >
+                  {tab.label}
+                </Link>
+              ))}
+            </nav>
           </div>
-        ) : null}
 
-        {/* ── 2. Breakdown — always visible: Activos brutos · Deudas · Vivienda · Líquido ── */}
-        {presentation ? (
-          <div className="breakdown">
-            {presentation.breakdown.map((item) => (
-              <span key={item.id}>
-                {item.label}{" "}
-                <b className={hasHoldings ? undefined : "emptyFigure"}>
-                  {formatMoneyMinor(item.value)}
-                </b>
-              </span>
-            ))}
-          </div>
-        ) : null}
+          {presentation ? (
+            <div className="headline">
+              <span>{presentation.headlineLabel}</span>
+              <strong className={hasHoldings ? undefined : "emptyFigure"}>
+                {formatMoneyMinor(presentation.headline)}
+                {!hasHoldings ? <small>sin datos aún</small> : null}
+              </strong>
+            </div>
+          ) : null}
 
-        {/* ── Delta strip ── */}
-        {deltas ? (
-          <div className="deltaStrip" aria-label="Cambios de snapshots">
-            <span>
-              Snapshot anterior{" "}
-              <b
-                className={
-                  deltas.changeSincePrevious
-                    ? moneySign(deltas.changeSincePrevious)
-                    : undefined
-                }
-              >
-                {deltas.changeSincePrevious
-                  ? formatMoneyMinor(deltas.changeSincePrevious)
-                  : "sin dato"}
-              </b>
-            </span>
-            <span>
-              Cierre mensual{" "}
-              <b
-                className={
-                  deltas.changeSinceMonthlyClose
-                    ? moneySign(deltas.changeSinceMonthlyClose)
-                    : undefined
-                }
-              >
-                {deltas.changeSinceMonthlyClose
-                  ? formatMoneyMinor(deltas.changeSinceMonthlyClose)
-                  : "sin dato"}
-              </b>
-            </span>
+          {deltas ? (
+            <div className="deltaChips" aria-label="Cambios de snapshots">
+              <DeltaChip delta={vsPrevious} label="vs anterior" />
+              <DeltaChip delta={vsMonthlyClose} label="vs cierre mensual" />
+            </div>
+          ) : null}
+
+          {/* ── Breakdown — always visible: Neto líquido · Vivienda · Brutos · Deudas ── */}
+          {presentation ? (
+            <div className="heroStats">
+              {presentation.breakdown.map((item) => (
+                <div className="heroStat" key={item.id}>
+                  <span>{item.label}</span>
+                  <b className={hasHoldings ? undefined : "emptyFigure"}>
+                    {formatMoneyMinor(item.value)}
+                  </b>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
+
+        {/* ── 2. Liquidez — donut with drill anchors + dense tier rows with
+               embedded share bars ── */}
+        <section className="liquidityPanel" aria-label="Liquidez por capa">
+          <div className="panelHeader">
+            <h2>Liquidez</h2>
+            <span>Por capa · % del bruto</span>
           </div>
-        ) : null}
-      </section>
+          <svg
+            className="tierDonut"
+            viewBox="0 0 100 100"
+            role="img"
+            aria-label="Distribución por capa de liquidez"
+          >
+            <circle
+              className="donutTrack"
+              cx={TIER_DONUT_GEOMETRY.cx}
+              cy={TIER_DONUT_GEOMETRY.cy}
+              r={(TIER_DONUT_GEOMETRY.outerRadius + TIER_DONUT_GEOMETRY.innerRadius) / 2}
+              strokeWidth={
+                TIER_DONUT_GEOMETRY.outerRadius - TIER_DONUT_GEOMETRY.innerRadius
+              }
+            />
+            {donutSegments.map((segment) => {
+              const tier = pyramid[segment.index]!;
+              const drillKey = DRILL_GROUP_BY_TIER[tier.tier];
+              // Native SVG anchor to the segment's drill group (#79) — same
+              // destinations as the decomposition bands, Vista preserved, zero
+              // client JS (ADR 0009).
+              return (
+                <a
+                  aria-label={`${TIER_LABELS[tier.tier]}: ${DRILL_DESTINATION_LABELS[drillKey]}`}
+                  href={drillHrefs[drillKey]}
+                  key={tier.tier}
+                >
+                  <path className={`donutSegment ${tier.tier}`} d={segment.path}>
+                    <title>{`${TIER_LABELS[tier.tier]} · ${segment.share}%`}</title>
+                  </path>
+                </a>
+              );
+            })}
+          </svg>
+          <div className="pyramid">
+            {pyramid.map((tier, idx) => {
+              const pct = tierPercents[idx] ?? 0;
+              return (
+                <details className={`tier ${tier.tier}`} key={tier.tier}>
+                  <summary>
+                    <span className="tierName">{TIER_LABELS[tier.tier]}</span>
+                    {/* Green stays reserved for deltas/P&L — tier values render
+                        in ink, only a negative net goes red. */}
+                    <b className={moneySign(tier.netValue) === "neg" ? "neg" : undefined}>
+                      {formatMoneyMinor(tier.netValue)}
+                    </b>
+                    <span className="tierShare">{pct}%</span>
+                    <span className="tierBar" aria-hidden="true">
+                      <i style={{ width: `${pct}%` }} />
+                    </span>
+                  </summary>
+                  <div className="tierDetails">
+                    <span>Bruto {formatMoneyMinor(tier.grossAssets)}</span>
+                    <span>Deuda {formatMoneyMinor(tier.debts)}</span>
+                    {tier.assets.map((asset) => (
+                      <small key={asset.id}>+ {asset.name}</small>
+                    ))}
+                    {tier.liabilities.map((liability) => (
+                      <small key={liability.id}>- {liability.name}</small>
+                    ))}
+                  </div>
+                </details>
+              );
+            })}
+          </div>
+        </section>
 
       {/* ── 3. Evolution — server-rendered SVG area chart of the headline
-             figure; the delta strip above acts as its numeric legend ── */}
+             figure, with value/date axes; the hero chips are its numeric legend ── */}
       <section className="historyPanel" aria-label="Evolución del patrimonio">
         <div className="panelHeader">
           <h2>Evolución</h2>
@@ -267,75 +404,7 @@ export default async function DashboardPage({
         )}
       </section>
 
-      {/* ── 4. Composition — liquidity breakdown, 5 tiers ── */}
-      <section className="liquidityPanel" aria-label="Liquidez por capa">
-        <div className="panelHeader">
-          <h2>Liquidez</h2>
-          <span>Por capa · % del bruto</span>
-        </div>
-        <svg
-          className="tierDonut"
-          viewBox="0 0 100 100"
-          role="img"
-          aria-label="Distribución por capa de liquidez"
-        >
-          <circle
-            className="donutTrack"
-            cx={TIER_DONUT_GEOMETRY.cx}
-            cy={TIER_DONUT_GEOMETRY.cy}
-            r={(TIER_DONUT_GEOMETRY.outerRadius + TIER_DONUT_GEOMETRY.innerRadius) / 2}
-            strokeWidth={
-              TIER_DONUT_GEOMETRY.outerRadius - TIER_DONUT_GEOMETRY.innerRadius
-            }
-          />
-          {donutSegments.map((segment) => {
-            const tier = pyramid[segment.index]!;
-            const drillKey = DRILL_GROUP_BY_TIER[tier.tier];
-            // Native SVG anchor to the segment's drill group (#79) — same
-            // destinations as the decomposition bands, Vista preserved, zero
-            // client JS (ADR 0009).
-            return (
-              <a
-                aria-label={`${TIER_LABELS[tier.tier]}: ${DRILL_DESTINATION_LABELS[drillKey]}`}
-                href={drillHrefs[drillKey]}
-                key={tier.tier}
-              >
-                <path className={`donutSegment ${tier.tier}`} d={segment.path}>
-                  <title>{`${TIER_LABELS[tier.tier]} · ${segment.share}%`}</title>
-                </path>
-              </a>
-            );
-          })}
-        </svg>
-        <div className="pyramid">
-          {pyramid.map((tier, idx) => {
-            const pct = tierPercents[idx] ?? 0;
-            return (
-              <details className={`tier ${tier.tier}`} key={tier.tier}>
-                <summary>
-                  <span className="tierName">{TIER_LABELS[tier.tier]}</span>
-                  <b className={moneySign(tier.netValue)}>
-                    {formatMoneyMinor(tier.netValue)}
-                  </b>
-                  <span className="tierShare">{pct}%</span>
-                </summary>
-                <div className="tierDetails">
-                  <span>Bruto {formatMoneyMinor(tier.grossAssets)}</span>
-                  <span>Deuda {formatMoneyMinor(tier.debts)}</span>
-                  {tier.assets.map((asset) => (
-                    <small key={asset.id}>+ {asset.name}</small>
-                  ))}
-                  {tier.liabilities.map((liability) => (
-                    <small key={liability.id}>- {liability.name}</small>
-                  ))}
-                </div>
-              </details>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* ── 5. FIRE card — read-only, full chrome, link to /ajustes ── */}
+      {/* ── 4. FIRE card — funded percent leads, read-only, link to /ajustes ── */}
       <section className="firePanel" aria-label="FIRE">
         <div className="panelHeader">
           <h2>FIRE</h2>
@@ -343,19 +412,10 @@ export default async function DashboardPage({
         </div>
         {fireScopeConfig && fireResult ? (
           <div className="fireResults">
-            <div className="fireMetric">
-              <span>Número FIRE</span>
-              <strong>{formatMoneyMinor(fireResult.fireNumber)}</strong>
-            </div>
-            <div className="fireMetric">
-              <span>Activos elegibles</span>
-              <strong>{formatMoneyMinor(fireResult.eligibleAssets)}</strong>
-            </div>
             <div className="fireProgress">
-              <div className="fireProgressTop">
-                <span>% financiado</span>
-                <strong>{fireResult.percentFunded.toFixed(1)}%</strong>
-              </div>
+              <p className="fireBig" aria-label="Porcentaje financiado">
+                {fireResult.percentFunded.toFixed(1).replace(".", ",")} %
+              </p>
               <div className="fireBar">
                 {fireResult.coastFireRequired && fireResult.fireNumber.amountMinor > 0 ? (
                   <span
@@ -382,6 +442,14 @@ export default async function DashboardPage({
               ) : fireResult.isAlreadyAtCoastFire ? (
                 <span className="statePill ready">Coast FIRE alcanzado</span>
               ) : null}
+            </div>
+            <div className="fireMetric">
+              <span>Número FIRE</span>
+              <strong>{formatMoneyMinor(fireResult.fireNumber)}</strong>
+            </div>
+            <div className="fireMetric">
+              <span>Activos elegibles</span>
+              <strong>{formatMoneyMinor(fireResult.eligibleAssets)}</strong>
             </div>
             {fireResult.coastFireRequired ? (
               <div className="fireMetric">
@@ -412,7 +480,7 @@ export default async function DashboardPage({
         )}
       </section>
 
-      {/* ── 6. Onboarding checklist — shown while any step is pending ── */}
+      {/* ── 5. Onboarding checklist — shown while any step is pending ── */}
       {anyStepPending ? (
         <section className="onboardingChecklist" aria-label="Primeros pasos">
           <div className="panelHeader">
@@ -432,6 +500,7 @@ export default async function DashboardPage({
           </ol>
         </section>
       ) : null}
+      </div>
     </Shell>
   );
 }
