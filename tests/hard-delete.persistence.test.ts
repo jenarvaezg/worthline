@@ -242,7 +242,10 @@ describe("deleteOperation", () => {
     expect(ops).toHaveLength(2);
     const buy = ops.find((o) => o.kind === "buy")!;
 
-    expect(store.deleteOperation(buy.id)).toBe(1);
+    expect(store.deleteOperation(buy.id)).toEqual({
+      assetId: "inv1",
+      executedAt: buy.executedAt,
+    });
     expect(store.readOperations("inv1")).toHaveLength(1);
 
     const entry = store
@@ -260,7 +263,7 @@ describe("deleteOperation", () => {
 
     const buy = store.readOperations("inv1").find((o) => o.kind === "buy")!;
     // Removing the buy leaves only a sell of 4 → oversold (negative units).
-    expect(store.deleteOperation(buy.id)).toBe(1);
+    expect(store.deleteOperation(buy.id)).not.toBeNull();
 
     const position = store.readPositions().find((p) => p.assetId === "inv1");
     expect(position).toBeTruthy();
@@ -270,7 +273,7 @@ describe("deleteOperation", () => {
 
   test("unknown operation id is a no-op", () => {
     const store = setupStore();
-    expect(store.deleteOperation("nope")).toBe(0);
+    expect(store.deleteOperation("nope")).toBeNull();
     store.close();
   });
 });
