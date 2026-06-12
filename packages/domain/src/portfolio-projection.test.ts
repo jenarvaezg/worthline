@@ -111,7 +111,7 @@ describe("projectPortfolio — household scope", () => {
     const assets = result.sections[0]!.rows as ProjectedAssetRow[];
     const broker = assets.find((r) => r.id === "asset_broker")! as ProjectedAssetRow;
     expect(broker.isReadOnly).toBe(true);
-    expect(broker.detailHref).toBe("/inversiones/asset_broker");
+    expect(broker.detailHref).toBe("/inversiones#asset_broker");
   });
 
   test("non-investment asset rows are NOT read-only", () => {
