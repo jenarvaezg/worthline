@@ -218,16 +218,21 @@ export interface RecalculateSnapshotInput {
 
 /**
  * Recalculate an existing snapshot after one investment's operations changed
- * (ADR 0012 ripple). Only that asset's row is recomputed — every other frozen
- * row (manual holdings, liabilities, other investments, and holdings later
- * renamed, re-valued, or trashed) is preserved verbatim, so a ripple never
- * rewrites history it should not touch. The asset keeps the unit price the
- * snapshot already captured; a newly-appearing asset uses the last operation
- * price ≤ the snapshot's date. Its label and tier stay frozen if the asset was
- * already in the snapshot.
+ * (ADR 0012 ripple). Only that asset's row is recomputed; every other frozen
+ * row — manual holdings, liabilities (including ones frozen with a null tier),
+ * other investments, and holdings later renamed, re-valued, or trashed — is
+ * preserved verbatim. The five headline figures are adjusted by the operated
+ * asset's value delta against the snapshot's own frozen figures, NOT re-derived
+ * from rows, so the tier classification of every untouched holding survives
+ * exactly as captured (rows alone cannot reproduce it — a null-tier debt could
+ * be a mortgage or a loan). The asset keeps the unit price the snapshot already
+ * captured; a newly-appearing asset uses the last operation price ≤ the date.
  *
  * Returns null when no holdings remain (the caller deletes the snapshot rather
- * than leaving it showing values derived from a now-deleted operation).
+ * than leaving it showing values derived from a now-deleted operation). Callers
+ * must NOT invoke this for a snapshot with no frozen holding rows — a legacy
+ * capture predating holdings (ADR 0008) has nothing to recompute against and
+ * must be left frozen.
  */
 export function recalculateSnapshotForAsset(
   input: RecalculateSnapshotInput,
@@ -243,6 +248,8 @@ export function recalculateSnapshotForAsset(
   );
   const rows = input.frozenHoldings.filter((row) => row.holdingId !== input.asset.id);
 
+  // Recompute the operated asset's row at the snapshot's date.
+  let newRow: SnapshotHoldingRow | undefined;
   const ops = operationsUpTo(input.operations, targetDate);
   if (ops.length > 0) {
     const price = existingRow?.unitPrice ?? latestOperationPrice(ops);
@@ -260,7 +267,7 @@ export function recalculateSnapshotForAsset(
       });
 
       if (totalShareBps > 0) {
-        rows.push({
+        newRow = {
           holdingId: input.asset.id,
           kind: "asset",
           label: existingRow?.label ?? input.asset.name,
@@ -268,14 +275,44 @@ export function recalculateSnapshotForAsset(
           units: position.currentUnits,
           valueMinor: ownedMinor,
           ...(price !== undefined ? { unitPrice: price } : {}),
-        });
+        };
+        rows.push(newRow);
       }
     }
   }
 
   if (rows.length === 0) return null;
 
-  const summary = summarizeHoldingRows(rows, currency);
+  // Apply only the operated asset's delta to the frozen figures. The asset is
+  // always an investment (an asset, never a liability), so debts never move.
+  const deltaMinor = (newRow?.valueMinor ?? 0) - (existingRow?.valueMinor ?? 0);
+  const tier = existingRow?.liquidityTier ?? newRow?.liquidityTier ?? null;
+
+  const summary = {
+    debts: { amountMinor: input.snapshot.debts.amountMinor, currency },
+    grossAssets: {
+      amountMinor: input.snapshot.grossAssets.amountMinor + deltaMinor,
+      currency,
+    },
+    housingEquity: {
+      amountMinor:
+        input.snapshot.housingEquity.amountMinor +
+        (tier && isHousing(tier) ? deltaMinor : 0),
+      currency,
+    },
+    liquidNetWorth: {
+      amountMinor:
+        input.snapshot.liquidNetWorth.amountMinor +
+        (tier && isLiquid(tier) ? deltaMinor : 0),
+      currency,
+    },
+    scopeId: input.snapshot.scopeId,
+    totalNetWorth: {
+      amountMinor: input.snapshot.totalNetWorth.amountMinor + deltaMinor,
+      currency,
+    },
+  };
+
   const snapshot = createNetWorthSnapshot({
     capturedAt: input.snapshot.capturedAt,
     id: input.snapshot.id,
@@ -292,45 +329,4 @@ export function recalculateSnapshotForAsset(
   });
 
   return { holdings: rows, snapshot };
-}
-
-/**
- * The five headline figures derived from already-scope-weighted holding rows,
- * mirroring `calculateNetWorth` exactly (gross/debts, liquid = cash+market net
- * of liquid debts, housing equity = housing assets net of housing debts).
- */
-function summarizeHoldingRows(
-  rows: readonly SnapshotHoldingRow[],
-  currency: string,
-) {
-  let grossAssets = 0;
-  let liquidAssets = 0;
-  let housingAssets = 0;
-  let debts = 0;
-  let liquidDebts = 0;
-  let housingDebts = 0;
-
-  for (const row of rows) {
-    if (row.kind === "asset") {
-      grossAssets += row.valueMinor;
-      if (row.liquidityTier && isLiquid(row.liquidityTier)) liquidAssets += row.valueMinor;
-      if (row.liquidityTier === "housing") housingAssets += row.valueMinor;
-    } else {
-      debts += row.valueMinor;
-      if (row.liquidityTier && isHousing(row.liquidityTier)) {
-        housingDebts += row.valueMinor;
-      } else if (row.liquidityTier && isLiquid(row.liquidityTier)) {
-        liquidDebts += row.valueMinor;
-      }
-    }
-  }
-
-  return {
-    debts: money(debts, currency),
-    grossAssets: money(grossAssets, currency),
-    housingEquity: money(housingAssets - housingDebts, currency),
-    liquidNetWorth: money(liquidAssets - liquidDebts, currency),
-    scopeId: "",
-    totalNetWorth: money(grossAssets - debts, currency),
-  };
 }

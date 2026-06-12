@@ -303,11 +303,13 @@ export interface WorthlineStore {
   recordOperation: (input: CreateInvestmentOperationInput) => void;
   /**
    * Generate/recalculate historical snapshots after a backdated operation
-   * change to one investment (ADR 0012, PRD #107). record(D) generates the
-   * snapshot at D (when D is in the past) and recalculates snapshots > D;
-   * delete(D) recalculates snapshots ≥ D. Recalculation only ever touches the
-   * given asset's row in each snapshot. Generation at D is a no-op when D is
-   * today or in the future (the daily capture owns today).
+   * change to one investment (ADR 0012, PRD #107). record(D) generates a fresh
+   * snapshot at D when none exists there (and D is in the past), then
+   * recalculates every existing snapshot dated ≥ D; delete(D) recalculates
+   * every existing snapshot dated ≥ D. Recalculation only ever touches the
+   * given asset's row in each snapshot, and skips legacy captures that have no
+   * holding rows. Generation at D is a no-op when D is today or in the future
+   * (the daily capture owns today).
    */
   rippleHistoricalSnapshotsForOperation: (params: {
     assetId: string;
@@ -2225,21 +2227,25 @@ function rippleHistoricalSnapshots(
       }
 
       // Recalculate every affected existing snapshot — only the operated
-      // asset's row changes; all other frozen rows are preserved.
+      // asset's row changes; all other frozen rows are preserved. (Both modes
+      // recalculate ≥ D: record relies on the generate branch above for a
+      // brand-new D, and recalculates an existing D in place here.)
       for (const snap of existing) {
-        const affected =
-          mode === "delete"
-            ? snap.dateKey >= operationDateKey
-            : snap.dateKey >= operationDateKey; // includes D when a snapshot exists there
-        if (!affected) continue;
+        if (snap.dateKey < operationDateKey) continue;
+
+        const frozenHoldings = readSnapshotHoldings(sqlite, {
+          scopeId: scope.id,
+          from: snap.dateKey,
+          to: snap.dateKey,
+        });
+
+        // A legacy capture predating holdings (ADR 0008) has no rows to
+        // recompute against — leave its frozen figures untouched.
+        if (frozenHoldings.length === 0) continue;
 
         const recalculated = recalculateSnapshotForAsset({
           asset,
-          frozenHoldings: readSnapshotHoldings(sqlite, {
-            scopeId: scope.id,
-            from: snap.dateKey,
-            to: snap.dateKey,
-          }),
+          frozenHoldings,
           operations,
           snapshot: snap,
           workspace,

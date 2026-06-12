@@ -9,9 +9,16 @@ import { describe, expect, test } from "vitest";
 import {
   buildSnapshotAtDate,
   lastKnownValueAtDate,
+  recalculateSnapshotForAsset,
   type ManualValuePoint,
 } from "./historical-snapshot";
-import type { InvestmentOperation, ManualAsset, Workspace } from "./index";
+import type {
+  InvestmentOperation,
+  ManualAsset,
+  NetWorthSnapshot,
+  SnapshotHoldingRow,
+  Workspace,
+} from "./index";
 import { createManualAsset, createWorkspace } from "./index";
 
 function makeWorkspace(): Workspace {
@@ -255,5 +262,115 @@ describe("buildSnapshotAtDate", () => {
 
     // asset_cash: no history → current value 9999.00; asset_cash_2: last ≤ date = 2000.00
     expect(result!.snapshot.grossAssets.amountMinor).toBe(9_999_00 + 2_000_00);
+  });
+});
+
+describe("recalculateSnapshotForAsset", () => {
+  const eur = (amountMinor: number) => ({ amountMinor, currency: "EUR" });
+
+  function fundAsset(workspace: Workspace): ManualAsset {
+    return investment(workspace, "asset_fund", "Fondo");
+  }
+
+  function frozenFundRow(valueMinor: number, units: string): SnapshotHoldingRow {
+    return {
+      holdingId: "asset_fund",
+      kind: "asset",
+      label: "Fondo",
+      liquidityTier: "market",
+      unitPrice: "100",
+      units,
+      valueMinor,
+    };
+  }
+
+  // A snapshot whose figures already reflect an unassociated mortgage frozen
+  // with a null tier (housing debt) — the exact shape that broke the earlier
+  // row-summing recompute.
+  function snapshotWithMortgage(): NetWorthSnapshot {
+    return {
+      capturedAt: "2024-06-01T12:00:00.000Z",
+      dateKey: "2024-06-01",
+      debts: eur(500_00),
+      grossAssets: eur(1_000_00),
+      housingEquity: eur(-500_00), // 0 housing assets − 500 housing debt
+      id: "snap_x",
+      isMonthlyClose: false,
+      liquidNetWorth: eur(1_000_00), // fund (market) is liquid; mortgage is not
+      monthKey: "2024-06",
+      scopeId: "member_jose",
+      scopeLabel: "Jose",
+      totalNetWorth: eur(500_00),
+      warnings: [],
+    };
+  }
+
+  function mortgageRow(): SnapshotHoldingRow {
+    return {
+      holdingId: "liab_mortgage",
+      kind: "liability",
+      label: "Hipoteca",
+      liquidityTier: null, // unassociated → frozen as null
+      valueMinor: 500_00,
+    };
+  }
+
+  test("preserves a null-tier liability's housingEquity through a ripple", () => {
+    const workspace = makeWorkspace();
+    const result = recalculateSnapshotForAsset({
+      asset: fundAsset(workspace),
+      frozenHoldings: [frozenFundRow(1_000_00, "10"), mortgageRow()],
+      // The fund grew to 15 units (a backdated buy) at the captured price 100.
+      operations: [
+        buy("asset_fund", "op1", "2024-01-10", "10", "100"),
+        buy("asset_fund", "op2", "2024-02-10", "5", "100"),
+      ],
+      snapshot: snapshotWithMortgage(),
+      workspace,
+    })!;
+
+    // Fund delta = +500 (market/liquid). The mortgage's housing classification
+    // is frozen, so housingEquity must NOT move.
+    expect(result.snapshot.grossAssets.amountMinor).toBe(1_500_00);
+    expect(result.snapshot.liquidNetWorth.amountMinor).toBe(1_500_00);
+    expect(result.snapshot.housingEquity.amountMinor).toBe(-500_00);
+    expect(result.snapshot.debts.amountMinor).toBe(500_00);
+    expect(result.snapshot.totalNetWorth.amountMinor).toBe(1_000_00);
+  });
+
+  test("dropping the asset adjusts only its tier's figure and keeps the rest", () => {
+    const workspace = makeWorkspace();
+    const result = recalculateSnapshotForAsset({
+      asset: fundAsset(workspace),
+      frozenHoldings: [frozenFundRow(1_000_00, "10"), mortgageRow()],
+      operations: [], // the only operation was deleted → fund no longer held
+      snapshot: snapshotWithMortgage(),
+      workspace,
+    })!;
+
+    // Fund (-1000, market) leaves; mortgage stays frozen.
+    expect(result.snapshot.grossAssets.amountMinor).toBe(0);
+    expect(result.snapshot.liquidNetWorth.amountMinor).toBe(0);
+    expect(result.snapshot.housingEquity.amountMinor).toBe(-500_00);
+    expect(result.snapshot.debts.amountMinor).toBe(500_00);
+    expect(result.holdings.map((h) => h.holdingId)).toEqual(["liab_mortgage"]);
+  });
+
+  test("returns null when the operated asset was the snapshot's only holding", () => {
+    const workspace = makeWorkspace();
+    const result = recalculateSnapshotForAsset({
+      asset: fundAsset(workspace),
+      frozenHoldings: [frozenFundRow(1_000_00, "10")],
+      operations: [], // deleted → nothing left
+      snapshot: {
+        ...snapshotWithMortgage(),
+        debts: eur(0),
+        housingEquity: eur(0),
+        totalNetWorth: eur(1_000_00),
+      },
+      workspace,
+    });
+
+    expect(result).toBeNull();
   });
 });
