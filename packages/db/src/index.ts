@@ -28,7 +28,6 @@ import type {
 import {
   assertSnapshotHoldingsReconcile,
   buildSnapshotAtDate,
-  createInvestmentOperation,
   createWorkspace,
   historicalCapturedAt,
   listScopeOptions,
@@ -73,6 +72,11 @@ import {
   type UpdateLiabilityInput,
 } from "./liability-store";
 import {
+  createOperationsStore,
+  type OperationsStore,
+  type ValueUpdateCommand,
+} from "./operations-store";
+import {
   createSnapshotStore,
   readSnapshotHoldings,
   readSnapshots,
@@ -103,6 +107,7 @@ export type {
   UpdateInvestmentAssetInput,
 } from "./asset-store";
 export type { LiabilityStore, UpdateLiabilityInput } from "./liability-store";
+export type { OperationsStore, ValueUpdateCommand } from "./operations-store";
 export type {
   PositionView,
   SaveSnapshotInput,
@@ -167,12 +172,6 @@ export interface AuditLogEntry {
 export interface TrashView {
   assets: Array<{ id: string; name: string }>;
   liabilities: Array<{ id: string; name: string }>;
-}
-
-/** One confirmed value change from a value-update pass. */
-export interface ValueUpdateCommand {
-  id: string;
-  newValueMinor: number;
 }
 
 /** Holdings a member still owns a share of — blocks the member's hard delete. */
@@ -283,6 +282,11 @@ export interface WorthlineStore {
    *  softDeleteLiability, restoreLiability, and hardDeleteLiability methods
    *  delegate here. */
   liabilities: LiabilityStore;
+  /** Focused operations & price-cache store (Slice R4). The legacy
+   *  recordOperation, readOperations, deleteOperation, batchApplyValueUpdates,
+   *  batchApplyAllValueUpdates, upsertPrice, readPriceCache, and
+   *  readAllPriceCacheEntries methods delegate here. */
+  operations: OperationsStore;
   softDeleteAsset: (assetId: string, deletedAt: string) => number;
   softDeleteLiability: (liabilityId: string, deletedAt: string) => number;
   updateAsset: (assetId: string, input: UpdateAssetInput) => void;
@@ -379,6 +383,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
   const snapshotStore = createSnapshotStore(ctx);
   const assetStore = createAssetStore(ctx);
   const liabilityStore = createLiabilityStore(ctx);
+  const operationsStore = createOperationsStore(ctx);
 
   const { getWorkspace, invalidateWorkspace } = ctx;
 
@@ -512,50 +517,12 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
     },
     readLiabilities: () => liabilityStore.readLiabilities(),
     liabilities: liabilityStore,
-    readOperations: (assetId) => readOperations(sqlite, assetId),
+    readOperations: (assetId) => operationsStore.readOperations(assetId),
     readPositions: (scopeId) => snapshotStore.readPositions(scopeId),
     readSnapshots: (scopeId) => snapshotStore.readSnapshots(scopeId),
     snapshots: snapshotStore,
     readWorkspace: () => getWorkspace(),
-    recordOperation: (input) => {
-      const operation = createInvestmentOperation(input);
-
-      sqlite
-        .prepare(
-          `
-          INSERT INTO asset_operations (
-            id,
-            asset_id,
-            kind,
-            executed_at,
-            units,
-            price_per_unit,
-            currency,
-            fees_minor
-          )
-          VALUES (
-            @id,
-            @assetId,
-            @kind,
-            @executedAt,
-            @units,
-            @pricePerUnit,
-            @currency,
-            @feesMinor
-          )
-        `,
-        )
-        .run({
-          assetId: operation.assetId,
-          currency: operation.currency,
-          executedAt: operation.executedAt,
-          feesMinor: operation.feesMinor,
-          id: operation.id,
-          kind: operation.kind,
-          pricePerUnit: operation.pricePerUnit,
-          units: operation.units,
-        });
-    },
+    recordOperation: (input) => operationsStore.recordOperation(input),
     saveFireConfig: (scopeId, config) => {
       const db = drizzle(sqlite);
       const existing = db
@@ -581,62 +548,9 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
     saveSnapshot: (input) => snapshotStore.saveSnapshot(input),
     readSnapshotHoldings: (query) => snapshotStore.readSnapshotHoldings(query),
     exportWorkspace: () => buildWorkspaceExport(sqlite, getWorkspace()),
-    batchApplyValueUpdates: (commands) => {
-      if (commands.length === 0) return;
-
-      const applyAll = sqlite.transaction(() => {
-        const update = sqlite.prepare(
-          `UPDATE assets SET current_value_minor = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-        );
-
-        for (const cmd of commands) {
-          if (!Number.isInteger(cmd.newValueMinor)) {
-            throw new Error("Money must be stored as integer minor units.");
-          }
-          update.run(cmd.newValueMinor, cmd.id);
-          writeAuditEntry("update_valuation", "asset", cmd.id, {
-            currentValueMinor: cmd.newValueMinor,
-          });
-        }
-      });
-
-      applyAll();
-    },
-    batchApplyAllValueUpdates: (assetCommands, liabilityCommands) => {
-      const allCommands = [...assetCommands, ...liabilityCommands];
-      if (allCommands.length === 0) return;
-
-      // Validate ALL amounts before any write.
-      for (const cmd of allCommands) {
-        if (!Number.isInteger(cmd.newValueMinor)) {
-          throw new Error("Money must be stored as integer minor units.");
-        }
-      }
-
-      const applyAll = sqlite.transaction(() => {
-        const updateAsset = sqlite.prepare(
-          `UPDATE assets SET current_value_minor = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-        );
-        const updateLiability = sqlite.prepare(
-          `UPDATE liabilities SET current_balance_minor = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-        );
-
-        for (const cmd of assetCommands) {
-          updateAsset.run(cmd.newValueMinor, cmd.id);
-          writeAuditEntry("update_valuation", "asset", cmd.id, {
-            currentValueMinor: cmd.newValueMinor,
-          });
-        }
-        for (const cmd of liabilityCommands) {
-          updateLiability.run(cmd.newValueMinor, cmd.id);
-          writeAuditEntry("update_balance", "liability", cmd.id, {
-            balanceMinor: cmd.newValueMinor,
-          });
-        }
-      });
-
-      applyAll();
-    },
+    batchApplyValueUpdates: (commands) => operationsStore.batchApplyValueUpdates(commands),
+    batchApplyAllValueUpdates: (assetCommands, liabilityCommands) =>
+      operationsStore.batchApplyAllValueUpdates(assetCommands, liabilityCommands),
     updateAsset: (assetId, input) => assetStore.updateAsset(assetId, input),
     updateAssetValuation: (assetId, currentValueMinor) =>
       assetStore.updateAssetValuation(assetId, currentValueMinor),
@@ -656,74 +570,11 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         .run(member.name, member.id);
       invalidateWorkspace();
     },
-    readPriceCache: (assetId) => {
-      const db = drizzle(sqlite);
-      const row = db
-        .select()
-        .from(assetPriceCache)
-        .where(eq(assetPriceCache.assetId, assetId))
-        .get();
-
-      if (!row) return null;
-
-      return {
-        assetId: row.assetId,
-        currency: row.currency,
-        fetchedAt: row.fetchedAt,
-        freshnessState: row.freshnessState,
-        price: row.price,
-        source: row.source,
-        ...(row.priceDate ? { priceDate: row.priceDate } : {}),
-        ...(row.staleReason ? { staleReason: row.staleReason } : {}),
-      };
-    },
+    readPriceCache: (assetId) => operationsStore.readPriceCache(assetId),
     readInvestmentAssetsWithMeta: () => assetStore.readInvestmentAssetsWithMeta(),
-    readAllPriceCacheEntries: () => {
-      const db = drizzle(sqlite);
-      const rows = db.select().from(assetPriceCache).all();
-
-      return rows.map((row) => ({
-        assetId: row.assetId,
-        currency: row.currency,
-        fetchedAt: row.fetchedAt,
-        freshnessState: row.freshnessState,
-        price: row.price,
-        source: row.source,
-        ...(row.priceDate ? { priceDate: row.priceDate } : {}),
-        ...(row.staleReason ? { staleReason: row.staleReason } : {}),
-      }));
-    },
-    upsertPrice: (price) => {
-      const db = drizzle(sqlite);
-      const now = new Date().toISOString();
-
-      db.insert(assetPriceCache)
-        .values({
-          assetId: price.assetId,
-          currency: price.currency,
-          fetchedAt: price.fetchedAt,
-          freshnessState: price.freshnessState,
-          price: price.price,
-          priceDate: price.priceDate ?? null,
-          source: price.source,
-          staleReason: price.staleReason ?? null,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: assetPriceCache.assetId,
-          set: {
-            currency: price.currency,
-            fetchedAt: price.fetchedAt,
-            freshnessState: price.freshnessState,
-            price: price.price,
-            priceDate: price.priceDate ?? null,
-            source: price.source,
-            staleReason: price.staleReason ?? null,
-            updatedAt: now,
-          },
-        })
-        .run();
-    },
+    readAllPriceCacheEntries: () => operationsStore.readAllPriceCacheEntries(),
+    upsertPrice: (price) => operationsStore.upsertPrice(price),
+    operations: operationsStore,
     softDeleteAsset: (assetId, deletedAt) => assetStore.softDeleteAsset(assetId, deletedAt),
     restoreAsset: (assetId) => assetStore.restoreAsset(assetId),
     acknowledgeWarning: (code, entityId) => {
@@ -783,45 +634,7 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
 
         return { assets, liabilities };
       })(),
-    deleteOperation: (operationId) => {
-      const row = sqlite
-        .prepare(
-          `SELECT asset_id AS assetId, kind, executed_at AS executedAt, units,
-                  price_per_unit AS pricePerUnit, currency, fees_minor AS feesMinor
-           FROM asset_operations WHERE id = ?`,
-        )
-        .get(operationId) as
-        | {
-            assetId: string;
-            kind: string;
-            executedAt: string;
-            units: string;
-            pricePerUnit: string;
-            currency: string;
-            feesMinor: number;
-          }
-        | undefined;
-
-      if (!row) {
-        return null;
-      }
-
-      sqlite.prepare(`DELETE FROM asset_operations WHERE id = ?`).run(operationId);
-
-      // Audit against the owning asset so the deletion shows in its history;
-      // the full operation is recorded, making manual re-entry a de facto undo.
-      writeAuditEntry("delete_operation", "asset", row.assetId, {
-        currency: row.currency,
-        executedAt: row.executedAt,
-        feesMinor: row.feesMinor,
-        kind: row.kind,
-        operationId,
-        pricePerUnit: row.pricePerUnit,
-        units: row.units,
-      });
-
-      return { assetId: row.assetId, executedAt: row.executedAt };
-    },
+    deleteOperation: (operationId) => operationsStore.deleteOperation(operationId),
     readMemberOwnerships: (memberId) => ({
       assets: sqlite
         .prepare(
@@ -1618,19 +1431,6 @@ function readWorkspace(sqlite: DatabaseConnection): Workspace | null {
     ),
     mode: workspaceRow.mode,
   });
-}
-
-function readOperations(
-  sqlite: DatabaseConnection,
-  assetId: string,
-): InvestmentOperation[] {
-  return drizzle(sqlite)
-    .select()
-    .from(assetOperations)
-    .where(eq(assetOperations.assetId, assetId))
-    .orderBy(asc(assetOperations.executedAt), asc(assetOperations.id))
-    .all()
-    .map(toOperation);
 }
 
 /**
