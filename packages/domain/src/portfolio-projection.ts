@@ -156,7 +156,7 @@ export function projectPortfolio(input: PortfolioProjectionInput): PortfolioProj
       tier,
       tierLabel: tierLabel(tier),
       isReadOnly: isInvestment,
-      ...(isInvestment ? { detailHref: `/inversiones/${asset.id}` } : {}),
+      ...(isInvestment ? { detailHref: `/inversiones#${asset.id}` } : {}),
       ownership,
     });
 
