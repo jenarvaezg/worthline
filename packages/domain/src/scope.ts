@@ -1,4 +1,4 @@
-import type { Member, Workspace } from "./index";
+import type { Member, Workspace } from "./workspace-types";
 
 export type ScopeType = "household" | "member" | "group";
 

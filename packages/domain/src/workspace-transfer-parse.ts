@@ -12,8 +12,8 @@
 import { z } from "zod";
 
 import { compareUnits } from "./decimal";
-import type { OwnershipShare, Workspace } from "./index";
-import { checkOwnershipSplit } from "./index";
+import type { OwnershipShare, Workspace } from "./workspace-types";
+import { checkOwnershipSplit } from "./workspace-types";
 import { assertSnapshotHoldingsReconcile } from "./snapshot-holdings";
 import type {
   ExportedAsset,

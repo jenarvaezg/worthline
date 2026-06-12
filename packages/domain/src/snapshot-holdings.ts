@@ -16,7 +16,7 @@
 import type { LiquidityTier } from "./classification";
 import { tierOfAsset, tierOfLiability } from "./classification";
 import type { DecimalString } from "./decimal";
-import type { Liability, ManualAsset, Workspace } from "./index";
+import type { Liability, ManualAsset, Workspace } from "./workspace-types";
 import { resolveScopeMemberIds } from "./scope";
 import { allocateScopedHolding } from "./scope-allocation";
 

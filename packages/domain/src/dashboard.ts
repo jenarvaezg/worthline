@@ -8,31 +8,29 @@ export interface LocalPersistenceStatus {
   checkKey: string;
   checkValue: string;
 }
+import type { FireScopeConfig } from "./fire";
+import { calculateFireForScope } from "./fire";
+import type { Liability, ManualAsset, Workspace } from "./workspace-types";
+import type { PositionSummary } from "./investment-types";
+import type { ScopeOption } from "./scope";
+import { resolveScopeMemberIds } from "./scope";
 import type {
-  FireScopeConfig,
-  Liability,
-  ManualAsset,
+  LiquidityTierBreakdown,
   NetWorthFraming,
   NetWorthPresentation,
   NetWorthSummary,
-  PositionSummary,
-  ScopeOption,
-  SnapshotDeltas,
-  WarningOverride,
-  Workspace,
-} from "./index";
-import type { LiquidityTierBreakdown } from "./index";
-import type { DashboardShell, DomainWarning } from "./index";
+} from "./net-worth";
 import {
   buildLiquidityBreakdown,
-  calculateFireForScope,
   calculateNetWorth,
-  calculateSnapshotDeltas,
-  collectWarnings,
-  createDashboardShell,
   presentNetWorth,
-  resolveScopeMemberIds,
-} from "./index";
+} from "./net-worth";
+import type { SnapshotDeltas } from "./snapshot-types";
+import { calculateSnapshotDeltas } from "./snapshot-types";
+import type { DomainWarning, WarningOverride } from "./warnings";
+import { collectWarnings } from "./warnings";
+import type { DashboardShell } from "./dashboard-shell";
+import { createDashboardShell } from "./dashboard-shell";
 
 export interface PositionView extends PositionSummary {
   name: string;

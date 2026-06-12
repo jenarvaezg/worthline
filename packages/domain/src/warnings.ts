@@ -1,4 +1,4 @@
-import type { ManualAsset } from "./index";
+import type { ManualAsset } from "./workspace-types";
 
 export type WarningSeverity = "blocking" | "overrideable";
 

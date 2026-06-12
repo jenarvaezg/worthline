@@ -15,7 +15,7 @@
  */
 
 import { allocateByBps } from "./money";
-import type { OwnershipShare } from "./index";
+import type { OwnershipShare } from "./workspace-types";
 
 export interface ScopedHolding {
   /** The scope's owned amount in integer minor units. */

@@ -1,5 +1,6 @@
 import type { DecimalString } from "./decimal";
-import type { InvestmentOperation, ManualAsset } from "./index";
+import type { InvestmentOperation } from "./investment-types";
+import type { ManualAsset } from "./workspace-types";
 import { derivePosition } from "./positions";
 
 /**

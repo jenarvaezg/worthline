@@ -23,19 +23,14 @@
 import { isHousing, isLiquid, tierOfAsset } from "./classification";
 import type { DecimalString } from "./decimal";
 import { compareUnits } from "./decimal";
-import type {
-  InvestmentOperation,
-  Liability,
-  ManualAsset,
-  NetWorthSnapshot,
-  Workspace,
-} from "./index";
+import type { InvestmentOperation } from "./investment-types";
+import type { Liability, ManualAsset, Workspace } from "./workspace-types";
+import type { NetWorthSnapshot, ValuedNetWorthSnapshot } from "./snapshot-types";
 import {
-  assertSnapshotHoldingsReconcile,
   captureValuedNetWorthSnapshot,
   createNetWorthSnapshot,
-  type ValuedNetWorthSnapshot,
-} from "./index";
+} from "./snapshot-types";
+import { assertSnapshotHoldingsReconcile } from "./snapshot-holdings";
 import { money } from "./money";
 import { derivePosition } from "./positions";
 import { resolveScopeMemberIds } from "./scope";
