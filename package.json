@@ -16,6 +16,7 @@
     "test:e2e": "playwright test",
     "test:e2e:first-run": "playwright test --config playwright.first-run.config.ts",
     "test:watch": "vitest",
+    "backfill:snapshots": "tsx scripts/backfill-historical-snapshots.ts",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "format": "prettier --check ."
   },
