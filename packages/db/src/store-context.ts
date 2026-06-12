@@ -10,7 +10,7 @@ import type {
 } from "@worthline/domain";
 import { createLiability, projectAssets } from "@worthline/domain";
 import type { Database as DatabaseConnection } from "better-sqlite3";
-import { asc, isNull } from "drizzle-orm";
+import { asc, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { randomUUID } from "node:crypto";
 
@@ -19,10 +19,15 @@ import {
   assetOwnerships,
   assetPriceCache,
   assets,
+  auditLog,
   investmentAssets,
   liabilities,
   liabilityOwnerships,
+  warningOverrides,
 } from "./schema";
+
+/** The shared drizzle query builder type, bound to the better-sqlite3 driver. */
+export type StoreDb = ReturnType<typeof drizzle>;
 
 /**
  * Shared substrate for every extracted *-Store (R1–R5 of the architectural
@@ -31,6 +36,14 @@ import {
  * connection, the drizzle instance, id generation, transaction wrapping, audit
  * logging, and the per-unit-of-work workspace cache are owned in exactly one
  * place and never duplicated across the slices.
+ *
+ * STORE RULE (PRD #120 candidate 4, completed in R12): the store layer uses
+ * Drizzle for everything — reads and writes alike, through the one shared
+ * `db` instance. If a query genuinely cannot be expressed in Drizzle, drop to
+ * raw SQL on `sqlite` and document why inline. The only standing exceptions are
+ * `resetWorkspace` / `importWorkspace`'s table wipe (a DELETE over a runtime
+ * list of table names, which Drizzle's typed builder cannot express) and the
+ * schema setup in `migrate` (out of scope — not store reads/writes).
  */
 export interface StoreContext {
   /** The raw better-sqlite3 connection — for prepared statements and as the
@@ -38,7 +51,7 @@ export interface StoreContext {
   readonly sqlite: DatabaseConnection;
   /** A drizzle query builder bound to the shared connection. Built once per
    *  store lifetime and shared, so every slice writes through one instance. */
-  readonly db: ReturnType<typeof drizzle>;
+  readonly db: StoreDb;
   /** Id generator (randomUUID), injectable so slices never import crypto twice. */
   newId: () => string;
   /** Wrap a unit of work in a SQLite transaction and run it immediately. */
@@ -63,7 +76,7 @@ export interface StoreContext {
  */
 export function createStoreContext(
   sqlite: DatabaseConnection,
-  readWorkspace: (sqlite: DatabaseConnection) => Workspace | null,
+  readWorkspace: (db: StoreDb) => Workspace | null,
 ): StoreContext {
   // Per-unit-of-work workspace cache: the workspace only changes on membership
   // writes, so memoize it for the store's (short) lifetime and invalidate on
@@ -79,22 +92,19 @@ export function createStoreContext(
     newId: () => randomUUID(),
     transaction: (work) => sqlite.transaction(work)(),
     writeAuditEntry: (action, entityType, entityId, details = {}) => {
-      sqlite
-        .prepare(
-          `INSERT INTO audit_log (id, action, entity_type, entity_id, details_json)
-           VALUES (@id, @action, @entityType, @entityId, @detailsJson)`,
-        )
-        .run({
+      db.insert(auditLog)
+        .values({
           action,
           detailsJson: JSON.stringify(details),
           entityId,
           entityType,
           id: randomUUID(),
-        });
+        })
+        .run();
     },
     getWorkspace: () => {
       if (cachedWorkspace === undefined) {
-        cachedWorkspace = readWorkspace(sqlite);
+        cachedWorkspace = readWorkspace(db);
       }
 
       return cachedWorkspace;
@@ -130,9 +140,9 @@ export function toOperation(
 }
 
 export function readAllOperations(
-  sqlite: DatabaseConnection,
+  db: StoreDb,
 ): Map<string, InvestmentOperation[]> {
-  const rows = drizzle(sqlite)
+  const rows = db
     .select()
     .from(assetOperations)
     .orderBy(asc(assetOperations.executedAt), asc(assetOperations.id))
@@ -153,9 +163,9 @@ export function readAllOperations(
 }
 
 export function readInvestmentMeta(
-  sqlite: DatabaseConnection,
+  db: StoreDb,
 ): Map<string, InvestmentMeta> {
-  const rows = drizzle(sqlite)
+  const rows = db
     .select({
       assetId: investmentAssets.assetId,
       manualPricePerUnit: investmentAssets.manualPricePerUnit,
@@ -174,9 +184,9 @@ export function readInvestmentMeta(
 }
 
 export function readAllPriceCache(
-  sqlite: DatabaseConnection,
+  db: StoreDb,
 ): Map<string, { price: string }> {
-  const rows = drizzle(sqlite).select().from(assetPriceCache).all();
+  const rows = db.select().from(assetPriceCache).all();
 
   return rows.reduce((map, row) => {
     map.set(row.assetId, { price: row.price });
@@ -207,9 +217,9 @@ export function groupOwnershipByOwner<
 
 /** All asset ownership rows in one query, grouped by asset id (member order preserved). */
 export function readAssetOwnerships(
-  sqlite: DatabaseConnection,
+  db: StoreDb,
 ): Map<string, OwnershipShare[]> {
-  const rows = drizzle(sqlite)
+  const rows = db
     .select({
       assetId: assetOwnerships.assetId,
       memberId: assetOwnerships.memberId,
@@ -233,17 +243,17 @@ export function readAssetOwnerships(
  * drifts between them.
  */
 export function buildAssetProjectionContext(
-  sqlite: DatabaseConnection,
+  db: StoreDb,
   hasInvestments: boolean,
 ): AssetProjectionContext {
   const operationsByAsset = hasInvestments
-    ? readAllOperations(sqlite)
+    ? readAllOperations(db)
     : new Map<string, InvestmentOperation[]>();
   const metaByAsset = hasInvestments
-    ? readInvestmentMeta(sqlite)
+    ? readInvestmentMeta(db)
     : new Map<string, InvestmentMeta>();
   const priceCacheByAsset = hasInvestments
-    ? readAllPriceCache(sqlite)
+    ? readAllPriceCache(db)
     : new Map<string, { price: string }>();
 
   const manualPriceByAsset = new Map<string, DecimalString | undefined>();
@@ -260,7 +270,7 @@ export function buildAssetProjectionContext(
     cachedPriceByAsset,
     manualPriceByAsset,
     operationsByAsset,
-    ownershipByAsset: readAssetOwnerships(sqlite),
+    ownershipByAsset: readAssetOwnerships(db),
   };
 }
 
@@ -273,14 +283,14 @@ export function buildAssetProjectionContext(
  * home — rather than being duplicated across the slices.
  */
 export function readAssets(
-  sqlite: DatabaseConnection,
+  db: StoreDb,
   workspace: Workspace | null,
 ): ManualAsset[] {
   if (!workspace) {
     return [];
   }
 
-  const rows = drizzle(sqlite)
+  const rows = db
     .select({
       currency: assets.currency,
       currentValueMinor: assets.currentValueMinor,
@@ -306,9 +316,9 @@ export function readAssets(
   }));
 
   const hasInvestments = rawRows.some((row) => row.type === "investment");
-  const ctx = buildAssetProjectionContext(sqlite, hasInvestments);
+  const projectionContext = buildAssetProjectionContext(db, hasInvestments);
 
-  return projectAssets(workspace, rawRows, ctx);
+  return projectAssets(workspace, rawRows, projectionContext);
 }
 
 /**
@@ -324,35 +334,46 @@ export function readAssets(
  * monolith's emptyTrash run it — so the trash-delete semantics can never drift.
  */
 export function hardDeleteAssetTx(ctx: StoreContext, assetId: string): number {
-  const { sqlite } = ctx;
-  const row = sqlite
-    .prepare(`SELECT name, type, deleted_at AS deletedAt FROM assets WHERE id = ?`)
-    .get(assetId) as
-    | { name: string; type: string; deletedAt: string | null }
-    | undefined;
+  const { db } = ctx;
+  const row = db
+    .select({ name: assets.name, type: assets.type, deletedAt: assets.deletedAt })
+    .from(assets)
+    .where(eq(assets.id, assetId))
+    .get();
 
   // Hard delete is reachable only from the trash: refuse a live holding.
   if (!row || row.deletedAt === null) {
     return 0;
   }
 
-  const ownership = sqlite
-    .prepare(
-      `SELECT member_id AS memberId, share_bps AS shareBps FROM asset_ownerships WHERE asset_id = ?`,
-    )
-    .all(assetId);
+  const ownership = db
+    .select({ memberId: assetOwnerships.memberId, shareBps: assetOwnerships.shareBps })
+    .from(assetOwnerships)
+    .where(eq(assetOwnerships.assetId, assetId))
+    .all();
   const operations =
     row.type === "investment"
-      ? sqlite
-          .prepare(
-            `SELECT id, kind, executed_at AS executedAt, units, price_per_unit AS pricePerUnit, currency, fees_minor AS feesMinor
-             FROM asset_operations WHERE asset_id = ?`,
-          )
-          .all(assetId)
+      ? db
+          .select({
+            id: assetOperations.id,
+            kind: assetOperations.kind,
+            executedAt: assetOperations.executedAt,
+            units: assetOperations.units,
+            pricePerUnit: assetOperations.pricePerUnit,
+            currency: assetOperations.currency,
+            feesMinor: assetOperations.feesMinor,
+          })
+          .from(assetOperations)
+          .where(eq(assetOperations.assetId, assetId))
+          .all()
       : [];
 
-  sqlite.prepare(`DELETE FROM warning_overrides WHERE entity_id = ?`).run(assetId);
-  const result = sqlite.prepare(`DELETE FROM assets WHERE id = ?`).run(assetId);
+  // No FK points at the warning overrides, so clear them by hand; the asset
+  // row's FK cascades take ownerships, investment metadata, operations, and
+  // the price cache. Frozen snapshot_holdings are intentionally never touched
+  // (ADR 0008).
+  db.delete(warningOverrides).where(eq(warningOverrides.entityId, assetId)).run();
+  const result = db.delete(assets).where(eq(assets.id, assetId)).run();
 
   ctx.writeAuditEntry("hard_delete_asset", "asset", assetId, {
     name: row.name,
@@ -367,9 +388,9 @@ export function hardDeleteAssetTx(ctx: StoreContext, assetId: string): number {
 /** All liability ownership rows in one query, grouped by liability id. Shared by
  *  the LiabilityStore (R3) and the monolith's export/historical reconstruction. */
 export function readLiabilityOwnerships(
-  sqlite: DatabaseConnection,
+  db: StoreDb,
 ): Map<string, OwnershipShare[]> {
-  const rows = drizzle(sqlite)
+  const rows = db
     .select({
       liabilityId: liabilityOwnerships.liabilityId,
       memberId: liabilityOwnerships.memberId,
@@ -389,14 +410,14 @@ export function readLiabilityOwnerships(
  * duplicated across the slices.
  */
 export function readLiabilities(
-  sqlite: DatabaseConnection,
+  db: StoreDb,
   workspace: Workspace | null,
 ): Liability[] {
   if (!workspace) {
     return [];
   }
 
-  const rows = drizzle(sqlite)
+  const rows = db
     .select({
       associatedAssetId: liabilities.associatedAssetId,
       balanceMinor: liabilities.currentBalanceMinor,
@@ -409,7 +430,7 @@ export function readLiabilities(
     .where(isNull(liabilities.deletedAt))
     .orderBy(asc(liabilities.createdAt), asc(liabilities.id))
     .all();
-  const ownershipByLiability = readLiabilityOwnerships(sqlite);
+  const ownershipByLiability = readLiabilityOwnerships(db);
 
   return rows.map((row) =>
     createLiability(workspace, {
@@ -434,25 +455,34 @@ export function readLiabilities(
  * drift.
  */
 export function hardDeleteLiabilityTx(ctx: StoreContext, liabilityId: string): number {
-  const { sqlite } = ctx;
-  const row = sqlite
-    .prepare(`SELECT name, type, deleted_at AS deletedAt FROM liabilities WHERE id = ?`)
-    .get(liabilityId) as
-    | { name: string; type: string; deletedAt: string | null }
-    | undefined;
+  const { db } = ctx;
+  const row = db
+    .select({
+      name: liabilities.name,
+      type: liabilities.type,
+      deletedAt: liabilities.deletedAt,
+    })
+    .from(liabilities)
+    .where(eq(liabilities.id, liabilityId))
+    .get();
 
   if (!row || row.deletedAt === null) {
     return 0;
   }
 
-  const ownership = sqlite
-    .prepare(
-      `SELECT member_id AS memberId, share_bps AS shareBps FROM liability_ownerships WHERE liability_id = ?`,
-    )
-    .all(liabilityId);
+  const ownership = db
+    .select({
+      memberId: liabilityOwnerships.memberId,
+      shareBps: liabilityOwnerships.shareBps,
+    })
+    .from(liabilityOwnerships)
+    .where(eq(liabilityOwnerships.liabilityId, liabilityId))
+    .all();
 
-  sqlite.prepare(`DELETE FROM warning_overrides WHERE entity_id = ?`).run(liabilityId);
-  const result = sqlite.prepare(`DELETE FROM liabilities WHERE id = ?`).run(liabilityId);
+  // FK cascade takes the ownerships; clear the warning overrides by hand (no FK
+  // points at them); snapshots stay frozen (ADR 0008).
+  db.delete(warningOverrides).where(eq(warningOverrides.entityId, liabilityId)).run();
+  const result = db.delete(liabilities).where(eq(liabilities.id, liabilityId)).run();
 
   ctx.writeAuditEntry("hard_delete_liability", "liability", liabilityId, {
     name: row.name,

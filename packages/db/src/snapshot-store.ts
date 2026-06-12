@@ -1,20 +1,20 @@
 import type {
   DomainWarning,
-  LiquidityTier,
   NetWorthSnapshot,
   PositionSummary,
   RawInvestmentRow,
-  SnapshotHoldingKind,
   SnapshotHoldingRow,
   Workspace,
 } from "@worthline/domain";
 import { projectPositions } from "@worthline/domain";
-import type { Database as DatabaseConnection } from "better-sqlite3";
-import { and, asc, eq, isNull } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import { and, asc, eq, gte, isNull, lte, sql, type SQL } from "drizzle-orm";
 
-import { assets, snapshots } from "./schema";
-import { buildAssetProjectionContext, type StoreContext } from "./store-context";
+import { assets, snapshotHoldings, snapshots } from "./schema";
+import {
+  buildAssetProjectionContext,
+  type StoreContext,
+  type StoreDb,
+} from "./store-context";
 
 export interface SaveSnapshotInput {
   snapshot: NetWorthSnapshot;
@@ -64,15 +64,15 @@ export interface SnapshotStore {
 export function createSnapshotStore(ctx: StoreContext): SnapshotStore {
   return {
     saveSnapshot: (input) => saveSnapshot(ctx, input),
-    readSnapshots: (scopeId) => readSnapshots(ctx.sqlite, scopeId),
-    readSnapshotHoldings: (query) => readSnapshotHoldings(ctx.sqlite, query),
+    readSnapshots: (scopeId) => readSnapshots(ctx.db, scopeId),
+    readSnapshotHoldings: (query) => readSnapshotHoldings(ctx.db, query),
     readPositions: (scopeId) =>
-      readPositions(ctx.sqlite, ctx.getWorkspace(), scopeId),
+      readPositions(ctx.db, ctx.getWorkspace(), scopeId),
   };
 }
 
 function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): void {
-  const { sqlite } = ctx;
+  const { db } = ctx;
   const snapshot = input.snapshot;
 
   // The reconciliation invariant (ADR 0008) is enforced by the callers before
@@ -82,15 +82,15 @@ function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): void {
   // (PRD #120 candidate 3 — domain invariants live outside the store layer).
   ctx.transaction(() => {
     if (snapshot.isMonthlyClose) {
-      sqlite
-        .prepare(
-          `
-          UPDATE snapshots
-          SET is_monthly_close = 0
-          WHERE scope_id = ? AND month_key = ?
-        `,
+      db.update(snapshots)
+        .set({ isMonthlyClose: 0 })
+        .where(
+          and(
+            eq(snapshots.scopeId, snapshot.scopeId),
+            eq(snapshots.monthKey, snapshot.monthKey),
+          ),
         )
-        .run(snapshot.scopeId, snapshot.monthKey);
+        .run();
     }
 
     // Upsert on (scope_id, date_key): concurrent first-loads degrade
@@ -102,71 +102,29 @@ function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): void {
     // go with it — at most one set of rows per scope per day. The delete
     // must run before the upsert because the upsert rewrites the parent
     // snapshot id that the rows' foreign key points at.
-    const existing = sqlite
-      .prepare(`SELECT id FROM snapshots WHERE scope_id = ? AND date_key = ?`)
-      .get(snapshot.scopeId, snapshot.dateKey) as { id: string } | undefined;
+    const existing = db
+      .select({ id: snapshots.id })
+      .from(snapshots)
+      .where(
+        and(
+          eq(snapshots.scopeId, snapshot.scopeId),
+          eq(snapshots.dateKey, snapshot.dateKey),
+        ),
+      )
+      .get();
 
     if (existing) {
-      sqlite
-        .prepare(`DELETE FROM snapshot_holdings WHERE snapshot_id = ?`)
-        .run(existing.id);
+      db.delete(snapshotHoldings)
+        .where(eq(snapshotHoldings.snapshotId, existing.id))
+        .run();
 
       if (input.replace) {
-        sqlite.prepare("DELETE FROM snapshots WHERE id = ?").run(existing.id);
+        db.delete(snapshots).where(eq(snapshots.id, existing.id)).run();
       }
     }
 
-    sqlite
-      .prepare(
-        `
-        INSERT INTO snapshots (
-          id,
-          scope_id,
-          scope_label,
-          captured_at,
-          date_key,
-          month_key,
-          is_monthly_close,
-          currency,
-          total_net_worth_minor,
-          liquid_net_worth_minor,
-          housing_equity_minor,
-          gross_assets_minor,
-          debts_minor,
-          warnings_json
-        )
-        VALUES (
-          @id,
-          @scopeId,
-          @scopeLabel,
-          @capturedAt,
-          @dateKey,
-          @monthKey,
-          @isMonthlyClose,
-          @currency,
-          @totalNetWorthMinor,
-          @liquidNetWorthMinor,
-          @housingEquityMinor,
-          @grossAssetsMinor,
-          @debtsMinor,
-          @warningsJson
-        )
-        ON CONFLICT(scope_id, date_key) DO UPDATE SET
-          id = excluded.id,
-          scope_label = excluded.scope_label,
-          captured_at = excluded.captured_at,
-          month_key = excluded.month_key,
-          is_monthly_close = excluded.is_monthly_close,
-          currency = excluded.currency,
-          total_net_worth_minor = excluded.total_net_worth_minor,
-          liquid_net_worth_minor = excluded.liquid_net_worth_minor,
-          housing_equity_minor = excluded.housing_equity_minor,
-          gross_assets_minor = excluded.gross_assets_minor,
-          debts_minor = excluded.debts_minor,
-          warnings_json = excluded.warnings_json
-      `,
-      )
-      .run({
+    db.insert(snapshots)
+      .values({
         capturedAt: snapshot.capturedAt,
         currency: snapshot.totalNetWorth.currency,
         dateKey: snapshot.dateKey,
@@ -181,56 +139,50 @@ function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): void {
         scopeLabel: snapshot.scopeLabel,
         totalNetWorthMinor: snapshot.totalNetWorth.amountMinor,
         warningsJson: JSON.stringify(snapshot.warnings),
-      });
+      })
+      .onConflictDoUpdate({
+        target: [snapshots.scopeId, snapshots.dateKey],
+        set: {
+          id: sql`excluded.id`,
+          scopeLabel: sql`excluded.scope_label`,
+          capturedAt: sql`excluded.captured_at`,
+          monthKey: sql`excluded.month_key`,
+          isMonthlyClose: sql`excluded.is_monthly_close`,
+          currency: sql`excluded.currency`,
+          totalNetWorthMinor: sql`excluded.total_net_worth_minor`,
+          liquidNetWorthMinor: sql`excluded.liquid_net_worth_minor`,
+          housingEquityMinor: sql`excluded.housing_equity_minor`,
+          grossAssetsMinor: sql`excluded.gross_assets_minor`,
+          debtsMinor: sql`excluded.debts_minor`,
+          warningsJson: sql`excluded.warnings_json`,
+        },
+      })
+      .run();
 
     if (input.holdings && input.holdings.length > 0) {
-      const insertHolding = sqlite.prepare(`
-        INSERT INTO snapshot_holdings (
-          id,
-          snapshot_id,
-          holding_id,
-          kind,
-          label,
-          liquidity_tier,
-          value_minor,
-          units,
-          unit_price
+      db.insert(snapshotHoldings)
+        .values(
+          input.holdings.map((row) => ({
+            holdingId: row.holdingId,
+            id: ctx.newId(),
+            kind: row.kind,
+            label: row.label,
+            liquidityTier: row.liquidityTier,
+            snapshotId: snapshot.id,
+            unitPrice: row.unitPrice ?? null,
+            units: row.units ?? null,
+            valueMinor: row.valueMinor,
+          })),
         )
-        VALUES (
-          @id,
-          @snapshotId,
-          @holdingId,
-          @kind,
-          @label,
-          @liquidityTier,
-          @valueMinor,
-          @units,
-          @unitPrice
-        )
-      `);
-
-      for (const row of input.holdings) {
-        insertHolding.run({
-          holdingId: row.holdingId,
-          id: ctx.newId(),
-          kind: row.kind,
-          label: row.label,
-          liquidityTier: row.liquidityTier,
-          snapshotId: snapshot.id,
-          unitPrice: row.unitPrice ?? null,
-          units: row.units ?? null,
-          valueMinor: row.valueMinor,
-        });
-      }
+        .run();
     }
   });
 }
 
 export function readSnapshots(
-  sqlite: DatabaseConnection,
+  db: StoreDb,
   scopeId?: string,
 ): NetWorthSnapshot[] {
-  const db = drizzle(sqlite);
   const rows = scopeId
     ? db
         .select()
@@ -261,71 +213,61 @@ export function readSnapshots(
   }));
 }
 
-interface SnapshotHoldingDbRow {
-  capturedAt: string;
-  dateKey: string;
-  holdingId: string;
-  kind: SnapshotHoldingKind;
-  label: string;
-  liquidityTier: LiquidityTier | null;
-  scopeId: string;
-  snapshotId: string;
-  unitPrice: string | null;
-  units: string | null;
-  valueMinor: number;
-}
-
 /**
  * Read frozen holding rows (ADR 0008), optionally filtered by scope and by an
  * inclusive date-key window. Rows are joined with their snapshot for identity
  * and ordering — chronological, then assets before liabilities, then by the
- * frozen label for a stable presentation order.
+ * frozen label for a stable presentation order. Dynamic WHERE is built as a
+ * Drizzle condition list (mirroring readSnapshots), so the filter never drops
+ * to raw SQL.
  */
 export function readSnapshotHoldings(
-  sqlite: DatabaseConnection,
+  db: StoreDb,
   query: SnapshotHoldingQuery = {},
 ): SnapshotHoldingRecord[] {
-  const conditions: string[] = [];
-  const params: unknown[] = [];
+  const conditions: SQL[] = [];
 
   if (query.scopeId !== undefined) {
-    conditions.push("s.scope_id = ?");
-    params.push(query.scopeId);
+    conditions.push(eq(snapshots.scopeId, query.scopeId));
   }
 
   if (query.from !== undefined) {
-    conditions.push("s.date_key >= ?");
-    params.push(query.from);
+    conditions.push(gte(snapshots.dateKey, query.from));
   }
 
   if (query.to !== undefined) {
-    conditions.push("s.date_key <= ?");
-    params.push(query.to);
+    conditions.push(lte(snapshots.dateKey, query.to));
   }
 
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-  const rows = sqlite
-    .prepare(
-      `
-      SELECT
-        h.snapshot_id AS snapshotId,
-        s.scope_id AS scopeId,
-        s.date_key AS dateKey,
-        s.captured_at AS capturedAt,
-        h.holding_id AS holdingId,
-        h.kind AS kind,
-        h.label AS label,
-        h.liquidity_tier AS liquidityTier,
-        h.value_minor AS valueMinor,
-        h.units AS units,
-        h.unit_price AS unitPrice
-      FROM snapshot_holdings h
-      JOIN snapshots s ON s.id = h.snapshot_id
-      ${where}
-      ORDER BY s.date_key ASC, s.scope_id ASC, h.kind ASC, h.label ASC, h.holding_id ASC
-    `,
+  const baseQuery = db
+    .select({
+      snapshotId: snapshotHoldings.snapshotId,
+      scopeId: snapshots.scopeId,
+      dateKey: snapshots.dateKey,
+      capturedAt: snapshots.capturedAt,
+      holdingId: snapshotHoldings.holdingId,
+      kind: snapshotHoldings.kind,
+      label: snapshotHoldings.label,
+      liquidityTier: snapshotHoldings.liquidityTier,
+      valueMinor: snapshotHoldings.valueMinor,
+      units: snapshotHoldings.units,
+      unitPrice: snapshotHoldings.unitPrice,
+    })
+    .from(snapshotHoldings)
+    .innerJoin(snapshots, eq(snapshots.id, snapshotHoldings.snapshotId));
+
+  const filtered =
+    conditions.length > 0 ? baseQuery.where(and(...conditions)) : baseQuery;
+
+  const rows = filtered
+    .orderBy(
+      asc(snapshots.dateKey),
+      asc(snapshots.scopeId),
+      asc(snapshotHoldings.kind),
+      asc(snapshotHoldings.label),
+      asc(snapshotHoldings.holdingId),
     )
-    .all(...params) as SnapshotHoldingDbRow[];
+    .all();
 
   return rows.map((row) => ({
     capturedAt: row.capturedAt,
@@ -350,7 +292,7 @@ export function readSnapshotHoldings(
  * itself (PRD #120 candidate 3, R10).
  */
 export function readPositions(
-  sqlite: DatabaseConnection,
+  db: StoreDb,
   workspace: Workspace | null,
   scopeId?: string,
 ): PositionView[] {
@@ -358,7 +300,7 @@ export function readPositions(
     return [];
   }
 
-  const rows: RawInvestmentRow[] = drizzle(sqlite)
+  const rows: RawInvestmentRow[] = db
     .select({ currency: assets.currency, id: assets.id, name: assets.name })
     .from(assets)
     .where(and(eq(assets.type, "investment"), isNull(assets.deletedAt)))
@@ -369,7 +311,7 @@ export function readPositions(
     return [];
   }
 
-  const ctx = buildAssetProjectionContext(sqlite, true);
+  const projectionContext = buildAssetProjectionContext(db, true);
 
-  return projectPositions(workspace, rows, ctx, scopeId);
+  return projectPositions(workspace, rows, projectionContext, scopeId);
 }

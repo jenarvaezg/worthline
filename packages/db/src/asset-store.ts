@@ -103,7 +103,7 @@ export function createAssetStore(ctx: StoreContext): AssetStore {
   return {
     createManualAsset: (input) => createManualAssetRecord(ctx, input),
     createInvestmentAsset: (input) => createInvestmentAsset(ctx, input),
-    readAssets: () => readAssets(ctx.sqlite, ctx.getWorkspace()),
+    readAssets: () => readAssets(ctx.db, ctx.getWorkspace()),
     readInvestmentAssetById: (assetId) => readInvestmentAssetById(ctx, assetId),
     readInvestmentAssetsWithMeta: () => readInvestmentAssetsWithMeta(ctx),
     updateAsset: (assetId, input) => updateAsset(ctx, assetId, input),
@@ -377,40 +377,31 @@ function updateAssetValuation(
 }
 
 function updateInvestmentAsset(ctx: StoreContext, input: UpdateInvestmentAssetInput): void {
-  const { sqlite } = ctx;
-  const update = sqlite.transaction(() => {
-    sqlite
-      .prepare(
-        `UPDATE assets SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-      )
-      .run(input.name, input.id);
+  const { db } = ctx;
+  const assetFields: Partial<typeof assets.$inferInsert> = { name: input.name };
 
-    if (input.liquidityTier) {
-      sqlite
-        .prepare(
-          `UPDATE assets SET liquidity_tier = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-        )
-        .run(input.liquidityTier, input.id);
-    }
+  if (input.liquidityTier) {
+    assetFields.liquidityTier = input.liquidityTier;
+  }
 
-    sqlite
-      .prepare(
-        `UPDATE investment_assets
-         SET unit_symbol = ?, isin = ?, price_provider = ?, provider_symbol = ?,
-             manual_price_per_unit = ?
-         WHERE asset_id = ?`,
-      )
-      .run(
-        input.unitSymbol ?? null,
-        input.isin ?? null,
-        input.priceProvider ?? null,
-        input.providerSymbol ?? null,
-        input.manualPricePerUnit ?? null,
-        input.id,
-      );
+  ctx.transaction(() => {
+    db.update(assets)
+      .set({ ...assetFields, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(assets.id, input.id))
+      .run();
+
+    db.update(investmentAssets)
+      .set({
+        unitSymbol: input.unitSymbol ?? null,
+        isin: input.isin ?? null,
+        priceProvider: input.priceProvider ?? null,
+        providerSymbol: input.providerSymbol ?? null,
+        manualPricePerUnit: input.manualPricePerUnit ?? null,
+      })
+      .where(eq(investmentAssets.assetId, input.id))
+      .run();
   });
 
-  update();
   ctx.writeAuditEntry("update_investment_asset", "asset", input.id, {
     name: input.name,
   });
