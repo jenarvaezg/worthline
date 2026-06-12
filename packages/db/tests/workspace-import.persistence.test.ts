@@ -288,14 +288,20 @@ describe("importWorkspace", () => {
     expect(liabilities[0]!.associatedAssetId).toBe("b-a1");
 
     const snapshots = store.readSnapshots();
-    expect(snapshots.map((s) => s.id)).toEqual(["b-s1"]);
-    expect(snapshots[0]!.isMonthlyClose).toBe(true);
-    expect(snapshots[0]!.totalNetWorth).toEqual(eur(150000));
-    expect(snapshots[0]!.scopeLabel).toBe("Hogar");
+    // b-s1 is restored intact; import also gap-fills the operation date (ADR
+    // 0012, #112), so extra B-scoped snapshots may appear. No A snapshot leaks.
+    expect(snapshots.some((s) => s.id === "snap-A")).toBe(false);
+    const bS1 = snapshots.find((s) => s.id === "b-s1")!;
+    expect(bS1).toBeTruthy();
+    expect(bS1.isMonthlyClose).toBe(true);
+    expect(bS1.totalNetWorth).toEqual(eur(150000));
+    expect(bS1.scopeLabel).toBe("Hogar");
 
-    const holdings = store.readSnapshotHoldings();
-    expect(holdings.map((h) => h.holdingId).sort()).toEqual(["b-a1", "b-l1"]);
-    expect(holdings.every((h) => h.snapshotId === "b-s1")).toBe(true);
+    // b-s1's own frozen holdings are untouched by gap-fill.
+    const b1Holdings = store
+      .readSnapshotHoldings()
+      .filter((h) => h.snapshotId === "b-s1");
+    expect(b1Holdings.map((h) => h.holdingId).sort()).toEqual(["b-a1", "b-l1"]);
 
     const operations = store.readOperations("b-a2");
     expect(operations).toEqual([
@@ -339,7 +345,9 @@ describe("importWorkspace", () => {
     // Nothing of A remains anywhere.
     expect(assets.some((a) => a.id.startsWith("a-A"))).toBe(false);
     expect(snapshots.some((s) => s.id === "snap-A")).toBe(false);
-    expect(holdings.some((h) => h.holdingId.startsWith("a-A"))).toBe(false);
+    expect(
+      store.readSnapshotHoldings().some((h) => h.holdingId.startsWith("a-A")),
+    ).toBe(false);
     expect(workspace!.members.some((m) => m.id === "mA")).toBe(false);
 
     store.close();

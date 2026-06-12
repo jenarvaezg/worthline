@@ -153,6 +153,18 @@ export type { CaptureDecision, SnapshotPolicyEntry } from "./snapshot-policy";
 export { deriveMonthlyCloses, planSnapshotCapture } from "./snapshot-policy";
 
 export type {
+  BuildSnapshotAtDateInput,
+  ManualValuePoint,
+  RecalculateSnapshotInput,
+} from "./historical-snapshot";
+export {
+  buildSnapshotAtDate,
+  historicalCapturedAt,
+  lastKnownValueAtDate,
+  recalculateSnapshotForAsset,
+} from "./historical-snapshot";
+
+export type {
   EvolutionChartGeometry,
   EvolutionMarker,
   EvolutionSeriesPoint,
