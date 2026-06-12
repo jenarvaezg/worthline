@@ -56,6 +56,13 @@ export {
   deriveInvestmentValuation,
   selectInvestmentPrice,
 } from "./investment-valuation";
+export type {
+  AssetProjectionContext,
+  PositionProjection,
+  RawAssetRow,
+  RawInvestmentRow,
+} from "./asset-projection";
+export { projectAssets, projectPositions } from "./asset-projection";
 
 export type {
   AssetPrice,

@@ -3,27 +3,18 @@ import type {
   LiquidityTier,
   NetWorthSnapshot,
   PositionSummary,
+  RawInvestmentRow,
   SnapshotHoldingKind,
   SnapshotHoldingRow,
   Workspace,
 } from "@worthline/domain";
-import {
-  derivePosition,
-  resolveScopeMemberIds,
-  selectInvestmentPrice,
-} from "@worthline/domain";
+import { projectPositions } from "@worthline/domain";
 import type { Database as DatabaseConnection } from "better-sqlite3";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 
 import { assets, snapshots } from "./schema";
-import {
-  readAllOperations,
-  readAllPriceCache,
-  readAssetOwnerships,
-  readInvestmentMeta,
-  type StoreContext,
-} from "./store-context";
+import { buildAssetProjectionContext, type StoreContext } from "./store-context";
 
 export interface SaveSnapshotInput {
   snapshot: NetWorthSnapshot;
@@ -351,6 +342,13 @@ export function readSnapshotHoldings(
   }));
 }
 
+/**
+ * Read the live investment positions for the dashboard. The store reads the raw
+ * investment rows and the raw supporting maps, then hands them to the domain
+ * projection (projectPositions), which owns the price-selection rule (ADR 0006)
+ * and the position math (derivePosition). The store no longer computes positions
+ * itself (PRD #120 candidate 3, R10).
+ */
 export function readPositions(
   sqlite: DatabaseConnection,
   workspace: Workspace | null,
@@ -360,7 +358,7 @@ export function readPositions(
     return [];
   }
 
-  const rows = drizzle(sqlite)
+  const rows: RawInvestmentRow[] = drizzle(sqlite)
     .select({ currency: assets.currency, id: assets.id, name: assets.name })
     .from(assets)
     .where(and(eq(assets.type, "investment"), isNull(assets.deletedAt)))
@@ -371,41 +369,7 @@ export function readPositions(
     return [];
   }
 
-  const ownershipByAsset = readAssetOwnerships(sqlite);
-  const operationsByAsset = readAllOperations(sqlite);
-  const metaByAsset = readInvestmentMeta(sqlite);
-  const priceCacheByAsset = readAllPriceCache(sqlite);
-  const scopeMemberIds = scopeId
-    ? new Set(resolveScopeMemberIds(workspace, scopeId))
-    : null;
+  const ctx = buildAssetProjectionContext(sqlite, true);
 
-  const views: PositionView[] = [];
-
-  for (const row of rows) {
-    const ownership = ownershipByAsset.get(row.id) ?? [];
-
-    if (
-      scopeMemberIds &&
-      !ownership.some((share) => scopeMemberIds.has(share.memberId))
-    ) {
-      continue;
-    }
-
-    // Price-selection rule is owned by selectInvestmentPrice (ADR 0006).
-    // We need the full PositionSummary for the positions table view, so we call
-    // derivePosition with the price that selectInvestmentPrice picks.
-    const selected = selectInvestmentPrice({
-      cachedPrice: priceCacheByAsset.get(row.id)?.price,
-      manualPrice: metaByAsset.get(row.id)?.manualPricePerUnit,
-    });
-    const position = derivePosition(operationsByAsset.get(row.id) ?? [], {
-      assetId: row.id,
-      currency: row.currency,
-      ...(selected ? { currentPricePerUnit: selected.pricePerUnit } : {}),
-    });
-
-    views.push({ ...position, name: row.name });
-  }
-
-  return views;
+  return projectPositions(workspace, rows, ctx, scopeId);
 }

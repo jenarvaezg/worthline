@@ -1,16 +1,14 @@
 import type {
+  AssetProjectionContext,
   DecimalString,
   InvestmentOperation,
   Liability,
   ManualAsset,
   OwnershipShare,
+  RawAssetRow,
   Workspace,
 } from "@worthline/domain";
-import {
-  createLiability,
-  createManualAsset,
-  deriveInvestmentValuation,
-} from "@worthline/domain";
+import { createLiability, projectAssets } from "@worthline/domain";
 import type { Database as DatabaseConnection } from "better-sqlite3";
 import { asc, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
@@ -221,15 +219,54 @@ export function readAssetOwnerships(
 }
 
 /**
- * Read every live (non-trashed) asset as a domain ManualAsset. Investment
- * assets get their value derived from operations + price on read (ADR 0006);
- * hand-valued kinds carry their stored value. Shared by the AssetStore (R2) and
- * the monolith's historical-snapshot reconstruction, so it lives here — the one
- * shared-concerns home — rather than being duplicated across the slices.
+ * Build the raw supporting reads (ownership, operations, manual + cached prices)
+ * that the domain projection needs to value investments. The store layer stays
+ * shallow — it gathers raw rows and the domain owns the composition (PRD #120
+ * candidate 3, R10). The investment-only reads are skipped entirely when there
+ * are no investments to value.
  *
- * NOTE (PRD #120 candidate 3, R9–R10): the call into the domain constructors and
- * deriveInvestmentValuation is intentionally left here as-is; a later slice owns
- * moving that computation out of the data-access layer.
+ * Shared by readAssets (R2) and readPositions (R1), so the raw-read shape never
+ * drifts between them.
+ */
+export function buildAssetProjectionContext(
+  sqlite: DatabaseConnection,
+  hasInvestments: boolean,
+): AssetProjectionContext {
+  const operationsByAsset = hasInvestments
+    ? readAllOperations(sqlite)
+    : new Map<string, InvestmentOperation[]>();
+  const metaByAsset = hasInvestments
+    ? readInvestmentMeta(sqlite)
+    : new Map<string, InvestmentMeta>();
+  const priceCacheByAsset = hasInvestments
+    ? readAllPriceCache(sqlite)
+    : new Map<string, { price: string }>();
+
+  const manualPriceByAsset = new Map<string, DecimalString | undefined>();
+  for (const [assetId, meta] of metaByAsset) {
+    manualPriceByAsset.set(assetId, meta.manualPricePerUnit);
+  }
+
+  const cachedPriceByAsset = new Map<string, DecimalString | undefined>();
+  for (const [assetId, cached] of priceCacheByAsset) {
+    cachedPriceByAsset.set(assetId, cached.price);
+  }
+
+  return {
+    cachedPriceByAsset,
+    manualPriceByAsset,
+    operationsByAsset,
+    ownershipByAsset: readAssetOwnerships(sqlite),
+  };
+}
+
+/**
+ * Read every live (non-trashed) asset as a domain ManualAsset. The store reads
+ * raw rows and the raw supporting maps, then hands them to the domain projection
+ * (projectAssets), which owns the units × price valuation (ADR 0006) and the
+ * ManualAsset reconstitution. Shared by the AssetStore (R2) and the monolith's
+ * historical-snapshot reconstruction, so it lives here — the one shared-concerns
+ * home — rather than being duplicated across the slices.
  */
 export function readAssets(
   sqlite: DatabaseConnection,
@@ -253,57 +290,21 @@ export function readAssets(
     .where(isNull(assets.deletedAt))
     .orderBy(asc(assets.createdAt), asc(assets.id))
     .all();
-  const ownershipByAsset = readAssetOwnerships(sqlite);
-  const hasInvestments = rows.some((row) => row.type === "investment");
-  const operationsByAsset = hasInvestments
-    ? readAllOperations(sqlite)
-    : new Map<string, InvestmentOperation[]>();
-  const metaByAsset = hasInvestments
-    ? readInvestmentMeta(sqlite)
-    : new Map<string, InvestmentMeta>();
-  const priceCacheByAsset = hasInvestments
-    ? readAllPriceCache(sqlite)
-    : new Map<string, { price: string }>();
 
-  return rows.map((row) =>
-    createManualAsset(workspace, {
-      currency: row.currency,
-      currentValueMinor:
-        row.type === "investment"
-          ? investmentValueMinor(
-              row.id,
-              row.currency,
-              operationsByAsset,
-              metaByAsset,
-              priceCacheByAsset,
-            )
-          : row.currentValueMinor,
-      id: row.id,
-      isPrimaryResidence: row.isPrimaryResidence === 1,
-      liquidityTier: row.liquidityTier,
-      name: row.name,
-      ownership: ownershipByAsset.get(row.id) ?? [],
-      type: row.type,
-    }),
-  );
-}
+  const rawRows: RawAssetRow[] = rows.map((row) => ({
+    currency: row.currency,
+    currentValueMinor: row.currentValueMinor,
+    id: row.id,
+    isPrimaryResidence: row.isPrimaryResidence === 1,
+    liquidityTier: row.liquidityTier,
+    name: row.name,
+    type: row.type,
+  }));
 
-/** The derived current value of an investment asset: market value if a price is
- *  known, otherwise its remaining cost basis (book value). */
-function investmentValueMinor(
-  assetId: string,
-  currency: string,
-  operationsByAsset: Map<string, InvestmentOperation[]>,
-  metaByAsset: Map<string, InvestmentMeta>,
-  priceCacheByAsset: Map<string, { price: string }>,
-): number {
-  return deriveInvestmentValuation({
-    assetId,
-    cachedPrice: priceCacheByAsset.get(assetId)?.price,
-    currency,
-    manualPrice: metaByAsset.get(assetId)?.manualPricePerUnit,
-    operations: operationsByAsset.get(assetId) ?? [],
-  }).valueMinor;
+  const hasInvestments = rawRows.some((row) => row.type === "investment");
+  const ctx = buildAssetProjectionContext(sqlite, hasInvestments);
+
+  return projectAssets(workspace, rawRows, ctx);
 }
 
 /**
