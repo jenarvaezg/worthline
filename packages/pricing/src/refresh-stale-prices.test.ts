@@ -91,6 +91,32 @@ describe("refreshStalePrices provider routing", () => {
     });
   });
 
+  test("surfaces each failed symbol with its human-readable reason", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      text: async () => "<h1>Producto no disponible</h1>",
+    } as Response);
+
+    const result = await refreshStalePrices(
+      [stalePrice("asset-pension")],
+      [
+        {
+          id: "asset-pension",
+          currency: "EUR",
+          liquidityTier: "retirement",
+          providerSymbol: "N5394",
+        },
+      ],
+      "2026-06-09T10:00:00Z",
+    );
+
+    expect(result.updated).toBe(0);
+    expect(result.failedSymbols).toEqual(["N5394"]);
+    expect(result.failures).toEqual([
+      { symbol: "N5394", reason: "Símbolo no encontrado en el proveedor" },
+    ]);
+  });
+
   test("explicit price provider overrides the liquidity-tier default", async () => {
     const csv =
       "Symbol,Date,Time,Open,High,Low,Close,Volume\nVUSA,2026-06-09,16:00:00,80,81,79,80.50,1234";

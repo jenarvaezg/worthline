@@ -52,7 +52,7 @@ async function convertYahooPriceToEur(
   if (currency === "EUR") return price;
 
   const fx = await ecbProvider.fetchPrice({ ...ctx, symbol: currency });
-  if (!fx) return null;
+  if (!fx || "failed" in fx) return null;
 
   const converted = Number(price) * Number(fx.price);
   if (!Number.isFinite(converted)) return null;
@@ -65,5 +65,9 @@ async function fetchStooqFallback(
 ): ReturnType<PriceProvider["fetchPrice"]> {
   const fallback = await stooqProvider.fetchPrice(ctx);
 
-  return fallback ? { ...fallback, source: stooqProvider.name } : null;
+  // Propagate Stooq's failure reason (or null) verbatim; only stamp the source
+  // on a successful quote so the cache records where the price actually came from.
+  if (!fallback || "failed" in fallback) return fallback;
+
+  return { ...fallback, source: stooqProvider.name };
 }

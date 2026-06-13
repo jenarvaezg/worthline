@@ -90,7 +90,7 @@ describe("stooqProvider", () => {
     expect(result).toEqual({ price: "181.25", currency: "EUR", priceDate: "2024-01-15" });
   });
 
-  it("returns null when close price is N/D", async () => {
+  it("reports a no-quote failure when close price is N/D", async () => {
     const csv =
       "Symbol,Date,Time,Open,High,Low,Close,Volume\nAAPL,2024-01-15,16:00:00,N/D,N/D,N/D,N/D,0";
     vi.mocked(fetch).mockResolvedValueOnce({
@@ -100,15 +100,35 @@ describe("stooqProvider", () => {
 
     const result = await stooqProvider.fetchPrice({ ...baseCtx, symbol: "aapl.us" });
 
-    expect(result).toBeNull();
+    expect(result).toEqual({
+      failed: true,
+      reason: "El proveedor no devolvió cotización",
+    });
   });
 
-  it("returns null when response is not ok", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({ ok: false } as Response);
+  it("reports a symbol-not-found failure when the CSV has no data row", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      text: async () => "Symbol,Date,Time,Open,High,Low,Close,Volume",
+    } as Response);
+
+    const result = await stooqProvider.fetchPrice({ ...baseCtx, symbol: "nope.us" });
+
+    expect(result).toEqual({
+      failed: true,
+      reason: "Símbolo no encontrado en el proveedor",
+    });
+  });
+
+  it("reports an HTTP-error failure when response is not ok", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 500 } as Response);
 
     const result = await stooqProvider.fetchPrice({ ...baseCtx, symbol: "aapl.us" });
 
-    expect(result).toBeNull();
+    expect(result).toEqual({
+      failed: true,
+      reason: "El proveedor respondió con un error (500)",
+    });
   });
 });
 
@@ -202,6 +222,22 @@ describe("yahooProvider", () => {
     expect(result.source).toBe("stooq");
   });
 
+  it("propagates the Stooq failure reason when both Yahoo and Stooq fail", async () => {
+    const csv =
+      "Symbol,Date,Time,Open,High,Low,Close,Volume\nNOPE,2024-01-15,16:00:00,N/D,N/D,N/D,N/D,0";
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({ ok: false, status: 404 } as Response)
+      .mockResolvedValueOnce({ ok: true, text: async () => csv } as Response);
+
+    const result = await fetchAndCachePrice(yahooProvider, {
+      ...baseCtx,
+      symbol: "NOPE.MC",
+    });
+
+    expect(result.freshnessState).toBe("failed");
+    expect(result.staleReason).toBe("El proveedor no devolvió cotización");
+  });
+
   it("falls back to Stooq when the Yahoo request throws", async () => {
     const csv =
       "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2024-01-15,16:00:00,4.10,4.30,4.05,4.25,55000000";
@@ -254,6 +290,38 @@ describe("finectProvider", () => {
       priceDate: "2026-06-10",
     });
   });
+
+  it("reports a symbol-not-found failure for the 'Producto no disponible' soft-404 page", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      text: async () => `
+        <html>
+          <body>
+            <h1>Producto no disponible</h1>
+            <p>El plan que buscas no está disponible en Finect.</p>
+          </body>
+        </html>
+      `,
+    } as Response);
+
+    const result = await finectProvider.fetchPrice({ ...baseCtx, symbol: "NOPE" });
+
+    expect(result).toEqual({
+      failed: true,
+      reason: "Símbolo no encontrado en el proveedor",
+    });
+  });
+
+  it("reports an HTTP-error failure when Finect responds with a non-2xx status", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 503 } as Response);
+
+    const result = await finectProvider.fetchPrice({ ...baseCtx, symbol: "N5394" });
+
+    expect(result).toEqual({
+      failed: true,
+      reason: "El proveedor respondió con un error (503)",
+    });
+  });
 });
 
 describe("fetchAndCachePrice", () => {
@@ -270,6 +338,23 @@ describe("fetchAndCachePrice", () => {
     expect(result.assetId).toBe("asset-1");
     expect(result.source).toBe("stooq");
     expect(result.staleReason).toBe("No price returned");
+  });
+
+  it("surfaces a discriminated provider failure reason as staleReason", async () => {
+    const provider = {
+      name: "finect" as const,
+      canFetch: () => true,
+      fetchPrice: async () => ({
+        failed: true as const,
+        reason: "Símbolo no encontrado en el proveedor",
+      }),
+    };
+
+    const result: AssetPrice = await fetchAndCachePrice(provider, baseCtx);
+
+    expect(result.freshnessState).toBe("failed");
+    expect(result.staleReason).toBe("Símbolo no encontrado en el proveedor");
+    expect(result.source).toBe("finect");
   });
 
   it("returns failed AssetPrice when provider throws", async () => {

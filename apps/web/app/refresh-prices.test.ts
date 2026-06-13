@@ -46,6 +46,7 @@ describe("refreshAndPersistStalePrices", () => {
       refreshed: [price],
       updated: 1,
       failedSymbols: [],
+      failures: [],
     };
 
     const refreshStalePrices = vi.fn().mockResolvedValue(refreshResult);
@@ -80,6 +81,7 @@ describe("refreshAndPersistStalePrices", () => {
       refreshed: [],
       updated: 0,
       failedSymbols: [],
+      failures: [],
     };
 
     const refreshStalePrices = vi.fn().mockResolvedValue(refreshResult);
@@ -108,6 +110,7 @@ describe("refreshAndPersistStalePrices", () => {
       refreshed: [failedPrice],
       updated: 0,
       failedSymbols: ["TEST.WA"],
+      failures: [{ symbol: "TEST.WA", reason: "El proveedor no devolvió cotización" }],
     };
 
     const refreshStalePrices = vi.fn().mockResolvedValue(refreshResult);
@@ -160,6 +163,7 @@ describe("refreshAndPersistStalePrices", () => {
       refreshed: [],
       updated: 0,
       failedSymbols: [],
+      failures: [],
     };
     const refreshStalePrices = vi.fn().mockResolvedValue(refreshResult);
     const upsertPrice = vi.fn();
