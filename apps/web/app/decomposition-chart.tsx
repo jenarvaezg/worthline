@@ -1,4 +1,4 @@
-import { buildDecompositionChartGeometry } from "@worthline/domain";
+import { buildDecompositionChartGeometry, formatMoneyMinor } from "@worthline/domain";
 import type { DecompositionBandId, NetWorthSnapshot } from "@worthline/domain";
 
 /**
@@ -20,6 +20,26 @@ const DRILL_ARIA_LABELS: Record<DecompositionBandId, string> = {
   liquid: "Ver desglose del líquido",
   rest: "Ver desglose del resto",
 };
+
+function parsePointString(points: string): Array<{ x: number; y: number }> {
+  return points.split(" ").map((pair) => {
+    const [x, y] = pair.split(",");
+    return { x: Number(x), y: Number(y) };
+  });
+}
+
+function bandValueMinor(
+  snapshot: NetWorthSnapshot,
+  band: DecompositionBandId,
+): number {
+  if (band === "liquid") return snapshot.liquidNetWorth.amountMinor;
+  if (band === "housing") return snapshot.housingEquity.amountMinor;
+  return (
+    snapshot.totalNetWorth.amountMinor -
+    snapshot.liquidNetWorth.amountMinor -
+    snapshot.housingEquity.amountMinor
+  );
+}
 
 export default function DecompositionChart({
   drillHrefs,
@@ -45,6 +65,11 @@ export default function DecompositionChart({
   // Below the placeholder threshold the evolution chart above already shows
   // the section's empty message — render nothing instead of repeating it.
   if (!geometry) return null;
+
+  const sortedSnapshots = [...snapshots].sort((a, b) =>
+    a.dateKey < b.dateKey ? -1 : 1,
+  );
+  const currency = sortedSnapshots[0]?.totalNetWorth.currency ?? "EUR";
 
   return (
     <>
@@ -116,6 +141,33 @@ export default function DecompositionChart({
                 <g key={band.band}>{polyline}</g>
               );
             })}
+        {geometry.bands.flatMap((band) =>
+          parsePointString(band.linePoints).map((point, index) => {
+            const snapshot = sortedSnapshots[index];
+            if (!snapshot) return null;
+
+            const valueMinor = bandValueMinor(snapshot, band.band);
+
+            return (
+              <circle
+                className={`decompositionPointHit ${band.band}`}
+                cx={point.x}
+                cy={point.y}
+                fill="transparent"
+                key={`${band.band}-${snapshot.dateKey}`}
+                pointerEvents="all"
+                r="7"
+              >
+                <title>
+                  {`${snapshot.dateKey} · ${BAND_LABELS[band.band]}: ${formatMoneyMinor({
+                    amountMinor: valueMinor,
+                    currency,
+                  })}`}
+                </title>
+              </circle>
+            );
+          }),
+        )}
       </svg>
     </>
   );
