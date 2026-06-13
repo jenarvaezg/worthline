@@ -63,6 +63,12 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
+      # Playwright serves the production build in CI (next start), so build the
+      # web app first. The packages export TS source directly, so Next
+      # transpiles them — no separate package build is needed.
+      - name: Build web app
+        run: npm run build --workspace @worthline/web
+
       - name: Run E2E tests
         run: npm run test:e2e
 

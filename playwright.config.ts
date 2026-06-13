@@ -27,6 +27,14 @@ const e2eDbPath = join(e2eDbDir, "test.sqlite");
 const e2ePort = Number(process.env.E2E_PORT ?? 3001);
 const e2eBaseUrl = `http://127.0.0.1:${e2ePort}`;
 
+// In CI we run against a PRODUCTION build (`next start`) instead of `next dev`.
+// `next dev` compiles routes on demand, and the dashboard `/` route is heavy
+// enough that the first compile on a (slower) CI runner overran the 15s
+// navigation timeout — flaky by construction. `next start` serves precompiled
+// routes, so request latency is small and deterministic. The CI workflow runs
+// `next build` for the web app before invoking Playwright so `.next` exists.
+const isCI = !!process.env.CI;
+
 // Expose the DB path so the globalSetup script can seed a historical snapshot
 // before the webServer boots (the decomposition legend needs ≥2 calendar days).
 process.env.WORTHLINE_DB_PATH = e2eDbPath;
@@ -43,8 +51,8 @@ export default defineConfig({
   use: {
     baseURL: e2eBaseUrl,
     // Server-rendered HTML — no JS navigation, so we wait for full page loads.
-    actionTimeout: 10_000,
-    navigationTimeout: 15_000,
+    actionTimeout: isCI ? 20_000 : 10_000,
+    navigationTimeout: isCI ? 30_000 : 15_000,
     // Don't carry browser state across test files (each spec gets a fresh context).
     // Within a spec, state is shared so journey steps build on each other.
     trace: "on-first-retry",
@@ -56,9 +64,12 @@ export default defineConfig({
     },
   ],
   webServer: {
-    // next dev reads --port from CLI args; pass it explicitly so it doesn't
-    // collide with the developer's default :3000 server.
-    command: `npm run dev --workspace @worthline/web -- --port ${e2ePort}`,
+    // next dev/start read --port from CLI args; pass it explicitly so they
+    // don't collide with the developer's default :3000 server. In CI we serve
+    // the production build (precompiled routes → deterministic latency).
+    command: isCI
+      ? `npm run start --workspace @worthline/web -- --port ${e2ePort}`
+      : `npm run dev --workspace @worthline/web -- --port ${e2ePort}`,
     url: e2eBaseUrl,
     reuseExistingServer: false,
     env: {
