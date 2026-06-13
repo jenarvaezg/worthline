@@ -1,5 +1,5 @@
 import { createWorthlineStore } from "@worthline/db";
-import { captureNetWorthSnapshot } from "@worthline/domain";
+import { captureValuedNetWorthSnapshot } from "@worthline/domain";
 
 export default async function globalSetup(): Promise<void> {
   const databasePath = process.env.WORTHLINE_DB_PATH;
@@ -30,9 +30,21 @@ export default async function globalSetup(): Promise<void> {
     ],
   });
 
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayIso = yesterday.toISOString();
+  // Seed a snapshot dated in the PREVIOUS calendar month. The composition chart
+  // (#142) selects one base point per period (month) and only plots points that
+  // carry frozen holding rows; with a single period it renders the "needs more
+  // captures" placeholder and the band/legend drill links never appear. So we
+  // seed a distinct earlier month — combined with today's auto-captured snapshot
+  // the chart has two period points and renders during the serial run, which the
+  // drilldown journeys (11/12) and the evolution journey (07) depend on.
+  //
+  // Day 15 of the prior month avoids month-length edge cases (e.g. seeding from
+  // the 31st). The span stays under a year so availableCompositionRanges yields
+  // only "all" and the range control (#144) correctly stays hidden.
+  const lastMonth = new Date();
+  lastMonth.setDate(15);
+  lastMonth.setMonth(lastMonth.getMonth() - 1);
+  const seedCapturedAt = lastMonth.toISOString();
 
   const workspace = store.workspace.readWorkspace();
   if (!workspace) {
@@ -41,16 +53,18 @@ export default async function globalSetup(): Promise<void> {
 
   const assets = store.assets.readAssets();
 
-  const snapshot = captureNetWorthSnapshot({
+  // captureValuedNetWorthSnapshot also builds the frozen holding rows (ADR 0008)
+  // — required so this point survives the composition series' row-backed filter.
+  const { snapshot, holdings } = captureValuedNetWorthSnapshot({
     workspace,
     scopeId: "household",
     scopeLabel: "Hogar",
     assets,
-    capturedAt: yesterdayIso,
-    id: "snapshot_seed_yesterday",
+    capturedAt: seedCapturedAt,
+    id: "snapshot_seed_prev_month",
   });
 
-  store.snapshots.saveSnapshot({ snapshot });
+  store.snapshots.saveSnapshot({ snapshot, holdings });
 
   store.close();
 }
