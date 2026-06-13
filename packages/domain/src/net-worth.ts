@@ -1,13 +1,8 @@
 import type { MoneyMinor } from "./money";
 import { addMoney, money, subtractMoney } from "./money";
 import type { LiquidityTier } from "./classification";
-import {
-  isHousing,
-  isHousingAsset,
-  isLiquid,
-  tierOfAsset,
-  tierOfLiability,
-} from "./classification";
+import { isHousingAsset, isLiquid, rungForLiability, tierOfAsset } from "./classification";
+import { LIQUIDITY_LADDER } from "./liquidity-ladder";
 import { resolveScopeMemberIds } from "./scope";
 import { allocateScopedHolding } from "./scope-allocation";
 import type { Liability, ManualAsset, Workspace } from "./workspace-types";
@@ -70,9 +65,8 @@ export interface LiquidityTierBreakdown {
 }
 
 export const defaultLiquidityTierOrder = [
-  "housing",
   "illiquid",
-  "retirement",
+  "term-locked",
   "market",
   "cash",
 ] as const satisfies readonly LiquidityTier[];
@@ -88,6 +82,9 @@ export function calculateNetWorth(input: {
   const zero = money(0, currency);
   const assetTierById = new Map(
     input.assets.map((asset) => [asset.id, tierOfAsset(asset)]),
+  );
+  const housingAssetIds = new Set(
+    input.assets.filter((asset) => isHousingAsset(asset)).map((asset) => asset.id),
   );
 
   let grossAssets = zero;
@@ -128,11 +125,12 @@ export function calculateNetWorth(input: {
 
     debts = addMoney(debts, scoped);
 
-    const tier = tierOfLiability(liability, assetTierById);
+    const securesHousing =
+      !!liability.associatedAssetId && housingAssetIds.has(liability.associatedAssetId);
 
-    if (isHousing(tier)) {
+    if (securesHousing) {
       housingDebts = addMoney(housingDebts, scoped);
-    } else if (isLiquid(tier)) {
+    } else if (isLiquid(rungForLiability(liability, assetTierById))) {
       liquidDebts = addMoney(liquidDebts, scoped);
     }
   }
@@ -218,7 +216,7 @@ export function buildLiquidityBreakdown(input: {
   }
 
   for (const liability of input.liabilities ?? []) {
-    const tier = tierOfLiability(liability, assetTierById);
+    const tier = rungForLiability(liability, assetTierById);
     const breakdown = tiers.get(tier);
 
     if (!breakdown) {
@@ -256,15 +254,7 @@ export function buildLiquidityBreakdown(input: {
         : 0;
   }
 
-  // Ordered most→least liquid (cash at the top), so the breakdown reads as a
-  // liquidity ladder ending in the illiquid housing tier.
-  const liquidFirstOrder: LiquidityTier[] = [
-    "cash",
-    "market",
-    "retirement",
-    "illiquid",
-    "housing",
-  ];
-
-  return liquidFirstOrder.map((tier) => tiers.get(tier)!);
+  // Ordered most→least liquid (cash at the top), so the breakdown reads as the
+  // liquidity ladder ending in the illiquid rung.
+  return LIQUIDITY_LADDER.map((tier) => tiers.get(tier)!);
 }

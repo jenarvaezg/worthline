@@ -16,12 +16,12 @@ export {
 
 export type { LiquidityTier } from "./classification";
 export {
-  isHousing,
   isHousingAsset,
   isLiquid,
+  rungForLiability,
   tierOfAsset,
-  tierOfLiability,
 } from "./classification";
+export { LIQUIDITY_LADDER } from "./liquidity-ladder";
 
 export type { DomainResult, DomainViolation } from "./domain-result";
 

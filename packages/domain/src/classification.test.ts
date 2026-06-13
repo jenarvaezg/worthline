@@ -1,13 +1,7 @@
 import type { LiquidityTier } from "./classification";
 import { describe, expect, test } from "vitest";
 
-import {
-  isHousing,
-  isHousingAsset,
-  isLiquid,
-  tierOfAsset,
-  tierOfLiability,
-} from "./classification";
+import { isHousingAsset, isLiquid, tierOfAsset } from "./classification";
 import {
   buildLiquidityBreakdown,
   calculateNetWorth,
@@ -42,53 +36,27 @@ function asset(
   });
 }
 
-function liability(id: string, type: "mortgage" | "debt", associatedAssetId?: string) {
-  return createLiability(workspace, {
-    balanceMinor: 1_000,
-    currency: "EUR",
-    id,
-    name: id,
-    ownership: fullOwnership,
-    type,
-    ...(associatedAssetId ? { associatedAssetId } : {}),
-  });
-}
-
-describe("tier posture predicates", () => {
-  test("isLiquid is true only for cash and market", () => {
-    expect(isLiquid("cash")).toBe(true);
-    expect(isLiquid("market")).toBe(true);
-    expect(isLiquid("retirement")).toBe(false);
-    expect(isLiquid("illiquid")).toBe(false);
-    expect(isLiquid("housing")).toBe(false);
-  });
-
-  test("isHousing is true only for the housing tier", () => {
-    expect(isHousing("housing")).toBe(true);
-    expect(isHousing("cash")).toBe(false);
-  });
-});
-
 describe("asset classification", () => {
-  test("tierOfAsset reflects the asset's declared liquidity tier", () => {
+  test("tierOfAsset reflects the asset's declared rung", () => {
     expect(tierOfAsset(asset("a", "market"))).toBe("market");
-    expect(tierOfAsset(asset("b", "retirement"))).toBe("retirement");
+    expect(tierOfAsset(asset("b", "term-locked"))).toBe("term-locked");
   });
 
-  test("isHousingAsset covers real estate, primary residence, and the housing tier", () => {
+  test("real estate and the primary residence sit on illiquid regardless of declared rung", () => {
+    expect(tierOfAsset(asset("home", "cash", { type: "real_estate" }))).toBe("illiquid");
+    expect(tierOfAsset(asset("flat", "market", { isPrimaryResidence: true }))).toBe(
+      "illiquid",
+    );
+  });
+
+  test("isHousingAsset covers real estate and the primary residence, by type — not by rung", () => {
     expect(isHousingAsset(asset("home", "illiquid", { type: "real_estate" }))).toBe(true);
     expect(isHousingAsset(asset("flat", "cash", { isPrimaryResidence: true }))).toBe(
       true,
     );
-    expect(isHousingAsset(asset("plot", "housing"))).toBe(true);
+    // A non-housing illiquid holding (art) is not housing, even on the same rung.
+    expect(isHousingAsset(asset("art", "illiquid"))).toBe(false);
     expect(isHousingAsset(asset("broker", "market"))).toBe(false);
-  });
-
-  test("real_estate or primary residence assets normalize to housing tier regardless of declared tier", () => {
-    expect(tierOfAsset(asset("home", "cash", { type: "real_estate" }))).toBe("housing");
-    expect(tierOfAsset(asset("flat", "market", { isPrimaryResidence: true }))).toBe(
-      "housing",
-    );
   });
 
   test("a housing asset is never counted as liquid", () => {
@@ -98,36 +66,8 @@ describe("asset classification", () => {
   });
 });
 
-describe("liability classification", () => {
-  const assetTierById = new Map<string, LiquidityTier>([
-    ["asset_home", "housing"],
-    ["asset_broker", "market"],
-    ["asset_pension", "retirement"],
-  ]);
-
-  test("an associated liability inherits the owning asset's tier", () => {
-    expect(tierOfLiability(liability("l1", "debt", "asset_broker"), assetTierById)).toBe(
-      "market",
-    );
-    expect(tierOfLiability(liability("l2", "debt", "asset_pension"), assetTierById)).toBe(
-      "retirement",
-    );
-  });
-
-  test("an unknown associated asset falls back to housing", () => {
-    expect(tierOfLiability(liability("l3", "debt", "asset_ghost"), assetTierById)).toBe(
-      "housing",
-    );
-  });
-
-  test("an unassociated liability falls back by type: mortgage -> housing, debt -> cash", () => {
-    expect(tierOfLiability(liability("l4", "mortgage"), assetTierById)).toBe("housing");
-    expect(tierOfLiability(liability("l5", "debt"), assetTierById)).toBe("cash");
-  });
-});
-
-describe("summary and pyramid reconcile on debt classification", () => {
-  test("a debt tied to a non-liquid asset is classified identically by both views", () => {
+describe("summary and breakdown reconcile on debt classification", () => {
+  test("liquid net worth and housing equity are unaffected by where non-liquid debts sit", () => {
     const cash = createManualAsset(workspace, {
       currency: "EUR",
       currentValueMinor: 100_000,
@@ -151,7 +91,7 @@ describe("summary and pyramid reconcile on debt classification", () => {
       currentValueMinor: 300_000,
       id: "asset_home",
       isPrimaryResidence: true,
-      liquidityTier: "housing",
+      liquidityTier: "illiquid",
       name: "Vivienda",
       ownership: fullOwnership,
       type: "real_estate",
@@ -160,7 +100,7 @@ describe("summary and pyramid reconcile on debt classification", () => {
       currency: "EUR",
       currentValueMinor: 80_000,
       id: "asset_pension",
-      liquidityTier: "retirement",
+      liquidityTier: "term-locked",
       name: "Plan",
       ownership: fullOwnership,
       type: "manual",
@@ -211,24 +151,24 @@ describe("summary and pyramid reconcile on debt classification", () => {
     const tierDebt = (tier: LiquidityTier) =>
       pyramid.find((breakdown) => breakdown.tier === tier)?.debts.amountMinor ?? 0;
 
-    // Hand-computed expectations.
+    // Hand-computed expectations — the headline figures are unchanged by the recut.
     expect(summary.debts.amountMinor).toBe(210_000);
     expect(summary.housingEquity.amountMinor).toBe(120_000); // 300k - 180k mortgage
     expect(summary.liquidNetWorth.amountMinor).toBe(140_000); // (100k+50k) - 10k cash debt
 
-    // The pension-backed debt must NOT erode liquid net worth (the bug being fixed).
-    const housingDebt = tierDebt("housing");
-    const liquidDebt = tierDebt("cash") + tierDebt("market");
+    // The mortgage nets against its house on the illiquid rung; the pension-backed
+    // debt sits term-locked; only the unassociated card erodes liquid net worth.
+    expect(tierDebt("illiquid")).toBe(180_000);
+    expect(tierDebt("term-locked")).toBe(20_000);
+    expect(tierDebt("cash") + tierDebt("market")).toBe(10_000);
 
-    expect(housingDebt).toBe(180_000);
-    expect(liquidDebt).toBe(10_000);
-    expect(tierDebt("retirement")).toBe(20_000);
-
-    // Reconciliation: pyramid per-tier debts match the summary's housing/liquid split.
-    expect(housingDebt).toBe(300_000 - summary.housingEquity.amountMinor);
-    expect(liquidDebt).toBe(150_000 - summary.liquidNetWorth.amountMinor);
-    expect(housingDebt + liquidDebt + tierDebt("retirement")).toBe(
-      summary.debts.amountMinor,
+    // Reconciliation: per-rung debts sum to the headline debts.
+    expect(
+      tierDebt("cash") + tierDebt("market") + tierDebt("term-locked") + tierDebt("illiquid"),
+    ).toBe(summary.debts.amountMinor);
+    // The only illiquid asset is the house, so that rung's net equals housing equity.
+    expect(pyramid.find((b) => b.tier === "illiquid")?.netValue.amountMinor).toBe(
+      summary.housingEquity.amountMinor,
     );
   });
 });

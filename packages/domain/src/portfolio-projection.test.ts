@@ -51,7 +51,7 @@ const home = createManualAsset(workspace, {
   currentValueMinor: 30_000_000,
   id: "asset_home",
   isPrimaryResidence: true,
-  liquidityTier: "housing",
+  liquidityTier: "illiquid",
   name: "Vivienda",
   ownership: [
     { memberId: "member_ana", shareBps: 5_000 },
@@ -144,7 +144,7 @@ describe("projectPortfolio — household scope", () => {
     const broker = assets.find((r) => r.id === "asset_broker")!;
     expect(broker.tierLabel).toBe("Mercado");
     const housing = assets.find((r) => r.id === "asset_home")!;
-    expect(housing.tierLabel).toBe("Vivienda");
+    expect(housing.tierLabel).toBe("Ilíquido");
   });
 
   test("reconciliation: asset row sum equals grossAssets from calculateNetWorth", () => {
@@ -270,7 +270,7 @@ describe("projectPortfolio — single-member workspace (individual mode)", () =>
     currency: "EUR",
     currentValueMinor: 42_000,
     id: "asset_solo",
-    liquidityTier: "retirement",
+    liquidityTier: "term-locked",
     name: "Pensión",
     ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
     type: "manual",
@@ -299,7 +299,7 @@ describe("projectPortfolio — single-member workspace (individual mode)", () =>
     expect(result.totalGrossAssets.amountMinor).toBe(42_000);
   });
 
-  test("retirement tier label is 'Jubilación'", () => {
+  test("term-locked tier label is 'A plazo'", () => {
     const result = projectPortfolio({
       assets: [soloAsset],
       liabilities: [],
@@ -307,7 +307,7 @@ describe("projectPortfolio — single-member workspace (individual mode)", () =>
       workspace: soloWorkspace,
     });
     const assets = result.sections[0]!.rows as ProjectedAssetRow[];
-    expect(assets[0]!.tierLabel).toBe("Jubilación");
+    expect(assets[0]!.tierLabel).toBe("A plazo");
   });
 });
 

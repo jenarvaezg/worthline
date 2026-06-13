@@ -384,7 +384,7 @@ describe("loadDashboard — rest and housing drilldowns", () => {
       currency: "EUR",
       currentValueMinor: 300_000_00,
       id: "asset_piso",
-      liquidityTier: "housing",
+      liquidityTier: "illiquid",
       name: "Piso",
       ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
       type: "real_estate",
@@ -423,7 +423,7 @@ describe("loadDashboard — rest and housing drilldowns", () => {
       currentValueMinor: 320_000_00,
       holdingId: "asset_piso",
       label: "Piso",
-      tier: "housing",
+      tier: "illiquid",
     });
 
     store.close();

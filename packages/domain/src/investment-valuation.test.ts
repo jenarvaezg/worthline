@@ -168,7 +168,7 @@ describe("assertNotInvestmentAsset — rejects manual valuation for investments"
       currency: "EUR",
       currentValueMinor: 200_000_00,
       id: "asset_home",
-      liquidityTier: "housing",
+      liquidityTier: "illiquid",
       name: "Casa",
       ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
       type: "real_estate",

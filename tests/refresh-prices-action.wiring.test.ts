@@ -155,7 +155,7 @@ describe("refreshPricesAction wiring", () => {
       id: "asset_pension",
       name: "Pension Plan",
       currency: "EUR",
-      liquidityTier: "retirement",
+      liquidityTier: "term-locked",
       ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
       providerSymbol: "N5394",
     });

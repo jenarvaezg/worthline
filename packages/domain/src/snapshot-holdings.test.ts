@@ -46,7 +46,7 @@ function makeAssets(workspace: Workspace): ManualAsset[] {
       currentValueMinor: 300_000_00,
       id: "asset_home",
       isPrimaryResidence: true,
-      // tier is denormalized via tierOfAsset: primary residence → housing,
+      // tier is denormalized via tierOfAsset: primary residence → illiquid,
       // regardless of the stored liquidityTier.
       liquidityTier: "illiquid",
       name: "Piso",
@@ -120,13 +120,13 @@ describe("buildSnapshotHoldingRows — row production and denormalization", () =
       valueMinor: 50_000_00,
     });
 
-    // Primary residence resolves to the housing tier (tierOfAsset), not the
+    // Primary residence resolves to the illiquid rung (tierOfAsset), not the
     // stored liquidityTier.
     const homeRow = rows.find((row) => row.holdingId === "asset_home");
     expect(homeRow).toMatchObject({
       kind: "asset",
       label: "Piso",
-      liquidityTier: "housing",
+      liquidityTier: "illiquid",
       valueMinor: 300_000_00,
     });
   });
@@ -144,7 +144,7 @@ describe("buildSnapshotHoldingRows — row production and denormalization", () =
     expect(mortgageRow).toMatchObject({
       kind: "liability",
       label: "Hipoteca",
-      liquidityTier: "housing",
+      liquidityTier: "illiquid",
       valueMinor: 120_000_00,
     });
 

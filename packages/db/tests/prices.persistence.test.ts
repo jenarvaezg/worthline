@@ -124,7 +124,7 @@ describe("investment price provider metadata", () => {
     store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "asset_pension",
-      liquidityTier: "retirement",
+      liquidityTier: "term-locked",
       name: "Pension Plan",
       ownership: [{ memberId: "m1", shareBps: 10000 }],
       providerSymbol: "N5394",
@@ -148,7 +148,7 @@ describe("investment price provider metadata", () => {
       priceProvider: "yahoo",
     });
     expect(byId.get("asset_pension")).toMatchObject({
-      liquidityTier: "retirement",
+      liquidityTier: "term-locked",
       priceProvider: "finect",
     });
     expect(byId.get("asset_stooq")).toMatchObject({

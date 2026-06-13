@@ -14,7 +14,7 @@
  */
 
 import type { LiquidityTier } from "./classification";
-import { tierOfAsset, tierOfLiability } from "./classification";
+import { rungForLiability, tierOfAsset } from "./classification";
 import type { DecimalString } from "./decimal";
 import type { Liability, ManualAsset, Workspace } from "./workspace-types";
 import { resolveScopeMemberIds } from "./scope";
@@ -122,7 +122,7 @@ export function buildSnapshotHoldingRows(
       kind: "liability",
       label: liability.name,
       liquidityTier: liability.associatedAssetId
-        ? tierOfLiability(liability, assetTierById)
+        ? rungForLiability(liability, assetTierById)
         : null,
       valueMinor: ownedMinor,
     });

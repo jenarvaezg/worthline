@@ -1054,7 +1054,7 @@ describe("parseInvestmentAssetCommandStrict — required name, strict price", ()
   test("parses provider symbol, provider, and liquidity tier for pension plans", () => {
     const result = parseInvestmentAssetCommandStrict(
       form({
-        liquidityTier: "retirement",
+        liquidityTier: "term-locked",
         name: "MyInvestor S&P 500 PP",
         priceProvider: "finect",
         providerSymbol: "N5394",
@@ -1065,7 +1065,7 @@ describe("parseInvestmentAssetCommandStrict — required name, strict price", ()
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.command.liquidityTier).toBe("retirement");
+    expect(result.command.liquidityTier).toBe("term-locked");
     expect(result.command.priceProvider).toBe("finect");
     expect(result.command.providerSymbol).toBe("N5394");
   });
@@ -1229,7 +1229,7 @@ describe("parseUpdateInvestmentCommand — edit investment fields", () => {
   test("parses provider symbol, provider, and liquidity tier", () => {
     const result = parseUpdateInvestmentCommand(
       form({
-        liquidityTier: "retirement",
+        liquidityTier: "term-locked",
         name: "Plan renombrado",
         priceProvider: "finect",
         providerSymbol: "N5394",
@@ -1239,7 +1239,7 @@ describe("parseUpdateInvestmentCommand — edit investment fields", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.command.liquidityTier).toBe("retirement");
+    expect(result.command.liquidityTier).toBe("term-locked");
     expect(result.command.priceProvider).toBe("finect");
     expect(result.command.providerSymbol).toBe("N5394");
   });

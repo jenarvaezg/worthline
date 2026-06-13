@@ -39,7 +39,7 @@ describe("refreshStalePrices provider routing", () => {
         {
           id: "asset-pension",
           currency: "EUR",
-          liquidityTier: "retirement",
+          liquidityTier: "term-locked",
           providerSymbol: "N5394",
         },
       ],
@@ -103,7 +103,7 @@ describe("refreshStalePrices provider routing", () => {
         {
           id: "asset-pension",
           currency: "EUR",
-          liquidityTier: "retirement",
+          liquidityTier: "term-locked",
           providerSymbol: "N5394",
         },
       ],

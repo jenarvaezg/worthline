@@ -1003,6 +1003,11 @@ function rippleHistoricalSnapshotsForDebt(
   const curve = deps.debtBalanceByLiability.get(liabilityId);
   if (!curve || curve.debtModel === null) return; // no model → nothing to ripple
 
+  // Housing assets — a debt securing one nets historical housing equity (ADR 0013).
+  const housingAssetIds = new Set(
+    deps.assets.filter((asset) => isHousingAsset(asset)).map((asset) => asset.id),
+  );
+
   // The set of dates to generate fresh snapshots at, and the earliest date from
   // which existing snapshots are recalculated.
   let generateDates: string[];
@@ -1066,6 +1071,7 @@ function rippleHistoricalSnapshotsForDebt(
         const recalculated = recalculateSnapshotForLiability({
           curve,
           frozenHoldings,
+          housingAssetIds,
           liability,
           snapshot: snap,
           workspace,

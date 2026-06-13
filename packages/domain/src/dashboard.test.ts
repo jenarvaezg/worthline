@@ -75,7 +75,7 @@ describe("prepareDashboardState", () => {
 
     expect(state.summary).toBeDefined();
     expect(state.summary!.grossAssets.amountMinor).toBe(0);
-    expect(state.pyramid).toHaveLength(5);
+    expect(state.pyramid).toHaveLength(4);
     expect(state.warnings).toHaveLength(1);
     expect(state.warnings[0]!.code).toBe("ZERO_VALUE_ASSET");
     expect(state.dashboard.generatedAt).toBeDefined();

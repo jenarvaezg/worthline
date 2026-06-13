@@ -2,8 +2,10 @@
  * Drilldown state module (#76, #77, #78) — pure domain math behind the
  * server-rendered drill view that replaces the decomposition chart.
  *
- * A drill key resolves a group of liquidity tiers: "liquid" (cash + market),
- * "rest" (retirement + illiquid), and "housing" (the single housing tier).
+ * A drill key resolves a group: "liquid" (cash + market rungs), "rest" (the
+ * term-locked + illiquid rungs, minus housing), and "housing" — the scope's
+ * real-estate holdings, sourced by holding id rather than by rung, since
+ * housing is no longer a tier (ADR 0013 bridge).
  * Everything is derived exclusively from frozen snapshot holding rows
  * (per-tier aggregates are never stored, ADR 0008): a per-tier stacked series
  * over time (net per frozen tier = asset rows − liability rows), reusing the
@@ -35,13 +37,17 @@ export const LIQUID_DRILL_TIERS = ["cash", "market"] as const;
 
 export type LiquidDrillTier = (typeof LIQUID_DRILL_TIERS)[number];
 
-/** The rest group: retirement plus the illiquid remainder (#77). */
-export const REST_DRILL_TIERS = ["retirement", "illiquid"] as const;
+/** The rest group: the term-locked and illiquid rungs, minus housing (#77). */
+export const REST_DRILL_TIERS = ["term-locked", "illiquid"] as const;
 
 export type RestDrillTier = (typeof REST_DRILL_TIERS)[number];
 
-/** The housing group: a single tier — its drill has no stack (#77). */
-export const HOUSING_DRILL_TIERS = ["housing"] as const;
+/**
+ * The housing group is sourced by holding id (the scope's real-estate holdings),
+ * not by a rung — housing is no longer a tier (ADR 0013 bridge). Its drill has
+ * no stack (#77); the rung here is only nominal metadata (houses sit on `illiquid`).
+ */
+export const HOUSING_DRILL_TIERS = ["illiquid"] as const;
 
 export type HousingDrillTier = (typeof HOUSING_DRILL_TIERS)[number];
 
@@ -53,10 +59,9 @@ export type HousingDrillTier = (typeof HOUSING_DRILL_TIERS)[number];
  */
 export const DRILL_GROUP_BY_TIER: Record<LiquidityTier, DrilldownKey> = {
   cash: "liquid",
-  housing: "housing",
   illiquid: "rest",
   market: "liquid",
-  retirement: "rest",
+  "term-locked": "rest",
 } as const;
 
 /** A frozen holding row plus the calendar day of its capture. */
@@ -70,6 +75,12 @@ export interface LiquidDrilldownInput {
   rows: DatedSnapshotHoldingRow[];
   /** Ids of the holdings currently in the portfolio (assets and liabilities). */
   currentHoldingIds: readonly string[];
+  /**
+   * Ids of the scope's housing holdings (real-estate). Housing is sourced by id,
+   * not by rung (ADR 0013 bridge): the housing drill takes exactly these, and the
+   * other groups exclude them so a house on `illiquid` is never double-counted.
+   */
+  housingHoldingIds?: readonly string[];
 }
 
 /** Every drill group builds from the same input shape (#77). */
@@ -300,10 +311,13 @@ function buildGroupDrilldown<Key extends DrilldownKey, Tier extends LiquidityTie
   options: { withStack: boolean },
 ): GroupDrilldownState<Key, Tier> {
   const tierSet = new Set<LiquidityTier>(tiers);
+  const housingIds = new Set(input.housingHoldingIds ?? []);
   const groupRows = input.rows
     .filter(
       (row): row is GroupRow<Tier> =>
-        row.liquidityTier !== null && tierSet.has(row.liquidityTier),
+        row.liquidityTier !== null &&
+        tierSet.has(row.liquidityTier) &&
+        !housingIds.has(row.holdingId),
     )
     .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
 
@@ -337,9 +351,19 @@ export function buildRestDrilldown(input: DrilldownInput): RestDrilldownState {
  * property revalued more".
  */
 export function buildHousingDrilldown(input: DrilldownInput): HousingDrilldownState {
-  return buildGroupDrilldown("housing", HOUSING_DRILL_TIERS, input, {
-    withStack: false,
-  });
+  const housingIds = new Set(input.housingHoldingIds ?? []);
+  const groupRows = input.rows
+    .filter(
+      (row): row is DrillGroupRow =>
+        row.liquidityTier !== null && housingIds.has(row.holdingId),
+    )
+    .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+
+  return {
+    holdings: buildDrillHoldingMultiples(groupRows, input.currentHoldingIds),
+    key: "housing",
+    stack: null,
+  };
 }
 
 /** Dispatch a drill key to its group builder (#77). */

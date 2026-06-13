@@ -54,13 +54,13 @@ describe("buildLiquidDrilldown — group resolution", () => {
       row({
         dateKey: "2026-06-01",
         holdingId: "a_house",
-        tier: "housing",
+        tier: "illiquid",
         valueMinor: 999,
       }),
       row({
         dateKey: "2026-06-01",
         holdingId: "a_pension",
-        tier: "retirement",
+        tier: "term-locked",
         valueMinor: 999,
       }),
       row({
@@ -80,7 +80,7 @@ describe("buildLiquidDrilldown — group resolution", () => {
       row({
         dateKey: "2026-06-02",
         holdingId: "a_house",
-        tier: "housing",
+        tier: "illiquid",
         valueMinor: 999,
       }),
     ];
@@ -401,7 +401,7 @@ describe("buildRestDrilldown — group resolution (#77)", () => {
       row({
         dateKey: "2026-06-01",
         holdingId: "a_pension",
-        tier: "retirement",
+        tier: "term-locked",
         valueMinor: 100,
       }),
       row({
@@ -414,7 +414,7 @@ describe("buildRestDrilldown — group resolution (#77)", () => {
       row({
         dateKey: "2026-06-01",
         holdingId: "a_house",
-        tier: "housing",
+        tier: "illiquid",
         valueMinor: 999,
       }),
       row({
@@ -427,7 +427,7 @@ describe("buildRestDrilldown — group resolution (#77)", () => {
       row({
         dateKey: "2026-06-02",
         holdingId: "a_pension",
-        tier: "retirement",
+        tier: "term-locked",
         valueMinor: 120,
       }),
       row({
@@ -439,11 +439,15 @@ describe("buildRestDrilldown — group resolution (#77)", () => {
       row({ dateKey: "2026-06-02", holdingId: "a_cash", tier: "cash", valueMinor: 999 }),
     ];
 
-    const state = buildRestDrilldown({ currentHoldingIds: ["a_pension", "a_art"], rows });
+    const state = buildRestDrilldown({
+      currentHoldingIds: ["a_pension", "a_art"],
+      housingHoldingIds: ["a_house"],
+      rows,
+    });
 
     expect(state.key).toBe("rest");
     expect(state.stack).not.toBeNull();
-    expect(state.stack!.bands.map((b) => b.band)).toEqual(["retirement", "illiquid"]);
+    expect(state.stack!.bands.map((b) => b.band)).toEqual(["term-locked", "illiquid"]);
     expect(state.holdings.map((h) => h.holdingId)).toEqual(["a_art", "a_pension"]);
   });
 
@@ -452,7 +456,7 @@ describe("buildRestDrilldown — group resolution (#77)", () => {
       row({
         dateKey: "2026-06-01",
         holdingId: "a_pension",
-        tier: "retirement",
+        tier: "term-locked",
         valueMinor: 100_00,
       }),
       row({
@@ -464,7 +468,7 @@ describe("buildRestDrilldown — group resolution (#77)", () => {
       row({
         dateKey: "2026-06-02",
         holdingId: "a_pension",
-        tier: "retirement",
+        tier: "term-locked",
         valueMinor: 110_00,
       }),
       row({
@@ -497,7 +501,7 @@ describe("buildRestDrilldown — group resolution (#77)", () => {
       row({
         dateKey: "2026-06-10",
         holdingId: "a_pension",
-        tier: "retirement",
+        tier: "term-locked",
         valueMinor: 100,
       }),
     ];
@@ -515,7 +519,7 @@ describe("buildHousingDrilldown — single-tier group (#77)", () => {
       row({
         dateKey: "2026-06-01",
         holdingId: "a_piso",
-        tier: "housing",
+        tier: "illiquid",
         valueMinor: 300_000_00,
         label: "Piso",
       }),
@@ -523,19 +527,23 @@ describe("buildHousingDrilldown — single-tier group (#77)", () => {
       row({
         dateKey: "2026-06-01",
         holdingId: "a_pension",
-        tier: "retirement",
+        tier: "term-locked",
         valueMinor: 999,
       }),
       row({
         dateKey: "2026-06-02",
         holdingId: "a_piso",
-        tier: "housing",
+        tier: "illiquid",
         valueMinor: 320_000_00,
         label: "Piso",
       }),
     ];
 
-    const state = buildHousingDrilldown({ currentHoldingIds: ["a_piso"], rows });
+    const state = buildHousingDrilldown({
+      currentHoldingIds: ["a_piso"],
+      housingHoldingIds: ["a_piso"],
+      rows,
+    });
 
     expect(state.key).toBe("housing");
     expect(state.holdings.map((h) => h.holdingId)).toEqual(["a_piso"]);
@@ -546,18 +554,22 @@ describe("buildHousingDrilldown — single-tier group (#77)", () => {
       row({
         dateKey: "2026-06-01",
         holdingId: "a_piso",
-        tier: "housing",
+        tier: "illiquid",
         valueMinor: 300_000_00,
       }),
       row({
         dateKey: "2026-06-02",
         holdingId: "a_piso",
-        tier: "housing",
+        tier: "illiquid",
         valueMinor: 320_000_00,
       }),
     ];
 
-    const state = buildHousingDrilldown({ currentHoldingIds: ["a_piso"], rows });
+    const state = buildHousingDrilldown({
+      currentHoldingIds: ["a_piso"],
+      housingHoldingIds: ["a_piso"],
+      rows,
+    });
 
     expect(state.stack).toBeNull();
   });
@@ -567,28 +579,28 @@ describe("buildHousingDrilldown — single-tier group (#77)", () => {
       row({
         dateKey: "2026-06-01",
         holdingId: "a_piso",
-        tier: "housing",
+        tier: "illiquid",
         valueMinor: 300_000_00,
         label: "Piso",
       }),
       row({
         dateKey: "2026-06-01",
         holdingId: "a_atico",
-        tier: "housing",
+        tier: "illiquid",
         valueMinor: 200_000_00,
         label: "Ático",
       }),
       row({
         dateKey: "2026-06-02",
         holdingId: "a_piso",
-        tier: "housing",
+        tier: "illiquid",
         valueMinor: 320_000_00,
         label: "Piso",
       }),
       row({
         dateKey: "2026-06-02",
         holdingId: "a_atico",
-        tier: "housing",
+        tier: "illiquid",
         valueMinor: 200_000_00,
         label: "Ático",
       }),
@@ -596,6 +608,7 @@ describe("buildHousingDrilldown — single-tier group (#77)", () => {
 
     const state = buildHousingDrilldown({
       currentHoldingIds: ["a_piso", "a_atico"],
+      housingHoldingIds: ["a_piso", "a_atico"],
       rows,
     });
 
@@ -604,7 +617,7 @@ describe("buildHousingDrilldown — single-tier group (#77)", () => {
       200_000_00, 320_000_00,
     ]);
     for (const holding of state.holdings) {
-      expect(holding.tier).toBe("housing");
+      expect(holding.tier).toBe("illiquid");
       expect(holding.sparkline.linePoints.length).toBeGreaterThan(0);
     }
   });
@@ -761,9 +774,8 @@ describe("DRILL_GROUP_BY_TIER — tier → drill group mapping (#79)", () => {
     expect(DRILL_GROUP_BY_TIER).toEqual({
       cash: "liquid",
       market: "liquid",
-      retirement: "rest",
+      "term-locked": "rest",
       illiquid: "rest",
-      housing: "housing",
     });
   });
 

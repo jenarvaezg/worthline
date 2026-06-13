@@ -22,10 +22,9 @@ import type { Liability, ManualAsset, OwnershipShare, Workspace } from "./worksp
 
 const TIER_LABELS: Record<LiquidityTier, string> = {
   cash: "Caja",
-  housing: "Vivienda",
   illiquid: "Ilíquido",
   market: "Mercado",
-  retirement: "Jubilación",
+  "term-locked": "A plazo",
 };
 
 function tierLabel(tier: LiquidityTier): string {
