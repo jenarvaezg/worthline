@@ -28,9 +28,9 @@ import {
 
 const IDLE: ImportPreviewState = { status: "idle" };
 
-/** A valid version-1 export document with known per-section counts. */
+/** A valid version-2 export document with known per-section counts (#155). */
 const validDoc = {
-  version: 1,
+  version: 2,
   workspace: { mode: "individual", baseCurrency: "EUR" },
   members: [
     { id: "m1", name: "Ana" },
