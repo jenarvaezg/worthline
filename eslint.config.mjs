@@ -34,6 +34,16 @@ export default defineConfig([
       ],
     },
   },
+  {
+    // Playwright fixtures take a `use` callback —
+    // `base.extend({ page: async ({ page }, use) => … })`. The react-hooks plugin
+    // (pulled in by next/core-web-vitals) misreads the `use(...)` call as a React
+    // Hook. e2e specs are not React components, so the rule does not apply here.
+    files: ["e2e/**/*.ts"],
+    rules: {
+      "react-hooks/rules-of-hooks": "off",
+    },
+  },
   globalIgnores([
     ".next/**",
     ".local/**",
