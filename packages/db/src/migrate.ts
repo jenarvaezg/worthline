@@ -196,12 +196,15 @@ export function migrate(sqlite: DatabaseConnection): void {
 
   if (version < 13) {
     // ADR 0014 (#148): valuation method becomes a first-class column, backfilled
-    // from each holding's current type / debt model — cash/manual → stored,
-    // investment → derived, real_estate → appreciating; amortizable → amortized,
-    // revolving/informal → anchored, no model → stored. Nullable, no CHECK (the
-    // enum is enforced in TS, like liquidity_tier). The dispatcher still derives
-    // the method at the valuation boundary in S2, so this column changes no
-    // figure; it is the schema seam later slices build on.
+    // from each holding's current type / debt model — investment → derived, a
+    // real-estate OR primary-residence asset → appreciating, else stored;
+    // amortizable → amortized, revolving/informal → anchored, no model → stored.
+    // The asset precedence mirrors the runtime boundary (assetValuationInput is
+    // investment-first, then isHousingAsset) so the persisted column never
+    // disagrees with the derived method. Nullable, no CHECK (the enum is enforced
+    // in TS, like liquidity_tier). The dispatcher still derives the method at the
+    // valuation boundary in S2, so this column changes no figure; it is the schema
+    // seam later slices build on.
     try {
       sqlite.exec("ALTER TABLE assets ADD COLUMN valuation_method TEXT");
     } catch {}
@@ -209,9 +212,9 @@ export function migrate(sqlite: DatabaseConnection): void {
       sqlite.exec("ALTER TABLE liabilities ADD COLUMN valuation_method TEXT");
     } catch {}
     sqlite.exec(
-      `UPDATE assets SET valuation_method = CASE type
-         WHEN 'investment' THEN 'derived'
-         WHEN 'real_estate' THEN 'appreciating'
+      `UPDATE assets SET valuation_method = CASE
+         WHEN type = 'investment' THEN 'derived'
+         WHEN type = 'real_estate' OR is_primary_residence = 1 THEN 'appreciating'
          ELSE 'stored' END;`,
     );
     sqlite.exec(
