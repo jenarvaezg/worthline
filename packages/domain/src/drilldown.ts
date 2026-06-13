@@ -29,8 +29,8 @@ import {
 import { paddedValueDomain, valueToY } from "./evolution-chart";
 import type { SnapshotHoldingKind, SnapshotHoldingRow } from "./snapshot-holdings";
 
-/** The drill keys the home understands (#76 liquid, #77 rest + housing). */
-export type DrilldownKey = "liquid" | "rest" | "housing";
+/** The drill keys the home understands (#76 liquid, #77 rest + housing, #145 debts). */
+export type DrilldownKey = "liquid" | "rest" | "housing" | "debts";
 
 /** The liquid group: the tiers that make up liquid net worth. */
 export const LIQUID_DRILL_TIERS = ["cash", "market"] as const;
@@ -101,8 +101,11 @@ export interface DrillHoldingMultiple {
   kind: SnapshotHoldingKind;
   /** The holding's label as frozen at its latest capture in the window. */
   label: string;
-  /** The holding's tier as frozen at its latest capture in the window. */
-  tier: LiquidityTier;
+  /**
+   * The holding's tier as frozen at its latest capture in the window; `null` for
+   * an unsecured liability in the debts drill (#145) — those carry no rung.
+   */
+  tier: LiquidityTier | null;
   sparkline: DrillSparklineGeometry;
   /**
    * The holding's latest captured scoped value when it is still in the
@@ -139,11 +142,30 @@ export type RestDrilldownState = GroupDrilldownState<"rest", RestDrillTier>;
 // Housing is sourced by id, not a rung, so its drill never stacks (Tier = never).
 export type HousingDrilldownState = GroupDrilldownState<"housing", never>;
 
+/** The single synthetic band of the aggregate debt series (#145). */
+export type DebtDrillBand = "debts";
+
+/**
+ * The debts drill view state (#145): ALL liabilities — secured and unsecured —
+ * aggregated into one debt series over time (mirroring the main chart's single
+ * debt band), plus per-debt small multiples. Shares the `{ key, stack, holdings }`
+ * shape of the tier groups so the panel renders it uniformly; here `stack` is the
+ * aggregate area rather than a per-tier stack.
+ */
+export interface DebtsDrilldownState {
+  key: "debts";
+  /** The aggregate debt area (single "debts" band), or `null` below the threshold. */
+  stack: StackedChartGeometry<DebtDrillBand> | null;
+  /** Per-debt small multiples; no-longer-live debts kept, flagged, ordered last. */
+  holdings: DrillHoldingMultiple[];
+}
+
 /** Any active drill view state, discriminated by `key`. */
 export type DrilldownState =
   | LiquidDrilldownState
   | RestDrilldownState
-  | HousingDrilldownState;
+  | HousingDrilldownState
+  | DebtsDrilldownState;
 
 /** A drill group row: a dated holding row whose frozen tier resolved into the group. */
 export type DrillGroupRow = DatedSnapshotHoldingRow & { liquidityTier: LiquidityTier };
@@ -216,7 +238,7 @@ function buildSparkline(
  * holdings (stable by label within each group).
  */
 export function buildDrillHoldingMultiples(
-  groupRows: readonly DrillGroupRow[],
+  groupRows: readonly DatedSnapshotHoldingRow[],
   currentHoldingIds: readonly string[],
 ): DrillHoldingMultiple[] {
   const sortedRows = [...groupRows].sort((a, b) => a.dateKey.localeCompare(b.dateKey));
@@ -226,7 +248,7 @@ export function buildDrillHoldingMultiples(
   const windowStartMs = parseDateKey(sortedRows[0]!.dateKey);
   const windowSpanMs = parseDateKey(sortedRows.at(-1)!.dateKey) - windowStartMs;
 
-  const rowsByHolding = new Map<string, DrillGroupRow[]>();
+  const rowsByHolding = new Map<string, DatedSnapshotHoldingRow[]>();
 
   for (const row of sortedRows) {
     rowsByHolding.set(row.holdingId, [...(rowsByHolding.get(row.holdingId) ?? []), row]);
@@ -392,7 +414,34 @@ export function buildHousingDrilldown(input: DrilldownInput): HousingDrilldownSt
   );
 }
 
-/** Dispatch a drill key to its group builder (#77). */
+/**
+ * Builds the debts drill view state (#145): every liability — secured or not —
+ * summed into one debt series over time (mirroring the main chart's single debt
+ * band), plus the per-debt small multiples. Unlike the tier groups it never
+ * filters by rung, so an unsecured debt (null rung) belongs here too. A debt
+ * that has left the portfolio keeps its captured history, flagged and ordered
+ * after the live ones (#78), exactly like the other drilldowns.
+ */
+export function buildDebtsDrilldown(input: DrilldownInput): DebtsDrilldownState {
+  const debtRows = input.rows
+    .filter((row) => row.kind === "liability")
+    .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+
+  const dateKeys = [...new Set(debtRows.map((row) => row.dateKey))];
+  const totalByDate = new Map<string, number>(dateKeys.map((dateKey) => [dateKey, 0]));
+  for (const row of debtRows) {
+    totalByDate.set(row.dateKey, totalByDate.get(row.dateKey)! + row.valueMinor);
+  }
+
+  const stack = buildStackedChartGeometry<DebtDrillBand>(dateKeys, [
+    { band: "debts", values: dateKeys.map((dateKey) => totalByDate.get(dateKey)!) },
+  ]);
+  const holdings = buildDrillHoldingMultiples(debtRows, input.currentHoldingIds);
+
+  return { holdings, key: "debts", stack };
+}
+
+/** Dispatch a drill key to its group builder (#77, #145). */
 export function buildDrilldown(key: DrilldownKey, input: DrilldownInput): DrilldownState {
   switch (key) {
     case "liquid":
@@ -401,5 +450,7 @@ export function buildDrilldown(key: DrilldownKey, input: DrilldownInput): Drilld
       return buildRestDrilldown(input);
     case "housing":
       return buildHousingDrilldown(input);
+    case "debts":
+      return buildDebtsDrilldown(input);
   }
 }

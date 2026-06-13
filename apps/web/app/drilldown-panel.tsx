@@ -11,8 +11,9 @@ import type { DrilldownKey, DrilldownState, LiquidityTier } from "@worthline/dom
  * anchors, native <title> hovers.
  */
 
-const TIER_LABELS: Record<LiquidityTier, string> = {
+const BAND_LABELS: Record<LiquidityTier | "debts", string> = {
   cash: "Caja",
+  debts: "Deudas",
   illiquid: "Ilíquido",
   market: "Mercado",
   "term-locked": "A plazo",
@@ -31,6 +32,15 @@ const GROUP_COPY: Record<
     stackCopy?: { legendAria: string; chartAria: string; empty: string };
   }
 > = {
+  debts: {
+    multiplesAria: "Deudas individuales",
+    stackCopy: {
+      chartAria: "Evolución de las deudas agregadas",
+      empty: "La evolución de las deudas aparecerá cuando haya más capturas.",
+      legendAria: "Banda de deudas agregadas",
+    },
+    title: "Deudas · obligaciones",
+  },
   housing: {
     multiplesAria: "Propiedades del grupo vivienda",
     title: "Vivienda · propiedades",
@@ -84,7 +94,7 @@ export default function DrilldownPanel({
               {stack.bands.map((band) => (
                 <span className={band.band} key={band.band}>
                   <i aria-hidden="true" />
-                  {TIER_LABELS[band.band]}
+                  {BAND_LABELS[band.band]}
                 </span>
               ))}
             </div>
@@ -102,7 +112,7 @@ export default function DrilldownPanel({
                       key={band.band}
                       points={band.areaPoints!}
                     >
-                      <title>{TIER_LABELS[band.band]}</title>
+                      <title>{BAND_LABELS[band.band]}</title>
                     </polygon>
                   ))
                 : stack.bands.map((band) => (
@@ -114,7 +124,7 @@ export default function DrilldownPanel({
                       strokeWidth="1.5"
                       vectorEffect="non-scaling-stroke"
                     >
-                      <title>{TIER_LABELS[band.band]}</title>
+                      <title>{BAND_LABELS[band.band]}</title>
                     </polyline>
                   ))}
             </svg>
@@ -136,7 +146,10 @@ export default function DrilldownPanel({
               <span className="drillMultipleLabel">{holding.label}</span>
               {holding.noLongerHeld || holding.currentValueMinor === null ? (
                 // Frozen means frozen: the history stays, only the present is gone.
-                <span className="drillMultipleGone">Ya no en cartera</span>
+                // A liability reads "no vigente"; an asset "no en cartera".
+                <span className="drillMultipleGone">
+                  {holding.kind === "liability" ? "Ya no vigente" : "Ya no en cartera"}
+                </span>
               ) : (
                 <b>
                   {formatMoneyMinor({
@@ -149,7 +162,7 @@ export default function DrilldownPanel({
                 </b>
               )}
               <svg
-                className={`drillSparkline ${holding.tier}`}
+                className={`drillSparkline ${holding.tier ?? "debt"}`}
                 viewBox={`0 0 ${holding.sparkline.width} ${holding.sparkline.height}`}
                 role="img"
                 aria-label={`Evolución de ${holding.label}`}

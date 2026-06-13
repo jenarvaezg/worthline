@@ -15,6 +15,8 @@ import { describe, expect, test } from "vitest";
 
 import type { DatedSnapshotHoldingRow } from "./drilldown";
 import {
+  buildDebtsDrilldown,
+  buildDrilldown,
   buildHousingDrilldown,
   buildLiquidDrilldown,
   buildRestDrilldown,
@@ -791,5 +793,76 @@ describe("DRILL_GROUP_BY_TIER — tier → drill group mapping (#79)", () => {
       expect(group).not.toBe("housing");
       expect(tiersByGroup[group as "liquid" | "rest"]).toContain(tier);
     }
+  });
+});
+
+describe("buildDebtsDrilldown — aggregate debts series + per-debt multiples (#145)", () => {
+  const rows = [
+    // A secured mortgage (rung illiquid) and an UNSECURED card (null rung).
+    row({ dateKey: "2026-04-30", holdingId: "l_mortgage", kind: "liability", label: "Hipoteca", tier: "illiquid", valueMinor: 200_000_00 }),
+    row({ dateKey: "2026-05-31", holdingId: "l_mortgage", kind: "liability", label: "Hipoteca", tier: "illiquid", valueMinor: 190_000_00 }),
+    row({ dateKey: "2026-06-30", holdingId: "l_mortgage", kind: "liability", label: "Hipoteca", tier: "illiquid", valueMinor: 180_000_00 }),
+    row({ dateKey: "2026-04-30", holdingId: "l_card", kind: "liability", label: "Tarjeta", tier: null, valueMinor: 1_000_00 }),
+    row({ dateKey: "2026-05-31", holdingId: "l_card", kind: "liability", label: "Tarjeta", tier: null, valueMinor: 1_500_00 }),
+    // An asset must never enter the debts drill.
+    row({ dateKey: "2026-04-30", holdingId: "a_cash", tier: "cash", valueMinor: 50_000_00 }),
+    row({ dateKey: "2026-05-31", holdingId: "a_cash", tier: "cash", valueMinor: 60_000_00 }),
+  ];
+
+  test("aggregates every liability (secured AND unsecured) into one 'debts' series", () => {
+    const state = buildDebtsDrilldown({
+      currentHoldingIds: ["l_mortgage", "l_card"],
+      housingHoldingIds: [],
+      rows,
+    });
+
+    expect(state.key).toBe("debts");
+    expect(state.stack).not.toBeNull();
+    // A single aggregated band — the main series never splits debt per-liability.
+    expect(state.stack!.bands.map((b) => b.band)).toEqual(["debts"]);
+    expect(state.stack!.bands).toHaveLength(1);
+    // Peak total at the first capture = mortgage 200k + card 1k, summed across
+    // BOTH debts (the unsecured card is included). yMax = peak + 10% padding.
+    expect(state.stack!.yMax).toBeCloseTo(201_000_00 * 1.1, 0);
+  });
+
+  test("lists each contributing debt as a multiple; assets are excluded", () => {
+    const state = buildDebtsDrilldown({
+      currentHoldingIds: ["l_mortgage", "l_card"],
+      housingHoldingIds: [],
+      rows,
+    });
+
+    // Both held → ordered by frozen label: "Hipoteca" before "Tarjeta".
+    expect(state.holdings.map((h) => h.holdingId)).toEqual(["l_mortgage", "l_card"]);
+    expect(state.holdings.every((h) => h.kind === "liability")).toBe(true);
+    expect(state.holdings.find((h) => h.holdingId === "l_mortgage")!.currentValueMinor).toBe(
+      180_000_00,
+    );
+  });
+
+  test("a debt no longer live stays, flagged and ordered after the live ones (#78)", () => {
+    // l_card has left the portfolio but keeps its captured history.
+    const state = buildDebtsDrilldown({
+      currentHoldingIds: ["l_mortgage"],
+      housingHoldingIds: [],
+      rows,
+    });
+
+    const card = state.holdings.find((h) => h.holdingId === "l_card")!;
+    expect(card.noLongerHeld).toBe(true);
+    expect(card.currentValueMinor).toBeNull();
+    // Live debts first, then no-longer-held.
+    expect(state.holdings.map((h) => h.holdingId)).toEqual(["l_mortgage", "l_card"]);
+  });
+
+  test("buildDrilldown dispatches the 'debts' key", () => {
+    const state = buildDrilldown("debts", {
+      currentHoldingIds: ["l_mortgage", "l_card"],
+      housingHoldingIds: [],
+      rows,
+    });
+
+    expect(state.key).toBe("debts");
   });
 });

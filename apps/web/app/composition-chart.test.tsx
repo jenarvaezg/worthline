@@ -101,4 +101,33 @@ describe("CompositionChart", () => {
 
     expect(markup).toContain("Ocultar vivienda");
   });
+
+  test("links Deudas (legend + band) to the debts drilldown when given a destination (#145)", () => {
+    const markup = renderToStaticMarkup(
+      <CompositionChart
+        currency="EUR"
+        drillHrefs={{
+          debts: "/?drill=debts",
+          housing: "/?drill=housing",
+          liquid: "/?drill=liquid",
+          rest: "/?drill=rest",
+        }}
+        points={[
+          point({ cash: 10_000_00, dateKey: "2026-05-31", debts: 120_000_00, housing: 200_000_00 }),
+          point({
+            cash: 12_000_00,
+            dateKey: "2026-06-30",
+            debts: 118_000_00,
+            housing: 200_000_00,
+            isOpenPeriod: true,
+          }),
+        ]}
+      />,
+    );
+
+    // The debt band and its legend entry now navigate to their own drilldown.
+    expect(markup).toContain('href="/?drill=debts"');
+    // The legend entry is a link now, not a bare span.
+    expect(markup).not.toContain('<span class="debt">');
+  });
 });

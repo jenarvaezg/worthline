@@ -17,18 +17,22 @@
 import type { WorthlineStore } from "@worthline/db";
 import type {
   AssetPrice,
+  CompositionRange,
   DrilldownKey,
   DrilldownState,
   InvestmentCaptureDetail,
   NetWorthFraming,
 } from "@worthline/domain";
 import {
+  availableCompositionRanges,
   buildCompositionSeries,
   buildDrilldown,
   captureSnapshotForScope,
   housingAssetIdsOf,
   listScopeOptions,
+  monthsBetween,
   prepareDashboardState,
+  rangeStartMonthKey,
 } from "@worthline/domain";
 import type {
   CompositionSeriesPoint,
@@ -58,6 +62,12 @@ export interface LoadDashboardInput {
    * frozen snapshot holding rows. Absent/null = no drill.
    */
   drill?: DrilldownKey | null;
+  /**
+   * Composition chart temporal range (#144): windows both the chart series and
+   * the active drill, and the density adapts to the windowed span. Defaults to
+   * `all` (full history) when omitted.
+   */
+  range?: CompositionRange;
   /**
    * "Today" as YYYY-MM-DD. Retained for API compatibility: the snapshot
    * capture policy now derives its date from `now` inside
@@ -103,12 +113,19 @@ export interface LoadDashboardResult extends DashboardState {
    * holding rows. Empty when there is no scope.
    */
   compositionSeries: CompositionSeriesPoint[];
+  /**
+   * The temporal ranges worth offering for this scope's history (#144): a bounded
+   * range only when the history is longer than its window, plus `all`. A single
+   * entry means the range control should hide itself. Empty when there is no scope.
+   */
+  compositionRanges: CompositionRange[];
 }
 
 export async function loadDashboard(
   input: LoadDashboardInput,
 ): Promise<LoadDashboardResult> {
-  const { store, persistence, scopeId, selectedView, drill, now, refreshPrices } = input;
+  const { store, persistence, scopeId, selectedView, drill, range, now, refreshPrices } =
+    input;
 
   // ── 1. Refresh stale prices ───────────────────────────────────────────────
   const investmentAssets = store.assets.readInvestmentAssetsWithMeta();
@@ -194,16 +211,36 @@ export async function loadDashboard(
     ? store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id })
     : [];
   const housingHoldingIds = [...housingAssetIdsOf(assets)];
+  const activeRange = range ?? "all";
 
-  // ── 4a. Composition chart (#142) — monthly net-worth composition series ──
+  // ── 4a. Composition chart (#142, #144) — windowed net-worth composition ──
+  // The selected range windows the series; density then adapts to the span.
   const compositionSeries = buildCompositionSeries({
     housingHoldingIds,
+    range: activeRange,
     rows: holdingRows,
     snapshots,
     today: input.today,
   });
 
-  // ── 4b. Drilldown (#76, #77) — drill view state from frozen holding rows ─
+  // The ranges worth offering: bounded ranges only when the history exceeds
+  // them (else they'd equal "all"), plus "all" (#144). Span = earliest capture
+  // to today, in months.
+  const earliestMonthKey = snapshots.reduce<string | null>(
+    (earliest, snapshot) =>
+      earliest === null || snapshot.monthKey < earliest ? snapshot.monthKey : earliest,
+    null,
+  );
+  const compositionRanges = availableCompositionRanges(
+    earliestMonthKey ? monthsBetween(earliestMonthKey, input.today.slice(0, 7)) : 0,
+  );
+
+  // ── 4b. Drilldown (#76, #77, #145) — drill view state from frozen rows ───
+  // Window the rows to the same range so a drill mirrors the chart's window.
+  const rangeCutoff = rangeStartMonthKey(input.today, activeRange);
+  const windowedRows = rangeCutoff
+    ? holdingRows.filter((row) => row.dateKey.slice(0, 7) >= rangeCutoff)
+    : holdingRows;
   const drilldown =
     drill && selectedScope
       ? buildDrilldown(drill, {
@@ -212,7 +249,7 @@ export async function loadDashboard(
             ...liabilities.map((liability) => liability.id),
           ],
           housingHoldingIds,
-          rows: holdingRows,
+          rows: windowedRows,
         })
       : null;
 
@@ -234,6 +271,7 @@ export async function loadDashboard(
 
   return {
     ...state,
+    compositionRanges,
     compositionSeries,
     drilldown,
     needsOnboarding: false,
@@ -268,6 +306,7 @@ function buildEmptyResult(
 
   return {
     ...state,
+    compositionRanges: [],
     compositionSeries: [],
     drilldown: null,
     needsOnboarding: true,

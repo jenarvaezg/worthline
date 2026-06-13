@@ -280,24 +280,34 @@ export type {
   CompositionBandHoverPoint,
   CompositionBands,
   CompositionChartGeometry,
+  CompositionGranularity,
   CompositionHoverPoint,
   CompositionPeriodGeometry,
+  CompositionRange,
   CompositionSeriesPoint,
   MonthlySeriesEntry,
 } from "./composition-chart";
 export {
+  availableCompositionRanges,
   buildCompositionChartGeometry,
   buildCompositionSeries,
   COMPOSITION_ASSET_BANDS,
   COMPOSITION_CHART_HEIGHT,
   COMPOSITION_CHART_INSET_X,
   COMPOSITION_CHART_WIDTH,
+  COMPOSITION_RANGES,
   deriveCompositionBands,
+  granularityForSpanMonths,
+  monthsBetween,
+  rangeStartMonthKey,
   selectMonthlySeries,
+  selectPeriodicSeries,
 } from "./composition-chart";
 
 export type {
   DatedSnapshotHoldingRow,
+  DebtDrillBand,
+  DebtsDrilldownState,
   DrillHoldingMultiple,
   DrillSparklineGeometry,
   DrilldownInput,
@@ -312,6 +322,7 @@ export type {
   RestDrilldownState,
 } from "./drilldown";
 export {
+  buildDebtsDrilldown,
   buildDrilldown,
   buildHousingDrilldown,
   buildLiquidDrilldown,

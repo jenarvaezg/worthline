@@ -24,6 +24,7 @@ import {
   parseScopeParam,
   parseUpdateInvestmentCommand,
   parseDrillParam,
+  parseRangeParam,
   parseValuationAnchorStrict,
   parseAppreciationRateStrict,
   parseDebtModelStrict,
@@ -85,9 +86,20 @@ describe("scope and view params", () => {
     expect(parseDrillParam("liquid")).toBe("liquid");
     expect(parseDrillParam("rest")).toBe("rest");
     expect(parseDrillParam("housing")).toBe("housing");
+    expect(parseDrillParam("debts")).toBe("debts");
     expect(parseDrillParam(["liquid", "other"])).toBe("liquid");
     expect(parseDrillParam("nonsense")).toBeNull();
     expect(parseDrillParam(undefined)).toBeNull();
+  });
+
+  test("parseRangeParam accepts known temporal ranges, else 'all'", () => {
+    expect(parseRangeParam("1y")).toBe("1y");
+    expect(parseRangeParam("3y")).toBe("3y");
+    expect(parseRangeParam("5y")).toBe("5y");
+    expect(parseRangeParam("all")).toBe("all");
+    expect(parseRangeParam(["3y", "1y"])).toBe("3y");
+    expect(parseRangeParam("nonsense")).toBe("all");
+    expect(parseRangeParam(undefined)).toBe("all");
   });
 });
 
