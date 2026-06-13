@@ -289,6 +289,31 @@ describe("valueAt — amortized (French amortization plan)", () => {
     // dispatcher must thread revisions into the curve, not drop them.
     expect(withRevision).not.toBe(withoutRevision);
   });
+
+  test("threads early repayments through to the amortization curve", () => {
+    const at = "2026-06-01";
+
+    const withoutRepayment = valueAt(
+      { currentBalanceMinor: 0, method: "amortized", plan },
+      at,
+    ).valueMinor;
+    const withRepayment = valueAt(
+      {
+        currentBalanceMinor: 0,
+        earlyRepayments: [
+          { amountMinor: 10_000_00, mode: "reduce-payment", repaymentDate: "2025-01-01" },
+        ],
+        method: "amortized",
+        plan,
+      },
+      at,
+    ).valueMinor;
+
+    // A lump dated before the valuation date lowers the outstanding balance —
+    // the dispatcher must thread early repayments into the curve, not drop them.
+    expect(withRepayment).not.toBe(withoutRepayment);
+    expect(withRepayment!).toBeLessThan(withoutRepayment!);
+  });
 });
 
 describe("valueAt — anchored (declared balances)", () => {

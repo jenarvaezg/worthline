@@ -219,6 +219,34 @@ describe("debtBalanceAtDate — amortizable (delegates to French curve)", () => 
     expect(debtBalanceAtDate({ ...input, targetDate: "2050-01-01" })).toBe(0);
   });
 
+  test("threads early repayments through to the amortization curve", () => {
+    const plan = {
+      annualInterestRate: "0.03",
+      initialCapitalMinor: 100_000_00,
+      startDate: "2020-01-01",
+      termMonths: 120,
+    };
+    const at = "2022-01-01";
+    const withoutRepayment = debtBalanceAtDate({
+      currentBalanceMinor: 0,
+      debtModel: "amortizable",
+      plan,
+      targetDate: at,
+    });
+    const withRepayment = debtBalanceAtDate({
+      currentBalanceMinor: 0,
+      debtModel: "amortizable",
+      earlyRepayments: [
+        { amountMinor: 20_000_00, mode: "reduce-payment", repaymentDate: "2022-01-01" },
+      ],
+      plan,
+      targetDate: at,
+    });
+    // The lump lands on the target date, so the balance drops by exactly it —
+    // the dispatcher must thread early repayments into the curve, not drop them.
+    expect(withRepayment).toBe(withoutRepayment - 20_000_00);
+  });
+
   test("with no plan falls back to the current balance constant", () => {
     expect(
       debtBalanceAtDate({

@@ -964,6 +964,30 @@ describe("recalculateSnapshotForLiability", () => {
     revisions: [],
   };
 
+  test("threads early repayments through to the recomputed debt row", () => {
+    const workspace = makeWorkspace();
+    const recompute = (curve: DebtBalanceCurveInputs) =>
+      recalculateSnapshotForLiability({
+        curve,
+        frozenHoldings: [pisoRow(200_000_00), mortgageRow(120_000_00)],
+        housingAssetIds: new Set(["asset_piso"]),
+        liability: makeMortgage(workspace, 100_000_00),
+        snapshot: snapshotWithHousingDebt(200_000_00, 120_000_00),
+        workspace,
+      })!.holdings.find((h) => h.holdingId === "liab_h")!.valueMinor;
+
+    const withoutRepayment = recompute(amortizableCurve);
+    const withRepayment = recompute({
+      ...amortizableCurve,
+      earlyRepayments: [
+        { amountMinor: 20_000_00, mode: "reduce-payment", repaymentDate: "2021-01-01" },
+      ],
+    });
+    // A lump dated before the snapshot date lowers the recomputed balance — the
+    // liability ripple must thread early repayments into the curve.
+    expect(withRepayment).toBeLessThan(withoutRepayment);
+  });
+
   test("recomputes the debt row from the curve and moves debts + housing equity", () => {
     const workspace = makeWorkspace();
     const result = recalculateSnapshotForLiability({

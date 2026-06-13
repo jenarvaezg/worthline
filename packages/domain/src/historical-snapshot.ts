@@ -20,7 +20,11 @@
  * and the five headline figures stay identical to the daily-capture path.
  */
 
-import type { AmortizationPlanInput, InterestRateRevision } from "./amortization";
+import type {
+  AmortizationPlanInput,
+  EarlyRepayment,
+  InterestRateRevision,
+} from "./amortization";
 import {
   isHousingAsset,
   isLiquid,
@@ -29,9 +33,7 @@ import {
   tierOfAsset,
 } from "./classification";
 import type { DebtBalanceAnchor } from "./debt-balance";
-import { debtBalanceAtDate } from "./debt-balance";
 import type { DecimalString } from "./decimal";
-import { compareUnits } from "./decimal";
 import { valueAt } from "./holding-valuation";
 import type { HoldingValuationInput } from "./holding-valuation";
 import type { HousingValuationAnchor } from "./housing-valuation";
@@ -41,7 +43,6 @@ import type { NetWorthSnapshot, ValuedNetWorthSnapshot } from "./snapshot-types"
 import { captureValuedNetWorthSnapshot, createNetWorthSnapshot } from "./snapshot-types";
 import { assertSnapshotHoldingsReconcile } from "./snapshot-holdings";
 import { money } from "./money";
-import { derivePosition, latestOperationPrice, operationsUpTo } from "./positions";
 import { resolveScopeMemberIds } from "./scope";
 import { allocateScopedHolding } from "./scope-allocation";
 import type { InvestmentCaptureDetail, SnapshotHoldingRow } from "./snapshot-holdings";
@@ -79,28 +80,49 @@ export interface DebtBalanceCurveInputs {
   plan?: AmortizationPlanInput;
   /** Rate revisions for an amortizable liability (any order). */
   revisions?: readonly InterestRateRevision[];
+  /** Early repayments for an amortizable liability (any order). */
+  earlyRepayments?: readonly EarlyRepayment[];
   /** Initial capital for an informal liability, integer minor units. */
   initialCapitalMinor?: number;
   /** The liability's current stored balance, integer minor units (the fallback). */
   currentBalanceMinor: number;
 }
 
-/** Resolve a liability's debt-curve balance on the target date, in minor units. */
-function debtCurveBalanceMinor(
+/**
+ * Map a liability's debt curve to the `valueAt` input for its model — the single
+ * place a curve becomes a method-specific valuation input, shared by the fresh
+ * capture (`liabilityValuationInput`) and the ripple (`recalculateSnapshotFor
+ * Liability`). Returns null for a null model, leaving the manual stored fallback
+ * to the caller (which sources its current value differently).
+ */
+function debtCurveValuationInput(
   curve: DebtBalanceCurveInputs,
-  targetDate: string,
-): number {
-  return debtBalanceAtDate({
-    currentBalanceMinor: curve.currentBalanceMinor,
-    debtModel: curve.debtModel,
-    targetDate,
-    ...(curve.anchors !== undefined ? { anchors: curve.anchors } : {}),
-    ...(curve.plan !== undefined ? { plan: curve.plan } : {}),
-    ...(curve.revisions !== undefined ? { revisions: curve.revisions } : {}),
-    ...(curve.initialCapitalMinor !== undefined
-      ? { initialCapitalMinor: curve.initialCapitalMinor }
-      : {}),
-  });
+): HoldingValuationInput | null {
+  if (curve.debtModel === "amortizable") {
+    return {
+      currentBalanceMinor: curve.currentBalanceMinor,
+      method: "amortized",
+      ...(curve.plan !== undefined ? { plan: curve.plan } : {}),
+      ...(curve.revisions !== undefined ? { revisions: curve.revisions } : {}),
+      ...(curve.earlyRepayments !== undefined
+        ? { earlyRepayments: curve.earlyRepayments }
+        : {}),
+    };
+  }
+
+  if (curve.debtModel === "revolving" || curve.debtModel === "informal") {
+    return {
+      currentBalanceMinor: curve.currentBalanceMinor,
+      debtModel: curve.debtModel,
+      method: "anchored",
+      ...(curve.anchors !== undefined ? { anchors: curve.anchors } : {}),
+      ...(curve.initialCapitalMinor !== undefined
+        ? { initialCapitalMinor: curve.initialCapitalMinor }
+        : {}),
+    };
+  }
+
+  return null;
 }
 
 /** Last calendar day of the given year/month (1-based month). */
@@ -245,26 +267,8 @@ function liabilityValuationInput(
   curve: DebtBalanceCurveInputs | undefined,
   input: BuildSnapshotAtDateInput,
 ): HoldingValuationInput {
-  if (curve?.debtModel === "amortizable") {
-    return {
-      currentBalanceMinor: curve.currentBalanceMinor,
-      method: "amortized",
-      ...(curve.plan !== undefined ? { plan: curve.plan } : {}),
-      ...(curve.revisions !== undefined ? { revisions: curve.revisions } : {}),
-    };
-  }
-
-  if (curve?.debtModel === "revolving" || curve?.debtModel === "informal") {
-    return {
-      currentBalanceMinor: curve.currentBalanceMinor,
-      debtModel: curve.debtModel,
-      method: "anchored",
-      ...(curve.anchors !== undefined ? { anchors: curve.anchors } : {}),
-      ...(curve.initialCapitalMinor !== undefined
-        ? { initialCapitalMinor: curve.initialCapitalMinor }
-        : {}),
-    };
-  }
+  const curveInput = curve ? debtCurveValuationInput(curve) : null;
+  if (curveInput) return curveInput;
 
   const valueHistory = input.manualValueHistory.get(liability.id);
   return {
@@ -386,36 +390,42 @@ export function recalculateSnapshotForAsset(
   );
   const rows = input.frozenHoldings.filter((row) => row.holdingId !== input.asset.id);
 
-  // Recompute the operated asset's row at the snapshot's date.
+  // Recompute the operated asset's row at the snapshot's date via the same
+  // dispatcher the fresh capture uses (#150 carry-over): `derived` folds the
+  // ledger to the date, keeping the unit price the snapshot already captured
+  // (else the last operation price ≤ the date), and yields null when the asset
+  // was not held then — byte-identical to the positions math this used to inline.
   let newRow: SnapshotHoldingRow | undefined;
-  const ops = operationsUpTo(input.operations, targetDate);
-  if (ops.length > 0) {
-    const price = existingRow?.unitPrice ?? latestOperationPrice(ops);
-    const position = derivePosition(ops, {
+  const valuation = valueAt(
+    {
       assetId: input.asset.id,
       currency: input.asset.currency,
-      ...(price !== undefined ? { currentPricePerUnit: price } : {}),
+      method: "derived",
+      operations: input.operations,
+      ...(existingRow?.unitPrice !== undefined
+        ? { capturedUnitPrice: existingRow.unitPrice }
+        : {}),
+    },
+    targetDate,
+  );
+
+  if (valuation.valueMinor !== null) {
+    const { ownedMinor, totalShareBps } = allocateScopedHolding(valuation.valueMinor, {
+      ownership: input.asset.ownership,
+      scopeMemberIds,
     });
 
-    if (compareUnits(position.currentUnits, "0") !== 0) {
-      const fullValueMinor = (position.marketValue ?? position.costBasis).amountMinor;
-      const { ownedMinor, totalShareBps } = allocateScopedHolding(fullValueMinor, {
-        ownership: input.asset.ownership,
-        scopeMemberIds,
-      });
-
-      if (totalShareBps > 0) {
-        newRow = {
-          holdingId: input.asset.id,
-          kind: "asset",
-          label: existingRow?.label ?? input.asset.name,
-          liquidityTier: existingRow?.liquidityTier ?? tierOfAsset(input.asset),
-          units: position.currentUnits,
-          valueMinor: ownedMinor,
-          ...(price !== undefined ? { unitPrice: price } : {}),
-        };
-        rows.push(newRow);
-      }
+    if (totalShareBps > 0) {
+      newRow = {
+        holdingId: input.asset.id,
+        kind: "asset",
+        label: existingRow?.label ?? input.asset.name,
+        liquidityTier: existingRow?.liquidityTier ?? tierOfAsset(input.asset),
+        valueMinor: ownedMinor,
+        ...(valuation.units !== undefined ? { units: valuation.units } : {}),
+        ...(valuation.unitPrice !== undefined ? { unitPrice: valuation.unitPrice } : {}),
+      };
+      rows.push(newRow);
     }
   }
 
@@ -670,7 +680,14 @@ export function recalculateSnapshotForLiability(
   const affectsLiquid =
     !securesHousing && isLiquid(rungForLiability(input.liability, assetRungById));
 
-  const fullBalanceMinor = debtCurveBalanceMinor(input.curve, targetDate);
+  // Value the liability on the target date via the unified dispatcher (#150
+  // carry-over): the curve's model picks amortized / anchored, and a null model
+  // falls back to the curve's current balance — byte-identical to the engines
+  // this used to inline, but now threading early repayments in one place.
+  const curveInput = debtCurveValuationInput(input.curve);
+  const fullBalanceMinor =
+    (curveInput ? valueAt(curveInput, targetDate).valueMinor : null) ??
+    input.curve.currentBalanceMinor;
   const { ownedMinor, totalShareBps } = allocateScopedHolding(fullBalanceMinor, {
     ownership: input.liability.ownership,
     scopeMemberIds,

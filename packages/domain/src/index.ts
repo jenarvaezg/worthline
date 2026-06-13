@@ -216,6 +216,8 @@ export { valueHousingAtDate } from "./housing-valuation";
 export type {
   AmortizableBalanceAtDateInput,
   AmortizationPlanInput,
+  EarlyRepayment,
+  EarlyRepaymentMode,
   InterestRateRevision,
 } from "./amortization";
 export { amortizableBalanceAtDate } from "./amortization";
