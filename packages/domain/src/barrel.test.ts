@@ -85,6 +85,8 @@ const KEY_EXPORTS = [
   // historical-snapshot
   "buildSnapshotAtDate",
   "recalculateSnapshotForAsset",
+  "recalculateSnapshotForLiability",
+  "amortizationPaymentDatesUpTo",
   // evolution-chart
   "buildEvolutionChartGeometry",
   // decomposition-chart
