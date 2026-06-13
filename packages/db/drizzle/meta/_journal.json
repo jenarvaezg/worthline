@@ -57,6 +57,13 @@
       "when": 1781321361546,
       "tag": "0007_cold_micromax",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1781388751154,
+      "tag": "0008_busy_tyger_tiger",
+      "breakpoints": true
     }
   ]
 }

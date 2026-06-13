@@ -329,3 +329,130 @@ describe("amortizableBalanceAtDate — store reads plan + revisions and delegate
     ).toThrow();
   });
 });
+
+describe("early repayments — CRUD", () => {
+  function seedPlan(store: WorthlineStore): void {
+    seed(store);
+    store.liabilities.createAmortizationPlan({
+      annualInterestRate: "0.03",
+      id: "plan1",
+      initialCapitalMinor: 100_000_00,
+      liabilityId: "loan",
+      startDate: "2020-01-01",
+      termMonths: 120,
+    });
+  }
+
+  test("create + read repayments back, ordered by date", () => {
+    const store = createInMemoryStore();
+    seedPlan(store);
+
+    store.liabilities.addEarlyRepayment({
+      amountMinor: 10_000_00,
+      id: "e2",
+      mode: "reduce-term",
+      planId: "plan1",
+      repaymentDate: "2024-01-01",
+    });
+    store.liabilities.addEarlyRepayment({
+      amountMinor: 20_000_00,
+      id: "e1",
+      mode: "reduce-payment",
+      planId: "plan1",
+      repaymentDate: "2022-01-01",
+    });
+
+    const repayments = store.liabilities.readEarlyRepayments("plan1");
+    expect(repayments.map((r) => r.repaymentDate)).toEqual(["2022-01-01", "2024-01-01"]);
+    expect(repayments[0]).toMatchObject({
+      amountMinor: 20_000_00,
+      id: "e1",
+      mode: "reduce-payment",
+      repaymentDate: "2022-01-01",
+    });
+  });
+
+  test("update a repayment's date, amount and mode in place", () => {
+    const store = createInMemoryStore();
+    seedPlan(store);
+    store.liabilities.addEarlyRepayment({
+      amountMinor: 20_000_00,
+      id: "e1",
+      mode: "reduce-payment",
+      planId: "plan1",
+      repaymentDate: "2022-01-01",
+    });
+
+    expect(
+      store.liabilities.updateEarlyRepayment("e1", {
+        amountMinor: 25_000_00,
+        mode: "reduce-term",
+        repaymentDate: "2022-06-01",
+      }),
+    ).toBe(1);
+
+    const [repayment] = store.liabilities.readEarlyRepayments("plan1");
+    expect(repayment).toMatchObject({
+      amountMinor: 25_000_00,
+      id: "e1",
+      mode: "reduce-term",
+      repaymentDate: "2022-06-01",
+    });
+  });
+
+  test("update returns 0 for an unknown repayment", () => {
+    const store = createInMemoryStore();
+    seedPlan(store);
+    expect(store.liabilities.updateEarlyRepayment("nope", { amountMinor: 1_00 })).toBe(0);
+  });
+
+  test("delete a repayment by id", () => {
+    const store = createInMemoryStore();
+    seedPlan(store);
+    store.liabilities.addEarlyRepayment({
+      amountMinor: 20_000_00,
+      id: "e1",
+      mode: "reduce-payment",
+      planId: "plan1",
+      repaymentDate: "2022-01-01",
+    });
+
+    expect(store.liabilities.deleteEarlyRepayment("e1")).toBe(1);
+    expect(store.liabilities.readEarlyRepayments("plan1")).toHaveLength(0);
+    expect(store.liabilities.deleteEarlyRepayment("e1")).toBe(0);
+  });
+
+  test("rejects a malformed repayment date", () => {
+    const store = createInMemoryStore();
+    seedPlan(store);
+    expect(() =>
+      store.liabilities.addEarlyRepayment({
+        amountMinor: 20_000_00,
+        id: "bad",
+        mode: "reduce-payment",
+        planId: "plan1",
+        repaymentDate: "2022/01/01",
+      }),
+    ).toThrow();
+  });
+
+  test("amortizableBalanceAtDate applies a stored early repayment", () => {
+    const store = createInMemoryStore();
+    seedPlan(store);
+    const withoutRepayment = store.liabilities.amortizableBalanceAtDate(
+      "loan",
+      "2022-01-01",
+    );
+    store.liabilities.addEarlyRepayment({
+      amountMinor: 20_000_00,
+      id: "e1",
+      mode: "reduce-payment",
+      planId: "plan1",
+      repaymentDate: "2022-01-01",
+    });
+    // The lump lands on the target date → the balance drops by exactly it.
+    expect(store.liabilities.amortizableBalanceAtDate("loan", "2022-01-01")).toBe(
+      withoutRepayment - 20_000_00,
+    );
+  });
+});
