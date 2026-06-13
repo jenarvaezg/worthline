@@ -98,10 +98,10 @@ const KEY_EXPORTS = [
   "recalculateSnapshotForAsset",
   "recalculateSnapshotForLiability",
   "amortizationPaymentDatesUpTo",
-  // evolution-chart
-  "buildEvolutionChartGeometry",
-  // decomposition-chart
-  "buildDecompositionChartGeometry",
+  // composition-chart (#142)
+  "buildCompositionSeries",
+  "buildCompositionChartGeometry",
+  // decomposition-chart (generic stacked geometry)
   "buildStackedChartGeometry",
   // drilldown
   "buildDrilldown",

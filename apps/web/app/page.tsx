@@ -29,9 +29,8 @@ import {
 } from "./intake";
 import { loadDashboard } from "./load-dashboard";
 import type { RefreshPricesResult } from "./load-dashboard";
-import DecompositionChart from "./decomposition-chart";
+import CompositionChart from "./composition-chart";
 import DrilldownPanel from "./drilldown-panel";
-import EvolutionChart from "./evolution-chart";
 import { refreshAndPersistStalePrices } from "./refresh-prices";
 import Shell from "./shell";
 
@@ -387,11 +386,11 @@ export default async function DashboardPage({
             Ver histórico →
           </Link>
         </div>
-        <EvolutionChart framing={selectedView} snapshots={snapshots} />
-        {/* Decomposition — always splits NET WORTH (framing-invariant):
-            liquid (green), housing (gold), rest (blue). When a drill is
-            active (#76, #77) the drill panel renders in its place, with a
-            breadcrumb back that preserves the Vista. */}
+        {/* Composition (#142) — the single historical chart: gross asset bands
+            stack above zero (four liquidity rungs + Vivienda from the property
+            instrument), one aggregated debt stack below, a net-worth line over
+            the total. Framing-invariant. When a drill is active (#76, #77) the
+            drill panel renders in its place, breadcrumb back preserving the Vista. */}
         {selectedDrill && state.drilldown ? (
           <DrilldownPanel
             backHref={viewHomeUrl}
@@ -399,7 +398,10 @@ export default async function DashboardPage({
             drilldown={state.drilldown}
           />
         ) : (
-          <DecompositionChart drillHrefs={drillHrefs} snapshots={snapshots} />
+          <CompositionChart
+            currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
+            points={state.compositionSeries}
+          />
         )}
       </section>
 
