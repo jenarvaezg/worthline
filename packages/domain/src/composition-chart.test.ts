@@ -290,6 +290,29 @@ describe("buildCompositionChartGeometry", () => {
     expect(geometry.periods.map((p) => p.isOpenPeriod)).toEqual([false, true]);
   });
 
+  test("excluding a band drops it from the stack/anchors and rescales to the rest", () => {
+    const points = [
+      seriesPoint("2026-05-31", { cashMinor: 10_000_00, housingMinor: 500_000_00 }),
+      seriesPoint("2026-06-30", { cashMinor: 12_000_00, housingMinor: 500_000_00 }),
+    ];
+
+    const full = buildCompositionChartGeometry(points)!;
+    const exHousing = buildCompositionChartGeometry(points, { excludedBands: ["housing"] })!;
+
+    // Housing is gone from the rendered bands and the per-period hover anchors.
+    expect(exHousing.assetBands.map((band) => band.band)).toEqual([
+      "cash",
+      "market",
+      "term-locked",
+      "illiquid",
+    ]);
+    expect(exHousing.periods[0]!.assetBands.some((a) => a.band === "housing")).toBe(false);
+    // The y domain no longer spans the 500k housing → it rescales much smaller.
+    expect(exHousing.yMax).toBeLessThan(full.yMax / 10);
+    // The net-worth line now excludes housing: net = cash − debts (no debt here).
+    expect(exHousing.periods[0]!.netWorth.valueMinor).toBe(10_000_00);
+  });
+
   test("no debt in any period → no debt stack and no debt hover anchor", () => {
     const geometry = buildCompositionChartGeometry([
       seriesPoint("2026-05-31", { cashMinor: 100_00 }),

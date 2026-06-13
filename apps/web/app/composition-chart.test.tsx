@@ -87,4 +87,18 @@ describe("CompositionChart", () => {
     expect(markup).toContain('<span class="debt">');
     expect(markup).not.toContain('drill=debt');
   });
+
+  test("offers a control to fold Vivienda out of the chart", () => {
+    const markup = renderToStaticMarkup(
+      <CompositionChart
+        currency="EUR"
+        points={[
+          point({ cash: 10_000_00, dateKey: "2026-05-31", housing: 500_000_00 }),
+          point({ cash: 12_000_00, dateKey: "2026-06-30", housing: 500_000_00 }),
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Ocultar vivienda");
+  });
 });
