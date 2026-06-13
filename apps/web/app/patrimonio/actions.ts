@@ -1048,12 +1048,7 @@ function parseAssetType(value: FormDataEntryValue | null) {
 }
 
 function parseLiquidityTier(value: FormDataEntryValue | null) {
-  if (
-    value === "market" ||
-    value === "retirement" ||
-    value === "illiquid" ||
-    value === "housing"
-  ) {
+  if (value === "market" || value === "term-locked" || value === "illiquid") {
     return value;
   }
   return "cash" as const;

@@ -138,7 +138,7 @@ describe("createAssetAction wiring", () => {
     const [asset] = store.assets.readAssets();
     expect(asset).toMatchObject({
       currentValue: { amountMinor: 18_000_000, currency: "EUR" },
-      liquidityTier: "housing",
+      liquidityTier: "illiquid",
       name: "Piso Centro",
       type: "real_estate",
     });

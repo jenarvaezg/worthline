@@ -53,13 +53,7 @@ const groupSchema = z.object({
   memberIds: z.array(nonEmptyString),
 });
 
-const liquidityTierSchema = z.enum([
-  "cash",
-  "market",
-  "retirement",
-  "illiquid",
-  "housing",
-]);
+const liquidityTierSchema = z.enum(["cash", "market", "term-locked", "illiquid"]);
 
 const investmentMetaSchema = z.object({
   unitSymbol: nonEmptyString.optional(),

@@ -8,7 +8,7 @@ import {
 } from "./index";
 
 describe("liquidity breakdown", () => {
-  test("returns empty tiers and groups scoped net, gross, and debt values by liquidity tier", () => {
+  test("returns empty rungs and groups scoped net, gross, and debt values by rung", () => {
     const workspace = createWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -24,9 +24,8 @@ describe("liquidity breakdown", () => {
     ).toEqual([
       ["cash", 0],
       ["market", 0],
-      ["retirement", 0],
+      ["term-locked", 0],
       ["illiquid", 0],
-      ["housing", 0],
     ]);
 
     const cash = createManualAsset(workspace, {
@@ -63,12 +62,13 @@ describe("liquidity breakdown", () => {
       ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
       type: "manual",
     });
+    // Real estate sits on the illiquid rung (ADR 0013) regardless of declared tier.
     const home = createManualAsset(workspace, {
       currency: "EUR",
       currentValueMinor: 300_000,
       id: "asset_home",
       isPrimaryResidence: true,
-      liquidityTier: "housing",
+      liquidityTier: "illiquid",
       name: "Vivienda",
       ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
       type: "real_estate",
@@ -99,23 +99,24 @@ describe("liquidity breakdown", () => {
       grossAssets: { amountMinor: 20_000 },
       netValue: { amountMinor: 20_000 },
     });
-    expect(pyramid.find((tier) => tier.tier === "housing")).toMatchObject({
+    // The house and its mortgage net against each other on the illiquid rung.
+    expect(pyramid.find((tier) => tier.tier === "illiquid")).toMatchObject({
       debts: { amountMinor: 180_000 },
       grossAssets: { amountMinor: 300_000 },
       netValue: { amountMinor: 120_000 },
     });
-    expect(pyramid.find((tier) => tier.tier === "housing")?.assets).toEqual([
+    expect(pyramid.find((tier) => tier.tier === "illiquid")?.assets).toEqual([
       { id: "asset_home", name: "Vivienda", valueMinor: 300_000 },
     ]);
-    expect(pyramid.find((tier) => tier.tier === "housing")?.liabilities).toEqual([
+    expect(pyramid.find((tier) => tier.tier === "illiquid")?.liabilities).toEqual([
       { id: "debt_mortgage", name: "Hipoteca", valueMinor: 180_000 },
     ]);
 
-    // shareOfGrossBps is each tier's share of total gross assets
+    // shareOfGrossBps is each rung's share of total gross assets
     // (10_000 + 20_000 + 300_000 = 330_000).
     expect(pyramid.find((tier) => tier.tier === "cash")?.shareOfGrossBps).toBe(303);
     expect(pyramid.find((tier) => tier.tier === "market")?.shareOfGrossBps).toBe(606);
-    expect(pyramid.find((tier) => tier.tier === "housing")?.shareOfGrossBps).toBe(9091);
-    expect(pyramid.find((tier) => tier.tier === "retirement")?.shareOfGrossBps).toBe(0);
+    expect(pyramid.find((tier) => tier.tier === "illiquid")?.shareOfGrossBps).toBe(9091);
+    expect(pyramid.find((tier) => tier.tier === "term-locked")?.shareOfGrossBps).toBe(0);
   });
 });

@@ -322,12 +322,13 @@ describe("historical housing equity from a real mortgage curve", () => {
       currency: "EUR",
       currentValueMinor: 200_000_00,
       id: "piso",
-      liquidityTier: "housing",
+      liquidityTier: "illiquid",
       name: "Piso",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
       type: "real_estate",
     });
     store.liabilities.createLiability({
+      associatedAssetId: "piso",
       balanceMinor: 100_000_00,
       currency: "EUR",
       id: "mortgage",

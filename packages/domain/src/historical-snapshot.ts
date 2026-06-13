@@ -22,11 +22,10 @@
 
 import type { AmortizationPlanInput, InterestRateRevision } from "./amortization";
 import {
-  isHousing,
   isHousingAsset,
   isLiquid,
+  rungForLiability,
   tierOfAsset,
-  tierOfLiability,
 } from "./classification";
 import type { DebtBalanceAnchor } from "./debt-balance";
 import { debtBalanceAtDate } from "./debt-balance";
@@ -478,7 +477,7 @@ export function recalculateSnapshotForAsset(
     housingEquity: {
       amountMinor:
         input.snapshot.housingEquity.amountMinor +
-        (tier && isHousing(tier) ? deltaMinor : 0),
+        (isHousingAsset(input.asset) ? deltaMinor : 0),
       currency,
     },
     liquidNetWorth: {
@@ -617,7 +616,7 @@ export function recalculateSnapshotForHousing(
     housingEquity: {
       amountMinor:
         input.snapshot.housingEquity.amountMinor +
-        (tier && isHousing(tier) ? deltaMinor : 0),
+        (isHousingAsset(input.asset) ? deltaMinor : 0),
       currency,
     },
     liquidNetWorth: {
@@ -660,6 +659,12 @@ export interface RecalculateLiabilitySnapshotInput {
   liability: Liability;
   /** That liability's debt-balance curve inputs (model + anchors/plan/revisions). */
   curve: DebtBalanceCurveInputs;
+  /**
+   * Ids of the scope's housing assets (real estate / primary residence). A debt
+   * securing one of these nets housing equity; the liquidity rung alone can no
+   * longer tell housing from other illiquid holdings (ADR 0013 bridge).
+   */
+  housingAssetIds: ReadonlySet<string>;
   workspace: Workspace;
 }
 
@@ -670,12 +675,11 @@ export interface RecalculateLiabilitySnapshotInput {
  * the snapshot's date; every other frozen row is preserved verbatim, exactly
  * like the asset/housing ripples. Figures are adjusted by the liability's value
  * delta against the snapshot's own frozen figures: debts move by +delta and
- * total net worth by -delta (a higher balance lowers net worth); housing equity
- * / liquid net worth move by -delta only when the debt is of that tier. The
- * debt's tier is resolved via `tierOfLiability` (a mortgage, or a debt securing
- * a housing asset, is housing-tier) — NOT the frozen row's tier, which is null
- * for an unassociated mortgage. Associated debts resolve their tier from the
- * frozen asset rows.
+ * total net worth by -delta (a higher balance lowers net worth). Housing equity
+ * moves by -delta when the debt secures a housing asset (`housingAssetIds`);
+ * otherwise liquid net worth moves by -delta when the debt sits on a liquid
+ * rung — resolved from the frozen asset rows, since the frozen liability row's
+ * own tier is null for an unassociated debt (ADR 0013).
  *
  * Returns null when no holdings remain (the caller drops the snapshot). The
  * liability is scope-weighted with the same allocation the headline figures use,
@@ -697,16 +701,20 @@ export function recalculateSnapshotForLiability(
     (row) => row.holdingId !== input.liability.id,
   );
 
-  // The debt's tier classification (same basis as calculateNetWorth): a mortgage
-  // or a debt securing a housing asset is housing-tier. Associated debts resolve
-  // from the frozen asset rows' tiers; this is the truth behind the headline
-  // figures even when the frozen liability row's own tier is null.
-  const assetTierById = new Map(
+  // What the debt's change moves (same basis as calculateNetWorth): a debt
+  // securing a housing asset nets housing equity; otherwise, if it sits on a
+  // liquid rung, it nets liquid net worth. The rung resolves from the frozen
+  // asset rows even when the frozen liability row's own tier is null.
+  const assetRungById = new Map(
     rows
       .filter((row) => row.kind === "asset" && row.liquidityTier !== null)
       .map((row) => [row.holdingId, row.liquidityTier!] as const),
   );
-  const tier = tierOfLiability(input.liability, assetTierById);
+  const securesHousing =
+    !!input.liability.associatedAssetId &&
+    input.housingAssetIds.has(input.liability.associatedAssetId);
+  const affectsLiquid =
+    !securesHousing && isLiquid(rungForLiability(input.liability, assetRungById));
 
   const fullBalanceMinor = debtCurveBalanceMinor(input.curve, targetDate);
   const { ownedMinor, totalShareBps } = allocateScopedHolding(fullBalanceMinor, {
@@ -741,12 +749,12 @@ export function recalculateSnapshotForLiability(
     },
     housingEquity: {
       amountMinor:
-        input.snapshot.housingEquity.amountMinor + (isHousing(tier) ? -deltaMinor : 0),
+        input.snapshot.housingEquity.amountMinor + (securesHousing ? -deltaMinor : 0),
       currency,
     },
     liquidNetWorth: {
       amountMinor:
-        input.snapshot.liquidNetWorth.amountMinor + (isLiquid(tier) ? -deltaMinor : 0),
+        input.snapshot.liquidNetWorth.amountMinor + (affectsLiquid ? -deltaMinor : 0),
       currency,
     },
     scopeId: input.snapshot.scopeId,

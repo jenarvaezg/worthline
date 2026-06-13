@@ -200,7 +200,7 @@ describe("net worth calculations", () => {
       currentValueMinor: 30_000_000,
       id: "asset_home",
       isPrimaryResidence: true,
-      liquidityTier: "housing",
+      liquidityTier: "illiquid",
       name: "Vivienda",
       ownership: [
         { memberId: "member_ana", shareBps: 5_000 },

@@ -330,9 +330,8 @@ function AssetEditForm({
               >
                 <option value="cash">Caja</option>
                 <option value="market">Mercado</option>
-                <option value="retirement">Jubilación</option>
+                <option value="term-locked">A plazo</option>
                 <option value="illiquid">Ilíquido</option>
-                <option value="housing">Vivienda</option>
               </select>
             </label>
 

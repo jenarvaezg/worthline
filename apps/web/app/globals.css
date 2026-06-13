@@ -28,7 +28,7 @@
      housing in gold. Green/red elsewhere stay reserved for deltas and P/L. */
   --tier-cash: #0d7a64;
   --tier-market: #2aa188;
-  --tier-retirement: #2f5e8d;
+  --tier-term-locked: #2f5e8d;
   --tier-illiquid: #6b86a3;
   --tier-housing: #b3831f;
   --radius: 14px;
@@ -921,8 +921,8 @@ th:last-child {
   fill: var(--tier-market);
 }
 
-.donutSegment.retirement {
-  fill: var(--tier-retirement);
+.donutSegment.term-locked {
+  fill: var(--tier-term-locked);
 }
 
 .donutSegment.illiquid {
@@ -963,7 +963,7 @@ th:last-child {
   background: rgba(42, 161, 136, 0.09);
 }
 
-.tier.retirement {
+.tier.term-locked {
   background: rgba(47, 94, 141, 0.08);
 }
 
@@ -1215,32 +1215,32 @@ svg a:hover .decompositionBand.rest {
 
 /* Retirement, illiquid and housing reuse their page-wide tier hues
    (.donutSegment/.tier), exactly like cash and market above. */
-.decompositionLegend .retirement i {
-  background: var(--tier-retirement);
+.decompositionLegend .term-locked i {
+  background: var(--tier-term-locked);
 }
 
 .decompositionLegend .illiquid i {
   background: var(--tier-illiquid);
 }
 
-.drillBand.retirement {
-  fill: var(--tier-retirement);
+.drillBand.term-locked {
+  fill: var(--tier-term-locked);
 }
 
 .drillBand.illiquid {
   fill: var(--tier-illiquid);
 }
 
-.drillLine.retirement {
-  stroke: var(--tier-retirement);
+.drillLine.term-locked {
+  stroke: var(--tier-term-locked);
 }
 
 .drillLine.illiquid {
   stroke: var(--tier-illiquid);
 }
 
-.drillSparkline.retirement polyline {
-  stroke: var(--tier-retirement);
+.drillSparkline.term-locked polyline {
+  stroke: var(--tier-term-locked);
 }
 
 .drillSparkline.illiquid polyline {
@@ -2646,8 +2646,8 @@ td.rowActions > * {
   background: var(--tier-market);
 }
 
-.tier.retirement .tierBar i {
-  background: var(--tier-retirement);
+.tier.term-locked .tierBar i {
+  background: var(--tier-term-locked);
 }
 
 .tier.illiquid .tierBar i {

@@ -13,10 +13,9 @@ import type { DrilldownKey, DrilldownState, LiquidityTier } from "@worthline/dom
 
 const TIER_LABELS: Record<LiquidityTier, string> = {
   cash: "Caja",
-  housing: "Vivienda",
   illiquid: "Ilíquido",
   market: "Mercado",
-  retirement: "Jubilación",
+  "term-locked": "A plazo",
 };
 
 /**

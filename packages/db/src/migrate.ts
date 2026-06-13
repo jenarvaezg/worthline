@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 export function migrate(sqlite: DatabaseConnection): void {
   sqlite.pragma("journal_mode = WAL");
@@ -171,5 +171,26 @@ export function migrate(sqlite: DatabaseConnection): void {
        ON liability_balance_anchors (liability_id, anchor_date);`,
     );
     sqlite.pragma("user_version = 11");
+  }
+
+  if (version < 12) {
+    // ADR 0013: recut the liquidity ladder to four pure-accessibility rungs.
+    // `retirement → term-locked` and `housing → illiquid`, applied to live
+    // holdings and to the denormalized frozen tier on snapshot-holding rows
+    // (ADR 0008). The snapshots' frozen FIGURES are never touched, so historical
+    // net worth, liquid net worth and housing equity stay byte-identical.
+    sqlite.exec(
+      "UPDATE assets SET liquidity_tier = 'term-locked' WHERE liquidity_tier = 'retirement';",
+    );
+    sqlite.exec(
+      "UPDATE assets SET liquidity_tier = 'illiquid' WHERE liquidity_tier = 'housing';",
+    );
+    sqlite.exec(
+      "UPDATE snapshot_holdings SET liquidity_tier = 'term-locked' WHERE liquidity_tier = 'retirement';",
+    );
+    sqlite.exec(
+      "UPDATE snapshot_holdings SET liquidity_tier = 'illiquid' WHERE liquidity_tier = 'housing';",
+    );
+    sqlite.pragma("user_version = 12");
   }
 }

@@ -27,7 +27,7 @@ export const PRICE_TTL_DAYS: Record<PriceSource, number> = {
 export function defaultInvestmentPriceProvider(
   liquidityTier: LiquidityTier,
 ): InvestmentPriceProvider {
-  return liquidityTier === "retirement" ? "finect" : "yahoo";
+  return liquidityTier === "term-locked" ? "finect" : "yahoo";
 }
 
 export function getPriceFreshness(

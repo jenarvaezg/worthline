@@ -45,9 +45,8 @@ const framingTabs = [
 const TIER_LABELS: Record<LiquidityTier, string> = {
   cash: "Caja",
   market: "Mercado",
-  retirement: "Jubilación",
+  "term-locked": "A plazo",
   illiquid: "Ilíquido",
-  housing: "Vivienda",
 };
 
 // Donut ring geometry in viewBox units (viewBox 0 0 100 100).

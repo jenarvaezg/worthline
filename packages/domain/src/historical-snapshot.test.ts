@@ -63,7 +63,7 @@ function housing(workspace: Workspace, id: string, valueMinor: number): ManualAs
     currency: "EUR",
     currentValueMinor: valueMinor,
     id,
-    liquidityTier: "housing",
+    liquidityTier: "illiquid",
     name: "Piso",
     ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
     type: "real_estate",
@@ -346,7 +346,7 @@ describe("recalculateSnapshotForHousing", () => {
       holdingId: "asset_piso",
       kind: "asset",
       label: "Piso",
-      liquidityTier: "housing",
+      liquidityTier: "illiquid",
       valueMinor,
     };
   }
@@ -656,6 +656,7 @@ describe("buildSnapshotAtDate with debtBalanceByLiability", () => {
     balanceMinor: number,
   ): Liability {
     return createLiability(workspace, {
+      associatedAssetId: "asset_piso",
       balanceMinor,
       currency: "EUR",
       id,
@@ -813,6 +814,7 @@ describe("recalculateSnapshotForLiability", () => {
 
   function makeMortgage(workspace: Workspace, balanceMinor: number): Liability {
     return createLiability(workspace, {
+      associatedAssetId: "asset_piso",
       balanceMinor,
       currency: "EUR",
       id: "liab_h",
@@ -827,7 +829,7 @@ describe("recalculateSnapshotForLiability", () => {
       holdingId: "asset_piso",
       kind: "asset",
       label: "Piso",
-      liquidityTier: "housing",
+      liquidityTier: "illiquid",
       valueMinor,
     };
   }
@@ -883,6 +885,7 @@ describe("recalculateSnapshotForLiability", () => {
     const result = recalculateSnapshotForLiability({
       curve: amortizableCurve,
       frozenHoldings: [pisoRow(200_000_00), mortgageRow(120_000_00)],
+      housingAssetIds: new Set(["asset_piso"]),
       liability: makeMortgage(workspace, 100_000_00),
       snapshot: snapshotWithHousingDebt(200_000_00, 120_000_00),
       workspace,
@@ -917,6 +920,7 @@ describe("recalculateSnapshotForLiability", () => {
     const result = recalculateSnapshotForLiability({
       curve: amortizableCurve,
       frozenHoldings: [pisoRow(200_000_00), mortgageRow(120_000_00), cashRow],
+      housingAssetIds: new Set(["asset_piso"]),
       liability: makeMortgage(workspace, 100_000_00),
       snapshot: {
         ...snapshotWithHousingDebt(205_000_00, 120_000_00),
@@ -983,6 +987,7 @@ describe("recalculateSnapshotForLiability", () => {
         debtModel: "revolving",
       },
       frozenHoldings: [cashRow, cardRow],
+      housingAssetIds: new Set(),
       liability: card,
       snapshot,
       workspace,
@@ -1005,6 +1010,7 @@ describe("recalculateSnapshotForLiability", () => {
         debtModel: "revolving",
       },
       frozenHoldings: [mortgageRow(120_000_00)],
+      housingAssetIds: new Set(["asset_piso"]),
       liability: makeMortgage(workspace, 0),
       snapshot: snapshotWithHousingDebt(0, 120_000_00),
       workspace,

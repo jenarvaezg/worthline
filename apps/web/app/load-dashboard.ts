@@ -25,6 +25,7 @@ import type {
 import {
   buildDrilldown,
   captureSnapshotForScope,
+  isHousingAsset,
   listScopeOptions,
   prepareDashboardState,
 } from "@worthline/domain";
@@ -183,6 +184,10 @@ export async function loadDashboard(
             ...assets.map((asset) => asset.id),
             ...liabilities.map((liability) => liability.id),
           ],
+          // Housing is sourced by id, not rung (ADR 0013 bridge): real-estate holdings.
+          housingHoldingIds: assets
+            .filter((asset) => isHousingAsset(asset))
+            .map((asset) => asset.id),
           rows: store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id }),
         })
       : null;

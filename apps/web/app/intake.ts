@@ -540,7 +540,7 @@ export function parseAssetCommandStrict(
 
   const type = parseAssetType(formData.get("type"));
   const liquidityTier =
-    type === "real_estate" ? "housing" : parseLiquidityTier(formData.get("liquidityTier"));
+    type === "real_estate" ? "illiquid" : parseLiquidityTier(formData.get("liquidityTier"));
 
   const housingData = parseHousingCreationData(formData, type);
 
@@ -1143,12 +1143,7 @@ function parseAssetType(
 function parseLiquidityTier(
   value: FormDataEntryValue | null,
 ): CreateManualAssetInput["liquidityTier"] {
-  if (
-    value === "market" ||
-    value === "retirement" ||
-    value === "illiquid" ||
-    value === "housing"
-  ) {
+  if (value === "market" || value === "term-locked" || value === "illiquid") {
     return value;
   }
 
@@ -1549,9 +1544,8 @@ function isLiquidityTier(value: string): value is LiquidityTier {
   return (
     value === "cash" ||
     value === "market" ||
-    value === "retirement" ||
-    value === "illiquid" ||
-    value === "housing"
+    value === "term-locked" ||
+    value === "illiquid"
   );
 }
 
