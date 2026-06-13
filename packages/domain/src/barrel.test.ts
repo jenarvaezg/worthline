@@ -27,6 +27,11 @@ const KEY_EXPORTS = [
   "valueAt",
   "defaultValuationMethodForAssetType",
   "defaultValuationMethodForDebtModel",
+  // instrument-catalog
+  "defaultsFor",
+  "instrumentForQuoteType",
+  "defaultInstrumentForAssetType",
+  "defaultInstrumentForLiability",
   // value-history
   "lastKnownValueAtDate",
   // workspace-types

@@ -34,6 +34,17 @@ export {
   defaultValuationMethodForDebtModel,
   valueAt,
 } from "./holding-valuation";
+export type {
+  Instrument,
+  InstrumentDefaults,
+  InstrumentPriceProvider,
+} from "./instrument-catalog";
+export {
+  defaultInstrumentForAssetType,
+  defaultInstrumentForLiability,
+  defaultsFor,
+  instrumentForQuoteType,
+} from "./instrument-catalog";
 
 export type { DomainResult, DomainViolation } from "./domain-result";
 
