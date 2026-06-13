@@ -277,9 +277,11 @@ export type {
   BuildCompositionSeriesInput,
   CompositionAssetBandId,
   CompositionBandGeometry,
+  CompositionBandHoverPoint,
   CompositionBands,
   CompositionChartGeometry,
-  CompositionMarker,
+  CompositionHoverPoint,
+  CompositionPeriodGeometry,
   CompositionSeriesPoint,
   MonthlySeriesEntry,
 } from "./composition-chart";

@@ -285,17 +285,57 @@ describe("buildCompositionChartGeometry", () => {
       yFor(points[0]!.netWorthMinor, geometry.yMin, geometry.yMax),
       2,
     );
-    // Markers mark finalized closes only — the open period carries no dot.
-    expect(geometry.markers.map((marker) => marker.dateKey)).toEqual(["2026-05-31"]);
-    expect(geometry.markers[0]!.valueMinor).toBe(points[0]!.netWorthMinor);
+    // Every period is exposed for hover, with its open/closed flag.
+    expect(geometry.periods.map((p) => p.dateKey)).toEqual(["2026-05-31", "2026-06-30"]);
+    expect(geometry.periods.map((p) => p.isOpenPeriod)).toEqual([false, true]);
   });
 
-  test("no debt in any period → no debt stack", () => {
+  test("no debt in any period → no debt stack and no debt hover anchor", () => {
     const geometry = buildCompositionChartGeometry([
       seriesPoint("2026-05-31", { cashMinor: 100_00 }),
       seriesPoint("2026-06-30", { cashMinor: 120_00 }),
     ])!;
 
     expect(geometry.debtArea).toBeNull();
+    expect(geometry.periods.every((p) => p.debt === null)).toBe(true);
+  });
+
+  test("each period exposes per-band, debt and net-worth hover anchors with values", () => {
+    const points = [
+      seriesPoint("2026-05-31", {
+        cashMinor: 10_000_00,
+        housingMinor: 200_000_00,
+        debtsMinor: 120_000_00,
+      }),
+      seriesPoint("2026-06-30", { cashMinor: 12_000_00, housingMinor: 200_000_00 }),
+    ];
+
+    const geometry = buildCompositionChartGeometry(points)!;
+    const may = geometry.periods[0]!;
+
+    // Five asset-band anchors in stacking order, each carrying that band's value.
+    expect(may.assetBands.map((b) => b.band)).toEqual([
+      "cash",
+      "market",
+      "term-locked",
+      "illiquid",
+      "housing",
+    ]);
+    expect(may.assetBands.find((b) => b.band === "cash")!.valueMinor).toBe(10_000_00);
+    expect(may.assetBands.find((b) => b.band === "housing")!.valueMinor).toBe(200_000_00);
+    // Debt anchor present (this period has debt) with the aggregated balance.
+    expect(may.debt!.valueMinor).toBe(120_000_00);
+    // Net-worth anchor sits on the line.
+    expect(may.netWorth.valueMinor).toBe(points[0]!.netWorthMinor);
+    expect(may.netWorth.y).toBeCloseTo(yFor(points[0]!.netWorthMinor, geometry.yMin, geometry.yMax), 2);
+    // All anchors of a period share its x.
+    const xs = new Set([
+      ...may.assetBands.map((b) => b.x),
+      may.debt!.x,
+      may.netWorth.x,
+    ]);
+    expect(xs.size).toBe(1);
+    // The period that carries no debt exposes a null debt anchor.
+    expect(geometry.periods[1]!.debt).toBeNull();
   });
 });

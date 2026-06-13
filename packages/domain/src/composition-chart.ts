@@ -204,12 +204,32 @@ export function buildCompositionSeries(
     }));
 }
 
-/** A monthly-close vertex on the net-worth line. */
-export interface CompositionMarker {
+/** A hover anchor: a point in viewBox space carrying the value it represents. */
+export interface CompositionHoverPoint {
   x: number;
   y: number;
-  dateKey: string;
   valueMinor: number;
+}
+
+/** A hover anchor for one asset band at one period. */
+export interface CompositionBandHoverPoint extends CompositionHoverPoint {
+  band: CompositionAssetBandId;
+}
+
+/**
+ * Per-period hover anchors for every component of the chart (#143): one anchor
+ * per asset band, the aggregated debt, and the net-worth point — so the web
+ * layer can place a native <title> on each without re-deriving geometry.
+ */
+export interface CompositionPeriodGeometry {
+  dateKey: string;
+  isOpenPeriod: boolean;
+  /** One anchor per asset band (slab midpoint), in stacking order. */
+  assetBands: CompositionBandHoverPoint[];
+  /** Debt anchor (slab midpoint), or null when this period carries no debt. */
+  debt: CompositionHoverPoint | null;
+  /** Net-worth anchor, on the line. */
+  netWorth: CompositionHoverPoint;
 }
 
 export interface CompositionBandGeometry {
@@ -232,8 +252,8 @@ export interface CompositionChartGeometry {
   debtArea: string | null;
   /** The net-worth polyline ("x,y x,y …"). */
   netWorthLine: string;
-  /** Monthly-close vertices on the net-worth line (the open period is excluded). */
-  markers: CompositionMarker[];
+  /** Per-period hover anchors for every component (asset bands, debt, net worth). */
+  periods: CompositionPeriodGeometry[];
   /** Padded value domain (minor units) the y scale maps from; spans the baseline. */
   yMin: number;
   yMax: number;
@@ -325,19 +345,34 @@ export function buildCompositionChartGeometry(
     points.map((p) => toY(p.netWorthMinor)),
   );
 
-  const markers = points.flatMap((p, i) =>
-    p.isOpenPeriod
-      ? []
-      : [{ dateKey: p.dateKey, valueMinor: p.netWorthMinor, x: xs[i]!, y: toY(p.netWorthMinor) }],
-  );
+  // Hover anchors per period: each asset band at its slab midpoint, the debt
+  // slab midpoint, and the net-worth point on the line.
+  const periods = points.map<CompositionPeriodGeometry>((p, i) => {
+    const x = xs[i]!;
+    return {
+      assetBands: COMPOSITION_ASSET_BANDS.map((band, b) => ({
+        band,
+        valueMinor: bandValueMinor(p, band),
+        x,
+        y: (edgeYs[b]![i]! + edgeYs[b + 1]![i]!) / 2,
+      })),
+      dateKey: p.dateKey,
+      debt:
+        p.debtsMinor > 0
+          ? { valueMinor: p.debtsMinor, x, y: (baselineY + toY(-p.debtsMinor)) / 2 }
+          : null,
+      isOpenPeriod: p.isOpenPeriod,
+      netWorth: { valueMinor: p.netWorthMinor, x, y: toY(p.netWorthMinor) },
+    };
+  });
 
   return {
     assetBands,
     baselineY,
     debtArea,
     height: COMPOSITION_CHART_HEIGHT,
-    markers,
     netWorthLine,
+    periods,
     width: COMPOSITION_CHART_WIDTH,
     yMax,
     yMin,
