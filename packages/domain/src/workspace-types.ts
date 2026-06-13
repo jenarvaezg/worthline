@@ -74,6 +74,14 @@ export interface ManualAsset {
 
 export type LiabilityType = "mortgage" | "debt";
 
+/**
+ * How a liability is modelled for historical reconstruction (PRD #109, slice 7).
+ * `amortizable` = a French-amortization loan with a plan; `revolving` = a credit
+ * line; `informal` = an ad-hoc debt. Null on a liability means no model is
+ * declared and the current balance is used as-is (no derived history).
+ */
+export type DebtModel = "amortizable" | "revolving" | "informal";
+
 export interface Liability {
   id: string;
   name: string;

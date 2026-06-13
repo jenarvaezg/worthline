@@ -1,8 +1,20 @@
-import type { CreateLiabilityInput, Liability, OwnershipShare } from "@worthline/domain";
-import { createLiability } from "@worthline/domain";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import type {
+  CreateLiabilityInput,
+  DebtModel,
+  DecimalString,
+  InterestRateRevision,
+  Liability,
+  OwnershipShare,
+} from "@worthline/domain";
+import { amortizableBalanceAtDate, createLiability } from "@worthline/domain";
+import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
 
-import { liabilities, liabilityOwnerships } from "./schema";
+import {
+  amortizationPlans,
+  interestRateRevisions,
+  liabilities,
+  liabilityOwnerships,
+} from "./schema";
 import {
   hardDeleteLiabilityTx,
   readLiabilities,
@@ -15,6 +27,54 @@ export interface UpdateLiabilityInput {
   type?: "mortgage" | "debt";
   associatedAssetId?: string | null;
   ownership?: OwnershipShare[];
+}
+
+/** Input for an amortization plan (PRD #109, slice 7). */
+export interface CreateAmortizationPlanInput {
+  id: string;
+  liabilityId: string;
+  /** Initial borrowed capital, integer minor units. */
+  initialCapitalMinor: number;
+  /** Decimal-string annual interest rate, e.g. "0.025". */
+  annualInterestRate: DecimalString;
+  /** Loan term in whole months. */
+  termMonths: number;
+  /** Loan start date, YYYY-MM-DD. */
+  startDate: string;
+}
+
+/** An amortization plan as read back from the store. */
+export interface AmortizationPlanRecord {
+  id: string;
+  liabilityId: string;
+  initialCapitalMinor: number;
+  annualInterestRate: DecimalString;
+  termMonths: number;
+  startDate: string;
+}
+
+/** Fields that can be patched on an existing amortization plan. */
+export interface UpdateAmortizationPlanInput {
+  initialCapitalMinor?: number;
+  annualInterestRate?: DecimalString;
+  termMonths?: number;
+  startDate?: string;
+}
+
+/** Input for a single interest-rate revision (PRD #109, slice 7). */
+export interface AddInterestRateRevisionInput {
+  id: string;
+  planId: string;
+  /** YYYY-MM-DD the new rate takes effect from. */
+  revisionDate: string;
+  /** Decimal-string annual rate, e.g. "0.03". */
+  newAnnualInterestRate: DecimalString;
+}
+
+/** A stored interest-rate revision as read back from the store. */
+export interface InterestRateRevisionRecord extends InterestRateRevision {
+  id: string;
+  planId: string;
 }
 
 /**
@@ -34,6 +94,33 @@ export interface LiabilityStore {
   restoreLiability: (liabilityId: string) => number;
   /** Hard-delete a trashed liability (live data + overrides; snapshots untouched). Returns 1 if removed, 0 if not found or not in trash. */
   hardDeleteLiability: (liabilityId: string) => number;
+  /** Set (or clear, with null) a liability's debt model. */
+  setDebtModel: (liabilityId: string, debtModel: DebtModel | null) => void;
+  /** Read a liability's debt model, or null if unset. */
+  readDebtModel: (liabilityId: string) => DebtModel | null;
+  /** Create the amortization plan for a liability (1:1; throws if one exists). */
+  createAmortizationPlan: (input: CreateAmortizationPlanInput) => void;
+  /** Read a liability's amortization plan, or null if it has none. */
+  readAmortizationPlan: (liabilityId: string) => AmortizationPlanRecord | null;
+  /** Update an amortization plan in place. Returns 1 if updated, 0 if not found. */
+  updateAmortizationPlan: (
+    planId: string,
+    input: UpdateAmortizationPlanInput,
+  ) => number;
+  /** Delete an amortization plan by id (cascades its revisions). Returns 1 if removed, 0 if not found. */
+  deleteAmortizationPlan: (planId: string) => number;
+  /** Add an interest-rate revision to a plan. */
+  addInterestRateRevision: (input: AddInterestRateRevisionInput) => void;
+  /** Read a plan's rate revisions, ordered ascending by date. */
+  readInterestRateRevisions: (planId: string) => InterestRateRevisionRecord[];
+  /** Delete a rate revision by id. Returns 1 if removed, 0 if not found. */
+  deleteInterestRateRevision: (revisionId: string) => number;
+  /**
+   * Outstanding principal of an amortizable liability on `targetDate`
+   * (YYYY-MM-DD): reads the plan + revisions and delegates to the pure domain
+   * curve. Throws if the liability has no amortization plan.
+   */
+  amortizableBalanceAtDate: (liabilityId: string, targetDate: string) => number;
 }
 
 export function createLiabilityStore(ctx: StoreContext): LiabilityStore {
@@ -48,7 +135,282 @@ export function createLiabilityStore(ctx: StoreContext): LiabilityStore {
     restoreLiability: (liabilityId) => restoreLiability(ctx, liabilityId),
     hardDeleteLiability: (liabilityId) =>
       ctx.sqlite.transaction(() => hardDeleteLiabilityTx(ctx, liabilityId))(),
+    setDebtModel: (liabilityId, debtModel) =>
+      setDebtModel(ctx, liabilityId, debtModel),
+    readDebtModel: (liabilityId) => readDebtModel(ctx, liabilityId),
+    createAmortizationPlan: (input) => createAmortizationPlan(ctx, input),
+    readAmortizationPlan: (liabilityId) => readAmortizationPlan(ctx, liabilityId),
+    updateAmortizationPlan: (planId, input) =>
+      updateAmortizationPlan(ctx, planId, input),
+    deleteAmortizationPlan: (planId) => deleteAmortizationPlan(ctx, planId),
+    addInterestRateRevision: (input) => addInterestRateRevision(ctx, input),
+    readInterestRateRevisions: (planId) => readInterestRateRevisions(ctx, planId),
+    deleteInterestRateRevision: (revisionId) =>
+      deleteInterestRateRevision(ctx, revisionId),
+    amortizableBalanceAtDate: (liabilityId, targetDate) =>
+      amortizableBalanceAtDateFor(ctx, liabilityId, targetDate),
   };
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const DECIMAL_STRING = /^-?\d+(\.\d+)?$/;
+
+function assertIsoDate(value: string, label: string): void {
+  if (!ISO_DATE.test(value)) {
+    throw new Error(`${label} must be in YYYY-MM-DD format, got "${value}".`);
+  }
+}
+
+function assertDecimalString(value: string, label: string): void {
+  if (!DECIMAL_STRING.test(value)) {
+    throw new Error(`${label} must be a decimal string (e.g. "0.025"), got "${value}".`);
+  }
+}
+
+function setDebtModel(
+  ctx: StoreContext,
+  liabilityId: string,
+  debtModel: DebtModel | null,
+): void {
+  ctx.db
+    .update(liabilities)
+    .set({ debtModel, updatedAt: sql`CURRENT_TIMESTAMP` })
+    .where(eq(liabilities.id, liabilityId))
+    .run();
+  ctx.writeAuditEntry("set_debt_model", "liability", liabilityId, { debtModel });
+}
+
+function readDebtModel(ctx: StoreContext, liabilityId: string): DebtModel | null {
+  const row = ctx.db
+    .select({ debtModel: liabilities.debtModel })
+    .from(liabilities)
+    .where(eq(liabilities.id, liabilityId))
+    .get();
+  return row?.debtModel ?? null;
+}
+
+function createAmortizationPlan(
+  ctx: StoreContext,
+  input: CreateAmortizationPlanInput,
+): void {
+  if (!Number.isInteger(input.initialCapitalMinor)) {
+    throw new Error("Money must be stored as integer minor units.");
+  }
+  if (!Number.isInteger(input.termMonths) || input.termMonths <= 0) {
+    throw new Error(`Term must be a positive whole number of months, got "${input.termMonths}".`);
+  }
+  assertIsoDate(input.startDate, "Start date");
+  assertDecimalString(input.annualInterestRate, "Annual interest rate");
+
+  // The "liability must be amortizable" invariant is a domain/caller guard (R9),
+  // not enforced here. The unique index on liability_id keeps the plan 1:1.
+  ctx.db
+    .insert(amortizationPlans)
+    .values({
+      annualInterestRate: input.annualInterestRate,
+      id: input.id,
+      initialCapitalMinor: input.initialCapitalMinor,
+      liabilityId: input.liabilityId,
+      startDate: input.startDate,
+      termMonths: input.termMonths,
+    })
+    .run();
+
+  ctx.writeAuditEntry("create_amortization_plan", "liability", input.liabilityId, {
+    planId: input.id,
+  });
+}
+
+function readAmortizationPlan(
+  ctx: StoreContext,
+  liabilityId: string,
+): AmortizationPlanRecord | null {
+  const row = ctx.db
+    .select()
+    .from(amortizationPlans)
+    .where(eq(amortizationPlans.liabilityId, liabilityId))
+    .get();
+
+  if (!row) return null;
+
+  return {
+    annualInterestRate: row.annualInterestRate,
+    id: row.id,
+    initialCapitalMinor: row.initialCapitalMinor,
+    liabilityId: row.liabilityId,
+    startDate: row.startDate,
+    termMonths: row.termMonths,
+  };
+}
+
+function updateAmortizationPlan(
+  ctx: StoreContext,
+  planId: string,
+  input: UpdateAmortizationPlanInput,
+): number {
+  if (input.initialCapitalMinor !== undefined && !Number.isInteger(input.initialCapitalMinor)) {
+    throw new Error("Money must be stored as integer minor units.");
+  }
+  if (
+    input.termMonths !== undefined &&
+    (!Number.isInteger(input.termMonths) || input.termMonths <= 0)
+  ) {
+    throw new Error(`Term must be a positive whole number of months, got "${input.termMonths}".`);
+  }
+  if (input.startDate !== undefined) {
+    assertIsoDate(input.startDate, "Start date");
+  }
+  if (input.annualInterestRate !== undefined) {
+    assertDecimalString(input.annualInterestRate, "Annual interest rate");
+  }
+
+  const existing = ctx.db
+    .select({ liabilityId: amortizationPlans.liabilityId })
+    .from(amortizationPlans)
+    .where(eq(amortizationPlans.id, planId))
+    .get();
+
+  if (!existing) return 0;
+
+  const fields: Partial<typeof amortizationPlans.$inferInsert> = {};
+  if (input.initialCapitalMinor !== undefined) {
+    fields.initialCapitalMinor = input.initialCapitalMinor;
+  }
+  if (input.annualInterestRate !== undefined) {
+    fields.annualInterestRate = input.annualInterestRate;
+  }
+  if (input.termMonths !== undefined) fields.termMonths = input.termMonths;
+  if (input.startDate !== undefined) fields.startDate = input.startDate;
+
+  const result = ctx.db
+    .update(amortizationPlans)
+    .set(fields)
+    .where(eq(amortizationPlans.id, planId))
+    .run();
+
+  if (result.changes > 0) {
+    ctx.writeAuditEntry(
+      "update_amortization_plan",
+      "liability",
+      existing.liabilityId,
+      { planId, ...input },
+    );
+  }
+  return result.changes;
+}
+
+function deleteAmortizationPlan(ctx: StoreContext, planId: string): number {
+  const row = ctx.db
+    .select({ liabilityId: amortizationPlans.liabilityId })
+    .from(amortizationPlans)
+    .where(eq(amortizationPlans.id, planId))
+    .get();
+
+  if (!row) return 0;
+
+  const result = ctx.db
+    .delete(amortizationPlans)
+    .where(eq(amortizationPlans.id, planId))
+    .run();
+
+  if (result.changes > 0) {
+    ctx.writeAuditEntry("delete_amortization_plan", "liability", row.liabilityId, {
+      planId,
+    });
+  }
+  return result.changes;
+}
+
+function addInterestRateRevision(
+  ctx: StoreContext,
+  input: AddInterestRateRevisionInput,
+): void {
+  assertIsoDate(input.revisionDate, "Revision date");
+  assertDecimalString(input.newAnnualInterestRate, "Annual interest rate");
+
+  ctx.db
+    .insert(interestRateRevisions)
+    .values({
+      id: input.id,
+      newAnnualInterestRate: input.newAnnualInterestRate,
+      planId: input.planId,
+      revisionDate: input.revisionDate,
+    })
+    .run();
+
+  ctx.writeAuditEntry("add_rate_revision", "amortization_plan", input.planId, {
+    newAnnualInterestRate: input.newAnnualInterestRate,
+    revisionDate: input.revisionDate,
+    revisionId: input.id,
+  });
+}
+
+function readInterestRateRevisions(
+  ctx: StoreContext,
+  planId: string,
+): InterestRateRevisionRecord[] {
+  const rows = ctx.db
+    .select()
+    .from(interestRateRevisions)
+    .where(eq(interestRateRevisions.planId, planId))
+    .orderBy(asc(interestRateRevisions.revisionDate), asc(interestRateRevisions.id))
+    .all();
+
+  return rows.map((row) => ({
+    id: row.id,
+    newAnnualInterestRate: row.newAnnualInterestRate,
+    planId: row.planId,
+    revisionDate: row.revisionDate,
+  }));
+}
+
+function deleteInterestRateRevision(ctx: StoreContext, revisionId: string): number {
+  const row = ctx.db
+    .select({ planId: interestRateRevisions.planId })
+    .from(interestRateRevisions)
+    .where(eq(interestRateRevisions.id, revisionId))
+    .get();
+
+  if (!row) return 0;
+
+  const result = ctx.db
+    .delete(interestRateRevisions)
+    .where(eq(interestRateRevisions.id, revisionId))
+    .run();
+
+  if (result.changes > 0) {
+    ctx.writeAuditEntry("delete_rate_revision", "amortization_plan", row.planId, {
+      revisionId,
+    });
+  }
+  return result.changes;
+}
+
+function amortizableBalanceAtDateFor(
+  ctx: StoreContext,
+  liabilityId: string,
+  targetDate: string,
+): number {
+  const plan = readAmortizationPlan(ctx, liabilityId);
+  if (!plan) {
+    throw new Error(`Liability "${liabilityId}" has no amortization plan.`);
+  }
+
+  const revisions = readInterestRateRevisions(ctx, plan.id).map((revision) => ({
+    newAnnualInterestRate: revision.newAnnualInterestRate,
+    revisionDate: revision.revisionDate,
+  }));
+
+  return amortizableBalanceAtDate({
+    plan: {
+      annualInterestRate: plan.annualInterestRate,
+      initialCapitalMinor: plan.initialCapitalMinor,
+      startDate: plan.startDate,
+      termMonths: plan.termMonths,
+    },
+    revisions,
+    targetDate,
+  });
 }
 
 function createLiabilityRecord(ctx: StoreContext, input: CreateLiabilityInput): void {

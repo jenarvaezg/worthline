@@ -42,6 +42,7 @@ CREATE TABLE \`liabilities\` (
 	\`currency\` text NOT NULL,
 	\`current_balance_minor\` integer NOT NULL,
 	\`associated_asset_id\` text,
+	\`debt_model\` text,
 	\`deleted_at\` text,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -182,5 +183,27 @@ CREATE TABLE \`asset_valuations\` (
 	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX \`asset_valuations_asset_date_unique\` ON \`asset_valuations\` (\`asset_id\`,\`valuation_date\`);
+CREATE UNIQUE INDEX \`asset_valuations_asset_date_unique\` ON \`asset_valuations\` (\`asset_id\`,\`valuation_date\`);--> statement-breakpoint
+CREATE TABLE \`amortization_plans\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`liability_id\` text NOT NULL,
+	\`initial_capital_minor\` integer NOT NULL,
+	\`annual_interest_rate\` text NOT NULL,
+	\`term_months\` integer NOT NULL,
+	\`start_date\` text NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`liability_id\`) REFERENCES \`liabilities\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX \`amortization_plans_liability_unique\` ON \`amortization_plans\` (\`liability_id\`);--> statement-breakpoint
+CREATE TABLE \`interest_rate_revisions\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`plan_id\` text NOT NULL,
+	\`revision_date\` text NOT NULL,
+	\`new_annual_interest_rate\` text NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`plan_id\`) REFERENCES \`amortization_plans\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX \`interest_rate_revisions_plan_date_unique\` ON \`interest_rate_revisions\` (\`plan_id\`,\`revision_date\`);
 `;
