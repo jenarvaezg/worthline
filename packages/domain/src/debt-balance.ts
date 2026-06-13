@@ -3,6 +3,7 @@ import Big from "big.js";
 import {
   amortizableBalanceAtDate,
   type AmortizationPlanInput,
+  type EarlyRepayment,
   type InterestRateRevision,
 } from "./amortization";
 import type { DebtModel } from "./workspace-types";
@@ -58,6 +59,8 @@ export interface DebtBalanceAtDateInput {
   plan?: AmortizationPlanInput;
   /** Rate revisions for an amortizable liability (any order). */
   revisions?: readonly InterestRateRevision[];
+  /** Early repayments for an amortizable liability (any order). */
+  earlyRepayments?: readonly EarlyRepayment[];
   /**
    * Initial capital for an informal liability, integer minor units. Used as the
    * balance before the first anchor when present.
@@ -183,11 +186,14 @@ export function debtBalanceAtDate(input: DebtBalanceAtDateInput): number {
     if (!input.plan) {
       return currentBalanceMinor;
     }
-    return amortizableBalanceAtDate(
-      input.revisions === undefined
-        ? { plan: input.plan, targetDate }
-        : { plan: input.plan, revisions: input.revisions, targetDate },
-    );
+    return amortizableBalanceAtDate({
+      plan: input.plan,
+      targetDate,
+      ...(input.revisions !== undefined ? { revisions: input.revisions } : {}),
+      ...(input.earlyRepayments !== undefined
+        ? { earlyRepayments: input.earlyRepayments }
+        : {}),
+    });
   }
 
   return currentBalanceMinor;

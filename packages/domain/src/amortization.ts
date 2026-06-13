@@ -36,6 +36,26 @@ export interface InterestRateRevision {
   newAnnualInterestRate: DecimalString;
 }
 
+/** How an early repayment reshapes the remaining schedule (PRD #146, slice S4). */
+export type EarlyRepaymentMode = "reduce-payment" | "reduce-term";
+
+/**
+ * A lump-sum early repayment (amortización anticipada) against the principal.
+ * Applied at its month boundary (`monthsBetween` floor — the same granularity as
+ * a rate revision): the live balance drops by `amountMinor` (clamped at 0, so a
+ * lump ≥ the balance is a total repayment that closes the loan), then either the
+ * cuota is recomputed over the remaining term (`reduce-payment`, the end date is
+ * kept) or the cuota is held and the loan reaches 0 earlier (`reduce-term`).
+ */
+export interface EarlyRepayment {
+  /** YYYY-MM-DD the repayment is made. */
+  repaymentDate: string;
+  /** Principal repaid, integer minor units. */
+  amountMinor: number;
+  /** Keep the term and lower the cuota, or keep the cuota and shorten the term. */
+  mode: EarlyRepaymentMode;
+}
+
 export interface AmortizationPlanInput {
   /** Initial borrowed capital, integer minor units. */
   initialCapitalMinor: number;
@@ -51,6 +71,8 @@ export interface AmortizableBalanceAtDateInput {
   plan: AmortizationPlanInput;
   /** Rate revisions in any order; applied from each revision's month boundary. */
   revisions?: readonly InterestRateRevision[];
+  /** Early repayments in any order; applied from each repayment's month boundary. */
+  earlyRepayments?: readonly EarlyRepayment[];
   /** The date to value the outstanding balance on, YYYY-MM-DD. */
   targetDate: string;
 }
@@ -146,6 +168,16 @@ function buildBoundaries(input: AmortizableBalanceAtDateInput): MonthlyBoundary[
     }))
     .sort((a, b) => a.monthIndex - b.monthIndex);
 
+  // Early repayments grouped by the month boundary they land on (floor, like a
+  // revision). Input order within a month is preserved for determinism.
+  const repaymentsByMonth = new Map<number, EarlyRepayment[]>();
+  for (const repayment of input.earlyRepayments ?? []) {
+    const monthIndex = Math.max(0, monthsBetween(startDate, repayment.repaymentDate));
+    const list = repaymentsByMonth.get(monthIndex) ?? [];
+    list.push(repayment);
+    repaymentsByMonth.set(monthIndex, list);
+  }
+
   const boundaries: MonthlyBoundary[] = [{ balance: new Big(initialCapitalMinor) }];
   let balance = new Big(initialCapitalMinor);
   let payment = monthlyPayment(balance, new Big(annualInterestRate).div(12), termMonths);
@@ -164,10 +196,33 @@ function buildBoundaries(input: AmortizableBalanceAtDateInput): MonthlyBoundary[
       const remainingTerm = termMonths - monthIndex;
       payment = monthlyPayment(balance, new Big(activeRate).div(12), remainingTerm);
     }
+
+    // Apply any early repayments landing on this boundary, before the month's
+    // amortization. The lump drops the principal (clamped at 0 → total
+    // repayment); reduce-payment recomputes the cuota over the remaining term on
+    // the new balance, reduce-term keeps the cuota so the loan ends earlier.
+    const repayments = repaymentsByMonth.get(monthIndex);
+    if (repayments) {
+      for (const repayment of repayments) {
+        balance = balance.minus(repayment.amountMinor);
+        if (balance.lt(0)) balance = new Big(0);
+        if (repayment.mode === "reduce-payment") {
+          const remainingTerm = termMonths - monthIndex;
+          payment = monthlyPayment(balance, new Big(activeRate).div(12), remainingTerm);
+        }
+      }
+      // The lump lands at the start of this month, so the balance ON the
+      // boundary date itself reflects it — overwrite the pre-lump start-of-month
+      // value the previous iteration pushed. (Guarded: the no-repayment path is
+      // left byte-identical to the revisions-only curve.)
+      boundaries[monthIndex] = { balance };
+    }
+
     const monthlyRate = new Big(activeRate).div(12);
     const interest = balance.times(monthlyRate);
     const principal = payment.minus(interest);
     balance = balance.minus(principal);
+    if (balance.lt(0)) balance = new Big(0); // reduce-term / total repayment payoff
     boundaries.push({ balance });
   }
 

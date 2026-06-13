@@ -10,7 +10,11 @@
  * `debtModel` valuation branches.
  */
 
-import type { AmortizationPlanInput, InterestRateRevision } from "./amortization";
+import type {
+  AmortizationPlanInput,
+  EarlyRepayment,
+  InterestRateRevision,
+} from "./amortization";
 import { debtBalanceAtDate } from "./debt-balance";
 import type { DebtBalanceAnchor } from "./debt-balance";
 import { compareUnits } from "./decimal";
@@ -124,6 +128,8 @@ export type HoldingValuationInput =
       plan?: AmortizationPlanInput;
       /** Interest-rate revisions (any order). */
       revisions?: readonly InterestRateRevision[];
+      /** Early repayments (any order). */
+      earlyRepayments?: readonly EarlyRepayment[];
       /** The current stored balance — the fallback when the plan is absent. */
       currentBalanceMinor: number;
     }
@@ -202,6 +208,9 @@ export function valueAt(
           targetDate,
           ...(input.plan !== undefined ? { plan: input.plan } : {}),
           ...(input.revisions !== undefined ? { revisions: input.revisions } : {}),
+          ...(input.earlyRepayments !== undefined
+            ? { earlyRepayments: input.earlyRepayments }
+            : {}),
         }),
       };
     }

@@ -1,7 +1,11 @@
 import { describe, expect, test } from "vitest";
 
 import { amortizableBalanceAtDate } from "./amortization";
-import type { AmortizationPlanInput, InterestRateRevision } from "./amortization";
+import type {
+  AmortizationPlanInput,
+  EarlyRepayment,
+  InterestRateRevision,
+} from "./amortization";
 
 /**
  * Pure French-amortization balance curve (PRD #109, slice 7).
@@ -172,6 +176,135 @@ describe("amortizableBalanceAtDate — French amortization (cuota fija)", () => 
       targetDate: "2027-01-01",
     });
     expect(afterTwo).toBeGreaterThan(afterOne);
+  });
+});
+
+describe("early repayments (amortización anticipada) — PRD #146, slice S4", () => {
+  const LOAN: AmortizationPlanInput = {
+    annualInterestRate: "0.03",
+    initialCapitalMinor: 100_000_00,
+    startDate: "2020-01-01",
+    termMonths: 120,
+  };
+
+  test("a reduce-payment lump sum drops the balance on its date by the lump", () => {
+    // Month 24 = 2022-01-01. The lump is applied at that boundary, so the
+    // outstanding balance on the repayment date is the un-repaid balance minus
+    // the lump, exactly (both share the same start-of-month balance).
+    const repayments: EarlyRepayment[] = [
+      { amountMinor: 20_000_00, mode: "reduce-payment", repaymentDate: "2022-01-01" },
+    ];
+    const withoutRepayment = amortizableBalanceAtDate({
+      plan: LOAN,
+      targetDate: "2022-01-01",
+    });
+    const withRepayment = amortizableBalanceAtDate({
+      earlyRepayments: repayments,
+      plan: LOAN,
+      targetDate: "2022-01-01",
+    });
+    expect(withRepayment).toBe(withoutRepayment - 20_000_00);
+  });
+
+  test("reduce-payment keeps the term: still owing near the original end date", () => {
+    // Month 119 = 2029-12-01, one month before the 120-month loan ends.
+    // reduce-payment lowers the cuota and keeps the end date, so the loan is
+    // NOT paid off early — there is still a balance just before the term.
+    const balanceNearEnd = amortizableBalanceAtDate({
+      earlyRepayments: [
+        { amountMinor: 20_000_00, mode: "reduce-payment", repaymentDate: "2022-01-01" },
+      ],
+      plan: LOAN,
+      targetDate: "2029-12-01",
+    });
+    expect(balanceNearEnd).toBeGreaterThan(0);
+  });
+
+  test("reduce-term keeps the cuota: same balance on the date, paid off early", () => {
+    const onDate = (mode: "reduce-payment" | "reduce-term", targetDate: string) =>
+      amortizableBalanceAtDate({
+        earlyRepayments: [{ amountMinor: 20_000_00, mode, repaymentDate: "2022-01-01" }],
+        plan: LOAN,
+        targetDate,
+      });
+
+    // On the repayment date the lump applies identically; only the forward
+    // schedule differs by mode, so both balances coincide there.
+    expect(onDate("reduce-term", "2022-01-01")).toBe(
+      onDate("reduce-payment", "2022-01-01"),
+    );
+    // Holding the cuota retires principal faster, so by a later date the
+    // reduce-term balance sits below the reduce-payment one …
+    expect(onDate("reduce-term", "2025-01-01")).toBeLessThan(
+      onDate("reduce-payment", "2025-01-01"),
+    );
+    // … and the loan is fully repaid before the original term (0 near the end,
+    // where reduce-payment is still positive).
+    expect(onDate("reduce-term", "2029-12-01")).toBe(0);
+  });
+
+  test("a total repayment (lump ≥ balance) closes the loan from its date on", () => {
+    const repayments: EarlyRepayment[] = [
+      { amountMinor: 100_000_00, mode: "reduce-payment", repaymentDate: "2022-01-01" },
+    ];
+    // Still owing on the cuota date just before the repayment …
+    expect(
+      amortizableBalanceAtDate({
+        earlyRepayments: repayments,
+        plan: LOAN,
+        targetDate: "2021-12-01",
+      }),
+    ).toBeGreaterThan(0);
+    // … zero on the repayment date and every date after it.
+    expect(
+      amortizableBalanceAtDate({
+        earlyRepayments: repayments,
+        plan: LOAN,
+        targetDate: "2022-01-01",
+      }),
+    ).toBe(0);
+    expect(
+      amortizableBalanceAtDate({
+        earlyRepayments: repayments,
+        plan: LOAN,
+        targetDate: "2025-06-01",
+      }),
+    ).toBe(0);
+  });
+
+  test("a repayment combines with a rate revision on the same loan", () => {
+    const revisions: InterestRateRevision[] = [
+      { newAnnualInterestRate: "0.05", revisionDate: "2021-01-01" }, // month 12
+    ];
+    const repayments: EarlyRepayment[] = [
+      { amountMinor: 20_000_00, mode: "reduce-payment", repaymentDate: "2022-01-01" }, // month 24
+    ];
+    const withRevisionOnly = amortizableBalanceAtDate({
+      plan: LOAN,
+      revisions,
+      targetDate: "2022-01-01",
+    });
+    const withBoth = amortizableBalanceAtDate({
+      earlyRepayments: repayments,
+      plan: LOAN,
+      revisions,
+      targetDate: "2022-01-01",
+    });
+    // The lump still drops the (revised-rate) balance by exactly the lump.
+    expect(withBoth).toBe(withRevisionOnly - 20_000_00);
+  });
+
+  test("a repayment has no effect on dates before it (past or future lump)", () => {
+    const baseline = amortizableBalanceAtDate({ plan: LOAN, targetDate: "2021-01-01" });
+    // A repayment dated AFTER the target leaves the earlier balance untouched.
+    const beforeFutureLump = amortizableBalanceAtDate({
+      earlyRepayments: [
+        { amountMinor: 20_000_00, mode: "reduce-term", repaymentDate: "2022-01-01" },
+      ],
+      plan: LOAN,
+      targetDate: "2021-01-01",
+    });
+    expect(beforeFutureLump).toBe(baseline);
   });
 });
 
