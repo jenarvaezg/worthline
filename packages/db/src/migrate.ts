@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 
 export function migrate(sqlite: DatabaseConnection): void {
   sqlite.pragma("journal_mode = WAL");
@@ -192,5 +192,35 @@ export function migrate(sqlite: DatabaseConnection): void {
       "UPDATE snapshot_holdings SET liquidity_tier = 'illiquid' WHERE liquidity_tier = 'housing';",
     );
     sqlite.pragma("user_version = 12");
+  }
+
+  if (version < 13) {
+    // ADR 0014 (#148): valuation method becomes a first-class column, backfilled
+    // from each holding's current type / debt model — cash/manual → stored,
+    // investment → derived, real_estate → appreciating; amortizable → amortized,
+    // revolving/informal → anchored, no model → stored. Nullable, no CHECK (the
+    // enum is enforced in TS, like liquidity_tier). The dispatcher still derives
+    // the method at the valuation boundary in S2, so this column changes no
+    // figure; it is the schema seam later slices build on.
+    try {
+      sqlite.exec("ALTER TABLE assets ADD COLUMN valuation_method TEXT");
+    } catch {}
+    try {
+      sqlite.exec("ALTER TABLE liabilities ADD COLUMN valuation_method TEXT");
+    } catch {}
+    sqlite.exec(
+      `UPDATE assets SET valuation_method = CASE type
+         WHEN 'investment' THEN 'derived'
+         WHEN 'real_estate' THEN 'appreciating'
+         ELSE 'stored' END;`,
+    );
+    sqlite.exec(
+      `UPDATE liabilities SET valuation_method = CASE debt_model
+         WHEN 'amortizable' THEN 'amortized'
+         WHEN 'revolving' THEN 'anchored'
+         WHEN 'informal' THEN 'anchored'
+         ELSE 'stored' END;`,
+    );
+    sqlite.pragma("user_version = 13");
   }
 }

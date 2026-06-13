@@ -9,13 +9,12 @@ import { describe, expect, test } from "vitest";
 import {
   amortizationPaymentDatesUpTo,
   buildSnapshotAtDate,
-  lastKnownValueAtDate,
   recalculateSnapshotForAsset,
   recalculateSnapshotForHousing,
   recalculateSnapshotForLiability,
   type DebtBalanceCurveInputs,
-  type ManualValuePoint,
 } from "./historical-snapshot";
+import { lastKnownValueAtDate, type ManualValuePoint } from "./value-history";
 import type {
   InvestmentOperation,
   Liability,
