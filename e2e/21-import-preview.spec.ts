@@ -12,9 +12,9 @@
 
 import { test, expect } from "./fixtures";
 
-/** A valid version-1 export document with known per-section counts. */
+/** A valid version-2 export document with known per-section counts. */
 const previewDoc = {
-  version: 1,
+  version: 2,
   workspace: { mode: "household", baseCurrency: "EUR" },
   members: [
     { id: "member-preview-1", name: "Preview Uno" },

@@ -231,6 +231,7 @@ describe("exportWorkspace", () => {
       name: "Cuenta ING",
       ownership: [{ memberId: "m1", shareBps: 10000 }],
       type: "cash",
+      valuationMethod: "stored",
     });
 
     const home = doc.assets.find((a) => a.id === "a_home")!;
@@ -262,6 +263,8 @@ describe("exportWorkspace", () => {
         { memberId: "m2", shareBps: 5000 },
       ],
       type: "mortgage",
+      // No debt model declared in the seed, so the method defaults to stored.
+      valuationMethod: "stored",
     });
 
     // Operations for ALL investments — including the trashed one.
@@ -387,6 +390,161 @@ describe("exportWorkspace", () => {
     expect(store.operations.readAllPriceCacheEntries()).toEqual(pricesBefore);
 
     store.close();
+  });
+});
+
+/**
+ * Seed a workspace whose holdings carry full structure (#155): an appreciating
+ * property (appreciation rate + market-appraisal & improvement anchors) and an
+ * amortized mortgage (amortization plan + an interest-rate revision + an early
+ * repayment). This is the exact shape that the lossy v1 format silently flattened.
+ */
+function seedStructuredWorkspace(store: WorthlineStore): void {
+  store.workspace.initializeWorkspace({
+    members: [{ id: "m1", name: "Alice" }],
+    mode: "individual",
+  });
+  const own = [{ memberId: "m1", shareBps: 10000 }];
+
+  // Appreciating property.
+  store.assets.createManualAsset({
+    currency: "EUR",
+    currentValueMinor: 30000000,
+    id: "a_home",
+    isPrimaryResidence: true,
+    liquidityTier: "illiquid",
+    name: "Piso Madrid",
+    ownership: own,
+    type: "real_estate",
+  });
+  store.assets.setAnnualAppreciationRate("a_home", "0.03");
+  store.assets.addValuationAnchor({
+    adjustsPriorCurve: true,
+    assetId: "a_home",
+    id: "anchor1",
+    valuationDate: "2024-01-01",
+    valueMinor: 28000000,
+  });
+  store.assets.addValuationAnchor({
+    adjustsPriorCurve: false,
+    assetId: "a_home",
+    id: "anchor2",
+    valuationDate: "2025-06-01",
+    valueMinor: 1500000,
+  });
+
+  // Amortized mortgage with a rate revision and an early repayment.
+  store.liabilities.createLiability({
+    associatedAssetId: "a_home",
+    balanceMinor: 12000000,
+    currency: "EUR",
+    id: "l_mort",
+    name: "Hipoteca",
+    ownership: own,
+    type: "mortgage",
+  });
+  store.liabilities.setDebtModel("l_mort", "amortizable");
+  store.liabilities.createAmortizationPlan({
+    annualInterestRate: "0.025",
+    id: "plan1",
+    initialCapitalMinor: 15000000,
+    liabilityId: "l_mort",
+    startDate: "2020-01-01",
+    termMonths: 360,
+  });
+  store.liabilities.addInterestRateRevision({
+    id: "rev1",
+    newAnnualInterestRate: "0.031",
+    planId: "plan1",
+    revisionDate: "2023-01-01",
+  });
+  store.liabilities.addEarlyRepayment({
+    amountMinor: 2000000,
+    id: "rep1",
+    mode: "reduce-term",
+    planId: "plan1",
+    repaymentDate: "2024-07-01",
+  });
+}
+
+describe("full holding model round-trips through export/import (#155)", () => {
+  test("an appreciating property and an amortized debt survive export→import with curve and schedule intact (NOT flattened)", () => {
+    const source = createInMemoryStore();
+    seedStructuredWorkspace(source);
+
+    // Pre-export structure and derived history (the curve/schedule).
+    const homeRateBefore = source.assets.readAnnualAppreciationRate("a_home");
+    const anchorsBefore = source.assets.readValuationAnchors("a_home");
+    const debtModelBefore = source.liabilities.readDebtModel("l_mort");
+    const planBefore = source.liabilities.readAmortizationPlan("l_mort");
+    const revisionsBefore = source.liabilities.readInterestRateRevisions("plan1");
+    const repaymentsBefore = source.liabilities.readEarlyRepayments("plan1");
+
+    // Two sampling dates exercise both the housing curve and the loan schedule.
+    const homeValueBefore = source.assets.valueHousingAtDate(
+      "a_home",
+      "2025-01-01",
+      "2026-06-14",
+    );
+    const debtBalanceBefore = source.liabilities.debtBalanceAtDate(
+      "l_mort",
+      "2025-01-01",
+    );
+    // A balance AFTER the early repayment proves the repayment survived.
+    const debtAfterRepaymentBefore = source.liabilities.debtBalanceAtDate(
+      "l_mort",
+      "2025-01-01",
+    );
+
+    const doc = source.workspace.exportWorkspace();
+
+    // Import into a fresh store — the real full-replace path.
+    const restored = createInMemoryStore();
+    restored.workspace.importWorkspace(doc);
+
+    // Structure restored faithfully.
+    expect(restored.assets.readAnnualAppreciationRate("a_home")).toEqual(homeRateBefore);
+    expect(restored.assets.readValuationAnchors("a_home")).toEqual(anchorsBefore);
+    expect(restored.liabilities.readDebtModel("l_mort")).toEqual(debtModelBefore);
+    expect(restored.liabilities.readAmortizationPlan("l_mort")).toEqual(planBefore);
+    expect(restored.liabilities.readInterestRateRevisions("plan1")).toEqual(
+      revisionsBefore,
+    );
+    expect(restored.liabilities.readEarlyRepayments("plan1")).toEqual(repaymentsBefore);
+
+    // History matches pre-export — the curve/schedule is intact, NOT flattened.
+    expect(restored.assets.valueHousingAtDate("a_home", "2025-01-01", "2026-06-14")).toBe(
+      homeValueBefore,
+    );
+    expect(restored.liabilities.debtBalanceAtDate("l_mort", "2025-01-01")).toBe(
+      debtBalanceBefore,
+    );
+    expect(restored.liabilities.debtBalanceAtDate("l_mort", "2025-01-01")).toBe(
+      debtAfterRepaymentBefore,
+    );
+
+    // The flat-line regression guard: a structured debt's balance on a past date
+    // must NOT equal its stored current balance (that is exactly the v1 bug).
+    expect(restored.liabilities.debtBalanceAtDate("l_mort", "2025-01-01")).not.toBe(
+      12000000,
+    );
+
+    source.close();
+    restored.close();
+  });
+
+  test("re-exporting after import reproduces the same structured document (idempotent)", () => {
+    const source = createInMemoryStore();
+    seedStructuredWorkspace(source);
+
+    const doc = source.workspace.exportWorkspace();
+    const restored = createInMemoryStore();
+    restored.workspace.importWorkspace(doc);
+
+    expect(restored.workspace.exportWorkspace()).toEqual(doc);
+
+    source.close();
+    restored.close();
   });
 });
 
