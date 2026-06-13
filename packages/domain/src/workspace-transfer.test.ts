@@ -24,6 +24,7 @@ function makeExportData(): WorkspaceExportData {
         currentValue: { amountMinor: 150000, currency: "EUR" },
         liquidityTier: "cash",
         isPrimaryResidence: false,
+        valuationMethod: "stored",
         ownership: [
           { memberId: "m1", shareBps: 5000 },
           { memberId: "m2", shareBps: 5000 },
@@ -35,6 +36,7 @@ function makeExportData(): WorkspaceExportData {
         type: "investment",
         currency: "EUR",
         liquidityTier: "market",
+        valuationMethod: "derived",
         ownership: [{ memberId: "m1", shareBps: 10000 }],
         investment: {
           unitSymbol: "VWCE",
@@ -44,6 +46,35 @@ function makeExportData(): WorkspaceExportData {
           manualPricedAt: "2026-06-01T08:00:00.000Z",
         },
       },
+      {
+        id: "a3",
+        name: "Piso Madrid",
+        type: "real_estate",
+        currency: "EUR",
+        currentValue: { amountMinor: 30000000, currency: "EUR" },
+        liquidityTier: "illiquid",
+        isPrimaryResidence: true,
+        valuationMethod: "appreciating",
+        annualAppreciationRate: "0.03",
+        valuationAnchors: [
+          {
+            id: "anchor1",
+            valueMinor: 28000000,
+            valuationDate: "2024-01-01",
+            adjustsPriorCurve: true,
+          },
+          {
+            id: "anchor2",
+            valueMinor: 1500000,
+            valuationDate: "2025-06-01",
+            adjustsPriorCurve: false,
+          },
+        ],
+        ownership: [
+          { memberId: "m1", shareBps: 5000 },
+          { memberId: "m2", shareBps: 5000 },
+        ],
+      },
     ],
     liabilities: [
       {
@@ -52,11 +83,49 @@ function makeExportData(): WorkspaceExportData {
         type: "mortgage",
         currency: "EUR",
         currentBalance: { amountMinor: 12000000, currency: "EUR" },
+        valuationMethod: "amortized",
+        debtModel: "amortizable",
+        amortizationPlan: {
+          id: "plan1",
+          initialCapitalMinor: 15000000,
+          annualInterestRate: "0.025",
+          termMonths: 360,
+          startDate: "2020-01-01",
+          interestRateRevisions: [
+            {
+              id: "rev1",
+              revisionDate: "2023-01-01",
+              newAnnualInterestRate: "0.031",
+            },
+          ],
+          earlyRepayments: [
+            {
+              id: "rep1",
+              repaymentDate: "2024-07-01",
+              amountMinor: 2000000,
+              mode: "reduce-term",
+            },
+          ],
+        },
         ownership: [
           { memberId: "m1", shareBps: 5000 },
           { memberId: "m2", shareBps: 5000 },
         ],
-        associatedAssetId: "a1",
+        associatedAssetId: "a3",
+      },
+      {
+        id: "l2",
+        name: "Tarjeta revolving",
+        type: "debt",
+        currency: "EUR",
+        currentBalance: { amountMinor: 80000, currency: "EUR" },
+        valuationMethod: "anchored",
+        debtModel: "revolving",
+        balanceAnchors: [
+          { id: "banchor1", balanceMinor: 100000, anchorDate: "2025-01-01" },
+          { id: "banchor2", balanceMinor: 80000, anchorDate: "2025-06-01" },
+        ],
+        ownership: [{ memberId: "m1", shareBps: 10000 }],
       },
     ],
     operations: [
@@ -153,8 +222,64 @@ describe("serializeWorkspaceExport", () => {
   test("stamps the document with the current export version", () => {
     const doc = serializeWorkspaceExport(makeExportData());
 
-    expect(EXPORT_VERSION).toBe(1);
+    expect(EXPORT_VERSION).toBe(2);
     expect(doc.version).toBe(EXPORT_VERSION);
+  });
+
+  test("carries the full holding model for structured holdings (#155)", () => {
+    const data = makeExportData();
+    const doc = serializeWorkspaceExport(data);
+
+    // Appreciating property: method + rate + valuation anchors verbatim.
+    const home = doc.assets.find((a) => a.id === "a3")!;
+    expect(home.valuationMethod).toBe("appreciating");
+    expect(home.annualAppreciationRate).toBe("0.03");
+    expect(home.valuationAnchors).toEqual([
+      {
+        id: "anchor1",
+        valueMinor: 28000000,
+        valuationDate: "2024-01-01",
+        adjustsPriorCurve: true,
+      },
+      {
+        id: "anchor2",
+        valueMinor: 1500000,
+        valuationDate: "2025-06-01",
+        adjustsPriorCurve: false,
+      },
+    ]);
+
+    // Amortized debt: method + model + plan with its revisions and repayments.
+    const mortgage = doc.liabilities.find((l) => l.id === "l1")!;
+    expect(mortgage.valuationMethod).toBe("amortized");
+    expect(mortgage.debtModel).toBe("amortizable");
+    expect(mortgage.amortizationPlan).toEqual({
+      id: "plan1",
+      initialCapitalMinor: 15000000,
+      annualInterestRate: "0.025",
+      termMonths: 360,
+      startDate: "2020-01-01",
+      interestRateRevisions: [
+        { id: "rev1", revisionDate: "2023-01-01", newAnnualInterestRate: "0.031" },
+      ],
+      earlyRepayments: [
+        {
+          id: "rep1",
+          repaymentDate: "2024-07-01",
+          amountMinor: 2000000,
+          mode: "reduce-term",
+        },
+      ],
+    });
+
+    // Anchored revolving debt: method + model + balance anchors verbatim.
+    const card = doc.liabilities.find((l) => l.id === "l2")!;
+    expect(card.valuationMethod).toBe("anchored");
+    expect(card.debtModel).toBe("revolving");
+    expect(card.balanceAnchors).toEqual([
+      { id: "banchor1", balanceMinor: 100000, anchorDate: "2025-01-01" },
+      { id: "banchor2", balanceMinor: 80000, anchorDate: "2025-06-01" },
+    ]);
   });
 
   test("carries every section of the workspace verbatim", () => {
@@ -234,8 +359,8 @@ describe("summarizeWorkspaceExport", () => {
     expect(summarizeWorkspaceExport(doc)).toEqual({
       members: 2,
       groups: 1,
-      assets: 2,
-      liabilities: 1,
+      assets: 3,
+      liabilities: 2,
       operations: 1,
       snapshots: 1,
       trashedAssets: 1,

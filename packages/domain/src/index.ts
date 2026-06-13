@@ -163,11 +163,16 @@ export type { ScopedHolding } from "./scope-allocation";
 export { allocateScopedHolding } from "./scope-allocation";
 
 export type {
+  ExportedAmortizationPlan,
   ExportedAsset,
+  ExportedBalanceAnchor,
+  ExportedEarlyRepayment,
+  ExportedInterestRateRevision,
   ExportedInvestmentMeta,
   ExportedLiability,
   ExportedSnapshot,
   ExportedTrash,
+  ExportedValuationAnchor,
   ExportedWorkspaceConfig,
   WorkspaceExport,
   WorkspaceExportData,

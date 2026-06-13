@@ -25,6 +25,7 @@ function makeExportData(): WorkspaceExportData {
         currentValue: { amountMinor: 150000, currency: "EUR" },
         liquidityTier: "cash",
         isPrimaryResidence: false,
+        valuationMethod: "stored",
         ownership: [
           { memberId: "m1", shareBps: 5000 },
           { memberId: "m2", shareBps: 5000 },
@@ -36,6 +37,7 @@ function makeExportData(): WorkspaceExportData {
         type: "investment",
         currency: "EUR",
         liquidityTier: "market",
+        valuationMethod: "derived",
         ownership: [{ memberId: "m1", shareBps: 10000 }],
         investment: {
           unitSymbol: "VWCE",
@@ -45,6 +47,26 @@ function makeExportData(): WorkspaceExportData {
           manualPricedAt: "2026-06-01T08:00:00.000Z",
         },
       },
+      {
+        id: "a3",
+        name: "Piso Madrid",
+        type: "real_estate",
+        currency: "EUR",
+        currentValue: { amountMinor: 30000000, currency: "EUR" },
+        liquidityTier: "illiquid",
+        isPrimaryResidence: true,
+        valuationMethod: "appreciating",
+        annualAppreciationRate: "0.03",
+        valuationAnchors: [
+          {
+            id: "anchor1",
+            valueMinor: 28000000,
+            valuationDate: "2024-01-01",
+            adjustsPriorCurve: true,
+          },
+        ],
+        ownership: [{ memberId: "m1", shareBps: 10000 }],
+      },
     ],
     liabilities: [
       {
@@ -53,6 +75,26 @@ function makeExportData(): WorkspaceExportData {
         type: "mortgage",
         currency: "EUR",
         currentBalance: { amountMinor: 12000000, currency: "EUR" },
+        valuationMethod: "amortized",
+        debtModel: "amortizable",
+        amortizationPlan: {
+          id: "plan1",
+          initialCapitalMinor: 15000000,
+          annualInterestRate: "0.025",
+          termMonths: 360,
+          startDate: "2020-01-01",
+          interestRateRevisions: [
+            { id: "rev1", revisionDate: "2023-01-01", newAnnualInterestRate: "0.031" },
+          ],
+          earlyRepayments: [
+            {
+              id: "rep1",
+              repaymentDate: "2024-07-01",
+              amountMinor: 2000000,
+              mode: "reduce-term",
+            },
+          ],
+        },
         ownership: [
           { memberId: "m1", shareBps: 5000 },
           { memberId: "m2", shareBps: 5000 },
@@ -199,9 +241,75 @@ describe("parseWorkspaceExport — acceptance", () => {
     }
   });
 
+  test("the full holding model survives the parse (#155)", () => {
+    const document = makeDocument();
+    const result = parseWorkspaceExport(document);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const home = result.value.assets.find((a) => a.id === "a3")!;
+    expect(home.valuationMethod).toBe("appreciating");
+    expect(home.annualAppreciationRate).toBe("0.03");
+    expect(home.valuationAnchors).toEqual([
+      {
+        id: "anchor1",
+        valueMinor: 28000000,
+        valuationDate: "2024-01-01",
+        adjustsPriorCurve: true,
+      },
+    ]);
+
+    const mortgage = result.value.liabilities.find((l) => l.id === "l1")!;
+    expect(mortgage.valuationMethod).toBe("amortized");
+    expect(mortgage.debtModel).toBe("amortizable");
+    expect(mortgage.amortizationPlan).toEqual({
+      id: "plan1",
+      initialCapitalMinor: 15000000,
+      annualInterestRate: "0.025",
+      termMonths: 360,
+      startDate: "2020-01-01",
+      interestRateRevisions: [
+        { id: "rev1", revisionDate: "2023-01-01", newAnnualInterestRate: "0.031" },
+      ],
+      earlyRepayments: [
+        {
+          id: "rep1",
+          repaymentDate: "2024-07-01",
+          amountMinor: 2000000,
+          mode: "reduce-term",
+        },
+      ],
+    });
+  });
+
+  test("an unknown valuation method is rejected naming the JSON path (#155)", () => {
+    const document = makeDocument((doc) => {
+      (doc.assets[0] as { valuationMethod: string }).valuationMethod = "vibes";
+    });
+
+    expectRejection(document, /assets\[0\]\.valuationMethod/);
+  });
+
+  test("an unknown debt model is rejected naming the JSON path (#155)", () => {
+    const document = makeDocument((doc) => {
+      (doc.liabilities[0] as { debtModel: string }).debtModel = "ponzi";
+    });
+
+    expectRejection(document, /liabilities\[0\]\.debtModel/);
+  });
+
+  test("a non-integer valuation-anchor amount is rejected (#155)", () => {
+    const document = makeDocument((doc) => {
+      doc.assets[2]!.valuationAnchors![0]!.valueMinor = 100.5;
+    });
+
+    expectRejection(document, /valuationAnchors\[0\]\.valueMinor.*entero/);
+  });
+
   test("a minimal live-state-only document parses with absent sections normalized empty", () => {
     const result = parseWorkspaceExport({
-      version: 1,
+      version: 2,
       workspace: { mode: "individual", baseCurrency: "EUR" },
       members: [{ id: "m1", name: "Alice" }],
       assets: [
@@ -220,7 +328,7 @@ describe("parseWorkspaceExport — acceptance", () => {
     expect(result.ok).toBe(true);
 
     if (result.ok) {
-      expect(result.value.version).toBe(1);
+      expect(result.value.version).toBe(2);
       expect(result.value.groups).toEqual([]);
       expect(result.value.liabilities).toEqual([]);
       expect(result.value.operations).toEqual([]);
@@ -273,7 +381,7 @@ describe("parseWorkspaceExport — input shape and version", () => {
       delete (doc as Partial<WorkspaceExport>).version;
     });
 
-    expectRejection(document, /versión 1/);
+    expectRejection(document, /versión 2/);
   });
 
   test("a different version is rejected naming found vs expected", () => {
@@ -282,7 +390,16 @@ describe("parseWorkspaceExport — input shape and version", () => {
     });
 
     expectRejection(document, /versión 99/);
+    expectRejection(document, /versión 2/);
+  });
+
+  test("the lossy v1 format is rejected outright — no converter (ADR 0015)", () => {
+    const document = makeDocument((doc) => {
+      (doc as unknown as Record<string, unknown>)["version"] = 1;
+    });
+
     expectRejection(document, /versión 1/);
+    expectRejection(document, /versión 2/);
   });
 });
 
