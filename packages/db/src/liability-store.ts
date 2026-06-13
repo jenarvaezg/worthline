@@ -82,6 +82,12 @@ export interface InterestRateRevisionRecord extends InterestRateRevision {
   planId: string;
 }
 
+/** Fields that can be patched on an existing interest-rate revision. */
+export interface UpdateInterestRateRevisionInput {
+  revisionDate?: string;
+  newAnnualInterestRate?: DecimalString;
+}
+
 /** Input for a single balance anchor of a revolving/informal liability (slice 8). */
 export interface AddBalanceAnchorInput {
   id: string;
@@ -142,6 +148,11 @@ export interface LiabilityStore {
   addInterestRateRevision: (input: AddInterestRateRevisionInput) => void;
   /** Read a plan's rate revisions, ordered ascending by date. */
   readInterestRateRevisions: (planId: string) => InterestRateRevisionRecord[];
+  /** Update a rate revision in place. Returns 1 if updated, 0 if not found. */
+  updateInterestRateRevision: (
+    revisionId: string,
+    input: UpdateInterestRateRevisionInput,
+  ) => number;
   /** Delete a rate revision by id. Returns 1 if removed, 0 if not found. */
   deleteInterestRateRevision: (revisionId: string) => number;
   /**
@@ -189,6 +200,8 @@ export function createLiabilityStore(ctx: StoreContext): LiabilityStore {
     deleteAmortizationPlan: (planId) => deleteAmortizationPlan(ctx, planId),
     addInterestRateRevision: (input) => addInterestRateRevision(ctx, input),
     readInterestRateRevisions: (planId) => readInterestRateRevisions(ctx, planId),
+    updateInterestRateRevision: (revisionId, input) =>
+      updateInterestRateRevision(ctx, revisionId, input),
     deleteInterestRateRevision: (revisionId) =>
       deleteInterestRateRevision(ctx, revisionId),
     amortizableBalanceAtDate: (liabilityId, targetDate) =>
@@ -413,6 +426,47 @@ function readInterestRateRevisions(
     planId: row.planId,
     revisionDate: row.revisionDate,
   }));
+}
+
+function updateInterestRateRevision(
+  ctx: StoreContext,
+  revisionId: string,
+  input: UpdateInterestRateRevisionInput,
+): number {
+  if (input.revisionDate !== undefined) {
+    assertIsoDate(input.revisionDate, "Revision date");
+  }
+  if (input.newAnnualInterestRate !== undefined) {
+    assertDecimalString(input.newAnnualInterestRate, "Annual interest rate");
+  }
+
+  const existing = ctx.db
+    .select({ planId: interestRateRevisions.planId })
+    .from(interestRateRevisions)
+    .where(eq(interestRateRevisions.id, revisionId))
+    .get();
+
+  if (!existing) return 0;
+
+  const fields: Partial<typeof interestRateRevisions.$inferInsert> = {};
+  if (input.revisionDate !== undefined) fields.revisionDate = input.revisionDate;
+  if (input.newAnnualInterestRate !== undefined) {
+    fields.newAnnualInterestRate = input.newAnnualInterestRate;
+  }
+
+  const result = ctx.db
+    .update(interestRateRevisions)
+    .set(fields)
+    .where(eq(interestRateRevisions.id, revisionId))
+    .run();
+
+  if (result.changes > 0) {
+    ctx.writeAuditEntry("update_rate_revision", "amortization_plan", existing.planId, {
+      revisionId,
+      ...input,
+    });
+  }
+  return result.changes;
 }
 
 function deleteInterestRateRevision(ctx: StoreContext, revisionId: string): number {

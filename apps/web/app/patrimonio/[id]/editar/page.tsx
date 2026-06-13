@@ -1,12 +1,17 @@
 import { runBootstrapHealthcheck, withStore } from "@worthline/db";
-import type { ValuationAnchorRecord } from "@worthline/db";
+import type {
+  AmortizationPlanRecord,
+  BalanceAnchorRecord,
+  InterestRateRevisionRecord,
+  ValuationAnchorRecord,
+} from "@worthline/db";
 import {
   collectWarnings,
   formatMoneyInput,
   formatMoneyMinor,
   listScopeOptions,
 } from "@worthline/domain";
-import type { Liability, ManualAsset, Member } from "@worthline/domain";
+import type { DebtModel, Liability, ManualAsset, Member } from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -21,13 +26,22 @@ import {
 import Shell from "../../../shell";
 import {
   acknowledgeWarningAction,
+  addBalanceAnchorAction,
+  addInterestRateRevisionAction,
   addValuationAnchorAction,
+  deleteAmortizationPlanAction,
   deleteAssetAction,
+  deleteBalanceAnchorAction,
+  deleteInterestRateRevisionAction,
   deleteLiabilityAction,
   deleteValuationAnchorAction,
   editAssetAction,
+  saveAmortizationPlanAction,
   setAppreciationRateAction,
+  setDebtModelAction,
   updateAssetValuationAction,
+  updateBalanceAnchorAction,
+  updateInterestRateRevisionAction,
   updateLiabilityBalanceAction,
   updateValuationAnchorAction,
 } from "../../actions";
@@ -76,14 +90,32 @@ export default async function EditarPage({
       ? store.assets.readAnnualAppreciationRate(id)
       : null;
 
+    // Debt-model data (PRD #109, slice 10): only meaningful for a liability.
+    const debtModel = liability ? store.liabilities.readDebtModel(id) : null;
+    const amortizationPlan =
+      liability && debtModel === "amortizable"
+        ? store.liabilities.readAmortizationPlan(id)
+        : null;
+    const rateRevisions = amortizationPlan
+      ? store.liabilities.readInterestRateRevisions(amortizationPlan.id)
+      : [];
+    const balanceAnchors =
+      liability && (debtModel === "revolving" || debtModel === "informal")
+        ? store.liabilities.readBalanceAnchors(id)
+        : [];
+
     return {
       activeMembers: workspace.members.filter((m) => !m.disabledAt),
+      amortizationPlan,
       anchors,
       appreciationRate,
       asset,
       assets: assets.filter((a) => a.type !== "investment"),
+      balanceAnchors,
+      debtModel,
       liability,
       overrides,
+      rateRevisions,
       scopes,
       selectedScope,
       workspace,
@@ -96,12 +128,16 @@ export default async function EditarPage({
 
   const {
     activeMembers,
+    amortizationPlan,
     anchors,
     appreciationRate,
     asset,
     assets,
+    balanceAnchors,
+    debtModel,
     liability,
     overrides,
+    rateRevisions,
     scopes,
     selectedScope,
   } = storeData;
@@ -193,6 +229,18 @@ export default async function EditarPage({
             appreciationRate={appreciationRate}
             assetId={asset.id}
             formError={formError}
+            today={today}
+          />
+        ) : null}
+
+        {liability ? (
+          <DebtModelSection
+            amortizationPlan={amortizationPlan}
+            balanceAnchors={balanceAnchors}
+            debtModel={debtModel}
+            formError={formError}
+            liabilityId={liability.id}
+            rateRevisions={rateRevisions}
             today={today}
           />
         ) : null}
@@ -726,6 +774,529 @@ function AnchorRow({
         <form action={deleteValuationAnchorAction}>
           <input name="currentUrl" type="hidden" value={currentUrl} />
           <input name="id" type="hidden" value={assetId} />
+          <input name="anchorId" type="hidden" value={anchor.id} />
+          <details className="confirmDelete">
+            <summary>Eliminar</summary>
+            <button type="submit">Confirmar</button>
+          </details>
+        </form>
+      </td>
+    </tr>
+  );
+}
+
+/** Render a stored decimal rate ("0.025") back as the percent the user typed ("2.5"). */
+function rateToPercent(rate: string): string {
+  const pct = Number(rate) * 100;
+
+  return String(Math.round(pct * 1_000_000) / 1_000_000);
+}
+
+const DEBT_MODEL_LABELS: Record<DebtModel, string> = {
+  amortizable: "Amortizable (préstamo francés)",
+  informal: "Informal",
+  revolving: "Revolving",
+};
+
+/**
+ * Debt-model editor (PRD #109, slice 10). Only rendered for liabilities. All
+ * forms are server-action driven (no client JS, ADR 0009): the model selector
+ * posts and the page re-renders the matching sub-section from the stored
+ * `debt_model`. Conditional rendering is therefore server-side — there is no
+ * useState. Inline edit uses <details>, delete is two-step.
+ */
+function DebtModelSection({
+  amortizationPlan,
+  balanceAnchors,
+  debtModel,
+  formError,
+  liabilityId,
+  rateRevisions,
+  today,
+}: {
+  amortizationPlan: AmortizationPlanRecord | null;
+  balanceAnchors: BalanceAnchorRecord[];
+  debtModel: DebtModel | null;
+  formError: FormErrorContext | null;
+  liabilityId: string;
+  rateRevisions: InterestRateRevisionRecord[];
+  today: string;
+}) {
+  const currentUrl = `/patrimonio/${liabilityId}/editar`;
+
+  return (
+    <section className="debtModel" aria-label="Modelo de deuda">
+      <h3>Modelo de deuda</h3>
+
+      <form action={setDebtModelAction} className="stackForm">
+        <input name="currentUrl" type="hidden" value={currentUrl} />
+        <input name="id" type="hidden" value={liabilityId} />
+        <label>
+          Modelo de deuda
+          <select
+            aria-label="Modelo de deuda"
+            defaultValue={debtModel ?? ""}
+            name="debtModel"
+          >
+            <option value="">Sin modelo</option>
+            <option value="amortizable">{DEBT_MODEL_LABELS.amortizable}</option>
+            <option value="revolving">{DEBT_MODEL_LABELS.revolving}</option>
+            <option value="informal">{DEBT_MODEL_LABELS.informal}</option>
+          </select>
+        </label>
+        <p className="infoNote">
+          Elige cómo evoluciona el saldo de la deuda en el histórico. Al cambiarlo se
+          muestra el formulario correspondiente.
+        </p>
+        <button type="submit">Guardar modelo</button>
+      </form>
+
+      {debtModel === "amortizable" ? (
+        <AmortizablePlanEditor
+          currentUrl={currentUrl}
+          formError={formError}
+          liabilityId={liabilityId}
+          plan={amortizationPlan}
+          rateRevisions={rateRevisions}
+          today={today}
+        />
+      ) : null}
+
+      {debtModel === "revolving" || debtModel === "informal" ? (
+        <BalanceAnchorEditor
+          balanceAnchors={balanceAnchors}
+          currentUrl={currentUrl}
+          formError={formError}
+          liabilityId={liabilityId}
+          today={today}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+/** Shared plan fields for the create/edit amortization-plan form. */
+function PlanFields({
+  max,
+  values,
+}: {
+  max: string;
+  values: Record<string, string>;
+}) {
+  return (
+    <>
+      <label>
+        Capital inicial (EUR)
+        <input
+          aria-label="Capital inicial en EUR"
+          defaultValue={values["initialCapital"]}
+          inputMode="decimal"
+          min="0"
+          name="initialCapital"
+          placeholder="200.000"
+          required
+        />
+      </label>
+      <label>
+        Tipo de interés anual (%)
+        <input
+          aria-label="Tipo de interés anual (%)"
+          defaultValue={values["annualInterestRate"]}
+          inputMode="decimal"
+          min="0"
+          name="annualInterestRate"
+          placeholder="2,5"
+          required
+        />
+      </label>
+      <label>
+        Plazo (meses)
+        <input
+          aria-label="Plazo en meses"
+          defaultValue={values["termMonths"]}
+          inputMode="numeric"
+          min="1"
+          name="termMonths"
+          placeholder="360"
+          required
+          step="1"
+        />
+      </label>
+      <label>
+        Fecha de inicio
+        <input
+          aria-label="Fecha de inicio"
+          defaultValue={values["startDate"]}
+          max={max}
+          name="startDate"
+          required
+          type="date"
+        />
+      </label>
+    </>
+  );
+}
+
+/** The amortizable sub-section: the plan (create or edit) plus its rate revisions. */
+function AmortizablePlanEditor({
+  currentUrl,
+  formError,
+  liabilityId,
+  plan,
+  rateRevisions,
+  today,
+}: {
+  currentUrl: string;
+  formError: FormErrorContext | null;
+  liabilityId: string;
+  plan: AmortizationPlanRecord | null;
+  rateRevisions: InterestRateRevisionRecord[];
+  today: string;
+}) {
+  const planValues =
+    formError?.formId === "plan"
+      ? formError.values
+      : plan
+        ? {
+            annualInterestRate: rateToPercent(plan.annualInterestRate),
+            initialCapital: formatMoneyInput(plan.initialCapitalMinor),
+            startDate: plan.startDate,
+            termMonths: String(plan.termMonths),
+          }
+        : {};
+  const revisionValues = formError?.formId === "revision" ? formError.values : {};
+  const sortedRevisions = [...rateRevisions].sort((a, b) =>
+    b.revisionDate.localeCompare(a.revisionDate),
+  );
+
+  return (
+    <div className="debtModelDetail">
+      <form
+        action={saveAmortizationPlanAction}
+        aria-label="Plan de amortización"
+        className="stackForm"
+      >
+        <input name="currentUrl" type="hidden" value={currentUrl} />
+        <input name="id" type="hidden" value={liabilityId} />
+        <PlanFields max={today} values={planValues} />
+        <div className="formActions">
+          <button type="submit">{plan ? "Actualizar plan" : "Guardar plan"}</button>
+        </div>
+      </form>
+
+      {plan ? (
+        <form action={deleteAmortizationPlanAction}>
+          <input name="currentUrl" type="hidden" value={currentUrl} />
+          <input name="id" type="hidden" value={liabilityId} />
+          <input name="planId" type="hidden" value={plan.id} />
+          <details className="confirmDelete">
+            <summary>Eliminar plan</summary>
+            <button type="submit">Confirmar</button>
+          </details>
+        </form>
+      ) : null}
+
+      {plan ? (
+        <>
+          <h4>Revisiones de tipo</h4>
+          <form
+            action={addInterestRateRevisionAction}
+            aria-label="Registrar revisión de tipo"
+            className="stackForm"
+          >
+            <input name="currentUrl" type="hidden" value={currentUrl} />
+            <input name="id" type="hidden" value={liabilityId} />
+            <input name="planId" type="hidden" value={plan.id} />
+            <RevisionFields max={today} values={revisionValues} />
+            <button type="submit">Registrar revisión</button>
+          </form>
+
+          {sortedRevisions.length > 0 ? (
+            <div className="tableScroll">
+              <table aria-label="Revisiones de tipo">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th className="numCol">Nuevo tipo</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedRevisions.map((revision) => (
+                    <RevisionRow
+                      currentUrl={currentUrl}
+                      formError={formError}
+                      key={revision.id}
+                      liabilityId={liabilityId}
+                      max={today}
+                      planId={plan.id}
+                      revision={revision}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="emptyLine">Sin revisiones de tipo registradas.</p>
+          )}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** Shared date / rate fields for the add and edit revision forms. */
+function RevisionFields({
+  max,
+  values,
+}: {
+  max: string;
+  values: Record<string, string>;
+}) {
+  return (
+    <>
+      <label>
+        Fecha de la revisión
+        <input
+          aria-label="Fecha de la revisión"
+          defaultValue={values["revisionDate"]}
+          max={max}
+          name="revisionDate"
+          required
+          type="date"
+        />
+      </label>
+      <label>
+        Nuevo tipo de interés (%)
+        <input
+          aria-label="Nuevo tipo de interés (%)"
+          defaultValue={values["newAnnualInterestRate"]}
+          inputMode="decimal"
+          min="0"
+          name="newAnnualInterestRate"
+          placeholder="3"
+          required
+        />
+      </label>
+    </>
+  );
+}
+
+/** One revision row: data + inline edit (<details>) + two-step delete. */
+function RevisionRow({
+  currentUrl,
+  formError,
+  liabilityId,
+  max,
+  planId,
+  revision,
+}: {
+  currentUrl: string;
+  formError: FormErrorContext | null;
+  liabilityId: string;
+  max: string;
+  planId: string;
+  revision: InterestRateRevisionRecord;
+}) {
+  const editFormId = `revision-${revision.id}`;
+  const editing = formError?.formId === editFormId;
+  const editValues = editing
+    ? formError.values
+    : {
+        newAnnualInterestRate: rateToPercent(revision.newAnnualInterestRate),
+        revisionDate: revision.revisionDate,
+      };
+
+  return (
+    <tr>
+      <td>{revision.revisionDate}</td>
+      <td className="numCol">{rateToPercent(revision.newAnnualInterestRate)} %</td>
+      <td className="rowActions">
+        <details className="anchorEdit" open={editing}>
+          <summary>Editar</summary>
+          <form
+            action={updateInterestRateRevisionAction}
+            aria-label="Editar revisión de tipo"
+            className="stackForm"
+          >
+            <input name="currentUrl" type="hidden" value={currentUrl} />
+            <input name="id" type="hidden" value={liabilityId} />
+            <input name="planId" type="hidden" value={planId} />
+            <input name="revisionId" type="hidden" value={revision.id} />
+            <RevisionFields max={max} values={editValues} />
+            <div className="formActions">
+              <button type="submit">Guardar revisión</button>
+            </div>
+          </form>
+        </details>
+        <form action={deleteInterestRateRevisionAction}>
+          <input name="currentUrl" type="hidden" value={currentUrl} />
+          <input name="id" type="hidden" value={liabilityId} />
+          <input name="planId" type="hidden" value={planId} />
+          <input name="revisionId" type="hidden" value={revision.id} />
+          <details className="confirmDelete">
+            <summary>Eliminar</summary>
+            <button type="submit">Confirmar</button>
+          </details>
+        </form>
+      </td>
+    </tr>
+  );
+}
+
+/** Shared date / balance fields for the add and edit balance-anchor forms. */
+function BalanceAnchorFields({
+  max,
+  values,
+}: {
+  max: string;
+  values: Record<string, string>;
+}) {
+  return (
+    <>
+      <label>
+        Fecha del saldo
+        <input
+          aria-label="Fecha del saldo"
+          defaultValue={values["anchorDate"]}
+          max={max}
+          name="anchorDate"
+          required
+          type="date"
+        />
+      </label>
+      <label>
+        Saldo restante (EUR)
+        <input
+          aria-label="Saldo restante en EUR"
+          defaultValue={values["balance"]}
+          inputMode="decimal"
+          min="0"
+          name="balance"
+          placeholder="12.500"
+          required
+        />
+      </label>
+    </>
+  );
+}
+
+/** The revolving/informal sub-section: declare a balance anchor + list them. */
+function BalanceAnchorEditor({
+  balanceAnchors,
+  currentUrl,
+  formError,
+  liabilityId,
+  today,
+}: {
+  balanceAnchors: BalanceAnchorRecord[];
+  currentUrl: string;
+  formError: FormErrorContext | null;
+  liabilityId: string;
+  today: string;
+}) {
+  const anchorValues = formError?.formId === "balanceAnchor" ? formError.values : {};
+  const sorted = [...balanceAnchors].sort((a, b) =>
+    b.anchorDate.localeCompare(a.anchorDate),
+  );
+
+  return (
+    <div className="debtModelDetail">
+      <h4>Saldos declarados</h4>
+      <form
+        action={addBalanceAnchorAction}
+        aria-label="Registrar saldo"
+        className="stackForm"
+      >
+        <input name="currentUrl" type="hidden" value={currentUrl} />
+        <input name="id" type="hidden" value={liabilityId} />
+        <BalanceAnchorFields max={today} values={anchorValues} />
+        <p className="infoNote">
+          Declara el total adeudado en esa fecha (intereses incluidos).
+        </p>
+        <button type="submit">Registrar saldo</button>
+      </form>
+
+      {sorted.length > 0 ? (
+        <div className="tableScroll">
+          <table aria-label="Saldos declarados">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th className="numCol">Saldo</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((anchor) => (
+                <BalanceAnchorRow
+                  anchor={anchor}
+                  currentUrl={currentUrl}
+                  formError={formError}
+                  key={anchor.id}
+                  liabilityId={liabilityId}
+                  max={today}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="emptyLine">Sin saldos declarados.</p>
+      )}
+    </div>
+  );
+}
+
+/** One balance-anchor row: data + inline edit (<details>) + two-step delete. */
+function BalanceAnchorRow({
+  anchor,
+  currentUrl,
+  formError,
+  liabilityId,
+  max,
+}: {
+  anchor: BalanceAnchorRecord;
+  currentUrl: string;
+  formError: FormErrorContext | null;
+  liabilityId: string;
+  max: string;
+}) {
+  const editFormId = `balanceAnchor-${anchor.id}`;
+  const editing = formError?.formId === editFormId;
+  const editValues = editing
+    ? formError.values
+    : {
+        anchorDate: anchor.anchorDate,
+        balance: formatMoneyInput(anchor.balanceMinor),
+      };
+
+  return (
+    <tr>
+      <td>{anchor.anchorDate}</td>
+      <td className="numCol">
+        {formatMoneyMinor({ amountMinor: anchor.balanceMinor, currency: "EUR" })}
+      </td>
+      <td className="rowActions">
+        <details className="anchorEdit" open={editing}>
+          <summary>Editar</summary>
+          <form
+            action={updateBalanceAnchorAction}
+            aria-label="Editar saldo"
+            className="stackForm"
+          >
+            <input name="currentUrl" type="hidden" value={currentUrl} />
+            <input name="id" type="hidden" value={liabilityId} />
+            <input name="anchorId" type="hidden" value={anchor.id} />
+            <BalanceAnchorFields max={max} values={editValues} />
+            <div className="formActions">
+              <button type="submit">Guardar saldo</button>
+            </div>
+          </form>
+        </details>
+        <form action={deleteBalanceAnchorAction}>
+          <input name="currentUrl" type="hidden" value={currentUrl} />
+          <input name="id" type="hidden" value={liabilityId} />
           <input name="anchorId" type="hidden" value={anchor.id} />
           <details className="confirmDelete">
             <summary>Eliminar</summary>

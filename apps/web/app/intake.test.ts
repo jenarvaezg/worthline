@@ -26,6 +26,10 @@ import {
   parseDrillParam,
   parseValuationAnchorStrict,
   parseAppreciationRateStrict,
+  parseDebtModelStrict,
+  parseAmortizationPlanStrict,
+  parseInterestRateRevisionStrict,
+  parseBalanceAnchorStrict,
   parseValueUpdatePass,
   parseViewParam,
   parseWorkspaceInit,
@@ -1353,6 +1357,278 @@ describe("parseValuationAnchorStrict", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.command.valueMinor).toBe(120_000_50);
+  });
+});
+
+describe("parseDebtModelStrict", () => {
+  test("accepts the three known models", () => {
+    for (const model of ["amortizable", "revolving", "informal"] as const) {
+      const result = parseDebtModelStrict(form({ debtModel: model }));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.model).toBe(model);
+    }
+  });
+
+  test("treats an empty value as clearing the model (null)", () => {
+    const result = parseDebtModelStrict(form({ debtModel: "" }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.model).toBeNull();
+  });
+
+  test("treats a missing value as clearing the model (null)", () => {
+    const result = parseDebtModelStrict(form({}));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.model).toBeNull();
+  });
+
+  test("rejects an unknown model", () => {
+    const result = parseDebtModelStrict(form({ debtModel: "weird" }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("modelo");
+  });
+});
+
+describe("parseAmortizationPlanStrict", () => {
+  const TODAY = "2026-06-12";
+
+  test("parses a valid plan, converting percent to a decimal rate and EUR to minor", () => {
+    const result = parseAmortizationPlanStrict(
+      form({
+        initialCapital: "200000",
+        annualInterestRate: "2,5",
+        termMonths: "360",
+        startDate: "2020-01-01",
+      }),
+      "loan",
+      7,
+      TODAY,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.liabilityId).toBe("loan");
+    expect(result.command.initialCapitalMinor).toBe(200_000_00);
+    expect(result.command.annualInterestRate).toBe("0.025");
+    expect(result.command.termMonths).toBe(360);
+    expect(result.command.startDate).toBe("2020-01-01");
+    expect(result.command.id).toContain("plan_");
+  });
+
+  test("rejects a future start date", () => {
+    const result = parseAmortizationPlanStrict(
+      form({
+        initialCapital: "200000",
+        annualInterestRate: "3",
+        termMonths: "360",
+        startDate: "2027-01-01",
+      }),
+      "loan",
+      1,
+      TODAY,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("futura");
+  });
+
+  test("rejects a non-positive capital", () => {
+    const result = parseAmortizationPlanStrict(
+      form({
+        initialCapital: "0",
+        annualInterestRate: "3",
+        termMonths: "360",
+        startDate: "2020-01-01",
+      }),
+      "loan",
+      1,
+      TODAY,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("capital");
+  });
+
+  test("rejects a non-integer or non-positive term", () => {
+    const fractional = parseAmortizationPlanStrict(
+      form({
+        initialCapital: "200000",
+        annualInterestRate: "3",
+        termMonths: "12,5",
+        startDate: "2020-01-01",
+      }),
+      "loan",
+      1,
+      TODAY,
+    );
+    expect(fractional.ok).toBe(false);
+
+    const zero = parseAmortizationPlanStrict(
+      form({
+        initialCapital: "200000",
+        annualInterestRate: "3",
+        termMonths: "0",
+        startDate: "2020-01-01",
+      }),
+      "loan",
+      1,
+      TODAY,
+    );
+    expect(zero.ok).toBe(false);
+    if (zero.ok) return;
+    expect(zero.error).toContain("plazo");
+  });
+
+  test("rejects a negative interest rate", () => {
+    const result = parseAmortizationPlanStrict(
+      form({
+        initialCapital: "200000",
+        annualInterestRate: "-1",
+        termMonths: "360",
+        startDate: "2020-01-01",
+      }),
+      "loan",
+      1,
+      TODAY,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("tipo");
+  });
+
+  test("rejects a missing start date", () => {
+    const result = parseAmortizationPlanStrict(
+      form({ initialCapital: "200000", annualInterestRate: "3", termMonths: "360" }),
+      "loan",
+      1,
+      TODAY,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("fecha");
+  });
+});
+
+describe("parseInterestRateRevisionStrict", () => {
+  const TODAY = "2026-06-12";
+
+  test("parses a valid revision, converting percent to a decimal rate", () => {
+    const result = parseInterestRateRevisionStrict(
+      form({ revisionDate: "2024-01-01", newAnnualInterestRate: "3,5" }),
+      "plan1",
+      9,
+      TODAY,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.planId).toBe("plan1");
+    expect(result.command.revisionDate).toBe("2024-01-01");
+    expect(result.command.newAnnualInterestRate).toBe("0.035");
+    expect(result.command.id).toContain("rev_");
+  });
+
+  test("rejects a future revision date", () => {
+    const result = parseInterestRateRevisionStrict(
+      form({ revisionDate: "2027-01-01", newAnnualInterestRate: "3" }),
+      "plan1",
+      1,
+      TODAY,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("futura");
+  });
+
+  test("rejects a negative rate", () => {
+    const result = parseInterestRateRevisionStrict(
+      form({ revisionDate: "2024-01-01", newAnnualInterestRate: "-1" }),
+      "plan1",
+      1,
+      TODAY,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("tipo");
+  });
+
+  test("rejects a missing date", () => {
+    const result = parseInterestRateRevisionStrict(
+      form({ newAnnualInterestRate: "3" }),
+      "plan1",
+      1,
+      TODAY,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("fecha");
+  });
+});
+
+describe("parseBalanceAnchorStrict", () => {
+  const TODAY = "2026-06-12";
+
+  test("parses a valid past anchor, converting EUR to minor units", () => {
+    const result = parseBalanceAnchorStrict(
+      form({ anchorDate: "2024-03-15", balance: "12.500,50" }),
+      "loan",
+      3,
+      TODAY,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.liabilityId).toBe("loan");
+    expect(result.command.anchorDate).toBe("2024-03-15");
+    expect(result.command.balanceMinor).toBe(12_500_50);
+    expect(result.command.id).toContain("banchor_");
+  });
+
+  test("accepts today's date as non-future", () => {
+    const result = parseBalanceAnchorStrict(
+      form({ anchorDate: TODAY, balance: "1000" }),
+      "loan",
+      1,
+      TODAY,
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  test("rejects a future date", () => {
+    const result = parseBalanceAnchorStrict(
+      form({ anchorDate: "2027-01-01", balance: "1000" }),
+      "loan",
+      1,
+      TODAY,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("futura");
+  });
+
+  test("rejects a non-positive balance", () => {
+    const zero = parseBalanceAnchorStrict(
+      form({ anchorDate: "2024-01-01", balance: "0" }),
+      "loan",
+      1,
+      TODAY,
+    );
+    expect(zero.ok).toBe(false);
+    if (zero.ok) return;
+    expect(zero.error).toContain("saldo");
+  });
+
+  test("rejects a missing date", () => {
+    const result = parseBalanceAnchorStrict(
+      form({ balance: "1000" }),
+      "loan",
+      1,
+      TODAY,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("fecha");
   });
 });
 

@@ -436,6 +436,110 @@ describe("multi-member ownership", () => {
   });
 });
 
+describe("plan deletion recalculates snapshots to currentBalance basis", () => {
+  function seedAmortizableForDelete(store: WorthlineStore): void {
+    store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 10_000_00,
+      id: "cash",
+      liquidityTier: "cash",
+      name: "Cuenta",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "cash",
+    });
+    store.liabilities.createLiability({
+      balanceMinor: 100_000_00,
+      currency: "EUR",
+      id: "mortgage",
+      name: "Hipoteca",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+    store.liabilities.setDebtModel("mortgage", "amortizable");
+    store.liabilities.createAmortizationPlan({
+      annualInterestRate: "0.03",
+      id: "plan1",
+      initialCapitalMinor: 150_000_00,
+      liabilityId: "mortgage",
+      startDate: "2026-01-15",
+      termMonths: 240,
+    });
+    store.rippleHistoricalSnapshotsForDebt({
+      liabilityId: "mortgage",
+      kind: "amortizable-plan",
+      today: TODAY,
+    });
+  }
+
+  test("RED: ripple-before-delete leaves snapshots frozen at plan balances, not currentBalance", () => {
+    // Documents the BROKEN action wiring: ripple(amortizable-plan) then delete.
+    // The plan ripple early-returns when called after delete (curve.plan is null),
+    // so doing it before delete means snapshots keep plan-derived balances forever.
+    // This test asserts that specific (wrong) outcome so we can confirm it is what
+    // the pre-fix action produces.
+    const store = createInMemoryStore();
+    seedAmortizableForDelete(store);
+
+    const planBalance = store.liabilities.debtBalanceAtDate("mortgage", "2026-01-15");
+    expect(planBalance).not.toBe(100_000_00); // plan balance ≠ currentBalance
+
+    // Broken wiring: ripple with the plan still present, then delete.
+    store.rippleHistoricalSnapshotsForDebt({
+      liabilityId: "mortgage",
+      kind: "amortizable-plan",
+      today: TODAY,
+    });
+    store.liabilities.deleteAmortizationPlan("plan1");
+
+    // Snapshot is still frozen at the plan balance — NOT reset to currentBalance.
+    expect(debtsAt(store, "2026-01-15")).toBe(planBalance);
+    expect(debtsAt(store, "2026-01-15")).not.toBe(100_000_00);
+    store.close();
+  });
+
+  test("GREEN: delete plan first, then ripple amortizable-revision from startDate resets snapshots to currentBalance", () => {
+    // This is the canonical correctness test for the fixed action wiring:
+    //   1. capture startDate before deleting
+    //   2. deleteAmortizationPlan
+    //   3. ripple(amortizable-revision, fromDateKey=startDate)
+    //      → curve now has no plan, debtBalanceAtDate falls back to currentBalance
+    //      → every existing snapshot ≥ startDate is recalculated to currentBalance
+    const store = createInMemoryStore();
+    seedAmortizableForDelete(store);
+
+    const planBalance = store.liabilities.debtBalanceAtDate("mortgage", "2026-01-15");
+    expect(planBalance).not.toBe(100_000_00); // confirm pre-condition
+
+    const startDate = store.liabilities.readAmortizationPlan("mortgage")!.startDate;
+
+    // Correct wiring: delete first, then ripple.
+    store.liabilities.deleteAmortizationPlan("plan1");
+    store.rippleHistoricalSnapshotsForDebt({
+      liabilityId: "mortgage",
+      kind: "amortizable-revision",
+      fromDateKey: startDate,
+      today: TODAY,
+    });
+
+    // All snapshots on or after the old plan start now reflect currentBalance (100k).
+    for (const dateKey of [
+      "2026-01-15",
+      "2026-02-15",
+      "2026-03-15",
+      "2026-04-15",
+      "2026-05-15",
+    ]) {
+      expect(debtsAt(store, dateKey)).toBe(100_000_00);
+      expect(holdingsReconcile(store, dateKey)).toBe(true);
+    }
+    store.close();
+  });
+});
+
 describe("no regression", () => {
   test("a liability with no debt model keeps last-known-value in history", () => {
     const store = createInMemoryStore();
