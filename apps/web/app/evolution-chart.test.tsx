@@ -43,6 +43,18 @@ const SNAPSHOTS = [
   snapshot({ dateKey: "2026-06-10", id: "s4", valueMinor: 102_000_00 }),
 ];
 
+function polylinePoints(markup: string): Array<{ x: number; y: number }> {
+  const match = markup.match(/<polyline[^>]* points="([^"]+)"/);
+  if (!match) return [];
+
+  return match[1]!
+    .split(" ")
+    .map((pair) => {
+      const [x, y] = pair.split(",");
+      return { x: Number(x), y: Number(y) };
+    });
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -72,5 +84,25 @@ describe("EvolutionChart — SSR renders without React warnings", () => {
     expect(titles.length).toBeGreaterThan(0);
     // The monthly close of May is its last snapshot.
     expect(titles.some((t) => t!.startsWith("2026-05-31 ·"))).toBe(true);
+  });
+
+  test("x positions are proportional to calendar gaps, matching the decomposition chart", () => {
+    const markup = renderToStaticMarkup(
+      <EvolutionChart
+        framing="total"
+        snapshots={[
+          snapshot({ dateKey: "2026-01-01", id: "s1", valueMinor: 100_000_00 }),
+          snapshot({ dateKey: "2026-01-02", id: "s2", valueMinor: 101_000_00 }),
+          snapshot({ dateKey: "2026-01-11", id: "s3", valueMinor: 102_000_00 }),
+        ]}
+      />,
+    );
+
+    const points = polylinePoints(markup);
+    expect(points).toHaveLength(3);
+
+    const firstSegment = points[1]!.x - points[0]!.x;
+    const secondSegment = points[2]!.x - points[1]!.x;
+    expect(secondSegment).toBeGreaterThan(firstSegment * 8);
   });
 });

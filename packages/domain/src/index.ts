@@ -230,6 +230,7 @@ export {
   EVOLUTION_CHART_HEIGHT,
   EVOLUTION_CHART_INSET_X,
   EVOLUTION_CHART_WIDTH,
+  timeProportionalXs,
 } from "./evolution-chart";
 
 export type {

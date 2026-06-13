@@ -1,4 +1,8 @@
-import { deriveMonthlyCloses, formatMoneyMinor } from "@worthline/domain";
+import {
+  deriveMonthlyCloses,
+  formatMoneyMinor,
+  timeProportionalXs,
+} from "@worthline/domain";
 import type { NetWorthFraming, NetWorthSnapshot } from "@worthline/domain";
 
 /**
@@ -85,7 +89,19 @@ export default function EvolutionChart({
 
   const innerW = W - MARGIN.left - MARGIN.right;
   const innerH = H - MARGIN.top - MARGIN.bottom;
-  const x = (index: number) => MARGIN.left + (index / (points.length - 1)) * innerW;
+  const xs = timeProportionalXs(
+    points.map((point) => point.dateKey),
+    innerW,
+    0,
+  );
+  if (!xs) {
+    return (
+      <p className="emptyLine evolutionEmpty">
+        La evolución aparecerá cuando haya más capturas.
+      </p>
+    );
+  }
+  const x = (index: number) => MARGIN.left + xs[index]!;
   const y = (value: number) =>
     MARGIN.top + (1 - (value - yMin) / (yMax - yMin)) * innerH;
 
