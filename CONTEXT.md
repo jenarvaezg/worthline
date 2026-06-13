@@ -281,15 +281,27 @@ group them — a presentation lens, not a figure.
 
 **Coin value**:
 The value of one Numista **position**: the greater of its **metal value** (metal
-content × spot price) and its **numismatic value** (Numista's estimate for that
-coin at its **grade**). Taken per coin, then summed into the rolled-up holding.
-A coin whose metal is worth more than its collector estimate is valued as metal,
-and vice-versa.
+content × spot price, sourced from Stooq + ECB) and its **numismatic value**
+(Numista's estimate for that coin at its **grade**). Taken per coin, then summed
+into the rolled-up holding. A coin whose metal is worth more than its collector
+estimate is valued as metal, and vice-versa. When neither is available (a
+base-metal coin Numista does not estimate), the value falls back to its
+**purchase price**; absent even that, it is 0 and raises the existing
+"value at 0" **warning**.
 
 **Grade**:
 The condition rating of a coin (e.g. VF, XF, AU, UNC), assigned by the user
 _on Numista_, not in worthline. It selects which **numismatic value** estimate
 applies. worthline reads it as part of a **position** and never edits it.
+
+**Purchase date**:
+The date a coin entered the collection, read from its Numista trade
+(_compraventa_). worthline treats it as a **dated fact about the past** — like a
+backdated **operation** — that ripples existing **snapshots** from that date
+forward, placing the coin on the timeline when it was acquired. The value
+applied is the coin's value _at the moment of the ripple_, then frozen:
+worthline never fetches a coin's historical price, and later price moves never
+rewrite a past snapshot. Numista's trade prices set _when_, not _how much_.
 
 **Sync**:
 Refreshing a **connected source** by re-reading its current positions and
