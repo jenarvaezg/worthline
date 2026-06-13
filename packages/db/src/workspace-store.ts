@@ -1,8 +1,11 @@
 import type {
   AssetPrice,
+  ExportedAmortizationPlan,
   ExportedAsset,
+  ExportedBalanceAnchor,
   ExportedLiability,
   ExportedSnapshot,
+  ExportedValuationAnchor,
   FireScopeConfig,
   Member,
   MemberGroup,
@@ -16,18 +19,25 @@ import {
   createWorkspace,
   defaultInstrumentForAssetType,
   defaultInstrumentForLiability,
+  defaultValuationMethodForAssetType,
+  defaultValuationMethodForDebtModel,
   serializeWorkspaceExport,
 } from "@worthline/domain";
 import { asc, count, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 import {
+  amortizationPlans,
   appSettings,
   assetOperations,
   assetOwnerships,
   assetPriceCache,
+  assetValuations,
   assets,
+  earlyRepayments,
+  interestRateRevisions,
   liabilities,
+  liabilityBalanceAnchors,
   liabilityOwnerships,
   investmentAssets,
   memberGroupMembers,
@@ -83,6 +93,11 @@ const WORKSPACE_TABLES = [
   "asset_operations",
   "asset_price_cache",
   "investment_assets",
+  "asset_valuations",
+  "early_repayments",
+  "interest_rate_revisions",
+  "amortization_plans",
+  "liability_balance_anchors",
   "asset_ownerships",
   "liability_ownerships",
   "warning_overrides",
@@ -452,6 +467,7 @@ function importWorkspace(
     const writeAsset = (asset: ExportedAsset): void => {
       db.insert(assets)
         .values({
+          annualAppreciationRate: asset.annualAppreciationRate ?? null,
           currency: asset.currency,
           // Investments are stored at zero like createInvestmentAsset does:
           // their value is derived from operations and prices on read, never
@@ -467,6 +483,10 @@ function importWorkspace(
           liquidityTier: asset.liquidityTier,
           name: asset.name,
           type: asset.type,
+          // The full holding model (ADR 0015, #155): derive the method from type
+          // when the file omits it (a v1-shaped file the user hand-rolled).
+          valuationMethod:
+            asset.valuationMethod ?? defaultValuationMethodForAssetType(asset.type),
         })
         .run();
 
@@ -477,6 +497,22 @@ function importWorkspace(
               assetId: asset.id,
               memberId: share.memberId,
               shareBps: share.shareBps,
+            })),
+          )
+          .run();
+      }
+
+      // Housing valuation anchors (ADR 0015, #155) — ids preserved like every
+      // other restored row. FK to assets is satisfied: the asset is inserted above.
+      if (asset.valuationAnchors && asset.valuationAnchors.length > 0) {
+        db.insert(assetValuations)
+          .values(
+            asset.valuationAnchors.map((anchor) => ({
+              adjustsPriorCurve: anchor.adjustsPriorCurve ? 1 : 0,
+              assetId: asset.id,
+              id: anchor.id,
+              valuationDate: anchor.valuationDate,
+              valueMinor: anchor.valueMinor,
             })),
           )
           .run();
@@ -506,17 +542,25 @@ function importWorkspace(
     for (const asset of doc.trash.assets) writeAsset(asset);
 
     const writeLiability = (liability: ExportedLiability): void => {
+      const debtModel = liability.debtModel ?? null;
+
       db.insert(liabilities)
         .values({
           associatedAssetId: liability.associatedAssetId ?? null,
           currency: liability.currency,
           currentBalanceMinor: liability.currentBalance.amountMinor,
+          // The full holding model (ADR 0015, #155): the debt model + method are
+          // first-class, derived from the model when the file omits the method.
+          debtModel,
           deletedAt: liability.deletedAt ?? null,
           id: liability.id,
           instrument:
-            liability.instrument ?? defaultInstrumentForLiability(liability.type, null),
+            liability.instrument ??
+            defaultInstrumentForLiability(liability.type, debtModel),
           name: liability.name,
           type: liability.type,
+          valuationMethod:
+            liability.valuationMethod ?? defaultValuationMethodForDebtModel(debtModel),
         })
         .run();
 
@@ -527,6 +571,64 @@ function importWorkspace(
               liabilityId: liability.id,
               memberId: share.memberId,
               shareBps: share.shareBps,
+            })),
+          )
+          .run();
+      }
+
+      // Amortization plan + its dated facts (ADR 0015, #155): the plan first
+      // (FK to liabilities is satisfied above), then its revisions and early
+      // repayments (FK to the plan is satisfied here), all ids preserved.
+      const plan = liability.amortizationPlan;
+      if (plan) {
+        db.insert(amortizationPlans)
+          .values({
+            annualInterestRate: plan.annualInterestRate,
+            id: plan.id,
+            initialCapitalMinor: plan.initialCapitalMinor,
+            liabilityId: liability.id,
+            startDate: plan.startDate,
+            termMonths: plan.termMonths,
+          })
+          .run();
+
+        if (plan.interestRateRevisions.length > 0) {
+          db.insert(interestRateRevisions)
+            .values(
+              plan.interestRateRevisions.map((revision) => ({
+                id: revision.id,
+                newAnnualInterestRate: revision.newAnnualInterestRate,
+                planId: plan.id,
+                revisionDate: revision.revisionDate,
+              })),
+            )
+            .run();
+        }
+
+        if (plan.earlyRepayments.length > 0) {
+          db.insert(earlyRepayments)
+            .values(
+              plan.earlyRepayments.map((repayment) => ({
+                amountMinor: repayment.amountMinor,
+                id: repayment.id,
+                mode: repayment.mode,
+                planId: plan.id,
+                repaymentDate: repayment.repaymentDate,
+              })),
+            )
+            .run();
+        }
+      }
+
+      // Balance anchors for a revolving/informal debt (ADR 0015, #155).
+      if (liability.balanceAnchors && liability.balanceAnchors.length > 0) {
+        db.insert(liabilityBalanceAnchors)
+          .values(
+            liability.balanceAnchors.map((anchor) => ({
+              anchorDate: anchor.anchorDate,
+              balanceMinor: anchor.balanceMinor,
+              id: anchor.id,
+              liabilityId: liability.id,
             })),
           )
           .run();
@@ -705,9 +807,13 @@ function buildWorkspaceExport(db: StoreDb, workspace: Workspace | null): Workspa
       .all()
       .map((row) => [row.assetId, row] as const),
   );
+  // Housing valuation anchors grouped by asset (ADR 0015, #155), ordered by
+  // date then id so the restored curve matches what the live store reads back.
+  const anchorsByAsset = readValuationAnchorsByAsset(db);
 
   const toExportedAsset = (row: typeof assets.$inferSelect): ExportedAsset => {
     const meta = investmentMetaByAsset.get(row.id);
+    const anchors = anchorsByAsset.get(row.id) ?? [];
 
     return {
       id: row.id,
@@ -726,6 +832,13 @@ function buildWorkspaceExport(db: StoreDb, workspace: Workspace | null): Workspa
       instrument:
         row.instrument ??
         defaultInstrumentForAssetType(row.type, row.isPrimaryResidence === 1),
+      valuationMethod:
+        row.valuationMethod ?? defaultValuationMethodForAssetType(row.type),
+      // The full holding model (ADR 0015, #155): appreciation rate + anchors.
+      ...(row.annualAppreciationRate
+        ? { annualAppreciationRate: row.annualAppreciationRate }
+        : {}),
+      ...(anchors.length > 0 ? { valuationAnchors: anchors } : {}),
       ownership: ownershipByAsset.get(row.id) ?? [],
       ...(row.type === "investment" && meta
         ? {
@@ -752,20 +865,35 @@ function buildWorkspaceExport(db: StoreDb, workspace: Workspace | null): Workspa
     .orderBy(asc(liabilities.createdAt), asc(liabilities.id))
     .all();
   const ownershipByLiability = readLiabilityOwnerships(db);
+  // The full debt model (ADR 0015, #155): amortization plans (each with its
+  // rate revisions + early repayments) and balance anchors, grouped by liability.
+  const planByLiability = readAmortizationPlansByLiability(db);
+  const balanceAnchorsByLiability = readBalanceAnchorsByLiability(db);
 
   const toExportedLiability = (
     row: typeof liabilities.$inferSelect,
-  ): ExportedLiability => ({
-    id: row.id,
-    name: row.name,
-    type: row.type,
-    currency: row.currency,
-    currentBalance: { amountMinor: row.currentBalanceMinor, currency: row.currency },
-    instrument: row.instrument ?? defaultInstrumentForLiability(row.type, row.debtModel),
-    ownership: ownershipByLiability.get(row.id) ?? [],
-    ...(row.associatedAssetId ? { associatedAssetId: row.associatedAssetId } : {}),
-    ...(row.deletedAt ? { deletedAt: row.deletedAt } : {}),
-  });
+  ): ExportedLiability => {
+    const plan = planByLiability.get(row.id);
+    const balanceAnchors = balanceAnchorsByLiability.get(row.id) ?? [];
+
+    return {
+      id: row.id,
+      name: row.name,
+      type: row.type,
+      currency: row.currency,
+      currentBalance: { amountMinor: row.currentBalanceMinor, currency: row.currency },
+      instrument:
+        row.instrument ?? defaultInstrumentForLiability(row.type, row.debtModel),
+      valuationMethod:
+        row.valuationMethod ?? defaultValuationMethodForDebtModel(row.debtModel ?? null),
+      ...(row.debtModel ? { debtModel: row.debtModel } : {}),
+      ...(plan ? { amortizationPlan: plan } : {}),
+      ...(balanceAnchors.length > 0 ? { balanceAnchors } : {}),
+      ownership: ownershipByLiability.get(row.id) ?? [],
+      ...(row.associatedAssetId ? { associatedAssetId: row.associatedAssetId } : {}),
+      ...(row.deletedAt ? { deletedAt: row.deletedAt } : {}),
+    };
+  };
 
   // Operations for every investment asset — including trashed ones, so a
   // restore after import keeps their history.
@@ -837,6 +965,139 @@ function buildWorkspaceExport(db: StoreDb, workspace: Workspace | null): Workspa
     },
     priceCache,
   });
+}
+
+/**
+ * Housing valuation anchors grouped by asset (ADR 0015, #155), ordered by date
+ * then id — the same order asset-store's readValuationAnchors returns, so the
+ * exported curve reconstructs identically on restore.
+ */
+function readValuationAnchorsByAsset(
+  db: StoreDb,
+): Map<string, ExportedValuationAnchor[]> {
+  const rows = db
+    .select()
+    .from(assetValuations)
+    .orderBy(asc(assetValuations.valuationDate), asc(assetValuations.id))
+    .all();
+
+  const byAsset = new Map<string, ExportedValuationAnchor[]>();
+
+  for (const row of rows) {
+    const anchor: ExportedValuationAnchor = {
+      id: row.id,
+      valueMinor: row.valueMinor,
+      valuationDate: row.valuationDate,
+      adjustsPriorCurve: row.adjustsPriorCurve === 1,
+    };
+    const existing = byAsset.get(row.assetId);
+
+    if (existing) {
+      existing.push(anchor);
+    } else {
+      byAsset.set(row.assetId, [anchor]);
+    }
+  }
+
+  return byAsset;
+}
+
+/**
+ * The amortization plan of each amortizable liability (ADR 0015, #155), each
+ * carrying its rate revisions and early repayments, all ordered by date then id
+ * to match the live store readers. The plan is 1:1 with its liability.
+ */
+function readAmortizationPlansByLiability(
+  db: StoreDb,
+): Map<string, ExportedAmortizationPlan> {
+  const planRows = db.select().from(amortizationPlans).all();
+
+  const revisionRows = db
+    .select()
+    .from(interestRateRevisions)
+    .orderBy(asc(interestRateRevisions.revisionDate), asc(interestRateRevisions.id))
+    .all();
+  const repaymentRows = db
+    .select()
+    .from(earlyRepayments)
+    .orderBy(asc(earlyRepayments.repaymentDate), asc(earlyRepayments.id))
+    .all();
+
+  const revisionsByPlan = new Map<
+    string,
+    ExportedAmortizationPlan["interestRateRevisions"]
+  >();
+  for (const row of revisionRows) {
+    const revision = {
+      id: row.id,
+      revisionDate: row.revisionDate,
+      newAnnualInterestRate: row.newAnnualInterestRate,
+    };
+    const existing = revisionsByPlan.get(row.planId);
+    if (existing) existing.push(revision);
+    else revisionsByPlan.set(row.planId, [revision]);
+  }
+
+  const repaymentsByPlan = new Map<string, ExportedAmortizationPlan["earlyRepayments"]>();
+  for (const row of repaymentRows) {
+    const repayment = {
+      id: row.id,
+      repaymentDate: row.repaymentDate,
+      amountMinor: row.amountMinor,
+      mode: row.mode,
+    };
+    const existing = repaymentsByPlan.get(row.planId);
+    if (existing) existing.push(repayment);
+    else repaymentsByPlan.set(row.planId, [repayment]);
+  }
+
+  const byLiability = new Map<string, ExportedAmortizationPlan>();
+  for (const row of planRows) {
+    byLiability.set(row.liabilityId, {
+      id: row.id,
+      initialCapitalMinor: row.initialCapitalMinor,
+      annualInterestRate: row.annualInterestRate,
+      termMonths: row.termMonths,
+      startDate: row.startDate,
+      interestRateRevisions: revisionsByPlan.get(row.id) ?? [],
+      earlyRepayments: repaymentsByPlan.get(row.id) ?? [],
+    });
+  }
+
+  return byLiability;
+}
+
+/**
+ * Balance anchors grouped by liability (ADR 0015, #155), ordered by date then id
+ * — the same order liability-store's readBalanceAnchors returns.
+ */
+function readBalanceAnchorsByLiability(
+  db: StoreDb,
+): Map<string, ExportedBalanceAnchor[]> {
+  const rows = db
+    .select()
+    .from(liabilityBalanceAnchors)
+    .orderBy(asc(liabilityBalanceAnchors.anchorDate), asc(liabilityBalanceAnchors.id))
+    .all();
+
+  const byLiability = new Map<string, ExportedBalanceAnchor[]>();
+
+  for (const row of rows) {
+    const anchor: ExportedBalanceAnchor = {
+      id: row.id,
+      balanceMinor: row.balanceMinor,
+      anchorDate: row.anchorDate,
+    };
+    const existing = byLiability.get(row.liabilityId);
+
+    if (existing) {
+      existing.push(anchor);
+    } else {
+      byLiability.set(row.liabilityId, [anchor]);
+    }
+  }
+
+  return byLiability;
 }
 
 /**
