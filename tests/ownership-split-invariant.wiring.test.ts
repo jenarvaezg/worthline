@@ -141,6 +141,22 @@ describe("createManualAssetSafe — ownership-split invariant", () => {
       expect(result.violations[0]!.totalBps).toBe(7_000);
     }
   });
+
+  test("real estate can be owned partially by known household members", () => {
+    const result = createManualAssetSafe(workspace, {
+      ...baseInput,
+      liquidityTier: "housing",
+      type: "real_estate",
+      ownership: [{ memberId: "member_ana", shareBps: 5_000 }],
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.ownership).toEqual([
+        { memberId: "member_ana", shareBps: 5_000 },
+      ]);
+    }
+  });
 });
 
 describe("createLiabilitySafe — ownership-split invariant", () => {
@@ -240,6 +256,34 @@ describe("createAssetAction — ownership-split wiring", () => {
     expect(redirectUrl).toContain("error=");
     expect(errorMessageOf(redirectUrl)).toBe("La propiedad suma 120% — debe sumar 100%.");
     expect(store.assets.readAssets()).toHaveLength(0);
+  });
+
+  test("real estate custom split can leave the external share outside the household", async () => {
+    store = createInMemoryStore();
+    store.workspace.initializeWorkspace({
+      members: [
+        { id: "member_ana", name: "Ana" },
+        { id: "member_jose", name: "Jose" },
+      ],
+      mode: "household",
+    });
+
+    const fd = buildAssetFormData({
+      acquisitionDate: "2020-05-10",
+      acquisitionValue: "180000",
+      name: "Piso copropiedad",
+      ownershipPreset: "custom",
+      owner_member_ana: "50",
+      owner_member_jose: "",
+      type: "real_estate",
+    });
+
+    const redirectUrl = await catchRedirect(() => createAssetAction(fd, store));
+
+    expect(redirectUrl).toContain("ok=asset_added");
+    expect(store.assets.readAssets()[0]!.ownership).toEqual([
+      { memberId: "member_ana", shareBps: 5_000 },
+    ]);
   });
 });
 

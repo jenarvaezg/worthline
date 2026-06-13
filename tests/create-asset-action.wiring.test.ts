@@ -157,5 +157,10 @@ describe("createAssetAction wiring", () => {
       }),
     ]);
     expect(store.assets.readAnnualAppreciationRate(asset!.id)).toBe("0.03");
+
+    const acquisitionSnapshot = store.snapshots
+      .readSnapshots()
+      .find((snapshot) => snapshot.dateKey === "2020-05-10");
+    expect(acquisitionSnapshot?.grossAssets.amountMinor).toBe(18_000_000);
   });
 });
