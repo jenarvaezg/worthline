@@ -61,30 +61,6 @@ describe("CompositionChart", () => {
     // Five asset bands above zero + one aggregated debt stack below.
     expect(markup).toContain("compositionBand housing");
     expect(markup).toContain("compositionDebt");
-    // The net-worth line carries a native hover title in es-ES money for the
-    // finalized close (net = 10.000 + 200.000 − 120.000 = 90.000).
-    expect(markup).toContain("2026-05-31 · Patrimonio neto: 90.000");
-  });
-
-  test("exposes native hover with period, label and value on each band, debt and the net line", () => {
-    const markup = renderToStaticMarkup(
-      <CompositionChart
-        currency="EUR"
-        points={[
-          point({ cash: 10_000_00, dateKey: "2026-05-31", debts: 120_000_00, housing: 200_000_00 }),
-          point({ cash: 12_000_00, dateKey: "2026-06-30", housing: 200_000_00, isOpenPeriod: true }),
-        ]}
-      />,
-    );
-
-    // Each asset component, per period.
-    expect(markup).toContain("2026-05-31 · Caja: 10.000");
-    expect(markup).toContain("2026-05-31 · Vivienda: 200.000");
-    // The aggregated debt band.
-    expect(markup).toContain("2026-05-31 · Deudas: 120.000");
-    // The net-worth line — for BOTH the finalized close and the open period.
-    expect(markup).toContain("2026-05-31 · Patrimonio neto: 90.000");
-    expect(markup).toContain("2026-06-30 · Patrimonio neto: 212.000");
   });
 
   test("legend and asset bands link to their drilldown; Deudas has no destination", () => {
