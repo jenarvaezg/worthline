@@ -35,17 +35,24 @@ test("auto-snapshot: / load captures snapshot → historico shows entry", async 
   //    is automatically the monthly close
   await expect(page.getByText("Cierre de mes").first()).toBeVisible();
 
-  // 6. Back on /, the Evolución panel reflects the captured snapshot.
+  // 6. Back on /, the Evolución panel reflects the captured snapshot. Since
+  //    #142 the panel hosts the net-worth composition chart (not the old
+  //    evolution area chart): the dashboard renders `.compositionChart` when
+  //    there are ≥2 period points (the seeded prior-month snapshot + today's
+  //    auto-capture guarantee this) or the `.compositionEmpty` placeholder
+  //    otherwise. Either proves the panel rendered without a hydration error.
   await page.goto("/");
   await expect(
     page.getByRole("region", { name: "Evolución del patrimonio" }),
   ).toBeVisible();
   await expect(
-    page.locator("svg.evolutionChart").or(page.locator(".evolutionEmpty")).first(),
+    page.locator("svg.compositionChart").or(page.locator(".compositionEmpty")).first(),
   ).toBeVisible();
 
-  // 7. Delta strip: with single-day data (all journeys share one wall-clock
-  //    day) there is no previous snapshot to diff against, so the strip must
-  //    not render. If a second day were seeded (#94), the strip would appear.
-  await expect(page.locator(".deltaStrip")).toHaveCount(0);
+  // 7. Delta context: the hero exposes its snapshot deltas through the
+  //    `.deltaChips` strip (the legacy `.deltaStrip` element was removed with
+  //    #142). With the seeded prior-month close present, the "vs cierre
+  //    mensual" chip carries a real diff rather than "sin dato".
+  await expect(page.locator(".deltaChips")).toBeVisible();
+  await expect(page.getByText("vs cierre mensual")).toBeVisible();
 });

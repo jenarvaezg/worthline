@@ -13,6 +13,9 @@
 
 import { test, expect } from "./fixtures";
 
+/** Today as YYYY-MM-DD — the native `max` the future-date guards advertise. */
+const today = new Date().toISOString().slice(0, 10);
+
 test("housing valuation: rate, anchor CRUD, future rejected, past snapshot in historico", async ({
   page,
 }) => {
@@ -72,7 +75,7 @@ test("housing valuation: rate, anchor CRUD, future rejected, past snapshot in hi
   await page.getByRole("button", { name: "Registrar tasación" }).click();
   // The native max constraint blocks submission: the input is invalid and we
   // stay on the page with exactly one anchor row (the 2024-03-15 one).
-  await expect(futureDate).toHaveAttribute("max", "2026-06-12");
+  await expect(futureDate).toHaveAttribute("max", today);
   expect(await futureDate.evaluate((el: HTMLInputElement) => el.validity.valid)).toBe(
     false,
   );
