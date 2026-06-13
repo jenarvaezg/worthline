@@ -15,6 +15,13 @@ means: SVG `<title>` for hover values and SVG `<a>` for drilldown navigation via
 query params. If rich cursor-following interactivity is ever wanted, the cost is
 migrating individual chart components, not the page architecture.
 
+This escape hatch was taken for the net-worth composition chart (#143): its
+consolidated, cursor-following tooltip — listing every band, debt and the net
+worth of the hovered period — is a `"use client"` component. The tooltip overlay
+is `pointer-events: none`, so the asset bands underneath stay native `<a>` links
+(drilldown navigation remains a zero-JS full document navigation); only the hover
+layer needs the client. The rest of the dashboard stays server-rendered.
+
 Historical chart zoom follows the same boundary: range and density controls are
 URL state handled by the server, not pan/zoom gestures inside the SVG. The chart
 may switch monthly, quarterly, or annual buckets as the selected range changes,

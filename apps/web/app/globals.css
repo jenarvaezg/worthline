@@ -529,6 +529,12 @@ h3 {
   padding: 16px;
 }
 
+/* Drill/back navigation anchors to #composicion; clear the sticky header so the
+   panel lands just below it instead of behind it (#143 follow-up). */
+.historyPanel {
+  scroll-margin-top: 76px;
+}
+
 .panelHeader {
   align-items: center;
   border-bottom: 1px solid var(--hairline);
@@ -1151,6 +1157,60 @@ svg a:hover .compositionBand {
 
 .compositionEmpty {
   margin-top: 14px;
+}
+
+/* Hover layer (#143): a cursor-following tooltip listing every value of the
+   hovered period, plus a vertical guide. The tooltip is pointer-events:none so
+   the asset bands underneath stay clickable for drilldown. */
+.compositionChartWrap {
+  position: relative;
+}
+
+.compositionGuide {
+  stroke: var(--ink);
+  stroke-opacity: 0.35;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.compositionTooltip {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  font-size: 0.78rem;
+  min-width: 190px;
+  padding: 8px 10px;
+  pointer-events: none;
+  position: absolute;
+  z-index: 20;
+}
+
+.compositionTooltipDate {
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.compositionTooltipRow {
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+}
+
+.compositionTooltipRow b {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.compositionTooltipRow.debt b {
+  color: var(--red);
+}
+
+.compositionTooltipRow.net {
+  border-top: 1px solid var(--line-soft);
+  margin-top: 4px;
+  padding-top: 4px;
 }
 
 /* === #76 liquid drilldown === */

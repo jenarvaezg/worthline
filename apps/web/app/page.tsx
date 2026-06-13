@@ -144,12 +144,16 @@ export default async function DashboardPage({
   const selectedDrill = parseDrillParam(resolvedSearchParams?.drill);
   const currentUrl = buildCurrentUrl(resolvedSearchParams);
 
-  // Drill navigation (#76, #77): every URL preserves the selected Vista.
+  // Drill navigation (#76, #77): every URL preserves the selected Vista. The
+  // `#composicion` fragment anchors the full-document <a> navigation (ADR 0009)
+  // to the composition panel instead of the page top, so a drill leaves the
+  // reader where they were rather than scrolling up (#143 follow-up).
   const viewHomeUrl = selectedView === "total" ? "/" : `/?view=${selectedView}`;
+  const composicionHomeUrl = `${viewHomeUrl}#composicion`;
   const drillHrefs = {
-    housing: appendParam(viewHomeUrl, "drill", "housing"),
-    liquid: appendParam(viewHomeUrl, "drill", "liquid"),
-    rest: appendParam(viewHomeUrl, "drill", "rest"),
+    housing: `${appendParam(viewHomeUrl, "drill", "housing")}#composicion`,
+    liquid: `${appendParam(viewHomeUrl, "drill", "liquid")}#composicion`,
+    rest: `${appendParam(viewHomeUrl, "drill", "rest")}#composicion`,
   };
 
   const jar = await cookies();
@@ -379,7 +383,7 @@ export default async function DashboardPage({
 
       {/* ── 3. Evolution — server-rendered SVG area chart of the headline
              figure, with value/date axes; the hero chips are its numeric legend ── */}
-      <section className="historyPanel" aria-label="Evolución del patrimonio">
+      <section className="historyPanel" id="composicion" aria-label="Evolución del patrimonio">
         <div className="panelHeader">
           <h2>Evolución</h2>
           <Link className="panelAction" href="/historico" scroll={false}>
@@ -393,7 +397,7 @@ export default async function DashboardPage({
             drill panel renders in its place, breadcrumb back preserving the Vista. */}
         {selectedDrill && state.drilldown ? (
           <DrilldownPanel
-            backHref={viewHomeUrl}
+            backHref={composicionHomeUrl}
             currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
             drilldown={state.drilldown}
           />
