@@ -1,4 +1,4 @@
-import type { LiquidityTier } from "./classification";
+import type { Instrument, LiquidityTier } from "./classification";
 import { describe, expect, test } from "vitest";
 
 import { isHousingAsset, isLiquid, tierOfAsset } from "./classification";
@@ -22,6 +22,7 @@ function asset(
   overrides: {
     type?: "cash" | "manual" | "real_estate";
     isPrimaryResidence?: boolean;
+    instrument?: Instrument;
   } = {},
 ) {
   return createManualAsset(workspace, {
@@ -33,6 +34,7 @@ function asset(
     name: id,
     ownership: fullOwnership,
     type: overrides.type ?? "manual",
+    ...(overrides.instrument ? { instrument: overrides.instrument } : {}),
   });
 }
 
@@ -63,6 +65,24 @@ describe("asset classification", () => {
     const home = asset("home", "cash", { type: "real_estate" });
     expect(isHousingAsset(home)).toBe(true);
     expect(isLiquid(tierOfAsset(home))).toBe(false);
+  });
+
+  test("housing is sourced from the instrument, not the legacy type (#149)", () => {
+    // An explicit instrument wins over the type-derived default: a property
+    // instrument makes a non-real_estate asset housing…
+    const declaredProperty = asset("storage", "illiquid", {
+      type: "cash",
+      instrument: "property",
+    });
+    expect(isHousingAsset(declaredProperty)).toBe(true);
+    expect(tierOfAsset(declaredProperty)).toBe("illiquid"); // housing → illiquid
+
+    // …and a non-property instrument makes a real_estate-typed asset NOT housing.
+    const reclassified = asset("reit", "market", {
+      type: "real_estate",
+      instrument: "fund",
+    });
+    expect(isHousingAsset(reclassified)).toBe(false);
   });
 });
 

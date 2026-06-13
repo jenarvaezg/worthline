@@ -1,19 +1,30 @@
+import type { Instrument } from "./instrument-catalog";
+import { defaultInstrumentForAssetType } from "./instrument-catalog";
 import type { LiquidityTier } from "./liquidity-ladder";
 import { isLiquid, rungForLiability } from "./liquidity-ladder";
 import type { ManualAsset } from "./workspace-types";
 
-export type { LiquidityTier };
+export type { Instrument, LiquidityTier };
 export { isLiquid, rungForLiability };
 
 /**
- * An asset's rung on the liquidity ladder (ADR 0013). Real estate and the
- * primary residence are among the least-liquid holdings there are, so they sit
- * on `illiquid` regardless of any declared tier. Their housing-ness — the basis
- * for housing equity — is a separate, type-based fact (`isHousingAsset`), no
- * longer a rung of its own.
+ * What an asset is (ADR 0014, #149). Reads the stored instrument when present
+ * (the backfilled column wins), deriving it from the legacy `type` /
+ * `isPrimaryResidence` only for in-memory assets that predate the column.
+ */
+export function instrumentOfAsset(asset: ManualAsset): Instrument {
+  return (
+    asset.instrument ?? defaultInstrumentForAssetType(asset.type, asset.isPrimaryResidence)
+  );
+}
+
+/**
+ * An asset's rung on the liquidity ladder (ADR 0013). Housing — among the
+ * least-liquid holdings there are — sits on `illiquid` regardless of any declared
+ * tier. Housing-ness is now the instrument (`property`), not a rung of its own.
  */
 export function tierOfAsset(asset: ManualAsset): LiquidityTier {
-  if (asset.type === "real_estate" || asset.isPrimaryResidence) {
+  if (isHousingAsset(asset)) {
     return "illiquid";
   }
 
@@ -21,13 +32,12 @@ export function tierOfAsset(asset: ManualAsset): LiquidityTier {
 }
 
 /**
- * A housing asset, identified by type — real estate or the primary residence.
- * Bridge (ADR 0013/0014): housing equity and the housing composition stay
- * sourced from this type-based fact until the instrument re-sources them,
- * decoupled from the (now `illiquid`) liquidity rung.
+ * A housing asset — one whose instrument is `property` (ADR 0014, #149). Housing
+ * equity and the housing composition are sourced from this, decoupled from the
+ * (now `illiquid`) liquidity rung and from the legacy AssetType.
  */
 export function isHousingAsset(asset: ManualAsset): boolean {
-  return asset.type === "real_estate" || asset.isPrimaryResidence;
+  return instrumentOfAsset(asset) === "property";
 }
 
 /**

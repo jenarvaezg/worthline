@@ -225,6 +225,7 @@ describe("exportWorkspace", () => {
       currency: "EUR",
       currentValue: { amountMinor: 500000, currency: "EUR" },
       id: "a_cash",
+      instrument: "current_account",
       isPrimaryResidence: false,
       liquidityTier: "cash",
       name: "Cuenta ING",
@@ -254,6 +255,7 @@ describe("exportWorkspace", () => {
       currency: "EUR",
       currentBalance: { amountMinor: 12000000, currency: "EUR" },
       id: "l_mort",
+      instrument: "mortgage",
       name: "Hipoteca",
       ownership: [
         { memberId: "m1", shareBps: 5000 },
@@ -385,5 +387,75 @@ describe("exportWorkspace", () => {
     expect(store.operations.readAllPriceCacheEntries()).toEqual(pricesBefore);
 
     store.close();
+  });
+});
+
+describe("instrument round-trips through export/import (#149)", () => {
+  test("export carries each holding's instrument and import restores it", () => {
+    const store = createInMemoryStore();
+    store.workspace.initializeWorkspace({
+      members: [{ id: "m1", name: "Alice" }],
+      mode: "individual",
+    });
+    const own = [{ memberId: "m1", shareBps: 10000 }];
+    store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 30000000,
+      id: "a_home",
+      isPrimaryResidence: true,
+      liquidityTier: "illiquid",
+      name: "Piso",
+      ownership: own,
+      type: "real_estate",
+    });
+    store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 200000,
+      id: "a_cash",
+      liquidityTier: "cash",
+      name: "Caja",
+      ownership: own,
+      type: "cash",
+    });
+    store.liabilities.createLiability({
+      associatedAssetId: "a_home",
+      balanceMinor: 10000000,
+      currency: "EUR",
+      id: "l_mort",
+      name: "Hipoteca",
+      ownership: own,
+      type: "mortgage",
+    });
+    store.liabilities.createLiability({
+      balanceMinor: 5000,
+      currency: "EUR",
+      id: "l_card",
+      name: "Tarjeta",
+      ownership: own,
+      type: "debt",
+    });
+
+    const doc = store.workspace.exportWorkspace();
+    const assetInstrument = (id: string) =>
+      doc.assets.find((a) => a.id === id)?.instrument;
+    const liabilityInstrument = (id: string) =>
+      doc.liabilities.find((l) => l.id === id)?.instrument;
+
+    expect(assetInstrument("a_home")).toBe("property");
+    expect(assetInstrument("a_cash")).toBe("current_account");
+    expect(liabilityInstrument("l_mort")).toBe("mortgage");
+    expect(liabilityInstrument("l_card")).toBe("loan");
+
+    // Import into a fresh store and re-export: the instruments survive intact.
+    const restored = createInMemoryStore();
+    restored.workspace.importWorkspace(doc);
+    const doc2 = restored.workspace.exportWorkspace();
+
+    expect(doc2.assets.find((a) => a.id === "a_home")?.instrument).toBe("property");
+    expect(doc2.assets.find((a) => a.id === "a_cash")?.instrument).toBe("current_account");
+    expect(doc2.liabilities.find((l) => l.id === "l_mort")?.instrument).toBe("mortgage");
+
+    store.close();
+    restored.close();
   });
 });

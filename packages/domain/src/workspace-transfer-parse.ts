@@ -55,6 +55,24 @@ const groupSchema = z.object({
 
 const liquidityTierSchema = z.enum(["cash", "market", "term-locked", "illiquid"]);
 
+const instrumentSchema = z.enum([
+  "current_account",
+  "term_deposit",
+  "fund",
+  "etf",
+  "stock",
+  "index",
+  "pension_plan",
+  "crypto",
+  "precious_metal",
+  "vehicle",
+  "property",
+  "mortgage",
+  "loan",
+  "credit_card",
+  "other",
+]);
+
 const investmentMetaSchema = z.object({
   unitSymbol: nonEmptyString.optional(),
   isin: nonEmptyString.optional(),
@@ -72,6 +90,7 @@ const assetSchema = z.object({
   currentValue: moneyMinorSchema.optional(),
   liquidityTier: liquidityTierSchema,
   isPrimaryResidence: z.boolean().optional(),
+  instrument: instrumentSchema.optional(),
   ownership: z.array(ownershipShareSchema),
   investment: investmentMetaSchema.optional(),
   deletedAt: nonEmptyString.optional(),
@@ -83,6 +102,7 @@ const liabilitySchema = z.object({
   type: z.enum(["mortgage", "debt"]),
   currency: nonEmptyString,
   currentBalance: moneyMinorSchema,
+  instrument: instrumentSchema.optional(),
   ownership: z.array(ownershipShareSchema),
   associatedAssetId: nonEmptyString.optional(),
   deletedAt: nonEmptyString.optional(),

@@ -184,6 +184,21 @@ describe("parseWorkspaceExport — acceptance", () => {
     }
   });
 
+  test("a holding's instrument survives the parse (#149)", () => {
+    const document = makeDocument((doc) => {
+      doc.assets[0]!.instrument = "property";
+      doc.liabilities[0]!.instrument = "credit_card";
+    });
+
+    const result = parseWorkspaceExport(document);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.assets[0]!.instrument).toBe("property");
+      expect(result.value.liabilities[0]!.instrument).toBe("credit_card");
+    }
+  });
+
   test("a minimal live-state-only document parses with absent sections normalized empty", () => {
     const result = parseWorkspaceExport({
       version: 1,
@@ -294,6 +309,14 @@ describe("parseWorkspaceExport — structure", () => {
     });
 
     expectRejection(document, /members\[0\]\.id/);
+  });
+
+  test("an unknown instrument is rejected naming the JSON path (#149)", () => {
+    const document = makeDocument((doc) => {
+      (doc.assets[0] as { instrument: string }).instrument = "spaceship";
+    });
+
+    expectRejection(document, /assets\[0\]\.instrument/);
   });
 });
 
