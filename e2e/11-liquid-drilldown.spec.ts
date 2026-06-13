@@ -1,11 +1,14 @@
 /**
  * Journey 11: Liquid drilldown (#76)
  *
- * From the home, the decomposition chart's liquid band/legend entry links to
+ * From the home, the composition chart's liquid band/legend entry links to
  * the drill view (drill=liquid, composable with view=). The drill panel
- * renders in place of the decomposition chart with a breadcrumb back. The
- * globalSetup seeds a second snapshot day so the decomposition chart always
+ * renders in place of the composition chart with a breadcrumb back. The
+ * globalSetup seeds a second snapshot day so the composition chart always
  * renders during the serial run.
+ *
+ * Note (#142): the dashboard composition chart's legend is `.compositionLegend`;
+ * `.decompositionLegend` now lives only INSIDE the drill panel's stack section.
  */
 
 import { test, expect } from "./fixtures";
@@ -17,9 +20,10 @@ test("liquid drilldown: band/legend link → drill panel → breadcrumb back", a
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
 
-  // 2. The legend's "Líquido" entry (and the band itself) is a link — the
-  //    seeded second snapshot day guarantees the decomposition chart renders.
-  const legendLink = page.locator(".decompositionLegend a");
+  // 2. The composition legend's "Líquido" entry (cash, the first band, drills to
+  //    liquid) is a link — the seeded second snapshot day guarantees the chart
+  //    renders.
+  const legendLink = page.locator('.compositionLegend a[href*="drill=liquid"]');
   await expect(legendLink.first()).toHaveAttribute("href", /drill=liquid/);
   await legendLink.first().click();
 

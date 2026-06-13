@@ -1,12 +1,15 @@
 /**
  * Journey 12: Rest and housing drilldowns (#77)
  *
- * From the home, the decomposition chart's rest band/legend entry links to
+ * From the home, the composition chart's rest band/legend entry links to
  * the retirement-vs-illiquid drill (drill=rest), and the housing band/legend
  * entry links straight to the per-property small multiples (drill=housing —
  * a single tier, so no stacked chart, ever). Both compose with view=. The
- * globalSetup seeds a second snapshot day so the decomposition chart always
+ * globalSetup seeds a second snapshot day so the composition chart always
  * renders during the serial run.
+ *
+ * Note (#142): the dashboard composition chart's legend is `.compositionLegend`;
+ * `.decompositionLegend` now lives only INSIDE the drill panel's stack section.
  */
 
 import { test, expect } from "./fixtures";
@@ -18,10 +21,11 @@ test("rest drilldown: band/legend link → stack panel → breadcrumb back", asy
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
 
-  // 2. The legend's "Resto" entry (and the band itself) is a link — the
-  //    seeded second snapshot day guarantees the decomposition chart renders.
-  const legendLink = page.locator('.decompositionLegend a[href*="drill=rest"]');
-  await expect(legendLink.first()).toHaveText("Resto");
+  // 2. The composition legend's rest-group entries (the "A plazo" and "Ilíquido"
+  //    bands both drill to rest) are links — the seeded second snapshot day
+  //    guarantees the chart renders. Take the first rest-bound legend link.
+  const legendLink = page.locator('.compositionLegend a[href*="drill=rest"]');
+  await expect(legendLink.first()).toHaveText(/A plazo|Ilíquido/);
   await legendLink.first().click();
 
   await expect(page).toHaveURL(/drill=rest/);
@@ -51,7 +55,7 @@ test("housing drilldown: straight to per-property multiples, no stack", async ({
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
 
-  const legendLink = page.locator('.decompositionLegend a[href*="drill=housing"]');
+  const legendLink = page.locator('.compositionLegend a[href*="drill=housing"]');
   await expect(legendLink.first()).toHaveText("Vivienda");
   await legendLink.first().click();
 
