@@ -53,18 +53,6 @@ async function pinHouseholdScope(page: import("@playwright/test").Page): Promise
 test("debts drilldown: band/legend link → aggregate series + per-debt multiples → breadcrumb back", async ({
   page,
 }) => {
-  // Quarantined in CI only (still runs locally) pending #158. This test asserts
-  // the debt band/legend + per-debt multiples, which require the liability that
-  // journey 24 creates — but journey 24 is skipped in CI (its RSC server-action
-  // bug destabilises the shared server), so no debt exists here. The sibling
-  // test below ("…survives entering and leaving") navigates straight to the
-  // drill route and stays green. Remove this skip once #158 is fixed and
-  // journey 24 runs in CI again.
-  test.skip(
-    !!process.env.CI,
-    "Depends on journey 24's debt, quarantined in CI pending #158",
-  );
-
   // 0. Pin the household scope: earlier journeys leave a member scope in the
   //    cookie. The household scope aggregates every liability, so the debt the
   //    previous journeys created is guaranteed present. The scope choice is a

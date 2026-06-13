@@ -152,12 +152,73 @@ function toMinorInt(value: Big): number {
 }
 
 /**
+ * Memo of computed boundary curves, keyed by the plan + revisions + early
+ * repayments (everything `buildBoundaries` reads — `targetDate` is NOT a key,
+ * since the curve is identical for every date queried against the same loan).
+ *
+ * Why this exists (#158): the historical ripple values an amortizable liability
+ * at one date per past payment boundary, per scope — dozens to hundreds of
+ * `amortizableBalanceAtDate` calls with the SAME loan terms but different dates.
+ * Rebuilding the full O(termMonths) big.js schedule on every call made saving a
+ * long-running plan take ~30s, long enough that the dev server's server-action
+ * request timed out / reset (no native POST, no binding bug — a perf cliff).
+ * Memoising the date-independent curve turns the ripple from
+ * O(dates × termMonths) into O(termMonths + dates). Output is byte-identical.
+ *
+ * Bounded so it can never grow without limit across a long-lived server process.
+ */
+const MAX_BOUNDARY_CACHE_ENTRIES = 64;
+const boundaryCache = new Map<string, MonthlyBoundary[]>();
+
+/** Stable value-key for the inputs `buildBoundaries` depends on (not the date). */
+function boundaryCacheKey(input: AmortizableBalanceAtDateInput): string {
+  const { plan } = input;
+  const revisions = (input.revisions ?? [])
+    .map((r) => `${r.revisionDate}:${r.newAnnualInterestRate}`)
+    .join(",");
+  const repayments = (input.earlyRepayments ?? [])
+    .map((r) => `${r.repaymentDate}:${r.amountMinor}:${r.mode}`)
+    .join(",");
+  return [
+    plan.initialCapitalMinor,
+    plan.annualInterestRate,
+    plan.termMonths,
+    plan.startDate,
+    `R[${revisions}]`,
+    `E[${repayments}]`,
+  ].join("|");
+}
+
+/**
  * Build the balance at the start of each month [0..termMonths]. `boundaries[0]`
  * is the initial capital and `boundaries[termMonths]` is zero (the loan is
  * fully repaid). The payment is recomputed at every revision boundary over the
  * remaining term on the live balance, so revisions ripple forward correctly.
+ *
+ * Memoised by the date-independent loan key (#158): repeated calls for the same
+ * loan reuse the curve instead of rebuilding the O(termMonths) big.js schedule.
  */
 function buildBoundaries(input: AmortizableBalanceAtDateInput): MonthlyBoundary[] {
+  const cacheKey = boundaryCacheKey(input);
+  const cached = boundaryCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const boundaries = computeBoundaries(input);
+
+  // Simple bounded LRU-ish eviction: drop the oldest entry once full.
+  if (boundaryCache.size >= MAX_BOUNDARY_CACHE_ENTRIES) {
+    const oldest = boundaryCache.keys().next().value;
+    if (oldest !== undefined) {
+      boundaryCache.delete(oldest);
+    }
+  }
+  boundaryCache.set(cacheKey, boundaries);
+  return boundaries;
+}
+
+function computeBoundaries(input: AmortizableBalanceAtDateInput): MonthlyBoundary[] {
   const { plan } = input;
   const { initialCapitalMinor, annualInterestRate, termMonths, startDate } = plan;
 
