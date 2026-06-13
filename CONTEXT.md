@@ -330,6 +330,9 @@ lines.
 - A **balance anchor** attaches to a **revolving** or **informal** liability at a date.
 - A **debt model** determines how a liability's historical balance is calculated: from an **amortization plan**, from **balance anchors**, or from a step function of anchors.
 - A backdated **operation**, **valuation anchor**, or **balance anchor** triggers a **ripple recalculation** of existing **snapshots**; an **import** restores exported snapshots as-is and only fills gaps (ADR 0012).
+- A **connected source** mirrors **positions** read-only and **projects** them into the portfolio as one **holding** per source per **liquidity tier** rung; the positions are sub-detail beneath that holding, the way **operations** sit beneath an **investment**. Such a holding's value is **derived** (computed from its positions, never hand-set), so it is excluded from the manual **value update pass** and re-valued through the **price provider** machinery.
+- A coin's **purchase date** is a dated fact that ripples existing **snapshots** from that date forward (frozen at ripple time); a **sync** that finds a new trade ripples only from its date, while a mere price move never rewrites a past snapshot.
+- Ownership of a **connected source** holding is worthline's own concern (the source has none): a normal **ownership split**, editable, defaulting to 100% the connecting **scope** member.
 
 ## Flagged ambiguities
 
