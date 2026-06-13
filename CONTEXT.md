@@ -270,6 +270,41 @@ elsewhere.
 _Avoid_: integration, account (overloaded — see **scope**), import (a one-shot
 full-workspace replace, not a live mirror).
 
+**Position**:
+A single line a **connected source** mirrors — what you hold, where it lives.
+For Numista a position is a coin you own (its catalogue id, **grade**, and how
+many); for a hypothetical exchange it would be a token balance. A position is
+not a **holding**: it is method-specific sub-detail beneath one, the way an
+**operation** sits beneath an **investment**. Each position carries grouping
+metadata (a coin's metal, a token's symbol) so the holding's detail page can
+group them — a presentation lens, not a figure.
+
+**Coin value**:
+The value of one Numista **position**: the greater of its **metal value** (metal
+content × spot price) and its **numismatic value** (Numista's estimate for that
+coin at its **grade**). Taken per coin, then summed into the rolled-up holding.
+A coin whose metal is worth more than its collector estimate is valued as metal,
+and vice-versa.
+
+**Grade**:
+The condition rating of a coin (e.g. VF, XF, AU, UNC), assigned by the user
+_on Numista_, not in worthline. It selects which **numismatic value** estimate
+applies. worthline reads it as part of a **position** and never edits it.
+
+**Sync**:
+Refreshing a **connected source** by re-reading its current positions and
+re-valuing them. On demand, read-only, and bounded by the source's rate limits.
+Distinct from a **snapshot** (a frozen capture worthline derives) and from an
+**import** (a one-shot full-workspace replace).
+
+**Projection**:
+How a **connected source**'s **positions** roll up into the portfolio: one
+**holding** per source per **liquidity tier** rung. Numista's coins are all
+**illiquid**, so the collection is a single line; a source spanning rungs would
+surface one line per rung, keeping the **liquidity breakdown** honest. Finer
+grouping (by metal, by token) is a lens on the holding's detail page, not extra
+lines.
+
 ## Relationships
 
 - **Net worth** decomposes into **gross assets** − **debts**.

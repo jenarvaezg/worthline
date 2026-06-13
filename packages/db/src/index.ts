@@ -86,14 +86,17 @@ export type {
 } from "./asset-store";
 export type {
   AddBalanceAnchorInput,
+  AddEarlyRepaymentInput,
   AddInterestRateRevisionInput,
   AmortizationPlanRecord,
   BalanceAnchorRecord,
   CreateAmortizationPlanInput,
+  EarlyRepaymentRecord,
   InterestRateRevisionRecord,
   LiabilityStore,
   UpdateAmortizationPlanInput,
   UpdateBalanceAnchorInput,
+  UpdateEarlyRepaymentInput,
   UpdateInterestRateRevisionInput,
   UpdateLiabilityInput,
 } from "./liability-store";

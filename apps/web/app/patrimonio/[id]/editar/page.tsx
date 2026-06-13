@@ -2,6 +2,7 @@ import { runBootstrapHealthcheck, withStore } from "@worthline/db";
 import type {
   AmortizationPlanRecord,
   BalanceAnchorRecord,
+  EarlyRepaymentRecord,
   InterestRateRevisionRecord,
   ValuationAnchorRecord,
 } from "@worthline/db";
@@ -11,7 +12,13 @@ import {
   formatMoneyMinor,
   listScopeOptions,
 } from "@worthline/domain";
-import type { DebtModel, Liability, ManualAsset, Member } from "@worthline/domain";
+import type {
+  DebtModel,
+  EarlyRepaymentMode,
+  Liability,
+  ManualAsset,
+  Member,
+} from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -27,11 +34,13 @@ import Shell from "../../../shell";
 import {
   acknowledgeWarningAction,
   addBalanceAnchorAction,
+  addEarlyRepaymentAction,
   addInterestRateRevisionAction,
   addValuationAnchorAction,
   deleteAmortizationPlanAction,
   deleteAssetAction,
   deleteBalanceAnchorAction,
+  deleteEarlyRepaymentAction,
   deleteInterestRateRevisionAction,
   deleteLiabilityAction,
   deleteValuationAnchorAction,
@@ -41,6 +50,7 @@ import {
   setDebtModelAction,
   updateAssetValuationAction,
   updateBalanceAnchorAction,
+  updateEarlyRepaymentAction,
   updateInterestRateRevisionAction,
   updateLiabilityBalanceAction,
   updateValuationAnchorAction,
@@ -99,6 +109,9 @@ export default async function EditarPage({
     const rateRevisions = amortizationPlan
       ? store.liabilities.readInterestRateRevisions(amortizationPlan.id)
       : [];
+    const earlyRepayments = amortizationPlan
+      ? store.liabilities.readEarlyRepayments(amortizationPlan.id)
+      : [];
     const balanceAnchors =
       liability && (debtModel === "revolving" || debtModel === "informal")
         ? store.liabilities.readBalanceAnchors(id)
@@ -113,6 +126,7 @@ export default async function EditarPage({
       assets: assets.filter((a) => a.type !== "investment"),
       balanceAnchors,
       debtModel,
+      earlyRepayments,
       liability,
       overrides,
       rateRevisions,
@@ -135,6 +149,7 @@ export default async function EditarPage({
     assets,
     balanceAnchors,
     debtModel,
+    earlyRepayments,
     liability,
     overrides,
     rateRevisions,
@@ -238,6 +253,7 @@ export default async function EditarPage({
             amortizationPlan={amortizationPlan}
             balanceAnchors={balanceAnchors}
             debtModel={debtModel}
+            earlyRepayments={earlyRepayments}
             formError={formError}
             liabilityId={liability.id}
             rateRevisions={rateRevisions}
@@ -804,6 +820,7 @@ function DebtModelSection({
   amortizationPlan,
   balanceAnchors,
   debtModel,
+  earlyRepayments,
   formError,
   liabilityId,
   rateRevisions,
@@ -812,6 +829,7 @@ function DebtModelSection({
   amortizationPlan: AmortizationPlanRecord | null;
   balanceAnchors: BalanceAnchorRecord[];
   debtModel: DebtModel | null;
+  earlyRepayments: EarlyRepaymentRecord[];
   formError: FormErrorContext | null;
   liabilityId: string;
   rateRevisions: InterestRateRevisionRecord[];
@@ -849,6 +867,7 @@ function DebtModelSection({
       {debtModel === "amortizable" ? (
         <AmortizablePlanEditor
           currentUrl={currentUrl}
+          earlyRepayments={earlyRepayments}
           formError={formError}
           liabilityId={liabilityId}
           plan={amortizationPlan}
@@ -926,9 +945,13 @@ function PlanFields({ max, values }: { max: string; values: Record<string, strin
   );
 }
 
-/** The amortizable sub-section: the plan (create or edit) plus its rate revisions. */
+/**
+ * The amortizable sub-section: the plan (create or edit), its rate revisions, and
+ * its early repayments (amortización anticipada, PRD #146 / #150).
+ */
 function AmortizablePlanEditor({
   currentUrl,
+  earlyRepayments,
   formError,
   liabilityId,
   plan,
@@ -936,6 +959,7 @@ function AmortizablePlanEditor({
   today,
 }: {
   currentUrl: string;
+  earlyRepayments: EarlyRepaymentRecord[];
   formError: FormErrorContext | null;
   liabilityId: string;
   plan: AmortizationPlanRecord | null;
@@ -954,6 +978,10 @@ function AmortizablePlanEditor({
           }
         : {};
   const revisionValues = formError?.formId === "revision" ? formError.values : {};
+  const repaymentValues = formError?.formId === "repayment" ? formError.values : {};
+  const sortedRepayments = [...earlyRepayments].sort((a, b) =>
+    b.repaymentDate.localeCompare(a.repaymentDate),
+  );
   const sortedRevisions = [...rateRevisions].sort((a, b) =>
     b.revisionDate.localeCompare(a.revisionDate),
   );
@@ -1027,6 +1055,53 @@ function AmortizablePlanEditor({
             </div>
           ) : (
             <p className="emptyLine">Sin revisiones de tipo registradas.</p>
+          )}
+        </>
+      ) : null}
+
+      {plan ? (
+        <>
+          <h4>Amortizaciones anticipadas</h4>
+          <form
+            action={addEarlyRepaymentAction}
+            aria-label="Registrar amortización anticipada"
+            className="stackForm"
+          >
+            <input name="currentUrl" type="hidden" value={currentUrl} />
+            <input name="id" type="hidden" value={liabilityId} />
+            <input name="planId" type="hidden" value={plan.id} />
+            <EarlyRepaymentFields max={today} values={repaymentValues} />
+            <button type="submit">Registrar amortización</button>
+          </form>
+
+          {sortedRepayments.length > 0 ? (
+            <div className="tableScroll">
+              <table aria-label="Amortizaciones anticipadas">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th className="numCol">Importe</th>
+                    <th>Tipo</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedRepayments.map((repayment) => (
+                    <EarlyRepaymentRow
+                      currentUrl={currentUrl}
+                      formError={formError}
+                      key={repayment.id}
+                      liabilityId={liabilityId}
+                      max={today}
+                      planId={plan.id}
+                      repayment={repayment}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="emptyLine">Sin amortizaciones anticipadas registradas.</p>
           )}
         </>
       ) : null}
@@ -1123,6 +1198,129 @@ function RevisionRow({
           <input name="id" type="hidden" value={liabilityId} />
           <input name="planId" type="hidden" value={planId} />
           <input name="revisionId" type="hidden" value={revision.id} />
+          <details className="confirmDelete">
+            <summary>Eliminar</summary>
+            <button type="submit">Confirmar</button>
+          </details>
+        </form>
+      </td>
+    </tr>
+  );
+}
+
+const EARLY_REPAYMENT_MODE_LABELS: Record<EarlyRepaymentMode, string> = {
+  "reduce-payment": "Reducir cuota",
+  "reduce-term": "Reducir plazo",
+};
+
+/** Shared date / amount / mode fields for the add and edit early-repayment forms. */
+function EarlyRepaymentFields({
+  max,
+  values,
+}: {
+  max: string;
+  values: Record<string, string>;
+}) {
+  return (
+    <>
+      <label>
+        Fecha de la amortización
+        <input
+          aria-label="Fecha de la amortización"
+          defaultValue={values["repaymentDate"]}
+          max={max}
+          name="repaymentDate"
+          required
+          type="date"
+        />
+      </label>
+      <label>
+        Importe en EUR
+        <input
+          aria-label="Importe en EUR"
+          defaultValue={values["amount"]}
+          inputMode="decimal"
+          min="0"
+          name="amount"
+          placeholder="10000"
+          required
+        />
+      </label>
+      <label>
+        Tipo de amortización
+        <select
+          aria-label="Tipo de amortización"
+          defaultValue={values["mode"] ?? "reduce-payment"}
+          name="mode"
+        >
+          <option value="reduce-payment">
+            {EARLY_REPAYMENT_MODE_LABELS["reduce-payment"]}
+          </option>
+          <option value="reduce-term">
+            {EARLY_REPAYMENT_MODE_LABELS["reduce-term"]}
+          </option>
+        </select>
+      </label>
+    </>
+  );
+}
+
+/** One early-repayment row: data + inline edit (<details>) + two-step delete. */
+function EarlyRepaymentRow({
+  currentUrl,
+  formError,
+  liabilityId,
+  max,
+  planId,
+  repayment,
+}: {
+  currentUrl: string;
+  formError: FormErrorContext | null;
+  liabilityId: string;
+  max: string;
+  planId: string;
+  repayment: EarlyRepaymentRecord;
+}) {
+  const editFormId = `repayment-${repayment.id}`;
+  const editing = formError?.formId === editFormId;
+  const editValues = editing
+    ? formError.values
+    : {
+        amount: formatMoneyInput(repayment.amountMinor),
+        mode: repayment.mode,
+        repaymentDate: repayment.repaymentDate,
+      };
+
+  return (
+    <tr>
+      <td>{repayment.repaymentDate}</td>
+      <td className="numCol">
+        {formatMoneyMinor({ amountMinor: repayment.amountMinor, currency: "EUR" })}
+      </td>
+      <td>{EARLY_REPAYMENT_MODE_LABELS[repayment.mode]}</td>
+      <td className="rowActions">
+        <details className="anchorEdit" open={editing}>
+          <summary>Editar</summary>
+          <form
+            action={updateEarlyRepaymentAction}
+            aria-label="Editar amortización anticipada"
+            className="stackForm"
+          >
+            <input name="currentUrl" type="hidden" value={currentUrl} />
+            <input name="id" type="hidden" value={liabilityId} />
+            <input name="planId" type="hidden" value={planId} />
+            <input name="repaymentId" type="hidden" value={repayment.id} />
+            <EarlyRepaymentFields max={max} values={editValues} />
+            <div className="formActions">
+              <button type="submit">Guardar amortización</button>
+            </div>
+          </form>
+        </details>
+        <form action={deleteEarlyRepaymentAction}>
+          <input name="currentUrl" type="hidden" value={currentUrl} />
+          <input name="id" type="hidden" value={liabilityId} />
+          <input name="planId" type="hidden" value={planId} />
+          <input name="repaymentId" type="hidden" value={repayment.id} />
           <details className="confirmDelete">
             <summary>Eliminar</summary>
             <button type="submit">Confirmar</button>

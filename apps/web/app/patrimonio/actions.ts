@@ -24,6 +24,7 @@ import {
   parseAmortizationPlanStrict,
   parseBalanceAnchorStrict,
   parseDebtModelStrict,
+  parseEarlyRepaymentStrict,
   parseInterestRateRevisionStrict,
   parseValueUpdatePass,
   preserveFields,
@@ -1526,6 +1527,212 @@ export async function deleteInterestRateRevisionAction(
   }
 
   redirect(successRedirectUrl(editUrl(id), "revision_deleted", id));
+}
+
+export async function addEarlyRepaymentAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const id = parseEntityId(formData);
+  const planId = parseEntityId(formData, "planId");
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id || !planId) {
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador del plan no encontrado.",
+      }),
+    );
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const parsed = parseEarlyRepaymentStrict(formData, planId, Date.now(), today);
+
+  if (!parsed.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        formId: "repayment",
+        message: parsed.error,
+        values: preserveFields(formData, ["repaymentDate", "amount", "mode"]),
+      }),
+    );
+  }
+
+  const result = runWith((store) => {
+    const guard = requireDebtModel(store, id, "amortizable");
+
+    if (!guard.ok) {
+      return guard;
+    }
+
+    store.liabilities.addEarlyRepayment(parsed.command);
+
+    // A past repayment is a dated fact: generate the snapshot at its date and
+    // recalculate the ones after it (ADR 0012, the "amortizable-repayment" kind).
+    if (parsed.command.repaymentDate <= today) {
+      store.rippleHistoricalSnapshotsForDebt({
+        fromDateKey: parsed.command.repaymentDate,
+        kind: "amortizable-repayment",
+        liabilityId: id,
+        today,
+      });
+    }
+
+    return { ok: true as const };
+  });
+
+  if (!result.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), { formId: "repayment", message: result.error! }),
+    );
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "repayment_added", id));
+}
+
+export async function updateEarlyRepaymentAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const id = parseEntityId(formData);
+  const planId = parseEntityId(formData, "planId");
+  const repaymentId = parseEntityId(formData, "repaymentId");
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id || !planId || !repaymentId) {
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador de la amortización no encontrado.",
+      }),
+    );
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const parsed = parseEarlyRepaymentStrict(formData, planId, Date.now(), today);
+
+  if (!parsed.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        formId: `repayment-${repaymentId}`,
+        message: parsed.error,
+        values: preserveFields(formData, ["repaymentDate", "amount", "mode"]),
+      }),
+    );
+  }
+
+  const result = runWith((store) => {
+    const guard = requireDebtModel(store, id, "amortizable");
+
+    if (!guard.ok) {
+      return guard;
+    }
+
+    // Ripple from the earlier of the old/new date so every affected snapshot recomputes.
+    const previous = store.liabilities
+      .readEarlyRepayments(planId)
+      .find((r) => r.id === repaymentId);
+    const changes = store.liabilities.updateEarlyRepayment(repaymentId, {
+      amountMinor: parsed.command.amountMinor,
+      mode: parsed.command.mode,
+      repaymentDate: parsed.command.repaymentDate,
+    });
+
+    if (changes === 0) {
+      return {
+        ok: false as const,
+        error: "No se encontró la amortización — puede que ya se haya eliminado.",
+      };
+    }
+
+    const fromDateKey =
+      previous && previous.repaymentDate < parsed.command.repaymentDate
+        ? previous.repaymentDate
+        : parsed.command.repaymentDate;
+
+    if (fromDateKey <= today) {
+      store.rippleHistoricalSnapshotsForDebt({
+        fromDateKey,
+        kind: "amortizable-repayment",
+        liabilityId: id,
+        today,
+      });
+    }
+
+    return { ok: true as const };
+  });
+
+  if (!result.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        formId: `repayment-${repaymentId}`,
+        message: result.error!,
+      }),
+    );
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "repayment_saved", id));
+}
+
+export async function deleteEarlyRepaymentAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const id = parseEntityId(formData);
+  const repaymentId = parseEntityId(formData, "repaymentId");
+  const planId = parseEntityId(formData, "planId");
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id || !repaymentId || !planId) {
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador de la amortización no encontrado.",
+      }),
+    );
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const result = runWith((store) => {
+    const guard = requireDebtModel(store, id, "amortizable");
+
+    if (!guard.ok) {
+      return guard;
+    }
+
+    const removed = store.liabilities
+      .readEarlyRepayments(planId)
+      .find((r) => r.id === repaymentId);
+    const changes = store.liabilities.deleteEarlyRepayment(repaymentId);
+
+    if (changes === 0) {
+      return {
+        ok: false as const,
+        error: "No se encontró la amortización — puede que ya se haya eliminado.",
+      };
+    }
+
+    // Deleting a dated fact recalculates the snapshots from its date forward
+    // (ADR 0012). Recalc-only via the "amortizable-revision" kind — no
+    // generation, the curve now has no repayment there (mirrors plan deletion).
+    if (removed && removed.repaymentDate <= today) {
+      store.rippleHistoricalSnapshotsForDebt({
+        fromDateKey: removed.repaymentDate,
+        kind: "amortizable-revision",
+        liabilityId: id,
+        today,
+      });
+    }
+
+    return { ok: true as const };
+  });
+
+  if (!result.ok) {
+    redirect(errorRedirectUrl(editUrl(id), { message: result.error! }));
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "repayment_deleted", id));
 }
 
 export async function addBalanceAnchorAction(

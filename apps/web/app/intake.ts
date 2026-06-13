@@ -1,6 +1,7 @@
 import type { DecimalString } from "@worthline/domain";
 import type {
   AddBalanceAnchorInput,
+  AddEarlyRepaymentInput,
   AddInterestRateRevisionInput,
   AddValuationAnchorInput,
   CreateAmortizationPlanInput,
@@ -347,6 +348,9 @@ export function okMessage(key: string | undefined): string | null {
     plan_deleted: "Plan de amortización eliminado.",
     plan_saved: "Plan de amortización guardado.",
     prices_refreshed: "Precios actualizados.",
+    repayment_added: "Amortización anticipada registrada.",
+    repayment_deleted: "Amortización anticipada eliminada.",
+    repayment_saved: "Amortización anticipada actualizada.",
     rate_saved: "Tasa de revalorización guardada.",
     revision_added: "Revisión de tipo registrada.",
     revision_deleted: "Revisión de tipo eliminada.",
@@ -1046,6 +1050,57 @@ export function parseBalanceAnchorStrict(
       balanceMinor,
       id: createStableId("banchor", liabilityId, seed),
       liabilityId,
+    },
+  };
+}
+
+/**
+ * Strict early-repayment parser (PRD #146, slice S4). Builds an
+ * AddEarlyRepaymentInput: a present, ISO, non-future date, a positive amount
+ * (EUR → minor), and a mode — reduce-payment keeps the term and lowers the
+ * cuota, reduce-term keeps the cuota and shortens the term. The caller redirects
+ * on error.
+ */
+export function parseEarlyRepaymentStrict(
+  formData: FormData,
+  planId: string,
+  seed: number,
+  today: string,
+): StrictParseResult<AddEarlyRepaymentInput> {
+  const repaymentDate = String(formData.get("repaymentDate") ?? "").trim();
+
+  if (!repaymentDate) {
+    return { ok: false, error: "La fecha de la amortización es obligatoria." };
+  }
+
+  if (!ISO_DATE.test(repaymentDate)) {
+    return { ok: false, error: "La fecha de la amortización no es válida." };
+  }
+
+  if (repaymentDate > today) {
+    return { ok: false, error: "La fecha no puede ser futura." };
+  }
+
+  const amountMinor = parseMoneyMinorField(formData, "amount");
+
+  if (amountMinor === null || amountMinor <= 0) {
+    return { ok: false, error: "El importe debe ser un número positivo." };
+  }
+
+  const mode = String(formData.get("mode") ?? "").trim();
+
+  if (mode !== "reduce-payment" && mode !== "reduce-term") {
+    return { ok: false, error: "El tipo de amortización no es válido." };
+  }
+
+  return {
+    ok: true,
+    command: {
+      amountMinor,
+      id: createStableId("erp", planId, seed),
+      mode,
+      planId,
+      repaymentDate,
     },
   };
 }
