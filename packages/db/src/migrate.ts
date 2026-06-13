@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 export function migrate(sqlite: DatabaseConnection): void {
   sqlite.pragma("journal_mode = WAL");
@@ -225,5 +225,43 @@ export function migrate(sqlite: DatabaseConnection): void {
          ELSE 'stored' END;`,
     );
     sqlite.pragma("user_version = 13");
+  }
+
+  if (version < 14) {
+    // ADR 0014 (#149): instrument — what a holding IS — becomes a first-class
+    // column, backfilled from each holding's current type / debt model. Assets:
+    // a real-estate OR primary-residence asset → property (mirroring the runtime
+    // isHousingAsset boundary, so housing equity stays byte-identical when it is
+    // re-sourced from instrument = 'property'); cash → current_account; an
+    // investment → pension_plan when priced by Finect, else fund (the coarse
+    // default — new investments resolve finer via the symbol-search quote type);
+    // everything else → other. Liabilities: a mortgage → mortgage, a revolving
+    // debt → credit_card, every other debt → loan. Nullable, no CHECK (the enum
+    // is enforced in TS, like valuation_method). The instrument is forward-prep
+    // for valuation in this slice — only housing reads it — so it changes no
+    // figure; it is the schema seam later slices build the add flow on.
+    try {
+      sqlite.exec("ALTER TABLE assets ADD COLUMN instrument TEXT");
+    } catch {}
+    try {
+      sqlite.exec("ALTER TABLE liabilities ADD COLUMN instrument TEXT");
+    } catch {}
+    sqlite.exec(
+      `UPDATE assets SET instrument = CASE
+         WHEN type = 'real_estate' OR is_primary_residence = 1 THEN 'property'
+         WHEN type = 'cash' THEN 'current_account'
+         WHEN type = 'investment' THEN COALESCE(
+           (SELECT CASE WHEN ia.price_provider = 'finect' THEN 'pension_plan' ELSE 'fund' END
+            FROM investment_assets ia WHERE ia.asset_id = assets.id),
+           'fund')
+         ELSE 'other' END;`,
+    );
+    sqlite.exec(
+      `UPDATE liabilities SET instrument = CASE
+         WHEN type = 'mortgage' THEN 'mortgage'
+         WHEN debt_model = 'revolving' THEN 'credit_card'
+         ELSE 'loan' END;`,
+    );
+    sqlite.pragma("user_version = 14");
   }
 }
