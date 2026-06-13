@@ -21,6 +21,10 @@ import {
   parseOwnership,
   parseLiabilityCommand,
   parseValuationAnchorStrict,
+  parseAmortizationPlanStrict,
+  parseBalanceAnchorStrict,
+  parseDebtModelStrict,
+  parseInterestRateRevisionStrict,
   parseValueUpdatePass,
   preserveFields,
   successRedirectUrl,
@@ -1053,4 +1057,554 @@ function parseLiquidityTier(value: FormDataEntryValue | null) {
     return value;
   }
   return "cash" as const;
+}
+
+/**
+ * Debt-model editing (PRD #109, slice 10). All mutations of a liability's debt
+ * model, amortization plan, interest-rate revisions and balance anchors flow
+ * through these server actions. Domain guard (R9): only a liability can carry a
+ * debt model; an amortizable plan/revisions require the amortizable model, and
+ * balance anchors require the revolving/informal model — any mismatch is
+ * rejected with a Spanish message. After every mutation we ripple historical
+ * snapshots with the matching kind so /historico reflects the recomputed debt
+ * curve (slice 9 wiring; the deferred #118 acceptance lives here).
+ */
+
+/** Read a liability by id, or null. Shared by the debt actions for the R9 guard. */
+function findLiability(store: WorthlineStore, id: string) {
+  return store.liabilities.readLiabilities().find((l) => l.id === id) ?? null;
+}
+
+export async function setDebtModelAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const id = parseEntityId(formData);
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id) {
+    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador de deuda no encontrado." }));
+  }
+
+  const parsed = parseDebtModelStrict(formData);
+
+  if (!parsed.ok) {
+    redirect(errorRedirectUrl(editUrl(id), { formId: "debtModel", message: parsed.error }));
+  }
+
+  const result = runWith((store) => {
+    const liability = findLiability(store, id);
+
+    if (!liability) {
+      return { ok: false, error: "No se encontró la deuda." };
+    }
+
+    store.liabilities.setDebtModel(id, parsed.model);
+    return { ok: true };
+  });
+
+  if (!result.ok) {
+    redirect(errorRedirectUrl(editUrl(id), { formId: "debtModel", message: result.error! }));
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "debt_model_saved", id));
+}
+
+/** Guard a debt mutation to liabilities carrying the expected model. */
+function requireDebtModel(
+  store: WorthlineStore,
+  id: string,
+  expected: DebtModelGuard,
+): { ok: true } | { ok: false; error: string } {
+  const liability = findLiability(store, id);
+
+  if (!liability) {
+    return { ok: false, error: "No se encontró la deuda." };
+  }
+
+  const model = store.liabilities.readDebtModel(id);
+
+  if (expected === "amortizable" && model !== "amortizable") {
+    return {
+      ok: false,
+      error: "El plan de amortización solo aplica a deudas amortizables.",
+    };
+  }
+
+  if (expected === "anchorable" && model !== "revolving" && model !== "informal") {
+    return {
+      ok: false,
+      error: "Los saldos solo aplican a deudas revolving o informales.",
+    };
+  }
+
+  return { ok: true };
+}
+
+type DebtModelGuard = "amortizable" | "anchorable";
+
+export async function saveAmortizationPlanAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const id = parseEntityId(formData);
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id) {
+    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador de deuda no encontrado." }));
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const parsed = parseAmortizationPlanStrict(formData, id, Date.now(), today);
+
+  if (!parsed.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        formId: "plan",
+        message: parsed.error,
+        values: preserveFields(formData, [
+          "initialCapital",
+          "annualInterestRate",
+          "termMonths",
+          "startDate",
+        ]),
+      }),
+    );
+  }
+
+  const result = runWith((store) => {
+    const guard = requireDebtModel(store, id, "amortizable");
+
+    if (!guard.ok) {
+      return guard;
+    }
+
+    const existing = store.liabilities.readAmortizationPlan(id);
+
+    if (existing) {
+      store.liabilities.updateAmortizationPlan(existing.id, {
+        annualInterestRate: parsed.command.annualInterestRate,
+        initialCapitalMinor: parsed.command.initialCapitalMinor,
+        startDate: parsed.command.startDate,
+        termMonths: parsed.command.termMonths,
+      });
+    } else {
+      store.liabilities.createAmortizationPlan(parsed.command);
+    }
+
+    store.rippleHistoricalSnapshotsForDebt({
+      kind: "amortizable-plan",
+      liabilityId: id,
+      today,
+    });
+
+    return { ok: true as const };
+  });
+
+  if (!result.ok) {
+    redirect(errorRedirectUrl(editUrl(id), { formId: "plan", message: result.error! }));
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "plan_saved", id));
+}
+
+export async function deleteAmortizationPlanAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const id = parseEntityId(formData);
+  const planId = parseEntityId(formData, "planId");
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id || !planId) {
+    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador del plan no encontrado." }));
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const result = runWith((store) => {
+    const guard = requireDebtModel(store, id, "amortizable");
+
+    if (!guard.ok) {
+      return guard;
+    }
+
+    // Capture the plan's startDate BEFORE deleting — needed for the ripple.
+    const plan = store.liabilities.readAmortizationPlan(id);
+
+    if (!plan) {
+      return { ok: false as const, error: "No se encontró el plan — puede que ya se haya eliminado." };
+    }
+
+    const startDate = plan.startDate;
+    const changes = store.liabilities.deleteAmortizationPlan(plan.id);
+
+    if (changes === 0) {
+      return { ok: false as const, error: "No se encontró el plan — puede que ya se haya eliminado." };
+    }
+
+    // Ripple AFTER deleting so the curve has no plan. The "amortizable-revision"
+    // kind (generateDates=[], recalcFrom=startDate) recalculates every existing
+    // snapshot ≥ startDate against the now-planless curve, which falls back to
+    // currentBalance — correctly reflecting the plan's removal in history.
+    // (The "amortizable-plan" kind cannot be used here because it early-returns
+    // when curve.plan is null.)
+    if (startDate <= today) {
+      store.rippleHistoricalSnapshotsForDebt({
+        fromDateKey: startDate,
+        kind: "amortizable-revision",
+        liabilityId: id,
+        today,
+      });
+    }
+
+    return { ok: true as const };
+  });
+
+  if (!result.ok) {
+    redirect(errorRedirectUrl(editUrl(id), { message: result.error! }));
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "plan_deleted", id));
+}
+
+export async function addInterestRateRevisionAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const id = parseEntityId(formData);
+  const planId = parseEntityId(formData, "planId");
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id || !planId) {
+    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador del plan no encontrado." }));
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const parsed = parseInterestRateRevisionStrict(formData, planId, Date.now(), today);
+
+  if (!parsed.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        formId: "revision",
+        message: parsed.error,
+        values: preserveFields(formData, ["revisionDate", "newAnnualInterestRate"]),
+      }),
+    );
+  }
+
+  const result = runWith((store) => {
+    const guard = requireDebtModel(store, id, "amortizable");
+
+    if (!guard.ok) {
+      return guard;
+    }
+
+    store.liabilities.addInterestRateRevision(parsed.command);
+
+    if (parsed.command.revisionDate <= today) {
+      store.rippleHistoricalSnapshotsForDebt({
+        fromDateKey: parsed.command.revisionDate,
+        kind: "amortizable-revision",
+        liabilityId: id,
+        today,
+      });
+    }
+
+    return { ok: true as const };
+  });
+
+  if (!result.ok) {
+    redirect(errorRedirectUrl(editUrl(id), { formId: "revision", message: result.error! }));
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "revision_added", id));
+}
+
+export async function updateInterestRateRevisionAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const id = parseEntityId(formData);
+  const planId = parseEntityId(formData, "planId");
+  const revisionId = parseEntityId(formData, "revisionId");
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id || !planId || !revisionId) {
+    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador de la revisión no encontrado." }));
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const parsed = parseInterestRateRevisionStrict(formData, planId, Date.now(), today);
+
+  if (!parsed.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        formId: `revision-${revisionId}`,
+        message: parsed.error,
+        values: preserveFields(formData, ["revisionDate", "newAnnualInterestRate"]),
+      }),
+    );
+  }
+
+  const result = runWith((store) => {
+    const guard = requireDebtModel(store, id, "amortizable");
+
+    if (!guard.ok) {
+      return guard;
+    }
+
+    // Ripple from the earlier of the old/new date so every affected snapshot recomputes.
+    const previous = store.liabilities
+      .readInterestRateRevisions(planId)
+      .find((r) => r.id === revisionId);
+    const changes = store.liabilities.updateInterestRateRevision(revisionId, {
+      newAnnualInterestRate: parsed.command.newAnnualInterestRate,
+      revisionDate: parsed.command.revisionDate,
+    });
+
+    if (changes === 0) {
+      return { ok: false as const, error: "No se encontró la revisión — puede que ya se haya eliminado." };
+    }
+
+    const fromDateKey =
+      previous && previous.revisionDate < parsed.command.revisionDate
+        ? previous.revisionDate
+        : parsed.command.revisionDate;
+
+    if (fromDateKey <= today) {
+      store.rippleHistoricalSnapshotsForDebt({
+        fromDateKey,
+        kind: "amortizable-revision",
+        liabilityId: id,
+        today,
+      });
+    }
+
+    return { ok: true as const };
+  });
+
+  if (!result.ok) {
+    redirect(errorRedirectUrl(editUrl(id), { formId: `revision-${revisionId}`, message: result.error! }));
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "revision_saved", id));
+}
+
+export async function deleteInterestRateRevisionAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const id = parseEntityId(formData);
+  const revisionId = parseEntityId(formData, "revisionId");
+  const planId = parseEntityId(formData, "planId");
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id || !revisionId || !planId) {
+    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador de la revisión no encontrado." }));
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const result = runWith((store) => {
+    const guard = requireDebtModel(store, id, "amortizable");
+
+    if (!guard.ok) {
+      return guard;
+    }
+
+    const removed = store.liabilities
+      .readInterestRateRevisions(planId)
+      .find((r) => r.id === revisionId);
+    const changes = store.liabilities.deleteInterestRateRevision(revisionId);
+
+    if (changes === 0) {
+      return { ok: false as const, error: "No se encontró la revisión — puede que ya se haya eliminado." };
+    }
+
+    if (removed && removed.revisionDate <= today) {
+      store.rippleHistoricalSnapshotsForDebt({
+        fromDateKey: removed.revisionDate,
+        kind: "amortizable-revision",
+        liabilityId: id,
+        today,
+      });
+    }
+
+    return { ok: true as const };
+  });
+
+  if (!result.ok) {
+    redirect(errorRedirectUrl(editUrl(id), { message: result.error! }));
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "revision_deleted", id));
+}
+
+export async function addBalanceAnchorAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const id = parseEntityId(formData);
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id) {
+    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador de deuda no encontrado." }));
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const parsed = parseBalanceAnchorStrict(formData, id, Date.now(), today);
+
+  if (!parsed.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        formId: "balanceAnchor",
+        message: parsed.error,
+        values: preserveFields(formData, ["anchorDate", "balance"]),
+      }),
+    );
+  }
+
+  const result = runWith((store) => {
+    const guard = requireDebtModel(store, id, "anchorable");
+
+    if (!guard.ok) {
+      return guard;
+    }
+
+    store.liabilities.addBalanceAnchor(parsed.command);
+    store.rippleHistoricalSnapshotsForDebt({
+      fromDateKey: parsed.command.anchorDate,
+      kind: "anchor",
+      liabilityId: id,
+      today,
+    });
+
+    return { ok: true as const };
+  });
+
+  if (!result.ok) {
+    redirect(errorRedirectUrl(editUrl(id), { formId: "balanceAnchor", message: result.error! }));
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "balance_anchor_added", id));
+}
+
+export async function updateBalanceAnchorAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const id = parseEntityId(formData);
+  const anchorId = parseEntityId(formData, "anchorId");
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id || !anchorId) {
+    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador del saldo no encontrado." }));
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const parsed = parseBalanceAnchorStrict(formData, id, Date.now(), today);
+
+  if (!parsed.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        formId: `balanceAnchor-${anchorId}`,
+        message: parsed.error,
+        values: preserveFields(formData, ["anchorDate", "balance"]),
+      }),
+    );
+  }
+
+  const result = runWith((store) => {
+    const guard = requireDebtModel(store, id, "anchorable");
+
+    if (!guard.ok) {
+      return guard;
+    }
+
+    const previous = store.liabilities.readBalanceAnchors(id).find((a) => a.id === anchorId);
+    const changes = store.liabilities.updateBalanceAnchor(anchorId, {
+      anchorDate: parsed.command.anchorDate,
+      balanceMinor: parsed.command.balanceMinor,
+    });
+
+    if (changes === 0) {
+      return { ok: false as const, error: "No se encontró el saldo — puede que ya se haya eliminado." };
+    }
+
+    const fromDateKey =
+      previous && previous.anchorDate < parsed.command.anchorDate
+        ? previous.anchorDate
+        : parsed.command.anchorDate;
+
+    if (fromDateKey <= today) {
+      store.rippleHistoricalSnapshotsForDebt({
+        fromDateKey,
+        kind: "anchor",
+        liabilityId: id,
+        today,
+      });
+    }
+
+    return { ok: true as const };
+  });
+
+  if (!result.ok) {
+    redirect(errorRedirectUrl(editUrl(id), { formId: `balanceAnchor-${anchorId}`, message: result.error! }));
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "balance_anchor_saved", id));
+}
+
+export async function deleteBalanceAnchorAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<never> {
+  const id = parseEntityId(formData);
+  const anchorId = parseEntityId(formData, "anchorId");
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id || !anchorId) {
+    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador del saldo no encontrado." }));
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const result = runWith((store) => {
+    const guard = requireDebtModel(store, id, "anchorable");
+
+    if (!guard.ok) {
+      return guard;
+    }
+
+    const removed = store.liabilities.readBalanceAnchors(id).find((a) => a.id === anchorId);
+    const changes = store.liabilities.deleteBalanceAnchor(anchorId);
+
+    if (changes === 0) {
+      return { ok: false as const, error: "No se encontró el saldo — puede que ya se haya eliminado." };
+    }
+
+    if (removed && removed.anchorDate <= today) {
+      store.rippleHistoricalSnapshotsForDebt({
+        fromDateKey: removed.anchorDate,
+        kind: "anchor",
+        liabilityId: id,
+        today,
+      });
+    }
+
+    return { ok: true as const };
+  });
+
+  if (!result.ok) {
+    redirect(errorRedirectUrl(editUrl(id), { message: result.error! }));
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "balance_anchor_deleted", id));
 }

@@ -100,6 +100,7 @@ export type {
   LiabilityStore,
   UpdateAmortizationPlanInput,
   UpdateBalanceAnchorInput,
+  UpdateInterestRateRevisionInput,
   UpdateLiabilityInput,
 } from "./liability-store";
 export type { OperationsStore, ValueUpdateCommand } from "./operations-store";

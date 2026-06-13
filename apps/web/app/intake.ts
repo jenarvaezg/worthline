@@ -1,9 +1,16 @@
 import type { DecimalString } from "@worthline/domain";
-import type { AddValuationAnchorInput, CreateInvestmentAssetInput } from "@worthline/db";
+import type {
+  AddBalanceAnchorInput,
+  AddInterestRateRevisionInput,
+  AddValuationAnchorInput,
+  CreateAmortizationPlanInput,
+  CreateInvestmentAssetInput,
+} from "@worthline/db";
 import type {
   CreateInvestmentOperationInput,
   CreateLiabilityInput,
   CreateManualAssetInput,
+  DebtModel,
   DomainViolation,
   DrilldownKey,
   FireScopeConfig,
@@ -277,6 +284,10 @@ export function okMessage(key: string | undefined): string | null {
     anchor_deleted: "Tasación eliminada.",
     anchor_saved: "Tasación actualizada.",
     asset_added: "Activo añadido.",
+    balance_anchor_added: "Saldo registrado.",
+    balance_anchor_deleted: "Saldo eliminado.",
+    balance_anchor_saved: "Saldo actualizado.",
+    debt_model_saved: "Modelo de deuda guardado.",
     deleted_recoverable: "Eliminado — recuperable en Papelera.",
     fire_saved: "Configuración FIRE guardada.",
     hard_deleted: "Eliminado definitivamente.",
@@ -284,8 +295,13 @@ export function okMessage(key: string | undefined): string | null {
     liability_added: "Deuda añadida.",
     member_deleted: "Miembro borrado definitivamente.",
     operation_deleted: "Operación eliminada.",
+    plan_deleted: "Plan de amortización eliminado.",
+    plan_saved: "Plan de amortización guardado.",
     prices_refreshed: "Precios actualizados.",
     rate_saved: "Tasa de revalorización guardada.",
+    revision_added: "Revisión de tipo registrada.",
+    revision_deleted: "Revisión de tipo eliminada.",
+    revision_saved: "Revisión de tipo actualizada.",
     restored: "Restaurado.",
     saved: "Guardado.",
     trash_emptied: "Papelera vaciada.",
@@ -774,6 +790,198 @@ export function parseAppreciationRateStrict(formData: FormData): AppreciationRat
   const rate = (Number.isInteger(decimal) ? String(decimal) : decimal.toString()) as DecimalString;
 
   return { ok: true, rate };
+}
+
+/** Result of parsing the debt-model selector: ok with the model (or null = clear). */
+export type DebtModelResult =
+  | { ok: true; model: DebtModel | null }
+  | { ok: false; error: string };
+
+/**
+ * Strict debt-model parser (PRD #109, slice 10). The «modelo de deuda» selector
+ * posts one of the three known models, or an empty value to clear it (null = no
+ * model). Anything else is rejected. The caller redirects on error.
+ */
+export function parseDebtModelStrict(formData: FormData): DebtModelResult {
+  const raw = String(formData.get("debtModel") ?? "").trim();
+
+  if (!raw) {
+    return { ok: true, model: null };
+  }
+
+  if (raw === "amortizable" || raw === "revolving" || raw === "informal") {
+    return { ok: true, model: raw };
+  }
+
+  return { ok: false, error: "El modelo de deuda no es válido." };
+}
+
+/**
+ * Convert a user-typed annual percentage (e.g. "3", es-ES "2,5") into the
+ * decimal string the store persists ("0.03", "0.025"). Rejects a blank or
+ * negative value. Mirrors the percent→decimal logic of parseAppreciationRateStrict.
+ */
+function parseAnnualRatePercent(
+  raw: string,
+): { ok: true; rate: DecimalString } | { ok: false } {
+  const pct = parseDecimalStrict(raw.trim());
+
+  if (pct === null || pct < 0) {
+    return { ok: false };
+  }
+
+  const decimal = pct / 100;
+  const rate = (Number.isInteger(decimal)
+    ? String(decimal)
+    : decimal.toString()) as DecimalString;
+
+  return { ok: true, rate };
+}
+
+/**
+ * Strict amortization-plan parser (PRD #109, slice 10). Builds a
+ * CreateAmortizationPlanInput from the plan form. Validates server-side: a
+ * positive initial capital (EUR → minor), a non-negative annual interest rate
+ * (% → decimal string), a positive whole-month term, and a present, ISO,
+ * non-future start date (a future start would generate no history). The caller
+ * redirects on error.
+ */
+export function parseAmortizationPlanStrict(
+  formData: FormData,
+  liabilityId: string,
+  seed: number,
+  today: string,
+): StrictParseResult<CreateAmortizationPlanInput> {
+  const initialCapitalMinor = parseMoneyMinorField(formData, "initialCapital");
+
+  if (initialCapitalMinor === null || initialCapitalMinor <= 0) {
+    return { ok: false, error: "El capital inicial debe ser un número positivo." };
+  }
+
+  const rate = parseAnnualRatePercent(String(formData.get("annualInterestRate") ?? ""));
+
+  if (!rate.ok) {
+    return { ok: false, error: "El tipo de interés anual no es válido." };
+  }
+
+  const termMonths = parseDecimalStrict(String(formData.get("termMonths") ?? ""));
+
+  if (termMonths === null || !Number.isInteger(termMonths) || termMonths <= 0) {
+    return { ok: false, error: "El plazo debe ser un número entero de meses mayor que cero." };
+  }
+
+  const startDate = String(formData.get("startDate") ?? "").trim();
+
+  if (!startDate) {
+    return { ok: false, error: "La fecha de inicio es obligatoria." };
+  }
+
+  if (!ISO_DATE.test(startDate)) {
+    return { ok: false, error: "La fecha de inicio no es válida." };
+  }
+
+  if (startDate > today) {
+    return { ok: false, error: "La fecha no puede ser futura." };
+  }
+
+  return {
+    ok: true,
+    command: {
+      annualInterestRate: rate.rate,
+      id: createStableId("plan", liabilityId, seed),
+      initialCapitalMinor,
+      liabilityId,
+      startDate,
+      termMonths,
+    },
+  };
+}
+
+/**
+ * Strict interest-rate-revision parser (PRD #109, slice 10). Builds an
+ * AddInterestRateRevisionInput from the revision form: a present, ISO,
+ * non-future date and a non-negative annual rate (% → decimal string). The
+ * caller redirects on error.
+ */
+export function parseInterestRateRevisionStrict(
+  formData: FormData,
+  planId: string,
+  seed: number,
+  today: string,
+): StrictParseResult<AddInterestRateRevisionInput> {
+  const revisionDate = String(formData.get("revisionDate") ?? "").trim();
+
+  if (!revisionDate) {
+    return { ok: false, error: "La fecha de la revisión es obligatoria." };
+  }
+
+  if (!ISO_DATE.test(revisionDate)) {
+    return { ok: false, error: "La fecha de la revisión no es válida." };
+  }
+
+  if (revisionDate > today) {
+    return { ok: false, error: "La fecha no puede ser futura." };
+  }
+
+  const rate = parseAnnualRatePercent(String(formData.get("newAnnualInterestRate") ?? ""));
+
+  if (!rate.ok) {
+    return { ok: false, error: "El nuevo tipo de interés no es válido." };
+  }
+
+  return {
+    ok: true,
+    command: {
+      id: createStableId("rev", planId, seed),
+      newAnnualInterestRate: rate.rate,
+      planId,
+      revisionDate,
+    },
+  };
+}
+
+/**
+ * Strict balance-anchor parser (PRD #109, slice 10). Builds an
+ * AddBalanceAnchorInput for a revolving/informal debt: a present, ISO,
+ * non-future date and a positive total balance (EUR → minor, interest already
+ * included — there is no separate flag, slice #117 decision). The caller
+ * redirects on error.
+ */
+export function parseBalanceAnchorStrict(
+  formData: FormData,
+  liabilityId: string,
+  seed: number,
+  today: string,
+): StrictParseResult<AddBalanceAnchorInput> {
+  const anchorDate = String(formData.get("anchorDate") ?? "").trim();
+
+  if (!anchorDate) {
+    return { ok: false, error: "La fecha del saldo es obligatoria." };
+  }
+
+  if (!ISO_DATE.test(anchorDate)) {
+    return { ok: false, error: "La fecha del saldo no es válida." };
+  }
+
+  if (anchorDate > today) {
+    return { ok: false, error: "La fecha no puede ser futura." };
+  }
+
+  const balanceMinor = parseMoneyMinorField(formData, "balance");
+
+  if (balanceMinor === null || balanceMinor <= 0) {
+    return { ok: false, error: "El saldo debe ser un número positivo." };
+  }
+
+  return {
+    ok: true,
+    command: {
+      anchorDate,
+      balanceMinor,
+      id: createStableId("banchor", liabilityId, seed),
+      liabilityId,
+    },
+  };
 }
 
 /** One row in a value-update-pass: either a diff to apply or a parse error. */

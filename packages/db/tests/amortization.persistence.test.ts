@@ -215,6 +215,41 @@ describe("interest-rate revisions — CRUD", () => {
     });
   });
 
+  test("update a revision's date and rate in place", () => {
+    const store = createInMemoryStore();
+    seedPlan(store);
+    store.liabilities.addInterestRateRevision({
+      id: "r1",
+      newAnnualInterestRate: "0.03",
+      planId: "plan1",
+      revisionDate: "2022-01-01",
+    });
+
+    expect(
+      store.liabilities.updateInterestRateRevision("r1", {
+        newAnnualInterestRate: "0.04",
+        revisionDate: "2022-06-01",
+      }),
+    ).toBe(1);
+
+    const [revision] = store.liabilities.readInterestRateRevisions("plan1");
+    expect(revision).toMatchObject({
+      id: "r1",
+      newAnnualInterestRate: "0.04",
+      revisionDate: "2022-06-01",
+    });
+  });
+
+  test("update returns 0 for an unknown revision", () => {
+    const store = createInMemoryStore();
+    seedPlan(store);
+    expect(
+      store.liabilities.updateInterestRateRevision("nope", {
+        newAnnualInterestRate: "0.04",
+      }),
+    ).toBe(0);
+  });
+
   test("delete a revision by id", () => {
     const store = createInMemoryStore();
     seedPlan(store);

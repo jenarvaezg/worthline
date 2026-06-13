@@ -2394,6 +2394,53 @@ td.rowActions > * {
   margin-bottom: 8px;
 }
 
+/* === Debt model editor (PRD #109, slice 10) — reuses housing tokens ====== */
+
+.debtModel {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 16px;
+}
+
+.debtModel h3 {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 0;
+}
+
+.debtModel h4 {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 8px 0 0;
+}
+
+.debtModelDetail {
+  display: grid;
+  gap: 16px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+
+.debtModel .anchorEdit {
+  margin-bottom: 8px;
+}
+
+.debtModel .anchorEdit > summary {
+  cursor: pointer;
+  color: var(--blue);
+  font-size: 0.82rem;
+}
+
+.debtModel .anchorEdit[open] > summary {
+  margin-bottom: 8px;
+}
+
 @media (max-width: 640px) {
   .puestaRow {
     grid-template-columns: 1fr;
