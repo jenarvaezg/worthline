@@ -7,22 +7,9 @@
  * and mode, and delete it. A past repayment is a dated fact that ripples the
  * historical snapshots (visible in /historico). A future date is rejected
  * client-side (native max) and on the server.
- *
- * SKIPPED pending #158 — the RSC server-action binding bug. In Playwright the
- * plan/repayment server action never dispatches after setDebtModel's soft
- * redirect, so the debt-model config flow can't be driven end to end: journey 24
- * hits the identical wall, locally and in CI, and the Next 16.2.9 bump did not
- * fix it (a fresh navigation between steps does not recover it either). The add /
- * edit / delete and the past-dated ripple this journey asserts are covered
- * meanwhile by the domain (amortization), persistence (early_repayments CRUD) and
- * historical-snapshot ripple tests. Flip BLOCKED_BY_158 to false (and prefer the
- * CI-only skip journey 24 uses) once #158 lands.
  */
 
 import { test, expect } from "./fixtures";
-
-/** #158: the RSC server-action bug blocks the debt-model e2e flow. Flip once fixed. */
-const BLOCKED_BY_158 = true;
 
 /** A YYYY-MM-DD a given number of whole years before today. */
 function yearsAgo(years: number): string {
@@ -43,8 +30,6 @@ const today = new Date().toISOString().slice(0, 10);
 test("early repayment: add reduce-payment, edit to reduce-term, future rejected, past ripples to historico, delete", async ({
   page,
 }) => {
-  test.skip(BLOCKED_BY_158, "Pending #158 (RSC server-action bug) — see file header");
-
   const editUrl = (id: string) => `/patrimonio/${id}/editar`;
 
   // 1. Create a liability.
@@ -106,7 +91,9 @@ test("early repayment: add reduce-payment, edit to reduce-term, future rejected,
   });
   await expect(repaymentTable.getByText(repaymentDate)).toBeVisible();
   await expect(repaymentTable.getByText(/10\.000/)).toBeVisible();
-  await expect(repaymentTable.getByText("Reducir cuota")).toBeVisible();
+  // Scope to the cell: the collapsed inline-edit <select> keeps both mode
+  // <option>s in the DOM, so getByText would strict-mode-violate.
+  await expect(repaymentTable.getByRole("cell", { name: "Reducir cuota" })).toBeVisible();
 
   // 5. Edit the repayment: change the amount and switch the mode to reduce-term.
   await page.goto(editUrl(liabilityId));
@@ -122,7 +109,7 @@ test("early repayment: add reduce-payment, edit to reduce-term, future rejected,
     "Amortización anticipada actualizada.",
   );
   await expect(repaymentTable.getByText(/12\.000/)).toBeVisible();
-  await expect(repaymentTable.getByText("Reducir plazo")).toBeVisible();
+  await expect(repaymentTable.getByRole("cell", { name: "Reducir plazo" })).toBeVisible();
 
   // 6. The past plan + repayment produced historical snapshots — in /historico.
   await page.goto("/historico");
