@@ -420,6 +420,43 @@ h3 {
   color: var(--paper-strong);
 }
 
+/* Composition range controls (#144): a compact secondary segmented control in
+   the history panel header — server-side URL state, never a client gesture
+   (ADR 0009). It groups with the "Ver histórico" action, right of the title. */
+.historyControls {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.rangeTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rangeTabs a {
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+  padding: 3px 10px;
+  text-decoration: none;
+}
+
+.rangeTabs a:hover {
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.rangeTabs a.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper-strong);
+}
+
 .headline {
   margin-top: 16px;
 }
@@ -1381,6 +1418,27 @@ svg a:hover .compositionBand {
 
 .drillSparkline.housing polyline {
   stroke: var(--tier-housing);
+}
+
+/* === #145 debts drilldown === */
+
+/* The aggregate debt area and per-debt sparklines reuse the page-wide debt red,
+   matching the composition chart's single debt band. */
+.decompositionLegend .debts i {
+  background: var(--red);
+}
+
+.drillBand.debts {
+  fill: var(--red);
+  fill-opacity: 0.85;
+}
+
+.drillLine.debts {
+  stroke: var(--red);
+}
+
+.drillSparkline.debt polyline {
+  stroke: var(--red);
 }
 
 /* === #78 no-longer-held holdings: dimmed, marked, history intact === */

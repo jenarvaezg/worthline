@@ -11,11 +11,15 @@ import { describe, expect, test } from "vitest";
 
 import type { DatedSnapshotHoldingRow } from "./drilldown";
 import {
+  availableCompositionRanges,
   buildCompositionChartGeometry,
   buildCompositionSeries,
   COMPOSITION_CHART_HEIGHT,
   deriveCompositionBands,
+  granularityForSpanMonths,
+  rangeStartMonthKey,
   selectMonthlySeries,
+  selectPeriodicSeries,
 } from "./composition-chart";
 import type { CompositionSeriesPoint } from "./composition-chart";
 import type { LiquidityTier } from "./classification";
@@ -360,5 +364,176 @@ describe("buildCompositionChartGeometry", () => {
     expect(xs.size).toBe(1);
     // The period that carries no debt exposes a null debt anchor.
     expect(geometry.periods[1]!.debt).toBeNull();
+  });
+});
+
+// ── #144: temporal range + adaptive density ──────────────────────────────────
+
+describe("rangeStartMonthKey", () => {
+  test("bounded ranges count back inclusive of the current month", () => {
+    expect(rangeStartMonthKey("2026-06-13", "1y")).toBe("2025-07");
+    expect(rangeStartMonthKey("2026-06-13", "3y")).toBe("2023-07");
+    expect(rangeStartMonthKey("2026-06-13", "5y")).toBe("2021-07");
+  });
+
+  test("crossing the year boundary borrows correctly", () => {
+    expect(rangeStartMonthKey("2026-02-01", "1y")).toBe("2025-03");
+    expect(rangeStartMonthKey("2026-01-15", "1y")).toBe("2025-02");
+  });
+
+  test("'all' is unbounded — no cutoff", () => {
+    expect(rangeStartMonthKey("2026-06-13", "all")).toBeNull();
+  });
+});
+
+describe("granularityForSpanMonths", () => {
+  test("monthly up to 3 years, quarterly up to 7, annual beyond", () => {
+    expect(granularityForSpanMonths(0)).toBe("month");
+    expect(granularityForSpanMonths(36)).toBe("month");
+    expect(granularityForSpanMonths(37)).toBe("quarter");
+    expect(granularityForSpanMonths(84)).toBe("quarter");
+    expect(granularityForSpanMonths(85)).toBe("year");
+  });
+});
+
+describe("availableCompositionRanges", () => {
+  test("offers only bounded ranges the history exceeds, plus 'all'", () => {
+    // ~2 years of data → only 1A is meaningful besides Todo (the worked example).
+    expect(availableCompositionRanges(24)).toEqual(["1y", "all"]);
+    // Under a year → only Todo (the control should hide itself).
+    expect(availableCompositionRanges(6)).toEqual(["all"]);
+    // Exactly a year of data → 1A would equal Todo, so only Todo.
+    expect(availableCompositionRanges(12)).toEqual(["all"]);
+    // Long history → every range.
+    expect(availableCompositionRanges(120)).toEqual(["1y", "3y", "5y", "all"]);
+  });
+});
+
+describe("selectPeriodicSeries", () => {
+  const snaps = [
+    { dateKey: "2024-02-15" },
+    { dateKey: "2024-03-31" },
+    { dateKey: "2024-06-30" },
+    { dateKey: "2025-01-10" },
+    { dateKey: "2026-05-31" },
+    { dateKey: "2026-06-13" },
+  ];
+
+  test("monthly keeps the last snapshot of each month", () => {
+    expect(selectPeriodicSeries(snaps, "2026-06-13", "month").map((e) => e.dateKey)).toEqual([
+      "2024-02-15",
+      "2024-03-31",
+      "2024-06-30",
+      "2025-01-10",
+      "2026-05-31",
+      "2026-06-13",
+    ]);
+  });
+
+  test("quarterly keeps the last snapshot of each calendar quarter", () => {
+    expect(selectPeriodicSeries(snaps, "2026-06-13", "quarter").map((e) => e.dateKey)).toEqual([
+      "2024-03-31", // Q1 2024 (feb + mar → mar wins)
+      "2024-06-30", // Q2 2024
+      "2025-01-10", // Q1 2025
+      "2026-06-13", // Q2 2026 (may + jun → jun wins)
+    ]);
+  });
+
+  test("annual keeps the last snapshot of each year", () => {
+    expect(selectPeriodicSeries(snaps, "2026-06-13", "year").map((e) => e.dateKey)).toEqual([
+      "2024-06-30",
+      "2025-01-10",
+      "2026-06-13",
+    ]);
+  });
+
+  test("flags the period that contains today as the open one, at any granularity", () => {
+    const q = selectPeriodicSeries(snaps, "2026-06-13", "quarter");
+    expect(q.at(-1)).toEqual({ dateKey: "2026-06-13", isOpenPeriod: true });
+    expect(q.slice(0, -1).every((e) => !e.isOpenPeriod)).toBe(true);
+
+    const y = selectPeriodicSeries(snaps, "2026-06-13", "year");
+    expect(y.at(-1)!.isOpenPeriod).toBe(true);
+    expect(y.find((e) => e.dateKey === "2025-01-10")!.isOpenPeriod).toBe(false);
+  });
+});
+
+describe("buildCompositionSeries — range window and adaptive density", () => {
+  /** N consecutive monthly closes (day 28) with one cash row each, ascending. */
+  function genMonthlyHistory(startYear: number, startMonth: number, count: number) {
+    const snapshots: Array<{ dateKey: string; monthKey: string }> = [];
+    const rows: DatedSnapshotHoldingRow[] = [];
+    for (let i = 0; i < count; i++) {
+      const total = startYear * 12 + (startMonth - 1) + i;
+      const y = Math.floor(total / 12);
+      const m = (total % 12) + 1;
+      const dateKey = `${y}-${String(m).padStart(2, "0")}-28`;
+      snapshots.push({ dateKey, monthKey: dateKey.slice(0, 7) });
+      rows.push(row({ dateKey, holdingId: "a_cash", tier: "cash", valueMinor: 1_000_00 + i }));
+    }
+    return { rows, snapshots };
+  }
+
+  test("'all' over a long history buckets coarser than monthly (density adapts)", () => {
+    const { rows, snapshots } = genMonthlyHistory(2021, 1, 66); // 2021-01 .. 2026-06
+    const series = buildCompositionSeries({
+      housingHoldingIds: [],
+      range: "all",
+      rows,
+      snapshots,
+      today: "2026-06-28",
+    });
+
+    // 66 months, span 65 → quarterly: ~22 quarter closes, far fewer than 66.
+    expect(series.length).toBeGreaterThanOrEqual(20);
+    expect(series.length).toBeLessThanOrEqual(24);
+    // The latest capture remains the open period at the right edge.
+    expect(series.at(-1)!.dateKey).toBe("2026-06-28");
+    expect(series.at(-1)!.isOpenPeriod).toBe(true);
+  });
+
+  test("'1y' windows to the last twelve months at monthly density", () => {
+    const { rows, snapshots } = genMonthlyHistory(2021, 1, 66);
+    const series = buildCompositionSeries({
+      housingHoldingIds: [],
+      range: "1y",
+      rows,
+      snapshots,
+      today: "2026-06-28",
+    });
+
+    expect(series.map((p) => p.dateKey)).toEqual([
+      "2025-07-28",
+      "2025-08-28",
+      "2025-09-28",
+      "2025-10-28",
+      "2025-11-28",
+      "2025-12-28",
+      "2026-01-28",
+      "2026-02-28",
+      "2026-03-28",
+      "2026-04-28",
+      "2026-05-28",
+      "2026-06-28",
+    ]);
+  });
+
+  test("omitting range defaults to 'all' — unchanged behavior for short histories", () => {
+    const { rows, snapshots } = genMonthlyHistory(2026, 1, 6); // 6 months, monthly
+    const series = buildCompositionSeries({
+      housingHoldingIds: [],
+      rows,
+      snapshots,
+      today: "2026-06-28",
+    });
+
+    expect(series.map((p) => p.dateKey)).toEqual([
+      "2026-01-28",
+      "2026-02-28",
+      "2026-03-28",
+      "2026-04-28",
+      "2026-05-28",
+      "2026-06-28",
+    ]);
   });
 });

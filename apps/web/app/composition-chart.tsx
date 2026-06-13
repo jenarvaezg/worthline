@@ -29,8 +29,8 @@ import {
  * tooltip follows the cursor and lists ALL of the hovered period's values. The
  * tooltip overlay is pointer-events:none, so the asset bands stay clickable —
  * each links to its drilldown (cash/market → liquid, term-locked/illiquid →
- * rest, housing → housing). Debts have no destination. The chart still renders
- * server-side; only the hover layer needs the client.
+ * rest, housing → housing, and the debt band → debts, #145). The chart still
+ * renders server-side; only the hover layer needs the client.
  */
 
 /** Which drill an asset band navigates to (the ADR 0013 grouping). */
@@ -120,10 +120,17 @@ export default function CompositionChart({
           );
         })}
         {geometry.debtArea ? (
-          <span className="debt">
-            <i aria-hidden="true" />
-            Deudas
-          </span>
+          drillHrefs?.debts ? (
+            <a className="debt" href={drillHrefs.debts}>
+              <i aria-hidden="true" />
+              Deudas
+            </a>
+          ) : (
+            <span className="debt">
+              <i aria-hidden="true" />
+              Deudas
+            </span>
+          )
         ) : null}
         <span className="net">
           <i aria-hidden="true" />
@@ -175,7 +182,15 @@ export default function CompositionChart({
             );
           })}
           {geometry.debtArea ? (
-            <polygon className="compositionDebt" points={geometry.debtArea} />
+            drillHrefs?.debts ? (
+              // Native SVG anchor to the debts drilldown (#145), like the asset
+              // bands — the hover overlay is pointer-events:none so it stays clickable.
+              <a aria-label="Ver desglose: Deudas" href={drillHrefs.debts}>
+                <polygon className="compositionDebt" points={geometry.debtArea} />
+              </a>
+            ) : (
+              <polygon className="compositionDebt" points={geometry.debtArea} />
+            )
           ) : null}
           {/* Zero baseline — assets above, debts below. */}
           <line

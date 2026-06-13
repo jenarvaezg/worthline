@@ -6,6 +6,7 @@ import {
   moneySign,
 } from "@worthline/domain";
 import type {
+  CompositionRange,
   DrilldownKey,
   LiquidityTier,
   MoneyMinor,
@@ -22,6 +23,7 @@ import {
   appendParam,
   buildCurrentUrl,
   parseDrillParam,
+  parseRangeParam,
   parseScopeParam,
   parseScopeCookie,
   parseViewParam,
@@ -30,6 +32,7 @@ import {
 import { loadDashboard } from "./load-dashboard";
 import type { RefreshPricesResult } from "./load-dashboard";
 import CompositionChart from "./composition-chart";
+import CompositionRangeControls from "./composition-range-controls";
 import DrilldownPanel from "./drilldown-panel";
 import { refreshAndPersistStalePrices } from "./refresh-prices";
 import Shell from "./shell";
@@ -54,6 +57,7 @@ const TIER_DONUT_GEOMETRY = { cx: 50, cy: 50, innerRadius: 27, outerRadius: 45 }
 // Drill destinations phrased like the decomposition band anchors (#79), so a
 // donut segment and its band read the same to assistive tech.
 const DRILL_DESTINATION_LABELS: Record<DrilldownKey, string> = {
+  debts: "ver desglose de las deudas",
   housing: "ver desglose de la vivienda",
   liquid: "ver desglose del líquido",
   rest: "ver desglose del resto",
@@ -133,6 +137,27 @@ function DeltaChip({ delta, label }: { delta: DeltaWithPct | null; label: string
   );
 }
 
+/**
+ * A composition-area URL preserving the framing, an optional drill, and the
+ * temporal range (#144/#145). Clean defaults are omitted (total view, no drill,
+ * the `all` range). The `#composicion` fragment anchors full-document <a>
+ * navigation to the chart panel (ADR 0009); the hero's framing tabs pass
+ * `anchor = false` so switching Vista does not scroll away from the headline.
+ */
+function compositionUrl(
+  view: NetWorthFraming,
+  drill: DrilldownKey | null,
+  range: CompositionRange,
+  anchor = true,
+): string {
+  let url = "/";
+  if (view === "liquid") url = appendParam(url, "view", "liquid");
+  if (drill) url = appendParam(url, "drill", drill);
+  if (range !== "all") url = appendParam(url, "range", range);
+
+  return anchor ? `${url}#composicion` : url;
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -142,18 +167,19 @@ export default async function DashboardPage({
   const persistence = runBootstrapHealthcheck();
   const selectedView = parseViewParam(resolvedSearchParams?.view);
   const selectedDrill = parseDrillParam(resolvedSearchParams?.drill);
+  const selectedRange = parseRangeParam(resolvedSearchParams?.range);
   const currentUrl = buildCurrentUrl(resolvedSearchParams);
 
-  // Drill navigation (#76, #77): every URL preserves the selected Vista. The
-  // `#composicion` fragment anchors the full-document <a> navigation (ADR 0009)
-  // to the composition panel instead of the page top, so a drill leaves the
-  // reader where they were rather than scrolling up (#143 follow-up).
-  const viewHomeUrl = selectedView === "total" ? "/" : `/?view=${selectedView}`;
-  const composicionHomeUrl = `${viewHomeUrl}#composicion`;
+  // Drill navigation (#76, #77, #145): every URL preserves the selected Vista
+  // and the temporal range (#144). The `#composicion` fragment anchors the
+  // full-document <a> navigation (ADR 0009) to the composition panel instead of
+  // the page top, so a drill leaves the reader where they were (#143 follow-up).
+  const composicionHomeUrl = compositionUrl(selectedView, null, selectedRange);
   const drillHrefs = {
-    housing: `${appendParam(viewHomeUrl, "drill", "housing")}#composicion`,
-    liquid: `${appendParam(viewHomeUrl, "drill", "liquid")}#composicion`,
-    rest: `${appendParam(viewHomeUrl, "drill", "rest")}#composicion`,
+    debts: compositionUrl(selectedView, "debts", selectedRange),
+    housing: compositionUrl(selectedView, "housing", selectedRange),
+    liquid: compositionUrl(selectedView, "liquid", selectedRange),
+    rest: compositionUrl(selectedView, "rest", selectedRange),
   };
 
   const jar = await cookies();
@@ -172,6 +198,7 @@ export default async function DashboardPage({
       scopeId: queryScopeId ?? cookieScopeId,
       selectedView,
       drill: selectedDrill,
+      range: selectedRange,
       today,
       now,
       refreshPrices: async ({
@@ -212,6 +239,13 @@ export default async function DashboardPage({
   } = state;
 
   const hasHoldings = state.assets.length + state.liabilities.length > 0;
+
+  // Range controls (#144): the ranges this scope's history actually spans, each
+  // a link that sets the range while preserving the Vista and any active drill.
+  const rangeOptions = state.compositionRanges.map((range) => ({
+    href: compositionUrl(selectedView, selectedDrill, range),
+    range,
+  }));
 
   // Onboarding checklist: show while ANY step is still pending.
   const anyStepPending = onboarding.some((step) => !step.done);
@@ -261,11 +295,7 @@ export default async function DashboardPage({
               {framingTabs.map((tab) => (
                 <Link
                   className={tab.id === selectedView ? "active" : undefined}
-                  href={
-                    selectedDrill
-                      ? appendParam(`/?view=${tab.id}`, "drill", selectedDrill)
-                      : `/?view=${tab.id}`
-                  }
+                  href={compositionUrl(tab.id, selectedDrill, selectedRange, false)}
                   key={tab.id}
                   scroll={false}
                 >
@@ -386,9 +416,12 @@ export default async function DashboardPage({
       <section className="historyPanel" id="composicion" aria-label="Evolución del patrimonio">
         <div className="panelHeader">
           <h2>Evolución</h2>
-          <Link className="panelAction" href="/historico" scroll={false}>
-            Ver histórico →
-          </Link>
+          <div className="historyControls">
+            <CompositionRangeControls options={rangeOptions} selected={selectedRange} />
+            <Link className="panelAction" href="/historico" scroll={false}>
+              Ver histórico →
+            </Link>
+          </div>
         </div>
         {/* Composition (#142) — the single historical chart: gross asset bands
             stack above zero (four liquidity rungs + Vivienda from the property

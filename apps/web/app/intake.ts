@@ -7,6 +7,7 @@ import type {
   CreateInvestmentAssetInput,
 } from "@worthline/db";
 import type {
+  CompositionRange,
   CreateInvestmentOperationInput,
   CreateLiabilityInput,
   CreateManualAssetInput,
@@ -62,7 +63,20 @@ export function parseDrillParam(
 ): DrilldownKey | null {
   const raw = normalizeParam(value);
 
-  return raw === "liquid" || raw === "rest" || raw === "housing" ? raw : null;
+  return raw === "liquid" || raw === "rest" || raw === "housing" || raw === "debts"
+    ? raw
+    : null;
+}
+
+/**
+ * Parse the `range=` query param (#144): the composition chart's temporal window.
+ * Only the bounded ranges activate a window — anything else (including the
+ * default) means the full captured history. Composable with `view=` and `drill=`.
+ */
+export function parseRangeParam(value: string | string[] | undefined): CompositionRange {
+  const raw = normalizeParam(value);
+
+  return raw === "1y" || raw === "3y" || raw === "5y" ? raw : "all";
 }
 
 /** Set or replace a query param on a (possibly relative) URL string. */

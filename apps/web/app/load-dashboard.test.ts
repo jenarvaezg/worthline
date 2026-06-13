@@ -650,3 +650,119 @@ describe("loadDashboard — no workspace", () => {
     store.close();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Debts drilldown (#145)
+// ---------------------------------------------------------------------------
+
+describe("loadDashboard — debts drilldown", () => {
+  test("drill=debts over two days → debts key, aggregate stack, per-debt entry", async () => {
+    const store = createInMemoryStore();
+    makeWorkspace(store);
+    makeAsset(store);
+    store.liabilities.createLiability({
+      balanceMinor: 200_000_00,
+      currency: "EUR",
+      id: "debt_mortgage",
+      name: "Hipoteca",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+
+    // Day 1 capture
+    await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-09",
+      now: "2026-06-09T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    // Day 2: balance reduced, debts drill requested
+    store.liabilities.updateLiabilityBalance("debt_mortgage", 190_000_00);
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      drill: "debts",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    expect(result.drilldown).not.toBeNull();
+    expect(result.drilldown!.key).toBe("debts");
+    // One aggregated debt series (not split per-liability).
+    expect(result.drilldown!.stack).not.toBeNull();
+    expect(result.drilldown!.stack!.bands.map((b) => b.band)).toEqual(["debts"]);
+    // The mortgage appears as a per-debt multiple with its frozen latest value.
+    const debt = result.drilldown!.holdings.find((h) => h.holdingId === "debt_mortgage");
+    expect(debt).toBeDefined();
+    expect(debt!.kind).toBe("liability");
+    expect(debt!.currentValueMinor).toBe(190_000_00);
+
+    store.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Composition range and density (#144)
+// ---------------------------------------------------------------------------
+
+describe("loadDashboard — composition range and density", () => {
+  test("offers the ranges the history spans and windows the series to the selection", async () => {
+    const store = createInMemoryStore();
+    makeWorkspace(store);
+    makeAsset(store);
+
+    // Build 14 monthly snapshots: 2025-05 .. 2026-06 (a ~13-month span).
+    for (let i = 0; i < 14; i++) {
+      const total = 2025 * 12 + 4 + i;
+      const y = Math.floor(total / 12);
+      const m = (total % 12) + 1;
+      const today = `${y}-${String(m).padStart(2, "0")}-15`;
+      store.assets.updateAssetValuation("asset_cash", 100_000_00 + i * 1_000_00);
+      await loadDashboard({
+        store,
+        persistence: makePersistence(),
+        scopeId: undefined,
+        selectedView: "total",
+        today,
+        now: `${today}T10:00:00.000Z`,
+        refreshPrices: noOpRefresh,
+      });
+    }
+
+    // Default (all): the ~13-month span unlocks 1A (and Todo), monthly density.
+    const all = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-15",
+      now: "2026-06-15T12:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+    expect(all.compositionRanges).toEqual(["1y", "all"]);
+    expect(all.compositionSeries.length).toBe(14);
+
+    // The 1y window keeps only the last twelve monthly closes.
+    const y1 = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      range: "1y",
+      today: "2026-06-15",
+      now: "2026-06-15T12:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+    expect(y1.compositionSeries.length).toBe(12);
+    expect(y1.compositionSeries.length).toBeLessThan(all.compositionSeries.length);
+
+    store.close();
+  });
+});

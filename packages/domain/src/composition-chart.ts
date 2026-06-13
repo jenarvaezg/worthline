@@ -116,44 +116,134 @@ export function deriveCompositionBands(
   };
 }
 
-/** One base point of the monthly series: a date and whether it is the open period. */
+/** One base point of the series: a date and whether it is the open period. */
 export interface MonthlySeriesEntry {
   /** Calendar day of the chosen snapshot, YYYY-MM-DD. */
   dateKey: string;
   /**
-   * True for the current (not-yet-closed) month's latest snapshot, appended so
-   * the chart never looks a month stale (ADR 0009); false for finalized closes.
+   * True for the current (not-yet-closed) period's latest snapshot, appended so
+   * the chart never looks a period stale (ADR 0009); false for finalized closes.
    */
   isOpenPeriod: boolean;
 }
 
 /**
- * Selects the monthly base points of the composition chart (ADR 0009): the last
- * snapshot of each calendar month. Past months are finalized closes; the current
- * month's last snapshot (relative to `today`) is flagged as the open period.
- * Ascending by date. Takes the minimal `{ dateKey, monthKey }` shape so any
- * snapshot list satisfies it structurally.
+ * The selectable temporal ranges of the composition chart (#144). Bounded ranges
+ * count back from today; `all` is the full captured history. ADR 0009 keeps these
+ * as server-side URL state — never a client pan/zoom gesture.
+ */
+export const COMPOSITION_RANGES = ["1y", "3y", "5y", "all"] as const;
+
+export type CompositionRange = (typeof COMPOSITION_RANGES)[number];
+
+/** The bucketing density a windowed series is drawn at (#144). */
+export type CompositionGranularity = "month" | "quarter" | "year";
+
+/** Months each bounded range spans (counting the current month). */
+const RANGE_MONTHS: Record<Exclude<CompositionRange, "all">, number> = {
+  "1y": 12,
+  "3y": 36,
+  "5y": 60,
+};
+
+/** A monthKey ("YYYY-MM") as an absolute month ordinal, for pure date math. */
+function monthIndex(monthKey: string): number {
+  return Number(monthKey.slice(0, 4)) * 12 + (Number(monthKey.slice(5, 7)) - 1);
+}
+
+function monthKeyFromIndex(index: number): string {
+  const year = Math.floor(index / 12);
+  const month = (index % 12) + 1;
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+/** Whole months from `a` to `b` (b − a), both "YYYY-MM" — the windowed span. */
+export function monthsBetween(a: string, b: string): number {
+  return monthIndex(b) - monthIndex(a);
+}
+
+/**
+ * The inclusive earliest monthKey of a range relative to `today` — the window
+ * cutoff (#144); `null` for `all` (unbounded). A bounded range of N months ends
+ * at today's month and reaches back N−1 months, so it covers exactly N months.
+ */
+export function rangeStartMonthKey(today: string, range: CompositionRange): string | null {
+  if (range === "all") return null;
+  return monthKeyFromIndex(monthIndex(today.slice(0, 7)) - (RANGE_MONTHS[range] - 1));
+}
+
+/**
+ * The bucketing density for a windowed span (#144): monthly for short windows,
+ * coarsening to quarterly then annual so a long history stays legible (ADR 0009).
+ * Derived from the ACTUAL windowed span, so a sparse multi-year window that holds
+ * little data still draws monthly.
+ */
+export function granularityForSpanMonths(spanMonths: number): CompositionGranularity {
+  if (spanMonths <= 36) return "month";
+  if (spanMonths <= 84) return "quarter";
+  return "year";
+}
+
+/**
+ * The ranges worth offering for a history of `spanMonths` (#144): a bounded range
+ * appears only when the history is longer than its window (otherwise it would
+ * show the same as `all`); `all` is always offered. With ~2 years of data this
+ * yields just `["1y", "all"]`; under a year, only `["all"]` (hide the control).
+ */
+export function availableCompositionRanges(spanMonths: number): CompositionRange[] {
+  const bounded = (["1y", "3y", "5y"] as const).filter(
+    (range) => RANGE_MONTHS[range] < spanMonths,
+  );
+  return [...bounded, "all"];
+}
+
+/** The period a capture day falls in, at the given granularity — lexically ordered. */
+function periodKeyOf(dateKey: string, granularity: CompositionGranularity): string {
+  const year = dateKey.slice(0, 4);
+  if (granularity === "year") return year;
+  if (granularity === "quarter") {
+    return `${year}-Q${Math.ceil(Number(dateKey.slice(5, 7)) / 3)}`;
+  }
+  return dateKey.slice(0, 7);
+}
+
+/**
+ * Selects the base points of the composition chart (ADR 0009) at a given density:
+ * the last snapshot of each period (month, quarter, or year). Past periods are
+ * finalized closes; the period containing `today` is flagged as the open one.
+ * Ascending by date. Takes the minimal `{ dateKey }` shape so any snapshot list
+ * satisfies it structurally.
+ */
+export function selectPeriodicSeries(
+  snapshots: readonly { dateKey: string }[],
+  today: string,
+  granularity: CompositionGranularity,
+): MonthlySeriesEntry[] {
+  const currentPeriodKey = periodKeyOf(today, granularity);
+
+  // Last snapshot (by dateKey) wins per period — sort ascending so it overwrites.
+  const lastDateByPeriod = new Map<string, string>();
+  for (const snapshot of [...snapshots].sort((a, b) => a.dateKey.localeCompare(b.dateKey))) {
+    lastDateByPeriod.set(periodKeyOf(snapshot.dateKey, granularity), snapshot.dateKey);
+  }
+
+  return [...lastDateByPeriod.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([periodKey, dateKey]) => ({
+      dateKey,
+      isOpenPeriod: periodKey >= currentPeriodKey,
+    }));
+}
+
+/**
+ * Monthly base points — the last snapshot of each calendar month (ADR 0009).
+ * A thin wrapper over the general periodic selection at month granularity.
  */
 export function selectMonthlySeries(
   snapshots: readonly { dateKey: string; monthKey: string }[],
   today: string,
 ): MonthlySeriesEntry[] {
-  const currentMonthKey = today.slice(0, 7);
-
-  // Last snapshot (by dateKey) wins per month — sort ascending so it overwrites.
-  const lastDateByMonth = new Map<string, string>();
-  for (const snapshot of [...snapshots].sort((a, b) =>
-    a.dateKey.localeCompare(b.dateKey),
-  )) {
-    lastDateByMonth.set(snapshot.monthKey, snapshot.dateKey);
-  }
-
-  return [...lastDateByMonth.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([monthKey, dateKey]) => ({
-      dateKey,
-      isOpenPeriod: monthKey >= currentMonthKey,
-    }));
+  return selectPeriodicSeries(snapshots, today, "month");
 }
 
 /** One base point of the chart: its date, open/closed flag, and banded figures. */
@@ -163,21 +253,29 @@ export interface CompositionSeriesPoint extends CompositionBands {
 }
 
 export interface BuildCompositionSeriesInput {
-  /** The scope's snapshots — drives monthly base-point selection. */
+  /** The scope's snapshots — drives base-point selection. */
   snapshots: readonly { dateKey: string; monthKey: string }[];
   /** The scope's frozen holding rows across the window (any dates). */
   rows: readonly DatedSnapshotHoldingRow[];
   /** Ids of the scope's housing holdings (sourced by id, ADR 0013 bridge). */
   housingHoldingIds: readonly string[];
-  /** "Today" as YYYY-MM-DD — defines the open (current) month. */
+  /** "Today" as YYYY-MM-DD — defines the open (current) period and the window. */
   today: string;
+  /**
+   * Temporal range window (#144). Bounded ranges keep only snapshots within the
+   * window; density then adapts to the windowed span (month → quarter → year).
+   * Defaults to `all` — the full history, unchanged from before this option.
+   */
+  range?: CompositionRange;
 }
 
 /**
- * Assembles the composition chart's series: one banded base point per monthly
- * close (plus the open period), each aggregated from exactly that date's frozen
- * rows. A scope captures at most one snapshot per day (ADR 0005), so `dateKey`
- * keys a snapshot's rows unambiguously within the scope.
+ * Assembles the composition chart's series (#142, #144): one banded base point
+ * per period close (plus the open period), each aggregated from exactly that
+ * date's frozen rows. The `range` windows the history; the bucket density then
+ * adapts to the windowed span so a long history stays legible (ADR 0009). A
+ * scope captures at most one snapshot per day (ADR 0005), so `dateKey` keys a
+ * snapshot's rows unambiguously within the scope.
  */
 export function buildCompositionSeries(
   input: BuildCompositionSeriesInput,
@@ -192,7 +290,22 @@ export function buildCompositionSeries(
     }
   }
 
-  return selectMonthlySeries(input.snapshots, input.today)
+  // Window to the selected range, then pick the density from the windowed span.
+  const cutoff = rangeStartMonthKey(input.today, input.range ?? "all");
+  const windowed = cutoff
+    ? input.snapshots.filter((snapshot) => snapshot.monthKey >= cutoff)
+    : input.snapshots;
+  let minIdx = Infinity;
+  let maxIdx = -Infinity;
+  for (const snapshot of windowed) {
+    const idx = monthIndex(snapshot.monthKey);
+    if (idx < minIdx) minIdx = idx;
+    if (idx > maxIdx) maxIdx = idx;
+  }
+  const spanMonths = windowed.length > 0 ? maxIdx - minIdx : 0;
+  const granularity = granularityForSpanMonths(spanMonths);
+
+  return selectPeriodicSeries(windowed, input.today, granularity)
     // Skip legacy snapshots that predate holding rows (ADR 0008): with no rows
     // they would plot a false zero. Every plotted point is row-backed, so its
     // bands reconcile to the snapshot's headline net worth.
