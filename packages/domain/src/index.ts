@@ -17,6 +17,7 @@ export {
 export type { LiquidityTier } from "./classification";
 export {
   housingAssetIdsOf,
+  instrumentOfAsset,
   isHousingAsset,
   isLiquid,
   rungForLiability,

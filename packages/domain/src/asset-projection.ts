@@ -1,5 +1,6 @@
 import type { LiquidityTier } from "./classification";
 import type { DecimalString } from "./decimal";
+import type { Instrument } from "./instrument-catalog";
 import type { InvestmentOperation, PositionSummary } from "./investment-types";
 import type {
   AssetType,
@@ -33,6 +34,8 @@ export interface RawAssetRow {
   currentValueMinor: number;
   liquidityTier: LiquidityTier;
   isPrimaryResidence: boolean;
+  /** The stored instrument (ADR 0014, #149); null/absent for not-yet-backfilled rows. */
+  instrument?: Instrument | null;
 }
 
 /** A raw investment-asset row with only the fields a position view needs. */
@@ -93,6 +96,7 @@ export function projectAssets(
       name: row.name,
       ownership: ctx.ownershipByAsset.get(row.id) ?? [],
       type: row.type,
+      ...(row.instrument ? { instrument: row.instrument } : {}),
     }),
   );
 }

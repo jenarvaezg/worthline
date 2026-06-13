@@ -14,6 +14,7 @@
 
 import type { LiquidityTier } from "./classification";
 import type { DecimalString } from "./decimal";
+import type { Instrument } from "./instrument-catalog";
 import type { CurrencyCode, MoneyMinor } from "./money";
 import type { AssetPrice, InvestmentPriceProvider } from "./prices";
 import type { SnapshotHoldingRow } from "./snapshot-holdings";
@@ -63,6 +64,8 @@ export interface ExportedAsset {
   currentValue?: MoneyMinor;
   liquidityTier: LiquidityTier;
   isPrimaryResidence?: boolean;
+  /** What the asset is (ADR 0014, #149); derived from type on import when absent. */
+  instrument?: Instrument;
   ownership: OwnershipShare[];
   investment?: ExportedInvestmentMeta;
   deletedAt?: string;
@@ -75,6 +78,8 @@ export interface ExportedLiability {
   type: LiabilityType;
   currency: CurrencyCode;
   currentBalance: MoneyMinor;
+  /** What the liability is (ADR 0014, #149); derived from type on import when absent. */
+  instrument?: Instrument;
   ownership: OwnershipShare[];
   associatedAssetId?: string;
   deletedAt?: string;

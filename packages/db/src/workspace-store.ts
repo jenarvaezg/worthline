@@ -14,6 +14,8 @@ import type {
 import {
   assertSnapshotHoldingsReconcile,
   createWorkspace,
+  defaultInstrumentForAssetType,
+  defaultInstrumentForLiability,
   serializeWorkspaceExport,
 } from "@worthline/domain";
 import { asc, count, eq, sql } from "drizzle-orm";
@@ -458,6 +460,9 @@ function importWorkspace(
             asset.type === "investment" ? 0 : (asset.currentValue?.amountMinor ?? 0),
           deletedAt: asset.deletedAt ?? null,
           id: asset.id,
+          instrument:
+            asset.instrument ??
+            defaultInstrumentForAssetType(asset.type, asset.isPrimaryResidence ?? false),
           isPrimaryResidence: asset.isPrimaryResidence ? 1 : 0,
           liquidityTier: asset.liquidityTier,
           name: asset.name,
@@ -508,6 +513,8 @@ function importWorkspace(
           currentBalanceMinor: liability.currentBalance.amountMinor,
           deletedAt: liability.deletedAt ?? null,
           id: liability.id,
+          instrument:
+            liability.instrument ?? defaultInstrumentForLiability(liability.type, null),
           name: liability.name,
           type: liability.type,
         })
@@ -719,6 +726,9 @@ function buildWorkspaceExport(
           }),
       liquidityTier: row.liquidityTier,
       isPrimaryResidence: row.isPrimaryResidence === 1,
+      instrument:
+        row.instrument ??
+        defaultInstrumentForAssetType(row.type, row.isPrimaryResidence === 1),
       ownership: ownershipByAsset.get(row.id) ?? [],
       ...(row.type === "investment" && meta
         ? {
@@ -754,6 +764,7 @@ function buildWorkspaceExport(
     type: row.type,
     currency: row.currency,
     currentBalance: { amountMinor: row.currentBalanceMinor, currency: row.currency },
+    instrument: row.instrument ?? defaultInstrumentForLiability(row.type, row.debtModel),
     ownership: ownershipByLiability.get(row.id) ?? [],
     ...(row.associatedAssetId ? { associatedAssetId: row.associatedAssetId } : {}),
     ...(row.deletedAt ? { deletedAt: row.deletedAt } : {}),

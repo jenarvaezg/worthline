@@ -1151,6 +1151,7 @@ function readInvestmentIdentity(
       currency: assets.currency,
       liquidityTier: assets.liquidityTier,
       isPrimaryResidence: assets.isPrimaryResidence,
+      instrument: assets.instrument,
     })
     .from(assets)
     .where(eq(assets.id, assetId))
@@ -1173,6 +1174,7 @@ function readInvestmentIdentity(
     name: row.name,
     ownership,
     type: row.type,
+    ...(row.instrument ? { instrument: row.instrument } : {}),
   };
 }
 

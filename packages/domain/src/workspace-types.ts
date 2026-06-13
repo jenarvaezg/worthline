@@ -1,6 +1,8 @@
 import type { CurrencyCode, MoneyMinor } from "./money";
 import { assertMinorInteger } from "./money";
 import type { LiquidityTier } from "./liquidity-tier";
+import type { Instrument } from "./instrument-catalog";
+import { defaultInstrumentForAssetType } from "./instrument-catalog";
 import type { DomainResult, DomainViolation } from "./domain-result";
 
 export type WorkspaceMode = "individual" | "household";
@@ -70,6 +72,13 @@ export interface ManualAsset {
   liquidityTier: LiquidityTier;
   ownership: OwnershipShare[];
   isPrimaryResidence: boolean;
+  /**
+   * What the asset is (ADR 0014, #149). Optional on the type for the many
+   * in-memory fixtures that predate it; `createManualAsset` always populates it
+   * (deriving from `type`/`isPrimaryResidence` when not given), and reads source
+   * it from the backfilled column. `instrumentOfAsset` derives it when absent.
+   */
+  instrument?: Instrument;
 }
 
 export type LiabilityType = "mortgage" | "debt";
@@ -101,6 +110,8 @@ export interface CreateManualAssetInput {
   liquidityTier: LiquidityTier;
   ownership: OwnershipShare[];
   isPrimaryResidence?: boolean;
+  /** What the asset is (ADR 0014, #149); derived from `type` when not given. */
+  instrument?: Instrument;
 }
 
 export interface CreateLiabilityInput {
@@ -130,6 +141,9 @@ export function createManualAsset(
       currency: input.currency,
     },
     id: input.id,
+    instrument:
+      input.instrument ??
+      defaultInstrumentForAssetType(input.type, input.isPrimaryResidence ?? false),
     isPrimaryResidence: input.isPrimaryResidence ?? false,
     liquidityTier: input.liquidityTier,
     name: input.name,

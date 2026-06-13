@@ -10,6 +10,7 @@ import {
   amortizableBalanceAtDate,
   createLiability,
   debtBalanceAtDate,
+  defaultInstrumentForLiability,
 } from "@worthline/domain";
 import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
 
@@ -692,6 +693,9 @@ function createLiabilityRecord(ctx: StoreContext, input: CreateLiabilityInput): 
         currency: liability.currency,
         currentBalanceMinor: liability.currentBalance.amountMinor,
         id: liability.id,
+        // Debt model is declared later (setDebtModel); at create time the
+        // instrument follows the liability type (mortgage→mortgage, else loan).
+        instrument: defaultInstrumentForLiability(liability.type, null),
         name: liability.name,
         type: liability.type,
       })
