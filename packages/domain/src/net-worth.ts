@@ -1,7 +1,14 @@
 import type { MoneyMinor } from "./money";
 import { addMoney, money, subtractMoney } from "./money";
 import type { LiquidityTier } from "./classification";
-import { isHousingAsset, isLiquid, rungForLiability, tierOfAsset } from "./classification";
+import {
+  housingAssetIdsOf,
+  isHousingAsset,
+  isLiquid,
+  rungForLiability,
+  securesHousingAsset,
+  tierOfAsset,
+} from "./classification";
 import { LIQUIDITY_LADDER } from "./liquidity-ladder";
 import { resolveScopeMemberIds } from "./scope";
 import { allocateScopedHolding } from "./scope-allocation";
@@ -83,9 +90,7 @@ export function calculateNetWorth(input: {
   const assetTierById = new Map(
     input.assets.map((asset) => [asset.id, tierOfAsset(asset)]),
   );
-  const housingAssetIds = new Set(
-    input.assets.filter((asset) => isHousingAsset(asset)).map((asset) => asset.id),
-  );
+  const housingAssetIds = housingAssetIdsOf(input.assets);
 
   let grossAssets = zero;
   let liquidAssets = zero;
@@ -125,8 +130,7 @@ export function calculateNetWorth(input: {
 
     debts = addMoney(debts, scoped);
 
-    const securesHousing =
-      !!liability.associatedAssetId && housingAssetIds.has(liability.associatedAssetId);
+    const securesHousing = securesHousingAsset(liability, housingAssetIds);
 
     if (securesHousing) {
       housingDebts = addMoney(housingDebts, scoped);

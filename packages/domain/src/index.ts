@@ -16,9 +16,11 @@ export {
 
 export type { LiquidityTier } from "./classification";
 export {
+  housingAssetIdsOf,
   isHousingAsset,
   isLiquid,
   rungForLiability,
+  securesHousingAsset,
   tierOfAsset,
 } from "./classification";
 export { LIQUIDITY_LADDER } from "./liquidity-ladder";

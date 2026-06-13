@@ -25,6 +25,7 @@ import {
   isHousingAsset,
   isLiquid,
   rungForLiability,
+  securesHousingAsset,
   tierOfAsset,
 } from "./classification";
 import type { DebtBalanceAnchor } from "./debt-balance";
@@ -710,9 +711,7 @@ export function recalculateSnapshotForLiability(
       .filter((row) => row.kind === "asset" && row.liquidityTier !== null)
       .map((row) => [row.holdingId, row.liquidityTier!] as const),
   );
-  const securesHousing =
-    !!input.liability.associatedAssetId &&
-    input.housingAssetIds.has(input.liability.associatedAssetId);
+  const securesHousing = securesHousingAsset(input.liability, input.housingAssetIds);
   const affectsLiquid =
     !securesHousing && isLiquid(rungForLiability(input.liability, assetRungById));
 

@@ -29,3 +29,25 @@ export function tierOfAsset(asset: ManualAsset): LiquidityTier {
 export function isHousingAsset(asset: ManualAsset): boolean {
   return asset.type === "real_estate" || asset.isPrimaryResidence;
 }
+
+/**
+ * The ids of the housing assets in a collection — real estate / primary residence
+ * (`isHousingAsset`). A debt securing one of these nets housing equity rather than
+ * its liquidity rung (ADR 0013 bridge), so callers that net debts against housing
+ * build this set once and pass it down.
+ */
+export function housingAssetIdsOf(assets: readonly ManualAsset[]): ReadonlySet<string> {
+  return new Set(assets.filter(isHousingAsset).map((asset) => asset.id));
+}
+
+/**
+ * Whether a liability secures a housing asset — the basis for netting it against
+ * housing equity instead of by liquidity rung (ADR 0013 bridge). True only when the
+ * liability points at an asset present in `housingAssetIds`.
+ */
+export function securesHousingAsset(
+  liability: { associatedAssetId?: string },
+  housingAssetIds: ReadonlySet<string>,
+): boolean {
+  return !!liability.associatedAssetId && housingAssetIds.has(liability.associatedAssetId);
+}
