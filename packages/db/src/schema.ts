@@ -2,6 +2,7 @@ import type { LiquidityTier } from "@worthline/domain";
 import type {
   AssetType,
   DebtModel,
+  Instrument,
   InvestmentPriceProvider,
   LiabilityType,
   OperationKind,
@@ -92,6 +93,14 @@ export const assets = sqliteTable("assets", {
    * `liquidity_tier`.
    */
   valuationMethod: text("valuation_method").$type<ValuationMethod>(),
+  /**
+   * What the holding is (ADR 0014, #149): one of the instrument vocabulary
+   * (current_account, fund, property, …). Nullable — backfilled from `type`
+   * (and the investment's price provider) by the v14 migration. No CHECK — the
+   * enum is enforced in TS, like `liquidity_tier` / `valuation_method`. Housing
+   * equity is re-sourced from `instrument = 'property'`.
+   */
+  instrument: text("instrument").$type<Instrument>(),
   /**
    * Decimal-string annual appreciation rate (e.g. "0.03") used to drift a
    * real-estate asset's value between/beyond its valuation anchors. Null means
@@ -192,6 +201,8 @@ export const liabilities = sqliteTable("liabilities", {
   debtModel: text("debt_model").$type<DebtModel>(),
   /** Valuation method (ADR 0014, #148); backfilled from `debt_model` by the v13 migration. */
   valuationMethod: text("valuation_method").$type<ValuationMethod>(),
+  /** What the liability is (ADR 0014, #149): mortgage | loan | credit_card. Backfilled by v14. */
+  instrument: text("instrument").$type<Instrument>(),
   deletedAt: text("deleted_at"),
   createdAt: timestamp("created_at"),
   updatedAt: timestamp("updated_at"),
