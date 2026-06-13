@@ -465,6 +465,30 @@ function seedStructuredWorkspace(store: WorthlineStore): void {
     planId: "plan1",
     repaymentDate: "2024-07-01",
   });
+
+  // Revolving line of credit with two balance anchors on distinct dates.
+  // This is the AC#1 element that was previously un-exercised in the round-trip.
+  store.liabilities.createLiability({
+    balanceMinor: 500000,
+    currency: "EUR",
+    id: "l_revol",
+    name: "Línea de crédito",
+    ownership: own,
+    type: "debt",
+  });
+  store.liabilities.setDebtModel("l_revol", "revolving");
+  store.liabilities.addBalanceAnchor({
+    anchorDate: "2023-06-01",
+    balanceMinor: 800000,
+    id: "banc1",
+    liabilityId: "l_revol",
+  });
+  store.liabilities.addBalanceAnchor({
+    anchorDate: "2024-06-01",
+    balanceMinor: 600000,
+    id: "banc2",
+    liabilityId: "l_revol",
+  });
 }
 
 describe("full holding model round-trips through export/import (#155)", () => {
@@ -490,11 +514,19 @@ describe("full holding model round-trips through export/import (#155)", () => {
       "l_mort",
       "2025-01-01",
     );
-    // A balance AFTER the early repayment proves the repayment survived.
-    const debtAfterRepaymentBefore = source.liabilities.debtBalanceAtDate(
+    // Gap 4 fix: sample just BEFORE and just AFTER the 2024-07-01 early repayment.
+    // The repayment reduces principal by ~2 000 000 — a dropped repayment would
+    // make both samples equal (no step), so asserting the drop proves survival.
+    const debtJustBeforeRepayment = source.liabilities.debtBalanceAtDate(
       "l_mort",
-      "2025-01-01",
+      "2024-06-30",
     );
+    const debtJustAfterRepayment = source.liabilities.debtBalanceAtDate(
+      "l_mort",
+      "2024-07-02",
+    );
+    // Sanity: the repayment must produce a visible drop before we rely on it.
+    expect(debtJustBeforeRepayment).toBeGreaterThan(debtJustAfterRepayment);
 
     const doc = source.workspace.exportWorkspace();
 
@@ -519,14 +551,56 @@ describe("full holding model round-trips through export/import (#155)", () => {
     expect(restored.liabilities.debtBalanceAtDate("l_mort", "2025-01-01")).toBe(
       debtBalanceBefore,
     );
-    expect(restored.liabilities.debtBalanceAtDate("l_mort", "2025-01-01")).toBe(
-      debtAfterRepaymentBefore,
+    // The repayment step is preserved: the before/after drop must match source.
+    // A dropped early repayment would collapse this to zero difference.
+    expect(restored.liabilities.debtBalanceAtDate("l_mort", "2024-06-30")).toBe(
+      debtJustBeforeRepayment,
+    );
+    expect(restored.liabilities.debtBalanceAtDate("l_mort", "2024-07-02")).toBe(
+      debtJustAfterRepayment,
     );
 
     // The flat-line regression guard: a structured debt's balance on a past date
     // must NOT equal its stored current balance (that is exactly the v1 bug).
     expect(restored.liabilities.debtBalanceAtDate("l_mort", "2025-01-01")).not.toBe(
       12000000,
+    );
+
+    source.close();
+    restored.close();
+  });
+
+  test("a revolving debt with balance anchors survives export→import with anchored curve intact (AC#1 balance-anchor round-trip)", () => {
+    const source = createInMemoryStore();
+    seedStructuredWorkspace(source);
+
+    // Pre-export balance anchors and derived curve.
+    const anchorsBefore = source.liabilities.readBalanceAnchors("l_revol");
+    const debtModelBefore = source.liabilities.readDebtModel("l_revol");
+
+    // Sample a date between the two anchors — the interpolated/stepped value
+    // must survive round-trip. Using the anchor store means a dropped insert
+    // causes the balance to fall back to the stored currentBalance (500000).
+    const balanceBetweenAnchorsBefore = source.liabilities.debtBalanceAtDate(
+      "l_revol",
+      "2024-01-01",
+    );
+    // Must differ from stored currentBalance to prove the anchor curve is live.
+    expect(balanceBetweenAnchorsBefore).not.toBe(500000);
+
+    const doc = source.workspace.exportWorkspace();
+
+    // Import into a fresh store.
+    const restored = createInMemoryStore();
+    restored.workspace.importWorkspace(doc);
+
+    // Anchors restored faithfully (rows identical, incl. ids).
+    expect(restored.liabilities.readBalanceAnchors("l_revol")).toEqual(anchorsBefore);
+    expect(restored.liabilities.readDebtModel("l_revol")).toEqual(debtModelBefore);
+
+    // The interpolated curve matches pre-export — not flattened to currentBalance.
+    expect(restored.liabilities.debtBalanceAtDate("l_revol", "2024-01-01")).toBe(
+      balanceBetweenAnchorsBefore,
     );
 
     source.close();
