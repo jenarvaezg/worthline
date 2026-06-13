@@ -16,10 +16,36 @@ export interface PriceProviderResult {
   source?: PriceSource;
 }
 
+/**
+ * A provider failure carrying a human-readable reason (issue #137). Lets a
+ * provider distinguish "symbol resolved but no parseable quote" / "HTTP error"
+ * from the generic `null` ("no data"), so the refresh banner can tell the user
+ * *why* a symbol failed (wrong symbol vs transient outage).
+ */
+export interface PriceProviderFailure {
+  failed: true;
+  reason: string;
+}
+
+/** Standard, localized failure reasons shared across HTML/web providers. */
+export const PRICE_FAILURE_REASONS = {
+  symbolNotFound: "Símbolo no encontrado en el proveedor",
+  noQuote: "El proveedor no devolvió cotización",
+  httpError: (status: number) => `El proveedor respondió con un error (${status})`,
+} as const;
+
 export interface PriceProvider {
   name: PriceSource;
   canFetch(ctx: PriceProviderContext): boolean;
-  fetchPrice(ctx: PriceProviderContext): Promise<PriceProviderResult | null>;
+  fetchPrice(
+    ctx: PriceProviderContext,
+  ): Promise<PriceProviderResult | PriceProviderFailure | null>;
+}
+
+function isProviderFailure(
+  result: PriceProviderResult | PriceProviderFailure | null,
+): result is PriceProviderFailure {
+  return result !== null && "failed" in result && result.failed === true;
 }
 
 export async function fetchAndCachePrice(
@@ -28,7 +54,7 @@ export async function fetchAndCachePrice(
 ): Promise<AssetPrice> {
   try {
     const result = await provider.fetchPrice(ctx);
-    if (!result) {
+    if (!result || isProviderFailure(result)) {
       return {
         assetId: ctx.assetId,
         currency: ctx.currency,
@@ -36,7 +62,7 @@ export async function fetchAndCachePrice(
         source: provider.name,
         fetchedAt: ctx.nowIso,
         freshnessState: "failed",
-        staleReason: "No price returned",
+        staleReason: result ? result.reason : "No price returned",
       };
     }
     return {

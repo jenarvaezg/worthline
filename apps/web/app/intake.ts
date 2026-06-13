@@ -223,19 +223,49 @@ export function preserveFields(
   return values;
 }
 
-/** Encode a price-refresh outcome (count + failing symbols) into the redirect. */
+/** A failed price refresh paired with the reason it failed (issue #137). */
+export interface PriceRefreshFailure {
+  symbol: string;
+  reason: string;
+}
+
+/** Entry separator and symbol/reason separator for the `failed` param. */
+const FAILURE_ENTRY_SEP = "|";
+const FAILURE_REASON_SEP = ":";
+
+/** Encode a price-refresh outcome (count + failing symbols/reasons) into the redirect. */
 export function pricesRefreshedRedirectUrl(
   currentUrl: string,
-  outcome: { updated: number; failedSymbols: string[] },
+  outcome: { updated: number; failures: PriceRefreshFailure[] },
 ): string {
   let url = appendParam(currentUrl, "ok", "prices_refreshed");
   url = appendParam(url, "updated", String(outcome.updated));
 
-  if (outcome.failedSymbols.length > 0) {
-    url = appendParam(url, "failed", outcome.failedSymbols.join(","));
+  if (outcome.failures.length > 0) {
+    const encoded = outcome.failures
+      .map((f) => (f.reason ? `${f.symbol}${FAILURE_REASON_SEP}${f.reason}` : f.symbol))
+      .join(FAILURE_ENTRY_SEP);
+    url = appendParam(url, "failed", encoded);
   }
 
   return url;
+}
+
+/** Decode the `failed` param back into symbol/reason pairs. */
+function parseFailures(raw: string | undefined): PriceRefreshFailure[] {
+  if (!raw) return [];
+
+  return raw
+    .split(FAILURE_ENTRY_SEP)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const sepAt = entry.indexOf(FAILURE_REASON_SEP);
+
+      return sepAt === -1
+        ? { symbol: entry, reason: "" }
+        : { symbol: entry.slice(0, sepAt), reason: entry.slice(sepAt + 1) };
+    });
 }
 
 /**
@@ -258,17 +288,18 @@ export function resolveOkMessage(
   }
 
   const updated = Number.parseInt(updatedRaw, 10) || 0;
-  const failedSymbols = (normalizeParam(searchParams?.["failed"]) ?? "")
-    .split(",")
-    .map((symbol) => symbol.trim())
-    .filter(Boolean);
+  const failures = parseFailures(normalizeParam(searchParams?.["failed"]));
 
-  if (updated === 0 && failedSymbols.length === 0) {
+  if (updated === 0 && failures.length === 0) {
     return "Sin inversiones con símbolo que actualizar.";
   }
 
   const failedPart =
-    failedSymbols.length > 0 ? ` Con error: ${failedSymbols.join(", ")}.` : "";
+    failures.length > 0
+      ? ` Con error: ${failures
+          .map((f) => (f.reason ? `${f.symbol} (${f.reason})` : f.symbol))
+          .join(", ")}.`
+      : "";
 
   return `Precios actualizados: ${updated}.${failedPart}`;
 }

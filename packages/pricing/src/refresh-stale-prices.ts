@@ -18,6 +18,12 @@ export interface InvestmentAssetRef {
   providerSymbol?: string | undefined;
 }
 
+/** A failed refresh paired with its human-readable reason (issue #137). */
+export interface RefreshFailure {
+  symbol: string;
+  reason: string;
+}
+
 export interface RefreshStalePricesResult {
   /** AssetPrice entries that were refreshed (fresh or failed outcome). */
   refreshed: AssetPrice[];
@@ -25,6 +31,8 @@ export interface RefreshStalePricesResult {
   updated: number;
   /** Symbols that failed to refresh. */
   failedSymbols: string[];
+  /** Failed symbols paired with the reason the refresh failed (issue #137). */
+  failures: RefreshFailure[];
 }
 
 /**
@@ -51,7 +59,7 @@ export async function refreshStalePrices(
   );
 
   if (refreshable.length === 0) {
-    return { refreshed: [], updated: 0, failedSymbols: [] };
+    return { refreshed: [], updated: 0, failedSymbols: [], failures: [] };
   }
 
   const results = await Promise.all(
@@ -68,12 +76,15 @@ export async function refreshStalePrices(
     }),
   );
 
+  const failures = results
+    .filter((r) => r.price.freshnessState === "failed")
+    .map((r) => ({ symbol: r.symbol, reason: r.price.staleReason ?? "" }));
+
   return {
     refreshed: results.map((r) => r.price),
     updated: results.filter((r) => r.price.freshnessState === "fresh").length,
-    failedSymbols: results
-      .filter((r) => r.price.freshnessState === "failed")
-      .map((r) => r.symbol),
+    failedSymbols: failures.map((f) => f.symbol),
+    failures,
   };
 }
 

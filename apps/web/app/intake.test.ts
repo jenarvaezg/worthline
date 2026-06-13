@@ -470,39 +470,54 @@ describe("preserveFields", () => {
 });
 
 describe("prices refresh feedback", () => {
-  test("pricesRefreshedRedirectUrl encodes the outcome", () => {
+  test("pricesRefreshedRedirectUrl encodes each failure symbol and reason", () => {
     const url = pricesRefreshedRedirectUrl("/?scope=household", {
-      failedSymbols: ["ACME", "FOO"],
+      failures: [
+        { symbol: "ACME", reason: "Símbolo no encontrado en el proveedor" },
+        { symbol: "FOO", reason: "El proveedor no devolvió cotización" },
+      ],
       updated: 2,
     });
     const params = searchParamsOf(url);
 
     expect(params["ok"]).toBe("prices_refreshed");
     expect(params["updated"]).toBe("2");
-    expect(params["failed"]).toBe("ACME,FOO");
+    expect(params["failed"]).toBe(
+      "ACME:Símbolo no encontrado en el proveedor|FOO:El proveedor no devolvió cotización",
+    );
   });
 
-  test("resolveOkMessage reports the updated count and which symbols failed", () => {
-    const url = pricesRefreshedRedirectUrl("/", { failedSymbols: ["ACME"], updated: 2 });
+  test("resolveOkMessage reports the count and each failed symbol with its reason", () => {
+    const url = pricesRefreshedRedirectUrl("/", {
+      failures: [{ symbol: "ACME", reason: "Símbolo no encontrado en el proveedor" }],
+      updated: 2,
+    });
 
     expect(resolveOkMessage(searchParamsOf(url))).toBe(
-      "Precios actualizados: 2. Con error: ACME.",
+      "Precios actualizados: 2. Con error: ACME (Símbolo no encontrado en el proveedor).",
     );
     expect(
       resolveOkMessage(
-        searchParamsOf(
-          pricesRefreshedRedirectUrl("/", { failedSymbols: [], updated: 3 }),
-        ),
+        searchParamsOf(pricesRefreshedRedirectUrl("/", { failures: [], updated: 3 })),
       ),
     ).toBe("Precios actualizados: 3.");
+  });
+
+  test("resolveOkMessage shows the bare symbol when no reason was recorded", () => {
+    const url = pricesRefreshedRedirectUrl("/", {
+      failures: [{ symbol: "ACME", reason: "" }],
+      updated: 0,
+    });
+
+    expect(resolveOkMessage(searchParamsOf(url))).toBe(
+      "Precios actualizados: 0. Con error: ACME.",
+    );
   });
 
   test("resolveOkMessage explains when there was nothing to refresh", () => {
     expect(
       resolveOkMessage(
-        searchParamsOf(
-          pricesRefreshedRedirectUrl("/", { failedSymbols: [], updated: 0 }),
-        ),
+        searchParamsOf(pricesRefreshedRedirectUrl("/", { failures: [], updated: 0 })),
       ),
     ).toBe("Sin inversiones con símbolo que actualizar.");
   });

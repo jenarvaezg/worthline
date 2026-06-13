@@ -1,4 +1,4 @@
-import type { PriceProvider } from "./index";
+import { PRICE_FAILURE_REASONS, type PriceProvider } from "./index";
 
 const FINECT_BASE_URL = "https://www.finect.com/planes-pensiones/";
 
@@ -10,12 +10,17 @@ export const finectProvider: PriceProvider = {
       signal: AbortSignal.timeout(8000),
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      return { failed: true, reason: PRICE_FAILURE_REASONS.httpError(res.status) };
+    }
 
     const html = await res.text();
     const price = parseFinectNavPrice(html);
 
-    if (!price) return null;
+    // HTTP-OK but no parseable NAV — Finect's `Producto no disponible` soft-404.
+    if (!price) {
+      return { failed: true, reason: PRICE_FAILURE_REASONS.symbolNotFound };
+    }
 
     const priceDate = parseFinectNavDate(html);
 

@@ -419,9 +419,12 @@ export async function refreshPricesAction(
       );
 
       return {
-        failedSymbols: results
+        failures: results
           .filter((entry) => entry.price.freshnessState === "failed")
-          .map((entry) => entry.symbol),
+          .map((entry) => ({
+            symbol: entry.symbol,
+            reason: entry.price.staleReason ?? "",
+          })),
         updated: results.filter((entry) => entry.price.freshnessState === "fresh").length,
       };
     }
@@ -441,7 +444,7 @@ export async function refreshPricesAction(
     }
 
     return {
-      failedSymbols: result.failedSymbols,
+      failures: result.failures,
       updated: result.updated,
     };
   })();
