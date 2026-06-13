@@ -2,6 +2,8 @@ import type {
   CreateLiabilityInput,
   DebtModel,
   DecimalString,
+  EarlyRepayment,
+  EarlyRepaymentMode,
   InterestRateRevision,
   Liability,
   OwnershipShare,
@@ -16,6 +18,7 @@ import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
 
 import {
   amortizationPlans,
+  earlyRepayments,
   interestRateRevisions,
   liabilities,
   liabilityBalanceAnchors,
@@ -89,6 +92,31 @@ export interface UpdateInterestRateRevisionInput {
   newAnnualInterestRate?: DecimalString;
 }
 
+/** Input for a single early repayment (PRD #146, slice S4). */
+export interface AddEarlyRepaymentInput {
+  id: string;
+  planId: string;
+  /** YYYY-MM-DD the repayment is made. */
+  repaymentDate: string;
+  /** Principal repaid, integer minor units. */
+  amountMinor: number;
+  /** reduce-payment keeps the term; reduce-term keeps the cuota. */
+  mode: EarlyRepaymentMode;
+}
+
+/** A stored early repayment as read back from the store. */
+export interface EarlyRepaymentRecord extends EarlyRepayment {
+  id: string;
+  planId: string;
+}
+
+/** Fields that can be patched on an existing early repayment. */
+export interface UpdateEarlyRepaymentInput {
+  repaymentDate?: string;
+  amountMinor?: number;
+  mode?: EarlyRepaymentMode;
+}
+
 /** Input for a single balance anchor of a revolving/informal liability (slice 8). */
 export interface AddBalanceAnchorInput {
   id: string;
@@ -153,10 +181,18 @@ export interface LiabilityStore {
   ) => number;
   /** Delete a rate revision by id. Returns 1 if removed, 0 if not found. */
   deleteInterestRateRevision: (revisionId: string) => number;
+  /** Add an early repayment to a plan. */
+  addEarlyRepayment: (input: AddEarlyRepaymentInput) => void;
+  /** Read a plan's early repayments, ordered ascending by date. */
+  readEarlyRepayments: (planId: string) => EarlyRepaymentRecord[];
+  /** Update an early repayment in place. Returns 1 if updated, 0 if not found. */
+  updateEarlyRepayment: (repaymentId: string, input: UpdateEarlyRepaymentInput) => number;
+  /** Delete an early repayment by id. Returns 1 if removed, 0 if not found. */
+  deleteEarlyRepayment: (repaymentId: string) => number;
   /**
    * Outstanding principal of an amortizable liability on `targetDate`
-   * (YYYY-MM-DD): reads the plan + revisions and delegates to the pure domain
-   * curve. Throws if the liability has no amortization plan.
+   * (YYYY-MM-DD): reads the plan + revisions + early repayments and delegates to
+   * the pure domain curve. Throws if the liability has no amortization plan.
    */
   amortizableBalanceAtDate: (liabilityId: string, targetDate: string) => number;
   /** Add a balance anchor to a revolving/informal liability. */
@@ -200,6 +236,11 @@ export function createLiabilityStore(ctx: StoreContext): LiabilityStore {
       updateInterestRateRevision(ctx, revisionId, input),
     deleteInterestRateRevision: (revisionId) =>
       deleteInterestRateRevision(ctx, revisionId),
+    addEarlyRepayment: (input) => addEarlyRepayment(ctx, input),
+    readEarlyRepayments: (planId) => readEarlyRepayments(ctx, planId),
+    updateEarlyRepayment: (repaymentId, input) =>
+      updateEarlyRepayment(ctx, repaymentId, input),
+    deleteEarlyRepayment: (repaymentId) => deleteEarlyRepayment(ctx, repaymentId),
     amortizableBalanceAtDate: (liabilityId, targetDate) =>
       amortizableBalanceAtDateFor(ctx, liabilityId, targetDate),
     addBalanceAnchor: (input) => addBalanceAnchor(ctx, input),
@@ -491,6 +532,110 @@ function deleteInterestRateRevision(ctx: StoreContext, revisionId: string): numb
   return result.changes;
 }
 
+function addEarlyRepayment(ctx: StoreContext, input: AddEarlyRepaymentInput): void {
+  assertIsoDate(input.repaymentDate, "Repayment date");
+  if (!Number.isInteger(input.amountMinor)) {
+    throw new Error("Money must be stored as integer minor units.");
+  }
+
+  ctx.db
+    .insert(earlyRepayments)
+    .values({
+      amountMinor: input.amountMinor,
+      id: input.id,
+      mode: input.mode,
+      planId: input.planId,
+      repaymentDate: input.repaymentDate,
+    })
+    .run();
+
+  ctx.writeAuditEntry("add_early_repayment", "amortization_plan", input.planId, {
+    amountMinor: input.amountMinor,
+    mode: input.mode,
+    repaymentDate: input.repaymentDate,
+    repaymentId: input.id,
+  });
+}
+
+function readEarlyRepayments(ctx: StoreContext, planId: string): EarlyRepaymentRecord[] {
+  const rows = ctx.db
+    .select()
+    .from(earlyRepayments)
+    .where(eq(earlyRepayments.planId, planId))
+    .orderBy(asc(earlyRepayments.repaymentDate), asc(earlyRepayments.id))
+    .all();
+
+  return rows.map((row) => ({
+    amountMinor: row.amountMinor,
+    id: row.id,
+    mode: row.mode,
+    planId: row.planId,
+    repaymentDate: row.repaymentDate,
+  }));
+}
+
+function updateEarlyRepayment(
+  ctx: StoreContext,
+  repaymentId: string,
+  input: UpdateEarlyRepaymentInput,
+): number {
+  if (input.repaymentDate !== undefined) {
+    assertIsoDate(input.repaymentDate, "Repayment date");
+  }
+  if (input.amountMinor !== undefined && !Number.isInteger(input.amountMinor)) {
+    throw new Error("Money must be stored as integer minor units.");
+  }
+
+  const existing = ctx.db
+    .select({ planId: earlyRepayments.planId })
+    .from(earlyRepayments)
+    .where(eq(earlyRepayments.id, repaymentId))
+    .get();
+
+  if (!existing) return 0;
+
+  const fields: Partial<typeof earlyRepayments.$inferInsert> = {};
+  if (input.repaymentDate !== undefined) fields.repaymentDate = input.repaymentDate;
+  if (input.amountMinor !== undefined) fields.amountMinor = input.amountMinor;
+  if (input.mode !== undefined) fields.mode = input.mode;
+
+  const result = ctx.db
+    .update(earlyRepayments)
+    .set(fields)
+    .where(eq(earlyRepayments.id, repaymentId))
+    .run();
+
+  if (result.changes > 0) {
+    ctx.writeAuditEntry("update_early_repayment", "amortization_plan", existing.planId, {
+      repaymentId,
+      ...input,
+    });
+  }
+  return result.changes;
+}
+
+function deleteEarlyRepayment(ctx: StoreContext, repaymentId: string): number {
+  const row = ctx.db
+    .select({ planId: earlyRepayments.planId })
+    .from(earlyRepayments)
+    .where(eq(earlyRepayments.id, repaymentId))
+    .get();
+
+  if (!row) return 0;
+
+  const result = ctx.db
+    .delete(earlyRepayments)
+    .where(eq(earlyRepayments.id, repaymentId))
+    .run();
+
+  if (result.changes > 0) {
+    ctx.writeAuditEntry("delete_early_repayment", "amortization_plan", row.planId, {
+      repaymentId,
+    });
+  }
+  return result.changes;
+}
+
 function amortizableBalanceAtDateFor(
   ctx: StoreContext,
   liabilityId: string,
@@ -506,7 +651,14 @@ function amortizableBalanceAtDateFor(
     revisionDate: revision.revisionDate,
   }));
 
+  const repayments = readEarlyRepayments(ctx, plan.id).map((repayment) => ({
+    amountMinor: repayment.amountMinor,
+    mode: repayment.mode,
+    repaymentDate: repayment.repaymentDate,
+  }));
+
   return amortizableBalanceAtDate({
+    earlyRepayments: repayments,
     plan: {
       annualInterestRate: plan.annualInterestRate,
       initialCapitalMinor: plan.initialCapitalMinor,
@@ -654,9 +806,15 @@ function debtBalanceAtDateFor(
       newAnnualInterestRate: revision.newAnnualInterestRate,
       revisionDate: revision.revisionDate,
     }));
+    const repayments = readEarlyRepayments(ctx, plan.id).map((repayment) => ({
+      amountMinor: repayment.amountMinor,
+      mode: repayment.mode,
+      repaymentDate: repayment.repaymentDate,
+    }));
     return debtBalanceAtDate({
       currentBalanceMinor,
       debtModel,
+      earlyRepayments: repayments,
       plan: {
         annualInterestRate: plan.annualInterestRate,
         initialCapitalMinor: plan.initialCapitalMinor,

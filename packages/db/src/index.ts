@@ -3,6 +3,7 @@ import type {
   DebtBalanceCurveInputs,
   DebtModel,
   DecimalString,
+  EarlyRepaymentMode,
   FireScopeConfig,
   HousingCurveInputs,
   InvestmentOperation,
@@ -37,6 +38,7 @@ import {
   assets,
   assetValuations,
   auditLog,
+  earlyRepayments,
   interestRateRevisions,
   liabilities,
   liabilityBalanceAnchors,
@@ -230,7 +232,7 @@ export interface WorthlineStore {
       | { liabilityId: string; kind: "amortizable-plan"; today: string }
       | {
           liabilityId: string;
-          kind: "amortizable-revision" | "anchor";
+          kind: "amortizable-revision" | "anchor" | "amortizable-repayment";
           fromDateKey: string;
           today: string;
         },
@@ -642,6 +644,21 @@ function readDebtBalanceInputs(
     revisionsByPlan.set(row.planId, list);
   }
 
+  const repaymentRows = db.select().from(earlyRepayments).all();
+  const repaymentsByPlan = new Map<
+    string,
+    { repaymentDate: string; amountMinor: number; mode: EarlyRepaymentMode }[]
+  >();
+  for (const row of repaymentRows) {
+    const list = repaymentsByPlan.get(row.planId) ?? [];
+    list.push({
+      amountMinor: row.amountMinor,
+      mode: row.mode,
+      repaymentDate: row.repaymentDate,
+    });
+    repaymentsByPlan.set(row.planId, list);
+  }
+
   for (const liability of liveLiabilities) {
     const debtModel = modelById.get(liability.id) ?? null;
     if (debtModel === null) continue; // no model → last-known-value basis
@@ -655,6 +672,7 @@ function readDebtBalanceInputs(
         debtModel,
         ...(plan
           ? {
+              earlyRepayments: repaymentsByPlan.get(plan.id) ?? [],
               plan: {
                 annualInterestRate: plan.annualInterestRate,
                 initialCapitalMinor: plan.initialCapitalMinor,
@@ -979,7 +997,7 @@ function rippleHistoricalSnapshotsForDebt(
     | { liabilityId: string; kind: "amortizable-plan"; today: string }
     | {
         liabilityId: string;
-        kind: "amortizable-revision" | "anchor";
+        kind: "amortizable-revision" | "anchor" | "amortizable-repayment";
         fromDateKey: string;
         today: string;
       },
@@ -1010,9 +1028,14 @@ function rippleHistoricalSnapshotsForDebt(
     recalcFrom = curve.plan.startDate;
   } else {
     const { fromDateKey } = params;
-    // A revision never generates new dates; an anchor generates at its own date
-    // when in the past.
-    generateDates = params.kind === "anchor" && fromDateKey < today ? [fromDateKey] : [];
+    // A revision never generates new dates; an anchor and an early repayment are
+    // dated facts that generate the snapshot at their own date when in the past
+    // (ADR 0012), then recalculate from it forward.
+    generateDates =
+      (params.kind === "anchor" || params.kind === "amortizable-repayment") &&
+      fromDateKey < today
+        ? [fromDateKey]
+        : [];
     recalcFrom = fromDateKey;
   }
 

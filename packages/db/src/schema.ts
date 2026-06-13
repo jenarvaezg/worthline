@@ -2,6 +2,7 @@ import type { LiquidityTier } from "@worthline/domain";
 import type {
   AssetType,
   DebtModel,
+  EarlyRepaymentMode,
   Instrument,
   InvestmentPriceProvider,
   LiabilityType,
@@ -249,6 +250,32 @@ export const interestRateRevisions = sqliteTable(
     uniqueIndex("interest_rate_revisions_plan_date_unique").on(
       table.planId,
       table.revisionDate,
+    ),
+  ],
+);
+
+/**
+ * A lump-sum early repayment (amortización anticipada) against an amortization
+ * plan (PRD #146, slice S4). `amount_minor` is the principal repaid; `mode`
+ * chooses whether the remaining schedule keeps the term (reduce-payment) or the
+ * cuota (reduce-term). The unique index keeps one repayment per plan per date.
+ */
+export const earlyRepayments = sqliteTable(
+  "early_repayments",
+  {
+    id: text("id").primaryKey(),
+    planId: text("plan_id")
+      .notNull()
+      .references(() => amortizationPlans.id, { onDelete: "cascade" }),
+    repaymentDate: text("repayment_date").notNull(),
+    amountMinor: integer("amount_minor").notNull(),
+    mode: text("mode").$type<EarlyRepaymentMode>().notNull(),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    uniqueIndex("early_repayments_plan_date_unique").on(
+      table.planId,
+      table.repaymentDate,
     ),
   ],
 );
