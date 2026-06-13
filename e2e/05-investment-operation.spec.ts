@@ -38,33 +38,46 @@ test("investment: create with manual price → buy operation → P/L visible", a
   // 7. On the operation page
   await expect(page.getByRole("heading", { name: "Registrar operación" })).toBeVisible();
 
-  // 8. Trigger a validation error: submit with units left empty
-  const unitsInput = page.getByLabel("Unidades");
-  const priceInput = page.getByLabel("Precio por unidad en EUR");
-  await priceInput.fill("105,50");
-  await unitsInput.clear();
-  await page.getByRole("button", { name: "Registrar operación" }).click();
-
-  // 9. Error banner shown — typed price value is preserved
-  await expect(page.getByRole("alert")).toBeVisible();
-  await expect(priceInput).toHaveValue("105,50");
-
-  // 10. Now fill units correctly and submit
+  // 8. Trigger a validation error: submit with units left empty. The server
+  //    rejects the empty units field and redirects back to the operacion page
+  //    with `error=` + the preserved typed values (intake.errorRedirectUrl).
   const operationForm = page.locator("form.inversionesForm");
-  await operationForm.getByLabel("Unidades").fill("10");
-  await expect(operationForm.getByLabel("Unidades")).toHaveValue("10");
-  await expect
-    .poll(
-      async () =>
-        operationForm.evaluate((form) =>
-          String(new FormData(form as HTMLFormElement).get("units") ?? ""),
-        ),
-      { message: "the operation form submits the filled units value" },
-    )
-    .toBe("10");
+  await operationForm.getByLabel("Precio por unidad en EUR").fill("105,50");
+  await operationForm.getByLabel("Unidades").clear();
   await operationForm.getByRole("button", { name: "Registrar operación" }).click();
 
-  // 11. Success redirect — back on the operacion page with ok banner
+  // 9. Wait for the error navigation to FULLY settle before touching the form
+  //    again: assert the URL carries the error param (the server-action
+  //    redirect landed) and the error banner is shown. Without this wait the
+  //    next fill can land on the pre-navigation form node and be discarded by
+  //    the RSC swap — the root cause of this journey's historical flakiness.
+  //    Scope to the page's own error band: Next.js mounts a `role="alert"`
+  //    route announcer during client navigation, so a bare getByRole("alert")
+  //    is ambiguous in strict mode.
+  await expect(page).toHaveURL(/error=/);
+  const errorBand = page.locator("#operation-error");
+  await expect(errorBand).toBeVisible();
+  await expect(errorBand).toHaveText("Las unidades son obligatorias.");
+  // The typed price survives the round-trip (units was empty, so it does not).
+  await expect(operationForm.getByLabel("Precio por unidad en EUR")).toHaveValue(
+    "105,50",
+  );
+
+  // 10. Re-fill both fields on the settled form and confirm the DOM values
+  //     stuck before submitting (assert the values rather than polling
+  //     FormData — a deterministic, non-racy check against the live inputs).
+  await operationForm.getByLabel("Unidades").fill("10");
+  await operationForm.getByLabel("Precio por unidad en EUR").fill("105,50");
+  await expect(operationForm.getByLabel("Unidades")).toHaveValue("10");
+  await expect(operationForm.getByLabel("Precio por unidad en EUR")).toHaveValue(
+    "105,50",
+  );
+  await operationForm.getByRole("button", { name: "Registrar operación" }).click();
+
+  // 11. Success redirect — the action lands back on the operacion page with
+  //     `ok=saved`. Wait for that URL transition first (the deterministic
+  //     signal the operation persisted), then assert the status banner.
+  await expect(page).toHaveURL(/ok=saved/);
   await expect(page.getByRole("status")).toHaveText("Guardado.");
 
   // 12. Navigate to /inversiones — P/L column should now render a value
