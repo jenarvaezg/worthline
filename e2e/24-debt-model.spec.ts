@@ -35,17 +35,6 @@ const today = new Date().toISOString().slice(0, 10);
 test("debt model: amortizable plan + revisions, revolving anchors, future rejected, past snapshots in historico", async ({
   page,
 }) => {
-  // Quarantined in CI only (still runs locally) pending the RSC server-action
-  // binding bug — #158 (the Next 16.2.9 bump did not fix it). On the CI runner
-  // this journey doesn't just fail: the broken server-action interaction after
-  // setDebtModel's soft redirect leaves the server returning ECONNRESET, which
-  // then HANGS the next journey's `page.goto("/")` (journey 25 timed out at
-  // 30s). So we skip the whole body here (not test.fail) to keep the shared
-  // serial server healthy for the journeys that follow. Consequence: the debt
-  // this journey creates is absent in CI, so journey 25's debt-band test is
-  // quarantined too (see 25-debts-drilldown). Remove both once #158 is fixed.
-  test.skip(!!process.env.CI, "Quarantined in CI pending #158 (RSC server-action bug)");
-
   // 1. Create a liability.
   await page.goto("/patrimonio/nueva-deuda");
   await page.getByLabel("Nombre de la deuda").fill("Hipoteca Centro");
@@ -131,8 +120,9 @@ test("debt model: amortizable plan + revisions, revolving anchors, future reject
   ).toHaveCount(0);
 
   // 10. Switch to the revolving model. The plan form disappears, the balance
-  //     anchor form appears.
-  await page.getByLabel("Modelo de deuda").selectOption("revolving");
+  //     anchor form appears. (Scope to the <select> by its combobox role: the
+  //     "Modelo de deuda" label is shared by the section region and the select.)
+  await page.getByRole("combobox", { name: "Modelo de deuda" }).selectOption("revolving");
   await page.getByRole("button", { name: "Guardar modelo" }).click();
   await expect(page.getByRole("status")).toHaveText("Modelo de deuda guardado.");
   await expect(page.getByRole("form", { name: "Plan de amortización" })).toHaveCount(0);

@@ -340,3 +340,80 @@ describe("addMonths day-clamping — end-of-month start dates", () => {
     expect(amortizableBalanceAtDate({ plan, targetDate: "2020-02-15" })).toBe(277_500);
   });
 });
+
+/**
+ * Regression for #158. The historical-snapshot ripple values an amortizable
+ * liability at one date per past payment boundary (per scope) — dozens to
+ * hundreds of calls with the SAME loan terms but different `targetDate`s. We
+ * memoise the date-independent month-boundary curve so this is O(termMonths +
+ * dates) instead of O(dates × termMonths) of big.js work (a ~30s plan save that
+ * tripped the dev server's server-action timeout → the page appeared stuck).
+ *
+ * These tests pin the memo's correctness: caching must NEVER change a result,
+ * and the cache key must distinguish loans that differ only in their revisions
+ * or early repayments — even when those queries are interleaved by date.
+ */
+describe("amortizableBalanceAtDate — boundary memo (#158)", () => {
+  test("repeated and interleaved date queries are byte-identical to single ones", () => {
+    const dates = [
+      "2020-06-15",
+      "2021-01-01",
+      "2025-01-01",
+      "2021-01-16",
+      "2025-01-01", // a repeat, to exercise the cache hit path
+      "2049-12-01",
+    ];
+
+    // Reference values computed fresh (first call per date primes the cache).
+    const reference = dates.map((targetDate) =>
+      amortizableBalanceAtDate({ plan: PRD_EXAMPLE, targetDate }),
+    );
+
+    // A second sweep (now served from the cached curve) must match exactly.
+    for (let i = 0; i < dates.length; i += 1) {
+      expect(amortizableBalanceAtDate({ plan: PRD_EXAMPLE, targetDate: dates[i]! })).toBe(
+        reference[i]!,
+      );
+    }
+  });
+
+  test("a revision changes the curve even when interleaved with the unrevised loan", () => {
+    const revisions: InterestRateRevision[] = [
+      { revisionDate: "2022-01-01", newAnnualInterestRate: "0.05" },
+    ];
+    const targetDate = "2025-01-01";
+
+    // Prime the cache with the unrevised loan, then query the revised one, then
+    // the unrevised one again — the memo must key on the revisions, not reuse
+    // the wrong curve for a different loan.
+    const unrevised = amortizableBalanceAtDate({ plan: PRD_EXAMPLE, targetDate });
+    const revised = amortizableBalanceAtDate({
+      plan: PRD_EXAMPLE,
+      revisions,
+      targetDate,
+    });
+    const unrevisedAgain = amortizableBalanceAtDate({ plan: PRD_EXAMPLE, targetDate });
+
+    expect(revised).not.toBe(unrevised); // a higher rate leaves a higher balance
+    expect(revised).toBeGreaterThan(unrevised);
+    expect(unrevisedAgain).toBe(unrevised); // cache must not have been polluted
+  });
+
+  test("an early repayment changes the curve even when interleaved", () => {
+    const earlyRepayments: EarlyRepayment[] = [
+      { repaymentDate: "2021-06-01", amountMinor: 20_000_00, mode: "reduce-term" },
+    ];
+    const targetDate = "2025-01-01";
+
+    const withoutLump = amortizableBalanceAtDate({ plan: PRD_EXAMPLE, targetDate });
+    const withLump = amortizableBalanceAtDate({
+      plan: PRD_EXAMPLE,
+      earlyRepayments,
+      targetDate,
+    });
+    const withoutLumpAgain = amortizableBalanceAtDate({ plan: PRD_EXAMPLE, targetDate });
+
+    expect(withLump).toBeLessThan(withoutLump); // a lump leaves a lower balance
+    expect(withoutLumpAgain).toBe(withoutLump); // cache must not have been polluted
+  });
+});
