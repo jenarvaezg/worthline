@@ -142,6 +142,53 @@ describe("buildSnapshotAtDate", () => {
     expect(fundRow?.unitPrice).toBe("100");
   });
 
+  test("values a primary-residence-flagged investment by its operations, not as housing (#148 regression)", () => {
+    const workspace = makeWorkspace();
+    // An investment can carry isPrimaryResidence; it must still be valued by its
+    // operation ledger (derived), never reclassified to the housing curve.
+    const fund = { ...investment(workspace, "asset_fund", "Fondo"), isPrimaryResidence: true };
+    const operationsByAsset = new Map([
+      ["asset_fund", [buy("asset_fund", "op1", "2024-01-10", "10", "100")]],
+    ]);
+
+    const result = buildSnapshotAtDate({
+      ...BASE,
+      assets: [fund],
+      liabilities: [],
+      manualValueHistory: new Map(),
+      operationsByAsset,
+      targetDate: "2024-06-01",
+      workspace,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.snapshot.grossAssets.amountMinor).toBe(1_000_00); // 10 × 100, derived
+    const fundRow = result!.holdings.find((h) => h.holdingId === "asset_fund");
+    expect(fundRow?.units).toBe("10"); // investmentDetails preserved, not dropped
+    expect(fundRow?.unitPrice).toBe("100");
+  });
+
+  test("omits a primary-residence-flagged investment before its first operation (#148 regression)", () => {
+    const workspace = makeWorkspace();
+    const fund = { ...investment(workspace, "asset_fund", "Fondo"), isPrimaryResidence: true };
+    const operationsByAsset = new Map([
+      ["asset_fund", [buy("asset_fund", "op1", "2024-09-10", "10", "100")]],
+    ]);
+
+    const result = buildSnapshotAtDate({
+      ...BASE,
+      assets: [fund],
+      liabilities: [],
+      manualValueHistory: new Map(),
+      operationsByAsset,
+      targetDate: "2024-06-01",
+      workspace,
+    });
+
+    // Not yet held → omitted, never resurrected at its current value as housing.
+    expect(result).toBeNull();
+  });
+
   test("omits an investment with no operation on or before the date", () => {
     const workspace = makeWorkspace();
     const fund = investment(workspace, "asset_fund", "Fondo");

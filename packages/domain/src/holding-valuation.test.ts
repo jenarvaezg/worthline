@@ -156,6 +156,15 @@ describe("valueAt — derived (units × price)", () => {
 
     expect(valueAt(derivedInput(sold), "2024-09-01").valueMinor).toBeNull();
   });
+
+  test("a captured unit price does not resurrect a position before its first operation", () => {
+    const result = valueAt(
+      { assetId: "a1", capturedUnitPrice: "200", currency: "EUR", method: "derived", operations: ops },
+      "2024-01-01",
+    );
+
+    expect(result.valueMinor).toBeNull();
+  });
 });
 
 describe("valueAt — appreciating (revaluation curve)", () => {
@@ -190,6 +199,25 @@ describe("valueAt — appreciating (revaluation curve)", () => {
 
     expect(result.valueMinor).toBe(280_000_00);
   });
+
+  test("a rate-only curve (no anchors) routes to the appreciation curve, not the fallback", () => {
+    const result = valueAt(
+      {
+        anchors: [],
+        annualAppreciationRate: "0.10",
+        currentValueMinor: 110_000_00,
+        method: "appreciating",
+        today: "2025-01-01",
+      },
+      "2024-01-01",
+    );
+
+    // Back-extrapolated ~one year at 10% → strictly below today's value, proving
+    // the rate-only disjunct routes to the curve rather than returning
+    // currentValueMinor via the manual fallback.
+    expect(result.valueMinor).not.toBeNull();
+    expect(result.valueMinor!).toBeLessThan(110_000_00);
+  });
 });
 
 describe("valueAt — amortized (French amortization plan)", () => {
@@ -216,6 +244,34 @@ describe("valueAt — amortized (French amortization plan)", () => {
     );
 
     expect(result.valueMinor).toBeLessThan(100_000_00);
+  });
+
+  test("threads interest-rate revisions through to the amortization curve", () => {
+    const plan = {
+      annualInterestRate: "0.03",
+      initialCapitalMinor: 100_000_00,
+      startDate: "2024-01-01",
+      termMonths: 240,
+    };
+    const at = "2026-06-01";
+
+    const withoutRevision = valueAt(
+      { currentBalanceMinor: 0, method: "amortized", plan },
+      at,
+    ).valueMinor;
+    const withRevision = valueAt(
+      {
+        currentBalanceMinor: 0,
+        method: "amortized",
+        plan,
+        revisions: [{ newAnnualInterestRate: "0.06", revisionDate: "2025-01-01" }],
+      },
+      at,
+    ).valueMinor;
+
+    // A rate hike after its revision date changes the outstanding balance — the
+    // dispatcher must thread revisions into the curve, not drop them.
+    expect(withRevision).not.toBe(withoutRevision);
   });
 });
 
@@ -247,5 +303,23 @@ describe("valueAt — anchored (declared balances)", () => {
     );
 
     expect(result.valueMinor).toBe(12_000_00);
+  });
+
+  test("revolving interpolates linearly while informal steps — same anchors, divergent mid-range", () => {
+    const revolving = valueAt(
+      { anchors, currentBalanceMinor: 0, debtModel: "revolving", method: "anchored" },
+      "2024-07-01",
+    ).valueMinor;
+    const informal = valueAt(
+      { anchors, currentBalanceMinor: 0, debtModel: "informal", method: "anchored" },
+      "2024-07-01",
+    ).valueMinor;
+
+    // Revolving interpolates strictly between the anchors; informal holds the most
+    // recent anchor (a step). They diverge, proving the debtModel field is honoured.
+    expect(revolving).not.toBeNull();
+    expect(revolving!).toBeGreaterThan(0);
+    expect(revolving!).toBeLessThan(10_000_00);
+    expect(informal).toBe(10_000_00);
   });
 });

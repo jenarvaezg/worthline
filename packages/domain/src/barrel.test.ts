@@ -26,6 +26,9 @@ const KEY_EXPORTS = [
   // holding-valuation
   "valueAt",
   "defaultValuationMethodForAssetType",
+  "defaultValuationMethodForDebtModel",
+  // value-history
+  "lastKnownValueAtDate",
   // workspace-types
   "createWorkspace",
   "createManualAsset",

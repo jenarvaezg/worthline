@@ -17,9 +17,10 @@ import { schemaSql } from "../src/schema-sql";
 
 function seedV12(): Database.Database {
   const db = new Database(":memory:");
-  db.exec(schemaSql);
-  // Pretend this database predates the v13 backfill so migrate() runs only the
-  // v13 step; the seeded rows leave valuation_method NULL for it to fill in.
+  // Genuinely pre-v13: strip the valuation_method column so migrate() exercises
+  // the real legacy-DB path — ALTER TABLE ADD COLUMN then backfill — not merely a
+  // backfill of an already-present column.
+  db.exec(schemaSql.replace(/[ \t]*`valuation_method` text,\n/g, ""));
   db.pragma("user_version = 12");
 
   db.exec(`
@@ -28,6 +29,9 @@ function seedV12(): Database.Database {
       ('a_car', 'Coche', 'manual', 'EUR', 20000, 'illiquid'),
       ('a_fund', 'Fondo', 'investment', 'EUR', 50000, 'market'),
       ('a_home', 'Piso', 'real_estate', 'EUR', 300000, 'illiquid');
+
+    INSERT INTO assets (id, name, type, currency, current_value_minor, liquidity_tier, is_primary_residence) VALUES
+      ('a_residence', 'Vivienda', 'manual', 'EUR', 250000, 'illiquid', 1);
 
     INSERT INTO liabilities (id, name, type, currency, current_balance_minor, debt_model) VALUES
       ('l_mortgage', 'Hipoteca', 'mortgage', 'EUR', 200000, 'amortizable'),
@@ -66,6 +70,9 @@ describe("valuation-method schema migration (v13)", () => {
     expect(assetMethod(db, "a_car")).toBe("stored");
     expect(assetMethod(db, "a_fund")).toBe("derived");
     expect(assetMethod(db, "a_home")).toBe("appreciating");
+    // A primary residence is appreciating even when its type isn't real_estate —
+    // the backfill mirrors the runtime isHousingAsset boundary.
+    expect(assetMethod(db, "a_residence")).toBe("appreciating");
     expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
   });
 
@@ -89,5 +96,40 @@ describe("valuation-method schema migration (v13)", () => {
     migrate(db);
 
     expect(db.prepare(select).get()).toEqual(before);
+  });
+
+  test("adds the valuation_method column to both tables (the legacy ALTER path)", () => {
+    const db = seedV12();
+    const hasColumn = (table: string) =>
+      (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some(
+        (c) => c.name === "valuation_method",
+      );
+
+    expect(hasColumn("assets")).toBe(false); // genuinely pre-v13: column absent
+    migrate(db);
+    expect(hasColumn("assets")).toBe(true);
+    expect(hasColumn("liabilities")).toBe(true);
+  });
+
+  test("leaves no holding null and is idempotent on a second run", () => {
+    const db = seedV12();
+    migrate(db);
+
+    const nullCount = () =>
+      (
+        db
+          .prepare(
+            "SELECT (SELECT COUNT(*) FROM assets WHERE valuation_method IS NULL) + " +
+              "(SELECT COUNT(*) FROM liabilities WHERE valuation_method IS NULL) AS n",
+          )
+          .get() as { n: number }
+      ).n;
+
+    expect(nullCount()).toBe(0);
+
+    const before = db.prepare("SELECT id, valuation_method FROM assets ORDER BY id").all();
+    migrate(db); // a second run sits behind `version < 13` → no-op
+    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
+    expect(db.prepare("SELECT id, valuation_method FROM assets ORDER BY id").all()).toEqual(before);
   });
 });

@@ -6,14 +6,14 @@
  * reconstructs the valued portfolio *as it was* on that date and produces a
  * snapshot for it.
  *
- * Resolution rules (PRD #107):
- * - Investment with an operation on or before the date: position folded to
- *   that date (units), valued at the last known unit price ≤ date. An
- *   investment with no operation on or before the date did not exist yet and
- *   is omitted. A position fully sold by the date (zero units) is also omitted.
- * - Manual holdings (cash, housing, debts): the last known value ≤ date from
- *   the audit history, falling back to the holding's current value when no
- *   history reaches that far back (an accepted approximation).
+ * Resolution rules: reconstruction builds a per-holding HoldingValuationInput
+ * (assetValuationInput / liabilityValuationInput) and values it on the target
+ * date through holding-valuation's `valueAt`, which dispatches on the holding's
+ * valuation method (ADR 0014). `stored` is the manual last-known-value ≤ date
+ * basis, falling back to the current value; `derived` folds the operation ledger
+ * to that date (omitted before its first operation, or once fully sold);
+ * `appreciating`, `amortized` and `anchored` value the housing / debt curves
+ * (PRD #108/#109).
  *
  * The actual snapshot + holding rows are produced by the existing
  * `captureValuedNetWorthSnapshot`, so the reconciliation invariant (ADR 0008)
@@ -50,7 +50,6 @@ import { allocateScopedHolding } from "./scope-allocation";
 import type { InvestmentCaptureDetail, SnapshotHoldingRow } from "./snapshot-holdings";
 import type { ManualValuePoint } from "./value-history";
 
-
 /**
  * The curve inputs of one real-estate asset (PRD #108): its valuation anchors,
  * its annual appreciation rate, and its current stored value. When an asset has
@@ -63,7 +62,6 @@ export interface HousingCurveInputs {
   annualAppreciationRate?: DecimalString | null;
   currentValueMinor: number;
 }
-
 
 /**
  * The debt-balance curve inputs of one liability (PRD #109, slice 9): its debt
@@ -204,6 +202,22 @@ function assetValuationInput(
   asset: ManualAsset,
   input: BuildSnapshotAtDateInput,
 ): HoldingValuationInput {
+  // Precedence matches the live capture path and the pre-dispatcher historical
+  // path (type-first): an investment is valued by its operation ledger even when
+  // flagged a primary residence; housing-ness only chooses the method for
+  // non-investments. Reordering this with isHousingAsset would silently re-value
+  // an investment-flagged-primary-residence as housing (#148 regression).
+  if (asset.type === "investment") {
+    const capturedUnitPrice = input.capturedUnitPrices?.get(asset.id);
+    return {
+      assetId: asset.id,
+      currency: asset.currency,
+      method: "derived",
+      operations: input.operationsByAsset.get(asset.id) ?? [],
+      ...(capturedUnitPrice !== undefined ? { capturedUnitPrice } : {}),
+    };
+  }
+
   const valueHistory = input.manualValueHistory.get(asset.id);
 
   if (isHousingAsset(asset)) {
@@ -214,19 +228,10 @@ function assetValuationInput(
       currentValueMinor: curve?.currentValueMinor ?? asset.currentValue.amountMinor,
       method: "appreciating",
       today: input.today ?? input.targetDate,
-      ...(rate != null ? { annualAppreciationRate: rate } : {}),
+      // Mirror the curve-active guard (rate "" is not a curve), so the fallback
+      // path can never source currentValueMinor differently than the old code.
+      ...(rate != null && rate !== "" ? { annualAppreciationRate: rate } : {}),
       ...(valueHistory !== undefined ? { valueHistory } : {}),
-    };
-  }
-
-  if (asset.type === "investment") {
-    const capturedUnitPrice = input.capturedUnitPrices?.get(asset.id);
-    return {
-      assetId: asset.id,
-      currency: asset.currency,
-      method: "derived",
-      operations: input.operationsByAsset.get(asset.id) ?? [],
-      ...(capturedUnitPrice !== undefined ? { capturedUnitPrice } : {}),
     };
   }
 
@@ -535,7 +540,7 @@ export function recalculateSnapshotForHousing(
         currentValueMinor: input.curve.currentValueMinor,
         method: "appreciating",
         today: input.today,
-        ...(rate != null ? { annualAppreciationRate: rate } : {}),
+        ...(rate != null && rate !== "" ? { annualAppreciationRate: rate } : {}),
         ...(points !== undefined ? { valueHistory: points } : {}),
       },
       targetDate,
