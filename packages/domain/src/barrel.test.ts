@@ -23,6 +23,9 @@ const KEY_EXPORTS = [
   // classification
   "tierOfAsset",
   "isLiquid",
+  // holding-valuation
+  "valueAt",
+  "defaultValuationMethodForAssetType",
   // workspace-types
   "createWorkspace",
   "createManualAsset",

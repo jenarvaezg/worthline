@@ -17,6 +17,32 @@ import type {
 } from "./investment-types";
 import { assertMinorInteger, money, subtractMoney } from "./money";
 
+/** Operations whose executedAt date falls on or before the target date. */
+export function operationsUpTo(
+  operations: readonly InvestmentOperation[] | undefined,
+  targetDate: string,
+): InvestmentOperation[] {
+  if (!operations) return [];
+  return operations.filter((operation) => operation.executedAt.slice(0, 10) <= targetDate);
+}
+
+/** The unit price of the latest operation on or before the date. */
+export function latestOperationPrice(
+  operations: readonly InvestmentOperation[],
+): DecimalString | undefined {
+  let latest: InvestmentOperation | undefined;
+  for (const operation of operations) {
+    if (
+      !latest ||
+      operation.executedAt > latest.executedAt ||
+      (operation.executedAt === latest.executedAt && operation.id > latest.id)
+    ) {
+      latest = operation;
+    }
+  }
+  return latest?.pricePerUnit;
+}
+
 /**
  * Validate and normalize a single investment operation. Units must be positive,
  * price non-negative, fees a non-negative integer minor amount. Throws on

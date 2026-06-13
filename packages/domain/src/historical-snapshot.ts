@@ -32,8 +32,9 @@ import type { DebtBalanceAnchor } from "./debt-balance";
 import { debtBalanceAtDate } from "./debt-balance";
 import type { DecimalString } from "./decimal";
 import { compareUnits } from "./decimal";
+import { valueAt } from "./holding-valuation";
+import type { HoldingValuationInput } from "./holding-valuation";
 import type { HousingValuationAnchor } from "./housing-valuation";
-import { valueHousingAtDate } from "./housing-valuation";
 import type { InvestmentOperation } from "./investment-types";
 import type { DebtModel, Liability, ManualAsset, Workspace } from "./workspace-types";
 import type { NetWorthSnapshot, ValuedNetWorthSnapshot } from "./snapshot-types";
@@ -43,17 +44,12 @@ import {
 } from "./snapshot-types";
 import { assertSnapshotHoldingsReconcile } from "./snapshot-holdings";
 import { money } from "./money";
-import { derivePosition } from "./positions";
+import { derivePosition, latestOperationPrice, operationsUpTo } from "./positions";
 import { resolveScopeMemberIds } from "./scope";
 import { allocateScopedHolding } from "./scope-allocation";
 import type { InvestmentCaptureDetail, SnapshotHoldingRow } from "./snapshot-holdings";
+import type { ManualValuePoint } from "./value-history";
 
-/** One declared value of a manual holding on a date, from the audit history. */
-export interface ManualValuePoint {
-  /** YYYY-MM-DD the value applies from. */
-  dateKey: string;
-  valueMinor: number;
-}
 
 /**
  * The curve inputs of one real-estate asset (PRD #108): its valuation anchors,
@@ -68,37 +64,6 @@ export interface HousingCurveInputs {
   currentValueMinor: number;
 }
 
-/**
- * True when an asset is a housing holding (real_estate / primary residence /
- * housing tier) AND carries a curve worth evaluating — at least one anchor or a
- * declared rate. A housing asset with neither falls back to the last-known-value
- * basis (no regression for assets without anchors, PRD #108).
- */
-function hasHousingCurve(
-  asset: ManualAsset,
-  curve: HousingCurveInputs | undefined,
-): curve is HousingCurveInputs {
-  if (!curve || !isHousingAsset(asset)) return false;
-  return (
-    curve.anchors.length > 0 ||
-    (curve.annualAppreciationRate != null && curve.annualAppreciationRate !== "")
-  );
-}
-
-/** Resolve a housing asset's curve value on the target date, in minor units. */
-function housingCurveValueMinor(
-  curve: HousingCurveInputs,
-  targetDate: string,
-  today: string,
-): number {
-  return valueHousingAtDate({
-    anchors: curve.anchors,
-    annualAppreciationRate: curve.annualAppreciationRate ?? null,
-    currentValueMinor: curve.currentValueMinor,
-    targetDate,
-    today,
-  });
-}
 
 /**
  * The debt-balance curve inputs of one liability (PRD #109, slice 9): its debt
@@ -234,46 +199,77 @@ export interface BuildSnapshotAtDateInput {
   capturedUnitPrices?: ReadonlyMap<string, DecimalString>;
 }
 
-/** The most recent value with dateKey ≤ target, or undefined if none reaches back. */
-export function lastKnownValueAtDate(
-  points: readonly ManualValuePoint[] | undefined,
-  targetDate: string,
-): number | undefined {
-  if (!points || points.length === 0) return undefined;
+/** The valuation input for an asset on the historical path, by its valuation method. */
+function assetValuationInput(
+  asset: ManualAsset,
+  input: BuildSnapshotAtDateInput,
+): HoldingValuationInput {
+  const valueHistory = input.manualValueHistory.get(asset.id);
 
-  let resolved: number | undefined;
-  for (const point of points) {
-    if (point.dateKey <= targetDate) {
-      resolved = point.valueMinor;
-    }
+  if (isHousingAsset(asset)) {
+    const curve = input.housingValuationByAsset?.get(asset.id);
+    const rate = curve?.annualAppreciationRate;
+    return {
+      anchors: curve?.anchors ?? [],
+      currentValueMinor: curve?.currentValueMinor ?? asset.currentValue.amountMinor,
+      method: "appreciating",
+      today: input.today ?? input.targetDate,
+      ...(rate != null ? { annualAppreciationRate: rate } : {}),
+      ...(valueHistory !== undefined ? { valueHistory } : {}),
+    };
   }
-  return resolved;
+
+  if (asset.type === "investment") {
+    const capturedUnitPrice = input.capturedUnitPrices?.get(asset.id);
+    return {
+      assetId: asset.id,
+      currency: asset.currency,
+      method: "derived",
+      operations: input.operationsByAsset.get(asset.id) ?? [],
+      ...(capturedUnitPrice !== undefined ? { capturedUnitPrice } : {}),
+    };
+  }
+
+  return {
+    currentValueMinor: asset.currentValue.amountMinor,
+    method: "stored",
+    ...(valueHistory !== undefined ? { valueHistory } : {}),
+  };
 }
 
-/** The unit price of the latest operation on or before the date. */
-function latestOperationPrice(
-  operations: readonly InvestmentOperation[],
-): DecimalString | undefined {
-  let latest: InvestmentOperation | undefined;
-  for (const operation of operations) {
-    if (
-      !latest ||
-      operation.executedAt > latest.executedAt ||
-      (operation.executedAt === latest.executedAt && operation.id > latest.id)
-    ) {
-      latest = operation;
-    }
+/** The valuation input for a liability on the historical path, by its valuation method. */
+function liabilityValuationInput(
+  liability: Liability,
+  curve: DebtBalanceCurveInputs | undefined,
+  input: BuildSnapshotAtDateInput,
+): HoldingValuationInput {
+  if (curve?.debtModel === "amortizable") {
+    return {
+      currentBalanceMinor: curve.currentBalanceMinor,
+      method: "amortized",
+      ...(curve.plan !== undefined ? { plan: curve.plan } : {}),
+      ...(curve.revisions !== undefined ? { revisions: curve.revisions } : {}),
+    };
   }
-  return latest?.pricePerUnit;
-}
 
-/** Operations whose executedAt date falls on or before the target date. */
-function operationsUpTo(
-  operations: readonly InvestmentOperation[] | undefined,
-  targetDate: string,
-): InvestmentOperation[] {
-  if (!operations) return [];
-  return operations.filter((operation) => operation.executedAt.slice(0, 10) <= targetDate);
+  if (curve?.debtModel === "revolving" || curve?.debtModel === "informal") {
+    return {
+      currentBalanceMinor: curve.currentBalanceMinor,
+      debtModel: curve.debtModel,
+      method: "anchored",
+      ...(curve.anchors !== undefined ? { anchors: curve.anchors } : {}),
+      ...(curve.initialCapitalMinor !== undefined
+        ? { initialCapitalMinor: curve.initialCapitalMinor }
+        : {}),
+    };
+  }
+
+  const valueHistory = input.manualValueHistory.get(liability.id);
+  return {
+    currentValueMinor: liability.currentBalance.amountMinor,
+    method: "stored",
+    ...(valueHistory !== undefined ? { valueHistory } : {}),
+  };
 }
 
 /**
@@ -296,71 +292,30 @@ export function buildSnapshotAtDate(
   const investmentDetails = new Map<string, InvestmentCaptureDetail>();
 
   for (const asset of input.assets) {
-    if (asset.type === "investment") {
-      const ops = operationsUpTo(input.operationsByAsset.get(asset.id), input.targetDate);
-      if (ops.length === 0) continue; // did not exist yet
+    const valuation = valueAt(assetValuationInput(asset, input), input.targetDate);
+    if (valuation.valueMinor === null) continue; // not held on this date
 
-      const price =
-        input.capturedUnitPrices?.get(asset.id) ?? latestOperationPrice(ops);
+    historicalAssets.push({
+      ...asset,
+      currentValue: money(valuation.valueMinor, asset.currency),
+    });
 
-      const position = derivePosition(ops, {
-        assetId: asset.id,
-        currency: asset.currency,
-        ...(price !== undefined ? { currentPricePerUnit: price } : {}),
-      });
-
-      // Fully sold (or never accumulated) by this date — not held, omit.
-      if (compareUnits(position.currentUnits, "0") === 0) continue;
-
-      const value = position.marketValue ?? position.costBasis;
-      historicalAssets.push({ ...asset, currentValue: value });
+    if (valuation.units !== undefined) {
       investmentDetails.set(asset.id, {
-        units: position.currentUnits,
-        ...(price !== undefined ? { unitPrice: price } : {}),
+        units: valuation.units,
+        ...(valuation.unitPrice !== undefined ? { unitPrice: valuation.unitPrice } : {}),
       });
-      continue;
     }
-
-    // Housing valued from its curve (PRD #108): a real-estate asset with anchors
-    // or a rate is worth its curve value on the target date, not the last manual
-    // value. Without a curve it falls through to the manual last-known basis.
-    const curve = input.housingValuationByAsset?.get(asset.id);
-    if (hasHousingCurve(asset, curve)) {
-      const valueMinor = housingCurveValueMinor(
-        curve,
-        input.targetDate,
-        input.today ?? input.targetDate,
-      );
-      historicalAssets.push({ ...asset, currentValue: money(valueMinor, asset.currency) });
-      continue;
-    }
-
-    const known = lastKnownValueAtDate(
-      input.manualValueHistory.get(asset.id),
-      input.targetDate,
-    );
-    historicalAssets.push(
-      known !== undefined
-        ? { ...asset, currentValue: money(known, asset.currency) }
-        : asset,
-    );
   }
 
   const historicalLiabilities: Liability[] = input.liabilities.map((liability) => {
-    // A liability with a debt model is valued from its curve on the target date
-    // (PRD #109); one without keeps the manual last-known-value basis.
     const curve = input.debtBalanceByLiability?.get(liability.id);
-    if (curve && curve.debtModel !== null) {
-      const balanceMinor = debtCurveBalanceMinor(curve, input.targetDate);
-      return { ...liability, currentBalance: money(balanceMinor, liability.currency) };
-    }
-
-    const known = lastKnownValueAtDate(
-      input.manualValueHistory.get(liability.id),
+    const valuation = valueAt(
+      liabilityValuationInput(liability, curve, input),
       input.targetDate,
     );
-    return known !== undefined
-      ? { ...liability, currentBalance: money(known, liability.currency) }
+    return valuation.valueMinor !== null
+      ? { ...liability, currentBalance: money(valuation.valueMinor, liability.currency) }
       : liability;
   });
 
@@ -567,24 +522,24 @@ export function recalculateSnapshotForHousing(
   );
   const rows = input.frozenHoldings.filter((row) => row.holdingId !== input.asset.id);
 
-  // When the curve is empty (last anchor deleted, no rate) use the same
-  // last-known-value / currentValue basis that buildSnapshotAtDate uses for
-  // manual holdings — so both paths stay consistent (fix 1, PRD #108).
-  // We cannot reuse hasHousingCurve here because input.curve is always a
-  // HousingCurveInputs (not undefined), so the type guard would narrow the
-  // else-branch to never. Instead check the curve's content directly.
-  const curveIsActive =
-    input.curve.anchors.length > 0 ||
-    (input.curve.annualAppreciationRate != null &&
-      input.curve.annualAppreciationRate !== "");
-  let fullValueMinor: number;
-  if (curveIsActive) {
-    fullValueMinor = housingCurveValueMinor(input.curve, targetDate, input.today);
-  } else {
-    const points = input.manualValueHistory?.get(input.asset.id);
-    const known = lastKnownValueAtDate(points, targetDate);
-    fullValueMinor = known !== undefined ? known : input.curve.currentValueMinor;
-  }
+  // Value the housing asset on the target date via the same dispatcher (#148):
+  // the appreciating method already encodes "curve when active, else the
+  // last-known-value / currentValue basis" — keeping this ripple consistent with
+  // buildSnapshotAtDate (fix 1, PRD #108).
+  const points = input.manualValueHistory?.get(input.asset.id);
+  const rate = input.curve.annualAppreciationRate;
+  const fullValueMinor =
+    valueAt(
+      {
+        anchors: input.curve.anchors,
+        currentValueMinor: input.curve.currentValueMinor,
+        method: "appreciating",
+        today: input.today,
+        ...(rate != null ? { annualAppreciationRate: rate } : {}),
+        ...(points !== undefined ? { valueHistory: points } : {}),
+      },
+      targetDate,
+    ).valueMinor ?? input.curve.currentValueMinor;
 
   const { ownedMinor, totalShareBps } = allocateScopedHolding(fullValueMinor, {
     ownership: input.asset.ownership,

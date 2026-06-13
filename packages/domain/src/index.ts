@@ -24,6 +24,16 @@ export {
   tierOfAsset,
 } from "./classification";
 export { LIQUIDITY_LADDER } from "./liquidity-ladder";
+export type {
+  HoldingValuation,
+  HoldingValuationInput,
+  ValuationMethod,
+} from "./holding-valuation";
+export {
+  defaultValuationMethodForAssetType,
+  defaultValuationMethodForDebtModel,
+  valueAt,
+} from "./holding-valuation";
 
 export type { DomainResult, DomainViolation } from "./domain-result";
 
@@ -222,16 +232,16 @@ export type {
   BuildSnapshotAtDateInput,
   DebtBalanceCurveInputs,
   HousingCurveInputs,
-  ManualValuePoint,
   RecalculateHousingSnapshotInput,
   RecalculateLiabilitySnapshotInput,
   RecalculateSnapshotInput,
 } from "./historical-snapshot";
+export type { ManualValuePoint } from "./value-history";
+export { lastKnownValueAtDate } from "./value-history";
 export {
   amortizationPaymentDatesUpTo,
   buildSnapshotAtDate,
   historicalCapturedAt,
-  lastKnownValueAtDate,
   recalculateSnapshotForAsset,
   recalculateSnapshotForHousing,
   recalculateSnapshotForLiability,

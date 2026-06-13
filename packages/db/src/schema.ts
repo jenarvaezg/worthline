@@ -8,6 +8,7 @@ import type {
   PriceFreshnessState,
   PriceSource,
   SnapshotHoldingKind,
+  ValuationMethod,
   WorkspaceMode,
 } from "@worthline/domain";
 import { sql } from "drizzle-orm";
@@ -83,6 +84,14 @@ export const assets = sqliteTable("assets", {
   currentValueMinor: integer("current_value_minor").notNull(),
   liquidityTier: text("liquidity_tier").$type<LiquidityTier>().notNull(),
   isPrimaryResidence: integer("is_primary_residence").notNull().default(0),
+  /**
+   * How the holding's value evolves (ADR 0014, #148): stored | derived |
+   * appreciating | amortized | anchored. Nullable forward-prep — backfilled from
+   * `type` by the v13 migration; in S2 the dispatcher still derives the method at
+   * the valuation boundary. No CHECK — the enum is enforced in TS, like
+   * `liquidity_tier`.
+   */
+  valuationMethod: text("valuation_method").$type<ValuationMethod>(),
   /**
    * Decimal-string annual appreciation rate (e.g. "0.03") used to drift a
    * real-estate asset's value between/beyond its valuation anchors. Null means
@@ -181,6 +190,8 @@ export const liabilities = sqliteTable("liabilities", {
    * declared — the current balance is used as-is, with no derived history.
    */
   debtModel: text("debt_model").$type<DebtModel>(),
+  /** Valuation method (ADR 0014, #148); backfilled from `debt_model` by the v13 migration. */
+  valuationMethod: text("valuation_method").$type<ValuationMethod>(),
   deletedAt: text("deleted_at"),
   createdAt: timestamp("created_at"),
   updatedAt: timestamp("updated_at"),
