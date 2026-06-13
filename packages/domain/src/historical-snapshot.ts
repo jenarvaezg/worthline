@@ -20,13 +20,22 @@
  * and the five headline figures stay identical to the daily-capture path.
  */
 
-import { isHousing, isHousingAsset, isLiquid, tierOfAsset } from "./classification";
+import type { AmortizationPlanInput, InterestRateRevision } from "./amortization";
+import {
+  isHousing,
+  isHousingAsset,
+  isLiquid,
+  tierOfAsset,
+  tierOfLiability,
+} from "./classification";
+import type { DebtBalanceAnchor } from "./debt-balance";
+import { debtBalanceAtDate } from "./debt-balance";
 import type { DecimalString } from "./decimal";
 import { compareUnits } from "./decimal";
 import type { HousingValuationAnchor } from "./housing-valuation";
 import { valueHousingAtDate } from "./housing-valuation";
 import type { InvestmentOperation } from "./investment-types";
-import type { Liability, ManualAsset, Workspace } from "./workspace-types";
+import type { DebtModel, Liability, ManualAsset, Workspace } from "./workspace-types";
 import type { NetWorthSnapshot, ValuedNetWorthSnapshot } from "./snapshot-types";
 import {
   captureValuedNetWorthSnapshot,
@@ -91,6 +100,93 @@ function housingCurveValueMinor(
   });
 }
 
+/**
+ * The debt-balance curve inputs of one liability (PRD #109, slice 9): its debt
+ * model and the model-specific data needed to value the outstanding balance on
+ * any past date via the pure `debtBalanceAtDate` dispatcher. A liability with an
+ * entry here AND a non-null `debtModel` is valued from its curve in historical
+ * reconstruction instead of the manual last-known-value basis. A liability
+ * absent from the map (or carrying a null model) keeps the last-known basis —
+ * no regression for liabilities without a model (PRD #109). The shape mirrors
+ * `HousingCurveInputs` for assets.
+ */
+export interface DebtBalanceCurveInputs {
+  /** How the liability is modelled. Null → no curve, last-known-value basis. */
+  debtModel: DebtModel | null;
+  /** Balance anchors (any order) for a revolving/informal liability. */
+  anchors?: readonly DebtBalanceAnchor[];
+  /** The amortization plan for an amortizable liability. */
+  plan?: AmortizationPlanInput;
+  /** Rate revisions for an amortizable liability (any order). */
+  revisions?: readonly InterestRateRevision[];
+  /** Initial capital for an informal liability, integer minor units. */
+  initialCapitalMinor?: number;
+  /** The liability's current stored balance, integer minor units (the fallback). */
+  currentBalanceMinor: number;
+}
+
+/** Resolve a liability's debt-curve balance on the target date, in minor units. */
+function debtCurveBalanceMinor(
+  curve: DebtBalanceCurveInputs,
+  targetDate: string,
+): number {
+  return debtBalanceAtDate({
+    currentBalanceMinor: curve.currentBalanceMinor,
+    debtModel: curve.debtModel,
+    targetDate,
+    ...(curve.anchors !== undefined ? { anchors: curve.anchors } : {}),
+    ...(curve.plan !== undefined ? { plan: curve.plan } : {}),
+    ...(curve.revisions !== undefined ? { revisions: curve.revisions } : {}),
+    ...(curve.initialCapitalMinor !== undefined
+      ? { initialCapitalMinor: curve.initialCapitalMinor }
+      : {}),
+  });
+}
+
+/** Last calendar day of the given year/month (1-based month). */
+function lastDayOfMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+/** The YYYY-MM-DD `count` whole months after `dateKey`, day clamped to month end. */
+function addMonths(dateKey: string, count: number): string {
+  const year = Number(dateKey.slice(0, 4));
+  const month = Number(dateKey.slice(5, 7));
+  const day = Number(dateKey.slice(8, 10));
+  const zeroBased = month - 1 + count;
+  const newYear = year + Math.floor(zeroBased / 12);
+  const newMonth = (zeroBased % 12) + 1;
+  const clampedDay = Math.min(day, lastDayOfMonth(newYear, newMonth));
+  const mm = String(newMonth).padStart(2, "0");
+  const dd = String(clampedDay).padStart(2, "0");
+  return `${newYear}-${mm}-${dd}`;
+}
+
+/**
+ * The amortizable payment-boundary dates strictly before `targetDate`, ascending
+ * (PRD #109, slice 9). Each boundary is `startDate + m months` for m in
+ * [0..termMonths] (the start date itself is the first, the final payment the
+ * last). This drives the "one snapshot per past cuota" density of the
+ * amortizable ripple — the deliberate exception to ADR 0012 recognised by PRD
+ * #109. Dates on or after `targetDate` are excluded (the caller never generates
+ * for today/future, and a boundary equal to the target is owned by the target).
+ */
+export function amortizationPaymentDatesUpTo(
+  plan: AmortizationPlanInput,
+  targetDate: string,
+): string[] {
+  const dates: string[] = [];
+  for (let m = 0; m <= plan.termMonths; m += 1) {
+    const dateKey = addMonths(plan.startDate, m);
+    if (dateKey < targetDate) {
+      dates.push(dateKey);
+    } else {
+      break;
+    }
+  }
+  return dates;
+}
+
 export interface BuildSnapshotAtDateInput {
   workspace: Workspace;
   scopeId: string;
@@ -110,6 +206,14 @@ export interface BuildSnapshotAtDateInput {
    * manual last-known-value basis (no regression).
    */
   housingValuationByAsset?: ReadonlyMap<string, HousingCurveInputs>;
+  /**
+   * Debt-balance curve inputs of every liability with a debt model, keyed by
+   * liability id (PRD #109). A liability present here with a non-null model is
+   * valued via the pure `debtBalanceAtDate` dispatcher on the target date; one
+   * absent (or with a null model) keeps the manual last-known-value basis (no
+   * regression). The liability path's analogue of `housingValuationByAsset`.
+   */
+  debtBalanceByLiability?: ReadonlyMap<string, DebtBalanceCurveInputs>;
   /**
    * "Today" as YYYY-MM-DD — forwarded to the housing curve for forward
    * extrapolation. Defaults to the target date when omitted (a target ≤ today
@@ -243,6 +347,14 @@ export function buildSnapshotAtDate(
   }
 
   const historicalLiabilities: Liability[] = input.liabilities.map((liability) => {
+    // A liability with a debt model is valued from its curve on the target date
+    // (PRD #109); one without keeps the manual last-known-value basis.
+    const curve = input.debtBalanceByLiability?.get(liability.id);
+    if (curve && curve.debtModel !== null) {
+      const balanceMinor = debtCurveBalanceMinor(curve, input.targetDate);
+      return { ...liability, currentBalance: money(balanceMinor, liability.currency) };
+    }
+
     const known = lastKnownValueAtDate(
       input.manualValueHistory.get(liability.id),
       input.targetDate,
@@ -517,6 +629,129 @@ export function recalculateSnapshotForHousing(
     scopeId: input.snapshot.scopeId,
     totalNetWorth: {
       amountMinor: input.snapshot.totalNetWorth.amountMinor + deltaMinor,
+      currency,
+    },
+  };
+
+  const snapshot = createNetWorthSnapshot({
+    capturedAt: input.snapshot.capturedAt,
+    id: input.snapshot.id,
+    isMonthlyClose: input.snapshot.isMonthlyClose,
+    scopeId: input.snapshot.scopeId,
+    scopeLabel: input.snapshot.scopeLabel,
+    summary,
+    warnings: input.snapshot.warnings,
+  });
+
+  assertSnapshotHoldingsReconcile(rows, {
+    debtsMinor: summary.debts.amountMinor,
+    grossAssetsMinor: summary.grossAssets.amountMinor,
+  });
+
+  return { holdings: rows, snapshot };
+}
+
+export interface RecalculateLiabilitySnapshotInput {
+  /** The existing snapshot to recalculate (its id, scope, date, capturedAt are preserved). */
+  snapshot: NetWorthSnapshot;
+  /** The snapshot's currently frozen holding rows. */
+  frozenHoldings: SnapshotHoldingRow[];
+  /** The identity of the single liability whose debt curve changed. */
+  liability: Liability;
+  /** That liability's debt-balance curve inputs (model + anchors/plan/revisions). */
+  curve: DebtBalanceCurveInputs;
+  workspace: Workspace;
+}
+
+/**
+ * Recalculate an existing snapshot after one liability's debt curve changed
+ * (PRD #109, slice 9 ripple) — a declared/edited/deleted plan, anchor, or rate
+ * revision. Only that liability's row is recomputed from `debtBalanceAtDate` at
+ * the snapshot's date; every other frozen row is preserved verbatim, exactly
+ * like the asset/housing ripples. Figures are adjusted by the liability's value
+ * delta against the snapshot's own frozen figures: debts move by +delta and
+ * total net worth by -delta (a higher balance lowers net worth); housing equity
+ * / liquid net worth move by -delta only when the debt is of that tier. The
+ * debt's tier is resolved via `tierOfLiability` (a mortgage, or a debt securing
+ * a housing asset, is housing-tier) — NOT the frozen row's tier, which is null
+ * for an unassociated mortgage. Associated debts resolve their tier from the
+ * frozen asset rows.
+ *
+ * Returns null when no holdings remain (the caller drops the snapshot). The
+ * liability is scope-weighted with the same allocation the headline figures use,
+ * so the reconciliation invariant holds by construction.
+ */
+export function recalculateSnapshotForLiability(
+  input: RecalculateLiabilitySnapshotInput,
+): ValuedNetWorthSnapshot | null {
+  const targetDate = input.snapshot.dateKey;
+  const currency = input.workspace.baseCurrency;
+  const scopeMemberIds = new Set(
+    resolveScopeMemberIds(input.workspace, input.snapshot.scopeId),
+  );
+
+  const existingRow = input.frozenHoldings.find(
+    (row) => row.holdingId === input.liability.id && row.kind === "liability",
+  );
+  const rows = input.frozenHoldings.filter(
+    (row) => row.holdingId !== input.liability.id,
+  );
+
+  // The debt's tier classification (same basis as calculateNetWorth): a mortgage
+  // or a debt securing a housing asset is housing-tier. Associated debts resolve
+  // from the frozen asset rows' tiers; this is the truth behind the headline
+  // figures even when the frozen liability row's own tier is null.
+  const assetTierById = new Map(
+    rows
+      .filter((row) => row.kind === "asset" && row.liquidityTier !== null)
+      .map((row) => [row.holdingId, row.liquidityTier!] as const),
+  );
+  const tier = tierOfLiability(input.liability, assetTierById);
+
+  const fullBalanceMinor = debtCurveBalanceMinor(input.curve, targetDate);
+  const { ownedMinor, totalShareBps } = allocateScopedHolding(fullBalanceMinor, {
+    ownership: input.liability.ownership,
+    scopeMemberIds,
+  });
+
+  let newRow: SnapshotHoldingRow | undefined;
+  if (totalShareBps > 0 && ownedMinor !== 0) {
+    newRow = {
+      holdingId: input.liability.id,
+      kind: "liability",
+      label: existingRow?.label ?? input.liability.name,
+      liquidityTier: existingRow ? existingRow.liquidityTier : null,
+      valueMinor: ownedMinor,
+    };
+    rows.push(newRow);
+  }
+
+  if (rows.length === 0) return null;
+
+  const deltaMinor = (newRow?.valueMinor ?? 0) - (existingRow?.valueMinor ?? 0);
+
+  const summary = {
+    debts: {
+      amountMinor: input.snapshot.debts.amountMinor + deltaMinor,
+      currency,
+    },
+    grossAssets: {
+      amountMinor: input.snapshot.grossAssets.amountMinor,
+      currency,
+    },
+    housingEquity: {
+      amountMinor:
+        input.snapshot.housingEquity.amountMinor + (isHousing(tier) ? -deltaMinor : 0),
+      currency,
+    },
+    liquidNetWorth: {
+      amountMinor:
+        input.snapshot.liquidNetWorth.amountMinor + (isLiquid(tier) ? -deltaMinor : 0),
+      currency,
+    },
+    scopeId: input.snapshot.scopeId,
+    totalNetWorth: {
+      amountMinor: input.snapshot.totalNetWorth.amountMinor - deltaMinor,
       currency,
     },
   };

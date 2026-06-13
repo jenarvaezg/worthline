@@ -218,17 +218,21 @@ export { buildSnapshotId, captureSnapshotForScope } from "./capture-snapshot";
 
 export type {
   BuildSnapshotAtDateInput,
+  DebtBalanceCurveInputs,
   HousingCurveInputs,
   ManualValuePoint,
   RecalculateHousingSnapshotInput,
+  RecalculateLiabilitySnapshotInput,
   RecalculateSnapshotInput,
 } from "./historical-snapshot";
 export {
+  amortizationPaymentDatesUpTo,
   buildSnapshotAtDate,
   historicalCapturedAt,
   lastKnownValueAtDate,
   recalculateSnapshotForAsset,
   recalculateSnapshotForHousing,
+  recalculateSnapshotForLiability,
 } from "./historical-snapshot";
 
 export type {

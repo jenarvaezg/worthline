@@ -1,5 +1,7 @@
 import type { LocalPersistenceStatus } from "@worthline/domain";
 import type {
+  DebtBalanceCurveInputs,
+  DebtModel,
   DecimalString,
   FireScopeConfig,
   HousingCurveInputs,
@@ -11,12 +13,14 @@ import type {
   Workspace,
 } from "@worthline/domain";
 import {
+  amortizationPaymentDatesUpTo,
   buildSnapshotAtDate,
   historicalCapturedAt,
   isHousingAsset,
   listScopeOptions,
   recalculateSnapshotForAsset,
   recalculateSnapshotForHousing,
+  recalculateSnapshotForLiability,
 } from "@worthline/domain";
 import Database from "better-sqlite3";
 import type { Database as DatabaseConnection } from "better-sqlite3";
@@ -26,12 +30,16 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import {
+  amortizationPlans,
   appSettings,
   assetOwnerships,
   assets,
   assetValuations,
   auditLog,
+  interestRateRevisions,
   liabilities,
+  liabilityBalanceAnchors,
+  liabilityOwnerships,
   snapshots,
   warningOverrides,
 } from "./schema";
@@ -200,6 +208,40 @@ export interface WorthlineStore {
     fromDateKey: string;
     today: string;
   }) => void;
+  /**
+   * Generate/recalculate historical snapshots after a debt-balance change (PRD
+   * #109, slice 9). The liability is valued from its debt curve
+   * (`debtBalanceAtDate`) on each affected date.
+   *
+   * - `kind: "amortizable-plan"` (a created/edited plan): generate a fresh
+   *   snapshot at EVERY past payment-boundary date that has none yet (the "one
+   *   snapshot per past cuota" density — the deliberate exception to ADR 0012
+   *   recognised by PRD #109), then recalculate every existing snapshot dated ≥
+   *   the loan start by re-valuing only the liability's row from the curve.
+   * - `kind: "amortizable-revision"`: pass the revision's date as `fromDateKey`;
+   *   recalculates every existing snapshot dated ≥ it (no new generation — the
+   *   revision only changes existing balances after it).
+   * - `kind: "anchor"` (a declared/edited/deleted balance anchor for a
+   *   revolving/informal debt): pass the anchor date as `fromDateKey`; generates
+   *   a fresh snapshot at it when in the past and none exists, then recalculates
+   *   every existing snapshot dated ≥ it.
+   *
+   * A date today or in the future never generates history (the daily capture
+   * owns today, the future is not history). Only the liability's row in each
+   * snapshot is recomputed; every other frozen row is preserved, and legacy
+   * captures with no holding rows are skipped. A no-op when the liability has no
+   * debt model or curve data.
+   */
+  rippleHistoricalSnapshotsForDebt: (
+    params:
+      | { liabilityId: string; kind: "amortizable-plan"; today: string }
+      | {
+          liabilityId: string;
+          kind: "amortizable-revision" | "anchor";
+          fromDateKey: string;
+          today: string;
+        },
+  ) => void;
   /**
    * One-shot backfill (ADR 0012, PRD #107): generate a historical snapshot for
    * every past operation date that has no snapshot yet, across all scopes.
@@ -450,6 +492,16 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
         params,
       );
     },
+    rippleHistoricalSnapshotsForDebt: (params) => {
+      const workspace = getWorkspace();
+      if (!workspace) return;
+      rippleHistoricalSnapshotsForDebt(
+        ctx,
+        workspace,
+        store.snapshots.saveSnapshot,
+        params,
+      );
+    },
     backfillHistoricalSnapshots: (today) => {
       const workspace = getWorkspace();
       if (!workspace) return;
@@ -476,6 +528,8 @@ interface HistoricalSnapshotDeps {
   manualValueHistory: Map<string, ManualValuePoint[]>;
   /** Curve inputs (anchors + rate + current value) of every real-estate asset (PRD #108). */
   housingValuationByAsset: Map<string, HousingCurveInputs>;
+  /** Debt-balance curve inputs of every liability with a debt model (PRD #109). */
+  debtBalanceByLiability: Map<string, DebtBalanceCurveInputs>;
 }
 
 function buildHistoricalSnapshotDeps(
@@ -483,10 +537,12 @@ function buildHistoricalSnapshotDeps(
   workspace: Workspace,
 ): HistoricalSnapshotDeps {
   const reconstructedAssets = readAssets(db, workspace);
+  const reconstructedLiabilities = readLiabilities(db, workspace);
   return {
     assets: reconstructedAssets,
+    debtBalanceByLiability: readDebtBalanceInputs(db, reconstructedLiabilities),
     housingValuationByAsset: readHousingCurveInputs(db, reconstructedAssets),
-    liabilities: readLiabilities(db, workspace),
+    liabilities: reconstructedLiabilities,
     manualValueHistory: readManualValueHistory(db),
     operationsByAsset: readAllOperations(db),
     scopes: listScopeOptions(workspace),
@@ -533,6 +589,96 @@ function readHousingCurveInputs(
       anchors: anchorsByAsset.get(asset.id) ?? [],
       annualAppreciationRate: rateByAsset.get(asset.id) ?? null,
       currentValueMinor: asset.currentValue.amountMinor,
+    });
+  }
+
+  return inputs;
+}
+
+/**
+ * Read the debt-balance curve inputs for every live liability that carries a
+ * debt model (PRD #109): its model, its balance anchors (revolving/informal),
+ * its amortization plan + rate revisions (amortizable), and its current balance.
+ * Keyed by liability id; only liabilities with a non-null model are included, so
+ * a liability without a model keeps the last-known-value basis (no regression).
+ * `currentBalance` comes from the already-read liabilities so the curve uses the
+ * same fallback the live read derived.
+ */
+function readDebtBalanceInputs(
+  db: StoreDb,
+  liveLiabilities: readonly Liability[],
+): Map<string, DebtBalanceCurveInputs> {
+  const inputs = new Map<string, DebtBalanceCurveInputs>();
+  if (liveLiabilities.length === 0) return inputs;
+
+  const modelRows = db
+    .select({ id: liabilities.id, debtModel: liabilities.debtModel })
+    .from(liabilities)
+    .all();
+  const modelById = new Map<string, DebtModel | null>();
+  for (const row of modelRows) modelById.set(row.id, row.debtModel ?? null);
+
+  // Anchors (revolving/informal), grouped by liability.
+  const anchorRows = db.select().from(liabilityBalanceAnchors).all();
+  const anchorsByLiability = new Map<
+    string,
+    { anchorDate: string; balanceMinor: number }[]
+  >();
+  for (const row of anchorRows) {
+    const list = anchorsByLiability.get(row.liabilityId) ?? [];
+    list.push({ anchorDate: row.anchorDate, balanceMinor: row.balanceMinor });
+    anchorsByLiability.set(row.liabilityId, list);
+  }
+
+  // Amortization plans, keyed by liability, plus revisions keyed by plan id.
+  const planRows = db.select().from(amortizationPlans).all();
+  const planByLiability = new Map<string, (typeof planRows)[number]>();
+  for (const row of planRows) planByLiability.set(row.liabilityId, row);
+
+  const revisionRows = db.select().from(interestRateRevisions).all();
+  const revisionsByPlan = new Map<
+    string,
+    { revisionDate: string; newAnnualInterestRate: DecimalString }[]
+  >();
+  for (const row of revisionRows) {
+    const list = revisionsByPlan.get(row.planId) ?? [];
+    list.push({
+      newAnnualInterestRate: row.newAnnualInterestRate,
+      revisionDate: row.revisionDate,
+    });
+    revisionsByPlan.set(row.planId, list);
+  }
+
+  for (const liability of liveLiabilities) {
+    const debtModel = modelById.get(liability.id) ?? null;
+    if (debtModel === null) continue; // no model → last-known-value basis
+
+    const currentBalanceMinor = liability.currentBalance.amountMinor;
+
+    if (debtModel === "amortizable") {
+      const plan = planByLiability.get(liability.id);
+      inputs.set(liability.id, {
+        currentBalanceMinor,
+        debtModel,
+        ...(plan
+          ? {
+              plan: {
+                annualInterestRate: plan.annualInterestRate,
+                initialCapitalMinor: plan.initialCapitalMinor,
+                startDate: plan.startDate,
+                termMonths: plan.termMonths,
+              },
+              revisions: revisionsByPlan.get(plan.id) ?? [],
+            }
+          : {}),
+      });
+      continue;
+    }
+
+    inputs.set(liability.id, {
+      anchors: anchorsByLiability.get(liability.id) ?? [],
+      currentBalanceMinor,
+      debtModel,
     });
   }
 
@@ -637,6 +783,7 @@ function rippleHistoricalSnapshots(
         const built = buildSnapshotAtDate({
           assets: deps.assets,
           capturedAt: historicalCapturedAt(operationDateKey),
+          debtBalanceByLiability: deps.debtBalanceByLiability,
           housingValuationByAsset: deps.housingValuationByAsset,
           id: `histsnap_${scope.id}_${operationDateKey}`,
           liabilities: deps.liabilities,
@@ -750,6 +897,7 @@ function rippleHistoricalSnapshotsForValuation(
         const built = buildSnapshotAtDate({
           assets: deps.assets,
           capturedAt: historicalCapturedAt(fromDateKey),
+          debtBalanceByLiability: deps.debtBalanceByLiability,
           housingValuationByAsset: deps.housingValuationByAsset,
           id: `histsnap_${scope.id}_${fromDateKey}`,
           liabilities: deps.liabilities,
@@ -803,6 +951,181 @@ function rippleHistoricalSnapshotsForValuation(
       }
     }
   });
+}
+
+/**
+ * Ripple effect for debt-balance curves (PRD #109, slice 9): declaring,
+ * editing, or deleting an amortization plan, a balance anchor, or a rate
+ * revision regenerates / recalculates the snapshots the change affects. The
+ * liability is valued from its debt curve (`debtBalanceAtDate`) on each date.
+ *
+ * Affected-date selection by `kind`:
+ * - "amortizable-plan": generate at every past payment-boundary date (start +
+ *   m months, m∈[0..term], strictly before today) that has no snapshot yet —
+ *   the "one snapshot per past cuota" density (the deliberate ADR-0012
+ *   exception of PRD #109) — then recalculate every existing snapshot dated ≥
+ *   the loan start.
+ * - "amortizable-revision": recalculate every existing snapshot dated ≥
+ *   `fromDateKey` (the revision date). No generation: the revision only changes
+ *   balances on existing dates after it.
+ * - "anchor": generate at `fromDateKey` when in the past and none exists, then
+ *   recalculate every existing snapshot dated ≥ it.
+ *
+ * Deps are built ONCE outside the scope loop (lesson from #114). Only the
+ * liability's row in each snapshot is recomputed; every other frozen row is
+ * preserved, and legacy captures with no holding rows are skipped. A no-op when
+ * the liability has no debt model / curve.
+ */
+function rippleHistoricalSnapshotsForDebt(
+  ctx: StoreContext,
+  workspace: Workspace,
+  saveSnapshot: (input: SaveSnapshotInput) => void,
+  params:
+    | { liabilityId: string; kind: "amortizable-plan"; today: string }
+    | {
+        liabilityId: string;
+        kind: "amortizable-revision" | "anchor";
+        fromDateKey: string;
+        today: string;
+      },
+): void {
+  const { db } = ctx;
+  const { liabilityId, today } = params;
+
+  // The liability's identity — including trashed, since it existed on the
+  // snapshot dates even if it was trashed afterwards.
+  const liability = readLiabilityIdentity(db, liabilityId);
+  if (!liability) return;
+
+  // Build deps once — the same for every scope (lesson from #114).
+  const deps = buildHistoricalSnapshotDeps(db, workspace);
+  const curve = deps.debtBalanceByLiability.get(liabilityId);
+  if (!curve || curve.debtModel === null) return; // no model → nothing to ripple
+
+  // The set of dates to generate fresh snapshots at, and the earliest date from
+  // which existing snapshots are recalculated.
+  let generateDates: string[];
+  let recalcFrom: string;
+  if (params.kind === "amortizable-plan") {
+    if (!curve.plan) return;
+    generateDates = amortizationPaymentDatesUpTo(curve.plan, today);
+    recalcFrom = curve.plan.startDate;
+  } else {
+    const { fromDateKey } = params;
+    // A revision never generates new dates; an anchor generates at its own date
+    // when in the past.
+    generateDates =
+      params.kind === "anchor" && fromDateKey < today ? [fromDateKey] : [];
+    recalcFrom = fromDateKey;
+  }
+
+  ctx.transaction(() => {
+    for (const scope of listScopeOptions(workspace)) {
+      const existing = readSnapshots(db, scope.id);
+      const existingByDate = new Map(existing.map((snap) => [snap.dateKey, snap]));
+
+      // Generate a fresh whole-portfolio snapshot at each affected past date
+      // that has none yet.
+      for (const dateKey of generateDates) {
+        if (dateKey >= today || existingByDate.has(dateKey)) continue;
+        const built = buildSnapshotAtDate({
+          assets: deps.assets,
+          capturedAt: historicalCapturedAt(dateKey),
+          debtBalanceByLiability: deps.debtBalanceByLiability,
+          housingValuationByAsset: deps.housingValuationByAsset,
+          id: `histsnap_${scope.id}_${dateKey}`,
+          liabilities: deps.liabilities,
+          manualValueHistory: deps.manualValueHistory,
+          operationsByAsset: deps.operationsByAsset,
+          scopeId: scope.id,
+          scopeLabel: scope.label,
+          targetDate: dateKey,
+          today,
+          workspace,
+        });
+        if (built) {
+          saveSnapshot({ holdings: built.holdings, replace: false, snapshot: built.snapshot });
+        }
+      }
+
+      // Recalculate every existing snapshot on or after the change date by
+      // re-valuing only this liability's row from the curve.
+      for (const snap of existing) {
+        if (snap.dateKey < recalcFrom) continue;
+
+        const frozenHoldings = readSnapshotHoldings(db, {
+          scopeId: scope.id,
+          from: snap.dateKey,
+          to: snap.dateKey,
+        });
+
+        // A legacy capture predating holdings (ADR 0008) has nothing to recompute.
+        if (frozenHoldings.length === 0) continue;
+
+        const recalculated = recalculateSnapshotForLiability({
+          curve,
+          frozenHoldings,
+          liability,
+          snapshot: snap,
+          workspace,
+        });
+
+        if (recalculated) {
+          saveSnapshot({
+            holdings: recalculated.holdings,
+            replace: true,
+            snapshot: recalculated.snapshot,
+          });
+        } else {
+          db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
+        }
+      }
+    }
+  });
+}
+
+/**
+ * Read one liability's identity (ownership, currency, type, name, associated
+ * asset), including trashed liabilities — historical reconstruction needs the
+ * identity of debts that existed on past dates even if they were trashed since.
+ */
+function readLiabilityIdentity(
+  db: StoreDb,
+  liabilityId: string,
+): Liability | null {
+  const row = db
+    .select({
+      id: liabilities.id,
+      name: liabilities.name,
+      type: liabilities.type,
+      currency: liabilities.currency,
+      currentBalanceMinor: liabilities.currentBalanceMinor,
+      associatedAssetId: liabilities.associatedAssetId,
+    })
+    .from(liabilities)
+    .where(eq(liabilities.id, liabilityId))
+    .get();
+
+  if (!row) return null;
+
+  const ownership = db
+    .select({
+      memberId: liabilityOwnerships.memberId,
+      shareBps: liabilityOwnerships.shareBps,
+    })
+    .from(liabilityOwnerships)
+    .where(eq(liabilityOwnerships.liabilityId, liabilityId))
+    .all();
+
+  return {
+    currency: row.currency,
+    currentBalance: { amountMinor: row.currentBalanceMinor, currency: row.currency },
+    id: row.id,
+    name: row.name,
+    ownership,
+    type: row.type,
+    ...(row.associatedAssetId ? { associatedAssetId: row.associatedAssetId } : {}),
+  };
 }
 
 /**
@@ -881,6 +1204,7 @@ function gapFillHistoricalSnapshots(
       const built = buildSnapshotAtDate({
         assets: deps.assets,
         capturedAt: historicalCapturedAt(dateKey),
+        debtBalanceByLiability: deps.debtBalanceByLiability,
         housingValuationByAsset: deps.housingValuationByAsset,
         id: `histsnap_${scope.id}_${dateKey}`,
         liabilities: deps.liabilities,
