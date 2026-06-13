@@ -89,7 +89,7 @@ describe("fresh database", () => {
 
     const sqlite = new Database(databasePath);
     try {
-      expect(userVersion(sqlite)).toBe(10);
+      expect(userVersion(sqlite)).toBe(11);
       expect(tableNames(sqlite)).toContain("warning_overrides");
 
       const tables = tableNames(sqlite);
@@ -112,6 +112,7 @@ describe("fresh database", () => {
         "asset_valuations",
         "amortization_plans",
         "interest_rate_revisions",
+        "liability_balance_anchors",
       ]) {
         expect(tables).toContain(expected);
       }
@@ -164,7 +165,7 @@ describe("forward migration from v2", () => {
 
     const sqlite = new Database(databasePath);
     try {
-      expect(userVersion(sqlite)).toBe(10);
+      expect(userVersion(sqlite)).toBe(11);
       expect(tableNames(sqlite)).toContain("warning_overrides");
       expect(tableNames(sqlite)).toContain("asset_price_cache");
       expect(tableNames(sqlite)).toContain("audit_log");
@@ -172,6 +173,7 @@ describe("forward migration from v2", () => {
       expect(tableNames(sqlite)).toContain("asset_valuations");
       expect(tableNames(sqlite)).toContain("amortization_plans");
       expect(tableNames(sqlite)).toContain("interest_rate_revisions");
+      expect(tableNames(sqlite)).toContain("liability_balance_anchors");
       expect(columnNames(sqlite, "assets")).toContain("deleted_at");
       expect(columnNames(sqlite, "assets")).toContain("annual_appreciation_rate");
       expect(columnNames(sqlite, "liabilities")).toContain("deleted_at");
@@ -216,13 +218,14 @@ describe("forward migration from v3", () => {
 
     const sqlite = new Database(databasePath);
     try {
-      expect(userVersion(sqlite)).toBe(10);
+      expect(userVersion(sqlite)).toBe(11);
       expect(tableNames(sqlite)).toContain("warning_overrides");
       expect(tableNames(sqlite)).toContain("audit_log");
       expect(tableNames(sqlite)).toContain("snapshot_holdings");
       expect(tableNames(sqlite)).toContain("asset_valuations");
       expect(tableNames(sqlite)).toContain("amortization_plans");
       expect(tableNames(sqlite)).toContain("interest_rate_revisions");
+      expect(tableNames(sqlite)).toContain("liability_balance_anchors");
       expect(columnNames(sqlite, "assets")).toContain("deleted_at");
       expect(columnNames(sqlite, "assets")).toContain("annual_appreciation_rate");
       expect(columnNames(sqlite, "liabilities")).toContain("deleted_at");
