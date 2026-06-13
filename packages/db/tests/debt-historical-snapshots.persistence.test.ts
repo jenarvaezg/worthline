@@ -152,6 +152,54 @@ describe("historical snapshots from amortizable plans", () => {
     store.close();
   });
 
+  test("a past early repayment overwrites its snapshot and recalculates after it", () => {
+    const store = createInMemoryStore();
+    seedAmortizable(store);
+    store.liabilities.createAmortizationPlan({
+      annualInterestRate: "0.03",
+      id: "plan1",
+      initialCapitalMinor: 150_000_00,
+      liabilityId: "mortgage",
+      startDate: "2026-01-15",
+      termMonths: 240,
+    });
+    const planId = store.liabilities.readAmortizationPlan("mortgage")!.id;
+    store.rippleHistoricalSnapshotsForDebt({
+      liabilityId: "mortgage",
+      kind: "amortizable-plan",
+      today: TODAY,
+    });
+
+    const beforeRepayment = debtsAt(store, "2026-02-15")!;
+
+    store.liabilities.addEarlyRepayment({
+      amountMinor: 20_000_00,
+      id: "erp1",
+      mode: "reduce-payment",
+      planId,
+      repaymentDate: "2026-03-15",
+    });
+    store.rippleHistoricalSnapshotsForDebt({
+      fromDateKey: "2026-03-15",
+      kind: "amortizable-repayment",
+      liabilityId: "mortgage",
+      today: TODAY,
+    });
+
+    // The cuota before the repayment is untouched …
+    expect(debtsAt(store, "2026-02-15")).toBe(beforeRepayment);
+    // … and on/after it every snapshot matches the repayment-aware curve, with
+    // the lump landing on its own date (a ~20.000€ drop versus the prior cuota).
+    for (const dateKey of ["2026-03-15", "2026-04-15", "2026-05-15"]) {
+      expect(debtsAt(store, dateKey)).toBe(
+        store.liabilities.debtBalanceAtDate("mortgage", dateKey),
+      );
+      expect(holdingsReconcile(store, dateKey)).toBe(true);
+    }
+    expect(debtsAt(store, "2026-03-15")!).toBeLessThan(beforeRepayment - 19_000_00);
+    store.close();
+  });
+
   test("future plan generates nothing", () => {
     const store = createInMemoryStore();
     seedAmortizable(store);

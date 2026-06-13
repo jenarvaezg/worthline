@@ -258,6 +258,18 @@ identities so the restored workspace is the same one, not a copy. All-or-nothing
 an export that fails validation changes nothing. UI label: "Importar".
 _Avoid_: "pisar"; merge (an import never blends with existing data — it replaces).
 
+**Connected source**:
+An external account worthline links to and mirrors — read-only — to obtain
+**holdings** it would otherwise be entered by hand. The source owns the truth
+(its catalogue, grading, and trades happen _there_); worthline reflects it,
+never writes back, and refreshes by **syncing** on demand. A generic shape, not
+a one-off: each source has an adapter (authentication + position listing) and a
+projection into the portfolio. The first source is Numista (a numismatic
+collection); a brokerage or an exchange would be the same shape pointed
+elsewhere.
+_Avoid_: integration, account (overloaded — see **scope**), import (a one-shot
+full-workspace replace, not a live mirror).
+
 ## Relationships
 
 - **Net worth** decomposes into **gross assets** − **debts**.

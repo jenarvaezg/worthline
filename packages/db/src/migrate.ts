@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 export function migrate(sqlite: DatabaseConnection): void {
   sqlite.pragma("journal_mode = WAL");
@@ -263,5 +263,27 @@ export function migrate(sqlite: DatabaseConnection): void {
          ELSE 'loan' END;`,
     );
     sqlite.pragma("user_version = 14");
+  }
+
+  if (version < 15) {
+    // PRD #146 slice S4: lump-sum early repayments (amortización anticipada) on
+    // an amortization plan. The repayment→amortizable invariant is a
+    // domain/caller guard, not a SQL constraint (R9). The unique index keeps one
+    // repayment per plan per date; `mode` ∈ {reduce-payment, reduce-term} is
+    // enforced in TS, like the other text enums (no CHECK).
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS early_repayments (
+      id TEXT PRIMARY KEY NOT NULL,
+      plan_id TEXT NOT NULL,
+      repayment_date TEXT NOT NULL,
+      amount_minor INTEGER NOT NULL,
+      mode TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      FOREIGN KEY (plan_id) REFERENCES amortization_plans(id) ON UPDATE no action ON DELETE cascade
+    );`);
+    sqlite.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS early_repayments_plan_date_unique
+       ON early_repayments (plan_id, repayment_date);`,
+    );
+    sqlite.pragma("user_version = 15");
   }
 }
