@@ -1,6 +1,7 @@
 import type { LiquidityTier } from "@worthline/domain";
 import type {
   AssetType,
+  DebtModel,
   InvestmentPriceProvider,
   LiabilityType,
   OperationKind,
@@ -174,10 +175,63 @@ export const liabilities = sqliteTable("liabilities", {
   associatedAssetId: text("associated_asset_id").references(() => assets.id, {
     onDelete: "set null",
   }),
+  /**
+   * How the liability is modelled for historical reconstruction (PRD #109,
+   * slice 7): "amortizable" | "revolving" | "informal". Null means no model is
+   * declared — the current balance is used as-is, with no derived history.
+   */
+  debtModel: text("debt_model").$type<DebtModel>(),
   deletedAt: text("deleted_at"),
   createdAt: timestamp("created_at"),
   updatedAt: timestamp("updated_at"),
 });
+
+/**
+ * One French-amortization plan for an amortizable liability (PRD #109, slice 7).
+ * The `liability_id → debt_model = "amortizable"` invariant is a domain/caller
+ * guard, not a SQL constraint (pattern R9). The unique index keeps the plan 1:1
+ * with its liability.
+ */
+export const amortizationPlans = sqliteTable(
+  "amortization_plans",
+  {
+    id: text("id").primaryKey(),
+    liabilityId: text("liability_id")
+      .notNull()
+      .references(() => liabilities.id, { onDelete: "cascade" }),
+    initialCapitalMinor: integer("initial_capital_minor").notNull(),
+    annualInterestRate: text("annual_interest_rate").notNull(),
+    termMonths: integer("term_months").notNull(),
+    startDate: text("start_date").notNull(),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    uniqueIndex("amortization_plans_liability_unique").on(table.liabilityId),
+  ],
+);
+
+/**
+ * A scheduled interest-rate change on an amortization plan (PRD #109, slice 7).
+ * The unique index keeps one revision per plan per date.
+ */
+export const interestRateRevisions = sqliteTable(
+  "interest_rate_revisions",
+  {
+    id: text("id").primaryKey(),
+    planId: text("plan_id")
+      .notNull()
+      .references(() => amortizationPlans.id, { onDelete: "cascade" }),
+    revisionDate: text("revision_date").notNull(),
+    newAnnualInterestRate: text("new_annual_interest_rate").notNull(),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    uniqueIndex("interest_rate_revisions_plan_date_unique").on(
+      table.planId,
+      table.revisionDate,
+    ),
+  ],
+);
 
 export const auditLog = sqliteTable("audit_log", {
   id: text("id").primaryKey(),

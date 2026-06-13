@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 export function migrate(sqlite: DatabaseConnection): void {
   sqlite.pragma("journal_mode = WAL");
@@ -116,5 +116,41 @@ export function migrate(sqlite: DatabaseConnection): void {
        ON asset_valuations (asset_id, valuation_date);`,
     );
     sqlite.pragma("user_version = 9");
+  }
+
+  if (version < 10) {
+    // PRD #109 slice 7: French-amortization plans + interest-rate revisions, and
+    // a debt_model on the owning liability. The plan→amortizable invariant is a
+    // domain/caller guard, not a SQL constraint (R9).
+    try {
+      sqlite.exec("ALTER TABLE liabilities ADD COLUMN debt_model TEXT");
+    } catch {}
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS amortization_plans (
+      id TEXT PRIMARY KEY NOT NULL,
+      liability_id TEXT NOT NULL,
+      initial_capital_minor INTEGER NOT NULL,
+      annual_interest_rate TEXT NOT NULL,
+      term_months INTEGER NOT NULL,
+      start_date TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      FOREIGN KEY (liability_id) REFERENCES liabilities(id) ON UPDATE no action ON DELETE cascade
+    );`);
+    sqlite.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS amortization_plans_liability_unique
+       ON amortization_plans (liability_id);`,
+    );
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS interest_rate_revisions (
+      id TEXT PRIMARY KEY NOT NULL,
+      plan_id TEXT NOT NULL,
+      revision_date TEXT NOT NULL,
+      new_annual_interest_rate TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      FOREIGN KEY (plan_id) REFERENCES amortization_plans(id) ON UPDATE no action ON DELETE cascade
+    );`);
+    sqlite.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS interest_rate_revisions_plan_date_unique
+       ON interest_rate_revisions (plan_id, revision_date);`,
+    );
+    sqlite.pragma("user_version = 10");
   }
 }

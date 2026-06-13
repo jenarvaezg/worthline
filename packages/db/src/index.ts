@@ -82,7 +82,15 @@ export type {
   UpdateValuationAnchorInput,
   ValuationAnchorRecord,
 } from "./asset-store";
-export type { LiabilityStore, UpdateLiabilityInput } from "./liability-store";
+export type {
+  AddInterestRateRevisionInput,
+  AmortizationPlanRecord,
+  CreateAmortizationPlanInput,
+  InterestRateRevisionRecord,
+  LiabilityStore,
+  UpdateAmortizationPlanInput,
+  UpdateLiabilityInput,
+} from "./liability-store";
 export type { OperationsStore, ValueUpdateCommand } from "./operations-store";
 export type {
   PositionView,

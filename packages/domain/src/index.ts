@@ -29,6 +29,7 @@ export type {
   AssetType,
   CreateLiabilityInput,
   CreateManualAssetInput,
+  DebtModel,
   Liability,
   LiabilityType,
   ManualAsset,
@@ -187,6 +188,13 @@ export type {
   ValueHousingAtDateInput,
 } from "./housing-valuation";
 export { valueHousingAtDate } from "./housing-valuation";
+
+export type {
+  AmortizableBalanceAtDateInput,
+  AmortizationPlanInput,
+  InterestRateRevision,
+} from "./amortization";
+export { amortizableBalanceAtDate } from "./amortization";
 
 export type { DashboardState, LocalPersistenceStatus, OnboardingStep } from "./dashboard";
 export {
