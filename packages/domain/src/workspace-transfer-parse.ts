@@ -422,6 +422,7 @@ function collectDomainErrors(doc: WorkspaceExport): string[] {
   collectOperationErrors(errors, doc);
   collectDecimalStringErrors(errors, doc, allAssets, allLiabilities);
   collectStructuralIdErrors(errors, allAssets, allLiabilities);
+  collectStructuralKeyErrors(errors, allAssets, allLiabilities);
   collectReferentialIntegrityErrors(errors, doc, allAssets, allLiabilities);
   collectDatabaseKeyErrors(errors, doc);
   collectSnapshotReconciliationErrors(errors, doc);
@@ -473,6 +474,64 @@ function collectStructuralIdErrors(
       (liability.balanceAnchors ?? []).map((a) => a.id),
     ),
   );
+}
+
+/**
+ * Composite (entity, date) uniqueness mirrors the DB unique indexes:
+ *   asset_valuations_asset_date_unique, interest_rate_revisions_plan_date_unique,
+ *   early_repayments_plan_date_unique, liability_balance_anchors_liability_date_unique.
+ * A hand-crafted file with two rows on the same entity+date (distinct ids) passes
+ * the id-uniqueness check but would otherwise throw an opaque SQLITE_CONSTRAINT
+ * mid-import. Catching it here gives a clean Spanish error and preserves ADR 0010
+ * all-or-nothing semantics.
+ */
+function collectStructuralKeyErrors(
+  errors: string[],
+  allAssets: ExportedAsset[],
+  allLiabilities: ExportedLiability[],
+): void {
+  // Valuation anchors: unique per (assetId, valuationDate).
+  for (const asset of allAssets) {
+    collectDuplicateKeyErrors(
+      errors,
+      `anclaje de valoración por fecha del activo ${asset.id}`,
+      asset.valuationAnchors ?? [],
+      (a) => a.valuationDate,
+      (a) => `${asset.id}/${a.valuationDate}`,
+    );
+  }
+
+  for (const liability of allLiabilities) {
+    const plan = liability.amortizationPlan;
+    if (plan) {
+      // Interest-rate revisions: unique per (planId, revisionDate).
+      collectDuplicateKeyErrors(
+        errors,
+        `revisión de tipo por fecha del plan ${plan.id}`,
+        plan.interestRateRevisions,
+        (r) => r.revisionDate,
+        (r) => `${plan.id}/${r.revisionDate}`,
+      );
+
+      // Early repayments: unique per (planId, repaymentDate).
+      collectDuplicateKeyErrors(
+        errors,
+        `amortización anticipada por fecha del plan ${plan.id}`,
+        plan.earlyRepayments,
+        (r) => r.repaymentDate,
+        (r) => `${plan.id}/${r.repaymentDate}`,
+      );
+    }
+
+    // Balance anchors: unique per (liabilityId, anchorDate).
+    collectDuplicateKeyErrors(
+      errors,
+      `anclaje de saldo por fecha del pasivo ${liability.id}`,
+      liability.balanceAnchors ?? [],
+      (a) => a.anchorDate,
+      (a) => `${liability.id}/${a.anchorDate}`,
+    );
+  }
 }
 
 function collectDuplicateIdErrors(errors: string[], kind: string, ids: string[]): void {

@@ -707,6 +707,201 @@ describe("parseWorkspaceExport — domain invariants", () => {
     }
   });
 
+  // ── item #2: structural id duplicate rejections (collectStructuralIdErrors) ──
+
+  test("duplicate valuation-anchor id is rejected with Spanish boundary message (#155)", () => {
+    const document = makeDocument((doc) => {
+      doc.assets[2]!.valuationAnchors = [
+        {
+          id: "dup_anchor",
+          valueMinor: 28000000,
+          valuationDate: "2024-01-01",
+          adjustsPriorCurve: true,
+        },
+        {
+          id: "dup_anchor",
+          valueMinor: 29000000,
+          valuationDate: "2025-01-01",
+          adjustsPriorCurve: false,
+        },
+      ];
+    });
+    expectRejection(document, /anclaje de valoración.*dup_anchor/);
+  });
+
+  test("duplicate amortization-plan id is rejected with Spanish boundary message (#155)", () => {
+    const document = makeDocument((doc) => {
+      doc.liabilities.push({
+        id: "l_extra",
+        name: "Extra",
+        type: "debt",
+        currency: "EUR",
+        currentBalance: { amountMinor: 1000, currency: "EUR" },
+        ownership: [{ memberId: "m1", shareBps: 10000 }],
+        valuationMethod: "amortized",
+        debtModel: "amortizable",
+        amortizationPlan: {
+          id: "plan1",
+          initialCapitalMinor: 5000,
+          annualInterestRate: "0.02",
+          termMonths: 12,
+          startDate: "2024-01-01",
+          interestRateRevisions: [],
+          earlyRepayments: [],
+        },
+      });
+    });
+    expectRejection(document, /plan de amortización.*plan1/);
+  });
+
+  test("duplicate interest-rate-revision id is rejected with Spanish boundary message (#155)", () => {
+    const document = makeDocument((doc) => {
+      doc.liabilities[0]!.amortizationPlan!.interestRateRevisions = [
+        { id: "dup_rev", revisionDate: "2022-01-01", newAnnualInterestRate: "0.03" },
+        { id: "dup_rev", revisionDate: "2023-01-01", newAnnualInterestRate: "0.04" },
+      ];
+    });
+    expectRejection(document, /revisión de tipo.*dup_rev/);
+  });
+
+  test("duplicate early-repayment id is rejected with Spanish boundary message (#155)", () => {
+    const document = makeDocument((doc) => {
+      doc.liabilities[0]!.amortizationPlan!.earlyRepayments = [
+        {
+          id: "dup_rep",
+          repaymentDate: "2023-06-01",
+          amountMinor: 100000,
+          mode: "reduce-term",
+        },
+        {
+          id: "dup_rep",
+          repaymentDate: "2024-06-01",
+          amountMinor: 200000,
+          mode: "reduce-term",
+        },
+      ];
+    });
+    expectRejection(document, /amortización anticipada.*dup_rep/);
+  });
+
+  test("duplicate balance-anchor id is rejected with Spanish boundary message (#155)", () => {
+    const document = makeDocument((doc) => {
+      doc.liabilities[0]!.balanceAnchors = [
+        { id: "dup_banc", balanceMinor: 100000, anchorDate: "2023-01-01" },
+        { id: "dup_banc", balanceMinor: 90000, anchorDate: "2024-01-01" },
+      ];
+    });
+    expectRejection(document, /anclaje de saldo.*dup_banc/);
+  });
+
+  // ── item #2: non-numeric decimal strings in rate fields ──────────────────────
+
+  test("a non-numeric annualAppreciationRate is rejected (#155)", () => {
+    const document = makeDocument((doc) => {
+      (doc.assets[2] as { annualAppreciationRate: string }).annualAppreciationRate =
+        "abc";
+    });
+    expectRejection(document, /decimal válido/);
+  });
+
+  test("a non-numeric plan annualInterestRate is rejected (#155)", () => {
+    const document = makeDocument((doc) => {
+      doc.liabilities[0]!.amortizationPlan!.annualInterestRate = "abc";
+    });
+    expectRejection(document, /decimal válido/);
+  });
+
+  test("a non-numeric revision newAnnualInterestRate is rejected (#155)", () => {
+    const document = makeDocument((doc) => {
+      doc.liabilities[0]!.amortizationPlan!.interestRateRevisions[0]!.newAnnualInterestRate =
+        "abc";
+    });
+    expectRejection(document, /decimal válido/);
+  });
+
+  // ── item #3: composite (entity,date) uniqueness validation ───────────────────
+
+  test("two valuation anchors on the same asset+date with distinct ids are rejected (#155)", () => {
+    const document = makeDocument((doc) => {
+      doc.assets[2]!.valuationAnchors = [
+        {
+          id: "va1",
+          valueMinor: 28000000,
+          valuationDate: "2024-01-01",
+          adjustsPriorCurve: true,
+        },
+        {
+          id: "va2",
+          valueMinor: 29000000,
+          valuationDate: "2024-01-01",
+          adjustsPriorCurve: false,
+        },
+      ];
+    });
+    expectRejection(document, /anclaje.*fecha/i);
+  });
+
+  test("two valuation anchors on the same asset but distinct dates pass (#155)", () => {
+    const document = makeDocument((doc) => {
+      doc.assets[2]!.valuationAnchors = [
+        {
+          id: "va1",
+          valueMinor: 28000000,
+          valuationDate: "2024-01-01",
+          adjustsPriorCurve: true,
+        },
+        {
+          id: "va2",
+          valueMinor: 29000000,
+          valuationDate: "2025-01-01",
+          adjustsPriorCurve: false,
+        },
+      ];
+    });
+    const result = parseWorkspaceExport(document);
+    expect(result.ok).toBe(true);
+  });
+
+  test("two interest-rate revisions on the same plan+date with distinct ids are rejected (#155)", () => {
+    const document = makeDocument((doc) => {
+      doc.liabilities[0]!.amortizationPlan!.interestRateRevisions = [
+        { id: "r1", revisionDate: "2022-06-01", newAnnualInterestRate: "0.03" },
+        { id: "r2", revisionDate: "2022-06-01", newAnnualInterestRate: "0.04" },
+      ];
+    });
+    expectRejection(document, /revisión.*fecha/i);
+  });
+
+  test("two early repayments on the same plan+date with distinct ids are rejected (#155)", () => {
+    const document = makeDocument((doc) => {
+      doc.liabilities[0]!.amortizationPlan!.earlyRepayments = [
+        {
+          id: "e1",
+          repaymentDate: "2023-06-01",
+          amountMinor: 100000,
+          mode: "reduce-term",
+        },
+        {
+          id: "e2",
+          repaymentDate: "2023-06-01",
+          amountMinor: 200000,
+          mode: "reduce-term",
+        },
+      ];
+    });
+    expectRejection(document, /amortización.*fecha/i);
+  });
+
+  test("two balance anchors on the same liability+date with distinct ids are rejected (#155)", () => {
+    const document = makeDocument((doc) => {
+      doc.liabilities[0]!.balanceAnchors = [
+        { id: "b1", balanceMinor: 100000, anchorDate: "2023-01-01" },
+        { id: "b2", balanceMinor: 90000, anchorDate: "2023-01-01" },
+      ];
+    });
+    expectRejection(document, /anclaje.*saldo.*fecha/i);
+  });
+
   test("multiple independent violations are all collected", () => {
     const document = makeDocument((doc) => {
       doc.workspace.baseCurrency = "USD";
