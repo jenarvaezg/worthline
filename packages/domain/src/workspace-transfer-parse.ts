@@ -82,6 +82,54 @@ const investmentMetaSchema = z.object({
   manualPricedAt: nonEmptyString.optional(),
 });
 
+const valuationMethodSchema = z.enum([
+  "stored",
+  "derived",
+  "appreciating",
+  "amortized",
+  "anchored",
+]);
+
+const debtModelSchema = z.enum(["amortizable", "revolving", "informal"]);
+
+// ── Structural facts (ADR 0015, #155): the full holding model ───────────────
+
+const valuationAnchorSchema = z.object({
+  id: nonEmptyString,
+  valueMinor: z.number().int(),
+  valuationDate: nonEmptyString,
+  adjustsPriorCurve: z.boolean(),
+});
+
+const interestRateRevisionSchema = z.object({
+  id: nonEmptyString,
+  revisionDate: nonEmptyString,
+  newAnnualInterestRate: nonEmptyString,
+});
+
+const earlyRepaymentSchema = z.object({
+  id: nonEmptyString,
+  repaymentDate: nonEmptyString,
+  amountMinor: z.number().int(),
+  mode: z.enum(["reduce-payment", "reduce-term"]),
+});
+
+const amortizationPlanSchema = z.object({
+  id: nonEmptyString,
+  initialCapitalMinor: z.number().int(),
+  annualInterestRate: nonEmptyString,
+  termMonths: z.number().int().positive(),
+  startDate: nonEmptyString,
+  interestRateRevisions: z.array(interestRateRevisionSchema).default([]),
+  earlyRepayments: z.array(earlyRepaymentSchema).default([]),
+});
+
+const balanceAnchorSchema = z.object({
+  id: nonEmptyString,
+  balanceMinor: z.number().int(),
+  anchorDate: nonEmptyString,
+});
+
 const assetSchema = z.object({
   id: nonEmptyString,
   name: nonEmptyString,
@@ -91,6 +139,9 @@ const assetSchema = z.object({
   liquidityTier: liquidityTierSchema,
   isPrimaryResidence: z.boolean().optional(),
   instrument: instrumentSchema.optional(),
+  valuationMethod: valuationMethodSchema.optional(),
+  annualAppreciationRate: nonEmptyString.optional(),
+  valuationAnchors: z.array(valuationAnchorSchema).optional(),
   ownership: z.array(ownershipShareSchema),
   investment: investmentMetaSchema.optional(),
   deletedAt: nonEmptyString.optional(),
@@ -103,6 +154,10 @@ const liabilitySchema = z.object({
   currency: nonEmptyString,
   currentBalance: moneyMinorSchema,
   instrument: instrumentSchema.optional(),
+  valuationMethod: valuationMethodSchema.optional(),
+  debtModel: debtModelSchema.optional(),
+  amortizationPlan: amortizationPlanSchema.optional(),
+  balanceAnchors: z.array(balanceAnchorSchema).optional(),
   ownership: z.array(ownershipShareSchema),
   associatedAssetId: nonEmptyString.optional(),
   deletedAt: nonEmptyString.optional(),
@@ -365,12 +420,59 @@ function collectDomainErrors(doc: WorkspaceExport): string[] {
   collectOwnershipErrors(errors, doc, allAssets, allLiabilities);
   collectInvestmentValuationErrors(errors, allAssets);
   collectOperationErrors(errors, doc);
-  collectDecimalStringErrors(errors, doc, allAssets);
+  collectDecimalStringErrors(errors, doc, allAssets, allLiabilities);
+  collectStructuralIdErrors(errors, allAssets, allLiabilities);
   collectReferentialIntegrityErrors(errors, doc, allAssets, allLiabilities);
   collectDatabaseKeyErrors(errors, doc);
   collectSnapshotReconciliationErrors(errors, doc);
 
   return errors;
+}
+
+/**
+ * Structural ids must be globally unique within the file (ADR 0015, #155) — they
+ * become primary keys on restore (valuation anchors, amortization plans, rate
+ * revisions, early repayments, balance anchors), so a collision would otherwise
+ * surface as an opaque mid-import constraint violation rather than a clear error.
+ */
+function collectStructuralIdErrors(
+  errors: string[],
+  allAssets: ExportedAsset[],
+  allLiabilities: ExportedLiability[],
+): void {
+  collectDuplicateIdErrors(
+    errors,
+    "anclaje de valoración",
+    allAssets.flatMap((asset) => (asset.valuationAnchors ?? []).map((a) => a.id)),
+  );
+  collectDuplicateIdErrors(
+    errors,
+    "plan de amortización",
+    allLiabilities.flatMap((liability) =>
+      liability.amortizationPlan ? [liability.amortizationPlan.id] : [],
+    ),
+  );
+  collectDuplicateIdErrors(
+    errors,
+    "revisión de tipo",
+    allLiabilities.flatMap((liability) =>
+      (liability.amortizationPlan?.interestRateRevisions ?? []).map((r) => r.id),
+    ),
+  );
+  collectDuplicateIdErrors(
+    errors,
+    "amortización anticipada",
+    allLiabilities.flatMap((liability) =>
+      (liability.amortizationPlan?.earlyRepayments ?? []).map((r) => r.id),
+    ),
+  );
+  collectDuplicateIdErrors(
+    errors,
+    "anclaje de saldo",
+    allLiabilities.flatMap((liability) =>
+      (liability.balanceAnchors ?? []).map((a) => a.id),
+    ),
+  );
 }
 
 function collectDuplicateIdErrors(errors: string[], kind: string, ids: string[]): void {
@@ -566,6 +668,7 @@ function collectDecimalStringErrors(
   errors: string[],
   doc: WorkspaceExport,
   allAssets: ExportedAsset[],
+  allLiabilities: ExportedLiability[],
 ): void {
   for (const asset of allAssets) {
     if (asset.investment?.manualPricePerUnit !== undefined) {
@@ -575,6 +678,34 @@ function collectDecimalStringErrors(
         value: asset.investment.manualPricePerUnit,
       });
     }
+
+    // Appreciation rate (ADR 0015, #155): a decimal drift, may be negative.
+    if (asset.annualAppreciationRate !== undefined) {
+      collectDecimalValidityError(
+        errors,
+        `La tasa de revalorización de "${asset.name}" (${asset.id})`,
+        asset.annualAppreciationRate,
+      );
+    }
+  }
+
+  for (const liability of allLiabilities) {
+    const plan = liability.amortizationPlan;
+    if (!plan) continue;
+
+    collectDecimalValidityError(
+      errors,
+      `El tipo de interés del plan de "${liability.name}" (${liability.id})`,
+      plan.annualInterestRate,
+    );
+
+    for (const revision of plan.interestRateRevisions) {
+      collectDecimalValidityError(
+        errors,
+        `El tipo de la revisión ${revision.id} del plan de "${liability.name}" (${liability.id})`,
+        revision.newAnnualInterestRate,
+      );
+    }
   }
 
   for (const price of doc.priceCache) {
@@ -583,6 +714,18 @@ function collectDecimalStringErrors(
       min: "nonNegative",
       value: price.price,
     });
+  }
+}
+
+function collectDecimalValidityError(
+  errors: string[],
+  label: string,
+  value: string,
+): void {
+  try {
+    compareUnits(value, "0");
+  } catch {
+    errors.push(`${label} debe ser un número decimal válido.`);
   }
 }
 
