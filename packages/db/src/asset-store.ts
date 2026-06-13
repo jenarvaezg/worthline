@@ -9,6 +9,7 @@ import type {
 } from "@worthline/domain";
 import {
   createManualAsset,
+  defaultInstrumentForAssetType,
   defaultInvestmentPriceProvider,
   valueHousingAtDate,
 } from "@worthline/domain";
@@ -417,6 +418,9 @@ function createInvestmentAsset(ctx: StoreContext, input: CreateInvestmentAssetIn
     currency: input.currency,
     currentValueMinor: 0,
     id: input.id,
+    // Mirror the v14 backfill: a Finect-priced investment is a pension plan,
+    // anything else a fund (the coarse default until the add flow reads quoteType).
+    instrument: input.priceProvider === "finect" ? "pension_plan" : "fund",
     isPrimaryResidence: false,
     liquidityTier: input.liquidityTier ?? "market",
     name: input.name,
@@ -570,6 +574,24 @@ function updateAsset(ctx: StoreContext, assetId: string, input: UpdateAssetInput
 
   if (input.isPrimaryResidence !== undefined) {
     fields.isPrimaryResidence = input.isPrimaryResidence ? 1 : 0;
+  }
+
+  // Housing-ness is sourced from the instrument (#149), and the stored column
+  // wins in instrumentOfAsset — so a type / primary-residence edit must re-derive
+  // it from the EFFECTIVE values (current row merged with the input). Otherwise
+  // the instrument goes stale and isHousingAsset silently diverges from the edit.
+  if (input.type !== undefined || input.isPrimaryResidence !== undefined) {
+    const current = db
+      .select({ type: assets.type, isPrimaryResidence: assets.isPrimaryResidence })
+      .from(assets)
+      .where(eq(assets.id, assetId))
+      .get();
+    if (current) {
+      const effectiveType = input.type ?? current.type;
+      const effectiveIsPrimary =
+        input.isPrimaryResidence ?? current.isPrimaryResidence === 1;
+      fields.instrument = defaultInstrumentForAssetType(effectiveType, effectiveIsPrimary);
+    }
   }
 
   ctx.transaction(() => {
