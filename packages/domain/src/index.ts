@@ -259,13 +259,7 @@ export {
   recalculateSnapshotForLiability,
 } from "./historical-snapshot";
 
-export type {
-  EvolutionChartGeometry,
-  EvolutionMarker,
-  EvolutionSeriesPoint,
-} from "./evolution-chart";
 export {
-  buildEvolutionChartGeometry,
   EVOLUTION_CHART_HEIGHT,
   EVOLUTION_CHART_INSET_X,
   EVOLUTION_CHART_WIDTH,
@@ -273,20 +267,32 @@ export {
 } from "./evolution-chart";
 
 export type {
-  DecompositionBandGeometry,
-  DecompositionBandId,
-  DecompositionBandsPoint,
-  DecompositionChartGeometry,
-  DecompositionSeriesPoint,
   StackedBandGeometry,
   StackedChartGeometry,
   StackedSeriesInput,
 } from "./decomposition-chart";
+export { buildStackedChartGeometry } from "./decomposition-chart";
+
+export type {
+  BuildCompositionSeriesInput,
+  CompositionAssetBandId,
+  CompositionBandGeometry,
+  CompositionBands,
+  CompositionChartGeometry,
+  CompositionMarker,
+  CompositionSeriesPoint,
+  MonthlySeriesEntry,
+} from "./composition-chart";
 export {
-  buildDecompositionChartGeometry,
-  buildStackedChartGeometry,
-  deriveDecompositionBands,
-} from "./decomposition-chart";
+  buildCompositionChartGeometry,
+  buildCompositionSeries,
+  COMPOSITION_ASSET_BANDS,
+  COMPOSITION_CHART_HEIGHT,
+  COMPOSITION_CHART_INSET_X,
+  COMPOSITION_CHART_WIDTH,
+  deriveCompositionBands,
+  selectMonthlySeries,
+} from "./composition-chart";
 
 export type {
   DatedSnapshotHoldingRow,

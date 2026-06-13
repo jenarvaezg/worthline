@@ -1,0 +1,301 @@
+/**
+ * Net-worth composition chart (#142, ADR 0009).
+ *
+ * The dashboard's single historical chart: gross asset components stack above
+ * zero in five bands (the four liquidity-ladder rungs plus a Vivienda band
+ * sourced from the `property` instrument by holding id — the ADR 0013 bridge,
+ * identical carve to the drilldown), one aggregated debt stack below zero, and
+ * a net-worth line. Pure presentation math — numbers and strings only.
+ */
+import { describe, expect, test } from "vitest";
+
+import type { DatedSnapshotHoldingRow } from "./drilldown";
+import {
+  buildCompositionChartGeometry,
+  buildCompositionSeries,
+  COMPOSITION_CHART_HEIGHT,
+  deriveCompositionBands,
+  selectMonthlySeries,
+} from "./composition-chart";
+import type { CompositionSeriesPoint } from "./composition-chart";
+import type { LiquidityTier } from "./classification";
+import type { SnapshotHoldingKind } from "./snapshot-holdings";
+
+function row(input: {
+  holdingId: string;
+  tier: LiquidityTier | null;
+  valueMinor: number;
+  kind?: SnapshotHoldingKind;
+  dateKey?: string;
+}): DatedSnapshotHoldingRow {
+  return {
+    dateKey: input.dateKey ?? "2026-06-30",
+    holdingId: input.holdingId,
+    kind: input.kind ?? "asset",
+    label: input.holdingId,
+    liquidityTier: input.tier,
+    valueMinor: input.valueMinor,
+  };
+}
+
+function parseCoords(points: string): Array<{ x: number; y: number }> {
+  return points
+    .trim()
+    .split(" ")
+    .map((pair) => {
+      const [x, y] = pair.split(",");
+      return { x: Number(x), y: Number(y) };
+    });
+}
+
+/** Maps a minor-unit value through the geometry's own y domain. */
+function yFor(value: number, yMin: number, yMax: number): number {
+  return (
+    COMPOSITION_CHART_HEIGHT - ((value - yMin) / (yMax - yMin)) * COMPOSITION_CHART_HEIGHT
+  );
+}
+
+function seriesPoint(
+  dateKey: string,
+  bands: Partial<Omit<CompositionSeriesPoint, "dateKey" | "isOpenPeriod" | "netWorthMinor">>,
+  isOpenPeriod = false,
+): CompositionSeriesPoint {
+  const cashMinor = bands.cashMinor ?? 0;
+  const marketMinor = bands.marketMinor ?? 0;
+  const termLockedMinor = bands.termLockedMinor ?? 0;
+  const illiquidMinor = bands.illiquidMinor ?? 0;
+  const housingMinor = bands.housingMinor ?? 0;
+  const debtsMinor = bands.debtsMinor ?? 0;
+  return {
+    cashMinor,
+    dateKey,
+    debtsMinor,
+    housingMinor,
+    illiquidMinor,
+    isOpenPeriod,
+    marketMinor,
+    netWorthMinor:
+      cashMinor + marketMinor + termLockedMinor + illiquidMinor + housingMinor - debtsMinor,
+    termLockedMinor,
+  };
+}
+
+describe("deriveCompositionBands", () => {
+  test("sums asset rows into their rung band and liabilities into debts; net worth is assets − debts", () => {
+    const bands = deriveCompositionBands(
+      [
+        row({ holdingId: "a_cash", tier: "cash", valueMinor: 100_00 }),
+        row({ holdingId: "l_card", tier: null, valueMinor: 30_00, kind: "liability" }),
+      ],
+      [],
+    );
+
+    expect(bands).toEqual({
+      cashMinor: 100_00,
+      debtsMinor: 30_00,
+      housingMinor: 0,
+      illiquidMinor: 0,
+      marketMinor: 0,
+      netWorthMinor: 70_00,
+      termLockedMinor: 0,
+    });
+  });
+
+  test("carves housing out of the illiquid rung by holding id, never double-counting", () => {
+    const bands = deriveCompositionBands(
+      [
+        row({ holdingId: "a_house", tier: "illiquid", valueMinor: 300_000_00 }),
+        row({ holdingId: "a_art", tier: "illiquid", valueMinor: 20_000_00 }),
+      ],
+      ["a_house"],
+    );
+
+    expect(bands.housingMinor).toBe(300_000_00);
+    expect(bands.illiquidMinor).toBe(20_000_00);
+  });
+
+  test("five asset bands partition gross assets; net worth = gross − debts", () => {
+    const rows = [
+      row({ holdingId: "a_cash", tier: "cash", valueMinor: 10_000_00 }),
+      row({ holdingId: "a_fund", tier: "market", valueMinor: 50_000_00 }),
+      row({ holdingId: "a_pension", tier: "term-locked", valueMinor: 30_000_00 }),
+      row({ holdingId: "a_art", tier: "illiquid", valueMinor: 5_000_00 }),
+      row({ holdingId: "a_house", tier: "illiquid", valueMinor: 250_000_00 }),
+      row({
+        holdingId: "l_mortgage",
+        tier: "illiquid",
+        valueMinor: 120_000_00,
+        kind: "liability",
+      }),
+    ];
+
+    const bands = deriveCompositionBands(rows, ["a_house"]);
+    const grossMinor =
+      bands.cashMinor +
+      bands.marketMinor +
+      bands.termLockedMinor +
+      bands.illiquidMinor +
+      bands.housingMinor;
+
+    expect(grossMinor).toBe(345_000_00);
+    expect(bands.debtsMinor).toBe(120_000_00);
+    expect(bands.netWorthMinor).toBe(345_000_00 - 120_000_00);
+  });
+});
+
+describe("selectMonthlySeries", () => {
+  test("keeps the last snapshot of each month; flags the current month as the open period", () => {
+    const snapshots = [
+      { dateKey: "2026-04-10", monthKey: "2026-04" },
+      { dateKey: "2026-04-28", monthKey: "2026-04" },
+      { dateKey: "2026-05-31", monthKey: "2026-05" },
+      { dateKey: "2026-06-05", monthKey: "2026-06" },
+      { dateKey: "2026-06-13", monthKey: "2026-06" },
+    ];
+
+    const series = selectMonthlySeries(snapshots, "2026-06-13");
+
+    expect(series).toEqual([
+      { dateKey: "2026-04-28", isOpenPeriod: false },
+      { dateKey: "2026-05-31", isOpenPeriod: false },
+      { dateKey: "2026-06-13", isOpenPeriod: true },
+    ]);
+  });
+
+  test("no current-month snapshot → every entry is a finalized close", () => {
+    const series = selectMonthlySeries(
+      [
+        { dateKey: "2026-04-28", monthKey: "2026-04" },
+        { dateKey: "2026-05-31", monthKey: "2026-05" },
+      ],
+      "2026-06-13",
+    );
+
+    expect(series.map((entry) => entry.dateKey)).toEqual(["2026-04-28", "2026-05-31"]);
+    expect(series.every((entry) => !entry.isOpenPeriod)).toBe(true);
+  });
+});
+
+describe("buildCompositionSeries", () => {
+  test("assembles one banded point per monthly base point from that date's rows", () => {
+    const rows = [
+      row({ holdingId: "a_cash", tier: "cash", valueMinor: 100_00, dateKey: "2026-05-31" }),
+      row({ holdingId: "a_cash", tier: "cash", valueMinor: 150_00, dateKey: "2026-06-13" }),
+      row({
+        holdingId: "l_card",
+        tier: null,
+        valueMinor: 40_00,
+        kind: "liability",
+        dateKey: "2026-06-13",
+      }),
+    ];
+    const snapshots = [
+      { dateKey: "2026-05-31", monthKey: "2026-05" },
+      { dateKey: "2026-06-13", monthKey: "2026-06" },
+    ];
+
+    const series = buildCompositionSeries({
+      housingHoldingIds: [],
+      rows,
+      snapshots,
+      today: "2026-06-13",
+    });
+
+    expect(
+      series.map((point) => ({
+        cash: point.cashMinor,
+        dateKey: point.dateKey,
+        debts: point.debtsMinor,
+        isOpenPeriod: point.isOpenPeriod,
+        net: point.netWorthMinor,
+      })),
+    ).toEqual([
+      { cash: 100_00, dateKey: "2026-05-31", debts: 0, isOpenPeriod: false, net: 100_00 },
+      { cash: 150_00, dateKey: "2026-06-13", debts: 40_00, isOpenPeriod: true, net: 110_00 },
+    ]);
+  });
+
+  test("omits monthly points whose snapshot has no frozen rows (legacy pre-ADR-0008 captures)", () => {
+    // A legacy snapshot carries no holding rows; plotting it would draw a false
+    // zero. Only row-backed snapshots — whose bands reconcile to the headline —
+    // belong on the chart.
+    const rows = [
+      row({ holdingId: "a_cash", tier: "cash", valueMinor: 100_00, dateKey: "2026-06-30" }),
+    ];
+    const snapshots = [
+      { dateKey: "2026-05-31", monthKey: "2026-05" },
+      { dateKey: "2026-06-30", monthKey: "2026-06" },
+    ];
+
+    const series = buildCompositionSeries({
+      housingHoldingIds: [],
+      rows,
+      snapshots,
+      today: "2026-06-30",
+    });
+
+    expect(series.map((point) => point.dateKey)).toEqual(["2026-06-30"]);
+  });
+});
+
+describe("buildCompositionChartGeometry", () => {
+  test("returns null below the two-point placeholder threshold", () => {
+    expect(buildCompositionChartGeometry([seriesPoint("2026-06-30", { cashMinor: 100_00 })])).toBeNull();
+  });
+
+  test("returns null for a degenerate zero-length time span", () => {
+    expect(
+      buildCompositionChartGeometry([
+        seriesPoint("2026-06-30", { cashMinor: 100_00 }),
+        seriesPoint("2026-06-30", { cashMinor: 200_00 }),
+      ]),
+    ).toBeNull();
+  });
+
+  test("stacks five asset bands above zero, debt below, and a net-worth line over the total", () => {
+    const points = [
+      seriesPoint("2026-05-31", {
+        cashMinor: 100_00,
+        housingMinor: 200_000_00,
+        debtsMinor: 50_000_00,
+      }),
+      seriesPoint(
+        "2026-06-30",
+        { cashMinor: 120_00, housingMinor: 200_000_00, debtsMinor: 40_000_00 },
+        true,
+      ),
+    ];
+
+    const geometry = buildCompositionChartGeometry(points)!;
+
+    expect(geometry.assetBands.map((band) => band.band)).toEqual([
+      "cash",
+      "market",
+      "term-locked",
+      "illiquid",
+      "housing",
+    ]);
+    // Debt present anywhere → one aggregated negative stack.
+    expect(geometry.debtArea).not.toBeNull();
+    // Zero baseline sits between the asset stack (above) and the debt stack (below).
+    expect(geometry.baselineY).toBeCloseTo(yFor(0, geometry.yMin, geometry.yMax), 2);
+    // The net-worth line maps each period's net worth.
+    const lineCoords = parseCoords(geometry.netWorthLine);
+    expect(lineCoords[0]!.y).toBeCloseTo(
+      yFor(points[0]!.netWorthMinor, geometry.yMin, geometry.yMax),
+      2,
+    );
+    // Markers mark finalized closes only — the open period carries no dot.
+    expect(geometry.markers.map((marker) => marker.dateKey)).toEqual(["2026-05-31"]);
+    expect(geometry.markers[0]!.valueMinor).toBe(points[0]!.netWorthMinor);
+  });
+
+  test("no debt in any period → no debt stack", () => {
+    const geometry = buildCompositionChartGeometry([
+      seriesPoint("2026-05-31", { cashMinor: 100_00 }),
+      seriesPoint("2026-06-30", { cashMinor: 120_00 }),
+    ])!;
+
+    expect(geometry.debtArea).toBeNull();
+  });
+});

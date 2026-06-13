@@ -23,13 +23,18 @@ import type {
   NetWorthFraming,
 } from "@worthline/domain";
 import {
+  buildCompositionSeries,
   buildDrilldown,
   captureSnapshotForScope,
   housingAssetIdsOf,
   listScopeOptions,
   prepareDashboardState,
 } from "@worthline/domain";
-import type { DashboardState, LocalPersistenceStatus } from "@worthline/domain";
+import type {
+  CompositionSeriesPoint,
+  DashboardState,
+  LocalPersistenceStatus,
+} from "@worthline/domain";
 
 export interface RefreshPricesResult {
   /** Price cache after refresh (always populated — stale cache on failure). */
@@ -92,6 +97,12 @@ export interface LoadDashboardResult extends DashboardState {
    * scope's frozen snapshot holding rows. `null` when no drill is active.
    */
   drilldown: DrilldownState | null;
+  /**
+   * The net-worth composition chart series (#142): one banded base point per
+   * monthly close plus the open period, aggregated from the scope's frozen
+   * holding rows. Empty when there is no scope.
+   */
+  compositionSeries: CompositionSeriesPoint[];
 }
 
 export async function loadDashboard(
@@ -176,6 +187,22 @@ export async function loadDashboard(
   const fireConfig = store.readFireConfig();
   const snapshots = selectedScope ? store.snapshots.readSnapshots(selectedScope.id) : [];
 
+  // Frozen holding rows of the scope, read once and shared by the composition
+  // chart (always) and the drilldown (when active). Housing is sourced by id,
+  // not by rung (ADR 0013 bridge): real-estate holdings.
+  const holdingRows = selectedScope
+    ? store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id })
+    : [];
+  const housingHoldingIds = [...housingAssetIdsOf(assets)];
+
+  // ── 4a. Composition chart (#142) — monthly net-worth composition series ──
+  const compositionSeries = buildCompositionSeries({
+    housingHoldingIds,
+    rows: holdingRows,
+    snapshots,
+    today: input.today,
+  });
+
   // ── 4b. Drilldown (#76, #77) — drill view state from frozen holding rows ─
   const drilldown =
     drill && selectedScope
@@ -184,9 +211,8 @@ export async function loadDashboard(
             ...assets.map((asset) => asset.id),
             ...liabilities.map((liability) => liability.id),
           ],
-          // Housing is sourced by id, not rung (ADR 0013 bridge): real-estate holdings.
-          housingHoldingIds: [...housingAssetIdsOf(assets)],
-          rows: store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id }),
+          housingHoldingIds,
+          rows: holdingRows,
         })
       : null;
 
@@ -208,6 +234,7 @@ export async function loadDashboard(
 
   return {
     ...state,
+    compositionSeries,
     drilldown,
     needsOnboarding: false,
     pricingErrors,
@@ -241,6 +268,7 @@ function buildEmptyResult(
 
   return {
     ...state,
+    compositionSeries: [],
     drilldown: null,
     needsOnboarding: true,
     pricingErrors,

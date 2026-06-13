@@ -1005,24 +1005,10 @@ th:last-child {
   font-weight: 600;
 }
 
-/* Evolution chart — server-rendered SVG area of the headline figure (#73).
-   Ink line over a gradient fill to transparent; monthly closes are solid
-   points whose native <title> exposes date and value. */
-.evolutionChart {
-  display: block;
-  height: auto;
-  margin-top: 14px;
-  width: 100%;
-}
-
-.evolutionEmpty {
-  margin-top: 14px;
-}
-
-/* Decomposition chart (#75) — net worth split into liquid (green), housing
-   (gold) and rest (blue) bands under the evolution chart. Any band crossing
-   zero renders the window as three plain lines instead of a stack. The
-   legend names the bands with the page-wide color semantics. */
+/* Drill legend — reused by the drilldown panel (#76/#77) to name each tier with
+   the page-wide color swatches (the .cash/.market swatch rules live in the
+   drilldown section below). The standalone evolution + decomposition charts were
+   folded into the composition chart in #142. */
 .decompositionLegend {
   display: flex;
   flex-wrap: wrap;
@@ -1043,74 +1029,114 @@ th:last-child {
   width: 10px;
 }
 
-.decompositionLegend .liquid i {
-  background: var(--green);
+/* Composition chart (#142) — the dashboard's single historical chart. Five
+   gross asset bands stack above the zero baseline (the four liquidity rungs +
+   Vivienda from the property instrument), one aggregated debt stack sits below
+   it, and an ink net-worth line shows the resulting total (ADR 0009). Asset
+   bands reuse the page-wide tier hues; debt uses the negative red. */
+.compositionLegend {
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  gap: 14px;
+  margin-top: 18px;
 }
 
-.decompositionLegend .housing i {
-  background: var(--gold);
+.compositionLegend span {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
 }
 
-.decompositionLegend .rest i {
-  background: var(--blue);
+.compositionLegend i {
+  display: inline-block;
+  height: 10px;
+  width: 10px;
 }
 
-.decompositionChart {
+.compositionLegend .cash i {
+  background: var(--tier-cash);
+}
+
+.compositionLegend .market i {
+  background: var(--tier-market);
+}
+
+.compositionLegend .term-locked i {
+  background: var(--tier-term-locked);
+}
+
+.compositionLegend .illiquid i {
+  background: var(--tier-illiquid);
+}
+
+.compositionLegend .housing i {
+  background: var(--tier-housing);
+}
+
+.compositionLegend .debt i {
+  background: var(--red);
+}
+
+.compositionLegend .net i {
+  align-self: center;
+  background: transparent;
+  border-top: 2px solid var(--ink);
+  height: 0;
+}
+
+.compositionChart {
   display: block;
-  height: 160px;
+  height: 200px;
   margin-top: 8px;
   width: 100%;
 }
 
-.decompositionBand.liquid {
-  fill: var(--green);
+.compositionBand.cash {
+  fill: var(--tier-cash);
 }
 
-.decompositionBand.housing {
-  fill: var(--gold);
+.compositionBand.market {
+  fill: var(--tier-market);
 }
 
-.decompositionBand.rest {
-  fill: var(--blue);
+.compositionBand.term-locked {
+  fill: var(--tier-term-locked);
 }
 
-.decompositionLine.liquid {
-  stroke: var(--green);
+.compositionBand.illiquid {
+  fill: var(--tier-illiquid);
 }
 
-.decompositionLine.housing {
-  stroke: var(--gold);
+.compositionBand.housing {
+  fill: var(--tier-housing);
 }
 
-.decompositionLine.rest {
-  stroke: var(--blue);
+.compositionDebt {
+  fill: var(--red);
+  fill-opacity: 0.85;
+}
+
+.compositionBaseline {
+  stroke: var(--ink);
+  stroke-opacity: 0.25;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.compositionNetLine {
+  stroke: var(--ink);
+}
+
+.compositionMarker {
+  fill: var(--ink);
+}
+
+.compositionEmpty {
+  margin-top: 14px;
 }
 
 /* === #76 liquid drilldown === */
-
-/* The legend's liquid entry doubles as the drill link — same layout as the
-   plain span entries, underlined to read as navigation. */
-.decompositionLegend a {
-  align-items: center;
-  color: inherit;
-  display: inline-flex;
-  gap: 6px;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.decompositionLegend a:hover {
-  color: var(--green);
-}
-
-.decompositionBand.liquid:hover,
-svg a:hover .decompositionBand.liquid,
-.decompositionBand.housing:hover,
-svg a:hover .decompositionBand.housing,
-.decompositionBand.rest:hover,
-svg a:hover .decompositionBand.rest {
-  filter: brightness(1.08);
-}
 
 .drillHeader {
   align-items: baseline;
