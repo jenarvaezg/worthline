@@ -345,6 +345,7 @@ export function resolveOwnershipSplit(input: {
   scopeMemberId?: string | undefined;
   preset: OwnershipPreset;
   customBps?: Record<string, number> | undefined;
+  completeShortfall?: boolean | undefined;
 }): OwnershipShare[] {
   const members = input.activeMembers;
 
@@ -352,12 +353,12 @@ export function resolveOwnershipSplit(input: {
     return [];
   }
 
-  if (members.length === 1) {
-    return [{ memberId: members[0]!.id, shareBps: 10_000 }];
-  }
-
   const scopeMember =
     members.find((member) => member.id === input.scopeMemberId) ?? members[0]!;
+
+  if (members.length === 1 && input.preset !== "custom") {
+    return [{ memberId: scopeMember.id, shareBps: 10_000 }];
+  }
 
   if (input.preset === "scope") {
     return [{ memberId: scopeMember.id, shareBps: 10_000 }];
@@ -378,7 +379,7 @@ export function resolveOwnershipSplit(input: {
     return [{ memberId: scopeMember.id, shareBps: 10_000 }];
   }
 
-  if (provided < 10_000) {
+  if ((input.completeShortfall ?? true) && provided < 10_000) {
     const unset = entries.filter((entry) => entry.shareBps === 0);
 
     if (unset.length > 0) {
@@ -415,7 +416,11 @@ function distributeRemainder(
   }
 }
 
-export function parseOwnership(formData: FormData, members: Member[]): OwnershipShare[] {
+export function parseOwnership(
+  formData: FormData,
+  members: Member[],
+  options: { completeShortfall?: boolean } = {},
+): OwnershipShare[] {
   const activeMembers = members.filter((member) => !member.disabledAt);
   const preset = parseOwnershipPreset(formData.get("ownershipPreset"));
   const scopeMemberId = String(formData.get("scopeMemberId") ?? "") || undefined;
@@ -426,7 +431,13 @@ export function parseOwnership(formData: FormData, members: Member[]): Ownership
     ]),
   );
 
-  return resolveOwnershipSplit({ activeMembers, scopeMemberId, preset, customBps });
+  return resolveOwnershipSplit({
+    activeMembers,
+    completeShortfall: options.completeShortfall,
+    customBps,
+    preset,
+    scopeMemberId,
+  });
 }
 
 function parseOwnershipPreset(value: FormDataEntryValue | null): OwnershipPreset {
@@ -502,7 +513,9 @@ export function parseAssetCommandStrict(
       isPrimaryResidence: formData.get("isPrimaryResidence") === "on",
       liquidityTier,
       name,
-      ownership: parseOwnership(formData, members),
+      ownership: parseOwnership(formData, members, {
+        completeShortfall: type !== "real_estate",
+      }),
       type,
       ...(housingData.data.acquisitionDate
         ? { acquisitionDate: housingData.data.acquisitionDate }

@@ -267,7 +267,7 @@ function OwnershipInputs({
   scopeMemberId: string | undefined;
   values?: Record<string, string>;
 }) {
-  if (members.length <= 1) {
+  if (members.length === 0) {
     return null;
   }
 
@@ -287,15 +287,17 @@ function OwnershipInputs({
         />
         100% {scopeMember.name}
       </label>
-      <label className="ownerPreset">
-        <input
-          defaultChecked={preset === "even"}
-          name="ownershipPreset"
-          type="radio"
-          value="even"
-        />
-        Repartir a partes iguales
-      </label>
+      {members.length > 1 ? (
+        <label className="ownerPreset">
+          <input
+            defaultChecked={preset === "even"}
+            name="ownershipPreset"
+            type="radio"
+            value="even"
+          />
+          Repartir a partes iguales
+        </label>
+      ) : null}
       <details className="ownerCustomDetails">
         <summary>
           <label className="ownerPreset" style={{ display: "inline" }}>

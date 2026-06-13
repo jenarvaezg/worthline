@@ -302,6 +302,7 @@ function AssetEditForm({
             </label>
 
             <OwnershipInputs
+              allowPartial={asset.type === "real_estate"}
               members={members}
               scopeMemberId={scopeMemberId}
               currentOwnership={asset.ownership}
@@ -407,6 +408,7 @@ function LiabilityEditForm({
         </label>
 
         <OwnershipInputs
+          allowPartial={false}
           members={members}
           scopeMemberId={scopeMemberId}
           currentOwnership={liability.ownership}
@@ -442,17 +444,19 @@ function LiabilityEditForm({
 }
 
 function OwnershipInputs({
+  allowPartial,
   members,
   scopeMemberId,
   currentOwnership,
   values = {},
 }: {
+  allowPartial: boolean;
   members: Member[];
   scopeMemberId: string | undefined;
   currentOwnership: Array<{ memberId: string; shareBps: number }>;
   values?: Record<string, string>;
 }) {
-  if (members.length <= 1) {
+  if (members.length === 0 || (members.length === 1 && !allowPartial)) {
     return null;
   }
 
@@ -477,15 +481,17 @@ function OwnershipInputs({
         />
         100% {scopeMember.name}
       </label>
-      <label className="ownerPreset">
-        <input
-          defaultChecked={preset === "even"}
-          name="ownershipPreset"
-          type="radio"
-          value="even"
-        />
-        Repartir a partes iguales
-      </label>
+      {members.length > 1 ? (
+        <label className="ownerPreset">
+          <input
+            defaultChecked={preset === "even"}
+            name="ownershipPreset"
+            type="radio"
+            value="even"
+          />
+          Repartir a partes iguales
+        </label>
+      ) : null}
       <details className="ownerCustomDetails" open={preset === "custom"}>
         <summary>
           <label className="ownerPreset" style={{ display: "inline" }}>

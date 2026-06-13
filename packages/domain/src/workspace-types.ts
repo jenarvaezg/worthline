@@ -111,7 +111,9 @@ export function createManualAsset(
 ): ManualAsset {
   assertCurrency(input.currency);
   assertMinorInteger(input.currentValueMinor);
-  assertOwnership(workspace, input.ownership);
+  assertOwnership(workspace, input.ownership, {
+    allowKnownPartial: input.type === "real_estate",
+  });
 
   return {
     currency: input.currency,
@@ -163,7 +165,9 @@ export function createManualAssetSafe(
   assertCurrency(input.currency);
   assertMinorInteger(input.currentValueMinor);
 
-  const splitViolation = checkOwnershipSplit(workspace, input.ownership);
+  const splitViolation = checkOwnershipSplit(workspace, input.ownership, {
+    allowKnownPartial: input.type === "real_estate",
+  });
 
   if (splitViolation) {
     return { ok: false, violations: [splitViolation] };
@@ -206,6 +210,7 @@ function assertCurrency(currency: CurrencyCode): void {
 export function checkOwnershipSplit(
   workspace: Workspace,
   ownership: OwnershipShare[],
+  options: { allowKnownPartial?: boolean } = {},
 ): Extract<DomainViolation, { code: "ownership_split_invalid" }> | null {
   const knownMemberIds = new Set(workspace.members.map((member) => member.id));
   const totalBps = ownership.reduce((sum, share) => {
@@ -220,15 +225,23 @@ export function checkOwnershipSplit(
     return sum + share.shareBps;
   }, 0);
 
-  if (totalBps !== 10_000) {
+  const isValid = options.allowKnownPartial
+    ? totalBps > 0 && totalBps <= 10_000
+    : totalBps === 10_000;
+
+  if (!isValid) {
     return { code: "ownership_split_invalid", totalBps };
   }
 
   return null;
 }
 
-function assertOwnership(workspace: Workspace, ownership: OwnershipShare[]): void {
-  const violation = checkOwnershipSplit(workspace, ownership);
+function assertOwnership(
+  workspace: Workspace,
+  ownership: OwnershipShare[],
+  options: { allowKnownPartial?: boolean } = {},
+): void {
+  const violation = checkOwnershipSplit(workspace, ownership, options);
 
   if (violation) {
     throw new Error("Ownership shares must add up to 10000 bps.");

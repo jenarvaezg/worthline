@@ -461,7 +461,23 @@ export async function updateAssetValuationAction(
     }
   }
 
-  runWith((store) => store.assets.updateAssetValuation(id, currentValue));
+  runWith((store) => {
+    store.assets.updateAssetValuation(id, currentValue);
+
+    if (asset?.type === "real_estate") {
+      const today = new Date().toISOString().slice(0, 10);
+      upsertTodayMarketValuationAnchor(store, id, currentValue, today);
+
+      const fromDateKey = firstHousingCurrentValueRippleDate(store, id, today);
+      if (fromDateKey) {
+        store.rippleHistoricalSnapshotsForValuation({
+          assetId: id,
+          fromDateKey,
+          today,
+        });
+      }
+    }
+  });
   redirect(successRedirectUrl("/patrimonio", "saved", id));
 }
 
@@ -664,14 +680,31 @@ export async function editAssetAction(
     const liquidityTier = parseLiquidityTier(formData.get("liquidityTier"));
     const isPrimaryResidence = formData.get("isPrimaryResidence") === "on";
 
-    const ownership = parseOwnership(formData, workspace.members);
-    const splitViolation = checkOwnershipSplit(workspace, ownership);
+    const ownership = parseOwnership(formData, workspace.members, {
+      completeShortfall: type !== "real_estate",
+    });
+    const splitViolation = checkOwnershipSplit(workspace, ownership, {
+      allowKnownPartial: type === "real_estate",
+    });
 
     if (splitViolation) {
       return { ok: false, error: mapDomainViolation(splitViolation) };
     }
 
     store.assets.updateAsset(id, { name, type, liquidityTier, isPrimaryResidence, ownership });
+
+    if (type === "real_estate") {
+      const today = new Date().toISOString().slice(0, 10);
+      const fromDateKey = firstHousingEventDate(store, id, today);
+
+      if (fromDateKey) {
+        store.rippleHistoricalSnapshotsForValuation({
+          assetId: id,
+          fromDateKey,
+          today,
+        });
+      }
+    }
 
     return { ok: true };
   });
@@ -700,6 +733,83 @@ function editUrl(id: string): string {
 /** Read an asset by id, or null. Shared by the housing actions for the R9 guard. */
 function findAsset(store: WorthlineStore, id: string) {
   return store.assets.readAssets().find((a) => a.id === id) ?? null;
+}
+
+function upsertTodayMarketValuationAnchor(
+  store: WorthlineStore,
+  assetId: string,
+  valueMinor: number,
+  today: string,
+): void {
+  const existing = store.assets
+    .readValuationAnchors(assetId)
+    .find((anchor) => anchor.valuationDate === today);
+
+  if (existing) {
+    store.assets.updateValuationAnchor(existing.id, {
+      adjustsPriorCurve: true,
+      valueMinor,
+    });
+    return;
+  }
+
+  store.assets.addValuationAnchor({
+    adjustsPriorCurve: true,
+    assetId,
+    id: createStableId("anchor", `${assetId}_${today}`, Date.now()),
+    valuationDate: today,
+    valueMinor,
+  });
+}
+
+function firstHousingCurrentValueRippleDate(
+  store: WorthlineStore,
+  assetId: string,
+  today: string,
+): string | null {
+  const firstPastAnchorDate = store.assets
+    .readValuationAnchors(assetId)
+    .map((anchor) => anchor.valuationDate)
+    .filter((dateKey) => dateKey < today)
+    .sort()[0];
+
+  if (firstPastAnchorDate) {
+    return firstPastAnchorDate;
+  }
+
+  const firstSnapshotDate = store.snapshots
+    .readSnapshotHoldings()
+    .filter((row) => row.kind === "asset" && row.holdingId === assetId)
+    .map((row) => row.dateKey)
+    .filter((dateKey) => dateKey < today)
+    .sort()[0];
+
+  return firstSnapshotDate ?? null;
+}
+
+function firstHousingEventDate(
+  store: WorthlineStore,
+  assetId: string,
+  today: string,
+): string | null {
+  const firstAnchorDate = store.assets
+    .readValuationAnchors(assetId)
+    .map((anchor) => anchor.valuationDate)
+    .filter((dateKey) => dateKey <= today)
+    .sort()[0];
+
+  if (firstAnchorDate) {
+    return firstAnchorDate;
+  }
+
+  const firstSnapshotDate = store.snapshots
+    .readSnapshotHoldings()
+    .filter((row) => row.kind === "asset" && row.holdingId === assetId)
+    .map((row) => row.dateKey)
+    .filter((dateKey) => dateKey <= today)
+    .sort()[0];
+
+  return firstSnapshotDate ?? null;
 }
 
 export async function setAppreciationRateAction(

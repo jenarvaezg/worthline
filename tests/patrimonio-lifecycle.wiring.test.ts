@@ -19,6 +19,7 @@ import {
   restoreLiabilityAction,
   acknowledgeWarningAction,
   updateLiabilityBalanceAction,
+  updateAssetValuationAction,
   editAssetAction,
 } from "../apps/web/app/patrimonio/actions";
 import { catchRedirect, fd } from "./helpers";
@@ -290,6 +291,74 @@ describe("updateLiabilityBalanceAction wiring", () => {
   });
 });
 
+// ========================================================= updateAssetValuationAction
+
+describe("updateAssetValuationAction wiring", () => {
+  test("updating a real-estate current value anchors today and recalculates prior housing snapshots", async () => {
+    setupStore();
+    store.assets.createManualAsset({
+      id: "asset_home",
+      name: "Piso",
+      type: "real_estate",
+      currency: "EUR",
+      currentValueMinor: 200_000_00,
+      liquidityTier: "housing",
+      ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
+    });
+    store.assets.addValuationAnchor({
+      adjustsPriorCurve: true,
+      assetId: "asset_home",
+      id: "anchor_purchase",
+      valuationDate: "2024-01-01",
+      valueMinor: 100_000_00,
+    });
+    store.assets.setAnnualAppreciationRate("asset_home", "0.1");
+    store.assets.createInvestmentAsset({
+      id: "asset_fund",
+      name: "Fondo",
+      currency: "EUR",
+      ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
+    });
+    store.operations.recordOperation({
+      assetId: "asset_fund",
+      currency: "EUR",
+      executedAt: "2025-01-01",
+      feesMinor: 0,
+      id: "op_2025",
+      kind: "buy",
+      pricePerUnit: "1",
+      units: "1",
+    });
+    store.rippleHistoricalSnapshotsForOperation({
+      assetId: "asset_fund",
+      mode: "record",
+      operationDateKey: "2025-01-01",
+      today: "2026-06-12",
+    });
+
+    const housingValueAt2025Before = () =>
+      store
+        .snapshots
+        .readSnapshotHoldings({ from: "2025-01-01", to: "2025-01-01" })
+        .find((row) => row.holdingId === "asset_home" && row.scopeId === "household")
+        ?.valueMinor;
+
+    expect(housingValueAt2025Before()).toBeGreaterThan(109_000_00);
+
+    const url = await catchRedirect(() =>
+      updateAssetValuationAction(
+        fd({ id: "asset_home", currentValue: "100000" }),
+        store,
+      ),
+    );
+
+    expect(url).toContain("ok=saved");
+    expect(store.assets.readAssets().find((asset) => asset.id === "asset_home")
+      ?.currentValue.amountMinor).toBe(100_000_00);
+    expect(housingValueAt2025Before()).toBe(100_000_00);
+  });
+});
+
 // ================================================================ editAssetAction
 
 describe("editAssetAction wiring", () => {
@@ -315,6 +384,65 @@ describe("editAssetAction wiring", () => {
     expect(url).toContain("ok=saved");
     const asset = store.assets.readAssets().find((a) => a.id === ASSET_ID);
     expect(asset?.name).toBe("Cuenta Ahorro");
+  });
+
+  test("editing real-estate ownership recalculates housing snapshots retroactively", async () => {
+    setupStore();
+    store.assets.createManualAsset({
+      id: "asset_home",
+      name: "Rio Tajo",
+      type: "real_estate",
+      currency: "EUR",
+      currentValueMinor: 100_000_00,
+      liquidityTier: "housing",
+      ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
+    });
+    store.assets.addValuationAnchor({
+      adjustsPriorCurve: true,
+      assetId: "asset_home",
+      id: "anchor_purchase",
+      valuationDate: "2024-01-01",
+      valueMinor: 100_000_00,
+    });
+    store.rippleHistoricalSnapshotsForValuation({
+      assetId: "asset_home",
+      fromDateKey: "2024-01-01",
+      today: "2026-06-12",
+    });
+
+    expect(
+      store
+        .snapshots
+        .readSnapshots("household")
+        .find((snapshot) => snapshot.dateKey === "2024-01-01")
+        ?.grossAssets.amountMinor,
+    ).toBe(100_000_00 + 50_000);
+
+    const url = await catchRedirect(() =>
+      editAssetAction(
+        fd({
+          id: "asset_home",
+          isLiability: "false",
+          name: "Rio Tajo",
+          type: "real_estate",
+          liquidityTier: "housing",
+          ownershipPreset: "custom",
+          [`owner_${MEMBER_ID}`]: "50",
+        }),
+        store,
+      ),
+    );
+
+    expect(url).toContain("ok=saved");
+    expect(store.assets.readAssets().find((asset) => asset.id === "asset_home")?.ownership)
+      .toEqual([{ memberId: MEMBER_ID, shareBps: 5_000 }]);
+    expect(
+      store
+        .snapshots
+        .readSnapshots("household")
+        .find((snapshot) => snapshot.dateKey === "2024-01-01")
+        ?.grossAssets.amountMinor,
+    ).toBe(50_000_00 + 50_000);
   });
 
   test("happy path (liability): name updated", async () => {
