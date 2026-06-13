@@ -1,6 +1,10 @@
 "use client";
 
-import { buildCompositionChartGeometry, formatMoneyMinor } from "@worthline/domain";
+import {
+  buildCompositionChartGeometry,
+  COMPOSITION_ASSET_BANDS,
+  formatMoneyMinor,
+} from "@worthline/domain";
 import type {
   CompositionAssetBandId,
   CompositionSeriesPoint,
@@ -52,7 +56,14 @@ export default function CompositionChart({
   drillHrefs?: Partial<Record<DrilldownKey, string>>;
   points: CompositionSeriesPoint[];
 }) {
-  const geometry = useMemo(() => buildCompositionChartGeometry(points), [points]);
+  const [housingHidden, setHousingHidden] = useState(false);
+  const geometry = useMemo(
+    () =>
+      buildCompositionChartGeometry(points, {
+        excludedBands: housingHidden ? ["housing"] : [],
+      }),
+    [points, housingHidden],
+  );
   const wrapRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{ index: number; x: number; y: number; flip: boolean } | null>(
     null,
@@ -89,17 +100,20 @@ export default function CompositionChart({
   return (
     <>
       <div className="compositionLegend" aria-label="Bandas de composición">
-        {geometry.assetBands.map((band) => {
-          const label = COMPOSITION_BAND_LABELS[band.band];
-          const href = bandHref(band.band);
+        {/* All bands are listed (not just the shown ones) so Vivienda stays a
+            visible, dimmed cue while hidden. */}
+        {COMPOSITION_ASSET_BANDS.map((band) => {
+          const label = COMPOSITION_BAND_LABELS[band];
+          const href = bandHref(band);
+          const className = housingHidden && band === "housing" ? `${band} hidden` : band;
 
           return href ? (
-            <a className={band.band} href={href} key={band.band}>
+            <a className={className} href={href} key={band}>
               <i aria-hidden="true" />
               {label}
             </a>
           ) : (
-            <span className={band.band} key={band.band}>
+            <span className={className} key={band}>
               <i aria-hidden="true" />
               {label}
             </span>
@@ -115,6 +129,16 @@ export default function CompositionChart({
           <i aria-hidden="true" />
           Patrimonio neto
         </span>
+        {/* Vivienda can dwarf everything else; let the reader fold it out so the
+            chart rescales to the remaining bands. */}
+        <button
+          aria-pressed={housingHidden}
+          className="compositionToggle"
+          onClick={() => setHousingHidden((hidden) => !hidden)}
+          type="button"
+        >
+          {housingHidden ? "Mostrar vivienda" : "Ocultar vivienda"}
+        </button>
       </div>
       <div
         className="compositionChartWrap"

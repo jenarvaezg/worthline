@@ -294,11 +294,20 @@ function toAreaString(xs: number[], upperYs: number[], lowerYs: number[]): strin
  * gross-asset stack above it, and the deepest aggregated debt below it. Gross
  * asset values and debt balances are non-negative, so no band ever crosses zero
  * — there is no lines-fallback (unlike the old decomposition chart). The
- * net-worth line is `Σ asset bands − debts`, which equals the snapshot's headline
- * net worth by the reconciliation invariant (ADR 0008).
+ * net-worth line is `Σ shown asset bands − debts`. With no exclusions that equals
+ * the snapshot's headline net worth by the reconciliation invariant (ADR 0008);
+ * `excludedBands` drops a band from the stack, the net line and the y domain
+ * (so the chart rescales to the remaining bands — e.g. hiding a dominant
+ * Vivienda) and omits it from the per-period hover anchors.
  */
+export interface CompositionGeometryOptions {
+  /** Asset bands to drop from the stack, net line, domain and hover anchors. */
+  excludedBands?: readonly CompositionAssetBandId[];
+}
+
 export function buildCompositionChartGeometry(
   points: CompositionSeriesPoint[],
+  options: CompositionGeometryOptions = {},
 ): CompositionChartGeometry | null {
   if (points.length < 2) return null;
 
@@ -309,24 +318,30 @@ export function buildCompositionChartGeometry(
   );
   if (!xs) return null;
 
+  const excluded = new Set(options.excludedBands ?? []);
+  const shownBands = COMPOSITION_ASSET_BANDS.filter((band) => !excluded.has(band));
+
+  // Gross of the SHOWN bands, and net worth of what is shown (gross − debts).
+  // With nothing excluded these equal grossAssets and the headline net worth.
   const grossSums = points.map((p) =>
-    COMPOSITION_ASSET_BANDS.reduce((sum, band) => sum + bandValueMinor(p, band), 0),
+    shownBands.reduce((sum, band) => sum + bandValueMinor(p, band), 0),
   );
+  const nets = points.map((p, i) => grossSums[i]! - p.debtsMinor);
   const negDebts = points.map((p) => -p.debtsMinor);
   const { yMin, yMax } = paddedValueDomain([0, ...grossSums, ...negDebts]);
   const toY = (value: number): number =>
     valueToY(value, yMin, yMax, COMPOSITION_CHART_HEIGHT);
   const baselineY = toY(0);
 
-  // Cumulative stacked edges from the zero baseline up; the top edge of the last
-  // band (housing) is the gross assets of that period.
-  const edges = COMPOSITION_ASSET_BANDS.reduce<number[][]>(
+  // Cumulative stacked edges from the zero baseline up over the shown bands; the
+  // top edge of the last band is the shown gross assets of that period.
+  const edges = shownBands.reduce<number[][]>(
     (acc, band) => [...acc, acc.at(-1)!.map((sum, i) => sum + bandValueMinor(points[i]!, band))],
     [points.map(() => 0)],
   );
   const edgeYs = edges.map((edge) => edge.map(toY));
 
-  const assetBands = COMPOSITION_ASSET_BANDS.map((band, i) => ({
+  const assetBands = shownBands.map((band, i) => ({
     areaPoints: toAreaString(xs, edgeYs[i + 1]!, edgeYs[i]!),
     band,
   }));
@@ -342,15 +357,15 @@ export function buildCompositionChartGeometry(
 
   const netWorthLine = toPointsString(
     xs,
-    points.map((p) => toY(p.netWorthMinor)),
+    nets.map(toY),
   );
 
-  // Hover anchors per period: each asset band at its slab midpoint, the debt
-  // slab midpoint, and the net-worth point on the line.
+  // Hover anchors per period: each shown asset band at its slab midpoint, the
+  // debt slab midpoint, and the net-worth point on the line.
   const periods = points.map<CompositionPeriodGeometry>((p, i) => {
     const x = xs[i]!;
     return {
-      assetBands: COMPOSITION_ASSET_BANDS.map((band, b) => ({
+      assetBands: shownBands.map((band, b) => ({
         band,
         valueMinor: bandValueMinor(p, band),
         x,
@@ -362,7 +377,7 @@ export function buildCompositionChartGeometry(
           ? { valueMinor: p.debtsMinor, x, y: (baselineY + toY(-p.debtsMinor)) / 2 }
           : null,
       isOpenPeriod: p.isOpenPeriod,
-      netWorth: { valueMinor: p.netWorthMinor, x, y: toY(p.netWorthMinor) },
+      netWorth: { valueMinor: nets[i]!, x, y: toY(nets[i]!) },
     };
   });
 

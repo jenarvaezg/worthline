@@ -1101,6 +1101,35 @@ th:last-child {
   text-underline-offset: 3px;
 }
 
+/* A band folded out of the chart stays in the legend, dimmed as a cue. */
+.compositionLegend .hidden {
+  opacity: 0.4;
+}
+
+/* Fold a dominant band (Vivienda) out so the chart rescales to the rest. */
+.compositionToggle {
+  background: none;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.74rem;
+  margin-left: auto;
+  padding: 2px 8px;
+}
+
+.compositionToggle:hover {
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.compositionToggle[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--ink-panel-text);
+}
+
 .compositionChart {
   display: block;
   height: 200px;
