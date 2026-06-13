@@ -1085,6 +1085,16 @@ th:last-child {
   height: 0;
 }
 
+/* Legend entries that double as drill links read as navigation (#143). */
+.compositionLegend a {
+  align-items: center;
+  color: inherit;
+  display: inline-flex;
+  gap: 6px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .compositionChart {
   display: block;
   height: 200px;
@@ -1115,6 +1125,13 @@ th:last-child {
 .compositionDebt {
   fill: var(--red);
   fill-opacity: 0.85;
+}
+
+/* Linked asset bands brighten on hover — a subtle affordance that they navigate
+   to their drilldown (#143). */
+.compositionBand:hover,
+svg a:hover .compositionBand {
+  filter: brightness(1.08);
 }
 
 .compositionBaseline {

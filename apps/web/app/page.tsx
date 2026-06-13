@@ -400,6 +400,7 @@ export default async function DashboardPage({
         ) : (
           <CompositionChart
             currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
+            drillHrefs={drillHrefs}
             points={state.compositionSeries}
           />
         )}
