@@ -40,8 +40,8 @@ export default async function PuestaAlDiaPage({
 
     return {
       // Only manual (non-investment) assets, sorted stalest first via updatedAt
-      assets: store
-        .assets.readAssets()
+      assets: store.assets
+        .readAssets()
         .filter((a) => a.type !== "investment")
         .sort((a, b) => {
           // Stable fallback: sort by id alphabetically for determinism

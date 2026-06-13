@@ -2883,7 +2883,6 @@ td.rowActions > * {
   table-layout: auto;
 }
 
-
 /* Secondary action row (e.g. «Actualizar precios») — quiet outline button. */
 .refreshRow {
   display: flex;

@@ -38,10 +38,7 @@ import type { HousingValuationAnchor } from "./housing-valuation";
 import type { InvestmentOperation } from "./investment-types";
 import type { DebtModel, Liability, ManualAsset, Workspace } from "./workspace-types";
 import type { NetWorthSnapshot, ValuedNetWorthSnapshot } from "./snapshot-types";
-import {
-  captureValuedNetWorthSnapshot,
-  createNetWorthSnapshot,
-} from "./snapshot-types";
+import { captureValuedNetWorthSnapshot, createNetWorthSnapshot } from "./snapshot-types";
 import { assertSnapshotHoldingsReconcile } from "./snapshot-holdings";
 import { money } from "./money";
 import { derivePosition, latestOperationPrice, operationsUpTo } from "./positions";
@@ -658,9 +655,7 @@ export function recalculateSnapshotForLiability(
   const existingRow = input.frozenHoldings.find(
     (row) => row.holdingId === input.liability.id && row.kind === "liability",
   );
-  const rows = input.frozenHoldings.filter(
-    (row) => row.holdingId !== input.liability.id,
-  );
+  const rows = input.frozenHoldings.filter((row) => row.holdingId !== input.liability.id);
 
   // What the debt's change moves (same basis as calculateNetWorth): a debt
   // securing a housing asset nets housing equity; otherwise, if it sits on a

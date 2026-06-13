@@ -84,9 +84,7 @@ function toMinorInt(value: Big): number {
 }
 
 /** Anchors sorted ascending by date (tie-broken by balance for determinism). */
-function sortAnchors(
-  anchors: readonly DebtBalanceAnchor[],
-): DebtBalanceAnchor[] {
+function sortAnchors(anchors: readonly DebtBalanceAnchor[]): DebtBalanceAnchor[] {
   return [...anchors].sort((a, b) =>
     a.anchorDate < b.anchorDate ? -1 : a.anchorDate > b.anchorDate ? 1 : 0,
   );

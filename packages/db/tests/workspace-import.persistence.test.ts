@@ -298,8 +298,8 @@ describe("importWorkspace", () => {
     expect(bS1.scopeLabel).toBe("Hogar");
 
     // b-s1's own frozen holdings are untouched by gap-fill.
-    const b1Holdings = store
-      .snapshots.readSnapshotHoldings()
+    const b1Holdings = store.snapshots
+      .readSnapshotHoldings()
       .filter((h) => h.snapshotId === "b-s1");
     expect(b1Holdings.map((h) => h.holdingId).sort()).toEqual(["b-a1", "b-l1"]);
 
@@ -358,7 +358,9 @@ describe("importWorkspace", () => {
     store.workspace.importWorkspace(makeDocumentB());
 
     const assetIds = new Set(store.assets.readAssets().map((a) => a.id));
-    const assetHolding = store.snapshots.readSnapshotHoldings().find((row) => row.kind === "asset");
+    const assetHolding = store.snapshots
+      .readSnapshotHoldings()
+      .find((row) => row.kind === "asset");
 
     expect(assetHolding).toBeDefined();
     expect(assetHolding!.holdingId).toBe("b-a1");

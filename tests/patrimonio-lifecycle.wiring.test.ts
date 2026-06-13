@@ -287,7 +287,9 @@ describe("updateLiabilityBalanceAction wiring", () => {
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/saldo/i);
     // Balance unchanged
-    expect(store.liabilities.readLiabilities()[0]!.currentBalance.amountMinor).toBe(100_000);
+    expect(store.liabilities.readLiabilities()[0]!.currentBalance.amountMinor).toBe(
+      100_000,
+    );
   });
 });
 
@@ -337,8 +339,7 @@ describe("updateAssetValuationAction wiring", () => {
     });
 
     const housingValueAt2025Before = () =>
-      store
-        .snapshots
+      store.snapshots
         .readSnapshotHoldings({ from: "2025-01-01", to: "2025-01-01" })
         .find((row) => row.holdingId === "asset_home" && row.scopeId === "household")
         ?.valueMinor;
@@ -346,15 +347,14 @@ describe("updateAssetValuationAction wiring", () => {
     expect(housingValueAt2025Before()).toBeGreaterThan(109_000_00);
 
     const url = await catchRedirect(() =>
-      updateAssetValuationAction(
-        fd({ id: "asset_home", currentValue: "100000" }),
-        store,
-      ),
+      updateAssetValuationAction(fd({ id: "asset_home", currentValue: "100000" }), store),
     );
 
     expect(url).toContain("ok=saved");
-    expect(store.assets.readAssets().find((asset) => asset.id === "asset_home")
-      ?.currentValue.amountMinor).toBe(100_000_00);
+    expect(
+      store.assets.readAssets().find((asset) => asset.id === "asset_home")?.currentValue
+        .amountMinor,
+    ).toBe(100_000_00);
     expect(housingValueAt2025Before()).toBe(100_000_00);
   });
 });
@@ -411,11 +411,9 @@ describe("editAssetAction wiring", () => {
     });
 
     expect(
-      store
-        .snapshots
+      store.snapshots
         .readSnapshots("household")
-        .find((snapshot) => snapshot.dateKey === "2024-01-01")
-        ?.grossAssets.amountMinor,
+        .find((snapshot) => snapshot.dateKey === "2024-01-01")?.grossAssets.amountMinor,
     ).toBe(100_000_00 + 50_000);
 
     const url = await catchRedirect(() =>
@@ -434,14 +432,13 @@ describe("editAssetAction wiring", () => {
     );
 
     expect(url).toContain("ok=saved");
-    expect(store.assets.readAssets().find((asset) => asset.id === "asset_home")?.ownership)
-      .toEqual([{ memberId: MEMBER_ID, shareBps: 5_000 }]);
     expect(
-      store
-        .snapshots
+      store.assets.readAssets().find((asset) => asset.id === "asset_home")?.ownership,
+    ).toEqual([{ memberId: MEMBER_ID, shareBps: 5_000 }]);
+    expect(
+      store.snapshots
         .readSnapshots("household")
-        .find((snapshot) => snapshot.dateKey === "2024-01-01")
-        ?.grossAssets.amountMinor,
+        .find((snapshot) => snapshot.dateKey === "2024-01-01")?.grossAssets.amountMinor,
     ).toBe(50_000_00 + 50_000);
   });
 
@@ -463,7 +460,9 @@ describe("editAssetAction wiring", () => {
     );
 
     expect(url).toContain("ok=saved");
-    const liability = store.liabilities.readLiabilities().find((l) => l.id === LIABILITY_ID);
+    const liability = store.liabilities
+      .readLiabilities()
+      .find((l) => l.id === LIABILITY_ID);
     expect(liability?.name).toBe("Hipoteca Renovada");
   });
 

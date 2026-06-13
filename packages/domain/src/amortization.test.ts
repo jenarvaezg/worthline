@@ -85,12 +85,12 @@ describe("amortizableBalanceAtDate — French amortization (cuota fija)", () => 
       termMonths: 12,
     };
     // 100€/month. After 6 months → 600€ remaining.
-    expect(
-      amortizableBalanceAtDate({ plan: zeroRate, targetDate: "2020-07-01" }),
-    ).toBe(600_00);
-    expect(
-      amortizableBalanceAtDate({ plan: zeroRate, targetDate: "2021-01-01" }),
-    ).toBe(0);
+    expect(amortizableBalanceAtDate({ plan: zeroRate, targetDate: "2020-07-01" })).toBe(
+      600_00,
+    );
+    expect(amortizableBalanceAtDate({ plan: zeroRate, targetDate: "2021-01-01" })).toBe(
+      0,
+    );
   });
 
   test("a single rate revision recomputes the payment from its date", () => {
@@ -147,9 +147,17 @@ describe("amortizableBalanceAtDate — French amortization (cuota fija)", () => 
     ];
     // Up to the second revision date the two schedules agree.
     expect(
-      amortizableBalanceAtDate({ plan, revisions: oneRevision, targetDate: "2024-01-01" }),
+      amortizableBalanceAtDate({
+        plan,
+        revisions: oneRevision,
+        targetDate: "2024-01-01",
+      }),
     ).toBe(
-      amortizableBalanceAtDate({ plan, revisions: twoRevisions, targetDate: "2024-01-01" }),
+      amortizableBalanceAtDate({
+        plan,
+        revisions: twoRevisions,
+        targetDate: "2024-01-01",
+      }),
     );
     // After the second revision (higher rate → less principal repaid) the
     // two-revision balance sits above the one-revision balance.
@@ -194,12 +202,8 @@ describe("addMonths day-clamping — end-of-month start dates", () => {
     };
     // On 2020-02-29 the locator places us in month 1 (offset=0 from monthStart),
     // so the result is boundaries[1] = 265_833 (after month-0's payment).
-    expect(
-      amortizableBalanceAtDate({ plan, targetDate: "2020-02-29" }),
-    ).toBe(265_833);
+    expect(amortizableBalanceAtDate({ plan, targetDate: "2020-02-29" })).toBe(265_833);
     // Intra-month interpolation must use the correct 29-day February span.
-    expect(
-      amortizableBalanceAtDate({ plan, targetDate: "2020-02-15" }),
-    ).toBe(277_500);
+    expect(amortizableBalanceAtDate({ plan, targetDate: "2020-02-15" })).toBe(277_500);
   });
 });

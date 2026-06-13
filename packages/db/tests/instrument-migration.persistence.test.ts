@@ -60,14 +60,18 @@ function seedV13(): Database.Database {
 }
 
 const assetInstrument = (db: Database.Database, id: string) =>
-  (db.prepare("SELECT instrument AS i FROM assets WHERE id = ?").get(id) as {
-    i: string | null;
-  }).i;
+  (
+    db.prepare("SELECT instrument AS i FROM assets WHERE id = ?").get(id) as {
+      i: string | null;
+    }
+  ).i;
 
 const liabilityInstrument = (db: Database.Database, id: string) =>
-  (db.prepare("SELECT instrument AS i FROM liabilities WHERE id = ?").get(id) as {
-    i: string | null;
-  }).i;
+  (
+    db.prepare("SELECT instrument AS i FROM liabilities WHERE id = ?").get(id) as {
+      i: string | null;
+    }
+  ).i;
 
 describe("instrument schema migration (v14)", () => {
   test("backfills asset instrument from type (+ provider for investments)", () => {
@@ -141,6 +145,8 @@ describe("instrument schema migration (v14)", () => {
     const before = db.prepare("SELECT id, instrument FROM assets ORDER BY id").all();
     migrate(db); // a second run sits behind `version < 14` → no-op
     expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
-    expect(db.prepare("SELECT id, instrument FROM assets ORDER BY id").all()).toEqual(before);
+    expect(db.prepare("SELECT id, instrument FROM assets ORDER BY id").all()).toEqual(
+      before,
+    );
   });
 });

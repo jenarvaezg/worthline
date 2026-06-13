@@ -66,8 +66,7 @@ export function createSnapshotStore(ctx: StoreContext): SnapshotStore {
     saveSnapshot: (input) => saveSnapshot(ctx, input),
     readSnapshots: (scopeId) => readSnapshots(ctx.db, scopeId),
     readSnapshotHoldings: (query) => readSnapshotHoldings(ctx.db, query),
-    readPositions: (scopeId) =>
-      readPositions(ctx.db, ctx.getWorkspace(), scopeId),
+    readPositions: (scopeId) => readPositions(ctx.db, ctx.getWorkspace(), scopeId),
   };
 }
 
@@ -179,10 +178,7 @@ function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): void {
   });
 }
 
-export function readSnapshots(
-  db: StoreDb,
-  scopeId?: string,
-): NetWorthSnapshot[] {
+export function readSnapshots(db: StoreDb, scopeId?: string): NetWorthSnapshot[] {
   const rows = scopeId
     ? db
         .select()

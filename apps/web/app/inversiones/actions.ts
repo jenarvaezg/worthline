@@ -270,7 +270,9 @@ export async function deleteInvestmentAction(
     );
   }
 
-  const changes = runWith((store) => store.assets.softDeleteAsset(id, new Date().toISOString()));
+  const changes = runWith((store) =>
+    store.assets.softDeleteAsset(id, new Date().toISOString()),
+  );
 
   if (changes === 0) {
     redirect(
@@ -398,7 +400,9 @@ export async function refreshPricesAction(
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
     _store ? fn(_store) : withStore(fn);
 
-  const investmentAssets = runWith((store) => store.assets.readInvestmentAssetsWithMeta());
+  const investmentAssets = runWith((store) =>
+    store.assets.readInvestmentAssetsWithMeta(),
+  );
   const refreshable = investmentAssets.filter((asset) => Boolean(asset.providerSymbol));
 
   const outcome = await (async () => {

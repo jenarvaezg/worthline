@@ -81,7 +81,7 @@ function addMonths(dateKey: string, count: number): string {
   const year = Number(dateKey.slice(0, 4));
   const month = Number(dateKey.slice(5, 7));
   const day = Number(dateKey.slice(8, 10));
-  const zeroBased = (month - 1) + count;
+  const zeroBased = month - 1 + count;
   const newYear = year + Math.floor(zeroBased / 12);
   const newMonth = (zeroBased % 12) + 1;
   const clampedDay = Math.min(day, lastDayOfMonth(newYear, newMonth));
@@ -148,11 +148,7 @@ function buildBoundaries(input: AmortizableBalanceAtDateInput): MonthlyBoundary[
 
   const boundaries: MonthlyBoundary[] = [{ balance: new Big(initialCapitalMinor) }];
   let balance = new Big(initialCapitalMinor);
-  let payment = monthlyPayment(
-    balance,
-    new Big(annualInterestRate).div(12),
-    termMonths,
-  );
+  let payment = monthlyPayment(balance, new Big(annualInterestRate).div(12), termMonths);
   let activeRate = annualInterestRate;
 
   for (let monthIndex = 0; monthIndex < termMonths; monthIndex += 1) {

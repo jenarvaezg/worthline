@@ -37,7 +37,9 @@ export interface OperationsStore {
   recordOperation: (input: CreateInvestmentOperationInput) => void;
   readOperations: (assetId: string) => InvestmentOperation[];
   /** Delete an operation. Returns the deleted operation's asset id and date, or null if not found. */
-  deleteOperation: (operationId: string) => { assetId: string; executedAt: string } | null;
+  deleteOperation: (
+    operationId: string,
+  ) => { assetId: string; executedAt: string } | null;
   batchApplyValueUpdates: (commands: ValueUpdateCommand[]) => void;
   batchApplyAllValueUpdates: (
     assetCommands: ValueUpdateCommand[],

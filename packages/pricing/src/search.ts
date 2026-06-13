@@ -57,14 +57,12 @@ export async function searchYahooSymbols(query: string): Promise<SymbolCandidate
     const data = (await res.json()) as YahooSearchResponse;
 
     return (data.quotes ?? [])
-      .filter(
-        (q) => q.symbol && (!q.quoteType || RELEVANT_QUOTE_TYPES.has(q.quoteType)),
-      )
+      .filter((q) => q.symbol && (!q.quoteType || RELEVANT_QUOTE_TYPES.has(q.quoteType)))
       .map((q) => ({
         provider: "yahoo" as const,
         symbol: q.symbol!,
         name: q.longname ?? q.shortname ?? q.symbol!,
-        ...(q.exchDisp ?? q.exchange ? { exchange: q.exchDisp ?? q.exchange } : {}),
+        ...((q.exchDisp ?? q.exchange) ? { exchange: q.exchDisp ?? q.exchange } : {}),
         ...(q.quoteType ? { quoteType: q.quoteType } : {}),
       }));
   } catch {

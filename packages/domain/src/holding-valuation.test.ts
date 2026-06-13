@@ -131,7 +131,13 @@ describe("valueAt — derived (units × price)", () => {
 
   test("a captured unit price overrides the latest operation price", () => {
     const result = valueAt(
-      { assetId: "a1", capturedUnitPrice: "200", currency: "EUR", method: "derived", operations: ops },
+      {
+        assetId: "a1",
+        capturedUnitPrice: "200",
+        currency: "EUR",
+        method: "derived",
+        operations: ops,
+      },
       "2024-07-01",
     );
 
@@ -159,7 +165,13 @@ describe("valueAt — derived (units × price)", () => {
 
   test("a captured unit price does not resurrect a position before its first operation", () => {
     const result = valueAt(
-      { assetId: "a1", capturedUnitPrice: "200", currency: "EUR", method: "derived", operations: ops },
+      {
+        assetId: "a1",
+        capturedUnitPrice: "200",
+        currency: "EUR",
+        method: "derived",
+        operations: ops,
+      },
       "2024-01-01",
     );
 
@@ -172,7 +184,11 @@ describe("valueAt — appreciating (revaluation curve)", () => {
     const result = valueAt(
       {
         anchors: [
-          { adjustsPriorCurve: true, valuationDate: "2024-06-01", valueMinor: 250_000_00 },
+          {
+            adjustsPriorCurve: true,
+            valuationDate: "2024-06-01",
+            valueMinor: 250_000_00,
+          },
         ],
         currentValueMinor: 300_000_00,
         method: "appreciating",

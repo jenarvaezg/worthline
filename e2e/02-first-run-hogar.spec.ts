@@ -16,7 +16,9 @@ test("hogar onboarding: /empezar → Crear hogar → dashboard with household", 
 }) => {
   // 1. Navigate to /empezar — fresh DB, so the onboarding page renders
   await page.goto("/empezar");
-  await expect(page.getByRole("heading", { name: "worthline", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "worthline", exact: true }),
+  ).toBeVisible();
 
   // 2. The Crear hogar form is present with a textarea for member names
   const memberNamesInput = page.getByLabel("Miembros (un nombre por línea)");
@@ -30,7 +32,9 @@ test("hogar onboarding: /empezar → Crear hogar → dashboard with household", 
 
   // 5. Redirected to / — the dashboard renders
   await expect(page).toHaveURL(/\//);
-  await expect(page.getByRole("heading", { name: "worthline", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "worthline", exact: true }),
+  ).toBeVisible();
 
   // 6. The scope selector shows household + individual member scopes
   const scopeNav = page.locator("[aria-label='Selector de scope']");

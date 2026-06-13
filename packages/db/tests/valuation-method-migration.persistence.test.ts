@@ -52,14 +52,18 @@ function seedV12(): Database.Database {
 }
 
 const assetMethod = (db: Database.Database, id: string) =>
-  (db.prepare("SELECT valuation_method AS m FROM assets WHERE id = ?").get(id) as {
-    m: string | null;
-  }).m;
+  (
+    db.prepare("SELECT valuation_method AS m FROM assets WHERE id = ?").get(id) as {
+      m: string | null;
+    }
+  ).m;
 
 const liabilityMethod = (db: Database.Database, id: string) =>
-  (db.prepare("SELECT valuation_method AS m FROM liabilities WHERE id = ?").get(id) as {
-    m: string | null;
-  }).m;
+  (
+    db.prepare("SELECT valuation_method AS m FROM liabilities WHERE id = ?").get(id) as {
+      m: string | null;
+    }
+  ).m;
 
 describe("valuation-method schema migration (v13)", () => {
   test("backfills asset valuation_method from type", () => {
@@ -127,9 +131,13 @@ describe("valuation-method schema migration (v13)", () => {
 
     expect(nullCount()).toBe(0);
 
-    const before = db.prepare("SELECT id, valuation_method FROM assets ORDER BY id").all();
+    const before = db
+      .prepare("SELECT id, valuation_method FROM assets ORDER BY id")
+      .all();
     migrate(db); // a second run sits behind `version < 13` → no-op
     expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
-    expect(db.prepare("SELECT id, valuation_method FROM assets ORDER BY id").all()).toEqual(before);
+    expect(
+      db.prepare("SELECT id, valuation_method FROM assets ORDER BY id").all(),
+    ).toEqual(before);
   });
 });

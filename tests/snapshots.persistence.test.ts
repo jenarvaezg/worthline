@@ -65,15 +65,20 @@ describe("snapshot persistence", () => {
       scopeLabel: "Hogar",
       workspace,
     });
-    store.snapshots.saveSnapshot({ holdings: duplicate.holdings, snapshot: duplicate.snapshot });
+    store.snapshots.saveSnapshot({
+      holdings: duplicate.holdings,
+      snapshot: duplicate.snapshot,
+    });
     // After the collision the row count for that date-key is still 1.
     expect(
-      store.snapshots.readSnapshots("household").filter((s) => s.dateKey === "2026-06-01"),
+      store.snapshots
+        .readSnapshots("household")
+        .filter((s) => s.dateKey === "2026-06-01"),
     ).toHaveLength(1);
     // And there is still exactly one holding row for that day's scope.
     expect(
-      store
-        .snapshots.readSnapshotHoldings({ scopeId: "household" })
+      store.snapshots
+        .readSnapshotHoldings({ scopeId: "household" })
         .filter((row) => row.dateKey === "2026-06-01"),
     ).toHaveLength(1);
 
@@ -139,7 +144,10 @@ describe("snapshot persistence", () => {
       scopeLabel: "Hogar",
       workspace,
     });
-    store.snapshots.saveSnapshot({ holdings: captured.holdings, snapshot: captured.snapshot });
+    store.snapshots.saveSnapshot({
+      holdings: captured.holdings,
+      snapshot: captured.snapshot,
+    });
 
     const snapshots = store.snapshots.readSnapshots("household");
     const warnings: DomainWarning[] = snapshots[0]!.warnings;

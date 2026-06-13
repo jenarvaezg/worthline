@@ -49,10 +49,8 @@ async function runAction(
 
 /** Debt total in a snapshot at the given dateKey (household / default scope). */
 function debtsAt(store: WorthlineStore, dateKey: string): number | undefined {
-  return store.snapshots
-    .readSnapshots()
-    .find((s) => s.dateKey === dateKey)
-    ?.debts.amountMinor;
+  return store.snapshots.readSnapshots().find((s) => s.dateKey === dateKey)?.debts
+    .amountMinor;
 }
 
 const TODAY = new Date().toISOString().slice(0, 10);

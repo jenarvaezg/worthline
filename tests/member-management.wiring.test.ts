@@ -105,9 +105,9 @@ describe("updateMemberAction wiring", () => {
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/obligatorio/i);
     // Name unchanged
-    expect(store.workspace.readWorkspace()!.members.find((m) => m.id === "member_ana")?.name).toBe(
-      "Ana",
-    );
+    expect(
+      store.workspace.readWorkspace()!.members.find((m) => m.id === "member_ana")?.name,
+    ).toBe("Ana");
   });
 });
 
@@ -122,7 +122,9 @@ describe("disableMemberAction wiring", () => {
     );
 
     expect(url).toContain("ok=saved");
-    const member = store.workspace.readWorkspace()!.members.find((m) => m.id === "member_ana");
+    const member = store.workspace
+      .readWorkspace()!
+      .members.find((m) => m.id === "member_ana");
     expect(member?.disabledAt).toBeTruthy();
   });
 
@@ -137,7 +139,8 @@ describe("disableMemberAction wiring", () => {
     expect(decodeURIComponent(url)).toMatch(/identificador/i);
     // Member still active
     expect(
-      store.workspace.readWorkspace()!.members.find((m) => m.id === "member_ana")?.disabledAt,
+      store.workspace.readWorkspace()!.members.find((m) => m.id === "member_ana")
+        ?.disabledAt,
     ).toBeFalsy();
   });
 });
@@ -154,7 +157,9 @@ describe("reactivateMemberAction wiring", () => {
     );
 
     expect(url).toContain("ok=saved");
-    const member = store.workspace.readWorkspace()!.members.find((m) => m.id === "member_ana");
+    const member = store.workspace
+      .readWorkspace()!
+      .members.find((m) => m.id === "member_ana");
     expect(member?.disabledAt).toBeFalsy();
   });
 

@@ -12,7 +12,14 @@ function liabilityRow(
   valueMinor: number,
   tier: "illiquid" | null = null,
 ): DatedSnapshotHoldingRow {
-  return { dateKey, holdingId, kind: "liability", label, liquidityTier: tier, valueMinor };
+  return {
+    dateKey,
+    holdingId,
+    kind: "liability",
+    label,
+    liquidityTier: tier,
+    valueMinor,
+  };
 }
 
 describe("DrilldownPanel — debts drilldown (#145)", () => {
@@ -32,7 +39,11 @@ describe("DrilldownPanel — debts drilldown (#145)", () => {
     });
 
     const markup = renderToStaticMarkup(
-      <DrilldownPanel backHref="/?view=liquid#composicion" currency="EUR" drilldown={drilldown} />,
+      <DrilldownPanel
+        backHref="/?view=liquid#composicion"
+        currency="EUR"
+        drilldown={drilldown}
+      />,
     );
 
     expect(markup).toContain("Deudas");

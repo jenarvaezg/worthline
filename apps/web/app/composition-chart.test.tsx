@@ -31,7 +31,10 @@ function point(input: {
 describe("CompositionChart", () => {
   test("shows an empty-state message below the two-point threshold", () => {
     const markup = renderToStaticMarkup(
-      <CompositionChart currency="EUR" points={[point({ cash: 100_00, dateKey: "2026-06-30" })]} />,
+      <CompositionChart
+        currency="EUR"
+        points={[point({ cash: 100_00, dateKey: "2026-06-30" })]}
+      />,
     );
 
     expect(markup).toContain("más capturas");
@@ -42,7 +45,12 @@ describe("CompositionChart", () => {
       <CompositionChart
         currency="EUR"
         points={[
-          point({ cash: 10_000_00, dateKey: "2026-05-31", debts: 120_000_00, housing: 200_000_00 }),
+          point({
+            cash: 10_000_00,
+            dateKey: "2026-05-31",
+            debts: 120_000_00,
+            housing: 200_000_00,
+          }),
           point({
             cash: 12_000_00,
             dateKey: "2026-06-30",
@@ -73,8 +81,18 @@ describe("CompositionChart", () => {
           rest: "/?drill=rest",
         }}
         points={[
-          point({ cash: 10_000_00, dateKey: "2026-05-31", debts: 120_000_00, housing: 200_000_00 }),
-          point({ cash: 12_000_00, dateKey: "2026-06-30", housing: 200_000_00, isOpenPeriod: true }),
+          point({
+            cash: 10_000_00,
+            dateKey: "2026-05-31",
+            debts: 120_000_00,
+            housing: 200_000_00,
+          }),
+          point({
+            cash: 12_000_00,
+            dateKey: "2026-06-30",
+            housing: 200_000_00,
+            isOpenPeriod: true,
+          }),
         ]}
       />,
     );
@@ -85,7 +103,7 @@ describe("CompositionChart", () => {
     expect(markup).toContain('href="/?drill=housing"');
     // Deudas stays a non-navigable legend entry with no destination.
     expect(markup).toContain('<span class="debt">');
-    expect(markup).not.toContain('drill=debt');
+    expect(markup).not.toContain("drill=debt");
   });
 
   test("offers a control to fold Vivienda out of the chart", () => {
@@ -113,7 +131,12 @@ describe("CompositionChart", () => {
           rest: "/?drill=rest",
         }}
         points={[
-          point({ cash: 10_000_00, dateKey: "2026-05-31", debts: 120_000_00, housing: 200_000_00 }),
+          point({
+            cash: 10_000_00,
+            dateKey: "2026-05-31",
+            debts: 120_000_00,
+            housing: 200_000_00,
+          }),
           point({
             cash: 12_000_00,
             dateKey: "2026-06-30",

@@ -151,7 +151,10 @@ describe("snapshot holding rows persistence", () => {
     store.snapshots.saveSnapshot({ holdings: first.holdings, snapshot: first.snapshot });
 
     const second = captureFor(store, "snap_b", "2026-06-10T09:00:00.000Z");
-    store.snapshots.saveSnapshot({ holdings: second.holdings, snapshot: second.snapshot });
+    store.snapshots.saveSnapshot({
+      holdings: second.holdings,
+      snapshot: second.snapshot,
+    });
 
     const rows = store.snapshots.readSnapshotHoldings({ scopeId: "household" });
     expect(rows).toHaveLength(2);
@@ -239,9 +242,13 @@ describe("snapshot holding rows persistence", () => {
     }
 
     // By scope: all three days, two rows each.
-    expect(store.snapshots.readSnapshotHoldings({ scopeId: "household" })).toHaveLength(6);
+    expect(store.snapshots.readSnapshotHoldings({ scopeId: "household" })).toHaveLength(
+      6,
+    );
     // Unknown scope: nothing.
-    expect(store.snapshots.readSnapshotHoldings({ scopeId: "member_jose" })).toHaveLength(0);
+    expect(store.snapshots.readSnapshotHoldings({ scopeId: "member_jose" })).toHaveLength(
+      0,
+    );
 
     // Time window (inclusive date keys).
     const windowed = store.snapshots.readSnapshotHoldings({
@@ -272,7 +279,10 @@ describe("snapshot holding rows persistence", () => {
     );
     store.snapshots.saveSnapshot({ holdings, snapshot });
 
-    store.assets.updateAsset("asset_cash", { liquidityTier: "illiquid", name: "Renombrada" });
+    store.assets.updateAsset("asset_cash", {
+      liquidityTier: "illiquid",
+      name: "Renombrada",
+    });
     store.assets.softDeleteAsset("asset_cash", "2026-06-11T10:00:00.000Z");
 
     const rows = store.snapshots.readSnapshotHoldings({ scopeId: "household" });

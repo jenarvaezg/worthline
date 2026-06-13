@@ -27,7 +27,11 @@ describe("timeProportionalXs", () => {
 
   test("returns null for unparseable dates", () => {
     expect(
-      timeProportionalXs(["nope", "2026-06-02"], EVOLUTION_CHART_WIDTH, EVOLUTION_CHART_INSET_X),
+      timeProportionalXs(
+        ["nope", "2026-06-02"],
+        EVOLUTION_CHART_WIDTH,
+        EVOLUTION_CHART_INSET_X,
+      ),
     ).toBeNull();
   });
 
@@ -51,7 +55,10 @@ describe("timeProportionalXs", () => {
 
 describe("paddedValueDomain", () => {
   test("pads the data range by ~10% on each side", () => {
-    expect(paddedValueDomain([100_000, 200_000])).toEqual({ yMax: 210_000, yMin: 90_000 });
+    expect(paddedValueDomain([100_000, 200_000])).toEqual({
+      yMax: 210_000,
+      yMin: 90_000,
+    });
   });
 
   test("a flat series still gets headroom instead of a zero-height domain", () => {

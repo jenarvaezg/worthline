@@ -202,7 +202,9 @@ export function valueHousingAtDate(input: ValueHousingAtDateInput): number {
   const span = daysBetween(lower.dateKey, upper.dateKey);
   const offset = daysBetween(lower.dateKey, targetDate);
   const fraction = span === 0 ? new Big(0) : new Big(offset).div(span);
-  const base = lower.baseMinor.plus(upper.baseMinor.minus(lower.baseMinor).times(fraction));
+  const base = lower.baseMinor.plus(
+    upper.baseMinor.minus(lower.baseMinor).times(fraction),
+  );
   const improvements = sumImprovements(anchors, (dateKey) => dateKey <= targetDate);
   return toMinorInt(base.plus(improvements));
 }

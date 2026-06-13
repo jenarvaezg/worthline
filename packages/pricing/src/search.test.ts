@@ -117,7 +117,9 @@ describe("searchSymbols", () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
       json: async () => ({
-        quotes: [{ symbol: "VWCE.DE", shortname: "Vanguard FTSE All-World", quoteType: "ETF" }],
+        quotes: [
+          { symbol: "VWCE.DE", shortname: "Vanguard FTSE All-World", quoteType: "ETF" },
+        ],
       }),
     } as Response);
 

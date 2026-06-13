@@ -5,7 +5,10 @@
  * environment while the client component holds only the thin mouse wiring.
  */
 
-import type { CompositionAssetBandId, CompositionPeriodGeometry } from "@worthline/domain";
+import type {
+  CompositionAssetBandId,
+  CompositionPeriodGeometry,
+} from "@worthline/domain";
 
 export const COMPOSITION_BAND_LABELS: Record<CompositionAssetBandId, string> = {
   cash: "Caja",
@@ -27,7 +30,10 @@ export interface CompositionTooltipRow {
  * clamping to the ends outside the data range. Drives the cursor→period snap so
  * hovering anywhere in the chart resolves to one moment.
  */
-export function nearestPeriodIndex(periodXs: readonly number[], xInViewBox: number): number {
+export function nearestPeriodIndex(
+  periodXs: readonly number[],
+  xInViewBox: number,
+): number {
   let bestIndex = 0;
   let bestDistance = Infinity;
   for (let i = 0; i < periodXs.length; i += 1) {
@@ -58,7 +64,11 @@ export function compositionTooltipRows(
     rows.push({ kind: "debt", label: "Deudas", valueMinor: period.debt.valueMinor });
   }
 
-  rows.push({ kind: "net", label: "Patrimonio neto", valueMinor: period.netWorth.valueMinor });
+  rows.push({
+    kind: "net",
+    label: "Patrimonio neto",
+    valueMinor: period.netWorth.valueMinor,
+  });
 
   return rows;
 }

@@ -55,7 +55,9 @@ export function defaultValuationMethodForAssetType(type: AssetType): ValuationMe
  * balance is `anchored`, and a liability with no model keeps its manual balance
  * (`stored`).
  */
-export function defaultValuationMethodForDebtModel(model: DebtModel | null): ValuationMethod {
+export function defaultValuationMethodForDebtModel(
+  model: DebtModel | null,
+): ValuationMethod {
   switch (model) {
     case "amortizable":
       return "amortized";
@@ -218,4 +220,3 @@ export function valueAt(
     }
   }
 }
-

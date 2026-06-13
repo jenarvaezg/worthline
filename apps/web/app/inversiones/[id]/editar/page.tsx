@@ -185,7 +185,10 @@ export default async function EditarInversionPage({
             <input
               aria-label="Símbolo del proveedor"
               defaultValue={
-                prefillSymbol ?? editValues["providerSymbol"] ?? asset.providerSymbol ?? ""
+                prefillSymbol ??
+                editValues["providerSymbol"] ??
+                asset.providerSymbol ??
+                ""
               }
               name="providerSymbol"
               placeholder="SAN.MC"

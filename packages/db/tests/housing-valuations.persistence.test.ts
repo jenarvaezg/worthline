@@ -141,7 +141,10 @@ describe("housing valuation anchors — update", () => {
     const changed = store.assets.updateValuationAnchor("a1", { valueMinor: 105_000_00 });
     expect(changed).toBe(1);
     const anchors = store.assets.readValuationAnchors("home");
-    expect(anchors[0]).toMatchObject({ valueMinor: 105_000_00, valuationDate: "2024-01-01" });
+    expect(anchors[0]).toMatchObject({
+      valueMinor: 105_000_00,
+      valuationDate: "2024-01-01",
+    });
   });
 
   test("update valuationDate to a free slot succeeds and returns 1", () => {
@@ -155,9 +158,13 @@ describe("housing valuation anchors — update", () => {
       valueMinor: 100_000_00,
     });
 
-    const changed = store.assets.updateValuationAnchor("a1", { valuationDate: "2024-06-01" });
+    const changed = store.assets.updateValuationAnchor("a1", {
+      valuationDate: "2024-06-01",
+    });
     expect(changed).toBe(1);
-    expect(store.assets.readValuationAnchors("home")[0]?.valuationDate).toBe("2024-06-01");
+    expect(store.assets.readValuationAnchors("home")[0]?.valuationDate).toBe(
+      "2024-06-01",
+    );
   });
 
   test("update to an already-occupied date throws (unique index)", () => {
@@ -186,7 +193,9 @@ describe("housing valuation anchors — update", () => {
   test("update a non-existent anchor returns 0", () => {
     const store = createInMemoryStore();
     seed(store);
-    expect(store.assets.updateValuationAnchor("ghost", { valueMinor: 50_000_00 })).toBe(0);
+    expect(store.assets.updateValuationAnchor("ghost", { valueMinor: 50_000_00 })).toBe(
+      0,
+    );
   });
 
   test("update rejects a non-integer valueMinor", () => {

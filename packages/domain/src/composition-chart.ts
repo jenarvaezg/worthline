@@ -167,7 +167,10 @@ export function monthsBetween(a: string, b: string): number {
  * cutoff (#144); `null` for `all` (unbounded). A bounded range of N months ends
  * at today's month and reaches back N−1 months, so it covers exactly N months.
  */
-export function rangeStartMonthKey(today: string, range: CompositionRange): string | null {
+export function rangeStartMonthKey(
+  today: string,
+  range: CompositionRange,
+): string | null {
   if (range === "all") return null;
   return monthKeyFromIndex(monthIndex(today.slice(0, 7)) - (RANGE_MONTHS[range] - 1));
 }
@@ -223,7 +226,9 @@ export function selectPeriodicSeries(
 
   // Last snapshot (by dateKey) wins per period — sort ascending so it overwrites.
   const lastDateByPeriod = new Map<string, string>();
-  for (const snapshot of [...snapshots].sort((a, b) => a.dateKey.localeCompare(b.dateKey))) {
+  for (const snapshot of [...snapshots].sort((a, b) =>
+    a.dateKey.localeCompare(b.dateKey),
+  )) {
     lastDateByPeriod.set(periodKeyOf(snapshot.dateKey, granularity), snapshot.dateKey);
   }
 
@@ -305,16 +310,21 @@ export function buildCompositionSeries(
   const spanMonths = windowed.length > 0 ? maxIdx - minIdx : 0;
   const granularity = granularityForSpanMonths(spanMonths);
 
-  return selectPeriodicSeries(windowed, input.today, granularity)
-    // Skip legacy snapshots that predate holding rows (ADR 0008): with no rows
-    // they would plot a false zero. Every plotted point is row-backed, so its
-    // bands reconcile to the snapshot's headline net worth.
-    .filter((entry) => rowsByDate.has(entry.dateKey))
-    .map((entry) => ({
-      ...deriveCompositionBands(rowsByDate.get(entry.dateKey)!, input.housingHoldingIds),
-      dateKey: entry.dateKey,
-      isOpenPeriod: entry.isOpenPeriod,
-    }));
+  return (
+    selectPeriodicSeries(windowed, input.today, granularity)
+      // Skip legacy snapshots that predate holding rows (ADR 0008): with no rows
+      // they would plot a false zero. Every plotted point is row-backed, so its
+      // bands reconcile to the snapshot's headline net worth.
+      .filter((entry) => rowsByDate.has(entry.dateKey))
+      .map((entry) => ({
+        ...deriveCompositionBands(
+          rowsByDate.get(entry.dateKey)!,
+          input.housingHoldingIds,
+        ),
+        dateKey: entry.dateKey,
+        isOpenPeriod: entry.isOpenPeriod,
+      }))
+  );
 }
 
 /** A hover anchor: a point in viewBox space carrying the value it represents. */
@@ -449,7 +459,10 @@ export function buildCompositionChartGeometry(
   // Cumulative stacked edges from the zero baseline up over the shown bands; the
   // top edge of the last band is the shown gross assets of that period.
   const edges = shownBands.reduce<number[][]>(
-    (acc, band) => [...acc, acc.at(-1)!.map((sum, i) => sum + bandValueMinor(points[i]!, band))],
+    (acc, band) => [
+      ...acc,
+      acc.at(-1)!.map((sum, i) => sum + bandValueMinor(points[i]!, band)),
+    ],
     [points.map(() => 0)],
   );
   const edgeYs = edges.map((edge) => edge.map(toY));
@@ -468,10 +481,7 @@ export function buildCompositionChartGeometry(
       )
     : null;
 
-  const netWorthLine = toPointsString(
-    xs,
-    nets.map(toY),
-  );
+  const netWorthLine = toPointsString(xs, nets.map(toY));
 
   // Hover anchors per period: each shown asset band at its slab midpoint, the
   // debt slab midpoint, and the net-worth point on the line.

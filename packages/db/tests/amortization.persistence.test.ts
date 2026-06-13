@@ -204,10 +204,7 @@ describe("interest-rate revisions — CRUD", () => {
     });
 
     const revisions = store.liabilities.readInterestRateRevisions("plan1");
-    expect(revisions.map((r) => r.revisionDate)).toEqual([
-      "2022-01-01",
-      "2024-01-01",
-    ]);
+    expect(revisions.map((r) => r.revisionDate)).toEqual(["2022-01-01", "2024-01-01"]);
     expect(revisions[0]).toMatchObject({
       id: "r1",
       newAnnualInterestRate: "0.03",

@@ -53,9 +53,7 @@ function recordBuy(
 }
 
 function grossAt(store: WorthlineStore, dateKey: string): number | undefined {
-  return store
-    .snapshots.readSnapshots()
-    .find((snap) => snap.dateKey === dateKey)
+  return store.snapshots.readSnapshots().find((snap) => snap.dateKey === dateKey)
     ?.grossAssets.amountMinor;
 }
 
@@ -202,7 +200,9 @@ describe("ripple preserves frozen history (ADR 0012)", () => {
     recordBuy(store, "2024-01-10", "10", "100");
     expect(grossAt(store, "2024-01-10")).toBe(10 * 100_00);
 
-    const op = store.operations.readOperations("fund").find((o) => o.executedAt === "2024-01-10")!;
+    const op = store.operations
+      .readOperations("fund")
+      .find((o) => o.executedAt === "2024-01-10")!;
     store.operations.deleteOperation(op.id);
     store.rippleHistoricalSnapshotsForOperation({
       assetId: "fund",

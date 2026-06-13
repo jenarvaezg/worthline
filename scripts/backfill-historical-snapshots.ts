@@ -50,6 +50,8 @@ withStore((store) => {
       console.log(`  ${snap.dateKey}  [${snap.scopeLabel}]  neto ${total} €`);
     }
   } else {
-    console.log("\nNothing to backfill — every past operation date already has a snapshot.");
+    console.log(
+      "\nNothing to backfill — every past operation date already has a snapshot.",
+    );
   }
 });

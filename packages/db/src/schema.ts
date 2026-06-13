@@ -227,9 +227,7 @@ export const amortizationPlans = sqliteTable(
     startDate: text("start_date").notNull(),
     createdAt: timestamp("created_at"),
   },
-  (table) => [
-    uniqueIndex("amortization_plans_liability_unique").on(table.liabilityId),
-  ],
+  (table) => [uniqueIndex("amortization_plans_liability_unique").on(table.liabilityId)],
 );
 
 /**

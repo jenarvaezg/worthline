@@ -57,7 +57,11 @@ const INSTRUMENT_DEFAULTS: Record<Instrument, InstrumentDefaults> = {
   etf: { rung: "market", valuationMethod: "derived", priceProvider: "yahoo" },
   stock: { rung: "market", valuationMethod: "derived", priceProvider: "yahoo" },
   index: { rung: "market", valuationMethod: "derived", priceProvider: "yahoo" },
-  pension_plan: { rung: "term-locked", valuationMethod: "derived", priceProvider: "finect" },
+  pension_plan: {
+    rung: "term-locked",
+    valuationMethod: "derived",
+    priceProvider: "finect",
+  },
   crypto: { rung: "market", valuationMethod: "derived", priceProvider: "coingecko" },
   // Appreciating — revaluation curve + appraisals.
   property: { rung: "illiquid", valuationMethod: "appreciating" },
