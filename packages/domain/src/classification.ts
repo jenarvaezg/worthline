@@ -14,7 +14,8 @@ export { isLiquid, rungForLiability };
  */
 export function instrumentOfAsset(asset: ManualAsset): Instrument {
   return (
-    asset.instrument ?? defaultInstrumentForAssetType(asset.type, asset.isPrimaryResidence)
+    asset.instrument ??
+    defaultInstrumentForAssetType(asset.type, asset.isPrimaryResidence)
   );
 }
 
@@ -59,5 +60,7 @@ export function securesHousingAsset(
   liability: { associatedAssetId?: string },
   housingAssetIds: ReadonlySet<string>,
 ): boolean {
-  return !!liability.associatedAssetId && housingAssetIds.has(liability.associatedAssetId);
+  return (
+    !!liability.associatedAssetId && housingAssetIds.has(liability.associatedAssetId)
+  );
 }

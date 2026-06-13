@@ -103,7 +103,8 @@ function deltaWithPct(
       amountMinor: currentMinor - baseMinor,
       currency: current.totalNetWorth.currency,
     },
-    pct: baseMinor === 0 ? null : ((currentMinor - baseMinor) / Math.abs(baseMinor)) * 100,
+    pct:
+      baseMinor === 0 ? null : ((currentMinor - baseMinor) / Math.abs(baseMinor)) * 100,
   };
 }
 
@@ -117,11 +118,7 @@ function formatPct(pct: number): string {
 /** Sign-colored delta pill: amount, percent and period label. */
 function DeltaChip({ delta, label }: { delta: DeltaWithPct | null; label: string }) {
   if (!delta) {
-    return (
-      <span className="deltaChip zero">
-        {label}: sin dato
-      </span>
-    );
+    return <span className="deltaChip zero">{label}: sin dato</span>;
   }
 
   const sign = moneySign(delta.change);
@@ -411,134 +408,139 @@ export default async function DashboardPage({
           </div>
         </section>
 
-      {/* ── 3. Evolution — server-rendered SVG area chart of the headline
+        {/* ── 3. Evolution — server-rendered SVG area chart of the headline
              figure, with value/date axes; the hero chips are its numeric legend ── */}
-      <section className="historyPanel" id="composicion" aria-label="Evolución del patrimonio">
-        <div className="panelHeader">
-          <h2>Evolución</h2>
-          <div className="historyControls">
-            <CompositionRangeControls options={rangeOptions} selected={selectedRange} />
-            <Link className="panelAction" href="/historico" scroll={false}>
-              Ver histórico →
-            </Link>
+        <section
+          className="historyPanel"
+          id="composicion"
+          aria-label="Evolución del patrimonio"
+        >
+          <div className="panelHeader">
+            <h2>Evolución</h2>
+            <div className="historyControls">
+              <CompositionRangeControls options={rangeOptions} selected={selectedRange} />
+              <Link className="panelAction" href="/historico" scroll={false}>
+                Ver histórico →
+              </Link>
+            </div>
           </div>
-        </div>
-        {/* Composition (#142) — the single historical chart: gross asset bands
+          {/* Composition (#142) — the single historical chart: gross asset bands
             stack above zero (four liquidity rungs + Vivienda from the property
             instrument), one aggregated debt stack below, a net-worth line over
             the total. Framing-invariant. When a drill is active (#76, #77) the
             drill panel renders in its place, breadcrumb back preserving the Vista. */}
-        {selectedDrill && state.drilldown ? (
-          <DrilldownPanel
-            backHref={composicionHomeUrl}
-            currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
-            drilldown={state.drilldown}
-          />
-        ) : (
-          <CompositionChart
-            currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
-            drillHrefs={drillHrefs}
-            points={state.compositionSeries}
-          />
-        )}
-      </section>
+          {selectedDrill && state.drilldown ? (
+            <DrilldownPanel
+              backHref={composicionHomeUrl}
+              currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
+              drilldown={state.drilldown}
+            />
+          ) : (
+            <CompositionChart
+              currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
+              drillHrefs={drillHrefs}
+              points={state.compositionSeries}
+            />
+          )}
+        </section>
 
-      {/* ── 4. FIRE card — funded percent leads, read-only, link to /ajustes ── */}
-      <section className="firePanel" aria-label="FIRE">
-        <div className="panelHeader">
-          <h2>FIRE</h2>
-          <span>Independencia financiera</span>
-        </div>
-        {fireScopeConfig && fireResult ? (
-          <div className="fireResults">
-            <div className="fireProgress">
-              <p className="fireBig" aria-label="Porcentaje financiado">
-                {fireResult.percentFunded.toFixed(1).replace(".", ",")} %
-              </p>
-              <div className="fireBar">
-                {fireResult.coastFireRequired && fireResult.fireNumber.amountMinor > 0 ? (
-                  <span
-                    aria-hidden="true"
-                    className="fireTick"
-                    style={{
-                      left: `${Math.min(
-                        100,
-                        (fireResult.coastFireRequired.amountMinor /
-                          fireResult.fireNumber.amountMinor) *
+        {/* ── 4. FIRE card — funded percent leads, read-only, link to /ajustes ── */}
+        <section className="firePanel" aria-label="FIRE">
+          <div className="panelHeader">
+            <h2>FIRE</h2>
+            <span>Independencia financiera</span>
+          </div>
+          {fireScopeConfig && fireResult ? (
+            <div className="fireResults">
+              <div className="fireProgress">
+                <p className="fireBig" aria-label="Porcentaje financiado">
+                  {fireResult.percentFunded.toFixed(1).replace(".", ",")} %
+                </p>
+                <div className="fireBar">
+                  {fireResult.coastFireRequired &&
+                  fireResult.fireNumber.amountMinor > 0 ? (
+                    <span
+                      aria-hidden="true"
+                      className="fireTick"
+                      style={{
+                        left: `${Math.min(
                           100,
-                      )}%`,
+                          (fireResult.coastFireRequired.amountMinor /
+                            fireResult.fireNumber.amountMinor) *
+                            100,
+                        )}%`,
+                      }}
+                    />
+                  ) : null}
+                  <i
+                    style={{
+                      width: `${Math.min(100, Math.max(0, fireResult.percentFunded))}%`,
                     }}
                   />
+                </div>
+                {fireResult.percentFunded >= 100 ? (
+                  <span className="statePill ready">FIRE alcanzado</span>
+                ) : fireResult.isAlreadyAtCoastFire ? (
+                  <span className="statePill ready">Coast FIRE alcanzado</span>
                 ) : null}
-                <i
-                  style={{
-                    width: `${Math.min(100, Math.max(0, fireResult.percentFunded))}%`,
-                  }}
-                />
               </div>
-              {fireResult.percentFunded >= 100 ? (
-                <span className="statePill ready">FIRE alcanzado</span>
-              ) : fireResult.isAlreadyAtCoastFire ? (
-                <span className="statePill ready">Coast FIRE alcanzado</span>
+              <div className="fireMetric">
+                <span>Número FIRE</span>
+                <strong>{formatMoneyMinor(fireResult.fireNumber)}</strong>
+              </div>
+              <div className="fireMetric">
+                <span>Activos elegibles</span>
+                <strong>{formatMoneyMinor(fireResult.eligibleAssets)}</strong>
+              </div>
+              {fireResult.coastFireRequired ? (
+                <div className="fireMetric">
+                  <span>Coast FIRE requerido</span>
+                  <strong>{formatMoneyMinor(fireResult.coastFireRequired)}</strong>
+                </div>
               ) : null}
+              {fireResult.coastFireAge !== undefined ? (
+                <div className="fireMetric">
+                  <span>Edad Coast FIRE</span>
+                  <strong>{fireResult.coastFireAge.toFixed(1)}</strong>
+                </div>
+              ) : null}
+              <Link className="panelAction" href="/ajustes">
+                Configurar → Ajustes
+              </Link>
             </div>
-            <div className="fireMetric">
-              <span>Número FIRE</span>
-              <strong>{formatMoneyMinor(fireResult.fireNumber)}</strong>
+          ) : (
+            <div className="fireEmpty">
+              <p className="fireEmptyHint">
+                Configura tu número FIRE para ver tu progreso hacia la independencia
+                financiera.
+              </p>
+              <Link className="panelAction" href="/ajustes">
+                Configurar → Ajustes
+              </Link>
             </div>
-            <div className="fireMetric">
-              <span>Activos elegibles</span>
-              <strong>{formatMoneyMinor(fireResult.eligibleAssets)}</strong>
-            </div>
-            {fireResult.coastFireRequired ? (
-              <div className="fireMetric">
-                <span>Coast FIRE requerido</span>
-                <strong>{formatMoneyMinor(fireResult.coastFireRequired)}</strong>
-              </div>
-            ) : null}
-            {fireResult.coastFireAge !== undefined ? (
-              <div className="fireMetric">
-                <span>Edad Coast FIRE</span>
-                <strong>{fireResult.coastFireAge.toFixed(1)}</strong>
-              </div>
-            ) : null}
-            <Link className="panelAction" href="/ajustes">
-              Configurar → Ajustes
-            </Link>
-          </div>
-        ) : (
-          <div className="fireEmpty">
-            <p className="fireEmptyHint">
-              Configura tu número FIRE para ver tu progreso hacia la independencia
-              financiera.
-            </p>
-            <Link className="panelAction" href="/ajustes">
-              Configurar → Ajustes
-            </Link>
-          </div>
-        )}
-      </section>
-
-      {/* ── 5. Onboarding checklist — shown while any step is pending ── */}
-      {anyStepPending ? (
-        <section className="onboardingChecklist" aria-label="Primeros pasos">
-          <div className="panelHeader">
-            <h2>Primeros pasos</h2>
-            <span>Empieza aquí</span>
-          </div>
-          <ol>
-            {onboarding.map((step) => (
-              <li className={step.done ? "done" : undefined} key={step.id}>
-                {step.done ? (
-                  <span>✓ {step.label}</span>
-                ) : (
-                  <Link href={ONBOARDING_LINKS[step.id] ?? "/"}>○ {step.label}</Link>
-                )}
-              </li>
-            ))}
-          </ol>
+          )}
         </section>
-      ) : null}
+
+        {/* ── 5. Onboarding checklist — shown while any step is pending ── */}
+        {anyStepPending ? (
+          <section className="onboardingChecklist" aria-label="Primeros pasos">
+            <div className="panelHeader">
+              <h2>Primeros pasos</h2>
+              <span>Empieza aquí</span>
+            </div>
+            <ol>
+              {onboarding.map((step) => (
+                <li className={step.done ? "done" : undefined} key={step.id}>
+                  {step.done ? (
+                    <span>✓ {step.label}</span>
+                  ) : (
+                    <Link href={ONBOARDING_LINKS[step.id] ?? "/"}>○ {step.label}</Link>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </section>
+        ) : null}
       </div>
     </Shell>
   );

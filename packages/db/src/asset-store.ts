@@ -16,11 +16,7 @@ import {
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { assetOwnerships, assets, assetValuations, investmentAssets } from "./schema";
-import {
-  hardDeleteAssetTx,
-  readAssets,
-  type StoreContext,
-} from "./store-context";
+import { hardDeleteAssetTx, readAssets, type StoreContext } from "./store-context";
 
 export interface CreateInvestmentAssetInput {
   id: string;
@@ -167,7 +163,8 @@ export function createAssetStore(ctx: StoreContext): AssetStore {
     addValuationAnchor: (input) => addValuationAnchor(ctx, input),
     readValuationAnchors: (assetId) => readValuationAnchors(ctx, assetId),
     deleteValuationAnchor: (anchorId) => deleteValuationAnchor(ctx, anchorId),
-    updateValuationAnchor: (anchorId, input) => updateValuationAnchor(ctx, anchorId, input),
+    updateValuationAnchor: (anchorId, input) =>
+      updateValuationAnchor(ctx, anchorId, input),
     setAnnualAppreciationRate: (assetId, rate) =>
       setAnnualAppreciationRate(ctx, assetId, rate),
     readAnnualAppreciationRate: (assetId) => readAnnualAppreciationRate(ctx, assetId),
@@ -403,7 +400,10 @@ function createManualAssetRecord(ctx: StoreContext, input: CreateManualAssetInpu
   ctx.writeAuditEntry("create_asset", "asset", asset.id);
 }
 
-function createInvestmentAsset(ctx: StoreContext, input: CreateInvestmentAssetInput): void {
+function createInvestmentAsset(
+  ctx: StoreContext,
+  input: CreateInvestmentAssetInput,
+): void {
   const { db } = ctx;
   const workspace = ctx.getWorkspace();
 
@@ -550,8 +550,7 @@ function readInvestmentAssetsWithMeta(ctx: StoreContext): InvestmentAssetMeta[] 
     name: row.name,
     currency: row.currency,
     liquidityTier: row.liquidityTier,
-    priceProvider:
-      row.priceProvider ?? defaultInvestmentPriceProvider(row.liquidityTier),
+    priceProvider: row.priceProvider ?? defaultInvestmentPriceProvider(row.liquidityTier),
     ...(row.providerSymbol ? { providerSymbol: row.providerSymbol } : {}),
   }));
 }
@@ -590,7 +589,10 @@ function updateAsset(ctx: StoreContext, assetId: string, input: UpdateAssetInput
       const effectiveType = input.type ?? current.type;
       const effectiveIsPrimary =
         input.isPrimaryResidence ?? current.isPrimaryResidence === 1;
-      fields.instrument = defaultInstrumentForAssetType(effectiveType, effectiveIsPrimary);
+      fields.instrument = defaultInstrumentForAssetType(
+        effectiveType,
+        effectiveIsPrimary,
+      );
     }
   }
 
@@ -646,7 +648,10 @@ function updateAssetValuation(
   ctx.writeAuditEntry("update_valuation", "asset", assetId, { currentValueMinor });
 }
 
-function updateInvestmentAsset(ctx: StoreContext, input: UpdateInvestmentAssetInput): void {
+function updateInvestmentAsset(
+  ctx: StoreContext,
+  input: UpdateInvestmentAssetInput,
+): void {
   const { db } = ctx;
   const assetFields: Partial<typeof assets.$inferInsert> = { name: input.name };
 

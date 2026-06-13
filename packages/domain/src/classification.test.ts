@@ -184,7 +184,10 @@ describe("summary and breakdown reconcile on debt classification", () => {
 
     // Reconciliation: per-rung debts sum to the headline debts.
     expect(
-      tierDebt("cash") + tierDebt("market") + tierDebt("term-locked") + tierDebt("illiquid"),
+      tierDebt("cash") +
+        tierDebt("market") +
+        tierDebt("term-locked") +
+        tierDebt("illiquid"),
     ).toBe(summary.debts.amountMinor);
     // The only illiquid asset is the house, so that rung's net equals housing equity.
     expect(pyramid.find((b) => b.tier === "illiquid")?.netValue.amountMinor).toBe(

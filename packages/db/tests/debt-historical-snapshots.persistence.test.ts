@@ -17,9 +17,7 @@ import type { WorthlineStore } from "../src/index";
 const TODAY = "2026-06-13";
 
 function snapAt(store: WorthlineStore, dateKey: string, scopeId?: string) {
-  return store
-    .snapshots.readSnapshots(scopeId)
-    .find((snap) => snap.dateKey === dateKey);
+  return store.snapshots.readSnapshots(scopeId).find((snap) => snap.dateKey === dateKey);
 }
 
 function debtsAt(store: WorthlineStore, dateKey: string): number | undefined {
@@ -44,9 +42,7 @@ function holdingsReconcile(store: WorthlineStore, dateKey: string): boolean {
   const debts = rows
     .filter((r) => r.kind === "liability")
     .reduce((s, r) => s + r.valueMinor, 0);
-  return (
-    assets === snap.grossAssets.amountMinor && debts === snap.debts.amountMinor
-  );
+  return assets === snap.grossAssets.amountMinor && debts === snap.debts.amountMinor;
 }
 
 describe("historical snapshots from amortizable plans", () => {

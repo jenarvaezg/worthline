@@ -298,14 +298,18 @@ describe("member hard delete", () => {
 
     // Disabled but owning a holding → refused.
     seedAsset(store, "a1", "Cuenta");
-    store.assets.updateAsset("a1", { ownership: [{ memberId: "tmp", shareBps: 10_000 }] });
+    store.assets.updateAsset("a1", {
+      ownership: [{ memberId: "tmp", shareBps: 10_000 }],
+    });
     store.workspace.disableMember("tmp", "2026-06-09T00:00:00.000Z");
     expect(store.workspace.hardDeleteMember("tmp")).toBe(0);
 
     // Reassign the holding away, then the disabled member deletes cleanly.
     store.assets.updateAsset("a1", { ownership: [{ memberId: "m", shareBps: 10_000 }] });
     expect(store.workspace.hardDeleteMember("tmp")).toBe(1);
-    expect(store.workspace.readWorkspace()!.members.some((mem) => mem.id === "tmp")).toBe(false);
+    expect(store.workspace.readWorkspace()!.members.some((mem) => mem.id === "tmp")).toBe(
+      false,
+    );
     expect(
       store
         .readAuditLog({ entityId: "tmp" })
@@ -338,7 +342,9 @@ describe("resetWorkspace", () => {
       members: [{ id: "m2", name: "Otro" }],
       mode: "individual",
     });
-    expect(store.workspace.readWorkspace()!.members.map((mem) => mem.name)).toEqual(["Otro"]);
+    expect(store.workspace.readWorkspace()!.members.map((mem) => mem.name)).toEqual([
+      "Otro",
+    ]);
     store.close();
   });
 });

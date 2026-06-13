@@ -61,7 +61,9 @@ function yFor(value: number, yMin: number, yMax: number): number {
 
 function seriesPoint(
   dateKey: string,
-  bands: Partial<Omit<CompositionSeriesPoint, "dateKey" | "isOpenPeriod" | "netWorthMinor">>,
+  bands: Partial<
+    Omit<CompositionSeriesPoint, "dateKey" | "isOpenPeriod" | "netWorthMinor">
+  >,
   isOpenPeriod = false,
 ): CompositionSeriesPoint {
   const cashMinor = bands.cashMinor ?? 0;
@@ -79,7 +81,12 @@ function seriesPoint(
     isOpenPeriod,
     marketMinor,
     netWorthMinor:
-      cashMinor + marketMinor + termLockedMinor + illiquidMinor + housingMinor - debtsMinor,
+      cashMinor +
+      marketMinor +
+      termLockedMinor +
+      illiquidMinor +
+      housingMinor -
+      debtsMinor,
     termLockedMinor,
   };
 }
@@ -183,8 +190,18 @@ describe("selectMonthlySeries", () => {
 describe("buildCompositionSeries", () => {
   test("assembles one banded point per monthly base point from that date's rows", () => {
     const rows = [
-      row({ holdingId: "a_cash", tier: "cash", valueMinor: 100_00, dateKey: "2026-05-31" }),
-      row({ holdingId: "a_cash", tier: "cash", valueMinor: 150_00, dateKey: "2026-06-13" }),
+      row({
+        holdingId: "a_cash",
+        tier: "cash",
+        valueMinor: 100_00,
+        dateKey: "2026-05-31",
+      }),
+      row({
+        holdingId: "a_cash",
+        tier: "cash",
+        valueMinor: 150_00,
+        dateKey: "2026-06-13",
+      }),
       row({
         holdingId: "l_card",
         tier: null,
@@ -215,7 +232,13 @@ describe("buildCompositionSeries", () => {
       })),
     ).toEqual([
       { cash: 100_00, dateKey: "2026-05-31", debts: 0, isOpenPeriod: false, net: 100_00 },
-      { cash: 150_00, dateKey: "2026-06-13", debts: 40_00, isOpenPeriod: true, net: 110_00 },
+      {
+        cash: 150_00,
+        dateKey: "2026-06-13",
+        debts: 40_00,
+        isOpenPeriod: true,
+        net: 110_00,
+      },
     ]);
   });
 
@@ -224,7 +247,12 @@ describe("buildCompositionSeries", () => {
     // zero. Only row-backed snapshots — whose bands reconcile to the headline —
     // belong on the chart.
     const rows = [
-      row({ holdingId: "a_cash", tier: "cash", valueMinor: 100_00, dateKey: "2026-06-30" }),
+      row({
+        holdingId: "a_cash",
+        tier: "cash",
+        valueMinor: 100_00,
+        dateKey: "2026-06-30",
+      }),
     ];
     const snapshots = [
       { dateKey: "2026-05-31", monthKey: "2026-05" },
@@ -244,7 +272,9 @@ describe("buildCompositionSeries", () => {
 
 describe("buildCompositionChartGeometry", () => {
   test("returns null below the two-point placeholder threshold", () => {
-    expect(buildCompositionChartGeometry([seriesPoint("2026-06-30", { cashMinor: 100_00 })])).toBeNull();
+    expect(
+      buildCompositionChartGeometry([seriesPoint("2026-06-30", { cashMinor: 100_00 })]),
+    ).toBeNull();
   });
 
   test("returns null for a degenerate zero-length time span", () => {
@@ -301,7 +331,9 @@ describe("buildCompositionChartGeometry", () => {
     ];
 
     const full = buildCompositionChartGeometry(points)!;
-    const exHousing = buildCompositionChartGeometry(points, { excludedBands: ["housing"] })!;
+    const exHousing = buildCompositionChartGeometry(points, {
+      excludedBands: ["housing"],
+    })!;
 
     // Housing is gone from the rendered bands and the per-period hover anchors.
     expect(exHousing.assetBands.map((band) => band.band)).toEqual([
@@ -310,7 +342,9 @@ describe("buildCompositionChartGeometry", () => {
       "term-locked",
       "illiquid",
     ]);
-    expect(exHousing.periods[0]!.assetBands.some((a) => a.band === "housing")).toBe(false);
+    expect(exHousing.periods[0]!.assetBands.some((a) => a.band === "housing")).toBe(
+      false,
+    );
     // The y domain no longer spans the 500k housing → it rescales much smaller.
     expect(exHousing.yMax).toBeLessThan(full.yMax / 10);
     // The net-worth line now excludes housing: net = cash − debts (no debt here).
@@ -354,13 +388,12 @@ describe("buildCompositionChartGeometry", () => {
     expect(may.debt!.valueMinor).toBe(120_000_00);
     // Net-worth anchor sits on the line.
     expect(may.netWorth.valueMinor).toBe(points[0]!.netWorthMinor);
-    expect(may.netWorth.y).toBeCloseTo(yFor(points[0]!.netWorthMinor, geometry.yMin, geometry.yMax), 2);
+    expect(may.netWorth.y).toBeCloseTo(
+      yFor(points[0]!.netWorthMinor, geometry.yMin, geometry.yMax),
+      2,
+    );
     // All anchors of a period share its x.
-    const xs = new Set([
-      ...may.assetBands.map((b) => b.x),
-      may.debt!.x,
-      may.netWorth.x,
-    ]);
+    const xs = new Set([...may.assetBands.map((b) => b.x), may.debt!.x, may.netWorth.x]);
     expect(xs.size).toBe(1);
     // The period that carries no debt exposes a null debt anchor.
     expect(geometry.periods[1]!.debt).toBeNull();
@@ -420,7 +453,9 @@ describe("selectPeriodicSeries", () => {
   ];
 
   test("monthly keeps the last snapshot of each month", () => {
-    expect(selectPeriodicSeries(snaps, "2026-06-13", "month").map((e) => e.dateKey)).toEqual([
+    expect(
+      selectPeriodicSeries(snaps, "2026-06-13", "month").map((e) => e.dateKey),
+    ).toEqual([
       "2024-02-15",
       "2024-03-31",
       "2024-06-30",
@@ -431,7 +466,9 @@ describe("selectPeriodicSeries", () => {
   });
 
   test("quarterly keeps the last snapshot of each calendar quarter", () => {
-    expect(selectPeriodicSeries(snaps, "2026-06-13", "quarter").map((e) => e.dateKey)).toEqual([
+    expect(
+      selectPeriodicSeries(snaps, "2026-06-13", "quarter").map((e) => e.dateKey),
+    ).toEqual([
       "2024-03-31", // Q1 2024 (feb + mar → mar wins)
       "2024-06-30", // Q2 2024
       "2025-01-10", // Q1 2025
@@ -440,11 +477,9 @@ describe("selectPeriodicSeries", () => {
   });
 
   test("annual keeps the last snapshot of each year", () => {
-    expect(selectPeriodicSeries(snaps, "2026-06-13", "year").map((e) => e.dateKey)).toEqual([
-      "2024-06-30",
-      "2025-01-10",
-      "2026-06-13",
-    ]);
+    expect(
+      selectPeriodicSeries(snaps, "2026-06-13", "year").map((e) => e.dateKey),
+    ).toEqual(["2024-06-30", "2025-01-10", "2026-06-13"]);
   });
 
   test("flags the period that contains today as the open one, at any granularity", () => {
@@ -469,7 +504,9 @@ describe("buildCompositionSeries — range window and adaptive density", () => {
       const m = (total % 12) + 1;
       const dateKey = `${y}-${String(m).padStart(2, "0")}-28`;
       snapshots.push({ dateKey, monthKey: dateKey.slice(0, 7) });
-      rows.push(row({ dateKey, holdingId: "a_cash", tier: "cash", valueMinor: 1_000_00 + i }));
+      rows.push(
+        row({ dateKey, holdingId: "a_cash", tier: "cash", valueMinor: 1_000_00 + i }),
+      );
     }
     return { rows, snapshots };
   }

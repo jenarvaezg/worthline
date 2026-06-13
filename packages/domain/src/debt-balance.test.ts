@@ -28,15 +28,11 @@ describe("debtBalanceAtDate — revolving (linear interpolation by days)", () =>
   };
 
   test("on the first anchor returns that anchor's balance", () => {
-    expect(
-      debtBalanceAtDate({ ...REVOLVING, targetDate: "2024-01-01" }),
-    ).toBe(10_000_00);
+    expect(debtBalanceAtDate({ ...REVOLVING, targetDate: "2024-01-01" })).toBe(10_000_00);
   });
 
   test("on the last anchor returns that anchor's balance", () => {
-    expect(
-      debtBalanceAtDate({ ...REVOLVING, targetDate: "2024-12-31" }),
-    ).toBe(0);
+    expect(debtBalanceAtDate({ ...REVOLVING, targetDate: "2024-12-31" })).toBe(0);
   });
 
   test("interpolates linearly by days between two anchors", () => {
@@ -44,21 +40,15 @@ describe("debtBalanceAtDate — revolving (linear interpolation by days)", () =>
     // 2024-07-01 is 182 days after the first anchor.
     // balance = 10_000_00 + (0 - 10_000_00) * 182 / 365
     //         = 1_000_000 * (1 - 182/365) = 1_000_000 * 183/365 = 501369.86… → 501370
-    expect(
-      debtBalanceAtDate({ ...REVOLVING, targetDate: "2024-07-01" }),
-    ).toBe(501_370);
+    expect(debtBalanceAtDate({ ...REVOLVING, targetDate: "2024-07-01" })).toBe(501_370);
   });
 
   test("before the first anchor is flat at the first balance (no extrapolation)", () => {
-    expect(
-      debtBalanceAtDate({ ...REVOLVING, targetDate: "2020-01-01" }),
-    ).toBe(10_000_00);
+    expect(debtBalanceAtDate({ ...REVOLVING, targetDate: "2020-01-01" })).toBe(10_000_00);
   });
 
   test("after the last anchor is flat at the last balance (no extrapolation)", () => {
-    expect(
-      debtBalanceAtDate({ ...REVOLVING, targetDate: "2030-01-01" }),
-    ).toBe(0);
+    expect(debtBalanceAtDate({ ...REVOLVING, targetDate: "2030-01-01" })).toBe(0);
   });
 
   test("three anchors: interpolates within the correct segment", () => {
@@ -226,9 +216,7 @@ describe("debtBalanceAtDate — amortizable (delegates to French curve)", () => 
     // Before the loan starts → full initial capital (the amortization contract).
     expect(debtBalanceAtDate(input)).toBe(200_000_00);
     // After the final payment → zero.
-    expect(
-      debtBalanceAtDate({ ...input, targetDate: "2050-01-01" }),
-    ).toBe(0);
+    expect(debtBalanceAtDate({ ...input, targetDate: "2050-01-01" })).toBe(0);
   });
 
   test("with no plan falls back to the current balance constant", () => {

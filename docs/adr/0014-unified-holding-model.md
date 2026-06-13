@@ -24,7 +24,7 @@ amortization plan) lives on its detail page.
 ## Consequences
 
 - The derived-value invariant of **ADR 0006** stands (an investment's value is still always
-  derived, never typed); this decision overturns only its *navigational* consequence — "no
+  derived, never typed); this decision overturns only its _navigational_ consequence — "no
   inline value edit" no longer implies "a separate section".
 - Charts and groupings become lenses over the one unified list (by direction, by rung, by
   instrument) — presentation, not model.

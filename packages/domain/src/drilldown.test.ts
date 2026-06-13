@@ -86,7 +86,11 @@ describe("buildLiquidDrilldown — group resolution", () => {
       }),
     ];
 
-    const state = buildLiquidDrilldown({ currentHoldingIds: ["a_cash"], housingHoldingIds: [], rows });
+    const state = buildLiquidDrilldown({
+      currentHoldingIds: ["a_cash"],
+      housingHoldingIds: [],
+      rows,
+    });
 
     expect(state.key).toBe("liquid");
     expect(state.stack).not.toBeNull();
@@ -107,7 +111,11 @@ describe("buildLiquidDrilldown — per-tier stacked series", () => {
       }),
     ];
 
-    const state = buildLiquidDrilldown({ currentHoldingIds: ["a_cash", "a_fund"], housingHoldingIds: [], rows });
+    const state = buildLiquidDrilldown({
+      currentHoldingIds: ["a_cash", "a_fund"],
+      housingHoldingIds: [],
+      rows,
+    });
 
     expect(state.stack).toBeNull();
     expect(state.holdings).toEqual([]);
@@ -155,7 +163,11 @@ describe("buildLiquidDrilldown — per-tier stacked series", () => {
       }),
     ];
 
-    const state = buildLiquidDrilldown({ currentHoldingIds: [], housingHoldingIds: [], rows });
+    const state = buildLiquidDrilldown({
+      currentHoldingIds: [],
+      housingHoldingIds: [],
+      rows,
+    });
 
     expect(state.stack).not.toBeNull();
     expect(state.stack!.mode).toBe("stacked");
@@ -204,7 +216,11 @@ describe("buildLiquidDrilldown — per-tier stacked series", () => {
       }),
     ];
 
-    const state = buildLiquidDrilldown({ currentHoldingIds: [], housingHoldingIds: [], rows });
+    const state = buildLiquidDrilldown({
+      currentHoldingIds: [],
+      housingHoldingIds: [],
+      rows,
+    });
 
     expect(state.stack).not.toBeNull();
     expect(state.stack!.mode).toBe("lines");
@@ -230,7 +246,11 @@ describe("buildLiquidDrilldown — per-tier stacked series", () => {
       }),
     ];
 
-    const state = buildLiquidDrilldown({ currentHoldingIds: [], housingHoldingIds: [], rows });
+    const state = buildLiquidDrilldown({
+      currentHoldingIds: [],
+      housingHoldingIds: [],
+      rows,
+    });
 
     expect(state.stack!.bands.map((b) => b.band)).toEqual(["cash", "market"]);
     expect(state.stack!.mode).toBe("stacked");
@@ -263,7 +283,11 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
       }),
     ];
 
-    const state = buildLiquidDrilldown({ currentHoldingIds: ["a_cash", "a_fund"], housingHoldingIds: [], rows });
+    const state = buildLiquidDrilldown({
+      currentHoldingIds: ["a_cash", "a_fund"],
+      housingHoldingIds: [],
+      rows,
+    });
 
     expect(state.holdings).toHaveLength(1);
     expect(state.holdings[0]).toMatchObject({
@@ -280,7 +304,11 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
       row({ dateKey: "2026-06-02", holdingId: "a_cash", tier: "cash", valueMinor: 200 }),
     ];
 
-    const state = buildLiquidDrilldown({ currentHoldingIds: ["a_cash"], housingHoldingIds: [], rows });
+    const state = buildLiquidDrilldown({
+      currentHoldingIds: ["a_cash"],
+      housingHoldingIds: [],
+      rows,
+    });
 
     const sparkline = state.holdings[0]!.sparkline;
     expect(sparkline.width).toBe(DRILL_SPARKLINE_WIDTH);
@@ -296,7 +324,11 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
       row({ dateKey: "2026-06-02", holdingId: "a_cash", tier: "cash", valueMinor: 250 }),
     ];
 
-    const state = buildLiquidDrilldown({ currentHoldingIds: ["a_cash"], housingHoldingIds: [], rows });
+    const state = buildLiquidDrilldown({
+      currentHoldingIds: ["a_cash"],
+      housingHoldingIds: [],
+      rows,
+    });
 
     expect(state.holdings[0]!.currentValueMinor).toBe(250);
   });
@@ -317,7 +349,11 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
       }),
     ];
 
-    const state = buildLiquidDrilldown({ currentHoldingIds: [], housingHoldingIds: [], rows });
+    const state = buildLiquidDrilldown({
+      currentHoldingIds: [],
+      housingHoldingIds: [],
+      rows,
+    });
 
     expect(state.holdings[0]!.currentValueMinor).toBeNull();
   });
@@ -340,7 +376,11 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
       }),
     ];
 
-    const state = buildLiquidDrilldown({ currentHoldingIds: ["a_x"], housingHoldingIds: [], rows });
+    const state = buildLiquidDrilldown({
+      currentHoldingIds: ["a_x"],
+      housingHoldingIds: [],
+      rows,
+    });
 
     expect(state.holdings[0]!.label).toBe("Nueva");
     expect(state.holdings[0]!.tier).toBe("market");
@@ -352,7 +392,11 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
       row({ dateKey: "2026-06-02", holdingId: "a_cash", tier: "cash", valueMinor: 250 }),
     ];
 
-    const state = buildLiquidDrilldown({ currentHoldingIds: ["a_cash"], housingHoldingIds: [], rows });
+    const state = buildLiquidDrilldown({
+      currentHoldingIds: ["a_cash"],
+      housingHoldingIds: [],
+      rows,
+    });
 
     expect(state.holdings[0]!.noLongerHeld).toBe(false);
     expect(state.holdings[0]!.currentValueMinor).toBe(250);
@@ -390,7 +434,11 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
       }),
     ];
 
-    const state = buildLiquidDrilldown({ currentHoldingIds: [], housingHoldingIds: [], rows });
+    const state = buildLiquidDrilldown({
+      currentHoldingIds: [],
+      housingHoldingIds: [],
+      rows,
+    });
 
     expect(state.holdings.map((h) => h.label)).toEqual(["Alfa", "Zeta"]);
   });
@@ -488,7 +536,11 @@ describe("buildRestDrilldown — group resolution (#77)", () => {
     ];
 
     // Illiquid net dips below zero on day 2 → the whole window becomes lines.
-    const state = buildRestDrilldown({ currentHoldingIds: [], housingHoldingIds: [], rows });
+    const state = buildRestDrilldown({
+      currentHoldingIds: [],
+      housingHoldingIds: [],
+      rows,
+    });
 
     expect(state.stack).not.toBeNull();
     expect(state.stack!.mode).toBe("lines");
@@ -507,7 +559,11 @@ describe("buildRestDrilldown — group resolution (#77)", () => {
       }),
     ];
 
-    const state = buildRestDrilldown({ currentHoldingIds: ["a_pension"], housingHoldingIds: [], rows });
+    const state = buildRestDrilldown({
+      currentHoldingIds: ["a_pension"],
+      housingHoldingIds: [],
+      rows,
+    });
 
     expect(state.stack).toBeNull();
     expect(state.holdings).toEqual([]);
@@ -659,7 +715,11 @@ describe("buildLiquidDrilldown — no-longer-held holdings (#78)", () => {
       }),
     ];
 
-    const state = buildLiquidDrilldown({ currentHoldingIds: ["a_cash"], housingHoldingIds: [], rows });
+    const state = buildLiquidDrilldown({
+      currentHoldingIds: ["a_cash"],
+      housingHoldingIds: [],
+      rows,
+    });
 
     const sold = state.holdings.find((h) => h.holdingId === "a_sold")!;
     expect(sold.noLongerHeld).toBe(true);
@@ -691,7 +751,11 @@ describe("buildLiquidDrilldown — no-longer-held holdings (#78)", () => {
       }),
     ];
 
-    const state = buildLiquidDrilldown({ currentHoldingIds: ["a_cash"], housingHoldingIds: [], rows });
+    const state = buildLiquidDrilldown({
+      currentHoldingIds: ["a_cash"],
+      housingHoldingIds: [],
+      rows,
+    });
 
     expect(state.holdings.map((h) => h.holdingId)).toEqual(["a_cash"]);
   });
@@ -799,14 +863,59 @@ describe("DRILL_GROUP_BY_TIER — tier → drill group mapping (#79)", () => {
 describe("buildDebtsDrilldown — aggregate debts series + per-debt multiples (#145)", () => {
   const rows = [
     // A secured mortgage (rung illiquid) and an UNSECURED card (null rung).
-    row({ dateKey: "2026-04-30", holdingId: "l_mortgage", kind: "liability", label: "Hipoteca", tier: "illiquid", valueMinor: 200_000_00 }),
-    row({ dateKey: "2026-05-31", holdingId: "l_mortgage", kind: "liability", label: "Hipoteca", tier: "illiquid", valueMinor: 190_000_00 }),
-    row({ dateKey: "2026-06-30", holdingId: "l_mortgage", kind: "liability", label: "Hipoteca", tier: "illiquid", valueMinor: 180_000_00 }),
-    row({ dateKey: "2026-04-30", holdingId: "l_card", kind: "liability", label: "Tarjeta", tier: null, valueMinor: 1_000_00 }),
-    row({ dateKey: "2026-05-31", holdingId: "l_card", kind: "liability", label: "Tarjeta", tier: null, valueMinor: 1_500_00 }),
+    row({
+      dateKey: "2026-04-30",
+      holdingId: "l_mortgage",
+      kind: "liability",
+      label: "Hipoteca",
+      tier: "illiquid",
+      valueMinor: 200_000_00,
+    }),
+    row({
+      dateKey: "2026-05-31",
+      holdingId: "l_mortgage",
+      kind: "liability",
+      label: "Hipoteca",
+      tier: "illiquid",
+      valueMinor: 190_000_00,
+    }),
+    row({
+      dateKey: "2026-06-30",
+      holdingId: "l_mortgage",
+      kind: "liability",
+      label: "Hipoteca",
+      tier: "illiquid",
+      valueMinor: 180_000_00,
+    }),
+    row({
+      dateKey: "2026-04-30",
+      holdingId: "l_card",
+      kind: "liability",
+      label: "Tarjeta",
+      tier: null,
+      valueMinor: 1_000_00,
+    }),
+    row({
+      dateKey: "2026-05-31",
+      holdingId: "l_card",
+      kind: "liability",
+      label: "Tarjeta",
+      tier: null,
+      valueMinor: 1_500_00,
+    }),
     // An asset must never enter the debts drill.
-    row({ dateKey: "2026-04-30", holdingId: "a_cash", tier: "cash", valueMinor: 50_000_00 }),
-    row({ dateKey: "2026-05-31", holdingId: "a_cash", tier: "cash", valueMinor: 60_000_00 }),
+    row({
+      dateKey: "2026-04-30",
+      holdingId: "a_cash",
+      tier: "cash",
+      valueMinor: 50_000_00,
+    }),
+    row({
+      dateKey: "2026-05-31",
+      holdingId: "a_cash",
+      tier: "cash",
+      valueMinor: 60_000_00,
+    }),
   ];
 
   test("aggregates every liability (secured AND unsecured) into one 'debts' series", () => {
@@ -836,9 +945,9 @@ describe("buildDebtsDrilldown — aggregate debts series + per-debt multiples (#
     // Both held → ordered by frozen label: "Hipoteca" before "Tarjeta".
     expect(state.holdings.map((h) => h.holdingId)).toEqual(["l_mortgage", "l_card"]);
     expect(state.holdings.every((h) => h.kind === "liability")).toBe(true);
-    expect(state.holdings.find((h) => h.holdingId === "l_mortgage")!.currentValueMinor).toBe(
-      180_000_00,
-    );
+    expect(
+      state.holdings.find((h) => h.holdingId === "l_mortgage")!.currentValueMinor,
+    ).toBe(180_000_00);
   });
 
   test("a debt no longer live stays, flagged and ordered after the live ones (#78)", () => {

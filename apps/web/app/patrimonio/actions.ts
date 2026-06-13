@@ -115,11 +115,7 @@ export async function createAssetAction(
 
     store.assets.createManualAsset(assetCommand);
 
-    if (
-      assetCommand.type === "real_estate" &&
-      acquisitionDate &&
-      acquisitionValueMinor
-    ) {
+    if (assetCommand.type === "real_estate" && acquisitionDate && acquisitionValueMinor) {
       store.assets.addValuationAnchor({
         adjustsPriorCurve: true,
         assetId: assetCommand.id,
@@ -127,17 +123,16 @@ export async function createAssetAction(
         valuationDate: acquisitionDate,
         valueMinor: acquisitionValueMinor,
       });
-      store.assets.setAnnualAppreciationRate(assetCommand.id, annualAppreciationRate ?? null);
+      store.assets.setAnnualAppreciationRate(
+        assetCommand.id,
+        annualAppreciationRate ?? null,
+      );
 
       if (initialValuation) {
         store.assets.addValuationAnchor({
           ...initialValuation,
           assetId: assetCommand.id,
-          id: createStableId(
-            "anchor",
-            `${assetCommand.id}_initial`,
-            Date.now() + 1,
-          ),
+          id: createStableId("anchor", `${assetCommand.id}_initial`, Date.now() + 1),
         });
       }
 
@@ -222,7 +217,9 @@ export async function deleteAssetAction(
     );
   }
 
-  const changes = runWith((store) => store.assets.softDeleteAsset(id, new Date().toISOString()));
+  const changes = runWith((store) =>
+    store.assets.softDeleteAsset(id, new Date().toISOString()),
+  );
 
   if (changes === 0) {
     redirect(
@@ -443,8 +440,8 @@ export async function updateAssetValuationAction(
     );
   }
 
-  const asset = runWith((store) =>
-    store.assets.readAssets().find((a) => a.id === id) ?? null,
+  const asset = runWith(
+    (store) => store.assets.readAssets().find((a) => a.id === id) ?? null,
   );
 
   // Domain guard (ADR 0006): an investment's value is always derived and must
@@ -695,7 +692,13 @@ export async function editAssetAction(
       return { ok: false, error: mapDomainViolation(splitViolation) };
     }
 
-    store.assets.updateAsset(id, { name, type, liquidityTier, isPrimaryResidence, ownership });
+    store.assets.updateAsset(id, {
+      name,
+      type,
+      liquidityTier,
+      isPrimaryResidence,
+      ownership,
+    });
 
     if (type === "real_estate") {
       const today = new Date().toISOString().slice(0, 10);
@@ -825,7 +828,11 @@ export async function setAppreciationRateAction(
     _store ? fn(_store) : withStore(fn);
 
   if (!id) {
-    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador de activo no encontrado." }));
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador de activo no encontrado.",
+      }),
+    );
   }
 
   const parsed = parseAppreciationRateStrict(formData);
@@ -849,7 +856,10 @@ export async function setAppreciationRateAction(
     }
 
     if (asset.type !== "real_estate") {
-      return { ok: false, error: "Solo los inmuebles pueden tener una tasa de revalorización." };
+      return {
+        ok: false,
+        error: "Solo los inmuebles pueden tener una tasa de revalorización.",
+      };
     }
 
     store.assets.setAnnualAppreciationRate(id, parsed.rate);
@@ -886,7 +896,11 @@ export async function addValuationAnchorAction(
     _store ? fn(_store) : withStore(fn);
 
   if (!id) {
-    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador de activo no encontrado." }));
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador de activo no encontrado.",
+      }),
+    );
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -897,7 +911,11 @@ export async function addValuationAnchorAction(
       errorRedirectUrl(editUrl(id), {
         formId: "anchor",
         message: parsed.error,
-        values: preserveFields(formData, ["valuationDate", "anchorValue", "adjustsPriorCurve"]),
+        values: preserveFields(formData, [
+          "valuationDate",
+          "anchorValue",
+          "adjustsPriorCurve",
+        ]),
       }),
     );
   }
@@ -940,7 +958,11 @@ export async function updateValuationAnchorAction(
     _store ? fn(_store) : withStore(fn);
 
   if (!id || !anchorId) {
-    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador de tasación no encontrado." }));
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador de tasación no encontrado.",
+      }),
+    );
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -951,7 +973,11 @@ export async function updateValuationAnchorAction(
       errorRedirectUrl(editUrl(id), {
         formId: `anchor-${anchorId}`,
         message: parsed.error,
-        values: preserveFields(formData, ["valuationDate", "anchorValue", "adjustsPriorCurve"]),
+        values: preserveFields(formData, [
+          "valuationDate",
+          "anchorValue",
+          "adjustsPriorCurve",
+        ]),
       }),
     );
   }
@@ -973,7 +999,10 @@ export async function updateValuationAnchorAction(
     });
 
     if (changes === 0) {
-      return { ok: false, error: "No se encontró la tasación — puede que ya se haya eliminado." };
+      return {
+        ok: false,
+        error: "No se encontró la tasación — puede que ya se haya eliminado.",
+      };
     }
 
     const fromDateKey =
@@ -989,7 +1018,12 @@ export async function updateValuationAnchorAction(
   });
 
   if (!result.ok) {
-    redirect(errorRedirectUrl(editUrl(id), { formId: `anchor-${anchorId}`, message: result.error! }));
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        formId: `anchor-${anchorId}`,
+        message: result.error!,
+      }),
+    );
   }
 
   redirect(successRedirectUrl(editUrl(id), "anchor_saved", id));
@@ -1005,7 +1039,11 @@ export async function deleteValuationAnchorAction(
     _store ? fn(_store) : withStore(fn);
 
   if (!id || !anchorId) {
-    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador de tasación no encontrado." }));
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador de tasación no encontrado.",
+      }),
+    );
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -1020,7 +1058,10 @@ export async function deleteValuationAnchorAction(
     const changes = store.assets.deleteValuationAnchor(anchorId);
 
     if (changes === 0) {
-      return { ok: false, error: "No se encontró la tasación — puede que ya se haya eliminado." };
+      return {
+        ok: false,
+        error: "No se encontró la tasación — puede que ya se haya eliminado.",
+      };
     }
 
     if (removed && removed.valuationDate <= today) {
@@ -1079,13 +1120,19 @@ export async function setDebtModelAction(
     _store ? fn(_store) : withStore(fn);
 
   if (!id) {
-    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador de deuda no encontrado." }));
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador de deuda no encontrado.",
+      }),
+    );
   }
 
   const parsed = parseDebtModelStrict(formData);
 
   if (!parsed.ok) {
-    redirect(errorRedirectUrl(editUrl(id), { formId: "debtModel", message: parsed.error }));
+    redirect(
+      errorRedirectUrl(editUrl(id), { formId: "debtModel", message: parsed.error }),
+    );
   }
 
   const result = runWith((store) => {
@@ -1100,7 +1147,9 @@ export async function setDebtModelAction(
   });
 
   if (!result.ok) {
-    redirect(errorRedirectUrl(editUrl(id), { formId: "debtModel", message: result.error! }));
+    redirect(
+      errorRedirectUrl(editUrl(id), { formId: "debtModel", message: result.error! }),
+    );
   }
 
   redirect(successRedirectUrl(editUrl(id), "debt_model_saved", id));
@@ -1148,7 +1197,11 @@ export async function saveAmortizationPlanAction(
     _store ? fn(_store) : withStore(fn);
 
   if (!id) {
-    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador de deuda no encontrado." }));
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador de deuda no encontrado.",
+      }),
+    );
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -1215,7 +1268,11 @@ export async function deleteAmortizationPlanAction(
     _store ? fn(_store) : withStore(fn);
 
   if (!id || !planId) {
-    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador del plan no encontrado." }));
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador del plan no encontrado.",
+      }),
+    );
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -1230,14 +1287,20 @@ export async function deleteAmortizationPlanAction(
     const plan = store.liabilities.readAmortizationPlan(id);
 
     if (!plan) {
-      return { ok: false as const, error: "No se encontró el plan — puede que ya se haya eliminado." };
+      return {
+        ok: false as const,
+        error: "No se encontró el plan — puede que ya se haya eliminado.",
+      };
     }
 
     const startDate = plan.startDate;
     const changes = store.liabilities.deleteAmortizationPlan(plan.id);
 
     if (changes === 0) {
-      return { ok: false as const, error: "No se encontró el plan — puede que ya se haya eliminado." };
+      return {
+        ok: false as const,
+        error: "No se encontró el plan — puede que ya se haya eliminado.",
+      };
     }
 
     // Ripple AFTER deleting so the curve has no plan. The "amortizable-revision"
@@ -1275,7 +1338,11 @@ export async function addInterestRateRevisionAction(
     _store ? fn(_store) : withStore(fn);
 
   if (!id || !planId) {
-    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador del plan no encontrado." }));
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador del plan no encontrado.",
+      }),
+    );
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -1313,7 +1380,9 @@ export async function addInterestRateRevisionAction(
   });
 
   if (!result.ok) {
-    redirect(errorRedirectUrl(editUrl(id), { formId: "revision", message: result.error! }));
+    redirect(
+      errorRedirectUrl(editUrl(id), { formId: "revision", message: result.error! }),
+    );
   }
 
   redirect(successRedirectUrl(editUrl(id), "revision_added", id));
@@ -1330,7 +1399,11 @@ export async function updateInterestRateRevisionAction(
     _store ? fn(_store) : withStore(fn);
 
   if (!id || !planId || !revisionId) {
-    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador de la revisión no encontrado." }));
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador de la revisión no encontrado.",
+      }),
+    );
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -1363,7 +1436,10 @@ export async function updateInterestRateRevisionAction(
     });
 
     if (changes === 0) {
-      return { ok: false as const, error: "No se encontró la revisión — puede que ya se haya eliminado." };
+      return {
+        ok: false as const,
+        error: "No se encontró la revisión — puede que ya se haya eliminado.",
+      };
     }
 
     const fromDateKey =
@@ -1384,7 +1460,12 @@ export async function updateInterestRateRevisionAction(
   });
 
   if (!result.ok) {
-    redirect(errorRedirectUrl(editUrl(id), { formId: `revision-${revisionId}`, message: result.error! }));
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        formId: `revision-${revisionId}`,
+        message: result.error!,
+      }),
+    );
   }
 
   redirect(successRedirectUrl(editUrl(id), "revision_saved", id));
@@ -1401,7 +1482,11 @@ export async function deleteInterestRateRevisionAction(
     _store ? fn(_store) : withStore(fn);
 
   if (!id || !revisionId || !planId) {
-    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador de la revisión no encontrado." }));
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador de la revisión no encontrado.",
+      }),
+    );
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -1418,7 +1503,10 @@ export async function deleteInterestRateRevisionAction(
     const changes = store.liabilities.deleteInterestRateRevision(revisionId);
 
     if (changes === 0) {
-      return { ok: false as const, error: "No se encontró la revisión — puede que ya se haya eliminado." };
+      return {
+        ok: false as const,
+        error: "No se encontró la revisión — puede que ya se haya eliminado.",
+      };
     }
 
     if (removed && removed.revisionDate <= today) {
@@ -1449,7 +1537,11 @@ export async function addBalanceAnchorAction(
     _store ? fn(_store) : withStore(fn);
 
   if (!id) {
-    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador de deuda no encontrado." }));
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador de deuda no encontrado.",
+      }),
+    );
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -1484,7 +1576,9 @@ export async function addBalanceAnchorAction(
   });
 
   if (!result.ok) {
-    redirect(errorRedirectUrl(editUrl(id), { formId: "balanceAnchor", message: result.error! }));
+    redirect(
+      errorRedirectUrl(editUrl(id), { formId: "balanceAnchor", message: result.error! }),
+    );
   }
 
   redirect(successRedirectUrl(editUrl(id), "balance_anchor_added", id));
@@ -1500,7 +1594,11 @@ export async function updateBalanceAnchorAction(
     _store ? fn(_store) : withStore(fn);
 
   if (!id || !anchorId) {
-    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador del saldo no encontrado." }));
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador del saldo no encontrado.",
+      }),
+    );
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -1523,14 +1621,19 @@ export async function updateBalanceAnchorAction(
       return guard;
     }
 
-    const previous = store.liabilities.readBalanceAnchors(id).find((a) => a.id === anchorId);
+    const previous = store.liabilities
+      .readBalanceAnchors(id)
+      .find((a) => a.id === anchorId);
     const changes = store.liabilities.updateBalanceAnchor(anchorId, {
       anchorDate: parsed.command.anchorDate,
       balanceMinor: parsed.command.balanceMinor,
     });
 
     if (changes === 0) {
-      return { ok: false as const, error: "No se encontró el saldo — puede que ya se haya eliminado." };
+      return {
+        ok: false as const,
+        error: "No se encontró el saldo — puede que ya se haya eliminado.",
+      };
     }
 
     const fromDateKey =
@@ -1551,7 +1654,12 @@ export async function updateBalanceAnchorAction(
   });
 
   if (!result.ok) {
-    redirect(errorRedirectUrl(editUrl(id), { formId: `balanceAnchor-${anchorId}`, message: result.error! }));
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        formId: `balanceAnchor-${anchorId}`,
+        message: result.error!,
+      }),
+    );
   }
 
   redirect(successRedirectUrl(editUrl(id), "balance_anchor_saved", id));
@@ -1567,7 +1675,11 @@ export async function deleteBalanceAnchorAction(
     _store ? fn(_store) : withStore(fn);
 
   if (!id || !anchorId) {
-    redirect(errorRedirectUrl("/patrimonio", { message: "Identificador del saldo no encontrado." }));
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador del saldo no encontrado.",
+      }),
+    );
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -1578,11 +1690,16 @@ export async function deleteBalanceAnchorAction(
       return guard;
     }
 
-    const removed = store.liabilities.readBalanceAnchors(id).find((a) => a.id === anchorId);
+    const removed = store.liabilities
+      .readBalanceAnchors(id)
+      .find((a) => a.id === anchorId);
     const changes = store.liabilities.deleteBalanceAnchor(anchorId);
 
     if (changes === 0) {
-      return { ok: false as const, error: "No se encontró el saldo — puede que ya se haya eliminado." };
+      return {
+        ok: false as const,
+        error: "No se encontró el saldo — puede que ya se haya eliminado.",
+      };
     }
 
     if (removed && removed.anchorDate <= today) {

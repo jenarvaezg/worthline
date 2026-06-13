@@ -13,30 +13,30 @@ forms POST, `<details>` y `<title>` nativos.
 
 ## 1. Tokens (`:root` en globals.css)
 
-| Token | Valor | Uso |
-|---|---|---|
-| `--paper` | `#eef2ef` | Fondo de página (con cuadrícula sutil) |
-| `--panel` | `#fffdf7` | Superficie de tarjeta |
-| `--ink` | `#17201e` | Texto principal, botón primario, nav activa |
-| `--ink-panel` | `#1d2724` | **El único panel oscuro**: el hero del dashboard |
-| `--ink-panel-text` / `--ink-panel-muted` | `#e8ece7` / `#9fb0a9` | Texto sobre el panel oscuro |
-| `--muted` | `#51605b` | Texto secundario y labels (≥4.5:1 — testeado) |
-| `--line` / `--line-strong` | `#78877f` / `#5d6c66` | Bordes con significado: controles de formulario, separadores funcionales (≥3:1 WCAG 1.4.11 — `contrast.test.ts`) |
-| `--line-soft` / `--hairline` | `#d9ded7` / `#e4e8e2` | Bordes decorativos: tarjetas y filas. Nunca el único límite de un control |
-| `--green` / `--red` | `#006f5f` / `#b9442f` | **Reservados para deltas y P/L** (+ banners éxito/error) |
-| `--pos-on-dark` / `--neg-on-dark` | `#5ad4ae` / `#f0907b` | Deltas sobre el panel oscuro (chips del hero) |
-| `--blue` | `#245177` | Acento de interacción: links de acción, hover |
-| `--gold` | `#b3831f` | Avisos |
-| `--tier-cash`→`--tier-housing` | verdes → azules → oro | Identidad de capas de liquidez (ver §5) |
-| `--radius` / `--radius-sm` | `14px` / `8px` | Tarjetas / controles. Píldoras: `999px` |
-| `--shadow` | corta y suave, 2 capas | **La única elevación.** No inventar sombras nuevas |
+| Token                                    | Valor                  | Uso                                                                                                              |
+| ---------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `--paper`                                | `#eef2ef`              | Fondo de página (con cuadrícula sutil)                                                                           |
+| `--panel`                                | `#fffdf7`              | Superficie de tarjeta                                                                                            |
+| `--ink`                                  | `#17201e`              | Texto principal, botón primario, nav activa                                                                      |
+| `--ink-panel`                            | `#1d2724`              | **El único panel oscuro**: el hero del dashboard                                                                 |
+| `--ink-panel-text` / `--ink-panel-muted` | `#e8ece7` / `#9fb0a9`  | Texto sobre el panel oscuro                                                                                      |
+| `--muted`                                | `#51605b`              | Texto secundario y labels (≥4.5:1 — testeado)                                                                    |
+| `--line` / `--line-strong`               | `#78877f` / `#5d6c66`  | Bordes con significado: controles de formulario, separadores funcionales (≥3:1 WCAG 1.4.11 — `contrast.test.ts`) |
+| `--line-soft` / `--hairline`             | `#d9ded7` / `#e4e8e2`  | Bordes decorativos: tarjetas y filas. Nunca el único límite de un control                                        |
+| `--green` / `--red`                      | `#006f5f` / `#b9442f`  | **Reservados para deltas y P/L** (+ banners éxito/error)                                                         |
+| `--pos-on-dark` / `--neg-on-dark`        | `#5ad4ae` / `#f0907b`  | Deltas sobre el panel oscuro (chips del hero)                                                                    |
+| `--blue`                                 | `#245177`              | Acento de interacción: links de acción, hover                                                                    |
+| `--gold`                                 | `#b3831f`              | Avisos                                                                                                           |
+| `--tier-cash`→`--tier-housing`           | verdes → azules → oro  | Identidad de capas de liquidez (ver §5)                                                                          |
+| `--radius` / `--radius-sm`               | `14px` / `8px`         | Tarjetas / controles. Píldoras: `999px`                                                                          |
+| `--shadow`                               | corta y suave, 2 capas | **La única elevación.** No inventar sombras nuevas                                                               |
 
 ## 2. Jerarquía tipográfica
 
 Tres niveles — cuando todo es énfasis, nada lo es:
 
 1. **Cifra héroe**: `clamp(2.6rem, 5.5vw, 3.8rem)`, peso 760, `letter-spacing
-   -0.02em`. Solo el patrimonio neto del dashboard.
+-0.02em`. Solo el patrimonio neto del dashboard.
 2. **Títulos de panel** (`h2`): `1rem`, peso 650, **sentence case** — nada de
    uppercase ni letter-spacing.
 3. **Labels pequeños** (stats, cabeceras de tabla, `h3`): `0.7–0.78rem`,
@@ -51,7 +51,7 @@ explícito ("+3,6 %").
 ## 3. Superficies y elevación
 
 - Tarjeta estándar: `background: var(--panel); border: 1px solid
-  var(--line-soft); border-radius: var(--radius); box-shadow: var(--shadow)`.
+var(--line-soft); border-radius: var(--radius); box-shadow: var(--shadow)`.
 - **Un solo panel oscuro por app**: el hero del dashboard (`.heroPanel`).
   Contiene el dato por el que existe el producto; nada más compite con él.
 - El footer de persistencia es una línea de texto muted **sin cromo de

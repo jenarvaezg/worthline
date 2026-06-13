@@ -140,10 +140,18 @@ describe("snapshot-policy persistence", () => {
       });
     };
 
-    store.snapshots.saveSnapshot({ snapshot: makeSnapshot("snap_may_a", "2026-05-15", 90_000) });
-    store.snapshots.saveSnapshot({ snapshot: makeSnapshot("snap_may_b", "2026-05-31", 95_000) });
-    store.snapshots.saveSnapshot({ snapshot: makeSnapshot("snap_jun_a", "2026-06-01", 100_000) });
-    store.snapshots.saveSnapshot({ snapshot: makeSnapshot("snap_jun_b", "2026-06-09", 105_000) });
+    store.snapshots.saveSnapshot({
+      snapshot: makeSnapshot("snap_may_a", "2026-05-15", 90_000),
+    });
+    store.snapshots.saveSnapshot({
+      snapshot: makeSnapshot("snap_may_b", "2026-05-31", 95_000),
+    });
+    store.snapshots.saveSnapshot({
+      snapshot: makeSnapshot("snap_jun_a", "2026-06-01", 100_000),
+    });
+    store.snapshots.saveSnapshot({
+      snapshot: makeSnapshot("snap_jun_b", "2026-06-09", 105_000),
+    });
 
     const snapshots = store.snapshots.readSnapshots("household");
     const closes = deriveMonthlyCloses(snapshots);

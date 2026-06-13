@@ -603,7 +603,9 @@ function HousingValuationSection({
   const currentUrl = `/patrimonio/${assetId}/editar`;
   const rateValues = formError?.formId === "rate" ? formError.values : {};
   const anchorValues = formError?.formId === "anchor" ? formError.values : {};
-  const sorted = [...anchors].sort((a, b) => b.valuationDate.localeCompare(a.valuationDate));
+  const sorted = [...anchors].sort((a, b) =>
+    b.valuationDate.localeCompare(a.valuationDate),
+  );
 
   return (
     <section className="housingValuation" aria-label="Valoración del inmueble">
@@ -672,13 +674,7 @@ function HousingValuationSection({
 }
 
 /** Shared date / value / type fields for the add and edit anchor forms. */
-function AnchorFields({
-  max,
-  values,
-}: {
-  max: string;
-  values: Record<string, string>;
-}) {
+function AnchorFields({ max, values }: { max: string; values: Record<string, string> }) {
   return (
     <>
       <label>
@@ -714,9 +710,9 @@ function AnchorFields({
       </label>
       <p className="infoNote">
         <strong>Tasación de mercado:</strong> una valoración real del inmueble que
-        recalibra toda la curva de valoraciones previas.{" "}
-        <strong>Mejora:</strong> una inversión (reforma, ampliación) que se suma al
-        valor existente sin reemplazar las tasaciones anteriores.
+        recalibra toda la curva de valoraciones previas. <strong>Mejora:</strong> una
+        inversión (reforma, ampliación) que se suma al valor existente sin reemplazar las
+        tasaciones anteriores.
       </p>
     </>
   );
@@ -875,13 +871,7 @@ function DebtModelSection({
 }
 
 /** Shared plan fields for the create/edit amortization-plan form. */
-function PlanFields({
-  max,
-  values,
-}: {
-  max: string;
-  values: Record<string, string>;
-}) {
+function PlanFields({ max, values }: { max: string; values: Record<string, string> }) {
   return (
     <>
       <label>

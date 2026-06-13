@@ -18,7 +18,17 @@
     "test:watch": "vitest",
     "backfill:snapshots": "tsx scripts/backfill-historical-snapshots.ts",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "format": "prettier --check ."
+    "format": "prettier --check .",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "{apps,packages,tests,e2e}/**/*.{ts,tsx,js,jsx,mjs}": [
+      "eslint --max-warnings=0 --no-warn-ignored",
+      "prettier --write"
+    ],
+    "*.{ts,tsx,js,jsx,mjs,json,css,md,yml,yaml}": [
+      "prettier --write"
+    ]
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
@@ -27,6 +37,8 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "latest",
     "eslint-config-next": "latest",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.7",
     "prettier": "latest",
     "tsx": "latest",
     "typescript": "latest",

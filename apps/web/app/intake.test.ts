@@ -1647,12 +1647,7 @@ describe("parseBalanceAnchorStrict", () => {
   });
 
   test("rejects a missing date", () => {
-    const result = parseBalanceAnchorStrict(
-      form({ balance: "1000" }),
-      "loan",
-      1,
-      TODAY,
-    );
+    const result = parseBalanceAnchorStrict(form({ balance: "1000" }), "loan", 1, TODAY);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toContain("fecha");

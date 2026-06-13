@@ -24,7 +24,11 @@ import type {
   OwnershipShare,
   PriceFreshnessState,
 } from "@worthline/domain";
-import { parseDecimal, parseDecimalStrict, parseDecimalToMinorStrict } from "@worthline/domain";
+import {
+  parseDecimal,
+  parseDecimalStrict,
+  parseDecimalToMinorStrict,
+} from "@worthline/domain";
 
 // Re-export types needed by #58 inversiones functions
 export type { CreateInvestmentAssetInput };
@@ -554,7 +558,9 @@ export function parseAssetCommandStrict(
 
   const type = parseAssetType(formData.get("type"));
   const liquidityTier =
-    type === "real_estate" ? "illiquid" : parseLiquidityTier(formData.get("liquidityTier"));
+    type === "real_estate"
+      ? "illiquid"
+      : parseLiquidityTier(formData.get("liquidityTier"));
 
   const housingData = parseHousingCreationData(formData, type);
 
@@ -627,11 +633,17 @@ function parseHousingCreationData(
   }
 
   if (date && !valueRaw) {
-    return { ok: false, error: "Si indicas la fecha de adquisición, también debes indicar el precio." };
+    return {
+      ok: false,
+      error: "Si indicas la fecha de adquisición, también debes indicar el precio.",
+    };
   }
 
   if (!date && valueRaw) {
-    return { ok: false, error: "Si indicas el precio de adquisición, también debes indicar la fecha." };
+    return {
+      ok: false,
+      error: "Si indicas el precio de adquisición, también debes indicar la fecha.",
+    };
   }
 
   if (!ISO_DATE.test(date)) {
@@ -690,14 +702,16 @@ function parseInitialValuation(
   if (valuationDate && !valueRaw) {
     return {
       ok: false,
-      error: "Si indicas la fecha de la tasación inicial, también debes indicar el valor.",
+      error:
+        "Si indicas la fecha de la tasación inicial, también debes indicar el valor.",
     };
   }
 
   if (!valuationDate && valueRaw) {
     return {
       ok: false,
-      error: "Si indicas el valor de la tasación inicial, también debes indicar la fecha.",
+      error:
+        "Si indicas el valor de la tasación inicial, también debes indicar la fecha.",
     };
   }
 
@@ -832,7 +846,9 @@ export function parseAppreciationRateStrict(formData: FormData): AppreciationRat
   // Convert percent → decimal, then trim trailing-zero/float noise to a clean
   // decimal string the store accepts (e.g. 2.5 % → "0.025", 3 % → "0.03").
   const decimal = pct / 100;
-  const rate = (Number.isInteger(decimal) ? String(decimal) : decimal.toString()) as DecimalString;
+  const rate = (
+    Number.isInteger(decimal) ? String(decimal) : decimal.toString()
+  ) as DecimalString;
 
   return { ok: true, rate };
 }
@@ -876,9 +892,9 @@ function parseAnnualRatePercent(
   }
 
   const decimal = pct / 100;
-  const rate = (Number.isInteger(decimal)
-    ? String(decimal)
-    : decimal.toString()) as DecimalString;
+  const rate = (
+    Number.isInteger(decimal) ? String(decimal) : decimal.toString()
+  ) as DecimalString;
 
   return { ok: true, rate };
 }
@@ -912,7 +928,10 @@ export function parseAmortizationPlanStrict(
   const termMonths = parseDecimalStrict(String(formData.get("termMonths") ?? ""));
 
   if (termMonths === null || !Number.isInteger(termMonths) || termMonths <= 0) {
-    return { ok: false, error: "El plazo debe ser un número entero de meses mayor que cero." };
+    return {
+      ok: false,
+      error: "El plazo debe ser un número entero de meses mayor que cero.",
+    };
   }
 
   const startDate = String(formData.get("startDate") ?? "").trim();
@@ -968,7 +987,9 @@ export function parseInterestRateRevisionStrict(
     return { ok: false, error: "La fecha no puede ser futura." };
   }
 
-  const rate = parseAnnualRatePercent(String(formData.get("newAnnualInterestRate") ?? ""));
+  const rate = parseAnnualRatePercent(
+    String(formData.get("newAnnualInterestRate") ?? ""),
+  );
 
   if (!rate.ok) {
     return { ok: false, error: "El nuevo tipo de interés no es válido." };

@@ -30,16 +30,12 @@ function seed(store: WorthlineStore): void {
 }
 
 function grossAt(store: WorthlineStore, dateKey: string): number | undefined {
-  return store
-    .snapshots.readSnapshots()
-    .find((snap) => snap.dateKey === dateKey)
+  return store.snapshots.readSnapshots().find((snap) => snap.dateKey === dateKey)
     ?.grossAssets.amountMinor;
 }
 
 function housingEquityAt(store: WorthlineStore, dateKey: string): number | undefined {
-  return store
-    .snapshots.readSnapshots()
-    .find((snap) => snap.dateKey === dateKey)
+  return store.snapshots.readSnapshots().find((snap) => snap.dateKey === dateKey)
     ?.housingEquity.amountMinor;
 }
 
@@ -215,9 +211,7 @@ describe("historical snapshots from housing anchors", () => {
 
     addMarketAnchor(store, "a1", "2024-01-01", 100_000_00);
 
-    const snap = store.snapshots
-      .readSnapshots()
-      .find((s) => s.dateKey === "2024-01-01")!;
+    const snap = store.snapshots.readSnapshots().find((s) => s.dateKey === "2024-01-01")!;
     const rows = store.snapshots.readSnapshotHoldings({
       scopeId: snap.scopeId,
       from: "2024-01-01",
@@ -269,9 +263,7 @@ describe("housing historical snapshots — household scope weighting", () => {
       today: TODAY,
     });
 
-    const at = store.snapshots
-      .readSnapshots()
-      .filter((s) => s.dateKey === "2024-01-01");
+    const at = store.snapshots.readSnapshots().filter((s) => s.dateKey === "2024-01-01");
     const grosses = at.map((s) => s.grossAssets.amountMinor).sort((a, b) => b - a);
 
     expect(at.length).toBeGreaterThan(1);
@@ -443,7 +435,7 @@ describe("housing historical snapshots — empty-curve basis consistency (fix 1)
     // show the deleted anchor's value (100k).
     const gross = grossAt(store, "2028-01-01");
     expect(gross).not.toBe(100_000_00); // deleted anchor must not persist
-    expect(gross).toBe(200_000_00);     // currentValue fallback
+    expect(gross).toBe(200_000_00); // currentValue fallback
     store.close();
   });
 });

@@ -139,9 +139,7 @@ export function toOperation(
   };
 }
 
-export function readAllOperations(
-  db: StoreDb,
-): Map<string, InvestmentOperation[]> {
+export function readAllOperations(db: StoreDb): Map<string, InvestmentOperation[]> {
   const rows = db
     .select()
     .from(assetOperations)
@@ -162,9 +160,7 @@ export function readAllOperations(
   }, new Map<string, InvestmentOperation[]>());
 }
 
-export function readInvestmentMeta(
-  db: StoreDb,
-): Map<string, InvestmentMeta> {
+export function readInvestmentMeta(db: StoreDb): Map<string, InvestmentMeta> {
   const rows = db
     .select({
       assetId: investmentAssets.assetId,
@@ -183,9 +179,7 @@ export function readInvestmentMeta(
   }, new Map<string, InvestmentMeta>());
 }
 
-export function readAllPriceCache(
-  db: StoreDb,
-): Map<string, { price: string }> {
+export function readAllPriceCache(db: StoreDb): Map<string, { price: string }> {
   const rows = db.select().from(assetPriceCache).all();
 
   return rows.reduce((map, row) => {
@@ -195,9 +189,10 @@ export function readAllPriceCache(
 }
 
 /** Group flat ownership rows into a map keyed by their owning entity id. */
-export function groupOwnershipByOwner<
-  Row extends { memberId: string; shareBps: number },
->(rows: Row[], ownerIdOf: (row: Row) => string): Map<string, OwnershipShare[]> {
+export function groupOwnershipByOwner<Row extends { memberId: string; shareBps: number }>(
+  rows: Row[],
+  ownerIdOf: (row: Row) => string,
+): Map<string, OwnershipShare[]> {
   const byOwner = new Map<string, OwnershipShare[]>();
 
   for (const row of rows) {
@@ -216,9 +211,7 @@ export function groupOwnershipByOwner<
 }
 
 /** All asset ownership rows in one query, grouped by asset id (member order preserved). */
-export function readAssetOwnerships(
-  db: StoreDb,
-): Map<string, OwnershipShare[]> {
+export function readAssetOwnerships(db: StoreDb): Map<string, OwnershipShare[]> {
   const rows = db
     .select({
       assetId: assetOwnerships.assetId,
@@ -282,10 +275,7 @@ export function buildAssetProjectionContext(
  * historical-snapshot reconstruction, so it lives here — the one shared-concerns
  * home — rather than being duplicated across the slices.
  */
-export function readAssets(
-  db: StoreDb,
-  workspace: Workspace | null,
-): ManualAsset[] {
+export function readAssets(db: StoreDb, workspace: Workspace | null): ManualAsset[] {
   if (!workspace) {
     return [];
   }
@@ -389,9 +379,7 @@ export function hardDeleteAssetTx(ctx: StoreContext, assetId: string): number {
 
 /** All liability ownership rows in one query, grouped by liability id. Shared by
  *  the LiabilityStore (R3) and the monolith's export/historical reconstruction. */
-export function readLiabilityOwnerships(
-  db: StoreDb,
-): Map<string, OwnershipShare[]> {
+export function readLiabilityOwnerships(db: StoreDb): Map<string, OwnershipShare[]> {
   const rows = db
     .select({
       liabilityId: liabilityOwnerships.liabilityId,
@@ -411,10 +399,7 @@ export function readLiabilityOwnerships(
  * export, so it lives here — the one shared-concerns home — rather than being
  * duplicated across the slices.
  */
-export function readLiabilities(
-  db: StoreDb,
-  workspace: Workspace | null,
-): Liability[] {
+export function readLiabilities(db: StoreDb, workspace: Workspace | null): Liability[] {
   if (!workspace) {
     return [];
   }

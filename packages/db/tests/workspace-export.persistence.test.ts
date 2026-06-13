@@ -452,7 +452,9 @@ describe("instrument round-trips through export/import (#149)", () => {
     const doc2 = restored.workspace.exportWorkspace();
 
     expect(doc2.assets.find((a) => a.id === "a_home")?.instrument).toBe("property");
-    expect(doc2.assets.find((a) => a.id === "a_cash")?.instrument).toBe("current_account");
+    expect(doc2.assets.find((a) => a.id === "a_cash")?.instrument).toBe(
+      "current_account",
+    );
     expect(doc2.liabilities.find((l) => l.id === "l_mort")?.instrument).toBe("mortgage");
 
     store.close();

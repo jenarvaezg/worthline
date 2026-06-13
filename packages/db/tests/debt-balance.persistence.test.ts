@@ -125,7 +125,11 @@ describe("balance anchors — CRUD", () => {
     ).toBe(1);
 
     expect(store.liabilities.readBalanceAnchors("card")).toEqual([
-      expect.objectContaining({ anchorDate: "2024-02-01", balanceMinor: 8_000_00, id: "a1" }),
+      expect.objectContaining({
+        anchorDate: "2024-02-01",
+        balanceMinor: 8_000_00,
+        id: "a1",
+      }),
     ]);
   });
 

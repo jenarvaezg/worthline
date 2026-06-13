@@ -45,8 +45,12 @@ export default async function InversionesPage({
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
   // Auto-refresh stale prices on load (same pattern as /)
-  const investmentAssetsMeta = withStore((store) => store.assets.readInvestmentAssetsWithMeta());
-  const initialPriceCache = withStore((store) => store.operations.readAllPriceCacheEntries());
+  const investmentAssetsMeta = withStore((store) =>
+    store.assets.readInvestmentAssetsWithMeta(),
+  );
+  const initialPriceCache = withStore((store) =>
+    store.operations.readAllPriceCacheEntries(),
+  );
   const { priceCache } = await refreshAndPersistStalePrices({
     cacheEntries: initialPriceCache,
     assets: investmentAssetsMeta,

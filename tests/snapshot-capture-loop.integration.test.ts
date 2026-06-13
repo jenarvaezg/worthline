@@ -20,7 +20,11 @@
 import { afterEach, describe, expect, test } from "vitest";
 
 import type { WorthlineStore } from "@worthline/db";
-import type { CaptureSnapshotOutput, InvestmentCaptureDetail, ScopeOption } from "@worthline/domain";
+import type {
+  CaptureSnapshotOutput,
+  InvestmentCaptureDetail,
+  ScopeOption,
+} from "@worthline/domain";
 import {
   assertSnapshotHoldingsReconcile,
   captureSnapshotForScope,

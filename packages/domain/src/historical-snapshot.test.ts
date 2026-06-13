@@ -146,7 +146,10 @@ describe("buildSnapshotAtDate", () => {
     const workspace = makeWorkspace();
     // An investment can carry isPrimaryResidence; it must still be valued by its
     // operation ledger (derived), never reclassified to the housing curve.
-    const fund = { ...investment(workspace, "asset_fund", "Fondo"), isPrimaryResidence: true };
+    const fund = {
+      ...investment(workspace, "asset_fund", "Fondo"),
+      isPrimaryResidence: true,
+    };
     const operationsByAsset = new Map([
       ["asset_fund", [buy("asset_fund", "op1", "2024-01-10", "10", "100")]],
     ]);
@@ -170,7 +173,10 @@ describe("buildSnapshotAtDate", () => {
 
   test("omits a primary-residence-flagged investment before its first operation (#148 regression)", () => {
     const workspace = makeWorkspace();
-    const fund = { ...investment(workspace, "asset_fund", "Fondo"), isPrimaryResidence: true };
+    const fund = {
+      ...investment(workspace, "asset_fund", "Fondo"),
+      isPrimaryResidence: true,
+    };
     const operationsByAsset = new Map([
       ["asset_fund", [buy("asset_fund", "op1", "2024-09-10", "10", "100")]],
     ]);
@@ -340,9 +346,21 @@ describe("buildSnapshotAtDate", () => {
           "asset_piso",
           {
             anchors: [
-              { adjustsPriorCurve: true, valuationDate: "2024-01-01", valueMinor: 100_000_00 },
-              { adjustsPriorCurve: false, valuationDate: "2024-07-01", valueMinor: 10_000_00 },
-              { adjustsPriorCurve: true, valuationDate: "2025-01-01", valueMinor: 120_000_00 },
+              {
+                adjustsPriorCurve: true,
+                valuationDate: "2024-01-01",
+                valueMinor: 100_000_00,
+              },
+              {
+                adjustsPriorCurve: false,
+                valuationDate: "2024-07-01",
+                valueMinor: 10_000_00,
+              },
+              {
+                adjustsPriorCurve: true,
+                valuationDate: "2025-01-01",
+                valueMinor: 120_000_00,
+              },
             ],
             annualAppreciationRate: "0.03",
             currentValueMinor: 130_000_00,
@@ -423,9 +441,21 @@ describe("recalculateSnapshotForHousing", () => {
       asset: piso,
       curve: {
         anchors: [
-          { adjustsPriorCurve: true, valuationDate: "2024-01-01", valueMinor: 100_000_00 },
-          { adjustsPriorCurve: false, valuationDate: "2024-07-01", valueMinor: 10_000_00 },
-          { adjustsPriorCurve: true, valuationDate: "2025-01-01", valueMinor: 120_000_00 },
+          {
+            adjustsPriorCurve: true,
+            valuationDate: "2024-01-01",
+            valueMinor: 100_000_00,
+          },
+          {
+            adjustsPriorCurve: false,
+            valuationDate: "2024-07-01",
+            valueMinor: 10_000_00,
+          },
+          {
+            adjustsPriorCurve: true,
+            valuationDate: "2025-01-01",
+            valueMinor: 120_000_00,
+          },
         ],
         annualAppreciationRate: "0.03",
         currentValueMinor: 130_000_00,
@@ -457,9 +487,21 @@ describe("recalculateSnapshotForHousing", () => {
       asset: piso,
       curve: {
         anchors: [
-          { adjustsPriorCurve: true, valuationDate: "2024-01-01", valueMinor: 100_000_00 },
-          { adjustsPriorCurve: false, valuationDate: "2024-07-01", valueMinor: 10_000_00 },
-          { adjustsPriorCurve: true, valuationDate: "2025-01-01", valueMinor: 120_000_00 },
+          {
+            adjustsPriorCurve: true,
+            valuationDate: "2024-01-01",
+            valueMinor: 100_000_00,
+          },
+          {
+            adjustsPriorCurve: false,
+            valuationDate: "2024-07-01",
+            valueMinor: 10_000_00,
+          },
+          {
+            adjustsPriorCurve: true,
+            valuationDate: "2025-01-01",
+            valueMinor: 120_000_00,
+          },
         ],
         annualAppreciationRate: "0.03",
         currentValueMinor: 130_000_00,
@@ -696,11 +738,7 @@ describe("amortizationPaymentDatesUpTo", () => {
 });
 
 describe("buildSnapshotAtDate with debtBalanceByLiability", () => {
-  function mortgage(
-    workspace: Workspace,
-    id: string,
-    balanceMinor: number,
-  ): Liability {
+  function mortgage(workspace: Workspace, id: string, balanceMinor: number): Liability {
     return createLiability(workspace, {
       associatedAssetId: "asset_piso",
       balanceMinor,

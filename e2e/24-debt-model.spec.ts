@@ -147,9 +147,9 @@ test("debt model: amortizable plan + revisions, revolving anchors, future reject
   // 12. A FUTURE balance date is rejected client-side.
   const futureAnchor = addAnchor.getByLabel("Fecha del saldo");
   await futureAnchor.fill(yearsAhead(1));
-  expect(
-    await futureAnchor.evaluate((el: HTMLInputElement) => el.validity.valid),
-  ).toBe(false);
+  expect(await futureAnchor.evaluate((el: HTMLInputElement) => el.validity.valid)).toBe(
+    false,
+  );
   await expect(futureAnchor).toHaveAttribute("max", today);
 
   // 13. Edit the anchor's balance via its inline edit form.

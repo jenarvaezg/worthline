@@ -251,7 +251,9 @@ describe("hardDeleteMemberAction wiring", () => {
       hardDeleteMemberAction(fdAjustes({ id: "tmp" }), store),
     );
     expect(url).toContain("ok=member_deleted");
-    expect(store.workspace.readWorkspace()!.members.some((m) => m.id === "tmp")).toBe(false);
+    expect(store.workspace.readWorkspace()!.members.some((m) => m.id === "tmp")).toBe(
+      false,
+    );
   });
 
   test("active member: blocked with a clear message", async () => {
@@ -263,7 +265,9 @@ describe("hardDeleteMemberAction wiring", () => {
     );
     expect(url).toContain("error=");
     expect(decodeURIComponent(url.replace(/\+/g, " "))).toMatch(/desactivado/i);
-    expect(store.workspace.readWorkspace()!.members.some((m) => m.id === "tmp")).toBe(true);
+    expect(store.workspace.readWorkspace()!.members.some((m) => m.id === "tmp")).toBe(
+      true,
+    );
   });
 
   test("disabled member with ownerships: blocked, message lists the holding", async () => {
@@ -286,7 +290,9 @@ describe("hardDeleteMemberAction wiring", () => {
     );
     expect(url).toContain("error=");
     expect(decodeURIComponent(url.replace(/\+/g, " "))).toMatch(/Piso compartido/);
-    expect(store.workspace.readWorkspace()!.members.some((m) => m.id === "tmp")).toBe(true);
+    expect(store.workspace.readWorkspace()!.members.some((m) => m.id === "tmp")).toBe(
+      true,
+    );
   });
 });
 

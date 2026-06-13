@@ -23,7 +23,9 @@ export function operationsUpTo(
   targetDate: string,
 ): InvestmentOperation[] {
   if (!operations) return [];
-  return operations.filter((operation) => operation.executedAt.slice(0, 10) <= targetDate);
+  return operations.filter(
+    (operation) => operation.executedAt.slice(0, 10) <= targetDate,
+  );
 }
 
 /** The unit price of the latest operation on or before the date. */

@@ -61,9 +61,7 @@
       "indexes": {
         "amortization_plans_liability_unique": {
           "name": "amortization_plans_liability_unique",
-          "columns": [
-            "liability_id"
-          ],
+          "columns": ["liability_id"],
           "isUnique": true
         }
       },
@@ -72,12 +70,8 @@
           "name": "amortization_plans_liability_id_liabilities_id_fk",
           "tableFrom": "amortization_plans",
           "tableTo": "liabilities",
-          "columnsFrom": [
-            "liability_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["liability_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -193,12 +187,8 @@
           "name": "asset_operations_asset_id_assets_id_fk",
           "tableFrom": "asset_operations",
           "tableTo": "assets",
-          "columnsFrom": [
-            "asset_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["asset_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -238,12 +228,8 @@
           "name": "asset_ownerships_asset_id_assets_id_fk",
           "tableFrom": "asset_ownerships",
           "tableTo": "assets",
-          "columnsFrom": [
-            "asset_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["asset_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -251,22 +237,15 @@
           "name": "asset_ownerships_member_id_members_id_fk",
           "tableFrom": "asset_ownerships",
           "tableTo": "members",
-          "columnsFrom": [
-            "member_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["member_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "asset_ownerships_asset_id_member_id_pk": {
-          "columns": [
-            "asset_id",
-            "member_id"
-          ],
+          "columns": ["asset_id", "member_id"],
           "name": "asset_ownerships_asset_id_member_id_pk"
         }
       },
@@ -357,12 +336,8 @@
           "name": "asset_price_cache_asset_id_assets_id_fk",
           "tableFrom": "asset_price_cache",
           "tableTo": "assets",
-          "columnsFrom": [
-            "asset_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["asset_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -421,10 +396,7 @@
       "indexes": {
         "asset_valuations_asset_date_unique": {
           "name": "asset_valuations_asset_date_unique",
-          "columns": [
-            "asset_id",
-            "valuation_date"
-          ],
+          "columns": ["asset_id", "valuation_date"],
           "isUnique": true
         }
       },
@@ -433,12 +405,8 @@
           "name": "asset_valuations_asset_id_assets_id_fk",
           "tableFrom": "asset_valuations",
           "tableTo": "assets",
-          "columnsFrom": [
-            "asset_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["asset_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -634,10 +602,7 @@
       "indexes": {
         "interest_rate_revisions_plan_date_unique": {
           "name": "interest_rate_revisions_plan_date_unique",
-          "columns": [
-            "plan_id",
-            "revision_date"
-          ],
+          "columns": ["plan_id", "revision_date"],
           "isUnique": true
         }
       },
@@ -646,12 +611,8 @@
           "name": "interest_rate_revisions_plan_id_amortization_plans_id_fk",
           "tableFrom": "interest_rate_revisions",
           "tableTo": "amortization_plans",
-          "columnsFrom": [
-            "plan_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["plan_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -719,12 +680,8 @@
           "name": "investment_assets_asset_id_assets_id_fk",
           "tableFrom": "investment_assets",
           "tableTo": "assets",
-          "columnsFrom": [
-            "asset_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["asset_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -815,12 +772,8 @@
           "name": "liabilities_associated_asset_id_assets_id_fk",
           "tableFrom": "liabilities",
           "tableTo": "assets",
-          "columnsFrom": [
-            "associated_asset_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["associated_asset_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -860,12 +813,8 @@
           "name": "liability_ownerships_liability_id_liabilities_id_fk",
           "tableFrom": "liability_ownerships",
           "tableTo": "liabilities",
-          "columnsFrom": [
-            "liability_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["liability_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -873,22 +822,15 @@
           "name": "liability_ownerships_member_id_members_id_fk",
           "tableFrom": "liability_ownerships",
           "tableTo": "members",
-          "columnsFrom": [
-            "member_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["member_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "liability_ownerships_liability_id_member_id_pk": {
-          "columns": [
-            "liability_id",
-            "member_id"
-          ],
+          "columns": ["liability_id", "member_id"],
           "name": "liability_ownerships_liability_id_member_id_pk"
         }
       },
@@ -926,12 +868,8 @@
           "name": "member_group_members_group_id_member_groups_id_fk",
           "tableFrom": "member_group_members",
           "tableTo": "member_groups",
-          "columnsFrom": [
-            "group_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["group_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -939,22 +877,15 @@
           "name": "member_group_members_member_id_members_id_fk",
           "tableFrom": "member_group_members",
           "tableTo": "members",
-          "columnsFrom": [
-            "member_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["member_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "member_group_members_group_id_member_id_pk": {
-          "columns": [
-            "group_id",
-            "member_id"
-          ],
+          "columns": ["group_id", "member_id"],
           "name": "member_group_members_group_id_member_id_pk"
         }
       },
@@ -1126,11 +1057,7 @@
       "indexes": {
         "snapshot_holdings_snapshot_kind_holding_unique": {
           "name": "snapshot_holdings_snapshot_kind_holding_unique",
-          "columns": [
-            "snapshot_id",
-            "kind",
-            "holding_id"
-          ],
+          "columns": ["snapshot_id", "kind", "holding_id"],
           "isUnique": true
         }
       },
@@ -1139,12 +1066,8 @@
           "name": "snapshot_holdings_snapshot_id_snapshots_id_fk",
           "tableFrom": "snapshot_holdings",
           "tableTo": "snapshots",
-          "columnsFrom": [
-            "snapshot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["snapshot_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1268,10 +1191,7 @@
       "indexes": {
         "snapshots_scope_date_unique": {
           "name": "snapshots_scope_date_unique",
-          "columns": [
-            "scope_id",
-            "date_key"
-          ],
+          "columns": ["scope_id", "date_key"],
           "isUnique": true
         }
       },
@@ -1310,10 +1230,7 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "warning_overrides_code_entity_id_pk": {
-          "columns": [
-            "code",
-            "entity_id"
-          ],
+          "columns": ["code", "entity_id"],
           "name": "warning_overrides_code_entity_id_pk"
         }
       },

@@ -39,7 +39,9 @@ export default async function HistoricoPage({
 
     const scopes = listScopeOptions(workspace);
     const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
-    const snapshots = selectedScope ? store.snapshots.readSnapshots(selectedScope.id) : [];
+    const snapshots = selectedScope
+      ? store.snapshots.readSnapshots(selectedScope.id)
+      : [];
 
     return { scopes, selectedScope, snapshots };
   });

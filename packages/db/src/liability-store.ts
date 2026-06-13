@@ -139,10 +139,7 @@ export interface LiabilityStore {
   /** Read a liability's amortization plan, or null if it has none. */
   readAmortizationPlan: (liabilityId: string) => AmortizationPlanRecord | null;
   /** Update an amortization plan in place. Returns 1 if updated, 0 if not found. */
-  updateAmortizationPlan: (
-    planId: string,
-    input: UpdateAmortizationPlanInput,
-  ) => number;
+  updateAmortizationPlan: (planId: string, input: UpdateAmortizationPlanInput) => number;
   /** Delete an amortization plan by id (cascades its revisions). Returns 1 if removed, 0 if not found. */
   deleteAmortizationPlan: (planId: string) => number;
   /** Add an interest-rate revision to a plan. */
@@ -191,13 +188,11 @@ export function createLiabilityStore(ctx: StoreContext): LiabilityStore {
     restoreLiability: (liabilityId) => restoreLiability(ctx, liabilityId),
     hardDeleteLiability: (liabilityId) =>
       ctx.sqlite.transaction(() => hardDeleteLiabilityTx(ctx, liabilityId))(),
-    setDebtModel: (liabilityId, debtModel) =>
-      setDebtModel(ctx, liabilityId, debtModel),
+    setDebtModel: (liabilityId, debtModel) => setDebtModel(ctx, liabilityId, debtModel),
     readDebtModel: (liabilityId) => readDebtModel(ctx, liabilityId),
     createAmortizationPlan: (input) => createAmortizationPlan(ctx, input),
     readAmortizationPlan: (liabilityId) => readAmortizationPlan(ctx, liabilityId),
-    updateAmortizationPlan: (planId, input) =>
-      updateAmortizationPlan(ctx, planId, input),
+    updateAmortizationPlan: (planId, input) => updateAmortizationPlan(ctx, planId, input),
     deleteAmortizationPlan: (planId) => deleteAmortizationPlan(ctx, planId),
     addInterestRateRevision: (input) => addInterestRateRevision(ctx, input),
     readInterestRateRevisions: (planId) => readInterestRateRevisions(ctx, planId),
@@ -209,8 +204,7 @@ export function createLiabilityStore(ctx: StoreContext): LiabilityStore {
       amortizableBalanceAtDateFor(ctx, liabilityId, targetDate),
     addBalanceAnchor: (input) => addBalanceAnchor(ctx, input),
     readBalanceAnchors: (liabilityId) => readBalanceAnchors(ctx, liabilityId),
-    updateBalanceAnchor: (anchorId, input) =>
-      updateBalanceAnchor(ctx, anchorId, input),
+    updateBalanceAnchor: (anchorId, input) => updateBalanceAnchor(ctx, anchorId, input),
     deleteBalanceAnchor: (anchorId) => deleteBalanceAnchor(ctx, anchorId),
     debtBalanceAtDate: (liabilityId, targetDate) =>
       debtBalanceAtDateFor(ctx, liabilityId, targetDate),
@@ -262,7 +256,9 @@ function createAmortizationPlan(
     throw new Error("Money must be stored as integer minor units.");
   }
   if (!Number.isInteger(input.termMonths) || input.termMonths <= 0) {
-    throw new Error(`Term must be a positive whole number of months, got "${input.termMonths}".`);
+    throw new Error(
+      `Term must be a positive whole number of months, got "${input.termMonths}".`,
+    );
   }
   assertIsoDate(input.startDate, "Start date");
   assertDecimalString(input.annualInterestRate, "Annual interest rate");
@@ -313,14 +309,19 @@ function updateAmortizationPlan(
   planId: string,
   input: UpdateAmortizationPlanInput,
 ): number {
-  if (input.initialCapitalMinor !== undefined && !Number.isInteger(input.initialCapitalMinor)) {
+  if (
+    input.initialCapitalMinor !== undefined &&
+    !Number.isInteger(input.initialCapitalMinor)
+  ) {
     throw new Error("Money must be stored as integer minor units.");
   }
   if (
     input.termMonths !== undefined &&
     (!Number.isInteger(input.termMonths) || input.termMonths <= 0)
   ) {
-    throw new Error(`Term must be a positive whole number of months, got "${input.termMonths}".`);
+    throw new Error(
+      `Term must be a positive whole number of months, got "${input.termMonths}".`,
+    );
   }
   if (input.startDate !== undefined) {
     assertIsoDate(input.startDate, "Start date");
@@ -354,12 +355,10 @@ function updateAmortizationPlan(
     .run();
 
   if (result.changes > 0) {
-    ctx.writeAuditEntry(
-      "update_amortization_plan",
-      "liability",
-      existing.liabilityId,
-      { planId, ...input },
-    );
+    ctx.writeAuditEntry("update_amortization_plan", "liability", existing.liabilityId, {
+      planId,
+      ...input,
+    });
   }
   return result.changes;
 }

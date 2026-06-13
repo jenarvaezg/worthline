@@ -2,7 +2,7 @@
 
 The liquidity classification was a flat set of five "tiers" (cash, market, retirement,
 illiquid, housing) that mixed real liquidity with instrument purpose — "retirement" named
-*why* a holding was locked and "housing" named *what* it was, and neither is a liquidity
+_why_ a holding was locked and "housing" named _what_ it was, and neither is a liquidity
 level. We recut it into an ordered **liquidity ladder** of four pure-accessibility rungs —
 **cash** (available instantly), **market** (realizable in days at minimal cost),
 **term-locked** (locked until a date or age), **illiquid** (sellable only with friction or

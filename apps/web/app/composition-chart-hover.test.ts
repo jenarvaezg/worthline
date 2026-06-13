@@ -15,7 +15,13 @@ import {
 
 function period(
   dateKey: string,
-  bands: { cash?: number; market?: number; termLocked?: number; illiquid?: number; housing?: number },
+  bands: {
+    cash?: number;
+    market?: number;
+    termLocked?: number;
+    illiquid?: number;
+    housing?: number;
+  },
   debtMinor: number | null,
 ): CompositionPeriodGeometry {
   const value = (v: number | undefined): number => v ?? 0;
@@ -57,7 +63,13 @@ describe("compositionTooltipRows", () => {
     const rows = compositionTooltipRows(
       period(
         "2026-05-31",
-        { cash: 10_000_00, housing: 200_000_00, illiquid: 1_000_00, market: 5_000_00, termLocked: 3_000_00 },
+        {
+          cash: 10_000_00,
+          housing: 200_000_00,
+          illiquid: 1_000_00,
+          market: 5_000_00,
+          termLocked: 3_000_00,
+        },
         120_000_00,
       ),
     );
@@ -77,7 +89,11 @@ describe("compositionTooltipRows", () => {
     const rows = compositionTooltipRows(period("2026-06-30", { cash: 12_000_00 }, null));
 
     expect(rows.some((row) => row.kind === "debt")).toBe(false);
-    expect(rows.at(-1)).toEqual({ kind: "net", label: "Patrimonio neto", valueMinor: 12_000_00 });
+    expect(rows.at(-1)).toEqual({
+      kind: "net",
+      label: "Patrimonio neto",
+      valueMinor: 12_000_00,
+    });
   });
 });
 

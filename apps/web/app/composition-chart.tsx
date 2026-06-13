@@ -65,9 +65,12 @@ export default function CompositionChart({
     [points, housingHidden],
   );
   const wrapRef = useRef<HTMLDivElement>(null);
-  const [hover, setHover] = useState<{ index: number; x: number; y: number; flip: boolean } | null>(
-    null,
-  );
+  const [hover, setHover] = useState<{
+    index: number;
+    x: number;
+    y: number;
+    flip: boolean;
+  } | null>(null);
 
   if (!geometry) {
     return (
@@ -77,7 +80,8 @@ export default function CompositionChart({
     );
   }
 
-  const money = (amountMinor: number): string => formatMoneyMinor({ amountMinor, currency });
+  const money = (amountMinor: number): string =>
+    formatMoneyMinor({ amountMinor, currency });
   const bandHref = (band: CompositionAssetBandId): string | undefined =>
     drillHrefs?.[BAND_DRILL_KEY[band]];
   const periodXs = geometry.periods.map((period) => period.netWorth.x);
@@ -163,7 +167,10 @@ export default function CompositionChart({
           {geometry.assetBands.map((band) => {
             const href = bandHref(band.band);
             const polygon = (
-              <polygon className={`compositionBand ${band.band}`} points={band.areaPoints} />
+              <polygon
+                className={`compositionBand ${band.band}`}
+                points={band.areaPoints}
+              />
             );
 
             // Native SVG anchor — drilldown navigation with zero client JS for the
@@ -240,11 +247,17 @@ export default function CompositionChart({
               transform: `translate(${hover.flip ? "calc(-100% - 14px)" : "14px"}, -50%)`,
             }}
           >
-            <div className="compositionTooltipDate">{formatTooltipDate(activePeriod.dateKey)}</div>
+            <div className="compositionTooltipDate">
+              {formatTooltipDate(activePeriod.dateKey)}
+            </div>
             {compositionTooltipRows(activePeriod).map((row) => (
               <div className={`compositionTooltipRow ${row.kind}`} key={row.label}>
                 <span>{row.label}</span>
-                <b>{row.kind === "debt" ? `−${money(row.valueMinor)}` : money(row.valueMinor)}</b>
+                <b>
+                  {row.kind === "debt"
+                    ? `−${money(row.valueMinor)}`
+                    : money(row.valueMinor)}
+                </b>
               </div>
             ))}
           </div>

@@ -57,9 +57,11 @@ describe("liquidity-ladder schema migration (v12)", () => {
     migrate(db);
 
     const tierOf = (id: string) =>
-      (db.prepare("SELECT liquidity_tier AS t FROM assets WHERE id = ?").get(id) as {
-        t: string;
-      }).t;
+      (
+        db.prepare("SELECT liquidity_tier AS t FROM assets WHERE id = ?").get(id) as {
+          t: string;
+        }
+      ).t;
 
     expect(tierOf("a_pension")).toBe("term-locked");
     expect(tierOf("a_home")).toBe("illiquid");
@@ -73,7 +75,9 @@ describe("liquidity-ladder schema migration (v12)", () => {
 
     const tierOf = (id: string) =>
       (
-        db.prepare("SELECT liquidity_tier AS t FROM snapshot_holdings WHERE id = ?").get(id) as {
+        db
+          .prepare("SELECT liquidity_tier AS t FROM snapshot_holdings WHERE id = ?")
+          .get(id) as {
           t: string | null;
         }
       ).t;

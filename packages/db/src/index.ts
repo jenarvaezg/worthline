@@ -44,19 +44,10 @@ import {
   snapshots,
   warningOverrides,
 } from "./schema";
-import {
-  createAssetStore,
-  type AssetStore,
-} from "./asset-store";
+import { createAssetStore, type AssetStore } from "./asset-store";
 import { migrate } from "./migrate";
-import {
-  createLiabilityStore,
-  type LiabilityStore,
-} from "./liability-store";
-import {
-  createOperationsStore,
-  type OperationsStore,
-} from "./operations-store";
+import { createLiabilityStore, type LiabilityStore } from "./liability-store";
+import { createOperationsStore, type OperationsStore } from "./operations-store";
 import {
   createSnapshotStore,
   readSnapshotHoldings,
@@ -694,14 +685,8 @@ function readDebtBalanceInputs(
  * (PRD #107): each `update_valuation` / `update_balance` audit entry is a dated
  * value point. The entry's `created_at` date is when the value became known.
  */
-function readManualValueHistory(
-  db: StoreDb,
-): Map<string, ManualValuePoint[]> {
-  const rows = db
-    .select()
-    .from(auditLog)
-    .orderBy(asc(auditLog.createdAt))
-    .all();
+function readManualValueHistory(db: StoreDb): Map<string, ManualValuePoint[]> {
+  const rows = db.select().from(auditLog).orderBy(asc(auditLog.createdAt)).all();
 
   const history = new Map<string, ManualValuePoint[]>();
 
@@ -798,7 +783,11 @@ function rippleHistoricalSnapshots(
           workspace,
         });
         if (built) {
-          saveSnapshot({ holdings: built.holdings, replace: false, snapshot: built.snapshot });
+          saveSnapshot({
+            holdings: built.holdings,
+            replace: false,
+            snapshot: built.snapshot,
+          });
         }
       }
 
@@ -912,7 +901,11 @@ function rippleHistoricalSnapshotsForValuation(
           workspace,
         });
         if (built) {
-          saveSnapshot({ holdings: built.holdings, replace: false, snapshot: built.snapshot });
+          saveSnapshot({
+            holdings: built.holdings,
+            replace: false,
+            snapshot: built.snapshot,
+          });
         }
       }
 
@@ -1019,8 +1012,7 @@ function rippleHistoricalSnapshotsForDebt(
     const { fromDateKey } = params;
     // A revision never generates new dates; an anchor generates at its own date
     // when in the past.
-    generateDates =
-      params.kind === "anchor" && fromDateKey < today ? [fromDateKey] : [];
+    generateDates = params.kind === "anchor" && fromDateKey < today ? [fromDateKey] : [];
     recalcFrom = fromDateKey;
   }
 
@@ -1049,7 +1041,11 @@ function rippleHistoricalSnapshotsForDebt(
           workspace,
         });
         if (built) {
-          saveSnapshot({ holdings: built.holdings, replace: false, snapshot: built.snapshot });
+          saveSnapshot({
+            holdings: built.holdings,
+            replace: false,
+            snapshot: built.snapshot,
+          });
         }
       }
 
@@ -1095,10 +1091,7 @@ function rippleHistoricalSnapshotsForDebt(
  * asset), including trashed liabilities — historical reconstruction needs the
  * identity of debts that existed on past dates even if they were trashed since.
  */
-function readLiabilityIdentity(
-  db: StoreDb,
-  liabilityId: string,
-): Liability | null {
+function readLiabilityIdentity(db: StoreDb, liabilityId: string): Liability | null {
   const row = db
     .select({
       id: liabilities.id,
@@ -1139,10 +1132,7 @@ function readLiabilityIdentity(
  * including trashed assets — historical reconstruction needs the identity of
  * holdings that existed on past dates even if they were trashed since.
  */
-function readInvestmentIdentity(
-  db: StoreDb,
-  assetId: string,
-): ManualAsset | null {
+function readInvestmentIdentity(db: StoreDb, assetId: string): ManualAsset | null {
   const row = db
     .select({
       id: assets.id,
@@ -1226,7 +1216,11 @@ function gapFillHistoricalSnapshots(
       });
 
       if (built) {
-        saveSnapshot({ holdings: built.holdings, replace: false, snapshot: built.snapshot });
+        saveSnapshot({
+          holdings: built.holdings,
+          replace: false,
+          snapshot: built.snapshot,
+        });
       }
     }
   }

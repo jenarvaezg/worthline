@@ -74,7 +74,11 @@ export function captureSnapshotForScope(
   const generateId = options.generateId ?? buildSnapshotId;
   const seed = options.seed ?? (() => Date.now());
 
-  const plan = planSnapshotCapture(input.existingSnapshots, input.scope.id, input.capturedAt.slice(0, 10));
+  const plan = planSnapshotCapture(
+    input.existingSnapshots,
+    input.scope.id,
+    input.capturedAt.slice(0, 10),
+  );
 
   if (!plan.shouldCapture) {
     return null;

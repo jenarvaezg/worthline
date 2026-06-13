@@ -12,10 +12,7 @@ import type { HousingValuationAnchor } from "./housing-valuation";
  * layered on top. Interpolation and compound extrapolation are always by days.
  */
 
-const market = (
-  valuationDate: string,
-  valueMinor: number,
-): HousingValuationAnchor => ({
+const market = (valuationDate: string, valueMinor: number): HousingValuationAnchor => ({
   adjustsPriorCurve: true,
   valuationDate,
   valueMinor,
@@ -133,10 +130,7 @@ describe("valueHousingAtDate — extrapolation before the first appraisal", () =
 describe("valueHousingAtDate — extrapolation after the last appraisal", () => {
   test("without a rate, holds the last appraisal flat plus later improvements", () => {
     const value = valueHousingAtDate({
-      anchors: [
-        market("2024-01-01", 100_000_00),
-        improvement("2024-07-01", 10_000_00),
-      ],
+      anchors: [market("2024-01-01", 100_000_00), improvement("2024-07-01", 10_000_00)],
       currentValueMinor: 130_000_00,
       today: "2026-06-12",
       targetDate: "2025-01-01",

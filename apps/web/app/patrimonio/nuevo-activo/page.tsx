@@ -120,13 +120,17 @@ export default async function NuevoActivoPage({
               <summary>¿Qué es la capa de liquidez?</summary>
               <dl>
                 <dt>Caja</dt>
-                <dd>Efectivo, cuentas corrientes y de ahorro. Disponible de inmediato.</dd>
+                <dd>
+                  Efectivo, cuentas corrientes y de ahorro. Disponible de inmediato.
+                </dd>
                 <dt>Mercado</dt>
                 <dd>Acciones, fondos, ETFs y similares. Liquidable en días.</dd>
                 <dt>Jubilación</dt>
                 <dd>Planes de pensiones y activos con restricciones de retirada.</dd>
                 <dt>Ilíquido</dt>
-                <dd>Arte, vehículos, participaciones privadas. Difícil de vender rápido.</dd>
+                <dd>
+                  Arte, vehículos, participaciones privadas. Difícil de vender rápido.
+                </dd>
                 <dt>Vivienda</dt>
                 <dd>Inmuebles residenciales. Incluye vivienda habitual.</dd>
               </dl>
@@ -148,9 +152,7 @@ export default async function NuevoActivoPage({
               name="currentValue"
               placeholder="p.ej. 12500,00"
             />
-            <small>
-              Para inmuebles se usa el precio de adquisición como valor base.
-            </small>
+            <small>Para inmuebles se usa el precio de adquisición como valor base.</small>
           </label>
 
           <label className="checkLine">
@@ -165,9 +167,8 @@ export default async function NuevoActivoPage({
           <fieldset className="ownershipGrid">
             <legend>Datos de inmueble</legend>
             <p className="infoNote">
-              Si el tipo es Inmueble, la fecha y el precio de adquisición crean
-              la primera tasación de mercado y sustituyen al valor actual como
-              base inicial.
+              Si el tipo es Inmueble, la fecha y el precio de adquisición crean la primera
+              tasación de mercado y sustituyen al valor actual como base inicial.
             </p>
             <label>
               Fecha de adquisición
@@ -198,7 +199,9 @@ export default async function NuevoActivoPage({
                 name="rate"
                 placeholder="3"
               />
-              <small>Déjalo en blanco para no aplicar revalorización entre tasaciones.</small>
+              <small>
+                Déjalo en blanco para no aplicar revalorización entre tasaciones.
+              </small>
             </label>
             <details className="valuationDetails">
               <summary>Añadir tasación inicial</summary>
@@ -232,10 +235,10 @@ export default async function NuevoActivoPage({
                   Es una tasación de mercado
                 </label>
                 <p className="infoNote">
-                  <strong>Tasación de mercado:</strong> una valoración real del
-                  inmueble que recalibra toda la curva previa.{" "}
-                  <strong>Mejora:</strong> una inversión que se suma al valor
-                  existente sin reemplazar las tasaciones anteriores.
+                  <strong>Tasación de mercado:</strong> una valoración real del inmueble
+                  que recalibra toda la curva previa. <strong>Mejora:</strong> una
+                  inversión que se suma al valor existente sin reemplazar las tasaciones
+                  anteriores.
                 </p>
               </div>
             </details>

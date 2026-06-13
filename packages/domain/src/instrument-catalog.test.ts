@@ -60,7 +60,11 @@ describe("defaultsFor — covers every instrument (#149 AC)", () => {
     etf: { rung: "market", valuationMethod: "derived", priceProvider: "yahoo" },
     stock: { rung: "market", valuationMethod: "derived", priceProvider: "yahoo" },
     index: { rung: "market", valuationMethod: "derived", priceProvider: "yahoo" },
-    pension_plan: { rung: "term-locked", valuationMethod: "derived", priceProvider: "finect" },
+    pension_plan: {
+      rung: "term-locked",
+      valuationMethod: "derived",
+      priceProvider: "finect",
+    },
     crypto: { rung: "market", valuationMethod: "derived", priceProvider: "coingecko" },
     precious_metal: { rung: "illiquid", valuationMethod: "stored" },
     vehicle: { rung: "illiquid", valuationMethod: "stored" },

@@ -349,14 +349,18 @@ describe("softDeleteLiability / restoreLiability — returns affected row count"
       balanceMinor: 1_000,
       ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
     });
-    expect(store.liabilities.softDeleteLiability("l_del", new Date().toISOString())).toBe(1);
+    expect(store.liabilities.softDeleteLiability("l_del", new Date().toISOString())).toBe(
+      1,
+    );
     expect(store.liabilities.restoreLiability("l_del")).toBe(1);
     store.close();
   });
 
   test("returns 0 when the id does not exist", () => {
     const store = setupStore();
-    expect(store.liabilities.softDeleteLiability("ghost_id", new Date().toISOString())).toBe(0);
+    expect(
+      store.liabilities.softDeleteLiability("ghost_id", new Date().toISOString()),
+    ).toBe(0);
     expect(store.liabilities.restoreLiability("ghost_id")).toBe(0);
     store.close();
   });

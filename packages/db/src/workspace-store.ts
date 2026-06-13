@@ -686,10 +686,7 @@ function importWorkspace(
  * the final assembly is delegated to the domain's serializeWorkspaceExport.
  * The audit log is deliberately not a section.
  */
-function buildWorkspaceExport(
-  db: StoreDb,
-  workspace: Workspace | null,
-): WorkspaceExport {
+function buildWorkspaceExport(db: StoreDb, workspace: Workspace | null): WorkspaceExport {
   if (!workspace) {
     throw new Error("Workspace must be initialized before exporting.");
   }
@@ -848,9 +845,7 @@ function buildWorkspaceExport(
  * implicit rowid has no schema column, so the ORDER BY drops to a raw `sql`
  * fragment inside the otherwise-Drizzle query.
  */
-function readHoldingRowsBySnapshot(
-  db: StoreDb,
-): Map<string, SnapshotHoldingRow[]> {
+function readHoldingRowsBySnapshot(db: StoreDb): Map<string, SnapshotHoldingRow[]> {
   const rows = db
     .select({
       snapshotId: snapshotHoldings.snapshotId,
