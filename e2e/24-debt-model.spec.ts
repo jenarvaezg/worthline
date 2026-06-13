@@ -35,16 +35,16 @@ const today = new Date().toISOString().slice(0, 10);
 test("debt model: amortizable plan + revisions, revolving anchors, future rejected, past snapshots in historico", async ({
   page,
 }) => {
-  // Quarantined in CI only (passes locally) pending the RSC server-action
-  // binding bug: the plan/anchor actions don't dispatch after setDebtModel's
-  // soft redirect, so step 4 below times out — tracked in #158 (the Next 16.2.9
-  // bump did not fix it). We use test.fail (not test.skip) on purpose: this is a
-  // serial, shared-DB journey and journey 25 (debts drilldown) depends on the
-  // liability created in step 1 below. Skipping the test entirely would remove
-  // that debt and break 25; test.fail still RUNS the body (creating the debt)
-  // and only marks the expected step-4 failure as green. Remove once #158 is
-  // resolved.
-  test.fail(!!process.env.CI, "Quarantined in CI pending #158 (RSC server-action bug)");
+  // Quarantined in CI only (still runs locally) pending the RSC server-action
+  // binding bug — #158 (the Next 16.2.9 bump did not fix it). On the CI runner
+  // this journey doesn't just fail: the broken server-action interaction after
+  // setDebtModel's soft redirect leaves the server returning ECONNRESET, which
+  // then HANGS the next journey's `page.goto("/")` (journey 25 timed out at
+  // 30s). So we skip the whole body here (not test.fail) to keep the shared
+  // serial server healthy for the journeys that follow. Consequence: the debt
+  // this journey creates is absent in CI, so journey 25's debt-band test is
+  // quarantined too (see 25-debts-drilldown). Remove both once #158 is fixed.
+  test.skip(!!process.env.CI, "Quarantined in CI pending #158 (RSC server-action bug)");
 
   // 1. Create a liability.
   await page.goto("/patrimonio/nueva-deuda");
