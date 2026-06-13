@@ -233,6 +233,35 @@ export const interestRateRevisions = sqliteTable(
   ],
 );
 
+/**
+ * A declared balance for a revolving or informal liability on a given date (PRD
+ * #109, slice 8). `balance_minor` is the TOTAL owed on that date — if the debt
+ * accrues interest the user declares it already included; there is intentionally
+ * no "includes interest" flag (firm PRD #109 decision).
+ *
+ * The `liability_id → debt_model ∈ {revolving, informal}` invariant is a
+ * domain/caller guard, not a SQL constraint (pattern R9). The unique index keeps
+ * one anchor per liability per date.
+ */
+export const liabilityBalanceAnchors = sqliteTable(
+  "liability_balance_anchors",
+  {
+    id: text("id").primaryKey(),
+    liabilityId: text("liability_id")
+      .notNull()
+      .references(() => liabilities.id, { onDelete: "cascade" }),
+    balanceMinor: integer("balance_minor").notNull(),
+    anchorDate: text("anchor_date").notNull(),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    uniqueIndex("liability_balance_anchors_liability_date_unique").on(
+      table.liabilityId,
+      table.anchorDate,
+    ),
+  ],
+);
+
 export const auditLog = sqliteTable("audit_log", {
   id: text("id").primaryKey(),
   action: text("action").notNull(),

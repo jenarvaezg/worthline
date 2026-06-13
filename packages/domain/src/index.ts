@@ -196,6 +196,9 @@ export type {
 } from "./amortization";
 export { amortizableBalanceAtDate } from "./amortization";
 
+export type { DebtBalanceAnchor, DebtBalanceAtDateInput } from "./debt-balance";
+export { debtBalanceAtDate } from "./debt-balance";
+
 export type { DashboardState, LocalPersistenceStatus, OnboardingStep } from "./dashboard";
 export {
   deriveOnboardingProgress,

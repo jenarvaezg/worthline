@@ -6,13 +6,18 @@ import type {
   Liability,
   OwnershipShare,
 } from "@worthline/domain";
-import { amortizableBalanceAtDate, createLiability } from "@worthline/domain";
+import {
+  amortizableBalanceAtDate,
+  createLiability,
+  debtBalanceAtDate,
+} from "@worthline/domain";
 import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
 
 import {
   amortizationPlans,
   interestRateRevisions,
   liabilities,
+  liabilityBalanceAnchors,
   liabilityOwnerships,
 } from "./schema";
 import {
@@ -77,6 +82,30 @@ export interface InterestRateRevisionRecord extends InterestRateRevision {
   planId: string;
 }
 
+/** Input for a single balance anchor of a revolving/informal liability (slice 8). */
+export interface AddBalanceAnchorInput {
+  id: string;
+  liabilityId: string;
+  /** Total owed on that date, integer minor units (interest already included). */
+  balanceMinor: number;
+  /** YYYY-MM-DD the balance applies on. */
+  anchorDate: string;
+}
+
+/** A stored balance anchor as read back from the store. */
+export interface BalanceAnchorRecord {
+  id: string;
+  liabilityId: string;
+  balanceMinor: number;
+  anchorDate: string;
+}
+
+/** Fields that can be patched on an existing balance anchor. */
+export interface UpdateBalanceAnchorInput {
+  balanceMinor?: number;
+  anchorDate?: string;
+}
+
 /**
  * Liability persistence (Slice R3 of the architectural refactor, PRD #120 / #123).
  * Owns the live liability rows, their ownership, the balance valuation, and the
@@ -121,6 +150,21 @@ export interface LiabilityStore {
    * curve. Throws if the liability has no amortization plan.
    */
   amortizableBalanceAtDate: (liabilityId: string, targetDate: string) => number;
+  /** Add a balance anchor to a revolving/informal liability. */
+  addBalanceAnchor: (input: AddBalanceAnchorInput) => void;
+  /** Read a liability's balance anchors, ordered ascending by date. */
+  readBalanceAnchors: (liabilityId: string) => BalanceAnchorRecord[];
+  /** Update a balance anchor in place. Returns 1 if updated, 0 if not found. */
+  updateBalanceAnchor: (anchorId: string, input: UpdateBalanceAnchorInput) => number;
+  /** Delete a balance anchor by id. Returns 1 if removed, 0 if not found. */
+  deleteBalanceAnchor: (anchorId: string) => number;
+  /**
+   * Outstanding balance of a liability on `targetDate` (YYYY-MM-DD) for any debt
+   * model: reads the model + anchors (+ plan/revisions when amortizable) + the
+   * current balance and delegates to the pure domain dispatcher. A null model or
+   * missing data falls back to the current balance.
+   */
+  debtBalanceAtDate: (liabilityId: string, targetDate: string) => number;
 }
 
 export function createLiabilityStore(ctx: StoreContext): LiabilityStore {
@@ -149,6 +193,13 @@ export function createLiabilityStore(ctx: StoreContext): LiabilityStore {
       deleteInterestRateRevision(ctx, revisionId),
     amortizableBalanceAtDate: (liabilityId, targetDate) =>
       amortizableBalanceAtDateFor(ctx, liabilityId, targetDate),
+    addBalanceAnchor: (input) => addBalanceAnchor(ctx, input),
+    readBalanceAnchors: (liabilityId) => readBalanceAnchors(ctx, liabilityId),
+    updateBalanceAnchor: (anchorId, input) =>
+      updateBalanceAnchor(ctx, anchorId, input),
+    deleteBalanceAnchor: (anchorId) => deleteBalanceAnchor(ctx, anchorId),
+    debtBalanceAtDate: (liabilityId, targetDate) =>
+      debtBalanceAtDateFor(ctx, liabilityId, targetDate),
   };
 }
 
@@ -411,6 +462,164 @@ function amortizableBalanceAtDateFor(
     revisions,
     targetDate,
   });
+}
+
+function addBalanceAnchor(ctx: StoreContext, input: AddBalanceAnchorInput): void {
+  if (!Number.isInteger(input.balanceMinor)) {
+    throw new Error("Money must be stored as integer minor units.");
+  }
+  assertIsoDate(input.anchorDate, "Anchor date");
+
+  // The "liability must be revolving/informal" invariant is a domain/caller
+  // guard (R9), not enforced here. The unique index on (liability_id,
+  // anchor_date) keeps one anchor per liability per date — a collision throws.
+  ctx.db
+    .insert(liabilityBalanceAnchors)
+    .values({
+      anchorDate: input.anchorDate,
+      balanceMinor: input.balanceMinor,
+      id: input.id,
+      liabilityId: input.liabilityId,
+    })
+    .run();
+
+  ctx.writeAuditEntry("add_balance_anchor", "liability", input.liabilityId, {
+    anchorDate: input.anchorDate,
+    anchorId: input.id,
+    balanceMinor: input.balanceMinor,
+  });
+}
+
+function readBalanceAnchors(
+  ctx: StoreContext,
+  liabilityId: string,
+): BalanceAnchorRecord[] {
+  const rows = ctx.db
+    .select()
+    .from(liabilityBalanceAnchors)
+    .where(eq(liabilityBalanceAnchors.liabilityId, liabilityId))
+    .orderBy(asc(liabilityBalanceAnchors.anchorDate), asc(liabilityBalanceAnchors.id))
+    .all();
+
+  return rows.map((row) => ({
+    anchorDate: row.anchorDate,
+    balanceMinor: row.balanceMinor,
+    id: row.id,
+    liabilityId: row.liabilityId,
+  }));
+}
+
+function updateBalanceAnchor(
+  ctx: StoreContext,
+  anchorId: string,
+  input: UpdateBalanceAnchorInput,
+): number {
+  if (input.balanceMinor !== undefined && !Number.isInteger(input.balanceMinor)) {
+    throw new Error("Money must be stored as integer minor units.");
+  }
+  if (input.anchorDate !== undefined) {
+    assertIsoDate(input.anchorDate, "Anchor date");
+  }
+
+  const existing = ctx.db
+    .select({ liabilityId: liabilityBalanceAnchors.liabilityId })
+    .from(liabilityBalanceAnchors)
+    .where(eq(liabilityBalanceAnchors.id, anchorId))
+    .get();
+
+  if (!existing) return 0;
+
+  const fields: Partial<typeof liabilityBalanceAnchors.$inferInsert> = {};
+  if (input.balanceMinor !== undefined) fields.balanceMinor = input.balanceMinor;
+  if (input.anchorDate !== undefined) fields.anchorDate = input.anchorDate;
+
+  const result = ctx.db
+    .update(liabilityBalanceAnchors)
+    .set(fields)
+    .where(eq(liabilityBalanceAnchors.id, anchorId))
+    .run();
+
+  if (result.changes > 0) {
+    ctx.writeAuditEntry("update_balance_anchor", "liability", existing.liabilityId, {
+      anchorId,
+      ...input,
+    });
+  }
+  return result.changes;
+}
+
+function deleteBalanceAnchor(ctx: StoreContext, anchorId: string): number {
+  const row = ctx.db
+    .select({ liabilityId: liabilityBalanceAnchors.liabilityId })
+    .from(liabilityBalanceAnchors)
+    .where(eq(liabilityBalanceAnchors.id, anchorId))
+    .get();
+
+  if (!row) return 0;
+
+  const result = ctx.db
+    .delete(liabilityBalanceAnchors)
+    .where(eq(liabilityBalanceAnchors.id, anchorId))
+    .run();
+
+  if (result.changes > 0) {
+    ctx.writeAuditEntry("delete_balance_anchor", "liability", row.liabilityId, {
+      anchorId,
+    });
+  }
+  return result.changes;
+}
+
+function debtBalanceAtDateFor(
+  ctx: StoreContext,
+  liabilityId: string,
+  targetDate: string,
+): number {
+  const row = ctx.db
+    .select({
+      currentBalanceMinor: liabilities.currentBalanceMinor,
+      debtModel: liabilities.debtModel,
+    })
+    .from(liabilities)
+    .where(eq(liabilities.id, liabilityId))
+    .get();
+
+  if (!row) {
+    throw new Error(`Liability "${liabilityId}" not found.`);
+  }
+
+  const currentBalanceMinor = row.currentBalanceMinor;
+  const debtModel = row.debtModel ?? null;
+
+  if (debtModel === "amortizable") {
+    const plan = readAmortizationPlan(ctx, liabilityId);
+    if (!plan) {
+      return debtBalanceAtDate({ currentBalanceMinor, debtModel, targetDate });
+    }
+    const revisions = readInterestRateRevisions(ctx, plan.id).map((revision) => ({
+      newAnnualInterestRate: revision.newAnnualInterestRate,
+      revisionDate: revision.revisionDate,
+    }));
+    return debtBalanceAtDate({
+      currentBalanceMinor,
+      debtModel,
+      plan: {
+        annualInterestRate: plan.annualInterestRate,
+        initialCapitalMinor: plan.initialCapitalMinor,
+        startDate: plan.startDate,
+        termMonths: plan.termMonths,
+      },
+      revisions,
+      targetDate,
+    });
+  }
+
+  const anchors = readBalanceAnchors(ctx, liabilityId).map((anchor) => ({
+    anchorDate: anchor.anchorDate,
+    balanceMinor: anchor.balanceMinor,
+  }));
+
+  return debtBalanceAtDate({ anchors, currentBalanceMinor, debtModel, targetDate });
 }
 
 function createLiabilityRecord(ctx: StoreContext, input: CreateLiabilityInput): void {

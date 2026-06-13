@@ -97,6 +97,8 @@ const KEY_EXPORTS = [
   "valueHousingAtDate",
   // amortization
   "amortizableBalanceAtDate",
+  // debt-balance
+  "debtBalanceAtDate",
 ] as const;
 
 describe("@worthline/domain barrel", () => {

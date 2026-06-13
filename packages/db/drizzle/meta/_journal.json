@@ -50,6 +50,13 @@
       "when": 1781320584599,
       "tag": "0006_furry_meggan",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1781321361546,
+      "tag": "0007_cold_micromax",
+      "breakpoints": true
     }
   ]
 }
