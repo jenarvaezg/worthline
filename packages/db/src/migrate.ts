@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 18;
+export const SCHEMA_VERSION = 19;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -42,6 +42,10 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
 
   const version = sqlite.pragma("user_version", { simple: true }) as number;
   if (version >= SCHEMA_VERSION) return { ranV18Backfill: false };
+
+  // Set by the v18 block and returned at the end — must survive later migration
+  // steps (v19+) rather than short-circuiting the ladder with an early return.
+  let ranV18Backfill = false;
 
   if (version < 2) {
     const safeSql = schemaSql
@@ -401,7 +405,6 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     }[];
     const hasStartDate = columns.some((c) => c.name === "start_date");
 
-    let ranV18Backfill = false;
     if (hasStartDate) {
       ranV18Backfill = true;
       sqlite.exec("ALTER TABLE amortization_plans ADD COLUMN disbursement_date TEXT");
@@ -454,8 +457,41 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       sqlite.pragma("foreign_keys = ON");
     }
     sqlite.pragma("user_version = 18");
-    return { ranV18Backfill };
   }
 
-  return { ranV18Backfill: false };
+  if (version < 19) {
+    // PRD #160 / #163 (ADR 0016/0017): connected sources mirror an external
+    // account read-only and project their positions into one rolled-up holding.
+    // credentials_json + token_json are LOCAL ONLY — never exported (ADR 0016).
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS connected_sources (
+      id TEXT PRIMARY KEY NOT NULL,
+      adapter TEXT NOT NULL,
+      label TEXT NOT NULL,
+      asset_id TEXT NOT NULL,
+      credentials_json TEXT NOT NULL,
+      token_json TEXT,
+      last_sync_at TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      FOREIGN KEY (asset_id) REFERENCES assets(id) ON UPDATE no action ON DELETE cascade
+    );`);
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS positions (
+      id TEXT PRIMARY KEY NOT NULL,
+      source_id TEXT NOT NULL,
+      catalogue_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      grade TEXT NOT NULL,
+      quantity INTEGER NOT NULL,
+      liquidity_tier TEXT NOT NULL,
+      metal TEXT,
+      purchase_date TEXT NOT NULL,
+      purchase_price_minor INTEGER,
+      currency TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      FOREIGN KEY (source_id) REFERENCES connected_sources(id) ON UPDATE no action ON DELETE cascade
+    );`);
+    sqlite.pragma("user_version = 19");
+  }
+
+  return { ranV18Backfill };
 }

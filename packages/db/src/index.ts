@@ -52,6 +52,10 @@ import {
   warningOverrides,
 } from "./schema";
 import { createAssetStore, type AssetStore } from "./asset-store";
+import {
+  createConnectedSourceStore,
+  type ConnectedSourceStore,
+} from "./connected-source-store";
 import { migrate, type MigrateResult } from "./migrate";
 
 export { SCHEMA_VERSION } from "./migrate";
@@ -110,6 +114,12 @@ export type {
   UpdateInterestRateRevisionInput,
   UpdateLiabilityInput,
 } from "./liability-store";
+export type {
+  ConnectSourceInput,
+  ConnectedSourceRow,
+  ConnectedSourceStore,
+  SourcePositionInput,
+} from "./connected-source-store";
 export type { OperationsStore, ValueUpdateCommand } from "./operations-store";
 export type {
   PositionView,
@@ -171,6 +181,8 @@ export interface WorthlineStore {
   operations: OperationsStore;
   /** Focused workspace lifecycle & member store (Slice R5). */
   workspace: WorkspaceStore;
+  /** Connected-source persistence (PRD #160 / #163, ADR 0016/0017). */
+  connectedSources: ConnectedSourceStore;
 
   // ── Cross-cutting (no per-domain home) ──────────────────────────────────────
 
@@ -384,6 +396,7 @@ function buildStore(
   const assetStore = createAssetStore(ctx);
   const liabilityStore = createLiabilityStore(ctx);
   const operationsStore = createOperationsStore(ctx);
+  const connectedSourceStore = createConnectedSourceStore(ctx);
   // importWorkspace's post-import gap-fill spans every domain and the snapshot
   // save path, so it stays in the monolith and is injected into the workspace
   // store as a dependency. The arrow defers reading store.snapshots.saveSnapshot until
@@ -402,6 +415,7 @@ function buildStore(
     liabilities: liabilityStore,
     operations: operationsStore,
     workspace: workspaceStore,
+    connectedSources: connectedSourceStore,
     close: () => {
       sqlite.close();
     },
