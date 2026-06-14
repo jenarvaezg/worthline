@@ -91,6 +91,34 @@ describe("refreshStalePrices provider routing", () => {
     });
   });
 
+  test("crypto investments route to CoinGecko and resolve a derived price", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ bitcoin: { eur: 58000 } }),
+    } as Response);
+
+    const result = await refreshStalePrices(
+      [stalePrice("asset-btc")],
+      [
+        {
+          id: "asset-btc",
+          currency: "EUR",
+          liquidityTier: "market",
+          priceProvider: "coingecko",
+          providerSymbol: "Bitcoin",
+        },
+      ],
+      "2026-06-09T10:00:00Z",
+    );
+
+    expect(result.updated).toBe(1);
+    expect(result.refreshed[0]).toMatchObject({
+      assetId: "asset-btc",
+      price: "58000",
+      source: "coingecko",
+    });
+  });
+
   test("surfaces each failed symbol with its human-readable reason", async () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
