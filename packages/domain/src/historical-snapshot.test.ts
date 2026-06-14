@@ -12,6 +12,7 @@ import {
   recalculateSnapshotForAsset,
   recalculateSnapshotForHousing,
   recalculateSnapshotForLiability,
+  recalculateSnapshotForOwnership,
   type DebtBalanceCurveInputs,
 } from "./historical-snapshot";
 import { lastKnownValueAtDate, type ManualValuePoint } from "./value-history";
@@ -1127,5 +1128,184 @@ describe("recalculateSnapshotForLiability", () => {
     // Balance recomputes to 0 (no anchors → current balance 0) → row drops →
     // nothing left → null.
     expect(result).toBeNull();
+  });
+});
+
+describe("recalculateSnapshotForOwnership (#172)", () => {
+  const eur = (amountMinor: number) => ({ amountMinor, currency: "EUR" });
+
+  function household(): Workspace {
+    return createWorkspace({
+      baseCurrency: "EUR",
+      members: [
+        { id: "mJ", name: "Jose" },
+        { id: "mA", name: "Ana" },
+      ],
+      mode: "household",
+    });
+  }
+
+  function mortgage(
+    workspace: Workspace,
+    ownership: { memberId: string; shareBps: number }[],
+  ): Liability {
+    return createLiability(workspace, {
+      associatedAssetId: "asset_piso",
+      balanceMinor: 100_000_00,
+      currency: "EUR",
+      id: "liab_h",
+      name: "Hipoteca",
+      ownership,
+      type: "mortgage",
+    });
+  }
+
+  const pisoRow = (valueMinor: number): SnapshotHoldingRow => ({
+    holdingId: "asset_piso",
+    kind: "asset",
+    label: "Piso",
+    liquidityTier: "illiquid",
+    valueMinor,
+  });
+  const mortgageRow = (valueMinor: number): SnapshotHoldingRow => ({
+    holdingId: "liab_h",
+    kind: "liability",
+    label: "Hipoteca",
+    liquidityTier: null,
+    valueMinor,
+  });
+
+  function snapshot(
+    scopeId: string,
+    pisoMinor: number,
+    debtMinor: number,
+  ): NetWorthSnapshot {
+    return {
+      capturedAt: "2022-01-01T12:00:00.000Z",
+      dateKey: "2022-01-01",
+      debts: eur(debtMinor),
+      grossAssets: eur(pisoMinor),
+      housingEquity: eur(pisoMinor - debtMinor),
+      id: `snap_${scopeId}`,
+      isMonthlyClose: false,
+      liquidNetWorth: eur(0),
+      monthKey: "2022-01",
+      scopeId,
+      scopeLabel: scopeId,
+      totalNetWorth: eur(pisoMinor - debtMinor),
+      warnings: [],
+    };
+  }
+
+  test("re-weights a member-scope liability row by the new split, preserving reconciliation", () => {
+    const workspace = household();
+    // Jose's scope froze 50% of each: piso 100k, mortgage 50k (global piso 200k,
+    // global mortgage 100k). The mortgage's split is corrected to 70/30.
+    const result = recalculateSnapshotForOwnership({
+      frozenHoldings: [pisoRow(100_000_00), mortgageRow(50_000_00)],
+      globalValueMinor: 100_000_00,
+      holding: {
+        housingAssetIds: new Set(["asset_piso"]),
+        kind: "liability",
+        liability: mortgage(workspace, [
+          { memberId: "mJ", shareBps: 7_000 },
+          { memberId: "mA", shareBps: 3_000 },
+        ]),
+      },
+      snapshot: snapshot("mJ", 100_000_00, 50_000_00),
+      workspace,
+    })!;
+
+    const debtRow = result.holdings.find((h) => h.holdingId === "liab_h")!;
+    expect(debtRow.valueMinor).toBe(70_000_00); // 70% of the 100k global balance
+    expect(result.snapshot.debts.amountMinor).toBe(70_000_00);
+    // Mortgage secures the piso → housing equity moves opposite to debt; gross unchanged.
+    expect(result.snapshot.grossAssets.amountMinor).toBe(100_000_00);
+    expect(result.snapshot.housingEquity.amountMinor).toBe(100_000_00 - 70_000_00);
+    expect(result.snapshot.totalNetWorth.amountMinor).toBe(100_000_00 - 70_000_00);
+    // Reconciliation: liability rows sum to debts; the piso row is untouched.
+    expect(
+      result.holdings
+        .filter((h) => h.kind === "liability")
+        .reduce((s, h) => s + h.valueMinor, 0),
+    ).toBe(70_000_00);
+    expect(result.holdings.find((h) => h.holdingId === "asset_piso")!.valueMinor).toBe(
+      100_000_00,
+    );
+  });
+
+  test("the household scope is a no-op — the split always sums to 100% there", () => {
+    const workspace = household();
+    const result = recalculateSnapshotForOwnership({
+      frozenHoldings: [pisoRow(200_000_00), mortgageRow(100_000_00)],
+      globalValueMinor: 100_000_00,
+      holding: {
+        housingAssetIds: new Set(["asset_piso"]),
+        kind: "liability",
+        liability: mortgage(workspace, [
+          { memberId: "mJ", shareBps: 7_000 },
+          { memberId: "mA", shareBps: 3_000 },
+        ]),
+      },
+      snapshot: snapshot("household", 200_000_00, 100_000_00),
+      workspace,
+    })!;
+    // Household sees the full balance regardless of how the split is cut.
+    expect(result.holdings.find((h) => h.holdingId === "liab_h")!.valueMinor).toBe(
+      100_000_00,
+    );
+    expect(result.snapshot.debts.amountMinor).toBe(100_000_00);
+    expect(result.snapshot.housingEquity.amountMinor).toBe(100_000_00);
+  });
+
+  test("re-weights a member-scope cash asset row and moves gross + liquid net worth", () => {
+    const workspace = household();
+    const account = createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 10_000_00,
+      id: "asset_cash",
+      liquidityTier: "cash",
+      name: "Cuenta",
+      ownership: [
+        { memberId: "mJ", shareBps: 6_000 },
+        { memberId: "mA", shareBps: 4_000 },
+      ],
+      type: "cash",
+    });
+    // Ana's scope froze 50% = 5_000_00; the split is corrected to 60/40.
+    const cashRow: SnapshotHoldingRow = {
+      holdingId: "asset_cash",
+      kind: "asset",
+      label: "Cuenta",
+      liquidityTier: "cash",
+      valueMinor: 5_000_00,
+    };
+    const result = recalculateSnapshotForOwnership({
+      frozenHoldings: [cashRow],
+      globalValueMinor: 10_000_00,
+      holding: { asset: account, kind: "asset" },
+      snapshot: {
+        capturedAt: "2022-01-01T12:00:00.000Z",
+        dateKey: "2022-01-01",
+        debts: eur(0),
+        grossAssets: eur(5_000_00),
+        housingEquity: eur(0),
+        id: "snap_mA",
+        isMonthlyClose: false,
+        liquidNetWorth: eur(5_000_00),
+        monthKey: "2022-01",
+        scopeId: "mA",
+        scopeLabel: "Ana",
+        totalNetWorth: eur(5_000_00),
+        warnings: [],
+      },
+      workspace,
+    })!;
+    const row = result.holdings.find((h) => h.holdingId === "asset_cash")!;
+    expect(row.valueMinor).toBe(4_000_00); // 40% of the 10k global value
+    expect(result.snapshot.grossAssets.amountMinor).toBe(4_000_00);
+    expect(result.snapshot.liquidNetWorth.amountMinor).toBe(4_000_00);
+    expect(result.snapshot.totalNetWorth.amountMinor).toBe(4_000_00);
+    expect(result.snapshot.housingEquity.amountMinor).toBe(0);
   });
 });

@@ -207,7 +207,10 @@ export function LiabilityEditForm({
         </label>
 
         <OwnershipInputs
-          allowPartial={false}
+          allowPartial={
+            assets.find((a) => a.id === liability.associatedAssetId)?.type ===
+            "real_estate"
+          }
           members={members}
           scopeMemberId={scopeMemberId}
           currentOwnership={liability.ownership}

@@ -89,6 +89,7 @@ const FIELD_KEYS = [
   "rate",
   "balance",
   "assoc",
+  "inheritOwnership",
 ];
 
 /** Copy a suffixed field onto a canonical name, when present. */
@@ -176,6 +177,7 @@ function scopedLiabilityForm(
   carry(formData, scoped, `name_${instrument}`, "name");
   carry(formData, scoped, `balance_${instrument}`, "balance");
   carry(formData, scoped, `assoc_${instrument}`, "associatedAssetId");
+  carry(formData, scoped, `inheritOwnership_${instrument}`, "inheritOwnership");
   carryOwnership(formData, scoped);
 
   return scoped;
@@ -315,7 +317,30 @@ export async function createHoldingAction(
       }
 
       const command = parseLiabilityCommand(scoped, workspace.members, Date.now());
-      const domainResult = createLiabilitySafe(workspace, command);
+
+      // #171: a liability associated to an asset inherits that asset's ownership
+      // split by default — a one-time copy at creation, then independently
+      // editable (not a live link, CONTEXT.md). Resolved here, server-side,
+      // because the add page carries no client JS (ADR 0009). The pre-checked
+      // "mismo reparto" option drives it; unchecked — or no asset associated —
+      // falls back to the footer ownership inputs exactly as before.
+      const inheritOwnership = scoped.get("inheritOwnership") === "on";
+      const associatedAsset = command.associatedAssetId
+        ? (store.assets.readAssets().find((a) => a.id === command.associatedAssetId) ??
+          null)
+        : null;
+      // A debt on a co-owned home mirrors the asset's split, which may be a known
+      // partial (e.g. 75% mine, 25% a non-member's), so it accepts a partial split
+      // exactly like the real_estate asset; a standalone debt still totals 100%.
+      const allowKnownPartial = associatedAsset?.type === "real_estate";
+      const resolved =
+        inheritOwnership && associatedAsset
+          ? { ...command, ownership: associatedAsset.ownership }
+          : command;
+
+      const domainResult = createLiabilitySafe(workspace, resolved, {
+        allowKnownPartial,
+      });
 
       if (!domainResult.ok) {
         return {
@@ -324,10 +349,10 @@ export async function createHoldingAction(
         };
       }
 
-      store.liabilities.createLiability(command);
-      store.liabilities.setDebtModel(command.id, liabilitySpec.debtModel);
+      store.liabilities.createLiability(resolved);
+      store.liabilities.setDebtModel(resolved.id, liabilitySpec.debtModel);
 
-      return { ok: true as const, id: command.id };
+      return { ok: true as const, id: resolved.id };
     });
 
     if (!result.ok) {

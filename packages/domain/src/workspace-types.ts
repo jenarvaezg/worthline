@@ -155,10 +155,11 @@ export function createManualAsset(
 export function createLiability(
   workspace: Workspace,
   input: CreateLiabilityInput,
+  options: { allowKnownPartial?: boolean } = {},
 ): Liability {
   assertCurrency(input.currency);
   assertMinorInteger(input.balanceMinor);
-  assertOwnership(workspace, input.ownership);
+  assertOwnership(workspace, input.ownership, options);
 
   return {
     currency: input.currency,
@@ -205,17 +206,18 @@ export function createManualAssetSafe(
 export function createLiabilitySafe(
   workspace: Workspace,
   input: CreateLiabilityInput,
+  options: { allowKnownPartial?: boolean } = {},
 ): DomainResult<Liability> {
   assertCurrency(input.currency);
   assertMinorInteger(input.balanceMinor);
 
-  const splitViolation = checkOwnershipSplit(workspace, input.ownership);
+  const splitViolation = checkOwnershipSplit(workspace, input.ownership, options);
 
   if (splitViolation) {
     return { ok: false, violations: [splitViolation] };
   }
 
-  return { ok: true, value: createLiability(workspace, input) };
+  return { ok: true, value: createLiability(workspace, input, options) };
 }
 
 function assertCurrency(currency: CurrencyCode): void {

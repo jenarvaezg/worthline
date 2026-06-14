@@ -47,6 +47,36 @@ function seedStore(): WorthlineStore {
   return store;
 }
 
+/** A 2-member household with a piso owned 65 % Jose / 35 % Ana (for #171). */
+function seedHousehold(): WorthlineStore {
+  const store = createInMemoryStore();
+  store.workspace.initializeWorkspace({
+    members: [
+      { id: "mJ", name: "Jose" },
+      { id: "mA", name: "Ana" },
+    ],
+    mode: "household",
+  });
+  store.assets.createManualAsset({
+    currency: "EUR",
+    currentValueMinor: 200_000_00,
+    id: "piso",
+    liquidityTier: "illiquid",
+    name: "Piso",
+    ownership: [
+      { memberId: "mJ", shareBps: 6_500 },
+      { memberId: "mA", shareBps: 3_500 },
+    ],
+    type: "real_estate",
+  });
+  return store;
+}
+
+function ownershipByMember(store: WorthlineStore): Record<string, number> {
+  const liability = store.liabilities.readLiabilities()[0]!;
+  return Object.fromEntries(liability.ownership.map((o) => [o.memberId, o.shareBps]));
+}
+
 describe("createHoldingAction — stored assets", () => {
   test("current_account → manual asset on the cash rung, instrument persisted", async () => {
     const store = seedStore();
@@ -287,5 +317,133 @@ describe("createHoldingAction — debts", () => {
     expect(liability.type).toBe("debt");
     expect(store.liabilities.readDebtModel(liability.id)).toBe("revolving");
     expect(defaultInstrumentForLiability("debt", "revolving")).toBe("credit_card");
+  });
+});
+
+describe("createHoldingAction — debt ownership inheritance (#171)", () => {
+  test("a mortgage associated to an asset, inherit on, copies the asset's split", async () => {
+    const store = seedHousehold();
+
+    await runAction(
+      form({
+        instrument: "mortgage",
+        name_mortgage: "Hipoteca Santander",
+        balance_mortgage: "120.000,00",
+        assoc_mortgage: "piso",
+        inheritOwnership_mortgage: "on",
+        // The footer says 100% Jose — it MUST be ignored while inherit is on.
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const liability = store.liabilities.readLiabilities()[0]!;
+    expect(liability.associatedAssetId).toBe("piso");
+    // Equals the piso's split (65/35), not the footer's 100% Jose.
+    expect(ownershipByMember(store)).toEqual({ mJ: 6_500, mA: 3_500 });
+  });
+
+  test("inherit off uses the footer ownership inputs exactly as today", async () => {
+    const store = seedHousehold();
+
+    await runAction(
+      form({
+        instrument: "mortgage",
+        name_mortgage: "Hipoteca",
+        balance_mortgage: "120.000,00",
+        assoc_mortgage: "piso",
+        // The inherit checkbox is unchecked → its field is absent from the POST.
+        ownershipPreset: "even",
+      }),
+      store,
+    );
+
+    // The footer's even split wins — NOT the piso's 65/35.
+    expect(ownershipByMember(store)).toEqual({ mJ: 5_000, mA: 5_000 });
+  });
+
+  test("inherits a partially-owned home's split and accepts it (single member, 75%)", async () => {
+    // A home co-owned with a non-member: 75% Jose, 25% external. The mortgage on
+    // it mirrors the 75% — a debt on a co-owned home is a known partial (#171),
+    // not rejected by the "totals 100%" rule that standalone debts obey.
+    const store = createInMemoryStore();
+    store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 200_000_00,
+      id: "piso",
+      liquidityTier: "illiquid",
+      name: "Piso",
+      ownership: [{ memberId: "mJ", shareBps: 7_500 }],
+      type: "real_estate",
+    });
+
+    const url = await runAction(
+      form({
+        instrument: "mortgage",
+        name_mortgage: "Hipoteca",
+        balance_mortgage: "120.000,00",
+        assoc_mortgage: "piso",
+        inheritOwnership_mortgage: "on",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    expect(url).toContain("ok="); // accepted, not rejected as "must sum to 100%"
+    expect(ownershipByMember(store)).toEqual({ mJ: 7_500 });
+  });
+
+  test("inherit on but no asset associated falls back to the footer preset (no crash)", async () => {
+    const store = seedHousehold();
+
+    await runAction(
+      form({
+        instrument: "mortgage",
+        name_mortgage: "Hipoteca",
+        balance_mortgage: "120.000,00",
+        assoc_mortgage: "",
+        inheritOwnership_mortgage: "on",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    expect(ownershipByMember(store)).toEqual({ mJ: 10_000 });
+  });
+
+  test("the inherited split is a one-time copy — a later asset edit does not move it", async () => {
+    const store = seedHousehold();
+
+    await runAction(
+      form({
+        instrument: "mortgage",
+        name_mortgage: "Hipoteca",
+        balance_mortgage: "120.000,00",
+        assoc_mortgage: "piso",
+        inheritOwnership_mortgage: "on",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+    expect(ownershipByMember(store)).toEqual({ mJ: 6_500, mA: 3_500 });
+
+    // Changing the asset's split afterwards must NOT follow into the liability:
+    // the inheritance is a copy at creation, not a live link (CONTEXT.md).
+    store.assets.updateAsset("piso", {
+      ownership: [
+        { memberId: "mJ", shareBps: 9_000 },
+        { memberId: "mA", shareBps: 1_000 },
+      ],
+    });
+
+    expect(ownershipByMember(store)).toEqual({ mJ: 6_500, mA: 3_500 });
   });
 });

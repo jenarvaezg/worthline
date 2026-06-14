@@ -618,9 +618,17 @@ function collectOwnershipErrors(
   };
   const memberIds = new Set(doc.members.map((member) => member.id));
 
+  // A real_estate asset — and a debt secured against one — may carry a known
+  // partial split (co-owned with a non-member, #171); every other holding totals
+  // 100%. Mirror the creation rule so a valid export round-trips.
+  const realEstateAssetIds = new Set(
+    allAssets.filter((asset) => asset.type === "real_estate").map((asset) => asset.id),
+  );
+
   const check = (
     kind: string,
     entity: { id: string; name: string; ownership: OwnershipShare[] },
+    allowKnownPartial: boolean,
   ): void => {
     const seenShareMembers = new Set<string>();
     const duplicateShareMembers = new Set<string>();
@@ -652,7 +660,9 @@ function collectOwnershipErrors(
       return;
     }
 
-    const violation = checkOwnershipSplit(workspace, entity.ownership);
+    const violation = checkOwnershipSplit(workspace, entity.ownership, {
+      allowKnownPartial,
+    });
 
     if (violation) {
       errors.push(
@@ -662,11 +672,17 @@ function collectOwnershipErrors(
   };
 
   for (const asset of allAssets) {
-    check("activo", asset);
+    check("activo", asset, asset.type === "real_estate");
   }
 
   for (const liability of allLiabilities) {
-    check("pasivo", liability);
+    check(
+      "pasivo",
+      liability,
+      liability.associatedAssetId
+        ? realEstateAssetIds.has(liability.associatedAssetId)
+        : false,
+    );
   }
 }
 

@@ -752,3 +752,177 @@ export function recalculateSnapshotForLiability(
 
   return { holdings: rows, snapshot };
 }
+
+/** The edited holding's identity, carrying its NEW ownership split (#172). */
+export type OwnershipRippleHolding =
+  | { kind: "asset"; asset: ManualAsset }
+  | { kind: "liability"; liability: Liability; housingAssetIds: ReadonlySet<string> };
+
+export interface RecalculateOwnershipSnapshotInput {
+  /** The existing snapshot to recalculate (its id, scope, date, capturedAt are preserved). */
+  snapshot: NetWorthSnapshot;
+  /** The snapshot's currently frozen holding rows. */
+  frozenHoldings: SnapshotHoldingRow[];
+  /** The edited holding's identity with its NEW ownership split. */
+  holding: OwnershipRippleHolding;
+  /**
+   * The holding's GLOBAL value (the whole holding, 100% of the split) on this
+   * snapshot's date — i.e. the household-scope frozen value, which is invariant
+   * under an ownership-split edit. Positive; for a liability it is the
+   * outstanding balance. The new per-scope row is this value re-weighted by the
+   * new split (`allocateScopedHolding`).
+   */
+  globalValueMinor: number;
+  workspace: Workspace;
+}
+
+/**
+ * Recalculate an existing snapshot after one holding's OWNERSHIP SPLIT changed
+ * (#172 ripple). An ownership split has no date dimension — it weights the
+ * holding's global value into each member's scope — so a correction re-derives
+ * every per-scope snapshot's row for that holding by re-weighting its (unchanged)
+ * global value with the new split. Only that holding's row is recomputed; every
+ * other frozen row is preserved verbatim, exactly like the operation / housing /
+ * debt ripples. The household scope is invariant (its split always sums to 100%),
+ * so callers skip it; passing a household snapshot here is a genuine no-op
+ * (delta 0). Figures are adjusted by the holding's value delta against the
+ * snapshot's own frozen figures, on the same axes the value ripples use (an asset
+ * moves gross + total, plus housing or liquid by its tier; a liability moves debts
+ * + total, plus housing equity or liquid). No new snapshot dates are created.
+ *
+ * Returns null when no holdings remain (the caller drops the snapshot). The
+ * holding is scope-weighted with the same allocation the headline figures use, so
+ * the reconciliation invariant (ADR 0008) holds by construction.
+ */
+export function recalculateSnapshotForOwnership(
+  input: RecalculateOwnershipSnapshotInput,
+): ValuedNetWorthSnapshot | null {
+  const currency = input.workspace.baseCurrency;
+  const scopeMemberIds = new Set(
+    resolveScopeMemberIds(input.workspace, input.snapshot.scopeId),
+  );
+
+  const { holding } = input;
+  const holdingId = holding.kind === "asset" ? holding.asset.id : holding.liability.id;
+  const ownership =
+    holding.kind === "asset" ? holding.asset.ownership : holding.liability.ownership;
+
+  const existingRow = input.frozenHoldings.find(
+    (row) => row.holdingId === holdingId && row.kind === holding.kind,
+  );
+  const rows = input.frozenHoldings.filter((row) => row.holdingId !== holdingId);
+
+  // Re-weight the holding's global value into THIS scope by the new split.
+  const { ownedMinor, totalShareBps } = allocateScopedHolding(input.globalValueMinor, {
+    ownership,
+    scopeMemberIds,
+  });
+
+  let newRow: SnapshotHoldingRow | undefined;
+  if (totalShareBps > 0 && ownedMinor !== 0) {
+    newRow = {
+      holdingId,
+      kind: holding.kind,
+      label:
+        existingRow?.label ??
+        (holding.kind === "asset" ? holding.asset.name : holding.liability.name),
+      liquidityTier: existingRow
+        ? existingRow.liquidityTier
+        : holding.kind === "asset"
+          ? tierOfAsset(holding.asset)
+          : null,
+      valueMinor: ownedMinor,
+      ...(existingRow?.units !== undefined ? { units: existingRow.units } : {}),
+      ...(existingRow?.unitPrice !== undefined
+        ? { unitPrice: existingRow.unitPrice }
+        : {}),
+    };
+    rows.push(newRow);
+  }
+
+  if (rows.length === 0) return null;
+
+  const deltaMinor = (newRow?.valueMinor ?? 0) - (existingRow?.valueMinor ?? 0);
+
+  let summary;
+  if (holding.kind === "asset") {
+    // An asset moves gross + total; housing equity when it is the home; liquid
+    // when it sits on a liquid rung — same basis as recalculateSnapshotForAsset.
+    const tier = existingRow?.liquidityTier ?? newRow?.liquidityTier ?? null;
+    const movesHousing = isHousingAsset(holding.asset);
+    summary = {
+      debts: { amountMinor: input.snapshot.debts.amountMinor, currency },
+      grossAssets: {
+        amountMinor: input.snapshot.grossAssets.amountMinor + deltaMinor,
+        currency,
+      },
+      housingEquity: {
+        amountMinor:
+          input.snapshot.housingEquity.amountMinor + (movesHousing ? deltaMinor : 0),
+        currency,
+      },
+      liquidNetWorth: {
+        amountMinor:
+          input.snapshot.liquidNetWorth.amountMinor +
+          (tier && isLiquid(tier) ? deltaMinor : 0),
+        currency,
+      },
+      scopeId: input.snapshot.scopeId,
+      totalNetWorth: {
+        amountMinor: input.snapshot.totalNetWorth.amountMinor + deltaMinor,
+        currency,
+      },
+    };
+  } else {
+    // A liability moves debts (+delta) and total (-delta); housing equity when it
+    // secures the home, else liquid when it sits on a liquid rung — same basis as
+    // recalculateSnapshotForLiability (the rung resolves from frozen asset rows).
+    const assetRungById = new Map(
+      rows
+        .filter((row) => row.kind === "asset" && row.liquidityTier !== null)
+        .map((row) => [row.holdingId, row.liquidityTier!] as const),
+    );
+    const securesHousing = securesHousingAsset(
+      holding.liability,
+      holding.housingAssetIds,
+    );
+    const affectsLiquid =
+      !securesHousing && isLiquid(rungForLiability(holding.liability, assetRungById));
+    summary = {
+      debts: { amountMinor: input.snapshot.debts.amountMinor + deltaMinor, currency },
+      grossAssets: { amountMinor: input.snapshot.grossAssets.amountMinor, currency },
+      housingEquity: {
+        amountMinor:
+          input.snapshot.housingEquity.amountMinor + (securesHousing ? -deltaMinor : 0),
+        currency,
+      },
+      liquidNetWorth: {
+        amountMinor:
+          input.snapshot.liquidNetWorth.amountMinor + (affectsLiquid ? -deltaMinor : 0),
+        currency,
+      },
+      scopeId: input.snapshot.scopeId,
+      totalNetWorth: {
+        amountMinor: input.snapshot.totalNetWorth.amountMinor - deltaMinor,
+        currency,
+      },
+    };
+  }
+
+  const ownershipSnapshot = createNetWorthSnapshot({
+    capturedAt: input.snapshot.capturedAt,
+    id: input.snapshot.id,
+    isMonthlyClose: input.snapshot.isMonthlyClose,
+    scopeId: input.snapshot.scopeId,
+    scopeLabel: input.snapshot.scopeLabel,
+    summary,
+    warnings: input.snapshot.warnings,
+  });
+
+  assertSnapshotHoldingsReconcile(rows, {
+    debtsMinor: summary.debts.amountMinor,
+    grossAssetsMinor: summary.grossAssets.amountMinor,
+  });
+
+  return { holdings: rows, snapshot: ownershipSnapshot };
+}

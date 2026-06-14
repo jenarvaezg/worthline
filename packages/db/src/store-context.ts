@@ -420,15 +420,23 @@ export function readLiabilities(db: StoreDb, workspace: Workspace | null): Liabi
   const ownershipByLiability = readLiabilityOwnerships(db);
 
   return rows.map((row) =>
-    createLiability(workspace, {
-      balanceMinor: row.balanceMinor,
-      currency: row.currency,
-      id: row.id,
-      name: row.name,
-      ownership: ownershipByLiability.get(row.id) ?? [],
-      type: row.type,
-      ...(row.associatedAssetId ? { associatedAssetId: row.associatedAssetId } : {}),
-    }),
+    // Reconstruction of already-persisted data never re-asserts the strict
+    // "totals 100%" rule (that is a write-time concern). A debt on a co-owned
+    // home is legitimately a known partial (#171), so accept ≤100% here — re-
+    // asserting would turn a valid data state into a crash on every read.
+    createLiability(
+      workspace,
+      {
+        balanceMinor: row.balanceMinor,
+        currency: row.currency,
+        id: row.id,
+        name: row.name,
+        ownership: ownershipByLiability.get(row.id) ?? [],
+        type: row.type,
+        ...(row.associatedAssetId ? { associatedAssetId: row.associatedAssetId } : {}),
+      },
+      { allowKnownPartial: true },
+    ),
   );
 }
 

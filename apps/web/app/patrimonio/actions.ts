@@ -7,6 +7,7 @@ import {
   createLiabilitySafe,
   isHousingAsset,
 } from "@worthline/domain";
+import type { OwnershipShare } from "@worthline/domain";
 import { redirect } from "next/navigation";
 
 import {
@@ -147,7 +148,13 @@ export async function createLiabilityAction(
     }
 
     const command = parseLiabilityCommand(formData, workspace.members, Date.now());
-    const domainResult = createLiabilitySafe(workspace, command);
+    // A debt on a co-owned home mirrors the asset's (possibly partial) split (#171).
+    const associatedAsset = command.associatedAssetId
+      ? (store.assets.readAssets().find((a) => a.id === command.associatedAssetId) ??
+        null)
+      : null;
+    const allowKnownPartial = associatedAsset?.type === "real_estate";
+    const domainResult = createLiabilitySafe(workspace, command, { allowKnownPartial });
 
     if (!domainResult.ok) {
       return { ok: false, error: mapDomainViolation(domainResult.violations[0]) };
@@ -559,6 +566,17 @@ export async function batchValueUpdateAction(
   );
 }
 
+/**
+ * Whether two ownership splits differ (order-independent). Gates the #172
+ * ripple: an ownership-split change re-derives history, a cosmetic edit (rename)
+ * leaves the split — and therefore the frozen snapshots — untouched.
+ */
+function ownershipChanged(before: OwnershipShare[], after: OwnershipShare[]): boolean {
+  if (before.length !== after.length) return true;
+  const beforeByMember = new Map(before.map((share) => [share.memberId, share.shareBps]));
+  return after.some((share) => beforeByMember.get(share.memberId) !== share.shareBps);
+}
+
 export async function editAssetAction(
   formData: FormData,
   _store?: WorthlineStore,
@@ -605,17 +623,37 @@ export async function editAssetAction(
         return { ok: false, error: "Workspace no inicializado." };
       }
 
-      const ownership = parseOwnership(formData, workspace.members);
-      const splitViolation = checkOwnershipSplit(workspace, ownership);
+      const liabilityType =
+        formData.get("type") === "debt" ? ("debt" as const) : ("mortgage" as const);
+      const associatedAssetId =
+        String(formData.get("associatedAssetId") ?? "").trim() || null;
+
+      // #171: a debt associated to a co-owned home mirrors the asset's split,
+      // which may be a known partial (e.g. 75% mine, 25% a non-member's). So a
+      // debt on a real_estate asset accepts a partial split, exactly like the
+      // asset; a standalone debt still totals 100%.
+      const associatedAsset = associatedAssetId
+        ? (store.assets.readAssets().find((a) => a.id === associatedAssetId) ?? null)
+        : null;
+      const allowKnownPartial = associatedAsset?.type === "real_estate";
+
+      const ownership = parseOwnership(formData, workspace.members, {
+        completeShortfall: !allowKnownPartial,
+      });
+      const splitViolation = checkOwnershipSplit(workspace, ownership, {
+        allowKnownPartial,
+      });
 
       if (splitViolation) {
         return { ok: false, error: mapDomainViolation(splitViolation) };
       }
 
-      const liabilityType =
-        formData.get("type") === "debt" ? ("debt" as const) : ("mortgage" as const);
-      const associatedAssetId =
-        String(formData.get("associatedAssetId") ?? "").trim() || null;
+      // #172: an ownership-split change is a retroactive parameter edit that
+      // ripples per-member snapshot history; a rename (same split) does not.
+      const before = store.liabilities.readLiabilities().find((l) => l.id === id) ?? null;
+      const ownershipDidChange = before
+        ? ownershipChanged(before.ownership, ownership)
+        : false;
 
       store.liabilities.updateLiability(id, {
         name,
@@ -623,6 +661,14 @@ export async function editAssetAction(
         associatedAssetId,
         ownership,
       });
+
+      if (ownershipDidChange && before) {
+        store.rippleHistoricalSnapshotsForOwnership({
+          holdingId: id,
+          kind: "liability",
+          previousOwnership: before.ownership,
+        });
+      }
 
       return { ok: true };
     });
@@ -656,6 +702,14 @@ export async function editAssetAction(
       return { ok: false, error: mapDomainViolation(splitViolation) };
     }
 
+    // #172: an ownership-split change ripples per-member snapshot history. For a
+    // real_estate asset the valuation ripple below already re-weights every
+    // affected snapshot from the asset's new split, so it covers this case.
+    const before = store.assets.readAssets().find((a) => a.id === id) ?? null;
+    const ownershipDidChange = before
+      ? ownershipChanged(before.ownership, ownership)
+      : false;
+
     store.assets.updateAsset(id, {
       name,
       type,
@@ -675,6 +729,12 @@ export async function editAssetAction(
           today,
         });
       }
+    } else if (ownershipDidChange && before) {
+      store.rippleHistoricalSnapshotsForOwnership({
+        holdingId: id,
+        kind: "asset",
+        previousOwnership: before.ownership,
+      });
     }
 
     return { ok: true };
