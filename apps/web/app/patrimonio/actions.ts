@@ -793,6 +793,27 @@ function upsertTodayMarketValuationAnchor(
   });
 }
 
+/**
+ * The earliest dateKey strictly before `today` of an existing snapshot that
+ * carries this asset's row, or null. Shared by the housing ripples to find the
+ * earliest snapshot a curve change could affect — including ones dated before
+ * the first anchor (where the appreciation rate compounds backward, #184).
+ */
+function earliestHousingSnapshotDate(
+  store: WorthlineStore,
+  assetId: string,
+  today: string,
+): string | null {
+  return (
+    store.snapshots
+      .readSnapshotHoldings()
+      .filter((row) => row.kind === "asset" && row.holdingId === assetId)
+      .map((row) => row.dateKey)
+      .filter((dateKey) => dateKey < today)
+      .sort()[0] ?? null
+  );
+}
+
 function firstHousingCurrentValueRippleDate(
   store: WorthlineStore,
   assetId: string,
@@ -808,14 +829,7 @@ function firstHousingCurrentValueRippleDate(
     return firstPastAnchorDate;
   }
 
-  const firstSnapshotDate = store.snapshots
-    .readSnapshotHoldings()
-    .filter((row) => row.kind === "asset" && row.holdingId === assetId)
-    .map((row) => row.dateKey)
-    .filter((dateKey) => dateKey < today)
-    .sort()[0];
-
-  return firstSnapshotDate ?? null;
+  return earliestHousingSnapshotDate(store, assetId, today);
 }
 
 function firstHousingEventDate(
@@ -888,15 +902,22 @@ export async function setAppreciationRateAction(
 
     store.assets.setAnnualAppreciationRate(id, parsed.rate);
 
-    // A rate change ripples from the first anchor's date (PRD #108): re-evaluate
-    // every snapshot on/after it from the new curve. No anchors → nothing to ripple.
-    const anchors = store.assets.readValuationAnchors(id);
-    const firstAnchorDate = anchors[0]?.valuationDate;
+    // A rate change ripples over the WHOLE rate-valued range (#184): the curve
+    // compounds the rate BACKWARD before the first appraisal, so a snapshot dated
+    // before the first anchor is rate-valued too. Ripple from the EARLIEST
+    // affected snapshot date — min(first anchor, earliest existing snapshot
+    // carrying this asset) — reusing the current-value ripple's earliest-snapshot
+    // logic, so the pre-appraisal range is recomputed and not left stale.
+    const firstAnchorDate = store.assets.readValuationAnchors(id)[0]?.valuationDate;
+    const earliestSnapshotDate = earliestHousingSnapshotDate(store, id, today);
+    const fromDateKey = [firstAnchorDate, earliestSnapshotDate]
+      .filter((dateKey): dateKey is string => dateKey != null)
+      .sort()[0];
 
-    if (firstAnchorDate && firstAnchorDate <= today) {
+    if (fromDateKey && fromDateKey <= today) {
       store.rippleHistoricalSnapshotsForValuation({
         assetId: id,
-        fromDateKey: firstAnchorDate,
+        fromDateKey,
         today,
       });
     }
