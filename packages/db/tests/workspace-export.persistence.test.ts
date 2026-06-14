@@ -113,6 +113,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
         kind: "asset",
         label: "Cuenta ING",
         liquidityTier: "cash",
+        securesHousing: false,
         valueMinor: 500000,
       },
       {
@@ -120,6 +121,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
         kind: "asset",
         label: "Fondo Indexado",
         liquidityTier: "market",
+        securesHousing: false,
         unitPrice: "105.5",
         units: "10",
         valueMinor: 105500,
@@ -129,6 +131,8 @@ function seedFullWorkspace(store: WorthlineStore): void {
         kind: "liability",
         label: "Hipoteca",
         liquidityTier: null,
+        // The frozen housing-securing signal round-trips through export/import (#180).
+        securesHousing: true,
         valueMinor: 120000,
       },
     ],
@@ -311,6 +315,7 @@ describe("exportWorkspace", () => {
         kind: "asset",
         label: "Cuenta ING",
         liquidityTier: "cash",
+        securesHousing: false,
         valueMinor: 500000,
       },
       {
@@ -318,6 +323,7 @@ describe("exportWorkspace", () => {
         kind: "asset",
         label: "Fondo Indexado",
         liquidityTier: "market",
+        securesHousing: false,
         unitPrice: "105.5",
         units: "10",
         valueMinor: 105500,
@@ -327,6 +333,7 @@ describe("exportWorkspace", () => {
         kind: "liability",
         label: "Hipoteca",
         liquidityTier: null,
+        securesHousing: true,
         valueMinor: 120000,
       },
     ]);

@@ -412,6 +412,7 @@ describe("recalculateSnapshotForHousing", () => {
       kind: "asset",
       label: "Piso",
       liquidityTier: "illiquid",
+      securesHousing: false,
       valueMinor,
     };
   }
@@ -481,6 +482,7 @@ describe("recalculateSnapshotForHousing", () => {
       kind: "asset",
       label: "Cuenta",
       liquidityTier: "cash",
+      securesHousing: false,
       valueMinor: 5_000_00,
     };
 
@@ -586,6 +588,7 @@ describe("recalculateSnapshotForAsset", () => {
       kind: "asset",
       label: "Fondo",
       liquidityTier: "market",
+      securesHousing: false,
       unitPrice: "100",
       units,
       valueMinor,
@@ -619,6 +622,7 @@ describe("recalculateSnapshotForAsset", () => {
       kind: "liability",
       label: "Hipoteca",
       liquidityTier: null, // unassociated → frozen as null
+      securesHousing: false, // unassociated → secures no housing
       valueMinor: 500_00,
     };
   }
@@ -794,6 +798,46 @@ describe("buildSnapshotAtDate with debtBalanceByLiability", () => {
     expect(built.snapshot.totalNetWorth.amountMinor).toBe(200_000_00 - balance2022);
   });
 
+  test("the historical path freezes securesHousing on every row (#180)", () => {
+    const workspace = makeWorkspace();
+    const piso = housing(workspace, "asset_piso", 200_000_00);
+    const hipoteca = mortgage(workspace, "liab_h", 100_000_00);
+    // A standalone debt that secures no asset at all.
+    const loan = createLiability(workspace, {
+      balanceMinor: 5_000_00,
+      currency: "EUR",
+      id: "liab_loan",
+      name: "Préstamo",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "debt",
+    });
+
+    const built = buildSnapshotAtDate({
+      ...BASE,
+      assets: [piso],
+      capturedAt: "2022-01-01T12:00:00.000Z",
+      liabilities: [hipoteca, loan],
+      manualValueHistory: new Map(),
+      operationsByAsset: new Map(),
+      targetDate: "2022-01-01",
+      today: "2026-06-12",
+      workspace,
+    })!;
+
+    // A debt associated to a housing asset freezes true; an unassociated debt
+    // and the housing asset itself freeze false — the same all-assets
+    // classification the live capture path uses, mirrored at historical capture.
+    expect(built.holdings.find((h) => h.holdingId === "liab_h")?.securesHousing).toBe(
+      true,
+    );
+    expect(built.holdings.find((h) => h.holdingId === "liab_loan")?.securesHousing).toBe(
+      false,
+    );
+    expect(built.holdings.find((h) => h.holdingId === "asset_piso")?.securesHousing).toBe(
+      false,
+    );
+  });
+
   test("values a revolving liability from anchors, flat outside the range", () => {
     const workspace = makeWorkspace();
     const card = createLiability(workspace, {
@@ -915,18 +959,21 @@ describe("recalculateSnapshotForLiability", () => {
       kind: "asset",
       label: "Piso",
       liquidityTier: "illiquid",
+      securesHousing: false,
       valueMinor,
     };
   }
 
-  // A null-tier frozen mortgage row (unassociated mortgage), exactly the shape
-  // buildSnapshotHoldingRows freezes for an unassociated mortgage.
+  // A null-tier frozen mortgage row that nonetheless secures a housing asset:
+  // the rung is null (liabilities net against their asset, not by their own
+  // rung), but securesHousing is frozen true — the self-classifying signal (#180).
   function mortgageRow(valueMinor: number): SnapshotHoldingRow {
     return {
       holdingId: "liab_h",
       kind: "liability",
       label: "Hipoteca",
       liquidityTier: null,
+      securesHousing: true,
       valueMinor,
     };
   }
@@ -1024,6 +1071,7 @@ describe("recalculateSnapshotForLiability", () => {
       kind: "asset",
       label: "Cuenta",
       liquidityTier: "cash",
+      securesHousing: false,
       valueMinor: 5_000_00,
     };
     const result = recalculateSnapshotForLiability({
@@ -1061,6 +1109,7 @@ describe("recalculateSnapshotForLiability", () => {
       kind: "liability",
       label: "Tarjeta",
       liquidityTier: null,
+      securesHousing: false,
       valueMinor: 1_000_00,
     };
     const cashRow: SnapshotHoldingRow = {
@@ -1068,6 +1117,7 @@ describe("recalculateSnapshotForLiability", () => {
       kind: "asset",
       label: "Cuenta",
       liquidityTier: "cash",
+      securesHousing: false,
       valueMinor: 5_000_00,
     };
     const snapshot: NetWorthSnapshot = {
@@ -1165,6 +1215,7 @@ describe("recalculateSnapshotForOwnership (#172)", () => {
     kind: "asset",
     label: "Piso",
     liquidityTier: "illiquid",
+    securesHousing: false,
     valueMinor,
   });
   const mortgageRow = (valueMinor: number): SnapshotHoldingRow => ({
@@ -1172,6 +1223,7 @@ describe("recalculateSnapshotForOwnership (#172)", () => {
     kind: "liability",
     label: "Hipoteca",
     liquidityTier: null,
+    securesHousing: true, // secures asset_piso (a housing asset) — frozen true (#180)
     valueMinor,
   });
 
@@ -1278,6 +1330,7 @@ describe("recalculateSnapshotForOwnership (#172)", () => {
       kind: "asset",
       label: "Cuenta",
       liquidityTier: "cash",
+      securesHousing: false,
       valueMinor: 5_000_00,
     };
     const result = recalculateSnapshotForOwnership({

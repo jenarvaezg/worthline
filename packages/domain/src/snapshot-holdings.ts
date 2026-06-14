@@ -14,7 +14,12 @@
  */
 
 import type { LiquidityTier } from "./classification";
-import { rungForLiability, tierOfAsset } from "./classification";
+import {
+  housingAssetIdsOf,
+  rungForLiability,
+  securesHousingAsset,
+  tierOfAsset,
+} from "./classification";
 import type { DecimalString } from "./decimal";
 import type { Liability, ManualAsset, Workspace } from "./workspace-types";
 import { resolveScopeMemberIds } from "./scope";
@@ -39,6 +44,16 @@ export interface SnapshotHoldingRow {
    * resolved via the asset securing them — null when no asset secures the debt.
    */
   liquidityTier: LiquidityTier | null;
+  /**
+   * Whether this holding secures a housing asset, frozen at capture time from the
+   * ALL-ASSETS classification (#180). Set only for liabilities — true when the
+   * liability is associated to a housing asset present at capture, false
+   * otherwise; always false for assets. Frozen on purpose: it makes the derived
+   * housing-equity axis self-classifying, so historical figures never re-derive
+   * the relationship from live holding identity (a live foreign key into frozen
+   * history, which ADR 0008 forbids).
+   */
+  securesHousing: boolean;
   /** The scope-weighted value in integer minor units (same weighting as the headline figures). */
   valueMinor: number;
   /** Units held — investments only. */
@@ -77,6 +92,10 @@ export function buildSnapshotHoldingRows(
   const assetTierById = new Map(
     input.assets.map((asset) => [asset.id, tierOfAsset(asset)]),
   );
+  // The ALL-ASSETS housing classification at capture time (#180) — the same basis
+  // calculateNetWorth uses to net debts against housing. Frozen onto each row so
+  // historical figures never re-derive it from live holding identity (ADR 0008).
+  const housingAssetIds = housingAssetIdsOf(input.assets);
   const rows: SnapshotHoldingRow[] = [];
 
   for (const asset of input.assets) {
@@ -97,6 +116,7 @@ export function buildSnapshotHoldingRows(
       kind: "asset",
       label: asset.name,
       liquidityTier: tierOfAsset(asset),
+      securesHousing: false,
       valueMinor: ownedMinor,
       ...(detail
         ? {
@@ -124,6 +144,7 @@ export function buildSnapshotHoldingRows(
       liquidityTier: liability.associatedAssetId
         ? rungForLiability(liability, assetTierById)
         : null,
+      securesHousing: securesHousingAsset(liability, housingAssetIds),
       valueMinor: ownedMinor,
     });
   }

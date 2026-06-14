@@ -143,6 +143,7 @@ function makeExportData(): WorkspaceExportData {
             kind: "asset",
             label: "Cuenta corriente",
             liquidityTier: "cash",
+            securesHousing: false,
             valueMinor: 150000,
           },
           {
@@ -150,6 +151,7 @@ function makeExportData(): WorkspaceExportData {
             kind: "liability",
             label: "Hipoteca",
             liquidityTier: "cash",
+            securesHousing: true,
             valueMinor: 20000,
           },
         ],
@@ -348,6 +350,23 @@ describe("parseWorkspaceExport — acceptance", () => {
     const result = parseWorkspaceExport(document);
 
     expect(result.ok).toBe(true);
+  });
+
+  test("a holding row lacking securesHousing defaults to false (pre-#180 export)", () => {
+    const document = makeDocument((doc) => {
+      for (const holding of doc.snapshots[0]!.holdings) {
+        delete (holding as unknown as Record<string, unknown>)["securesHousing"];
+      }
+    });
+
+    const result = parseWorkspaceExport(document);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      for (const holding of result.value.snapshots[0]!.holdings) {
+        expect(holding.securesHousing).toBe(false);
+      }
+    }
   });
 
   test("unknown extra keys are tolerated and stripped", () => {

@@ -157,6 +157,61 @@ describe("buildSnapshotHoldingRows — row production and denormalization", () =
     });
   });
 
+  test("freezes securesHousing=true for a debt on a housing asset, false otherwise (#180)", () => {
+    const workspace = makeWorkspace();
+    const rows = buildSnapshotHoldingRows({
+      assets: makeAssets(workspace),
+      liabilities: makeLiabilities(workspace),
+      scopeId: "household",
+      workspace,
+    });
+
+    // The mortgage secures the primary residence (a housing asset) → frozen true.
+    expect(
+      rows.find((row) => row.holdingId === "liability_mortgage")?.securesHousing,
+    ).toBe(true);
+
+    // An unassociated personal loan secures no housing → frozen false.
+    expect(rows.find((row) => row.holdingId === "liability_loan")?.securesHousing).toBe(
+      false,
+    );
+
+    // Assets never secure housing — the signal is liability-only by meaning.
+    expect(rows.find((row) => row.holdingId === "asset_home")?.securesHousing).toBe(
+      false,
+    );
+    expect(rows.find((row) => row.holdingId === "asset_cash")?.securesHousing).toBe(
+      false,
+    );
+  });
+
+  test("a debt associated to a NON-housing asset freezes securesHousing=false (#180)", () => {
+    const workspace = makeWorkspace();
+    const assets = makeAssets(workspace);
+    // A debt secured against the (liquid, non-housing) cash account.
+    const liabilities = [
+      createLiability(workspace, {
+        associatedAssetId: "asset_cash",
+        balanceMinor: 1_000_00,
+        currency: "EUR",
+        id: "liability_secured_cash",
+        name: "Pignoración",
+        ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+        type: "debt",
+      }),
+    ];
+    const rows = buildSnapshotHoldingRows({
+      assets,
+      liabilities,
+      scopeId: "household",
+      workspace,
+    });
+
+    expect(
+      rows.find((row) => row.holdingId === "liability_secured_cash")?.securesHousing,
+    ).toBe(false);
+  });
+
   test("scope-weights values by ownership and omits holdings outside the scope", () => {
     const workspace = makeWorkspace();
     const rows = buildSnapshotHoldingRows({
@@ -287,6 +342,7 @@ describe("assertSnapshotHoldingsReconcile — both sides of the invariant", () =
       kind: "asset" as const,
       label: "A",
       liquidityTier: "cash" as const,
+      securesHousing: false,
       valueMinor: 70_00,
     },
     {
@@ -294,6 +350,7 @@ describe("assertSnapshotHoldingsReconcile — both sides of the invariant", () =
       kind: "asset" as const,
       label: "B",
       liquidityTier: "market" as const,
+      securesHousing: false,
       valueMinor: 30_00,
     },
     {
@@ -301,6 +358,7 @@ describe("assertSnapshotHoldingsReconcile — both sides of the invariant", () =
       kind: "liability" as const,
       label: "C",
       liquidityTier: null,
+      securesHousing: false,
       valueMinor: 25_00,
     },
   ];

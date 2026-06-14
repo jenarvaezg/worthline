@@ -201,6 +201,10 @@ const snapshotHoldingSchema = z.object({
   kind: z.enum(["asset", "liability"]),
   label: nonEmptyString,
   liquidityTier: liquidityTierSchema.nullable(),
+  // Frozen housing-securing signal (#180). Defaults false for exports written
+  // before the field existed — the same additive basis the migration backfill
+  // uses, so an old export never claims a debt secures housing it cannot prove.
+  securesHousing: z.boolean().default(false),
   valueMinor: z.number().int(),
   units: nonEmptyString.optional(),
   unitPrice: nonEmptyString.optional(),
