@@ -24,7 +24,14 @@ import type {
   SnapshotHoldingRow,
   Workspace,
 } from "./index";
-import { createLiability, createManualAsset, createWorkspace } from "./index";
+import {
+  calculateNetWorth,
+  captureValuedNetWorthSnapshot,
+  createLiability,
+  createManualAsset,
+  createWorkspace,
+  money,
+} from "./index";
 
 function makeWorkspace(): Workspace {
   return createWorkspace({
@@ -595,19 +602,21 @@ describe("recalculateSnapshotForAsset", () => {
     };
   }
 
-  // A snapshot whose figures already reflect an unassociated mortgage frozen
-  // with a null tier (housing debt) — the exact shape that broke the earlier
-  // row-summing recompute.
+  // A snapshot whose figures already reflect a mortgage frozen with a null tier
+  // but securesHousing=true (a housing debt) — the exact shape that broke the
+  // earlier row-summing recompute. Self-consistent under the five-figure
+  // invariant (#181): the debt nets HOUSING equity, never liquid, because its
+  // frozen securesHousing says so — not its (null) rung.
   function snapshotWithMortgage(): NetWorthSnapshot {
     return {
       capturedAt: "2024-06-01T12:00:00.000Z",
       dateKey: "2024-06-01",
       debts: eur(500_00),
       grossAssets: eur(1_000_00),
-      housingEquity: eur(-500_00), // 0 housing assets − 500 housing debt
+      housingEquity: eur(-500_00), // 0 housing assets − 500 housing-securing debt
       id: "snap_x",
       isMonthlyClose: false,
-      liquidNetWorth: eur(1_000_00), // fund (market) is liquid; mortgage is not
+      liquidNetWorth: eur(1_000_00), // fund (market) is liquid; the housing debt is not
       monthKey: "2024-06",
       scopeId: "member_jose",
       scopeLabel: "Jose",
@@ -621,8 +630,8 @@ describe("recalculateSnapshotForAsset", () => {
       holdingId: "liab_mortgage",
       kind: "liability",
       label: "Hipoteca",
-      liquidityTier: null, // unassociated → frozen as null
-      securesHousing: false, // unassociated → secures no housing
+      liquidityTier: null, // null rung (liabilities net against their asset)
+      securesHousing: true, // frozen housing debt → nets housing equity, not liquid
       valueMinor: 500_00,
     };
   }
@@ -1160,7 +1169,7 @@ describe("recalculateSnapshotForLiability", () => {
     expect(result.snapshot.liquidNetWorth.amountMinor).toBe(5_000_00 - 3_033_33);
   });
 
-  test("returns null when the recomputed debt was the snapshot's only holding", () => {
+  test("keeps a zero-balance debt row when the holding still has a scope stake (#181 parity)", () => {
     const workspace = makeWorkspace();
     const result = recalculateSnapshotForLiability({
       curve: {
@@ -1173,11 +1182,448 @@ describe("recalculateSnapshotForLiability", () => {
       liability: makeMortgage(workspace, 0),
       snapshot: snapshotWithHousingDebt(0, 120_000_00),
       workspace,
+    })!;
+
+    // Balance recomputes to 0, but the holding still has a scope stake, so the
+    // row is KEPT at value 0 — the same existence rule the capture path applies
+    // (share>0 / value==0 rows survive), unified across all four ripples (#181).
+    expect(result).not.toBeNull();
+    const debtRow = result.holdings.find((h) => h.holdingId === "liab_h")!;
+    expect(debtRow.valueMinor).toBe(0);
+    expect(debtRow.securesHousing).toBe(true); // frozen signal preserved
+    expect(result.snapshot.debts.amountMinor).toBe(0);
+    expect(result.snapshot.housingEquity.amountMinor).toBe(0); // 0 assets − 0 debt
+    expect(result.snapshot.totalNetWorth.amountMinor).toBe(0);
+  });
+
+  test("returns null when the holding has no stake in the scope", () => {
+    const household = createWorkspace({
+      baseCurrency: "EUR",
+      members: [
+        { id: "member_jose", name: "Jose" },
+        { id: "member_ana", name: "Ana" },
+      ],
+      mode: "household",
+    });
+    // The mortgage is wholly Ana's; recomputed in Jose's scope it has no stake →
+    // no row → nothing left → null.
+    const anaMortgage = createLiability(household, {
+      associatedAssetId: "asset_piso",
+      balanceMinor: 0,
+      currency: "EUR",
+      id: "liab_h",
+      name: "Hipoteca",
+      ownership: [{ memberId: "member_ana", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+    const result = recalculateSnapshotForLiability({
+      curve: { anchors: [], currentBalanceMinor: 0, debtModel: "revolving" },
+      frozenHoldings: [mortgageRow(120_000_00)],
+      housingAssetIds: new Set(["asset_piso"]),
+      liability: anaMortgage,
+      snapshot: { ...snapshotWithHousingDebt(0, 120_000_00), scopeId: "member_jose" },
+      workspace: household,
     });
 
-    // Balance recomputes to 0 (no anchors → current balance 0) → row drops →
-    // nothing left → null.
     expect(result).toBeNull();
+  });
+});
+
+describe("row-derived ripple axes (#181)", () => {
+  const eur = (amountMinor: number) => ({ amountMinor, currency: "EUR" });
+
+  function makeMortgage(workspace: Workspace, balanceMinor: number): Liability {
+    return createLiability(workspace, {
+      associatedAssetId: "asset_piso",
+      balanceMinor,
+      currency: "EUR",
+      id: "liab_h",
+      name: "Hipoteca",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+  }
+
+  // A frozen mortgage row that secures the piso — securesHousing frozen TRUE at
+  // capture, even if the piso is later reclassified away from housing.
+  const frozenMortgageRow = (valueMinor: number): SnapshotHoldingRow => ({
+    holdingId: "liab_h",
+    kind: "liability",
+    label: "Hipoteca",
+    liquidityTier: null,
+    securesHousing: true,
+    valueMinor,
+  });
+  const pisoRow = (valueMinor: number): SnapshotHoldingRow => ({
+    holdingId: "asset_piso",
+    kind: "asset",
+    label: "Piso",
+    liquidityTier: "illiquid",
+    securesHousing: false,
+    valueMinor,
+  });
+
+  const amortizableCurve: DebtBalanceCurveInputs = {
+    anchors: [],
+    currentBalanceMinor: 100_000_00,
+    debtModel: "amortizable",
+    plan: {
+      annualInterestRate: "0.03",
+      initialCapitalMinor: 150_000_00,
+      startDate: "2020-01-01",
+      termMonths: 240,
+    },
+    revisions: [],
+  };
+
+  test("a debt-curve ripple honours the FROZEN securesHousing, not the live reclassification", () => {
+    const workspace = makeWorkspace();
+    const snapshot: NetWorthSnapshot = {
+      capturedAt: "2022-01-01T12:00:00.000Z",
+      dateKey: "2022-01-01",
+      debts: eur(120_000_00),
+      grossAssets: eur(200_000_00),
+      housingEquity: eur(80_000_00), // piso 200k − mortgage 120k (frozen housing debt)
+      id: "snap_d",
+      isMonthlyClose: false,
+      liquidNetWorth: eur(0),
+      monthKey: "2022-01",
+      scopeId: "member_jose",
+      scopeLabel: "Jose",
+      totalNetWorth: eur(80_000_00),
+      warnings: [],
+    };
+
+    // The piso has been reclassified away from housing AFTER capture: the live
+    // housingAssetIds no longer contains it. The ripple must NOT re-impute the
+    // debt to the liquid axis — the frozen row says it secures housing.
+    const result = recalculateSnapshotForLiability({
+      curve: amortizableCurve,
+      frozenHoldings: [pisoRow(200_000_00), frozenMortgageRow(120_000_00)],
+      housingAssetIds: new Set(), // live: piso no longer a housing asset
+      liability: makeMortgage(workspace, 100_000_00),
+      snapshot,
+      workspace,
+    })!;
+
+    const balance = result.holdings.find((h) => h.holdingId === "liab_h")!.valueMinor;
+    // The recomputed balance still nets HOUSING equity (frozen securesHousing),
+    // never the liquid axis — no drift from the live reclassification.
+    expect(result.snapshot.housingEquity.amountMinor).toBe(200_000_00 - balance);
+    expect(result.snapshot.liquidNetWorth.amountMinor).toBe(0);
+    expect(result.snapshot.debts.amountMinor).toBe(balance);
+    // The frozen signal is preserved on the recomputed row.
+    expect(result.holdings.find((h) => h.holdingId === "liab_h")!.securesHousing).toBe(
+      true,
+    );
+  });
+
+  test("ripple output equals calculateNetWorth over the recomputed rows on all five figures", () => {
+    const workspace = makeWorkspace();
+    // A portfolio whose frozen rows fully describe the breakdown: a piso (housing),
+    // a fund (liquid market), a mortgage on the piso (housing debt), a card (liquid).
+    const piso = housing(workspace, "asset_piso", 200_000_00);
+    const fund = createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 10_000_00,
+      id: "asset_fund",
+      liquidityTier: "market",
+      name: "Fondo",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "investment",
+    });
+    const card = createLiability(workspace, {
+      balanceMinor: 1_000_00,
+      currency: "EUR",
+      id: "liab_card",
+      name: "Tarjeta",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "debt",
+    });
+
+    const fundRow: SnapshotHoldingRow = {
+      holdingId: "asset_fund",
+      kind: "asset",
+      label: "Fondo",
+      liquidityTier: "market",
+      securesHousing: false,
+      valueMinor: 10_000_00,
+    };
+    const cardRow: SnapshotHoldingRow = {
+      holdingId: "liab_card",
+      kind: "liability",
+      label: "Tarjeta",
+      liquidityTier: null,
+      securesHousing: false,
+      valueMinor: 1_000_00,
+    };
+
+    const snapshot: NetWorthSnapshot = {
+      capturedAt: "2022-01-01T12:00:00.000Z",
+      dateKey: "2022-01-01",
+      debts: eur(121_000_00),
+      grossAssets: eur(210_000_00),
+      housingEquity: eur(80_000_00),
+      id: "snap_p",
+      isMonthlyClose: false,
+      liquidNetWorth: eur(9_000_00), // fund 10k − card 1k
+      monthKey: "2022-01",
+      scopeId: "member_jose",
+      scopeLabel: "Jose",
+      totalNetWorth: eur(89_000_00),
+      warnings: [],
+    };
+
+    const result = recalculateSnapshotForLiability({
+      curve: amortizableCurve,
+      frozenHoldings: [
+        pisoRow(200_000_00),
+        fundRow,
+        frozenMortgageRow(120_000_00),
+        cardRow,
+      ],
+      housingAssetIds: new Set(["asset_piso"]),
+      liability: makeMortgage(workspace, 100_000_00),
+      snapshot,
+      workspace,
+    })!;
+
+    // Reconstruct the live holdings FROM the recomputed rows, then compare the
+    // ripple's five figures against calculateNetWorth over those same holdings.
+    const balance = result.holdings.find((h) => h.holdingId === "liab_h")!.valueMinor;
+    const recomputedMortgage = makeMortgage(workspace, balance);
+    const reference = calculateNetWorth({
+      assets: [
+        { ...piso, currentValue: money(200_000_00, "EUR") },
+        { ...fund, currentValue: money(10_000_00, "EUR") },
+      ],
+      liabilities: [
+        recomputedMortgage,
+        { ...card, currentBalance: money(1_000_00, "EUR") },
+      ],
+      scopeId: "member_jose",
+      workspace,
+    });
+
+    expect(result.snapshot.grossAssets.amountMinor).toBe(
+      reference.grossAssets.amountMinor,
+    );
+    expect(result.snapshot.debts.amountMinor).toBe(reference.debts.amountMinor);
+    expect(result.snapshot.totalNetWorth.amountMinor).toBe(
+      reference.totalNetWorth.amountMinor,
+    );
+    expect(result.snapshot.liquidNetWorth.amountMinor).toBe(
+      reference.liquidNetWorth.amountMinor,
+    );
+    expect(result.snapshot.housingEquity.amountMinor).toBe(
+      reference.housingEquity.amountMinor,
+    );
+  });
+
+  test("an asset-ownership ripple on a housing asset re-derives housing equity from rows", () => {
+    const household = createWorkspace({
+      baseCurrency: "EUR",
+      members: [
+        { id: "mJ", name: "Jose" },
+        { id: "mA", name: "Ana" },
+      ],
+      mode: "household",
+    });
+    // Jose's scope froze 50% of a 200k piso = 100k; the split is corrected to 70/30.
+    const piso = createManualAsset(household, {
+      currency: "EUR",
+      currentValueMinor: 200_000_00,
+      id: "asset_piso",
+      liquidityTier: "illiquid",
+      name: "Piso",
+      ownership: [
+        { memberId: "mJ", shareBps: 7_000 },
+        { memberId: "mA", shareBps: 3_000 },
+      ],
+      type: "real_estate",
+    });
+    const frozenPiso: SnapshotHoldingRow = {
+      holdingId: "asset_piso",
+      kind: "asset",
+      label: "Piso",
+      liquidityTier: "illiquid",
+      securesHousing: false,
+      valueMinor: 100_000_00,
+    };
+
+    const result = recalculateSnapshotForOwnership({
+      frozenHoldings: [frozenPiso],
+      globalValueMinor: 200_000_00,
+      holding: { asset: piso, kind: "asset" },
+      snapshot: {
+        capturedAt: "2022-01-01T12:00:00.000Z",
+        dateKey: "2022-01-01",
+        debts: eur(0),
+        grossAssets: eur(100_000_00),
+        housingEquity: eur(100_000_00),
+        id: "snap_o",
+        isMonthlyClose: false,
+        liquidNetWorth: eur(0),
+        monthKey: "2022-01",
+        scopeId: "mJ",
+        scopeLabel: "Jose",
+        totalNetWorth: eur(100_000_00),
+        warnings: [],
+      },
+      workspace: household,
+    })!;
+
+    // Re-weighted to 70% of 200k = 140k; housing equity follows gross (no debt).
+    expect(result.holdings.find((h) => h.holdingId === "asset_piso")!.valueMinor).toBe(
+      140_000_00,
+    );
+    expect(result.snapshot.grossAssets.amountMinor).toBe(140_000_00);
+    expect(result.snapshot.housingEquity.amountMinor).toBe(140_000_00);
+    expect(result.snapshot.liquidNetWorth.amountMinor).toBe(0);
+    expect(result.snapshot.totalNetWorth.amountMinor).toBe(140_000_00);
+  });
+
+  test("a wrong-axis snapshot fed to a ripple is rejected by the extended reconcile", () => {
+    const workspace = makeWorkspace();
+    // A snapshot whose frozen housingEquity wrongly imputes a non-housing card to
+    // the housing axis (securesHousing=false on the card). Re-deriving from rows
+    // exposes the contradiction: the helper's reconcile throws.
+    const cardRow: SnapshotHoldingRow = {
+      holdingId: "liab_card",
+      kind: "liability",
+      label: "Tarjeta",
+      liquidityTier: null,
+      securesHousing: false,
+      valueMinor: 1_000_00,
+    };
+    const fundRow: SnapshotHoldingRow = {
+      holdingId: "asset_fund",
+      kind: "asset",
+      label: "Fondo",
+      liquidityTier: "market",
+      securesHousing: false,
+      valueMinor: 10_000_00,
+    };
+    // housingEquity claims −1000 (card netted against housing) — impossible given
+    // the card's frozen securesHousing=false. liquid wrongly excludes the card.
+    const corrupt: NetWorthSnapshot = {
+      capturedAt: "2024-02-01T12:00:00.000Z",
+      dateKey: "2024-02-01",
+      debts: eur(1_000_00),
+      grossAssets: eur(10_000_00),
+      housingEquity: eur(-1_000_00),
+      id: "snap_w",
+      isMonthlyClose: false,
+      liquidNetWorth: eur(10_000_00),
+      monthKey: "2024-02",
+      scopeId: "member_jose",
+      scopeLabel: "Jose",
+      totalNetWorth: eur(9_000_00),
+      warnings: [],
+    };
+    const card = createLiability(workspace, {
+      balanceMinor: 1_000_00,
+      currency: "EUR",
+      id: "liab_card",
+      name: "Tarjeta",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "debt",
+    });
+
+    // A no-op ownership re-weight (split unchanged) still re-derives the figures
+    // from rows and must reject the contradictory frozen housingEquity.
+    expect(() =>
+      recalculateSnapshotForOwnership({
+        frozenHoldings: [fundRow, cardRow],
+        globalValueMinor: 1_000_00,
+        holding: { housingAssetIds: new Set(), kind: "liability", liability: card },
+        snapshot: corrupt,
+        workspace,
+      }),
+    ).toThrow(/housing equity|liquid net worth/i);
+  });
+
+  test("capture and every ripple path produce the same row set for the same date (#181 parity)", () => {
+    const workspace = makeWorkspace();
+    // Capture a portfolio: a housing piso, a market fund, a mortgage on the piso,
+    // and a standalone card. The capture defines the canonical row set.
+    const piso = housing(workspace, "asset_piso", 200_000_00);
+    const fund = createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 10_000_00,
+      id: "asset_fund",
+      liquidityTier: "market",
+      name: "Fondo",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "investment",
+    });
+    const mortgage = createLiability(workspace, {
+      associatedAssetId: "asset_piso",
+      balanceMinor: 120_000_00,
+      currency: "EUR",
+      id: "liab_h",
+      name: "Hipoteca",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+    const card = createLiability(workspace, {
+      balanceMinor: 0, // a zero-balance debt with a scope stake — the parity edge case
+      currency: "EUR",
+      id: "liab_card",
+      name: "Tarjeta",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "debt",
+    });
+
+    const captured = captureValuedNetWorthSnapshot({
+      assets: [piso, fund],
+      capturedAt: "2024-06-01T12:00:00.000Z",
+      id: "snap_cap",
+      liabilities: [mortgage, card],
+      scopeId: "member_jose",
+      scopeLabel: "Jose",
+      workspace,
+    });
+    const canonicalIds = captured.holdings.map((h) => `${h.kind}:${h.holdingId}`).sort();
+
+    const rowSet = (v: { holdings: SnapshotHoldingRow[] } | null) =>
+      v!.holdings.map((h) => `${h.kind}:${h.holdingId}`).sort();
+
+    // Re-running the card's liability ripple (a no-op curve at balance 0) keeps
+    // the zero-value card row — the same row set the capture produced.
+    const liabilityRippled = recalculateSnapshotForLiability({
+      curve: { anchors: [], currentBalanceMinor: 0, debtModel: "revolving" },
+      frozenHoldings: captured.holdings,
+      housingAssetIds: new Set(["asset_piso"]),
+      liability: card,
+      snapshot: captured.snapshot,
+      workspace,
+    });
+    expect(rowSet(liabilityRippled)).toEqual(canonicalIds);
+
+    // The fund's operation ripple (re-buying the same units at the same price).
+    const assetRippled = recalculateSnapshotForAsset({
+      asset: fund,
+      frozenHoldings: captured.holdings,
+      operations: [buy("asset_fund", "op1", "2024-01-10", "100", "100")],
+      snapshot: captured.snapshot,
+      workspace,
+    });
+    expect(rowSet(assetRippled)).toEqual(canonicalIds);
+
+    // The card's ownership ripple (split unchanged) keeps the zero-value row too.
+    const ownershipRippled = recalculateSnapshotForOwnership({
+      frozenHoldings: captured.holdings,
+      globalValueMinor: 0,
+      holding: {
+        housingAssetIds: new Set(["asset_piso"]),
+        kind: "liability",
+        liability: card,
+      },
+      snapshot: captured.snapshot,
+      workspace,
+    });
+    expect(rowSet(ownershipRippled)).toEqual(canonicalIds);
   });
 });
 

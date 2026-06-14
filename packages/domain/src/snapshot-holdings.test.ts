@@ -9,7 +9,13 @@
  */
 import { describe, expect, test } from "vitest";
 
-import type { InvestmentCaptureDetail, Liability, ManualAsset, Workspace } from "./index";
+import type {
+  InvestmentCaptureDetail,
+  Liability,
+  ManualAsset,
+  SnapshotHoldingRow,
+  Workspace,
+} from "./index";
 import {
   assertSnapshotHoldingsReconcile,
   buildSnapshotHoldingRows,
@@ -388,5 +394,91 @@ describe("assertSnapshotHoldingsReconcile — both sides of the invariant", () =
         grossAssetsMinor: 100_00,
       }),
     ).toThrow(/debts/i);
+  });
+});
+
+describe("assertSnapshotHoldingsReconcile — five-figure invariant (#181)", () => {
+  // A piso (illiquid housing asset), a market fund (liquid), a mortgage that
+  // secures the piso (housing debt, null rung), and a cash-tier card (liquid debt).
+  const rows: SnapshotHoldingRow[] = [
+    {
+      holdingId: "asset_piso",
+      kind: "asset",
+      label: "Piso",
+      liquidityTier: "illiquid",
+      securesHousing: false,
+      valueMinor: 200_000_00,
+    },
+    {
+      holdingId: "asset_fund",
+      kind: "asset",
+      label: "Fondo",
+      liquidityTier: "market",
+      securesHousing: false,
+      valueMinor: 10_000_00,
+    },
+    {
+      holdingId: "liab_mortgage",
+      kind: "liability",
+      label: "Hipoteca",
+      liquidityTier: null,
+      securesHousing: true,
+      valueMinor: 120_000_00,
+    },
+    {
+      holdingId: "liab_card",
+      kind: "liability",
+      label: "Tarjeta",
+      liquidityTier: null,
+      securesHousing: false,
+      valueMinor: 1_000_00,
+    },
+  ];
+
+  // The five figures consistent with the rows, given the housing-asset sum (the
+  // piso is the only housing asset). housingAssets 200k − housingDebts 120k = 80k.
+  // liquidAssets 10k − liquidNonHousingDebts 1k = 9k. total = 210k − 121k = 89k.
+  const correct = {
+    debtsMinor: 121_000_00,
+    grossAssetsMinor: 210_000_00,
+    housingAssetsMinor: 200_000_00,
+    housingEquityMinor: 80_000_00,
+    liquidNetWorthMinor: 9_000_00,
+    totalNetWorthMinor: 89_000_00,
+  };
+
+  test("passes silently when all five figures reconcile with the rows", () => {
+    expect(() => assertSnapshotHoldingsReconcile(rows, correct)).not.toThrow();
+  });
+
+  test("throws when totalNetWorth is not grossAssets − debts", () => {
+    expect(() =>
+      assertSnapshotHoldingsReconcile(rows, {
+        ...correct,
+        totalNetWorthMinor: 90_000_00,
+      }),
+    ).toThrow(/total net worth/i);
+  });
+
+  test("throws when housing equity imputes a non-housing debt to the housing axis", () => {
+    // The wrong-axis corruption: the card (securesHousing=false) was netted
+    // against housing equity (80k − 1k = 79k), and pulled out of liquid (9k → 10k).
+    // Row-derived housing debts exclude the card, so the figures contradict.
+    expect(() =>
+      assertSnapshotHoldingsReconcile(rows, {
+        ...correct,
+        housingEquityMinor: 79_000_00,
+        liquidNetWorthMinor: 10_000_00,
+      }),
+    ).toThrow(/housing equity|liquid net worth/i);
+  });
+
+  test("throws when liquid net worth omits a liquid, non-housing debt", () => {
+    expect(() =>
+      assertSnapshotHoldingsReconcile(rows, {
+        ...correct,
+        liquidNetWorthMinor: 10_000_00,
+      }),
+    ).toThrow(/liquid net worth/i);
   });
 });
