@@ -97,6 +97,20 @@ reference metadata only — it does not participate in price fetching. The
 **Operation**:
 A buy or a sell against one **investment**: date, units, price per unit, fees.
 
+**Statement**:
+A file an external broker exports listing one **investment**'s movements (e.g. a
+MyInvestor orders export for a single ISIN). The user uploads it against a chosen
+investment and declares its broker; worthline reads it with a broker-specific
+parser and merges its rows into that investment's **operations** — matched by
+date, the file winning where a date overlaps, and operations whose date is absent
+from the file left untouched (never deleted). Only executed rows load; pending or
+rejected ones are skipped. Distinct from an **Import** (a one-shot full-workspace
+replace) and from a **connected source** (a live, read-only API mirror that owns
+its holdings): a statement is a manual, per-investment, file-based feed of
+operations, and the holding's value still derives from its **price provider**.
+UI label: "Cargar movimientos".
+_Avoid_: import (the full-workspace replace), pisar, sync (a connected source's refresh).
+
 **Valuation anchor**:
 A declared value of a **holding** at a specific date. Used to reconstruct historical
 values for **snapshots**. Two kinds: **market appraisal** (reflects market movement,
