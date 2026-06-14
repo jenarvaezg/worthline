@@ -90,7 +90,7 @@ export default async function PuestaAlDiaPage({
         {assets.length === 0 && liabilities.length === 0 ? (
           <p className="emptyLine">
             Sin activos ni deudas manuales.{" "}
-            <Link href="/patrimonio/nuevo-activo">Añadir activo →</Link>
+            <Link href="/patrimonio/anadir">Añadir holding →</Link>
           </p>
         ) : (
           <form action={batchValueUpdateAction} className="stackForm">

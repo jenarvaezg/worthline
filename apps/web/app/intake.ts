@@ -1661,7 +1661,9 @@ function parseInvestmentPriceProvider(
   const raw = String(value ?? "").trim();
   if (!raw) return undefined;
 
-  return raw === "yahoo" || raw === "stooq" || raw === "finect" ? raw : null;
+  return raw === "yahoo" || raw === "stooq" || raw === "finect" || raw === "coingecko"
+    ? raw
+    : null;
 }
 
 /** Map a price freshness state to a localized label (shared by /inversiones pages). */

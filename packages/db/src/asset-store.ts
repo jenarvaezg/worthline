@@ -2,6 +2,7 @@ import type {
   CreateManualAssetInput,
   DecimalString,
   HousingValuationAnchor,
+  Instrument,
   InvestmentPriceProvider,
   LiquidityTier,
   ManualAsset,
@@ -29,6 +30,13 @@ export interface CreateInvestmentAssetInput {
   priceProvider?: InvestmentPriceProvider;
   providerSymbol?: string;
   manualPricePerUnit?: DecimalString;
+  /**
+   * What the investment is (ADR 0014, #149). The instrument-first add flow passes
+   * the chosen instrument (etf/stock/index/crypto/pension_plan/fund); when absent
+   * we fall back to the legacy provider-based guess so existing callers are
+   * unchanged.
+   */
+  instrument?: Instrument;
 }
 
 export interface InvestmentAssetMeta {
@@ -418,9 +426,11 @@ function createInvestmentAsset(
     currency: input.currency,
     currentValueMinor: 0,
     id: input.id,
-    // Mirror the v14 backfill: a Finect-priced investment is a pension plan,
-    // anything else a fund (the coarse default until the add flow reads quoteType).
-    instrument: input.priceProvider === "finect" ? "pension_plan" : "fund",
+    // The instrument-first add flow (#151) passes the chosen instrument. Older
+    // callers don't, so mirror the v14 backfill: a Finect-priced investment is a
+    // pension plan, anything else a fund.
+    instrument:
+      input.instrument ?? (input.priceProvider === "finect" ? "pension_plan" : "fund"),
     isPrimaryResidence: false,
     liquidityTier: input.liquidityTier ?? "market",
     name: input.name,

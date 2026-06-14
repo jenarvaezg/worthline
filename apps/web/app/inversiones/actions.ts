@@ -74,8 +74,9 @@ async function validateInvestmentProviderSymbol(input: {
     input.priceProvider ?? defaultInvestmentPriceProvider(input.liquidityTier);
 
   // Finect NAVs can lag or disappear temporarily; per issue #106, Finect
-  // validation is non-blocking at save time.
-  if (priceProvider === "finect") return null;
+  // validation is non-blocking at save time. CoinGecko (crypto, #151) is treated
+  // the same — its symbols are validated on price refresh, not at save.
+  if (priceProvider === "finect" || priceProvider === "coingecko") return null;
 
   const provider = providerForValidation(priceProvider);
   const price = await fetchAndCachePrice(provider, {
@@ -91,7 +92,7 @@ async function validateInvestmentProviderSymbol(input: {
 }
 
 function providerForValidation(
-  provider: Exclude<InvestmentPriceProvider, "finect">,
+  provider: Exclude<InvestmentPriceProvider, "finect" | "coingecko">,
 ): PriceProvider {
   switch (provider) {
     case "stooq":
@@ -109,6 +110,8 @@ function providerLabel(provider: InvestmentPriceProvider): string {
       return "Yahoo Finance";
     case "finect":
       return "Finect";
+    case "coingecko":
+      return "CoinGecko";
   }
 }
 
