@@ -404,6 +404,13 @@ export const snapshotHoldings = sqliteTable(
     kind: text("kind").$type<SnapshotHoldingKind>().notNull(),
     label: text("label").notNull(),
     liquidityTier: text("liquidity_tier").$type<LiquidityTier>(),
+    /**
+     * Whether this holding secures a housing asset, frozen at capture time from
+     * the all-assets classification (#180). Stored as 0/1; the only meaningful
+     * non-zero rows are liabilities associated to a housing asset. Denormalized
+     * on purpose, like the tier — no live foreign key into holdings (ADR 0008).
+     */
+    securesHousing: integer("secures_housing").notNull().default(0),
     valueMinor: integer("value_minor").notNull(),
     units: text("units"),
     unitPrice: text("unit_price"),

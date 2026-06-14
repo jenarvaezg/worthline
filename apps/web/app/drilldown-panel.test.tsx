@@ -18,6 +18,7 @@ function liabilityRow(
     kind: "liability",
     label,
     liquidityTier: tier,
+    securesHousing: false,
     valueMinor,
   };
 }

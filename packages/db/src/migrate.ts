@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 15;
+export const SCHEMA_VERSION = 16;
 
 export function migrate(sqlite: DatabaseConnection): void {
   sqlite.pragma("journal_mode = WAL");
@@ -285,5 +285,35 @@ export function migrate(sqlite: DatabaseConnection): void {
        ON early_repayments (plan_id, repayment_date);`,
     );
     sqlite.pragma("user_version = 15");
+  }
+
+  if (version < 16) {
+    // #180 (ADR 0008): freeze each snapshot-holding row's housing-securing signal
+    // so historical figures never re-derive it from live holding identity (a live
+    // foreign key into frozen history, which ADR 0008 forbids). secures_housing is
+    // backfilled to 1 for any frozen LIABILITY row whose live liability is
+    // associated to a current housing asset — the same pragmatic "current
+    // classification" basis the liquidity_tier denormalization (v12) used. Housing
+    // mirrors the runtime isHousingAsset boundary: instrument = 'property', or
+    // (for assets predating the instrument backfill) type = 'real_estate' OR
+    // is_primary_residence = 1. Assets and unassociated debts stay 0. This touches
+    // no snapshot FIGURE — it is an additive, self-classifying signal.
+    try {
+      sqlite.exec(
+        "ALTER TABLE snapshot_holdings ADD COLUMN secures_housing INTEGER NOT NULL DEFAULT 0",
+      );
+    } catch {}
+    sqlite.exec(
+      `UPDATE snapshot_holdings SET secures_housing = 1
+       WHERE kind = 'liability'
+         AND holding_id IN (
+           SELECT l.id FROM liabilities l
+           JOIN assets a ON a.id = l.associated_asset_id
+           WHERE a.instrument = 'property'
+              OR a.type = 'real_estate'
+              OR a.is_primary_residence = 1
+         );`,
+    );
+    sqlite.pragma("user_version = 16");
   }
 }

@@ -38,6 +38,7 @@ function row(input: {
     kind: input.kind ?? "asset",
     label: input.holdingId,
     liquidityTier: input.tier,
+    securesHousing: false,
     valueMinor: input.valueMinor,
   };
 }
