@@ -13,7 +13,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { isTokenValid, mintNumistaToken } from "./numista";
 
-const creds = { apiKey: "KEY", clientId: "CID", clientSecret: "SEC" };
+// Per Numista's docs, the client_credentials grant authenticates "to your own
+// account" with ONLY grant_type + scope — the API key (header) is the credential;
+// there is NO separate client_id/client_secret in the body.
+const creds = { apiKey: "KEY" };
 
 describe("mintNumistaToken — client_credentials + scope=view_collection", () => {
   beforeEach(() => {
@@ -23,7 +26,7 @@ describe("mintNumistaToken — client_credentials + scope=view_collection", () =
     vi.unstubAllGlobals();
   });
 
-  it("POSTs the client_credentials grant and parses the token + expiry", async () => {
+  it("POSTs the client_credentials grant (api key in header) and parses the token + expiry", async () => {
     const fetchMock = vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -46,8 +49,9 @@ describe("mintNumistaToken — client_credentials + scope=view_collection", () =
     const body = String(init.body);
     expect(body).toContain("grant_type=client_credentials");
     expect(body).toContain("scope=view_collection");
-    expect(body).toContain("client_id=CID");
-    expect(body).toContain("client_secret=SEC");
+    // The API key is the credential (header) — no client_id/secret in the body.
+    expect(body).not.toContain("client_id");
+    expect(body).not.toContain("client_secret");
   });
 
   it("throws a clear error when the token endpoint rejects the credentials", async () => {

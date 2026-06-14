@@ -4,13 +4,16 @@
  * A deep module encapsulating Numista's HTTP + OAuth behind a small interface.
  * Reading a user's collection requires an OAuth2 token: the `client_credentials`
  * grant with `scope=view_collection` reads your OWN collection non-interactively
- * (the API key alone 403s on collected_items). The token lasts ~2h; callers mint
- * on demand and re-mint on expiry via {@link isTokenValid}.
+ * (the API key alone 403s on collected_items). Per Numista's docs, that grant
+ * authenticates "to your own account" with ONLY `grant_type` + `scope` — the
+ * **API key (sent in the `Numista-API-Key` header) is the credential**; there is
+ * no separate client_id/client_secret to register (in the authorization-code
+ * flow Numista even defines `client_secret` AS the API key). The token lasts ~2h;
+ * callers mint on demand and re-mint on expiry via {@link isTokenValid}.
  *
- * Credentials (API key + OAuth client id/secret) live in local config and are
- * passed in; this module never reads env or persists anything. The
- * collected_items / coin-detail / prices readers are added against the committed
- * S0 fixtures (spike #161).
+ * The API key lives in local config and is passed in; this module never reads env
+ * or persists anything. The collected_items / coin-detail / prices readers are
+ * added against the committed S0 fixtures (spike #161).
  */
 
 const NUMISTA_BASE = "https://api.numista.com/v3";
@@ -18,11 +21,12 @@ const NUMISTA_BASE = "https://api.numista.com/v3";
 /** Re-mint when fewer than this many ms remain, so a sync never races expiry. */
 const TOKEN_SAFETY_MARGIN_MS = 60_000;
 
-/** The credentials worthline stores in local config (ADR 0016); never exported. */
+/**
+ * The credential worthline stores in local config (ADR 0016); never exported.
+ * For the client_credentials self-read, the API key is the only field needed.
+ */
 export interface NumistaCredentials {
   apiKey: string;
-  clientId: string;
-  clientSecret: string;
 }
 
 /** A minted access token plus the epoch-ms instant it expires. */
@@ -50,8 +54,6 @@ export async function mintNumistaToken(
 ): Promise<NumistaToken> {
   const body = new URLSearchParams({
     grant_type: "client_credentials",
-    client_id: credentials.clientId,
-    client_secret: credentials.clientSecret,
     scope: "view_collection",
   });
 

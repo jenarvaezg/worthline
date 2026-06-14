@@ -10,12 +10,16 @@ identifiers before committing (replace with `***`).
 
 - **Base URL**: `https://api.numista.com/v3`
 - **Header on every request**: `Numista-API-Key: <API_KEY>`
-- **Token**: `POST /oauth_token` with `grant_type=client_credentials`,
-  `client_id`, `client_secret`, `scope=view_collection`. Returns an
-  `access_token` valid ~2h (`expires_in`); re-mint on expiry.
+- **Token**: `POST /oauth_token` with body `grant_type=client_credentials` +
+  `scope=view_collection` — and the API key in the `Numista-API-Key` header.
+  Per Numista's docs the client_credentials grant authenticates "to your own
+  account" with **only** those two body params; the API key IS the credential
+  (there is no separate client_id/client_secret to register — the
+  authorization-code flow even defines `client_secret` AS the API key). Returns
+  an `access_token` valid ~2h (`expires_in`); re-mint on expiry.
 - **Authenticated reads** add `Authorization: Bearer <access_token>`.
-- **Credential fields worthline stores** (local `.env`, never exported):
-  `NUMISTA_API_KEY`, `NUMISTA_CLIENT_ID`, `NUMISTA_CLIENT_SECRET`.
+- **Credential field worthline stores** (local `.env`, never exported):
+  just `NUMISTA_API_KEY`.
 
 ## Expected fixture files
 
