@@ -139,6 +139,7 @@ function makeExportData(): WorkspaceExportData {
         warnings: [],
         holdings: [
           {
+            countsAsHousing: false,
             holdingId: "a1",
             kind: "asset",
             label: "Cuenta corriente",
@@ -147,6 +148,7 @@ function makeExportData(): WorkspaceExportData {
             valueMinor: 150000,
           },
           {
+            countsAsHousing: false,
             holdingId: "l1",
             kind: "liability",
             label: "Hipoteca",

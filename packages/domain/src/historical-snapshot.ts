@@ -27,7 +27,6 @@ import type {
 } from "./amortization";
 import {
   isHousingAsset,
-  isLiquid,
   rungForLiability,
   securesHousingAsset,
   tierOfAsset,
@@ -41,7 +40,7 @@ import type { InvestmentOperation } from "./investment-types";
 import type { DebtModel, Liability, ManualAsset, Workspace } from "./workspace-types";
 import type { NetWorthSnapshot, ValuedNetWorthSnapshot } from "./snapshot-types";
 import { captureValuedNetWorthSnapshot, createNetWorthSnapshot } from "./snapshot-types";
-import { assertSnapshotHoldingsReconcile } from "./snapshot-holdings";
+import { assertSnapshotHoldingsReconcile, deriveRowAxes } from "./snapshot-holdings";
 import { money } from "./money";
 import { resolveScopeMemberIds } from "./scope";
 import { allocateScopedHolding } from "./scope-allocation";
@@ -279,6 +278,87 @@ function liabilityValuationInput(
 }
 
 /**
+ * The single place a ripple's recomputed rows become a five-figure summary,
+ * reconciled, and wrapped in a snapshot (#181 + #181-completion). Every
+ * `recalculate*` function funnels through here so the breakdown axes
+ * (`liquidNetWorth`, `housingEquity`, `totalNetWorth`) are RE-DERIVED from the
+ * frozen rows the same way `calculateNetWorth` derives them from live holdings —
+ * never hand-adjusted by a per-holding delta whose axis is chosen from live
+ * identity. This collapses the four near-duplicate scaffolds (row construction +
+ * figure math + reconcile) and removes the axis-by-axis drift.
+ *
+ * All five axes are now fully self-classifying from the frozen flags on each row:
+ *   grossAssets   = Σ asset rows
+ *   debts         = Σ liability rows
+ *   totalNetWorth = grossAssets − debts
+ *   liquidNetWorth= Σ(liquid-rung asset rows) − Σ(liquid, non-housing-securing liability rows)
+ *   housingEquity = Σ(countsAsHousing asset rows) − Σ(securesHousing liability rows)
+ * No live `isHousingAsset` / `housingAssetIds` lookup is needed anywhere.
+ *
+ * Returns null when no holdings remain (the caller drops the snapshot).
+ */
+function assembleRippleSnapshot(input: {
+  snapshot: NetWorthSnapshot;
+  currency: string;
+  /** The original frozen rows, before the operated holding was swapped out. */
+  frozenHoldings: readonly SnapshotHoldingRow[];
+  /** The rows after the swap (frozen survivors + the recomputed row, if any). */
+  rows: SnapshotHoldingRow[];
+}): ValuedNetWorthSnapshot | null {
+  if (input.rows.length === 0) return null;
+
+  // Safety net (#181): assert that the INPUT snapshot's all five row-derivable
+  // figures reconcile with the ORIGINAL frozen rows before producing a ripple.
+  // A snapshot that imputed a value to the wrong axis fails here and never
+  // propagates corruption to the next ripple in the chain.
+  assertSnapshotHoldingsReconcile(input.frozenHoldings, {
+    debtsMinor: input.snapshot.debts.amountMinor,
+    grossAssetsMinor: input.snapshot.grossAssets.amountMinor,
+    housingEquityMinor: input.snapshot.housingEquity.amountMinor,
+    liquidNetWorthMinor: input.snapshot.liquidNetWorth.amountMinor,
+    totalNetWorthMinor: input.snapshot.totalNetWorth.amountMinor,
+  });
+
+  // All five axes derived from the NEW row set — fully frozen, no live lookups.
+  const axes = deriveRowAxes(input.rows);
+  const currency = input.currency;
+  const grossAssetsMinor = axes.grossAssetsMinor;
+  const debtsMinor = axes.debtsMinor;
+  const totalNetWorthMinor = grossAssetsMinor - debtsMinor;
+  const liquidNetWorthMinor = axes.liquidAssetsMinor - axes.liquidDebtsMinor;
+  const housingEquityMinor = axes.housingAssetsMinor - axes.housingDebtsMinor;
+
+  const summary = {
+    debts: { amountMinor: debtsMinor, currency },
+    grossAssets: { amountMinor: grossAssetsMinor, currency },
+    housingEquity: { amountMinor: housingEquityMinor, currency },
+    liquidNetWorth: { amountMinor: liquidNetWorthMinor, currency },
+    scopeId: input.snapshot.scopeId,
+    totalNetWorth: { amountMinor: totalNetWorthMinor, currency },
+  };
+
+  const snapshot = createNetWorthSnapshot({
+    capturedAt: input.snapshot.capturedAt,
+    id: input.snapshot.id,
+    isMonthlyClose: input.snapshot.isMonthlyClose,
+    scopeId: input.snapshot.scopeId,
+    scopeLabel: input.snapshot.scopeLabel,
+    summary,
+    warnings: input.snapshot.warnings,
+  });
+
+  assertSnapshotHoldingsReconcile(input.rows, {
+    debtsMinor,
+    grossAssetsMinor,
+    housingEquityMinor,
+    liquidNetWorthMinor,
+    totalNetWorthMinor,
+  });
+
+  return { holdings: input.rows, snapshot };
+}
+
+/**
  * Reconstruct and capture the snapshot for one scope on a past date.
  *
  * Returns null when the portfolio had no holdings at all on that date (nothing
@@ -395,7 +475,6 @@ export function recalculateSnapshotForAsset(
   // ledger to the date, keeping the unit price the snapshot already captured
   // (else the last operation price ≤ the date), and yields null when the asset
   // was not held then — byte-identical to the positions math this used to inline.
-  let newRow: SnapshotHoldingRow | undefined;
   const valuation = valueAt(
     {
       assetId: input.asset.id,
@@ -416,7 +495,10 @@ export function recalculateSnapshotForAsset(
     });
 
     if (totalShareBps > 0) {
-      newRow = {
+      rows.push({
+        // Preserve the frozen flag for an existing row; for a newly-appearing
+        // investment row, freeze false (investments are never housing assets).
+        countsAsHousing: existingRow?.countsAsHousing ?? false,
         holdingId: input.asset.id,
         kind: "asset",
         label: existingRow?.label ?? input.asset.name,
@@ -426,59 +508,16 @@ export function recalculateSnapshotForAsset(
         valueMinor: ownedMinor,
         ...(valuation.units !== undefined ? { units: valuation.units } : {}),
         ...(valuation.unitPrice !== undefined ? { unitPrice: valuation.unitPrice } : {}),
-      };
-      rows.push(newRow);
+      });
     }
   }
 
-  if (rows.length === 0) return null;
-
-  // Apply only the operated asset's delta to the frozen figures. The asset is
-  // always an investment (an asset, never a liability), so debts never move.
-  const deltaMinor = (newRow?.valueMinor ?? 0) - (existingRow?.valueMinor ?? 0);
-  const tier = existingRow?.liquidityTier ?? newRow?.liquidityTier ?? null;
-
-  const summary = {
-    debts: { amountMinor: input.snapshot.debts.amountMinor, currency },
-    grossAssets: {
-      amountMinor: input.snapshot.grossAssets.amountMinor + deltaMinor,
-      currency,
-    },
-    housingEquity: {
-      amountMinor:
-        input.snapshot.housingEquity.amountMinor +
-        (isHousingAsset(input.asset) ? deltaMinor : 0),
-      currency,
-    },
-    liquidNetWorth: {
-      amountMinor:
-        input.snapshot.liquidNetWorth.amountMinor +
-        (tier && isLiquid(tier) ? deltaMinor : 0),
-      currency,
-    },
-    scopeId: input.snapshot.scopeId,
-    totalNetWorth: {
-      amountMinor: input.snapshot.totalNetWorth.amountMinor + deltaMinor,
-      currency,
-    },
-  };
-
-  const snapshot = createNetWorthSnapshot({
-    capturedAt: input.snapshot.capturedAt,
-    id: input.snapshot.id,
-    isMonthlyClose: input.snapshot.isMonthlyClose,
-    scopeId: input.snapshot.scopeId,
-    scopeLabel: input.snapshot.scopeLabel,
-    summary,
-    warnings: input.snapshot.warnings,
+  return assembleRippleSnapshot({
+    currency,
+    frozenHoldings: input.frozenHoldings,
+    rows,
+    snapshot: input.snapshot,
   });
-
-  assertSnapshotHoldingsReconcile(rows, {
-    debtsMinor: summary.debts.amountMinor,
-    grossAssetsMinor: summary.grossAssets.amountMinor,
-  });
-
-  return { holdings: rows, snapshot };
 }
 
 export interface RecalculateHousingSnapshotInput {
@@ -560,9 +599,12 @@ export function recalculateSnapshotForHousing(
     scopeMemberIds,
   });
 
-  let newRow: SnapshotHoldingRow | undefined;
   if (totalShareBps > 0) {
-    newRow = {
+    rows.push({
+      // This ripple is called only for housing assets — freeze true, matching the
+      // capture path (buildSnapshotHoldingRows sets countsAsHousing=true for housing
+      // assets). Preserve the frozen flag for an existing row.
+      countsAsHousing: existingRow?.countsAsHousing ?? true,
       holdingId: input.asset.id,
       kind: "asset",
       label: existingRow?.label ?? input.asset.name,
@@ -570,56 +612,17 @@ export function recalculateSnapshotForHousing(
       // An asset never secures housing — the signal is liability-only (#180).
       securesHousing: false,
       valueMinor: ownedMinor,
-    };
-    rows.push(newRow);
+    });
   }
 
-  if (rows.length === 0) return null;
-
-  const deltaMinor = (newRow?.valueMinor ?? 0) - (existingRow?.valueMinor ?? 0);
-  const tier = existingRow?.liquidityTier ?? newRow?.liquidityTier ?? null;
-
-  const summary = {
-    debts: { amountMinor: input.snapshot.debts.amountMinor, currency },
-    grossAssets: {
-      amountMinor: input.snapshot.grossAssets.amountMinor + deltaMinor,
-      currency,
-    },
-    housingEquity: {
-      amountMinor:
-        input.snapshot.housingEquity.amountMinor +
-        (isHousingAsset(input.asset) ? deltaMinor : 0),
-      currency,
-    },
-    liquidNetWorth: {
-      amountMinor:
-        input.snapshot.liquidNetWorth.amountMinor +
-        (tier && isLiquid(tier) ? deltaMinor : 0),
-      currency,
-    },
-    scopeId: input.snapshot.scopeId,
-    totalNetWorth: {
-      amountMinor: input.snapshot.totalNetWorth.amountMinor + deltaMinor,
-      currency,
-    },
-  };
-
-  const snapshot = createNetWorthSnapshot({
-    capturedAt: input.snapshot.capturedAt,
-    id: input.snapshot.id,
-    isMonthlyClose: input.snapshot.isMonthlyClose,
-    scopeId: input.snapshot.scopeId,
-    scopeLabel: input.snapshot.scopeLabel,
-    summary,
-    warnings: input.snapshot.warnings,
+  // housingEquity is now fully row-derived from the frozen countsAsHousing flags
+  // on asset rows (#181 completion) — the helper needs no delta parameter.
+  return assembleRippleSnapshot({
+    currency,
+    frozenHoldings: input.frozenHoldings,
+    rows,
+    snapshot: input.snapshot,
   });
-
-  assertSnapshotHoldingsReconcile(rows, {
-    debtsMinor: summary.debts.amountMinor,
-    grossAssetsMinor: summary.grossAssets.amountMinor,
-  });
-
-  return { holdings: rows, snapshot };
 }
 
 export interface RecalculateLiabilitySnapshotInput {
@@ -671,19 +674,6 @@ export function recalculateSnapshotForLiability(
   );
   const rows = input.frozenHoldings.filter((row) => row.holdingId !== input.liability.id);
 
-  // What the debt's change moves (same basis as calculateNetWorth): a debt
-  // securing a housing asset nets housing equity; otherwise, if it sits on a
-  // liquid rung, it nets liquid net worth. The rung resolves from the frozen
-  // asset rows even when the frozen liability row's own tier is null.
-  const assetRungById = new Map(
-    rows
-      .filter((row) => row.kind === "asset" && row.liquidityTier !== null)
-      .map((row) => [row.holdingId, row.liquidityTier!] as const),
-  );
-  const securesHousing = securesHousingAsset(input.liability, input.housingAssetIds);
-  const affectsLiquid =
-    !securesHousing && isLiquid(rungForLiability(input.liability, assetRungById));
-
   // Value the liability on the target date via the unified dispatcher (#150
   // carry-over): the curve's model picks amortized / anchored, and a null model
   // falls back to the curve's current balance — byte-identical to the engines
@@ -697,67 +687,53 @@ export function recalculateSnapshotForLiability(
     scopeMemberIds,
   });
 
-  let newRow: SnapshotHoldingRow | undefined;
-  if (totalShareBps > 0 && ownedMinor !== 0) {
-    newRow = {
+  // The new row keeps the SAME existence rule the capture path applies (a row for
+  // any scope stake, even a zero balance) so every ripple and the capture produce
+  // the same row set for a date (#181). Its rung is resolved consistently with the
+  // live calculateNetWorth path: an associated debt inherits its asset's frozen
+  // rung from the surviving asset rows, else `cash` (rungForLiability) — never
+  // null, so a non-housing associated debt lands on the right liquid axis.
+  if (totalShareBps > 0) {
+    const assetRungById = new Map(
+      rows
+        .filter((row) => row.kind === "asset" && row.liquidityTier !== null)
+        .map((row) => [row.holdingId, row.liquidityTier!] as const),
+    );
+    rows.push({
+      // Liabilities never count as housing assets (#181).
+      countsAsHousing: false,
       holdingId: input.liability.id,
       kind: "liability",
       label: existingRow?.label ?? input.liability.name,
-      liquidityTier: existingRow ? existingRow.liquidityTier : null,
+      // Preserve the frozen rung for an existing row; for a newly-appearing row
+      // mirror the capture path EXACTLY (buildSnapshotHoldingRows): an associated
+      // debt freezes its asset's rung (resolved from the frozen asset rows like
+      // the live net-worth path), an unassociated debt freezes null — so every
+      // ripple and the capture produce the same row set for a date (#181).
+      liquidityTier: existingRow
+        ? existingRow.liquidityTier
+        : input.liability.associatedAssetId
+          ? rungForLiability(input.liability, assetRungById)
+          : null,
       // Preserve the frozen signal for an existing row; for a newly-appearing
       // row freeze it from the same classification the figures use (#180).
-      securesHousing: existingRow ? existingRow.securesHousing : securesHousing,
+      securesHousing: existingRow
+        ? existingRow.securesHousing
+        : securesHousingAsset(input.liability, input.housingAssetIds),
       valueMinor: ownedMinor,
-    };
-    rows.push(newRow);
+    });
   }
 
-  if (rows.length === 0) return null;
-
-  const deltaMinor = (newRow?.valueMinor ?? 0) - (existingRow?.valueMinor ?? 0);
-
-  const summary = {
-    debts: {
-      amountMinor: input.snapshot.debts.amountMinor + deltaMinor,
-      currency,
-    },
-    grossAssets: {
-      amountMinor: input.snapshot.grossAssets.amountMinor,
-      currency,
-    },
-    housingEquity: {
-      amountMinor:
-        input.snapshot.housingEquity.amountMinor + (securesHousing ? -deltaMinor : 0),
-      currency,
-    },
-    liquidNetWorth: {
-      amountMinor:
-        input.snapshot.liquidNetWorth.amountMinor + (affectsLiquid ? -deltaMinor : 0),
-      currency,
-    },
-    scopeId: input.snapshot.scopeId,
-    totalNetWorth: {
-      amountMinor: input.snapshot.totalNetWorth.amountMinor - deltaMinor,
-      currency,
-    },
-  };
-
-  const snapshot = createNetWorthSnapshot({
-    capturedAt: input.snapshot.capturedAt,
-    id: input.snapshot.id,
-    isMonthlyClose: input.snapshot.isMonthlyClose,
-    scopeId: input.snapshot.scopeId,
-    scopeLabel: input.snapshot.scopeLabel,
-    summary,
-    warnings: input.snapshot.warnings,
+  // A liability never moves the housing-ASSET axis; its housing/liquid effect is
+  // re-derived from the frozen rows (frozen securesHousing + frozen rung) inside
+  // the shared helper — never from a live securesHousingAsset / housingAssetIds
+  // lookup, so a later reclassification can't drift historical figures (#181).
+  return assembleRippleSnapshot({
+    currency,
+    frozenHoldings: input.frozenHoldings,
+    rows,
+    snapshot: input.snapshot,
   });
-
-  assertSnapshotHoldingsReconcile(rows, {
-    debtsMinor: summary.debts.amountMinor,
-    grossAssetsMinor: summary.grossAssets.amountMinor,
-  });
-
-  return { holdings: rows, snapshot };
 }
 
 /** The edited holding's identity, carrying its NEW ownership split (#172). */
@@ -825,19 +801,40 @@ export function recalculateSnapshotForOwnership(
     scopeMemberIds,
   });
 
-  let newRow: SnapshotHoldingRow | undefined;
-  if (totalShareBps > 0 && ownedMinor !== 0) {
-    newRow = {
+  // Keep the SAME existence rule the capture path applies (a row for any scope
+  // stake) so every ripple and the capture produce the same row set for a date
+  // (#181) — a re-weight to a zero value still keeps the row.
+  if (totalShareBps > 0) {
+    const assetRungById = new Map(
+      rows
+        .filter((row) => row.kind === "asset" && row.liquidityTier !== null)
+        .map((row) => [row.holdingId, row.liquidityTier!] as const),
+    );
+    rows.push({
+      // Preserve the frozen housing-membership flag for an existing row. For a
+      // newly-appearing asset row freeze it from the live classification (same as
+      // capture); for a liability row always false. After this, housingEquity is
+      // fully row-derived — the live `isHousingAsset` call is gone (#181 completion).
+      countsAsHousing: existingRow
+        ? existingRow.countsAsHousing
+        : holding.kind === "asset"
+          ? isHousingAsset(holding.asset)
+          : false,
       holdingId,
       kind: holding.kind,
       label:
         existingRow?.label ??
         (holding.kind === "asset" ? holding.asset.name : holding.liability.name),
+      // Preserve the frozen rung for an existing row; else mirror the capture path:
+      // an asset's tier from tierOfAsset, an associated debt's from its asset's
+      // frozen rung, an unassociated debt's null (#181 parity).
       liquidityTier: existingRow
         ? existingRow.liquidityTier
         : holding.kind === "asset"
           ? tierOfAsset(holding.asset)
-          : null,
+          : holding.liability.associatedAssetId
+            ? rungForLiability(holding.liability, assetRungById)
+            : null,
       // Preserve the frozen signal for an existing row; else freeze it from the
       // same classification the figures use — assets never secure housing (#180).
       securesHousing: existingRow
@@ -850,93 +847,17 @@ export function recalculateSnapshotForOwnership(
       ...(existingRow?.unitPrice !== undefined
         ? { unitPrice: existingRow.unitPrice }
         : {}),
-    };
-    rows.push(newRow);
+    });
   }
 
-  if (rows.length === 0) return null;
-
-  const deltaMinor = (newRow?.valueMinor ?? 0) - (existingRow?.valueMinor ?? 0);
-
-  let summary;
-  if (holding.kind === "asset") {
-    // An asset moves gross + total; housing equity when it is the home; liquid
-    // when it sits on a liquid rung — same basis as recalculateSnapshotForAsset.
-    const tier = existingRow?.liquidityTier ?? newRow?.liquidityTier ?? null;
-    const movesHousing = isHousingAsset(holding.asset);
-    summary = {
-      debts: { amountMinor: input.snapshot.debts.amountMinor, currency },
-      grossAssets: {
-        amountMinor: input.snapshot.grossAssets.amountMinor + deltaMinor,
-        currency,
-      },
-      housingEquity: {
-        amountMinor:
-          input.snapshot.housingEquity.amountMinor + (movesHousing ? deltaMinor : 0),
-        currency,
-      },
-      liquidNetWorth: {
-        amountMinor:
-          input.snapshot.liquidNetWorth.amountMinor +
-          (tier && isLiquid(tier) ? deltaMinor : 0),
-        currency,
-      },
-      scopeId: input.snapshot.scopeId,
-      totalNetWorth: {
-        amountMinor: input.snapshot.totalNetWorth.amountMinor + deltaMinor,
-        currency,
-      },
-    };
-  } else {
-    // A liability moves debts (+delta) and total (-delta); housing equity when it
-    // secures the home, else liquid when it sits on a liquid rung — same basis as
-    // recalculateSnapshotForLiability (the rung resolves from frozen asset rows).
-    const assetRungById = new Map(
-      rows
-        .filter((row) => row.kind === "asset" && row.liquidityTier !== null)
-        .map((row) => [row.holdingId, row.liquidityTier!] as const),
-    );
-    const securesHousing = securesHousingAsset(
-      holding.liability,
-      holding.housingAssetIds,
-    );
-    const affectsLiquid =
-      !securesHousing && isLiquid(rungForLiability(holding.liability, assetRungById));
-    summary = {
-      debts: { amountMinor: input.snapshot.debts.amountMinor + deltaMinor, currency },
-      grossAssets: { amountMinor: input.snapshot.grossAssets.amountMinor, currency },
-      housingEquity: {
-        amountMinor:
-          input.snapshot.housingEquity.amountMinor + (securesHousing ? -deltaMinor : 0),
-        currency,
-      },
-      liquidNetWorth: {
-        amountMinor:
-          input.snapshot.liquidNetWorth.amountMinor + (affectsLiquid ? -deltaMinor : 0),
-        currency,
-      },
-      scopeId: input.snapshot.scopeId,
-      totalNetWorth: {
-        amountMinor: input.snapshot.totalNetWorth.amountMinor - deltaMinor,
-        currency,
-      },
-    };
-  }
-
-  const ownershipSnapshot = createNetWorthSnapshot({
-    capturedAt: input.snapshot.capturedAt,
-    id: input.snapshot.id,
-    isMonthlyClose: input.snapshot.isMonthlyClose,
-    scopeId: input.snapshot.scopeId,
-    scopeLabel: input.snapshot.scopeLabel,
-    summary,
-    warnings: input.snapshot.warnings,
+  // housingEquity is now fully row-derived from the frozen countsAsHousing flags
+  // on asset rows (#181 completion) — no live isHousingAsset call, no delta
+  // parameter. A housing asset's re-weight carries its frozen flag onto the new
+  // row; the helper reads it from there.
+  return assembleRippleSnapshot({
+    currency,
+    frozenHoldings: input.frozenHoldings,
+    rows,
+    snapshot: input.snapshot,
   });
-
-  assertSnapshotHoldingsReconcile(rows, {
-    debtsMinor: summary.debts.amountMinor,
-    grossAssetsMinor: summary.grossAssets.amountMinor,
-  });
-
-  return { holdings: rows, snapshot: ownershipSnapshot };
 }
