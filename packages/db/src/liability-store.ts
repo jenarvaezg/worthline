@@ -842,7 +842,11 @@ function createLiabilityRecord(ctx: StoreContext, input: CreateLiabilityInput): 
     throw new Error("Workspace must be initialized before creating liabilities.");
   }
 
-  const liability = createLiability(workspace, input);
+  // The split rule is enforced at the write boundary (createLiabilitySafe, which
+  // allows a known partial for a debt on a co-owned home — #171). This low-level
+  // persist only constructs the row, so it accepts ≤100% rather than re-asserting
+  // strict 100% and rejecting an already-approved partial split.
+  const liability = createLiability(workspace, input, { allowKnownPartial: true });
   ctx.transaction(() => {
     db.insert(liabilities)
       .values({

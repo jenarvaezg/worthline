@@ -276,6 +276,7 @@ export {
   recalculateSnapshotForAsset,
   recalculateSnapshotForHousing,
   recalculateSnapshotForLiability,
+  recalculateSnapshotForOwnership,
 } from "./historical-snapshot";
 
 export {

@@ -3038,6 +3038,12 @@ td.rowActions > * {
   color: var(--muted);
 }
 
+/* Column 2 of the grid: the central form panes with the shared ownership +
+   submit footer stacked directly beneath them (so the primary action sits
+   below the form it submits, not under the instrument gallery). */
+.addHoldingRight {
+  min-width: 0;
+}
 .addHoldingPanes {
   min-height: 360px;
 }
@@ -3092,6 +3098,20 @@ td.rowActions > * {
 }
 .addHoldingFull {
   grid-column: 1 / -1;
+}
+.addHoldingInherit {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink);
+}
+.addHoldingInherit input[type="checkbox"] {
+  width: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--blue);
 }
 .addHoldingFields small {
   color: var(--muted);

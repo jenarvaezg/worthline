@@ -181,7 +181,12 @@ _Avoid_: liquidity pyramid (implied a shape that never encoded amounts).
 A member's percentage stake in one holding.
 
 **Ownership split**:
-The full set of **ownership shares** on one holding; always totals 100%.
+The full set of **ownership shares** on one holding; totals 100% for most
+holdings. The exception is a holding co-owned with someone who is not a member: a
+**real-estate** asset — and a debt **associated** to one — may carry a _known
+partial_ split (e.g. 75% mine, the other 25% a non-member's), so its figures
+reflect only the household's stake. Every other holding (cash, investments, a
+standalone debt) totals 100%.
 _Avoid_: ownership %, share (when the whole set is meant).
 
 **Value update pass**:
@@ -192,23 +197,38 @@ form. UI label: "Puesta al día". Investments are excluded — their values are 
 A frozen capture, on a date, of a scope's net worth figures and of each holding's
 value behind them (for investments, also units and unit price). Captured
 automatically — at most one per scope per day, the day's latest capture winning.
-Not a user act. Frozen means frozen against edits to the present: later edits,
-renames, or deletions of a holding never alter what a past snapshot captured.
+Not a user act. Frozen means frozen against **cosmetic** edits to the present: a
+rename or a deletion of a holding never alters what a past snapshot captured.
 Declaring a dated fact about the past — a backdated **operation**, a
-**valuation anchor**, a **balance anchor** — is new information, not an edit:
-it generates the snapshot for that date and triggers a **ripple recalculation**
-(ADR 0012).
+**valuation anchor**, a **balance anchor**, or an **amortization plan** — is new
+information, not an edit: it generates the snapshot for that date and triggers a
+**ripple recalculation** (ADR 0012). A **parameter edit** that changes how a
+holding's value flows into history — its **amortization plan**, its
+**appreciation rate**, or its **ownership split** — ripples the same way, without
+declaring any new date. An amortization plan is the one fact that
+generates a whole _series_: one snapshot per monthly payment from its start to
+today, so a backdated loan shows its stepped paydown with no prior snapshots.
 _Avoid_: "guardar snapshot" as a user-facing action.
 
 **Ripple recalculation**:
 The re-derivation of existing **snapshots** after a dated fact about the past
 is declared, modified, or deleted. Declaring at date D overwrites the snapshot
-at D and recalculates the ones after D; modifying or deleting recalculates from
-D inclusive. Only existing snapshots are re-derived — no new dates are
+at D (generating it if none existed) and recalculates the ones after D; modifying
+or deleting recalculates from D inclusive. A dated fact generates a snapshot at
+its own date; the lone exception that generates _many_ is an **amortization
+plan**, which generates one at every monthly payment from its start to today (a
+backdated loan's stepped paydown — PRD #109). No other intermediate dates are
 backfilled. A snapshot generated for a past date is an ordinary **snapshot**,
-not a special kind. See ADR 0012.
+not a special kind. An **ownership split** edit ripples along the **scope** axis
+rather than time: it has no date, creates no new snapshot dates, and only
+re-weights each existing per-member **scope** snapshot's row for that holding by
+the new split — the household scope (always 100%) is left untouched. It joins the
+**amortization plan** and the **appreciation rate** as a parameter edit that
+re-derives history, distinct from a cosmetic edit (a rename), which never does.
+See ADR 0012.
 _Avoid_: treating it as an exception to frozen snapshots (it incorporates new
-information about the past; edits to the present still never touch history).
+information — a dated fact or a changed parameter; a purely cosmetic edit like a
+rename still never touches history).
 
 **Monthly close**:
 The last **snapshot** of a calendar month. Derived, never declared by the user.
@@ -322,6 +342,7 @@ lines.
 
 - **Net worth** decomposes into **gross assets** − **debts**.
 - A **holding** sits on one rung of the **liquidity ladder**. A liability inherits the rung of its associated asset (netting against it); an unassociated liability sits on **cash** — it is a claim on liquid resources for its full balance.
+- A liability **associated** to an asset inherits, by default, that asset's **ownership split** — copied when the association is established, then independently editable; it is not a live link (a later change to the asset's split does not move the liability's). Holding values are always declared globally (the whole holding) and weighted per **scope** by the split, so a debt on a home owned 65 % nets against it without the user computing shares by hand.
 - A **holding** carries a **valuation method**; **investment** is just the **derived** method (value = units × unit price, never set by hand), not a kind of its own.
 - **Liquid net worth** is **net worth** restricted to the two top rungs of the **liquidity ladder** (cash + market); **housing equity** is the equity of property holdings — both partial views of **net worth**.
 - A **framing** chooses which figure headlines; **gross assets**, **debts**, **housing equity**, and **liquid net worth** are always-visible breakdown around it.

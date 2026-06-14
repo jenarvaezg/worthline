@@ -254,30 +254,32 @@ export default async function AnadirHoldingPage({
               ))}
             </aside>
 
-            <section className="addHoldingPanes" aria-live="polite">
-              <p className="addHoldingEmpty">
-                Elige un instrumento a la izquierda para empezar.
-              </p>
-              {ALL_INSTRUMENTS.map((entry) => (
-                <InstrumentPane
-                  key={entry.id}
-                  entry={entry}
-                  values={values}
-                  assocOptions={assocOptions}
-                />
-              ))}
-            </section>
-          </div>
+            <div className="addHoldingRight">
+              <section className="addHoldingPanes" aria-live="polite">
+                <p className="addHoldingEmpty">
+                  Elige un instrumento a la izquierda para empezar.
+                </p>
+                {ALL_INSTRUMENTS.map((entry) => (
+                  <InstrumentPane
+                    key={entry.id}
+                    entry={entry}
+                    values={values}
+                    assocOptions={assocOptions}
+                  />
+                ))}
+              </section>
 
-          <div className="addHoldingFooter">
-            <OwnershipInputs
-              members={activeMembers}
-              scopeMemberId={ownershipScopeMemberId}
-              values={values}
-            />
-            <div className="formActions">
-              <button type="submit">Añadir al patrimonio</button>
-              <Link href="/patrimonio">Cancelar</Link>
+              <div className="addHoldingFooter">
+                <OwnershipInputs
+                  members={activeMembers}
+                  scopeMemberId={ownershipScopeMemberId}
+                  values={values}
+                />
+                <div className="formActions">
+                  <button type="submit">Añadir al patrimonio</button>
+                  <Link href="/patrimonio">Cancelar</Link>
+                </div>
+              </div>
             </div>
           </div>
         </form>
@@ -449,17 +451,30 @@ function MethodFields({
       ) : null}
 
       {id === "mortgage" ? (
-        <label className="addHoldingFull">
-          Activo asociado <small>(la vivienda que garantiza)</small>
-          <select name={`assoc_${id}`} defaultValue={v("assoc") ?? ""}>
-            <option value="">Sin activo asociado</option>
-            {assocOptions.map((opt) => (
-              <option key={opt.id} value={opt.id}>
-                {opt.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <>
+          <label className="addHoldingFull">
+            Activo asociado <small>(la vivienda que garantiza)</small>
+            <select name={`assoc_${id}`} defaultValue={v("assoc") ?? ""}>
+              <option value="">Sin activo asociado</option>
+              {assocOptions.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="addHoldingFull addHoldingInherit">
+            <input
+              type="checkbox"
+              name={`inheritOwnership_${id}`}
+              defaultChecked={v("inheritOwnership") !== "off"}
+            />
+            <span>
+              Mismo reparto que el activo asociado{" "}
+              <small>(copia su propiedad; podrás ajustarla luego)</small>
+            </span>
+          </label>
+        </>
       ) : null}
     </div>
   );
