@@ -33,6 +33,7 @@ function row(input: {
   dateKey?: string;
 }): DatedSnapshotHoldingRow {
   return {
+    countsAsHousing: false,
     dateKey: input.dateKey ?? "2026-06-30",
     holdingId: input.holdingId,
     kind: input.kind ?? "asset",

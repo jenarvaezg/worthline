@@ -39,6 +39,7 @@ function row(input: {
   label?: string;
 }): DatedSnapshotHoldingRow {
   return {
+    countsAsHousing: false,
     dateKey: input.dateKey,
     holdingId: input.holdingId,
     kind: input.kind ?? "asset",

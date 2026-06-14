@@ -162,6 +162,7 @@ function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): void {
       db.insert(snapshotHoldings)
         .values(
           input.holdings.map((row) => ({
+            countsAsHousing: row.countsAsHousing ? 1 : 0,
             holdingId: row.holdingId,
             id: ctx.newId(),
             kind: row.kind,
@@ -242,6 +243,7 @@ export function readSnapshotHoldings(
       scopeId: snapshots.scopeId,
       dateKey: snapshots.dateKey,
       capturedAt: snapshots.capturedAt,
+      countsAsHousing: snapshotHoldings.countsAsHousing,
       holdingId: snapshotHoldings.holdingId,
       kind: snapshotHoldings.kind,
       label: snapshotHoldings.label,
@@ -269,6 +271,7 @@ export function readSnapshotHoldings(
 
   return rows.map((row) => ({
     capturedAt: row.capturedAt,
+    countsAsHousing: row.countsAsHousing === 1,
     dateKey: row.dateKey,
     holdingId: row.holdingId,
     kind: row.kind,

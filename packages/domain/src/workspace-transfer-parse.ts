@@ -197,6 +197,11 @@ const domainWarningSchema = z.object({
 });
 
 const snapshotHoldingSchema = z.object({
+  // Frozen housing-membership signal for ASSET rows (#181). Defaults false for
+  // exports written before the field existed — the same additive basis the v17
+  // migration backfill uses, so an old export never claims an asset was a housing
+  // asset it cannot prove. Always false for liability rows.
+  countsAsHousing: z.boolean().default(false),
   holdingId: nonEmptyString,
   kind: z.enum(["asset", "liability"]),
   label: nonEmptyString,

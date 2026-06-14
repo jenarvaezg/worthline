@@ -311,6 +311,7 @@ describe("exportWorkspace", () => {
     expect(snap.warnings).toEqual([]);
     expect(snap.holdings).toStrictEqual([
       {
+        countsAsHousing: false,
         holdingId: "a_cash",
         kind: "asset",
         label: "Cuenta ING",
@@ -319,6 +320,7 @@ describe("exportWorkspace", () => {
         valueMinor: 500000,
       },
       {
+        countsAsHousing: false,
         holdingId: "a_inv",
         kind: "asset",
         label: "Fondo Indexado",
@@ -329,6 +331,7 @@ describe("exportWorkspace", () => {
         valueMinor: 105500,
       },
       {
+        countsAsHousing: false,
         holdingId: "l_mort",
         kind: "liability",
         label: "Hipoteca",
@@ -695,6 +698,63 @@ describe("instrument round-trips through export/import (#149)", () => {
       "current_account",
     );
     expect(doc2.liabilities.find((l) => l.id === "l_mort")?.instrument).toBe("mortgage");
+
+    store.close();
+    restored.close();
+  });
+});
+
+describe("countsAsHousing round-trips through export/import (#181)", () => {
+  test("a housing asset's frozen countsAsHousing survives export→import (not reset to false)", () => {
+    const store = createInMemoryStore();
+    store.workspace.initializeWorkspace({
+      members: [{ id: "m1", name: "Alice" }],
+      mode: "individual",
+    });
+
+    // A snapshot whose only holding is a housing asset frozen as countsAsHousing.
+    // housingEquity equals that asset's value; liquid is zero (illiquid housing) —
+    // a self-consistent five-figure snapshot under the #181 row-derivation rules.
+    const snapshot: NetWorthSnapshot = {
+      capturedAt: "2026-02-01T10:00:00.000Z",
+      dateKey: "2026-02-01",
+      debts: { amountMinor: 0, currency: "EUR" },
+      grossAssets: { amountMinor: 30000000, currency: "EUR" },
+      housingEquity: { amountMinor: 30000000, currency: "EUR" },
+      id: "snapH",
+      isMonthlyClose: true,
+      liquidNetWorth: { amountMinor: 0, currency: "EUR" },
+      monthKey: "2026-02",
+      scopeId: "m1",
+      scopeLabel: "Alice",
+      totalNetWorth: { amountMinor: 30000000, currency: "EUR" },
+      warnings: [],
+    };
+    store.snapshots.saveSnapshot({
+      holdings: [
+        {
+          countsAsHousing: true,
+          holdingId: "a_home",
+          kind: "asset",
+          label: "Piso Madrid",
+          liquidityTier: "illiquid",
+          securesHousing: false,
+          valueMinor: 30000000,
+        },
+      ],
+      snapshot,
+    });
+
+    // Export must carry the frozen flag (it was dropped before the export-read fix).
+    const doc = store.workspace.exportWorkspace();
+    expect(doc.snapshots[0].holdings[0].countsAsHousing).toBe(true);
+
+    // A fresh import must persist it (it was reset to the column default before the
+    // import-insert fix), so a re-export of the restored store still shows it true.
+    const restored = createInMemoryStore();
+    restored.workspace.importWorkspace(doc);
+    const reDoc = restored.workspace.exportWorkspace();
+    expect(reDoc.snapshots[0].holdings[0].countsAsHousing).toBe(true);
 
     store.close();
     restored.close();

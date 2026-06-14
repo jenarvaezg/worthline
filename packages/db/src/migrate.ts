@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 16;
+export const SCHEMA_VERSION = 17;
 
 export function migrate(sqlite: DatabaseConnection): void {
   sqlite.pragma("journal_mode = WAL");
@@ -315,5 +315,31 @@ export function migrate(sqlite: DatabaseConnection): void {
          );`,
     );
     sqlite.pragma("user_version = 16");
+  }
+
+  if (version < 17) {
+    // #181 (ADR 0008): freeze each snapshot-holding ASSET row's housing-membership
+    // signal so the housing-equity axis is fully row-derivable from frozen flags —
+    // no live `isHousingAsset` call needed in ripples. counts_as_housing mirrors
+    // isHousingAsset at backfill time: instrument = 'property', or (for assets
+    // predating the instrument backfill) type = 'real_estate' OR
+    // is_primary_residence = 1. Liabilities and non-housing assets stay 0.
+    // This is the asset-side complement of the v16 `secures_housing` migration.
+    try {
+      sqlite.exec(
+        "ALTER TABLE snapshot_holdings ADD COLUMN counts_as_housing INTEGER NOT NULL DEFAULT 0",
+      );
+    } catch {}
+    sqlite.exec(
+      `UPDATE snapshot_holdings SET counts_as_housing = 1
+       WHERE kind = 'asset'
+         AND holding_id IN (
+           SELECT a.id FROM assets a
+           WHERE a.instrument = 'property'
+              OR a.type = 'real_estate'
+              OR a.is_primary_residence = 1
+         );`,
+    );
+    sqlite.pragma("user_version = 17");
   }
 }
