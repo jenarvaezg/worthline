@@ -1,0 +1,64 @@
+{
+  "_comment": "Representative GET /users/{id}/collected_items?category=coin response (spike #161). Shape is real (captured live); identifiers/contents are anonymized for this public repo. Intentionally mixes items WITHOUT a recorded price/acquisition_date (the common case — value falls back) and one WITH both (exercises the price + purchase-date mapping). Numista returns the whole collection in one call — no pagination.",
+  "item_count": 3,
+  "item_for_swap_count": 0,
+  "item_type_count": 2,
+  "item_type_for_swap_count": 0,
+  "items": [
+    {
+      "id": 78084155,
+      "quantity": 1,
+      "type": {
+        "id": 1493,
+        "title": "1 Dollar \"American Silver Eagle\" (Bullion Coin)",
+        "category": "coin",
+        "issuer": { "code": "etats-unis", "name": "Estados Unidos" }
+      },
+      "issue": {
+        "id": 32723,
+        "is_dated": true,
+        "year": 2008,
+        "gregorian_year": 2008,
+        "mintage": 20583000,
+        "comment": "No Mint Mark, Minted at West Point"
+      },
+      "for_swap": false,
+      "grade": "unc"
+    },
+    {
+      "id": 78084999,
+      "quantity": 2,
+      "type": {
+        "id": 5678,
+        "title": "5 Pesetas Alfonso XII",
+        "category": "coin",
+        "issuer": { "code": "espagne", "name": "España" }
+      },
+      "issue": { "id": 99001, "is_dated": true, "year": 1885, "gregorian_year": 1885 },
+      "for_swap": false,
+      "grade": "vf",
+      "price": { "value": 40.5, "currency": "EUR" },
+      "acquisition_date": "2019-05-12"
+    },
+    {
+      "id": 78085000,
+      "quantity": 1,
+      "type": {
+        "id": 1493,
+        "title": "1 Dollar \"American Silver Eagle\" (Bullion Coin)",
+        "category": "coin",
+        "issuer": { "code": "etats-unis", "name": "Estados Unidos" }
+      },
+      "issue": {
+        "id": 637384,
+        "is_dated": true,
+        "year": 2021,
+        "gregorian_year": 2021,
+        "mint_letter": "W",
+        "comment": "Proof"
+      },
+      "for_swap": false,
+      "grade": "unc"
+    }
+  ]
+}
