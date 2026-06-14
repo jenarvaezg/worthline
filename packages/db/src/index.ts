@@ -17,6 +17,7 @@ import type {
 import {
   amortizationPaymentDatesUpTo,
   buildSnapshotAtDate,
+  globalHoldingValueAtDate,
   historicalCapturedAt,
   housingAssetIdsOf,
   isHousingAsset,
@@ -59,6 +60,7 @@ import {
   readSnapshotHoldings,
   readSnapshots,
   type SaveSnapshotInput,
+  type SnapshotHoldingRecord,
   type SnapshotStore,
 } from "./snapshot-store";
 import {
@@ -1191,21 +1193,70 @@ function rippleHistoricalSnapshotsForDebt(
 }
 
 /**
+ * Re-derive one asset's GLOBAL (100%) value on a date from the lossless deps,
+ * honoring the frozen household row's captured unit price / cost-basis flag so an
+ * investment's re-valued global matches the price the snapshot showed (#187).
+ */
+function globalAssetValue(
+  asset: ManualAsset,
+  deps: HistoricalSnapshotDeps,
+  householdRow: SnapshotHoldingRecord,
+  dateKey: string,
+): number | null {
+  const housingCurve = deps.housingValuationByAsset.get(asset.id);
+  const manualValueHistory = deps.manualValueHistory.get(asset.id);
+  return globalHoldingValueAtDate(
+    {
+      atCostBasis:
+        householdRow.units !== undefined && householdRow.unitPrice === undefined,
+      holding: { asset, kind: "asset" },
+      operations: deps.operationsByAsset.get(asset.id) ?? [],
+      ...(householdRow.unitPrice !== undefined
+        ? { capturedUnitPrice: householdRow.unitPrice }
+        : {}),
+      ...(housingCurve !== undefined ? { housingCurve } : {}),
+      ...(manualValueHistory !== undefined ? { manualValueHistory } : {}),
+    },
+    dateKey,
+  );
+}
+
+/** Re-derive one liability's GLOBAL (100%) outstanding balance on a date (#187). */
+function globalLiabilityValue(
+  liability: Liability,
+  deps: HistoricalSnapshotDeps,
+  dateKey: string,
+): number | null {
+  const debtCurve = deps.debtBalanceByLiability.get(liability.id);
+  const manualValueHistory = deps.manualValueHistory.get(liability.id);
+  return globalHoldingValueAtDate(
+    {
+      holding: { kind: "liability", liability },
+      ...(debtCurve !== undefined ? { debtCurve } : {}),
+      ...(manualValueHistory !== undefined ? { manualValueHistory } : {}),
+    },
+    dateKey,
+  );
+}
+
+/**
  * Ripple effect for an ownership-split edit (#172): re-weight the edited
  * holding's row in every existing scope snapshot using its new split. Unlike the
  * value ripples this generates NO snapshot dates — an ownership split has no date
- * dimension. The whole-holding (global) value at each date is recovered from the
- * household-scope frozen row divided by the share the household held under
- * `previousOwnership`: the household row is the members' COMBINED stake (the full
- * value when the split totals 100% among members, less when the holding is
- * co-owned with a non-member). Every scope — including the household — is then
- * re-weighted from that global value, so a holding fully owned within the
- * household leaves the household figure unchanged while a co-owned holding's
- * household figure moves with the members' combined share. Only the edited
- * holding's row moves; every other frozen row is preserved, the reconciliation
- * invariant holds (ADR 0008), and legacy captures with no holding rows are
- * skipped. A no-op when the household held no stake before, or no household
- * snapshot carries the holding.
+ * dimension. The whole-holding (global, 100%) value at each date is RE-DERIVED
+ * losslessly from the holding's curve / operations / stored basis — the same
+ * source `buildSnapshotAtDate` values it from (#187) — never recovered by
+ * dividing the rounded household snapshot row, which cannot invert allocation
+ * rounding and drifts ±1–2 minor units for a holding co-owned with a non-member
+ * (the household combined share < 100%). The set of dates re-weighted is exactly
+ * the household snapshots that carry the holding (an ownership edit moves no other
+ * dates). Every scope — including the household — is then re-weighted from that
+ * global value, so a holding fully owned within the household leaves the household
+ * figure unchanged while a co-owned holding's household figure moves with the
+ * members' combined share. Only the edited holding's row moves; every other
+ * frozen row is preserved, the reconciliation invariant holds (ADR 0008), and
+ * legacy captures with no holding rows are skipped. A no-op when the household
+ * held no stake before, or no household snapshot carries the holding.
  */
 function rippleHistoricalSnapshotsForOwnership(
   ctx: StoreContext,
@@ -1226,24 +1277,28 @@ function rippleHistoricalSnapshotsForOwnership(
   const liability = kind === "liability" ? readLiabilityIdentity(db, holdingId) : null;
   if (!asset && !liability) return;
 
-  // The combined stake the household held under the PREVIOUS split — what each
-  // frozen household row was weighted by. Used to divide the row back out to the
-  // whole-holding value. Zero means the household held nothing → nothing to do.
+  // The combined stake the household held under the PREVIOUS split. Zero means the
+  // household held nothing before this edit → nothing to re-weight, no-op.
   const householdMemberIds = new Set(resolveScopeMemberIds(workspace, "household"));
   const previousHouseholdBps = previousOwnership
     .filter((share) => householdMemberIds.has(share.memberId))
     .reduce((sum, share) => sum + share.shareBps, 0);
   if (previousHouseholdBps <= 0) return;
 
+  // The valuation deps `buildSnapshotAtDate` uses (operations, curves, manual
+  // history): the lossless source the global value is RE-DERIVED from (#187),
+  // never the rounded household row.
+  const deps = buildHistoricalSnapshotDeps(db, workspace);
   // A liability that secures the home nets housing equity (ADR 0013).
   const housingAssetIds =
-    liability !== null
-      ? housingAssetIdsOf(buildHistoricalSnapshotDeps(db, workspace).assets)
-      : new Set<string>();
+    liability !== null ? housingAssetIdsOf(deps.assets) : new Set<string>();
 
   ctx.transaction(() => {
-    // Recover the holding's GLOBAL value per date: divide the household row (the
-    // members' combined stake) back out by the share the household held before.
+    // The dates to re-weight: exactly the household snapshots carrying the holding
+    // (an ownership edit moves no other dates), each mapped to the LOSSLESS global
+    // value re-derived from the holding's curve / operations / stored basis. The
+    // household row's frozen unit price / cost-basis flag is honored so an
+    // investment's re-valued global matches the price the snapshot captured.
     const globalByDate = new Map<string, number>();
     for (const snap of readSnapshots(db, "household")) {
       const row = readSnapshotHoldings(db, {
@@ -1251,12 +1306,17 @@ function rippleHistoricalSnapshotsForOwnership(
         scopeId: "household",
         to: snap.dateKey,
       }).find((r) => r.holdingId === holdingId && r.kind === kind);
-      if (row) {
-        globalByDate.set(
-          snap.dateKey,
-          Math.round((row.valueMinor * 10_000) / previousHouseholdBps),
-        );
-      }
+      if (!row) continue;
+
+      const globalValueMinor = asset
+        ? globalAssetValue(asset, deps, row, snap.dateKey)
+        : globalLiabilityValue(liability!, deps, snap.dateKey);
+      // A household row exists for this date, so the holding WAS captured then.
+      // Re-valuation returns null only when the live ledger no longer holds it on
+      // that date (e.g. operations deleted since the freeze) — a data mismatch the
+      // frozen row alone records faithfully, so re-weight that captured value as
+      // the old code did. This never happens for the co-owned-home case (#187).
+      globalByDate.set(snap.dateKey, globalValueMinor ?? row.valueMinor);
     }
     if (globalByDate.size === 0) return; // no household basis → nothing to re-weight
 

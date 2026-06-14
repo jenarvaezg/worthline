@@ -262,6 +262,7 @@ export { buildSnapshotId, captureSnapshotForScope } from "./capture-snapshot";
 export type {
   BuildSnapshotAtDateInput,
   DebtBalanceCurveInputs,
+  GlobalHoldingValueInput,
   HousingCurveInputs,
   RecalculateHousingSnapshotInput,
   RecalculateLiabilitySnapshotInput,
@@ -272,6 +273,7 @@ export { lastKnownValueAtDate } from "./value-history";
 export {
   amortizationPaymentDatesUpTo,
   buildSnapshotAtDate,
+  globalHoldingValueAtDate,
   historicalCapturedAt,
   recalculateSnapshotForAsset,
   recalculateSnapshotForHousing,

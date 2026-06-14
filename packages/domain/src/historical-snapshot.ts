@@ -225,10 +225,26 @@ export interface BuildSnapshotAtDateInput {
   costBasisAssetIds?: ReadonlySet<string>;
 }
 
+/**
+ * The exact slice of `BuildSnapshotAtDateInput` the per-holding valuation-input
+ * builders read. `BuildSnapshotAtDateInput` satisfies it structurally, so the
+ * fresh-capture path passes itself unchanged; the single-holding lossless
+ * re-valuation (`globalHoldingValueAtDate`, #187) passes a minimal object.
+ */
+interface HistoricalValuationContext {
+  manualValueHistory: ReadonlyMap<string, ManualValuePoint[]>;
+  operationsByAsset: ReadonlyMap<string, InvestmentOperation[]>;
+  housingValuationByAsset?: ReadonlyMap<string, HousingCurveInputs>;
+  capturedUnitPrices?: ReadonlyMap<string, DecimalString>;
+  costBasisAssetIds?: ReadonlySet<string>;
+  today?: string;
+  targetDate: string;
+}
+
 /** The valuation input for an asset on the historical path, by its valuation method. */
 function assetValuationInput(
   asset: ManualAsset,
-  input: BuildSnapshotAtDateInput,
+  input: HistoricalValuationContext,
 ): HoldingValuationInput {
   // Precedence matches the live capture path and the pre-dispatcher historical
   // path (type-first): an investment is valued by its operation ledger even when
@@ -278,7 +294,7 @@ function assetValuationInput(
 function liabilityValuationInput(
   liability: Liability,
   curve: DebtBalanceCurveInputs | undefined,
-  input: BuildSnapshotAtDateInput,
+  input: Pick<HistoricalValuationContext, "manualValueHistory">,
 ): HoldingValuationInput {
   const curveInput = curve ? debtCurveValuationInput(curve) : null;
   if (curveInput) return curveInput;
@@ -758,6 +774,94 @@ export function recalculateSnapshotForLiability(
   });
 }
 
+/**
+ * The inputs needed to re-value ONE holding's GLOBAL (100%, un-allocated) value
+ * on a past date through the same valuation dispatcher the fresh capture uses
+ * (#187). Mirrors the per-holding slice of `BuildSnapshotAtDateInput`: an asset
+ * is valued by its operation ledger (investments), housing curve (real estate),
+ * or last-known-value basis; a liability by its debt curve or last-known balance.
+ */
+export interface GlobalHoldingValueInput {
+  /** The holding identity (asset or liability) carrying its current basis. */
+  holding:
+    | { kind: "asset"; asset: ManualAsset }
+    | { kind: "liability"; liability: Liability };
+  /** Every operation for the asset (investments); empty/omitted otherwise. */
+  operations?: readonly InvestmentOperation[];
+  /** The asset's housing curve (real estate); omitted for non-housing. */
+  housingCurve?: HousingCurveInputs;
+  /** The liability's debt-balance curve; omitted for a no-model liability. */
+  debtCurve?: DebtBalanceCurveInputs;
+  /** Audit history of manual values/balances for this holding (asc by date). */
+  manualValueHistory?: readonly ManualValuePoint[];
+  /**
+   * The unit price the snapshot already captured for this asset that day, if any
+   * (investments). Honored so the re-valued global matches the price the frozen
+   * row used — never a later operation price the snapshot could not have shown.
+   */
+  capturedUnitPrice?: DecimalString;
+  /** True when the asset was captured at COST BASIS that day (ADR 0006, #183). */
+  atCostBasis?: boolean;
+  /** "Today" as YYYY-MM-DD — forwarded to the housing curve for extrapolation. */
+  today?: string;
+}
+
+/**
+ * Re-derive ONE holding's GLOBAL (100%, un-allocated) value on `targetDate` from
+ * its curve / operations / stored basis — the SAME lossless source
+ * `buildSnapshotAtDate` values it from (#187). This replaces dividing the rounded
+ * household snapshot row by its combined share to recover the global: that
+ * division cannot invert allocation rounding, so it drifts ±1–2 minor units for a
+ * holding co-owned with a non-member (the household share < 100%). Re-valuing
+ * recovers the value losslessly while touching ONLY the value — never a live
+ * identity/classification FK into frozen history (ADR 0008).
+ *
+ * Returns null when the holding was not held on that date (e.g. an investment
+ * before its first operation or once fully sold) — the caller skips re-weighting.
+ */
+export function globalHoldingValueAtDate(
+  input: GlobalHoldingValueInput,
+  targetDate: string,
+): number | null {
+  const { holding } = input;
+  const holdingId = holding.kind === "asset" ? holding.asset.id : holding.liability.id;
+  const manualValueHistory: ReadonlyMap<string, ManualValuePoint[]> =
+    input.manualValueHistory !== undefined
+      ? new Map([[holdingId, [...input.manualValueHistory]]])
+      : new Map();
+
+  const valuationInput: HoldingValuationInput =
+    holding.kind === "asset"
+      ? assetValuationInput(holding.asset, {
+          manualValueHistory,
+          operationsByAsset: new Map([[holding.asset.id, [...(input.operations ?? [])]]]),
+          targetDate,
+          ...(input.capturedUnitPrice !== undefined
+            ? {
+                capturedUnitPrices: new Map([
+                  [holding.asset.id, input.capturedUnitPrice],
+                ]),
+              }
+            : {}),
+          ...(input.atCostBasis === true
+            ? { costBasisAssetIds: new Set([holding.asset.id]) }
+            : {}),
+          ...(input.housingCurve !== undefined
+            ? {
+                housingValuationByAsset: new Map([
+                  [holding.asset.id, input.housingCurve],
+                ]),
+              }
+            : {}),
+          ...(input.today !== undefined ? { today: input.today } : {}),
+        })
+      : liabilityValuationInput(holding.liability, input.debtCurve, {
+          manualValueHistory,
+        });
+
+  return valueAt(valuationInput, targetDate).valueMinor;
+}
+
 /** The edited holding's identity, carrying its NEW ownership split (#172). */
 export type OwnershipRippleHolding =
   | { kind: "asset"; asset: ManualAsset }
@@ -772,10 +876,13 @@ export interface RecalculateOwnershipSnapshotInput {
   holding: OwnershipRippleHolding;
   /**
    * The holding's GLOBAL value (the whole holding, 100% of the split) on this
-   * snapshot's date — i.e. the household-scope frozen value, which is invariant
-   * under an ownership-split edit. Positive; for a liability it is the
-   * outstanding balance. The new per-scope row is this value re-weighted by the
-   * new split (`allocateScopedHolding`).
+   * snapshot's date, re-derived losslessly from the holding's curve / operations /
+   * stored basis (`globalHoldingValueAtDate`, #187) — NOT recovered by dividing
+   * the rounded household row, which drifts ±1–2 minor units for a holding
+   * co-owned with a non-member. Invariant under an ownership-split edit (the split
+   * only re-weights it). Positive; for a liability it is the outstanding balance.
+   * The new per-scope row is this value re-weighted by the new split
+   * (`allocateScopedHolding`).
    */
   globalValueMinor: number;
   workspace: Workspace;
