@@ -70,6 +70,18 @@ export interface MemberOwnerships {
 }
 
 /**
+ * Outcome of {@link WorkspaceStore.importWorkspace}. The import itself always
+ * committed (or threw); this reports the best-effort post-import historical-
+ * snapshot gap-fill (ADR 0012, #112). When it failed, `gapFillError` carries the
+ * cause so the UI can surface it and prompt a re-run of the backfill — rather
+ * than the failure being swallowed by a bare `console.error` (#185).
+ */
+export interface ImportWorkspaceResult {
+  /** The post-import gap-fill error, when it failed; absent on success. */
+  gapFillError?: Error;
+}
+
+/**
  * Cross-domain orchestration the WorkspaceStore composes but does not own.
  * importWorkspace must gap-fill historical snapshots after the bulk insert
  * (ADR 0012, #112); that reconstruction lives outside this store (it spans every
@@ -141,7 +153,7 @@ export interface WorkspaceStore {
    * are bulk-inserted with their ids preserved. Callers must validate the
    * document with parseWorkspaceExport first — this method does not re-parse.
    */
-  importWorkspace: (doc: WorkspaceExport) => void;
+  importWorkspace: (doc: WorkspaceExport) => ImportWorkspaceResult;
   createMember: (member: Member) => void;
   updateMember: (member: Pick<Member, "id" | "name">) => void;
   disableMember: (memberId: string, disabledAt: string) => void;
@@ -415,7 +427,7 @@ function importWorkspace(
   ctx: StoreContext,
   deps: WorkspaceStoreDeps,
   doc: WorkspaceExport,
-): void {
+): ImportWorkspaceResult {
   const { db, sqlite } = ctx;
 
   ctx.transaction(() => {
@@ -776,12 +788,17 @@ function importWorkspace(
     try {
       deps.gapFillHistoricalSnapshots(importedWorkspace, today);
     } catch (error) {
-      // The import itself already committed (ADR 0010). Gap-fill is a
-      // best-effort post-step: surface its failure without rolling back a
-      // successful import — the user can re-run the backfill later.
-      console.error("Historical-snapshot gap-fill after import failed:", error);
+      // The import itself already committed (ADR 0010), so we never roll it
+      // back. But the gap-fill is no longer swallowed by a bare console.error
+      // (#185): its failure is surfaced to the caller so the UI can prompt a
+      // re-run of the backfill rather than leaving silent partial history.
+      return {
+        gapFillError: error instanceof Error ? error : new Error(String(error)),
+      };
     }
   }
+
+  return {};
 }
 
 /**
