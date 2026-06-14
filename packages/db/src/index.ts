@@ -53,6 +53,8 @@ import {
 } from "./schema";
 import { createAssetStore, type AssetStore } from "./asset-store";
 import { migrate } from "./migrate";
+
+export { SCHEMA_VERSION } from "./migrate";
 import { createLiabilityStore, type LiabilityStore } from "./liability-store";
 import { createOperationsStore, type OperationsStore } from "./operations-store";
 import {
@@ -760,8 +762,9 @@ function readDebtBalanceInputs(
               earlyRepayments: repaymentsByPlan.get(plan.id) ?? [],
               plan: {
                 annualInterestRate: plan.annualInterestRate,
+                disbursementDate: plan.disbursementDate,
+                firstPaymentDate: plan.firstPaymentDate,
                 initialCapitalMinor: plan.initialCapitalMinor,
-                startDate: plan.startDate,
                 termMonths: plan.termMonths,
               },
               revisions: revisionsByPlan.get(plan.id) ?? [],
@@ -1112,7 +1115,8 @@ function rippleHistoricalSnapshotsForDebt(
   if (params.kind === "amortizable-plan") {
     if (!curve.plan) return;
     generateDates = amortizationPaymentDatesUpTo(curve.plan, today);
-    recalcFrom = curve.plan.startDate;
+    // The debt appears at the disbursement date (ADR 0019), the earliest boundary.
+    recalcFrom = curve.plan.disbursementDate;
   } else {
     const { fromDateKey } = params;
     // A revision never generates new dates; an anchor and an early repayment are

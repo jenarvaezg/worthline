@@ -2,7 +2,32 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 17;
+export const SCHEMA_VERSION = 18;
+
+/** Last calendar day of the given year/month (1-based month). */
+function lastDayOfMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+/**
+ * The YYYY-MM-DD exactly one month after `dateKey`, with the day clamped to the
+ * destination month's last valid day — the SAME `addMonths(dateKey, 1)` the
+ * amortization engine uses (e.g. 2020-01-31 → 2020-02-29). Inlined here so the
+ * v18 backfill reproduces the engine's "first payment one month after start"
+ * rule to the day, keeping every existing snapshot byte-identical (ADR 0019).
+ */
+function addOneMonthClamped(dateKey: string): string {
+  const year = Number(dateKey.slice(0, 4));
+  const month = Number(dateKey.slice(5, 7));
+  const day = Number(dateKey.slice(8, 10));
+  const zeroBased = month - 1 + 1;
+  const newYear = year + Math.floor(zeroBased / 12);
+  const newMonth = (zeroBased % 12) + 1;
+  const clampedDay = Math.min(day, lastDayOfMonth(newYear, newMonth));
+  const mm = String(newMonth).padStart(2, "0");
+  const dd = String(clampedDay).padStart(2, "0");
+  return `${newYear}-${mm}-${dd}`;
+}
 
 export function migrate(sqlite: DatabaseConnection): void {
   sqlite.pragma("journal_mode = WAL");
@@ -341,5 +366,81 @@ export function migrate(sqlite: DatabaseConnection): void {
          );`,
     );
     sqlite.pragma("user_version = 17");
+  }
+
+  if (version < 18) {
+    // ADR 0019 (#188): an amortization plan carries TWO dates — a disbursement
+    // date (firma / devengo: the debt appears at its initial capital) and a
+    // first-payment date (the first cuota; the balance amortizes from here on its
+    // day-of-month, term counted from here) — replacing the single `start_date`.
+    //
+    // Forward migration (ADR 0002): backfill disbursement_date = start_date and
+    // first_payment_date = start_date + 1 month (day clamped to the destination
+    // month's last day, exactly as the engine's addMonths). That reproduces the
+    // pre-#188 engine's "first payment one month after start" rule, so the curve
+    // is byte-identical on every payment-boundary date addMonths(start, m) — which
+    // is precisely the set of dates historical snapshots are taken on. No existing
+    // snapshot figure changes, so — like the figure-preserving v12/v16/v17
+    // migrations — this needs no re-ripple to refresh derived history; the
+    // amortizable curve is unchanged at every snapshot date.
+    //
+    // SQLite cannot ALTER ADD a NOT NULL column nor compute the clamped +1 month
+    // in pure SQL, so we add the columns nullable, backfill in JS with the engine's
+    // clamping rule, then table-rebuild to the final shape (two NOT NULL dates, no
+    // start_date). Guarded by start_date's presence so a fresh DB — already created
+    // at the two-date shape from schema-sql — skips the rebuild (idempotent).
+    const columns = sqlite.prepare("PRAGMA table_info(amortization_plans)").all() as {
+      name: string;
+    }[];
+    const hasStartDate = columns.some((c) => c.name === "start_date");
+
+    if (hasStartDate) {
+      sqlite.exec("ALTER TABLE amortization_plans ADD COLUMN disbursement_date TEXT");
+      sqlite.exec("ALTER TABLE amortization_plans ADD COLUMN first_payment_date TEXT");
+
+      const plans = sqlite
+        .prepare("SELECT id, start_date FROM amortization_plans")
+        .all() as { id: string; start_date: string }[];
+      const backfill = sqlite.prepare(
+        "UPDATE amortization_plans SET disbursement_date = ?, first_payment_date = ? WHERE id = ?",
+      );
+      for (const plan of plans) {
+        backfill.run(plan.start_date, addOneMonthClamped(plan.start_date), plan.id);
+      }
+
+      // Table-rebuild to drop start_date and enforce NOT NULL on the two dates,
+      // preserving the FK and the 1:1 unique index (the SQLite-recommended
+      // table rebuild). Foreign keys are toggled OFF for the rebuild: the child
+      // tables (interest_rate_revisions, early_repayments) reference
+      // amortization_plans by NAME, so after the drop + rename their FKs resolve
+      // to the rebuilt table unchanged — but the transient DROP would otherwise
+      // trip the enforcement. Re-enabled immediately after.
+      sqlite.pragma("foreign_keys = OFF");
+      sqlite.exec(`CREATE TABLE amortization_plans_new (
+        id TEXT PRIMARY KEY NOT NULL,
+        liability_id TEXT NOT NULL,
+        initial_capital_minor INTEGER NOT NULL,
+        annual_interest_rate TEXT NOT NULL,
+        term_months INTEGER NOT NULL,
+        disbursement_date TEXT NOT NULL,
+        first_payment_date TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        FOREIGN KEY (liability_id) REFERENCES liabilities(id) ON UPDATE no action ON DELETE cascade
+      );`);
+      sqlite.exec(`INSERT INTO amortization_plans_new
+        (id, liability_id, initial_capital_minor, annual_interest_rate, term_months,
+         disbursement_date, first_payment_date, created_at)
+        SELECT id, liability_id, initial_capital_minor, annual_interest_rate, term_months,
+               disbursement_date, first_payment_date, created_at
+        FROM amortization_plans;`);
+      sqlite.exec("DROP TABLE amortization_plans;");
+      sqlite.exec("ALTER TABLE amortization_plans_new RENAME TO amortization_plans;");
+      sqlite.exec(
+        `CREATE UNIQUE INDEX IF NOT EXISTS amortization_plans_liability_unique
+         ON amortization_plans (liability_id);`,
+      );
+      sqlite.pragma("foreign_keys = ON");
+    }
+    sqlite.pragma("user_version = 18");
   }
 }

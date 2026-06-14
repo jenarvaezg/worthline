@@ -276,7 +276,8 @@ describe("valueAt — amortized (French amortization plan)", () => {
   const plan = {
     annualInterestRate: "0.03",
     initialCapitalMinor: 100_000_00,
-    startDate: "2024-01-01",
+    disbursementDate: "2024-01-01",
+    firstPaymentDate: "2024-02-01",
     termMonths: 240,
   };
 
@@ -302,7 +303,8 @@ describe("valueAt — amortized (French amortization plan)", () => {
     const plan = {
       annualInterestRate: "0.03",
       initialCapitalMinor: 100_000_00,
-      startDate: "2024-01-01",
+      disbursementDate: "2024-01-01",
+      firstPaymentDate: "2024-02-01",
       termMonths: 240,
     };
     const at = "2026-06-01";

@@ -119,7 +119,8 @@ const amortizationPlanSchema = z.object({
   initialCapitalMinor: z.number().int(),
   annualInterestRate: nonEmptyString,
   termMonths: z.number().int().positive(),
-  startDate: nonEmptyString,
+  disbursementDate: nonEmptyString,
+  firstPaymentDate: nonEmptyString,
   interestRateRevisions: z.array(interestRateRevisionSchema).default([]),
   earlyRepayments: z.array(earlyRepaymentSchema).default([]),
 });

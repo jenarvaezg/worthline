@@ -534,7 +534,8 @@ describe("globalHoldingValueAtDate (#187)", () => {
           plan: {
             annualInterestRate: "0.03",
             initialCapitalMinor: 150_000_00,
-            startDate: "2020-01-01",
+            disbursementDate: "2020-01-01",
+            firstPaymentDate: "2020-02-01",
             termMonths: 240,
           },
           revisions: [],
@@ -957,7 +958,8 @@ describe("amortizationPaymentDatesUpTo", () => {
   const plan = {
     annualInterestRate: "0.03",
     initialCapitalMinor: 120_000_00,
-    startDate: "2024-01-15",
+    disbursementDate: "2024-01-15",
+    firstPaymentDate: "2024-02-15",
     termMonths: 240,
   };
 
@@ -982,7 +984,8 @@ describe("amortizationPaymentDatesUpTo", () => {
     const monthEndPlan = {
       annualInterestRate: "0.03",
       initialCapitalMinor: 100_000_00,
-      startDate: "2024-01-31",
+      disbursementDate: "2024-01-31",
+      firstPaymentDate: "2024-02-29",
       termMonths: 12,
     };
     expect(amortizationPaymentDatesUpTo(monthEndPlan, "2024-03-15")).toEqual([
@@ -995,7 +998,8 @@ describe("amortizationPaymentDatesUpTo", () => {
     const shortPlan = {
       annualInterestRate: "0",
       initialCapitalMinor: 1_000_00,
-      startDate: "2024-01-01",
+      disbursementDate: "2024-01-01",
+      firstPaymentDate: "2024-02-01",
       termMonths: 3,
     };
     // term ends 2024-04-01; only the 4 boundaries [0..3] exist, target far away.
@@ -1033,7 +1037,8 @@ describe("buildSnapshotAtDate with debtBalanceByLiability", () => {
       plan: {
         annualInterestRate: "0.03",
         initialCapitalMinor: 150_000_00,
-        startDate: "2020-01-01",
+        disbursementDate: "2020-01-01",
+        firstPaymentDate: "2020-02-01",
         termMonths: 240,
       },
       revisions: [],
@@ -1274,7 +1279,8 @@ describe("recalculateSnapshotForLiability", () => {
     plan: {
       annualInterestRate: "0.03",
       initialCapitalMinor: 150_000_00,
-      startDate: "2020-01-01",
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
       termMonths: 240,
     },
     revisions: [],
@@ -1538,7 +1544,8 @@ describe("row-derived ripple axes (#181)", () => {
     plan: {
       annualInterestRate: "0.03",
       initialCapitalMinor: 150_000_00,
-      startDate: "2020-01-01",
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
       termMonths: 240,
     },
     revisions: [],

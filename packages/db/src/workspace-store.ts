@@ -596,10 +596,11 @@ function importWorkspace(
         db.insert(amortizationPlans)
           .values({
             annualInterestRate: plan.annualInterestRate,
+            disbursementDate: plan.disbursementDate,
+            firstPaymentDate: plan.firstPaymentDate,
             id: plan.id,
             initialCapitalMinor: plan.initialCapitalMinor,
             liabilityId: liability.id,
-            startDate: plan.startDate,
             termMonths: plan.termMonths,
           })
           .run();
@@ -1077,7 +1078,8 @@ function readAmortizationPlansByLiability(
       initialCapitalMinor: row.initialCapitalMinor,
       annualInterestRate: row.annualInterestRate,
       termMonths: row.termMonths,
-      startDate: row.startDate,
+      disbursementDate: row.disbursementDate,
+      firstPaymentDate: row.firstPaymentDate,
       interestRateRevisions: revisionsByPlan.get(row.id) ?? [],
       earlyRepayments: repaymentsByPlan.get(row.id) ?? [],
     });

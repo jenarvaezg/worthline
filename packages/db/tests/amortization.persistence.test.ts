@@ -48,7 +48,8 @@ describe("amortization plan — CRUD", () => {
       id: "plan1",
       initialCapitalMinor: 200_000_00,
       liabilityId: "loan",
-      startDate: "2020-01-01",
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
       termMonths: 360,
     });
 
@@ -58,7 +59,8 @@ describe("amortization plan — CRUD", () => {
       id: "plan1",
       initialCapitalMinor: 200_000_00,
       liabilityId: "loan",
-      startDate: "2020-01-01",
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
       termMonths: 360,
     });
   });
@@ -72,7 +74,8 @@ describe("amortization plan — CRUD", () => {
       id: "plan1",
       initialCapitalMinor: 200_000_00,
       liabilityId: "loan",
-      startDate: "2020-01-01",
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
       termMonths: 360,
     });
     expect(() =>
@@ -81,7 +84,8 @@ describe("amortization plan — CRUD", () => {
         id: "plan2",
         initialCapitalMinor: 100_000_00,
         liabilityId: "loan",
-        startDate: "2020-01-01",
+        disbursementDate: "2020-01-01",
+        firstPaymentDate: "2020-02-01",
         termMonths: 240,
       }),
     ).toThrow();
@@ -95,7 +99,8 @@ describe("amortization plan — CRUD", () => {
       id: "plan1",
       initialCapitalMinor: 200_000_00,
       liabilityId: "loan",
-      startDate: "2020-01-01",
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
       termMonths: 360,
     });
 
@@ -118,7 +123,8 @@ describe("amortization plan — CRUD", () => {
       id: "plan1",
       initialCapitalMinor: 200_000_00,
       liabilityId: "loan",
-      startDate: "2020-01-01",
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
       termMonths: 360,
     });
 
@@ -136,22 +142,40 @@ describe("amortization plan — CRUD", () => {
         id: "bad",
         initialCapitalMinor: 100.5,
         liabilityId: "loan",
-        startDate: "2020-01-01",
+        disbursementDate: "2020-01-01",
+        firstPaymentDate: "2020-02-01",
         termMonths: 360,
       }),
     ).toThrow();
   });
 
-  test("rejects a malformed start date", () => {
+  test("rejects a malformed disbursement date", () => {
     const store = createInMemoryStore();
     seed(store);
     expect(() =>
       store.liabilities.createAmortizationPlan({
         annualInterestRate: "0.025",
+        disbursementDate: "01/01/2020",
+        firstPaymentDate: "2020-02-01",
         id: "bad",
         initialCapitalMinor: 200_000_00,
         liabilityId: "loan",
-        startDate: "01/01/2020",
+        termMonths: 360,
+      }),
+    ).toThrow();
+  });
+
+  test("rejects a malformed first-payment date", () => {
+    const store = createInMemoryStore();
+    seed(store);
+    expect(() =>
+      store.liabilities.createAmortizationPlan({
+        annualInterestRate: "0.025",
+        disbursementDate: "2020-01-01",
+        firstPaymentDate: "01/02/2020",
+        id: "bad",
+        initialCapitalMinor: 200_000_00,
+        liabilityId: "loan",
         termMonths: 360,
       }),
     ).toThrow();
@@ -166,7 +190,8 @@ describe("amortization plan — CRUD", () => {
         id: "bad",
         initialCapitalMinor: 200_000_00,
         liabilityId: "loan",
-        startDate: "2020-01-01",
+        disbursementDate: "2020-01-01",
+        firstPaymentDate: "2020-02-01",
         termMonths: 360,
       }),
     ).toThrow();
@@ -181,7 +206,8 @@ describe("interest-rate revisions — CRUD", () => {
       id: "plan1",
       initialCapitalMinor: 100_000_00,
       liabilityId: "loan",
-      startDate: "2020-01-01",
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
       termMonths: 120,
     });
   }
@@ -285,7 +311,8 @@ describe("amortizableBalanceAtDate — store reads plan + revisions and delegate
       id: "plan1",
       initialCapitalMinor: 200_000_00,
       liabilityId: "loan",
-      startDate: "2020-01-01",
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
       termMonths: 360,
     });
 
@@ -305,7 +332,8 @@ describe("amortizableBalanceAtDate — store reads plan + revisions and delegate
       id: "plan1",
       initialCapitalMinor: 100_000_00,
       liabilityId: "loan",
-      startDate: "2020-01-01",
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
       termMonths: 120,
     });
     store.liabilities.addInterestRateRevision({
@@ -338,7 +366,8 @@ describe("early repayments — CRUD", () => {
       id: "plan1",
       initialCapitalMinor: 100_000_00,
       liabilityId: "loan",
-      startDate: "2020-01-01",
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
       termMonths: 120,
     });
   }
