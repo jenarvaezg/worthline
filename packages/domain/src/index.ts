@@ -35,6 +35,7 @@ export {
   defaultValuationMethodForDebtModel,
   valueAt,
 } from "./holding-valuation";
+export { valuationMethodOfAsset, valuationMethodOfLiability } from "./holding-method";
 export type {
   Instrument,
   InstrumentDefaults,

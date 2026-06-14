@@ -1,0 +1,316 @@
+/**
+ * The identity + valuation forms shared across the detail surfaces (#152).
+ *
+ * `AssetEditForm` / `LiabilityEditForm` edit a holding's identity (name, type,
+ * ownership) and — for non-investments — its stored value/balance. An investment
+ * shows no manual value field (ADR 0006: value is always derived); its
+ * operations live in the `derived` surface (OperationsEditor). `OwnershipInputs`
+ * is the shared ownership fieldset.
+ *
+ * Extracted from the monolithic editar page so each surface is a small focused
+ * file the page composes. Server-rendered, no client JS (ADR 0009).
+ */
+
+import { formatMoneyInput, formatMoneyMinor } from "@worthline/domain";
+import type { Liability, ManualAsset, Member } from "@worthline/domain";
+import Link from "next/link";
+
+import {
+  editAssetAction,
+  updateAssetValuationAction,
+  updateLiabilityBalanceAction,
+} from "../../../actions";
+
+export function AssetEditForm({
+  asset,
+  members,
+  scopeMemberId,
+  values,
+}: {
+  asset: ManualAsset;
+  members: Member[];
+  scopeMemberId: string | undefined;
+  values: Record<string, string>;
+}) {
+  const isInvestment = asset.type === "investment";
+
+  return (
+    <>
+      <form action={editAssetAction} className="stackForm">
+        <input name="currentUrl" type="hidden" value={`/patrimonio/${asset.id}/editar`} />
+        <input name="id" type="hidden" value={asset.id} />
+        <input name="scopeMemberId" type="hidden" value={scopeMemberId ?? ""} />
+
+        <label>
+          Nombre
+          <input
+            aria-label="Nombre del activo"
+            defaultValue={values["name"] ?? asset.name}
+            name="name"
+            disabled={isInvestment}
+          />
+        </label>
+
+        {isInvestment ? (
+          <p className="infoNote">
+            Esta inversión cotiza con ticker. Su nombre, proveedor de precios y símbolo se
+            editan en{" "}
+            <Link href={`/inversiones/${asset.id}/editar`}>su ficha de inversión</Link>.
+          </p>
+        ) : (
+          <>
+            <label>
+              Tipo
+              <select defaultValue={values["type"] ?? asset.type} name="type">
+                <option value="cash">Cash</option>
+                <option value="manual">Manual</option>
+                <option value="real_estate">Inmueble</option>
+              </select>
+            </label>
+
+            <label>
+              Capa de liquidez
+              <select
+                defaultValue={values["liquidityTier"] ?? asset.liquidityTier}
+                name="liquidityTier"
+              >
+                <option value="cash">Caja</option>
+                <option value="market">Mercado</option>
+                <option value="term-locked">A plazo</option>
+                <option value="illiquid">Ilíquido</option>
+              </select>
+            </label>
+
+            <label className="checkLine">
+              <input
+                defaultChecked={
+                  values["isPrimaryResidence"]
+                    ? values["isPrimaryResidence"] === "on"
+                    : asset.isPrimaryResidence
+                }
+                name="isPrimaryResidence"
+                type="checkbox"
+              />{" "}
+              Vivienda habitual
+            </label>
+
+            <OwnershipInputs
+              allowPartial={asset.type === "real_estate"}
+              members={members}
+              scopeMemberId={scopeMemberId}
+              currentOwnership={asset.ownership}
+              values={values}
+            />
+          </>
+        )}
+
+        {!isInvestment ? (
+          <div className="formActions">
+            <button type="submit">Guardar cambios</button>
+            <Link href={`/patrimonio#${asset.id}`}>Cancelar</Link>
+          </div>
+        ) : null}
+      </form>
+
+      {!isInvestment ? (
+        <form action={updateAssetValuationAction} className="stackForm updateValueForm">
+          <input
+            name="currentUrl"
+            type="hidden"
+            value={`/patrimonio/${asset.id}/editar`}
+          />
+          <input name="id" type="hidden" value={asset.id} />
+          <label>
+            Valor actual (EUR)
+            <input
+              aria-label="Valor actual en EUR"
+              defaultValue={formatMoneyInput(asset.currentValue.amountMinor)}
+              inputMode="decimal"
+              name="currentValue"
+            />
+          </label>
+          <button type="submit">Actualizar valor</button>
+        </form>
+      ) : (
+        <p className="infoNote">
+          Valor actual: {formatMoneyMinor(asset.currentValue)} — derivado de las
+          operaciones (ADR 0006).
+        </p>
+      )}
+    </>
+  );
+}
+
+export function LiabilityEditForm({
+  assets,
+  liability,
+  members,
+  scopeMemberId,
+  values,
+}: {
+  assets: ManualAsset[];
+  liability: Liability;
+  members: Member[];
+  scopeMemberId: string | undefined;
+  values: Record<string, string>;
+}) {
+  return (
+    <>
+      <form action={editAssetAction} className="stackForm">
+        <input
+          name="currentUrl"
+          type="hidden"
+          value={`/patrimonio/${liability.id}/editar`}
+        />
+        <input name="id" type="hidden" value={liability.id} />
+        <input name="scopeMemberId" type="hidden" value={scopeMemberId ?? ""} />
+        <input name="isLiability" type="hidden" value="true" />
+
+        <label>
+          Nombre
+          <input
+            aria-label="Nombre de la deuda"
+            defaultValue={values["name"] ?? liability.name}
+            name="name"
+          />
+        </label>
+
+        <label>
+          Tipo
+          <select defaultValue={values["type"] ?? liability.type} name="type">
+            <option value="mortgage">Hipoteca</option>
+            <option value="debt">Deuda</option>
+          </select>
+        </label>
+
+        <label>
+          Activo asociado (opcional)
+          <select
+            defaultValue={
+              values["associatedAssetId"] ?? liability.associatedAssetId ?? ""
+            }
+            name="associatedAssetId"
+          >
+            <option value="">Sin activo asociado</option>
+            {assets.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <OwnershipInputs
+          allowPartial={false}
+          members={members}
+          scopeMemberId={scopeMemberId}
+          currentOwnership={liability.ownership}
+          values={values}
+        />
+
+        <div className="formActions">
+          <button type="submit">Guardar cambios</button>
+          <Link href={`/patrimonio#${liability.id}`}>Cancelar</Link>
+        </div>
+      </form>
+
+      <form action={updateLiabilityBalanceAction} className="stackForm updateValueForm">
+        <input
+          name="currentUrl"
+          type="hidden"
+          value={`/patrimonio/${liability.id}/editar`}
+        />
+        <input name="id" type="hidden" value={liability.id} />
+        <label>
+          Saldo pendiente (EUR)
+          <input
+            aria-label="Saldo pendiente en EUR"
+            defaultValue={formatMoneyInput(liability.currentBalance.amountMinor)}
+            inputMode="decimal"
+            name="balance"
+          />
+        </label>
+        <button type="submit">Actualizar saldo</button>
+      </form>
+    </>
+  );
+}
+
+export function OwnershipInputs({
+  allowPartial,
+  members,
+  scopeMemberId,
+  currentOwnership,
+  values = {},
+}: {
+  allowPartial: boolean;
+  members: Member[];
+  scopeMemberId: string | undefined;
+  currentOwnership: Array<{ memberId: string; shareBps: number }>;
+  values?: Record<string, string>;
+}) {
+  if (members.length === 0 || (members.length === 1 && !allowPartial)) {
+    return null;
+  }
+
+  const scopeMember = members.find((m) => m.id === scopeMemberId) ?? members[0]!;
+  const preset = values["ownershipPreset"] ?? "custom";
+
+  const currentBpsFor = (memberId: string): string => {
+    const share = currentOwnership.find((s) => s.memberId === memberId);
+    return share ? String(Math.round(share.shareBps / 100)) : "0";
+  };
+
+  return (
+    <fieldset className="ownershipGrid">
+      <legend>Propiedad</legend>
+      <input name="scopeMemberId" type="hidden" value={scopeMember.id} />
+      <label className="ownerPreset">
+        <input
+          defaultChecked={preset === "scope"}
+          name="ownershipPreset"
+          type="radio"
+          value="scope"
+        />
+        100% {scopeMember.name}
+      </label>
+      {members.length > 1 ? (
+        <label className="ownerPreset">
+          <input
+            defaultChecked={preset === "even"}
+            name="ownershipPreset"
+            type="radio"
+            value="even"
+          />
+          Repartir a partes iguales
+        </label>
+      ) : null}
+      <details className="ownerCustomDetails" open={preset === "custom"}>
+        <summary>
+          <label className="ownerPreset" style={{ display: "inline" }}>
+            <input
+              defaultChecked={preset === "custom"}
+              name="ownershipPreset"
+              type="radio"
+              value="custom"
+            />
+            Personalizado
+          </label>
+        </summary>
+        <div className="ownerCustom">
+          {members.map((member) => (
+            <label key={member.id}>
+              {member.name}
+              <input
+                defaultValue={values[`owner_${member.id}`] ?? currentBpsFor(member.id)}
+                inputMode="decimal"
+                name={`owner_${member.id}`}
+                aria-label={`Porcentaje de ${member.name}`}
+              />
+            </label>
+          ))}
+        </div>
+      </details>
+    </fieldset>
+  );
+}
