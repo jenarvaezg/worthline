@@ -56,8 +56,8 @@ export function AssetEditForm({
         {isInvestment ? (
           <p className="infoNote">
             Esta inversión cotiza con ticker. Su nombre, proveedor de precios y símbolo se
-            editan en{" "}
-            <Link href={`/inversiones/${asset.id}/editar`}>su ficha de inversión</Link>.
+            fijaron al añadirla; su valor se deriva de las operaciones de abajo (ADR
+            0006).
           </p>
         ) : (
           <>

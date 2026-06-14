@@ -10,17 +10,11 @@ import Link from "next/link";
  * back; active-link state is a prop, not router state.
  */
 
-export type AppSection =
-  | "resumen"
-  | "patrimonio"
-  | "inversiones"
-  | "historico"
-  | "ajustes";
+export type AppSection = "resumen" | "patrimonio" | "historico" | "ajustes";
 
 const NAV_SECTIONS: Array<{ id: AppSection; label: string; href: string }> = [
   { id: "resumen", label: "Resumen", href: "/" },
   { id: "patrimonio", label: "Patrimonio", href: "/patrimonio" },
-  { id: "inversiones", label: "Inversiones", href: "/inversiones" },
   { id: "historico", label: "Histórico", href: "/historico" },
   { id: "ajustes", label: "Ajustes", href: "/ajustes" },
 ];
@@ -122,7 +116,7 @@ export default function Shell({
           {warnings.map((w) => (
             <div className="warningItem" key={`${w.entityId}-${w.code}`}>
               <span>⚠ {w.message}</span>
-              <a href={`/patrimonio#${w.entityId}`} className="warningLink">
+              <a href={`/patrimonio/${w.entityId}/editar`} className="warningLink">
                 Ver holding
               </a>
             </div>

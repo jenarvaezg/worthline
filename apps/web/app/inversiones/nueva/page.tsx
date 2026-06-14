@@ -72,7 +72,7 @@ export default async function NuevaInversionPage({
 
   return (
     <Shell
-      activeSection="inversiones"
+      activeSection="patrimonio"
       currentPageUrl={currentUrl}
       persistence={persistence}
       scopes={scopes}
@@ -82,7 +82,7 @@ export default async function NuevaInversionPage({
       <section className="inversionesSubpage" aria-label="Nueva inversión">
         <div className="panelHeader">
           <h2>Nueva inversión</h2>
-          <a href="/inversiones">← Volver</a>
+          <a href="/patrimonio">← Volver</a>
         </div>
 
         {formOk ? (

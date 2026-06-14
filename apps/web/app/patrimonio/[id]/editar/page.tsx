@@ -170,8 +170,9 @@ export default async function EditarPage({
     activeMembers.find((m) => m.id === selectedScope?.id)?.id ?? activeMembers[0]?.id;
 
   // Bind the holding id to the operations actions so the `derived` surface posts
-  // back to this detail page (the same actions /inversiones uses — S7 keeps the
-  // /inversiones routes; both call into these shared actions).
+  // back to this detail page (#153 collapsed the /inversiones management routes;
+  // the shared investment actions now live on under app/inversiones/actions.ts
+  // and the ficha is the single place operations are recorded).
   async function boundRecordOperationAction(formData: FormData) {
     "use server";
     await recordOperationAction(id, formData);
