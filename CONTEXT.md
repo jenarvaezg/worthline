@@ -145,11 +145,16 @@ interpolation). Stored on the liability.
 
 **Amortization plan**:
 The declared conditions of an **amortizable** debt: initial capital, annual interest
-rate, term in months, and start date. The system derives the French amortization
-schedule and can calculate the outstanding balance at any date. Supports
-**interest rate revisions** for variable-rate loans and **early repayments** (partial or
-total). A mortgage and a conventional loan use this identically — they differ only as
-**instruments** (a mortgage is secured against a property), not in method.
+rate, term in months, a **disbursement date** (firma — when the debt appears at its
+initial capital and interest begins to accrue) and a **first-payment date** (the first
+cuota; the balance amortizes from here and this date's day-of-month is the recurring
+payment day). The balance is flat between the two. The system derives the French
+amortization schedule and can calculate the outstanding balance at any date. The first
+period's stub interest (disbursement → first payment, often more than a month) only
+enlarges the displayed first cuota; it does not move the balance curve (ADR 0019).
+Supports **interest rate revisions** for variable-rate loans and **early repayments**
+(partial or total). A mortgage and a conventional loan use this identically — they
+differ only as **instruments** (a mortgage is secured against a property), not in method.
 
 **Interest rate revision**:
 A declared change to the annual interest rate of an **amortization plan** at a
