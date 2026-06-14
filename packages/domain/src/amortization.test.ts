@@ -17,12 +17,119 @@ import type {
  * and are the source of truth for the test.
  */
 
+// Migrated to the two-date model (ADR 0019): the old single `start_date:
+// "2020-01-01"` becomes disbursement = start and firstPayment = start + 1 month —
+// the migration's backfill, which reproduces the old single-date curve exactly on
+// every old payment-boundary date addMonths(start, m). Every pinned figure below
+// is therefore byte-identical to the pre-#188 engine.
 const PRD_EXAMPLE: AmortizationPlanInput = {
   annualInterestRate: "0.025",
   initialCapitalMinor: 200_000_00,
-  startDate: "2020-01-01",
+  disbursementDate: "2020-01-01",
+  firstPaymentDate: "2020-02-01",
   termMonths: 360,
 };
+
+/**
+ * Two-date model (ADR 0019, #188). A plan carries a DISBURSEMENT date (firma —
+ * the debt appears at its initial capital and interest begins to accrue) and a
+ * FIRST-PAYMENT date (the first cuota; the balance amortizes from here, on this
+ * date's day-of-month, with the term counted from here). Between the two the
+ * balance is FLAT at the initial capital; the stub interest only enlarges the
+ * displayed first cuota and never moves the balance.
+ */
+describe("two-date model — disbursement + first payment (ADR 0019, #188)", () => {
+  // Mid-month firma, first payment on a later 1st-of-month (a >1-month stub —
+  // the ING shape). 200.000€, 3% annual, 240 months.
+  const BANK_PLAN: AmortizationPlanInput = {
+    annualInterestRate: "0.03",
+    initialCapitalMinor: 200_000_00,
+    disbursementDate: "2020-01-15",
+    firstPaymentDate: "2020-03-01",
+    termMonths: 240,
+  };
+
+  test("balance is flat at the initial capital between disbursement and first payment", () => {
+    // Before the firma → full capital (the debt does not yet exist).
+    expect(amortizableBalanceAtDate({ plan: BANK_PLAN, targetDate: "2019-12-31" })).toBe(
+      200_000_00,
+    );
+    // On the firma → full capital.
+    expect(amortizableBalanceAtDate({ plan: BANK_PLAN, targetDate: "2020-01-15" })).toBe(
+      200_000_00,
+    );
+    // Mid-stub (after the firma, before the first payment) → still flat at the
+    // full capital, NOT amortizing. The stub interest is cosmetic for balances.
+    expect(amortizableBalanceAtDate({ plan: BANK_PLAN, targetDate: "2020-02-10" })).toBe(
+      200_000_00,
+    );
+    // The day before the first payment is still flat.
+    expect(amortizableBalanceAtDate({ plan: BANK_PLAN, targetDate: "2020-02-29" })).toBe(
+      200_000_00,
+    );
+  });
+
+  test("amortizes from the first payment on its day-of-month", () => {
+    // The first cuota lands ON the first-payment date: the balance there is the
+    // initial capital less the first ordinary French principal.
+    expect(amortizableBalanceAtDate({ plan: BANK_PLAN, targetDate: "2020-03-01" })).toBe(
+      199_390_80,
+    );
+    // Subsequent payments fall on the first-payment day-of-month (the 1st).
+    expect(amortizableBalanceAtDate({ plan: BANK_PLAN, targetDate: "2020-04-01" })).toBe(
+      198_780_09,
+    );
+  });
+
+  test("the term counts payments from the first payment (regression to the cent)", () => {
+    // The 13th payment (firstPayment + 12 months = 2021-03-01).
+    expect(amortizableBalanceAtDate({ plan: BANK_PLAN, targetDate: "2021-03-01" })).toBe(
+      191_960_57,
+    );
+    // The 61st payment (firstPayment + 60 months = 2025-03-01).
+    expect(amortizableBalanceAtDate({ plan: BANK_PLAN, targetDate: "2025-03-01" })).toBe(
+      159_909_88,
+    );
+    // One cuota before the end: payment 240 lands on firstPayment + 239 months =
+    // 2040-02-01, so on 2040-01-01 the final principal is still owed.
+    expect(amortizableBalanceAtDate({ plan: BANK_PLAN, targetDate: "2040-01-01" })).toBe(
+      1_106_43,
+    );
+    // The loan is fully repaid on the last payment (firstPayment + 239 months).
+    expect(amortizableBalanceAtDate({ plan: BANK_PLAN, targetDate: "2040-02-01" })).toBe(
+      0,
+    );
+    expect(amortizableBalanceAtDate({ plan: BANK_PLAN, targetDate: "2050-01-01" })).toBe(
+      0,
+    );
+  });
+
+  test("backfill (firstPayment = disbursement + 1 month) reproduces the single-date curve to the cent", () => {
+    // The migration backfills disbursement = old start_date and firstPayment =
+    // start_date + 1 month. With that mapping every old payment boundary date —
+    // addMonths(start, m) — is a boundary of the new schedule, and the new curve
+    // must equal the old single-date curve on those dates to the cent.
+    const backfilled: AmortizationPlanInput = {
+      annualInterestRate: "0.025",
+      initialCapitalMinor: 200_000_00,
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
+      termMonths: 360,
+    };
+    // The historical single-date pins (the old engine's exact output) survive:
+    //   start date itself → initial capital
+    expect(amortizableBalanceAtDate({ plan: backfilled, targetDate: "2020-01-01" })).toBe(
+      200_000_00,
+    );
+    //   12 boundaries later (2021-01-01) and 60 later (2025-01-01).
+    expect(amortizableBalanceAtDate({ plan: backfilled, targetDate: "2021-01-01" })).toBe(
+      195_465_37,
+    );
+    expect(amortizableBalanceAtDate({ plan: backfilled, targetDate: "2025-01-01" })).toBe(
+      176_150_76,
+    );
+  });
+});
 
 describe("amortizableBalanceAtDate — French amortization (cuota fija)", () => {
   test("balance before the start date is the full initial capital", () => {
@@ -85,7 +192,8 @@ describe("amortizableBalanceAtDate — French amortization (cuota fija)", () => 
     const zeroRate: AmortizationPlanInput = {
       annualInterestRate: "0",
       initialCapitalMinor: 1_200_00,
-      startDate: "2020-01-01",
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
       termMonths: 12,
     };
     // 100€/month. After 6 months → 600€ remaining.
@@ -101,7 +209,8 @@ describe("amortizableBalanceAtDate — French amortization (cuota fija)", () => 
     const plan: AmortizationPlanInput = {
       annualInterestRate: "0.05",
       initialCapitalMinor: 100_000_00,
-      startDate: "2020-01-01",
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
       termMonths: 120,
     };
     const revisions: InterestRateRevision[] = [
@@ -139,7 +248,8 @@ describe("amortizableBalanceAtDate — French amortization (cuota fija)", () => 
     const plan: AmortizationPlanInput = {
       annualInterestRate: "0.05",
       initialCapitalMinor: 100_000_00,
-      startDate: "2020-01-01",
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
       termMonths: 120,
     };
     const oneRevision: InterestRateRevision[] = [
@@ -183,7 +293,8 @@ describe("early repayments (amortización anticipada) — PRD #146, slice S4", (
   const LOAN: AmortizationPlanInput = {
     annualInterestRate: "0.03",
     initialCapitalMinor: 100_000_00,
-    startDate: "2020-01-01",
+    disbursementDate: "2020-01-01",
+    firstPaymentDate: "2020-02-01",
     termMonths: 120,
   };
 
@@ -309,40 +420,47 @@ describe("early repayments (amortización anticipada) — PRD #146, slice S4", (
 });
 
 /**
- * Regression for #182. The schedule pins a dated event (early repayment or rate
- * revision) to a month boundary, and the balance locator pins a query date to a
- * month boundary. These two mappings must AGREE: an event placed on boundary `m`
- * is the boundary the same date resolves to when queried — the largest `m` with
- * `addMonths(start, m) ≤ eventDate` (the cycle the event actually falls in).
+ * Regression for #182, preserved over the two-date model (ADR 0019, #188). The
+ * schedule pins a dated event (early repayment or rate revision) to a payment
+ * boundary, and the balance locator pins a query date to a boundary. These two
+ * mappings must AGREE: an event placed on boundary `m` is the boundary the same
+ * date resolves to when queried — the largest `m` with `boundaryDate(m) ≤
+ * eventDate` (the cycle the event actually falls in). The payment cadence now
+ * runs from the FIRST-PAYMENT date, so the clamping anchor is the first-payment
+ * day-of-month rather than the old single start date.
  *
- * The two disagreed when the event/target day-of-month precedes the loan-start
+ * The two disagreed when the event/target day-of-month precedes the cadence-anchor
  * day, because the old event pin floored a partial month (`monthsBetween`'s
  * `if (toDay < fromDay) months -= 1`) while the locator preserves the day via
- * `addMonths` + clamping. A non-day-1 start whose day clamps on the destination
- * month (here a day-31 start, so Feb clamps to the 28th — event day 28 < start
- * day 31) lands an event one cycle EARLIER under the floor than the locator
- * resolves it to: a lump declared on D appeared partly amortized away when
- * valued on D, instead of the balance ON the boundary date reflecting it.
+ * `addMonths` + clamping. A non-day-1 first payment whose day clamps on the
+ * destination month (here a day-31 first payment, so Feb clamps to the 28th —
+ * event day 28 < anchor day 31) lands an event one cycle EARLIER under the floor
+ * than the locator resolves it to: a lump declared on D appeared partly amortized
+ * away when valued on D, instead of the balance ON the boundary date reflecting it.
  *
  * Each case values the balance on the boundary the event date resolves to, where
  * the on-date drop must equal the declared lump within a single edge-rounding
- * cent (the acceptance criterion). The boundary that D resolves to is
- * `addMonths(start, m)`; for a day-31 start that is 2021-02-28 for the Feb cycle.
+ * cent (the acceptance criterion). The boundary D resolves to is
+ * `addMonths(firstPayment, m − 1)`; for a day-31 first payment that is 2021-02-28
+ * for the Feb cycle.
  */
-describe("event month-mapping when the event day precedes the loan-start day (#182)", () => {
-  // Day-31 start: addMonths(2020-01-31, 13) = 2021-02-28 (clamped, leap-aware →
-  // 28 in 2021). monthsBetween floors 2021-02-28 to month 12 (day 28 < day 31),
-  // one cycle BEFORE the locator's month 13 → the divergence under test.
+describe("event month-mapping when the event day precedes the first-payment day (#182)", () => {
+  // Day-31 first payment (disbursement a month earlier, so the cadence anchor is
+  // the day-31 first payment): addMonths(2020-01-31, 13) = 2021-02-28 (clamped,
+  // leap-aware → 28 in 2021). The old floor mapped 2021-02-28 one cycle earlier
+  // than the locator → the divergence under test, now on the first-payment anchor.
   const CLAMPING_LOAN: AmortizationPlanInput = {
     annualInterestRate: "0.03",
     initialCapitalMinor: 100_000_00,
-    startDate: "2020-01-31",
+    disbursementDate: "2019-12-31",
+    firstPaymentDate: "2020-01-31",
     termMonths: 120,
   };
   // The boundary the Feb-cycle event resolves to under the locator.
   const RESOLVED_BOUNDARY = "2021-02-28";
-  // An event date inside the resolved cycle, whose day (28) precedes the start
-  // day (31): the locator maps it to month 13, the old floor mapped it to 12.
+  // An event date inside the resolved cycle, whose day (28) precedes the
+  // first-payment day (31): the locator maps it to the Feb-2021 cycle, the old
+  // floor mapped it one cycle earlier.
   const EVENT_DATE = "2021-02-28";
 
   test("reproduction: a lump whose day precedes the start day drops the on-date balance by exactly the lump", () => {
@@ -431,36 +549,41 @@ describe("event month-mapping when the event day precedes the loan-start day (#1
   }
 });
 
-describe("addMonths day-clamping — end-of-month start dates", () => {
+describe("addMonths day-clamping — end-of-month first-payment dates", () => {
   test("intra-month interpolation uses the real calendar span, not a rolled date", () => {
-    // startDate = 2020-01-31. Month 1 boundary is 2020-02-29 (leap year, clamped),
-    // so that month has 29 days, not 31. A target of 2020-02-15 is 15 days in.
+    // Two-date model (ADR 0019): the payment cadence runs from a day-31 first
+    // payment (2020-01-31), so a February payment boundary clamps to 2020-02-29
+    // (leap year). The disbursement→first-payment stub is flat, so this case tests
+    // an AMORTIZING month boundary (boundary 1→2), not the flat stub.
     //
     // 0% loan: payment = capital / n, balance falls linearly. With capital =
-    // 2_900_00 cents and 12 months, each month retires 2_900_00/12 cents of
-    // principal.
+    // 2_900_00 cents and 12 months, each payment retires 2_900_00/12 cents.
     //
-    // Month 0 runs from 2020-01-31 to 2020-02-29 (clamped — leap year).
-    //   boundaries[0] = 2_900_00  (balance at startDate, before any payment)
-    //   boundaries[1] = 2_900_00 − 2_900_00/12 = 265_833 cents
+    // Boundary 1 (first payment, 2020-01-31) = 2_900_00 − 2_900_00/12 = 265_833.
+    // Boundary 2 (2020-02-29, clamped) = 2_900_00 − 2 × 2_900_00/12 = 241_667.
+    // The boundary-1→2 month runs 2020-01-31 → 2020-02-29 (29 days, not 31).
     //
-    // On 2020-02-15 (15 days into month 0, span=29 days):
-    //   interpolated = 2_900_00 − (2_900_00/12) × (15/29) = 277_500 cents (half-up)
+    // On 2020-02-15 (15 days into that month, span=29 days):
+    //   interpolated = 265_833 − (2_900_00/12) × (15/29) = 253_333 cents (half-up)
     //
     // The buggy addMonths produced "2020-02-31", which JS rolls to 2020-03-02,
-    // giving span=31 instead of 29 → wrong interpolated result of 278_306 cents,
-    // and also shifted the month-locator so 2020-02-29 fell in month 0.
+    // giving the wrong span and shifting the month-locator.
     const plan: AmortizationPlanInput = {
       annualInterestRate: "0",
       initialCapitalMinor: 2_900_00,
-      startDate: "2020-01-31",
+      disbursementDate: "2019-12-31",
+      firstPaymentDate: "2020-01-31",
       termMonths: 12,
     };
-    // On 2020-02-29 the locator places us in month 1 (offset=0 from monthStart),
-    // so the result is boundaries[1] = 265_833 (after month-0's payment).
-    expect(amortizableBalanceAtDate({ plan, targetDate: "2020-02-29" })).toBe(265_833);
+    // The balance is flat at the initial capital through the stub (up to but not
+    // including the first payment).
+    expect(amortizableBalanceAtDate({ plan, targetDate: "2020-01-15" })).toBe(2_900_00);
+    // On the first payment (boundary 1) → after the first payment.
+    expect(amortizableBalanceAtDate({ plan, targetDate: "2020-01-31" })).toBe(265_833);
+    // On 2020-02-29 the locator places us on boundary 2 (offset 0) → 241_667.
+    expect(amortizableBalanceAtDate({ plan, targetDate: "2020-02-29" })).toBe(241_667);
     // Intra-month interpolation must use the correct 29-day February span.
-    expect(amortizableBalanceAtDate({ plan, targetDate: "2020-02-15" })).toBe(277_500);
+    expect(amortizableBalanceAtDate({ plan, targetDate: "2020-02-15" })).toBe(253_333);
   });
 });
 

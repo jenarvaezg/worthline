@@ -207,7 +207,9 @@ describe("debtBalanceAtDate — unified read", () => {
       id: "plan1",
       initialCapitalMinor: 200_000_00,
       liabilityId: "card",
-      startDate: "2020-01-01",
+      disbursementDate: "2020-01-01",
+
+      firstPaymentDate: "2020-02-01",
       termMonths: 360,
     });
 

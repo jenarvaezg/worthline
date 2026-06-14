@@ -204,7 +204,9 @@ function AmortizablePlanEditor({
         ? {
             annualInterestRate: rateToPercent(plan.annualInterestRate),
             initialCapital: formatMoneyInput(plan.initialCapitalMinor),
-            startDate: plan.startDate,
+            // This slice (#188) keeps the single date input; it shows the
+            // disbursement date (ADR 0019). The form slice (#189) adds the second.
+            startDate: plan.disbursementDate,
             termMonths: String(plan.termMonths),
           }
         : {};

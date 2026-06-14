@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { withStore } from "@worthline/db";
+import { SCHEMA_VERSION, withStore } from "@worthline/db";
 
 const tempDirs: string[] = [];
 
@@ -89,7 +89,7 @@ describe("fresh database", () => {
 
     const sqlite = new Database(databasePath);
     try {
-      expect(userVersion(sqlite)).toBe(17);
+      expect(userVersion(sqlite)).toBe(SCHEMA_VERSION);
       expect(tableNames(sqlite)).toContain("warning_overrides");
 
       const tables = tableNames(sqlite);
@@ -166,7 +166,7 @@ describe("forward migration from v2", () => {
 
     const sqlite = new Database(databasePath);
     try {
-      expect(userVersion(sqlite)).toBe(17);
+      expect(userVersion(sqlite)).toBe(SCHEMA_VERSION);
       expect(tableNames(sqlite)).toContain("warning_overrides");
       expect(tableNames(sqlite)).toContain("asset_price_cache");
       expect(tableNames(sqlite)).toContain("audit_log");
@@ -220,7 +220,7 @@ describe("forward migration from v3", () => {
 
     const sqlite = new Database(databasePath);
     try {
-      expect(userVersion(sqlite)).toBe(17);
+      expect(userVersion(sqlite)).toBe(SCHEMA_VERSION);
       expect(tableNames(sqlite)).toContain("warning_overrides");
       expect(tableNames(sqlite)).toContain("audit_log");
       expect(tableNames(sqlite)).toContain("snapshot_holdings");

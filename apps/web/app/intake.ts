@@ -27,6 +27,7 @@ import type {
   PriceFreshnessState,
 } from "@worthline/domain";
 import {
+  addMonths,
   parseDecimal,
   parseDecimalStrict,
   parseDecimalToMinorStrict,
@@ -968,14 +969,19 @@ export function parseAmortizationPlanStrict(
     return { ok: false, error: "La fecha no puede ser futura." };
   }
 
+  // This slice (#188) keeps the form's single date input. It maps to BOTH plan
+  // dates (ADR 0019): the disbursement is the input, and the first payment is one
+  // month after it — exactly the migration's backfill, so the curve is unchanged
+  // until the form slice (#189) captures the two dates explicitly.
   return {
     ok: true,
     command: {
       annualInterestRate: rate.rate,
+      disbursementDate: startDate,
+      firstPaymentDate: addMonths(startDate, 1),
       id: createStableId("plan", liabilityId, seed),
       initialCapitalMinor,
       liabilityId,
-      startDate,
       termMonths,
     },
   };

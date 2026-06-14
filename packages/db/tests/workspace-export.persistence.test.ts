@@ -470,7 +470,9 @@ function seedStructuredWorkspace(store: WorthlineStore): void {
     id: "plan1",
     initialCapitalMinor: 15000000,
     liabilityId: "l_mort",
-    startDate: "2020-01-01",
+    disbursementDate: "2020-01-01",
+
+    firstPaymentDate: "2020-02-01",
     termMonths: 360,
   });
   store.liabilities.addInterestRateRevision({

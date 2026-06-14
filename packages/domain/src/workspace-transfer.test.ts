@@ -90,7 +90,8 @@ function makeExportData(): WorkspaceExportData {
           initialCapitalMinor: 15000000,
           annualInterestRate: "0.025",
           termMonths: 360,
-          startDate: "2020-01-01",
+          disbursementDate: "2020-01-01",
+          firstPaymentDate: "2020-02-01",
           interestRateRevisions: [
             {
               id: "rev1",
@@ -262,7 +263,8 @@ describe("serializeWorkspaceExport", () => {
       initialCapitalMinor: 15000000,
       annualInterestRate: "0.025",
       termMonths: 360,
-      startDate: "2020-01-01",
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
       interestRateRevisions: [
         { id: "rev1", revisionDate: "2023-01-01", newAnnualInterestRate: "0.031" },
       ],

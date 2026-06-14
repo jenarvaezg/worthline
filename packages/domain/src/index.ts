@@ -237,7 +237,7 @@ export type {
   EarlyRepaymentMode,
   InterestRateRevision,
 } from "./amortization";
-export { amortizableBalanceAtDate } from "./amortization";
+export { addMonths, amortizableBalanceAtDate } from "./amortization";
 
 export type { DebtBalanceAnchor, DebtBalanceAtDateInput } from "./debt-balance";
 export { debtBalanceAtDate } from "./debt-balance";

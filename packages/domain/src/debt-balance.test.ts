@@ -207,7 +207,8 @@ describe("debtBalanceAtDate — amortizable (delegates to French curve)", () => 
       plan: {
         annualInterestRate: "0.025",
         initialCapitalMinor: 200_000_00,
-        startDate: "2020-01-01",
+        disbursementDate: "2020-01-01",
+        firstPaymentDate: "2020-02-01",
         termMonths: 360,
       },
       currentBalanceMinor: 0,
@@ -223,7 +224,8 @@ describe("debtBalanceAtDate — amortizable (delegates to French curve)", () => 
     const plan = {
       annualInterestRate: "0.03",
       initialCapitalMinor: 100_000_00,
-      startDate: "2020-01-01",
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
       termMonths: 120,
     };
     const at = "2022-01-01";

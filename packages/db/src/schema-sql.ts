@@ -196,7 +196,8 @@ CREATE TABLE \`amortization_plans\` (
 	\`initial_capital_minor\` integer NOT NULL,
 	\`annual_interest_rate\` text NOT NULL,
 	\`term_months\` integer NOT NULL,
-	\`start_date\` text NOT NULL,
+	\`disbursement_date\` text NOT NULL,
+	\`first_payment_date\` text NOT NULL,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	FOREIGN KEY (\`liability_id\`) REFERENCES \`liabilities\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
