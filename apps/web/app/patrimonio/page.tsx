@@ -224,10 +224,7 @@ export default async function PatrimonioPage({
                       <td>
                         <Link href={holding.detailHref}>{holding.name}</Link>
                         {rowWarnings.length > 0 ? (
-                          <span
-                            className="warningBadge"
-                            title={rowWarnings[0]!.message}
-                          >
+                          <span className="warningBadge" title={rowWarnings[0]!.message}>
                             {" "}
                             ⚠
                           </span>

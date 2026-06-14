@@ -60,16 +60,15 @@ test("unified list: investment row is actionable (not a ghost) + grouping by dir
   );
   const mercado = page.getByRole("region", { name: "Mercado" });
   await expect(mercado).toBeVisible();
-  await expect(
-    mercado.getByRole("row", { name: /Fondo Unificado S8/ }),
-  ).toBeVisible();
+  await expect(mercado.getByRole("row", { name: /Fondo Unificado S8/ })).toBeVisible();
 
   // 7. Group by INSTRUMENT: the fund's instrument group ("Fondo") renders and
   //    holds the investment as an actionable row.
   await page.goto("/patrimonio?group=instrument");
-  await expect(
-    grupoControls.getByRole("link", { name: "Instrumento" }),
-  ).toHaveAttribute("aria-current", "true");
+  await expect(grupoControls.getByRole("link", { name: "Instrumento" })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
   const fondo = page.getByRole("region", { name: "Fondo", exact: true });
   await expect(fondo).toBeVisible();
   const fondoRow = fondo.getByRole("row", { name: /Fondo Unificado S8/ });

@@ -177,9 +177,7 @@ describe("groupPortfolio — signed group totals", () => {
     for (const key of PORTFOLIO_GROUP_KEYS) {
       const groups = groupPortfolio(projection, key);
       expect(groups.reduce((acc, g) => acc + g.totalMinor.amountMinor, 0)).toBe(net);
-      expect(groups.flatMap((g) => g.holdings.map((h) => h.id)).sort()).toEqual(
-        ALL_IDS,
-      );
+      expect(groups.flatMap((g) => g.holdings.map((h) => h.id)).sort()).toEqual(ALL_IDS);
     }
   });
 });
