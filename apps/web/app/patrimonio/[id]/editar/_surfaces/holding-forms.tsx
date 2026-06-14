@@ -12,7 +12,7 @@
  */
 
 import { formatMoneyInput, formatMoneyMinor } from "@worthline/domain";
-import type { Liability, ManualAsset, Member } from "@worthline/domain";
+import type { Liability, ManualAsset, Member, ValuationMethod } from "@worthline/domain";
 import Link from "next/link";
 
 import {
@@ -24,11 +24,13 @@ import {
 export function AssetEditForm({
   asset,
   members,
+  method,
   scopeMemberId,
   values,
 }: {
   asset: ManualAsset;
   members: Member[];
+  method: ValuationMethod;
   scopeMemberId: string | undefined;
   values: Record<string, string>;
 }) {
@@ -112,7 +114,16 @@ export function AssetEditForm({
         ) : null}
       </form>
 
-      {!isInvestment ? (
+      {method === "derived" ? (
+        <p className="infoNote">
+          Valor actual: {formatMoneyMinor(asset.currentValue)} — derivado de las
+          operaciones (ADR 0006).
+        </p>
+      ) : (
+        // stored AND appreciating keep the manual current-value form: a property's
+        // current value is the appreciation curve's "today" anchor (the curve +
+        // appraisals are additive via HousingValuationSection). Only derived
+        // holdings (units × price) hide it (ADR 0006).
         <form action={updateAssetValuationAction} className="stackForm updateValueForm">
           <input
             name="currentUrl"
@@ -131,11 +142,6 @@ export function AssetEditForm({
           </label>
           <button type="submit">Actualizar valor</button>
         </form>
-      ) : (
-        <p className="infoNote">
-          Valor actual: {formatMoneyMinor(asset.currentValue)} — derivado de las
-          operaciones (ADR 0006).
-        </p>
       )}
     </>
   );

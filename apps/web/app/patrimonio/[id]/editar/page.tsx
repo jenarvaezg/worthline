@@ -241,6 +241,7 @@ export default async function EditarPage({
           <AssetEditForm
             asset={asset}
             members={activeMembers}
+            method={method}
             scopeMemberId={ownershipScopeMemberId}
             values={formError?.formId === "edit" ? formError.values : {}}
           />

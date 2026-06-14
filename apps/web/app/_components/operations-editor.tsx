@@ -56,7 +56,7 @@ export default function OperationsEditor({
   const operationValues = formError?.formId === "operation" ? formError.values : {};
 
   return (
-    <section className="inversionesSubpage" aria-label="Operaciones de la inversión">
+    <section aria-label="Operaciones de la inversión">
       <h3>Operaciones</h3>
 
       {/* Context header: name + derived state — no JS needed to verify a sell */}

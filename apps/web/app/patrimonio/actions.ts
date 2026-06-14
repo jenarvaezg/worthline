@@ -6,6 +6,7 @@ import {
   checkOwnershipSplit,
   createManualAssetSafe,
   createLiabilitySafe,
+  isHousingAsset,
 } from "@worthline/domain";
 import { redirect } from "next/navigation";
 
@@ -856,7 +857,7 @@ export async function setAppreciationRateAction(
       return { ok: false, error: "No se encontró el activo." };
     }
 
-    if (asset.type !== "real_estate") {
+    if (!isHousingAsset(asset)) {
       return {
         ok: false,
         error: "Solo los inmuebles pueden tener una tasa de revalorización.",
@@ -928,7 +929,7 @@ export async function addValuationAnchorAction(
       return { ok: false, error: "No se encontró el activo." };
     }
 
-    if (asset.type !== "real_estate") {
+    if (!isHousingAsset(asset)) {
       return { ok: false, error: "Solo los inmuebles pueden tener tasaciones." };
     }
 
@@ -986,7 +987,7 @@ export async function updateValuationAnchorAction(
   const result = runWith((store) => {
     const asset = findAsset(store, id);
 
-    if (!asset || asset.type !== "real_estate") {
+    if (!asset || !isHousingAsset(asset)) {
       return { ok: false, error: "Solo los inmuebles pueden tener tasaciones." };
     }
 
@@ -1051,7 +1052,7 @@ export async function deleteValuationAnchorAction(
   const result = runWith((store) => {
     const asset = findAsset(store, id);
 
-    if (!asset || asset.type !== "real_estate") {
+    if (!asset || !isHousingAsset(asset)) {
       return { ok: false, error: "Solo los inmuebles pueden tener tasaciones." };
     }
 

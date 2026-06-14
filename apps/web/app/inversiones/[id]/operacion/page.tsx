@@ -103,7 +103,7 @@ export default async function OperacionPage({
       selectedScopeId={selectedScope?.id}
       warnings={[]}
     >
-      <section className="inversionesSubpage" aria-label="Registrar operación">
+      <div className="inversionesSubpage">
         <div className="panelHeader">
           <h2>Registrar operación</h2>
           <a href="/inversiones">← Inversiones</a>
@@ -131,7 +131,7 @@ export default async function OperacionPage({
           recordAction={boundRecordOperationAction}
           today={today}
         />
-      </section>
+      </div>
     </Shell>
   );
 }
