@@ -1,13 +1,13 @@
 import { runBootstrapHealthcheck, withStore } from "@worthline/db";
-import { formatMoneyMinor, getPriceFreshness, listScopeOptions } from "@worthline/domain";
+import { getPriceFreshness, listScopeOptions } from "@worthline/domain";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 
+import OperationsEditor from "../../../_components/operations-editor";
 import {
   buildCurrentUrlFor,
   parseFormError,
   parseScopeCookie,
-  priceFreshnessLabel,
   resolveOkMessage,
   SCOPE_COOKIE_NAME,
 } from "../../../intake";
@@ -83,8 +83,6 @@ export default async function OperacionPage({
     ? getPriceFreshness(priceCache, persistence.checkedAt)
     : null;
 
-  const operationValues = formError?.formId === "operation" ? formError.values : {};
-
   // Bind the route asset id to the server actions
   async function boundRecordOperationAction(formData: FormData) {
     "use server";
@@ -111,157 +109,28 @@ export default async function OperacionPage({
           <a href="/inversiones">← Inversiones</a>
         </div>
 
-        {/* Context header: name + current state — no JS needed to verify a sell */}
-        <div className="operacionContext">
-          <span className="contextLabel">Inversión</span>
-          <strong>{asset.name}</strong>
-          {position ? (
-            <>
-              <span className="contextLabel">Unidades actuales</span>
-              <span>{position.currentUnits}</span>
-              {priceCache ? (
-                <>
-                  <span className="contextLabel">Último precio</span>
-                  <span>
-                    {priceCache.price}{" "}
-                    <small className={`priceStatus ${freshness ?? "unknown"}`}>
-                      {priceFreshnessLabel(freshness)}
-                    </small>
-                  </span>
-                </>
-              ) : null}
-              {position.marketValue ? (
-                <>
-                  <span className="contextLabel">Valor actual</span>
-                  <span>{formatMoneyMinor(position.marketValue)}</span>
-                </>
-              ) : null}
-            </>
-          ) : (
-            <span className="emptyLine">Sin operaciones previas</span>
-          )}
-        </div>
-
         {formOk ? (
           <p className="successBand" role="status">
             {formOk}
           </p>
         ) : null}
 
-        {formError?.formId === "operation" ? (
-          <p className="errorBand" role="alert" id="operation-error">
-            {formError.message}
-          </p>
-        ) : null}
-
-        <form action={boundRecordOperationAction} className="stackForm inversionesForm">
-          <input name="currentUrl" type="hidden" value={currentUrl} />
-
-          <label>
-            Tipo
-            <select defaultValue={operationValues["kind"] ?? "buy"} name="kind">
-              <option value="buy">Compra</option>
-              <option value="sell">Venta</option>
-            </select>
-          </label>
-
-          <label>
-            Fecha
-            <input
-              aria-label="Fecha de ejecución"
-              defaultValue={operationValues["executedAt"] ?? today}
-              name="executedAt"
-              type="date"
-            />
-          </label>
-
-          <label>
-            Unidades <span aria-hidden="true">*</span>
-            <input
-              aria-label="Unidades"
-              aria-required="true"
-              defaultValue={operationValues["units"]}
-              inputMode="decimal"
-              name="units"
-              placeholder="10"
-            />
-          </label>
-
-          <label>
-            Precio por unidad (EUR) <span aria-hidden="true">*</span>
-            <input
-              aria-label="Precio por unidad en EUR"
-              aria-required="true"
-              defaultValue={operationValues["pricePerUnit"]}
-              inputMode="decimal"
-              name="pricePerUnit"
-              placeholder="100,00"
-            />
-          </label>
-
-          <label>
-            Comisiones (EUR)
-            <input
-              aria-label="Comisiones en EUR"
-              defaultValue={operationValues["fees"] ?? "0"}
-              inputMode="decimal"
-              name="fees"
-              placeholder="0"
-            />
-          </label>
-
-          <button type="submit">Registrar operación</button>
-        </form>
-
-        {operations.length > 0 ? (
-          <details className="recentOpsPanel" open>
-            <summary>Todas las operaciones ({operations.length})</summary>
-            <div className="tableScroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Tipo</th>
-                    <th>Unidades</th>
-                    <th>Precio/u</th>
-                    <th>Comisiones</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...operations]
-                    .sort((a, b) => b.executedAt.localeCompare(a.executedAt))
-                    .map((op) => (
-                      <tr key={op.id}>
-                        <td>{op.executedAt}</td>
-                        <td>{op.kind === "buy" ? "Compra" : "Venta"}</td>
-                        <td>{op.units}</td>
-                        <td>{op.pricePerUnit}</td>
-                        <td>
-                          {op.feesMinor > 0
-                            ? formatMoneyMinor({
-                                amountMinor: op.feesMinor,
-                                currency: op.currency,
-                              })
-                            : "—"}
-                        </td>
-                        <td className="rowActions">
-                          <form action={boundDeleteOperationAction}>
-                            <input name="currentUrl" type="hidden" value={currentUrl} />
-                            <input name="operationId" type="hidden" value={op.id} />
-                            <details className="confirmDelete">
-                              <summary>Eliminar</summary>
-                              <button type="submit">Confirmar</button>
-                            </details>
-                          </form>
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          </details>
-        ) : null}
+        <OperationsEditor
+          assetName={asset.name}
+          context={{
+            ...(position ? { currentUnits: position.currentUnits } : {}),
+            ...(priceCache
+              ? { unitPrice: priceCache.price, priceFreshness: freshness }
+              : {}),
+            ...(position?.marketValue ? { marketValue: position.marketValue } : {}),
+          }}
+          currentUrl={currentUrl}
+          deleteAction={boundDeleteOperationAction}
+          formError={formError}
+          operations={operations}
+          recordAction={boundRecordOperationAction}
+          today={today}
+        />
       </section>
     </Shell>
   );

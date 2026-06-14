@@ -27,6 +27,8 @@ const KEY_EXPORTS = [
   "valueAt",
   "defaultValuationMethodForAssetType",
   "defaultValuationMethodForDebtModel",
+  "valuationMethodOfAsset",
+  "valuationMethodOfLiability",
   // instrument-catalog
   "defaultsFor",
   "instrumentForQuoteType",

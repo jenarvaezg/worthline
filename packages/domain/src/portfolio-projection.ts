@@ -160,7 +160,11 @@ export function projectPortfolio(input: PortfolioProjectionInput): PortfolioProj
       tier,
       tierLabel: tierLabel(tier),
       isReadOnly: isInvestment,
-      ...(isInvestment ? { detailHref: `/inversiones#${asset.id}` } : {}),
+      // An investment is now fully managed from its unified holding detail
+      // (#152, S6): its value stays read-only in the list (ADR 0006) but the
+      // detail link reaches the method-dispatched ficha (operations editor),
+      // not the transitional /inversiones view.
+      ...(isInvestment ? { detailHref: `/patrimonio/${asset.id}/editar` } : {}),
       ownership,
     });
 

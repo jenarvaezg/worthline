@@ -203,7 +203,7 @@ export default async function PatrimonioPage({
                       {row.isReadOnly ? (
                         <small>
                           {" "}
-                          <Link href={row.detailHref!}>gestionado en Inversiones →</Link>
+                          <Link href={row.detailHref!}>ver ficha →</Link>
                         </small>
                       ) : null}
                     </td>
