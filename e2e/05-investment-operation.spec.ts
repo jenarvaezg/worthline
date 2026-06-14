@@ -65,7 +65,9 @@ test("investment: create with manual price → buy operation → derived value v
   await expect(errorBand).toBeVisible();
   await expect(errorBand).toHaveText("Las unidades son obligatorias.");
   // The typed price survives the round-trip (units was empty, so it does not).
-  await expect(operationForm.getByLabel("Precio por unidad en EUR")).toHaveValue("105,50");
+  await expect(operationForm.getByLabel("Precio por unidad en EUR")).toHaveValue(
+    "105,50",
+  );
 
   // 8. Re-fill both fields on the settled form and confirm the DOM values stuck
   //    before submitting (assert the values rather than polling FormData — a
@@ -73,7 +75,9 @@ test("investment: create with manual price → buy operation → derived value v
   await operationForm.getByLabel("Unidades").fill("10");
   await operationForm.getByLabel("Precio por unidad en EUR").fill("105,50");
   await expect(operationForm.getByLabel("Unidades")).toHaveValue("10");
-  await expect(operationForm.getByLabel("Precio por unidad en EUR")).toHaveValue("105,50");
+  await expect(operationForm.getByLabel("Precio por unidad en EUR")).toHaveValue(
+    "105,50",
+  );
   await operationForm.getByRole("button", { name: "Registrar operación" }).click();
 
   // 9. Success redirect — the action lands back on the ficha with `ok=saved`.
