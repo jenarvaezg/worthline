@@ -84,6 +84,9 @@ const KEY_EXPORTS = [
   "assertSnapshotHoldingsReconcile",
   // portfolio-projection
   "projectPortfolio",
+  // portfolio-grouping (#154)
+  "groupPortfolio",
+  "instrumentLabel",
   // dashboard
   "prepareDashboardState",
   "deriveOnboardingProgress",

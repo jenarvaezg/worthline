@@ -23,12 +23,14 @@ import type {
   NetWorthFraming,
   OperationKind,
   OwnershipShare,
+  PortfolioGroupKey,
   PriceFreshnessState,
 } from "@worthline/domain";
 import {
   parseDecimal,
   parseDecimalStrict,
   parseDecimalToMinorStrict,
+  PORTFOLIO_GROUP_KEYS,
 } from "@worthline/domain";
 
 // Re-export types needed by #58 inversiones functions
@@ -82,6 +84,20 @@ export function parseRangeParam(value: string | string[] | undefined): Compositi
   const raw = normalizeParam(value);
 
   return raw === "1y" || raw === "3y" || raw === "5y" ? raw : "all";
+}
+
+/**
+ * Parse the `group=` query param (#154, PRD #146 S8): how the unified /patrimonio
+ * holdings list is grouped. Only the three known axes activate; anything else
+ * (including the default) means `direction` (Activos/Pasivos). The selected group
+ * doubles as the filter, server-side — no client JS (ADR 0009).
+ */
+export function parseGroupParam(value: string | string[] | undefined): PortfolioGroupKey {
+  const raw = normalizeParam(value);
+
+  return PORTFOLIO_GROUP_KEYS.includes(raw as PortfolioGroupKey)
+    ? (raw as PortfolioGroupKey)
+    : "direction";
 }
 
 /** Set or replace a query param on a (possibly relative) URL string. */

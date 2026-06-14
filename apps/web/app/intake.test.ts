@@ -25,6 +25,7 @@ import {
   parseUpdateInvestmentCommand,
   parseDrillParam,
   parseRangeParam,
+  parseGroupParam,
   parseValuationAnchorStrict,
   parseAppreciationRateStrict,
   parseDebtModelStrict,
@@ -100,6 +101,15 @@ describe("scope and view params", () => {
     expect(parseRangeParam(["3y", "1y"])).toBe("3y");
     expect(parseRangeParam("nonsense")).toBe("all");
     expect(parseRangeParam(undefined)).toBe("all");
+  });
+
+  test("parseGroupParam accepts the three axes, else 'direction' (the default)", () => {
+    expect(parseGroupParam("direction")).toBe("direction");
+    expect(parseGroupParam("rung")).toBe("rung");
+    expect(parseGroupParam("instrument")).toBe("instrument");
+    expect(parseGroupParam(["rung", "instrument"])).toBe("rung");
+    expect(parseGroupParam("nonsense")).toBe("direction");
+    expect(parseGroupParam(undefined)).toBe("direction");
   });
 });
 

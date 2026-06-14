@@ -2,17 +2,21 @@ import { runBootstrapHealthcheck, withStore } from "@worthline/db";
 import {
   collectWarnings,
   formatMoneyMinor,
+  groupPortfolio,
   listScopeOptions,
   moneySign,
   projectPortfolio,
 } from "@worthline/domain";
+import type { PortfolioGroupKey } from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import {
+  appendParam,
   buildCurrentUrlFor,
   parseFormError,
+  parseGroupParam,
   parseScopeParam,
   parseScopeCookie,
   resolveOkMessage,
@@ -29,6 +33,7 @@ import {
   restoreAssetAction,
   restoreLiabilityAction,
 } from "./actions";
+import PatrimonioGroupControls from "./group-controls";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +47,7 @@ export default async function PatrimonioPage({
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
   const currentUrl = buildCurrentUrlFor("/patrimonio", resolvedSearchParams);
+  const selectedGroup = parseGroupParam(resolvedSearchParams?.group);
 
   const jar = await cookies();
   const queryScopeId = parseScopeParam(resolvedSearchParams?.scope);
@@ -83,16 +89,15 @@ export default async function PatrimonioPage({
     ? projectPortfolio({ workspace, scope: selectedScope, assets, liabilities })
     : null;
 
-  const [assetsSection, liabilitiesSection] = projection
-    ? projection.sections
-    : [
-        { kind: "assets" as const, rows: [] },
-        { kind: "liabilities" as const, rows: [] },
-      ];
-
-  const liabilityTypeById = new Map(liabilities.map((l) => [l.id, l.type]));
+  // The one unified list, grouped by the selected axis (#154, S8). The selected
+  // group doubles as the filter — the page renders each group as its own card.
+  const groups = projection ? groupPortfolio(projection, selectedGroup) : [];
 
   const isHousehold = workspace.mode === "household";
+
+  /** A /patrimonio URL that selects a grouping axis, preserving scope + feedback. */
+  const groupHrefFor = (group: PortfolioGroupKey): string =>
+    appendParam(currentUrl, "group", group);
 
   return (
     <Shell
@@ -137,191 +142,139 @@ export default async function PatrimonioPage({
             ¿Cotiza con ticker? → Inversión
           </Link>
         </div>
-        {assets.filter((a) => a.type !== "investment").length > 0 ||
-        liabilities.length > 0 ? (
+        {assets.length > 0 || liabilities.length > 0 ? (
           <Link className="actionLink" href="/patrimonio/actualizar">
             Puesta al día →
           </Link>
         ) : null}
+        <PatrimonioGroupControls hrefFor={groupHrefFor} selected={selectedGroup} />
       </section>
 
-      {/* ── Activos ─────────────────────────────────────────────────── */}
-      <section className="patrimonioSection" aria-label="Activos">
-        <div className="patrimonioSectionHeader">
-          <h3>Activos</h3>
-          {projection ? (
-            <strong className={moneySign(projection.totalGrossAssets)}>
-              {formatMoneyMinor(projection.totalGrossAssets)}
-            </strong>
-          ) : null}
-        </div>
-
-        <div className="tableScroll">
-          <table className="patrimonioTable">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Capa</th>
-                <th>Valor</th>
-                {isHousehold ? <th>Propiedad</th> : null}
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {assetsSection.rows.length === 0 ? (
+      {/* ── Unified holdings list, grouped by the selected axis (#154, S8) ──── */}
+      {groups.length === 0 ? (
+        <section className="patrimonioSection" aria-label="Holdings">
+          <div className="tableScroll">
+            <table className="patrimonioTable">
+              <tbody>
                 <tr>
-                  <td colSpan={isHousehold ? 5 : 4} className="emptyRow">
-                    Sin activos todavía.{" "}
+                  <td className="emptyRow">
+                    Sin holdings todavía.{" "}
                     <Link href="/patrimonio/nuevo-activo">Añadir activo →</Link>
                   </td>
                 </tr>
-              ) : null}
-              {assetsSection.rows.map((row) => {
-                const rowWarnings = warnings.filter((w) => w.entityId === row.id);
-                const overrideableWarning = rowWarnings.find(
-                  (w) => w.severity === "overrideable",
-                );
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
 
-                return (
-                  <tr id={row.id} key={row.id}>
-                    <td>
-                      {row.isReadOnly ? (
-                        <Link href={row.detailHref!}>{row.name}</Link>
-                      ) : (
-                        row.name
-                      )}
-                      {rowWarnings.length > 0 ? (
-                        <span className="warningBadge" title={rowWarnings[0]!.message}>
-                          {" "}
-                          ⚠
-                        </span>
-                      ) : null}
-                    </td>
-                    <td>{row.tierLabel}</td>
-                    <td className={row.isReadOnly ? "readOnlyValue" : undefined}>
-                      {formatMoneyMinor({ amountMinor: row.valueMinor, currency: "EUR" })}
-                      {row.isReadOnly ? (
-                        <small>
-                          {" "}
-                          <Link href={row.detailHref!}>ver ficha →</Link>
-                        </small>
-                      ) : null}
-                    </td>
-                    {isHousehold ? (
-                      <td className="ownershipCell">
-                        {row.ownership.totalShareBps < 10_000
-                          ? `${Math.round(row.ownership.totalShareBps / 100)}%`
-                          : "100%"}
+      {groups.map((group) => (
+        <section className="patrimonioSection" aria-label={group.label} key={group.key}>
+          <div className="patrimonioSectionHeader">
+            <h3>{group.label}</h3>
+            {/* A group total is a static figure → ink; only a NEGATIVE net (a rung
+                or instrument that owes more than it holds) reads red, per the
+                design system's "negative net in red" rule. */}
+            <strong className={moneySign(group.totalMinor) === "neg" ? "neg" : undefined}>
+              {formatMoneyMinor(group.totalMinor)}
+            </strong>
+          </div>
+
+          <div className="tableScroll">
+            <table className="patrimonioTable">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Capa</th>
+                  <th>Valor</th>
+                  {isHousehold ? <th>Propiedad</th> : null}
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {group.holdings.map((holding) => {
+                  // The signed amount for this holding (a liability shows its balance).
+                  const amountMinor =
+                    holding.direction === "asset"
+                      ? holding.valueMinor
+                      : holding.balanceMinor;
+                  const rowWarnings =
+                    holding.direction === "asset"
+                      ? warnings.filter((w) => w.entityId === holding.id)
+                      : [];
+                  const overrideableWarning = rowWarnings.find(
+                    (w) => w.severity === "overrideable",
+                  );
+                  // An investment's value is derived (ADR 0006) — render it read-only,
+                  // but the ROW is fully actionable like any other holding (#154).
+                  const valueIsDerived =
+                    holding.direction === "asset" && holding.valueIsDerived;
+                  const deleteAction =
+                    holding.direction === "asset"
+                      ? deleteAssetAction
+                      : deleteLiabilityAction;
+
+                  return (
+                    <tr id={holding.id} key={holding.id}>
+                      <td>
+                        <Link href={holding.detailHref}>{holding.name}</Link>
+                        {rowWarnings.length > 0 ? (
+                          <span
+                            className="warningBadge"
+                            title={rowWarnings[0]!.message}
+                          >
+                            {" "}
+                            ⚠
+                          </span>
+                        ) : null}
                       </td>
-                    ) : null}
-                    <td className="rowActions">
-                      {overrideableWarning ? (
-                        <form action={acknowledgeWarningAction}>
-                          <input name="currentUrl" type="hidden" value={currentUrl} />
-                          <input
-                            name="code"
-                            type="hidden"
-                            value={overrideableWarning.code}
-                          />
-                          <input name="entityId" type="hidden" value={row.id} />
-                          <button className="btnSmall btnWarning" type="submit">
-                            Es intencional
-                          </button>
-                        </form>
+                      <td>{holding.tierLabel}</td>
+                      <td className={valueIsDerived ? "readOnlyValue" : undefined}>
+                        {formatMoneyMinor({ amountMinor, currency: "EUR" })}
+                        {valueIsDerived ? <small> Valor calculado</small> : null}
+                      </td>
+                      {isHousehold ? (
+                        <td className="ownershipCell">
+                          {holding.ownership.totalShareBps < 10_000
+                            ? `${Math.round(holding.ownership.totalShareBps / 100)}%`
+                            : "100%"}
+                        </td>
                       ) : null}
-                      {!row.isReadOnly ? (
-                        <Link className="btnSmall" href={`/patrimonio/${row.id}/editar`}>
+                      <td className="rowActions">
+                        {overrideableWarning ? (
+                          <form action={acknowledgeWarningAction}>
+                            <input name="currentUrl" type="hidden" value={currentUrl} />
+                            <input
+                              name="code"
+                              type="hidden"
+                              value={overrideableWarning.code}
+                            />
+                            <input name="entityId" type="hidden" value={holding.id} />
+                            <button className="btnSmall btnWarning" type="submit">
+                              Es intencional
+                            </button>
+                          </form>
+                        ) : null}
+                        <Link className="btnSmall" href={holding.detailHref}>
                           Editar
                         </Link>
-                      ) : null}
-                      {!row.isReadOnly ? (
-                        <form action={deleteAssetAction}>
+                        <form action={deleteAction}>
                           <input name="currentUrl" type="hidden" value={currentUrl} />
-                          <input name="id" type="hidden" value={row.id} />
+                          <input name="id" type="hidden" value={holding.id} />
                           <details className="confirmDelete">
                             <summary>Eliminar</summary>
                             <button type="submit">Confirmar</button>
                           </details>
                         </form>
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* ── Deudas ──────────────────────────────────────────────────── */}
-      <section className="patrimonioSection" aria-label="Deudas">
-        <div className="patrimonioSectionHeader">
-          <h3>Deudas</h3>
-          {projection ? (
-            <strong className={moneySign(projection.totalDebts)}>
-              {formatMoneyMinor(projection.totalDebts)}
-            </strong>
-          ) : null}
-        </div>
-
-        <div className="tableScroll">
-          <table className="patrimonioTable">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Tipo</th>
-                <th>Saldo</th>
-                {isHousehold ? <th>Propiedad</th> : null}
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {liabilitiesSection.rows.length === 0 ? (
-                <tr>
-                  <td colSpan={isHousehold ? 4 : 3} className="emptyRow">
-                    Sin deudas registradas.{" "}
-                    <Link href="/patrimonio/nueva-deuda">Añadir deuda →</Link>
-                  </td>
-                </tr>
-              ) : null}
-              {liabilitiesSection.rows.map((row) => (
-                <tr id={row.id} key={row.id}>
-                  <td>{row.name}</td>
-                  <td>
-                    {liabilityTypeById.get(row.id) === "mortgage" ? "Hipoteca" : "Deuda"}
-                  </td>
-                  <td>
-                    {formatMoneyMinor({
-                      amountMinor: row.balanceMinor,
-                      currency: "EUR",
-                    })}
-                  </td>
-                  {isHousehold ? (
-                    <td className="ownershipCell">
-                      {row.ownership.totalShareBps < 10_000
-                        ? `${Math.round(row.ownership.totalShareBps / 100)}%`
-                        : "100%"}
-                    </td>
-                  ) : null}
-                  <td className="rowActions">
-                    <Link className="btnSmall" href={`/patrimonio/${row.id}/editar`}>
-                      Editar
-                    </Link>
-                    <form action={deleteLiabilityAction}>
-                      <input name="currentUrl" type="hidden" value={currentUrl} />
-                      <input name="id" type="hidden" value={row.id} />
-                      <details className="confirmDelete">
-                        <summary>Eliminar</summary>
-                        <button type="submit">Confirmar</button>
-                      </details>
-                    </form>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ))}
 
       {/* ── Papelera ────────────────────────────────────────────────── */}
       <section className="papelera" aria-label="Papelera">
