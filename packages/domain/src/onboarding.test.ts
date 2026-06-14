@@ -3,11 +3,10 @@ import { describe, expect, test } from "vitest";
 import { deriveOnboardingProgress } from "./index";
 
 describe("deriveOnboardingProgress", () => {
-  test("marks steps done from counts, in a stable order", () => {
+  test("collapses add into a single holdings step, in a stable order", () => {
     const steps = deriveOnboardingProgress({
       activeMemberCount: 1,
       holdingCount: 0,
-      positionCount: 0,
       hasFireConfig: false,
       snapshotCount: 0,
     });
@@ -15,19 +14,20 @@ describe("deriveOnboardingProgress", () => {
     expect(steps.map((step) => step.id)).toEqual([
       "members",
       "holdings",
-      "investments",
       "fire",
       "snapshot",
     ]);
     expect(steps.find((step) => step.id === "members")?.done).toBe(true);
     expect(steps.find((step) => step.id === "holdings")?.done).toBe(false);
+    expect(steps.find((step) => step.id === "holdings")?.label).toBe(
+      "Añade tu primer holding",
+    );
   });
 
-  test("every step is done once each collection is populated", () => {
+  test("the single holdings step is done as soon as any holding exists", () => {
     const steps = deriveOnboardingProgress({
       activeMemberCount: 2,
       holdingCount: 3,
-      positionCount: 1,
       hasFireConfig: true,
       snapshotCount: 4,
     });

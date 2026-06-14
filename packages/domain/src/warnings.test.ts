@@ -1,12 +1,18 @@
 import { describe, expect, test } from "vitest";
 
-import type { ManualAsset } from "./index";
+import type { AssetType, ManualAsset } from "./index";
 import { collectWarnings } from "./warnings";
 
-function asset(id: string, name: string, amountMinor: number): ManualAsset {
+function asset(
+  id: string,
+  name: string,
+  amountMinor: number,
+  type: AssetType = "cash",
+): ManualAsset {
   return {
     id,
     name,
+    type,
     currentValue: { amountMinor, currency: "EUR" },
   } as ManualAsset;
 }
@@ -25,6 +31,16 @@ describe("collectWarnings", () => {
       entityType: "asset",
       severity: "overrideable",
     });
+  });
+
+  test("does not flag a freshly-created derived holding at 0 (it reads 0 until its first operation)", () => {
+    const warnings = collectWarnings([
+      asset("inv1", "ETF MSCI World", 0, "investment"),
+      asset("a1", "Cuenta", 0, "cash"),
+    ]);
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({ code: "ZERO_VALUE_ASSET", entityId: "a1" });
   });
 
   test("suppresses an overrideable warning that has a matching override", () => {

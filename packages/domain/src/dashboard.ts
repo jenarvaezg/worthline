@@ -86,7 +86,6 @@ export interface OnboardingStep {
 export function deriveOnboardingProgress(input: {
   activeMemberCount: number;
   holdingCount: number;
-  positionCount: number;
   hasFireConfig: boolean;
   snapshotCount: number;
 }): OnboardingStep[] {
@@ -94,10 +93,9 @@ export function deriveOnboardingProgress(input: {
     { id: "members", label: "Revisa los miembros", done: input.activeMemberCount > 0 },
     {
       id: "holdings",
-      label: "Añade tu primer activo o deuda",
+      label: "Añade tu primer holding",
       done: input.holdingCount > 0,
     },
-    { id: "investments", label: "Registra una inversión", done: input.positionCount > 0 },
     { id: "fire", label: "Configura FIRE", done: input.hasFireConfig },
     {
       id: "snapshot",
@@ -206,7 +204,6 @@ export function prepareDashboardState(input: {
   const onboarding = deriveOnboardingProgress({
     activeMemberCount: activeMembers.length,
     holdingCount: assets.length + liabilities.length,
-    positionCount: input.positions.length,
     hasFireConfig: fireScopeConfig !== null,
     snapshotCount: input.snapshots.length,
   });
