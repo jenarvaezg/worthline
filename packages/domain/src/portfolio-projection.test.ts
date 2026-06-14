@@ -106,19 +106,37 @@ describe("projectPortfolio — household scope", () => {
     expect(cash.valueMinor).toBe(100_000);
   });
 
-  test("investment rows are flagged read-only and carry a detail link", () => {
+  test("investment rows flag their value as derived (units × price, ADR 0006)", () => {
     const result = projectPortfolio(input);
     const assets = result.sections[0]!.rows as ProjectedAssetRow[];
     const broker = assets.find((r) => r.id === "asset_broker")! as ProjectedAssetRow;
-    expect(broker.isReadOnly).toBe(true);
-    expect(broker.detailHref).toBe("/patrimonio/asset_broker/editar");
+    expect(broker.valueIsDerived).toBe(true);
   });
 
-  test("non-investment asset rows are NOT read-only", () => {
+  test("non-investment asset rows do NOT flag a derived value", () => {
     const result = projectPortfolio(input);
     const assets = result.sections[0]!.rows as ProjectedAssetRow[];
     const cash = assets.find((r) => r.id === "asset_cash")! as ProjectedAssetRow;
-    expect(cash.isReadOnly).toBe(false);
+    expect(cash.valueIsDerived).toBe(false);
+  });
+
+  test("EVERY asset row carries its ficha detail link — investments are no longer ghosts (#154)", () => {
+    const result = projectPortfolio(input);
+    const assets = result.sections[0]!.rows as ProjectedAssetRow[];
+    for (const row of assets) {
+      expect(row.detailHref).toBe(`/patrimonio/${row.id}/editar`);
+    }
+  });
+
+  test("rows expose their instrument so the list can group/filter by it (#154)", () => {
+    const result = projectPortfolio(input);
+    const assets = result.sections[0]!.rows as ProjectedAssetRow[];
+    const cash = assets.find((r) => r.id === "asset_cash")!;
+    expect(cash.instrument).toBe("current_account");
+    const broker = assets.find((r) => r.id === "asset_broker")!;
+    expect(broker.instrument).toBe("fund");
+    const housing = assets.find((r) => r.id === "asset_home")!;
+    expect(housing.instrument).toBe("property");
   });
 
   test("ownership data is present on every row in household mode", () => {

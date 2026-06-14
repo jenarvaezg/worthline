@@ -211,6 +211,17 @@ export type {
 } from "./portfolio-projection";
 export { projectPortfolio } from "./portfolio-projection";
 
+export type {
+  PortfolioGroup,
+  PortfolioGroupKey,
+  UnifiedHolding,
+} from "./portfolio-grouping";
+export {
+  groupPortfolio,
+  instrumentLabel,
+  PORTFOLIO_GROUP_KEYS,
+} from "./portfolio-grouping";
+
 export type { DecimalString } from "./decimal";
 
 export type {

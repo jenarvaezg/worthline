@@ -6,11 +6,17 @@
  * guaranteed to equal the grossAssets / debts figures that calculateNetWorth
  * reports for the same scope (reconciliation invariant).
  *
- * Investment rows are flagged read-only and carry a detail href, per ADR 0006.
+ * Every row is a first-class, fully-actionable holding: it carries a `detailHref`
+ * to its ficha (edit/manage) and participates in the normal row actions. An
+ * investment's VALUE stays derived (units × price, ADR 0006) — the row flags this
+ * via `valueIsDerived` so the UI renders the value read-only — but the row itself
+ * is no longer a ghost (#154, S8). Each row also exposes its `instrument` and
+ * `tier` (rung) so the list can group/filter by direction, rung or instrument.
  */
 
-import type { LiquidityTier } from "./classification";
-import { tierOfAsset } from "./classification";
+import type { Instrument, LiquidityTier } from "./classification";
+import { instrumentOfAsset, rungForLiability, tierOfAsset } from "./classification";
+import { defaultInstrumentForLiability } from "./instrument-catalog";
 import type { MoneyMinor } from "./money";
 import { money } from "./money";
 import { allocateScopedHolding } from "./scope-allocation";
@@ -60,14 +66,18 @@ export interface ProjectedAssetRow {
   /** Scope-weighted value in integer minor units (EUR cents). */
   valueMinor: number;
   tierLabel: string;
+  /** The holding's rung on the liquidity ladder — a group/filter key (#154). */
   tier: LiquidityTier;
+  /** What the holding is (fund, property, current_account…) — a group/filter key (#154). */
+  instrument: Instrument;
   /**
-   * True for investment assets — value is derived (units × price), never
-   * edited by hand (ADR 0006). The UI should render these read-only.
+   * True when the value is derived (units × price) and never hand-editable
+   * (ADR 0006 — investments). This gates only how the VALUE is rendered (read-only),
+   * NOT the row's actions: every row edits/deletes through its ficha (#154, S8).
    */
-  isReadOnly: boolean;
-  /** Present only for investment assets; links to the detail page. */
-  detailHref?: string;
+  valueIsDerived: boolean;
+  /** Every row links to its ficha — the single place a holding is edited/managed (#154). */
+  detailHref: string;
   ownership: RowOwnership;
 }
 
@@ -76,6 +86,13 @@ export interface ProjectedLiabilityRow {
   name: string;
   /** Scope-weighted balance in integer minor units (EUR cents). */
   balanceMinor: number;
+  /** The rung the debt sits on — inherited from the asset it secures (#154 grouping). */
+  tier: LiquidityTier;
+  tierLabel: string;
+  /** Coarse instrument (mortgage vs loan) for grouping — refined surfaces live on the ficha. */
+  instrument: Instrument;
+  /** Every liability links to its ficha — the single place it is edited/managed (#154). */
+  detailHref: string;
   ownership: RowOwnership;
 }
 
@@ -151,20 +168,21 @@ export function projectPortfolio(input: PortfolioProjectionInput): PortfolioProj
       totalShareBps: shareBps,
     };
 
-    const isInvestment = asset.type === "investment";
-
     assetRows.push({
       id: asset.id,
       name: asset.name,
       valueMinor: scopedValue,
       tier,
       tierLabel: tierLabel(tier),
-      isReadOnly: isInvestment,
-      // An investment is now fully managed from its unified holding detail
-      // (#152, S6): its value stays read-only in the list (ADR 0006) but the
-      // detail link reaches the method-dispatched ficha (operations editor),
-      // not the transitional /inversiones view.
-      ...(isInvestment ? { detailHref: `/patrimonio/${asset.id}/editar` } : {}),
+      instrument: instrumentOfAsset(asset),
+      // An investment's value is derived (units × price, ADR 0006) so the list
+      // renders it read-only — but the ROW is a first-class holding (#154, S8):
+      // it edits/manages through its ficha like any other, no longer a ghost.
+      valueIsDerived: asset.type === "investment",
+      // Every holding's ficha is /patrimonio/[id]/editar — the single place it is
+      // managed since S6 (#152) dispatches by valuation method (investments get
+      // the operations editor, not the transitional /inversiones view).
+      detailHref: `/patrimonio/${asset.id}/editar`,
       ownership,
     });
 
@@ -172,6 +190,10 @@ export function projectPortfolio(input: PortfolioProjectionInput): PortfolioProj
   }
 
   // ── Liability rows ──────────────────────────────────────────────────────
+  // A debt inherits the rung of the asset it secures (ADR 0013), so build the
+  // asset-rung map once and resolve each liability's rung against it (#154 grouping).
+  const assetRungById = new Map(assets.map((asset) => [asset.id, tierOfAsset(asset)]));
+
   const liabilityRows: ProjectedLiabilityRow[] = [];
   let debtsMinor = 0;
 
@@ -191,10 +213,19 @@ export function projectPortfolio(input: PortfolioProjectionInput): PortfolioProj
       totalShareBps: shareBps,
     };
 
+    const tier = rungForLiability(liability, assetRungById);
+
     liabilityRows.push({
       id: liability.id,
       name: liability.name,
       balanceMinor: scopedValue,
+      tier,
+      tierLabel: tierLabel(tier),
+      // Coarse instrument for grouping: a mortgage stays a mortgage, every other
+      // debt is a loan. The revolving/informal refinement needs the debt model
+      // (only on the ficha), and the list only distinguishes Hipoteca/Deuda.
+      instrument: defaultInstrumentForLiability(liability.type, null),
+      detailHref: `/patrimonio/${liability.id}/editar`,
       ownership,
     });
 
