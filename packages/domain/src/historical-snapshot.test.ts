@@ -255,6 +255,64 @@ describe("buildSnapshotAtDate", () => {
     expect(result!.holdings[0]?.unitPrice).toBe("120");
   });
 
+  test("values a no-price investment at cost basis when flagged, not at last-op price (#183)", () => {
+    const workspace = makeWorkspace();
+    const fund = investment(workspace, "asset_fund", "Fondo");
+    // Two buys at differing prices → weighted-avg cost ≠ last-op price (120).
+    // op1: 10 @ 100 = 1000.00, op2: 5 @ 120 = 600.00 → cost basis 1600.00 for 15.
+    const operationsByAsset = new Map([
+      [
+        "asset_fund",
+        [
+          buy("asset_fund", "op1", "2024-01-10", "10", "100"),
+          buy("asset_fund", "op2", "2024-03-10", "5", "120"),
+        ],
+      ],
+    ]);
+
+    const result = buildSnapshotAtDate({
+      ...BASE,
+      assets: [fund],
+      // Flagged as a no-price investment → cost basis, not 15 × 120 = 1800.00.
+      costBasisAssetIds: new Set(["asset_fund"]),
+      liabilities: [],
+      manualValueHistory: new Map(),
+      operationsByAsset,
+      targetDate: "2024-06-01",
+      workspace,
+    });
+
+    expect(result!.snapshot.grossAssets.amountMinor).toBe(1_600_00);
+    const fundRow = result!.holdings.find((h) => h.holdingId === "asset_fund");
+    expect(fundRow?.units).toBe("15");
+    // Cost-basis fallback freezes NO unit price (ADR 0006).
+    expect(fundRow?.unitPrice).toBeUndefined();
+  });
+
+  test("a captured price beats the cost-basis flag (ADR-0012 carry-over unchanged)", () => {
+    const workspace = makeWorkspace();
+    const fund = investment(workspace, "asset_fund", "Fondo");
+    const operationsByAsset = new Map([
+      ["asset_fund", [buy("asset_fund", "op1", "2024-01-10", "10", "100")]],
+    ]);
+
+    const result = buildSnapshotAtDate({
+      ...BASE,
+      assets: [fund],
+      // Both signals present: the real captured price wins (ADR 0012).
+      capturedUnitPrices: new Map([["asset_fund", "150"]]),
+      costBasisAssetIds: new Set(["asset_fund"]),
+      liabilities: [],
+      manualValueHistory: new Map(),
+      operationsByAsset,
+      targetDate: "2024-06-01",
+      workspace,
+    });
+
+    expect(result!.snapshot.grossAssets.amountMinor).toBe(10 * 150_00);
+    expect(result!.holdings[0]?.unitPrice).toBe("150");
+  });
+
   test("captured unit prices override operation prices (ripple recalc)", () => {
     const workspace = makeWorkspace();
     const fund = investment(workspace, "asset_fund", "Fondo");
@@ -701,6 +759,99 @@ describe("recalculateSnapshotForAsset", () => {
     });
 
     expect(result).toBeNull();
+  });
+
+  // A derived row frozen at cost basis (ADR 0006 fallback) carries units but NO
+  // unitPrice — the signal that live capture had no provider/manual price that
+  // day. A backdated operation must keep it at cost basis, never recompute it at
+  // units × latestOperationPrice (#183).
+  function frozenCostBasisRow(valueMinor: number, units: string): SnapshotHoldingRow {
+    return {
+      countsAsHousing: false,
+      holdingId: "asset_fund",
+      kind: "asset",
+      label: "Fondo",
+      liquidityTier: "market",
+      securesHousing: false,
+      // No unitPrice: captured at cost basis (ADR 0006).
+      units,
+      valueMinor,
+    };
+  }
+
+  // A standalone snapshot holding only the cost-basis fund, self-consistent under
+  // the five-figure invariant (#181). grossAssets == the cost-basis value.
+  function costBasisSnapshot(valueMinor: number): NetWorthSnapshot {
+    return {
+      capturedAt: "2024-06-01T12:00:00.000Z",
+      dateKey: "2024-06-01",
+      debts: eur(0),
+      grossAssets: eur(valueMinor),
+      housingEquity: eur(0),
+      id: "snap_cb",
+      isMonthlyClose: false,
+      liquidNetWorth: eur(valueMinor), // fund is on the market (liquid) rung
+      monthKey: "2024-06",
+      scopeId: "member_jose",
+      scopeLabel: "Jose",
+      totalNetWorth: eur(valueMinor),
+      warnings: [],
+    };
+  }
+
+  test("keeps a cost-basis row at cost basis when a backdated operation ripples it (#183)", () => {
+    const workspace = makeWorkspace();
+
+    // Frozen at cost basis from op1 (10 @ 100 = 1000.00) + op2 (5 @ 120 = 600.00):
+    // weighted-avg cost ≠ last-op price (120), so the bug would be visible.
+    // Cost basis = 1600.00 for 15 units; the row carries NO unitPrice.
+    const frozen = frozenCostBasisRow(1_600_00, "15");
+
+    // A backdated buy op0 (3 @ 90 on 2024-01-05) within the snapshot's window:
+    // the ripple re-folds [op0, op1, op2] → 18 units, cost basis 270 + 1000 + 600
+    // = 1870.00. The buggy path would value 18 × latestOperationPrice (120) =
+    // 2160.00 — a jump from cost basis to last-op price.
+    const result = recalculateSnapshotForAsset({
+      asset: fundAsset(workspace),
+      frozenHoldings: [frozen],
+      operations: [
+        buy("asset_fund", "op0", "2024-01-05", "3", "90"),
+        buy("asset_fund", "op1", "2024-01-10", "10", "100"),
+        buy("asset_fund", "op2", "2024-03-10", "5", "120"),
+      ],
+      snapshot: costBasisSnapshot(1_600_00),
+      workspace,
+    })!;
+
+    const rippledRow = result.holdings.find((h) => h.holdingId === "asset_fund");
+    // Stays at cost basis (1870.00), not units × last-op price (2160.00).
+    expect(result.snapshot.grossAssets.amountMinor).toBe(1_870_00);
+    expect(rippledRow?.valueMinor).toBe(1_870_00);
+    expect(rippledRow?.units).toBe("18");
+    // Still no captured price — the cost-basis signal is preserved.
+    expect(rippledRow?.unitPrice).toBeUndefined();
+  });
+
+  test("a priced row keeps the ADR-0012 captured-price carry-over on a ripple (unchanged)", () => {
+    const workspace = makeWorkspace();
+
+    // A row frozen WITH a captured price (100) must keep ADR-0012 behaviour:
+    // the captured price beats the last operation price (120) on recompute.
+    const result = recalculateSnapshotForAsset({
+      asset: fundAsset(workspace),
+      frozenHoldings: [frozenFundRow(1_000_00, "10")],
+      operations: [
+        buy("asset_fund", "op1", "2024-01-10", "10", "100"),
+        buy("asset_fund", "op2", "2024-03-10", "5", "120"),
+      ],
+      snapshot: costBasisSnapshot(1_000_00),
+      workspace,
+    })!;
+
+    const rippledRow = result.holdings.find((h) => h.holdingId === "asset_fund");
+    // 15 units × captured price 100 = 1500.00 (NOT last-op price 120).
+    expect(result.snapshot.grossAssets.amountMinor).toBe(1_500_00);
+    expect(rippledRow?.unitPrice).toBe("100");
   });
 });
 

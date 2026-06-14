@@ -177,6 +177,42 @@ describe("valueAt — derived (units × price)", () => {
 
     expect(result.valueMinor).toBeNull();
   });
+
+  test("atCostBasis values at cost basis, not the latest operation price (#183)", () => {
+    const result = valueAt(
+      {
+        assetId: "a1",
+        atCostBasis: true,
+        currency: "EUR",
+        method: "derived",
+        operations: ops,
+      },
+      "2024-07-01",
+    );
+
+    // Cost basis = 10×100 + 10×150 = 2500.00, NOT 20 × last-op price 150 (3000.00).
+    expect(result.valueMinor).toBe(2500_00);
+    expect(result.units).toBe("20");
+    expect(result.unitPrice).toBeUndefined(); // no price frozen at cost basis
+  });
+
+  test("a captured unit price beats atCostBasis (ADR-0012 carry-over)", () => {
+    const result = valueAt(
+      {
+        assetId: "a1",
+        atCostBasis: true,
+        capturedUnitPrice: "200",
+        currency: "EUR",
+        method: "derived",
+        operations: ops,
+      },
+      "2024-07-01",
+    );
+
+    // A real captured price always wins over the cost-basis flag.
+    expect(result.valueMinor).toBe(4000_00); // 20 × 200
+    expect(result.unitPrice).toBe("200");
+  });
 });
 
 describe("valueAt — appreciating (revaluation curve)", () => {

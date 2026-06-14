@@ -213,6 +213,16 @@ export interface BuildSnapshotAtDateInput {
    * best price it knew that day (ADR 0012); omitted when generating fresh.
    */
   capturedUnitPrices?: ReadonlyMap<string, DecimalString>;
+  /**
+   * Investment asset ids that must be valued at COST BASIS, never at the latest
+   * operation price (ADR 0006, #183). Use when fresh generation knows an
+   * investment had no provider/manual price — the same cost-basis fallback live
+   * capture takes (units present, unitPrice absent), so the generated row never
+   * jumps to a last-operation-price valuation it could not have shown that day.
+   * Ignored for an asset that also has a `capturedUnitPrices` entry (a real
+   * captured price always wins).
+   */
+  costBasisAssetIds?: ReadonlySet<string>;
 }
 
 /** The valuation input for an asset on the historical path, by its valuation method. */
@@ -227,12 +237,16 @@ function assetValuationInput(
   // an investment-flagged-primary-residence as housing (#148 regression).
   if (asset.type === "investment") {
     const capturedUnitPrice = input.capturedUnitPrices?.get(asset.id);
+    // A no-price investment values at cost basis (ADR 0006, #183) — never at the
+    // latest operation price, which the dispatcher would otherwise use as a proxy.
+    const atCostBasis = input.costBasisAssetIds?.has(asset.id) === true;
     return {
       assetId: asset.id,
       currency: asset.currency,
       method: "derived",
       operations: input.operationsByAsset.get(asset.id) ?? [],
       ...(capturedUnitPrice !== undefined ? { capturedUnitPrice } : {}),
+      ...(atCostBasis ? { atCostBasis: true } : {}),
     };
   }
 
@@ -475,6 +489,13 @@ export function recalculateSnapshotForAsset(
   // ledger to the date, keeping the unit price the snapshot already captured
   // (else the last operation price ≤ the date), and yields null when the asset
   // was not held then — byte-identical to the positions math this used to inline.
+  //
+  // A derived row frozen with units but NO unitPrice was captured at cost basis
+  // (ADR 0006 fallback — no provider/manual price that day). Flag it so the
+  // ripple preserves cost basis instead of falling back to the latest operation
+  // price, which would shift a figure whose portfolio state never changed (#183).
+  const wasCapturedAtCostBasis =
+    existingRow?.units !== undefined && existingRow.unitPrice === undefined;
   const valuation = valueAt(
     {
       assetId: input.asset.id,
@@ -484,6 +505,7 @@ export function recalculateSnapshotForAsset(
       ...(existingRow?.unitPrice !== undefined
         ? { capturedUnitPrice: existingRow.unitPrice }
         : {}),
+      ...(wasCapturedAtCostBasis ? { atCostBasis: true } : {}),
     },
     targetDate,
   );
