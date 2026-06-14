@@ -121,7 +121,7 @@ const PLACEHOLDERS: Record<Instrument, Placeholders> = {
   stock: { name: "Apple", symbol: "AAPL", price: "180,50" },
   index: { name: "S&P 500", symbol: "^GSPC", price: "5.200,00" },
   pension_plan: { name: "Indexa Más Rentabilidad", symbol: "N5394", price: "12,80" },
-  crypto: { name: "Bitcoin", symbol: "BTC-EUR", price: "58.000,00" },
+  crypto: { name: "Bitcoin", symbol: "bitcoin", price: "58.000,00" },
   property: { name: "Piso en Malasaña", acqValue: "180.000,00", rate: "3" },
   vehicle: { name: "Renault Clio 2019", value: "8.500,00" },
   precious_metal: { name: "Lingote de oro 100 g", value: "6.200,00" },
@@ -384,6 +384,7 @@ function MethodFields({
         <>
           <label>
             Símbolo del proveedor
+            {id === "crypto" ? <small> (id de CoinGecko, p. ej. «bitcoin»)</small> : null}
             <input
               name={`symbol_${id}`}
               defaultValue={v("symbol")}

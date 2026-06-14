@@ -70,14 +70,15 @@ _Avoid_: editing an investment's value directly (it is a derived figure).
 **Price provider**:
 A service that supplies unit prices for investments. Each provider implements
 the `PriceProvider` contract (`canFetch` + `fetchPrice`). Wired providers:
-Stooq (market tickers), CoinGecko (crypto), ECB (FX rates). Decided but not
-yet wired (ADR 0011, issue #106): Yahoo Finance (market tickers, primary once
-wired), Finect (pension plan NAVs).
+Yahoo Finance (market tickers — the default for liquid holdings, ADR 0011),
+Stooq (market tickers, alternative), Finect (pension plan NAVs — the default
+for term-locked holdings), CoinGecko (crypto, keyed by coin id e.g. `bitcoin`),
+ECB (FX rates).
 _Avoid_: data source, feed, API.
 
 **Price source**:
 The label recorded in the price cache to identify which **price provider**
-supplied a given price (e.g. `"stooq"`, `"yahoo"`, `"finect"`, `"manual"`).
+supplied a given price (e.g. `"stooq"`, `"yahoo"`, `"finect"`, `"coingecko"`, `"manual"`).
 One provider maps to one source; fallback chains record the provider that
 actually delivered the price, not the one that was tried first.
 

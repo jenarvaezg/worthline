@@ -187,7 +187,7 @@ describe("createHoldingAction — derived investments", () => {
       form({
         instrument: "crypto",
         name_crypto: "Bitcoin",
-        symbol_crypto: "BTC-EUR",
+        symbol_crypto: "bitcoin",
         ownershipPreset: "scope",
         scopeMemberId: "mJ",
       }),

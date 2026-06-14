@@ -42,6 +42,21 @@ describe("coingeckoProvider", () => {
     expect(result).toEqual({ price: "50000", currency: "EUR" });
   });
 
+  it("normalizes the symbol to a lowercase coin id (trims + lowercases)", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ bitcoin: { eur: 50000 } }),
+    } as Response);
+
+    const result = await coingeckoProvider.fetchPrice({
+      ...baseCtx,
+      symbol: "  Bitcoin  ",
+    });
+
+    expect(result).toEqual({ price: "50000", currency: "EUR" });
+    expect(String(vi.mocked(fetch).mock.calls[0]![0])).toContain("ids=bitcoin");
+  });
+
   it("fetchPrice returns null for unknown symbol (empty response object)", async () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
