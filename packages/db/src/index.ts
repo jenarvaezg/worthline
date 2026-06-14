@@ -117,6 +117,7 @@ export type {
   SnapshotStore,
 } from "./snapshot-store";
 export type {
+  ImportWorkspaceResult,
   InitializeWorkspaceInput,
   MemberOwnerships,
   WorkspaceStore,
@@ -543,11 +544,15 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
     backfillHistoricalSnapshots: (today) => {
       const workspace = getWorkspace();
       if (!workspace) return;
+      // Atomic: the whole backfill is one transaction (#185), so a mid-run
+      // failure rolls every generated snapshot back rather than leaving a
+      // partially filled history with no signal.
       gapFillHistoricalSnapshots(
         ctx,
         workspace,
         store.snapshots.saveSnapshot,
         today ?? new Date().toISOString().slice(0, 10),
+        { atomic: true },
       );
     },
   };
@@ -1439,17 +1444,35 @@ function readInvestmentIdentity(db: StoreDb, assetId: string): ManualAsset | nul
   };
 }
 
+/** Options for {@link gapFillHistoricalSnapshots}. */
+interface GapFillOptions {
+  /**
+   * Wrap the whole fill in one transaction so a mid-run failure rolls every
+   * generated snapshot back (#185). The standalone backfill sets this — it owns
+   * no enclosing transaction, so without it a throw partway leaves a partially
+   * filled history with no signal. The post-import path leaves it off: the
+   * import already committed (ADR 0010) and the gap-fill is a best-effort
+   * post-step whose failure is surfaced to the caller, not rolled back.
+   */
+  atomic?: boolean;
+}
+
 /**
  * Fill historical-snapshot gaps after an import (ADR 0012, Slice 3 / #112):
  * generate a snapshot for each past operation date that has no snapshot in the
  * imported file. Imported snapshots are never touched. One pass, no per-
  * operation ripple — each date is reconstructed once from all operations ≤ it.
+ *
+ * The standalone backfill passes `atomic` so the whole run rolls back on any
+ * failure (#185); the post-import path runs best-effort and lets its caller
+ * surface a thrown error instead of leaving silent partial history.
  */
 function gapFillHistoricalSnapshots(
   ctx: StoreContext,
   workspace: Workspace,
   saveSnapshot: (input: SaveSnapshotInput) => void,
   today: string,
+  options: GapFillOptions = {},
 ): void {
   const deps = buildHistoricalSnapshotDeps(ctx.db, workspace);
 
@@ -1462,39 +1485,51 @@ function gapFillHistoricalSnapshots(
   }
   const sortedDates = [...eventDates].sort();
 
-  for (const scope of deps.scopes) {
-    const existingDates = new Set(
-      readSnapshots(ctx.db, scope.id).map((snap) => snap.dateKey),
-    );
+  const fill = (): void => {
+    for (const scope of deps.scopes) {
+      const existingDates = new Set(
+        readSnapshots(ctx.db, scope.id).map((snap) => snap.dateKey),
+      );
 
-    for (const dateKey of sortedDates) {
-      if (existingDates.has(dateKey)) continue; // imported snapshot stays intact
+      for (const dateKey of sortedDates) {
+        if (existingDates.has(dateKey)) continue; // imported snapshot stays intact
 
-      const built = buildSnapshotAtDate({
-        assets: deps.assets,
-        capturedAt: historicalCapturedAt(dateKey),
-        costBasisAssetIds: deps.costBasisAssetIds,
-        debtBalanceByLiability: deps.debtBalanceByLiability,
-        housingValuationByAsset: deps.housingValuationByAsset,
-        id: `histsnap_${scope.id}_${dateKey}`,
-        liabilities: deps.liabilities,
-        manualValueHistory: deps.manualValueHistory,
-        operationsByAsset: deps.operationsByAsset,
-        scopeId: scope.id,
-        scopeLabel: scope.label,
-        targetDate: dateKey,
-        today,
-        workspace,
-      });
-
-      if (built) {
-        saveSnapshot({
-          holdings: built.holdings,
-          replace: false,
-          snapshot: built.snapshot,
+        const built = buildSnapshotAtDate({
+          assets: deps.assets,
+          capturedAt: historicalCapturedAt(dateKey),
+          costBasisAssetIds: deps.costBasisAssetIds,
+          debtBalanceByLiability: deps.debtBalanceByLiability,
+          housingValuationByAsset: deps.housingValuationByAsset,
+          id: `histsnap_${scope.id}_${dateKey}`,
+          liabilities: deps.liabilities,
+          manualValueHistory: deps.manualValueHistory,
+          operationsByAsset: deps.operationsByAsset,
+          scopeId: scope.id,
+          scopeLabel: scope.label,
+          targetDate: dateKey,
+          today,
+          workspace,
         });
+
+        if (built) {
+          saveSnapshot({
+            holdings: built.holdings,
+            replace: false,
+            snapshot: built.snapshot,
+          });
+        }
       }
     }
+  };
+
+  // Atomic standalone backfill: one transaction over the whole fill, so a
+  // mid-run throw rolls every generated snapshot back. saveSnapshot opens its
+  // own (now nested, savepoint-backed) transaction per date — the inner ones
+  // commit into this outer one, which is the unit that survives or rolls back.
+  if (options.atomic) {
+    ctx.transaction(fill);
+  } else {
+    fill();
   }
 }
 
