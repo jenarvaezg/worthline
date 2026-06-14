@@ -366,6 +366,57 @@ function monthIndexForDate(plan: AmortizationPlanInput, eventDate: string): numb
 }
 
 /**
+ * The exact first cuota of an amortization plan (ADR 0019, #190), broken down for
+ * display. The opening period runs from the disbursement to the first payment and
+ * is longer than one calendar month, so the first cuota carries the **stub
+ * interest** for that longer period plus that period's ordinary French principal:
+ *
+ *   stubInterest = capital × annualRate × days(disbursement → first payment) / 360
+ *   firstCuota   = stubInterest + first ordinary French principal
+ *
+ * Components are carried at full big.js precision and each rounded to the cent
+ * half up; the cuota itself is the full-precision sum rounded once at the edge
+ * (so it never accumulates the two parts' separate rounding). Mirrors the
+ * single-rounding-at-the-edge rule used across the engine.
+ *
+ * DISPLAY ONLY: this never feeds the balance curve, snapshots, or net worth. The
+ * principal the first payment amortizes is the ordinary French principal (the
+ * stub only enlarges the displayed cuota), so the curve is untouched — calling
+ * this changes no figure `amortizableBalanceAtDate` reports.
+ */
+export interface FirstCuota {
+  /** The exact first cuota, integer minor units (stub interest + first principal). */
+  amountMinor: number;
+  /** Stub interest of the disbursement→first-payment period, integer minor units. */
+  stubInterestMinor: number;
+  /** First-period ordinary French principal, integer minor units. */
+  firstPrincipalMinor: number;
+  /** The regular (subsequent) cuota for comparison, integer minor units. */
+  regularCuotaMinor: number;
+}
+
+export function firstCuota(plan: AmortizationPlanInput): FirstCuota {
+  const { initialCapitalMinor, annualInterestRate, termMonths } = plan;
+  const capital = new Big(initialCapitalMinor);
+  const annualRate = new Big(annualInterestRate);
+  const monthlyRate = annualRate.div(12);
+
+  const cuota = monthlyPayment(capital, monthlyRate, termMonths);
+  // First ordinary French principal = cuota − first ordinary month's interest.
+  const firstPrincipal = cuota.minus(capital.times(monthlyRate));
+
+  const stubDays = daysBetween(plan.disbursementDate, plan.firstPaymentDate);
+  const stubInterest = capital.times(annualRate).times(stubDays).div(360);
+
+  return {
+    amountMinor: toMinorInt(stubInterest.plus(firstPrincipal)),
+    firstPrincipalMinor: toMinorInt(firstPrincipal),
+    regularCuotaMinor: toMinorInt(cuota),
+    stubInterestMinor: toMinorInt(stubInterest),
+  };
+}
+
+/**
  * Outstanding principal on `targetDate`, in integer minor units (cents, half up).
  * Before the first payment → the full initial capital (flat — covers both the
  * pre-disbursement window and the disbursement→first-payment stub, ADR 0019). On

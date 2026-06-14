@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { amortizableBalanceAtDate } from "./amortization";
+import { amortizableBalanceAtDate, firstCuota } from "./amortization";
 import type {
   AmortizationPlanInput,
   EarlyRepayment,
@@ -128,6 +128,93 @@ describe("two-date model — disbursement + first payment (ADR 0019, #188)", () 
     expect(amortizableBalanceAtDate({ plan: backfilled, targetDate: "2025-01-01" })).toBe(
       176_150_76,
     );
+  });
+});
+
+/**
+ * The exact FIRST CUOTA (ADR 0019, #190). The opening period runs from the
+ * disbursement to the first payment and is LONGER than one month, so the first
+ * cuota carries the stub interest for that period plus that period's ordinary
+ * French principal:
+ *   stub interest = capital × annual rate × days(disbursement → first payment) / 360
+ *   first cuota   = stub interest + first ordinary French principal
+ * This is DISPLAY ONLY — it never moves the balance curve (the principal the
+ * first payment amortizes is the ordinary French principal; the stub only
+ * enlarges the displayed cuota).
+ */
+describe("firstCuota — exact first payment with stub interest (ADR 0019, #190)", () => {
+  // Mid-month firma, first payment on a later 1st-of-month: a 46-day stub.
+  // 200.000€, 3% annual, 240 months.
+  const BANK_PLAN: AmortizationPlanInput = {
+    annualInterestRate: "0.03",
+    initialCapitalMinor: 200_000_00,
+    disbursementDate: "2020-01-15",
+    firstPaymentDate: "2020-03-01",
+    termMonths: 240,
+  };
+
+  test("computes the stub interest from the day count, to the cent", () => {
+    // days(2020-01-15 → 2020-03-01) = 46. stub = 200000_00 × 0.03 × 46/360 =
+    // 766,6666…€ → 766,67€ (76667 cents, half up at the edge).
+    expect(firstCuota(BANK_PLAN).stubInterestMinor).toBe(76_667);
+  });
+
+  test("the first-period principal is the ordinary French principal", () => {
+    // cuota = 1.109,1951…€; interest of the first ordinary month = 200000 × i =
+    // 500,00€; principal = 609,1951…€ → 609,20€ (60920 cents). This matches the
+    // balance the engine reports after the first payment (200000_00 − 60920 =
+    // 199_390_80), so the stub never changes the curve.
+    expect(firstCuota(BANK_PLAN).firstPrincipalMinor).toBe(60_920);
+    expect(amortizableBalanceAtDate({ plan: BANK_PLAN, targetDate: "2020-03-01" })).toBe(
+      200_000_00 - 60_920,
+    );
+  });
+
+  test("the first cuota is stub interest + first-period principal (single edge round)", () => {
+    // 766,6666…€ + 609,1951…€ = 1.375,8618…€ → 1.375,86€ (137586 cents), rounded
+    // once at the edge (not the sum of the two separately-rounded parts).
+    expect(firstCuota(BANK_PLAN).amountMinor).toBe(137_586);
+    // It is strictly larger than the regular cuota (1.109,20€) because the stub
+    // period is longer than a month.
+    expect(firstCuota(BANK_PLAN).amountMinor).toBeGreaterThan(
+      firstCuota(BANK_PLAN).regularCuotaMinor,
+    );
+    expect(firstCuota(BANK_PLAN).regularCuotaMinor).toBe(110_920);
+  });
+
+  test("a calendar-month stub charges that month's exact day-count interest", () => {
+    // disbursement = firstPayment − 1 month → 31 days (Jan). The 360-day
+    // convention bills 31/360, slightly above a 30/360 month, so the first cuota
+    // sits just above the regular cuota: stub = 200000_00 × 0.03 × 31/360 =
+    // 516,67€; + 609,20€ principal = 1.125,86€ (137586 vs the regular 1.109,20€).
+    const monthlyStub: AmortizationPlanInput = {
+      annualInterestRate: "0.03",
+      initialCapitalMinor: 200_000_00,
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
+      termMonths: 240,
+    };
+    const result = firstCuota(monthlyStub);
+    expect(result.stubInterestMinor).toBe(51_667);
+    expect(result.amountMinor).toBe(112_586);
+    expect(result.amountMinor).toBeGreaterThan(result.regularCuotaMinor);
+  });
+
+  test("0% loan: the first cuota carries no stub interest, only principal", () => {
+    const zeroRate: AmortizationPlanInput = {
+      annualInterestRate: "0",
+      initialCapitalMinor: 1_200_00,
+      disbursementDate: "2020-01-15",
+      firstPaymentDate: "2020-03-01",
+      termMonths: 12,
+    };
+    const result = firstCuota(zeroRate);
+    expect(result.stubInterestMinor).toBe(0);
+    // payment = capital / n = 100,00€; with no interest the principal is the whole
+    // cuota, and the first cuota equals the regular cuota.
+    expect(result.firstPrincipalMinor).toBe(100_00);
+    expect(result.amountMinor).toBe(100_00);
+    expect(result.amountMinor).toBe(result.regularCuotaMinor);
   });
 });
 
