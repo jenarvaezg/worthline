@@ -106,10 +106,12 @@ export interface ExportedAmortizationPlan {
   initialCapitalMinor: number;
   /** Decimal-string annual interest rate, e.g. "0.025". */
   annualInterestRate: DecimalString;
-  /** Loan term in whole months. */
+  /** Loan term in whole months (payments counted from the first payment). */
   termMonths: number;
-  /** Loan start date, YYYY-MM-DD. */
-  startDate: string;
+  /** Disbursement date (firma / devengo), YYYY-MM-DD (ADR 0019). */
+  disbursementDate: string;
+  /** First-payment date, YYYY-MM-DD (ADR 0019). */
+  firstPaymentDate: string;
   interestRateRevisions: ExportedInterestRateRevision[];
   earlyRepayments: ExportedEarlyRepayment[];
 }

@@ -211,6 +211,9 @@ export const liabilities = sqliteTable("liabilities", {
 
 /**
  * One French-amortization plan for an amortizable liability (PRD #109, slice 7).
+ * Carries TWO dates (ADR 0019, #188): a disbursement date (firma / devengo — the
+ * debt appears at its initial capital) and a first-payment date (the first cuota;
+ * the balance amortizes from here on its day-of-month, term counted from here).
  * The `liability_id → debt_model = "amortizable"` invariant is a domain/caller
  * guard, not a SQL constraint (pattern R9). The unique index keeps the plan 1:1
  * with its liability.
@@ -225,7 +228,12 @@ export const amortizationPlans = sqliteTable(
     initialCapitalMinor: integer("initial_capital_minor").notNull(),
     annualInterestRate: text("annual_interest_rate").notNull(),
     termMonths: integer("term_months").notNull(),
-    startDate: text("start_date").notNull(),
+    /** Disbursement date (firma / devengo), YYYY-MM-DD — when the debt appears at
+     * its initial capital and interest begins to accrue (ADR 0019, #188). */
+    disbursementDate: text("disbursement_date").notNull(),
+    /** First-payment date, YYYY-MM-DD — the first cuota; the balance amortizes
+     * from here on this date's day-of-month, term counted from here (ADR 0019). */
+    firstPaymentDate: text("first_payment_date").notNull(),
     createdAt: timestamp("created_at"),
   },
   (table) => [uniqueIndex("amortization_plans_liability_unique").on(table.liabilityId)],

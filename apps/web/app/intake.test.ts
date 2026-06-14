@@ -1451,7 +1451,10 @@ describe("parseAmortizationPlanStrict", () => {
     expect(result.command.initialCapitalMinor).toBe(200_000_00);
     expect(result.command.annualInterestRate).toBe("0.025");
     expect(result.command.termMonths).toBe(360);
-    expect(result.command.startDate).toBe("2020-01-01");
+    // The single date input maps to BOTH plan dates (ADR 0019, #188): the
+    // disbursement is the input, the first payment one month after it.
+    expect(result.command.disbursementDate).toBe("2020-01-01");
+    expect(result.command.firstPaymentDate).toBe("2020-02-01");
     expect(result.command.id).toContain("plan_");
   });
 

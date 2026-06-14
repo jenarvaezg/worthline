@@ -93,7 +93,8 @@ describe("deleteAmortizationPlanAction — ripple correctness", () => {
       id: "plan1",
       initialCapitalMinor: 150_000_00,
       liabilityId: "mortgage",
-      startDate: "2026-01-15",
+      disbursementDate: "2026-01-15",
+      firstPaymentDate: "2026-02-15",
       termMonths: 240,
     });
 

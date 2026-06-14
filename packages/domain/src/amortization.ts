@@ -7,19 +7,33 @@ import type { DecimalString } from "./decimal";
  * I/O — given a loan's terms, its interest-rate revisions, and a target date, it
  * computes the outstanding principal on that date in integer minor units.
  *
+ * Two dates (ADR 0019, #188): a plan carries a DISBURSEMENT date (firma /
+ * devengo — when the debt appears at its initial capital and interest begins to
+ * accrue) and a FIRST-PAYMENT date (the first cuota; the balance amortizes from
+ * here, on this date's day-of-month, with the term counted from here). Between
+ * the two the balance is FLAT at the initial capital — the stub interest only
+ * enlarges the displayed first cuota and never moves the balance curve.
+ *
  * Model:
  *  1. Fixed monthly payment (cuota francesa):
  *       cuota = capital × (i × (1+i)^n) / ((1+i)^n − 1)
  *     with `i` the monthly rate (annual / 12) and `n` the term in months. When
  *     `i = 0` (0% loan) the payment is capital / n (avoids dividing by zero).
- *  2. The amortization schedule runs month by month from `startDate`. Each month
- *     the interest is balance × i and the principal repaid is payment − interest.
+ *  2. The amortization schedule has `termMonths` boundaries dated from the
+ *     first payment: boundary 0 is the disbursement (initial capital), boundary
+ *     `m ≥ 1` is `firstPaymentDate + (m − 1) months`. Boundary 1 is the first
+ *     cuota; each step deducts that month's ordinary French principal
+ *     (payment − balance × i). The disbursement→first-payment stub spans boundary
+ *     0→1 and is flat (the principal it carries is the ordinary first principal,
+ *     not a stub-adjusted one — the stub only changes the displayed cuota).
  *  3. A rate revision dated on month boundary `r` recomputes the payment from `r`
  *     onward, over the REMAINING term (n − monthsElapsed) on the live balance at
  *     `r`, using the new rate. Multiple revisions each recompute from their date.
- *  4. The balance on a target date is the balance at the start of the month the
- *     date falls in, minus the principal amortized in that month prorated by the
- *     days elapsed (linear intra-month interpolation, by calendar days).
+ *  4. The balance on a target date before the first payment is the initial
+ *     capital (flat). On/after it, the balance at the boundary the date falls in,
+ *     minus the principal amortized to the next boundary prorated by the days
+ *     elapsed (linear intra-month interpolation, by calendar days). The stub
+ *     (boundary 0→1) is never interpolated — it is flat.
  *
  * Rounding: all arithmetic is carried at full big.js precision; only the final
  * balance is rounded to a whole minor unit (cent), half up. This mirrors the
@@ -63,10 +77,19 @@ export interface AmortizationPlanInput {
   initialCapitalMinor: number;
   /** Decimal-string annual interest rate, e.g. "0.025". */
   annualInterestRate: DecimalString;
-  /** Loan term in whole months. */
+  /** Loan term in whole months (payments counted from the first payment). */
   termMonths: number;
-  /** Loan start date, YYYY-MM-DD. */
-  startDate: string;
+  /**
+   * Disbursement date (firma / devengo), YYYY-MM-DD — when the debt appears at
+   * its initial capital. The balance is flat at the initial capital from here
+   * until the first payment.
+   */
+  disbursementDate: string;
+  /**
+   * First-payment date, YYYY-MM-DD — the first cuota. The balance amortizes from
+   * here on this date's day-of-month; the term counts payments from here.
+   */
+  firstPaymentDate: string;
 }
 
 export interface AmortizableBalanceAtDateInput {
@@ -99,9 +122,11 @@ function lastDayOfMonth(year: number, month: number): number {
  * The YYYY-MM-DD that is `count` whole months after `dateKey` (same
  * day-of-month, clamped to the last valid day of the destination month). For
  * example, 2020-01-31 + 1 month → 2020-02-29 (leap year), not "2020-02-31"
- * which JS would silently roll to 2020-03-02.
+ * which JS would silently roll to 2020-03-02. Exported so the amortization form
+ * can derive the first-payment date from a single input the same way the engine
+ * does (ADR 0019, #188).
  */
-function addMonths(dateKey: string, count: number): string {
+export function addMonths(dateKey: string, count: number): string {
   const year = Number(dateKey.slice(0, 4));
   const month = Number(dateKey.slice(5, 7));
   const day = Number(dateKey.slice(8, 10));
@@ -185,7 +210,8 @@ function boundaryCacheKey(input: AmortizableBalanceAtDateInput): string {
     plan.initialCapitalMinor,
     plan.annualInterestRate,
     plan.termMonths,
-    plan.startDate,
+    plan.disbursementDate,
+    plan.firstPaymentDate,
     `R[${revisions}]`,
     `E[${repayments}]`,
   ].join("|");
@@ -222,11 +248,11 @@ function buildBoundaries(input: AmortizableBalanceAtDateInput): MonthlyBoundary[
 
 function computeBoundaries(input: AmortizableBalanceAtDateInput): MonthlyBoundary[] {
   const { plan } = input;
-  const { initialCapitalMinor, annualInterestRate, termMonths, startDate } = plan;
+  const { initialCapitalMinor, annualInterestRate, termMonths } = plan;
 
   const sortedRevisions = (input.revisions ?? [])
     .map((revision) => ({
-      monthIndex: monthIndexForDate(startDate, revision.revisionDate),
+      monthIndex: monthIndexForDate(plan, revision.revisionDate),
       rate: revision.newAnnualInterestRate,
     }))
     .sort((a, b) => a.monthIndex - b.monthIndex);
@@ -236,7 +262,7 @@ function computeBoundaries(input: AmortizableBalanceAtDateInput): MonthlyBoundar
   // within a month is preserved for determinism.
   const repaymentsByMonth = new Map<number, EarlyRepayment[]>();
   for (const repayment of input.earlyRepayments ?? []) {
-    const monthIndex = monthIndexForDate(startDate, repayment.repaymentDate);
+    const monthIndex = monthIndexForDate(plan, repayment.repaymentDate);
     const list = repaymentsByMonth.get(monthIndex) ?? [];
     list.push(repayment);
     repaymentsByMonth.set(monthIndex, list);
@@ -294,25 +320,46 @@ function computeBoundaries(input: AmortizableBalanceAtDateInput): MonthlyBoundar
 }
 
 /**
- * The month boundary index a dated event (early repayment or rate revision)
- * lands on: the largest `m` with `addMonths(startDate, m) ≤ eventDate`, i.e. the
+ * The date of schedule boundary `m` (ADR 0019, #188). Boundary 0 is the
+ * disbursement (initial capital); boundary `m ≥ 1` is `firstPaymentDate + (m − 1)
+ * months`, so boundary 1 is the first payment and the term's last boundary
+ * (`termMonths`) is `firstPaymentDate + (termMonths − 1) months`. The
+ * disbursement→first-payment stub is boundary 0→1; every later step is one month.
+ */
+function boundaryDate(plan: AmortizationPlanInput, m: number): string {
+  return m === 0 ? plan.disbursementDate : addMonths(plan.firstPaymentDate, m - 1);
+}
+
+/**
+ * The schedule boundary index a dated event (early repayment or rate revision)
+ * lands on: the largest `m` with `boundaryDate(plan, m) ≤ eventDate`, i.e. the
  * payment cycle the event actually falls in. This is the SAME locator
  * `amortizableBalanceAtDate` uses to find the balance for a query date, so an
  * event pinned here resolves to the boundary that the same date resolves to when
- * queried (#182). Floored at 0 for events on or before the start date.
+ * queried (#182, preserved over the two-date model). Floored at 0 for events on
+ * or before the disbursement date.
  *
- * Whole years/months give a fast lower bound (calendar months elapsed, which is
- * always ≤ the answer); we then advance while the next boundary is still ≤ the
- * event, so the day-of-month clamping in `addMonths` is honoured exactly.
+ * Whole years/months from the first payment give a fast lower bound for the
+ * payment cadence; we then advance while the next boundary is still ≤ the event,
+ * so the day-of-month clamping in `addMonths` is honoured exactly. The boundary
+ * 0→1 stub may be longer than a month, so the search starts at 0.
  */
-function monthIndexForDate(startDate: string, eventDate: string): number {
-  const fromYear = Number(startDate.slice(0, 4));
-  const fromMonth = Number(startDate.slice(5, 7));
+function monthIndexForDate(plan: AmortizationPlanInput, eventDate: string): number {
+  // Before the first payment the only boundary ≤ the event is the disbursement.
+  if (eventDate < plan.firstPaymentDate) return 0;
+  const fromYear = Number(plan.firstPaymentDate.slice(0, 4));
+  const fromMonth = Number(plan.firstPaymentDate.slice(5, 7));
   const toYear = Number(eventDate.slice(0, 4));
   const toMonth = Number(eventDate.slice(5, 7));
-  const lowerBound = Math.max(0, (toYear - fromYear) * 12 + (toMonth - fromMonth) - 1);
-  let monthIndex = lowerBound;
-  while (addMonths(startDate, monthIndex + 1) <= eventDate) {
+  // Boundary 1 is the first payment; the payment cadence runs from there. Whole
+  // calendar months from the first payment give a fast lower bound for the
+  // boundary index. boundaryDate(g) = firstPayment + (g − 1) months lands one
+  // calendar month before the event's month, so it is always ≤ the event — a safe
+  // lower bound (never over by clamping). We then advance while the NEXT boundary
+  // is still ≤ the event, honouring addMonths day-clamping exactly.
+  const calendarMonths = (toYear - fromYear) * 12 + (toMonth - fromMonth);
+  let monthIndex = Math.max(1, calendarMonths);
+  while (boundaryDate(plan, monthIndex + 1) <= eventDate) {
     monthIndex += 1;
   }
   return monthIndex;
@@ -320,36 +367,40 @@ function monthIndexForDate(startDate: string, eventDate: string): number {
 
 /**
  * Outstanding principal on `targetDate`, in integer minor units (cents, half up).
- * Before the loan starts → the full initial capital. On/after the final payment
- * → 0. Otherwise the start-of-month balance, less the month's principal prorated
- * by the days elapsed in that month (linear intra-month interpolation).
+ * Before the first payment → the full initial capital (flat — covers both the
+ * pre-disbursement window and the disbursement→first-payment stub, ADR 0019). On
+ * or after the final payment → 0. Otherwise the balance at the boundary the
+ * target falls in, less the principal amortized to the next boundary prorated by
+ * the days elapsed (linear intra-month interpolation). The stub (boundary 0→1) is
+ * never interpolated — `targetDate < firstPaymentDate` short-circuits to flat.
  */
 export function amortizableBalanceAtDate(input: AmortizableBalanceAtDateInput): number {
   const { plan, targetDate } = input;
-  const { initialCapitalMinor, termMonths, startDate } = plan;
+  const { initialCapitalMinor, termMonths, firstPaymentDate } = plan;
 
-  if (targetDate <= startDate) {
+  if (targetDate < firstPaymentDate) {
     return initialCapitalMinor;
   }
 
   const boundaries = buildBoundaries(input);
-  const endDate = addMonths(startDate, termMonths);
+  const endDate = boundaryDate(plan, termMonths);
   if (targetDate >= endDate) {
     return 0;
   }
 
-  // Locate the month the target falls in: the largest m with monthStart ≤ target.
-  let monthIndex = 0;
-  for (let m = 0; m < termMonths; m += 1) {
-    if (addMonths(startDate, m) <= targetDate) {
+  // Locate the boundary the target falls in: the largest m with boundaryDate ≤
+  // target. The target is on/after the first payment here, so m ≥ 1.
+  let monthIndex = 1;
+  for (let m = 1; m < termMonths; m += 1) {
+    if (boundaryDate(plan, m) <= targetDate) {
       monthIndex = m;
     } else {
       break;
     }
   }
 
-  const monthStart = addMonths(startDate, monthIndex);
-  const monthEnd = addMonths(startDate, monthIndex + 1);
+  const monthStart = boundaryDate(plan, monthIndex);
+  const monthEnd = boundaryDate(plan, monthIndex + 1);
   const startBalance = boundaries[monthIndex]!.balance;
   const endBalance = boundaries[monthIndex + 1]!.balance;
 

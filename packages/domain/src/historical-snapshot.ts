@@ -145,12 +145,14 @@ function addMonths(dateKey: string, count: number): string {
 
 /**
  * The amortizable payment-boundary dates strictly before `targetDate`, ascending
- * (PRD #109, slice 9). Each boundary is `startDate + m months` for m in
- * [0..termMonths] (the start date itself is the first, the final payment the
- * last). This drives the "one snapshot per past cuota" density of the
- * amortizable ripple — the deliberate exception to ADR 0012 recognised by PRD
- * #109. Dates on or after `targetDate` are excluded (the caller never generates
- * for today/future, and a boundary equal to the target is owned by the target).
+ * (PRD #109, slice 9; two-date model ADR 0019, #188). Boundary 0 is the
+ * disbursement (the debt appears at its initial capital — "la hipoteca empieza
+ * con la vivienda"); boundary `m ≥ 1` is `firstPaymentDate + (m − 1) months` (the
+ * first payment, then one per month, the last at term). This drives the "one
+ * snapshot per past cuota" density of the amortizable ripple — the deliberate
+ * exception to ADR 0012 recognised by PRD #109. Dates on or after `targetDate`
+ * are excluded (the caller never generates for today/future, and a boundary equal
+ * to the target is owned by the target).
  */
 export function amortizationPaymentDatesUpTo(
   plan: AmortizationPlanInput,
@@ -158,10 +160,14 @@ export function amortizationPaymentDatesUpTo(
 ): string[] {
   const dates: string[] = [];
   for (let m = 0; m <= plan.termMonths; m += 1) {
-    const dateKey = addMonths(plan.startDate, m);
+    const dateKey =
+      m === 0 ? plan.disbursementDate : addMonths(plan.firstPaymentDate, m - 1);
     if (dateKey < targetDate) {
       dates.push(dateKey);
-    } else {
+    } else if (m > 0) {
+      // Boundaries are ascending from m ≥ 1; once one reaches the target, stop.
+      // Boundary 0 (disbursement) can be later than boundary 1 only if the data
+      // is malformed, so the m === 0 case never early-breaks.
       break;
     }
   }

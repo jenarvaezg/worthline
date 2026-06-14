@@ -1279,8 +1279,9 @@ export async function saveAmortizationPlanAction(
     if (existing) {
       store.liabilities.updateAmortizationPlan(existing.id, {
         annualInterestRate: parsed.command.annualInterestRate,
+        disbursementDate: parsed.command.disbursementDate,
+        firstPaymentDate: parsed.command.firstPaymentDate,
         initialCapitalMinor: parsed.command.initialCapitalMinor,
-        startDate: parsed.command.startDate,
         termMonths: parsed.command.termMonths,
       });
     } else {
@@ -1328,7 +1329,8 @@ export async function deleteAmortizationPlanAction(
       return guard;
     }
 
-    // Capture the plan's startDate BEFORE deleting — needed for the ripple.
+    // Capture the plan's disbursement date BEFORE deleting — the earliest date the
+    // debt existed, the floor for the planless ripple (ADR 0019, #188).
     const plan = store.liabilities.readAmortizationPlan(id);
 
     if (!plan) {
@@ -1338,7 +1340,7 @@ export async function deleteAmortizationPlanAction(
       };
     }
 
-    const startDate = plan.startDate;
+    const startDate = plan.disbursementDate;
     const changes = store.liabilities.deleteAmortizationPlan(plan.id);
 
     if (changes === 0) {

@@ -81,7 +81,9 @@ describe("historical snapshots from amortizable plans", () => {
       id: "plan1",
       initialCapitalMinor: 150_000_00,
       liabilityId: "mortgage",
-      startDate: "2026-01-15", // 5 cuotas before TODAY (2026-06-13)
+      disbursementDate: "2026-01-15",
+
+      firstPaymentDate: "2026-02-15",
       termMonths: 240,
     });
     store.rippleHistoricalSnapshotsForDebt({
@@ -117,7 +119,9 @@ describe("historical snapshots from amortizable plans", () => {
       id: "plan1",
       initialCapitalMinor: 150_000_00,
       liabilityId: "mortgage",
-      startDate: "2026-01-15",
+      disbursementDate: "2026-01-15",
+
+      firstPaymentDate: "2026-02-15",
       termMonths: 240,
     });
     const planId = store.liabilities.readAmortizationPlan("mortgage")!.id;
@@ -160,7 +164,9 @@ describe("historical snapshots from amortizable plans", () => {
       id: "plan1",
       initialCapitalMinor: 150_000_00,
       liabilityId: "mortgage",
-      startDate: "2026-01-15",
+      disbursementDate: "2026-01-15",
+
+      firstPaymentDate: "2026-02-15",
       termMonths: 240,
     });
     const planId = store.liabilities.readAmortizationPlan("mortgage")!.id;
@@ -208,7 +214,9 @@ describe("historical snapshots from amortizable plans", () => {
       id: "plan1",
       initialCapitalMinor: 150_000_00,
       liabilityId: "mortgage",
-      startDate: "2030-01-15",
+      disbursementDate: "2030-01-15",
+
+      firstPaymentDate: "2030-02-15",
       termMonths: 240,
     });
     store.rippleHistoricalSnapshotsForDebt({
@@ -396,7 +404,9 @@ describe("historical housing equity from a real mortgage curve", () => {
       id: "plan1",
       initialCapitalMinor: 150_000_00,
       liabilityId: "mortgage",
-      startDate: "2024-01-01",
+      disbursementDate: "2024-01-01",
+
+      firstPaymentDate: "2024-02-01",
       termMonths: 240,
     });
 
@@ -521,7 +531,9 @@ describe("plan deletion recalculates snapshots to currentBalance basis", () => {
       id: "plan1",
       initialCapitalMinor: 150_000_00,
       liabilityId: "mortgage",
-      startDate: "2026-01-15",
+      disbursementDate: "2026-01-15",
+
+      firstPaymentDate: "2026-02-15",
       termMonths: 240,
     });
     store.rippleHistoricalSnapshotsForDebt({
@@ -570,7 +582,8 @@ describe("plan deletion recalculates snapshots to currentBalance basis", () => {
     const planBalance = store.liabilities.debtBalanceAtDate("mortgage", "2026-01-15");
     expect(planBalance).not.toBe(100_000_00); // confirm pre-condition
 
-    const startDate = store.liabilities.readAmortizationPlan("mortgage")!.startDate;
+    const startDate =
+      store.liabilities.readAmortizationPlan("mortgage")!.disbursementDate;
 
     // Correct wiring: delete first, then ripple.
     store.liabilities.deleteAmortizationPlan("plan1");

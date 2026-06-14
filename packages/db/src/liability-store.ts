@@ -38,7 +38,7 @@ export interface UpdateLiabilityInput {
   ownership?: OwnershipShare[];
 }
 
-/** Input for an amortization plan (PRD #109, slice 7). */
+/** Input for an amortization plan (PRD #109, slice 7; two dates ADR 0019, #188). */
 export interface CreateAmortizationPlanInput {
   id: string;
   liabilityId: string;
@@ -46,10 +46,12 @@ export interface CreateAmortizationPlanInput {
   initialCapitalMinor: number;
   /** Decimal-string annual interest rate, e.g. "0.025". */
   annualInterestRate: DecimalString;
-  /** Loan term in whole months. */
+  /** Loan term in whole months (payments counted from the first payment). */
   termMonths: number;
-  /** Loan start date, YYYY-MM-DD. */
-  startDate: string;
+  /** Disbursement date (firma / devengo), YYYY-MM-DD. */
+  disbursementDate: string;
+  /** First-payment date, YYYY-MM-DD (its day-of-month is the recurring pay day). */
+  firstPaymentDate: string;
 }
 
 /** An amortization plan as read back from the store. */
@@ -59,7 +61,8 @@ export interface AmortizationPlanRecord {
   initialCapitalMinor: number;
   annualInterestRate: DecimalString;
   termMonths: number;
-  startDate: string;
+  disbursementDate: string;
+  firstPaymentDate: string;
 }
 
 /** Fields that can be patched on an existing amortization plan. */
@@ -67,7 +70,8 @@ export interface UpdateAmortizationPlanInput {
   initialCapitalMinor?: number;
   annualInterestRate?: DecimalString;
   termMonths?: number;
-  startDate?: string;
+  disbursementDate?: string;
+  firstPaymentDate?: string;
 }
 
 /** Input for a single interest-rate revision (PRD #109, slice 7). */
@@ -301,7 +305,13 @@ function createAmortizationPlan(
       `Term must be a positive whole number of months, got "${input.termMonths}".`,
     );
   }
-  assertIsoDate(input.startDate, "Start date");
+  assertIsoDate(input.disbursementDate, "Disbursement date");
+  assertIsoDate(input.firstPaymentDate, "First-payment date");
+  if (input.disbursementDate > input.firstPaymentDate) {
+    throw new Error(
+      `Disbursement date must be ≤ first-payment date, got disbursement "${input.disbursementDate}" > first-payment "${input.firstPaymentDate}".`,
+    );
+  }
   assertDecimalString(input.annualInterestRate, "Annual interest rate");
 
   // The "liability must be amortizable" invariant is a domain/caller guard (R9),
@@ -310,10 +320,11 @@ function createAmortizationPlan(
     .insert(amortizationPlans)
     .values({
       annualInterestRate: input.annualInterestRate,
+      disbursementDate: input.disbursementDate,
+      firstPaymentDate: input.firstPaymentDate,
       id: input.id,
       initialCapitalMinor: input.initialCapitalMinor,
       liabilityId: input.liabilityId,
-      startDate: input.startDate,
       termMonths: input.termMonths,
     })
     .run();
@@ -337,10 +348,11 @@ function readAmortizationPlan(
 
   return {
     annualInterestRate: row.annualInterestRate,
+    disbursementDate: row.disbursementDate,
+    firstPaymentDate: row.firstPaymentDate,
     id: row.id,
     initialCapitalMinor: row.initialCapitalMinor,
     liabilityId: row.liabilityId,
-    startDate: row.startDate,
     termMonths: row.termMonths,
   };
 }
@@ -364,11 +376,24 @@ function updateAmortizationPlan(
       `Term must be a positive whole number of months, got "${input.termMonths}".`,
     );
   }
-  if (input.startDate !== undefined) {
-    assertIsoDate(input.startDate, "Start date");
+  if (input.disbursementDate !== undefined) {
+    assertIsoDate(input.disbursementDate, "Disbursement date");
+  }
+  if (input.firstPaymentDate !== undefined) {
+    assertIsoDate(input.firstPaymentDate, "First-payment date");
   }
   if (input.annualInterestRate !== undefined) {
     assertDecimalString(input.annualInterestRate, "Annual interest rate");
+  }
+  // Guard ordering when both dates are being updated together.
+  if (
+    input.disbursementDate !== undefined &&
+    input.firstPaymentDate !== undefined &&
+    input.disbursementDate > input.firstPaymentDate
+  ) {
+    throw new Error(
+      `Disbursement date must be ≤ first-payment date, got disbursement "${input.disbursementDate}" > first-payment "${input.firstPaymentDate}".`,
+    );
   }
 
   const existing = ctx.db
@@ -387,7 +412,12 @@ function updateAmortizationPlan(
     fields.annualInterestRate = input.annualInterestRate;
   }
   if (input.termMonths !== undefined) fields.termMonths = input.termMonths;
-  if (input.startDate !== undefined) fields.startDate = input.startDate;
+  if (input.disbursementDate !== undefined) {
+    fields.disbursementDate = input.disbursementDate;
+  }
+  if (input.firstPaymentDate !== undefined) {
+    fields.firstPaymentDate = input.firstPaymentDate;
+  }
 
   const result = ctx.db
     .update(amortizationPlans)
@@ -661,8 +691,9 @@ function amortizableBalanceAtDateFor(
     earlyRepayments: repayments,
     plan: {
       annualInterestRate: plan.annualInterestRate,
+      disbursementDate: plan.disbursementDate,
+      firstPaymentDate: plan.firstPaymentDate,
       initialCapitalMinor: plan.initialCapitalMinor,
-      startDate: plan.startDate,
       termMonths: plan.termMonths,
     },
     revisions,
@@ -817,8 +848,9 @@ function debtBalanceAtDateFor(
       earlyRepayments: repayments,
       plan: {
         annualInterestRate: plan.annualInterestRate,
+        disbursementDate: plan.disbursementDate,
+        firstPaymentDate: plan.firstPaymentDate,
         initialCapitalMinor: plan.initialCapitalMinor,
-        startDate: plan.startDate,
         termMonths: plan.termMonths,
       },
       revisions,
