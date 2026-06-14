@@ -274,7 +274,10 @@ export async function confirmImportAction(formData: FormData, _store?: Worthline
     );
   }
 
-  runWith((store) => store.workspace.importWorkspace(result.value), _store);
+  const importResult = runWith(
+    (store) => store.workspace.importWorkspace(result.value),
+    _store,
+  );
 
   // The previous workspace is gone — point the scope cookie at the imported
   // file's first member so the dashboard never resolves a stale member id.
@@ -289,6 +292,21 @@ export async function confirmImportAction(formData: FormData, _store?: Worthline
     });
   } else {
     jar.delete(SCOPE_COOKIE_NAME);
+  }
+
+  // The import committed, but the best-effort historical-snapshot gap-fill
+  // failed (#185): it is now surfaced rather than swallowed, so prompt the user
+  // to re-run the backfill instead of silently landing on a dashboard with a
+  // partial history.
+  if (importResult.gapFillError) {
+    redirect(
+      errorRedirectUrl(currentUrlOf(formData), {
+        message:
+          "Se importaron tus datos, pero la reconstrucción del histórico falló. " +
+          "Vuelve a ejecutar el relleno del histórico.",
+        formId: "import",
+      }),
+    );
   }
 
   // A valid import always yields a workspace — land on the dashboard.

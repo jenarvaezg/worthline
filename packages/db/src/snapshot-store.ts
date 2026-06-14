@@ -6,7 +6,7 @@ import type {
   SnapshotHoldingRow,
   Workspace,
 } from "@worthline/domain";
-import { projectPositions } from "@worthline/domain";
+import { assertSnapshotHoldingsReconcile, projectPositions } from "@worthline/domain";
 import { and, asc, eq, gte, isNull, lte, sql, type SQL } from "drizzle-orm";
 
 import { assets, snapshotHoldings, snapshots } from "./schema";
@@ -21,10 +21,11 @@ export interface SaveSnapshotInput {
   replace?: boolean;
   /**
    * The valued portfolio behind the snapshot's figures (ADR 0008) — saved
-   * atomically with the snapshot row. Must reconcile exactly with the
-   * snapshot's headline gross assets and debts; callers guarantee this by
-   * building holdings through the reconciling capture functions (ADR 0008),
-   * so the store no longer re-checks the invariant.
+   * atomically with the snapshot row. Must reconcile exactly with all five
+   * headline figures (gross assets, debts, total / liquid net worth, housing
+   * equity); callers build holdings through the reconciling capture functions
+   * (ADR 0008), and `saveSnapshot` re-asserts the invariant inside its
+   * transaction as a backstop (#185) so a non-reconciling set persists nothing.
    */
   holdings?: SnapshotHoldingRow[];
 }
@@ -74,22 +75,24 @@ function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): void {
   const { db } = ctx;
   const snapshot = input.snapshot;
 
-  // The reconciliation invariant (ADR 0008) is enforced by the callers before
-  // they reach the store: every path that supplies holdings builds them through
-  // captureValuedNetWorthSnapshot / buildSnapshotAtDate / recalculateSnapshotForAsset,
-  // each of which asserts assertSnapshotHoldingsReconcile by construction
-  // (PRD #120 candidate 3 — domain invariants live outside the store layer).
+  // Backstop the reconciliation invariant (ADR 0008, extended to all five
+  // figures in #181) at the store's single most-used write seam (#185). Every
+  // ripple and the daily capture funnel through here; callers build holdings
+  // through the reconciling capture functions, but re-checking inside the
+  // transaction means the invariant no longer depends on every one of ~9 call
+  // sites getting it right — and because the assert runs BEFORE any insert, a
+  // mismatch throws and rolls back, persisting nothing. The assert sees the
+  // same rows and figures being persisted. Empty holdings (legacy / no-portfolio
+  // captures) carry no rows to reconcile, so the check is skipped.
   ctx.transaction(() => {
-    if (snapshot.isMonthlyClose) {
-      db.update(snapshots)
-        .set({ isMonthlyClose: 0 })
-        .where(
-          and(
-            eq(snapshots.scopeId, snapshot.scopeId),
-            eq(snapshots.monthKey, snapshot.monthKey),
-          ),
-        )
-        .run();
+    if (input.holdings && input.holdings.length > 0) {
+      assertSnapshotHoldingsReconcile(input.holdings, {
+        debtsMinor: snapshot.debts.amountMinor,
+        grossAssetsMinor: snapshot.grossAssets.amountMinor,
+        housingEquityMinor: snapshot.housingEquity.amountMinor,
+        liquidNetWorthMinor: snapshot.liquidNetWorth.amountMinor,
+        totalNetWorthMinor: snapshot.totalNetWorth.amountMinor,
+      });
     }
 
     // Upsert on (scope_id, date_key): concurrent first-loads degrade
@@ -131,7 +134,12 @@ function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): void {
         grossAssetsMinor: snapshot.grossAssets.amountMinor,
         housingEquityMinor: snapshot.housingEquity.amountMinor,
         id: snapshot.id,
-        isMonthlyClose: snapshot.isMonthlyClose ? 1 : 0,
+        // The monthly close is DERIVED — the last snapshot of each month wins
+        // (ADR 0005); the declared flag is retired and the read side ignores
+        // this column. Write a constant 0 rather than carrying the dead flag,
+        // and never clear other rows' closes (that branch was unreachable
+        // write-only code that would have mutated frozen history if revived) (#185).
+        isMonthlyClose: 0,
         liquidNetWorthMinor: snapshot.liquidNetWorth.amountMinor,
         monthKey: snapshot.monthKey,
         scopeId: snapshot.scopeId,
@@ -146,7 +154,8 @@ function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): void {
           scopeLabel: sql`excluded.scope_label`,
           capturedAt: sql`excluded.captured_at`,
           monthKey: sql`excluded.month_key`,
-          isMonthlyClose: sql`excluded.is_monthly_close`,
+          // is_monthly_close is derived (ADR 0005) and always written 0; no need
+          // to copy it on conflict — the inserted constant already stands (#185).
           currency: sql`excluded.currency`,
           totalNetWorthMinor: sql`excluded.total_net_worth_minor`,
           liquidNetWorthMinor: sql`excluded.liquid_net_worth_minor`,
