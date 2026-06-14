@@ -308,6 +308,129 @@ describe("early repayments (amortización anticipada) — PRD #146, slice S4", (
   });
 });
 
+/**
+ * Regression for #182. The schedule pins a dated event (early repayment or rate
+ * revision) to a month boundary, and the balance locator pins a query date to a
+ * month boundary. These two mappings must AGREE: an event placed on boundary `m`
+ * is the boundary the same date resolves to when queried — the largest `m` with
+ * `addMonths(start, m) ≤ eventDate` (the cycle the event actually falls in).
+ *
+ * The two disagreed when the event/target day-of-month precedes the loan-start
+ * day, because the old event pin floored a partial month (`monthsBetween`'s
+ * `if (toDay < fromDay) months -= 1`) while the locator preserves the day via
+ * `addMonths` + clamping. A non-day-1 start whose day clamps on the destination
+ * month (here a day-31 start, so Feb clamps to the 28th — event day 28 < start
+ * day 31) lands an event one cycle EARLIER under the floor than the locator
+ * resolves it to: a lump declared on D appeared partly amortized away when
+ * valued on D, instead of the balance ON the boundary date reflecting it.
+ *
+ * Each case values the balance on the boundary the event date resolves to, where
+ * the on-date drop must equal the declared lump within a single edge-rounding
+ * cent (the acceptance criterion). The boundary that D resolves to is
+ * `addMonths(start, m)`; for a day-31 start that is 2021-02-28 for the Feb cycle.
+ */
+describe("event month-mapping when the event day precedes the loan-start day (#182)", () => {
+  // Day-31 start: addMonths(2020-01-31, 13) = 2021-02-28 (clamped, leap-aware →
+  // 28 in 2021). monthsBetween floors 2021-02-28 to month 12 (day 28 < day 31),
+  // one cycle BEFORE the locator's month 13 → the divergence under test.
+  const CLAMPING_LOAN: AmortizationPlanInput = {
+    annualInterestRate: "0.03",
+    initialCapitalMinor: 100_000_00,
+    startDate: "2020-01-31",
+    termMonths: 120,
+  };
+  // The boundary the Feb-cycle event resolves to under the locator.
+  const RESOLVED_BOUNDARY = "2021-02-28";
+  // An event date inside the resolved cycle, whose day (28) precedes the start
+  // day (31): the locator maps it to month 13, the old floor mapped it to 12.
+  const EVENT_DATE = "2021-02-28";
+
+  test("reproduction: a lump whose day precedes the start day drops the on-date balance by exactly the lump", () => {
+    const repayments: EarlyRepayment[] = [
+      { amountMinor: 20_000_00, mode: "reduce-payment", repaymentDate: EVENT_DATE },
+    ];
+    const withoutRepayment = amortizableBalanceAtDate({
+      plan: CLAMPING_LOAN,
+      targetDate: RESOLVED_BOUNDARY,
+    });
+    const withRepayment = amortizableBalanceAtDate({
+      earlyRepayments: repayments,
+      plan: CLAMPING_LOAN,
+      targetDate: RESOLVED_BOUNDARY,
+    });
+    const drop = withoutRepayment - withRepayment;
+    // Within a single edge-rounding cent of the declared lump.
+    expect(Math.abs(drop - 20_000_00)).toBeLessThanOrEqual(1);
+  });
+
+  for (const mode of ["reduce-payment", "reduce-term"] as const) {
+    test(`early repayment whose day precedes the start day drops the on-date balance by the lump (${mode})`, () => {
+      const repayments: EarlyRepayment[] = [
+        { amountMinor: 15_000_00, mode, repaymentDate: EVENT_DATE },
+      ];
+      const withoutRepayment = amortizableBalanceAtDate({
+        plan: CLAMPING_LOAN,
+        targetDate: RESOLVED_BOUNDARY,
+      });
+      const withRepayment = amortizableBalanceAtDate({
+        earlyRepayments: repayments,
+        plan: CLAMPING_LOAN,
+        targetDate: RESOLVED_BOUNDARY,
+      });
+      expect(Math.abs(withoutRepayment - withRepayment - 15_000_00)).toBeLessThanOrEqual(
+        1,
+      );
+    });
+
+    test(`rate revision whose day precedes the start day takes effect on its resolved boundary (${mode})`, () => {
+      // The revision resolves to month 13 (boundary 2021-02-28). One cycle BEFORE
+      // that boundary (month 12 = 2021-01-31) the revised and un-revised curves
+      // must still coincide — the revision is not yet in effect there. The old
+      // floor placed the revision at month 12, which would have diverged here.
+      const revisions: InterestRateRevision[] = [
+        { newAnnualInterestRate: "0.06", revisionDate: EVENT_DATE },
+      ];
+      const priorBoundary = "2021-01-31"; // month 12 start (before the revision)
+      expect(
+        amortizableBalanceAtDate({
+          plan: CLAMPING_LOAN,
+          revisions,
+          targetDate: priorBoundary,
+        }),
+      ).toBe(
+        amortizableBalanceAtDate({ plan: CLAMPING_LOAN, targetDate: priorBoundary }),
+      );
+
+      // From the resolved boundary on, the higher rate leaves a higher balance
+      // than the un-revised loan at a later date.
+      const later = "2025-02-28";
+      expect(
+        amortizableBalanceAtDate({ plan: CLAMPING_LOAN, revisions, targetDate: later }),
+      ).toBeGreaterThan(
+        amortizableBalanceAtDate({ plan: CLAMPING_LOAN, targetDate: later }),
+      );
+
+      // The lump on the same loan + revision still drops the on-date balance by
+      // the lump on its resolved boundary (matrix symmetry across both modes).
+      const repayments: EarlyRepayment[] = [
+        { amountMinor: 10_000_00, mode, repaymentDate: EVENT_DATE },
+      ];
+      const withoutLump = amortizableBalanceAtDate({
+        plan: CLAMPING_LOAN,
+        revisions,
+        targetDate: RESOLVED_BOUNDARY,
+      });
+      const withLump = amortizableBalanceAtDate({
+        earlyRepayments: repayments,
+        plan: CLAMPING_LOAN,
+        revisions,
+        targetDate: RESOLVED_BOUNDARY,
+      });
+      expect(Math.abs(withoutLump - withLump - 10_000_00)).toBeLessThanOrEqual(1);
+    });
+  }
+});
+
 describe("addMonths day-clamping — end-of-month start dates", () => {
   test("intra-month interpolation uses the real calendar span, not a rolled date", () => {
     // startDate = 2020-01-31. Month 1 boundary is 2020-02-29 (leap year, clamped),
