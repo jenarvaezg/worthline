@@ -108,6 +108,15 @@ export type HoldingValuationInput =
       operations: readonly InvestmentOperation[];
       /** A price captured in an existing snapshot for the date; beats the latest op price. */
       capturedUnitPrice?: DecimalString;
+      /**
+       * Value at COST BASIS, never at the latest operation price (ADR 0006, #183).
+       * Set when no provider/manual price was available — the same fallback live
+       * capture takes (units present, unitPrice absent). Without it the ripple
+       * would silently re-value a cost-basis row at units × latestOperationPrice,
+       * shifting a frozen figure whose portfolio state never changed. Ignored when
+       * `capturedUnitPrice` is present (a real captured price always wins).
+       */
+      atCostBasis?: boolean;
     }
   | {
       method: "appreciating";
@@ -163,7 +172,12 @@ export function valueAt(
       const ops = operationsUpTo(input.operations, targetDate);
       if (ops.length === 0) return { valueMinor: null }; // did not exist yet
 
-      const price = input.capturedUnitPrice ?? latestOperationPrice(ops);
+      // A captured price always wins (ADR 0012). Absent one, a row flagged
+      // `atCostBasis` keeps NO price so the position values at cost basis (ADR
+      // 0006, #183) — only an unflagged row falls back to the latest op price.
+      const price =
+        input.capturedUnitPrice ??
+        (input.atCostBasis ? undefined : latestOperationPrice(ops));
       const position = derivePosition(ops, {
         assetId: input.assetId,
         currency: input.currency,
