@@ -2617,6 +2617,50 @@ td.rowActions > * {
   border-top: 1px dashed var(--line);
 }
 
+/* First-cuota summary (ADR 0019, #190): the exact first cuota with its stub
+   interest, shown beside the regular cuota. Display only — derived from the plan,
+   never the balance math. Two label/figure cells with a hairline divider; numbers
+   tabular and right-aligned per the design system. */
+.planCuota {
+  display: grid;
+  gap: 8px;
+}
+
+.planCuotaGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  margin: 0;
+}
+
+.planCuotaItem {
+  border-left: 1px solid var(--hairline);
+  min-width: 0;
+  padding: 0 14px;
+}
+
+.planCuotaItem:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.planCuotaItem dt {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+.planCuotaFigure {
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .debtModel .anchorEdit {
   margin-bottom: 8px;
 }

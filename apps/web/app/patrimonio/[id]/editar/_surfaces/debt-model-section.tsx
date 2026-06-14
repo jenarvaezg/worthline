@@ -15,7 +15,7 @@ import type {
   EarlyRepaymentRecord,
   InterestRateRevisionRecord,
 } from "@worthline/db";
-import { formatMoneyInput, formatMoneyMinor } from "@worthline/domain";
+import { firstCuota, formatMoneyInput, formatMoneyMinor } from "@worthline/domain";
 import type { DebtModel, EarlyRepaymentMode } from "@worthline/domain";
 
 import type { FormErrorContext } from "../../../../intake";
@@ -39,6 +39,74 @@ function rateToPercent(rate: string): string {
   const pct = Number(rate) * 100;
 
   return String(Math.round(pct * 1_000_000) / 1_000_000);
+}
+
+/**
+ * Cents-precise es-ES euro display for a cuota. `formatMoneyMinor` drops the cents
+ * (it is for whole-euro totals); a cuota is exact to the cent (ADR 0019), so the
+ * stub-interest figure and the first cuota are shown with two decimals.
+ */
+function formatEurCents(amountMinor: number): string {
+  return new Intl.NumberFormat("es-ES", {
+    currency: "EUR",
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+    style: "currency",
+  }).format(amountMinor / 100);
+}
+
+/**
+ * Whole days between two YYYY-MM-DD dates (UTC midnights). Mirrors the domain
+ * engine's day count so the displayed opening-period length matches the days the
+ * stub interest is computed from (ADR 0019, #190).
+ */
+function daysBetween(from: string, to: string): number {
+  const fromMs = Date.parse(`${from}T00:00:00.000Z`);
+  const toMs = Date.parse(`${to}T00:00:00.000Z`);
+
+  return Math.round((toMs - fromMs) / 86_400_000);
+}
+
+/**
+ * The exact first cuota with its stub interest, derived on demand from the plan
+ * (ADR 0019, #190). DISPLAY ONLY: the `firstCuota` helper never feeds the balance
+ * curve, snapshots, or net worth — this enlarges the *displayed* first cuota, not
+ * the modeled balance. The opening period (disbursement → first payment) is longer
+ * than a month, so the first cuota carries that period's stub interest on top of
+ * the ordinary French principal; subsequent cuotas are the regular cuota.
+ */
+function PlanCuotaSummary({ plan }: { plan: AmortizationPlanRecord }) {
+  const cuota = firstCuota({
+    annualInterestRate: plan.annualInterestRate,
+    disbursementDate: plan.disbursementDate,
+    firstPaymentDate: plan.firstPaymentDate,
+    initialCapitalMinor: plan.initialCapitalMinor,
+    termMonths: plan.termMonths,
+  });
+  const stubDays = daysBetween(plan.disbursementDate, plan.firstPaymentDate);
+
+  return (
+    <section className="planCuota" aria-label="Cuotas del préstamo">
+      <h4>Cuotas</h4>
+      <dl className="planCuotaGrid">
+        <div className="planCuotaItem">
+          <dt>Primera cuota</dt>
+          <dd className="planCuotaFigure">{formatEurCents(cuota.amountMinor)}</dd>
+        </div>
+        <div className="planCuotaItem">
+          <dt>Cuota habitual</dt>
+          <dd className="planCuotaFigure">{formatEurCents(cuota.regularCuotaMinor)}</dd>
+        </div>
+      </dl>
+      <p className="infoNote">
+        La primera cuota incluye el interés del periodo de apertura ({stubDays} días, del{" "}
+        {plan.disbursementDate} al {plan.firstPaymentDate}):{" "}
+        {formatEurCents(cuota.stubInterestMinor)} de intereses más{" "}
+        {formatEurCents(cuota.firstPrincipalMinor)} de capital. No altera el saldo del
+        histórico.
+      </p>
+    </section>
+  );
 }
 
 const DEBT_MODEL_LABELS: Record<DebtModel, string> = {
@@ -245,6 +313,8 @@ function AmortizablePlanEditor({
           </details>
         </form>
       ) : null}
+
+      {plan ? <PlanCuotaSummary plan={plan} /> : null}
 
       {plan ? (
         <>
