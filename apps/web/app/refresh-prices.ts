@@ -34,8 +34,10 @@ export interface RefreshAndPersistResult {
 /**
  * Price-refresh orchestration: determine stale → fetch via pricing provider → persist.
  *
- * Extracted from the copy-pasted refresh-on-load pattern in app/page.tsx and
- * app/inversiones/page.tsx (issue #67). Both pages delegate to this function.
+ * Extracted from the copy-pasted refresh-on-load pattern in app/page.tsx (issue
+ * #67). The dashboard refreshes on load via loadDashboard, which then captures
+ * the daily snapshot on the freshly-refreshed prices (#153 removed the redundant
+ * /inversiones refresh-on-load now that the section is collapsed).
  *
  * Behaviour:
  * - Never throws. Provider failures degrade silently; errors are returned so

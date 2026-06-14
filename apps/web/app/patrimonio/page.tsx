@@ -133,8 +133,8 @@ export default async function PatrimonioPage({
             + Deuda
           </Link>
           <span className="actionDivider">·</span>
-          <Link className="actionLinkMuted" href="/inversiones">
-            ¿Cotiza con ticker? → Inversiones
+          <Link className="actionLinkMuted" href="/inversiones/nueva">
+            ¿Cotiza con ticker? → Inversión
           </Link>
         </div>
         {assets.filter((a) => a.type !== "investment").length > 0 ||

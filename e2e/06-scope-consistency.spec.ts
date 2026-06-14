@@ -2,8 +2,9 @@
  * Journey 6: Scope consistency
  *
  * The workspace has two members (TestUser + Socio from journey 2).
- * Switch to a member scope → headline, /patrimonio totals and /inversiones
- * positions all reconcile; scope survives navigation (cookie present after reload).
+ * Switch to a member scope → headline and /patrimonio totals reconcile; scope
+ * survives navigation (cookie present after reload). (#153 collapsed the
+ * standalone /inversiones section; investments now live in /patrimonio.)
  */
 
 import { test, expect } from "./fixtures";
@@ -71,9 +72,6 @@ test("scope consistency: switch member scope → reconciled views → survives r
   await page.goto("/patrimonio");
   await expect(page.getByRole("heading", { name: "Patrimonio" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Activos" })).toBeVisible();
-
-  await page.goto("/inversiones");
-  await expect(page.getByRole("heading", { name: "Inversiones" })).toBeVisible();
 
   await page.goto("/");
   await page.reload();

@@ -1,45 +1,55 @@
 /**
- * Journey 16: Delete an investment operation (issue #81)
+ * Journey 16: Delete an investment operation (issue #81).
  *
  * Creates an investment with a manual price (no network), records a buy
- * operation, then deletes that operation from the investment detail and
- * verifies the recent-operations list no longer shows it.
+ * operation, then deletes that operation and verifies the recent-operations
+ * panel no longer shows it.
+ *
+ * #153 collapsed the /inversiones management section: add happens on the kept
+ * /inversiones/nueva route, and operations (record + delete) are managed on the
+ * holding's own ficha (/patrimonio/[id]/editar).
  */
 
 import { test, expect } from "./fixtures";
 
 test("record an operation, then delete it", async ({ page }) => {
-  // 1. New investment with a manual price (no ticker → no network)
+  // 1. New investment with a manual price (no ticker → no network).
   await page.goto("/inversiones/nueva");
   await page.getByLabel("Nombre de la inversión").fill("Inv Op Borrado");
   await page.getByLabel("Precio actual por unidad en EUR").fill("50");
   await page.getByRole("button", { name: "Añadir inversión" }).click();
   await expect(page.getByRole("status")).toHaveText("Inversión añadida.");
 
-  // 2. Go to its operation page and record a buy
-  await page.goto("/inversiones");
+  // 2. Open the investment's ficha from the unified Patrimonio list.
+  await page.goto("/patrimonio");
   await page
     .getByRole("row", { name: /Inv Op Borrado/ })
-    .getByRole("link", { name: "Operar" })
+    .getByRole("link", { name: "Inv Op Borrado" })
     .click();
-  await expect(page.getByRole("heading", { name: "Registrar operación" })).toBeVisible();
+  await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
+  await expect(
+    page.getByRole("region", { name: "Operaciones de la inversión" }),
+  ).toBeVisible();
 
-  await page.getByLabel("Unidades").fill("10");
-  await page.getByLabel("Precio por unidad en EUR").fill("50");
+  // 3. Record a buy from the ficha's operations editor.
+  const opForm = page.getByRole("form", { name: "Registrar operación" });
+  await opForm.getByLabel("Unidades").fill("10");
+  await opForm.getByLabel("Precio por unidad en EUR").fill("50");
   await page.getByRole("button", { name: "Registrar operación" }).click();
+  await expect(page).toHaveURL(/ok=saved/);
   await expect(page.getByRole("status")).toBeVisible();
 
-  // 3. The recent-operations panel lists exactly one row
+  // 4. The recent-operations panel lists exactly one row.
   const opsPanel = page.locator("details.recentOpsPanel");
   await expect(opsPanel).toBeVisible();
   await expect(opsPanel.locator("tbody tr")).toHaveCount(1);
 
-  // 4. Delete that operation (two-step confirm)
+  // 5. Delete that operation (two-step confirm).
   const opDelete = opsPanel.locator("tbody tr").first().locator("details.confirmDelete");
   await opDelete.locator("summary").click();
   await opDelete.getByRole("button", { name: "Confirmar" }).click();
 
-  // 5. Success banner and the operation is gone (panel no longer rendered)
+  // 6. Success banner and the operation is gone (panel no longer rendered).
   await expect(page.getByRole("status")).toContainText("Operación eliminada");
   await expect(page.locator("details.recentOpsPanel")).toHaveCount(0);
 });

@@ -1,98 +1,102 @@
 /**
- * Journey 5: New investment → record buy operation → P/L renders
+ * Journey 5: New investment → record buy operation → derived value renders.
  *            Typed input survives a validation error (units field left empty).
  *
  * Uses MANUAL price (no ticker) to avoid any network calls to stooq.
+ *
+ * #153 collapsed the /inversiones management section: an investment is ADDED via
+ * the kept /inversiones/nueva route, then appears in the unified Patrimonio list,
+ * and its operations + derived value are managed on its own ficha
+ * (/patrimonio/[id]/editar). This journey exercises that path end to end. The
+ * unrealized-P/L column lived only on the removed /inversiones list; its sole
+ * surface is gone, so this asserts the derived market value (units × price) that
+ * the ficha now shows — re-surfacing P/L in the Patrimonio list is S8 (#154).
  */
 
 import { test, expect } from "./fixtures";
 
-test("investment: create with manual price → buy operation → P/L visible", async ({
+test("investment: create with manual price → buy operation → derived value visible", async ({
   page,
 }) => {
-  // 1. Navigate to nueva inversión
+  // 1. Add the investment via the kept add route (/inversiones/nueva).
   await page.goto("/inversiones/nueva");
   await expect(page.getByRole("heading", { name: "Nueva inversión" })).toBeVisible();
 
-  // 2. Fill the form — MANUAL price, no ticker/provider symbol
+  // 2. Fill the form — MANUAL price, no ticker/provider symbol (no network).
   await page.getByLabel("Nombre de la inversión").fill("Fondo Test E2E");
-  // Leave ticker empty (no network call)
   await page.getByLabel("Precio actual por unidad en EUR").fill("100");
 
-  // 3. Submit
+  // 3. Submit; the success banner appears (action returns to /inversiones/nueva).
   await page.getByRole("button", { name: "Añadir inversión" }).click();
-
-  // 4. The success banner appears. The action redirects back to currentUrl which
-  //    is /inversiones/nueva (the form's hidden input), so we're still on that
-  //    page with the ok banner. Navigate explicitly to the investments list.
   await expect(page.getByRole("status")).toHaveText("Inversión añadida.");
-  await page.goto("/inversiones");
 
-  // 5. The new investment row appears in the list
-  await expect(page.getByRole("cell", { name: "Fondo Test E2E" })).toBeVisible();
-
-  // 6. Find the asset row and click "Operar"
+  // 4. The investment is reachable from the unified Patrimonio list; open its ficha.
+  await page.goto("/patrimonio");
   const investmentRow = page.getByRole("row", { name: /Fondo Test E2E/ });
-  await investmentRow.getByRole("link", { name: "Operar" }).click();
+  await expect(investmentRow).toBeVisible();
+  await investmentRow.getByRole("link", { name: "Fondo Test E2E" }).click();
+  await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
 
-  // 7. On the operation page
-  await expect(page.getByRole("heading", { name: "Registrar operación" })).toBeVisible();
+  // 5. The ficha shows the DERIVED operations surface (units × price), not a
+  //    manual value field (ADR 0006: an investment's value is never edited).
+  await expect(
+    page.getByRole("region", { name: "Operaciones de la inversión" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Valor actual en EUR")).toHaveCount(0);
 
-  // 8. Trigger a validation error: submit with units left empty. The server
-  //    rejects the empty units field and redirects back to the operacion page
-  //    with `error=` + the preserved typed values (intake.errorRedirectUrl).
-  const operationForm = page.locator("form.inversionesForm");
+  const operationForm = page.getByRole("form", { name: "Registrar operación" });
+
+  // 6. Trigger a validation error: submit with units left empty. The server
+  //    rejects the empty units field and redirects back to the ficha with
+  //    `error=` + the preserved typed values (intake.errorRedirectUrl).
   await operationForm.getByLabel("Precio por unidad en EUR").fill("105,50");
   await operationForm.getByLabel("Unidades").clear();
   await operationForm.getByRole("button", { name: "Registrar operación" }).click();
 
-  // 9. Wait for the error navigation to FULLY settle before touching the form
-  //    again: assert the URL carries the error param (the server-action
-  //    redirect landed) and the error banner is shown. Without this wait the
-  //    next fill can land on the pre-navigation form node and be discarded by
-  //    the RSC swap — the root cause of this journey's historical flakiness.
-  //    Scope to the page's own error band: Next.js mounts a `role="alert"`
-  //    route announcer during client navigation, so a bare getByRole("alert")
-  //    is ambiguous in strict mode.
+  // 7. Wait for the error navigation to FULLY settle before touching the form
+  //    again: assert the URL carries the error param (the server-action redirect
+  //    landed) and the error banner is shown. Without this wait the next fill can
+  //    land on the pre-navigation form node and be discarded by the RSC swap —
+  //    the root cause of this journey's historical flakiness. Scope to the page's
+  //    own error band: Next.js mounts a `role="alert"` route announcer during
+  //    client navigation, so a bare getByRole("alert") is ambiguous in strict mode.
   await expect(page).toHaveURL(/error=/);
   const errorBand = page.locator("#operation-error");
   await expect(errorBand).toBeVisible();
   await expect(errorBand).toHaveText("Las unidades son obligatorias.");
   // The typed price survives the round-trip (units was empty, so it does not).
-  await expect(operationForm.getByLabel("Precio por unidad en EUR")).toHaveValue(
-    "105,50",
-  );
+  await expect(operationForm.getByLabel("Precio por unidad en EUR")).toHaveValue("105,50");
 
-  // 10. Re-fill both fields on the settled form and confirm the DOM values
-  //     stuck before submitting (assert the values rather than polling
-  //     FormData — a deterministic, non-racy check against the live inputs).
+  // 8. Re-fill both fields on the settled form and confirm the DOM values stuck
+  //    before submitting (assert the values rather than polling FormData — a
+  //    deterministic, non-racy check against the live inputs).
   await operationForm.getByLabel("Unidades").fill("10");
   await operationForm.getByLabel("Precio por unidad en EUR").fill("105,50");
   await expect(operationForm.getByLabel("Unidades")).toHaveValue("10");
-  await expect(operationForm.getByLabel("Precio por unidad en EUR")).toHaveValue(
-    "105,50",
-  );
+  await expect(operationForm.getByLabel("Precio por unidad en EUR")).toHaveValue("105,50");
   await operationForm.getByRole("button", { name: "Registrar operación" }).click();
 
-  // 11. Success redirect — the action lands back on the operacion page with
-  //     `ok=saved`. Wait for that URL transition first (the deterministic
-  //     signal the operation persisted), then assert the status banner.
+  // 9. Success redirect — the action lands back on the ficha with `ok=saved`.
+  //    Wait for that URL transition first (the deterministic signal the operation
+  //    persisted), then assert the status banner.
   await expect(page).toHaveURL(/ok=saved/);
   await expect(page.getByRole("status")).toHaveText("Guardado.");
 
-  // 12. Navigate to /inversiones — P/L column should now render a value
-  // (the locator from step 6 is lazy, so it re-resolves on the fresh page)
-  await page.goto("/inversiones");
-  await expect(investmentRow).toBeVisible();
+  // 10. The ficha's derived context now reports 10 units and the derived market
+  //     value (10 × 100 EUR manual price = 1.000 €). The manual price is 100 even
+  //     though the buy was at 105,50 — value is units × current price (ADR 0006),
+  //     not cost basis; this is the same figure the Patrimonio list shows.
+  const ctx = page.locator(".operacionContext");
+  await expect(ctx.getByText("10", { exact: true })).toBeVisible();
+  await expect(ctx.getByText(/1\.?000\s*€/)).toBeVisible();
 
-  // Locate P/L semantically: the column header is "P/L" (6th column).
-  const plCell = investmentRow.locator("td").nth(5);
-  const plText = await plCell.textContent();
-
-  // 10 units bought at 105,50 EUR with current price 100 EUR → P/L = -55,00 €.
-  // formatMoneyMinor renders es-ES currency with no cents: expect "55" and "€".
-  expect(plText).toBeTruthy();
-  expect(plText).not.toBe("—");
-  expect(plText).toMatch(/55/);
-  expect(plText).toContain("€");
+  // 11. The unified Patrimonio list shows the same derived value for the holding.
+  //     Assert against the row's full text (not a positional cell) so the check
+  //     is robust to the optional household "Propiedad" column.
+  await page.goto("/patrimonio");
+  const listRow = page.getByRole("row", { name: /Fondo Test E2E/ });
+  await expect(listRow).toBeVisible();
+  const rowText = await listRow.textContent();
+  expect(rowText).toBeTruthy();
+  expect(rowText).toMatch(/1\.?000\s*€/);
 });

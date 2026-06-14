@@ -1373,7 +1373,7 @@ export function scaleSignedBar(
 
 /**
  * buildCurrentUrlFor: like buildCurrentUrl but prepends a fixed basePath so
- * subpages (/inversiones/nueva, /inversiones/[id]/operacion, etc.) get the
+ * subpages (/inversiones/nueva, /patrimonio/[id]/editar, etc.) get the
  * right return URL without knowing the page URL at parse time.
  */
 export function buildCurrentUrlFor(

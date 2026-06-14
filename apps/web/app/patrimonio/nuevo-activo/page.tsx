@@ -81,7 +81,8 @@ export default async function NuevoActivoPage({
 
         <p className="formPageNote">
           <strong>¿El activo cotiza con ticker?</strong>{" "}
-          <Link href="/inversiones">Regístralo como Inversión →</Link> para que su valor
+          <Link href="/inversiones/nueva">Regístralo como Inversión →</Link> para que su
+          valor
           se derive automáticamente del precio de mercado.
         </p>
 

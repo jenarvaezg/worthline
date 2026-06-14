@@ -2,7 +2,8 @@
  * Tests for the shared price-refresh orchestration (issue #67).
  *
  * refreshAndPersistStalePrices: determine stale → fetch → persist.
- * Both the dashboard page (/) and the inversiones page (/inversiones) delegate to this.
+ * The dashboard page (/) delegates to this via loadDashboard, which refreshes
+ * prices before capturing the daily snapshot (#153 collapsed /inversiones).
  */
 import { describe, expect, test, vi } from "vitest";
 

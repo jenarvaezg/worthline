@@ -53,7 +53,11 @@ const EDIT_INVESTMENT_FIELDS = [
   "manualPricePerUnit",
 ];
 
-function currentUrlOf(formData: FormData, fallback = "/inversiones"): string {
+// #153 collapsed the /inversiones management routes; investments now live in
+// the unified Patrimonio list and on each holding's ficha. These fallbacks only
+// fire when a form omits currentUrl (the kept surfaces always set it), so they
+// default to the surviving investment homes rather than the removed list.
+function currentUrlOf(formData: FormData, fallback = "/patrimonio"): string {
   return (formData.get("currentUrl") as string) || fallback;
 }
 
@@ -112,7 +116,7 @@ export async function createInvestmentAction(
   formData: FormData,
   _store?: WorthlineStore,
 ) {
-  const returnUrl = currentUrlOf(formData, "/inversiones");
+  const returnUrl = currentUrlOf(formData, "/inversiones/nueva");
   const investmentErrorUrl = (message: string) =>
     errorRedirectUrl(returnUrl, {
       formId: "investment",
@@ -175,7 +179,7 @@ export async function recordOperationAction(
   formData: FormData,
   _store?: WorthlineStore,
 ) {
-  const returnUrl = currentUrlOf(formData, `/inversiones/${routeAssetId}/operacion`);
+  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const operationErrorUrl = (message: string) =>
     errorRedirectUrl(returnUrl, {
       formId: "operation",
@@ -219,7 +223,7 @@ export async function updateInvestmentAction(
   formData: FormData,
   _store?: WorthlineStore,
 ) {
-  const returnUrl = currentUrlOf(formData, `/inversiones/${routeAssetId}/editar`);
+  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const editErrorUrl = (message: string) =>
     errorRedirectUrl(returnUrl, {
       formId: "edit",
@@ -258,7 +262,7 @@ export async function deleteInvestmentAction(
   _store?: WorthlineStore,
 ) {
   const id = parseEntityId(formData);
-  const returnUrl = currentUrlOf(formData, "/inversiones");
+  const returnUrl = currentUrlOf(formData, "/patrimonio");
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
     _store ? fn(_store) : withStore(fn);
 
@@ -290,7 +294,7 @@ export async function restoreInvestmentAction(
   _store?: WorthlineStore,
 ) {
   const id = parseEntityId(formData);
-  const returnUrl = currentUrlOf(formData, "/inversiones");
+  const returnUrl = currentUrlOf(formData, "/patrimonio");
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
     _store ? fn(_store) : withStore(fn);
 
@@ -320,7 +324,7 @@ export async function hardDeleteInvestmentAction(
   _store?: WorthlineStore,
 ) {
   const id = parseEntityId(formData);
-  const returnUrl = currentUrlOf(formData, "/inversiones");
+  const returnUrl = currentUrlOf(formData, "/patrimonio");
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
     _store ? fn(_store) : withStore(fn);
 
@@ -351,7 +355,7 @@ export async function deleteOperationAction(
   _store?: WorthlineStore,
 ) {
   const operationId = parseEntityId(formData, "operationId");
-  const returnUrl = currentUrlOf(formData, `/inversiones/${routeAssetId}/operacion`);
+  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
     _store ? fn(_store) : withStore(fn);
 
@@ -394,7 +398,7 @@ export async function refreshPricesAction(
   _store?: WorthlineStore,
   _provider?: PriceProvider,
 ) {
-  const returnUrl = currentUrlOf(formData, "/inversiones");
+  const returnUrl = currentUrlOf(formData, "/patrimonio");
   const nowIso = new Date().toISOString();
 
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>

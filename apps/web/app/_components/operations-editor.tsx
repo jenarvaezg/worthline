@@ -4,9 +4,9 @@
  * Records buy/sell operations, lists them (date desc) with a two-step delete,
  * and shows the derived units / value context. An investment's value is never
  * edited by hand (ADR 0006); the only way to move units is an operation. This is
- * the single component the surface lives in, so both the unified holding detail
- * (`/patrimonio/[id]/editar`) and the transitional `/inversiones/[id]/operacion`
- * render the same editor — they pass already-bound server actions and the data.
+ * the single component the surface lives in: the unified holding detail
+ * (`/patrimonio/[id]/editar`) renders it with already-bound server actions and
+ * the data (#153 collapsed the /inversiones routes that once also used it).
  *
  * Server-rendered, zero client JS (ADR 0009): forms POST, the list uses native
  * <details>, the page re-renders from the store after each action's redirect.
