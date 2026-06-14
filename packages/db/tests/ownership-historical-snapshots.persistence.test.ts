@@ -176,3 +176,192 @@ describe("ownership-split ripple over historical snapshots (#172)", () => {
     store.close();
   });
 });
+
+/**
+ * The home global value (cents) chosen so the household's 65% combined share
+ * `round(GLOBAL * 6_500 / 10_000)` = 19_500_001 cannot be divided back to GLOBAL:
+ * `round(19_500_001 * 10_000 / 6_500)` = 30_000_002, a +1-cent drift. This is the
+ * exact ±1 the lossy "divide the rounded household row" recovery introduced (#187).
+ */
+const HOME_GLOBAL_MINOR = 30_000_001;
+
+/**
+ * A 2-member household owning a home co-owned 65% by the household (35% a
+ * non-member): household combined share 6_500 bps < 100% — the co-owned-home
+ * exception in the ownership-split glossary, the ONLY case the lossy recovery
+ * affected (#187). The home is pinned to a drifting global by a single valuation
+ * anchor; a co-owned mortgage's amortizable plan backfills several snapshot dates
+ * (PRD #109), each capturing the home at its flat curve value, so the drift
+ * appears on every date. A wholly-household cash holding (100% inside the
+ * household) is present to prove it stays exact and unchanged.
+ */
+function seedCoOwnedHome(store: WorthlineStore): void {
+  store.workspace.initializeWorkspace({
+    members: [
+      { id: "mJ", name: "Jose" },
+      { id: "mA", name: "Ana" },
+    ],
+    mode: "household",
+  });
+  // A wholly-household holding (100% inside the household) — must stay exact.
+  store.assets.createManualAsset({
+    currency: "EUR",
+    currentValueMinor: 20_000_00,
+    id: "cash",
+    liquidityTier: "cash",
+    name: "Cuenta",
+    ownership: [
+      { memberId: "mJ", shareBps: 5_000 },
+      { memberId: "mA", shareBps: 5_000 },
+    ],
+    type: "cash",
+  });
+  // The home, co-owned 40/25 by the members + 35% a non-member (household 65%).
+  store.assets.createManualAsset({
+    currency: "EUR",
+    currentValueMinor: HOME_GLOBAL_MINOR,
+    id: "piso",
+    liquidityTier: "housing",
+    name: "Piso",
+    ownership: [
+      { memberId: "mJ", shareBps: 4_000 },
+      { memberId: "mA", shareBps: 2_500 },
+    ],
+    type: "real_estate",
+  });
+  // Pin the home's global value flat at the drifting amount via one anchor.
+  store.assets.addValuationAnchor({
+    adjustsPriorCurve: true,
+    assetId: "piso",
+    id: "anchor1",
+    valuationDate: "2026-01-15",
+    valueMinor: HOME_GLOBAL_MINOR,
+  });
+  // A co-owned mortgage whose amortizable plan backfills one snapshot per past
+  // cuota (PRD #109); each captured snapshot also freezes the home's row.
+  store.liabilities.createLiability({
+    balanceMinor: 200_000_00,
+    currency: "EUR",
+    id: "mortgage",
+    name: "Hipoteca",
+    ownership: [
+      { memberId: "mJ", shareBps: 4_000 },
+      { memberId: "mA", shareBps: 2_500 },
+    ],
+    type: "mortgage",
+  });
+  store.liabilities.setDebtModel("mortgage", "amortizable");
+  store.liabilities.createAmortizationPlan({
+    annualInterestRate: "0.0317",
+    id: "plan1",
+    initialCapitalMinor: 210_000_00,
+    liabilityId: "mortgage",
+    startDate: "2026-01-15",
+    termMonths: 240,
+  });
+  store.rippleHistoricalSnapshotsForDebt({
+    kind: "amortizable-plan",
+    liabilityId: "mortgage",
+    today: TODAY,
+  });
+}
+
+function homeRowAt(
+  store: WorthlineStore,
+  dateKey: string,
+  scopeId: string,
+): number | undefined {
+  return store.snapshots
+    .readSnapshotHoldings({ from: dateKey, scopeId, to: dateKey })
+    .find((r) => r.holdingId === "piso")?.valueMinor;
+}
+
+describe("ownership-split ripple recovers the global value losslessly for a co-owned home (#187)", () => {
+  test("each member's re-weighted home row equals a from-scratch re-derivation EXACTLY (zero ±1 drift)", () => {
+    const store = createInMemoryStore();
+    seedCoOwnedHome(store);
+
+    // The dates the mortgage backfilled (one per past cuota), each capturing the
+    // home at its flat curve value HOME_GLOBAL_MINOR.
+    const dates = store.snapshots.readSnapshots("household").map((snap) => snap.dateKey);
+    expect(dates.length).toBeGreaterThan(2);
+
+    // Correct the INTERNAL member split (40/25 → 30/35) — the household combined
+    // share stays 65%, so the household row is invariant, but each member's row
+    // is re-derived from the (lossless) global value under the new split.
+    store.assets.updateAsset("piso", {
+      ownership: [
+        { memberId: "mJ", shareBps: 3_000 },
+        { memberId: "mA", shareBps: 3_500 },
+      ],
+    });
+    store.rippleHistoricalSnapshotsForOwnership({
+      holdingId: "piso",
+      kind: "asset",
+      previousOwnership: [
+        { memberId: "mJ", shareBps: 4_000 },
+        { memberId: "mA", shareBps: 2_500 },
+      ],
+    });
+
+    for (const dateKey of dates) {
+      // The lossless source of truth: the home's global value, never recovered by
+      // dividing the rounded household row.
+      expect(homeRowAt(store, dateKey, "household")).toBe(
+        owned(HOME_GLOBAL_MINOR, 6_500, "mJ"),
+      );
+      // Each member's row must match the from-scratch re-derivation EXACTLY — the
+      // lossy recovery drifted these by ±1 cent (30_000_002 vs 30_000_001).
+      expect(homeRowAt(store, dateKey, "mJ")).toBe(owned(HOME_GLOBAL_MINOR, 3_000, "mJ"));
+      expect(homeRowAt(store, dateKey, "mA")).toBe(owned(HOME_GLOBAL_MINOR, 3_500, "mA"));
+      // Reconciliation (ADR 0008) holds on every re-weighted snapshot.
+      expect(reconciles(store, dateKey, "household")).toBe(true);
+      expect(reconciles(store, dateKey, "mJ")).toBe(true);
+      expect(reconciles(store, dateKey, "mA")).toBe(true);
+    }
+
+    store.close();
+  });
+
+  test("the wholly-household holding stays byte-identical after the same ownership edit", () => {
+    const store = createInMemoryStore();
+    seedCoOwnedHome(store);
+
+    const dates = store.snapshots.readSnapshots("mJ").map((snap) => snap.dateKey);
+
+    const cashRow = (dateKey: string, scopeId: string): number | undefined =>
+      store.snapshots
+        .readSnapshotHoldings({ from: dateKey, scopeId, to: dateKey })
+        .find((r) => r.holdingId === "cash")?.valueMinor;
+
+    const before = dates.flatMap((d) => [
+      cashRow(d, "household"),
+      cashRow(d, "mJ"),
+      cashRow(d, "mA"),
+    ]);
+
+    store.assets.updateAsset("piso", {
+      ownership: [
+        { memberId: "mJ", shareBps: 3_000 },
+        { memberId: "mA", shareBps: 3_500 },
+      ],
+    });
+    store.rippleHistoricalSnapshotsForOwnership({
+      holdingId: "piso",
+      kind: "asset",
+      previousOwnership: [
+        { memberId: "mJ", shareBps: 4_000 },
+        { memberId: "mA", shareBps: 2_500 },
+      ],
+    });
+
+    const after = dates.flatMap((d) => [
+      cashRow(d, "household"),
+      cashRow(d, "mJ"),
+      cashRow(d, "mA"),
+    ]);
+
+    expect(after).toEqual(before);
+    store.close();
+  });
+});
