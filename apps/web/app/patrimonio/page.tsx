@@ -193,11 +193,16 @@ export default async function PatrimonioPage({
               </thead>
               <tbody>
                 {group.holdings.map((holding) => {
-                  // The signed amount for this holding (a liability shows its balance).
+                  // The signed contribution of this holding: an asset adds its
+                  // value, a liability SUBTRACTS its balance. Negating the debt
+                  // here (vs showing a bare positive balance) makes a debt row
+                  // unambiguous in a mixed rung/instrument group — a 180.000 €
+                  // debt reads "−180.000 €" in red, never identical to an asset
+                  // of the same magnitude. Matches the signed group total.
                   const amountMinor =
                     holding.direction === "asset"
                       ? holding.valueMinor
-                      : holding.balanceMinor;
+                      : -holding.balanceMinor;
                   const rowWarnings =
                     holding.direction === "asset"
                       ? warnings.filter((w) => w.entityId === holding.id)
@@ -229,7 +234,16 @@ export default async function PatrimonioPage({
                         ) : null}
                       </td>
                       <td>{holding.tierLabel}</td>
-                      <td className={valueIsDerived ? "readOnlyValue" : undefined}>
+                      <td
+                        className={
+                          [
+                            valueIsDerived ? "readOnlyValue" : "",
+                            amountMinor < 0 ? "neg" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ") || undefined
+                        }
+                      >
                         {formatMoneyMinor({ amountMinor, currency: "EUR" })}
                         {valueIsDerived ? <small> Valor calculado</small> : null}
                       </td>

@@ -137,3 +137,49 @@ describe("PORTFOLIO_GROUP_KEYS", () => {
     expect(PORTFOLIO_GROUP_KEYS).toEqual(["direction", "rung", "instrument"]);
   });
 });
+
+// ── signed group totals (#154 review) ────────────────────────────────────────
+// The per-group header figure nets two row types into one signed total: an asset
+// ADDS its value, a liability SUBTRACTS its balance. This is the only net-of-mixed
+// -holdings figure on /patrimonio; pin the sign convention so a flipped sign,
+// dropped contribution, or double-count can never pass green.
+
+describe("groupPortfolio — signed group totals", () => {
+  test("a liability subtracts: the Pasivos group total is negative", () => {
+    const groups = groupPortfolio(projection, "direction");
+    const pasivos = groups.find((g) => g.key === "liabilities")!;
+    expect(pasivos.totalMinor.amountMinor).toBe(-18_000_000);
+  });
+
+  test("a mixed rung group nets asset value minus liability balance", () => {
+    const groups = groupPortfolio(projection, "rung");
+    // the mortgage is associated to the home → both land on the illiquid rung
+    const illiquid = groups.find((g) =>
+      g.holdings.some((h) => h.id === "debt_mortgage"),
+    )!;
+    expect(illiquid.holdings.map((h) => h.id).sort()).toEqual([
+      "asset_home",
+      "debt_mortgage",
+    ]);
+    // 30_000_000 (home, stored) − 18_000_000 (mortgage balance)
+    expect(illiquid.totalMinor.amountMinor).toBe(12_000_000);
+  });
+
+  test("every grouping conserves the net and lists each holding exactly once", () => {
+    const ALL_IDS = ["asset_broker", "asset_cash", "asset_home", "debt_mortgage"];
+    // Net derived from the default grouping so the assertion is robust to how an
+    // investment's value is computed; every axis must agree on the same total and
+    // partition the same rows (no drop, no double-count).
+    const net = groupPortfolio(projection, "direction").reduce(
+      (acc, g) => acc + g.totalMinor.amountMinor,
+      0,
+    );
+    for (const key of PORTFOLIO_GROUP_KEYS) {
+      const groups = groupPortfolio(projection, key);
+      expect(groups.reduce((acc, g) => acc + g.totalMinor.amountMinor, 0)).toBe(net);
+      expect(groups.flatMap((g) => g.holdings.map((h) => h.id)).sort()).toEqual(
+        ALL_IDS,
+      );
+    }
+  });
+});
