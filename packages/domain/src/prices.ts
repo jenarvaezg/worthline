@@ -1,7 +1,7 @@
 import type { LiquidityTier } from "./classification";
 
 export type PriceSource = "manual" | "ecb" | "coingecko" | "stooq" | "yahoo" | "finect";
-export type InvestmentPriceProvider = "yahoo" | "stooq" | "finect";
+export type InvestmentPriceProvider = "yahoo" | "stooq" | "finect" | "coingecko";
 export type PriceFreshnessState = "fresh" | "stale" | "failed" | "manual";
 
 export interface AssetPrice {

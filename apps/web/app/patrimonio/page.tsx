@@ -130,16 +130,8 @@ export default async function PatrimonioPage({
           <span>Activos y deudas</span>
         </div>
         <div className="patrimonioActions">
-          <span>Añadir:</span>
-          <Link className="actionLink" href="/patrimonio/nuevo-activo">
-            + Activo
-          </Link>
-          <Link className="actionLink" href="/patrimonio/nueva-deuda">
-            + Deuda
-          </Link>
-          <span className="actionDivider">·</span>
-          <Link className="actionLinkMuted" href="/inversiones/nueva">
-            ¿Cotiza con ticker? → Inversión
+          <Link className="actionLink" href="/patrimonio/anadir">
+            + Añadir holding
           </Link>
         </div>
         {assets.length > 0 || liabilities.length > 0 ? (
@@ -159,7 +151,7 @@ export default async function PatrimonioPage({
                 <tr>
                   <td className="emptyRow">
                     Sin holdings todavía.{" "}
-                    <Link href="/patrimonio/nuevo-activo">Añadir activo →</Link>
+                    <Link href="/patrimonio/anadir">Añadir holding →</Link>
                   </td>
                 </tr>
               </tbody>

@@ -2917,3 +2917,262 @@ td.rowActions > * {
 .heroPanel .headline {
   margin-bottom: 14px;
 }
+
+/* ── Unified «Añadir holding» (PRD #146 S5, #151) ──────────────────────────
+   Instrument-first add flow: gallery · form · "Se creará" rail. Disclosure is
+   pure CSS :has() (the per-instrument reveal rules are emitted inline from the
+   catalog); zero client JS (ADR 0009). */
+.addHoldingHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+.addHoldingHeader a {
+  font-size: 0.85rem;
+  color: var(--blue);
+}
+.addHoldingLead {
+  max-width: 52rem;
+  color: var(--muted);
+  margin: 0.6rem 0 0;
+  line-height: 1.5;
+}
+
+.addHoldingGrid {
+  display: grid;
+  grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+  margin-top: 1.5rem;
+}
+@media (max-width: 900px) {
+  .addHoldingGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.addHoldingGallery {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  position: sticky;
+  top: 1rem;
+}
+.addHoldingFamily {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.addHoldingFamily legend {
+  font-size: 0.7rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding: 0 0 0.45rem;
+}
+.addHoldingChips {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.addHoldingChip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+.addHoldingChip:hover {
+  border-color: var(--line);
+}
+.addHoldingChip input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.addHoldingChip:has(input:checked) {
+  border-color: var(--ink);
+  background: var(--paper-strong);
+  box-shadow: inset 2px 0 0 var(--dot, var(--ink));
+}
+.addHoldingChip:has(input:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+.addHoldingDot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--dot, var(--line));
+}
+.addHoldingChipBody {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  min-width: 0;
+}
+.addHoldingChipLabel {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+.addHoldingChipHint {
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
+.addHoldingPanes {
+  min-height: 360px;
+}
+.addHoldingEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 360px;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  padding: 2rem;
+}
+.addHoldingPane {
+  display: none;
+  grid-template-columns: minmax(0, 1fr) clamp(260px, 30%, 340px);
+  gap: 1.5rem;
+  align-items: start;
+}
+@media (max-width: 780px) {
+  .addHoldingPane {
+    grid-template-columns: 1fr;
+  }
+}
+.addHoldingMain {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.4rem 1.6rem;
+}
+.addHoldingTitle {
+  margin: 0 0 1.2rem;
+  font-size: 1.1rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.addHoldingFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.95rem 1.1rem;
+}
+.addHoldingFields label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.addHoldingFull {
+  grid-column: 1 / -1;
+}
+.addHoldingFields small {
+  color: var(--muted);
+}
+.addHoldingFields input,
+.addHoldingFields select {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--ink);
+  background: var(--paper-strong);
+}
+.addHoldingFields input:focus,
+.addHoldingFields select:focus {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+  border-color: var(--blue);
+}
+
+.addHoldingSummary {
+  position: sticky;
+  top: 1rem;
+  background: var(--paper-strong);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.2rem;
+}
+.addHoldingSummaryLabel {
+  font-size: 0.7rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 0 0 0.4rem;
+}
+.addHoldingReadout {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+.addHoldingReadout div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.addHoldingReadout div:last-child {
+  border-bottom: 0;
+}
+.addHoldingReadout dt {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.addHoldingReadout dd {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.addHoldingCapaDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--dot, var(--line));
+}
+
+/* The shared ownership + submit footer is revealed (display:flex) once an
+   instrument is chosen — see the inline :has() rule emitted by the route. */
+.addHoldingFooter {
+  display: none;
+  flex-direction: column;
+  gap: 1.1rem;
+  margin-top: 1.5rem;
+  max-width: 46rem;
+}

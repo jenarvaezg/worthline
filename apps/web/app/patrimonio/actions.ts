@@ -4,7 +4,6 @@ import { withStore, type WorthlineStore } from "@worthline/db";
 import {
   assertNotInvestmentAsset,
   checkOwnershipSplit,
-  createManualAssetSafe,
   createLiabilitySafe,
   isHousingAsset,
 } from "@worthline/domain";
@@ -31,6 +30,7 @@ import {
   preserveFields,
   successRedirectUrl,
 } from "../intake";
+import { persistManualAssetCreation } from "./persist-holding";
 
 /**
  * Server actions for the /patrimonio section.
@@ -92,60 +92,22 @@ export async function createAssetAction(
     const workspace = store.workspace.readWorkspace();
 
     if (!workspace) {
-      return { ok: false, error: "Workspace no inicializado." };
+      return { ok: false as const, error: "Workspace no inicializado." };
     }
 
     const parsed = parseAssetCommandStrict(formData, workspace.members, Date.now());
 
     if (!parsed.ok) {
-      return { ok: false, error: parsed.error };
+      return { ok: false as const, error: parsed.error };
     }
 
-    const {
-      acquisitionDate,
-      acquisitionValueMinor,
-      annualAppreciationRate,
-      initialValuation,
-      ...assetCommand
-    } = parsed.command;
-
-    const domainResult = createManualAssetSafe(workspace, assetCommand);
-
-    if (!domainResult.ok) {
-      return { ok: false, error: mapDomainViolation(domainResult.violations[0]) };
-    }
-
-    store.assets.createManualAsset(assetCommand);
-
-    if (assetCommand.type === "real_estate" && acquisitionDate && acquisitionValueMinor) {
-      store.assets.addValuationAnchor({
-        adjustsPriorCurve: true,
-        assetId: assetCommand.id,
-        id: createStableId("anchor", `${assetCommand.id}_acquisition`, Date.now()),
-        valuationDate: acquisitionDate,
-        valueMinor: acquisitionValueMinor,
-      });
-      store.assets.setAnnualAppreciationRate(
-        assetCommand.id,
-        annualAppreciationRate ?? null,
-      );
-
-      if (initialValuation) {
-        store.assets.addValuationAnchor({
-          ...initialValuation,
-          assetId: assetCommand.id,
-          id: createStableId("anchor", `${assetCommand.id}_initial`, Date.now() + 1),
-        });
-      }
-
-      store.rippleHistoricalSnapshotsForValuation({
-        assetId: assetCommand.id,
-        fromDateKey: acquisitionDate,
-        today: new Date().toISOString().slice(0, 10),
-      });
-    }
-
-    return { ok: true, id: assetCommand.id };
+    return persistManualAssetCreation(
+      store,
+      workspace,
+      parsed.command,
+      Date.now(),
+      new Date().toISOString().slice(0, 10),
+    );
   });
 
   if (!result.ok) {

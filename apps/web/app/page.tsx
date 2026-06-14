@@ -65,8 +65,8 @@ const DRILL_DESTINATION_LABELS: Record<DrilldownKey, string> = {
 
 const ONBOARDING_LINKS: Record<string, string> = {
   members: "/ajustes",
-  holdings: "/patrimonio/nuevo-activo",
-  investments: "/inversiones/nueva",
+  holdings: "/patrimonio/anadir",
+  investments: "/patrimonio/anadir",
   fire: "/ajustes",
   snapshot: "/",
 };

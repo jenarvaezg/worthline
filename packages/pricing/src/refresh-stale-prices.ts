@@ -5,6 +5,7 @@ import type {
 } from "@worthline/domain";
 import { defaultInvestmentPriceProvider, selectStalePrices } from "@worthline/domain";
 
+import { coingeckoProvider } from "./coingecko";
 import { finectProvider } from "./finect";
 import { fetchAndCachePrice } from "./index";
 import { stooqProvider } from "./stooq";
@@ -100,5 +101,7 @@ function resolveInvestmentPriceProvider(asset: InvestmentAssetRef) {
       return stooqProvider;
     case "yahoo":
       return yahooProvider;
+    case "coingecko":
+      return coingeckoProvider;
   }
 }
