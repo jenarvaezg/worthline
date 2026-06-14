@@ -241,7 +241,9 @@ backfilled. A snapshot generated for a past date is an ordinary **snapshot**,
 not a special kind. An **ownership split** edit ripples along the **scope** axis
 rather than time: it has no date, creates no new snapshot dates, and only
 re-weights each existing per-member **scope** snapshot's row for that holding by
-the new split — the household scope (always 100%) is left untouched. It joins the
+the new split. The household scope row is re-weighted too when the holding is
+co-owned with a non-member (the household's combined share is then < 100%); it is
+a genuine no-op only when the split sums to 100% within the household. It joins the
 **amortization plan** and the **appreciation rate** as a parameter edit that
 re-derives history, distinct from a cosmetic edit (a rename), which never does.
 See ADR 0012.

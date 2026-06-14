@@ -868,9 +868,11 @@ function readManualValueHistory(db: StoreDb): Map<string, ManualValuePoint[]> {
  * Ripple effect (ADR 0012): a backdated operation change regenerates the
  * snapshot at its date and recalculates the existing snapshots it affects.
  *
- * - record(D), D in the past: generate/overwrite the snapshot at D (the new
- *   operation supplies its own best price), then recalculate existing
- *   snapshots dated > D.
+ * - record(D), D in the past: generate the snapshot at D if none exists, or
+ *   overwrite it in place if one does (the new operation supplies its own best
+ *   price), and recalculate every existing snapshot dated ≥ D. The affected
+ *   range is ≥ D, not > D: an existing snapshot at D is overwritten in place,
+ *   not skipped.
  * - delete(D): recalculate existing snapshots dated ≥ D (the snapshot at D was
  *   itself derived from the operation that just disappeared).
  *
