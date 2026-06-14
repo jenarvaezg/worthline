@@ -95,6 +95,8 @@ export type { SymbolCandidate } from "./search";
 export { stooqProvider } from "./stooq";
 export { yahooProvider } from "./yahoo";
 export { refreshStalePrices } from "./refresh-stale-prices";
+export { isTokenValid, mintNumistaToken } from "./numista";
+export type { NumistaCredentials, NumistaToken } from "./numista";
 export type {
   InvestmentAssetRef,
   RefreshStalePricesResult,
