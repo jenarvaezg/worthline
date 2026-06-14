@@ -46,6 +46,16 @@ export interface SnapshotHoldingRow {
    */
   liquidityTier: LiquidityTier | null;
   /**
+   * Whether this ASSET holding counted as a housing asset at capture time, frozen
+   * from the live `isHousingAsset` classification (#181). Always false for
+   * liabilities. Frozen on purpose: combined with `securesHousing` on the
+   * liability side this makes the entire housing-equity axis row-derivable —
+   * housingAssets = Σ(asset rows with countsAsHousing) and housingDebts =
+   * Σ(liability rows with securesHousing), so no live lookup into current holding
+   * identity is needed to reconstruct historical figures (ADR 0008).
+   */
+  countsAsHousing: boolean;
+  /**
    * Whether this holding secures a housing asset, frozen at capture time from the
    * ALL-ASSETS classification (#180). Set only for liabilities — true when the
    * liability is associated to a housing asset present at capture, false
@@ -113,6 +123,7 @@ export function buildSnapshotHoldingRows(
       asset.type === "investment" ? input.investmentDetails?.get(asset.id) : undefined;
 
     rows.push({
+      countsAsHousing: housingAssetIds.has(asset.id),
       holdingId: asset.id,
       kind: "asset",
       label: asset.name,
@@ -139,6 +150,7 @@ export function buildSnapshotHoldingRows(
     }
 
     rows.push({
+      countsAsHousing: false,
       holdingId: liability.id,
       kind: "liability",
       label: liability.name,
@@ -159,17 +171,19 @@ export function buildSnapshotHoldingRows(
  * three derived figures extend it (#181): when supplied, the reconcile also
  * proves the breakdown axes are self-consistent with the frozen rows, so a
  * ripple can never silently impute a value delta to the wrong axis.
+ *
+ * Note: `housingAssetsMinor` is no longer accepted here — it is derived from
+ * the frozen `countsAsHousing` flags on asset rows (#181 completion). The
+ * housing-equity check is now fully row-derived and requires no caller input.
  */
 export interface SnapshotReconciliationTotals {
   grossAssetsMinor: number;
   debtsMinor: number;
-  /** The housing-asset row sum behind housing equity — assets are not self-flagged. */
-  housingAssetsMinor?: number;
   /** totalNetWorth, asserted to equal grossAssets − debts (#181). */
   totalNetWorthMinor?: number;
   /** liquidNetWorth, asserted to equal liquid asset rows − liquid non-housing debt rows (#181). */
   liquidNetWorthMinor?: number;
-  /** housingEquity, asserted to equal housingAssets − securesHousing debt rows (#181). */
+  /** housingEquity, asserted to equal countsAsHousing asset rows − securesHousing debt rows (#181). */
   housingEquityMinor?: number;
 }
 
@@ -177,10 +191,10 @@ export interface SnapshotReconciliationTotals {
  * The breakdown axes derived purely from the frozen holding rows (#181) — the
  * single place the ripple/capture summary is reconciled against. Mirrors
  * `calculateNetWorth`'s definitions exactly: liquid = top-two-rung asset rows
- * less liquid non-housing-securing debt rows; housing debts = the frozen
- * `securesHousing` debt rows. Housing assets are NOT self-flagged on a row
- * (assets always freeze `securesHousing=false`), so the housing-asset sum is
- * supplied by the caller and only the housing-DEBT term is row-derived here.
+ * less liquid non-housing-securing debt rows; housing assets = asset rows with
+ * frozen `countsAsHousing` true (#181); housing debts = the frozen
+ * `securesHousing` debt rows. All five axes are now fully self-classifying from
+ * the frozen flags — no caller-supplied housing-asset sum needed.
  */
 export interface DerivedRowAxes {
   grossAssetsMinor: number;
@@ -189,6 +203,8 @@ export interface DerivedRowAxes {
   liquidAssetsMinor: number;
   /** Sum of liability rows that are liquid AND do not secure housing. */
   liquidDebtsMinor: number;
+  /** Sum of asset rows with frozen `countsAsHousing` true (#181). */
+  housingAssetsMinor: number;
   /** Sum of liability rows with frozen `securesHousing` true. */
   housingDebtsMinor: number;
 }
@@ -198,13 +214,16 @@ export interface DerivedRowAxes {
  * own frozen tier when present, else `cash` — the same fallback `rungForLiability`
  * applies to an unassociated/non-housing debt, so a null-tier non-housing debt
  * (frozen with a null rung) lands on the liquid axis exactly as the live
- * `calculateNetWorth` path resolves it.
+ * `calculateNetWorth` path resolves it. The housing-asset sum is derived from
+ * the frozen `countsAsHousing` flag on each asset row, making all five axes
+ * self-classifying without any live `isHousingAsset` lookup (#181 completion).
  */
 export function deriveRowAxes(rows: readonly SnapshotHoldingRow[]): DerivedRowAxes {
   let grossAssetsMinor = 0;
   let debtsMinor = 0;
   let liquidAssetsMinor = 0;
   let liquidDebtsMinor = 0;
+  let housingAssetsMinor = 0;
   let housingDebtsMinor = 0;
 
   for (const row of rows) {
@@ -212,6 +231,9 @@ export function deriveRowAxes(rows: readonly SnapshotHoldingRow[]): DerivedRowAx
       grossAssetsMinor += row.valueMinor;
       if (row.liquidityTier !== null && isLiquid(row.liquidityTier)) {
         liquidAssetsMinor += row.valueMinor;
+      }
+      if (row.countsAsHousing) {
+        housingAssetsMinor += row.valueMinor;
       }
     } else {
       debtsMinor += row.valueMinor;
@@ -226,6 +248,7 @@ export function deriveRowAxes(rows: readonly SnapshotHoldingRow[]): DerivedRowAx
   return {
     debtsMinor,
     grossAssetsMinor,
+    housingAssetsMinor,
     housingDebtsMinor,
     liquidAssetsMinor,
     liquidDebtsMinor,
@@ -286,19 +309,14 @@ export function assertSnapshotHoldingsReconcile(
   }
 
   if (totals.housingEquityMinor !== undefined) {
-    if (totals.housingAssetsMinor === undefined) {
-      throw new Error(
-        "Snapshot capture failed reconciliation: housingEquityMinor was supplied " +
-          "without housingAssetsMinor (the row-side housing-asset sum). " +
-          "Nothing was persisted.",
-      );
-    }
-    const expected = totals.housingAssetsMinor - axes.housingDebtsMinor;
+    // Housing assets are now row-derived from the frozen `countsAsHousing` flag
+    // on each asset row (#181 completion) — no caller-supplied sum needed.
+    const expected = axes.housingAssetsMinor - axes.housingDebtsMinor;
     if (totals.housingEquityMinor !== expected) {
       throw new Error(
         `Snapshot capture failed reconciliation: housing equity is ` +
-          `${totals.housingEquityMinor} but housing assets − securesHousing debt rows ` +
-          `is ${expected} (minor units). Nothing was persisted.`,
+          `${totals.housingEquityMinor} but countsAsHousing asset rows − securesHousing ` +
+          `debt rows is ${expected} (minor units). Nothing was persisted.`,
       );
     }
   }

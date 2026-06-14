@@ -344,6 +344,7 @@ describe("captureValuedNetWorthSnapshot — reconciliation invariant", () => {
 describe("assertSnapshotHoldingsReconcile — both sides of the invariant", () => {
   const reconciledRows = [
     {
+      countsAsHousing: false,
       holdingId: "asset_a",
       kind: "asset" as const,
       label: "A",
@@ -352,6 +353,7 @@ describe("assertSnapshotHoldingsReconcile — both sides of the invariant", () =
       valueMinor: 70_00,
     },
     {
+      countsAsHousing: false,
       holdingId: "asset_b",
       kind: "asset" as const,
       label: "B",
@@ -360,6 +362,7 @@ describe("assertSnapshotHoldingsReconcile — both sides of the invariant", () =
       valueMinor: 30_00,
     },
     {
+      countsAsHousing: false,
       holdingId: "liability_c",
       kind: "liability" as const,
       label: "C",
@@ -402,6 +405,7 @@ describe("assertSnapshotHoldingsReconcile — five-figure invariant (#181)", () 
   // secures the piso (housing debt, null rung), and a cash-tier card (liquid debt).
   const rows: SnapshotHoldingRow[] = [
     {
+      countsAsHousing: true, // piso is the housing asset
       holdingId: "asset_piso",
       kind: "asset",
       label: "Piso",
@@ -410,6 +414,7 @@ describe("assertSnapshotHoldingsReconcile — five-figure invariant (#181)", () 
       valueMinor: 200_000_00,
     },
     {
+      countsAsHousing: false,
       holdingId: "asset_fund",
       kind: "asset",
       label: "Fondo",
@@ -418,6 +423,7 @@ describe("assertSnapshotHoldingsReconcile — five-figure invariant (#181)", () 
       valueMinor: 10_000_00,
     },
     {
+      countsAsHousing: false,
       holdingId: "liab_mortgage",
       kind: "liability",
       label: "Hipoteca",
@@ -426,6 +432,7 @@ describe("assertSnapshotHoldingsReconcile — five-figure invariant (#181)", () 
       valueMinor: 120_000_00,
     },
     {
+      countsAsHousing: false,
       holdingId: "liab_card",
       kind: "liability",
       label: "Tarjeta",
@@ -435,13 +442,13 @@ describe("assertSnapshotHoldingsReconcile — five-figure invariant (#181)", () 
     },
   ];
 
-  // The five figures consistent with the rows, given the housing-asset sum (the
-  // piso is the only housing asset). housingAssets 200k − housingDebts 120k = 80k.
-  // liquidAssets 10k − liquidNonHousingDebts 1k = 9k. total = 210k − 121k = 89k.
+  // The five figures consistent with the rows. countsAsHousing drives housing assets:
+  // piso (countsAsHousing=true) = 200k; housingDebts (securesHousing=true) = 120k.
+  // housingEquity = 200k − 120k = 80k. liquidAssets 10k − liquidNonHousingDebts 1k = 9k.
+  // total = 210k − 121k = 89k.
   const correct = {
     debtsMinor: 121_000_00,
     grossAssetsMinor: 210_000_00,
-    housingAssetsMinor: 200_000_00,
     housingEquityMinor: 80_000_00,
     liquidNetWorthMinor: 9_000_00,
     totalNetWorthMinor: 89_000_00,
@@ -480,5 +487,25 @@ describe("assertSnapshotHoldingsReconcile — five-figure invariant (#181)", () 
         liquidNetWorthMinor: 10_000_00,
       }),
     ).toThrow(/liquid net worth/i);
+  });
+
+  test("throws when housing equity is wrong because a housing asset's countsAsHousing flag drives the asset sum (#181)", () => {
+    // A row set where the piso has countsAsHousing=true: housing assets = 200k,
+    // housing debts = 120k, so correct housing equity = 80k. Once countsAsHousing is
+    // self-classifying on each asset row, the caller no longer supplies
+    // housingAssetsMinor — it is derived from the rows directly. Supplying a wrong
+    // housingEquityMinor must throw regardless (the 6th check in the invariant).
+    const rowsWithFlag: SnapshotHoldingRow[] = rows.map((r) => ({
+      ...r,
+      countsAsHousing: r.holdingId === "asset_piso",
+    }));
+    // correct housing equity = 200k (piso, countsAsHousing=true) − 120k (securesHousing=true) = 80k.
+    // Supplying 79k contradicts what the flags derive (no housingAssetsMinor needed now).
+    expect(() =>
+      assertSnapshotHoldingsReconcile(rowsWithFlag, {
+        ...correct,
+        housingEquityMinor: 79_000_00,
+      }),
+    ).toThrow(/housing equity/i);
   });
 });

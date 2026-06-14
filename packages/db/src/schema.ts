@@ -411,6 +411,15 @@ export const snapshotHoldings = sqliteTable(
      * on purpose, like the tier — no live foreign key into holdings (ADR 0008).
      */
     securesHousing: integer("secures_housing").notNull().default(0),
+    /**
+     * Whether this ASSET holding counted as a housing asset at capture time,
+     * frozen from the live `isHousingAsset` classification (#181). Always 0 for
+     * liabilities. Combined with `secures_housing` on the liability side this
+     * makes the entire housing-equity axis row-derivable from the frozen flags —
+     * no live lookup needed. Stored as 0/1; default 0 for existing rows (the
+     * v17 migration backfills 1 for current housing assets, same basis as v16).
+     */
+    countsAsHousing: integer("counts_as_housing").notNull().default(0),
     valueMinor: integer("value_minor").notNull(),
     units: text("units"),
     unitPrice: text("unit_price"),

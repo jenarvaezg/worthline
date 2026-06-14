@@ -15,6 +15,7 @@ function liabilityRow(
   return {
     dateKey,
     holdingId,
+    countsAsHousing: false,
     kind: "liability",
     label,
     liquidityTier: tier,

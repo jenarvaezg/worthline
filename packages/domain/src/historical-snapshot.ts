@@ -279,20 +279,21 @@ function liabilityValuationInput(
 
 /**
  * The single place a ripple's recomputed rows become a five-figure summary,
- * reconciled, and wrapped in a snapshot (#181). Every `recalculate*` function
- * funnels through here, so the breakdown axes (`liquidNetWorth`, `housingEquity`,
- * `totalNetWorth`) are RE-DERIVED from the frozen rows the same way
- * `calculateNetWorth` derives them from live holdings — never hand-adjusted by a
- * per-holding delta whose axis is chosen from live identity. This collapses the
- * four near-duplicate scaffolds (row construction + figure math + reconcile) and
- * removes the axis-by-axis drift that lived between the asset and liability paths.
+ * reconciled, and wrapped in a snapshot (#181 + #181-completion). Every
+ * `recalculate*` function funnels through here so the breakdown axes
+ * (`liquidNetWorth`, `housingEquity`, `totalNetWorth`) are RE-DERIVED from the
+ * frozen rows the same way `calculateNetWorth` derives them from live holdings —
+ * never hand-adjusted by a per-holding delta whose axis is chosen from live
+ * identity. This collapses the four near-duplicate scaffolds (row construction +
+ * figure math + reconcile) and removes the axis-by-axis drift.
  *
- * Housing-asset membership is the one term the rows cannot self-describe (assets
- * always freeze `securesHousing=false`, and a housing property is indistinguishable
- * from any other illiquid asset by tier). It is reconstructed from the frozen
- * snapshot's own `housingEquity` plus the housing debts the ORIGINAL frozen rows
- * carried (`frozenHoldings`), then moved by the operated ASSET's housing-value
- * delta — all frozen data, no live `isHousingAsset` / `housingAssetIds` lookup.
+ * All five axes are now fully self-classifying from the frozen flags on each row:
+ *   grossAssets   = Σ asset rows
+ *   debts         = Σ liability rows
+ *   totalNetWorth = grossAssets − debts
+ *   liquidNetWorth= Σ(liquid-rung asset rows) − Σ(liquid, non-housing-securing liability rows)
+ *   housingEquity = Σ(countsAsHousing asset rows) − Σ(securesHousing liability rows)
+ * No live `isHousingAsset` / `housingAssetIds` lookup is needed anywhere.
  *
  * Returns null when no holdings remain (the caller drops the snapshot).
  */
@@ -303,46 +304,29 @@ function assembleRippleSnapshot(input: {
   frozenHoldings: readonly SnapshotHoldingRow[];
   /** The rows after the swap (frozen survivors + the recomputed row, if any). */
   rows: SnapshotHoldingRow[];
-  /**
-   * The operated ASSET's housing-value delta on the housing-asset axis: the new
-   * housing row's value minus the old one's. Non-zero only when the operated
-   * holding is a housing ASSET (the housing curve / a housing asset's ownership);
-   * zero for liabilities and non-housing assets, which never move housing assets.
-   */
-  housingAssetDeltaMinor: number;
 }): ValuedNetWorthSnapshot | null {
   if (input.rows.length === 0) return null;
 
-  // Safety net (#181): the housing-asset term is reconstructed from the frozen
-  // snapshot's own `housingEquity` (assets are not self-flagged on a row), so a
-  // wrong-axis INPUT snapshot would otherwise launder through. Before trusting it,
-  // assert the input snapshot's row-derivable figures (gross / debts / total /
-  // liquid) reconcile with the ORIGINAL frozen rows — a snapshot that imputed a
-  // value to the wrong derived axis fails here and never produces a ripple.
-  const beforeAxes = deriveRowAxes(input.frozenHoldings);
+  // Safety net (#181): assert that the INPUT snapshot's all five row-derivable
+  // figures reconcile with the ORIGINAL frozen rows before producing a ripple.
+  // A snapshot that imputed a value to the wrong axis fails here and never
+  // propagates corruption to the next ripple in the chain.
   assertSnapshotHoldingsReconcile(input.frozenHoldings, {
     debtsMinor: input.snapshot.debts.amountMinor,
     grossAssetsMinor: input.snapshot.grossAssets.amountMinor,
+    housingEquityMinor: input.snapshot.housingEquity.amountMinor,
     liquidNetWorthMinor: input.snapshot.liquidNetWorth.amountMinor,
     totalNetWorthMinor: input.snapshot.totalNetWorth.amountMinor,
   });
 
+  // All five axes derived from the NEW row set — fully frozen, no live lookups.
   const axes = deriveRowAxes(input.rows);
-  // Reconstruct the housing-asset sum from the frozen snapshot + the housing
-  // debts the original rows carried, then move it by the operated asset's delta.
-  // housingEquityBefore = housingAssetsBefore − housingDebtsBefore.
-  const housingDebtsBeforeMinor = beforeAxes.housingDebtsMinor;
-  const housingAssetsMinor =
-    input.snapshot.housingEquity.amountMinor +
-    housingDebtsBeforeMinor +
-    input.housingAssetDeltaMinor;
-
   const currency = input.currency;
   const grossAssetsMinor = axes.grossAssetsMinor;
   const debtsMinor = axes.debtsMinor;
   const totalNetWorthMinor = grossAssetsMinor - debtsMinor;
   const liquidNetWorthMinor = axes.liquidAssetsMinor - axes.liquidDebtsMinor;
-  const housingEquityMinor = housingAssetsMinor - axes.housingDebtsMinor;
+  const housingEquityMinor = axes.housingAssetsMinor - axes.housingDebtsMinor;
 
   const summary = {
     debts: { amountMinor: debtsMinor, currency },
@@ -366,7 +350,6 @@ function assembleRippleSnapshot(input: {
   assertSnapshotHoldingsReconcile(input.rows, {
     debtsMinor,
     grossAssetsMinor,
-    housingAssetsMinor,
     housingEquityMinor,
     liquidNetWorthMinor,
     totalNetWorthMinor,
@@ -513,6 +496,9 @@ export function recalculateSnapshotForAsset(
 
     if (totalShareBps > 0) {
       rows.push({
+        // Preserve the frozen flag for an existing row; for a newly-appearing
+        // investment row, freeze false (investments are never housing assets).
+        countsAsHousing: existingRow?.countsAsHousing ?? false,
         holdingId: input.asset.id,
         kind: "asset",
         label: existingRow?.label ?? input.asset.name,
@@ -526,13 +512,9 @@ export function recalculateSnapshotForAsset(
     }
   }
 
-  // The operated holding is always an investment (an asset, never housing — a
-  // primary-residence-flagged investment is still valued by its ledger, #148),
-  // so it never moves the housing-asset axis.
   return assembleRippleSnapshot({
     currency,
     frozenHoldings: input.frozenHoldings,
-    housingAssetDeltaMinor: 0,
     rows,
     snapshot: input.snapshot,
   });
@@ -617,9 +599,12 @@ export function recalculateSnapshotForHousing(
     scopeMemberIds,
   });
 
-  let newRow: SnapshotHoldingRow | undefined;
   if (totalShareBps > 0) {
-    newRow = {
+    rows.push({
+      // This ripple is called only for housing assets — freeze true, matching the
+      // capture path (buildSnapshotHoldingRows sets countsAsHousing=true for housing
+      // assets). Preserve the frozen flag for an existing row.
+      countsAsHousing: existingRow?.countsAsHousing ?? true,
       holdingId: input.asset.id,
       kind: "asset",
       label: existingRow?.label ?? input.asset.name,
@@ -627,21 +612,14 @@ export function recalculateSnapshotForHousing(
       // An asset never secures housing — the signal is liability-only (#180).
       securesHousing: false,
       valueMinor: ownedMinor,
-    };
-    rows.push(newRow);
+    });
   }
 
-  // This ripple is, by construction, a housing asset's curve change — its value
-  // delta moves the housing-asset axis (and gross + total via the rows). The
-  // delta is the new housing row's value less the old one's; the helper folds it
-  // into housing equity without any live `isHousingAsset` lookup (#181).
-  const housingAssetDeltaMinor =
-    (newRow?.valueMinor ?? 0) - (existingRow?.valueMinor ?? 0);
-
+  // housingEquity is now fully row-derived from the frozen countsAsHousing flags
+  // on asset rows (#181 completion) — the helper needs no delta parameter.
   return assembleRippleSnapshot({
     currency,
     frozenHoldings: input.frozenHoldings,
-    housingAssetDeltaMinor,
     rows,
     snapshot: input.snapshot,
   });
@@ -722,6 +700,8 @@ export function recalculateSnapshotForLiability(
         .map((row) => [row.holdingId, row.liquidityTier!] as const),
     );
     rows.push({
+      // Liabilities never count as housing assets (#181).
+      countsAsHousing: false,
       holdingId: input.liability.id,
       kind: "liability",
       label: existingRow?.label ?? input.liability.name,
@@ -751,7 +731,6 @@ export function recalculateSnapshotForLiability(
   return assembleRippleSnapshot({
     currency,
     frozenHoldings: input.frozenHoldings,
-    housingAssetDeltaMinor: 0,
     rows,
     snapshot: input.snapshot,
   });
@@ -825,14 +804,22 @@ export function recalculateSnapshotForOwnership(
   // Keep the SAME existence rule the capture path applies (a row for any scope
   // stake) so every ripple and the capture produce the same row set for a date
   // (#181) — a re-weight to a zero value still keeps the row.
-  let newRow: SnapshotHoldingRow | undefined;
   if (totalShareBps > 0) {
     const assetRungById = new Map(
       rows
         .filter((row) => row.kind === "asset" && row.liquidityTier !== null)
         .map((row) => [row.holdingId, row.liquidityTier!] as const),
     );
-    newRow = {
+    rows.push({
+      // Preserve the frozen housing-membership flag for an existing row. For a
+      // newly-appearing asset row freeze it from the live classification (same as
+      // capture); for a liability row always false. After this, housingEquity is
+      // fully row-derived — the live `isHousingAsset` call is gone (#181 completion).
+      countsAsHousing: existingRow
+        ? existingRow.countsAsHousing
+        : holding.kind === "asset"
+          ? isHousingAsset(holding.asset)
+          : false,
       holdingId,
       kind: holding.kind,
       label:
@@ -860,24 +847,16 @@ export function recalculateSnapshotForOwnership(
       ...(existingRow?.unitPrice !== undefined
         ? { unitPrice: existingRow.unitPrice }
         : {}),
-    };
-    rows.push(newRow);
+    });
   }
 
-  // Only a housing ASSET's re-weight moves the housing-asset axis. An ownership
-  // edit never changes a holding's instrument, so the asset's housing-ness is the
-  // frozen one — there is no live/frozen drift to introduce here (the drift the
-  // issue fixes is the debt-curve path). The helper re-derives every other axis
-  // from the frozen rows (frozen tier + frozen securesHousing).
-  const housingAssetDeltaMinor =
-    holding.kind === "asset" && isHousingAsset(holding.asset)
-      ? (newRow?.valueMinor ?? 0) - (existingRow?.valueMinor ?? 0)
-      : 0;
-
+  // housingEquity is now fully row-derived from the frozen countsAsHousing flags
+  // on asset rows (#181 completion) — no live isHousingAsset call, no delta
+  // parameter. A housing asset's re-weight carries its frozen flag onto the new
+  // row; the helper reads it from there.
   return assembleRippleSnapshot({
     currency,
     frozenHoldings: input.frozenHoldings,
-    housingAssetDeltaMinor,
     rows,
     snapshot: input.snapshot,
   });

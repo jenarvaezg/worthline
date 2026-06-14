@@ -170,6 +170,7 @@ CREATE TABLE \`snapshot_holdings\` (
 	\`label\` text NOT NULL,
 	\`liquidity_tier\` text,
 	\`secures_housing\` integer DEFAULT 0 NOT NULL,
+	\`counts_as_housing\` integer DEFAULT 0 NOT NULL,
 	\`value_minor\` integer NOT NULL,
 	\`units\` text,
 	\`unit_price\` text,

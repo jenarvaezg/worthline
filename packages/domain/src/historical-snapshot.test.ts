@@ -415,6 +415,7 @@ describe("recalculateSnapshotForHousing", () => {
 
   function housingRow(valueMinor: number): SnapshotHoldingRow {
     return {
+      countsAsHousing: true, // piso is a housing asset
       holdingId: "asset_piso",
       kind: "asset",
       label: "Piso",
@@ -485,6 +486,7 @@ describe("recalculateSnapshotForHousing", () => {
     const workspace = makeWorkspace();
     const piso = housing(workspace, "asset_piso", 130_000_00);
     const cashRow: SnapshotHoldingRow = {
+      countsAsHousing: false,
       holdingId: "asset_cash",
       kind: "asset",
       label: "Cuenta",
@@ -518,8 +520,12 @@ describe("recalculateSnapshotForHousing", () => {
       },
       frozenHoldings: [housingRow(100_000_00), cashRow],
       snapshot: {
-        ...snapshotWithHousing(105_000_00),
+        // grossAssets = piso 100k + cash 5k = 105k; housingEquity = piso 100k
+        // (countsAsHousing); liquidNetWorth = cash 5k. Self-consistent with frozen rows.
+        ...snapshotWithHousing(100_000_00),
+        grossAssets: eur(105_000_00),
         liquidNetWorth: eur(5_000_00),
+        totalNetWorth: eur(105_000_00),
       },
       today: "2026-06-12",
       workspace,
@@ -591,6 +597,7 @@ describe("recalculateSnapshotForAsset", () => {
 
   function frozenFundRow(valueMinor: number, units: string): SnapshotHoldingRow {
     return {
+      countsAsHousing: false,
       holdingId: "asset_fund",
       kind: "asset",
       label: "Fondo",
@@ -627,6 +634,7 @@ describe("recalculateSnapshotForAsset", () => {
 
   function mortgageRow(): SnapshotHoldingRow {
     return {
+      countsAsHousing: false,
       holdingId: "liab_mortgage",
       kind: "liability",
       label: "Hipoteca",
@@ -964,6 +972,7 @@ describe("recalculateSnapshotForLiability", () => {
 
   function pisoRow(valueMinor: number): SnapshotHoldingRow {
     return {
+      countsAsHousing: true, // piso is a housing asset
       holdingId: "asset_piso",
       kind: "asset",
       label: "Piso",
@@ -978,6 +987,7 @@ describe("recalculateSnapshotForLiability", () => {
   // rung), but securesHousing is frozen true — the self-classifying signal (#180).
   function mortgageRow(valueMinor: number): SnapshotHoldingRow {
     return {
+      countsAsHousing: false,
       holdingId: "liab_h",
       kind: "liability",
       label: "Hipoteca",
@@ -1076,6 +1086,7 @@ describe("recalculateSnapshotForLiability", () => {
   test("preserves other frozen rows verbatim", () => {
     const workspace = makeWorkspace();
     const cashRow: SnapshotHoldingRow = {
+      countsAsHousing: false,
       holdingId: "asset_cash",
       kind: "asset",
       label: "Cuenta",
@@ -1089,9 +1100,13 @@ describe("recalculateSnapshotForLiability", () => {
       housingAssetIds: new Set(["asset_piso"]),
       liability: makeMortgage(workspace, 100_000_00),
       snapshot: {
-        ...snapshotWithHousingDebt(205_000_00, 120_000_00),
+        // grossAssets = piso 200k + cash 5k = 205k; housingEquity = piso 200k − mortgage 120k = 80k
+        // (countsAsHousing); liquidNetWorth = cash 5k. Self-consistent with frozen rows.
+        ...snapshotWithHousingDebt(200_000_00, 120_000_00),
         grossAssets: eur(205_000_00),
+        housingEquity: eur(80_000_00),
         liquidNetWorth: eur(5_000_00),
+        totalNetWorth: eur(85_000_00),
       },
       workspace,
     })!;
@@ -1114,6 +1129,7 @@ describe("recalculateSnapshotForLiability", () => {
       type: "debt",
     });
     const cardRow: SnapshotHoldingRow = {
+      countsAsHousing: false,
       holdingId: "liab_card",
       kind: "liability",
       label: "Tarjeta",
@@ -1122,6 +1138,7 @@ describe("recalculateSnapshotForLiability", () => {
       valueMinor: 1_000_00,
     };
     const cashRow: SnapshotHoldingRow = {
+      countsAsHousing: false,
       holdingId: "asset_cash",
       kind: "asset",
       label: "Cuenta",
@@ -1247,6 +1264,7 @@ describe("row-derived ripple axes (#181)", () => {
   // A frozen mortgage row that secures the piso — securesHousing frozen TRUE at
   // capture, even if the piso is later reclassified away from housing.
   const frozenMortgageRow = (valueMinor: number): SnapshotHoldingRow => ({
+    countsAsHousing: false,
     holdingId: "liab_h",
     kind: "liability",
     label: "Hipoteca",
@@ -1255,6 +1273,7 @@ describe("row-derived ripple axes (#181)", () => {
     valueMinor,
   });
   const pisoRow = (valueMinor: number): SnapshotHoldingRow => ({
+    countsAsHousing: true, // piso is a housing asset, frozen at capture
     holdingId: "asset_piso",
     kind: "asset",
     label: "Piso",
@@ -1342,6 +1361,7 @@ describe("row-derived ripple axes (#181)", () => {
     });
 
     const fundRow: SnapshotHoldingRow = {
+      countsAsHousing: false,
       holdingId: "asset_fund",
       kind: "asset",
       label: "Fondo",
@@ -1350,6 +1370,7 @@ describe("row-derived ripple axes (#181)", () => {
       valueMinor: 10_000_00,
     };
     const cardRow: SnapshotHoldingRow = {
+      countsAsHousing: false,
       holdingId: "liab_card",
       kind: "liability",
       label: "Tarjeta",
@@ -1443,6 +1464,7 @@ describe("row-derived ripple axes (#181)", () => {
       type: "real_estate",
     });
     const frozenPiso: SnapshotHoldingRow = {
+      countsAsHousing: true, // piso is a housing asset, frozen at capture
       holdingId: "asset_piso",
       kind: "asset",
       label: "Piso",
@@ -1489,6 +1511,7 @@ describe("row-derived ripple axes (#181)", () => {
     // the housing axis (securesHousing=false on the card). Re-deriving from rows
     // exposes the contradiction: the helper's reconcile throws.
     const cardRow: SnapshotHoldingRow = {
+      countsAsHousing: false,
       holdingId: "liab_card",
       kind: "liability",
       label: "Tarjeta",
@@ -1497,6 +1520,7 @@ describe("row-derived ripple axes (#181)", () => {
       valueMinor: 1_000_00,
     };
     const fundRow: SnapshotHoldingRow = {
+      countsAsHousing: false,
       holdingId: "asset_fund",
       kind: "asset",
       label: "Fondo",
@@ -1541,6 +1565,141 @@ describe("row-derived ripple axes (#181)", () => {
         workspace,
       }),
     ).toThrow(/housing equity|liquid net worth/i);
+  });
+
+  test("an ownership ripple on a reclassified housing asset honours the FROZEN countsAsHousing flag", () => {
+    // Regression for the defect the adversarial review found: the asset was a housing
+    // asset at capture (countsAsHousing=true frozen on the row). Between capture and
+    // the ripple it was reclassified to a non-housing type. The live isHousingAsset
+    // returns false → housingAssetDeltaMinor=0 → historical housingEquity stays stuck
+    // while gross moved. After the fix the frozen flag drives the delta, not live identity.
+    const household = createWorkspace({
+      baseCurrency: "EUR",
+      members: [
+        { id: "mJ", name: "Jose" },
+        { id: "mA", name: "Ana" },
+      ],
+      mode: "household",
+    });
+    // At capture: piso is housing. Jose owned 50% → 100k. We freeze countsAsHousing=true.
+    const frozenPisoRow: SnapshotHoldingRow = {
+      countsAsHousing: true, // frozen: it WAS housing at capture
+      holdingId: "asset_piso",
+      kind: "asset",
+      label: "Piso",
+      liquidityTier: "illiquid",
+      securesHousing: false,
+      valueMinor: 100_000_00,
+    };
+    // After capture, the piso is reclassified to type "manual" (non-housing). The
+    // live asset no longer satisfies isHousingAsset — but the frozen row says true.
+    const reclassifiedPiso = createManualAsset(household, {
+      currency: "EUR",
+      currentValueMinor: 200_000_00,
+      id: "asset_piso",
+      liquidityTier: "illiquid",
+      name: "Piso",
+      ownership: [
+        { memberId: "mJ", shareBps: 7_000 },
+        { memberId: "mA", shareBps: 3_000 },
+      ],
+      type: "manual", // reclassified — isHousingAsset returns false now
+    });
+    const snapBefore: NetWorthSnapshot = {
+      capturedAt: "2022-01-01T12:00:00.000Z",
+      dateKey: "2022-01-01",
+      debts: eur(0),
+      grossAssets: eur(100_000_00),
+      housingEquity: eur(100_000_00), // piso was housing at capture
+      id: "snap_r",
+      isMonthlyClose: false,
+      liquidNetWorth: eur(0),
+      monthKey: "2022-01",
+      scopeId: "mJ",
+      scopeLabel: "Jose",
+      totalNetWorth: eur(100_000_00),
+      warnings: [],
+    };
+
+    // An ownership re-weight fires the ownership ripple: Jose's split changes to 70%.
+    // global value = 200k; Jose's new row = 140k. Housing delta = 140k − 100k = +40k.
+    const result = recalculateSnapshotForOwnership({
+      frozenHoldings: [frozenPisoRow],
+      globalValueMinor: 200_000_00,
+      holding: { asset: reclassifiedPiso, kind: "asset" },
+      snapshot: snapBefore,
+      workspace: household,
+    })!;
+
+    // The row value is re-weighted correctly.
+    expect(result.holdings[0]!.valueMinor).toBe(140_000_00);
+    // With frozen countsAsHousing=true the delta (+40k) hits the HOUSING axis.
+    // housingEquity = 100k (before) + 40k (delta) = 140k. liquidNetWorth stays 0.
+    expect(result.snapshot.grossAssets.amountMinor).toBe(140_000_00);
+    expect(result.snapshot.housingEquity.amountMinor).toBe(140_000_00);
+    expect(result.snapshot.liquidNetWorth.amountMinor).toBe(0);
+    expect(result.snapshot.totalNetWorth.amountMinor).toBe(140_000_00);
+    // The frozen flag is preserved on the output row.
+    expect(result.holdings[0]!.countsAsHousing).toBe(true);
+  });
+
+  test("inverse: an ownership ripple on a reclassified NON-housing asset honours frozen countsAsHousing=false", () => {
+    // Inverse: an asset was NOT housing at capture (countsAsHousing=false) but was
+    // reclassified to housing afterwards. The ripple must NOT impute the delta to
+    // the housing axis — frozen=false means it goes to gross+total only (illiquid).
+    const workspace = makeWorkspace();
+    const frozenNonHousingRow: SnapshotHoldingRow = {
+      countsAsHousing: false, // frozen: was NOT housing at capture
+      holdingId: "asset_garage",
+      kind: "asset",
+      label: "Garage",
+      liquidityTier: "illiquid",
+      securesHousing: false,
+      valueMinor: 50_000_00,
+    };
+    // After capture, garage reclassified to real_estate (now isHousingAsset=true live).
+    const nowHousingGarage = createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 80_000_00,
+      id: "asset_garage",
+      liquidityTier: "illiquid",
+      name: "Garage",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "real_estate", // live: isHousingAsset returns true
+    });
+    const snapBefore: NetWorthSnapshot = {
+      capturedAt: "2022-01-01T12:00:00.000Z",
+      dateKey: "2022-01-01",
+      debts: eur(0),
+      grossAssets: eur(50_000_00),
+      housingEquity: eur(0), // was NOT housing at capture
+      id: "snap_g",
+      isMonthlyClose: false,
+      liquidNetWorth: eur(0),
+      monthKey: "2022-01",
+      scopeId: "member_jose",
+      scopeLabel: "Jose",
+      totalNetWorth: eur(50_000_00),
+      warnings: [],
+    };
+
+    // Ownership re-weight is a no-op (individual scope, same member). Global = 80k.
+    const result = recalculateSnapshotForOwnership({
+      frozenHoldings: [frozenNonHousingRow],
+      globalValueMinor: 80_000_00,
+      holding: { asset: nowHousingGarage, kind: "asset" },
+      snapshot: snapBefore,
+      workspace,
+    })!;
+
+    expect(result.holdings[0]!.valueMinor).toBe(80_000_00);
+    // Frozen countsAsHousing=false → delta goes to gross+total only, not housing.
+    // housingEquity stays 0 (was 0, delta=0 on housing axis).
+    expect(result.snapshot.grossAssets.amountMinor).toBe(80_000_00);
+    expect(result.snapshot.housingEquity.amountMinor).toBe(0);
+    expect(result.snapshot.liquidNetWorth.amountMinor).toBe(0);
+    expect(result.snapshot.totalNetWorth.amountMinor).toBe(80_000_00);
+    expect(result.holdings[0]!.countsAsHousing).toBe(false);
   });
 
   test("capture and every ripple path produce the same row set for the same date (#181 parity)", () => {
@@ -1657,6 +1816,7 @@ describe("recalculateSnapshotForOwnership (#172)", () => {
   }
 
   const pisoRow = (valueMinor: number): SnapshotHoldingRow => ({
+    countsAsHousing: true, // piso is a housing asset, frozen at capture
     holdingId: "asset_piso",
     kind: "asset",
     label: "Piso",
@@ -1665,6 +1825,7 @@ describe("recalculateSnapshotForOwnership (#172)", () => {
     valueMinor,
   });
   const mortgageRow = (valueMinor: number): SnapshotHoldingRow => ({
+    countsAsHousing: false,
     holdingId: "liab_h",
     kind: "liability",
     label: "Hipoteca",
@@ -1772,6 +1933,7 @@ describe("recalculateSnapshotForOwnership (#172)", () => {
     });
     // Ana's scope froze 50% = 5_000_00; the split is corrected to 60/40.
     const cashRow: SnapshotHoldingRow = {
+      countsAsHousing: false,
       holdingId: "asset_cash",
       kind: "asset",
       label: "Cuenta",
