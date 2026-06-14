@@ -29,12 +29,19 @@ function addOneMonthClamped(dateKey: string): string {
   return `${newYear}-${mm}-${dd}`;
 }
 
-export function migrate(sqlite: DatabaseConnection): void {
+export interface MigrateResult {
+  /** True when the v18 backfill ran — the two-date model was just applied to
+   *  existing rows, so the caller must re-ripple every amortizable debt to
+   *  rewrite historical snapshots from the new curve (ADR 0019). */
+  ranV18Backfill: boolean;
+}
+
+export function migrate(sqlite: DatabaseConnection): MigrateResult {
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
 
   const version = sqlite.pragma("user_version", { simple: true }) as number;
-  if (version >= SCHEMA_VERSION) return;
+  if (version >= SCHEMA_VERSION) return { ranV18Backfill: false };
 
   if (version < 2) {
     const safeSql = schemaSql
@@ -394,7 +401,9 @@ export function migrate(sqlite: DatabaseConnection): void {
     }[];
     const hasStartDate = columns.some((c) => c.name === "start_date");
 
+    let ranV18Backfill = false;
     if (hasStartDate) {
+      ranV18Backfill = true;
       sqlite.exec("ALTER TABLE amortization_plans ADD COLUMN disbursement_date TEXT");
       sqlite.exec("ALTER TABLE amortization_plans ADD COLUMN first_payment_date TEXT");
 
@@ -414,33 +423,39 @@ export function migrate(sqlite: DatabaseConnection): void {
       // tables (interest_rate_revisions, early_repayments) reference
       // amortization_plans by NAME, so after the drop + rename their FKs resolve
       // to the rebuilt table unchanged — but the transient DROP would otherwise
-      // trip the enforcement. Re-enabled immediately after.
+      // trip the enforcement. The rebuild steps (CREATE new, INSERT, DROP old,
+      // RENAME) are wrapped in an explicit transaction so a crash between DROP
+      // and RENAME cannot leave the DB without an amortization_plans table.
+      // PRAGMA foreign_keys must be toggled outside any transaction (SQLite docs).
       sqlite.pragma("foreign_keys = OFF");
-      sqlite.exec(`CREATE TABLE amortization_plans_new (
-        id TEXT PRIMARY KEY NOT NULL,
-        liability_id TEXT NOT NULL,
-        initial_capital_minor INTEGER NOT NULL,
-        annual_interest_rate TEXT NOT NULL,
-        term_months INTEGER NOT NULL,
-        disbursement_date TEXT NOT NULL,
-        first_payment_date TEXT NOT NULL,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        FOREIGN KEY (liability_id) REFERENCES liabilities(id) ON UPDATE no action ON DELETE cascade
-      );`);
-      sqlite.exec(`INSERT INTO amortization_plans_new
-        (id, liability_id, initial_capital_minor, annual_interest_rate, term_months,
-         disbursement_date, first_payment_date, created_at)
-        SELECT id, liability_id, initial_capital_minor, annual_interest_rate, term_months,
-               disbursement_date, first_payment_date, created_at
-        FROM amortization_plans;`);
-      sqlite.exec("DROP TABLE amortization_plans;");
-      sqlite.exec("ALTER TABLE amortization_plans_new RENAME TO amortization_plans;");
-      sqlite.exec(
-        `CREATE UNIQUE INDEX IF NOT EXISTS amortization_plans_liability_unique
-         ON amortization_plans (liability_id);`,
-      );
+      sqlite.exec(`BEGIN;
+        CREATE TABLE amortization_plans_new (
+          id TEXT PRIMARY KEY NOT NULL,
+          liability_id TEXT NOT NULL,
+          initial_capital_minor INTEGER NOT NULL,
+          annual_interest_rate TEXT NOT NULL,
+          term_months INTEGER NOT NULL,
+          disbursement_date TEXT NOT NULL,
+          first_payment_date TEXT NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          FOREIGN KEY (liability_id) REFERENCES liabilities(id) ON UPDATE no action ON DELETE cascade
+        );
+        INSERT INTO amortization_plans_new
+          (id, liability_id, initial_capital_minor, annual_interest_rate, term_months,
+           disbursement_date, first_payment_date, created_at)
+          SELECT id, liability_id, initial_capital_minor, annual_interest_rate, term_months,
+                 disbursement_date, first_payment_date, created_at
+          FROM amortization_plans;
+        DROP TABLE amortization_plans;
+        ALTER TABLE amortization_plans_new RENAME TO amortization_plans;
+        CREATE UNIQUE INDEX IF NOT EXISTS amortization_plans_liability_unique
+          ON amortization_plans (liability_id);
+        COMMIT;`);
       sqlite.pragma("foreign_keys = ON");
     }
     sqlite.pragma("user_version = 18");
+    return { ranV18Backfill };
   }
+
+  return { ranV18Backfill: false };
 }

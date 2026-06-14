@@ -10,8 +10,11 @@
  *  - first_payment_date = start_date + 1 month (day clamped to the destination
  *    month's last day, exactly like the engine's addMonths),
  *  - the start_date column is gone,
- *  - every frozen snapshot figure stays BYTE-IDENTICAL (the backfill reproduces
- *    the pre-#188 engine's curve, so historical figures never change), and
+ *  - for day<=28 plans every frozen snapshot figure stays BYTE-IDENTICAL (the
+ *    backfill reproduces the pre-#188 engine's boundary dates exactly, so the
+ *    re-ripple is a no-op for those figures),
+ *  - for day>=29 plans the re-ripple corrects frozen snapshots to the new two-date
+ *    curve atomically at migration time (ADR 0019), and
  *  - the re-read curve equals the known pre-#188 single-date balances to the cent.
  * A second run is a no-op (idempotent), behind the `version < 18` guard, and a
  * fresh DB (already at the two-date shape) migrates cleanly without a start_date.
@@ -19,7 +22,7 @@
 import Database from "better-sqlite3";
 import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore } from "../src/index";
+import { createInMemoryStore, createStoreFromSqlite } from "../src/index";
 import { migrate, SCHEMA_VERSION } from "../src/migrate";
 import { schemaSql } from "../src/schema-sql";
 
@@ -28,13 +31,16 @@ import { schemaSql } from "../src/schema-sql";
  * schema back to the single `start_date` column, so migrate() exercises the real
  * legacy path (add columns + JS backfill + table rebuild), not a no-op.
  */
-function seedV17(): Database.Database {
-  const db = new Database(":memory:");
-  const legacySql = schemaSql.replace(
+function legacySchemaSql(): string {
+  return schemaSql.replace(
     /\t`disbursement_date` text NOT NULL,\n\t`first_payment_date` text NOT NULL,\n/,
     "\t`start_date` text NOT NULL,\n",
   );
-  db.exec(legacySql);
+}
+
+function seedV17(): Database.Database {
+  const db = new Database(":memory:");
+  db.exec(legacySchemaSql());
   db.pragma("user_version = 17");
 
   db.exec(`
@@ -66,6 +72,69 @@ function seedV17(): Database.Database {
 
     INSERT INTO snapshot_holdings (id, snapshot_id, holding_id, kind, label, liquidity_tier, value_minor) VALUES
       ('sh_mortgage', 'snap1', 'l_mortgage', 'liability', 'Hipoteca', NULL, 195465_37);
+  `);
+
+  return db;
+}
+
+/**
+ * Build a pre-v18 database WITH a workspace + ownership so the post-migrate
+ * re-ripple in buildStore can fire. Contains:
+ *  - day-31 plan  (l_eom / plan_eom): start=2020-01-31, 100k€, 3%, 120 months
+ *    snapshot at "2021-01-31" = old boundary 12, debts_minor = 91_293_65
+ *  - day-1 plan   (l_mortgage / plan_1st): start=2020-01-01, 200k€, 2.5%, 360 months
+ *    snapshot at "2021-01-01" = old boundary 12, debts_minor = 195_465_37
+ * Both snapshots use scope_id = 'household'.
+ */
+function seedV17WithRipple(): Database.Database {
+  const db = new Database(":memory:");
+  db.exec(legacySchemaSql());
+  db.pragma("user_version = 17");
+
+  db.exec(`
+    INSERT INTO workspace (id, mode, base_currency) VALUES ('default', 'individual', 'EUR');
+    INSERT INTO members (id, name) VALUES ('mJ', 'Jose');
+
+    INSERT INTO liabilities (id, name, type, currency, current_balance_minor, debt_model) VALUES
+      ('l_mortgage', 'Hipoteca',      'mortgage', 'EUR', 200000_00, 'amortizable'),
+      ('l_eom',      'Préstamo EOM',  'debt',     'EUR', 100000_00, 'amortizable');
+
+    INSERT INTO liability_ownerships (liability_id, member_id, share_bps) VALUES
+      ('l_mortgage', 'mJ', 10000),
+      ('l_eom',      'mJ', 10000);
+
+    INSERT INTO amortization_plans
+      (id, liability_id, initial_capital_minor, annual_interest_rate, term_months, start_date)
+    VALUES
+      ('plan_1st', 'l_mortgage', 200000_00, '0.025', 360, '2020-01-01'),
+      ('plan_eom', 'l_eom',     100000_00, '0.03',  120, '2020-01-31');
+
+    -- Day-1 plan: snapshot at old boundary 12 = 2021-01-01, debts_minor = 195_465_37.
+    -- After re-ripple the new curve (firstPayment=2020-02-01) has boundary 12 also
+    -- at 2021-01-01 (addMonths("2020-02-01",11)="2021-01-01") → byte-identical.
+    INSERT INTO snapshots
+      (id, scope_id, scope_label, captured_at, date_key, month_key, currency,
+       total_net_worth_minor, liquid_net_worth_minor, housing_equity_minor,
+       gross_assets_minor, debts_minor)
+    VALUES
+      ('snap_1st', 'household', 'Casa', '2021-01-01T12:00:00.000Z', '2021-01-01', '2021-01',
+       'EUR', -195465_37, -195465_37, 0, 0, 195465_37);
+    INSERT INTO snapshot_holdings (id, snapshot_id, holding_id, kind, label, liquidity_tier, value_minor) VALUES
+      ('sh_1st', 'snap_1st', 'l_mortgage', 'liability', 'Hipoteca', NULL, 195465_37);
+
+    -- Day-31 plan: snapshot at old boundary 12 = 2021-01-31, debts_minor = 91_293_65.
+    -- After re-ripple the new curve (firstPayment=2020-02-29) has boundary 12 at
+    -- 2021-01-29 and boundary 13 at 2021-02-28. "2021-01-31" is interpolated between
+    -- them → 91_244_49.
+    INSERT INTO snapshots
+      (id, scope_id, scope_label, captured_at, date_key, month_key, currency,
+       total_net_worth_minor, liquid_net_worth_minor, housing_equity_minor,
+       gross_assets_minor, debts_minor)
+    VALUES
+      ('snap_eom', 'household', 'Casa', '2021-01-31T12:00:00.000Z', '2021-01-31', '2021-01',
+       'EUR', -91293_65, -91293_65, 0, 0, 91293_65);
+    INSERT INTO snapshot_holdings (id, snapshot_id, holding_id, kind, label, liquidity_tier, value_minor) VALUES
+      ('sh_eom', 'snap_eom', 'l_eom', 'liability', 'Préstamo EOM', NULL, 91293_65);
   `);
 
   return db;
@@ -185,6 +254,56 @@ describe("amortization two-date schema migration (v18)", () => {
     expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
     store.close();
     db.close();
+  });
+
+  test("re-ripples day-31 plan snapshot to the new two-date curve (ADR 0019)", () => {
+    // The day-31 plan (start=2020-01-31) gets firstPayment=2020-02-29 after backfill.
+    // addMonths(addMonths("2020-01-31",1), m-1) ≠ addMonths("2020-01-31", m) for m≥2,
+    // so the new curve diverges from the old single-date curve at most boundary dates.
+    // The pre-migration snapshot at "2021-01-31" (= old boundary 12) had l_eom = 91_293_65.
+    // After re-ripple the holding row for l_eom must reflect the new curve: 91_244_49.
+    const db = seedV17WithRipple();
+    const store = createStoreFromSqlite(db); // migrate + re-ripple fires here
+    try {
+      // Check the frozen holding row for l_eom at 2021-01-31 (not the snapshot aggregate,
+      // which also includes l_mortgage added by its own re-ripple on the same date range).
+      const holdings = store.snapshots.readSnapshotHoldings({
+        from: "2021-01-31",
+        scopeId: "household",
+        to: "2021-01-31",
+      });
+      const eomRow = holdings.find(
+        (h) => h.holdingId === "l_eom" && h.kind === "liability",
+      );
+      expect(eomRow).toBeDefined();
+      expect(eomRow!.valueMinor).toBe(91_244_49);
+    } finally {
+      store.close();
+    }
+  });
+
+  test("day-1 plan snapshot holding stays byte-identical after re-ripple (no-op case)", () => {
+    // The day-1 plan (start=2020-01-01) gets firstPayment=2020-02-01 after backfill.
+    // addMonths("2020-02-01", m-1) = addMonths("2020-01-01", m) for all m (the
+    // composition trap only bites when day>=29). So the new curve boundary dates are
+    // identical to the old single-date curve boundary dates, and the re-ripple is a
+    // no-op for figures: the l_mortgage holding at its boundary date is unchanged.
+    const db = seedV17WithRipple();
+    const store = createStoreFromSqlite(db); // migrate + re-ripple fires here
+    try {
+      const holdings = store.snapshots.readSnapshotHoldings({
+        from: "2021-01-01",
+        scopeId: "household",
+        to: "2021-01-01",
+      });
+      const mortgageRow = holdings.find(
+        (h) => h.holdingId === "l_mortgage" && h.kind === "liability",
+      );
+      expect(mortgageRow).toBeDefined();
+      expect(mortgageRow!.valueMinor).toBe(195_465_37); // unchanged
+    } finally {
+      store.close();
+    }
   });
 
   test("the migrated curve reproduces the pre-#188 single-date balance to the cent", () => {

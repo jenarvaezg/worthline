@@ -307,6 +307,11 @@ function createAmortizationPlan(
   }
   assertIsoDate(input.disbursementDate, "Disbursement date");
   assertIsoDate(input.firstPaymentDate, "First-payment date");
+  if (input.disbursementDate > input.firstPaymentDate) {
+    throw new Error(
+      `Disbursement date must be ≤ first-payment date, got disbursement "${input.disbursementDate}" > first-payment "${input.firstPaymentDate}".`,
+    );
+  }
   assertDecimalString(input.annualInterestRate, "Annual interest rate");
 
   // The "liability must be amortizable" invariant is a domain/caller guard (R9),
@@ -379,6 +384,16 @@ function updateAmortizationPlan(
   }
   if (input.annualInterestRate !== undefined) {
     assertDecimalString(input.annualInterestRate, "Annual interest rate");
+  }
+  // Guard ordering when both dates are being updated together.
+  if (
+    input.disbursementDate !== undefined &&
+    input.firstPaymentDate !== undefined &&
+    input.disbursementDate > input.firstPaymentDate
+  ) {
+    throw new Error(
+      `Disbursement date must be ≤ first-payment date, got disbursement "${input.disbursementDate}" > first-payment "${input.firstPaymentDate}".`,
+    );
   }
 
   const existing = ctx.db

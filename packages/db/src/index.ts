@@ -52,7 +52,7 @@ import {
   warningOverrides,
 } from "./schema";
 import { createAssetStore, type AssetStore } from "./asset-store";
-import { migrate } from "./migrate";
+import { migrate, type MigrateResult } from "./migrate";
 
 export { SCHEMA_VERSION } from "./migrate";
 import { createLiabilityStore, type LiabilityStore } from "./liability-store";
@@ -344,8 +344,20 @@ export function runBootstrapHealthcheck(
  */
 export function createInMemoryStore(): WorthlineStore {
   const sqlite = new Database(":memory:");
-  migrate(sqlite);
-  return buildStore(sqlite);
+  const migrateResult = migrate(sqlite);
+  return buildStore(sqlite, migrateResult);
+}
+
+/**
+ * Open an existing SQLite connection as a WorthlineStore, running the migration
+ * ladder (and any post-migrate re-ripples) on it. Useful in tests that seed a
+ * legacy-schema database and then need to verify the store behaves correctly
+ * after migration — without going through the file-path lifecycle of
+ * `createWorthlineStore`.
+ */
+export function createStoreFromSqlite(sqlite: DatabaseConnection): WorthlineStore {
+  const migrateResult = migrate(sqlite);
+  return buildStore(sqlite, migrateResult);
 }
 
 export function createWorthlineStore(
@@ -355,11 +367,14 @@ export function createWorthlineStore(
   mkdirSync(dirname(databasePath), { recursive: true });
 
   const sqlite = new Database(databasePath);
-  migrate(sqlite);
-  return buildStore(sqlite);
+  const migrateResult = migrate(sqlite);
+  return buildStore(sqlite, migrateResult);
 }
 
-function buildStore(sqlite: DatabaseConnection): WorthlineStore {
+function buildStore(
+  sqlite: DatabaseConnection,
+  migrateResult: MigrateResult,
+): WorthlineStore {
   // Shared substrate for the extracted *-Store slices (R1–R5, PRD #120): the
   // connection, id generation, transaction wrapping, audit logging, and the
   // per-unit-of-work workspace cache all live in one place.
@@ -558,6 +573,30 @@ function buildStore(sqlite: DatabaseConnection): WorthlineStore {
       );
     },
   };
+
+  // ADR 0019 (#188): after the v18 backfill, re-ripple every amortizable debt
+  // so historical snapshots are rewritten from the new two-date curve. For
+  // day<=28 plans the new curve is byte-identical to the old single-date curve,
+  // so re-ripple is a no-op for figures. For day>=29 plans the clamped
+  // first_payment shifts the cadence (addMonths(addMonths(start,1),m-1) ≠
+  // addMonths(start,m)), so frozen snapshots must be corrected now — atomically
+  // at migration time — rather than drifting silently on the next curve touch.
+  if (migrateResult.ranV18Backfill) {
+    const workspace = getWorkspace();
+    if (workspace) {
+      const today = new Date().toISOString().slice(0, 10);
+      const deps = buildHistoricalSnapshotDeps(ctx.db, workspace);
+      for (const [liabilityId, curve] of deps.debtBalanceByLiability) {
+        if (curve.debtModel === "amortizable" && curve.plan) {
+          rippleHistoricalSnapshotsForDebt(ctx, workspace, store.snapshots.saveSnapshot, {
+            kind: "amortizable-plan",
+            liabilityId,
+            today,
+          });
+        }
+      }
+    }
+  }
 
   return store;
 }
