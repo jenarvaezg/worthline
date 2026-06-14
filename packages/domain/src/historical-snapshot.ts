@@ -421,6 +421,8 @@ export function recalculateSnapshotForAsset(
         kind: "asset",
         label: existingRow?.label ?? input.asset.name,
         liquidityTier: existingRow?.liquidityTier ?? tierOfAsset(input.asset),
+        // An asset never secures housing — the signal is liability-only (#180).
+        securesHousing: false,
         valueMinor: ownedMinor,
         ...(valuation.units !== undefined ? { units: valuation.units } : {}),
         ...(valuation.unitPrice !== undefined ? { unitPrice: valuation.unitPrice } : {}),
@@ -565,6 +567,8 @@ export function recalculateSnapshotForHousing(
       kind: "asset",
       label: existingRow?.label ?? input.asset.name,
       liquidityTier: existingRow?.liquidityTier ?? tierOfAsset(input.asset),
+      // An asset never secures housing — the signal is liability-only (#180).
+      securesHousing: false,
       valueMinor: ownedMinor,
     };
     rows.push(newRow);
@@ -700,6 +704,9 @@ export function recalculateSnapshotForLiability(
       kind: "liability",
       label: existingRow?.label ?? input.liability.name,
       liquidityTier: existingRow ? existingRow.liquidityTier : null,
+      // Preserve the frozen signal for an existing row; for a newly-appearing
+      // row freeze it from the same classification the figures use (#180).
+      securesHousing: existingRow ? existingRow.securesHousing : securesHousing,
       valueMinor: ownedMinor,
     };
     rows.push(newRow);
@@ -831,6 +838,13 @@ export function recalculateSnapshotForOwnership(
         : holding.kind === "asset"
           ? tierOfAsset(holding.asset)
           : null,
+      // Preserve the frozen signal for an existing row; else freeze it from the
+      // same classification the figures use — assets never secure housing (#180).
+      securesHousing: existingRow
+        ? existingRow.securesHousing
+        : holding.kind === "liability"
+          ? securesHousingAsset(holding.liability, holding.housingAssetIds)
+          : false,
       valueMinor: ownedMinor,
       ...(existingRow?.units !== undefined ? { units: existingRow.units } : {}),
       ...(existingRow?.unitPrice !== undefined

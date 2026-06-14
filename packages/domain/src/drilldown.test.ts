@@ -44,6 +44,7 @@ function row(input: {
     kind: input.kind ?? "asset",
     label: input.label ?? input.holdingId,
     liquidityTier: input.tier,
+    securesHousing: false,
     valueMinor: input.valueMinor,
   };
 }

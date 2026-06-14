@@ -177,6 +177,7 @@ function makeExportData(): WorkspaceExportData {
             kind: "asset",
             label: "Cuenta corriente",
             liquidityTier: "cash",
+            securesHousing: false,
             valueMinor: 150000,
           },
           {
@@ -184,6 +185,7 @@ function makeExportData(): WorkspaceExportData {
             kind: "liability",
             label: "Hipoteca",
             liquidityTier: "cash",
+            securesHousing: true,
             valueMinor: 20000,
           },
         ],

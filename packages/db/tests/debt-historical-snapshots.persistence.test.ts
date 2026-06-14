@@ -421,6 +421,17 @@ describe("historical housing equity from a real mortgage curve", () => {
     expect(housingEquityAt(store, "2025-01-01")).toBe(valueOnDate - balanceOnDate);
     expect(debtsAt(store, "2025-01-01")).toBe(balanceOnDate);
     expect(holdingsReconcile(store, "2025-01-01")).toBe(true);
+
+    // The frozen securesHousing signal persists and reads back (#180): the
+    // mortgage row secures the housing asset → true; the housing asset itself
+    // is an asset → false. No live foreign key into holdings is consulted.
+    const rows = store.snapshots.readSnapshotHoldings({
+      scopeId: "mJ",
+      from: "2025-01-01",
+      to: "2025-01-01",
+    });
+    expect(rows.find((r) => r.holdingId === "mortgage")?.securesHousing).toBe(true);
+    expect(rows.find((r) => r.holdingId === "piso")?.securesHousing).toBe(false);
     store.close();
   });
 });
