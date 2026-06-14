@@ -91,15 +91,22 @@ function seedFullWorkspace(store: WorthlineStore): void {
     safeWithdrawalRate: 0.04,
   });
 
+  // Five self-consistent figures under the #181 row-derivation rules: the
+  // mortgage row is frozen securesHousing → it is a HOUSING debt, so it nets
+  // against housing equity (0 housing assets − 120000 = −120000) and never
+  // against liquid (liquid = cash 500000 + market 105500 = 605500). The earlier
+  // fixture subtracted the mortgage from liquid while also marking it
+  // securesHousing, which the saveSnapshot reconcile backstop (#185) correctly
+  // rejects; total/gross/debts are unchanged.
   const snapshot: NetWorthSnapshot = {
     capturedAt: "2026-02-01T10:00:00.000Z",
     dateKey: "2026-02-01",
     debts: { amountMinor: 120000, currency: "EUR" },
     grossAssets: { amountMinor: 605500, currency: "EUR" },
-    housingEquity: { amountMinor: 0, currency: "EUR" },
+    housingEquity: { amountMinor: -120000, currency: "EUR" },
     id: "snap1",
     isMonthlyClose: true,
-    liquidNetWorth: { amountMinor: 485500, currency: "EUR" },
+    liquidNetWorth: { amountMinor: 605500, currency: "EUR" },
     monthKey: "2026-02",
     scopeId: "m1",
     scopeLabel: "Alice",
@@ -304,7 +311,11 @@ describe("exportWorkspace", () => {
     expect(snap.capturedAt).toBe("2026-02-01T10:00:00.000Z");
     expect(snap.dateKey).toBe("2026-02-01");
     expect(snap.monthKey).toBe("2026-02");
-    expect(snap.isMonthlyClose).toBe(true);
+    // The declared isMonthlyClose flag is retired (ADR 0005): saveSnapshot no
+    // longer carries it (the store writes a constant 0; the monthly close is
+    // DERIVED as the last snapshot of the month), so a captured snapshot reads
+    // back false regardless of what the caller declared (#185).
+    expect(snap.isMonthlyClose).toBe(false);
     expect(snap.totalNetWorth).toEqual({ amountMinor: 485500, currency: "EUR" });
     expect(snap.grossAssets).toEqual({ amountMinor: 605500, currency: "EUR" });
     expect(snap.debts).toEqual({ amountMinor: 120000, currency: "EUR" });
