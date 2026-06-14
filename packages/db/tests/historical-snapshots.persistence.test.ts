@@ -69,17 +69,49 @@ describe("historical snapshots from operations", () => {
     store.close();
   });
 
-  test("a later snapshot ripples and keeps its own captured price", () => {
+  test("a no-price investment keeps cost basis through a ripple, not last-op price (#183)", () => {
     const store = createInMemoryStore();
-    seed(store);
+    seed(store); // fund has no provider/manual price → valued at cost basis (ADR 0006)
 
-    // First, an operation at 2024-03-01 generates that snapshot at price 200.
+    // An operation at 2024-03-01 generates that snapshot at cost basis (5 × 200).
     recordBuy(store, "2024-03-01", "5", "200");
     expect(grossAt(store, "2024-03-01")).toBe(5 * 200_00);
 
     // A backdated buy at 2024-01-10 generates its own snapshot AND ripples the
-    // 2024-03-01 one (now 15 units) — valued at the price 2024-03-01 already
-    // captured (200), not the older op price (100).
+    // 2024-03-01 one (now 15 units). With no price known, the frozen value stays
+    // at COST BASIS — 10×100 + 5×200 = 2000.00 — never units × last-op price 200
+    // (3000.00), the #183 jump for a multi-buy weighted-avg ≠ last-op price.
+    recordBuy(store, "2024-01-10", "10", "100");
+
+    expect(grossAt(store, "2024-01-10")).toBe(10 * 100_00);
+    expect(grossAt(store, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00);
+    store.close();
+  });
+
+  test("a priced investment keeps its captured price through a ripple (ADR 0012)", () => {
+    const store = createInMemoryStore();
+    store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    // A manual quote (200) makes the fund priced — valued at market, not cost basis.
+    store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "fund",
+      liquidityTier: "market",
+      manualPricePerUnit: "200",
+      name: "Fondo indexado",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+
+    // 2024-03-01 generates at the known price 200 (5 × 200 = 1000.00).
+    recordBuy(store, "2024-03-01", "5", "200");
+    expect(grossAt(store, "2024-03-01")).toBe(5 * 200_00);
+
+    // A backdated buy at 2024-01-10 generates its own snapshot (at that date's
+    // last-op price 100) AND ripples 2024-03-01 (now 15 units) — which keeps the
+    // price 2024-03-01 already captured (200), not the older op price 100: the
+    // ADR-0012 carry-over for a row frozen WITH a unit price, unchanged by #183.
     recordBuy(store, "2024-01-10", "10", "100");
 
     expect(grossAt(store, "2024-01-10")).toBe(10 * 100_00);
@@ -116,7 +148,8 @@ describe("historical snapshots from operations", () => {
     recordBuy(store, "2024-03-01", "5", "200");
 
     expect(grossAt(store, "2024-01-10")).toBe(10 * 100_00 + 1_000_00);
-    expect(grossAt(store, "2024-03-01")).toBe(15 * 200_00 + 1_000_00);
+    // No-price fund frozen at cost basis (10×100 + 5×200), not last-op price (#183).
+    expect(grossAt(store, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00 + 1_000_00);
 
     // Delete the 2024-01-10 buy.
     const ops = store.operations.readOperations("fund");
@@ -157,9 +190,10 @@ describe("historical snapshots from imported operations (gap-fill)", () => {
 
     // Gap at 2024-01-10 is regenerated.
     expect(grossAt(target, "2024-01-10")).toBe(10 * 100_00);
-    // 2024-03-01 survives exactly as imported (15 units × the captured 200).
+    // 2024-03-01 survives exactly as imported — a no-price fund frozen at COST
+    // BASIS (10×100 + 5×200 = 2000.00, ADR 0006/#183), never recalculated on import.
     expect(grossAt(target, "2024-03-01")).toBe(marchSnapshot.grossAssets.amountMinor);
-    expect(grossAt(target, "2024-03-01")).toBe(15 * 200_00);
+    expect(grossAt(target, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00);
     target.close();
   });
 });
@@ -185,11 +219,12 @@ describe("ripple preserves frozen history (ADR 0012)", () => {
     // Trash the cash account — a present-state edit; frozen snapshots must not move.
     store.assets.softDeleteAsset("cash", "2026-06-10T00:00:00.000Z");
 
-    // A backdated fund operation ripples 2024-03-01. The fund row updates; the
-    // (now trashed) cash row must survive in that frozen snapshot.
+    // A backdated fund operation ripples 2024-03-01. The fund row updates (the
+    // no-price fund stays at cost basis 10×100 + 5×200 = 2000.00, not last-op
+    // price, #183); the (now trashed) cash row must survive in that frozen snapshot.
     recordBuy(store, "2024-01-10", "10", "100");
 
-    expect(grossAt(store, "2024-03-01")).toBe(15 * 200_00 + 1_000_00);
+    expect(grossAt(store, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00 + 1_000_00);
     store.close();
   });
 

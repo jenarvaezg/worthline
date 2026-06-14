@@ -26,6 +26,7 @@ import {
   recalculateSnapshotForLiability,
   recalculateSnapshotForOwnership,
   resolveScopeMemberIds,
+  selectInvestmentPrice,
 } from "@worthline/domain";
 import Database from "better-sqlite3";
 import type { Database as DatabaseConnection } from "better-sqlite3";
@@ -65,7 +66,9 @@ import {
   hardDeleteAssetTx,
   hardDeleteLiabilityTx,
   readAllOperations,
+  readAllPriceCache,
   readAssets,
+  readInvestmentMeta,
   readLiabilities,
   type StoreContext,
   type StoreDb,
@@ -563,6 +566,42 @@ interface HistoricalSnapshotDeps {
   housingValuationByAsset: Map<string, HousingCurveInputs>;
   /** Debt-balance curve inputs of every liability with a debt model (PRD #109). */
   debtBalanceByLiability: Map<string, DebtBalanceCurveInputs>;
+  /**
+   * Investment asset ids with no provider/manual price — valued at COST BASIS in
+   * fresh generation, mirroring live capture's ADR-0006 fallback, so a generated
+   * snapshot never shows a units × last-operation-price figure it could not have
+   * shown that day (#183).
+   */
+  costBasisAssetIds: Set<string>;
+}
+
+/**
+ * The investment asset ids that currently have no provider/manual price — the
+ * ones live capture values at cost basis (ADR 0006). Used so fresh historical
+ * generation values them at cost basis too, not at the latest operation price
+ * (#183). A priced investment is absent from the set and keeps its price-based
+ * valuation. Historical reconstruction has no contemporaneous price store, so
+ * "has a price today" is the only signal available — the same one live capture
+ * reads through `selectInvestmentPrice`.
+ */
+function readCostBasisAssetIds(db: StoreDb, assets: readonly ManualAsset[]): Set<string> {
+  const ids = new Set<string>();
+  const hasInvestments = assets.some((asset) => asset.type === "investment");
+  if (!hasInvestments) return ids;
+
+  const metaByAsset = readInvestmentMeta(db);
+  const priceCacheByAsset = readAllPriceCache(db);
+
+  for (const asset of assets) {
+    if (asset.type !== "investment") continue;
+    const selected = selectInvestmentPrice({
+      cachedPrice: priceCacheByAsset.get(asset.id)?.price,
+      manualPrice: metaByAsset.get(asset.id)?.manualPricePerUnit,
+    });
+    if (selected === undefined) ids.add(asset.id);
+  }
+
+  return ids;
 }
 
 function buildHistoricalSnapshotDeps(
@@ -573,6 +612,7 @@ function buildHistoricalSnapshotDeps(
   const reconstructedLiabilities = readLiabilities(db, workspace);
   return {
     assets: reconstructedAssets,
+    costBasisAssetIds: readCostBasisAssetIds(db, reconstructedAssets),
     debtBalanceByLiability: readDebtBalanceInputs(db, reconstructedLiabilities),
     housingValuationByAsset: readHousingCurveInputs(db, reconstructedAssets),
     liabilities: reconstructedLiabilities,
@@ -826,6 +866,7 @@ function rippleHistoricalSnapshots(
         const built = buildSnapshotAtDate({
           assets: deps.assets,
           capturedAt: historicalCapturedAt(operationDateKey),
+          costBasisAssetIds: deps.costBasisAssetIds,
           debtBalanceByLiability: deps.debtBalanceByLiability,
           housingValuationByAsset: deps.housingValuationByAsset,
           id: `histsnap_${scope.id}_${operationDateKey}`,
@@ -944,6 +985,7 @@ function rippleHistoricalSnapshotsForValuation(
         const built = buildSnapshotAtDate({
           assets: deps.assets,
           capturedAt: historicalCapturedAt(fromDateKey),
+          costBasisAssetIds: deps.costBasisAssetIds,
           debtBalanceByLiability: deps.debtBalanceByLiability,
           housingValuationByAsset: deps.housingValuationByAsset,
           id: `histsnap_${scope.id}_${fromDateKey}`,
@@ -1089,6 +1131,7 @@ function rippleHistoricalSnapshotsForDebt(
         const built = buildSnapshotAtDate({
           assets: deps.assets,
           capturedAt: historicalCapturedAt(dateKey),
+          costBasisAssetIds: deps.costBasisAssetIds,
           debtBalanceByLiability: deps.debtBalanceByLiability,
           housingValuationByAsset: deps.housingValuationByAsset,
           id: `histsnap_${scope.id}_${dateKey}`,
@@ -1370,6 +1413,7 @@ function gapFillHistoricalSnapshots(
       const built = buildSnapshotAtDate({
         assets: deps.assets,
         capturedAt: historicalCapturedAt(dateKey),
+        costBasisAssetIds: deps.costBasisAssetIds,
         debtBalanceByLiability: deps.debtBalanceByLiability,
         housingValuationByAsset: deps.housingValuationByAsset,
         id: `histsnap_${scope.id}_${dateKey}`,
