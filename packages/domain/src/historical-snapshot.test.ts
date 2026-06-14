@@ -9,6 +9,7 @@ import { describe, expect, test } from "vitest";
 import {
   amortizationPaymentDatesUpTo,
   buildSnapshotAtDate,
+  globalHoldingValueAtDate,
   recalculateSnapshotForAsset,
   recalculateSnapshotForHousing,
   recalculateSnapshotForLiability,
@@ -465,6 +466,103 @@ describe("buildSnapshotAtDate", () => {
 
     // Falls back to last known manual value ≤ date, not any curve.
     expect(result!.snapshot.grossAssets.amountMinor).toBe(180_000_00);
+  });
+});
+
+describe("globalHoldingValueAtDate (#187)", () => {
+  test("values an investment by its operation ledger to the date (100%, un-allocated)", () => {
+    const workspace = makeWorkspace();
+    const fund = investment(workspace, "asset_fund", "Fondo");
+
+    const value = globalHoldingValueAtDate(
+      {
+        holding: { asset: fund, kind: "asset" },
+        operations: [buy("asset_fund", "op1", "2024-01-10", "10", "100")],
+      },
+      "2024-06-01",
+    );
+
+    // 10 units × 100 = 1000.00 EUR — the whole-holding value, no scope weighting.
+    expect(value).toBe(1_000_00);
+  });
+
+  test("values a housing asset from its curve, never from an allocation-rounded row", () => {
+    const workspace = makeWorkspace();
+    const piso = housing(workspace, "asset_piso", 300_000_01);
+
+    const value = globalHoldingValueAtDate(
+      {
+        holding: { asset: piso, kind: "asset" },
+        housingCurve: {
+          anchors: [
+            {
+              adjustsPriorCurve: true,
+              valuationDate: "2024-01-01",
+              valueMinor: 300_000_01,
+            },
+          ],
+          annualAppreciationRate: null,
+          currentValueMinor: 300_000_01,
+        },
+        today: "2024-06-01",
+      },
+      "2024-06-01",
+    );
+
+    // The exact anchored value (odd cents), never a value drifted by re-dividing a
+    // rounded household row — the bug this helper fixes (#187).
+    expect(value).toBe(300_000_01);
+  });
+
+  test("values an amortizable liability from its debt curve, not last-known", () => {
+    const workspace = makeWorkspace();
+    const hipoteca = createLiability(workspace, {
+      balanceMinor: 100_000_00,
+      currency: "EUR",
+      id: "liab_h",
+      name: "Hipoteca",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+
+    const value = globalHoldingValueAtDate(
+      {
+        debtCurve: {
+          anchors: [],
+          currentBalanceMinor: 100_000_00,
+          debtModel: "amortizable",
+          plan: {
+            annualInterestRate: "0.03",
+            initialCapitalMinor: 150_000_00,
+            startDate: "2020-01-01",
+            termMonths: 240,
+          },
+          revisions: [],
+        },
+        holding: { kind: "liability", liability: hipoteca },
+      },
+      "2022-01-01",
+    );
+
+    // The curve balance 2y into a 20y loan is above the 100k last-known balance.
+    expect(value).not.toBeNull();
+    expect(value!).toBeGreaterThan(100_000_00);
+    expect(value!).toBeLessThan(150_000_00);
+  });
+
+  test("returns null when the investment was not held on that date (before first op)", () => {
+    const workspace = makeWorkspace();
+    const fund = investment(workspace, "asset_fund", "Fondo");
+
+    const value = globalHoldingValueAtDate(
+      {
+        holding: { asset: fund, kind: "asset" },
+        operations: [buy("asset_fund", "op1", "2024-05-01", "10", "100")],
+      },
+      "2024-01-01",
+    );
+
+    expect(value).toBeNull();
   });
 });
 
