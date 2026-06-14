@@ -1,3 +1,4 @@
+import { valuationMethodOfAsset } from "./holding-method";
 import type { ManualAsset } from "./workspace-types";
 
 export type WarningSeverity = "blocking" | "overrideable";
@@ -29,7 +30,11 @@ export function collectWarnings(
   const warnings: DomainWarning[] = [];
 
   for (const a of assets) {
-    if (a.currentValue.amountMinor === 0)
+    // A `derived` holding (investment) is valued only from its operations, so it
+    // reads 0 before its first operation and after its position is fully sold —
+    // both correct, not a misconfiguration — so it is never flagged (issue #157,
+    // ADR 0006). `stored`/`appreciating` holdings genuinely left at 0 still warn.
+    if (a.currentValue.amountMinor === 0 && valuationMethodOfAsset(a) !== "derived")
       warnings.push({
         code: "ZERO_VALUE_ASSET",
         severity: "overrideable",
