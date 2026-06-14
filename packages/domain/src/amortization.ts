@@ -41,11 +41,13 @@ export type EarlyRepaymentMode = "reduce-payment" | "reduce-term";
 
 /**
  * A lump-sum early repayment (amortización anticipada) against the principal.
- * Applied at its month boundary (`monthsBetween` floor — the same granularity as
- * a rate revision): the live balance drops by `amountMinor` (clamped at 0, so a
- * lump ≥ the balance is a total repayment that closes the loan), then either the
- * cuota is recomputed over the remaining term (`reduce-payment`, the end date is
- * kept) or the cuota is held and the loan reaches 0 earlier (`reduce-term`).
+ * Applied at its month boundary — the largest month start ≤ the repayment date,
+ * the same boundary the balance locator resolves that date to (#182), the same
+ * granularity as a rate revision: the live balance drops by `amountMinor`
+ * (clamped at 0, so a lump ≥ the balance is a total repayment that closes the
+ * loan), then either the cuota is recomputed over the remaining term
+ * (`reduce-payment`, the end date is kept) or the cuota is held and the loan
+ * reaches 0 earlier (`reduce-term`).
  */
 export interface EarlyRepayment {
   /** YYYY-MM-DD the repayment is made. */
@@ -224,16 +226,17 @@ function computeBoundaries(input: AmortizableBalanceAtDateInput): MonthlyBoundar
 
   const sortedRevisions = (input.revisions ?? [])
     .map((revision) => ({
-      monthIndex: Math.max(0, monthsBetween(startDate, revision.revisionDate)),
+      monthIndex: monthIndexForDate(startDate, revision.revisionDate),
       rate: revision.newAnnualInterestRate,
     }))
     .sort((a, b) => a.monthIndex - b.monthIndex);
 
-  // Early repayments grouped by the month boundary they land on (floor, like a
-  // revision). Input order within a month is preserved for determinism.
+  // Early repayments grouped by the month boundary they land on — the same
+  // boundary the balance locator resolves their date to (#182). Input order
+  // within a month is preserved for determinism.
   const repaymentsByMonth = new Map<number, EarlyRepayment[]>();
   for (const repayment of input.earlyRepayments ?? []) {
-    const monthIndex = Math.max(0, monthsBetween(startDate, repayment.repaymentDate));
+    const monthIndex = monthIndexForDate(startDate, repayment.repaymentDate);
     const list = repaymentsByMonth.get(monthIndex) ?? [];
     list.push(repayment);
     repaymentsByMonth.set(monthIndex, list);
@@ -290,17 +293,29 @@ function computeBoundaries(input: AmortizableBalanceAtDateInput): MonthlyBoundar
   return boundaries;
 }
 
-/** Whole calendar months elapsed from `from` to `to` (floor: partial month not counted). */
-function monthsBetween(from: string, to: string): number {
-  const fromYear = Number(from.slice(0, 4));
-  const fromMonth = Number(from.slice(5, 7));
-  const toYear = Number(to.slice(0, 4));
-  const toMonth = Number(to.slice(5, 7));
-  const toDay = Number(to.slice(8, 10));
-  const fromDay = Number(from.slice(8, 10));
-  let months = (toYear - fromYear) * 12 + (toMonth - fromMonth);
-  if (toDay < fromDay) months -= 1;
-  return months;
+/**
+ * The month boundary index a dated event (early repayment or rate revision)
+ * lands on: the largest `m` with `addMonths(startDate, m) ≤ eventDate`, i.e. the
+ * payment cycle the event actually falls in. This is the SAME locator
+ * `amortizableBalanceAtDate` uses to find the balance for a query date, so an
+ * event pinned here resolves to the boundary that the same date resolves to when
+ * queried (#182). Floored at 0 for events on or before the start date.
+ *
+ * Whole years/months give a fast lower bound (calendar months elapsed, which is
+ * always ≤ the answer); we then advance while the next boundary is still ≤ the
+ * event, so the day-of-month clamping in `addMonths` is honoured exactly.
+ */
+function monthIndexForDate(startDate: string, eventDate: string): number {
+  const fromYear = Number(startDate.slice(0, 4));
+  const fromMonth = Number(startDate.slice(5, 7));
+  const toYear = Number(eventDate.slice(0, 4));
+  const toMonth = Number(eventDate.slice(5, 7));
+  const lowerBound = Math.max(0, (toYear - fromYear) * 12 + (toMonth - fromMonth) - 1);
+  let monthIndex = lowerBound;
+  while (addMonths(startDate, monthIndex + 1) <= eventDate) {
+    monthIndex += 1;
+  }
+  return monthIndex;
 }
 
 /**
