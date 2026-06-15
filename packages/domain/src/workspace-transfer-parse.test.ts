@@ -186,6 +186,7 @@ function makeExportData(): WorkspaceExportData {
         freshnessState: "fresh",
       },
     ],
+    connectedSources: [],
   };
 }
 
@@ -940,5 +941,82 @@ describe("parseWorkspaceExport — domain invariants", () => {
     if (!result.ok) {
       expect(result.errors.length).toBeGreaterThanOrEqual(3);
     }
+  });
+});
+
+describe("parseWorkspaceExport — connected sources (ADR 0016)", () => {
+  /** A coin_collection asset + a numista source projecting into it, with a coin. */
+  function withConnectedSource(doc: WorkspaceExport): void {
+    doc.assets.push({
+      id: "coins",
+      name: "Colección Numista",
+      type: "manual",
+      currency: "EUR",
+      currentValue: { amountMinor: 12_500, currency: "EUR" },
+      liquidityTier: "illiquid",
+      instrument: "coin_collection",
+      valuationMethod: "derived",
+      ownership: [{ memberId: "m1", shareBps: 10_000 }],
+    });
+    doc.connectedSources = [
+      {
+        id: "src1",
+        adapter: "numista",
+        label: "Colección Numista",
+        assetId: "coins",
+        lastSyncAt: "2026-06-10T18:00:00.000Z",
+        positions: [
+          {
+            id: "p1",
+            externalId: "ext-1",
+            catalogueId: "n1",
+            issueId: null,
+            name: "8 reales",
+            grade: "VF",
+            quantity: 1,
+            liquidityTier: "illiquid",
+            metal: "silver",
+            finenessMillis: null,
+            weightGrams: null,
+            purchaseDate: "2024-01-01",
+            metalValueMinor: null,
+            numismaticValueMinor: null,
+            numismaticFetchedAt: null,
+            purchasePriceMinor: 5_000,
+            currency: "EUR",
+          },
+        ],
+      },
+    ];
+  }
+
+  test("a coin_collection holding + its source and positions parse", () => {
+    const document = makeDocument(withConnectedSource);
+    const result = parseWorkspaceExport(document);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.connectedSources).toHaveLength(1);
+      expect(result.value.connectedSources[0]!.positions).toHaveLength(1);
+    }
+  });
+
+  test("a source projecting into a missing asset is rejected", () => {
+    const document = makeDocument((doc) => {
+      withConnectedSource(doc);
+      doc.connectedSources[0]!.assetId = "ghost";
+    });
+    expectRejection(document, /fuente conectada.*activo inexistente/i);
+  });
+
+  test("two positions sharing an id under one source are rejected", () => {
+    const document = makeDocument((doc) => {
+      withConnectedSource(doc);
+      doc.connectedSources[0]!.positions.push({
+        ...doc.connectedSources[0]!.positions[0]!,
+        externalId: "ext-2",
+      });
+    });
+    expectRejection(document, /posición de la fuente/i);
   });
 });

@@ -220,6 +220,7 @@ function makeExportData(): WorkspaceExportData {
         freshnessState: "fresh",
       },
     ],
+    connectedSources: [],
   };
 }
 
@@ -374,6 +375,7 @@ describe("summarizeWorkspaceExport", () => {
       warningOverrides: 1,
       priceCacheEntries: 1,
       fireConfigScopes: 1,
+      connectedSources: 0,
     });
   });
 
@@ -390,6 +392,7 @@ describe("summarizeWorkspaceExport", () => {
       snapshots: [],
       trash: { assets: [], liabilities: [] },
       priceCache: [],
+      connectedSources: [],
     });
 
     expect(summarizeWorkspaceExport(doc)).toEqual({
@@ -404,6 +407,7 @@ describe("summarizeWorkspaceExport", () => {
       warningOverrides: 0,
       priceCacheEntries: 0,
       fireConfigScopes: 0,
+      connectedSources: 0,
     });
   });
 });

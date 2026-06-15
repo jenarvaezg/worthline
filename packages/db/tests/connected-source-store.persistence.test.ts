@@ -8,6 +8,7 @@
  */
 import {
   isValueUpdateEligible,
+  parseWorkspaceExport,
   valuationMethodOfAsset,
   type ManualAsset,
 } from "@worthline/domain";
@@ -398,6 +399,104 @@ describe("connected-source store — freezeIntoStoredHolding", () => {
     expect(store.connectedSources.freezeIntoStoredHolding("missing")).toBeNull();
     expect(store.connectedSources.listSources()).toHaveLength(1);
     expect(holding(store, assetId).instrument).toBe("coin_collection");
+  });
+});
+
+describe("connected-source store — export/import round-trip", () => {
+  test("carries the source + positions through export→parse→import, without secrets", () => {
+    const store = createInMemoryStore();
+    seed(store);
+    const { sourceId, assetId } = connectNumista(store);
+    // A minted token + the pasted API key are the local-only secrets.
+    store.connectedSources.saveToken(
+      sourceId,
+      JSON.stringify({ accessToken: "secret-token", expiresAtMs: 999, userId: 1 }),
+    );
+    store.connectedSources.syncPositions(
+      sourceId,
+      [
+        position({ catalogueId: "n1", externalId: "ext-1", purchasePriceMinor: 5_000 }),
+        position({ catalogueId: "n2", externalId: "ext-2", purchasePriceMinor: 7_500 }),
+      ],
+      "2024-06-01T10:00:00.000Z",
+    );
+
+    const doc = store.workspace.exportWorkspace();
+
+    // The export carries the source + its positions…
+    expect(doc.connectedSources).toHaveLength(1);
+    const exported = doc.connectedSources[0]!;
+    expect(exported).toMatchObject({
+      id: sourceId,
+      adapter: "numista",
+      assetId,
+      label: "Colección Numista",
+      lastSyncAt: "2024-06-01T10:00:00.000Z",
+    });
+    expect(exported.positions).toHaveLength(2);
+    // …but NEVER the secrets (apiKey "secret" + the minted "secret-token").
+    expect(JSON.stringify(doc)).not.toContain("secret");
+    expect(exported).not.toHaveProperty("credentialsJson");
+    expect(exported).not.toHaveProperty("tokenJson");
+
+    // The untrusted document validates (the coin_collection asset + the new
+    // connected-sources section both pass the parser gate)…
+    const parsed = parseWorkspaceExport(doc);
+    if (!parsed.ok) throw new Error(parsed.errors.join("; "));
+
+    // …and restores into a fresh store: holding + source + positions are back.
+    const fresh = createInMemoryStore();
+    fresh.workspace.importWorkspace(parsed.value);
+
+    const restored = fresh.connectedSources.listSources();
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({
+      id: sourceId,
+      adapter: "numista",
+      assetId,
+      label: "Colección Numista",
+      lastSyncAt: "2024-06-01T10:00:00.000Z",
+      tokenJson: null,
+    });
+    // The restored source has no usable credentials — a re-sync needs the API
+    // key re-entered (ADR 0016).
+    expect(
+      (JSON.parse(restored[0]!.credentialsJson) as { apiKey?: string }).apiKey,
+    ).toBeUndefined();
+
+    const restoredPositions = fresh.connectedSources.readPositions(sourceId);
+    expect(restoredPositions).toHaveLength(2);
+    expect(restoredPositions.map((p) => p.externalId).sort()).toEqual(["ext-1", "ext-2"]);
+
+    // The projected holding round-trips as a coin_collection with its rolled value.
+    const restoredHolding = fresh.assets.readAssets().find((a) => a.id === assetId);
+    expect(restoredHolding?.instrument).toBe("coin_collection");
+    expect(restoredHolding?.currentValue.amountMinor).toBe(12_500);
+  });
+});
+
+describe("connected-source store — import replaces existing sources", () => {
+  test("a full-replace import wipes a pre-existing source + positions", () => {
+    const target = createInMemoryStore();
+    seed(target);
+    const { sourceId } = connectNumista(target);
+    target.connectedSources.syncPositions(
+      sourceId,
+      [position({ catalogueId: "old", externalId: "old-1" })],
+      "2024-01-01T00:00:00.000Z",
+    );
+    expect(target.connectedSources.listSources()).toHaveLength(1);
+
+    // A document with NO connected sources must leave none behind after import.
+    const empty = createInMemoryStore();
+    seed(empty);
+    const doc = empty.workspace.exportWorkspace();
+    expect(doc.connectedSources).toHaveLength(0);
+
+    target.workspace.importWorkspace(doc);
+
+    expect(target.connectedSources.listSources()).toHaveLength(0);
+    expect(target.connectedSources.readPositions(sourceId)).toHaveLength(0);
   });
 });
 

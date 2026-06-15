@@ -14,6 +14,7 @@
 
 import type { EarlyRepaymentMode } from "./amortization";
 import type { LiquidityTier } from "./classification";
+import type { SourceAdapter, SourcePosition } from "./connected-source";
 import type { DecimalString } from "./decimal";
 import type { ValuationMethod } from "./holding-valuation";
 import type { Instrument } from "./instrument-catalog";
@@ -186,6 +187,31 @@ export interface ExportedLiability {
 }
 
 /**
+ * One position a connected source mirrors, carried in the file (ADR 0016): the
+ * full sub-detail of the coin/line, with its id preserved for a faithful
+ * restore. The `sourceId` is implied by nesting under the source, so it is
+ * omitted here.
+ */
+export type ExportedPosition = Omit<SourcePosition, "sourceId">;
+
+/**
+ * One connected source in the file (ADR 0016): the adapter, its label, the
+ * asset it projects into, when it last synced, and its positions. Credentials
+ * and cached tokens are LOCAL-ONLY and NEVER exported — a restored source must
+ * have its API key re-entered before it can sync again.
+ */
+export interface ExportedConnectedSource {
+  id: string;
+  adapter: SourceAdapter;
+  label: string;
+  /** The materialized rolled-up holding this source projects into. */
+  assetId: string;
+  /** ISO timestamp of the last sync; absent when the source never synced. */
+  lastSyncAt?: string;
+  positions: ExportedPosition[];
+}
+
+/**
  * A frozen snapshot plus the valued portfolio behind its figures (ADR 0008).
  * Holdings may be empty for captures that predate snapshot holdings; when
  * present they must reconcile exactly with the snapshot's headline figures.
@@ -213,6 +239,8 @@ export interface WorkspaceExportData {
   snapshots: ExportedSnapshot[];
   trash: ExportedTrash;
   priceCache: AssetPrice[];
+  /** Connected sources + their positions (ADR 0016); never their secrets. */
+  connectedSources: ExportedConnectedSource[];
 }
 
 /** The versioned export document — the on-disk JSON shape. */
@@ -236,6 +264,7 @@ export interface WorkspaceExportSummary {
   warningOverrides: number;
   priceCacheEntries: number;
   fireConfigScopes: number;
+  connectedSources: number;
 }
 
 /** Count every section of an (already validated) export document. */
@@ -252,6 +281,7 @@ export function summarizeWorkspaceExport(doc: WorkspaceExport): WorkspaceExportS
     warningOverrides: doc.warningOverrides.length,
     priceCacheEntries: doc.priceCache.length,
     fireConfigScopes: Object.keys(doc.fireConfig).length,
+    connectedSources: doc.connectedSources.length,
   };
 }
 
@@ -270,5 +300,6 @@ export function serializeWorkspaceExport(data: WorkspaceExportData): WorkspaceEx
     snapshots: data.snapshots,
     trash: data.trash,
     priceCache: data.priceCache,
+    connectedSources: data.connectedSources,
   };
 }

@@ -70,6 +70,7 @@ const instrumentSchema = z.enum([
   "mortgage",
   "loan",
   "credit_card",
+  "coin_collection",
   "other",
 ]);
 
@@ -244,6 +245,37 @@ const priceSchema = z.object({
   staleReason: nonEmptyString.optional(),
 });
 
+// ── Connected sources (ADR 0016): the source + its positions, never secrets ──
+
+const positionSchema = z.object({
+  id: nonEmptyString,
+  externalId: nonEmptyString,
+  catalogueId: nonEmptyString,
+  issueId: z.number().int().nullable(),
+  name: nonEmptyString,
+  grade: z.string(),
+  quantity: z.number().int(),
+  liquidityTier: liquidityTierSchema,
+  metal: nonEmptyString.nullable(),
+  finenessMillis: z.number().nullable(),
+  weightGrams: z.number().nullable(),
+  purchaseDate: nonEmptyString.nullable(),
+  metalValueMinor: z.number().int().nullable(),
+  numismaticValueMinor: z.number().int().nullable(),
+  numismaticFetchedAt: nonEmptyString.nullable(),
+  purchasePriceMinor: z.number().int().nullable(),
+  currency: nonEmptyString,
+});
+
+const connectedSourceSchema = z.object({
+  id: nonEmptyString,
+  adapter: z.enum(["numista"]),
+  label: nonEmptyString,
+  assetId: nonEmptyString,
+  lastSyncAt: nonEmptyString.optional(),
+  positions: z.array(positionSchema).default([]),
+});
+
 const documentSchema = z.object({
   version: z.literal(EXPORT_VERSION),
   workspace: z.object({
@@ -265,6 +297,7 @@ const documentSchema = z.object({
     })
     .default({ assets: [], liabilities: [] }),
   priceCache: z.array(priceSchema).default([]),
+  connectedSources: z.array(connectedSourceSchema).default([]),
 });
 
 // ── Entry point ──────────────────────────────────────────────────────────────
@@ -434,6 +467,7 @@ function collectDomainErrors(doc: WorkspaceExport): string[] {
   collectStructuralIdErrors(errors, allAssets, allLiabilities);
   collectStructuralKeyErrors(errors, allAssets, allLiabilities);
   collectReferentialIntegrityErrors(errors, doc, allAssets, allLiabilities);
+  collectConnectedSourceErrors(errors, doc, allAssets);
   collectDatabaseKeyErrors(errors, doc);
   collectSnapshotReconciliationErrors(errors, doc);
 
@@ -883,6 +917,41 @@ function collectReferentialIntegrityErrors(
 
   // Snapshot holdings' holdingId is deliberately NOT checked: snapshot rows are
   // frozen history with no live foreign key into holdings (ADR 0008).
+}
+
+/**
+ * Connected sources (ADR 0016): each source must project into an asset present
+ * in the file, source ids and the position ids beneath them must be unique, and
+ * no source may smuggle credentials/tokens back in via an unknown key (zod has
+ * already stripped those, so this only guards the referential + uniqueness
+ * invariants the FKs enforce live).
+ */
+function collectConnectedSourceErrors(
+  errors: string[],
+  doc: WorkspaceExport,
+  allAssets: ExportedAsset[],
+): void {
+  const assetById = new Map(allAssets.map((asset) => [asset.id, asset]));
+
+  collectDuplicateIdErrors(
+    errors,
+    "fuente conectada",
+    doc.connectedSources.map((source) => source.id),
+  );
+
+  for (const source of doc.connectedSources) {
+    if (!assetById.has(source.assetId)) {
+      errors.push(
+        `La fuente conectada "${source.label}" (${source.id}) referencia un activo inexistente: ${source.assetId}.`,
+      );
+    }
+
+    collectDuplicateIdErrors(
+      errors,
+      `posición de la fuente ${source.id}`,
+      source.positions.map((position) => position.id),
+    );
+  }
 }
 
 function collectDatabaseKeyErrors(errors: string[], doc: WorkspaceExport): void {
