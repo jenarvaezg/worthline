@@ -256,6 +256,7 @@ CREATE TABLE \`positions\` (
 	\`name\` text NOT NULL,
 	\`grade\` text NOT NULL,
 	\`quantity\` integer NOT NULL,
+	\`year\` integer,
 	\`liquidity_tier\` text NOT NULL,
 	\`metal\` text,
 	\`fineness_millis\` integer,

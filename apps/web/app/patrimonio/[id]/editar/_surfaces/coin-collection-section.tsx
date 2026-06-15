@@ -26,17 +26,13 @@ import { formatLastSync } from "../../../../ajustes/numista-helpers";
 import {
   basisTag,
   buildCoinCollectionView,
+  coinYear,
   formatSharePct,
   metalCoinCount,
 } from "./coin-collection-view";
 
 const eur = (amountMinor: number): string =>
   formatMoneyMinor({ amountMinor, currency: "EUR" });
-
-const coinYear = (position: SourcePosition): string | null => {
-  const date = position.purchaseDate;
-  return date && date.length >= 4 ? date.slice(0, 4) : null;
-};
 
 export function CoinCollectionSection({
   positions,

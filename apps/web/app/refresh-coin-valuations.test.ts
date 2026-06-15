@@ -47,6 +47,7 @@ function position(): SourcePosition {
     quantity: 1,
     sourceId: "src-1",
     weightGrams: 31.103,
+    year: 2021,
   };
 }
 

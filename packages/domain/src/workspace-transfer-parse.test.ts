@@ -974,6 +974,7 @@ describe("parseWorkspaceExport — connected sources (ADR 0016)", () => {
             name: "8 reales",
             grade: "VF",
             quantity: 1,
+            year: 1888,
             liquidityTier: "illiquid",
             metal: "silver",
             finenessMillis: null,

@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 21;
+export const SCHEMA_VERSION = 22;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -528,6 +528,16 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       sqlite.exec("ALTER TABLE positions ADD COLUMN external_id TEXT");
     } catch {}
     sqlite.pragma("user_version = 21");
+  }
+
+  if (version < 22) {
+    // #215: persist the coin's mint year on each position so the catalogue row
+    // shows the coin's year (not its acquisition date). Forward-only, nullable —
+    // existing rows get NULL and are repopulated on the next sync.
+    try {
+      sqlite.exec("ALTER TABLE positions ADD COLUMN year INTEGER");
+    } catch {}
+    sqlite.pragma("user_version = 22");
   }
 
   return { ranV18Backfill };

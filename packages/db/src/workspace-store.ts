@@ -809,6 +809,7 @@ function importWorkspace(
               quantity: position.quantity,
               sourceId: source.id,
               weightGrams: position.weightGrams,
+              year: position.year,
             })),
           )
           .run();

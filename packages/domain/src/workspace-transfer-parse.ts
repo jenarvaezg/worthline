@@ -255,6 +255,7 @@ const positionSchema = z.object({
   name: nonEmptyString,
   grade: z.string(),
   quantity: z.number().int(),
+  year: z.number().int().nullable(),
   liquidityTier: liquidityTierSchema,
   metal: nonEmptyString.nullable(),
   finenessMillis: z.number().nullable(),
