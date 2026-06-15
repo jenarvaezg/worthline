@@ -1,6 +1,7 @@
 import { runBootstrapHealthcheck, withStore } from "@worthline/db";
-import { collectWarnings, listScopeOptions } from "@worthline/domain";
+import { collectWarnings, formatMoneyMinor, listScopeOptions } from "@worthline/domain";
 import { cookies } from "next/headers";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import {
@@ -22,6 +23,12 @@ import {
   saveFireConfigAction,
   updateMemberAction,
 } from "./actions";
+import {
+  connectNumistaAction,
+  disconnectNumistaAction,
+  syncNumistaAction,
+} from "./numista-actions";
+import { formatLastSync } from "./numista-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -49,8 +56,31 @@ export default async function AjustesPage({
     const scopes = listScopeOptions(workspace);
     const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
 
+    // The connected Numista source (PRD #160), if any. The derived holding's value
+    // and coin count come from the asset row + its positions.
+    const numistaRow = store.connectedSources
+      .listSources()
+      .find((source) => source.adapter === "numista");
+    const numistaPositions = numistaRow
+      ? store.connectedSources.readPositions(numistaRow.id)
+      : [];
+    const numistaAsset = numistaRow
+      ? (store.assets.readAssets().find((a) => a.id === numistaRow.assetId) ?? null)
+      : null;
+    const numistaSource = numistaRow
+      ? {
+          id: numistaRow.id,
+          assetId: numistaRow.assetId,
+          label: numistaRow.label,
+          lastSyncAt: numistaRow.lastSyncAt,
+          coinCount: numistaPositions.reduce((sum, p) => sum + p.quantity, 0),
+          valueMinor: numistaAsset?.currentValue.amountMinor ?? 0,
+        }
+      : null;
+
     return {
       fireConfig: store.readFireConfig(),
+      numistaSource,
       overrides: store.readWarningOverrides(),
       scopes,
       selectedScope,
@@ -65,7 +95,8 @@ export default async function AjustesPage({
   // prepareDashboardState needs assets/liabilities/etc — for ajustes we only
   // need the workspace, scopes, and warnings-related data. Build the minimal
   // state subset needed for the shell.
-  const { scopes, selectedScope, workspace, fireConfig, overrides } = storeData;
+  const { scopes, selectedScope, workspace, fireConfig, overrides, numistaSource } =
+    storeData;
   const fireScopeConfig = selectedScope ? fireConfig[selectedScope.id] : undefined;
 
   // Build warnings for the shell rail (read from full store to be accurate).
@@ -313,6 +344,91 @@ export default async function AjustesPage({
           <a className="panelAction" href="/ajustes/export">
             Exportar
           </a>
+        </section>
+
+        {/* ── Fuentes conectadas ──────────────────────────────────── */}
+        <section className="ajustesPanel" aria-label="Fuentes conectadas">
+          <div className="panelHeader">
+            <h2>Fuentes conectadas</h2>
+            <span>Numista</span>
+          </div>
+
+          {formError?.formId === "numista" ? (
+            <p className="formError" role="alert">
+              {formError.message}
+            </p>
+          ) : null}
+
+          {numistaSource ? (
+            <div className="coinSourceTile">
+              <div className="coinSourceStatus">
+                <span className="coinStatusPill">Conectado</span>
+                <dl className="coinSourceStats">
+                  <div>
+                    <dt>Última sincronización</dt>
+                    <dd>{formatLastSync(numistaSource.lastSyncAt)}</dd>
+                  </div>
+                  <div>
+                    <dt>Monedas</dt>
+                    <dd className="coinNum">{numistaSource.coinCount}</dd>
+                  </div>
+                  <div>
+                    <dt>Valor</dt>
+                    <dd className="coinNum">
+                      {formatMoneyMinor({
+                        amountMinor: numistaSource.valueMinor,
+                        currency: "EUR",
+                      })}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+              <div className="coinSourceActions">
+                <form action={syncNumistaAction} className="coinSyncForm">
+                  <input name="currentUrl" type="hidden" value={currentUrl} />
+                  <input name="sourceId" type="hidden" value={numistaSource.id} />
+                  <button type="submit">Sincronizar Numista</button>
+                </form>
+                <Link
+                  className="actionLink"
+                  href={`/patrimonio/${numistaSource.assetId}/editar`}
+                >
+                  Ver colección →
+                </Link>
+                <form action={disconnectNumistaAction}>
+                  <input name="currentUrl" type="hidden" value={currentUrl} />
+                  <input name="sourceId" type="hidden" value={numistaSource.id} />
+                  <details className="confirmDelete">
+                    <summary>Desconectar</summary>
+                    <p>
+                      Se eliminará la colección y todas sus monedas. La clave de API se
+                      borra de este dispositivo; tu colección en Numista no se toca.
+                    </p>
+                    <button type="submit">Confirmar desconexión</button>
+                  </details>
+                </form>
+              </div>
+            </div>
+          ) : (
+            <form action={connectNumistaAction} className="stackForm">
+              <input name="currentUrl" type="hidden" value={currentUrl} />
+              <label>
+                Clave de API de Numista
+                <input
+                  aria-label="Clave de API de Numista"
+                  autoComplete="off"
+                  name="apiKey"
+                  placeholder="Pega aquí tu clave de API"
+                  type="password"
+                />
+              </label>
+              <p className="muted">
+                Conecta tu colección de Numista para reflejar tus monedas como un activo
+                ilíquido con valor calculado. La clave se guarda solo en este dispositivo.
+              </p>
+              <button type="submit">Conectar Numista</button>
+            </form>
+          )}
         </section>
 
         {/* ── Overrides de avisos ──────────────────────────────────── */}

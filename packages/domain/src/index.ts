@@ -35,7 +35,11 @@ export {
   defaultValuationMethodForDebtModel,
   valueAt,
 } from "./holding-valuation";
-export { valuationMethodOfAsset, valuationMethodOfLiability } from "./holding-method";
+export {
+  isValueUpdateEligible,
+  valuationMethodOfAsset,
+  valuationMethodOfLiability,
+} from "./holding-method";
 export type {
   Instrument,
   InstrumentDefaults,
@@ -135,6 +139,21 @@ export type {
   RawInvestmentRow,
 } from "./asset-projection";
 export { projectAssets, projectPositions } from "./asset-projection";
+
+export type {
+  CoinValuation,
+  ConnectedSource,
+  MetalGroup,
+  ProjectedHolding,
+  SourceAdapter,
+  SourcePosition,
+  ValuationBasis,
+} from "./connected-source";
+export {
+  coinValue,
+  groupPositionsByMetal,
+  projectConnectedSource,
+} from "./connected-source";
 
 export type {
   AssetPrice,

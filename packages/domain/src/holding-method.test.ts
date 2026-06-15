@@ -7,7 +7,11 @@
  */
 import { describe, expect, test } from "vitest";
 
-import { valuationMethodOfAsset, valuationMethodOfLiability } from "./holding-method";
+import {
+  isValueUpdateEligible,
+  valuationMethodOfAsset,
+  valuationMethodOfLiability,
+} from "./holding-method";
 import type { Instrument } from "./instrument-catalog";
 import type { AssetType, ManualAsset } from "./workspace-types";
 
@@ -65,6 +69,27 @@ describe("valuationMethodOfAsset (#152)", () => {
     expect(valuationMethodOfAsset(asset({ type: "investment", instrument }))).toBe(
       method,
     );
+  });
+});
+
+describe("isValueUpdateEligible — who appears in the manual value-update pass (ADR 0016)", () => {
+  test("hand-valued holdings (stored / appreciating) are eligible", () => {
+    expect(
+      isValueUpdateEligible(asset({ type: "cash", instrument: "current_account" })),
+    ).toBe(true);
+    expect(isValueUpdateEligible(asset({ type: "manual", instrument: "other" }))).toBe(
+      true,
+    );
+    expect(
+      isValueUpdateEligible(asset({ type: "real_estate", instrument: "property" })),
+    ).toBe(true);
+  });
+
+  test("derived holdings are excluded — investments and connected-source coin collections", () => {
+    expect(isValueUpdateEligible(asset({ type: "investment", instrument: "fund" }))).toBe(
+      false,
+    );
+    expect(isValueUpdateEligible(asset({ instrument: "coin_collection" }))).toBe(false);
   });
 });
 

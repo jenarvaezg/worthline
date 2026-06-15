@@ -1,0 +1,20 @@
+{
+  "_comment": "Trimmed GET /types/{id} response (spike #161). Real catalogue data (public). Only the value-relevant fields are kept: composition.text + weight drive the metal-value resolver (later slice); value/title/issuer are for display. The live response also carries obverse/reverse/comments/references/edge/mints, omitted here.",
+  "id": 1493,
+  "url": "https://es.numista.com/1493",
+  "title": "1 Dollar \"American Silver Eagle\" (Bullion Coin)",
+  "category": "coin",
+  "issuer": { "code": "etats-unis", "name": "Estados Unidos" },
+  "min_year": 1986,
+  "max_year": 2021,
+  "value": {
+    "text": "1 Dollar",
+    "numeric_value": 1,
+    "currency": { "id": 59, "name": "Dollar", "full_name": "Dollar (1785-date)" }
+  },
+  "composition": { "text": "Plata 999" },
+  "weight": 31.103,
+  "size": 40.6,
+  "shape": "Round",
+  "type": "Bullion coin"
+}

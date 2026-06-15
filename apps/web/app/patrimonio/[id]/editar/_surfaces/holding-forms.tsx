@@ -23,18 +23,67 @@ import {
 
 export function AssetEditForm({
   asset,
+  isCoinCollection = false,
   members,
   method,
   scopeMemberId,
   values,
 }: {
   asset: ManualAsset;
+  isCoinCollection?: boolean;
   members: Member[];
   method: ValuationMethod;
   scopeMemberId: string | undefined;
   values: Record<string, string>;
 }) {
   const isInvestment = asset.type === "investment";
+
+  // A connected-source coin collection (Numista) is `derived`, like an
+  // investment: its name/type/liquidity are fixed by the source and its value is
+  // computed from its mirrored positions (ADR 0016). Lock the identity fields,
+  // hide the manual value form, but keep ownership editable below.
+  if (isCoinCollection) {
+    return (
+      <>
+        <form action={editAssetAction} className="stackForm">
+          <input
+            name="currentUrl"
+            type="hidden"
+            value={`/patrimonio/${asset.id}/editar`}
+          />
+          <input name="id" type="hidden" value={asset.id} />
+          <input name="scopeMemberId" type="hidden" value={scopeMemberId ?? ""} />
+          <input name="name" type="hidden" value={asset.name} />
+          <input name="type" type="hidden" value={asset.type} />
+          <input name="liquidityTier" type="hidden" value={asset.liquidityTier} />
+
+          <label>
+            Nombre
+            <input aria-label="Nombre del activo" defaultValue={asset.name} disabled />
+          </label>
+
+          <p className="infoNote">
+            Es una colección conectada de Numista. Su valor se calcula a partir de las
+            monedas (ADR 0016) y se actualiza al sincronizar; aquí solo editas la
+            propiedad.
+          </p>
+
+          <OwnershipInputs
+            allowPartial={false}
+            members={members}
+            scopeMemberId={scopeMemberId}
+            currentOwnership={asset.ownership}
+            values={values}
+          />
+
+          <div className="formActions">
+            <button type="submit">Guardar cambios</button>
+            <Link href={`/patrimonio#${asset.id}`}>Cancelar</Link>
+          </div>
+        </form>
+      </>
+    );
+  }
 
   return (
     <>

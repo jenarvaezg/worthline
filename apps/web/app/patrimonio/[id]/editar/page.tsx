@@ -28,6 +28,7 @@ import {
   deleteAssetAction,
   deleteLiabilityAction,
 } from "../../actions";
+import { CoinCollectionSection } from "./_surfaces/coin-collection-section";
 import { DebtModelSection } from "./_surfaces/debt-model-section";
 import { AssetEditForm, LiabilityEditForm } from "./_surfaces/holding-forms";
 import { HousingValuationSection } from "./_surfaces/housing-valuation-section";
@@ -79,8 +80,20 @@ export default async function EditarPage({
       ? store.assets.readAnnualAppreciationRate(id)
       : null;
 
+    // A connected-source coin collection (Numista) is `derived` too, but its
+    // sub-detail is its mirrored positions, not investment operations (ADR 0016).
+    // Resolve the source from the asset id, then read its positions.
+    const isCoinCollection = asset?.instrument === "coin_collection";
+    const coinSource = isCoinCollection
+      ? (store.connectedSources.listSources().find((s) => s.assetId === id) ?? null)
+      : null;
+    const coinPositions = coinSource
+      ? store.connectedSources.readPositions(coinSource.id)
+      : [];
+
     // derived (investment): the operations editor + its derived position (ADR 0006).
-    const isDerived = assetMethod === "derived";
+    // A coin collection is derived but routed to its own surface, so skip these.
+    const isDerived = assetMethod === "derived" && !isCoinCollection;
     const operations = isDerived ? store.operations.readOperations(id) : [];
     const priceCache = isDerived ? store.operations.readPriceCache(id) : null;
     const position = isDerived
@@ -113,8 +126,11 @@ export default async function EditarPage({
       assetMethod,
       assets: assets.filter((a) => a.type !== "investment"),
       balanceAnchors,
+      coinPositions,
+      coinSource,
       debtModel,
       earlyRepayments,
+      isCoinCollection,
       liability,
       operations,
       overrides,
@@ -140,8 +156,11 @@ export default async function EditarPage({
     assetMethod,
     assets,
     balanceAnchors,
+    coinPositions,
+    coinSource,
     debtModel,
     earlyRepayments,
+    isCoinCollection,
     liability,
     operations,
     overrides,
@@ -241,6 +260,7 @@ export default async function EditarPage({
         {asset ? (
           <AssetEditForm
             asset={asset}
+            isCoinCollection={isCoinCollection}
             members={activeMembers}
             method={method}
             scopeMemberId={ownershipScopeMemberId}
@@ -258,8 +278,19 @@ export default async function EditarPage({
 
         {/* ── Method-dispatched configuration surface (#152, ADR 0014) ───────── */}
 
+        {/* coin_collection: the Numista catalogue (variant B) — derived, but its
+            sub-detail is mirrored positions, not operations (PRD #160, ADR 0016). */}
+        {asset && isCoinCollection ? (
+          <CoinCollectionSection
+            currentUrl={currentUrl}
+            lastSyncAt={coinSource?.lastSyncAt ?? null}
+            positions={coinPositions}
+            sourceId={coinSource?.id ?? null}
+          />
+        ) : null}
+
         {/* derived: the investment's operations editor (the single place units change) */}
-        {asset && method === "derived" ? (
+        {asset && method === "derived" && !isCoinCollection ? (
           <OperationsEditor
             assetName={asset.name}
             context={{

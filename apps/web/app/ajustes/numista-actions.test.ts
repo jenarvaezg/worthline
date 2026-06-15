@@ -1,0 +1,144 @@
+/**
+ * Integration tests for the Numista connected-source actions via the `_store`
+ * injection seam (PRD #160 / #163). connectNumistaAction reads the scope cookie
+ * from next/headers, which has no request context here, so it is exercised by its
+ * pure helpers (numista-helpers.test.ts) and the store API directly; these tests
+ * cover the cookie-free actions: sync's guard and disconnect's cascade.
+ */
+
+import { createInMemoryStore } from "@worthline/db";
+import type { WorthlineStore } from "@worthline/db";
+import { describe, expect, test } from "vitest";
+
+import { disconnectNumistaAction, syncNumistaAction } from "./numista-actions";
+
+function form(entries: Record<string, string>): FormData {
+  const fd = new FormData();
+  for (const [key, value] of Object.entries(entries)) {
+    fd.set(key, value);
+  }
+  return fd;
+}
+
+/** Run an action and return the NEXT_REDIRECT digest (the redirect target). */
+async function runAction(
+  action: (fd: FormData, store: WorthlineStore) => Promise<never>,
+  fd: FormData,
+  store: WorthlineStore,
+): Promise<string> {
+  try {
+    await action(fd, store);
+    throw new Error("action did not redirect");
+  } catch (err: unknown) {
+    const e = err as { message?: string; digest?: string };
+    if (e.message === "NEXT_REDIRECT" && typeof e.digest === "string") {
+      return e.digest;
+    }
+    throw err;
+  }
+}
+
+function seedWithSource(store: WorthlineStore): { sourceId: string; assetId: string } {
+  store.workspace.initializeWorkspace({
+    members: [{ id: "mJ", name: "Jose" }],
+    mode: "individual",
+  });
+  return store.connectedSources.connect({
+    adapter: "numista",
+    label: "Colección Numista",
+    credentialsJson: JSON.stringify({ apiKey: "secret" }),
+    ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+  });
+}
+
+describe("disconnectNumistaAction", () => {
+  test("removes the source, its positions, and the projected holding (cascade)", async () => {
+    const store = createInMemoryStore();
+    const { sourceId, assetId } = seedWithSource(store);
+
+    // Give it a position so we can prove the cascade also clears positions.
+    store.connectedSources.syncPositions(
+      sourceId,
+      [
+        {
+          catalogueId: "1",
+          name: "20 francos",
+          grade: "EBC",
+          quantity: 1,
+          liquidityTier: "illiquid",
+          metal: "gold",
+          purchaseDate: null,
+          metalValueMinor: 35_000,
+          numismaticValueMinor: null,
+          purchasePriceMinor: null,
+          currency: "EUR",
+        },
+      ],
+      "2026-06-14T10:00:00.000Z",
+    );
+
+    expect(store.connectedSources.listSources()).toHaveLength(1);
+    expect(store.assets.readAssets().some((a) => a.id === assetId)).toBe(true);
+
+    const digest = await runAction(
+      disconnectNumistaAction,
+      form({ currentUrl: "/ajustes", sourceId }),
+      store,
+    );
+
+    expect(digest).toContain("ok=numista_disconnected");
+    expect(store.connectedSources.listSources()).toHaveLength(0);
+    expect(store.connectedSources.readSource(sourceId)).toBeNull();
+    expect(store.assets.readAssets().some((a) => a.id === assetId)).toBe(false);
+  });
+
+  test("errors when no source id is supplied", async () => {
+    const store = createInMemoryStore();
+    seedWithSource(store);
+
+    const digest = await runAction(
+      disconnectNumistaAction,
+      form({ currentUrl: "/ajustes" }),
+      store,
+    );
+
+    expect(digest).toContain("error=");
+    expect(store.connectedSources.listSources()).toHaveLength(1);
+  });
+});
+
+describe("syncNumistaAction", () => {
+  test("errors (without wiping positions) when the source id is unknown", async () => {
+    const store = createInMemoryStore();
+    const { sourceId } = seedWithSource(store);
+    store.connectedSources.syncPositions(
+      sourceId,
+      [
+        {
+          catalogueId: "1",
+          name: "Soberano",
+          grade: "MBC",
+          quantity: 1,
+          liquidityTier: "illiquid",
+          metal: "gold",
+          purchaseDate: null,
+          metalValueMinor: 50_000,
+          numismaticValueMinor: null,
+          purchasePriceMinor: null,
+          currency: "EUR",
+        },
+      ],
+      "2026-06-14T10:00:00.000Z",
+    );
+
+    const digest = await runAction(
+      syncNumistaAction,
+      form({ currentUrl: "/ajustes", sourceId: "missing" }),
+      store,
+    );
+
+    expect(digest).toContain("error=");
+    // The real source's positions are untouched.
+    expect(store.connectedSources.readPositions(sourceId)).toHaveLength(1);
+  });
+});

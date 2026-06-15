@@ -1,0 +1,6 @@
+{
+  "access_token": "***REDACTED***",
+  "token_type": "bearer",
+  "expires_in": 7200,
+  "user_id": 123456
+}

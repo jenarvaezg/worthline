@@ -1,0 +1,9 @@
+{
+  "_comment": "Real GET /types/1493/issues/32723/prices?currency=EUR response (spike #161, public catalogue data). Per-grade numismatic estimate; EUR confirmed. Grades enum: g, vg, f, vf, xf, au, unc — a coin's grade selects its estimate (later valuation slice).",
+  "currency": "EUR",
+  "prices": [
+    { "grade": "xf", "price": 66.5425 },
+    { "grade": "au", "price": 66.5425 },
+    { "grade": "unc", "price": 75.585 }
+  ]
+}

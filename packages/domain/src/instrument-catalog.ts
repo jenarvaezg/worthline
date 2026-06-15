@@ -33,6 +33,7 @@ export type Instrument =
   | "mortgage"
   | "loan"
   | "credit_card"
+  | "coin_collection"
   | "other";
 
 /** The defaults an instrument suggests. */
@@ -52,6 +53,11 @@ const INSTRUMENT_DEFAULTS: Record<Instrument, InstrumentDefaults> = {
   precious_metal: { rung: "illiquid", valuationMethod: "stored" },
   vehicle: { rung: "illiquid", valuationMethod: "stored" },
   other: { rung: "illiquid", valuationMethod: "stored" },
+  // Derived from its positions — a connected source's rolled-up holding (ADR
+  // 0016). Value is computed from the positions, never hand-set, so it reuses
+  // the `derived` method (no sixth method) and is excluded from the value
+  // update pass. Priced from positions, not a market provider.
+  coin_collection: { rung: "illiquid", valuationMethod: "derived" },
   // Derived — units × price; the provider feeds the price.
   fund: { rung: "market", valuationMethod: "derived", priceProvider: "yahoo" },
   etf: { rung: "market", valuationMethod: "derived", priceProvider: "yahoo" },
