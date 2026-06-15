@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { amortizableBalanceAtDate, firstCuota } from "./amortization";
+import {
+  amortizableBalanceAtDate,
+  assertEventWithinTerm,
+  firstCuota,
+} from "./amortization";
 import type {
   AmortizationPlanInput,
   EarlyRepayment,
@@ -748,5 +752,65 @@ describe("amortizableBalanceAtDate — boundary memo (#158)", () => {
 
     expect(withLump).toBeLessThan(withoutLump); // a lump leaves a lower balance
     expect(withoutLumpAgain).toBe(withoutLump); // cache must not have been polluted
+  });
+});
+
+/**
+ * Regression for #210. An event (early repayment or rate revision) is pinned to
+ * the largest boundary `m` with `boundaryDate(m) ≤ eventDate` (#182), with NO
+ * upper clamp. The schedule build loop only iterates `monthIndex < termMonths`,
+ * so an event resolving to `monthIndex ≥ termMonths` — a far-future / mistyped
+ * date after the loan's final payment boundary — is never read and is SILENTLY
+ * DROPPED. The intake must reject such an event instead of discarding it.
+ *
+ * For a 120-month loan first-paid on 2020-02-01, the final payment boundary is
+ * `firstPayment + (termMonths − 1) months = 2030-01-01` (boundary index 120). An
+ * event ON or AFTER that date resolves to index ≥ 120 and would be dropped.
+ */
+describe("assertEventWithinTerm — reject events after the loan's final boundary (#210)", () => {
+  const FINITE_LOAN: AmortizationPlanInput = {
+    annualInterestRate: "0.05",
+    initialCapitalMinor: 100_000_00,
+    disbursementDate: "2020-01-01",
+    firstPaymentDate: "2020-02-01",
+    termMonths: 120,
+  };
+  // boundaryDate(FINITE_LOAN, termMonths) — the final payment boundary.
+  const FINAL_BOUNDARY = "2030-01-01";
+
+  test("a far-future early repayment (would resolve to month 240) is rejected, not dropped", () => {
+    expect(() =>
+      assertEventWithinTerm(FINITE_LOAN, "2040-01-01", "Repayment date"),
+    ).toThrow(/Repayment date 2040-01-01.*2030-01-01/);
+  });
+
+  test("a rate revision after the final boundary is rejected, not dropped", () => {
+    expect(() =>
+      assertEventWithinTerm(FINITE_LOAN, "2035-06-15", "Revision date"),
+    ).toThrow(/Revision date 2035-06-15.*2030-01-01/);
+  });
+
+  test("an event ON the final payment boundary is rejected (it resolves to month termMonths, which the loop never reads)", () => {
+    expect(() =>
+      assertEventWithinTerm(FINITE_LOAN, FINAL_BOUNDARY, "Repayment date"),
+    ).toThrow();
+  });
+
+  test("an event one cycle before the final boundary is accepted (in range)", () => {
+    expect(() =>
+      assertEventWithinTerm(FINITE_LOAN, "2029-12-01", "Repayment date"),
+    ).not.toThrow();
+  });
+
+  test("an event well inside the term is accepted (in range)", () => {
+    expect(() =>
+      assertEventWithinTerm(FINITE_LOAN, "2025-01-01", "Revision date"),
+    ).not.toThrow();
+  });
+
+  test("an event before the first payment is accepted (resolves to the disbursement boundary)", () => {
+    expect(() =>
+      assertEventWithinTerm(FINITE_LOAN, "2020-01-10", "Repayment date"),
+    ).not.toThrow();
   });
 });

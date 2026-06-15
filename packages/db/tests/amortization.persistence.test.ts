@@ -300,6 +300,38 @@ describe("interest-rate revisions — CRUD", () => {
       }),
     ).toThrow();
   });
+
+  // #210: the 120-month plan first-paid 2020-02-01 ends on its final payment
+  // boundary 2030-01-01. A revision dated after that resolves past termMonths and
+  // would be silently dropped by the build loop — reject it at intake instead.
+  test("rejects a rate revision dated after the loan's final boundary (not silently dropped)", () => {
+    const store = createInMemoryStore();
+    seedPlan(store);
+    expect(() =>
+      store.liabilities.addInterestRateRevision({
+        id: "far",
+        newAnnualInterestRate: "0.03",
+        planId: "plan1",
+        revisionDate: "2035-06-15",
+      }),
+    ).toThrow();
+    // The bad revision was never persisted.
+    expect(store.liabilities.readInterestRateRevisions("plan1")).toHaveLength(0);
+  });
+
+  test("accepts a rate revision well inside the term", () => {
+    const store = createInMemoryStore();
+    seedPlan(store);
+    expect(() =>
+      store.liabilities.addInterestRateRevision({
+        id: "ok",
+        newAnnualInterestRate: "0.03",
+        planId: "plan1",
+        revisionDate: "2024-01-01",
+      }),
+    ).not.toThrow();
+    expect(store.liabilities.readInterestRateRevisions("plan1")).toHaveLength(1);
+  });
 });
 
 describe("amortizableBalanceAtDate — store reads plan + revisions and delegates", () => {
@@ -463,6 +495,41 @@ describe("early repayments — CRUD", () => {
         repaymentDate: "2022/01/01",
       }),
     ).toThrow();
+  });
+
+  // #210: the 120-month plan first-paid 2020-02-01 ends on its final payment
+  // boundary 2030-01-01. A repayment dated after that (e.g. a mistyped 2040 date)
+  // resolves to month 240, past termMonths, and would be silently dropped by the
+  // build loop — reject it at intake instead.
+  test("rejects an early repayment dated after the loan's final boundary (not silently dropped)", () => {
+    const store = createInMemoryStore();
+    seedPlan(store);
+    expect(() =>
+      store.liabilities.addEarlyRepayment({
+        amountMinor: 20_000_00,
+        id: "far",
+        mode: "reduce-payment",
+        planId: "plan1",
+        repaymentDate: "2040-01-01",
+      }),
+    ).toThrow();
+    // The bad repayment was never persisted.
+    expect(store.liabilities.readEarlyRepayments("plan1")).toHaveLength(0);
+  });
+
+  test("accepts an early repayment well inside the term", () => {
+    const store = createInMemoryStore();
+    seedPlan(store);
+    expect(() =>
+      store.liabilities.addEarlyRepayment({
+        amountMinor: 20_000_00,
+        id: "ok",
+        mode: "reduce-payment",
+        planId: "plan1",
+        repaymentDate: "2024-01-01",
+      }),
+    ).not.toThrow();
+    expect(store.liabilities.readEarlyRepayments("plan1")).toHaveLength(1);
   });
 
   test("amortizableBalanceAtDate applies a stored early repayment", () => {
