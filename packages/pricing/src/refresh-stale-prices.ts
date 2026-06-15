@@ -25,6 +25,43 @@ export interface RefreshFailure {
   reason: string;
 }
 
+/**
+ * Maximum number of provider calls made concurrently while refreshing stale
+ * prices (issue #202). Bounds the burst so users with many investment symbols
+ * don't fan out an unbounded `Promise.all` against the price providers, which
+ * risks provider rate limits and local resource exhaustion. Tuned low because
+ * refresh runs in the background ahead of snapshot capture, not on a hot path.
+ */
+export const REFRESH_CONCURRENCY_LIMIT = 4;
+
+/**
+ * Maps `items` through `fn` with at most `limit` calls in flight at once,
+ * returning results in input order. `fn` must not reject (callers degrade
+ * failures into result values), so this helper never rejects either — it
+ * preserves the existing "never throws" refresh semantics.
+ */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+
+  const worker = async (): Promise<void> => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await fn(items[index]!, index);
+    }
+  };
+
+  const workerCount = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+  return results;
+}
+
 export interface RefreshStalePricesResult {
   /** AssetPrice entries that were refreshed (fresh or failed outcome). */
   refreshed: AssetPrice[];
@@ -63,8 +100,10 @@ export async function refreshStalePrices(
     return { refreshed: [], updated: 0, failedSymbols: [], failures: [] };
   }
 
-  const results = await Promise.all(
-    refreshable.map(async (asset) => {
+  const results = await mapWithConcurrency(
+    refreshable,
+    REFRESH_CONCURRENCY_LIMIT,
+    async (asset) => {
       const provider = resolveInvestmentPriceProvider(asset);
       const price = await fetchAndCachePrice(provider, {
         assetId: asset.id,
@@ -74,7 +113,7 @@ export async function refreshStalePrices(
       });
       onRefreshed?.(price);
       return { price, symbol: asset.providerSymbol! };
-    }),
+    },
   );
 
   const failures = results
