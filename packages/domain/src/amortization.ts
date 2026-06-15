@@ -366,6 +366,32 @@ function monthIndexForDate(plan: AmortizationPlanInput, eventDate: string): numb
 }
 
 /**
+ * Reject a dated event (early repayment or rate revision) that falls AFTER the
+ * loan's final payment boundary (#210). `monthIndexForDate` pins an event to the
+ * largest boundary `m ≤ eventDate` with no upper clamp, but the schedule only has
+ * boundaries `0..termMonths` and the build loop applies events for `monthIndex <
+ * termMonths`. An event resolving to `monthIndex ≥ termMonths` — a far-future or
+ * mistyped date past the last payment — is never read and would be SILENTLY
+ * DROPPED. Surfacing it as a validation error at intake is consistent with the
+ * rest of amortization intake validation, which fails fast with a clear message.
+ *
+ * Pure (reads no clock, no I/O) so the store and any UI can guard with the same
+ * rule. The final payment boundary is `boundaryDate(plan, termMonths)`.
+ */
+export function assertEventWithinTerm(
+  plan: AmortizationPlanInput,
+  eventDate: string,
+  label: string,
+): void {
+  if (monthIndexForDate(plan, eventDate) >= plan.termMonths) {
+    const finalBoundary = boundaryDate(plan, plan.termMonths);
+    throw new Error(
+      `${label} ${eventDate} is after the loan's final payment boundary (${finalBoundary}); it would fall outside the ${plan.termMonths}-month term and be silently dropped.`,
+    );
+  }
+}
+
+/**
  * The exact first cuota of an amortization plan (ADR 0019, #190), broken down for
  * display. The opening period runs from the disbursement to the first payment and
  * is longer than one calendar month, so the first cuota carries the **stub

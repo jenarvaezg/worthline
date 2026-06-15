@@ -260,7 +260,12 @@ export type {
   FirstCuota,
   InterestRateRevision,
 } from "./amortization";
-export { addMonths, amortizableBalanceAtDate, firstCuota } from "./amortization";
+export {
+  addMonths,
+  amortizableBalanceAtDate,
+  assertEventWithinTerm,
+  firstCuota,
+} from "./amortization";
 
 export type { DebtBalanceAnchor, DebtBalanceAtDateInput } from "./debt-balance";
 export { debtBalanceAtDate } from "./debt-balance";
