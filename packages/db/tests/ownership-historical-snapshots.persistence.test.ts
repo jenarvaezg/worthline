@@ -223,7 +223,7 @@ function seedCoOwnedHome(store: WorthlineStore): void {
     currency: "EUR",
     currentValueMinor: HOME_GLOBAL_MINOR,
     id: "piso",
-    liquidityTier: "housing",
+    liquidityTier: "illiquid",
     name: "Piso",
     ownership: [
       { memberId: "mJ", shareBps: 4_000 },

@@ -66,17 +66,21 @@ function seedWorkspaceA(store: WorthlineStore): void {
   store.snapshots.saveSnapshot({
     holdings: [
       {
+        countsAsHousing: false,
         holdingId: "a-A1",
         kind: "asset",
         label: "Cuenta A",
         liquidityTier: "cash",
+        securesHousing: false,
         valueMinor: 100000,
       },
       {
+        countsAsHousing: false,
         holdingId: "l-A1",
         kind: "liability",
         label: "Deuda A",
         liquidityTier: "cash",
+        securesHousing: false,
         valueMinor: 30000,
       },
     ],
@@ -172,17 +176,21 @@ function makeDocumentB(): WorkspaceExport {
         warnings: [],
         holdings: [
           {
+            countsAsHousing: false,
             holdingId: "b-a1",
             kind: "asset",
             label: "Cuenta B",
             liquidityTier: "cash",
+            securesHousing: false,
             valueMinor: 200000,
           },
           {
+            countsAsHousing: false,
             holdingId: "b-l1",
             kind: "liability",
             label: "Hipoteca B",
             liquidityTier: "cash",
+            securesHousing: false,
             valueMinor: 50000,
           },
         ],
@@ -224,6 +232,7 @@ function makeDocumentB(): WorkspaceExport {
         freshnessState: "fresh",
       },
     ],
+    connectedSources: [],
   });
 }
 
@@ -252,6 +261,7 @@ function makeLiveOnlyDocument(): WorkspaceExport {
     snapshots: [],
     trash: { assets: [], liabilities: [] },
     priceCache: [],
+    connectedSources: [],
   });
 }
 

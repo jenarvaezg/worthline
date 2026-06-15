@@ -33,7 +33,6 @@ function makeSnapshot(
   const dateKey = overrides.dateKey;
   return {
     capturedAt: `${dateKey}T20:00:00.000Z`,
-    dateKey,
     debts: eur(0),
     grossAssets: eur(0),
     housingEquity: eur(0),
@@ -339,6 +338,7 @@ describe("post-import gap-fill surfaces its failure to the caller (#185)", () =>
       ],
       trash: { assets: [], liabilities: [] },
       priceCache: [],
+      connectedSources: [],
     });
 
     const result = store.workspace.importWorkspace(doc);
@@ -383,6 +383,7 @@ describe("post-import gap-fill surfaces its failure to the caller (#185)", () =>
       snapshots: [],
       trash: { assets: [], liabilities: [] },
       priceCache: [],
+      connectedSources: [],
     });
 
     const result = store.workspace.importWorkspace(doc);

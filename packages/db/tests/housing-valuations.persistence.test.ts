@@ -20,7 +20,7 @@ function seed(store: WorthlineStore): void {
     currentValueMinor: 130_000_00,
     id: "home",
     isPrimaryResidence: true,
-    liquidityTier: "primary_residence",
+    liquidityTier: "illiquid",
     name: "Casa",
     ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     type: "real_estate",
