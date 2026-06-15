@@ -19,6 +19,12 @@ import {
 } from "../../intake";
 import Shell from "../../shell";
 import { createHoldingAction } from "../create-holding-action";
+import {
+  addHoldingFieldValue,
+  buildSymbolSearchCurrentParams,
+  firstNonEmptyParam,
+  selectedInstrumentFromAddHoldingState,
+} from "./search-state";
 import SymbolSearch from "./symbol-search";
 
 export const dynamic = "force-dynamic";
@@ -177,13 +183,16 @@ export default async function AnadirHoldingPage({
   }
 
   const { activeMembers, assets, scopes, selectedScope } = storeData;
+  const resolvedParams = resolvedSearchParams ?? {};
   const ownershipScopeMemberId =
     activeMembers.find((m) => m.id === selectedScope?.id)?.id ?? activeMembers[0]?.id;
 
   const values = formError?.formId === "holding" ? formError.values : {};
-  const selectedInstrument = values["instrument"];
+  const selectedInstrument = selectedInstrumentFromAddHoldingState(
+    values,
+    resolvedParams,
+  );
   const assocOptions = assets.map((a) => ({ id: a.id, name: a.name }));
-  const resolvedParams = resolvedSearchParams ?? {};
 
   // Pure-CSS `:has()` disclosure: one reveal rule per instrument, generated from
   // the catalog so it stays the single source of the instrument list (ADR 0009).
@@ -307,7 +316,7 @@ function InstrumentPane({
   values: Record<string, string>;
   assocOptions: Array<{ id: string; name: string }>;
   resolvedParams: Record<string, string | string[] | undefined>;
-  selectedInstrument: string | undefined;
+  selectedInstrument: Instrument | undefined;
 }) {
   const defaults = defaultsFor(entry.id);
   const isLiability = LIABILITY_INSTRUMENTS.has(entry.id);
@@ -373,20 +382,19 @@ function MethodFields({
   values: Record<string, string>;
   assocOptions: Array<{ id: string; name: string }>;
   resolvedParams: Record<string, string | string[] | undefined>;
-  selectedInstrument: string | undefined;
+  selectedInstrument: Instrument | undefined;
 }) {
   const id = entry.id;
   const method = defaultsFor(id).valuationMethod;
   const ph = PLACEHOLDERS[id];
-  const v = (key: string): string | undefined => {
-    if (id === selectedInstrument) {
-      if (key === "name" && resolvedParams["pfName"])
-        return String(resolvedParams["pfName"]);
-      if (key === "symbol" && resolvedParams["pfSymbol"])
-        return String(resolvedParams["pfSymbol"]);
-    }
-    return values[`${key}_${id}`];
-  };
+  const v = (field: string): string | undefined =>
+    addHoldingFieldValue({
+      field,
+      instrument: id,
+      searchParams: resolvedParams,
+      selectedInstrument,
+      values,
+    });
 
   return (
     <div className="addHoldingFields">
@@ -425,12 +433,13 @@ function MethodFields({
             }
             query={
               id === selectedInstrument
-                ? typeof resolvedParams["symbolq"] === "string"
-                  ? resolvedParams["symbolq"]
-                  : undefined
+                ? firstNonEmptyParam(resolvedParams["symbolq"])
                 : undefined
             }
-            currentParams={resolvedParams}
+            currentParams={buildSymbolSearchCurrentParams(
+              resolvedParams,
+              selectedInstrument,
+            )}
           />
           <label>
             Símbolo del proveedor
