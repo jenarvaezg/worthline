@@ -47,6 +47,7 @@ function position(overrides: Partial<SourcePositionInput> = {}): SourcePositionI
     purchasePriceMinor: 5_000,
     quantity: 1,
     weightGrams: null,
+    year: null,
     ...overrides,
   };
 }
@@ -546,9 +547,11 @@ describe("connected-source store — migration", () => {
       db.prepare("PRAGMA table_info(positions)").all() as { name: string }[]
     ).map((row) => row.name);
     expect(positionColumns).toContain("external_id");
+    // The v22 mint-year column (#215).
+    expect(positionColumns).toContain("year");
 
     expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(21);
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(22);
 
     db.close();
   });

@@ -93,6 +93,7 @@ export async function syncNumistaCollection(
       name: base.name,
       grade: base.grade,
       quantity: base.quantity,
+      year: base.year,
       liquidityTier: "illiquid",
       metal: composition.metal,
       finenessMillis: composition.finenessMillis,

@@ -65,6 +65,9 @@ export interface SourcePosition {
   /** Condition rating assigned on Numista, read-only here (ADR 0017). */
   grade: string;
   quantity: number;
+  /** The coin's MINT year, read from the source's issue (#215); null when the
+   *  catalogue records none. Distinct from `purchaseDate` (when it was acquired). */
+  year: number | null;
   /** The liquidity rung this position projects onto (Numista coins: "illiquid"). */
   liquidityTier: LiquidityTier;
   /** Grouping metadata for the holding's detail lens (a coin's metal); null when

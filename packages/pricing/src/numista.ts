@@ -100,7 +100,9 @@ export interface NumistaCollectedItem {
   id: number;
   quantity: number;
   type: { id: number; title: string; category?: string };
-  issue?: { id: number };
+  // The coin's mint year lives on the issue (#215): `gregorian_year` is the
+  // normalized Gregorian year, `year` the catalogue's own (possibly non-Gregorian).
+  issue?: { id: number; year?: number; gregorian_year?: number };
   grade?: string;
   price?: { value: number; currency: string };
   acquisition_date?: string;
@@ -212,13 +214,16 @@ export interface CollectedItemDraft {
   name: string;
   grade: string;
   quantity: number;
+  /** The coin's mint year from the issue (#215); null when the catalogue has none. */
+  year: number | null;
   purchaseDate: string | null;
   purchasePriceMinor: number | null;
   currency: string;
 }
 
 /** Map a raw collected item to its position draft, reading the optional
- *  price/acquisition_date when the user recorded them (spike #161). */
+ *  price/acquisition_date when the user recorded them (spike #161) and the coin's
+ *  mint year (#215, gregorian_year preferred over the catalogue's own year). */
 export function mapCollectedItem(item: NumistaCollectedItem): CollectedItemDraft {
   return {
     catalogueId: String(item.type.id),
@@ -226,6 +231,7 @@ export function mapCollectedItem(item: NumistaCollectedItem): CollectedItemDraft
     name: item.type.title,
     grade: item.grade ?? "",
     quantity: item.quantity,
+    year: item.issue?.gregorian_year ?? item.issue?.year ?? null,
     purchaseDate: item.acquisition_date ?? null,
     purchasePriceMinor: item.price ? Math.round(item.price.value * 100) : null,
     currency: item.price?.currency ?? "EUR",

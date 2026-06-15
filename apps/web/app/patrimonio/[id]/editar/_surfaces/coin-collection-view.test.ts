@@ -11,6 +11,7 @@ import { describe, expect, test } from "vitest";
 import {
   basisTag,
   buildCoinCollectionView,
+  coinYear,
   formatSharePct,
   metalCoinCount,
   metalIdentity,
@@ -26,6 +27,7 @@ function position(overrides: Partial<SourcePosition> = {}): SourcePosition {
     name: "Moneda",
     grade: "MBC",
     quantity: 1,
+    year: null,
     liquidityTier: "illiquid",
     metal: "gold",
     issueId: null,
@@ -44,6 +46,16 @@ function position(overrides: Partial<SourcePosition> = {}): SourcePosition {
 function group(overrides: Partial<MetalGroup>): MetalGroup {
   return { metal: "gold", positions: [], subtotalMinor: 0, ...overrides };
 }
+
+describe("coinYear", () => {
+  test("shows the coin's mint year from the position, not its acquisition date", () => {
+    expect(coinYear(position({ year: 1889, purchaseDate: "2019-05-12" }))).toBe("1889");
+  });
+
+  test("shows no year when the catalogue records none (no fabricated value)", () => {
+    expect(coinYear(position({ year: null, purchaseDate: "2019-05-12" }))).toBeNull();
+  });
+});
 
 describe("metalIdentity", () => {
   test("maps a known metal slug to its es-ES label and a decorative tone", () => {

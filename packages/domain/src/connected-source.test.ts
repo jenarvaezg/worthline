@@ -33,6 +33,7 @@ function coin(overrides: Partial<SourcePosition> = {}): SourcePosition {
     name: "20 francos Marianne",
     grade: "unc",
     quantity: 1,
+    year: null,
     liquidityTier: "illiquid",
     metal: "oro",
     issueId: null,

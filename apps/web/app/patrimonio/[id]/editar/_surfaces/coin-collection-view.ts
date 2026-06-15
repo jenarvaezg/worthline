@@ -8,7 +8,12 @@
  * No network, no persistence, no Next.js: maps (groups, total) → view rows.
  */
 
-import type { CoinValuation, MetalGroup, ValuationBasis } from "@worthline/domain";
+import type {
+  CoinValuation,
+  MetalGroup,
+  SourcePosition,
+  ValuationBasis,
+} from "@worthline/domain";
 
 /** A floor so a near-invisible metal (e.g. 0,2 %) still shows a sliver of bar. */
 export const MIN_SHARE_PCT = 2;
@@ -111,6 +116,15 @@ export interface CoinCollectionView {
 /** Count the coins across a metal group's positions (sum of quantities). */
 export function metalCoinCount(positions: MetalGroup["positions"]): number {
   return positions.reduce((sum, position) => sum + position.quantity, 0);
+}
+
+/**
+ * The catalogue row's year label: the coin's MINT year (#215), read from the
+ * position's `year` — NOT its acquisition date. Null (no label) when the
+ * catalogue records no year, so nothing is fabricated.
+ */
+export function coinYear(position: Pick<SourcePosition, "year">): string | null {
+  return position.year === null ? null : String(position.year);
 }
 
 /**

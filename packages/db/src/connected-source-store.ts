@@ -137,6 +137,7 @@ export function mapPositionRow(row: typeof positions.$inferSelect): SourcePositi
     quantity: Number(row.quantity),
     sourceId: row.sourceId,
     weightGrams: row.weightGrams === null ? null : Number(row.weightGrams),
+    year: row.year === null ? null : Number(row.year),
   };
 }
 
@@ -293,6 +294,7 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
                 quantity: position.quantity,
                 sourceId,
                 weightGrams: position.weightGrams,
+                year: position.year,
               })),
             )
             .run();

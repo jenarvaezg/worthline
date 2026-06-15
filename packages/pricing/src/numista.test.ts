@@ -178,4 +178,34 @@ describe("Numista readers — parse the live response shapes (fixtures, spike #1
     expect(draft.currency).toBe("EUR");
     expect(draft.catalogueId).toBe("1493");
   });
+
+  it("mapCollectedItem carries the coin's mint year, preferring gregorian_year (#215)", () => {
+    const item = {
+      id: 1,
+      quantity: 1,
+      type: { id: 5678, title: "5 Pesetas Alfonso XII" },
+      issue: { id: 99001, year: 1888, gregorian_year: 1889 },
+      grade: "vf",
+    };
+
+    // gregorian_year wins when both are present.
+    expect(mapCollectedItem(item).year).toBe(1889);
+
+    // year is the fallback when there is no gregorian_year.
+    expect(mapCollectedItem({ ...item, issue: { id: 99001, year: 1888 } }).year).toBe(
+      1888,
+    );
+
+    // no issue year at all → no fabricated value.
+    expect(mapCollectedItem({ ...item, issue: { id: 99001 } }).year).toBeNull();
+
+    // no issue object at all → still null (the common case).
+    const noIssue = {
+      id: 1,
+      quantity: 1,
+      type: { id: 5678, title: "5 Pesetas Alfonso XII" },
+      grade: "vf",
+    };
+    expect(mapCollectedItem(noIssue).year).toBeNull();
+  });
 });

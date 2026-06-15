@@ -367,6 +367,9 @@ export const positions = sqliteTable("positions", {
   name: text("name").notNull(),
   grade: text("grade").notNull(),
   quantity: integer("quantity").notNull(),
+  // The coin's mint year from the source's issue (#215); null when the catalogue
+  // records none. Distinct from purchase_date (when it was acquired).
+  year: integer("year"),
   liquidityTier: text("liquidity_tier").$type<LiquidityTier>().notNull(),
   metal: text("metal"),
   // Indefinite coin detail (ADR 0017): parsed fineness + weight, stamped once at
