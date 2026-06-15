@@ -22,6 +22,8 @@
  *  - a full historical backfill so ≈ 2 months of daily snapshots plus the
  *    per-cuota mortgage snapshots already exist in the DB before measuring
  */
+import { listScopeOptions } from "@worthline/domain";
+
 import type { WorthlineStore } from "@worthline/db";
 
 /** Anchor "today" for the seed. Fixed so the generated history is identical every run. */
@@ -325,5 +327,75 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
     rippleInvestmentId: "asset_etf_world",
     rippleOperationDateKey: dateMonthsAgo(18),
     rippleValuationDateKey: dateMonthsAgo(16),
+  };
+}
+
+/**
+ * The measured size of a seeded workspace — the "large workspace" baseline the
+ * performance budgets are conservative against (#203). Recorded explicitly so the
+ * budgets are anchored to a documented scale: if the seed grows, this baseline is
+ * what a reviewer compares against when deciding whether a budget change is the
+ * domain workload changing (re-baseline + adjust budgets) or a regression.
+ */
+export interface SeedDimensions {
+  /** Household members (drives ownership-split fan-out across scopes). */
+  members: number;
+  /** Manual + investment + housing assets read on every dashboard load. */
+  assets: number;
+  /** Mortgage + revolving credit + plain debt the liability curves cover. */
+  liabilities: number;
+  /** Scopes (household + one per member) the capture loop iterates. */
+  scopes: number;
+  /** Investment positions projected from operations. */
+  positions: number;
+  /** Net-worth snapshots stored for the household scope. */
+  householdSnapshots: number;
+  /** Net-worth snapshots stored across every scope. */
+  totalSnapshots: number;
+  /** Frozen holding rows stored for the household scope (the dense read path). */
+  householdHoldingRows: number;
+  /** Frozen holding rows stored across every scope. */
+  totalHoldingRows: number;
+}
+
+/**
+ * The documented large-workspace baseline (#203, AC: "documents the seeded
+ * workspace dimensions used as the large-workspace baseline"). These are the
+ * dimensions seedPerformanceWorkspace produces as it returns, BEFORE the harness
+ * runs any capture/ripple of its own. The harness asserts the live seed matches
+ * this record, so the budgets can never silently drift off their stated scale: a
+ * seed change is a deliberate edit here (and a budget review), not an accident.
+ */
+export const SEED_DIMENSIONS: SeedDimensions = {
+  assets: 11,
+  householdHoldingRows: 1_162,
+  householdSnapshots: 83,
+  liabilities: 3,
+  members: 2,
+  positions: 3,
+  scopes: 3,
+  totalHoldingRows: 2_656,
+  totalSnapshots: 249,
+};
+
+/**
+ * Measure the dimensions of an already-seeded `store`, reading them straight from
+ * the store the same way the dashboard/read paths do. Used by the harness to
+ * assert the live seed matches the documented {@link SEED_DIMENSIONS} baseline.
+ */
+export function measureSeedDimensions(store: WorthlineStore): SeedDimensions {
+  const workspace = store.workspace.readWorkspace()!;
+  return {
+    assets: store.assets.readAssets().length,
+    householdHoldingRows: store.snapshots.readSnapshotHoldings({
+      scopeId: "household",
+    }).length,
+    householdSnapshots: store.snapshots.readSnapshots("household").length,
+    liabilities: store.liabilities.readLiabilities().length,
+    members: workspace.members.length,
+    positions: store.snapshots.readPositions("household").length,
+    scopes: listScopeOptions(workspace).length,
+    totalHoldingRows: store.snapshots.readSnapshotHoldings().length,
+    totalSnapshots: store.snapshots.readSnapshots().length,
   };
 }
