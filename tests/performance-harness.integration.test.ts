@@ -62,7 +62,11 @@ const THRESHOLDS_MS = {
   windowedHistoryRead: 250,
 } as const;
 
-type Measurement = { name: keyof typeof THRESHOLDS_MS; durationMs: number; touched: number };
+type Measurement = {
+  name: keyof typeof THRESHOLDS_MS;
+  durationMs: number;
+  touched: number;
+};
 
 /** Run `fn`, recording its wall-clock duration and how many rows/snapshots it touched. */
 function measure(
@@ -133,7 +137,13 @@ function runHarness(): Measurement[] {
   const measurements: Measurement[] = [];
 
   // 1. Dashboard load — the multi-scope capture loop the web app runs per request.
-  measurements.push(measure("dashboardLoad", (r) => r as number, () => runCaptureLoop(store)));
+  measurements.push(
+    measure(
+      "dashboardLoad",
+      (r) => r as number,
+      () => runCaptureLoop(store),
+    ),
+  );
 
   // 2. Frozen holding reads — full history, then the recent-window slice.
   measurements.push(

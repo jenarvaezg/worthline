@@ -186,12 +186,26 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
   });
 
   // ── Investments with backdated operations (position projection + ripple) ─────
-  const investments: Array<{ id: string; name: string; price: string; memberId: string }> =
-    [
-      { id: "asset_etf_world", memberId: "member_ana", name: "ETF MSCI World", price: "98.40" },
-      { id: "asset_etf_bonds", memberId: "member_jose", name: "ETF Bonos", price: "52.10" },
-      { id: "asset_stock_tech", memberId: "member_ana", name: "Accion Tech", price: "210.75" },
-    ];
+  const investments: Array<{
+    id: string;
+    name: string;
+    price: string;
+    memberId: string;
+  }> = [
+    {
+      id: "asset_etf_world",
+      memberId: "member_ana",
+      name: "ETF MSCI World",
+      price: "98.40",
+    },
+    { id: "asset_etf_bonds", memberId: "member_jose", name: "ETF Bonos", price: "52.10" },
+    {
+      id: "asset_stock_tech",
+      memberId: "member_ana",
+      name: "Accion Tech",
+      price: "210.75",
+    },
+  ];
 
   for (const investment of investments) {
     store.assets.createInvestmentAsset({
