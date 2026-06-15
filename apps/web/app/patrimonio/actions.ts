@@ -684,8 +684,9 @@ function earliestHousingSnapshotDate(
 ): string | null {
   return (
     store.snapshots
-      .readSnapshotHoldings()
-      .filter((row) => row.kind === "asset" && row.holdingId === assetId)
+      // Targeted read (#207): the store filters by this asset's frozen rows
+      // through the (holding_id, kind) index instead of scanning every frozen row.
+      .readSnapshotHoldings({ holdingId: assetId, kind: "asset" })
       .map((row) => row.dateKey)
       .filter((dateKey) => dateKey < today)
       .sort()[0] ?? null
@@ -726,8 +727,9 @@ function firstHousingEventDate(
   }
 
   const firstSnapshotDate = store.snapshots
-    .readSnapshotHoldings()
-    .filter((row) => row.kind === "asset" && row.holdingId === assetId)
+    // Targeted read (#207): only this asset's frozen rows, via the
+    // (holding_id, kind) index — no full snapshot_holdings scan.
+    .readSnapshotHoldings({ holdingId: assetId, kind: "asset" })
     .map((row) => row.dateKey)
     .filter((dateKey) => dateKey <= today)
     .sort()[0];

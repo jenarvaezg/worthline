@@ -183,6 +183,7 @@ CREATE TABLE \`snapshot_holdings\` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX \`snapshot_holdings_snapshot_kind_holding_unique\` ON \`snapshot_holdings\` (\`snapshot_id\`,\`kind\`,\`holding_id\`);--> statement-breakpoint
+CREATE INDEX \`snapshot_holdings_holding_kind_idx\` ON \`snapshot_holdings\` (\`holding_id\`,\`kind\`);--> statement-breakpoint
 CREATE TABLE \`asset_valuations\` (
 	\`id\` text PRIMARY KEY NOT NULL,
 	\`asset_id\` text NOT NULL,
