@@ -1,6 +1,13 @@
 import type { LiquidityTier } from "./classification";
 
-export type PriceSource = "manual" | "ecb" | "coingecko" | "stooq" | "yahoo" | "finect";
+export type PriceSource =
+  | "manual"
+  | "ecb"
+  | "coingecko"
+  | "stooq"
+  | "yahoo"
+  | "finect"
+  | "numista";
 export type InvestmentPriceProvider = "yahoo" | "stooq" | "finect" | "coingecko";
 export type PriceFreshnessState = "fresh" | "stale" | "failed" | "manual";
 
@@ -22,6 +29,11 @@ export const PRICE_TTL_DAYS: Record<PriceSource, number> = {
   stooq: 1,
   yahoo: 1,
   finect: 1,
+  // The coin-collection holding's valuation freshness (PRD #160, ADR 0017): a
+  // daily cadence so metal-spot moves show up the next day. The numismatic
+  // estimate's long TTL is enforced per position inside the valuation refresh,
+  // keeping the daily pass well under Numista's request cap.
+  numista: 1,
 };
 
 export function defaultInvestmentPriceProvider(

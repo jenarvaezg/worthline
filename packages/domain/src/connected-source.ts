@@ -48,6 +48,10 @@ export interface SourcePosition {
   sourceId: string;
   /** The source's catalogue id for this line (Numista type id). */
   catalogueId: string;
+  /** The source's issue id within the catalogue type (Numista issue id); null
+   *  when the source records none. Persisted so the valuation refresh can refetch
+   *  the per-grade numismatic estimate without re-listing the collection (#166). */
+  issueId: number | null;
   /** Denormalized display name for the catalogue detail list. */
   name: string;
   /** Condition rating assigned on Numista, read-only here (ADR 0017). */
@@ -58,6 +62,12 @@ export interface SourcePosition {
   /** Grouping metadata for the holding's detail lens (a coin's metal); null when
    *  the source records no metal for the line. */
   metal: string | null;
+  /** Indefinite coin detail (ADR 0017): the parsed millesimal fineness (0–1000)
+   *  and weight in grams, stamped once at sync and never refetched. The valuation
+   *  refresh recomputes the melt value from these × the daily metal spot (#166).
+   *  Null when the catalogue records none / the composition has no precious metal. */
+  finenessMillis: number | null;
+  weightGrams: number | null;
   /** When the position entered the collection (its Numista acquisition date),
    *  YYYY-MM-DD; null when the user recorded none (an optional Numista field). */
   purchaseDate: string | null;
@@ -67,6 +77,9 @@ export interface SourcePosition {
   /** Candidate value — Numista's per-grade estimate, minor units; null when
    *  Numista has no estimate for this coin at its grade. */
   numismaticValueMinor: number | null;
+  /** When the numismatic estimate was last fetched (ISO); null until first
+   *  fetched. Drives the long-TTL refetch gate in the valuation refresh (#166). */
+  numismaticFetchedAt: string | null;
   /** What was paid for the position, minor units; null when Numista records no
    *  trade price (an optional field — many users record none). */
   purchasePriceMinor: number | null;

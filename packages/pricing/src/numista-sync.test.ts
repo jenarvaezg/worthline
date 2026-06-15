@@ -11,6 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchMetalSpotEur, syncNumistaCollection } from "./numista-sync";
 import type { NumistaCollectedItem } from "./numista";
 
+const NOW = "2026-06-15T12:00:00.000Z";
+
 const SILVER_EAGLE: NumistaCollectedItem = {
   id: 1,
   quantity: 1,
@@ -49,7 +51,7 @@ function deps(overrides: Partial<Parameters<typeof syncNumistaCollection>[0]> = 
 
 describe("syncNumistaCollection — drafts carry both candidate values", () => {
   it("resolves metal (× qty) and numismatic (× qty) per coin", async () => {
-    const drafts = await syncNumistaCollection(deps());
+    const drafts = await syncNumistaCollection(deps(), NOW);
 
     expect(drafts).toHaveLength(2);
     const eagle = drafts.find((d) => d.catalogueId === "1493")!;
@@ -74,10 +76,38 @@ describe("syncNumistaCollection — drafts carry both candidate values", () => {
     });
   });
 
+  it("persists the indefinite coin detail + issue id + numismatic fetched-at", async () => {
+    const drafts = await syncNumistaCollection(deps(), NOW);
+
+    const eagle = drafts.find((d) => d.catalogueId === "1493")!;
+    expect(eagle).toMatchObject({
+      issueId: 32723,
+      finenessMillis: 999, // parsed from "Plata 999"
+      weightGrams: 31.103,
+      numismaticFetchedAt: NOW, // estimate just read → stamps the long-TTL clock
+    });
+  });
+
+  it("leaves numismatic fetched-at null when the coin has no issue/grade to price", async () => {
+    const noIssue: NumistaCollectedItem = {
+      id: 7,
+      quantity: 1,
+      type: { id: 1493, title: "1 Dollar American Silver Eagle" },
+      grade: "unc",
+      // no `issue` → cannot fetch a per-grade estimate
+    };
+    const drafts = await syncNumistaCollection(
+      deps({ listItems: vi.fn(async () => [noIssue]) }),
+      NOW,
+    );
+
+    expect(drafts[0]).toMatchObject({ issueId: null, numismaticFetchedAt: null });
+  });
+
   it("dedupes type-detail and spot lookups (request-cap discipline)", async () => {
     const d = deps({ listItems: vi.fn(async () => [SILVER_EAGLE, SILVER_EAGLE]) });
 
-    await syncNumistaCollection(d);
+    await syncNumistaCollection(d, NOW);
 
     expect(d.typeDetail).toHaveBeenCalledTimes(1); // same type → one detail fetch
     expect(d.spotPerOzEur).toHaveBeenCalledTimes(1); // silver spot fetched once
@@ -104,7 +134,7 @@ describe("syncNumistaCollection — drafts carry both candidate values", () => {
       })),
     });
 
-    const drafts = await syncNumistaCollection(d);
+    const drafts = await syncNumistaCollection(d, NOW);
 
     expect(drafts[0]!.metal).toBeNull();
     expect(drafts[0]!.metalValueMinor).toBeNull();

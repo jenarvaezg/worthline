@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 19;
+export const SCHEMA_VERSION = 20;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -493,6 +493,30 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       FOREIGN KEY (source_id) REFERENCES connected_sources(id) ON UPDATE no action ON DELETE cascade
     );`);
     sqlite.pragma("user_version = 19");
+  }
+
+  if (version < 20) {
+    // PRD #160 / #166 (ADR 0017): decouple coin valuation from position sync.
+    // The valuation refresh recomputes a coin's melt value from its stored detail
+    // × the daily metal spot, and refetches Numista's per-grade estimate only past
+    // a long TTL — so positions carry the issue id, the indefinite detail
+    // (fineness + weight), and when the estimate was last fetched. Forward-only
+    // ALTERs (ADR 0002); existing rows get NULLs and are repopulated on next sync.
+    // Wrapped in try/catch like the other column adds: on a fresh DB the columns
+    // already exist (created by schema-sql at v<2), so the duplicate is ignored.
+    try {
+      sqlite.exec("ALTER TABLE positions ADD COLUMN issue_id INTEGER");
+    } catch {}
+    try {
+      sqlite.exec("ALTER TABLE positions ADD COLUMN fineness_millis INTEGER");
+    } catch {}
+    try {
+      sqlite.exec("ALTER TABLE positions ADD COLUMN weight_grams REAL");
+    } catch {}
+    try {
+      sqlite.exec("ALTER TABLE positions ADD COLUMN numismatic_fetched_at TEXT");
+    } catch {}
+    sqlite.pragma("user_version = 20");
   }
 
   return { ranV18Backfill };

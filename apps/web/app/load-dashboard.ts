@@ -88,6 +88,13 @@ export interface LoadDashboardInput {
     assets: Array<{ id: string; currency: string; providerSymbol?: string }>;
     nowIso: string;
   }) => Promise<RefreshPricesResult>;
+  /**
+   * Optional: refresh stale connected coin-collection valuations before snapshot
+   * capture (PRD #166, ADR 0017), so the snapshot freezes the freshly-valued
+   * coins. Production binds the Numista-backed orchestration; omitted in tests.
+   * Returns one message per source that failed, merged into `pricingErrors`.
+   */
+  refreshCoinValuations?: () => Promise<{ errors: string[] }>;
 }
 
 export interface LoadDashboardResult extends DashboardState {
@@ -131,11 +138,12 @@ export async function loadDashboard(
   const investmentAssets = store.assets.readInvestmentAssetsWithMeta();
   const initialCache = store.operations.readAllPriceCacheEntries();
 
-  const { priceCache, errors: pricingErrors } = await refreshPrices({
+  const { priceCache, errors: priceErrors } = await refreshPrices({
     cacheEntries: initialCache,
     assets: investmentAssets,
     nowIso: now,
   });
+  let pricingErrors = priceErrors;
 
   // Persist refreshed prices back to the store
   for (const price of priceCache) {
@@ -146,6 +154,16 @@ export async function loadDashboard(
     ) {
       store.operations.upsertPrice(price);
     }
+  }
+
+  // ── 1b. Refresh stale coin-collection valuations (PRD #166) ───────────────
+  // Decoupled from position sync: rides the same daily pass, recomputing metal
+  // value from the daily spot and refetching numismatic estimates only past their
+  // long TTL. Degrades to last-known on a Numista outage; runs before snapshot
+  // capture so today's snapshot freezes the freshly-valued coins.
+  if (input.refreshCoinValuations) {
+    const { errors } = await input.refreshCoinValuations();
+    pricingErrors = [...pricingErrors, ...errors];
   }
 
   // ── 2. Read workspace — redirect signal if absent ─────────────────────────

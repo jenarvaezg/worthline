@@ -19,6 +19,7 @@ import {
   check,
   integer,
   primaryKey,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -356,18 +357,30 @@ export const positions = sqliteTable("positions", {
     .notNull()
     .references(() => connectedSources.id, { onDelete: "cascade" }),
   catalogueId: text("catalogue_id").notNull(),
+  // Numista issue id within the type; null when the source records none. Persisted
+  // so the valuation refresh can refetch the per-grade estimate without re-listing
+  // the collection (#166).
+  issueId: integer("issue_id"),
   name: text("name").notNull(),
   grade: text("grade").notNull(),
   quantity: integer("quantity").notNull(),
   liquidityTier: text("liquidity_tier").$type<LiquidityTier>().notNull(),
   metal: text("metal"),
+  // Indefinite coin detail (ADR 0017): parsed fineness + weight, stamped once at
+  // sync and never refetched — the valuation refresh recomputes melt value from
+  // these × the daily metal spot (#166).
+  finenessMillis: integer("fineness_millis"),
+  weightGrams: real("weight_grams"),
   // Optional Numista fields — present only when the user recorded them (#161).
   purchaseDate: text("purchase_date"),
   purchasePriceMinor: integer("purchase_price_minor"),
-  // The two candidate values (ADR 0017), computed at sync time; null when not
-  // resolved (base-metal coin with no spot / no numismatic estimate).
+  // The two candidate values (ADR 0017); null when not resolved (base-metal coin
+  // with no spot / no numismatic estimate). Refreshed between syncs (#166).
   metalValueMinor: integer("metal_value_minor"),
   numismaticValueMinor: integer("numismatic_value_minor"),
+  // When the numismatic estimate was last fetched (ISO); null until first fetched.
+  // Drives the long-TTL refetch gate in the valuation refresh (#166).
+  numismaticFetchedAt: text("numismatic_fetched_at"),
   currency: text("currency").notNull(),
   createdAt: timestamp("created_at"),
 });

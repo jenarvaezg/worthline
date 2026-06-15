@@ -18,7 +18,7 @@
  */
 
 import { coinValue, formatMoneyMinor, groupPositionsByMetal } from "@worthline/domain";
-import type { SourcePosition } from "@worthline/domain";
+import type { PriceFreshnessState, SourcePosition } from "@worthline/domain";
 
 import {
   disconnectNumistaAction,
@@ -45,22 +45,35 @@ export function CoinCollectionSection({
   sourceId,
   lastSyncAt,
   currentUrl,
+  valuationFreshness = null,
+  valuationStaleReason = null,
 }: {
   positions: SourcePosition[];
   sourceId: string | null;
   lastSyncAt: string | null;
   currentUrl: string;
+  /** Freshness of the collection's valuation refresh (PRD #166): "stale"/"failed"
+   *  when the last decoupled refresh hit a Numista outage and kept last-known. */
+  valuationFreshness?: PriceFreshnessState | null;
+  valuationStaleReason?: string | null;
 }) {
   const groups = groupPositionsByMetal(positions);
   const totalMinor = groups.reduce((sum, group) => sum + group.subtotalMinor, 0);
   const view = buildCoinCollectionView(groups, totalMinor);
+
+  // The valuation rides the daily stale-price pass; on an outage it keeps the
+  // last-known value and flags itself stale (ADR 0017) — surface that here.
+  const valuationStale =
+    valuationFreshness === "stale" || valuationFreshness === "failed";
 
   return (
     <section className="coinCollection" aria-label="Colección Numista">
       {/* ── Connected-source tile ─────────────────────────────────────────── */}
       <div className="coinSourceTile">
         <div className="coinSourceStatus">
-          <span className="coinStatusPill">Conectado</span>
+          <span className={`coinStatusPill${valuationStale ? " isStale" : ""}`}>
+            {valuationStale ? "Valoración desactualizada" : "Conectado"}
+          </span>
           <dl className="coinSourceStats">
             <div>
               <dt>Última sincronización</dt>
@@ -85,6 +98,12 @@ export function CoinCollectionSection({
           </form>
         ) : null}
       </div>
+
+      {valuationStale && valuationStaleReason ? (
+        <p className="infoNote" role="status">
+          {valuationStaleReason} Se muestra el último valor conocido.
+        </p>
+      ) : null}
 
       {positions.length === 0 ? (
         <p className="infoNote">
