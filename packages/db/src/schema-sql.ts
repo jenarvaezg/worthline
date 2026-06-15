@@ -250,6 +250,7 @@ CREATE TABLE \`connected_sources\` (
 CREATE TABLE \`positions\` (
 	\`id\` text PRIMARY KEY NOT NULL,
 	\`source_id\` text NOT NULL,
+	\`external_id\` text,
 	\`catalogue_id\` text NOT NULL,
 	\`issue_id\` integer,
 	\`name\` text NOT NULL,

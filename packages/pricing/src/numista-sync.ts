@@ -87,6 +87,7 @@ export async function syncNumistaCollection(
     }
 
     drafts.push({
+      externalId: String(item.id),
       catalogueId: base.catalogueId,
       issueId: base.issueId,
       name: base.name,

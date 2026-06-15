@@ -191,9 +191,11 @@ export async function syncNumistaAction(
       nowIso,
     );
 
-    // 3) Write: replace positions, re-roll the holding value, stamp last sync.
+    // 3) Write: replace positions, re-roll the holding value, stamp last sync,
+    // and ripple each newly-seen coin's purchase date into history (ADR 0017).
     runWith(
-      (store) => store.connectedSources.syncPositions(sourceId, drafts, nowIso),
+      (store) =>
+        store.syncConnectedSource({ positions: drafts, sourceId, syncedAt: nowIso }),
       _store,
     );
   } catch {

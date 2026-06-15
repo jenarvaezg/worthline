@@ -118,6 +118,9 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
       .map((row) => ({
         catalogueId: row.catalogueId,
         currency: row.currency,
+        // Legacy rows written before the external-id column carry none; fall back
+        // to the internal id (stable, unique per row) so the diff key is never null.
+        externalId: row.externalId ?? row.id,
         finenessMillis: row.finenessMillis === null ? null : Number(row.finenessMillis),
         grade: row.grade,
         id: row.id,
@@ -256,6 +259,7 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
               inserted.map((position) => ({
                 catalogueId: position.catalogueId,
                 currency: position.currency,
+                externalId: position.externalId,
                 finenessMillis: position.finenessMillis,
                 grade: position.grade,
                 id: position.id,
