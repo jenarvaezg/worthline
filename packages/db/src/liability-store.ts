@@ -10,10 +10,12 @@ import type {
 } from "@worthline/domain";
 import {
   amortizableBalanceAtDate,
+  assertEventWithinTerm,
   createLiability,
   debtBalanceAtDate,
   defaultInstrumentForLiability,
 } from "@worthline/domain";
+import type { AmortizationPlanInput } from "@worthline/domain";
 import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
 
 import {
@@ -357,6 +359,32 @@ function readAmortizationPlan(
   };
 }
 
+/**
+ * The schedule shape of a plan, by plan id, as the pure domain engine reads it —
+ * or null if the plan is gone. Used to pin a dated event's boundary so the intake
+ * can reject events that fall past the loan's final payment (#210).
+ */
+function readPlanInputById(
+  ctx: StoreContext,
+  planId: string,
+): AmortizationPlanInput | null {
+  const row = ctx.db
+    .select()
+    .from(amortizationPlans)
+    .where(eq(amortizationPlans.id, planId))
+    .get();
+
+  if (!row) return null;
+
+  return {
+    annualInterestRate: row.annualInterestRate,
+    disbursementDate: row.disbursementDate,
+    firstPaymentDate: row.firstPaymentDate,
+    initialCapitalMinor: row.initialCapitalMinor,
+    termMonths: row.termMonths,
+  };
+}
+
 function updateAmortizationPlan(
   ctx: StoreContext,
   planId: string,
@@ -463,6 +491,13 @@ function addInterestRateRevision(
   assertIsoDate(input.revisionDate, "Revision date");
   assertDecimalString(input.newAnnualInterestRate, "Annual interest rate");
 
+  // #210: an event past the loan's final payment boundary resolves outside the
+  // term and would be silently dropped by the schedule build loop — reject it.
+  const plan = readPlanInputById(ctx, input.planId);
+  if (plan) {
+    assertEventWithinTerm(plan, input.revisionDate, "Revision date");
+  }
+
   ctx.db
     .insert(interestRateRevisions)
     .values({
@@ -519,6 +554,13 @@ function updateInterestRateRevision(
 
   if (!existing) return 0;
 
+  // #210: an edited date that lands past the loan's final boundary would be
+  // silently dropped just like an out-of-range add — reject it the same way.
+  if (input.revisionDate !== undefined) {
+    const plan = readPlanInputById(ctx, existing.planId);
+    if (plan) assertEventWithinTerm(plan, input.revisionDate, "Revision date");
+  }
+
   const fields: Partial<typeof interestRateRevisions.$inferInsert> = {};
   if (input.revisionDate !== undefined) fields.revisionDate = input.revisionDate;
   if (input.newAnnualInterestRate !== undefined) {
@@ -566,6 +608,13 @@ function addEarlyRepayment(ctx: StoreContext, input: AddEarlyRepaymentInput): vo
   assertIsoDate(input.repaymentDate, "Repayment date");
   if (!Number.isInteger(input.amountMinor)) {
     throw new Error("Money must be stored as integer minor units.");
+  }
+
+  // #210: an event past the loan's final payment boundary resolves outside the
+  // term and would be silently dropped by the schedule build loop — reject it.
+  const plan = readPlanInputById(ctx, input.planId);
+  if (plan) {
+    assertEventWithinTerm(plan, input.repaymentDate, "Repayment date");
   }
 
   ctx.db
@@ -623,6 +672,13 @@ function updateEarlyRepayment(
     .get();
 
   if (!existing) return 0;
+
+  // #210: an edited date that lands past the loan's final boundary would be
+  // silently dropped just like an out-of-range add — reject it the same way.
+  if (input.repaymentDate !== undefined) {
+    const plan = readPlanInputById(ctx, existing.planId);
+    if (plan) assertEventWithinTerm(plan, input.repaymentDate, "Repayment date");
+  }
 
   const fields: Partial<typeof earlyRepayments.$inferInsert> = {};
   if (input.repaymentDate !== undefined) fields.repaymentDate = input.repaymentDate;
