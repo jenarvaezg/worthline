@@ -18,6 +18,15 @@ export function addUnits(left: DecimalString, right: DecimalString): DecimalStri
   return new Big(left).plus(right).toString();
 }
 
+/**
+ * Normalize a decimal string through the seam: collapses trailing-zero and
+ * leading-zero noise (`7.180` → `7.18`, `095.400` → `95.4`). Throws when the
+ * input is not a valid decimal, so callers can use it to validate too.
+ */
+export function normalizeDecimal(value: DecimalString): DecimalString {
+  return new Big(value).toString();
+}
+
 export function subtractUnits(left: DecimalString, right: DecimalString): DecimalString {
   return new Big(left).minus(right).toString();
 }
@@ -35,6 +44,25 @@ export function multiplyToMinor(
   return Number(
     new Big(units).times(pricePerUnit).times(100).round(0, Big.roundHalfUp).toString(),
   );
+}
+
+/**
+ * numerator ÷ denominator as a high-precision decimal string. Used to reconstruct
+ * a unit price from a total amount and a unit count (ADR 0018: a MyInvestor order
+ * carries the amount and the units but no price column, so the NAV is recovered as
+ * amount ÷ units). The default 20 decimal places keep the result precise enough
+ * that `multiplyToMinor(units, price)` folds back to the original amount with no
+ * drift. Throws when the denominator is zero — a caller must guard against it.
+ */
+export function divideUnits(
+  numerator: DecimalString,
+  denominator: DecimalString,
+  decimalPlaces = 20,
+): DecimalString {
+  return new Big(numerator)
+    .div(new Big(denominator))
+    .round(decimalPlaces, Big.roundHalfUp)
+    .toString();
 }
 
 /**

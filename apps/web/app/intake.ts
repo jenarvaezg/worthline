@@ -119,6 +119,9 @@ const ONE_SHOT_PARAMS = new Set([
   "updated",
   "failed",
   "anchor",
+  // Statement-load summary (#174): counts shown once in the success banner.
+  "created",
+  "skipped",
   // Symbol-search state (#138): the query and the picked candidate's prefill
   // live in the URL only while the user is choosing — never carried into the
   // action return URL.
@@ -287,6 +290,21 @@ export function pricesRefreshedRedirectUrl(
   return url;
 }
 
+/**
+ * Build the success redirect for a statement load (#174), carrying the created /
+ * skipped counts so the banner can summarize what changed.
+ */
+export function statementLoadedRedirectUrl(
+  currentUrl: string,
+  summary: { created: number; skipped: number },
+): string {
+  let url = appendParam(currentUrl, "ok", "statement_loaded");
+  url = appendParam(url, "created", String(summary.created));
+  url = appendParam(url, "skipped", String(summary.skipped));
+
+  return url;
+}
+
 /** Decode the `failed` param back into symbol/reason pairs. */
 function parseFailures(raw: string | undefined): PriceRefreshFailure[] {
   if (!raw) return [];
@@ -312,6 +330,18 @@ export function resolveOkMessage(
   searchParams?: Record<string, string | string[] | undefined>,
 ): string | null {
   const key = normalizeParam(searchParams?.["ok"]);
+
+  if (key === "statement_loaded") {
+    const created =
+      Number.parseInt(normalizeParam(searchParams?.["created"]) ?? "", 10) || 0;
+    const skipped =
+      Number.parseInt(normalizeParam(searchParams?.["skipped"]) ?? "", 10) || 0;
+    const createdPart = `${created} ${created === 1 ? "movimiento cargado" : "movimientos cargados"}`;
+    const skippedPart =
+      skipped > 0 ? ` · ${skipped} omitido${skipped === 1 ? "" : "s"}` : "";
+
+    return `${createdPart}${skippedPart}.`;
+  }
 
   if (key !== "prices_refreshed") {
     return okMessage(key);

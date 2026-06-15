@@ -223,6 +223,22 @@ export interface WorthlineStore {
     today: string;
   }) => void;
   /**
+   * Batched variant of `rippleHistoricalSnapshotsForOperation` for a statement
+   * load that creates many backdated operations at once (ADR 0018, #174). Like
+   * the amortization-plan exception in ADR 0012: generate a fresh snapshot at
+   * EACH affected past operation date that has none yet, then run a SINGLE
+   * forward recalculation of every existing snapshot dated ≥ the earliest
+   * affected date, re-evaluating only this asset's row. One history rebuild per
+   * load regardless of the number of operation dates — the guard against the
+   * #158 O(N×snapshots) cliff. A date today or in the future generates no
+   * history. A no-op when the asset is unknown or no dates are given.
+   */
+  rippleHistoricalSnapshotsForOperations: (params: {
+    assetId: string;
+    operationDateKeys: string[];
+    today: string;
+  }) => void;
+  /**
    * Generate/recalculate historical snapshots after a housing valuation change
    * (PRD #108): a declared/edited/deleted valuation anchor with a past date, or
    * a changed appreciation rate. Generates a fresh snapshot at `fromDateKey`
@@ -569,6 +585,16 @@ function buildStore(
       const workspace = getWorkspace();
       if (!workspace) return;
       rippleHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, params);
+    },
+    rippleHistoricalSnapshotsForOperations: (params) => {
+      const workspace = getWorkspace();
+      if (!workspace) return;
+      rippleHistoricalSnapshotsForOperations(
+        ctx,
+        workspace,
+        store.snapshots.saveSnapshot,
+        params,
+      );
     },
     rippleHistoricalSnapshotsForValuation: (params) => {
       const workspace = getWorkspace();
@@ -1126,6 +1152,126 @@ function rippleHistoricalSnapshots(
         } else {
           // No holdings remain (e.g. the deleted operation was the only basis):
           // drop the snapshot rather than leave it showing stale values.
+          db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
+        }
+      }
+    }
+  });
+}
+
+/**
+ * Batched ripple for a statement load (ADR 0018, #174). Mirrors the
+ * amortization-plan exception in `rippleHistoricalSnapshotsForDebt`: generate a
+ * fresh whole-portfolio snapshot at each affected past operation date that has
+ * none yet, then run ONE forward recalculation of every existing snapshot dated
+ * ≥ the earliest affected date — re-evaluating only the operated asset's row.
+ *
+ * This replaces calling the per-operation ripple once per created operation
+ * (which would re-derive history N times — the #158 O(N×snapshots) cliff): deps
+ * are built once, the frozen rows are read in one batched query per scope, and a
+ * single forward pass folds the asset across the band regardless of how many
+ * operation dates the load carried. Dates today or in the future generate no
+ * history (the daily capture owns today). Legacy captures with no holding rows
+ * are skipped (ADR 0008). A no-op when the asset is unknown or no dates given.
+ */
+function rippleHistoricalSnapshotsForOperations(
+  ctx: StoreContext,
+  workspace: Workspace,
+  saveSnapshot: (input: SaveSnapshotInput) => void,
+  params: {
+    assetId: string;
+    operationDateKeys: string[];
+    today: string;
+  },
+): void {
+  const { db } = ctx;
+  const { assetId, operationDateKeys, today } = params;
+  if (operationDateKeys.length === 0) return;
+
+  // The operated asset's identity — read including trashed, since it existed on
+  // the snapshot dates even if it was trashed afterwards (ADR 0012).
+  const asset = readInvestmentIdentity(db, assetId);
+  if (!asset) return;
+  const operations = readAllOperations(db).get(assetId) ?? [];
+
+  // Unique affected dates, and the earliest from which existing snapshots recalc.
+  const generateDates = [...new Set(operationDateKeys)];
+  const recalcFrom = generateDates.reduce(
+    (min, date) => (date < min ? date : min),
+    generateDates[0]!,
+  );
+
+  // Build deps once — the same for every scope (lesson from #114).
+  const deps = buildHistoricalSnapshotDeps(db, workspace);
+
+  ctx.transaction(() => {
+    for (const scope of listScopeOptions(workspace)) {
+      const existing = readSnapshots(db, scope.id);
+      const existingByDate = new Map(existing.map((snap) => [snap.dateKey, snap]));
+
+      // Generate a fresh whole-portfolio snapshot at each affected past date that
+      // has none yet (ADR 0012). The single forward recalc below then folds the
+      // operated asset across every existing snapshot ≥ the earliest date.
+      for (const dateKey of generateDates) {
+        if (dateKey >= today || existingByDate.has(dateKey)) continue;
+        const built = buildSnapshotAtDate({
+          assets: deps.assets,
+          capturedAt: historicalCapturedAt(dateKey),
+          coinPositionsByAsset: deps.coinPositionsByAsset,
+          costBasisAssetIds: deps.costBasisAssetIds,
+          debtBalanceByLiability: deps.debtBalanceByLiability,
+          housingValuationByAsset: deps.housingValuationByAsset,
+          id: `histsnap_${scope.id}_${dateKey}`,
+          liabilities: deps.liabilities,
+          manualValueHistory: deps.manualValueHistory,
+          operationsByAsset: deps.operationsByAsset,
+          scopeId: scope.id,
+          scopeLabel: scope.label,
+          targetDate: dateKey,
+          today,
+          workspace,
+        });
+        if (built) {
+          saveSnapshot({
+            holdings: built.holdings,
+            replace: false,
+            snapshot: built.snapshot,
+          });
+        }
+      }
+
+      // Read the affected scope's frozen rows in ONE batched query for the whole
+      // ≥ recalc-from range (#205), then group them by snapshot date in memory —
+      // one read per scope, not one per rippled snapshot nor one per operation.
+      const frozenByDate = groupFrozenHoldingsByDate(
+        readSnapshotHoldings(db, { scopeId: scope.id, from: recalcFrom }),
+      );
+
+      // Recalculate every existing snapshot ≥ the earliest affected date by
+      // re-folding only the operated asset's row from its operations.
+      for (const snap of existing) {
+        if (snap.dateKey < recalcFrom) continue;
+
+        const frozenHoldings = frozenByDate.get(snap.dateKey) ?? [];
+
+        // A legacy capture predating holdings (ADR 0008) has nothing to recompute.
+        if (frozenHoldings.length === 0) continue;
+
+        const recalculated = recalculateSnapshotForAsset({
+          asset,
+          frozenHoldings,
+          operations,
+          snapshot: snap,
+          workspace,
+        });
+
+        if (recalculated) {
+          saveSnapshot({
+            holdings: recalculated.holdings,
+            replace: true,
+            snapshot: recalculated.snapshot,
+          });
+        } else {
           db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
         }
       }

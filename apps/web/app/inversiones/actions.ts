@@ -4,6 +4,7 @@ import { withStore, type WorthlineStore } from "@worthline/db";
 import {
   createInvestmentOperationSafe,
   defaultInvestmentPriceProvider,
+  parseStatement,
 } from "@worthline/domain";
 import type { InvestmentPriceProvider, LiquidityTier } from "@worthline/domain";
 import {
@@ -17,6 +18,7 @@ import { redirect } from "next/navigation";
 
 import type { FormErrorContext } from "../intake";
 import {
+  createStableId,
   errorRedirectUrl,
   mapDomainViolation,
   parseEntityId,
@@ -24,6 +26,7 @@ import {
   parseUpdateInvestmentCommand,
   pricesRefreshedRedirectUrl,
   preserveFields,
+  statementLoadedRedirectUrl,
   successRedirectUrl,
 } from "../intake";
 
@@ -145,6 +148,80 @@ export async function recordOperationAction(
   });
 
   redirect(successRedirectUrl(returnUrl, "saved"));
+}
+
+/**
+ * Statement upload (ADR 0018, S1 / #174). Parse a broker's exported CSV against
+ * this investment, create an operation for each executed (`Finalizada`) row, then
+ * run ONE batched historical-snapshot ripple across every affected date — never
+ * per operation (the #158 O(N×snapshots) cliff). S1 scope: MyInvestor only, naive
+ * create (no merge-by-date — that is Slice 2), all buys (no sells — Slice 5), no
+ * ISIN guard (Slice 4); the holding's value still comes from its price provider.
+ */
+export async function uploadStatementAction(
+  routeAssetId: string,
+  formData: FormData,
+  _store?: WorthlineStore,
+) {
+  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+  const statementErrorUrl = (message: string) =>
+    errorRedirectUrl(returnUrl, { formId: "statement", message });
+
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  const broker = String(formData.get("broker") ?? "").trim();
+  if (broker !== "myinvestor") {
+    redirect(statementErrorUrl("Selecciona un bróker compatible (MyInvestor)."));
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    redirect(statementErrorUrl("Selecciona un archivo .csv con movimientos."));
+  }
+
+  const parsed = parseStatement(await file.text(), "myinvestor");
+  if (!parsed.ok) {
+    redirect(statementErrorUrl(parsed.errors[0]));
+  }
+
+  const { rows, skipped } = parsed.value;
+  if (rows.length === 0) {
+    redirect(
+      statementErrorUrl("El archivo no contiene movimientos finalizados que cargar."),
+    );
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const seed = Date.now();
+
+  runWith((store) => {
+    // Naive create (S1): assume no date overlap yet — merge-by-date is Slice 2.
+    rows.forEach((row, i) => {
+      store.operations.recordOperation({
+        assetId: routeAssetId,
+        currency: row.currency,
+        executedAt: row.dateKey,
+        feesMinor: row.feesMinor,
+        id: createStableId("op", `${routeAssetId}_${row.dateKey}`, seed + i),
+        kind: row.kind,
+        pricePerUnit: row.pricePerUnit,
+        units: row.units,
+      });
+    });
+    store.rippleHistoricalSnapshotsForOperations({
+      assetId: routeAssetId,
+      operationDateKeys: rows.map((row) => row.dateKey),
+      today,
+    });
+  });
+
+  redirect(
+    statementLoadedRedirectUrl(returnUrl, {
+      created: rows.length,
+      skipped: skipped.length,
+    }),
+  );
 }
 
 export async function updateInvestmentAction(
