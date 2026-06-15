@@ -35,6 +35,21 @@ function columnNames(sqlite: Database, table: string): string[] {
     .map((row) => (row as { name: string }).name);
 }
 
+function indexNames(sqlite: Database, table: string): string[] {
+  return sqlite
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ?")
+    .all(table)
+    .map((row) => (row as { name: string }).name);
+}
+
+/** The four hot-read indexes added in #201 (schema-version 23). */
+const HOT_READ_INDEXES: ReadonlyArray<readonly [table: string, index: string]> = [
+  ["asset_operations", "asset_operations_asset_executed_idx"],
+  ["audit_log", "audit_log_entity_created_idx"],
+  ["assets", "assets_deleted_at_idx"],
+  ["liabilities", "liabilities_deleted_at_idx"],
+];
+
 function userVersion(sqlite: Database): number {
   return sqlite.pragma("user_version", { simple: true }) as number;
 }
@@ -128,6 +143,12 @@ describe("fresh database", () => {
 
       const investmentColumns = columnNames(sqlite, "investment_assets");
       expect(investmentColumns).toContain("price_provider");
+
+      // #201: the hot-read indexes are present on a fresh database (created from
+      // schema-sql at v<2), so the runtime SQL and the migration ladder agree.
+      for (const [table, indexName] of HOT_READ_INDEXES) {
+        expect(indexNames(sqlite, table)).toContain(indexName);
+      }
     } finally {
       sqlite.close();
     }
@@ -181,6 +202,13 @@ describe("forward migration from v2", () => {
       expect(columnNames(sqlite, "liabilities")).toContain("deleted_at");
       expect(columnNames(sqlite, "liabilities")).toContain("debt_model");
       expect(columnNames(sqlite, "investment_assets")).toContain("price_provider");
+
+      // #201: a legacy v2 database gains the hot-read indexes through the v23
+      // migration block (asset_operations/audit_log/assets/liabilities did not yet
+      // carry them), proving the ladder backfills them — not just a fresh schema-sql.
+      for (const [table, indexName] of HOT_READ_INDEXES) {
+        expect(indexNames(sqlite, table)).toContain(indexName);
+      }
     } finally {
       sqlite.close();
     }

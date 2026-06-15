@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 22;
+export const SCHEMA_VERSION = 23;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -538,6 +538,47 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       sqlite.exec("ALTER TABLE positions ADD COLUMN year INTEGER");
     } catch {}
     sqlite.pragma("user_version = 22");
+  }
+
+  if (version < 23) {
+    // #201: index the hot filtered reads the performance audit (#200) flagged so
+    // they resolve through a lookup plan instead of a full table scan as a
+    // workspace grows. These are purely structural — they change HOW the existing
+    // reads are planned, never WHAT they return, so no figure moves:
+    //  - asset_operations (asset_id, executed_at, id): readOperations filters by
+    //    asset and orders by execution date/id — the composite matches both, so
+    //    the per-investment read is an indexed range scan with no temp-b-tree sort.
+    //  - audit_log (entity_id, created_at): readAuditLog by entity filters by
+    //    entity and orders by creation time — same shape, same win.
+    //  - assets / liabilities (name) WHERE deleted_at IS NOT NULL: the trash reads
+    //    scan only the (tiny) set of trashed rows, ordered by name, instead of the
+    //    whole holdings table. PARTIAL indexes keep them small as live holdings grow.
+    // IF NOT EXISTS because a fresh DB already created these via schema-sql at v<2.
+    // Each statement is independently guarded (like the column-add ALTERs above):
+    // every real v<23 DB carries these tables (created at v<2), but minimal
+    // synthetic upgrade fixtures may stand up only a subset, so a CREATE INDEX over
+    // an absent table must be a no-op rather than aborting the rest of the step.
+    try {
+      sqlite.exec(
+        "CREATE INDEX IF NOT EXISTS asset_operations_asset_executed_idx ON asset_operations (asset_id, executed_at, id);",
+      );
+    } catch {}
+    try {
+      sqlite.exec(
+        "CREATE INDEX IF NOT EXISTS audit_log_entity_created_idx ON audit_log (entity_id, created_at);",
+      );
+    } catch {}
+    try {
+      sqlite.exec(
+        "CREATE INDEX IF NOT EXISTS assets_deleted_at_idx ON assets (name) WHERE deleted_at IS NOT NULL;",
+      );
+    } catch {}
+    try {
+      sqlite.exec(
+        "CREATE INDEX IF NOT EXISTS liabilities_deleted_at_idx ON liabilities (name) WHERE deleted_at IS NOT NULL;",
+      );
+    } catch {}
+    sqlite.pragma("user_version = 23");
   }
 
   return { ranV18Backfill };

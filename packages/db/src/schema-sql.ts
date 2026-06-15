@@ -37,6 +37,7 @@ CREATE TABLE \`assets\` (
 	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 --> statement-breakpoint
+CREATE INDEX \`assets_deleted_at_idx\` ON \`assets\` (\`name\`) WHERE \`deleted_at\` IS NOT NULL;--> statement-breakpoint
 CREATE TABLE \`liabilities\` (
 	\`id\` text PRIMARY KEY NOT NULL,
 	\`name\` text NOT NULL,
@@ -53,6 +54,7 @@ CREATE TABLE \`liabilities\` (
 	FOREIGN KEY (\`associated_asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE set null
 );
 --> statement-breakpoint
+CREATE INDEX \`liabilities_deleted_at_idx\` ON \`liabilities\` (\`name\`) WHERE \`deleted_at\` IS NOT NULL;--> statement-breakpoint
 CREATE TABLE \`liability_ownerships\` (
 	\`liability_id\` text NOT NULL,
 	\`member_id\` text NOT NULL,
@@ -128,6 +130,7 @@ CREATE TABLE \`asset_operations\` (
 	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE INDEX \`asset_operations_asset_executed_idx\` ON \`asset_operations\` (\`asset_id\`,\`executed_at\`,\`id\`);--> statement-breakpoint
 CREATE TABLE \`investment_assets\` (
 	\`asset_id\` text PRIMARY KEY NOT NULL,
 	\`unit_symbol\` text,
@@ -162,6 +165,7 @@ CREATE TABLE \`audit_log\` (
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 --> statement-breakpoint
+CREATE INDEX \`audit_log_entity_created_idx\` ON \`audit_log\` (\`entity_id\`,\`created_at\`);--> statement-breakpoint
 CREATE TABLE \`snapshot_holdings\` (
 	\`id\` text PRIMARY KEY NOT NULL,
 	\`snapshot_id\` text NOT NULL,
