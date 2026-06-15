@@ -21,6 +21,7 @@ import {
 import {
   deleteOperationAction,
   recordOperationAction,
+  uploadStatementAction,
 } from "../../../inversiones/actions";
 import Shell from "../../../shell";
 import {
@@ -32,6 +33,7 @@ import { CoinCollectionSection } from "./_surfaces/coin-collection-section";
 import { DebtModelSection } from "./_surfaces/debt-model-section";
 import { AssetEditForm, LiabilityEditForm } from "./_surfaces/holding-forms";
 import { HousingValuationSection } from "./_surfaces/housing-valuation-section";
+import { StatementUploadSection } from "./_surfaces/statement-upload-section";
 
 export const dynamic = "force-dynamic";
 
@@ -209,6 +211,11 @@ export default async function EditarPage({
     await deleteOperationAction(id, formData);
   }
 
+  async function boundUploadStatementAction(formData: FormData) {
+    "use server";
+    await uploadStatementAction(id, formData);
+  }
+
   const freshness =
     method === "derived" && priceCache
       ? getPriceFreshness(priceCache, persistence.checkedAt)
@@ -318,6 +325,14 @@ export default async function EditarPage({
             operations={operations}
             recordAction={boundRecordOperationAction}
             today={today}
+          />
+        ) : null}
+
+        {/* derived: load operations from a broker statement (ADR 0018, #174) */}
+        {asset && method === "derived" && !isCoinCollection ? (
+          <StatementUploadSection
+            action={boundUploadStatementAction}
+            currentUrl={currentUrl}
           />
         ) : null}
 
