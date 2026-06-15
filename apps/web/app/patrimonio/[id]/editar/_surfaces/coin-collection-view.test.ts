@@ -21,6 +21,7 @@ function position(overrides: Partial<SourcePosition> = {}): SourcePosition {
   return {
     id: "p1",
     sourceId: "s1",
+    externalId: "ext-p1",
     catalogueId: "1",
     name: "Moneda",
     grade: "MBC",

@@ -356,6 +356,9 @@ export const positions = sqliteTable("positions", {
   sourceId: text("source_id")
     .notNull()
     .references(() => connectedSources.id, { onDelete: "cascade" }),
+  // Numista's stable collected-item id — the cross-sync trade key (ADR 0017, #167).
+  // Nullable only for legacy rows written before v20; every sync now sets it.
+  externalId: text("external_id"),
   catalogueId: text("catalogue_id").notNull(),
   // Numista issue id within the type; null when the source records none. Persisted
   // so the valuation refresh can refetch the per-grade estimate without re-listing

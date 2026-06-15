@@ -27,6 +27,7 @@ function coin(overrides: Partial<SourcePosition> = {}): SourcePosition {
   return {
     id: "p1",
     sourceId: "src-numista",
+    externalId: "ext-p1",
     catalogueId: "1234",
     name: "20 francos Marianne",
     grade: "unc",

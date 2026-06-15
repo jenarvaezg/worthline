@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 20;
+export const SCHEMA_VERSION = 21;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -517,6 +517,17 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       sqlite.exec("ALTER TABLE positions ADD COLUMN numismatic_fetched_at TEXT");
     } catch {}
     sqlite.pragma("user_version = 20");
+  }
+
+  if (version < 21) {
+    // ADR 0017 (#167): persist Numista's stable collected-item id on each
+    // position so a wholesale re-sync can tell a genuinely new trade (ripple it
+    // into history) from a coin already frozen in past snapshots. Nullable for
+    // the rows that predate it; every sync from now on sets it.
+    try {
+      sqlite.exec("ALTER TABLE positions ADD COLUMN external_id TEXT");
+    } catch {}
+    sqlite.pragma("user_version = 21");
   }
 
   return { ranV18Backfill };
