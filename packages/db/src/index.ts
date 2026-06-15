@@ -1487,9 +1487,14 @@ function rippleHistoricalSnapshotsForOwnership(
       // A household row exists for this date, so the holding WAS captured then.
       // Re-valuation returns null only when the live ledger no longer holds it on
       // that date (e.g. operations deleted since the freeze) — a data mismatch the
-      // frozen row alone records faithfully, so re-weight that captured value as
-      // the old code did. This never happens for the co-owned-home case (#187).
-      globalByDate.set(snap.dateKey, globalValueMinor ?? row.valueMinor);
+      // frozen row alone records faithfully. SKIP re-weighting that date: dividing
+      // the already-allocated household row back to a global would re-introduce the
+      // lossy-magnitude error #187 removed (#212). Leaving the date out of
+      // globalByDate makes the downstream loop skip it, so the frozen row is left
+      // untouched as the only faithful record of that date.
+      if (globalValueMinor !== null) {
+        globalByDate.set(snap.dateKey, globalValueMinor);
+      }
     }
     if (globalByDate.size === 0) return; // no household basis → nothing to re-weight
 
