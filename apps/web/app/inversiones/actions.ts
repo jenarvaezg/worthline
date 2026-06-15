@@ -12,6 +12,7 @@ import type {
   InvestmentPriceProvider,
   LiquidityTier,
   ParsedStatement,
+  StatementMergePlan,
 } from "@worthline/domain";
 import {
   fetchAndCachePrice,
@@ -172,11 +173,20 @@ export type StatementPreviewState =
       skipped: number;
       /** Ambiguous same-date rows set aside, neither created nor overwritten (S4). */
       anomalies: number;
+      /** Rows detected as sells (negative amount/units) among those applied (S5). */
+      sells: number;
     };
 
 /** The Spanish error shown when the file's ISIN does not match the asset's (S4). */
 function isinMismatchMessage(fileIsin: string | null, assetIsin: string): string {
   return `El ISIN del archivo (${fileIsin ?? "—"}) no coincide con el de esta inversión (${assetIsin}). No se ha cargado nada.`;
+}
+
+/** Count the sells among the rows a plan will actually write (created + overwritten). */
+function countSells(plan: StatementMergePlan): number {
+  return [...plan.toCreate, ...plan.toOverwrite.map(({ row }) => row)].filter(
+    (row) => row.kind === "sell",
+  ).length;
 }
 
 /**
@@ -248,6 +258,7 @@ export async function previewStatementAction(
       anomalies: plan.anomalies.length,
       created: plan.toCreate.length,
       overwritten: plan.toOverwrite.length,
+      sells: countSells(plan),
       skipped: skipped.length,
       status: "summary",
     };
@@ -261,8 +272,9 @@ export async function previewStatementAction(
  * date overwrites in place, a new date creates, an operation the file omits is
  * untouched. Apply in one transaction, then run ONE batched historical-snapshot
  * ripple across the union of created + overwritten dates — never per operation
- * (the #158 O(N×snapshots) cliff). S3 scope: MyInvestor only, all buys (no
- * sells — Slice 5), no ISIN guard (Slice 4); value still comes from the provider.
+ * (the #158 O(N×snapshots) cliff). The ISIN guard blocks a wrong-file slip and
+ * backfills an empty asset (S4); a negative-signed row loads as a sell (S5).
+ * MyInvestor only for now; the holding's value still comes from its provider.
  */
 export async function confirmStatementAction(
   routeAssetId: string,
@@ -341,6 +353,7 @@ export async function confirmStatementAction(
       anomalies: plan.anomalies.length,
       created: plan.toCreate.length,
       overwritten: plan.toOverwrite.length,
+      sells: countSells(plan),
     } as const;
   });
 
@@ -353,6 +366,7 @@ export async function confirmStatementAction(
       anomalies: applied.anomalies,
       created: applied.created,
       overwritten: applied.overwritten,
+      sells: applied.sells,
       skipped: skipped.length,
     }),
   );

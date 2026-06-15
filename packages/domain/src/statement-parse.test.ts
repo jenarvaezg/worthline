@@ -96,6 +96,42 @@ describe("parseStatement — MyInvestor (ADR 0018, S1)", () => {
     expect(rows[0]!.pricePerUnit).toBe("25");
   });
 
+  test("a negative amount marks the row as a sell, stored with absolute price and units", () => {
+    const sell = [
+      "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
+      "15/01/2024;IE00BYX5NX33;-250 EUR;10;Finalizada",
+    ].join("\n");
+
+    const { rows } = parsedOk(sell);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe("sell");
+    // The model keeps units/price positive; the kind carries the direction.
+    expect(rows[0]!.units).toBe("10");
+    expect(rows[0]!.pricePerUnit).toBe("25");
+    expect(multiplyToMinor(rows[0]!.units, rows[0]!.pricePerUnit)).toBe(250_00);
+  });
+
+  test("negative units (`,`-decimal) also mark a sell, stored absolute", () => {
+    const sell = [
+      "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
+      "15/01/2024;IE00BYX5NX33;250 EUR;-7,226;Finalizada",
+    ].join("\n");
+
+    const { rows } = parsedOk(sell);
+    expect(rows[0]!.kind).toBe("sell");
+    expect(rows[0]!.units).toBe("7.226");
+  });
+
+  test("a malformed Finalizada row still aborts the whole load even alongside a sell", () => {
+    const mixed = [
+      "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
+      "15/01/2024;IE00BYX5NX33;-250 EUR;10;Finalizada",
+      "32/13/2025;IE00BYX5NX33;100 EUR;7,000;Finalizada",
+    ].join("\n");
+
+    expect(parseStatement(mixed, "myinvestor").ok).toBe(false);
+  });
+
   test("a malformed Finalizada row aborts the whole load (ADR 0010) and parses nothing", () => {
     const bad = [
       "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",

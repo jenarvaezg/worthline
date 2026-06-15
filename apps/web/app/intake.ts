@@ -119,11 +119,12 @@ const ONE_SHOT_PARAMS = new Set([
   "updated",
   "failed",
   "anchor",
-  // Statement-load summary (#174, #175, #178): counts shown once in the banner.
+  // Statement-load summary (#174, #175, #178, #179): counts shown once in the banner.
   "created",
   "overwritten",
   "skipped",
   "anomalies",
+  "sells",
   // Symbol-search state (#138): the query and the picked candidate's prefill
   // live in the URL only while the user is choosing — never carried into the
   // action return URL.
@@ -298,13 +299,20 @@ export function pricesRefreshedRedirectUrl(
  */
 export function statementLoadedRedirectUrl(
   currentUrl: string,
-  summary: { created: number; overwritten: number; skipped: number; anomalies: number },
+  summary: {
+    created: number;
+    overwritten: number;
+    skipped: number;
+    anomalies: number;
+    sells: number;
+  },
 ): string {
   let url = appendParam(currentUrl, "ok", "statement_loaded");
   url = appendParam(url, "created", String(summary.created));
   url = appendParam(url, "overwritten", String(summary.overwritten));
   url = appendParam(url, "skipped", String(summary.skipped));
   url = appendParam(url, "anomalies", String(summary.anomalies));
+  url = appendParam(url, "sells", String(summary.sells));
 
   return url;
 }
@@ -344,6 +352,7 @@ export function resolveOkMessage(
       Number.parseInt(normalizeParam(searchParams?.["skipped"]) ?? "", 10) || 0;
     const anomalies =
       Number.parseInt(normalizeParam(searchParams?.["anomalies"]) ?? "", 10) || 0;
+    const sells = Number.parseInt(normalizeParam(searchParams?.["sells"]) ?? "", 10) || 0;
     const createdPart = `${created} ${created === 1 ? "movimiento creado" : "movimientos creados"}`;
     const overwrittenPart =
       overwritten > 0
@@ -351,10 +360,14 @@ export function resolveOkMessage(
         : "";
     const skippedPart =
       skipped > 0 ? ` · ${skipped} omitido${skipped === 1 ? "" : "s"}` : "";
+    const sellsPart =
+      sells > 0
+        ? ` · ${sells} venta${sells === 1 ? "" : "s"} detectada${sells === 1 ? "" : "s"}`
+        : "";
     const anomalyPart =
       anomalies > 0 ? ` · ${anomalies} con fecha duplicada sin tocar` : "";
 
-    return `${createdPart}${overwrittenPart}${skippedPart}${anomalyPart}.`;
+    return `${createdPart}${overwrittenPart}${sellsPart}${skippedPart}${anomalyPart}.`;
   }
 
   if (key !== "prices_refreshed") {

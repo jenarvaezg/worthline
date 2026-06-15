@@ -402,3 +402,34 @@ describe("statement ISIN guard + anomalies (#178)", () => {
     expect(state.created).toBe(1); // only 01/03 is unambiguous
   });
 });
+
+describe("statement sells (#179)", () => {
+  const WITH_SELL = [
+    "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
+    "01/02/2024;IE00BYX5NX33;100 EUR;7,226;Finalizada",
+    "01/03/2024;IE00BYX5NX33;-50 EUR;3,000;Finalizada",
+  ].join("\n");
+
+  test("preview calls out detected sells distinctly", async () => {
+    const store = createInMemoryStore();
+    seedFund(store);
+
+    const state = await preview(uploadForm(WITH_SELL), store);
+    if (state.status !== "summary") throw new Error("expected summary");
+    expect(state.sells).toBe(1);
+    expect(state.created).toBe(2);
+  });
+
+  test("confirm stores a sell operation (negative row) with absolute units", async () => {
+    const store = createInMemoryStore();
+    seedFund(store);
+
+    await run(uploadForm(WITH_SELL), store);
+
+    const ops = store.operations.readOperations("fund");
+    const sell = ops.find((op) => op.kind === "sell");
+    expect(sell).toBeDefined();
+    expect(sell!.executedAt).toBe("2024-03-01");
+    expect(sell!.units).toBe("3"); // absolute, trailing-zero noise collapsed
+  });
+});

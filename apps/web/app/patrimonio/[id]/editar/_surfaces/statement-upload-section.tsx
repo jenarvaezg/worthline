@@ -123,6 +123,9 @@ export function StatementUploadSection({
               <li>
                 {count(shown.skipped, "movimiento omitido", "movimientos omitidos")}
               </li>
+              {shown.sells > 0 ? (
+                <li>{count(shown.sells, "venta detectada", "ventas detectadas")}</li>
+              ) : null}
               {shown.anomalies > 0 ? (
                 <li>
                   {count(
@@ -133,6 +136,14 @@ export function StatementUploadSection({
                 </li>
               ) : null}
             </ul>
+
+            {shown.sells > 0 ? (
+              <p className="contextLabel">
+                Las ventas se detectan por importe o participaciones en negativo — una
+                suposición sin verificar con un reembolso real. Revisa que sean ventas de
+                verdad antes de confirmar.
+              </p>
+            ) : null}
 
             {shown.anomalies > 0 ? (
               <p className="contextLabel">
