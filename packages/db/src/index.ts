@@ -133,6 +133,7 @@ export type { OperationsStore, ValueUpdateCommand } from "./operations-store";
 export type {
   PositionView,
   SaveSnapshotInput,
+  ScopedPositionsWithDetails,
   SnapshotHoldingQuery,
   SnapshotHoldingRecord,
   SnapshotStore,
