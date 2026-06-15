@@ -24,6 +24,7 @@ import {
   previewStatementAction,
   recordOperationAction,
   type StatementPreviewState,
+  updateInvestmentAction,
 } from "../../../inversiones/actions";
 import Shell from "../../../shell";
 import {
@@ -98,6 +99,7 @@ export default async function EditarPage({
     // derived (investment): the operations editor + its derived position (ADR 0006).
     // A coin collection is derived but routed to its own surface, so skip these.
     const isDerived = assetMethod === "derived" && !isCoinCollection;
+    const investment = isDerived ? store.assets.readInvestmentAssetById(id) : null;
     const operations = isDerived ? store.operations.readOperations(id) : [];
     const priceCache = isDerived ? store.operations.readPriceCache(id) : null;
     // The coin collection's decoupled valuation freshness (PRD #166): its own
@@ -141,6 +143,7 @@ export default async function EditarPage({
       debtModel,
       earlyRepayments,
       isCoinCollection,
+      investment,
       liability,
       operations,
       overrides,
@@ -172,6 +175,7 @@ export default async function EditarPage({
     debtModel,
     earlyRepayments,
     isCoinCollection,
+    investment,
     liability,
     operations,
     overrides,
@@ -224,6 +228,11 @@ export default async function EditarPage({
   async function boundConfirmStatementAction(formData: FormData) {
     "use server";
     await confirmStatementAction(id, formData);
+  }
+
+  async function boundUpdateInvestmentAction(formData: FormData) {
+    "use server";
+    await updateInvestmentAction(id, formData);
   }
 
   const freshness =
@@ -284,10 +293,12 @@ export default async function EditarPage({
         {asset ? (
           <AssetEditForm
             asset={asset}
+            investment={investment}
             isCoinCollection={isCoinCollection}
             members={activeMembers}
             method={method}
             scopeMemberId={ownershipScopeMemberId}
+            updateInvestmentAction={boundUpdateInvestmentAction}
             values={formError?.formId === "edit" ? formError.values : {}}
           />
         ) : liability ? (

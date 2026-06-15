@@ -103,6 +103,25 @@ describe("price cache persistence", () => {
 
     store.close();
   });
+
+  test("clearPriceCache removes an asset's cached price", () => {
+    const store = createTestStore();
+    seedWorkspaceAndAsset(store, "asset_1");
+
+    store.operations.upsertPrice({
+      assetId: "asset_1",
+      currency: "EUR",
+      fetchedAt: "2026-06-08T10:00:00Z",
+      freshnessState: "fresh",
+      price: "123.45",
+      source: "yahoo",
+    });
+
+    expect(store.operations.clearPriceCache("asset_1")).toBe(1);
+    expect(store.operations.readPriceCache("asset_1")).toBeNull();
+
+    store.close();
+  });
 });
 
 describe("investment price provider metadata", () => {

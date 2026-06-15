@@ -11,6 +11,7 @@
  * file the page composes. Server-rendered, no client JS (ADR 0009).
  */
 
+import type { InvestmentAssetFull } from "@worthline/db";
 import { formatMoneyInput, formatMoneyMinor } from "@worthline/domain";
 import type { Liability, ManualAsset, Member, ValuationMethod } from "@worthline/domain";
 import Link from "next/link";
@@ -21,19 +22,25 @@ import {
   updateLiabilityBalanceAction,
 } from "../../../actions";
 
+type FormAction = (formData: FormData) => void | Promise<void>;
+
 export function AssetEditForm({
   asset,
+  investment,
   isCoinCollection = false,
   members,
   method,
   scopeMemberId,
+  updateInvestmentAction,
   values,
 }: {
   asset: ManualAsset;
+  investment?: InvestmentAssetFull | null;
   isCoinCollection?: boolean;
   members: Member[];
   method: ValuationMethod;
   scopeMemberId: string | undefined;
+  updateInvestmentAction?: FormAction;
   values: Record<string, string>;
 }) {
   const isInvestment = asset.type === "investment";
@@ -75,6 +82,97 @@ export function AssetEditForm({
             currentOwnership={asset.ownership}
             values={values}
           />
+
+          <div className="formActions">
+            <button type="submit">Guardar cambios</button>
+            <Link href={`/patrimonio#${asset.id}`}>Cancelar</Link>
+          </div>
+        </form>
+      </>
+    );
+  }
+
+  if (isInvestment && investment && updateInvestmentAction) {
+    return (
+      <>
+        <form action={updateInvestmentAction} className="stackForm">
+          <input
+            name="currentUrl"
+            type="hidden"
+            value={`/patrimonio/${asset.id}/editar`}
+          />
+          <input name="unitSymbol" type="hidden" value={investment.unitSymbol ?? ""} />
+
+          <label>
+            Nombre
+            <input
+              aria-label="Nombre del activo"
+              defaultValue={values["name"] ?? investment.name}
+              name="name"
+            />
+          </label>
+
+          <label>
+            Capa de liquidez
+            <select
+              defaultValue={values["liquidityTier"] ?? investment.liquidityTier}
+              name="liquidityTier"
+            >
+              <option value="cash">Caja</option>
+              <option value="market">Mercado</option>
+              <option value="term-locked">A plazo</option>
+              <option value="illiquid">Ilíquido</option>
+            </select>
+          </label>
+
+          <label>
+            Proveedor de precios
+            <select
+              defaultValue={values["priceProvider"] ?? investment.priceProvider}
+              name="priceProvider"
+            >
+              <option value="yahoo">Yahoo Finance</option>
+              <option value="stooq">Stooq</option>
+              <option value="finect">Finect</option>
+              <option value="coingecko">CoinGecko</option>
+            </select>
+          </label>
+
+          <label>
+            Símbolo del proveedor
+            <input
+              aria-label="Símbolo del proveedor"
+              autoComplete="off"
+              defaultValue={values["providerSymbol"] ?? investment.providerSymbol ?? ""}
+              name="providerSymbol"
+            />
+          </label>
+
+          <label>
+            ISIN <small>(opcional)</small>
+            <input
+              aria-label="ISIN"
+              autoComplete="off"
+              defaultValue={values["isin"] ?? investment.isin ?? ""}
+              name="isin"
+            />
+          </label>
+
+          <label>
+            Precio manual por unidad (EUR) <small>(opcional)</small>
+            <input
+              defaultValue={
+                values["manualPricePerUnit"] ?? investment.manualPricePerUnit ?? ""
+              }
+              inputMode="decimal"
+              name="manualPricePerUnit"
+            />
+          </label>
+
+          <p className="infoNote">
+            Valor actual: {formatMoneyMinor(asset.currentValue)} — derivado de las
+            operaciones y del precio disponible.
+          </p>
 
           <div className="formActions">
             <button type="submit">Guardar cambios</button>
