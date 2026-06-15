@@ -115,6 +115,8 @@ export type {
 } from "./numista";
 export { metalValueMinor, parseComposition, STOOQ_METAL_SYMBOL } from "./metal";
 export type { MetalKind, MetalValueInput, ParsedComposition } from "./metal";
+export { fetchMetalSpotEur, syncNumistaCollection } from "./numista-sync";
+export type { NumistaSyncDeps, PositionDraft } from "./numista-sync";
 export type {
   InvestmentAssetRef,
   RefreshStalePricesResult,
