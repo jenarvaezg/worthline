@@ -36,6 +36,30 @@ export interface MigrateResult {
   ranV18Backfill: boolean;
 }
 
+/**
+ * Run an index-creating DDL statement, tolerating ONLY a missing target table.
+ *
+ * The v23/v24 index migrations run over tables that every real v<N DB carries
+ * (created at v<2 by schema-sql), but a minimal synthetic upgrade fixture may
+ * stand up only a subset — so a `CREATE INDEX` over an absent table must be a
+ * no-op rather than aborting the ladder. A bare `catch {}` would ALSO swallow a
+ * genuine DDL bug (a column typo, malformed SQL) while still bumping
+ * `user_version`; this narrows the tolerance to "no such table" and rethrows
+ * everything else so a real migration error surfaces instead of failing silent.
+ */
+export function createIndexToleratingMissingTable(
+  sqlite: DatabaseConnection,
+  sql: string,
+): void {
+  try {
+    sqlite.exec(sql);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (/no such table/i.test(message)) return;
+    throw err;
+  }
+}
+
 export function migrate(sqlite: DatabaseConnection): MigrateResult {
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
@@ -554,30 +578,25 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     //    scan only the (tiny) set of trashed rows, ordered by name, instead of the
     //    whole holdings table. PARTIAL indexes keep them small as live holdings grow.
     // IF NOT EXISTS because a fresh DB already created these via schema-sql at v<2.
-    // Each statement is independently guarded (like the column-add ALTERs above):
-    // every real v<23 DB carries these tables (created at v<2), but minimal
-    // synthetic upgrade fixtures may stand up only a subset, so a CREATE INDEX over
-    // an absent table must be a no-op rather than aborting the rest of the step.
-    try {
-      sqlite.exec(
-        "CREATE INDEX IF NOT EXISTS asset_operations_asset_executed_idx ON asset_operations (asset_id, executed_at, id);",
-      );
-    } catch {}
-    try {
-      sqlite.exec(
-        "CREATE INDEX IF NOT EXISTS audit_log_entity_created_idx ON audit_log (entity_id, created_at);",
-      );
-    } catch {}
-    try {
-      sqlite.exec(
-        "CREATE INDEX IF NOT EXISTS assets_deleted_at_idx ON assets (name) WHERE deleted_at IS NOT NULL;",
-      );
-    } catch {}
-    try {
-      sqlite.exec(
-        "CREATE INDEX IF NOT EXISTS liabilities_deleted_at_idx ON liabilities (name) WHERE deleted_at IS NOT NULL;",
-      );
-    } catch {}
+    // Each statement tolerates only a missing target table (synthetic upgrade
+    // fixtures may stand up a subset); a real DDL error still surfaces — see
+    // createIndexToleratingMissingTable.
+    createIndexToleratingMissingTable(
+      sqlite,
+      "CREATE INDEX IF NOT EXISTS asset_operations_asset_executed_idx ON asset_operations (asset_id, executed_at, id);",
+    );
+    createIndexToleratingMissingTable(
+      sqlite,
+      "CREATE INDEX IF NOT EXISTS audit_log_entity_created_idx ON audit_log (entity_id, created_at);",
+    );
+    createIndexToleratingMissingTable(
+      sqlite,
+      "CREATE INDEX IF NOT EXISTS assets_deleted_at_idx ON assets (name) WHERE deleted_at IS NOT NULL;",
+    );
+    createIndexToleratingMissingTable(
+      sqlite,
+      "CREATE INDEX IF NOT EXISTS liabilities_deleted_at_idx ON liabilities (name) WHERE deleted_at IS NOT NULL;",
+    );
     sqlite.pragma("user_version = 23");
   }
 
@@ -589,13 +608,13 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // any snapshot or figure holds (ADR 0008 frozen rows are untouched).
     // The pre-existing unique index leads with snapshot_id, so it cannot serve a
     // holding-first lookup; this composite does, with kind as the second key.
-    // IF NOT EXISTS / try-guarded like the v23 indexes: a fresh DB already created
-    // it via schema-sql, and a minimal synthetic upgrade fixture may lack the table.
-    try {
-      sqlite.exec(
-        "CREATE INDEX IF NOT EXISTS snapshot_holdings_holding_kind_idx ON snapshot_holdings (holding_id, kind);",
-      );
-    } catch {}
+    // IF NOT EXISTS / missing-table-tolerant like the v23 indexes: a fresh DB
+    // already created it via schema-sql, and a minimal synthetic upgrade fixture
+    // may lack the table — but a real DDL error still surfaces.
+    createIndexToleratingMissingTable(
+      sqlite,
+      "CREATE INDEX IF NOT EXISTS snapshot_holdings_holding_kind_idx ON snapshot_holdings (holding_id, kind);",
+    );
     sqlite.pragma("user_version = 24");
   }
 
