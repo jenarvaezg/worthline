@@ -213,6 +213,14 @@ export {
 } from "./workspace-transfer";
 export type { ParseWorkspaceExportResult } from "./workspace-transfer-parse";
 export { parseWorkspaceExport } from "./workspace-transfer-parse";
+export type {
+  ParsedStatement,
+  ParsedStatementRow,
+  ParseStatementResult,
+  SkippedStatementRow,
+  StatementBroker,
+} from "./statement-parse";
+export { parseStatement } from "./statement-parse";
 
 export type {
   BuildSnapshotHoldingRowsInput,
