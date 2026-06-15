@@ -10,6 +10,7 @@
  */
 
 import type { Member, OwnershipShare } from "@worthline/domain";
+import type { NumistaToken } from "@worthline/pricing";
 
 /**
  * Resolve the ownership split for a newly connected source: 100 % the connecting
@@ -54,6 +55,33 @@ export function readApiKey(credentialsJson: string): string | null {
     return typeof parsed.apiKey === "string" && parsed.apiKey.trim() !== ""
       ? parsed.apiKey
       : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Parse a stored token JSON back into a NumistaToken, or null when absent/bad. */
+export function parseNumistaToken(tokenJson: string | null): NumistaToken | null {
+  if (!tokenJson) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(tokenJson) as Partial<NumistaToken>;
+
+    if (
+      typeof parsed.accessToken === "string" &&
+      typeof parsed.expiresAtMs === "number" &&
+      typeof parsed.userId === "number"
+    ) {
+      return {
+        accessToken: parsed.accessToken,
+        expiresAtMs: parsed.expiresAtMs,
+        userId: parsed.userId,
+      };
+    }
+
+    return null;
   } catch {
     return null;
   }

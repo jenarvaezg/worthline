@@ -3303,6 +3303,14 @@ td.rowActions > * {
   border-radius: 50%;
   background: var(--green);
 }
+/* A stale valuation is no longer a live connection state, so the dot drops its
+   green for a muted tone (design-system §4 reserves green for healthy status). */
+.coinStatusPill.isStale {
+  color: var(--muted);
+}
+.coinStatusPill.isStale::before {
+  background: var(--muted);
+}
 .coinSourceStats {
   display: flex;
   flex-wrap: wrap;

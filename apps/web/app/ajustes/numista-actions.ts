@@ -9,7 +9,6 @@ import {
   isTokenValid,
   mintNumistaToken,
   syncNumistaCollection,
-  type NumistaToken,
 } from "@worthline/pricing";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -24,6 +23,7 @@ import {
 import {
   buildCredentialsJson,
   normalizeApiKey,
+  parseNumistaToken,
   readApiKey,
   resolveConnectingOwnership,
 } from "./numista-helpers";
@@ -166,7 +166,7 @@ export async function syncNumistaAction(
   // 2) Network: mint/refresh the token and pull the valued collection. On any
   // failure, redirect with a clear message and DO NOT touch existing positions.
   try {
-    let token = parseToken(source.tokenJson);
+    let token = parseNumistaToken(source.tokenJson);
 
     if (!token || !isTokenValid(token, nowMs)) {
       token = await mintNumistaToken(credentials, nowMs);
@@ -177,16 +177,19 @@ export async function syncNumistaAction(
     }
 
     const validToken = token;
-    const drafts = await syncNumistaCollection({
-      listItems: () =>
-        getCollectedItems(credentials, validToken.accessToken, validToken.userId),
-      typeDetail: (typeId) => getTypeDetail(credentials, typeId),
-      prices: (typeId, issueId) =>
-        getPrices(credentials, typeId, issueId)
-          .then((prices) => prices)
-          .catch(() => null),
-      spotPerOzEur: (metal) => fetchMetalSpotEur(metal, nowIso),
-    });
+    const drafts = await syncNumistaCollection(
+      {
+        listItems: () =>
+          getCollectedItems(credentials, validToken.accessToken, validToken.userId),
+        typeDetail: (typeId) => getTypeDetail(credentials, typeId),
+        prices: (typeId, issueId) =>
+          getPrices(credentials, typeId, issueId)
+            .then((prices) => prices)
+            .catch(() => null),
+        spotPerOzEur: (metal) => fetchMetalSpotEur(metal, nowIso),
+      },
+      nowIso,
+    );
 
     // 3) Write: replace positions, re-roll the holding value, stamp last sync.
     runWith(
@@ -246,31 +249,4 @@ export async function disconnectNumistaAction(
   }
 
   redirect(appendParam(returnUrl, "ok", "numista_disconnected"));
-}
-
-/** Parse a stored token JSON back into a NumistaToken, or null when absent/bad. */
-function parseToken(tokenJson: string | null): NumistaToken | null {
-  if (!tokenJson) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(tokenJson) as Partial<NumistaToken>;
-
-    if (
-      typeof parsed.accessToken === "string" &&
-      typeof parsed.expiresAtMs === "number" &&
-      typeof parsed.userId === "number"
-    ) {
-      return {
-        accessToken: parsed.accessToken,
-        expiresAtMs: parsed.expiresAtMs,
-        userId: parsed.userId,
-      };
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
 }

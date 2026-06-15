@@ -118,7 +118,9 @@ export type {
   ConnectSourceInput,
   ConnectedSourceRow,
   ConnectedSourceStore,
+  PositionValuationUpdate,
   SourcePositionInput,
+  ValuationFreshness,
 } from "./connected-source-store";
 export type { OperationsStore, ValueUpdateCommand } from "./operations-store";
 export type {

@@ -1,13 +1,20 @@
 import type {
   ConnectedSource,
   OwnershipShare,
+  PriceFreshnessState,
   SourceAdapter,
   SourcePosition,
 } from "@worthline/domain";
 import { projectConnectedSource } from "@worthline/domain";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 
-import { assetOwnerships, assets, connectedSources, positions } from "./schema";
+import {
+  assetOwnerships,
+  assetPriceCache,
+  assets,
+  connectedSources,
+  positions,
+} from "./schema";
 import { readAssetOwnerships, type StoreContext } from "./store-context";
 
 /** Connect a new source: the caller resolves ownership (default 100% the
@@ -33,6 +40,23 @@ export interface ConnectedSourceRow {
 /** A position to persist — the store assigns id + sourceId. */
 export type SourcePositionInput = Omit<SourcePosition, "id" | "sourceId">;
 
+/** A refreshed coin's candidate values, applied to an existing position by id
+ *  (PRD #166). Structurally compatible with pricing's `RevaluedPosition`. */
+export interface PositionValuationUpdate {
+  id: string;
+  metalValueMinor: number | null;
+  numismaticValueMinor: number | null;
+  numismaticFetchedAt: string | null;
+}
+
+/** The valuation freshness stamped on the coin-collection's price-cache row: the
+ *  staleness indicator and the daily stale-price-pass trigger (ADR 0017). */
+export interface ValuationFreshness {
+  fetchedAt: string;
+  freshnessState: PriceFreshnessState;
+  staleReason?: string;
+}
+
 /**
  * Persistence for connected sources (PRD #160 / #163, ADR 0016/0017): an external
  * account worthline mirrors read-only, projecting its positions into one
@@ -49,6 +73,17 @@ export interface ConnectedSourceStore {
     sourceId: string,
     positions: SourcePositionInput[],
     syncedAt: string,
+  ): void;
+  /**
+   * Apply refreshed candidate values to existing positions (by id), re-roll the
+   * holding's value, and stamp the coin-collection's valuation-freshness row —
+   * the decoupled valuation refresh (PRD #166, ADR 0017). Unlike `syncPositions`
+   * this never adds/removes lines; it only updates what each coin is worth.
+   */
+  revaluePositions(
+    sourceId: string,
+    updates: PositionValuationUpdate[],
+    freshness: ValuationFreshness,
   ): void;
 }
 
@@ -72,6 +107,60 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
       .from(connectedSources)
       .where(eq(connectedSources.id, sourceId))
       .get() ?? null;
+
+  const readPositionsForSource = (sourceId: string): SourcePosition[] =>
+    db
+      .select()
+      .from(positions)
+      .where(eq(positions.sourceId, sourceId))
+      .orderBy(asc(positions.createdAt), asc(positions.id))
+      .all()
+      .map((row) => ({
+        catalogueId: row.catalogueId,
+        currency: row.currency,
+        finenessMillis: row.finenessMillis === null ? null : Number(row.finenessMillis),
+        grade: row.grade,
+        id: row.id,
+        issueId: row.issueId === null ? null : Number(row.issueId),
+        liquidityTier: row.liquidityTier,
+        metal: row.metal,
+        metalValueMinor:
+          row.metalValueMinor === null ? null : Number(row.metalValueMinor),
+        name: row.name,
+        numismaticFetchedAt: row.numismaticFetchedAt,
+        numismaticValueMinor:
+          row.numismaticValueMinor === null ? null : Number(row.numismaticValueMinor),
+        purchaseDate: row.purchaseDate,
+        purchasePriceMinor:
+          row.purchasePriceMinor === null ? null : Number(row.purchasePriceMinor),
+        quantity: Number(row.quantity),
+        sourceId,
+        weightGrams: row.weightGrams === null ? null : Number(row.weightGrams),
+      }));
+
+  /** Re-roll the source's illiquid coin-collection holding from its positions
+   *  (the single rung Numista occupies) and persist it on the materialized asset. */
+  const rerollHoldingValue = (source: ConnectedSourceRow): number => {
+    const domainSource: ConnectedSource = {
+      adapter: source.adapter,
+      id: source.id,
+      label: source.label,
+      ownership: readAssetOwnerships(db).get(source.assetId) ?? [],
+    };
+    const holdings = projectConnectedSource(
+      domainSource,
+      readPositionsForSource(source.id),
+    );
+    const valueMinor =
+      holdings.find((holding) => holding.liquidityTier === "illiquid")?.valueMinor ?? 0;
+
+    db.update(assets)
+      .set({ currentValueMinor: valueMinor, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(assets.id, source.assetId))
+      .run();
+
+    return valueMinor;
+  };
 
   return {
     connect: (input) => {
@@ -143,31 +232,7 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
         .from(connectedSources)
         .orderBy(asc(connectedSources.createdAt), asc(connectedSources.id))
         .all(),
-    readPositions: (sourceId) =>
-      db
-        .select()
-        .from(positions)
-        .where(eq(positions.sourceId, sourceId))
-        .orderBy(asc(positions.createdAt), asc(positions.id))
-        .all()
-        .map((row) => ({
-          catalogueId: row.catalogueId,
-          currency: row.currency,
-          grade: row.grade,
-          id: row.id,
-          liquidityTier: row.liquidityTier,
-          metal: row.metal,
-          metalValueMinor:
-            row.metalValueMinor === null ? null : Number(row.metalValueMinor),
-          name: row.name,
-          numismaticValueMinor:
-            row.numismaticValueMinor === null ? null : Number(row.numismaticValueMinor),
-          purchaseDate: row.purchaseDate,
-          purchasePriceMinor:
-            row.purchasePriceMinor === null ? null : Number(row.purchasePriceMinor),
-          quantity: Number(row.quantity),
-          sourceId,
-        })),
+    readPositions: readPositionsForSource,
     syncPositions: (sourceId, incoming, syncedAt) => {
       ctx.transaction(() => {
         const source = readSource(sourceId);
@@ -191,41 +256,30 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
               inserted.map((position) => ({
                 catalogueId: position.catalogueId,
                 currency: position.currency,
+                finenessMillis: position.finenessMillis,
                 grade: position.grade,
                 id: position.id,
+                issueId: position.issueId,
                 liquidityTier: position.liquidityTier,
                 metal: position.metal,
                 metalValueMinor: position.metalValueMinor,
                 name: position.name,
+                numismaticFetchedAt: position.numismaticFetchedAt,
                 numismaticValueMinor: position.numismaticValueMinor,
                 purchaseDate: position.purchaseDate,
                 purchasePriceMinor: position.purchasePriceMinor,
                 quantity: position.quantity,
                 sourceId,
+                weightGrams: position.weightGrams,
               })),
             )
             .run();
         }
 
-        // Re-roll the holding's value from the projection (ADR 0016). Numista's
-        // coins all sit on the single illiquid rung; take that holding's derived
-        // value (0 when the source now holds nothing).
-        const domainSource: ConnectedSource = {
-          adapter: source.adapter,
-          id: sourceId,
-          label: source.label,
-          ownership: readAssetOwnerships(db).get(source.assetId) ?? [],
-        };
-        const holdings = projectConnectedSource(domainSource, inserted);
-        const illiquidHolding = holdings.find(
-          (holding) => holding.liquidityTier === "illiquid",
-        );
-        const valueMinor = illiquidHolding?.valueMinor ?? 0;
-
-        db.update(assets)
-          .set({ currentValueMinor: valueMinor, updatedAt: sql`CURRENT_TIMESTAMP` })
-          .where(eq(assets.id, source.assetId))
-          .run();
+        // Re-roll the holding's value from the freshly-written positions (ADR
+        // 0016). Numista's coins all sit on the single illiquid rung; the holding
+        // derives 0 when the source now holds nothing.
+        rerollHoldingValue(source);
 
         db.update(connectedSources)
           .set({ lastSyncAt: syncedAt, updatedAt: sql`CURRENT_TIMESTAMP` })
@@ -235,6 +289,56 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
 
       ctx.writeAuditEntry("sync_source", "connected_source", sourceId, {
         positionCount: incoming.length,
+      });
+    },
+    revaluePositions: (sourceId, updates, freshness) => {
+      ctx.transaction(() => {
+        const source = readSource(sourceId);
+        if (!source) {
+          throw new Error(`Connected source "${sourceId}" not found.`);
+        }
+
+        // Update each coin's candidate values in place — never adding or removing
+        // lines (that is `syncPositions`' job). A position not in `updates` keeps
+        // its stored values, so an outage that resolves nothing leaves them intact.
+        for (const update of updates) {
+          db.update(positions)
+            .set({
+              metalValueMinor: update.metalValueMinor,
+              numismaticValueMinor: update.numismaticValueMinor,
+              numismaticFetchedAt: update.numismaticFetchedAt,
+            })
+            .where(and(eq(positions.id, update.id), eq(positions.sourceId, sourceId)))
+            .run();
+        }
+
+        const valueMinor = rerollHoldingValue(source);
+
+        // Upsert the coin-collection's single valuation-freshness row (source
+        // "numista"): the staleness indicator the detail surface reads, and the
+        // entry the daily stale-price pass selects to trigger the next refresh.
+        // `price` carries the rolled-up value for parity with other cache rows.
+        const now = new Date().toISOString();
+        const row = {
+          assetId: source.assetId,
+          currency: "EUR",
+          fetchedAt: freshness.fetchedAt,
+          freshnessState: freshness.freshnessState,
+          price: String(valueMinor),
+          source: "numista" as const,
+          staleReason: freshness.staleReason ?? null,
+        };
+        db.insert(assetPriceCache)
+          .values({ ...row, updatedAt: now })
+          .onConflictDoUpdate({
+            target: assetPriceCache.assetId,
+            set: { ...row, updatedAt: now },
+          })
+          .run();
+      });
+
+      ctx.writeAuditEntry("revalue_source", "connected_source", sourceId, {
+        positionCount: updates.length,
       });
     },
   };

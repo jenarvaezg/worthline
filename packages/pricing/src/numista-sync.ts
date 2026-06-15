@@ -39,6 +39,7 @@ export interface NumistaSyncDeps {
 
 export async function syncNumistaCollection(
   deps: NumistaSyncDeps,
+  nowIso: string,
 ): Promise<PositionDraft[]> {
   const items = await deps.listItems();
 
@@ -75,23 +76,30 @@ export async function syncNumistaCollection(
     });
 
     let numismaticValue: number | null = null;
+    // null until we actually read an estimate — drives the long-TTL refetch gate.
+    let numismaticFetchedAt: string | null = null;
     if (base.issueId !== null && base.grade) {
       const priced = await deps.prices(typeId, base.issueId);
       const perCoin = priced ? numismaticEstimateMinor(priced.prices, base.grade) : null;
       // The estimate is per single coin; a position of N coins is worth N times it.
       numismaticValue = perCoin === null ? null : perCoin * item.quantity;
+      numismaticFetchedAt = nowIso;
     }
 
     drafts.push({
       catalogueId: base.catalogueId,
+      issueId: base.issueId,
       name: base.name,
       grade: base.grade,
       quantity: base.quantity,
       liquidityTier: "illiquid",
       metal: composition.metal,
+      finenessMillis: composition.finenessMillis,
+      weightGrams: detail.weightGrams,
       purchaseDate: base.purchaseDate,
       metalValueMinor: metalValue,
       numismaticValueMinor: numismaticValue,
+      numismaticFetchedAt,
       purchasePriceMinor: base.purchasePriceMinor,
       currency: base.currency,
     });

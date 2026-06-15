@@ -117,6 +117,13 @@ export { metalValueMinor, parseComposition, STOOQ_METAL_SYMBOL } from "./metal";
 export type { MetalKind, MetalValueInput, ParsedComposition } from "./metal";
 export { fetchMetalSpotEur, syncNumistaCollection } from "./numista-sync";
 export type { NumistaSyncDeps, PositionDraft } from "./numista-sync";
+export { NUMISMATIC_TTL_DAYS, refreshCoinValuations } from "./numista-revalue";
+export type {
+  RevalueDeps,
+  RevalueOptions,
+  RevaluedPosition,
+  RevaluePosition,
+} from "./numista-revalue";
 export type {
   InvestmentAssetRef,
   RefreshStalePricesResult,
