@@ -38,7 +38,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
     currentValueMinor: 30000000,
     id: "a_home",
     isPrimaryResidence: true,
-    liquidityTier: "housing",
+    liquidityTier: "illiquid",
     name: "Piso Madrid",
     ownership: [
       { memberId: "m1", shareBps: 5000 },
@@ -116,6 +116,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
   store.snapshots.saveSnapshot({
     holdings: [
       {
+        countsAsHousing: false,
         holdingId: "a_cash",
         kind: "asset",
         label: "Cuenta ING",
@@ -124,6 +125,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
         valueMinor: 500000,
       },
       {
+        countsAsHousing: false,
         holdingId: "a_inv",
         kind: "asset",
         label: "Fondo Indexado",
@@ -134,6 +136,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
         valueMinor: 105500,
       },
       {
+        countsAsHousing: false,
         holdingId: "l_mort",
         kind: "liability",
         label: "Hipoteca",
@@ -760,14 +763,14 @@ describe("countsAsHousing round-trips through export/import (#181)", () => {
 
     // Export must carry the frozen flag (it was dropped before the export-read fix).
     const doc = store.workspace.exportWorkspace();
-    expect(doc.snapshots[0].holdings[0].countsAsHousing).toBe(true);
+    expect(doc.snapshots[0]!.holdings[0]!.countsAsHousing).toBe(true);
 
     // A fresh import must persist it (it was reset to the column default before the
     // import-insert fix), so a re-export of the restored store still shows it true.
     const restored = createInMemoryStore();
     restored.workspace.importWorkspace(doc);
     const reDoc = restored.workspace.exportWorkspace();
-    expect(reDoc.snapshots[0].holdings[0].countsAsHousing).toBe(true);
+    expect(reDoc.snapshots[0]!.holdings[0]!.countsAsHousing).toBe(true);
 
     store.close();
     restored.close();
