@@ -10,6 +10,7 @@ function point(input: {
   cash?: number;
   housing?: number;
   debts?: number;
+  debtsSecuredByHousing?: number;
   isOpenPeriod?: boolean;
 }): CompositionSeriesPoint {
   const cashMinor = input.cash ?? 0;
@@ -19,6 +20,7 @@ function point(input: {
     cashMinor,
     dateKey: input.dateKey,
     debtsMinor,
+    debtsSecuredByHousingMinor: input.debtsSecuredByHousing ?? 0,
     housingMinor,
     illiquidMinor: 0,
     isOpenPeriod: input.isOpenPeriod ?? false,

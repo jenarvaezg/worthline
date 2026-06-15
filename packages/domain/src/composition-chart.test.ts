@@ -31,6 +31,7 @@ function row(input: {
   valueMinor: number;
   kind?: SnapshotHoldingKind;
   dateKey?: string;
+  securesHousing?: boolean;
 }): DatedSnapshotHoldingRow {
   return {
     countsAsHousing: false,
@@ -39,7 +40,7 @@ function row(input: {
     kind: input.kind ?? "asset",
     label: input.holdingId,
     liquidityTier: input.tier,
-    securesHousing: false,
+    securesHousing: input.securesHousing ?? false,
     valueMinor: input.valueMinor,
   };
 }
@@ -74,10 +75,12 @@ function seriesPoint(
   const illiquidMinor = bands.illiquidMinor ?? 0;
   const housingMinor = bands.housingMinor ?? 0;
   const debtsMinor = bands.debtsMinor ?? 0;
+  const debtsSecuredByHousingMinor = bands.debtsSecuredByHousingMinor ?? 0;
   return {
     cashMinor,
     dateKey,
     debtsMinor,
+    debtsSecuredByHousingMinor,
     housingMinor,
     illiquidMinor,
     isOpenPeriod,
@@ -106,6 +109,7 @@ describe("deriveCompositionBands", () => {
     expect(bands).toEqual({
       cashMinor: 100_00,
       debtsMinor: 30_00,
+      debtsSecuredByHousingMinor: 0,
       housingMinor: 0,
       illiquidMinor: 0,
       marketMinor: 0,
@@ -153,6 +157,57 @@ describe("deriveCompositionBands", () => {
     expect(grossMinor).toBe(345_000_00);
     expect(bands.debtsMinor).toBe(120_000_00);
     expect(bands.netWorthMinor).toBe(345_000_00 - 120_000_00);
+  });
+
+  test("carves housing-secured debt into its own breakdown while debts still sum ALL liabilities (ADR 0008)", () => {
+    const bands = deriveCompositionBands(
+      [
+        row({ holdingId: "a_cash", tier: "cash", valueMinor: 100_00 }),
+        row({ holdingId: "a_house", tier: "illiquid", valueMinor: 300_000_00 }),
+        row({
+          holdingId: "l_mortgage",
+          tier: "illiquid",
+          valueMinor: 120_000_00,
+          kind: "liability",
+          securesHousing: true,
+        }),
+        row({
+          holdingId: "l_card",
+          tier: null,
+          valueMinor: 5_000_00,
+          kind: "liability",
+          securesHousing: false,
+        }),
+      ],
+      ["a_house"],
+    );
+
+    // The carve mirrors the housing asset carve: it is a breakdown, not a
+    // replacement — `debtsMinor` still aggregates EVERY liability so the
+    // reconciliation identity (ADR 0008) is untouched.
+    expect(bands.debtsSecuredByHousingMinor).toBe(120_000_00);
+    expect(bands.debtsMinor).toBe(125_000_00);
+    expect(bands.netWorthMinor).toBe(300_100_00 - 125_000_00);
+  });
+
+  test("housing-secured carve keys off securesHousing, NOT type/tier (ADR 0013): an unsecured illiquid debt stays out", () => {
+    const bands = deriveCompositionBands(
+      [
+        row({ holdingId: "a_house", tier: "illiquid", valueMinor: 300_000_00 }),
+        // Illiquid rung but NOT securing housing — must not be carved.
+        row({
+          holdingId: "l_loan",
+          tier: "illiquid",
+          valueMinor: 10_000_00,
+          kind: "liability",
+          securesHousing: false,
+        }),
+      ],
+      ["a_house"],
+    );
+
+    expect(bands.debtsSecuredByHousingMinor).toBe(0);
+    expect(bands.debtsMinor).toBe(10_000_00);
   });
 });
 
@@ -351,6 +406,109 @@ describe("buildCompositionChartGeometry", () => {
     expect(exHousing.yMax).toBeLessThan(full.yMax / 10);
     // The net-worth line now excludes housing: net = cash − debts (no debt here).
     expect(exHousing.periods[0]!.netWorth.valueMinor).toBe(10_000_00);
+  });
+
+  test("excluding housing also drops the housing-secured debt: stack, net line, y-domain and anchors all shed it", () => {
+    const points = [
+      seriesPoint("2026-05-31", {
+        cashMinor: 10_000_00,
+        housingMinor: 500_000_00,
+        debtsMinor: 205_000_00,
+        debtsSecuredByHousingMinor: 200_000_00,
+      }),
+      seriesPoint(
+        "2026-06-30",
+        {
+          cashMinor: 10_000_00,
+          housingMinor: 500_000_00,
+          debtsMinor: 205_000_00,
+          debtsSecuredByHousingMinor: 200_000_00,
+        },
+        true,
+      ),
+    ];
+
+    const full = buildCompositionChartGeometry(points)!;
+    const exHousing = buildCompositionChartGeometry(points, {
+      excludedBands: ["housing"],
+    })!;
+
+    // With everything shown the debt stack spans the full 205k below the baseline.
+    expect(full.periods[0]!.debt!.valueMinor).toBe(205_000_00);
+    expect(full.debtArea).not.toBeNull();
+
+    // Hiding housing carves the 200k housing-secured slice out of the debt stack —
+    // only the 5k unsecured remainder survives, mirroring the asset-side carve.
+    expect(exHousing.periods[0]!.debt!.valueMinor).toBe(5_000_00);
+    expect(exHousing.periods[1]!.debt!.valueMinor).toBe(5_000_00);
+
+    // Net worth recomputes as Σ shown assets − Σ shown debts = 10k − 5k = 5k
+    // (NOT 500k+10k−205k), at EVERY period.
+    expect(exHousing.periods[0]!.netWorth.valueMinor).toBe(5_000_00);
+    expect(exHousing.periods[1]!.netWorth.valueMinor).toBe(5_000_00);
+
+    // The y-domain rescales to the remaining 10k-scale bands (no 500k dead space,
+    // no 205k debt depth). The deepest point is now the 5k debt, not 205k.
+    expect(exHousing.yMin).toBeGreaterThan(full.yMin / 10);
+    expect(-exHousing.yMin).toBeLessThan(50_000_00);
+
+    // The net line maps the shed net worth through the rescaled domain.
+    const lineCoords = parseCoords(exHousing.netWorthLine);
+    expect(lineCoords[0]!.y).toBeCloseTo(
+      yFor(5_000_00, exHousing.yMin, exHousing.yMax),
+      2,
+    );
+  });
+
+  test("excluding housing with zero housing-secured debt leaves the debt stack intact (only the asset band vanishes)", () => {
+    // A property with no associated debt: the household carries only unsecured
+    // card debt, which must remain in full when housing is hidden.
+    const points = [
+      seriesPoint("2026-05-31", {
+        cashMinor: 10_000_00,
+        housingMinor: 300_000_00,
+        debtsMinor: 5_000_00,
+        debtsSecuredByHousingMinor: 0,
+      }),
+      seriesPoint("2026-06-30", {
+        cashMinor: 12_000_00,
+        housingMinor: 300_000_00,
+        debtsMinor: 5_000_00,
+        debtsSecuredByHousingMinor: 0,
+      }),
+    ];
+
+    const exHousing = buildCompositionChartGeometry(points, {
+      excludedBands: ["housing"],
+    })!;
+
+    // Asset band gone, but the unsecured debt stack is untouched.
+    expect(exHousing.assetBands.some((b) => b.band === "housing")).toBe(false);
+    expect(exHousing.periods[0]!.debt!.valueMinor).toBe(5_000_00);
+    // Net = cash − unsecured debt = 10k − 5k.
+    expect(exHousing.periods[0]!.netWorth.valueMinor).toBe(5_000_00);
+  });
+
+  test("household with no housing at all: hiding housing is a no-op for the debt stack (behaves exactly as today)", () => {
+    const points = [
+      seriesPoint("2026-05-31", { cashMinor: 10_000_00, debtsMinor: 3_000_00 }),
+      seriesPoint("2026-06-30", { cashMinor: 11_000_00, debtsMinor: 3_000_00 }),
+    ];
+
+    const full = buildCompositionChartGeometry(points)!;
+    const exHousing = buildCompositionChartGeometry(points, {
+      excludedBands: ["housing"],
+    })!;
+
+    // No housing-secured debt to carve → the debt stack and net worth are
+    // identical with or without the toggle.
+    expect(exHousing.periods[0]!.debt!.valueMinor).toBe(
+      full.periods[0]!.debt!.valueMinor,
+    );
+    expect(exHousing.periods[0]!.netWorth.valueMinor).toBe(
+      full.periods[0]!.netWorth.valueMinor,
+    );
+    expect(exHousing.periods[0]!.netWorth.valueMinor).toBe(7_000_00);
   });
 
   test("no debt in any period → no debt stack and no debt hover anchor", () => {
