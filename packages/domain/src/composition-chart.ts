@@ -48,6 +48,16 @@ export interface CompositionBands {
   housingMinor: number;
   /** All liabilities, aggregated (the single negative stack). */
   debtsMinor: number;
+  /**
+   * The portion of `debtsMinor` that secures a housing asset — every liability
+   * frozen with `securesHousing === true` (#180), keyed off that flag and NOT
+   * the instrument (ADR 0013: a snapshot row freezes no instrument, only
+   * `securesHousing`). A breakdown of `debtsMinor`, never a replacement: it is
+   * additive (`debtsMinor` still sums EVERY liability), so the reconciliation
+   * identity holds (ADR 0008). Mirrors the housing asset carve so hiding Vivienda
+   * can shed the debt that secures it from the negative stack (#213).
+   */
+  debtsSecuredByHousingMinor: number;
   /** Σ asset bands − debts. Equals the snapshot's headline net worth (ADR 0008). */
   netWorthMinor: number;
 }
@@ -70,10 +80,18 @@ export function deriveCompositionBands(
   let illiquidMinor = 0;
   let housingMinor = 0;
   let debtsMinor = 0;
+  let debtsSecuredByHousingMinor = 0;
 
   for (const row of rows) {
     if (row.kind === "liability") {
+      // Every liability lands in the aggregate (ADR 0008 reconciliation), and a
+      // housing-securing one is ALSO tallied into the carve — a breakdown, not a
+      // partition. Keyed off the frozen `securesHousing` flag, never the
+      // instrument (ADR 0013).
       debtsMinor += row.valueMinor;
+      if (row.securesHousing) {
+        debtsSecuredByHousingMinor += row.valueMinor;
+      }
       continue;
     }
     if (housingIds.has(row.holdingId)) {
@@ -108,6 +126,7 @@ export function deriveCompositionBands(
   return {
     cashMinor,
     debtsMinor,
+    debtsSecuredByHousingMinor,
     housingMinor,
     illiquidMinor,
     marketMinor,
@@ -417,11 +436,14 @@ function toAreaString(xs: number[], upperYs: number[], lowerYs: number[]): strin
  * gross-asset stack above it, and the deepest aggregated debt below it. Gross
  * asset values and debt balances are non-negative, so no band ever crosses zero
  * — there is no lines-fallback (unlike the old decomposition chart). The
- * net-worth line is `Σ shown asset bands − debts`. With no exclusions that equals
- * the snapshot's headline net worth by the reconciliation invariant (ADR 0008);
- * `excludedBands` drops a band from the stack, the net line and the y domain
- * (so the chart rescales to the remaining bands — e.g. hiding a dominant
- * Vivienda) and omits it from the per-period hover anchors.
+ * net-worth line is `Σ shown asset bands − shown debts`. With no exclusions that
+ * equals the snapshot's headline net worth by the reconciliation invariant (ADR
+ * 0008); `excludedBands` drops a band from the stack, the net line and the y
+ * domain (so the chart rescales to the remaining bands — e.g. hiding a dominant
+ * Vivienda) and omits it from the per-period hover anchors. Excluding `housing`
+ * additionally sheds the debt that SECURES it (`debtsSecuredByHousingMinor`,
+ * ADR 0013) from the negative stack, net line, domain and debt anchor — one
+ * toggle hides both the Vivienda band and its mortgage together (#213).
  */
 export interface CompositionGeometryOptions {
   /** Asset bands to drop from the stack, net line, domain and hover anchors. */
@@ -444,13 +466,23 @@ export function buildCompositionChartGeometry(
   const excluded = new Set(options.excludedBands ?? []);
   const shownBands = COMPOSITION_ASSET_BANDS.filter((band) => !excluded.has(band));
 
-  // Gross of the SHOWN bands, and net worth of what is shown (gross − debts).
+  // Hiding Vivienda sheds the debt that SECURES it from the negative stack too,
+  // mirroring the asset-side carve (#213): the single toggle controls both. The
+  // shed debt is the frozen `securesHousing` portion (ADR 0013), so the chart
+  // still reads `Σ shown assets − Σ shown debts`. With housing shown nothing is
+  // shed and this equals the full aggregate.
+  const dropHousingDebt = excluded.has("housing");
+  const shownDebt = (p: CompositionSeriesPoint): number =>
+    dropHousingDebt ? p.debtsMinor - p.debtsSecuredByHousingMinor : p.debtsMinor;
+
+  // Gross of the SHOWN bands, and net worth of what is shown (gross − shown debts).
   // With nothing excluded these equal grossAssets and the headline net worth.
   const grossSums = points.map((p) =>
     shownBands.reduce((sum, band) => sum + bandValueMinor(p, band), 0),
   );
-  const nets = points.map((p, i) => grossSums[i]! - p.debtsMinor);
-  const negDebts = points.map((p) => -p.debtsMinor);
+  const shownDebts = points.map(shownDebt);
+  const nets = points.map((p, i) => grossSums[i]! - shownDebts[i]!);
+  const negDebts = shownDebts.map((debt) => -debt);
   const { yMin, yMax } = paddedValueDomain([0, ...grossSums, ...negDebts]);
   const toY = (value: number): number =>
     valueToY(value, yMin, yMax, COMPOSITION_CHART_HEIGHT);
@@ -472,12 +504,12 @@ export function buildCompositionChartGeometry(
     band,
   }));
 
-  const hasDebt = points.some((p) => p.debtsMinor > 0);
+  const hasDebt = shownDebts.some((debt) => debt > 0);
   const debtArea = hasDebt
     ? toAreaString(
         xs,
         points.map(() => baselineY),
-        points.map((p) => toY(-p.debtsMinor)),
+        shownDebts.map((debt) => toY(-debt)),
       )
     : null;
 
@@ -496,8 +528,12 @@ export function buildCompositionChartGeometry(
       })),
       dateKey: p.dateKey,
       debt:
-        p.debtsMinor > 0
-          ? { valueMinor: p.debtsMinor, x, y: (baselineY + toY(-p.debtsMinor)) / 2 }
+        shownDebts[i]! > 0
+          ? {
+              valueMinor: shownDebts[i]!,
+              x,
+              y: (baselineY + toY(-shownDebts[i]!)) / 2,
+            }
           : null,
       isOpenPeriod: p.isOpenPeriod,
       netWorth: { valueMinor: nets[i]!, x, y: toY(nets[i]!) },
