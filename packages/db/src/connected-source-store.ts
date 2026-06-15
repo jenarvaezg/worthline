@@ -157,7 +157,11 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
           id: row.id,
           liquidityTier: row.liquidityTier,
           metal: row.metal,
+          metalValueMinor:
+            row.metalValueMinor === null ? null : Number(row.metalValueMinor),
           name: row.name,
+          numismaticValueMinor:
+            row.numismaticValueMinor === null ? null : Number(row.numismaticValueMinor),
           purchaseDate: row.purchaseDate,
           purchasePriceMinor:
             row.purchasePriceMinor === null ? null : Number(row.purchasePriceMinor),
@@ -191,7 +195,9 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
                 id: position.id,
                 liquidityTier: position.liquidityTier,
                 metal: position.metal,
+                metalValueMinor: position.metalValueMinor,
                 name: position.name,
+                numismaticValueMinor: position.numismaticValueMinor,
                 purchaseDate: position.purchaseDate,
                 purchasePriceMinor: position.purchasePriceMinor,
                 quantity: position.quantity,

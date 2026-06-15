@@ -9,7 +9,11 @@
  */
 import { describe, expect, test } from "vitest";
 
-import { groupPositionsByMetal, projectConnectedSource } from "./connected-source";
+import {
+  coinValue,
+  groupPositionsByMetal,
+  projectConnectedSource,
+} from "./connected-source";
 import type { ConnectedSource, SourcePosition } from "./connected-source";
 
 const source: ConnectedSource = {
@@ -25,16 +29,58 @@ function coin(overrides: Partial<SourcePosition> = {}): SourcePosition {
     sourceId: "src-numista",
     catalogueId: "1234",
     name: "20 francos Marianne",
-    grade: "EBC",
+    grade: "unc",
     quantity: 1,
     liquidityTier: "illiquid",
     metal: "oro",
     purchaseDate: "2019-05-12",
+    metalValueMinor: null,
+    numismaticValueMinor: null,
     purchasePriceMinor: 30_000,
     currency: "EUR",
     ...overrides,
   };
 }
+
+describe("coinValue — max(metal, numismatic) → purchase price → 0 (ADR 0017)", () => {
+  test("takes the metal value when it beats the numismatic estimate", () => {
+    const v = coinValue(coin({ metalValueMinor: 53_800, numismaticValueMinor: 49_000 }));
+    expect(v).toEqual({ minor: 53_800, basis: "metal" });
+  });
+
+  test("takes the numismatic estimate when it beats the metal value", () => {
+    const v = coinValue(coin({ metalValueMinor: 1_900, numismaticValueMinor: 4_800 }));
+    expect(v).toEqual({ minor: 4_800, basis: "numismatic" });
+  });
+
+  test("a tie resolves to metal (bullion floor)", () => {
+    const v = coinValue(coin({ metalValueMinor: 7_500, numismaticValueMinor: 7_500 }));
+    expect(v).toEqual({ minor: 7_500, basis: "metal" });
+  });
+
+  test("falls back to the purchase price when neither metal nor numismatic is known", () => {
+    const v = coinValue(
+      coin({
+        metalValueMinor: null,
+        numismaticValueMinor: null,
+        purchasePriceMinor: 30_000,
+      }),
+    );
+    expect(v).toEqual({ minor: 30_000, basis: "purchase" });
+  });
+
+  test("a base-metal coin Numista does not estimate, with no purchase price, is 0", () => {
+    const v = coinValue(
+      coin({ metalValueMinor: 0, numismaticValueMinor: null, purchasePriceMinor: null }),
+    );
+    expect(v).toEqual({ minor: 0, basis: "zero" });
+  });
+
+  test("a known zero metal value still loses to a positive numismatic estimate", () => {
+    const v = coinValue(coin({ metalValueMinor: 0, numismaticValueMinor: 1_600 }));
+    expect(v).toEqual({ minor: 1_600, basis: "numismatic" });
+  });
+});
 
 describe("projectConnectedSource — positions roll up into one holding per rung", () => {
   test("a Numista collection projects to one illiquid holding valued at the sum of purchase prices", () => {

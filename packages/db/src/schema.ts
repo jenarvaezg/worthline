@@ -361,8 +361,13 @@ export const positions = sqliteTable("positions", {
   quantity: integer("quantity").notNull(),
   liquidityTier: text("liquidity_tier").$type<LiquidityTier>().notNull(),
   metal: text("metal"),
-  purchaseDate: text("purchase_date").notNull(),
+  // Optional Numista fields — present only when the user recorded them (#161).
+  purchaseDate: text("purchase_date"),
   purchasePriceMinor: integer("purchase_price_minor"),
+  // The two candidate values (ADR 0017), computed at sync time; null when not
+  // resolved (base-metal coin with no spot / no numismatic estimate).
+  metalValueMinor: integer("metal_value_minor"),
+  numismaticValueMinor: integer("numismatic_value_minor"),
   currency: text("currency").notNull(),
   createdAt: timestamp("created_at"),
 });

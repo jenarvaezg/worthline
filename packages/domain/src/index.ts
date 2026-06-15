@@ -141,11 +141,13 @@ export type {
 export { projectAssets, projectPositions } from "./asset-projection";
 
 export type {
+  CoinValuation,
   ConnectedSource,
   MetalGroup,
   ProjectedHolding,
   SourceAdapter,
   SourcePosition,
+  ValuationBasis,
 } from "./connected-source";
 export {
   coinValue,

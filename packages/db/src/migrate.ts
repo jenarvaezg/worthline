@@ -484,8 +484,10 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       quantity INTEGER NOT NULL,
       liquidity_tier TEXT NOT NULL,
       metal TEXT,
-      purchase_date TEXT NOT NULL,
+      purchase_date TEXT,
       purchase_price_minor INTEGER,
+      metal_value_minor INTEGER,
+      numismatic_value_minor INTEGER,
       currency TEXT NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
       FOREIGN KEY (source_id) REFERENCES connected_sources(id) ON UPDATE no action ON DELETE cascade

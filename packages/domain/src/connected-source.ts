@@ -58,20 +58,51 @@ export interface SourcePosition {
   /** Grouping metadata for the holding's detail lens (a coin's metal); null when
    *  the source records no metal for the line. */
   metal: string | null;
-  /** When the position entered the collection (its Numista trade), YYYY-MM-DD. */
-  purchaseDate: string;
-  /** What was paid for the position, minor units; null when Numista has no trade price. */
+  /** When the position entered the collection (its Numista acquisition date),
+   *  YYYY-MM-DD; null when the user recorded none (an optional Numista field). */
+  purchaseDate: string | null;
+  /** Candidate value — the coin's melt value (composition × weight × spot), minor
+   *  units; null when not resolved (e.g. a base-metal coin with no spot). */
+  metalValueMinor: number | null;
+  /** Candidate value — Numista's per-grade estimate, minor units; null when
+   *  Numista has no estimate for this coin at its grade. */
+  numismaticValueMinor: number | null;
+  /** What was paid for the position, minor units; null when Numista records no
+   *  trade price (an optional field — many users record none). */
   purchasePriceMinor: number | null;
   currency: CurrencyCode;
 }
 
+/** Which figure a coin's value came from — governs the detail-row label. */
+export type ValuationBasis = "metal" | "numismatic" | "purchase" | "zero";
+
+/** A coin's value with the basis that produced it. */
+export interface CoinValuation {
+  minor: number;
+  basis: ValuationBasis;
+}
+
 /**
- * The value of one position (ADR 0017). For now (S2 #163) the simplest
- * valuation: the price paid, or 0 when Numista records no trade price. The full
- * max(metal value, numismatic value) chain arrives in the coin-valuation slice.
+ * The value of one position (ADR 0017): the greater of its metal and numismatic
+ * values; when neither is known (a base-metal coin Numista does not estimate), it
+ * falls back to the purchase price; absent even that, it is 0 (the "value at 0"
+ * case). A tie resolves to metal (the bullion floor). A *zero* candidate does not
+ * count as "known" — only a positive metal/numismatic value wins over the
+ * purchase-price fallback.
  */
-export function coinValue(position: SourcePosition): number {
-  return position.purchasePriceMinor ?? 0;
+export function coinValue(position: SourcePosition): CoinValuation {
+  const metal = position.metalValueMinor ?? 0;
+  const numismatic = position.numismaticValueMinor ?? 0;
+
+  if (metal > 0 || numismatic > 0) {
+    return metal >= numismatic
+      ? { minor: metal, basis: "metal" }
+      : { minor: numismatic, basis: "numismatic" };
+  }
+  if (position.purchasePriceMinor !== null) {
+    return { minor: position.purchasePriceMinor, basis: "purchase" };
+  }
+  return { minor: 0, basis: "zero" };
 }
 
 /** A connected source's rolled-up holding on one liquidity rung (ADR 0016). */
@@ -115,7 +146,10 @@ export function projectConnectedSource(
       name: source.label,
       liquidityTier: rung,
       instrument: "coin_collection",
-      valueMinor: rungPositions.reduce((sum, position) => sum + coinValue(position), 0),
+      valueMinor: rungPositions.reduce(
+        (sum, position) => sum + coinValue(position).minor,
+        0,
+      ),
       currency: rungPositions[0]!.currency,
       ownership: source.ownership,
       positions: rungPositions,
@@ -147,7 +181,7 @@ export function groupPositionsByMetal(positions: SourcePosition[]): MetalGroup[]
   const groups: MetalGroup[] = [...byMetal.entries()].map(([metal, group]) => ({
     metal,
     positions: group,
-    subtotalMinor: group.reduce((sum, position) => sum + coinValue(position), 0),
+    subtotalMinor: group.reduce((sum, position) => sum + coinValue(position).minor, 0),
   }));
 
   return groups.sort((left, right) => {

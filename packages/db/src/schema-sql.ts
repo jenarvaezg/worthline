@@ -256,8 +256,10 @@ CREATE TABLE \`positions\` (
 	\`quantity\` integer NOT NULL,
 	\`liquidity_tier\` text NOT NULL,
 	\`metal\` text,
-	\`purchase_date\` text NOT NULL,
+	\`purchase_date\` text,
 	\`purchase_price_minor\` integer,
+	\`metal_value_minor\` integer,
+	\`numismatic_value_minor\` integer,
 	\`currency\` text NOT NULL,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	FOREIGN KEY (\`source_id\`) REFERENCES \`connected_sources\`(\`id\`) ON UPDATE no action ON DELETE cascade
