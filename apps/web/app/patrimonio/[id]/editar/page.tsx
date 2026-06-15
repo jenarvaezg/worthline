@@ -96,6 +96,11 @@ export default async function EditarPage({
     const isDerived = assetMethod === "derived" && !isCoinCollection;
     const operations = isDerived ? store.operations.readOperations(id) : [];
     const priceCache = isDerived ? store.operations.readPriceCache(id) : null;
+    // The coin collection's decoupled valuation freshness (PRD #166): its own
+    // `numista`-source cache row, separate from the investment derived path above.
+    const coinValuationCache = isCoinCollection
+      ? store.operations.readPriceCache(id)
+      : null;
     const position = isDerived
       ? (store.snapshots.readPositions().find((p) => p.assetId === id) ?? null)
       : null;
@@ -128,6 +133,7 @@ export default async function EditarPage({
       balanceAnchors,
       coinPositions,
       coinSource,
+      coinValuationCache,
       debtModel,
       earlyRepayments,
       isCoinCollection,
@@ -158,6 +164,7 @@ export default async function EditarPage({
     balanceAnchors,
     coinPositions,
     coinSource,
+    coinValuationCache,
     debtModel,
     earlyRepayments,
     isCoinCollection,
@@ -286,6 +293,8 @@ export default async function EditarPage({
             lastSyncAt={coinSource?.lastSyncAt ?? null}
             positions={coinPositions}
             sourceId={coinSource?.id ?? null}
+            valuationFreshness={coinValuationCache?.freshnessState ?? null}
+            valuationStaleReason={coinValuationCache?.staleReason ?? null}
           />
         ) : null}
 

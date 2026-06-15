@@ -32,15 +32,19 @@ function position(overrides: Partial<SourcePositionInput> = {}): SourcePositionI
   return {
     catalogueId: "n123",
     currency: "EUR",
+    finenessMillis: null,
     grade: "VF",
+    issueId: null,
     liquidityTier: "illiquid",
     metal: "silver",
     metalValueMinor: null,
     name: "8 reales",
+    numismaticFetchedAt: null,
     numismaticValueMinor: null,
     purchaseDate: "2024-01-01",
     purchasePriceMinor: 5_000,
     quantity: 1,
+    weightGrams: null,
     ...overrides,
   };
 }
@@ -156,6 +160,36 @@ describe("connected-source store — syncPositions", () => {
     expect(holding(store, assetId).currentValue.amountMinor).toBe(8_000);
   });
 
+  test("persists and round-trips the indefinite detail + numismatic fetched-at", () => {
+    const store = createInMemoryStore();
+    seed(store);
+    const { sourceId } = connectNumista(store);
+
+    store.connectedSources.syncPositions(
+      sourceId,
+      [
+        position({
+          catalogueId: "1493",
+          issueId: 32723,
+          finenessMillis: 999,
+          weightGrams: 31.103,
+          metalValueMinor: 2797,
+          numismaticValueMinor: 7558,
+          numismaticFetchedAt: "2026-06-15T12:00:00.000Z",
+        }),
+      ],
+      "2026-06-15T12:00:00.000Z",
+    );
+
+    const stored = store.connectedSources.readPositions(sourceId);
+    expect(stored[0]).toMatchObject({
+      issueId: 32723,
+      finenessMillis: 999,
+      weightGrams: 31.103,
+      numismaticFetchedAt: "2026-06-15T12:00:00.000Z",
+    });
+  });
+
   test("a null purchase price contributes 0 but is still stored", () => {
     const store = createInMemoryStore();
     seed(store);
@@ -176,6 +210,117 @@ describe("connected-source store — syncPositions", () => {
     expect(stored).toHaveLength(2);
     const unpriced = stored.find((p) => p.catalogueId === "unpriced");
     expect(unpriced?.purchasePriceMinor).toBeNull();
+  });
+});
+
+describe("connected-source store — revaluePositions", () => {
+  test("updates candidates in place, re-rolls the holding, stamps freshness", () => {
+    const store = createInMemoryStore();
+    seed(store);
+    const { sourceId, assetId } = connectNumista(store);
+
+    store.connectedSources.syncPositions(
+      sourceId,
+      [
+        position({
+          catalogueId: "1493",
+          metalValueMinor: 2797,
+          numismaticValueMinor: 7558,
+          purchasePriceMinor: null,
+        }),
+        position({
+          catalogueId: "5678",
+          metalValueMinor: 4051,
+          numismaticValueMinor: 2400,
+          purchasePriceMinor: null,
+        }),
+      ],
+      "2026-06-15T12:00:00.000Z",
+    );
+    // value = Σ max(metal, numismatic): 7558 + 4051 = 11609
+    expect(holding(store, assetId).currentValue.amountMinor).toBe(11609);
+
+    const stored = store.connectedSources.readPositions(sourceId);
+    const eagle = stored.find((p) => p.catalogueId === "1493")!;
+    const pesetas = stored.find((p) => p.catalogueId === "5678")!;
+
+    store.connectedSources.revaluePositions(
+      sourceId,
+      [
+        {
+          id: eagle.id,
+          metalValueMinor: 3000,
+          numismaticValueMinor: 7558,
+          numismaticFetchedAt: "2026-07-15T12:00:00.000Z",
+        },
+        {
+          id: pesetas.id,
+          metalValueMinor: 4500,
+          numismaticValueMinor: 2400,
+          numismaticFetchedAt: "2026-07-15T12:00:00.000Z",
+        },
+      ],
+      { fetchedAt: "2026-07-15T12:00:00.000Z", freshnessState: "fresh" },
+    );
+
+    // eagle max(3000, 7558)=7558; pesetas max(4500, 2400)=4500 → 12058
+    expect(holding(store, assetId).currentValue.amountMinor).toBe(12058);
+
+    const reread = store.connectedSources.readPositions(sourceId);
+    expect(reread.find((p) => p.catalogueId === "1493")).toMatchObject({
+      metalValueMinor: 3000,
+      numismaticFetchedAt: "2026-07-15T12:00:00.000Z",
+    });
+
+    // The freshness row is the staleness indicator + the daily refresh trigger.
+    expect(store.operations.readPriceCache(assetId)).toMatchObject({
+      source: "numista",
+      freshnessState: "fresh",
+      fetchedAt: "2026-07-15T12:00:00.000Z",
+    });
+  });
+
+  test("an outage freshness (stale + reason) keeps the last-known value", () => {
+    const store = createInMemoryStore();
+    seed(store);
+    const { sourceId, assetId } = connectNumista(store);
+
+    store.connectedSources.syncPositions(
+      sourceId,
+      [
+        position({
+          catalogueId: "1493",
+          numismaticValueMinor: 7558,
+          purchasePriceMinor: null,
+        }),
+      ],
+      "2026-06-15T12:00:00.000Z",
+    );
+    const eagle = store.connectedSources.readPositions(sourceId)[0]!;
+
+    // Outage: keep last-known candidate values, mark the row stale with a reason.
+    store.connectedSources.revaluePositions(
+      sourceId,
+      [
+        {
+          id: eagle.id,
+          metalValueMinor: eagle.metalValueMinor,
+          numismaticValueMinor: 7558,
+          numismaticFetchedAt: eagle.numismaticFetchedAt,
+        },
+      ],
+      {
+        fetchedAt: "2026-06-15T12:00:00.000Z",
+        freshnessState: "stale",
+        staleReason: "Numista no disponible",
+      },
+    );
+
+    expect(holding(store, assetId).currentValue.amountMinor).toBe(7558);
+    expect(store.operations.readPriceCache(assetId)).toMatchObject({
+      freshnessState: "stale",
+      staleReason: "Numista no disponible",
+    });
   });
 });
 
@@ -203,12 +348,10 @@ describe("connected-source store — token + last sync", () => {
   });
 });
 
-describe("connected-source store — v19 migration", () => {
+describe("connected-source store — migration", () => {
   // Fresh-DB table-existence + version assertion: a raw better-sqlite3 DB run
-  // through `migrate` lands at SCHEMA_VERSION (19) with both tables present.
-  // (Fresh-DB path, not an explicit 18→19 upgrade — connected_sources / positions
-  //  are brand-new tables with no prior data to migrate.)
-  test("migrate creates connected_sources and positions and reaches v19", () => {
+  // through `migrate` lands at SCHEMA_VERSION with both connected-source tables.
+  test("migrate creates connected_sources and positions and reaches the latest version", () => {
     const db = new Database(":memory:");
     migrate(db);
 
@@ -221,7 +364,72 @@ describe("connected-source store — v19 migration", () => {
     expect(tableNames).toContain("connected_sources");
     expect(tableNames).toContain("positions");
     expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(19);
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(20);
+
+    db.close();
+  });
+
+  // The v20 decoupled-valuation columns (PRD #166): present on a fresh DB and,
+  // crucially, idempotent — the v20 ALTERs are guarded so a fresh DB (which gets
+  // them from schema-sql) does not double-add and throw.
+  test("positions carries the v20 valuation-refresh columns", () => {
+    const db = new Database(":memory:");
+    migrate(db);
+
+    const columns = (
+      db.prepare("PRAGMA table_info(positions)").all() as { name: string }[]
+    ).map((row) => row.name);
+
+    expect(columns).toEqual(
+      expect.arrayContaining([
+        "issue_id",
+        "fineness_millis",
+        "weight_grams",
+        "numismatic_fetched_at",
+      ]),
+    );
+
+    db.close();
+  });
+
+  // An existing v19 DB (connected_sources/positions present, old positions shape)
+  // upgrades cleanly to v20: the ALTERs add the four columns to real data.
+  test("upgrades a v19 database to v20 by adding the columns", () => {
+    const db = new Database(":memory:");
+    // Stand up the v19 positions shape, then mark the DB as v19 so migrate runs
+    // only the v20 step against it (the real upgrade path, not the fresh-DB path).
+    db.exec(`CREATE TABLE positions (
+      id TEXT PRIMARY KEY NOT NULL,
+      source_id TEXT NOT NULL,
+      catalogue_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      grade TEXT NOT NULL,
+      quantity INTEGER NOT NULL,
+      liquidity_tier TEXT NOT NULL,
+      metal TEXT,
+      purchase_date TEXT,
+      purchase_price_minor INTEGER,
+      metal_value_minor INTEGER,
+      numismatic_value_minor INTEGER,
+      currency TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+    );`);
+    db.pragma("user_version = 19");
+
+    migrate(db);
+
+    const columns = (
+      db.prepare("PRAGMA table_info(positions)").all() as { name: string }[]
+    ).map((row) => row.name);
+    expect(columns).toEqual(
+      expect.arrayContaining([
+        "issue_id",
+        "fineness_millis",
+        "weight_grams",
+        "numismatic_fetched_at",
+      ]),
+    );
+    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
 
     db.close();
   });

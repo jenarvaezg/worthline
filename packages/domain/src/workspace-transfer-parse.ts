@@ -237,7 +237,7 @@ const priceSchema = z.object({
   assetId: nonEmptyString,
   currency: nonEmptyString,
   price: nonEmptyString,
-  source: z.enum(["manual", "ecb", "coingecko", "stooq", "yahoo", "finect"]),
+  source: z.enum(["manual", "ecb", "coingecko", "stooq", "yahoo", "finect", "numista"]),
   priceDate: nonEmptyString.optional(),
   fetchedAt: nonEmptyString,
   freshnessState: z.enum(["fresh", "stale", "failed", "manual"]),

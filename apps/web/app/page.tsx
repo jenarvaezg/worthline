@@ -34,6 +34,7 @@ import type { RefreshPricesResult } from "./load-dashboard";
 import CompositionChart from "./composition-chart";
 import CompositionRangeControls from "./composition-range-controls";
 import DrilldownPanel from "./drilldown-panel";
+import { runNumistaCoinRefresh } from "./ajustes/numista-coin-refresh";
 import { refreshAndPersistStalePrices } from "./refresh-prices";
 import Shell from "./shell";
 
@@ -211,6 +212,7 @@ export default async function DashboardPage({
           readCache: () => store.operations.readAllPriceCacheEntries(),
         });
       },
+      refreshCoinValuations: () => runNumistaCoinRefresh(store, now),
     });
   } finally {
     store.close();

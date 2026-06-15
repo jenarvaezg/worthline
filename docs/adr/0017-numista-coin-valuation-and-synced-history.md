@@ -61,9 +61,17 @@ refreshes, comfortably under the cap.
 
 ## Consequences
 
-- A coin position stores its catalogue id, grade, quantity, composition/weight,
-  purchase date and purchase price, plus the two candidate values; the holding's
-  detail page groups positions by metal.
+- A coin position stores its catalogue id, **issue id**, grade, quantity, the
+  **indefinite detail** (metal, parsed fineness and weight), purchase date and
+  purchase price, the two candidate values, and **when the numismatic estimate was
+  last fetched**. The issue id + detail let the decoupled refresh re-value a coin
+  without re-listing the collection; the holding's detail page groups by metal.
+- Valuation rides the dashboard's daily stale-price pass through one `numista`-source
+  price-cache row on the coin-collection holding: metal value is recomputed every
+  pass from the stored detail × the daily spot (free), while the numismatic estimate
+  is refetched only past its long TTL (`NUMISMATIC_TTL_DAYS`, gated per position).
+  A Numista outage keeps the last-known value and marks that row stale (it retries
+  next pass), surfaced as a "valoración desactualizada" note on the detail page.
 - Stooq's coverage of platinum/palladium must be verified at build time; base-metal
   circulation coins lean on the numismatic estimate or the purchase-price fallback.
 - The `client_credentials` end-to-end path and Numista's exact credential field set

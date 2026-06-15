@@ -143,6 +143,20 @@ describe("selectStalePrices (per-source TTL)", () => {
     expect(PRICE_TTL_DAYS.yahoo).toBe(1);
     expect(PRICE_TTL_DAYS.finect).toBe(1);
   });
+
+  // The coin-collection holding (PRD #160, ADR 0017) rides the stale-price pass
+  // through one `numista`-source cache row on the daily TTL — the cheapest cadence
+  // (metal spot moves daily). Numismatic estimates are gated separately on a long
+  // TTL inside the valuation refresh, so the daily run rarely touches Numista.
+  test("numista source rides the daily (1-day) TTL like the spot providers", () => {
+    expect(PRICE_TTL_DAYS.numista).toBe(1);
+
+    const stale = makeEntry({ source: "numista", fetchedAt: "2026-06-08T10:00:00Z" });
+    expect(selectStalePrices([stale], "2026-06-09T10:00:00Z")).toEqual([stale]);
+
+    const fresh = makeEntry({ source: "numista", fetchedAt: "2026-06-09T08:00:00Z" });
+    expect(selectStalePrices([fresh], "2026-06-09T10:00:00Z")).toEqual([]);
+  });
 });
 
 describe("getPriceFreshness", () => {
