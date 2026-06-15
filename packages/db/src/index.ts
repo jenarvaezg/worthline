@@ -129,7 +129,11 @@ export type {
   SourcePositionInput,
   ValuationFreshness,
 } from "./connected-source-store";
-export type { OperationsStore, ValueUpdateCommand } from "./operations-store";
+export type {
+  OperationsStore,
+  UpdateInvestmentOperationInput,
+  ValueUpdateCommand,
+} from "./operations-store";
 export type {
   PositionView,
   SaveSnapshotInput,

@@ -119,8 +119,9 @@ const ONE_SHOT_PARAMS = new Set([
   "updated",
   "failed",
   "anchor",
-  // Statement-load summary (#174): counts shown once in the success banner.
+  // Statement-load summary (#174, #175): counts shown once in the success banner.
   "created",
+  "overwritten",
   "skipped",
   // Symbol-search state (#138): the query and the picked candidate's prefill
   // live in the URL only while the user is choosing — never carried into the
@@ -296,10 +297,11 @@ export function pricesRefreshedRedirectUrl(
  */
 export function statementLoadedRedirectUrl(
   currentUrl: string,
-  summary: { created: number; skipped: number },
+  summary: { created: number; overwritten: number; skipped: number },
 ): string {
   let url = appendParam(currentUrl, "ok", "statement_loaded");
   url = appendParam(url, "created", String(summary.created));
+  url = appendParam(url, "overwritten", String(summary.overwritten));
   url = appendParam(url, "skipped", String(summary.skipped));
 
   return url;
@@ -334,13 +336,19 @@ export function resolveOkMessage(
   if (key === "statement_loaded") {
     const created =
       Number.parseInt(normalizeParam(searchParams?.["created"]) ?? "", 10) || 0;
+    const overwritten =
+      Number.parseInt(normalizeParam(searchParams?.["overwritten"]) ?? "", 10) || 0;
     const skipped =
       Number.parseInt(normalizeParam(searchParams?.["skipped"]) ?? "", 10) || 0;
-    const createdPart = `${created} ${created === 1 ? "movimiento cargado" : "movimientos cargados"}`;
+    const createdPart = `${created} ${created === 1 ? "movimiento creado" : "movimientos creados"}`;
+    const overwrittenPart =
+      overwritten > 0
+        ? ` · ${overwritten} actualizado${overwritten === 1 ? "" : "s"}`
+        : "";
     const skippedPart =
       skipped > 0 ? ` · ${skipped} omitido${skipped === 1 ? "" : "s"}` : "";
 
-    return `${createdPart}${skippedPart}.`;
+    return `${createdPart}${overwrittenPart}${skippedPart}.`;
   }
 
   if (key !== "prices_refreshed") {

@@ -221,6 +221,8 @@ export type {
   StatementBroker,
 } from "./statement-parse";
 export { parseStatement } from "./statement-parse";
+export type { StatementMergePlan, StatementOverwrite } from "./statement-merge";
+export { planStatementMerge } from "./statement-merge";
 
 export type {
   BuildSnapshotHoldingRowsInput,

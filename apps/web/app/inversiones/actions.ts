@@ -5,6 +5,7 @@ import {
   createInvestmentOperationSafe,
   defaultInvestmentPriceProvider,
   parseStatement,
+  planStatementMerge,
 } from "@worthline/domain";
 import type { InvestmentPriceProvider, LiquidityTier } from "@worthline/domain";
 import {
@@ -151,12 +152,15 @@ export async function recordOperationAction(
 }
 
 /**
- * Statement upload (ADR 0018, S1 / #174). Parse a broker's exported CSV against
- * this investment, create an operation for each executed (`Finalizada`) row, then
- * run ONE batched historical-snapshot ripple across every affected date — never
- * per operation (the #158 O(N×snapshots) cliff). S1 scope: MyInvestor only, naive
- * create (no merge-by-date — that is Slice 2), all buys (no sells — Slice 5), no
- * ISIN guard (Slice 4); the holding's value still comes from its price provider.
+ * Statement upload (ADR 0018, S1 #174 + S2 #175). Parse a broker's exported CSV
+ * against this investment, then **merge by date** into its operations (file wins
+ * on date overlap, never deletes — S2): a file date matching an existing
+ * operation overwrites it, a new date creates, an existing operation absent from
+ * the file is untouched. Apply in one transaction, then run ONE batched
+ * historical-snapshot ripple across the union of created + overwritten dates —
+ * never per operation (the #158 O(N×snapshots) cliff). S2 scope: MyInvestor only,
+ * all buys (no sells — Slice 5), no ISIN guard (Slice 4), minimal confirm (preview
+ * is Slice 3); the holding's value still comes from its price provider.
  */
 export async function uploadStatementAction(
   routeAssetId: string,
@@ -195,9 +199,13 @@ export async function uploadStatementAction(
   const today = new Date().toISOString().slice(0, 10);
   const seed = Date.now();
 
-  runWith((store) => {
-    // Naive create (S1): assume no date overlap yet — merge-by-date is Slice 2.
-    rows.forEach((row, i) => {
+  const applied = runWith((store) => {
+    // Merge by date (S2): plan against the asset's current operations so an
+    // overlapping date overwrites in place instead of duplicating, and operations
+    // the file does not mention survive untouched.
+    const plan = planStatementMerge(rows, store.operations.readOperations(routeAssetId));
+
+    plan.toCreate.forEach((row, i) => {
       store.operations.recordOperation({
         assetId: routeAssetId,
         currency: row.currency,
@@ -209,16 +217,36 @@ export async function uploadStatementAction(
         units: row.units,
       });
     });
+
+    for (const { operationId, row } of plan.toOverwrite) {
+      store.operations.updateOperation({
+        currency: row.currency,
+        feesMinor: row.feesMinor,
+        id: operationId,
+        kind: row.kind,
+        pricePerUnit: row.pricePerUnit,
+        units: row.units,
+      });
+    }
+
+    // One batched ripple over every date this load created or overwrote.
+    const affectedDateKeys = [
+      ...plan.toCreate.map((row) => row.dateKey),
+      ...plan.toOverwrite.map(({ row }) => row.dateKey),
+    ];
     store.rippleHistoricalSnapshotsForOperations({
       assetId: routeAssetId,
-      operationDateKeys: rows.map((row) => row.dateKey),
+      operationDateKeys: affectedDateKeys,
       today,
     });
+
+    return { created: plan.toCreate.length, overwritten: plan.toOverwrite.length };
   });
 
   redirect(
     statementLoadedRedirectUrl(returnUrl, {
-      created: rows.length,
+      created: applied.created,
+      overwritten: applied.overwritten,
       skipped: skipped.length,
     }),
   );

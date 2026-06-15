@@ -1,7 +1,10 @@
 import type {
   AssetPrice,
   CreateInvestmentOperationInput,
+  CurrencyCode,
+  DecimalString,
   InvestmentOperation,
+  OperationKind,
 } from "@worthline/domain";
 import { createInvestmentOperation } from "@worthline/domain";
 import { asc, eq, sql } from "drizzle-orm";
@@ -33,12 +36,31 @@ export interface ValueUpdateCommand {
  * monolith composes the ripple alongside them at the call site (mirroring how
  * the web action already orchestrates the two methods).
  */
+/** A statement-merge overwrite: replace an existing operation's values in place. */
+export interface UpdateInvestmentOperationInput {
+  id: string;
+  kind: OperationKind;
+  units: DecimalString;
+  pricePerUnit: DecimalString;
+  currency: CurrencyCode;
+  feesMinor: number;
+}
+
 export interface OperationsStore {
   recordOperation: (input: CreateInvestmentOperationInput) => void;
   readOperations: (assetId: string) => InvestmentOperation[];
   /** Delete an operation. Returns the deleted operation's asset id and date, or null if not found. */
   deleteOperation: (
     operationId: string,
+  ) => { assetId: string; executedAt: string } | null;
+  /**
+   * Overwrite an existing operation's value fields in place (statement merge,
+   * ADR 0018). The id, asset, and `executedAt` date are the match key and never
+   * change — only kind/units/price/currency/fees are replaced (the file wins).
+   * Returns the asset id and date so the caller can ripple, or null if not found.
+   */
+  updateOperation: (
+    input: UpdateInvestmentOperationInput,
   ) => { assetId: string; executedAt: string } | null;
   batchApplyValueUpdates: (commands: ValueUpdateCommand[]) => void;
   batchApplyAllValueUpdates: (
@@ -55,6 +77,7 @@ export function createOperationsStore(ctx: StoreContext): OperationsStore {
     recordOperation: (input) => recordOperation(ctx, input),
     readOperations: (assetId) => readOperations(ctx, assetId),
     deleteOperation: (operationId) => deleteOperation(ctx, operationId),
+    updateOperation: (input) => updateOperation(ctx, input),
     batchApplyValueUpdates: (commands) => batchApplyValueUpdates(ctx, commands),
     batchApplyAllValueUpdates: (assetCommands, liabilityCommands) =>
       batchApplyAllValueUpdates(ctx, assetCommands, liabilityCommands),
@@ -129,6 +152,50 @@ function deleteOperation(
     operationId,
     pricePerUnit: row.pricePerUnit,
     units: row.units,
+  });
+
+  return { assetId: row.assetId, executedAt: row.executedAt };
+}
+
+function updateOperation(
+  ctx: StoreContext,
+  input: UpdateInvestmentOperationInput,
+): { assetId: string; executedAt: string } | null {
+  const { db } = ctx;
+
+  if (!Number.isInteger(input.feesMinor)) {
+    throw new Error("Money must be stored as integer minor units.");
+  }
+
+  const row = db
+    .select({ assetId: assetOperations.assetId, executedAt: assetOperations.executedAt })
+    .from(assetOperations)
+    .where(eq(assetOperations.id, input.id))
+    .get();
+
+  if (!row) {
+    return null;
+  }
+
+  db.update(assetOperations)
+    .set({
+      currency: input.currency,
+      feesMinor: input.feesMinor,
+      kind: input.kind,
+      pricePerUnit: input.pricePerUnit,
+      units: input.units,
+    })
+    .where(eq(assetOperations.id, input.id))
+    .run();
+
+  ctx.writeAuditEntry("update_operation", "asset", row.assetId, {
+    currency: input.currency,
+    executedAt: row.executedAt,
+    feesMinor: input.feesMinor,
+    kind: input.kind,
+    operationId: input.id,
+    pricePerUnit: input.pricePerUnit,
+    units: input.units,
   });
 
   return { assetId: row.assetId, executedAt: row.executedAt };

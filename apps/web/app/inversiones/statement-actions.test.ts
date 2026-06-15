@@ -150,3 +150,83 @@ describe("uploadStatementAction (#174)", () => {
     expect(store.operations.readOperations("fund")).toHaveLength(0);
   });
 });
+
+describe("uploadStatementAction — merge by date (#175)", () => {
+  test("re-uploading the same file overwrites every match and creates nothing", async () => {
+    const store = createInMemoryStore();
+    seedFund(store);
+
+    await run(uploadForm(CSV), store);
+    expect(store.operations.readOperations("fund")).toHaveLength(8);
+
+    // The second identical load overwrites all 8 by date — no duplicates.
+    const digest = await run(uploadForm(CSV), store);
+
+    expect(digest).toContain("created=0");
+    expect(digest).toContain("overwritten=8");
+    const ops = store.operations.readOperations("fund");
+    expect(ops).toHaveLength(8);
+    expect(ops.map((op) => op.executedAt).sort()).toEqual([
+      "2024-02-01",
+      "2024-03-01",
+      "2024-04-01",
+      "2024-05-01",
+      "2024-06-01",
+      "2024-07-01",
+      "2024-08-01",
+      "2024-09-01",
+    ]);
+  });
+
+  test("overwrite replaces a hand-edited operation's value for the matched date", async () => {
+    const store = createInMemoryStore();
+    seedFund(store);
+
+    // A hand-typed approximation on a date the file also covers (01/03/2024).
+    store.operations.recordOperation({
+      assetId: "fund",
+      currency: "EUR",
+      executedAt: "2024-03-01",
+      id: "op_handtyped",
+      kind: "buy",
+      pricePerUnit: "1",
+      units: "999",
+    });
+
+    const digest = await run(uploadForm(CSV), store);
+
+    // 7 created (the other Finalizada dates) + the 01/03 match overwritten.
+    expect(digest).toContain("created=7");
+    expect(digest).toContain("overwritten=1");
+
+    const ops = store.operations.readOperations("fund");
+    expect(ops).toHaveLength(8);
+    const march = ops.find((op) => op.executedAt === "2024-03-01")!;
+    // The id is the match key and survives; the value is the file's, not 999.
+    expect(march.id).toBe("op_handtyped");
+    expect(march.units).toBe("7.18");
+  });
+
+  test("an operation on a date absent from the file is left untouched", async () => {
+    const store = createInMemoryStore();
+    seedFund(store);
+
+    // An operation the broker file never mentions (15/01/2024).
+    store.operations.recordOperation({
+      assetId: "fund",
+      currency: "EUR",
+      executedAt: "2024-01-15",
+      id: "op_manual",
+      kind: "buy",
+      pricePerUnit: "100",
+      units: "5",
+    });
+
+    await run(uploadForm(CSV), store);
+
+    const ops = store.operations.readOperations("fund");
+    // 8 from the file + the 1 untouched manual operation = 9, none deleted.
+    expect(ops).toHaveLength(9);
+    expect(ops.find((op) => op.id === "op_manual")).toBeDefined();
+  });
+});
