@@ -6,6 +6,7 @@ import {
   defaultInvestmentPriceProvider,
   parseStatement,
   planStatementMerge,
+  resolveStatementIsinGuard,
 } from "@worthline/domain";
 import type {
   InvestmentPriceProvider,
@@ -164,7 +165,19 @@ export async function recordOperationAction(
 export type StatementPreviewState =
   | { status: "idle" }
   | { status: "error"; message: string }
-  | { status: "summary"; created: number; overwritten: number; skipped: number };
+  | {
+      status: "summary";
+      created: number;
+      overwritten: number;
+      skipped: number;
+      /** Ambiguous same-date rows set aside, neither created nor overwritten (S4). */
+      anomalies: number;
+    };
+
+/** The Spanish error shown when the file's ISIN does not match the asset's (S4). */
+function isinMismatchMessage(fileIsin: string | null, assetIsin: string): string {
+  return `El ISIN del archivo (${fileIsin ?? "—"}) no coincide con el de esta inversión (${assetIsin}). No se ha cargado nada.`;
+}
 
 /**
  * Validate + parse the uploaded statement from the form, with no DB access — the
@@ -218,20 +231,27 @@ export async function previewStatementAction(
     return { message: read.message, status: "error" };
   }
 
-  const { rows, skipped } = read.value;
+  const { isin, rows, skipped } = read.value;
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
     _store ? fn(_store) : withStore(fn);
 
-  const plan = runWith((store) =>
-    planStatementMerge(rows, store.operations.readOperations(routeAssetId)),
-  );
+  return runWith((store) => {
+    // ISIN guard (S4): block a wrong-file slip before showing any summary.
+    const asset = store.assets.readInvestmentAssetById(routeAssetId);
+    const guard = resolveStatementIsinGuard(isin, asset?.isin ?? null);
+    if (guard.status === "mismatch") {
+      return { message: isinMismatchMessage(isin, asset?.isin ?? ""), status: "error" };
+    }
 
-  return {
-    created: plan.toCreate.length,
-    overwritten: plan.toOverwrite.length,
-    skipped: skipped.length,
-    status: "summary",
-  };
+    const plan = planStatementMerge(rows, store.operations.readOperations(routeAssetId));
+    return {
+      anomalies: plan.anomalies.length,
+      created: plan.toCreate.length,
+      overwritten: plan.toOverwrite.length,
+      skipped: skipped.length,
+      status: "summary",
+    };
+  });
 }
 
 /**
@@ -261,14 +281,25 @@ export async function confirmStatementAction(
     redirect(statementErrorUrl(read.message));
   }
 
-  const { rows, skipped } = read.value;
+  const { isin, rows, skipped } = read.value;
   const today = new Date().toISOString().slice(0, 10);
   const seed = Date.now();
 
   const applied = runWith((store) => {
+    // ISIN guard (S4): block a mismatch before any write; backfill an empty asset
+    // so a later upload to the same holding is guarded too.
+    const asset = store.assets.readInvestmentAssetById(routeAssetId);
+    const guard = resolveStatementIsinGuard(isin, asset?.isin ?? null);
+    if (guard.status === "mismatch") {
+      return { error: isinMismatchMessage(isin, asset?.isin ?? "") } as const;
+    }
+    if (guard.status === "backfill") {
+      store.assets.backfillInvestmentIsin(routeAssetId, guard.isin);
+    }
+
     // Merge by date (S2): plan against the asset's current operations so an
     // overlapping date overwrites in place instead of duplicating, and operations
-    // the file does not mention survive untouched.
+    // the file does not mention survive untouched. Anomalous dates are set aside.
     const plan = planStatementMerge(rows, store.operations.readOperations(routeAssetId));
 
     plan.toCreate.forEach((row, i) => {
@@ -306,11 +337,20 @@ export async function confirmStatementAction(
       today,
     });
 
-    return { created: plan.toCreate.length, overwritten: plan.toOverwrite.length };
+    return {
+      anomalies: plan.anomalies.length,
+      created: plan.toCreate.length,
+      overwritten: plan.toOverwrite.length,
+    } as const;
   });
+
+  if ("error" in applied) {
+    redirect(statementErrorUrl(applied.error));
+  }
 
   redirect(
     statementLoadedRedirectUrl(returnUrl, {
+      anomalies: applied.anomalies,
       created: applied.created,
       overwritten: applied.overwritten,
       skipped: skipped.length,

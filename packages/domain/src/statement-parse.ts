@@ -129,7 +129,16 @@ export function parseStatement(
     });
   }
 
-  // All-or-nothing (ADR 0010): a single malformed Finalizada row writes nothing.
+  // A statement is per-ISIN (ADR 0018, S4): a file carrying more than one
+  // distinct ISIN is a wrong-file slip, not something to graft onto one holding.
+  if (isins.size > 1) {
+    errors.push(
+      `El archivo contiene varios ISIN (${[...isins].join(", ")}); un extracto debe ser de un solo fondo.`,
+    );
+  }
+
+  // All-or-nothing (ADR 0010): a single malformed Finalizada row, or a mixed-ISIN
+  // file, writes nothing.
   if (errors.length > 0) {
     return fail(errors);
   }

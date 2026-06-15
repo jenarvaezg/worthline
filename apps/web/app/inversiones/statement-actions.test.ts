@@ -313,3 +313,92 @@ describe("previewStatementAction — preview before confirm (#176)", () => {
     expect(store.operations.readOperations("fund")).toHaveLength(0);
   });
 });
+
+describe("statement ISIN guard + anomalies (#178)", () => {
+  function seedFundWithIsin(store: WorthlineStore, isin: string): void {
+    store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "fund",
+      isin,
+      liquidityTier: "market",
+      manualPricePerUnit: "100",
+      name: "Fondo indexado",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+  }
+
+  function csvForIsin(isin: string): string {
+    return [
+      "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
+      `01/02/2024;${isin};100 EUR;7,226;Finalizada`,
+    ].join("\n");
+  }
+
+  test("a file whose ISIN differs from the asset's blocks confirm and writes nothing", async () => {
+    const store = createInMemoryStore();
+    seedFundWithIsin(store, "LU0000000000");
+
+    // CSV carries IE00BYX5NX33 — a different fund.
+    const digest = await run(uploadForm(CSV), store);
+    expect(digest).toContain("error=");
+    expect(store.operations.readOperations("fund")).toHaveLength(0);
+  });
+
+  test("preview surfaces an ISIN mismatch as an error", async () => {
+    const store = createInMemoryStore();
+    seedFundWithIsin(store, "LU0000000000");
+
+    const state = await preview(uploadForm(CSV), store);
+    expect(state.status).toBe("error");
+  });
+
+  test("an asset with no ISIN is backfilled, and a later upload is guarded by it", async () => {
+    const store = createInMemoryStore();
+    seedFund(store); // no ISIN
+
+    await run(uploadForm(CSV), store);
+    // The asset's ISIN is now the file's.
+    expect(store.assets.readInvestmentAssetById("fund")?.isin).toBe("IE00BYX5NX33");
+
+    // A subsequent upload of a DIFFERENT ISIN is now blocked by the backfill.
+    const digest = await run(uploadForm(csvForIsin("LU0000000000")), store);
+    expect(digest).toContain("error=");
+  });
+
+  test("a file containing more than one ISIN is rejected as malformed", async () => {
+    const store = createInMemoryStore();
+    seedFund(store);
+
+    const mixed = [
+      "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
+      "01/02/2024;IE00BYX5NX33;100 EUR;7,226;Finalizada",
+      "01/03/2024;LU0000000000;100 EUR;7,180;Finalizada",
+    ].join("\n");
+
+    const digest = await run(uploadForm(mixed), store);
+    expect(digest).toContain("error=");
+    expect(store.operations.readOperations("fund")).toHaveLength(0);
+  });
+
+  test("preview flags a same-date anomaly without overwriting the wrong row", async () => {
+    const store = createInMemoryStore();
+    seedFund(store);
+
+    // The file repeats 01/02/2024 — ambiguous, so it is flagged, not created.
+    const dup = [
+      "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
+      "01/02/2024;IE00BYX5NX33;100 EUR;7,226;Finalizada",
+      "01/02/2024;IE00BYX5NX33;200 EUR;14,000;Finalizada",
+      "01/03/2024;IE00BYX5NX33;100 EUR;7,180;Finalizada",
+    ].join("\n");
+
+    const state = await preview(uploadForm(dup), store);
+    if (state.status !== "summary") throw new Error("expected summary");
+    expect(state.anomalies).toBe(1);
+    expect(state.created).toBe(1); // only 01/03 is unambiguous
+  });
+});

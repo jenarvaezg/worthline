@@ -221,8 +221,14 @@ export type {
   StatementBroker,
 } from "./statement-parse";
 export { parseStatement } from "./statement-parse";
-export type { StatementMergePlan, StatementOverwrite } from "./statement-merge";
+export type {
+  StatementAnomaly,
+  StatementMergePlan,
+  StatementOverwrite,
+} from "./statement-merge";
 export { planStatementMerge } from "./statement-merge";
+export type { StatementIsinGuard } from "./statement-isin";
+export { resolveStatementIsinGuard } from "./statement-isin";
 
 export type {
   BuildSnapshotHoldingRowsInput,

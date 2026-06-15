@@ -123,7 +123,23 @@ export function StatementUploadSection({
               <li>
                 {count(shown.skipped, "movimiento omitido", "movimientos omitidos")}
               </li>
+              {shown.anomalies > 0 ? (
+                <li>
+                  {count(
+                    shown.anomalies,
+                    "fecha con varias operaciones, sin tocar",
+                    "fechas con varias operaciones, sin tocar",
+                  )}
+                </li>
+              ) : null}
             </ul>
+
+            {shown.anomalies > 0 ? (
+              <p className="contextLabel">
+                Hay fechas con más de una operación: no se sobrescriben para no tocar la
+                fila equivocada. Revísalas a mano si hace falta.
+              </p>
+            ) : null}
 
             <button formAction={confirmAction} type="submit">
               Confirmar y cargar

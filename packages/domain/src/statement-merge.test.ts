@@ -114,4 +114,46 @@ describe("planStatementMerge (ADR 0018, S2)", () => {
     expect(plan.toOverwrite[0]!.operationId).toBe("op_mar");
     expect(plan.toCreate).toHaveLength(0);
   });
+
+  test("unambiguous merges carry no anomalies", () => {
+    const plan = planStatementMerge([buy("2024-03-01")], [op("op_apr", "2024-04-01")]);
+    expect(plan.anomalies).toEqual([]);
+  });
+});
+
+describe("planStatementMerge — same-date anomalies (ADR 0018, S4)", () => {
+  test("a date repeated within the file is flagged, neither created nor overwritten", () => {
+    const rows = [buy("2024-03-01", "5"), buy("2024-03-01", "6"), buy("2024-04-01")];
+
+    const plan = planStatementMerge(rows, []);
+
+    // 2024-03-01 is ambiguous in the file → flagged, not created. 2024-04-01 is fine.
+    expect(plan.anomalies).toEqual([
+      { dateKey: "2024-03-01", reason: "duplicate-in-file" },
+    ]);
+    expect(plan.toCreate.map((r) => r.dateKey)).toEqual(["2024-04-01"]);
+    expect(plan.toOverwrite).toHaveLength(0);
+  });
+
+  test("a date the asset already carries twice is flagged; its operations stay untouched", () => {
+    // The asset somehow has two operations on the same date — we can't tell which
+    // the file row should overwrite, so we touch neither.
+    const existing = [
+      op("op_a", "2024-03-01"),
+      op("op_b", "2024-03-01"),
+      op("op_c", "2024-05-01"),
+    ];
+    const rows = [buy("2024-03-01"), buy("2024-06-01")];
+
+    const plan = planStatementMerge(rows, existing);
+
+    expect(plan.anomalies).toEqual([
+      { dateKey: "2024-03-01", reason: "duplicate-on-asset" },
+    ]);
+    // The 2024-03-01 file row is NOT overwritten (ambiguous); 2024-06-01 creates.
+    expect(plan.toOverwrite).toHaveLength(0);
+    expect(plan.toCreate.map((r) => r.dateKey)).toEqual(["2024-06-01"]);
+    // Both duplicate ops and the unrelated op survive untouched, none deleted.
+    expect(plan.untouched.map((o) => o.id).sort()).toEqual(["op_a", "op_b", "op_c"]);
+  });
 });

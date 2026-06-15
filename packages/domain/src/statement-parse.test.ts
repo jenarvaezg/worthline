@@ -107,6 +107,17 @@ describe("parseStatement — MyInvestor (ADR 0018, S1)", () => {
     expect(result.ok).toBe(false);
   });
 
+  test("a file carrying more than one distinct ISIN is rejected as malformed", () => {
+    // A statement is per-ISIN (ADR 0018); a mixed file is a wrong-file slip.
+    const mixed = [
+      "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
+      "01/10/2025;IE00BYX5NX33;100 EUR;7,226;Finalizada",
+      "01/11/2025;LU0000000000;100 EUR;7,180;Finalizada",
+    ].join("\n");
+
+    expect(parseStatement(mixed, "myinvestor").ok).toBe(false);
+  });
+
   test("a missing required column is an error, not a silent empty parse", () => {
     const noEstado = [
       "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones",
