@@ -363,6 +363,7 @@ export function okMessage(key: string | undefined): string | null {
     member_deleted: "Miembro borrado definitivamente.",
     numista_connected: "Colección Numista conectada.",
     numista_disconnected: "Colección Numista desconectada.",
+    numista_frozen: "Colección convertida en activo manual.",
     numista_synced: "Colección Numista sincronizada.",
     operation_deleted: "Operación eliminada.",
     plan_deleted: "Plan de amortización eliminado.",

@@ -338,6 +338,69 @@ describe("connected-source store — revaluePositions", () => {
   });
 });
 
+describe("connected-source store — freezeIntoStoredHolding", () => {
+  test("drops the source + positions, keeps the asset as a hand-valued precious_metal holding", () => {
+    const store = createInMemoryStore();
+    seed(store);
+    const { sourceId, assetId } = connectNumista(store);
+
+    store.connectedSources.syncPositions(
+      sourceId,
+      [
+        position({ catalogueId: "n1", externalId: "ext-1", purchasePriceMinor: 5_000 }),
+        position({ catalogueId: "n2", externalId: "ext-2", purchasePriceMinor: 7_500 }),
+      ],
+      "2024-06-01T10:00:00.000Z",
+    );
+    // A connected source carries a valuation-freshness price-cache row.
+    store.connectedSources.revaluePositions(
+      sourceId,
+      store.connectedSources.readPositions(sourceId).map((p) => ({
+        id: p.id,
+        metalValueMinor: p.metalValueMinor,
+        numismaticValueMinor: p.numismaticValueMinor,
+        numismaticFetchedAt: p.numismaticFetchedAt,
+      })),
+      { fetchedAt: "2024-06-01T10:00:00.000Z", freshnessState: "fresh" },
+    );
+    expect(holding(store, assetId).currentValue.amountMinor).toBe(12_500);
+    expect(store.operations.readPriceCache(assetId)).not.toBeNull();
+
+    const result = store.connectedSources.freezeIntoStoredHolding(sourceId);
+    expect(result).toEqual({ assetId });
+
+    // The source + its positions are gone; frozen snapshots are untouched.
+    expect(store.connectedSources.listSources()).toHaveLength(0);
+    expect(store.connectedSources.readSource(sourceId)).toBeNull();
+    expect(store.connectedSources.readPositions(sourceId)).toHaveLength(0);
+
+    // The asset survives as a plain, hand-maintained precious-metal holding: same
+    // frozen value, name and ownership, now valued by hand (stored) and eligible
+    // for the manual value-update pass.
+    const frozen = holding(store, assetId);
+    expect(frozen.instrument).toBe("precious_metal");
+    expect(frozen.liquidityTier).toBe("illiquid");
+    expect(frozen.currentValue.amountMinor).toBe(12_500);
+    expect(frozen.name).toBe("Colección Numista");
+    expect(frozen.ownership).toEqual(ownerAll);
+    expect(valuationMethodOfAsset(frozen)).toBe("stored");
+    expect(isValueUpdateEligible(frozen)).toBe(true);
+
+    // The orphaned connected-source price-cache row is cleared.
+    expect(store.operations.readPriceCache(assetId)).toBeNull();
+  });
+
+  test("returns null for an unknown source and changes nothing", () => {
+    const store = createInMemoryStore();
+    seed(store);
+    const { assetId } = connectNumista(store);
+
+    expect(store.connectedSources.freezeIntoStoredHolding("missing")).toBeNull();
+    expect(store.connectedSources.listSources()).toHaveLength(1);
+    expect(holding(store, assetId).instrument).toBe("coin_collection");
+  });
+});
+
 describe("connected-source store — token + last sync", () => {
   test("saveToken round-trips and a sync stamps lastSyncAt", () => {
     const store = createInMemoryStore();
