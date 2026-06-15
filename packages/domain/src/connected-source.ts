@@ -126,6 +126,28 @@ export function coinValue(position: SourcePosition): CoinValuation {
   return { minor: 0, basis: "zero" };
 }
 
+/**
+ * The coin collection's GLOBAL value on a past date, by **purchase-date accretion**
+ * (ADR 0017, #167 fresh-generation companion): the sum of `coinValue` over the
+ * positions acquired on or before `targetDate`. A position with no purchase date
+ * has no dated fact and never enters history (parity with the sync ripple), so it
+ * is excluded here too. Returns 0 when no dated coin was held yet — the caller
+ * then omits the holding from that snapshot (it was not held). Values are the
+ * coins' CURRENT values, frozen by the caller at generation time; worthline never
+ * fetches a coin's historical price.
+ */
+export function coinCollectionValueAtDate(
+  positions: readonly SourcePosition[],
+  targetDate: string,
+): number {
+  return positions.reduce((sum, position) => {
+    if (position.purchaseDate === null || position.purchaseDate > targetDate) {
+      return sum;
+    }
+    return sum + coinValue(position).minor;
+  }, 0);
+}
+
 /** A connected source's rolled-up holding on one liquidity rung (ADR 0016). */
 export interface ProjectedHolding {
   /** Stable holding id, derived from the source and rung. */

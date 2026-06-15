@@ -98,6 +98,38 @@ const sourceColumns = {
   lastSyncAt: connectedSources.lastSyncAt,
 } as const;
 
+/**
+ * Map a raw `positions` row to a domain {@link SourcePosition} — the single source
+ * of truth for the column→field shape, shared by the store reader and the
+ * historical-snapshot deps builder (#167). Numeric columns are coerced; a legacy
+ * row with no `external_id` falls back to its (stable, unique) internal id so the
+ * cross-sync diff key is never null.
+ */
+export function mapPositionRow(row: typeof positions.$inferSelect): SourcePosition {
+  return {
+    catalogueId: row.catalogueId,
+    currency: row.currency,
+    externalId: row.externalId ?? row.id,
+    finenessMillis: row.finenessMillis === null ? null : Number(row.finenessMillis),
+    grade: row.grade,
+    id: row.id,
+    issueId: row.issueId === null ? null : Number(row.issueId),
+    liquidityTier: row.liquidityTier,
+    metal: row.metal,
+    metalValueMinor: row.metalValueMinor === null ? null : Number(row.metalValueMinor),
+    name: row.name,
+    numismaticFetchedAt: row.numismaticFetchedAt,
+    numismaticValueMinor:
+      row.numismaticValueMinor === null ? null : Number(row.numismaticValueMinor),
+    purchaseDate: row.purchaseDate,
+    purchasePriceMinor:
+      row.purchasePriceMinor === null ? null : Number(row.purchasePriceMinor),
+    quantity: Number(row.quantity),
+    sourceId: row.sourceId,
+    weightGrams: row.weightGrams === null ? null : Number(row.weightGrams),
+  };
+}
+
 export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceStore {
   const { db } = ctx;
 
@@ -115,31 +147,7 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
       .where(eq(positions.sourceId, sourceId))
       .orderBy(asc(positions.createdAt), asc(positions.id))
       .all()
-      .map((row) => ({
-        catalogueId: row.catalogueId,
-        currency: row.currency,
-        // Legacy rows written before the external-id column carry none; fall back
-        // to the internal id (stable, unique per row) so the diff key is never null.
-        externalId: row.externalId ?? row.id,
-        finenessMillis: row.finenessMillis === null ? null : Number(row.finenessMillis),
-        grade: row.grade,
-        id: row.id,
-        issueId: row.issueId === null ? null : Number(row.issueId),
-        liquidityTier: row.liquidityTier,
-        metal: row.metal,
-        metalValueMinor:
-          row.metalValueMinor === null ? null : Number(row.metalValueMinor),
-        name: row.name,
-        numismaticFetchedAt: row.numismaticFetchedAt,
-        numismaticValueMinor:
-          row.numismaticValueMinor === null ? null : Number(row.numismaticValueMinor),
-        purchaseDate: row.purchaseDate,
-        purchasePriceMinor:
-          row.purchasePriceMinor === null ? null : Number(row.purchasePriceMinor),
-        quantity: Number(row.quantity),
-        sourceId,
-        weightGrams: row.weightGrams === null ? null : Number(row.weightGrams),
-      }));
+      .map(mapPositionRow);
 
   /** Re-roll the source's illiquid coin-collection holding from its positions
    *  (the single rung Numista occupies) and persist it on the materialized asset. */
