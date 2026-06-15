@@ -5,7 +5,7 @@
  * Uses MANUAL price (no ticker) to avoid any network calls to stooq.
  *
  * #153 collapsed the /inversiones management section: an investment is ADDED via
- * the kept /inversiones/nueva route, then appears in the unified Patrimonio list,
+ * the unified /patrimonio/anadir route, then appears in the unified Patrimonio list,
  * and its operations + derived value are managed on its own ficha
  * (/patrimonio/[id]/editar). This journey exercises that path end to end. The
  * unrealized-P/L column lived only on the removed /inversiones list; its sole
@@ -13,21 +13,17 @@
  * the ficha now shows — re-surfacing P/L in the Patrimonio list is S8 (#154).
  */
 
-import { test, expect } from "./fixtures";
+import { test, expect, addHolding } from "./fixtures";
 
 test("investment: create with manual price → buy operation → derived value visible", async ({
   page,
 }) => {
-  // 1. Add the investment via the kept add route (/inversiones/nueva).
-  await page.goto("/inversiones/nueva");
-  await expect(page.getByRole("heading", { name: "Nueva inversión" })).toBeVisible();
-
-  // 2. Fill the form — MANUAL price, no ticker/provider symbol (no network).
-  await page.getByLabel("Nombre de la inversión").fill("Fondo Test E2E");
-  await page.getByLabel("Precio actual por unidad en EUR").fill("100");
-
-  // 3. Submit; the success banner appears (action returns to /inversiones/nueva).
-  await page.getByRole("button", { name: "Añadir inversión" }).click();
+  // 1. Add the investment via the unified add route (/patrimonio/anadir).
+  await addHolding(page, {
+    instrument: "fund",
+    name: "Fondo Test E2E",
+    price: "100",
+  });
   await expect(page.getByRole("status")).toHaveText("Inversión añadida.");
 
   // 4. The investment is reachable from the unified Patrimonio list; open its ficha.

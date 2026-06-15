@@ -299,6 +299,9 @@ export default async function EditarPage({
                 ? { unitPrice: priceCache.price, priceFreshness: freshness }
                 : {}),
               ...(position?.marketValue ? { marketValue: position.marketValue } : {}),
+              ...(position?.unrealizedPnl
+                ? { unrealizedPnl: position.unrealizedPnl }
+                : {}),
             }}
             currentUrl={currentUrl}
             deleteAction={boundDeleteOperationAction}

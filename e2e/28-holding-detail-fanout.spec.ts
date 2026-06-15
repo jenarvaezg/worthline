@@ -10,7 +10,7 @@
  * appreciating, amortized, anchored) must still render/edit from the detail page.
  */
 
-import { test, expect } from "./fixtures";
+import { test, expect, addHolding } from "./fixtures";
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -18,10 +18,11 @@ test("derived: manage an investment's operations from /patrimonio/[id]/editar", 
   page,
 }) => {
   // 1. Create an investment with a MANUAL price (no ticker → no network).
-  await page.goto("/inversiones/nueva");
-  await page.getByLabel("Nombre de la inversión").fill("Fondo Ficha S6");
-  await page.getByLabel("Precio actual por unidad en EUR").fill("100");
-  await page.getByRole("button", { name: "Añadir inversión" }).click();
+  await addHolding(page, {
+    instrument: "fund",
+    name: "Fondo Ficha S6",
+    price: "100",
+  });
   await expect(page.getByRole("status")).toHaveText("Inversión añadida.");
 
   // 2. The investment is reachable from the unified Patrimonio list and its
@@ -83,11 +84,11 @@ test("derived: manage an investment's operations from /patrimonio/[id]/editar", 
 test("stored: a cash asset edits its current value from the detail page", async ({
   page,
 }) => {
-  await page.goto("/patrimonio/nuevo-activo");
-  await page.getByLabel("Nombre del activo").fill("Cuenta Corriente S6");
-  await page.getByLabel("Tipo").selectOption("cash");
-  await page.getByLabel("Valor actual en EUR").fill("5000");
-  await page.getByRole("button", { name: "Añadir activo" }).click();
+  await addHolding(page, {
+    instrument: "current_account",
+    name: "Cuenta Corriente S6",
+    value: "5000",
+  });
   await expect(page.getByRole("status")).toHaveText("Activo añadido.");
   const id = new URL(page.url()).hash.slice(1);
 
@@ -109,12 +110,12 @@ test("stored: a cash asset edits its current value from the detail page", async 
 test("appreciating: a property edits its valuation curve from the detail page", async ({
   page,
 }) => {
-  await page.goto("/patrimonio/nuevo-activo");
-  await page.getByLabel("Nombre del activo").fill("Piso S6");
-  await page.getByLabel("Tipo").selectOption("real_estate");
-  await page.getByLabel("Fecha de adquisición").fill("2021-01-10");
-  await page.getByLabel("Precio de adquisición en EUR").fill("220000");
-  await page.getByRole("button", { name: "Añadir activo" }).click();
+  await addHolding(page, {
+    instrument: "property",
+    name: "Piso S6",
+    acqDate: "2021-01-10",
+    acqValue: "220000",
+  });
   await expect(page.getByRole("status")).toHaveText("Activo añadido.");
   const id = new URL(page.url()).hash.slice(1);
 
@@ -132,10 +133,11 @@ test("appreciating: a property edits its valuation curve from the detail page", 
 test("amortized & anchored: a liability switches debt-model surfaces from the detail page", async ({
   page,
 }) => {
-  await page.goto("/patrimonio/nueva-deuda");
-  await page.getByLabel("Nombre de la deuda").fill("Préstamo S6");
-  await page.getByLabel("Saldo pendiente en EUR").fill("30000");
-  await page.getByRole("button", { name: "Añadir deuda" }).click();
+  await addHolding(page, {
+    instrument: "mortgage",
+    name: "Préstamo S6",
+    balance: "30000",
+  });
   await expect(page.getByRole("status")).toHaveText("Deuda añadida.");
   const id = new URL(page.url()).hash.slice(1);
 

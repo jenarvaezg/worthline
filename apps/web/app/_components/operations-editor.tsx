@@ -27,6 +27,8 @@ export interface OperationsEditorContext {
   priceFreshness?: PriceFreshnessState | null;
   /** The derived market value (units × price), when priced. */
   marketValue?: { amountMinor: number; currency: string } | null;
+  /** The unrealized profit/loss, when priced. */
+  unrealizedPnl?: { amountMinor: number; currency: string } | null;
 }
 
 /**
@@ -82,6 +84,21 @@ export default function OperationsEditor({
               <>
                 <span className="contextLabel">Valor actual</span>
                 <span>{formatMoneyMinor(context.marketValue)}</span>
+              </>
+            ) : null}
+            {context.unrealizedPnl ? (
+              <>
+                <span className="contextLabel">P/L latente</span>
+                <span
+                  className={
+                    context.unrealizedPnl.amountMinor >= 0
+                      ? "amountPositive"
+                      : "amountNegative"
+                  }
+                >
+                  {context.unrealizedPnl.amountMinor > 0 ? "+" : ""}
+                  {formatMoneyMinor(context.unrealizedPnl)}
+                </span>
               </>
             ) : null}
           </>

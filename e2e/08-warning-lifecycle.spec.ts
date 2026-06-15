@@ -6,16 +6,17 @@
  * and is retractable.
  */
 
-import { test, expect } from "./fixtures";
+import { test, expect, addHolding } from "./fixtures";
 
 test("warning lifecycle: zero asset → warning badge → override → listed in ajustes → retractable", async ({
   page,
 }) => {
   // 1. Create a zero-value asset (triggers ZERO_VALUE_ASSET warning)
-  await page.goto("/patrimonio/nuevo-activo");
-  await page.getByLabel("Nombre del activo").fill("Activo Cero");
-  await page.getByLabel("Valor actual en EUR").fill("0");
-  await page.getByRole("button", { name: "Añadir activo" }).click();
+  await addHolding(page, {
+    instrument: "current_account",
+    name: "Activo Cero",
+    value: "0",
+  });
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toHaveText("Activo añadido.");
 

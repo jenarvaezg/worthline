@@ -16,14 +16,15 @@ import { test, expect } from "./fixtures";
 test("ownership: custom 60/40 split via real interactions, visible in minority scope", async ({
   page,
 }) => {
-  await page.goto("/patrimonio/nuevo-activo");
-  await expect(page.getByRole("heading", { name: "Nuevo activo" })).toBeVisible();
+  await page.goto("/patrimonio/anadir");
+  await expect(page.getByRole("heading", { name: "Añadir holding" })).toBeVisible();
+  await page.locator(`label. Chip:has(input[value="current_account"])`).click();
 
   const ownershipFieldset = page.getByRole("group", { name: "Propiedad" });
   await expect(ownershipFieldset).toBeVisible();
 
-  await page.getByLabel("Nombre del activo").fill("Activo Split Test");
-  await page.getByLabel("Valor actual en EUR").fill("5000");
+  await page.locator('input[name="name_current_account"]').fill("Activo Split Test");
+  await page.locator('input[name="value_current_account"]').fill("5000");
 
   // Open the "Personalizado" details and select the radio
   // The <details> doesn't toggle properly via click due to label wrapping
@@ -49,7 +50,7 @@ test("ownership: custom 60/40 split via real interactions, visible in minority s
   await secondInput.fill("40");
 
   // Submit — the custom split totals 100%, so this must succeed
-  await page.getByRole("button", { name: "Añadir activo" }).click();
+  await page.getByRole("button", { name: "Añadir al patrimonio" }).click();
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toHaveText("Activo añadido.");
 
@@ -69,20 +70,21 @@ test("ownership: custom 60/40 split via real interactions, visible in minority s
 test("ownership: even-split preset makes asset visible in both member scopes", async ({
   page,
 }) => {
-  await page.goto("/patrimonio/nuevo-activo");
-  await expect(page.getByRole("heading", { name: "Nuevo activo" })).toBeVisible();
+  await page.goto("/patrimonio/anadir");
+  await expect(page.getByRole("heading", { name: "Añadir holding" })).toBeVisible();
+  await page.locator(`label. Chip:has(input[value="current_account"])`).click();
 
   const ownershipFieldset = page.getByRole("group", { name: "Propiedad" });
   await expect(ownershipFieldset).toBeVisible();
 
-  await page.getByLabel("Nombre del activo").fill("Activo Even Split");
-  await page.getByLabel("Valor actual en EUR").fill("10000");
+  await page.locator('input[name="name_current_account"]').fill("Activo Even Split");
+  await page.locator('input[name="value_current_account"]').fill("10000");
 
   // Select the "Repartir a partes iguales" preset
   await ownershipFieldset.getByRole("radio", { name: /partes iguales/i }).click();
 
   // Submit
-  await page.getByRole("button", { name: "Añadir activo" }).click();
+  await page.getByRole("button", { name: "Añadir al patrimonio" }).click();
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toHaveText("Activo añadido.");
 

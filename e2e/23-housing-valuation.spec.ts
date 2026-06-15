@@ -11,7 +11,7 @@
  * historical snapshot that appears in /historico at that date.
  */
 
-import { test, expect } from "./fixtures";
+import { test, expect, addHolding } from "./fixtures";
 
 /** Today as YYYY-MM-DD — the native `max` the future-date guards advertise. */
 const today = new Date().toISOString().slice(0, 10);
@@ -20,12 +20,12 @@ test("housing valuation: rate, anchor CRUD, future rejected, past snapshot in hi
   page,
 }) => {
   // 1. Create a real-estate asset.
-  await page.goto("/patrimonio/nuevo-activo");
-  await page.getByLabel("Nombre del activo").fill("Piso Centro");
-  await page.getByLabel("Tipo").selectOption("real_estate");
-  await page.getByLabel("Fecha de adquisición").fill("2020-05-10");
-  await page.getByLabel("Precio de adquisición en EUR").fill("200000");
-  await page.getByRole("button", { name: "Añadir activo" }).click();
+  await addHolding(page, {
+    instrument: "property",
+    name: "Piso Centro",
+    acqDate: "2020-05-10",
+    acqValue: "200000",
+  });
 
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toHaveText("Activo añadido.");

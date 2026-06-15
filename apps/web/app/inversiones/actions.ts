@@ -2,7 +2,6 @@
 
 import { withStore, type WorthlineStore } from "@worthline/db";
 import {
-  checkOwnershipSplit,
   createInvestmentOperationSafe,
   defaultInvestmentPriceProvider,
 } from "@worthline/domain";
@@ -21,7 +20,6 @@ import {
   errorRedirectUrl,
   mapDomainViolation,
   parseEntityId,
-  parseInvestmentAssetCommandStrict,
   parseRouteOperationCommand,
   parseUpdateInvestmentCommand,
   pricesRefreshedRedirectUrl,
@@ -30,16 +28,6 @@ import {
 } from "../intake";
 
 // Field lists for error-preserve round-trips
-const INVESTMENT_FORM_FIELDS = [
-  "name",
-  "liquidityTier",
-  "unitSymbol",
-  "isin",
-  "priceProvider",
-  "providerSymbol",
-  "manualPricePerUnit",
-  "ownershipPreset",
-];
 
 const OPERATION_FORM_FIELDS = ["kind", "executedAt", "units", "pricePerUnit", "fees"];
 
@@ -113,68 +101,6 @@ function providerLabel(provider: InvestmentPriceProvider): string {
     case "coingecko":
       return "CoinGecko";
   }
-}
-
-export async function createInvestmentAction(
-  formData: FormData,
-  _store?: WorthlineStore,
-) {
-  const returnUrl = currentUrlOf(formData, "/inversiones/nueva");
-  const investmentErrorUrl = (message: string) =>
-    errorRedirectUrl(returnUrl, {
-      formId: "investment",
-      message,
-      values: preserveFields(formData, INVESTMENT_FORM_FIELDS, ["owner_"]),
-    });
-
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
-    _store ? fn(_store) : withStore(fn);
-
-  const result = runWith((store) => {
-    const workspace = store.workspace.readWorkspace();
-
-    if (!workspace) {
-      return { ok: false as const, error: "Workspace no inicializado." };
-    }
-
-    const parsed = parseInvestmentAssetCommandStrict(
-      formData,
-      workspace.members,
-      Date.now(),
-    );
-
-    if (!parsed.ok) {
-      return { ok: false as const, error: parsed.error };
-    }
-
-    const splitViolation = checkOwnershipSplit(workspace, parsed.command.ownership);
-
-    if (splitViolation) {
-      return { ok: false as const, error: mapDomainViolation(splitViolation) };
-    }
-
-    return { ok: true as const, command: parsed.command, id: parsed.command.id };
-  });
-
-  if (!result.ok) {
-    redirect(investmentErrorUrl(result.error ?? "No se pudo crear la inversión."));
-  }
-
-  const validationError = await validateInvestmentProviderSymbol({
-    assetId: result.id,
-    currency: result.command.currency,
-    liquidityTier: result.command.liquidityTier ?? "market",
-    priceProvider: result.command.priceProvider,
-    providerSymbol: result.command.providerSymbol,
-  });
-
-  if (validationError) {
-    redirect(investmentErrorUrl(validationError));
-  }
-
-  runWith((store) => store.assets.createInvestmentAsset(result.command));
-
-  redirect(successRedirectUrl(returnUrl, "investment_added", result.id));
 }
 
 export async function recordOperationAction(

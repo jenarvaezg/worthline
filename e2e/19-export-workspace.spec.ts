@@ -9,7 +9,7 @@
 
 import { readFileSync } from "node:fs";
 
-import { test, expect } from "./fixtures";
+import { test, expect, addHolding } from "./fixtures";
 
 interface ExportDocument {
   version: number;
@@ -31,11 +31,11 @@ test("export workspace: bootstrap via UI → Exportar downloads the JSON documen
   await expect(page).toHaveURL("/");
 
   // 3. Create one asset through the real form (same as journey 03).
-  await page.goto("/patrimonio/nuevo-activo");
-  await expect(page.getByRole("heading", { name: "Nuevo activo" })).toBeVisible();
-  await page.getByLabel("Nombre del activo").fill("Cuenta Export");
-  await page.getByLabel("Valor actual en EUR").fill("5000");
-  await page.getByRole("button", { name: "Añadir activo" }).click();
+  await addHolding(page, {
+    instrument: "current_account",
+    name: "Cuenta Export",
+    value: "5000",
+  });
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toHaveText("Activo añadido.");
 

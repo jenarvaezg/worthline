@@ -6,14 +6,15 @@
  * restorable). The trash is the only doorway to a hard delete.
  */
 
-import { test, expect } from "./fixtures";
+import { test, expect, addHolding } from "./fixtures";
 
 test("trash → eliminar definitivamente → gone for good", async ({ page }) => {
   // 1. Create a dedicated asset
-  await page.goto("/patrimonio/nuevo-activo");
-  await page.getByLabel("Nombre del activo").fill("Activo Borrado Duro");
-  await page.getByLabel("Valor actual en EUR").fill("999");
-  await page.getByRole("button", { name: "Añadir activo" }).click();
+  await addHolding(page, {
+    instrument: "current_account",
+    name: "Activo Borrado Duro",
+    value: "999",
+  });
   await expect(page).toHaveURL(/\/patrimonio/);
 
   // 2. Soft-delete it into the Papelera (two-step confirm in its row)

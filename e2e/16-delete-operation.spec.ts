@@ -6,18 +6,19 @@
  * panel no longer shows it.
  *
  * #153 collapsed the /inversiones management section: add happens on the kept
- * /inversiones/nueva route, and operations (record + delete) are managed on the
+ * /patrimonio/anadir route, and operations (record + delete) are managed on the
  * holding's own ficha (/patrimonio/[id]/editar).
  */
 
-import { test, expect } from "./fixtures";
+import { test, expect, addHolding } from "./fixtures";
 
 test("record an operation, then delete it", async ({ page }) => {
   // 1. New investment with a manual price (no ticker → no network).
-  await page.goto("/inversiones/nueva");
-  await page.getByLabel("Nombre de la inversión").fill("Inv Op Borrado");
-  await page.getByLabel("Precio actual por unidad en EUR").fill("50");
-  await page.getByRole("button", { name: "Añadir inversión" }).click();
+  await addHolding(page, {
+    instrument: "fund",
+    name: "Inv Op Borrado",
+    price: "50",
+  });
   await expect(page.getByRole("status")).toHaveText("Inversión añadida.");
 
   // 2. Open the investment's ficha from the unified Patrimonio list.

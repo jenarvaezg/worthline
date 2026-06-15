@@ -14,7 +14,7 @@
  * /historico at their dates.
  */
 
-import { test, expect } from "./fixtures";
+import { test, expect, addHolding } from "./fixtures";
 
 /** A YYYY-MM-DD a given number of whole years before today. */
 function yearsAgo(years: number): string {
@@ -36,11 +36,11 @@ test("debt model: amortizable plan + revisions, revolving anchors, future reject
   page,
 }) => {
   // 1. Create a liability.
-  await page.goto("/patrimonio/nueva-deuda");
-  await page.getByLabel("Nombre de la deuda").fill("Hipoteca Centro");
-  await page.getByLabel("Tipo").selectOption("mortgage");
-  await page.getByLabel("Saldo pendiente en EUR").fill("180000");
-  await page.getByRole("button", { name: "Añadir deuda" }).click();
+  await addHolding(page, {
+    instrument: "mortgage",
+    name: "Hipoteca Centro",
+    balance: "180000",
+  });
 
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toHaveText("Deuda añadida.");

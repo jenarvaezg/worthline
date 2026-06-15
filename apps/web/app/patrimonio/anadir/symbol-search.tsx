@@ -15,16 +15,28 @@ export default async function SymbolSearch({
   basePath,
   query,
   pickedSymbol,
+  currentParams,
 }: {
   basePath: string;
   query?: string | undefined;
   pickedSymbol?: string | undefined;
+  currentParams: Record<string, string | string[] | undefined>;
 }) {
   const trimmed = query?.trim() ?? "";
   const candidates = trimmed ? await searchSymbols(trimmed) : [];
 
   function prefillHref(symbol: string, name: string, provider: string): string {
     const params = new URLSearchParams();
+    // Copy current params to preserve selected instrument and typed values
+    for (const [key, value] of Object.entries(currentParams)) {
+      if (value !== undefined) {
+        if (Array.isArray(value)) {
+          value.forEach((v) => params.append(key, v));
+        } else {
+          params.set(key, value);
+        }
+      }
+    }
     params.set("symbolq", trimmed);
     params.set("pfName", name);
     params.set("pfSymbol", symbol);
@@ -34,7 +46,7 @@ export default async function SymbolSearch({
 
   return (
     <div className="symbolSearch">
-      <form action={basePath} className="symbolSearchForm" method="get">
+      <div className="symbolSearchForm">
         <label>
           Buscar símbolo <small>(nombre, ISIN, o slug de Finect)</small>
           <span className="symbolSearchRow">
@@ -45,10 +57,12 @@ export default async function SymbolSearch({
               placeholder="IE00BYX5NX33, MSCI World, N5394-Myinvestor…"
               type="search"
             />
-            <button type="submit">Buscar</button>
+            <button formAction={basePath} formMethod="get">
+              Buscar
+            </button>
           </span>
         </label>
-      </form>
+      </div>
 
       {trimmed ? (
         candidates.length > 0 ? (

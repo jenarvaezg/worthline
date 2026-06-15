@@ -33,3 +33,44 @@ export const test = base.extend({
 });
 
 export { expect };
+
+export async function addHolding(
+  page: import("@playwright/test").Page,
+  fields: {
+    instrument: string;
+    name?: string;
+    value?: string;
+    symbol?: string;
+    price?: string;
+    acqDate?: string;
+    acqValue?: string;
+    rate?: string;
+    balance?: string;
+  },
+  submit: boolean = true,
+) {
+  const { expect } = await import("@playwright/test");
+  await page.goto("/patrimonio/anadir");
+  await expect(page.getByRole("heading", { name: "Añadir holding" })).toBeVisible();
+
+  await page
+    .locator(`label.addHoldingChip:has(input[value="${fields.instrument}"])`)
+    .click();
+
+  const id = fields.instrument;
+  if (fields.name) await page.locator(`input[name="name_${id}"]`).fill(fields.name);
+  if (fields.value) await page.locator(`input[name="value_${id}"]`).fill(fields.value);
+  if (fields.symbol) await page.locator(`input[name="symbol_${id}"]`).fill(fields.symbol);
+  if (fields.price) await page.locator(`input[name="price_${id}"]`).fill(fields.price);
+  if (fields.acqDate)
+    await page.locator(`input[name="acqDate_${id}"]`).fill(fields.acqDate);
+  if (fields.acqValue)
+    await page.locator(`input[name="acqValue_${id}"]`).fill(fields.acqValue);
+  if (fields.rate) await page.locator(`input[name="rate_${id}"]`).fill(fields.rate);
+  if (fields.balance)
+    await page.locator(`input[name="balance_${id}"]`).fill(fields.balance);
+
+  if (submit) {
+    await page.getByRole("button", { name: "Añadir al patrimonio" }).click();
+  }
+}

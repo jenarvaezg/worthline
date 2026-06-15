@@ -5,13 +5,14 @@
  * one action and verifies both are gone.
  */
 
-import { test, expect } from "./fixtures";
+import { test, expect, addHolding } from "./fixtures";
 
 async function createAndTrash(page: import("@playwright/test").Page, name: string) {
-  await page.goto("/patrimonio/nuevo-activo");
-  await page.getByLabel("Nombre del activo").fill(name);
-  await page.getByLabel("Valor actual en EUR").fill("100");
-  await page.getByRole("button", { name: "Añadir activo" }).click();
+  await addHolding(page, {
+    instrument: "current_account",
+    name: name,
+    value: "100",
+  });
   await expect(page).toHaveURL(/\/patrimonio/);
 
   const row = page.getByRole("row", { name: new RegExp(name) });

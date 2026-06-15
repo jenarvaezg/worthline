@@ -9,16 +9,17 @@
  * instrument — all server-rendered via the `?group=` query param (ADR 0009).
  */
 
-import { test, expect } from "./fixtures";
+import { test, expect, addHolding } from "./fixtures";
 
 test("unified list: investment row is actionable (not a ghost) + grouping by direction/rung/instrument", async ({
   page,
 }) => {
   // 1. Add an investment via the kept add route (S5 #151 untouched).
-  await page.goto("/inversiones/nueva");
-  await page.getByLabel("Nombre de la inversión").fill("Fondo Unificado S8");
-  await page.getByLabel("Precio actual por unidad en EUR").fill("50");
-  await page.getByRole("button", { name: "Añadir inversión" }).click();
+  await addHolding(page, {
+    instrument: "fund",
+    name: "Fondo Unificado S8",
+    price: "50",
+  });
   await expect(page.getByRole("status")).toHaveText("Inversión añadida.");
 
   // 2. Default grouping is by direction: the "Activos" group heading is present.
