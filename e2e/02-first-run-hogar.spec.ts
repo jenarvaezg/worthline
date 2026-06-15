@@ -46,7 +46,7 @@ test("hogar onboarding: /empezar → Crear hogar → dashboard with household", 
   // 7. Navigate to anadir — ownership presets must appear (2+ members)
   await page.goto("/patrimonio/anadir");
   await expect(page.getByRole("heading", { name: "Añadir holding" })).toBeVisible();
-  await page.locator(`label. Chip:has(input[value="current_account"])`).click();
+  await page.locator(`label.addHoldingChip:has(input[value="current_account"])`).click();
 
   const ownershipFieldset = page.getByRole("group", { name: "Propiedad" });
   await expect(ownershipFieldset).toBeVisible();
