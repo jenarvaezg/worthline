@@ -33,6 +33,9 @@ export interface NumistaCredentials {
 export interface NumistaToken {
   accessToken: string;
   expiresAtMs: number;
+  /** The authenticated user's Numista id (returned by the client_credentials
+   *  grant), needed for the collection read. */
+  userId: number;
 }
 
 /** The OAuth2 token response shape (RFC 6749 client_credentials grant). */
@@ -40,6 +43,7 @@ interface TokenResponse {
   access_token: string;
   token_type: string;
   expires_in: number;
+  user_id: number;
 }
 
 /**
@@ -75,6 +79,7 @@ export async function mintNumistaToken(
   return {
     accessToken: data.access_token,
     expiresAtMs: nowMs + data.expires_in * 1000,
+    userId: data.user_id,
   };
 }
 

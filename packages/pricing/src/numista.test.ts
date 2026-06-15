@@ -48,6 +48,7 @@ describe("mintNumistaToken — client_credentials + scope=view_collection", () =
         access_token: "tok-123",
         token_type: "bearer",
         expires_in: 7200,
+        user_id: 574660,
       }),
     } as Response);
 
@@ -55,6 +56,9 @@ describe("mintNumistaToken — client_credentials + scope=view_collection", () =
 
     expect(token.accessToken).toBe("tok-123");
     expect(token.expiresAtMs).toBe(1_000_000 + 7200 * 1000);
+    // The client_credentials response carries the authenticated user's id, which
+    // the collection read needs (no separate lookup).
+    expect(token.userId).toBe(574660);
 
     const call = fetchMock.mock.calls[0]!;
     expect(String(call[0])).toBe("https://api.numista.com/v3/oauth_token");
@@ -77,7 +81,7 @@ describe("mintNumistaToken — client_credentials + scope=view_collection", () =
 });
 
 describe("isTokenValid — re-mint before expiry", () => {
-  const token = { accessToken: "x", expiresAtMs: 1_000_000 };
+  const token = { accessToken: "x", expiresAtMs: 1_000_000, userId: 574660 };
 
   it("is valid well before expiry", () => {
     expect(isTokenValid(token, 500_000)).toBe(true);
