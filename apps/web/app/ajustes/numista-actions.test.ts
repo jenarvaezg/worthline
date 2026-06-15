@@ -62,6 +62,7 @@ describe("disconnectNumistaAction", () => {
       [
         {
           catalogueId: "1",
+          externalId: "ni-1",
           issueId: null,
           name: "20 francos",
           grade: "EBC",
@@ -120,6 +121,7 @@ describe("syncNumistaAction", () => {
       [
         {
           catalogueId: "1",
+          externalId: "ni-1",
           issueId: null,
           name: "Soberano",
           grade: "MBC",

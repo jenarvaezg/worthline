@@ -31,6 +31,7 @@ function position(): SourcePosition {
   return {
     catalogueId: "1493",
     currency: "EUR",
+    externalId: "ext-1493",
     finenessMillis: 999,
     grade: "unc",
     id: "pos-1",

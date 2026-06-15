@@ -11,6 +11,7 @@ import {
   buildSnapshotAtDate,
   globalHoldingValueAtDate,
   recalculateSnapshotForAsset,
+  recalculateSnapshotForCoinAcquisition,
   recalculateSnapshotForHousing,
   recalculateSnapshotForLiability,
   recalculateSnapshotForOwnership,
@@ -2224,5 +2225,108 @@ describe("recalculateSnapshotForOwnership (#172)", () => {
     expect(result.snapshot.liquidNetWorth.amountMinor).toBe(4_000_00);
     expect(result.snapshot.totalNetWorth.amountMinor).toBe(4_000_00);
     expect(result.snapshot.housingEquity.amountMinor).toBe(0);
+  });
+});
+
+describe("recalculateSnapshotForCoinAcquisition", () => {
+  const eur = (amountMinor: number) => ({ amountMinor, currency: "EUR" });
+
+  // The materialized coin-collection holding a Numista source projects into: a
+  // manual, illiquid asset valued from its positions (ADR 0016/0017).
+  function coinCollection(workspace: Workspace): ManualAsset {
+    return createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 0,
+      id: "asset_coins",
+      instrument: "coin_collection",
+      liquidityTier: "illiquid",
+      name: "Colección Numista",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "manual",
+    });
+  }
+
+  function cashRow(valueMinor: number): SnapshotHoldingRow {
+    return {
+      countsAsHousing: false,
+      holdingId: "asset_cash",
+      kind: "asset",
+      label: "Cuenta",
+      liquidityTier: "cash",
+      securesHousing: false,
+      valueMinor,
+    };
+  }
+
+  // A snapshot holding only cash, self-consistent under the five-figure
+  // invariant (#181): one liquid asset, no debts, no housing.
+  function cashSnapshot(valueMinor: number): NetWorthSnapshot {
+    return {
+      capturedAt: "2024-06-01T12:00:00.000Z",
+      dateKey: "2024-06-01",
+      debts: eur(0),
+      grossAssets: eur(valueMinor),
+      housingEquity: eur(0),
+      id: "snap_x",
+      isMonthlyClose: false,
+      liquidNetWorth: eur(valueMinor),
+      monthKey: "2024-06",
+      scopeId: "member_jose",
+      scopeLabel: "Jose",
+      totalNetWorth: eur(valueMinor),
+      warnings: [],
+    };
+  }
+
+  test("adds a newly-acquired coin's value as a fresh illiquid coin-collection row", () => {
+    const workspace = makeWorkspace();
+    const result = recalculateSnapshotForCoinAcquisition({
+      asset: coinCollection(workspace),
+      frozenHoldings: [cashRow(1_000_00)],
+      globalDeltaMinor: 300_00, // a coin worth 300, frozen at ripple time
+      snapshot: cashSnapshot(1_000_00),
+      workspace,
+    })!;
+
+    const coinRow = result.holdings.find((h) => h.holdingId === "asset_coins")!;
+    expect(coinRow.valueMinor).toBe(300_00);
+    expect(coinRow.liquidityTier).toBe("illiquid");
+    // Gross + total grow by the coin value; the coin is illiquid, not housing, so
+    // liquid net worth and housing equity stay exactly where they were frozen.
+    expect(result.snapshot.grossAssets.amountMinor).toBe(1_300_00);
+    expect(result.snapshot.totalNetWorth.amountMinor).toBe(1_300_00);
+    expect(result.snapshot.liquidNetWorth.amountMinor).toBe(1_000_00);
+    expect(result.snapshot.housingEquity.amountMinor).toBe(0);
+  });
+
+  test("adds onto an existing coin-collection row without recomputing it", () => {
+    const workspace = makeWorkspace();
+    const coinRow: SnapshotHoldingRow = {
+      countsAsHousing: false,
+      holdingId: "asset_coins",
+      kind: "asset",
+      label: "Colección Numista",
+      liquidityTier: "illiquid",
+      securesHousing: false,
+      valueMinor: 200_00, // a coin already frozen into this snapshot
+    };
+    const result = recalculateSnapshotForCoinAcquisition({
+      asset: coinCollection(workspace),
+      frozenHoldings: [cashRow(1_000_00), coinRow],
+      globalDeltaMinor: 300_00, // a second coin acquired on/before this date
+      snapshot: {
+        ...cashSnapshot(1_000_00),
+        grossAssets: eur(1_200_00),
+        totalNetWorth: eur(1_200_00),
+      },
+      workspace,
+    })!;
+
+    // The already-frozen 200 stays put and the new 300 is added on top — never a
+    // recompute from current prices.
+    const row = result.holdings.find((h) => h.holdingId === "asset_coins")!;
+    expect(row.valueMinor).toBe(500_00);
+    expect(result.snapshot.grossAssets.amountMinor).toBe(1_500_00);
+    expect(result.snapshot.liquidNetWorth.amountMinor).toBe(1_000_00);
   });
 });

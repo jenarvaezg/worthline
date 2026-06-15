@@ -11,18 +11,21 @@ import type {
   ManualValuePoint,
   ManualAsset,
   OwnershipShare,
+  SourcePosition,
   WarningOverride,
   Workspace,
 } from "@worthline/domain";
 import {
   amortizationPaymentDatesUpTo,
   buildSnapshotAtDate,
+  coinValue,
   globalHoldingValueAtDate,
   historicalCapturedAt,
   housingAssetIdsOf,
   isHousingAsset,
   listScopeOptions,
   recalculateSnapshotForAsset,
+  recalculateSnapshotForCoinAcquisition,
   recalculateSnapshotForHousing,
   recalculateSnapshotForLiability,
   recalculateSnapshotForOwnership,
@@ -55,6 +58,7 @@ import { createAssetStore, type AssetStore } from "./asset-store";
 import {
   createConnectedSourceStore,
   type ConnectedSourceStore,
+  type SourcePositionInput,
 } from "./connected-source-store";
 import { migrate, type MigrateResult } from "./migrate";
 
@@ -294,6 +298,24 @@ export interface WorthlineStore {
    * `today` defaults to the current date; pass it to control the cut-off in tests.
    */
   backfillHistoricalSnapshots: (today?: string) => void;
+  /**
+   * Sync a connected source's positions AND ripple coin purchase dates into
+   * history (ADR 0017, S6 / #167). Replaces the source's positions wholesale and
+   * re-rolls its live holding value (`connectedSources.syncPositions`), then for
+   * every position seen for the FIRST time that records a purchase date, adds the
+   * coin's value — frozen at this sync — to each existing snapshot dated on/after
+   * that purchase date. A position already seen on a prior sync is never rippled
+   * again (so a later price move never rewrites a past snapshot), and a position
+   * that disappeared (sold on Numista) simply leaves the live holding while its
+   * value stays frozen in the snapshots it was already rippled into. A coin with
+   * no purchase date has no dated fact and is not rippled (it counts only in the
+   * live holding and snapshots captured from now on).
+   */
+  syncConnectedSource: (params: {
+    sourceId: string;
+    positions: SourcePositionInput[];
+    syncedAt: string;
+  }) => void;
 }
 
 export function runBootstrapHealthcheck(
@@ -587,6 +609,50 @@ function buildStore(
         today ?? new Date().toISOString().slice(0, 10),
         { atomic: true },
       );
+    },
+    syncConnectedSource: (params) => {
+      const workspace = getWorkspace();
+      // One transaction so the wholesale replace + every coin ripple commit or
+      // roll back together (better-sqlite3 nests via savepoints).
+      ctx.transaction(() => {
+        // Diff BEFORE the wholesale replace reassigns ids: the set of external
+        // ids already mirrored — the coins already on the timeline.
+        const knownExternalIds = new Set(
+          store.connectedSources
+            .readPositions(params.sourceId)
+            .map((position) => position.externalId),
+        );
+
+        store.connectedSources.syncPositions(
+          params.sourceId,
+          params.positions,
+          params.syncedAt,
+        );
+
+        if (!workspace) return; // no workspace → no scopes, no history to ripple
+
+        const source = store.connectedSources.readSource(params.sourceId);
+        if (!source) return;
+
+        // A genuinely new trade carrying a purchase date is the only dated fact to
+        // ripple (ADR 0017): a coin seen before is frozen, a coin with no date has
+        // no past fact (it counts from the live holding forward).
+        const newDatedTrades = store.connectedSources
+          .readPositions(params.sourceId)
+          .filter(
+            (position) =>
+              !knownExternalIds.has(position.externalId) &&
+              position.purchaseDate !== null,
+          );
+        if (newDatedTrades.length === 0) return;
+
+        rippleHistoricalSnapshotsForCoinAcquisition(
+          ctx,
+          workspace,
+          store.snapshots.saveSnapshot,
+          { assetId: source.assetId, newTrades: newDatedTrades },
+        );
+      });
     },
   };
 
@@ -1421,6 +1487,83 @@ function rippleHistoricalSnapshotsForOwnership(
       }
     }
   });
+}
+
+/**
+ * Ripple newly-mirrored coin purchase dates into snapshot history (ADR 0017, S6
+ * / #167). Unlike the operation/curve ripples — which RE-DERIVE one holding's
+ * whole value from its ledger on each affected date — a coin acquisition is
+ * ADDITIVE and ONE-SHOT: each new trade's value is captured at this sync and
+ * added to the coin-collection row of every existing snapshot dated on/after its
+ * purchase date. A trade already mirrored on a prior sync is never passed here
+ * again, so a later price move never rewrites a past snapshot (frozen), and a
+ * sold trade is never subtracted, so it stays in the snapshots it was rippled
+ * into while leaving the live holding. No new snapshot dates are generated — only
+ * existing snapshots are touched (the literal S6 scope).
+ *
+ * For each scope/snapshot the per-snapshot delta is the SUM of every new trade
+ * acquired on/before that date, applied in a single recalculation so the row and
+ * the five figures reconcile in one pass (ADR 0008). Legacy captures with no
+ * holding rows are skipped, like the sibling ripples.
+ */
+function rippleHistoricalSnapshotsForCoinAcquisition(
+  ctx: StoreContext,
+  workspace: Workspace,
+  saveSnapshot: (input: SaveSnapshotInput) => void,
+  params: { assetId: string; newTrades: readonly SourcePosition[] },
+): void {
+  const { db } = ctx;
+
+  // The coin-collection holding's identity (ownership, illiquid tier) — read
+  // including trashed, since it existed on the snapshot dates regardless.
+  const asset = readInvestmentIdentity(db, params.assetId);
+  if (!asset) return;
+
+  // Each new trade reduced to its frozen GLOBAL value + the date it enters the
+  // timeline. A zero-value coin adds nothing, so it never forces a recalculation.
+  const trades = params.newTrades
+    .filter((position) => position.purchaseDate !== null)
+    .map((position) => ({
+      purchaseDate: position.purchaseDate as string,
+      valueMinor: coinValue(position).minor,
+    }))
+    .filter((trade) => trade.valueMinor > 0);
+  if (trades.length === 0) return;
+
+  for (const scope of listScopeOptions(workspace)) {
+    for (const snap of readSnapshots(db, scope.id)) {
+      // The combined value of every new coin acquired on/before this snapshot —
+      // each trade ripples only from its OWN purchase date forward.
+      const globalDeltaMinor = trades
+        .filter((trade) => trade.purchaseDate <= snap.dateKey)
+        .reduce((sum, trade) => sum + trade.valueMinor, 0);
+      if (globalDeltaMinor === 0) continue;
+
+      const frozenHoldings = readSnapshotHoldings(db, {
+        from: snap.dateKey,
+        scopeId: scope.id,
+        to: snap.dateKey,
+      });
+      // A legacy capture predating holdings (ADR 0008) has nothing to recompute.
+      if (frozenHoldings.length === 0) continue;
+
+      const recalculated = recalculateSnapshotForCoinAcquisition({
+        asset,
+        frozenHoldings,
+        globalDeltaMinor,
+        snapshot: snap,
+        workspace,
+      });
+
+      if (recalculated) {
+        saveSnapshot({
+          holdings: recalculated.holdings,
+          replace: true,
+          snapshot: recalculated.snapshot,
+        });
+      }
+    }
+  }
 }
 
 /**

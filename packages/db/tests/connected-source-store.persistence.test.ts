@@ -32,6 +32,7 @@ function position(overrides: Partial<SourcePositionInput> = {}): SourcePositionI
   return {
     catalogueId: "n123",
     currency: "EUR",
+    externalId: overrides.catalogueId ?? "n123",
     finenessMillis: null,
     grade: "VF",
     issueId: null,
@@ -105,8 +106,18 @@ describe("connected-source store — syncPositions", () => {
     store.connectedSources.syncPositions(
       sourceId,
       [
-        position({ catalogueId: "n1", name: "Coin A", purchasePriceMinor: 5_000 }),
-        position({ catalogueId: "n2", name: "Coin B", purchasePriceMinor: 7_500 }),
+        position({
+          catalogueId: "n1",
+          externalId: "ext-1",
+          name: "Coin A",
+          purchasePriceMinor: 5_000,
+        }),
+        position({
+          catalogueId: "n2",
+          externalId: "ext-2",
+          name: "Coin B",
+          purchasePriceMinor: 7_500,
+        }),
       ],
       "2024-06-01T10:00:00.000Z",
     );
@@ -116,9 +127,12 @@ describe("connected-source store — syncPositions", () => {
     const stored = store.connectedSources.readPositions(sourceId);
     expect(stored).toHaveLength(2);
     expect(stored.map((p) => p.catalogueId).sort()).toEqual(["n1", "n2"]);
+    // The Numista collected-item id round-trips — the cross-sync trade key (#167).
+    expect(stored.find((p) => p.catalogueId === "n1")?.externalId).toBe("ext-1");
     expect(stored.find((p) => p.catalogueId === "n1")).toMatchObject({
       catalogueId: "n1",
       currency: "EUR",
+      externalId: "ext-1",
       grade: "VF",
       liquidityTier: "illiquid",
       metal: "silver",
@@ -350,8 +364,10 @@ describe("connected-source store — token + last sync", () => {
 
 describe("connected-source store — migration", () => {
   // Fresh-DB table-existence + version assertion: a raw better-sqlite3 DB run
-  // through `migrate` lands at SCHEMA_VERSION with both connected-source tables.
-  test("migrate creates connected_sources and positions and reaches the latest version", () => {
+  // through `migrate` lands at SCHEMA_VERSION with both tables present, and the
+  // positions table carries the v21 external_id column (the cross-sync trade key,
+  // #167) added by the ladder after the v19 CREATE TABLE.
+  test("migrate creates connected_sources + positions and adds external_id", () => {
     const db = new Database(":memory:");
     migrate(db);
 
@@ -363,8 +379,14 @@ describe("connected-source store — migration", () => {
 
     expect(tableNames).toContain("connected_sources");
     expect(tableNames).toContain("positions");
+
+    const positionColumns = (
+      db.prepare("PRAGMA table_info(positions)").all() as { name: string }[]
+    ).map((row) => row.name);
+    expect(positionColumns).toContain("external_id");
+
     expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(20);
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(21);
 
     db.close();
   });

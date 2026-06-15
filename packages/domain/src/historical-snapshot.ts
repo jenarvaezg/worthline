@@ -996,3 +996,79 @@ export function recalculateSnapshotForOwnership(
     snapshot: input.snapshot,
   });
 }
+
+export interface RecalculateCoinAcquisitionSnapshotInput {
+  /** The existing snapshot to recalculate (its id, scope, date, capturedAt are preserved). */
+  snapshot: NetWorthSnapshot;
+  /** The snapshot's currently frozen holding rows. */
+  frozenHoldings: SnapshotHoldingRow[];
+  /** The materialized coin-collection asset the source projects into (ADR 0016). */
+  asset: ManualAsset;
+  /**
+   * The newly-acquired coin's GLOBAL (100%, un-allocated) value, minor units,
+   * captured AT RIPPLE TIME and frozen (ADR 0017): worthline never fetches a
+   * coin's historical price, so a later price move never rewrites this. The new
+   * per-scope contribution is this value re-weighted by the collection's split.
+   */
+  globalDeltaMinor: number;
+  workspace: Workspace;
+}
+
+/**
+ * Recalculate an existing snapshot after a coin's PURCHASE DATE places it on the
+ * timeline (ADR 0017 ripple, S6/#167). Unlike the operation/curve ripples — which
+ * re-derive one holding's whole value from its ledger — a coin acquisition is
+ * ADDITIVE: the coin's frozen owned value is added to the coin-collection holding's
+ * row (created if the snapshot had none), never recomputed from current positions.
+ * This is what keeps history frozen (a later price move adds nothing) and lets a
+ * sold coin stay in past snapshots (it is never subtracted): the orchestration
+ * ripples a coin exactly once, when its trade is first seen on sync.
+ *
+ * Every other frozen row is preserved verbatim, like the sibling ripples. The
+ * coin collection is illiquid and never housing, so only gross + total move; the
+ * coin is scope-weighted with the same allocation the headline figures use, so the
+ * reconciliation invariant (ADR 0008) holds by construction. Returns null when no
+ * holdings remain (the caller drops the snapshot) — never expected here, since the
+ * acquisition only ever adds value.
+ */
+export function recalculateSnapshotForCoinAcquisition(
+  input: RecalculateCoinAcquisitionSnapshotInput,
+): ValuedNetWorthSnapshot | null {
+  const currency = input.workspace.baseCurrency;
+  const scopeMemberIds = new Set(
+    resolveScopeMemberIds(input.workspace, input.snapshot.scopeId),
+  );
+
+  const existingRow = input.frozenHoldings.find(
+    (row) => row.holdingId === input.asset.id && row.kind === "asset",
+  );
+  const rows = input.frozenHoldings.filter((row) => row.holdingId !== input.asset.id);
+
+  const { ownedMinor, totalShareBps } = allocateScopedHolding(input.globalDeltaMinor, {
+    ownership: input.asset.ownership,
+    scopeMemberIds,
+  });
+
+  // Append the coin-collection row with its frozen value INCREMENTED by this
+  // scope's share of the new coin. Keep an existing row even when this scope gains
+  // no stake (totalShareBps 0), so a re-weight to zero never silently drops it.
+  if (existingRow !== undefined || totalShareBps > 0) {
+    rows.push({
+      // A coin collection is never a housing asset and never secures housing.
+      countsAsHousing: false,
+      holdingId: input.asset.id,
+      kind: "asset",
+      label: existingRow?.label ?? input.asset.name,
+      liquidityTier: existingRow?.liquidityTier ?? tierOfAsset(input.asset),
+      securesHousing: false,
+      valueMinor: (existingRow?.valueMinor ?? 0) + (totalShareBps > 0 ? ownedMinor : 0),
+    });
+  }
+
+  return assembleRippleSnapshot({
+    currency,
+    frozenHoldings: input.frozenHoldings,
+    rows,
+    snapshot: input.snapshot,
+  });
+}

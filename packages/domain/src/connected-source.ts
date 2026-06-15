@@ -46,6 +46,14 @@ export interface ConnectedSource {
 export interface SourcePosition {
   id: string;
   sourceId: string;
+  /**
+   * The source's STABLE per-line id (Numista's collected-item id) — the identity
+   * that survives a wholesale re-sync, distinct from worthline's internal `id`
+   * (reassigned each sync) and from `catalogueId` (the type, shared by two coins
+   * of the same kind). Diffing on it tells a genuinely new trade (ripple it into
+   * history, ADR 0017) from a coin already frozen in past snapshots.
+   */
+  externalId: string;
   /** The source's catalogue id for this line (Numista type id). */
   catalogueId: string;
   /** The source's issue id within the catalogue type (Numista issue id); null

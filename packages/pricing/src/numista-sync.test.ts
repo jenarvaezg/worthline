@@ -57,6 +57,7 @@ describe("syncNumistaCollection — drafts carry both candidate values", () => {
     const eagle = drafts.find((d) => d.catalogueId === "1493")!;
     expect(eagle).toMatchObject({
       catalogueId: "1493",
+      externalId: "1", // Numista's stable collected-item id — the cross-sync trade key
       liquidityTier: "illiquid",
       metal: "silver",
       quantity: 1,

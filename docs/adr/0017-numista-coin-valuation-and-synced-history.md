@@ -29,6 +29,18 @@ the moment of the ripple_, then **frozen** — worthline never fetches a coin's
 historical price, and a later price move never rewrites a past snapshot. Numista's
 trade prices set _when_ a coin was held, not _how much_ it was worth then.
 
+The ripple is **additive and once-per-trade** (S6, #167): each trade is keyed by
+Numista's stable **collected-item id**, persisted on the position. A sync ripples
+only trades seen for the **first time**, adding each coin's frozen value to the
+existing snapshots dated on/after its purchase date — never re-deriving the
+collection's value from current positions. That is what keeps history frozen (a
+re-sync at a new price adds nothing) and lets a **sold** coin stay in the
+snapshots it was rippled into while dropping from the live holding (it is never
+subtracted). Only existing snapshots are touched; no new dates are generated. A
+coin with **no acquisition date** recorded has no dated fact to ripple — it is
+left out of history entirely, counting only in the live holding and in snapshots
+captured from the sync forward.
+
 ## Refresh: decoupled, within 2,000 requests/month
 
 Numista's free tier allows 2,000 requests/month, so the two refreshes are
