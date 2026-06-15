@@ -369,3 +369,154 @@ describe("ownership-split ripple recovers the global value losslessly for a co-o
     store.close();
   });
 });
+
+/**
+ * A 2-member household with an investment fund whose value is recorded ONLY
+ * through its operation ledger, plus a mortgage whose amortizable plan backfills
+ * several snapshot dates (PRD #109). Each backfilled snapshot freezes the fund's
+ * row at its captured value. The fund's single buy predates every backfilled
+ * date, so the fund is held on all of them at capture time. An investment must
+ * be 100% owned by the workspace members (60/40 here); deleting its operations
+ * leaves the live ledger unable to value it on any date, so its re-derived global
+ * is null — the #212 unrecoverable-global case.
+ */
+function seedFundFrozenThenLedgerless(store: WorthlineStore): void {
+  store.workspace.initializeWorkspace({
+    members: [
+      { id: "mJ", name: "Jose" },
+      { id: "mA", name: "Ana" },
+    ],
+    mode: "household",
+  });
+  // An investment fund split 60/40 by the members. Its only source of truth is
+  // the operation ledger (no manual price), so deleting its operations makes the
+  // live ledger no longer hold it on any date (re-derived global is null).
+  store.assets.createInvestmentAsset({
+    currency: "EUR",
+    id: "fondo",
+    liquidityTier: "market",
+    name: "Fondo",
+    ownership: [
+      { memberId: "mJ", shareBps: 6_000 },
+      { memberId: "mA", shareBps: 4_000 },
+    ],
+  });
+  store.operations.recordOperation({
+    assetId: "fondo",
+    currency: "EUR",
+    executedAt: "2026-01-01",
+    feesMinor: 0,
+    id: "opBuy",
+    kind: "buy",
+    pricePerUnit: "100",
+    units: "10",
+  });
+  // A mortgage whose amortizable plan backfills one snapshot per past cuota (PRD
+  // #109); each captured snapshot also freezes the fund's row.
+  store.liabilities.createLiability({
+    balanceMinor: 200_000_00,
+    currency: "EUR",
+    id: "mortgage",
+    name: "Hipoteca",
+    ownership: [
+      { memberId: "mJ", shareBps: 6_000 },
+      { memberId: "mA", shareBps: 4_000 },
+    ],
+    type: "mortgage",
+  });
+  store.liabilities.setDebtModel("mortgage", "amortizable");
+  store.liabilities.createAmortizationPlan({
+    annualInterestRate: "0.0317",
+    id: "plan1",
+    initialCapitalMinor: 210_000_00,
+    liabilityId: "mortgage",
+    disbursementDate: "2026-01-15",
+    firstPaymentDate: "2026-02-15",
+    termMonths: 240,
+  });
+  store.rippleHistoricalSnapshotsForDebt({
+    kind: "amortizable-plan",
+    liabilityId: "mortgage",
+    today: TODAY,
+  });
+}
+
+describe("ownership-split ripple leaves the frozen row untouched when the global is unrecoverable (#212)", () => {
+  test("a co-owned holding whose global cannot be re-derived for a date is NOT re-weighted", () => {
+    const store = createInMemoryStore();
+    seedFundFrozenThenLedgerless(store);
+
+    const fundRow = (dateKey: string, scopeId: string): number | undefined =>
+      store.snapshots
+        .readSnapshotHoldings({ from: dateKey, scopeId, to: dateKey })
+        .find((r) => r.holdingId === "fondo")?.valueMinor;
+
+    const dates = store.snapshots.readSnapshots("household").map((snap) => snap.dateKey);
+    expect(dates.length).toBeGreaterThan(2);
+    // The fund WAS frozen into every backfilled household snapshot.
+    for (const dateKey of dates) {
+      expect(fundRow(dateKey, "household")).not.toBeUndefined();
+    }
+
+    // Snapshot the frozen rows and headline figures BEFORE the edit, across all
+    // scopes — these must be byte-identical after the ripple.
+    const figuresOf = (
+      dateKey: string,
+      scopeId: string,
+    ): Record<string, number> | undefined => {
+      const snap = store.snapshots
+        .readSnapshots(scopeId)
+        .find((s) => s.dateKey === dateKey);
+      if (!snap) return undefined;
+      return {
+        debts: snap.debts.amountMinor,
+        grossAssets: snap.grossAssets.amountMinor,
+        housingEquity: snap.housingEquity.amountMinor,
+        liquidNetWorth: snap.liquidNetWorth.amountMinor,
+        totalNetWorth: snap.totalNetWorth.amountMinor,
+      };
+    };
+    const scopes = ["household", "mJ", "mA"];
+    const fundBefore = dates.flatMap((d) => scopes.map((s) => fundRow(d, s)));
+    const figuresBefore = dates.flatMap((d) => scopes.map((s) => figuresOf(d, s)));
+
+    // Delete the fund's only operation: the live ledger no longer holds it on any
+    // date, so its global value is unrecoverable for every frozen snapshot.
+    store.operations.deleteOperation("opBuy");
+
+    // Correct the member split (60/40 → 70/30). With the global unrecoverable,
+    // re-weighting the already-allocated row would reconstruct the frozen member
+    // rows from a value the live ledger can no longer justify (#187 lossiness) —
+    // the ripple must SKIP these dates and leave every frozen row untouched.
+    store.assets.updateAsset("fondo", {
+      ownership: [
+        { memberId: "mJ", shareBps: 7_000 },
+        { memberId: "mA", shareBps: 3_000 },
+      ],
+    });
+    store.rippleHistoricalSnapshotsForOwnership({
+      holdingId: "fondo",
+      kind: "asset",
+      previousOwnership: [
+        { memberId: "mJ", shareBps: 6_000 },
+        { memberId: "mA", shareBps: 4_000 },
+      ],
+    });
+
+    const fundAfter = dates.flatMap((d) => scopes.map((s) => fundRow(d, s)));
+    const figuresAfter = dates.flatMap((d) => scopes.map((s) => figuresOf(d, s)));
+
+    // The frozen fund rows are left untouched on every scope and date.
+    expect(fundAfter).toEqual(fundBefore);
+    // The five headline figures are unchanged on every scope and date.
+    expect(figuresAfter).toEqual(figuresBefore);
+    // Reconciliation (ADR 0008) still holds on every snapshot.
+    for (const dateKey of dates) {
+      for (const scopeId of scopes) {
+        expect(reconciles(store, dateKey, scopeId)).toBe(true);
+      }
+    }
+
+    store.close();
+  });
+});
