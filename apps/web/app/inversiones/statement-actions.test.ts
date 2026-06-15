@@ -9,7 +9,13 @@ import { createInMemoryStore } from "@worthline/db";
 import type { WorthlineStore } from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
-import { uploadStatementAction } from "./actions";
+import {
+  confirmStatementAction,
+  previewStatementAction,
+  type StatementPreviewState,
+} from "./actions";
+
+const IDLE: StatementPreviewState = { status: "idle" };
 
 // 2024 dates so every order is unambiguously in the past regardless of wall
 // clock, making the generated snapshot band deterministic. Eight `Finalizada`
@@ -57,7 +63,7 @@ async function run(
   assetId = "fund",
 ): Promise<string> {
   try {
-    await uploadStatementAction(assetId, fd, store);
+    await confirmStatementAction(assetId, fd, store);
     throw new Error("action did not redirect");
   } catch (err: unknown) {
     const e = err as { message?: string; digest?: string };
@@ -68,7 +74,15 @@ async function run(
   }
 }
 
-describe("uploadStatementAction (#174)", () => {
+function preview(
+  fd: FormData,
+  store: WorthlineStore,
+  assetId = "fund",
+): Promise<StatementPreviewState> {
+  return previewStatementAction(assetId, IDLE, fd, store);
+}
+
+describe("confirmStatementAction (#174)", () => {
   test("creates 8 buy operations from the Finalizada rows and skips the other 2", async () => {
     const store = createInMemoryStore();
     seedFund(store);
@@ -151,7 +165,7 @@ describe("uploadStatementAction (#174)", () => {
   });
 });
 
-describe("uploadStatementAction — merge by date (#175)", () => {
+describe("confirmStatementAction — merge by date (#175)", () => {
   test("re-uploading the same file overwrites every match and creates nothing", async () => {
     const store = createInMemoryStore();
     seedFund(store);
@@ -228,5 +242,74 @@ describe("uploadStatementAction — merge by date (#175)", () => {
     // 8 from the file + the 1 untouched manual operation = 9, none deleted.
     expect(ops).toHaveLength(9);
     expect(ops.find((op) => op.id === "op_manual")).toBeDefined();
+  });
+});
+
+describe("previewStatementAction — preview before confirm (#176)", () => {
+  test("preview summarizes new/overwritten/skipped and writes NOTHING", async () => {
+    const store = createInMemoryStore();
+    seedFund(store);
+
+    const state = await preview(uploadForm(CSV), store);
+
+    expect(state.status).toBe("summary");
+    if (state.status !== "summary") throw new Error("expected summary");
+    expect(state.created).toBe(8);
+    expect(state.overwritten).toBe(0);
+    expect(state.skipped).toBe(2);
+    // The whole point of a preview: no operations and no snapshots are written.
+    expect(store.operations.readOperations("fund")).toHaveLength(0);
+    expect(store.snapshots.readSnapshots("household")).toHaveLength(0);
+  });
+
+  test("preview reflects overwrites against existing operations without writing", async () => {
+    const store = createInMemoryStore();
+    seedFund(store);
+    store.operations.recordOperation({
+      assetId: "fund",
+      currency: "EUR",
+      executedAt: "2024-03-01",
+      id: "op_existing",
+      kind: "buy",
+      pricePerUnit: "1",
+      units: "1",
+    });
+
+    const state = await preview(uploadForm(CSV), store);
+
+    if (state.status !== "summary") throw new Error("expected summary");
+    expect(state.created).toBe(7);
+    expect(state.overwritten).toBe(1);
+    // Still untouched: the preview did not apply the overwrite.
+    expect(
+      store.operations.readOperations("fund").find((o) => o.id === "op_existing")!.units,
+    ).toBe("1");
+  });
+
+  test("a parse error surfaces as an error state, not a thrown redirect", async () => {
+    const store = createInMemoryStore();
+    seedFund(store);
+
+    const bad = [
+      "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
+      "99/99/2024;IE00BYX5NX33;100 EUR;7,000;Finalizada",
+    ].join("\n");
+
+    const state = await preview(uploadForm(bad), store);
+    expect(state.status).toBe("error");
+  });
+
+  test("confirm re-validates the file server-side (a malformed file still aborts)", async () => {
+    const store = createInMemoryStore();
+    seedFund(store);
+
+    const bad = [
+      "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
+      "99/99/2024;IE00BYX5NX33;100 EUR;7,000;Finalizada",
+    ].join("\n");
+
+    const digest = await run(uploadForm(bad), store);
+    expect(digest).toContain("error=");
+    expect(store.operations.readOperations("fund")).toHaveLength(0);
   });
 });

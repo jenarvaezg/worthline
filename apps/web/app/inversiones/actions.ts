@@ -7,7 +7,11 @@ import {
   parseStatement,
   planStatementMerge,
 } from "@worthline/domain";
-import type { InvestmentPriceProvider, LiquidityTier } from "@worthline/domain";
+import type {
+  InvestmentPriceProvider,
+  LiquidityTier,
+  ParsedStatement,
+} from "@worthline/domain";
 import {
   fetchAndCachePrice,
   refreshStalePrices,
@@ -152,17 +156,95 @@ export async function recordOperationAction(
 }
 
 /**
- * Statement upload (ADR 0018, S1 #174 + S2 #175). Parse a broker's exported CSV
- * against this investment, then **merge by date** into its operations (file wins
- * on date overlap, never deletes — S2): a file date matching an existing
- * operation overwrites it, a new date creates, an existing operation absent from
- * the file is untouched. Apply in one transaction, then run ONE batched
- * historical-snapshot ripple across the union of created + overwritten dates —
- * never per operation (the #158 O(N×snapshots) cliff). S2 scope: MyInvestor only,
- * all buys (no sells — Slice 5), no ISIN guard (Slice 4), minimal confirm (preview
- * is Slice 3); the holding's value still comes from its price provider.
+ * The serializable result of a statement **preview** (ADR 0018, S3 / #176): the
+ * counts the user confirms against, with nothing written. `idle` is the initial
+ * useActionState value; `error` carries a Spanish message; `summary` carries the
+ * merge-plan shape (new / overwritten) plus skipped pending/rejected rows.
  */
-export async function uploadStatementAction(
+export type StatementPreviewState =
+  | { status: "idle" }
+  | { status: "error"; message: string }
+  | { status: "summary"; created: number; overwritten: number; skipped: number };
+
+/**
+ * Validate + parse the uploaded statement from the form, with no DB access — the
+ * shared front half of preview and confirm. Returns the parsed statement or a
+ * single Spanish error. The file is re-read here on BOTH steps, so confirm never
+ * trusts the preview: the mounted file travels with each submission (ADR 0018,
+ * mirroring the Import flow) and is re-validated server-side before any write.
+ */
+async function readStatementFromForm(
+  formData: FormData,
+): Promise<{ ok: false; message: string } | { ok: true; value: ParsedStatement }> {
+  const broker = String(formData.get("broker") ?? "").trim();
+  if (broker !== "myinvestor") {
+    return { message: "Selecciona un bróker compatible (MyInvestor).", ok: false };
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { message: "Selecciona un archivo .csv con movimientos.", ok: false };
+  }
+
+  const parsed = parseStatement(await file.text(), "myinvestor");
+  if (!parsed.ok) {
+    return { message: parsed.errors[0], ok: false };
+  }
+
+  if (parsed.value.rows.length === 0) {
+    return {
+      message: "El archivo no contiene movimientos finalizados que cargar.",
+      ok: false,
+    };
+  }
+
+  return { ok: true, value: parsed.value };
+}
+
+/**
+ * Statement preview (ADR 0018, S3 / #176). Parse the uploaded CSV and build the
+ * merge plan against this investment's current operations, then return the
+ * counts WITHOUT writing anything — the human check before confirm. Reads the
+ * store read-only; never redirects (it feeds useActionState).
+ */
+export async function previewStatementAction(
+  routeAssetId: string,
+  _prev: StatementPreviewState,
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<StatementPreviewState> {
+  const read = await readStatementFromForm(formData);
+  if (!read.ok) {
+    return { message: read.message, status: "error" };
+  }
+
+  const { rows, skipped } = read.value;
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  const plan = runWith((store) =>
+    planStatementMerge(rows, store.operations.readOperations(routeAssetId)),
+  );
+
+  return {
+    created: plan.toCreate.length,
+    overwritten: plan.toOverwrite.length,
+    skipped: skipped.length,
+    status: "summary",
+  };
+}
+
+/**
+ * Statement confirm (ADR 0018, S1 #174 + S2 #175 + S3 #176). Re-validate + parse
+ * the uploaded CSV (never trusting the preview), then **merge by date** into the
+ * investment's operations (file wins on date overlap, never deletes): a matching
+ * date overwrites in place, a new date creates, an operation the file omits is
+ * untouched. Apply in one transaction, then run ONE batched historical-snapshot
+ * ripple across the union of created + overwritten dates — never per operation
+ * (the #158 O(N×snapshots) cliff). S3 scope: MyInvestor only, all buys (no
+ * sells — Slice 5), no ISIN guard (Slice 4); value still comes from the provider.
+ */
+export async function confirmStatementAction(
   routeAssetId: string,
   formData: FormData,
   _store?: WorthlineStore,
@@ -174,28 +256,12 @@ export async function uploadStatementAction(
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
     _store ? fn(_store) : withStore(fn);
 
-  const broker = String(formData.get("broker") ?? "").trim();
-  if (broker !== "myinvestor") {
-    redirect(statementErrorUrl("Selecciona un bróker compatible (MyInvestor)."));
+  const read = await readStatementFromForm(formData);
+  if (!read.ok) {
+    redirect(statementErrorUrl(read.message));
   }
 
-  const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
-    redirect(statementErrorUrl("Selecciona un archivo .csv con movimientos."));
-  }
-
-  const parsed = parseStatement(await file.text(), "myinvestor");
-  if (!parsed.ok) {
-    redirect(statementErrorUrl(parsed.errors[0]));
-  }
-
-  const { rows, skipped } = parsed.value;
-  if (rows.length === 0) {
-    redirect(
-      statementErrorUrl("El archivo no contiene movimientos finalizados que cargar."),
-    );
-  }
-
+  const { rows, skipped } = read.value;
   const today = new Date().toISOString().slice(0, 10);
   const seed = Date.now();
 
