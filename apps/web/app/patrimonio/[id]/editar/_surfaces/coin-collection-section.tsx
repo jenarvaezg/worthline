@@ -20,10 +20,8 @@
 import { coinValue, formatMoneyMinor, groupPositionsByMetal } from "@worthline/domain";
 import type { PriceFreshnessState, SourcePosition } from "@worthline/domain";
 
-import {
-  disconnectNumistaAction,
-  syncNumistaAction,
-} from "../../../../ajustes/numista-actions";
+import DisconnectNumistaFold from "../../../../ajustes/disconnect-numista-fold";
+import { syncNumistaAction } from "../../../../ajustes/numista-actions";
 import { formatLastSync } from "../../../../ajustes/numista-helpers";
 import {
   basisTag,
@@ -189,18 +187,13 @@ export function CoinCollectionSection({
 
       {/* ── Disconnect (folded) ───────────────────────────────────────────── */}
       {sourceId ? (
-        <form action={disconnectNumistaAction} className="coinDisconnect">
-          <input name="currentUrl" type="hidden" value={currentUrl} />
-          <input name="sourceId" type="hidden" value={sourceId} />
-          <details className="confirmDelete">
-            <summary>Desconectar Numista</summary>
-            <p>
-              Se eliminará la colección y todas sus monedas. La clave de API se borra de
-              este dispositivo; tu colección en Numista no se toca.
-            </p>
-            <button type="submit">Confirmar desconexión</button>
-          </details>
-        </form>
+        <div className="coinDisconnect">
+          <DisconnectNumistaFold
+            currentUrl={currentUrl}
+            sourceId={sourceId}
+            summary="Desconectar Numista"
+          />
+        </div>
       ) : null}
     </section>
   );

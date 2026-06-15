@@ -218,6 +218,10 @@ export async function disconnectNumistaAction(
 ): Promise<never> {
   const sourceId = parseEntityId(formData, "sourceId");
   const returnUrl = currentUrlOf(formData);
+  // The disconnect CHOICE (PRD #160 story 21, ADR 0016): "freeze" keeps the
+  // holding as a plain hand-maintained one; anything else (the default) removes
+  // the live holding while frozen snapshots keep the history.
+  const freeze = (formData.get("mode") as string) === "freeze";
 
   if (!sourceId) {
     redirect(
@@ -234,8 +238,21 @@ export async function disconnectNumistaAction(
       return { ok: false as const, error: "No se encontró la fuente conectada." };
     }
 
-    // Deleting the holding cascade-deletes the source + positions (schema FKs).
-    // hardDeleteAsset only deletes from the trash, so soft-delete first.
+    if (freeze) {
+      // Freeze into a stored holding: drop the source (cascading positions) and
+      // flip the kept asset to a hand-valued precious_metal holding.
+      const frozen = store.connectedSources.freezeIntoStoredHolding(sourceId);
+
+      if (!frozen) {
+        return { ok: false as const, error: "No se pudo congelar la colección." };
+      }
+
+      return { ok: true as const, message: "numista_frozen" as const };
+    }
+
+    // Remove the live holding: deleting it cascade-deletes the source + positions
+    // (schema FKs). hardDeleteAsset only deletes from the trash, so soft-delete
+    // first. Frozen snapshots keep the history (a hard delete never touches it).
     store.assets.softDeleteAsset(source.assetId, new Date().toISOString());
     const removed = store.assets.hardDeleteAsset(source.assetId);
 
@@ -243,12 +260,12 @@ export async function disconnectNumistaAction(
       return { ok: false as const, error: "No se pudo desconectar la colección." };
     }
 
-    return { ok: true as const };
+    return { ok: true as const, message: "numista_disconnected" as const };
   }, _store);
 
   if (!result.ok) {
     redirect(errorRedirectUrl(returnUrl, { message: result.error }));
   }
 
-  redirect(appendParam(returnUrl, "ok", "numista_disconnected"));
+  redirect(appendParam(returnUrl, "ok", result.message));
 }

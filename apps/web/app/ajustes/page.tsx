@@ -23,11 +23,8 @@ import {
   saveFireConfigAction,
   updateMemberAction,
 } from "./actions";
-import {
-  connectNumistaAction,
-  disconnectNumistaAction,
-  syncNumistaAction,
-} from "./numista-actions";
+import DisconnectNumistaFold from "./disconnect-numista-fold";
+import { connectNumistaAction, syncNumistaAction } from "./numista-actions";
 import { formatLastSync } from "./numista-helpers";
 
 export const dynamic = "force-dynamic";
@@ -395,18 +392,10 @@ export default async function AjustesPage({
                 >
                   Ver colección →
                 </Link>
-                <form action={disconnectNumistaAction}>
-                  <input name="currentUrl" type="hidden" value={currentUrl} />
-                  <input name="sourceId" type="hidden" value={numistaSource.id} />
-                  <details className="confirmDelete">
-                    <summary>Desconectar</summary>
-                    <p>
-                      Se eliminará la colección y todas sus monedas. La clave de API se
-                      borra de este dispositivo; tu colección en Numista no se toca.
-                    </p>
-                    <button type="submit">Confirmar desconexión</button>
-                  </details>
-                </form>
+                <DisconnectNumistaFold
+                  currentUrl={currentUrl}
+                  sourceId={numistaSource.id}
+                />
               </div>
             </div>
           ) : (

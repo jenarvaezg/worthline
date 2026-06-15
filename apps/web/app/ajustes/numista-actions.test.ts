@@ -110,6 +110,64 @@ describe("disconnectNumistaAction", () => {
     expect(digest).toContain("error=");
     expect(store.connectedSources.listSources()).toHaveLength(1);
   });
+
+  test("mode=remove still removes the live holding (the default path)", async () => {
+    const store = createInMemoryStore();
+    const { sourceId, assetId } = seedWithSource(store);
+
+    const digest = await runAction(
+      disconnectNumistaAction,
+      form({ currentUrl: "/ajustes", sourceId, mode: "remove" }),
+      store,
+    );
+
+    expect(digest).toContain("ok=numista_disconnected");
+    expect(store.connectedSources.listSources()).toHaveLength(0);
+    expect(store.assets.readAssets().some((a) => a.id === assetId)).toBe(false);
+  });
+
+  test("mode=freeze keeps the asset as a hand-valued holding and drops the source", async () => {
+    const store = createInMemoryStore();
+    const { sourceId, assetId } = seedWithSource(store);
+    store.connectedSources.syncPositions(
+      sourceId,
+      [
+        {
+          catalogueId: "1",
+          externalId: "ni-1",
+          issueId: null,
+          name: "20 francos",
+          grade: "EBC",
+          quantity: 1,
+          liquidityTier: "illiquid",
+          metal: "gold",
+          finenessMillis: null,
+          weightGrams: null,
+          purchaseDate: null,
+          metalValueMinor: 35_000,
+          numismaticValueMinor: null,
+          numismaticFetchedAt: null,
+          purchasePriceMinor: null,
+          currency: "EUR",
+        },
+      ],
+      "2026-06-14T10:00:00.000Z",
+    );
+
+    const digest = await runAction(
+      disconnectNumistaAction,
+      form({ currentUrl: "/ajustes", sourceId, mode: "freeze" }),
+      store,
+    );
+
+    expect(digest).toContain("ok=numista_frozen");
+    // The source is gone, but the asset survives as a hand-valued precious-metal
+    // holding keeping its frozen value.
+    expect(store.connectedSources.listSources()).toHaveLength(0);
+    const frozen = store.assets.readAssets().find((a) => a.id === assetId);
+    expect(frozen?.instrument).toBe("precious_metal");
+    expect(frozen?.currentValue.amountMinor).toBe(35_000);
+  });
 });
 
 describe("syncNumistaAction", () => {

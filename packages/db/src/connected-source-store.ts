@@ -85,6 +85,16 @@ export interface ConnectedSourceStore {
     updates: PositionValuationUpdate[],
     freshness: ValuationFreshness,
   ): void;
+  /**
+   * Freeze the source's projected holding into a plain hand-maintained holding
+   * (PRD #160 story 21, ADR 0016): drop the source — cascading its positions —
+   * and flip the now-orphaned asset from the derived `coin_collection` instrument
+   * to `precious_metal` (illiquid, valued by hand). The asset keeps its frozen
+   * value, name and ownership; frozen snapshots are untouched. The orphaned
+   * connected-source price-cache row is cleared. Returns the freed asset id, or
+   * null when the source is unknown (nothing changes then).
+   */
+  freezeIntoStoredHolding(sourceId: string): { assetId: string } | null;
 }
 
 /** The columns that make up a {@link ConnectedSourceRow}. */
@@ -352,6 +362,40 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
       ctx.writeAuditEntry("revalue_source", "connected_source", sourceId, {
         positionCount: updates.length,
       });
+    },
+    freezeIntoStoredHolding: (sourceId) => {
+      const source = readSource(sourceId);
+      if (!source) {
+        return null;
+      }
+
+      ctx.transaction(() => {
+        // Drop the source first — the FK cascade removes its positions. The asset
+        // is NOT cascaded (sources reference the asset, not the other way round),
+        // so the rolled-up holding survives with its last derived value intact.
+        db.delete(connectedSources).where(eq(connectedSources.id, sourceId)).run();
+
+        // Flip the orphaned asset from the derived `coin_collection` instrument to
+        // a hand-valued `precious_metal` one (illiquid, `stored`). `connect` left
+        // valuation_method null and lets the runtime derive it from the
+        // instrument, so flipping the instrument is enough to make it hand-valued.
+        db.update(assets)
+          .set({ instrument: "precious_metal", updatedAt: sql`CURRENT_TIMESTAMP` })
+          .where(eq(assets.id, source.assetId))
+          .run();
+
+        // Clear the now-orphaned connected-source valuation-freshness row — a
+        // stored holding is valued from its current value, not a cached price.
+        db.delete(assetPriceCache)
+          .where(eq(assetPriceCache.assetId, source.assetId))
+          .run();
+      });
+
+      ctx.writeAuditEntry("freeze_source", "connected_source", sourceId, {
+        assetId: source.assetId,
+      });
+
+      return { assetId: source.assetId };
     },
   };
 }

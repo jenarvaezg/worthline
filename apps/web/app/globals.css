@@ -3489,6 +3489,30 @@ td.rowActions > * {
   margin-top: 1.4rem;
 }
 
+/* The disconnect CHOICE (PRD #160 story 21): two stacked options, each a button
+   over a one-line explanation. */
+.disconnectChoice {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.disconnectOption {
+  display: grid;
+  gap: 4px;
+}
+
+.disconnectOption .muted {
+  font-size: 0.78rem;
+  max-width: 48ch;
+}
+
+/* Freeze is non-destructive — reset it to the neutral ink button so it reads as
+   the safe alternative to the red remove action (overrides .confirmDelete button). */
+.disconnectChoice .disconnectFreeze {
+  background: var(--ink);
+}
+
 @media (max-width: 720px) {
   .coinMetalRow > summary {
     grid-template-columns: 7rem 1fr 6.5rem;
