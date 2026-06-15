@@ -5,7 +5,7 @@
  * Adds a second asset here so there are two values to update in one batch.
  */
 
-import { test, expect } from "./fixtures";
+import { test, expect, addHolding } from "./fixtures";
 
 function parseEuroMinor(text: string | null): number {
   expect(text).toBeTruthy();
@@ -26,10 +26,11 @@ test("puesta al dia: batch update two assets → values persist → headline cha
   page,
 }) => {
   // 1. Create a second manual asset so we have two to update
-  await page.goto("/patrimonio/nuevo-activo");
-  await page.getByLabel("Nombre del activo").fill("Fondo Monetario");
-  await page.getByLabel("Valor actual en EUR").fill("3000");
-  await page.getByRole("button", { name: "Añadir activo" }).click();
+  await addHolding(page, {
+    instrument: "current_account",
+    name: "Fondo Monetario",
+    value: "3000",
+  });
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toHaveText("Activo añadido.");
 

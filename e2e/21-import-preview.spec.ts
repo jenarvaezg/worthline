@@ -10,7 +10,7 @@
  * error and offers NO confirm button. This journey never confirms an import.
  */
 
-import { test, expect } from "./fixtures";
+import { test, expect, addHolding } from "./fixtures";
 
 /** A valid version-2 export document with known per-section counts. */
 const previewDoc = {
@@ -63,11 +63,11 @@ test("import preview: summary + data-loss warning for a valid file; inline error
   }
 
   // Guarantee pre-existing data: create one asset through the UI.
-  await page.goto("/patrimonio/nuevo-activo");
-  await expect(page.getByRole("heading", { name: "Nuevo activo" })).toBeVisible();
-  await page.getByLabel("Nombre del activo").fill("Activo preexistente 21");
-  await page.getByLabel("Valor actual en EUR").fill("777");
-  await page.getByRole("button", { name: "Añadir activo" }).click();
+  await addHolding(page, {
+    instrument: "current_account",
+    name: "Activo preexistente 21",
+    value: "777",
+  });
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("cell", { name: "Activo preexistente 21" })).toBeVisible();
 

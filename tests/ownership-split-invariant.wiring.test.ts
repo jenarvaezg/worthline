@@ -21,50 +21,12 @@ import { vi, describe, test, expect, afterEach } from "vitest";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
-import {
-  createAssetAction,
-  createLiabilityAction,
-} from "../apps/web/app/patrimonio/actions";
+import { type WorthlineStore } from "@worthline/db";
 import {
   createManualAssetSafe,
   createLiabilitySafe,
   createWorkspace,
 } from "@worthline/domain";
-import { catchRedirect, errorMessageOf } from "./helpers";
-
-function buildAssetFormData(overrides: Record<string, string> = {}): FormData {
-  const fd = new FormData();
-  fd.set("name", "Test Asset");
-  fd.set("type", "cash");
-  fd.set("currentValue", "1000");
-  fd.set("liquidityTier", "cash");
-  fd.set("ownershipPreset", "custom");
-  fd.set("currentUrl", "/patrimonio");
-
-  for (const [key, value] of Object.entries(overrides)) {
-    fd.set(key, value);
-  }
-
-  return fd;
-}
-
-function buildLiabilityFormData(overrides: Record<string, string> = {}): FormData {
-  const fd = new FormData();
-  fd.set("name", "Test Debt");
-  fd.set("type", "debt");
-  fd.set("balance", "5000");
-  fd.set("ownershipPreset", "custom");
-  fd.set("currentUrl", "/patrimonio");
-
-  for (const [key, value] of Object.entries(overrides)) {
-    fd.set(key, value);
-  }
-
-  return fd;
-}
-
-// ------------------------------------------------------------- test fixtures --
 
 let store: WorthlineStore;
 
@@ -209,106 +171,3 @@ describe("createLiabilitySafe — ownership-split invariant", () => {
 });
 
 // ---------------------------------------- 2. Action wiring tests (end-to-end) --
-
-describe("createAssetAction — ownership-split wiring", () => {
-  test("valid split (100%) persists the holding and redirects to success", async () => {
-    store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
-      members: [
-        { id: "member_ana", name: "Ana" },
-        { id: "member_jose", name: "Jose" },
-      ],
-      mode: "household",
-    });
-
-    const fd = buildAssetFormData({
-      name: "Cuenta corriente",
-      ownershipPreset: "custom",
-      owner_member_ana: "60",
-      owner_member_jose: "40",
-    });
-
-    const redirectUrl = await catchRedirect(() => createAssetAction(fd, store));
-
-    expect(redirectUrl).toContain("ok=asset_added");
-    expect(store.assets.readAssets()).toHaveLength(1);
-  });
-
-  test("custom split totaling 120% surfaces the exact Spanish message and persists nothing", async () => {
-    store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
-      members: [
-        { id: "member_ana", name: "Ana" },
-        { id: "member_jose", name: "Jose" },
-      ],
-      mode: "household",
-    });
-
-    const fd = buildAssetFormData({
-      name: "Activo",
-      ownershipPreset: "custom",
-      owner_member_ana: "60",
-      owner_member_jose: "60",
-    });
-
-    const redirectUrl = await catchRedirect(() => createAssetAction(fd, store));
-
-    expect(redirectUrl).toContain("error=");
-    expect(errorMessageOf(redirectUrl)).toBe("La propiedad suma 120% — debe sumar 100%.");
-    expect(store.assets.readAssets()).toHaveLength(0);
-  });
-
-  test("real estate custom split can leave the external share outside the household", async () => {
-    store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
-      members: [
-        { id: "member_ana", name: "Ana" },
-        { id: "member_jose", name: "Jose" },
-      ],
-      mode: "household",
-    });
-
-    const fd = buildAssetFormData({
-      acquisitionDate: "2020-05-10",
-      acquisitionValue: "180000",
-      name: "Piso copropiedad",
-      ownershipPreset: "custom",
-      owner_member_ana: "50",
-      owner_member_jose: "",
-      type: "real_estate",
-    });
-
-    const redirectUrl = await catchRedirect(() => createAssetAction(fd, store));
-
-    expect(redirectUrl).toContain("ok=asset_added");
-    expect(store.assets.readAssets()[0]!.ownership).toEqual([
-      { memberId: "member_ana", shareBps: 5_000 },
-    ]);
-  });
-});
-
-describe("createLiabilityAction — ownership-split wiring", () => {
-  test("valid split (100%) persists the liability and redirects to success", async () => {
-    store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
-      members: [
-        { id: "member_ana", name: "Ana" },
-        { id: "member_jose", name: "Jose" },
-      ],
-      mode: "household",
-    });
-
-    const fd = buildLiabilityFormData({
-      name: "Hipoteca",
-      balance: "200000",
-      ownershipPreset: "custom",
-      owner_member_ana: "50",
-      owner_member_jose: "50",
-    });
-
-    const redirectUrl = await catchRedirect(() => createLiabilityAction(fd, store));
-
-    expect(redirectUrl).toContain("ok=liability_added");
-    expect(store.liabilities.readLiabilities()).toHaveLength(1);
-  });
-});

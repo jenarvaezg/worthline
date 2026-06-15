@@ -2,21 +2,16 @@
  * Journey 3: Create asset → success lands at /patrimonio#<id> with success message
  */
 
-import { test, expect } from "./fixtures";
+import { test, expect, addHolding } from "./fixtures";
 
 test("create asset: form → success banner → anchored row in /patrimonio", async ({
   page,
 }) => {
-  await page.goto("/patrimonio/nuevo-activo");
-  await expect(page.getByRole("heading", { name: "Nuevo activo" })).toBeVisible();
-
-  // Fill the form
-  await page.getByLabel("Nombre del activo").fill("Cuenta ING");
-  // Type stays as "cash" (default), liquidityTier stays "cash" (default)
-  await page.getByLabel("Valor actual en EUR").fill("5000");
-
-  // Submit
-  await page.getByRole("button", { name: "Añadir activo" }).click();
+  await addHolding(page, {
+    instrument: "current_account",
+    name: "Cuenta ING",
+    value: "5000",
+  });
 
   // Should land on /patrimonio with success banner
   await expect(page).toHaveURL(/\/patrimonio/);

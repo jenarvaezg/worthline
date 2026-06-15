@@ -6,14 +6,15 @@
  * active assets table.
  */
 
-import { test, expect } from "./fixtures";
+import { test, expect, addHolding } from "./fixtures";
 
 test("delete → papelera → restore round-trip", async ({ page }) => {
   // 1. Create a dedicated asset for this test
-  await page.goto("/patrimonio/nuevo-activo");
-  await page.getByLabel("Nombre del activo").fill("Activo Para Borrar");
-  await page.getByLabel("Valor actual en EUR").fill("1234");
-  await page.getByRole("button", { name: "Añadir activo" }).click();
+  await addHolding(page, {
+    instrument: "current_account",
+    name: "Activo Para Borrar",
+    value: "1234",
+  });
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toHaveText("Activo añadido.");
 

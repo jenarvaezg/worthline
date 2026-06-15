@@ -11,7 +11,7 @@
  * while leaving the workspace untouched.
  */
 
-import { test, expect } from "./fixtures";
+import { test, expect, addHolding } from "./fixtures";
 
 /** A valid version-2 export document, built inline (plain object literal). */
 const importedDoc = {
@@ -46,11 +46,11 @@ test("import replaces the whole workspace; an invalid file changes nothing", asy
   }
 
   // Guarantee pre-existing data: create one asset through the UI.
-  await page.goto("/patrimonio/nuevo-activo");
-  await expect(page.getByRole("heading", { name: "Nuevo activo" })).toBeVisible();
-  await page.getByLabel("Nombre del activo").fill("Activo preexistente 20");
-  await page.getByLabel("Valor actual en EUR").fill("1234");
-  await page.getByRole("button", { name: "Añadir activo" }).click();
+  await addHolding(page, {
+    instrument: "current_account",
+    name: "Activo preexistente 20",
+    value: "1234",
+  });
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("cell", { name: "Activo preexistente 20" })).toBeVisible();
 

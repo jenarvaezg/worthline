@@ -19,6 +19,7 @@ import {
 } from "../../intake";
 import Shell from "../../shell";
 import { createHoldingAction } from "../create-holding-action";
+import SymbolSearch from "./symbol-search";
 
 export const dynamic = "force-dynamic";
 
@@ -182,6 +183,7 @@ export default async function AnadirHoldingPage({
   const values = formError?.formId === "holding" ? formError.values : {};
   const selectedInstrument = values["instrument"];
   const assocOptions = assets.map((a) => ({ id: a.id, name: a.name }));
+  const resolvedParams = resolvedSearchParams ?? {};
 
   // Pure-CSS `:has()` disclosure: one reveal rule per instrument, generated from
   // the catalog so it stays the single source of the instrument list (ADR 0009).
@@ -268,6 +270,8 @@ export default async function AnadirHoldingPage({
                     key={entry.id}
                     entry={entry}
                     values={values}
+                    resolvedParams={resolvedParams}
+                    selectedInstrument={selectedInstrument}
                     assocOptions={assocOptions}
                   />
                 ))}
@@ -296,10 +300,14 @@ function InstrumentPane({
   entry,
   values,
   assocOptions,
+  resolvedParams,
+  selectedInstrument,
 }: {
   entry: InstrumentEntry;
   values: Record<string, string>;
   assocOptions: Array<{ id: string; name: string }>;
+  resolvedParams: Record<string, string | string[] | undefined>;
+  selectedInstrument: string | undefined;
 }) {
   const defaults = defaultsFor(entry.id);
   const isLiability = LIABILITY_INSTRUMENTS.has(entry.id);
@@ -312,7 +320,13 @@ function InstrumentPane({
     >
       <div className="addHoldingMain">
         <h3 className="addHoldingTitle">{entry.label}</h3>
-        <MethodFields entry={entry} values={values} assocOptions={assocOptions} />
+        <MethodFields
+          entry={entry}
+          values={values}
+          resolvedParams={resolvedParams}
+          selectedInstrument={selectedInstrument}
+          assocOptions={assocOptions}
+        />
       </div>
 
       <aside className="addHoldingSummary" aria-label="Se creará">
@@ -352,15 +366,27 @@ function MethodFields({
   entry,
   values,
   assocOptions,
+  resolvedParams,
+  selectedInstrument,
 }: {
   entry: InstrumentEntry;
   values: Record<string, string>;
   assocOptions: Array<{ id: string; name: string }>;
+  resolvedParams: Record<string, string | string[] | undefined>;
+  selectedInstrument: string | undefined;
 }) {
   const id = entry.id;
   const method = defaultsFor(id).valuationMethod;
   const ph = PLACEHOLDERS[id];
-  const v = (key: string): string | undefined => values[`${key}_${id}`];
+  const v = (key: string): string | undefined => {
+    if (id === selectedInstrument) {
+      if (key === "name" && resolvedParams["pfName"])
+        return String(resolvedParams["pfName"]);
+      if (key === "symbol" && resolvedParams["pfSymbol"])
+        return String(resolvedParams["pfSymbol"]);
+    }
+    return values[`${key}_${id}`];
+  };
 
   return (
     <div className="addHoldingFields">
@@ -388,6 +414,24 @@ function MethodFields({
 
       {method === "derived" ? (
         <>
+          <SymbolSearch
+            basePath="/patrimonio/anadir"
+            pickedSymbol={
+              id === selectedInstrument
+                ? typeof resolvedParams["pfSymbol"] === "string"
+                  ? resolvedParams["pfSymbol"]
+                  : undefined
+                : undefined
+            }
+            query={
+              id === selectedInstrument
+                ? typeof resolvedParams["symbolq"] === "string"
+                  ? resolvedParams["symbolq"]
+                  : undefined
+                : undefined
+            }
+            currentParams={resolvedParams}
+          />
           <label>
             Símbolo del proveedor
             {id === "crypto" ? <small> (id de CoinGecko, p. ej. «bitcoin»)</small> : null}

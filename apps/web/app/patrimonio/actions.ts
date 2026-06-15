@@ -4,7 +4,6 @@ import { withStore, type WorthlineStore } from "@worthline/db";
 import {
   assertNotInvestmentAsset,
   checkOwnershipSplit,
-  createLiabilitySafe,
   isHousingAsset,
   isValueUpdateEligible,
 } from "@worthline/domain";
@@ -17,11 +16,9 @@ import {
   errorRedirectUrl,
   mapDomainViolation,
   parseAppreciationRateStrict,
-  parseAssetCommandStrict,
   parseEntityId,
   parseMoneyMinorField,
   parseOwnership,
-  parseLiabilityCommand,
   parseValuationAnchorStrict,
   parseAmortizationPlanStrict,
   parseBalanceAnchorStrict,
@@ -32,7 +29,6 @@ import {
   preserveFields,
   successRedirectUrl,
 } from "../intake";
-import { persistManualAssetCreation } from "./persist-holding";
 
 /**
  * Server actions for the /patrimonio section.
@@ -40,27 +36,6 @@ import { persistManualAssetCreation } from "./persist-holding";
  * parsers, anchors to row ids, and redirects back to /patrimonio.
  */
 
-const ASSET_FORM_FIELDS = [
-  "name",
-  "type",
-  "currentValue",
-  "liquidityTier",
-  "isPrimaryResidence",
-  "ownershipPreset",
-  "acquisitionDate",
-  "acquisitionValue",
-  "rate",
-  "initialValuationDate",
-  "initialValuationValue",
-  "initialAdjustsPriorCurve",
-];
-const LIABILITY_FORM_FIELDS = [
-  "name",
-  "type",
-  "balance",
-  "associatedAssetId",
-  "ownershipPreset",
-];
 const EDIT_ASSET_FIELDS = [
   "name",
   "type",
@@ -72,105 +47,6 @@ const EDIT_ASSET_FIELDS = [
 /** Base page URL for actions in this section — the patrimonio list. */
 function baseUrl(formData: FormData): string {
   return (formData.get("currentUrl") as string) || "/patrimonio";
-}
-
-export async function createAssetAction(
-  formData: FormData,
-  _store?: WorthlineStore,
-): Promise<never> {
-  const returnUrl = baseUrl(formData);
-
-  const assetErrorUrl = (message: string) =>
-    errorRedirectUrl(returnUrl, {
-      formId: "asset",
-      message,
-      values: preserveFields(formData, ASSET_FORM_FIELDS, ["owner_"]),
-    });
-
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
-    _store ? fn(_store) : withStore(fn);
-
-  const result = runWith((store) => {
-    const workspace = store.workspace.readWorkspace();
-
-    if (!workspace) {
-      return { ok: false as const, error: "Workspace no inicializado." };
-    }
-
-    const parsed = parseAssetCommandStrict(formData, workspace.members, Date.now());
-
-    if (!parsed.ok) {
-      return { ok: false as const, error: parsed.error };
-    }
-
-    return persistManualAssetCreation(
-      store,
-      workspace,
-      parsed.command,
-      Date.now(),
-      new Date().toISOString().slice(0, 10),
-    );
-  });
-
-  if (!result.ok) {
-    redirect(assetErrorUrl(result.error!));
-  }
-
-  redirect(successRedirectUrl("/patrimonio", "asset_added", result.id!));
-}
-
-export async function createLiabilityAction(
-  formData: FormData,
-  _store?: WorthlineStore,
-): Promise<never> {
-  const returnUrl = baseUrl(formData);
-
-  const liabilityErrorUrl = (message: string) =>
-    errorRedirectUrl(returnUrl, {
-      formId: "liability",
-      message,
-      values: preserveFields(formData, LIABILITY_FORM_FIELDS, ["owner_"]),
-    });
-
-  const balance = parseMoneyMinorField(formData, "balance");
-
-  if (balance === null) {
-    redirect(liabilityErrorUrl("El saldo de la deuda no es válido."));
-  }
-
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
-    _store ? fn(_store) : withStore(fn);
-
-  const result = runWith((store) => {
-    const workspace = store.workspace.readWorkspace();
-
-    if (!workspace) {
-      return { ok: false, error: "Workspace no inicializado." };
-    }
-
-    const command = parseLiabilityCommand(formData, workspace.members, Date.now());
-    // A debt on a co-owned home mirrors the asset's (possibly partial) split (#171).
-    const associatedAsset = command.associatedAssetId
-      ? (store.assets.readAssets().find((a) => a.id === command.associatedAssetId) ??
-        null)
-      : null;
-    const allowKnownPartial = associatedAsset?.type === "real_estate";
-    const domainResult = createLiabilitySafe(workspace, command, { allowKnownPartial });
-
-    if (!domainResult.ok) {
-      return { ok: false, error: mapDomainViolation(domainResult.violations[0]) };
-    }
-
-    store.liabilities.createLiability(command);
-
-    return { ok: true, id: command.id };
-  });
-
-  if (!result.ok) {
-    redirect(liabilityErrorUrl(result.error!));
-  }
-
-  redirect(successRedirectUrl("/patrimonio", "liability_added", result.id!));
 }
 
 export async function deleteAssetAction(
