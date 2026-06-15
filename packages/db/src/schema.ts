@@ -17,6 +17,7 @@ import type {
 import { sql } from "drizzle-orm";
 import {
   check,
+  index,
   integer,
   primaryKey,
   real,
@@ -80,41 +81,53 @@ export const memberGroupMembers = sqliteTable(
   (table) => [primaryKey({ columns: [table.groupId, table.memberId] })],
 );
 
-export const assets = sqliteTable("assets", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  type: text("type").$type<AssetType>().notNull(),
-  currency: text("currency").notNull(),
-  currentValueMinor: integer("current_value_minor").notNull(),
-  liquidityTier: text("liquidity_tier").$type<LiquidityTier>().notNull(),
-  isPrimaryResidence: integer("is_primary_residence").notNull().default(0),
-  /**
-   * How the holding's value evolves (ADR 0014, #148): stored | derived |
-   * appreciating | amortized | anchored. Nullable forward-prep — backfilled from
-   * `type` by the v13 migration; in S2 the dispatcher still derives the method at
-   * the valuation boundary. No CHECK — the enum is enforced in TS, like
-   * `liquidity_tier`.
-   */
-  valuationMethod: text("valuation_method").$type<ValuationMethod>(),
-  /**
-   * What the holding is (ADR 0014, #149): one of the instrument vocabulary
-   * (current_account, fund, property, …). Nullable — backfilled from `type`
-   * (and the investment's price provider) by the v14 migration. No CHECK — the
-   * enum is enforced in TS, like `liquidity_tier` / `valuation_method`. Housing
-   * equity is re-sourced from `instrument = 'property'`.
-   */
-  instrument: text("instrument").$type<Instrument>(),
-  /**
-   * Decimal-string annual appreciation rate (e.g. "0.03") used to drift a
-   * real-estate asset's value between/beyond its valuation anchors. Null means
-   * no drift. Only meaningful for real_estate assets — the guard lives in the
-   * domain/caller, not as a SQL constraint (PRD #108, slice 4 / pattern R9).
-   */
-  annualAppreciationRate: text("annual_appreciation_rate"),
-  deletedAt: text("deleted_at"),
-  createdAt: timestamp("created_at"),
-  updatedAt: timestamp("updated_at"),
-});
+export const assets = sqliteTable(
+  "assets",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    type: text("type").$type<AssetType>().notNull(),
+    currency: text("currency").notNull(),
+    currentValueMinor: integer("current_value_minor").notNull(),
+    liquidityTier: text("liquidity_tier").$type<LiquidityTier>().notNull(),
+    isPrimaryResidence: integer("is_primary_residence").notNull().default(0),
+    /**
+     * How the holding's value evolves (ADR 0014, #148): stored | derived |
+     * appreciating | amortized | anchored. Nullable forward-prep — backfilled from
+     * `type` by the v13 migration; in S2 the dispatcher still derives the method at
+     * the valuation boundary. No CHECK — the enum is enforced in TS, like
+     * `liquidity_tier`.
+     */
+    valuationMethod: text("valuation_method").$type<ValuationMethod>(),
+    /**
+     * What the holding is (ADR 0014, #149): one of the instrument vocabulary
+     * (current_account, fund, property, …). Nullable — backfilled from `type`
+     * (and the investment's price provider) by the v14 migration. No CHECK — the
+     * enum is enforced in TS, like `liquidity_tier` / `valuation_method`. Housing
+     * equity is re-sourced from `instrument = 'property'`.
+     */
+    instrument: text("instrument").$type<Instrument>(),
+    /**
+     * Decimal-string annual appreciation rate (e.g. "0.03") used to drift a
+     * real-estate asset's value between/beyond its valuation anchors. Null means
+     * no drift. Only meaningful for real_estate assets — the guard lives in the
+     * domain/caller, not as a SQL constraint (PRD #108, slice 4 / pattern R9).
+     */
+    annualAppreciationRate: text("annual_appreciation_rate"),
+    deletedAt: text("deleted_at"),
+    createdAt: timestamp("created_at"),
+    updatedAt: timestamp("updated_at"),
+  },
+  (table) => [
+    // Trash read (#201): WHERE deleted_at IS NOT NULL ORDER BY name. A PARTIAL
+    // index over only the trashed rows — keyed by name so the read is an indexed
+    // lookup with no temp-b-tree sort, and the index stays tiny because live
+    // holdings (the overwhelming majority) are excluded.
+    index("assets_deleted_at_idx")
+      .on(table.name)
+      .where(sql`${table.deletedAt} IS NOT NULL`),
+  ],
+);
 
 /**
  * Manual valuation anchors for a real-estate asset (PRD #108, slice 4). Each row
@@ -173,43 +186,66 @@ export const investmentAssets = sqliteTable("investment_assets", {
   manualPricedAt: text("manual_priced_at"),
 });
 
-export const assetOperations = sqliteTable("asset_operations", {
-  id: text("id").primaryKey(),
-  assetId: text("asset_id")
-    .notNull()
-    .references(() => assets.id, { onDelete: "cascade" }),
-  kind: text("kind").$type<OperationKind>().notNull(),
-  executedAt: text("executed_at").notNull(),
-  units: text("units").notNull(),
-  pricePerUnit: text("price_per_unit").notNull(),
-  currency: text("currency").notNull(),
-  feesMinor: integer("fees_minor").notNull().default(0),
-  createdAt: timestamp("created_at"),
-});
+export const assetOperations = sqliteTable(
+  "asset_operations",
+  {
+    id: text("id").primaryKey(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<OperationKind>().notNull(),
+    executedAt: text("executed_at").notNull(),
+    units: text("units").notNull(),
+    pricePerUnit: text("price_per_unit").notNull(),
+    currency: text("currency").notNull(),
+    feesMinor: integer("fees_minor").notNull().default(0),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    // Per-investment operation read (#201): WHERE asset_id ORDER BY executed_at, id.
+    // The (asset_id, executed_at, id) order matches the filter + sort exactly, so
+    // the read is a pure indexed range scan with no temp-b-tree sort.
+    index("asset_operations_asset_executed_idx").on(
+      table.assetId,
+      table.executedAt,
+      table.id,
+    ),
+  ],
+);
 
-export const liabilities = sqliteTable("liabilities", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  type: text("type").$type<LiabilityType>().notNull(),
-  currency: text("currency").notNull(),
-  currentBalanceMinor: integer("current_balance_minor").notNull(),
-  associatedAssetId: text("associated_asset_id").references(() => assets.id, {
-    onDelete: "set null",
-  }),
-  /**
-   * How the liability is modelled for historical reconstruction (PRD #109,
-   * slice 7): "amortizable" | "revolving" | "informal". Null means no model is
-   * declared — the current balance is used as-is, with no derived history.
-   */
-  debtModel: text("debt_model").$type<DebtModel>(),
-  /** Valuation method (ADR 0014, #148); backfilled from `debt_model` by the v13 migration. */
-  valuationMethod: text("valuation_method").$type<ValuationMethod>(),
-  /** What the liability is (ADR 0014, #149): mortgage | loan | credit_card. Backfilled by v14. */
-  instrument: text("instrument").$type<Instrument>(),
-  deletedAt: text("deleted_at"),
-  createdAt: timestamp("created_at"),
-  updatedAt: timestamp("updated_at"),
-});
+export const liabilities = sqliteTable(
+  "liabilities",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    type: text("type").$type<LiabilityType>().notNull(),
+    currency: text("currency").notNull(),
+    currentBalanceMinor: integer("current_balance_minor").notNull(),
+    associatedAssetId: text("associated_asset_id").references(() => assets.id, {
+      onDelete: "set null",
+    }),
+    /**
+     * How the liability is modelled for historical reconstruction (PRD #109,
+     * slice 7): "amortizable" | "revolving" | "informal". Null means no model is
+     * declared — the current balance is used as-is, with no derived history.
+     */
+    debtModel: text("debt_model").$type<DebtModel>(),
+    /** Valuation method (ADR 0014, #148); backfilled from `debt_model` by the v13 migration. */
+    valuationMethod: text("valuation_method").$type<ValuationMethod>(),
+    /** What the liability is (ADR 0014, #149): mortgage | loan | credit_card. Backfilled by v14. */
+    instrument: text("instrument").$type<Instrument>(),
+    deletedAt: text("deleted_at"),
+    createdAt: timestamp("created_at"),
+    updatedAt: timestamp("updated_at"),
+  },
+  (table) => [
+    // Trash read (#201): WHERE deleted_at IS NOT NULL ORDER BY name. The asset-side
+    // partial index's mirror — only trashed liabilities are indexed, keyed by name.
+    index("liabilities_deleted_at_idx")
+      .on(table.name)
+      .where(sql`${table.deletedAt} IS NOT NULL`),
+  ],
+);
 
 /**
  * One French-amortization plan for an amortizable liability (PRD #109, slice 7).
@@ -391,14 +427,23 @@ export const positions = sqliteTable("positions", {
   createdAt: timestamp("created_at"),
 });
 
-export const auditLog = sqliteTable("audit_log", {
-  id: text("id").primaryKey(),
-  action: text("action").notNull(),
-  entityType: text("entity_type").notNull(),
-  entityId: text("entity_id").notNull(),
-  detailsJson: text("details_json").notNull().default("{}"),
-  createdAt: timestamp("created_at"),
-});
+export const auditLog = sqliteTable(
+  "audit_log",
+  {
+    id: text("id").primaryKey(),
+    action: text("action").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    detailsJson: text("details_json").notNull().default("{}"),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    // Per-entity audit read (#201): WHERE entity_id ORDER BY created_at. The
+    // (entity_id, created_at) order matches the filter + sort, so a holding's
+    // history is a pure indexed range scan with no temp-b-tree sort.
+    index("audit_log_entity_created_idx").on(table.entityId, table.createdAt),
+  ],
+);
 
 export const warningOverrides = sqliteTable(
   "warning_overrides",
