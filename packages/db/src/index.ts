@@ -985,6 +985,29 @@ function readManualValueHistory(db: StoreDb): Map<string, ManualValuePoint[]> {
 }
 
 /**
+ * Group a scope's batched frozen-holding read by snapshot date (#205). The input
+ * is the result of a single `readSnapshotHoldings({ scopeId, from })` call —
+ * already ordered (dateKey, scopeId, kind, label, holdingId) — so iterating it in
+ * order and appending into each date's bucket preserves, per date, the exact row
+ * order the old one-query-per-snapshot read produced. The ripple then looks each
+ * snapshot's rows up by date instead of re-querying the store for every snapshot.
+ */
+function groupFrozenHoldingsByDate(
+  records: readonly SnapshotHoldingRecord[],
+): Map<string, SnapshotHoldingRecord[]> {
+  const byDate = new Map<string, SnapshotHoldingRecord[]>();
+  for (const record of records) {
+    const bucket = byDate.get(record.dateKey);
+    if (bucket) {
+      bucket.push(record);
+    } else {
+      byDate.set(record.dateKey, [record]);
+    }
+  }
+  return byDate;
+}
+
+/**
  * Ripple effect (ADR 0012): a backdated operation change regenerates the
  * snapshot at its date and recalculates the existing snapshots it affects.
  *
@@ -1060,6 +1083,18 @@ function rippleHistoricalSnapshots(
         }
       }
 
+      // Read the affected scope's frozen rows in ONE batched query for the whole
+      // ≥ operation-date range (#205), then group them by snapshot date in memory
+      // — instead of one query per snapshot date. The batched read uses the same
+      // ordering as the single-date read it replaces (dateKey, scopeId, kind,
+      // label, holdingId), so each snapshot's grouped rows arrive in the byte-
+      // identical order recalculateSnapshotForAsset saw before, preserving ADR
+      // 0012 behavior exactly. A date absent from the map had no frozen rows (a
+      // legacy capture predating holdings, ADR 0008) and is left untouched.
+      const frozenByDate = groupFrozenHoldingsByDate(
+        readSnapshotHoldings(db, { scopeId: scope.id, from: operationDateKey }),
+      );
+
       // Recalculate every affected existing snapshot — only the operated
       // asset's row changes; all other frozen rows are preserved. (Both modes
       // recalculate ≥ D: record relies on the generate branch above for a
@@ -1067,11 +1102,7 @@ function rippleHistoricalSnapshots(
       for (const snap of existing) {
         if (snap.dateKey < operationDateKey) continue;
 
-        const frozenHoldings = readSnapshotHoldings(db, {
-          scopeId: scope.id,
-          from: snap.dateKey,
-          to: snap.dateKey,
-        });
+        const frozenHoldings = frozenByDate.get(snap.dateKey) ?? [];
 
         // A legacy capture predating holdings (ADR 0008) has no rows to
         // recompute against — leave its frozen figures untouched.
