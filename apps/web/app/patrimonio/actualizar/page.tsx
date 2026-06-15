@@ -1,5 +1,10 @@
 import { runBootstrapHealthcheck, withStore } from "@worthline/db";
-import { formatMoneyInput, formatMoneyMinor, listScopeOptions } from "@worthline/domain";
+import {
+  formatMoneyInput,
+  formatMoneyMinor,
+  isValueUpdateEligible,
+  listScopeOptions,
+} from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -39,10 +44,11 @@ export default async function PuestaAlDiaPage({
     const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
 
     return {
-      // Only manual (non-investment) assets, sorted stalest first via updatedAt
+      // Only hand-valued assets — derived holdings (investments, connected-source
+      // coin collections) are valued from their sub-detail, never in this pass.
       assets: store.assets
         .readAssets()
-        .filter((a) => a.type !== "investment")
+        .filter(isValueUpdateEligible)
         .sort((a, b) => {
           // Stable fallback: sort by id alphabetically for determinism
           return a.id.localeCompare(b.id);

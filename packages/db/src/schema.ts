@@ -10,6 +10,7 @@ import type {
   PriceFreshnessState,
   PriceSource,
   SnapshotHoldingKind,
+  SourceAdapter,
   ValuationMethod,
   WorkspaceMode,
 } from "@worthline/domain";
@@ -316,6 +317,60 @@ export const liabilityBalanceAnchors = sqliteTable(
     ),
   ],
 );
+
+/**
+ * A connected source: an external account worthline mirrors read-only (PRD #160,
+ * ADR 0016/0017). It projects its positions into ONE rolled-up holding (the
+ * `asset_id` row), whose value is derived from the positions — never hand-set.
+ * `adapter` ∈ {numista} is enforced in TS, like the other text enums (no CHECK).
+ * `credentials_json` (API key + OAuth client) and `token_json` (cached access
+ * token + expiry) are LOCAL ONLY and never exported (ADR 0016).
+ */
+export const connectedSources = sqliteTable("connected_sources", {
+  id: text("id").primaryKey(),
+  adapter: text("adapter").$type<SourceAdapter>().notNull(),
+  label: text("label").notNull(),
+  // The materialized rolled-up holding this source projects into (ADR 0016).
+  assetId: text("asset_id")
+    .notNull()
+    .references(() => assets.id, { onDelete: "cascade" }),
+  // Local-only secrets — NEVER exported (ADR 0016). JSON blob of API key + OAuth client.
+  credentialsJson: text("credentials_json").notNull(),
+  // Cached OAuth token JSON (access_token + expiry); null until first mint.
+  tokenJson: text("token_json"),
+  lastSyncAt: text("last_sync_at"),
+  createdAt: timestamp("created_at"),
+  updatedAt: timestamp("updated_at"),
+});
+
+/**
+ * One line a connected source mirrors — for Numista, a coin you own (PRD #160,
+ * ADR 0017). Sits beneath the projected holding as sub-detail, the way an
+ * operation sits beneath an investment (ADR 0014). `liquidity_tier` ∈ the ladder
+ * vocabulary is enforced in TS (no CHECK); `metal` is grouping metadata for the
+ * detail-page lens, null when the source records no metal.
+ */
+export const positions = sqliteTable("positions", {
+  id: text("id").primaryKey(),
+  sourceId: text("source_id")
+    .notNull()
+    .references(() => connectedSources.id, { onDelete: "cascade" }),
+  catalogueId: text("catalogue_id").notNull(),
+  name: text("name").notNull(),
+  grade: text("grade").notNull(),
+  quantity: integer("quantity").notNull(),
+  liquidityTier: text("liquidity_tier").$type<LiquidityTier>().notNull(),
+  metal: text("metal"),
+  // Optional Numista fields — present only when the user recorded them (#161).
+  purchaseDate: text("purchase_date"),
+  purchasePriceMinor: integer("purchase_price_minor"),
+  // The two candidate values (ADR 0017), computed at sync time; null when not
+  // resolved (base-metal coin with no spot / no numismatic estimate).
+  metalValueMinor: integer("metal_value_minor"),
+  numismaticValueMinor: integer("numismatic_value_minor"),
+  currency: text("currency").notNull(),
+  createdAt: timestamp("created_at"),
+});
 
 export const auditLog = sqliteTable("audit_log", {
   id: text("id").primaryKey(),

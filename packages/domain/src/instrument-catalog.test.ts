@@ -47,6 +47,18 @@ describe("defaultsFor — instrument defaults (#149)", () => {
     expect(defaults.valuationMethod).toBe("derived");
     expect(defaults.priceProvider).toBe("coingecko");
   });
+
+  test("a coin collection is illiquid and derived from its positions (ADR 0016)", () => {
+    // The projected "Colección Numista" holding: value computed from its
+    // positions (never hand-set), so it is `derived` — no sixth valuation
+    // method — and it sits on the illiquid rung. It is priced from its
+    // positions, not by a market provider, so it carries no priceProvider.
+    const defaults = defaultsFor("coin_collection");
+
+    expect(defaults.rung).toBe("illiquid");
+    expect(defaults.valuationMethod).toBe("derived");
+    expect(defaults.priceProvider).toBeUndefined();
+  });
 });
 
 describe("defaultsFor — covers every instrument (#149 AC)", () => {
@@ -73,6 +85,7 @@ describe("defaultsFor — covers every instrument (#149 AC)", () => {
     loan: { rung: "cash", valuationMethod: "amortized" },
     credit_card: { rung: "cash", valuationMethod: "anchored" },
     other: { rung: "illiquid", valuationMethod: "stored" },
+    coin_collection: { rung: "illiquid", valuationMethod: "derived" },
   };
 
   test.each(Object.keys(EXPECTED) as Instrument[])(

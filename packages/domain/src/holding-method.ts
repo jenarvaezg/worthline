@@ -25,6 +25,19 @@ export function valuationMethodOfAsset(asset: ManualAsset): ValuationMethod {
 }
 
 /**
+ * Whether an asset appears in (and can be edited by) the manual value-update pass
+ * ("puesta al día"). A `derived` holding is valued from its sub-detail, never
+ * hand-set — an investment from its operations + price, a connected-source coin
+ * collection from its positions (ADR 0014/0016) — so it is excluded. Every other
+ * method (stored, appreciating, …) is hand-valued and eligible. This is the single
+ * seam both the value-update page (what it lists) and its action (what it rejects)
+ * read, so the two never drift.
+ */
+export function isValueUpdateEligible(asset: ManualAsset): boolean {
+  return valuationMethodOfAsset(asset) !== "derived";
+}
+
+/**
  * The valuation method a liability is configured by — its debt model decides:
  * `amortizable` → `amortized`, `revolving`/`informal` → `anchored`, no model →
  * `stored`. A thin alias over `defaultValuationMethodForDebtModel` so the page's

@@ -6,6 +6,7 @@ import {
   checkOwnershipSplit,
   createLiabilitySafe,
   isHousingAsset,
+  isValueUpdateEligible,
 } from "@worthline/domain";
 import type { OwnershipShare } from "@worthline/domain";
 import { redirect } from "next/navigation";
@@ -493,17 +494,18 @@ export async function batchValueUpdateAction(
 
   const result = runWith((store) => {
     const allAssets = store.assets.readAssets();
-    const investmentIds = new Set(
-      allAssets.filter((a) => a.type === "investment").map((a) => a.id),
+    const derivedIds = new Set(
+      allAssets.filter((a) => !isValueUpdateEligible(a)).map((a) => a.id),
     );
-    const manualAssets = allAssets.filter((a) => a.type !== "investment");
+    const manualAssets = allAssets.filter(isValueUpdateEligible);
     const liabilities = store.liabilities.readLiabilities();
 
-    // Reject submissions that name an investment holding — their value is derived.
+    // Reject submissions that name a derived holding (investment or connected-source
+    // coin collection) — their value is computed from sub-detail, never hand-set.
     for (const [key] of formData.entries()) {
       if (!key.startsWith("val_")) continue;
       const assetId = key.slice(4);
-      if (investmentIds.has(assetId)) {
+      if (derivedIds.has(assetId)) {
         return {
           ok: false,
           error: mapDomainViolation({ code: "value_update_investment_holding" }),

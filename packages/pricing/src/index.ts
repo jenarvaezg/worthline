@@ -95,6 +95,28 @@ export type { SymbolCandidate } from "./search";
 export { stooqProvider } from "./stooq";
 export { yahooProvider } from "./yahoo";
 export { refreshStalePrices } from "./refresh-stale-prices";
+export {
+  getCollectedItems,
+  getPrices,
+  getTypeDetail,
+  isTokenValid,
+  mapCollectedItem,
+  mintNumistaToken,
+  numismaticEstimateMinor,
+} from "./numista";
+export type {
+  CollectedItemDraft,
+  NumistaCollectedItem,
+  NumistaCredentials,
+  NumistaPriceEntry,
+  NumistaPrices,
+  NumistaToken,
+  NumistaTypeDetail,
+} from "./numista";
+export { metalValueMinor, parseComposition, STOOQ_METAL_SYMBOL } from "./metal";
+export type { MetalKind, MetalValueInput, ParsedComposition } from "./metal";
+export { fetchMetalSpotEur, syncNumistaCollection } from "./numista-sync";
+export type { NumistaSyncDeps, PositionDraft } from "./numista-sync";
 export type {
   InvestmentAssetRef,
   RefreshStalePricesResult,

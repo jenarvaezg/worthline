@@ -233,5 +233,35 @@ CREATE TABLE \`early_repayments\` (
 	FOREIGN KEY (\`plan_id\`) REFERENCES \`amortization_plans\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX \`early_repayments_plan_date_unique\` ON \`early_repayments\` (\`plan_id\`,\`repayment_date\`);
+CREATE UNIQUE INDEX \`early_repayments_plan_date_unique\` ON \`early_repayments\` (\`plan_id\`,\`repayment_date\`);--> statement-breakpoint
+CREATE TABLE \`connected_sources\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`adapter\` text NOT NULL,
+	\`label\` text NOT NULL,
+	\`asset_id\` text NOT NULL,
+	\`credentials_json\` text NOT NULL,
+	\`token_json\` text,
+	\`last_sync_at\` text,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE TABLE \`positions\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`source_id\` text NOT NULL,
+	\`catalogue_id\` text NOT NULL,
+	\`name\` text NOT NULL,
+	\`grade\` text NOT NULL,
+	\`quantity\` integer NOT NULL,
+	\`liquidity_tier\` text NOT NULL,
+	\`metal\` text,
+	\`purchase_date\` text,
+	\`purchase_price_minor\` integer,
+	\`metal_value_minor\` integer,
+	\`numismatic_value_minor\` integer,
+	\`currency\` text NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`source_id\`) REFERENCES \`connected_sources\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
 `;

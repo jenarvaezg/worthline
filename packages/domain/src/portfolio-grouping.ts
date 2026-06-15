@@ -78,6 +78,7 @@ const INSTRUMENT_LABELS: Record<Instrument, string> = {
   mortgage: "Hipoteca",
   loan: "Préstamo",
   credit_card: "Tarjeta de crédito",
+  coin_collection: "Colección de monedas",
   other: "Otro",
 };
 

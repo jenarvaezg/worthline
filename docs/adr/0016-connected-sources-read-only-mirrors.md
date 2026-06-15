@@ -41,13 +41,16 @@ account, no login, and no server holding user data.
 
 Reading a user's Numista collection requires OAuth2 (the API key alone returns
 403 on `collected_items`). Numista's documented example uses the interactive
-authorization-code flow, but the **`client_credentials`** grant works
-non-interactively for reading _your own_ collection **when `scope=view_collection`
-is sent** (confirmed by Numista's admin in their forum). The user registers their
-own Numista API app and stores its credentials (API key + OAuth client
-id/secret) in local config (`.env`, gitignored); worthline mints and caches the
-2-hour token on demand and re-mints on expiry. This is the first time worthline
-holds delegated credentials.
+authorization-code flow, but the **`client_credentials`** grant reads _your own_
+collection non-interactively. Per Numista's API docs that grant authenticates
+"to your own account" with **only** `grant_type=client_credentials` +
+`scope=view_collection` in the body, plus the API key in the `Numista-API-Key`
+header: **the API key _is_ the credential** — there is no separate OAuth client
+to register (the authorization-code flow even defines `client_secret` _as_ the
+API key). So the user generates their Numista API key and stores **just that**
+in local config (`.env`, gitignored); worthline mints and caches the ~2-hour
+access token on demand and re-mints on expiry. This is the first time worthline
+holds a delegated credential.
 
 ## Considered options
 
@@ -62,8 +65,8 @@ holds delegated credentials.
 - **A parallel "positions" value layer beside holdings** — rejected: it splits the
   unified holding model in two, doubling every figure/snapshot/export code path.
 - **Shared, app-shipped Numista credentials (zero setup)** — rejected: a local-first
-  app can't ship a `client_secret` safely, and a shared key would share the
-  2,000-request/month cap across all users. A cloud proxy to hide the secret would
+  app can't ship its API key (the credential) safely, and a shared key would share
+  the 2,000-request/month cap across all users. A cloud proxy to hide the key would
   itself violate local-first.
 - **The documented authorization-code flow** — viable fallback, but it forces a
   browser round-trip and refresh-token bookkeeping; `client_credentials` is

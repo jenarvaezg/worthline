@@ -129,6 +129,10 @@ const PLACEHOLDERS: Record<Instrument, Placeholders> = {
   mortgage: { name: "Hipoteca Santander", balance: "120.000,00" },
   loan: { name: "Préstamo coche", balance: "8.000,00" },
   credit_card: { name: "Visa BBVA", balance: "850,00" },
+  // A connected source's rolled-up holding (e.g. "Colección Numista") is created
+  // by syncing the source, never hand-added — so it is absent from FAMILIES and
+  // never rendered here. This entry only satisfies the exhaustive Instrument map.
+  coin_collection: { name: "Colección Numista" },
 };
 
 /** The liquidity-tier color token a holding's rung paints with (design-system §5). */

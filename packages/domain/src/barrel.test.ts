@@ -59,6 +59,10 @@ const KEY_EXPORTS = [
   // asset-projection
   "projectAssets",
   "projectPositions",
+  // connected-source
+  "projectConnectedSource",
+  "coinValue",
+  "groupPositionsByMetal",
   // prices
   "defaultInvestmentPriceProvider",
   "getPriceFreshness",
