@@ -558,5 +558,10 @@ export const snapshotHoldings = sqliteTable(
       table.kind,
       table.holdingId,
     ),
+    // Targeted single-holding reads (#207): the housing valuation ripples find the
+    // earliest frozen row of one asset by (holding_id, kind). The unique index
+    // above leads with snapshot_id, so it can't serve a holding-first lookup —
+    // this index does, turning a full snapshot_holdings scan into a lookup.
+    index("snapshot_holdings_holding_kind_idx").on(table.holdingId, table.kind),
   ],
 );
