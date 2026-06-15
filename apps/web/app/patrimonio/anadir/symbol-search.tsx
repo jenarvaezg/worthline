@@ -1,6 +1,8 @@
 import { searchSymbols } from "@worthline/pricing";
 import Link from "next/link";
 
+import { buildSymbolSearchCurrentParams } from "./search-state";
+
 /**
  * Symbol search for the investment forms — no client JS, matching the app's
  * server-rendered form ethos. A GET sub-form posts the query back to the same
@@ -24,11 +26,12 @@ export default async function SymbolSearch({
 }) {
   const trimmed = query?.trim() ?? "";
   const candidates = trimmed ? await searchSymbols(trimmed) : [];
+  const preservedParams = buildSymbolSearchCurrentParams(currentParams);
 
   function prefillHref(symbol: string, name: string, provider: string): string {
     const params = new URLSearchParams();
     // Copy current params to preserve selected instrument and typed values
-    for (const [key, value] of Object.entries(currentParams)) {
+    for (const [key, value] of Object.entries(preservedParams)) {
       if (value !== undefined) {
         if (Array.isArray(value)) {
           value.forEach((v) => params.append(key, v));
