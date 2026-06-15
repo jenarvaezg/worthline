@@ -395,11 +395,21 @@ export async function updateInvestmentAction(
   }
 
   const existing = runWith((store) => store.assets.readInvestmentAssetById(routeAssetId));
+  const nextLiquidityTier =
+    parsed.command.liquidityTier ?? existing?.liquidityTier ?? "market";
+  const nextPriceProvider =
+    parsed.command.priceProvider ?? defaultInvestmentPriceProvider(nextLiquidityTier);
+  const nextProviderSymbol = parsed.command.providerSymbol;
+  const priceConfigChanged = Boolean(
+    existing &&
+    (existing.priceProvider !== nextPriceProvider ||
+      existing.providerSymbol !== nextProviderSymbol),
+  );
   const validationError = await validateInvestmentProviderSymbol({
     assetId: routeAssetId,
     currency: existing?.currency ?? "EUR",
-    liquidityTier: parsed.command.liquidityTier ?? existing?.liquidityTier ?? "market",
-    priceProvider: parsed.command.priceProvider ?? existing?.priceProvider,
+    liquidityTier: nextLiquidityTier,
+    priceProvider: nextPriceProvider,
     providerSymbol: parsed.command.providerSymbol,
   });
 
@@ -407,7 +417,12 @@ export async function updateInvestmentAction(
     redirect(editErrorUrl(validationError));
   }
 
-  runWith((store) => store.assets.updateInvestmentAsset(parsed.command));
+  runWith((store) => {
+    store.assets.updateInvestmentAsset(parsed.command);
+    if (priceConfigChanged) {
+      store.operations.clearPriceCache(routeAssetId);
+    }
+  });
   redirect(successRedirectUrl(returnUrl, "saved"));
 }
 

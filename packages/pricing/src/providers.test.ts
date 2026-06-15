@@ -178,6 +178,48 @@ describe("yahooProvider", () => {
     expect(result).toEqual({ price: "123.45", currency: "EUR" });
   });
 
+  it("prefers the latest valid chart close over stale Yahoo metadata", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        chart: {
+          result: [
+            {
+              meta: {
+                currency: "EUR",
+                regularMarketPrice: 21.22,
+              },
+              timestamp: [1781074800, 1781161200, 1781247600, 1781506800],
+              indicators: {
+                quote: [
+                  {
+                    close: [
+                      40.507999420166016,
+                      40.746498107910156,
+                      41.500999450683594,
+                      null,
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    } as Response);
+
+    const result = await yahooProvider.fetchPrice({
+      ...baseCtx,
+      symbol: "IE0007987708.IR",
+    });
+
+    expect(result).toEqual({
+      price: "41.50099945",
+      currency: "EUR",
+      priceDate: "2026-06-12",
+    });
+  });
+
   it("converts non-EUR Yahoo prices to EUR through ECB rates", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce({

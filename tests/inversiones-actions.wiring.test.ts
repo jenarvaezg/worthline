@@ -101,6 +101,46 @@ describe("updateInvestmentAction wiring", () => {
     expect(asset?.unitSymbol).toBe("VWRL.UK");
   });
 
+  test("changing provider symbol clears the old cached price", async () => {
+    setupStoreWithInvestment();
+    store.assets.updateInvestmentAsset({
+      id: INVESTMENT_ID,
+      name: "Index Fund",
+      liquidityTier: "market",
+      priceProvider: "yahoo",
+      providerSymbol: "OLD.MC",
+    });
+    store.operations.upsertPrice({
+      assetId: INVESTMENT_ID,
+      currency: "EUR",
+      fetchedAt: "2026-06-08T10:00:00Z",
+      freshnessState: "fresh",
+      price: "12.34",
+      source: "yahoo",
+    });
+
+    const url = await catchRedirect(() =>
+      updateInvestmentAction(
+        INVESTMENT_ID,
+        fd(
+          {
+            name: "Index Fund",
+            priceProvider: "finect",
+            providerSymbol: "N5394",
+          },
+          "/inversiones",
+        ),
+        store,
+      ),
+    );
+
+    expect(url).toContain("ok=saved");
+    expect(store.assets.readInvestmentAssetById(INVESTMENT_ID)?.providerSymbol).toBe(
+      "N5394",
+    );
+    expect(store.operations.readPriceCache(INVESTMENT_ID)).toBeNull();
+  });
+
   test("blank name: error redirect, asset unchanged", async () => {
     setupStoreWithInvestment();
 

@@ -68,6 +68,7 @@ export interface OperationsStore {
     liabilityCommands: ValueUpdateCommand[],
   ) => void;
   upsertPrice: (price: AssetPrice) => void;
+  clearPriceCache: (assetId: string) => number;
   readPriceCache: (assetId: string) => AssetPrice | null;
   readAllPriceCacheEntries: () => AssetPrice[];
 }
@@ -82,6 +83,7 @@ export function createOperationsStore(ctx: StoreContext): OperationsStore {
     batchApplyAllValueUpdates: (assetCommands, liabilityCommands) =>
       batchApplyAllValueUpdates(ctx, assetCommands, liabilityCommands),
     upsertPrice: (price) => upsertPrice(ctx, price),
+    clearPriceCache: (assetId) => clearPriceCache(ctx, assetId),
     readPriceCache: (assetId) => readPriceCache(ctx, assetId),
     readAllPriceCacheEntries: () => readAllPriceCacheEntries(ctx),
   };
@@ -293,6 +295,11 @@ function upsertPrice(ctx: StoreContext, price: AssetPrice): void {
       },
     })
     .run();
+}
+
+function clearPriceCache(ctx: StoreContext, assetId: string): number {
+  return ctx.db.delete(assetPriceCache).where(eq(assetPriceCache.assetId, assetId)).run()
+    .changes;
 }
 
 function readPriceCache(ctx: StoreContext, assetId: string): AssetPrice | null {

@@ -9,9 +9,24 @@ interface YahooChartResponse {
         currency?: string;
         regularMarketPrice?: number;
       };
+      timestamp?: number[];
+      indicators?: {
+        quote?: Array<{
+          close?: Array<number | null>;
+        }>;
+        adjclose?: Array<{
+          adjclose?: Array<number | null>;
+        }>;
+      };
     }>;
   };
 }
+
+type YahooChartResult = NonNullable<
+  NonNullable<YahooChartResponse["chart"]>["result"]
+>[number];
+
+const YAHOO_CHART_URL = "https://query2.finance.yahoo.com/v8/finance/chart/";
 
 export const yahooProvider: PriceProvider = {
   name: "yahoo",
@@ -19,30 +34,71 @@ export const yahooProvider: PriceProvider = {
   fetchPrice: async (ctx) => {
     try {
       const url =
-        "https://query1.finance.yahoo.com/v8/finance/chart/" +
-        encodeURIComponent(ctx.symbol) +
-        "?interval=1d&range=5d";
-      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+        YAHOO_CHART_URL + encodeURIComponent(ctx.symbol) + "?interval=1d&range=5d";
+      const res = await fetch(url, {
+        headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" },
+        signal: AbortSignal.timeout(8000),
+      });
 
       if (!res.ok) return fetchStooqFallback(ctx);
 
       const data = (await res.json()) as YahooChartResponse;
-      const meta = data.chart?.result?.[0]?.meta;
-      const price = meta?.regularMarketPrice;
+      const result = data.chart?.result?.[0];
+      const meta = result?.meta;
+      const seriesPrice = latestSeriesPrice(result);
+      const price = seriesPrice?.price ?? meta?.regularMarketPrice;
 
       if (price == null || !Number.isFinite(price)) return fetchStooqFallback(ctx);
 
       const currency = meta?.currency ?? ctx.currency;
-      const priceInEur = await convertYahooPriceToEur(String(price), currency, ctx);
+      const priceInEur = await convertYahooPriceToEur(
+        decimalFromNumber(price),
+        currency,
+        ctx,
+      );
 
       return priceInEur
-        ? { price: priceInEur, currency: "EUR" }
+        ? {
+            price: priceInEur,
+            currency: "EUR",
+            ...(seriesPrice?.priceDate ? { priceDate: seriesPrice.priceDate } : {}),
+          }
         : fetchStooqFallback(ctx);
     } catch {
       return fetchStooqFallback(ctx);
     }
   },
 };
+
+function decimalFromNumber(value: number): string {
+  return String(Math.round((value + Number.EPSILON) * 100000000) / 100000000);
+}
+
+function latestSeriesPrice(
+  result: YahooChartResult | undefined,
+): { price: number; priceDate?: string } | null {
+  const timestamps = result?.timestamp ?? [];
+  const close = result?.indicators?.quote?.[0]?.close;
+  const adjclose = result?.indicators?.adjclose?.[0]?.adjclose;
+  const series = close ?? adjclose;
+
+  if (!series) return null;
+
+  for (let index = series.length - 1; index >= 0; index -= 1) {
+    const price = series[index];
+    if (price == null || !Number.isFinite(price) || price <= 0) continue;
+
+    const timestamp = timestamps[index];
+    return {
+      price,
+      ...(timestamp
+        ? { priceDate: new Date(timestamp * 1000).toISOString().slice(0, 10) }
+        : {}),
+    };
+  }
+
+  return null;
+}
 
 async function convertYahooPriceToEur(
   price: string,
