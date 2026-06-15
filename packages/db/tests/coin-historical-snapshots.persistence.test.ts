@@ -215,3 +215,50 @@ describe("coin purchase-date ripple into snapshot history", () => {
     store.close();
   });
 });
+
+describe("coin collection in freshly generated past snapshots", () => {
+  test("a snapshot generated before the purchase date excludes the collection; after it includes it", () => {
+    const store = createInMemoryStore();
+    seed(store);
+    const { sourceId } = connectNumista(store);
+    // A coin acquired 2024-06-01, worth 300 — synced while NO snapshots exist yet
+    // (so the #167 ripple has nothing to touch; only fresh generation will).
+    syncCoins(store, sourceId, [coin("c1", "2024-06-01", 300_00)]);
+
+    // Backdated fund ops GENERATE fresh snapshots straddling the coin's date.
+    recordBuy(store, "2020-01-01", "10", "100"); // before the coin
+    recordBuy(store, "2024-12-01", "5", "100"); // after the coin
+
+    // 2020 predates the coin → the collection is valued at 0 (no row), NOT its
+    // full current value (the bug this fixes).
+    expect(grossAt(store, "2020-01-01")).toBe(10 * 100_00);
+    // 2024-12 is after the purchase date → the coin is included, frozen at gen time.
+    expect(grossAt(store, "2024-12-01")).toBe(15 * 100_00 + 300_00);
+    store.close();
+  });
+
+  test("fresh generation agrees with the #167 ripple on a shared date", () => {
+    // Two stores, same facts in different order, must land on the same figure for
+    // 2024-12-01: one reaches it by fresh generation, the other by the ripple.
+    const viaGeneration = createInMemoryStore();
+    seed(viaGeneration);
+    {
+      const { sourceId } = connectNumista(viaGeneration);
+      syncCoins(viaGeneration, sourceId, [coin("c1", "2024-06-01", 300_00)]);
+      recordBuy(viaGeneration, "2024-12-01", "5", "100"); // generates the snapshot
+    }
+
+    const viaRipple = createInMemoryStore();
+    seed(viaRipple);
+    {
+      recordBuy(viaRipple, "2024-12-01", "5", "100"); // snapshot exists first
+      const { sourceId } = connectNumista(viaRipple);
+      syncCoins(viaRipple, sourceId, [coin("c1", "2024-06-01", 300_00)]); // ripples it
+    }
+
+    expect(grossAt(viaGeneration, "2024-12-01")).toBe(grossAt(viaRipple, "2024-12-01"));
+    expect(grossAt(viaGeneration, "2024-12-01")).toBe(5 * 100_00 + 300_00);
+    viaGeneration.close();
+    viaRipple.close();
+  });
+});

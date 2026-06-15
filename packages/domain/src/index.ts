@@ -150,6 +150,7 @@ export type {
   ValuationBasis,
 } from "./connected-source";
 export {
+  coinCollectionValueAtDate,
   coinValue,
   groupPositionsByMetal,
   projectConnectedSource,

@@ -10,6 +10,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  coinCollectionValueAtDate,
   coinValue,
   groupPositionsByMetal,
   projectConnectedSource,
@@ -165,5 +166,26 @@ describe("groupPositionsByMetal — the detail-page lens (grouped by metal)", ()
     expect(groups[0]!.metal).toBe("plata");
     expect(groups[1]!.metal).toBeNull();
     expect(groups[1]!.subtotalMinor).toBe(50_000);
+  });
+});
+
+describe("coinCollectionValueAtDate — purchase-date accretion (ADR 0017)", () => {
+  test("sums only coins acquired on or before the date", () => {
+    const positions = [
+      coin({ id: "a", purchaseDate: "2024-01-01", purchasePriceMinor: 100_00 }),
+      coin({ id: "b", purchaseDate: "2024-06-01", purchasePriceMinor: 200_00 }),
+    ];
+    // Before any coin → 0; between the two → only the first; after both → both.
+    expect(coinCollectionValueAtDate(positions, "2023-12-31")).toBe(0);
+    expect(coinCollectionValueAtDate(positions, "2024-03-01")).toBe(100_00);
+    expect(coinCollectionValueAtDate(positions, "2024-06-01")).toBe(300_00);
+  });
+
+  test("excludes coins with no purchase date (no dated fact to place)", () => {
+    const positions = [
+      coin({ id: "dated", purchaseDate: "2024-01-01", purchasePriceMinor: 100_00 }),
+      coin({ id: "undated", purchaseDate: null, purchasePriceMinor: 999_00 }),
+    ];
+    expect(coinCollectionValueAtDate(positions, "2024-12-31")).toBe(100_00);
   });
 });
