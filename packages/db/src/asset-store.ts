@@ -123,6 +123,12 @@ export interface AssetStore {
   updateAsset: (assetId: string, input: UpdateAssetInput) => void;
   updateAssetValuation: (assetId: string, currentValueMinor: number) => void;
   updateInvestmentAsset: (input: UpdateInvestmentAssetInput) => void;
+  /**
+   * Backfill an investment's ISIN when it has none (statement ISIN guard,
+   * ADR 0018 S4). Sets ONLY the isin column, leaving other metadata intact, so a
+   * later upload to the same asset is guarded. Returns 1 if updated, 0 if not found.
+   */
+  backfillInvestmentIsin: (assetId: string, isin: string) => number;
   /** Soft-delete an asset (moves it to the trash). Returns 1 if moved, 0 if not found. */
   softDeleteAsset: (assetId: string, deletedAt: string) => number;
   /** Restore a trashed asset. Returns 1 if restored, 0 if not found or not in trash. */
@@ -164,6 +170,7 @@ export function createAssetStore(ctx: StoreContext): AssetStore {
     updateAssetValuation: (assetId, currentValueMinor) =>
       updateAssetValuation(ctx, assetId, currentValueMinor),
     updateInvestmentAsset: (input) => updateInvestmentAsset(ctx, input),
+    backfillInvestmentIsin: (assetId, isin) => backfillInvestmentIsin(ctx, assetId, isin),
     softDeleteAsset: (assetId, deletedAt) => softDeleteAsset(ctx, assetId, deletedAt),
     restoreAsset: (assetId) => restoreAsset(ctx, assetId),
     hardDeleteAsset: (assetId) =>
@@ -690,6 +697,24 @@ function updateInvestmentAsset(
   ctx.writeAuditEntry("update_investment_asset", "asset", input.id, {
     name: input.name,
   });
+}
+
+function backfillInvestmentIsin(
+  ctx: StoreContext,
+  assetId: string,
+  isin: string,
+): number {
+  const result = ctx.db
+    .update(investmentAssets)
+    .set({ isin })
+    .where(eq(investmentAssets.assetId, assetId))
+    .run();
+
+  if (result.changes > 0) {
+    ctx.writeAuditEntry("backfill_investment_isin", "asset", assetId, { isin });
+  }
+
+  return result.changes;
 }
 
 function softDeleteAsset(ctx: StoreContext, assetId: string, deletedAt: string): number {
