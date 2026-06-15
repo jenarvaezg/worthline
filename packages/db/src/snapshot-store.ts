@@ -3,6 +3,7 @@ import type {
   NetWorthSnapshot,
   PositionSummary,
   RawInvestmentRow,
+  SnapshotHoldingKind,
   SnapshotHoldingRow,
   Workspace,
 } from "@worthline/domain";
@@ -30,11 +31,20 @@ export interface SaveSnapshotInput {
   holdings?: SnapshotHoldingRow[];
 }
 
-/** Filter for reading frozen holding rows: by scope and optional date-key window (inclusive). */
+/**
+ * Filter for reading frozen holding rows: by scope and optional date-key window
+ * (inclusive), and/or targeted to a single holding by its id + kind. The
+ * holding-id / kind pair lets a caller (e.g. the housing valuation ripples,
+ * #207) read just the frozen rows of one asset/liability through the
+ * `snapshot_holdings (holding_id, kind)` index, instead of pulling every frozen
+ * row into memory and filtering there.
+ */
 export interface SnapshotHoldingQuery {
   scopeId?: string;
   from?: string;
   to?: string;
+  holdingId?: string;
+  kind?: SnapshotHoldingKind;
 }
 
 /** A frozen holding row joined with its snapshot's identity and date. */
@@ -221,12 +231,15 @@ export function readSnapshots(db: StoreDb, scopeId?: string): NetWorthSnapshot[]
 }
 
 /**
- * Read frozen holding rows (ADR 0008), optionally filtered by scope and by an
- * inclusive date-key window. Rows are joined with their snapshot for identity
- * and ordering — chronological, then assets before liabilities, then by the
- * frozen label for a stable presentation order. Dynamic WHERE is built as a
- * Drizzle condition list (mirroring readSnapshots), so the filter never drops
- * to raw SQL.
+ * Read frozen holding rows (ADR 0008), optionally filtered by scope, by an
+ * inclusive date-key window, and/or targeted to a single holding by its id +
+ * kind (#207). Rows are joined with their snapshot for identity and ordering —
+ * chronological, then assets before liabilities, then by the frozen label for a
+ * stable presentation order. Dynamic WHERE is built as a Drizzle condition list
+ * (mirroring readSnapshots), so the filter never drops to raw SQL. A
+ * holding-id / kind filter resolves through the
+ * `snapshot_holdings (holding_id, kind)` index, so a caller reads one asset's
+ * frozen rows without scanning the whole table.
  */
 export function readSnapshotHoldings(
   db: StoreDb,
@@ -244,6 +257,17 @@ export function readSnapshotHoldings(
 
   if (query.to !== undefined) {
     conditions.push(lte(snapshots.dateKey, query.to));
+  }
+
+  // Targeted single-holding read (#207): keyed by the frozen row's own id + kind
+  // so it resolves through `snapshot_holdings_holding_kind_idx` rather than
+  // scanning every frozen row. The housing ripples ask for one asset's dates.
+  if (query.holdingId !== undefined) {
+    conditions.push(eq(snapshotHoldings.holdingId, query.holdingId));
+  }
+
+  if (query.kind !== undefined) {
+    conditions.push(eq(snapshotHoldings.kind, query.kind));
   }
 
   const baseQuery = db

@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 23;
+export const SCHEMA_VERSION = 24;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -579,6 +579,24 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       );
     } catch {}
     sqlite.pragma("user_version = 23");
+  }
+
+  if (version < 24) {
+    // #207: index snapshot_holdings by (holding_id, kind) so the housing
+    // valuation/appreciation ripples can find a single asset's earliest frozen
+    // snapshot through a lookup instead of scanning every frozen row into memory.
+    // Purely structural — it changes HOW the targeted read is planned, never WHAT
+    // any snapshot or figure holds (ADR 0008 frozen rows are untouched).
+    // The pre-existing unique index leads with snapshot_id, so it cannot serve a
+    // holding-first lookup; this composite does, with kind as the second key.
+    // IF NOT EXISTS / try-guarded like the v23 indexes: a fresh DB already created
+    // it via schema-sql, and a minimal synthetic upgrade fixture may lack the table.
+    try {
+      sqlite.exec(
+        "CREATE INDEX IF NOT EXISTS snapshot_holdings_holding_kind_idx ON snapshot_holdings (holding_id, kind);",
+      );
+    } catch {}
+    sqlite.pragma("user_version = 24");
   }
 
   return { ranV18Backfill };
