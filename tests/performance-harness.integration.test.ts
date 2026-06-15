@@ -23,13 +23,15 @@
  * drift. The ceilings catch order-of-magnitude regressions (the audit's real
  * concern) without being flaky.
  *
- * HOW TO UPDATE THE THRESHOLDS INTENTIONALLY:
- * After an intentional optimization (#201/#203/#205/#206/#207/#208 build on this
- * harness) the ceilings below can be LOWERED to lock in the gain — edit the
- * THRESHOLDS_MS map and note the change in the PR. The structural baseline is a
- * vitest snapshot: regenerate it with `npm test -- -u` when the set of measured
- * operations changes on purpose. Never raise a ceiling to silence a regression
- * without understanding why it slowed down.
+ * HOW TO UPDATE THE BUDGETS INTENTIONALLY (#203):
+ * The conservative budgets, the documented large-workspace baseline, and the
+ * rules for changing them on purpose live in docs/performance-budgets.md. In
+ * short: after an intentional optimization (#201/#205/#206/#207/#208 build on
+ * this harness) LOWER the relevant ceiling in THRESHOLDS_MS to lock the gain in
+ * and say so in the PR; when the domain workload genuinely grows, re-baseline
+ * SEED_DIMENSIONS (in performance-harness-seeds.ts) alongside the seed change and
+ * regenerate the structural snapshot with `npm test -- -u`. Never raise a ceiling
+ * to silence a regression without understanding why it slowed down.
  */
 import { afterEach, describe, expect, test } from "vitest";
 
@@ -38,6 +40,8 @@ import { captureSnapshotForScope, listScopeOptions } from "@worthline/domain";
 
 import { cleanupTempDirs, createFileBackedStore } from "./helpers";
 import {
+  measureSeedDimensions,
+  SEED_DIMENSIONS,
   SEED_SCOPE_IDS,
   SEED_TODAY,
   seedPerformanceWorkspace,
@@ -61,6 +65,21 @@ const THRESHOLDS_MS = {
   valuationRipple: 4_000,
   windowedHistoryRead: 250,
 } as const;
+
+/**
+ * The four hot paths the performance audit flagged (#203 AC: "Dashboard load,
+ * snapshot holding reads, position reads, and historical snapshot ripple each
+ * have a conservative threshold"), mapped to the THRESHOLDS_MS keys that budget
+ * them. Every path here MUST have at least one conservative ceiling, and the
+ * harness asserts that — so a future refactor that drops a measurement (and its
+ * budget) fails loudly instead of quietly leaving an audit path unguarded.
+ */
+const BUDGETED_AUDIT_PATHS: Record<string, ReadonlyArray<keyof typeof THRESHOLDS_MS>> = {
+  "dashboard load": ["dashboardLoad"],
+  "historical snapshot ripple": ["operationRipple", "valuationRipple", "debtRipple"],
+  "position reads": ["positionProjection"],
+  "snapshot holding reads": ["fullHistoryRead", "windowedHistoryRead"],
+};
 
 type Measurement = {
   name: keyof typeof THRESHOLDS_MS;
@@ -307,5 +326,55 @@ describe("performance harness (integration, #200)", () => {
       touched: m.touched,
     }));
     expect(baseline).toMatchSnapshot();
+  });
+});
+
+describe("performance budgets (large-workspace baseline, #203)", () => {
+  test("the seeded workspace matches the documented large-workspace baseline", () => {
+    // AC: the benchmark documents the seeded workspace dimensions used as the
+    // large-workspace baseline. We assert the LIVE seed equals the recorded
+    // SEED_DIMENSIONS so the budgets are always anchored to a known scale — a
+    // seed change is a deliberate re-baseline, not a silent drift.
+    const store = createFileBackedStore("worthline-perf-budget-");
+    seedPerformanceWorkspace(store);
+    const dimensions = measureSeedDimensions(store);
+    store.close();
+
+    expect(dimensions).toEqual(SEED_DIMENSIONS);
+
+    // Sanity floor: the baseline must stay genuinely "large" so the budgets
+    // measure meaningful work. Hundreds of frozen holding rows is the property
+    // the audit cared about; guard it explicitly rather than trusting the seed.
+    expect(SEED_DIMENSIONS.householdHoldingRows).toBeGreaterThan(1_000);
+    expect(SEED_DIMENSIONS.totalHoldingRows).toBeGreaterThan(2_000);
+    expect(SEED_DIMENSIONS.totalSnapshots).toBeGreaterThan(200);
+  });
+
+  test("every audit-flagged hot path has a conservative budget", () => {
+    // AC: dashboard load, snapshot holding reads, position reads, and historical
+    // snapshot ripple each have a conservative threshold. We assert each named
+    // path maps to at least one defined, positive ms ceiling so no audit path is
+    // ever left unbudgeted by a future refactor.
+    for (const [path, keys] of Object.entries(BUDGETED_AUDIT_PATHS)) {
+      expect(keys.length, `${path} has no budget mapped`).toBeGreaterThan(0);
+      for (const key of keys) {
+        const ceiling = THRESHOLDS_MS[key];
+        expect(ceiling, `${path} → ${key} ceiling`).toBeGreaterThan(0);
+      }
+    }
+
+    // The mapping must cover exactly the four audit-flagged paths — no more, no
+    // fewer — and collectively reference every measured threshold so a stray,
+    // unbudgeted measurement cannot slip in.
+    expect(Object.keys(BUDGETED_AUDIT_PATHS).sort()).toEqual([
+      "dashboard load",
+      "historical snapshot ripple",
+      "position reads",
+      "snapshot holding reads",
+    ]);
+    const budgetedKeys = new Set(Object.values(BUDGETED_AUDIT_PATHS).flat());
+    expect([...budgetedKeys].sort()).toEqual(
+      (Object.keys(THRESHOLDS_MS) as Array<keyof typeof THRESHOLDS_MS>).sort(),
+    );
   });
 });
