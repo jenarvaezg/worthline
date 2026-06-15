@@ -1,5 +1,6 @@
 import type {
   DomainWarning,
+  InvestmentCaptureDetail,
   NetWorthSnapshot,
   PositionSummary,
   RawInvestmentRow,
@@ -7,7 +8,11 @@ import type {
   SnapshotHoldingRow,
   Workspace,
 } from "@worthline/domain";
-import { assertSnapshotHoldingsReconcile, projectPositions } from "@worthline/domain";
+import {
+  assertSnapshotHoldingsReconcile,
+  projectPositions,
+  projectScopedPositionsWithDetails,
+} from "@worthline/domain";
 import { and, asc, eq, gte, isNull, lte, sql, type SQL } from "drizzle-orm";
 
 import { assets, snapshotHoldings, snapshots } from "./schema";
@@ -61,6 +66,18 @@ export interface PositionView extends PositionSummary {
 }
 
 /**
+ * The selected scope's positions plus the UNSCOPED per-investment capture details
+ * (units + unit price, ADR 0008), built from ONE shared projection context (#208).
+ * A dashboard load needs both off the same raw operation read — the capture
+ * details freeze every scope's snapshot rows, the positions drive the selected
+ * scope's table — so serving them together avoids reading every operation twice.
+ */
+export interface ScopedPositionsWithDetails {
+  positions: PositionView[];
+  details: Map<string, InvestmentCaptureDetail>;
+}
+
+/**
  * Snapshot and position persistence (Slice R1 of the architectural refactor,
  * PRD #120 / #121). Owns the snapshot rows, their frozen holding rows (ADR
  * 0008), and the derived live positions read off the investment assets.
@@ -70,6 +87,14 @@ export interface SnapshotStore {
   readSnapshots: (scopeId?: string) => NetWorthSnapshot[];
   readSnapshotHoldings: (query?: SnapshotHoldingQuery) => SnapshotHoldingRecord[];
   readPositions: (scopeId?: string) => PositionView[];
+  /**
+   * Read the selected scope's positions AND the unscoped capture details in one
+   * pass over the raw operations (#208): the dashboard load needs both per
+   * request, and building them from a single projection context reads every
+   * operation once instead of twice. Byte-identical to deriving the details from
+   * `readPositions()` and reading `readPositions(scopeId)` separately.
+   */
+  readScopedPositionsWithDetails: (scopeId?: string) => ScopedPositionsWithDetails;
 }
 
 export function createSnapshotStore(ctx: StoreContext): SnapshotStore {
@@ -78,6 +103,8 @@ export function createSnapshotStore(ctx: StoreContext): SnapshotStore {
     readSnapshots: (scopeId) => readSnapshots(ctx.db, scopeId),
     readSnapshotHoldings: (query) => readSnapshotHoldings(ctx.db, query),
     readPositions: (scopeId) => readPositions(ctx.db, ctx.getWorkspace(), scopeId),
+    readScopedPositionsWithDetails: (scopeId) =>
+      readScopedPositionsWithDetails(ctx.db, ctx.getWorkspace(), scopeId),
   };
 }
 
@@ -320,6 +347,20 @@ export function readSnapshotHoldings(
 }
 
 /**
+ * Read the raw live investment rows in their stable presentation order. Shared by
+ * `readPositions` and `readScopedPositionsWithDetails` so the raw-read shape never
+ * drifts between them.
+ */
+function readInvestmentRows(db: StoreDb): RawInvestmentRow[] {
+  return db
+    .select({ currency: assets.currency, id: assets.id, name: assets.name })
+    .from(assets)
+    .where(and(eq(assets.type, "investment"), isNull(assets.deletedAt)))
+    .orderBy(asc(assets.createdAt), asc(assets.id))
+    .all();
+}
+
+/**
  * Read the live investment positions for the dashboard. The store reads the raw
  * investment rows and the raw supporting maps, then hands them to the domain
  * projection (projectPositions), which owns the price-selection rule (ADR 0006)
@@ -335,12 +376,7 @@ export function readPositions(
     return [];
   }
 
-  const rows: RawInvestmentRow[] = db
-    .select({ currency: assets.currency, id: assets.id, name: assets.name })
-    .from(assets)
-    .where(and(eq(assets.type, "investment"), isNull(assets.deletedAt)))
-    .orderBy(asc(assets.createdAt), asc(assets.id))
-    .all();
+  const rows = readInvestmentRows(db);
 
   if (rows.length === 0) {
     return [];
@@ -349,4 +385,32 @@ export function readPositions(
   const projectionContext = buildAssetProjectionContext(db, true);
 
   return projectPositions(workspace, rows, projectionContext, scopeId);
+}
+
+/**
+ * Read the selected scope's positions and the unscoped capture details in ONE
+ * pass over the raw operations (#208). The store gathers the raw rows and the
+ * supporting maps exactly once and the domain projection
+ * (projectScopedPositionsWithDetails) derives both views from that single context
+ * — so a dashboard load reads every operation once, not once per `readPositions`
+ * call. The figures are byte-identical to the two separate reads it replaces.
+ */
+export function readScopedPositionsWithDetails(
+  db: StoreDb,
+  workspace: Workspace | null,
+  scopeId?: string,
+): ScopedPositionsWithDetails {
+  if (!workspace) {
+    return { details: new Map(), positions: [] };
+  }
+
+  const rows = readInvestmentRows(db);
+
+  if (rows.length === 0) {
+    return { details: new Map(), positions: [] };
+  }
+
+  const projectionContext = buildAssetProjectionContext(db, true);
+
+  return projectScopedPositionsWithDetails(workspace, rows, projectionContext, scopeId);
 }

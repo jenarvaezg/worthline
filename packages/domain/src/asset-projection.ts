@@ -2,6 +2,7 @@ import type { LiquidityTier } from "./classification";
 import type { DecimalString } from "./decimal";
 import type { Instrument } from "./instrument-catalog";
 import type { InvestmentOperation, PositionSummary } from "./investment-types";
+import type { InvestmentCaptureDetail } from "./snapshot-holdings";
 import type {
   AssetType,
   ManualAsset,
@@ -108,6 +109,58 @@ export function projectAssets(
  * deriveInvestmentValuation's shared seam — here we need the full PositionSummary,
  * so we call derivePosition with the selected price directly.
  */
+/**
+ * The per-investment units + unit price a snapshot freezes (ADR 0008), keyed by
+ * asset id. Derived from the UNSCOPED positions: capture details cover every
+ * investment regardless of scope, since the scope only filters which positions a
+ * scope's frozen rows include, never the per-asset units/price math.
+ */
+export function investmentCaptureDetailsFrom(
+  positions: readonly PositionProjection[],
+): Map<string, InvestmentCaptureDetail> {
+  return new Map(
+    positions.map((position) => [
+      position.assetId,
+      {
+        units: position.currentUnits,
+        ...(position.currentPricePerUnit
+          ? { unitPrice: position.currentPricePerUnit }
+          : {}),
+      },
+    ]),
+  );
+}
+
+/**
+ * Project raw investment rows into BOTH the unscoped capture details (every
+ * investment's units + unit price, ADR 0008) and the selected scope's positions,
+ * from ONE shared projection context — the dashboard load needs both off the same
+ * raw operation read (#208). The unscoped positions feed the capture details; the
+ * scoped positions are the dashboard's positions table. Building both from the
+ * same `ctx` means a dashboard load reads every operation once, not twice.
+ *
+ * The result is byte-identical to deriving the details from `projectPositions(…)`
+ * (unscoped) and reading `projectPositions(…, scopeId)` separately — only the
+ * single shared raw read changes, never the computed figures.
+ */
+export function projectScopedPositionsWithDetails(
+  workspace: Workspace,
+  rows: RawInvestmentRow[],
+  ctx: AssetProjectionContext,
+  scopeId?: string,
+): {
+  positions: PositionProjection[];
+  details: Map<string, InvestmentCaptureDetail>;
+} {
+  const unscoped = projectPositions(workspace, rows, ctx);
+  const details = investmentCaptureDetailsFrom(unscoped);
+  // When no scope narrows the view, the scoped positions ARE the unscoped ones —
+  // reuse them rather than re-folding the operations a second time.
+  const positions =
+    scopeId === undefined ? unscoped : projectPositions(workspace, rows, ctx, scopeId);
+  return { details, positions };
+}
+
 export function projectPositions(
   workspace: Workspace,
   rows: RawInvestmentRow[],
