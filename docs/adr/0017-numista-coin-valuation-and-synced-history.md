@@ -41,6 +41,14 @@ coin with **no acquisition date** recorded has no dated fact to ripple — it is
 left out of history entirely, counting only in the live holding and in snapshots
 captured from the sync forward.
 
+Symmetrically, when a snapshot is **freshly generated at a past date** (by another
+holding's backdated fact, or import gap-fill), the coin collection is valued by the
+same **purchase-date accretion** — the sum of `coinValue` over coins acquired on or
+before that date, frozen at generation time — not its full current value. So the
+two paths agree on a shared date, and a snapshot dated before any coin was bought
+never shows the collection. The diff (only first-seen trades ripple) keeps the two
+paths from double-counting a coin into the same snapshot.
+
 ## Refresh: decoupled, within 2,000 requests/month
 
 Numista's free tier allows 2,000 requests/month, so the two refreshes are

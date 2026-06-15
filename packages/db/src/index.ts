@@ -46,17 +46,20 @@ import {
   assets,
   assetValuations,
   auditLog,
+  connectedSources,
   earlyRepayments,
   interestRateRevisions,
   liabilities,
   liabilityBalanceAnchors,
   liabilityOwnerships,
+  positions,
   snapshots,
   warningOverrides,
 } from "./schema";
 import { createAssetStore, type AssetStore } from "./asset-store";
 import {
   createConnectedSourceStore,
+  mapPositionRow,
   type ConnectedSourceStore,
   type SourcePositionInput,
 } from "./connected-source-store";
@@ -697,6 +700,12 @@ interface HistoricalSnapshotDeps {
   /** Debt-balance curve inputs of every liability with a debt model (PRD #109). */
   debtBalanceByLiability: Map<string, DebtBalanceCurveInputs>;
   /**
+   * Positions of every connected coin-collection asset, keyed by the materialized
+   * asset id (ADR 0017, #167). Lets fresh generation value a coin collection by
+   * purchase-date accretion instead of its full current value.
+   */
+  coinPositionsByAsset: Map<string, SourcePosition[]>;
+  /**
    * Investment asset ids with no provider/manual price — valued at COST BASIS in
    * fresh generation, mirroring live capture's ADR-0006 fallback, so a generated
    * snapshot never shows a units × last-operation-price figure it could not have
@@ -742,6 +751,7 @@ function buildHistoricalSnapshotDeps(
   const reconstructedLiabilities = readLiabilities(db, workspace);
   return {
     assets: reconstructedAssets,
+    coinPositionsByAsset: readCoinPositionsByAsset(db),
     costBasisAssetIds: readCostBasisAssetIds(db, reconstructedAssets),
     debtBalanceByLiability: readDebtBalanceInputs(db, reconstructedLiabilities),
     housingValuationByAsset: readHousingCurveInputs(db, reconstructedAssets),
@@ -750,6 +760,34 @@ function buildHistoricalSnapshotDeps(
     operationsByAsset: readAllOperations(db),
     scopes: listScopeOptions(workspace),
   };
+}
+
+/**
+ * Positions of every connected coin-collection asset, keyed by the materialized
+ * asset id (ADR 0017, #167). Used so fresh historical generation values a coin
+ * collection by purchase-date accretion (Σ coinValue of coins acquired ≤ date)
+ * rather than its full current value. Reads positions including those whose
+ * source's asset was later trashed — the asset existed on the snapshot dates.
+ */
+function readCoinPositionsByAsset(db: StoreDb): Map<string, SourcePosition[]> {
+  const byAsset = new Map<string, SourcePosition[]>();
+  const assetBySource = new Map<string, string>();
+  for (const source of db
+    .select({ id: connectedSources.id, assetId: connectedSources.assetId })
+    .from(connectedSources)
+    .all()) {
+    assetBySource.set(source.id, source.assetId);
+  }
+  if (assetBySource.size === 0) return byAsset;
+
+  for (const row of db.select().from(positions).all()) {
+    const assetId = assetBySource.get(row.sourceId);
+    if (assetId === undefined) continue;
+    const list = byAsset.get(assetId) ?? [];
+    list.push(mapPositionRow(row));
+    byAsset.set(assetId, list);
+  }
+  return byAsset;
 }
 
 /**
@@ -999,6 +1037,7 @@ function rippleHistoricalSnapshots(
         const built = buildSnapshotAtDate({
           assets: deps.assets,
           capturedAt: historicalCapturedAt(operationDateKey),
+          coinPositionsByAsset: deps.coinPositionsByAsset,
           costBasisAssetIds: deps.costBasisAssetIds,
           debtBalanceByLiability: deps.debtBalanceByLiability,
           housingValuationByAsset: deps.housingValuationByAsset,
@@ -1118,6 +1157,7 @@ function rippleHistoricalSnapshotsForValuation(
         const built = buildSnapshotAtDate({
           assets: deps.assets,
           capturedAt: historicalCapturedAt(fromDateKey),
+          coinPositionsByAsset: deps.coinPositionsByAsset,
           costBasisAssetIds: deps.costBasisAssetIds,
           debtBalanceByLiability: deps.debtBalanceByLiability,
           housingValuationByAsset: deps.housingValuationByAsset,
@@ -1265,6 +1305,7 @@ function rippleHistoricalSnapshotsForDebt(
         const built = buildSnapshotAtDate({
           assets: deps.assets,
           capturedAt: historicalCapturedAt(dateKey),
+          coinPositionsByAsset: deps.coinPositionsByAsset,
           costBasisAssetIds: deps.costBasisAssetIds,
           debtBalanceByLiability: deps.debtBalanceByLiability,
           housingValuationByAsset: deps.housingValuationByAsset,
@@ -1701,6 +1742,7 @@ function gapFillHistoricalSnapshots(
         const built = buildSnapshotAtDate({
           assets: deps.assets,
           capturedAt: historicalCapturedAt(dateKey),
+          coinPositionsByAsset: deps.coinPositionsByAsset,
           costBasisAssetIds: deps.costBasisAssetIds,
           debtBalanceByLiability: deps.debtBalanceByLiability,
           housingValuationByAsset: deps.housingValuationByAsset,

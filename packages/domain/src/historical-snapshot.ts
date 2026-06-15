@@ -31,6 +31,8 @@ import {
   securesHousingAsset,
   tierOfAsset,
 } from "./classification";
+import { coinCollectionValueAtDate } from "./connected-source";
+import type { SourcePosition } from "./connected-source";
 import type { DebtBalanceAnchor } from "./debt-balance";
 import type { DecimalString } from "./decimal";
 import { valueAt } from "./holding-valuation";
@@ -201,6 +203,16 @@ export interface BuildSnapshotAtDateInput {
    * regression). The liability path's analogue of `housingValuationByAsset`.
    */
   debtBalanceByLiability?: ReadonlyMap<string, DebtBalanceCurveInputs>;
+  /**
+   * The positions of every connected coin-collection asset, keyed by the
+   * materialized asset id (ADR 0017, #167). A coin collection present here is
+   * valued by **purchase-date accretion** on the target date (Σ coinValue of
+   * coins acquired ≤ date), instead of the manual full-current-value basis — so a
+   * snapshot freshly generated at a past date never shows the whole collection
+   * before its coins were bought. An asset absent from the map keeps the stored
+   * basis (no regression).
+   */
+  coinPositionsByAsset?: ReadonlyMap<string, readonly SourcePosition[]>;
   /**
    * "Today" as YYYY-MM-DD — forwarded to the housing curve for forward
    * extrapolation. Defaults to the target date when omitted (a target ≤ today
@@ -414,6 +426,21 @@ export function buildSnapshotAtDate(
   const investmentDetails = new Map<string, InvestmentCaptureDetail>();
 
   for (const asset of input.assets) {
+    // A connected coin collection is valued by purchase-date accretion (ADR 0017),
+    // not the stored full-current-value basis — so a snapshot generated at a past
+    // date only carries the coins acquired by then. A zero sum means no dated coin
+    // was held yet → omit the holding (it was not held), matching the #167 ripple.
+    const coinPositions = input.coinPositionsByAsset?.get(asset.id);
+    if (coinPositions !== undefined) {
+      const coinValueMinor = coinCollectionValueAtDate(coinPositions, input.targetDate);
+      if (coinValueMinor === 0) continue;
+      historicalAssets.push({
+        ...asset,
+        currentValue: money(coinValueMinor, asset.currency),
+      });
+      continue;
+    }
+
     const valuation = valueAt(assetValuationInput(asset, input), input.targetDate);
     if (valuation.valueMinor === null) continue; // not held on this date
 
