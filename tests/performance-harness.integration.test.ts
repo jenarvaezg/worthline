@@ -33,9 +33,9 @@
  * regenerate the structural snapshot with `npm test -- -u`. Never raise a ceiling
  * to silence a regression without understanding why it slowed down.
  */
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import type { InvestmentCaptureDetail } from "@worthline/domain";
+import Database from "better-sqlite3";
 import { captureSnapshotForScope, listScopeOptions } from "@worthline/domain";
 
 import { cleanupTempDirs, createFileBackedStore } from "./helpers";
@@ -109,17 +109,14 @@ function runCaptureLoop(store: ReturnType<typeof createFileBackedStore>): number
   const assets = store.assets.readAssets();
   const liabilities = store.liabilities.readLiabilities();
   const scopes = listScopeOptions(workspace);
+  const selectedScope = scopes[0];
 
-  const investmentDetails = new Map<string, InvestmentCaptureDetail>(
-    store.snapshots.readPositions().map((position) => [
-      position.assetId,
-      {
-        units: position.currentUnits,
-        ...(position.currentPricePerUnit
-          ? { unitPrice: position.currentPricePerUnit }
-          : {}),
-      },
-    ]),
+  // Mirror the production reuse seam (#208): one projection serves both the
+  // unscoped capture details that freeze every scope's rows AND the selected
+  // scope's positions, reading every investment operation once per load instead
+  // of twice.
+  const { details: investmentDetails } = store.snapshots.readScopedPositionsWithDetails(
+    selectedScope?.id,
   );
 
   let saved = 0;
@@ -376,5 +373,84 @@ describe("performance budgets (large-workspace baseline, #203)", () => {
     expect([...budgetedKeys].sort()).toEqual(
       (Object.keys(THRESHOLDS_MS) as Array<keyof typeof THRESHOLDS_MS>).sort(),
     );
+  });
+});
+
+/**
+ * Read-shape regression (#208). Beyond the wall-clock ceilings (which are too
+ * loose to catch a doubled read on this small-by-ms but operation-heavy seed),
+ * this guards the actual WIN: a dashboard-style load over the large seeded
+ * workspace (3 investments × 24 backdated operations) reads the operations table
+ * exactly ONCE, not once per readPositions() call. Instruments better-sqlite3 to
+ * count full scans of asset_operations — Drizzle emits the full operation read as
+ * `select ... from "asset_operations" order by ...` with no WHERE; the targeted
+ * single-asset reads carry a `where`, so they are not counted.
+ */
+describe("dashboard load read shape — investment projection reuse (#208)", () => {
+  const originalPrepare = Database.prototype.prepare;
+  let fullOperationScans = 0;
+
+  beforeEach(() => {
+    fullOperationScans = 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    Database.prototype.prepare = function (this: any, sql: string, ...rest: any[]) {
+      const normalized = sql.toLowerCase();
+      if (
+        normalized.includes('from "asset_operations"') &&
+        !normalized.includes("where")
+      ) {
+        fullOperationScans += 1;
+      }
+      return originalPrepare.call(this, sql, ...rest);
+    } as typeof Database.prototype.prepare;
+  });
+
+  afterEach(() => {
+    Database.prototype.prepare = originalPrepare;
+  });
+
+  test("the dashboard capture loop reads the operations table once for the whole load", () => {
+    const store = createFileBackedStore("worthline-perf-readshape-");
+    seedPerformanceWorkspace(store);
+
+    const workspace = store.workspace.readWorkspace()!;
+    const assets = store.assets.readAssets();
+    const liabilities = store.liabilities.readLiabilities();
+    const scopes = listScopeOptions(workspace);
+    const selectedScope = scopes[0]!;
+
+    // Reset after seeding + the read-once assets/liabilities reads above, so only
+    // the position-projection reuse seam below is measured.
+    fullOperationScans = 0;
+
+    const { details: investmentDetails, positions } =
+      store.snapshots.readScopedPositionsWithDetails(selectedScope.id);
+
+    for (const scope of scopes) {
+      const capture = captureSnapshotForScope({
+        assets,
+        capturedAt: `${SEED_TODAY}T10:00:00.000Z`,
+        existingSnapshots: store.snapshots.readSnapshots(scope.id),
+        investmentDetails,
+        liabilities,
+        scope,
+        workspace,
+      });
+      if (capture) {
+        store.snapshots.saveSnapshot({
+          holdings: capture.holdings,
+          replace: capture.replace,
+          snapshot: capture.snapshot,
+        });
+      }
+    }
+
+    // Both the unscoped capture details and the selected scope's positions came
+    // from a single context build — one full operations scan, not the two the
+    // old unscoped-then-scoped readPositions() pair performed.
+    expect(positions.length).toBeGreaterThan(0);
+    expect(fullOperationScans).toBe(1);
+
+    store.close();
   });
 });

@@ -184,17 +184,19 @@ export async function loadDashboard(
   // currently viewed one. Each capture persists the valued portfolio behind
   // its figures — one frozen row per holding — atomically with the snapshot.
   // Investments additionally freeze units and the unit price used that day.
-  const investmentDetails = new Map<string, InvestmentCaptureDetail>(
-    store.snapshots.readPositions().map((position) => [
-      position.assetId,
-      {
-        units: position.currentUnits,
-        ...(position.currentPricePerUnit
-          ? { unitPrice: position.currentPricePerUnit }
-          : {}),
-      },
-    ]),
+  //
+  // The dashboard needs two things off the investment positions per request: the
+  // UNSCOPED capture details that freeze every scope's snapshot rows, and the
+  // SELECTED scope's positions for the dashboard state (read in §4). Both derive
+  // from the same raw operations and the same price rule (ADR 0006), so we build
+  // the projection once and reuse it (#208) instead of reading every operation
+  // twice. The selected-scope positions narrow the same per-asset figures; the
+  // capture details stay byte-identical to the old unscoped readPositions() map.
+  const scopedProjection = store.snapshots.readScopedPositionsWithDetails(
+    selectedScope?.id,
   );
+  const investmentDetails: ReadonlyMap<string, InvestmentCaptureDetail> =
+    scopedProjection.details;
 
   for (const scope of scopes) {
     const capture = captureSnapshotForScope({
@@ -217,7 +219,10 @@ export async function loadDashboard(
   }
 
   // ── 4. Collect remaining data for state assembly ─────────────────────────
-  const positions = selectedScope ? store.snapshots.readPositions(selectedScope.id) : [];
+  // The selected scope's positions came from the same projection as the capture
+  // details above (#208) — no second operation read. Empty when there is no scope
+  // (matching the prior `selectedScope ? … : []`).
+  const positions = selectedScope ? scopedProjection.positions : [];
   const overrides = store.readWarningOverrides();
   const fireConfig = store.readFireConfig();
   const snapshots = selectedScope ? store.snapshots.readSnapshots(selectedScope.id) : [];

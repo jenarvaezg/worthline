@@ -138,7 +138,12 @@ export type {
   RawAssetRow,
   RawInvestmentRow,
 } from "./asset-projection";
-export { projectAssets, projectPositions } from "./asset-projection";
+export {
+  investmentCaptureDetailsFrom,
+  projectAssets,
+  projectPositions,
+  projectScopedPositionsWithDetails,
+} from "./asset-projection";
 
 export type {
   CoinValuation,
