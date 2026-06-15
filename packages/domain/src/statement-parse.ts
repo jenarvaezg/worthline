@@ -11,13 +11,16 @@
  * The broker id selects a column-mapping strategy; MyInvestor is the only mapping
  * for now. A new broker later is a new mapping, not a new pipeline.
  *
- * S1 scope is deliberately narrow (later slices layer on the real semantics): only
- * `Finalizada` rows load, all as **buys** (no sell sign convention — Slice 5); the
- * merge-by-date planner, the rich preview, and the ISIN guard are later slices.
+ * Only `Finalizada` rows load; `En curso`/`Rechazada` are skipped (not errors).
+ * A `Finalizada` row with a negative `Importe estimado` or negative units loads
+ * as a `sell`, stored with ABSOLUTE units/price (the kind carries the direction);
+ * everything else is a buy. The sell-sign convention is an UNVERIFIED assumption
+ * (ADR 0018 Consequences) — we have no real MyInvestor reembolso sample.
  */
 
 import { compareUnits, divideUnits, normalizeDecimal } from "./decimal";
 import type { DecimalString } from "./decimal";
+import type { OperationKind } from "./investment-types";
 import type { CurrencyCode } from "./money";
 
 export type StatementBroker = "myinvestor";
@@ -26,8 +29,8 @@ export type StatementBroker = "myinvestor";
 export interface ParsedStatementRow {
   /** ISO `YYYY-MM-DD` execution date. */
   dateKey: string;
-  /** S1 loads every executed order as a buy (no sell sign convention yet). */
-  kind: "buy";
+  /** A negative amount or units loads as a `sell` (abs values); otherwise a buy. */
+  kind: OperationKind;
   units: DecimalString;
   /** Reconstructed NAV: amount ÷ units, at high precision. */
   pricePerUnit: DecimalString;
@@ -119,17 +122,30 @@ export function parseStatement(
       continue;
     }
 
+    // Sell sign convention (ADR 0018, S5, UNVERIFIED): a negative amount or units
+    // is a reembolso. We store absolute magnitudes — the kind carries direction.
+    const kind: OperationKind = units.negative || amount.negative ? "sell" : "buy";
+
     rows.push({
       currency: "EUR",
       dateKey,
       feesMinor: 0,
-      kind: "buy",
-      pricePerUnit: divideUnits(amount, units),
-      units,
+      kind,
+      pricePerUnit: divideUnits(amount.value, units.value),
+      units: units.value,
     });
   }
 
-  // All-or-nothing (ADR 0010): a single malformed Finalizada row writes nothing.
+  // A statement is per-ISIN (ADR 0018, S4): a file carrying more than one
+  // distinct ISIN is a wrong-file slip, not something to graft onto one holding.
+  if (isins.size > 1) {
+    errors.push(
+      `El archivo contiene varios ISIN (${[...isins].join(", ")}); un extracto debe ser de un solo fondo.`,
+    );
+  }
+
+  // All-or-nothing (ADR 0010): a single malformed Finalizada row, or a mixed-ISIN
+  // file, writes nothing.
   if (errors.length > 0) {
     return fail(errors);
   }
@@ -197,29 +213,36 @@ function parseDate(raw: string): string | null {
   return iso;
 }
 
-/** `Nº de participaciones` (`,`-decimal) → a positive decimal string, or null. */
-function parseUnits(raw: string | undefined): DecimalString | null {
-  const normalized = (raw ?? "").trim().replace(",", ".");
-  return toPositiveDecimal(normalized);
+/** A parsed magnitude plus whether the source carried a negative sign. */
+interface SignedDecimal {
+  value: DecimalString;
+  negative: boolean;
 }
 
-/** `Importe estimado` (`.`-decimal, ` EUR` suffix) → a positive decimal string, or null. */
-function parseAmount(raw: string | undefined): DecimalString | null {
+/** `Nº de participaciones` (`,`-decimal) → magnitude + sign, or null. */
+function parseUnits(raw: string | undefined): SignedDecimal | null {
+  const normalized = (raw ?? "").trim().replace(",", ".");
+  return toSignedDecimal(normalized);
+}
+
+/** `Importe estimado` (`.`-decimal, ` EUR` suffix) → magnitude + sign, or null. */
+function parseAmount(raw: string | undefined): SignedDecimal | null {
   const normalized = (raw ?? "")
     .trim()
     .replace(/\s*EUR\s*$/i, "")
     .trim();
-  return toPositiveDecimal(normalized);
+  return toSignedDecimal(normalized);
 }
 
 /**
- * A decimal magnitude as a normalized string, or null when unparseable or zero.
- * Takes the absolute value defensively (S1 has no sells, so a stray sign is
- * dropped to magnitude rather than mis-read as direction).
+ * Split a decimal into its positive magnitude (normalized) and sign, or null when
+ * unparseable or zero. The sign is preserved (not dropped) so the caller can read
+ * a negative amount/units as a sell (ADR 0018, S5); the magnitude is always > 0.
  */
-function toPositiveDecimal(value: string): DecimalString | null {
+function toSignedDecimal(value: string): SignedDecimal | null {
   if (!/^-?\d+(\.\d+)?$/.test(value)) return null;
-  const magnitude = value.startsWith("-") ? value.slice(1) : value;
+  const negative = value.startsWith("-");
+  const magnitude = negative ? value.slice(1) : value;
   // Collapse trailing-zero noise (`7.180` → `7.18`, `95.400` → `95.4`) via the seam.
   let normalized: DecimalString;
   try {
@@ -227,7 +250,7 @@ function toPositiveDecimal(value: string): DecimalString | null {
   } catch {
     return null;
   }
-  return compareUnits(normalized, "0") > 0 ? normalized : null;
+  return compareUnits(normalized, "0") > 0 ? { negative, value: normalized } : null;
 }
 
 function fail(errors: string[]): { ok: false; errors: [string, ...string[]] } {

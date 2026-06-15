@@ -5,8 +5,15 @@ import {
   createInvestmentOperationSafe,
   defaultInvestmentPriceProvider,
   parseStatement,
+  planStatementMerge,
+  resolveStatementIsinGuard,
 } from "@worthline/domain";
-import type { InvestmentPriceProvider, LiquidityTier } from "@worthline/domain";
+import type {
+  InvestmentPriceProvider,
+  LiquidityTier,
+  ParsedStatement,
+  StatementMergePlan,
+} from "@worthline/domain";
 import {
   fetchAndCachePrice,
   refreshStalePrices,
@@ -151,14 +158,125 @@ export async function recordOperationAction(
 }
 
 /**
- * Statement upload (ADR 0018, S1 / #174). Parse a broker's exported CSV against
- * this investment, create an operation for each executed (`Finalizada`) row, then
- * run ONE batched historical-snapshot ripple across every affected date — never
- * per operation (the #158 O(N×snapshots) cliff). S1 scope: MyInvestor only, naive
- * create (no merge-by-date — that is Slice 2), all buys (no sells — Slice 5), no
- * ISIN guard (Slice 4); the holding's value still comes from its price provider.
+ * The serializable result of a statement **preview** (ADR 0018, S3 / #176): the
+ * counts the user confirms against, with nothing written. `idle` is the initial
+ * useActionState value; `error` carries a Spanish message; `summary` carries the
+ * merge-plan shape (new / overwritten) plus skipped pending/rejected rows.
  */
-export async function uploadStatementAction(
+export type StatementPreviewState =
+  | { status: "idle" }
+  | { status: "error"; message: string }
+  | {
+      status: "summary";
+      created: number;
+      overwritten: number;
+      skipped: number;
+      /** Ambiguous same-date rows set aside, neither created nor overwritten (S4). */
+      anomalies: number;
+      /** Rows detected as sells (negative amount/units) among those applied (S5). */
+      sells: number;
+    };
+
+/** The Spanish error shown when the file's ISIN does not match the asset's (S4). */
+function isinMismatchMessage(fileIsin: string | null, assetIsin: string): string {
+  return `El ISIN del archivo (${fileIsin ?? "—"}) no coincide con el de esta inversión (${assetIsin}). No se ha cargado nada.`;
+}
+
+/** Count the sells among the rows a plan will actually write (created + overwritten). */
+function countSells(plan: StatementMergePlan): number {
+  return [...plan.toCreate, ...plan.toOverwrite.map(({ row }) => row)].filter(
+    (row) => row.kind === "sell",
+  ).length;
+}
+
+/**
+ * Validate + parse the uploaded statement from the form, with no DB access — the
+ * shared front half of preview and confirm. Returns the parsed statement or a
+ * single Spanish error. The file is re-read here on BOTH steps, so confirm never
+ * trusts the preview: the mounted file travels with each submission (ADR 0018,
+ * mirroring the Import flow) and is re-validated server-side before any write.
+ */
+async function readStatementFromForm(
+  formData: FormData,
+): Promise<{ ok: false; message: string } | { ok: true; value: ParsedStatement }> {
+  const broker = String(formData.get("broker") ?? "").trim();
+  if (broker !== "myinvestor") {
+    return { message: "Selecciona un bróker compatible (MyInvestor).", ok: false };
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { message: "Selecciona un archivo .csv con movimientos.", ok: false };
+  }
+
+  const parsed = parseStatement(await file.text(), "myinvestor");
+  if (!parsed.ok) {
+    return { message: parsed.errors[0], ok: false };
+  }
+
+  if (parsed.value.rows.length === 0) {
+    return {
+      message: "El archivo no contiene movimientos finalizados que cargar.",
+      ok: false,
+    };
+  }
+
+  return { ok: true, value: parsed.value };
+}
+
+/**
+ * Statement preview (ADR 0018, S3 / #176). Parse the uploaded CSV and build the
+ * merge plan against this investment's current operations, then return the
+ * counts WITHOUT writing anything — the human check before confirm. Reads the
+ * store read-only; never redirects (it feeds useActionState).
+ */
+export async function previewStatementAction(
+  routeAssetId: string,
+  _prev: StatementPreviewState,
+  formData: FormData,
+  _store?: WorthlineStore,
+): Promise<StatementPreviewState> {
+  const read = await readStatementFromForm(formData);
+  if (!read.ok) {
+    return { message: read.message, status: "error" };
+  }
+
+  const { isin, rows, skipped } = read.value;
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  return runWith((store) => {
+    // ISIN guard (S4): block a wrong-file slip before showing any summary.
+    const asset = store.assets.readInvestmentAssetById(routeAssetId);
+    const guard = resolveStatementIsinGuard(isin, asset?.isin ?? null);
+    if (guard.status === "mismatch") {
+      return { message: isinMismatchMessage(isin, asset?.isin ?? ""), status: "error" };
+    }
+
+    const plan = planStatementMerge(rows, store.operations.readOperations(routeAssetId));
+    return {
+      anomalies: plan.anomalies.length,
+      created: plan.toCreate.length,
+      overwritten: plan.toOverwrite.length,
+      sells: countSells(plan),
+      skipped: skipped.length,
+      status: "summary",
+    };
+  });
+}
+
+/**
+ * Statement confirm (ADR 0018, S1 #174 + S2 #175 + S3 #176). Re-validate + parse
+ * the uploaded CSV (never trusting the preview), then **merge by date** into the
+ * investment's operations (file wins on date overlap, never deletes): a matching
+ * date overwrites in place, a new date creates, an operation the file omits is
+ * untouched. Apply in one transaction, then run ONE batched historical-snapshot
+ * ripple across the union of created + overwritten dates — never per operation
+ * (the #158 O(N×snapshots) cliff). The ISIN guard blocks a wrong-file slip and
+ * backfills an empty asset (S4); a negative-signed row loads as a sell (S5).
+ * MyInvestor only for now; the holding's value still comes from its provider.
+ */
+export async function confirmStatementAction(
   routeAssetId: string,
   formData: FormData,
   _store?: WorthlineStore,
@@ -170,34 +288,33 @@ export async function uploadStatementAction(
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
     _store ? fn(_store) : withStore(fn);
 
-  const broker = String(formData.get("broker") ?? "").trim();
-  if (broker !== "myinvestor") {
-    redirect(statementErrorUrl("Selecciona un bróker compatible (MyInvestor)."));
+  const read = await readStatementFromForm(formData);
+  if (!read.ok) {
+    redirect(statementErrorUrl(read.message));
   }
 
-  const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
-    redirect(statementErrorUrl("Selecciona un archivo .csv con movimientos."));
-  }
-
-  const parsed = parseStatement(await file.text(), "myinvestor");
-  if (!parsed.ok) {
-    redirect(statementErrorUrl(parsed.errors[0]));
-  }
-
-  const { rows, skipped } = parsed.value;
-  if (rows.length === 0) {
-    redirect(
-      statementErrorUrl("El archivo no contiene movimientos finalizados que cargar."),
-    );
-  }
-
+  const { isin, rows, skipped } = read.value;
   const today = new Date().toISOString().slice(0, 10);
   const seed = Date.now();
 
-  runWith((store) => {
-    // Naive create (S1): assume no date overlap yet — merge-by-date is Slice 2.
-    rows.forEach((row, i) => {
+  const applied = runWith((store) => {
+    // ISIN guard (S4): block a mismatch before any write; backfill an empty asset
+    // so a later upload to the same holding is guarded too.
+    const asset = store.assets.readInvestmentAssetById(routeAssetId);
+    const guard = resolveStatementIsinGuard(isin, asset?.isin ?? null);
+    if (guard.status === "mismatch") {
+      return { error: isinMismatchMessage(isin, asset?.isin ?? "") } as const;
+    }
+    if (guard.status === "backfill") {
+      store.assets.backfillInvestmentIsin(routeAssetId, guard.isin);
+    }
+
+    // Merge by date (S2): plan against the asset's current operations so an
+    // overlapping date overwrites in place instead of duplicating, and operations
+    // the file does not mention survive untouched. Anomalous dates are set aside.
+    const plan = planStatementMerge(rows, store.operations.readOperations(routeAssetId));
+
+    plan.toCreate.forEach((row, i) => {
       store.operations.recordOperation({
         assetId: routeAssetId,
         currency: row.currency,
@@ -209,16 +326,47 @@ export async function uploadStatementAction(
         units: row.units,
       });
     });
+
+    for (const { operationId, row } of plan.toOverwrite) {
+      store.operations.updateOperation({
+        currency: row.currency,
+        feesMinor: row.feesMinor,
+        id: operationId,
+        kind: row.kind,
+        pricePerUnit: row.pricePerUnit,
+        units: row.units,
+      });
+    }
+
+    // One batched ripple over every date this load created or overwrote.
+    const affectedDateKeys = [
+      ...plan.toCreate.map((row) => row.dateKey),
+      ...plan.toOverwrite.map(({ row }) => row.dateKey),
+    ];
     store.rippleHistoricalSnapshotsForOperations({
       assetId: routeAssetId,
-      operationDateKeys: rows.map((row) => row.dateKey),
+      operationDateKeys: affectedDateKeys,
       today,
     });
+
+    return {
+      anomalies: plan.anomalies.length,
+      created: plan.toCreate.length,
+      overwritten: plan.toOverwrite.length,
+      sells: countSells(plan),
+    } as const;
   });
+
+  if ("error" in applied) {
+    redirect(statementErrorUrl(applied.error));
+  }
 
   redirect(
     statementLoadedRedirectUrl(returnUrl, {
-      created: rows.length,
+      anomalies: applied.anomalies,
+      created: applied.created,
+      overwritten: applied.overwritten,
+      sells: applied.sells,
       skipped: skipped.length,
     }),
   );

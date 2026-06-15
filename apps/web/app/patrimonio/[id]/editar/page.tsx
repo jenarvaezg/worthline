@@ -19,9 +19,11 @@ import {
   SCOPE_COOKIE_NAME,
 } from "../../../intake";
 import {
+  confirmStatementAction,
   deleteOperationAction,
+  previewStatementAction,
   recordOperationAction,
-  uploadStatementAction,
+  type StatementPreviewState,
 } from "../../../inversiones/actions";
 import Shell from "../../../shell";
 import {
@@ -211,9 +213,17 @@ export default async function EditarPage({
     await deleteOperationAction(id, formData);
   }
 
-  async function boundUploadStatementAction(formData: FormData) {
+  async function boundPreviewStatementAction(
+    prev: StatementPreviewState,
+    formData: FormData,
+  ) {
     "use server";
-    await uploadStatementAction(id, formData);
+    return previewStatementAction(id, prev, formData);
+  }
+
+  async function boundConfirmStatementAction(formData: FormData) {
+    "use server";
+    await confirmStatementAction(id, formData);
   }
 
   const freshness =
@@ -328,11 +338,12 @@ export default async function EditarPage({
           />
         ) : null}
 
-        {/* derived: load operations from a broker statement (ADR 0018, #174) */}
+        {/* derived: load operations from a broker statement (ADR 0018, #174/#176) */}
         {asset && method === "derived" && !isCoinCollection ? (
           <StatementUploadSection
-            action={boundUploadStatementAction}
+            confirmAction={boundConfirmStatementAction}
             currentUrl={currentUrl}
+            previewAction={boundPreviewStatementAction}
           />
         ) : null}
 
