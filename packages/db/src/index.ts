@@ -1359,16 +1359,25 @@ function rippleHistoricalSnapshotsForDebt(
         }
       }
 
+      // Read the affected scope's frozen rows in ONE batched query for the whole
+      // ≥ recalc-from range (#206), then group them by snapshot date in memory —
+      // instead of one query per recalculated snapshot. The batched read uses the
+      // same ordering as the single-date read it replaces (dateKey, scopeId,
+      // kind, label, holdingId), so each snapshot's grouped rows arrive in the
+      // byte-identical order recalculateSnapshotForLiability saw before,
+      // preserving ADR 0012 / ADR 0019 behavior exactly. A date absent from the
+      // map had no frozen rows (a legacy capture predating holdings, ADR 0008)
+      // and is left untouched.
+      const frozenByDate = groupFrozenHoldingsByDate(
+        readSnapshotHoldings(db, { scopeId: scope.id, from: recalcFrom }),
+      );
+
       // Recalculate every existing snapshot on or after the change date by
       // re-valuing only this liability's row from the curve.
       for (const snap of existing) {
         if (snap.dateKey < recalcFrom) continue;
 
-        const frozenHoldings = readSnapshotHoldings(db, {
-          scopeId: scope.id,
-          from: snap.dateKey,
-          to: snap.dateKey,
-        });
+        const frozenHoldings = frozenByDate.get(snap.dateKey) ?? [];
 
         // A legacy capture predating holdings (ADR 0008) has nothing to recompute.
         if (frozenHoldings.length === 0) continue;
