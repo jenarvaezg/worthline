@@ -3,7 +3,9 @@ import type {
   ExportedAmortizationPlan,
   ExportedAsset,
   ExportedBalanceAnchor,
+  ExportedConnectedSource,
   ExportedLiability,
+  ExportedPosition,
   ExportedSnapshot,
   ExportedValuationAnchor,
   FireScopeConfig,
@@ -26,6 +28,7 @@ import {
 import { asc, count, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
+import { mapPositionRow } from "./connected-source-store";
 import {
   amortizationPlans,
   appSettings,
@@ -34,6 +37,7 @@ import {
   assetPriceCache,
   assetValuations,
   assets,
+  connectedSources,
   earlyRepayments,
   interestRateRevisions,
   liabilities,
@@ -43,6 +47,7 @@ import {
   memberGroupMembers,
   memberGroups,
   members,
+  positions,
   snapshotHoldings,
   snapshots,
   warningOverrides,
@@ -104,6 +109,10 @@ const WORKSPACE_TABLES = [
   "snapshots",
   "asset_operations",
   "asset_price_cache",
+  // Connected sources project into an asset, with positions beneath the source —
+  // children before parents so the FK cascade order holds (ADR 0016).
+  "positions",
+  "connected_sources",
   "investment_assets",
   "asset_valuations",
   "early_repayments",
@@ -759,10 +768,58 @@ function importWorkspace(
         .run();
     }
 
+    // Connected sources + their positions (ADR 0016). The asset they project
+    // into is already inserted above (FK satisfied). Credentials are NEVER in
+    // the file: a restored source gets an empty credentials blob and no token,
+    // so it must have its API key re-entered before it can sync again. The
+    // section is normalized to [] by the parser; `?? []` also tolerates a
+    // hand-rolled v2 file written before the section existed.
+    for (const source of doc.connectedSources ?? []) {
+      db.insert(connectedSources)
+        .values({
+          adapter: source.adapter,
+          assetId: source.assetId,
+          credentialsJson: "{}",
+          id: source.id,
+          label: source.label,
+          lastSyncAt: source.lastSyncAt ?? null,
+          tokenJson: null,
+        })
+        .run();
+
+      if (source.positions.length > 0) {
+        db.insert(positions)
+          .values(
+            source.positions.map((position) => ({
+              catalogueId: position.catalogueId,
+              currency: position.currency,
+              externalId: position.externalId,
+              finenessMillis: position.finenessMillis,
+              grade: position.grade,
+              id: position.id,
+              issueId: position.issueId,
+              liquidityTier: position.liquidityTier,
+              metal: position.metal,
+              metalValueMinor: position.metalValueMinor,
+              name: position.name,
+              numismaticFetchedAt: position.numismaticFetchedAt,
+              numismaticValueMinor: position.numismaticValueMinor,
+              purchaseDate: position.purchaseDate,
+              purchasePriceMinor: position.purchasePriceMinor,
+              quantity: position.quantity,
+              sourceId: source.id,
+              weightGrams: position.weightGrams,
+            })),
+          )
+          .run();
+      }
+    }
+
     // One audit entry inside the transaction: a failed import leaves no
     // trace, a successful one starts the fresh log with its section counts.
     ctx.writeAuditEntry("import_workspace", "workspace", "default", {
       assets: doc.assets.length,
+      connectedSources: (doc.connectedSources ?? []).length,
       fireScopes: Object.keys(doc.fireConfig).length,
       groups: doc.groups.length,
       liabilities: doc.liabilities.length,
@@ -962,6 +1019,40 @@ function buildWorkspaceExport(db: StoreDb, workspace: Workspace | null): Workspa
       ...(row.staleReason ? { staleReason: row.staleReason } : {}),
     }));
 
+  // Connected sources + their positions (ADR 0016). credentials_json and
+  // token_json are LOCAL-ONLY and deliberately never read here — a restored
+  // source has its API key re-entered before it can sync again.
+  const positionsBySource = new Map<string, ExportedPosition[]>();
+  for (const row of db
+    .select()
+    .from(positions)
+    .orderBy(asc(positions.createdAt), asc(positions.id))
+    .all()) {
+    const { sourceId, ...position } = mapPositionRow(row);
+    const list = positionsBySource.get(sourceId) ?? [];
+    list.push(position);
+    positionsBySource.set(sourceId, list);
+  }
+  const exportedConnectedSources: ExportedConnectedSource[] = db
+    .select({
+      id: connectedSources.id,
+      adapter: connectedSources.adapter,
+      label: connectedSources.label,
+      assetId: connectedSources.assetId,
+      lastSyncAt: connectedSources.lastSyncAt,
+    })
+    .from(connectedSources)
+    .orderBy(asc(connectedSources.createdAt), asc(connectedSources.id))
+    .all()
+    .map((row) => ({
+      id: row.id,
+      adapter: row.adapter,
+      label: row.label,
+      assetId: row.assetId,
+      ...(row.lastSyncAt ? { lastSyncAt: row.lastSyncAt } : {}),
+      positions: positionsBySource.get(row.id) ?? [],
+    }));
+
   return serializeWorkspaceExport({
     workspace: { baseCurrency: workspace.baseCurrency, mode: workspace.mode },
     members: workspace.members,
@@ -984,6 +1075,7 @@ function buildWorkspaceExport(db: StoreDb, workspace: Workspace | null): Workspa
         .map(toExportedLiability),
     },
     priceCache,
+    connectedSources: exportedConnectedSources,
   });
 }
 
