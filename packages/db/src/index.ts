@@ -7,12 +7,14 @@ import type {
   DecimalString,
   EarlyRepaymentMode,
   FireScopeConfig,
+  FrozenIdentityCapture,
   HousingCurveInputs,
   InvestmentOperation,
   Liability,
   ManualValuePoint,
   ManualAsset,
   OwnershipShare,
+  SnapshotHoldingKind,
   SourcePosition,
   WarningOverride,
   Workspace,
@@ -1854,6 +1856,35 @@ function groupFrozenHoldingsByDate(
 }
 
 /**
+ * Read ONE holding's frozen classification captures across every existing
+ * snapshot (#242) — the basis the domain's frozen-vs-live seam recovers a
+ * holding's CONTEMPORANEOUS tier / housing-ness from when a ripple must generate
+ * a brand-new row at a date/scope that never carried one. Uses the targeted
+ * `(holding_id, kind)` index read (#207) so it never scans the whole table, and
+ * collapses to one capture per dateKey (a holding's classification is frozen
+ * identically across the scopes captured on a date until a reclassification, so
+ * the first row seen for a date is representative). Empty when the holding has
+ * never been captured — the seam then falls back to live (no recovery basis).
+ */
+function readFrozenIdentityCaptures(
+  db: StoreDb,
+  holdingId: string,
+  kind: SnapshotHoldingKind,
+): FrozenIdentityCapture[] {
+  const byDate = new Map<string, FrozenIdentityCapture>();
+  for (const record of readSnapshotHoldings(db, { holdingId, kind })) {
+    if (byDate.has(record.dateKey)) continue;
+    byDate.set(record.dateKey, {
+      countsAsHousing: record.countsAsHousing,
+      dateKey: record.dateKey,
+      liquidityTier: record.liquidityTier,
+      securesHousing: record.securesHousing,
+    });
+  }
+  return [...byDate.values()];
+}
+
+/**
  * Ripple effect (ADR 0012): a backdated operation change regenerates the
  * snapshot at its date and recalculates the existing snapshots it affects.
  *
@@ -1889,6 +1920,11 @@ function rippleHistoricalSnapshots(
   const asset = readInvestmentIdentity(db, assetId);
   if (!asset) return;
   const operations = readAllOperations(db).get(assetId) ?? [];
+
+  // The asset's frozen classification captures across every snapshot (#242),
+  // read ONCE before any recalc mutates rows — the basis the domain seam recovers
+  // a newly-appearing row's CONTEMPORANEOUS frozen tier from instead of the live.
+  const frozenIdentity = readFrozenIdentityCaptures(db, assetId, "asset");
 
   ctx.transaction(() => {
     for (const scope of listScopeOptions(workspace)) {
@@ -1957,6 +1993,7 @@ function rippleHistoricalSnapshots(
         const recalculated = recalculateSnapshotForAsset({
           asset,
           frozenHoldings,
+          frozenIdentity,
           operations,
           snapshot: snap,
           workspace,
@@ -2012,6 +2049,10 @@ function rippleHistoricalSnapshotsForOperations(
   const asset = readInvestmentIdentity(db, assetId);
   if (!asset) return;
   const operations = readAllOperations(db).get(assetId) ?? [];
+
+  // The asset's frozen classification captures across every snapshot (#242), read
+  // ONCE before any recalc mutates rows (see rippleHistoricalSnapshots).
+  const frozenIdentity = readFrozenIdentityCaptures(db, assetId, "asset");
 
   // Unique affected dates, and the earliest from which existing snapshots recalc.
   const generateDates = [...new Set(operationDateKeys)];
@@ -2079,6 +2120,7 @@ function rippleHistoricalSnapshotsForOperations(
         const recalculated = recalculateSnapshotForAsset({
           asset,
           frozenHoldings,
+          frozenIdentity,
           operations,
           snapshot: snap,
           workspace,
@@ -2143,6 +2185,10 @@ function rippleHistoricalSnapshotsForValuation(
   // remaining live record — nothing to ripple.
   if (!curve) return;
 
+  // The asset's frozen classification captures across every snapshot (#242), read
+  // ONCE before any recalc mutates rows (see rippleHistoricalSnapshots).
+  const frozenIdentity = readFrozenIdentityCaptures(db, assetId, "asset");
+
   ctx.transaction(() => {
     for (const scope of listScopeOptions(workspace)) {
       const existing = readSnapshots(db, scope.id);
@@ -2196,6 +2242,7 @@ function rippleHistoricalSnapshotsForValuation(
           asset,
           curve,
           frozenHoldings,
+          frozenIdentity,
           manualValueHistory: deps.manualValueHistory,
           snapshot: snap,
           today,
@@ -2472,6 +2519,12 @@ function rippleHistoricalSnapshotsForOwnership(
   const housingAssetIds =
     liability !== null ? housingAssetIdsOf(deps.assets) : new Set<string>();
 
+  // The holding's frozen classification captures across every snapshot (#242),
+  // read ONCE before any recalc mutates rows. A member gaining a stake gets a
+  // brand-new row whose frozen housing-ness/tier the seam recovers from these
+  // captures (e.g. the household scope's), not from the live identity.
+  const frozenIdentity = readFrozenIdentityCaptures(db, holdingId, kind);
+
   ctx.transaction(() => {
     // The dates to re-weight: exactly the household snapshots carrying the holding
     // (an ownership edit moves no other dates), each mapped to the LOSSLESS global
@@ -2519,6 +2572,7 @@ function rippleHistoricalSnapshotsForOwnership(
 
         const recalculated = recalculateSnapshotForOwnership({
           frozenHoldings,
+          frozenIdentity,
           globalValueMinor,
           holding: asset
             ? { asset, kind: "asset" }
@@ -2571,6 +2625,10 @@ function rippleHistoricalSnapshotsForCoinAcquisition(
   const asset = readInvestmentIdentity(db, params.assetId);
   if (!asset) return;
 
+  // The collection's frozen classification captures across every snapshot (#242),
+  // read ONCE before any recalc mutates rows (see rippleHistoricalSnapshots).
+  const frozenIdentity = readFrozenIdentityCaptures(db, params.assetId, "asset");
+
   // Each new trade reduced to its frozen GLOBAL value + the date it enters the
   // timeline. A zero-value coin adds nothing, so it never forces a recalculation.
   const trades = params.newTrades
@@ -2602,6 +2660,7 @@ function rippleHistoricalSnapshotsForCoinAcquisition(
       const recalculated = recalculateSnapshotForCoinAcquisition({
         asset,
         frozenHoldings,
+        frozenIdentity,
         globalDeltaMinor,
         snapshot: snap,
         workspace,

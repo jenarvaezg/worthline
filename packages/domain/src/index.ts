@@ -312,11 +312,13 @@ export { buildSnapshotId, captureSnapshotForScope } from "./capture-snapshot";
 export type {
   BuildSnapshotAtDateInput,
   DebtBalanceCurveInputs,
+  FrozenIdentityCapture,
   GlobalHoldingValueInput,
   HousingCurveInputs,
   RecalculateCoinAcquisitionSnapshotInput,
   RecalculateHousingSnapshotInput,
   RecalculateLiabilitySnapshotInput,
+  RecalculateOwnershipSnapshotInput,
   RecalculateSnapshotInput,
 } from "./historical-snapshot";
 export type { ManualValuePoint } from "./value-history";
