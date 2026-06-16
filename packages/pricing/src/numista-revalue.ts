@@ -13,13 +13,14 @@
  * readers (with the OAuth token) and a Stooq/ECB spot resolver.
  */
 
+import { COIN_VALUE_TTL_DAYS, coinValuation, isNumismaticStale } from "./coin-valuation";
 import type { MetalKind } from "./metal";
-import { metalValueMinor } from "./metal";
 import type { NumistaPrices } from "./numista";
-import { numismaticEstimateMinor } from "./numista";
 
-/** The long TTL for refetching a coin's numismatic estimate (ADR 0017). */
-export const NUMISMATIC_TTL_DAYS = 30;
+/** The long TTL for refetching a coin's numismatic estimate (ADR 0017). Sourced
+ *  from the single coin-value staleness config so it never drifts behind a
+ *  second independent literal (#240). */
+export const NUMISMATIC_TTL_DAYS = COIN_VALUE_TTL_DAYS.numismaticEstimate;
 
 /**
  * A stored coin position carrying the persisted detail needed to revalue it
@@ -65,14 +66,29 @@ export interface RevalueOptions {
   numismaticTtlDays?: number;
 }
 
+/** Whether a position's numismatic estimate is past its refetch TTL. Defers to
+ *  the coin-value module's clock by default (#240); honours the test/override TTL
+ *  when one is supplied. */
+function numismaticPastTtl(
+  fetchedAt: string | null,
+  nowIso: string,
+  overrideTtlDays: number | undefined,
+): boolean {
+  if (overrideTtlDays === undefined) {
+    return isNumismaticStale(fetchedAt, nowIso);
+  }
+  if (fetchedAt === null) {
+    return true;
+  }
+  const ageMs = new Date(nowIso).getTime() - new Date(fetchedAt).getTime();
+  return ageMs >= overrideTtlDays * 86400000;
+}
+
 export async function refreshCoinValuations(
   positions: RevaluePosition[],
   deps: RevalueDeps,
   options: RevalueOptions,
 ): Promise<RevaluedPosition[]> {
-  const ttlMs = (options.numismaticTtlDays ?? NUMISMATIC_TTL_DAYS) * 86400000;
-  const now = new Date(options.nowIso).getTime();
-
   // Deduped per (metal) and per (type, issue) so a collection of N coins makes at
   // most one spot lookup per metal and one estimate lookup per issue (ADR 0017
   // request-cap discipline). Estimates memoize the in-flight promise so two
@@ -102,40 +118,55 @@ export async function refreshCoinValuations(
 
   const results: RevaluedPosition[] = [];
   for (const position of positions) {
-    // ── Metal: recompute from stored detail × fresh spot; outage keeps last-known.
+    // ── Spot is fetched here (the I/O); the candidate math + decision live in the
+    //    coin-value module. An outage keeps the last-known metal figure (#240).
     const spot = position.metal === null ? null : await resolveSpot(position.metal);
-    const recomputed = metalValueMinor({
-      metal: position.metal,
-      finenessMillis: position.finenessMillis,
-      weightGrams: position.weightGrams,
-      quantity: position.quantity,
-      spotPerOzEur: spot,
-    });
-    const metal = spot === null ? position.metalValueMinor : recomputed;
 
-    // ── Numismatic: refetch only once the long TTL has lapsed (or never fetched).
-    let numismaticValue = position.numismaticValueMinor;
+    // ── Numismatic: refetch only once the long TTL has lapsed (or never fetched);
+    //    the staleness clock is the module's. A successful fetch advances the
+    //    fetched-at stamp and supplies fresh prices to the module; otherwise we
+    //    keep the prior stamp and pass null prices so it keeps the last-known.
+    let prices: NumistaPrices | null = null;
     let numismaticFetchedAt = position.numismaticFetchedAt;
 
-    const ageMs =
-      position.numismaticFetchedAt === null
-        ? Number.POSITIVE_INFINITY
-        : now - new Date(position.numismaticFetchedAt).getTime();
-
-    if (ageMs >= ttlMs && position.issueId !== null && position.grade) {
+    if (
+      numismaticPastTtl(
+        position.numismaticFetchedAt,
+        options.nowIso,
+        options.numismaticTtlDays,
+      ) &&
+      position.issueId !== null &&
+      position.grade
+    ) {
       const priced = await resolvePrices(position.typeId, position.issueId);
       if (priced !== null) {
-        const perCoin = numismaticEstimateMinor(priced.prices, position.grade);
-        numismaticValue = perCoin === null ? null : perCoin * position.quantity;
+        prices = priced;
         numismaticFetchedAt = options.nowIso;
       }
       // priced === null → leave value + fetched-at untouched so it retries next pass.
     }
 
+    const valuation = coinValuation({
+      metal: position.metal,
+      finenessMillis: position.finenessMillis,
+      weightGrams: position.weightGrams,
+      quantity: position.quantity,
+      grade: position.grade,
+      spotPerOzEur: spot,
+      prices: prices?.prices ?? null,
+      numismaticFetchedAt,
+      // The fallback rungs do not apply to the candidate refresh; the rollup owns
+      // the purchase/zero choice when both candidates are unresolved.
+      purchasePriceMinor: null,
+      lastMetalValueMinor: position.metalValueMinor,
+      lastNumismaticValueMinor: position.numismaticValueMinor,
+      nowIso: options.nowIso,
+    });
+
     results.push({
       id: position.id,
-      metalValueMinor: metal,
-      numismaticValueMinor: numismaticValue,
+      metalValueMinor: valuation.metal.minor,
+      numismaticValueMinor: valuation.numismatic.minor,
       numismaticFetchedAt,
     });
   }

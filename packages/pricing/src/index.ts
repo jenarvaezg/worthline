@@ -115,6 +115,13 @@ export type {
 } from "./numista";
 export { metalValueMinor, parseComposition, STOOQ_METAL_SYMBOL } from "./metal";
 export type { MetalKind, MetalValueInput, ParsedComposition } from "./metal";
+export { COIN_VALUE_TTL_DAYS, coinValuation, isNumismaticStale } from "./coin-valuation";
+export type {
+  CandidateValuation,
+  CoinValuationInput,
+  CoinValueResult,
+  NumismaticValuation,
+} from "./coin-valuation";
 export { fetchMetalSpotEur, syncNumistaCollection } from "./numista-sync";
 export type { NumistaSyncDeps, PositionDraft } from "./numista-sync";
 export { NUMISMATIC_TTL_DAYS, refreshCoinValuations } from "./numista-revalue";
