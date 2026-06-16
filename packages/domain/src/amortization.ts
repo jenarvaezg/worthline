@@ -139,6 +139,19 @@ export function addMonths(dateKey: string, count: number): string {
   return `${newYear}-${mm}-${dd}`;
 }
 
+/**
+ * The suggested first-payment date for a freshly-entered disbursement: the 1st
+ * of the month roughly two months out — the "rest of the contracting month plus
+ * a full month" stub ING uses (ADR 0019). A mid-month firma (2026-06-15) →
+ * 2026-08-01. It is an editable default, never enforced: banks use other stubs
+ * and payment days, so the form lets the user override it (#189). Day-of-month
+ * never overflows, so the YYYY-MM prefix of `addMonths(d, 2)` is the target
+ * month and pinning the day to "01" is safe.
+ */
+export function suggestFirstPaymentDate(disbursementDate: string): string {
+  return `${addMonths(disbursementDate, 2).slice(0, 7)}-01`;
+}
+
 /** Fixed monthly payment for the given capital, monthly rate, and term. */
 function monthlyPayment(capital: Big, monthlyRate: Big, termMonths: number): Big {
   if (monthlyRate.eq(0)) {

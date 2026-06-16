@@ -59,21 +59,28 @@ test("debt model: amortizable plan + revisions, revolving anchors, future reject
   await expect(page.getByRole("status")).toHaveText("Modelo de deuda guardado.");
   await expect(page.getByRole("form", { name: "Plan de amortización" })).toBeVisible();
 
-  // 4. Declare a PAST amortization plan (start ~6 years ago).
+  // 4. Declare a PAST amortization plan (firma ~6 years ago). Two dates now
+  //    (ADR 0019, #189): a disbursement and a first payment. Filling the firma
+  //    auto-fills the first-payment suggestion; we override it with an explicit
+  //    date to pin the curve.
   const planStart = yearsAgo(6);
   const planForm = page.getByRole("form", { name: "Plan de amortización" });
   await planForm.getByLabel("Capital inicial en EUR").fill("200000");
   await planForm.getByLabel("Tipo de interés anual (%)").fill("2,5");
   await planForm.getByLabel("Plazo en meses").fill("360");
-  await planForm.getByLabel("Fecha de inicio").fill(planStart);
+  await planForm.getByLabel("Fecha de firma").fill(planStart);
+  await planForm.getByLabel("Fecha del primer pago").fill(planStart);
   await page.getByRole("button", { name: "Guardar plan" }).click();
   await expect(page.getByRole("status")).toHaveText("Plan de amortización guardado.");
   // Persisted plan is shown back in the form.
-  await expect(planForm.getByLabel("Fecha de inicio")).toHaveValue(planStart);
+  await expect(planForm.getByLabel("Fecha de firma")).toHaveValue(planStart);
+  await expect(planForm.getByLabel("Fecha del primer pago")).toHaveValue(planStart);
   await expect(planForm.getByLabel("Plazo en meses")).toHaveValue("360");
 
-  // 5. A FUTURE start date is rejected client-side (native max=today).
-  const futureStart = planForm.getByLabel("Fecha de inicio");
+  // 5. A FUTURE firma is rejected client-side (native max=today). Editing an
+  //    existing plan, the first payment is already set, so changing the firma
+  //    leaves it untouched (the suggestion only tracks a blank field).
+  const futureStart = planForm.getByLabel("Fecha de firma");
   await futureStart.fill(yearsAhead(1));
   expect(await futureStart.evaluate((el: HTMLInputElement) => el.validity.valid)).toBe(
     false,

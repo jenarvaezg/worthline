@@ -19,6 +19,7 @@ import { firstCuota, formatMoneyInput, formatMoneyMinor } from "@worthline/domai
 import type { DebtModel, EarlyRepaymentMode } from "@worthline/domain";
 
 import type { FormErrorContext } from "../../../../intake";
+import { PlanDateFields } from "./plan-date-fields";
 import {
   addBalanceAnchorAction,
   addEarlyRepaymentAction,
@@ -229,17 +230,11 @@ function PlanFields({ max, values }: { max: string; values: Record<string, strin
           step="1"
         />
       </label>
-      <label>
-        Fecha de inicio
-        <input
-          aria-label="Fecha de inicio"
-          defaultValue={values["startDate"]}
-          max={max}
-          name="startDate"
-          required
-          type="date"
-        />
-      </label>
+      <PlanDateFields
+        initialDisbursement={values["disbursementDate"] ?? ""}
+        initialFirstPayment={values["firstPaymentDate"] ?? ""}
+        max={max}
+      />
     </>
   );
 }
@@ -271,10 +266,9 @@ function AmortizablePlanEditor({
       : plan
         ? {
             annualInterestRate: rateToPercent(plan.annualInterestRate),
+            disbursementDate: plan.disbursementDate,
+            firstPaymentDate: plan.firstPaymentDate,
             initialCapital: formatMoneyInput(plan.initialCapitalMinor),
-            // This slice (#188) keeps the single date input; it shows the
-            // disbursement date (ADR 0019). The form slice (#189) adds the second.
-            startDate: plan.disbursementDate,
             termMonths: String(plan.termMonths),
           }
         : {};
