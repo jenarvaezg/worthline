@@ -177,12 +177,16 @@ export async function syncBinanceAction(
 
     // 3) Write: replace positions and re-roll EVERY rung's holding value. Tokens
     // ripple no history (their value is live, never dated), so this is a pure
-    // value re-roll across the source's market + term-locked assets.
-    runWith(
-      (store) =>
-        store.syncConnectedSource({ positions: drafts, sourceId, syncedAt: nowIso }),
-      _store,
-    );
+    // value re-roll across the source's market + term-locked assets. A manual sync
+    // also stamps the `binance` freshness row fresh (PRD #245 S4) so the daily
+    // stale-price pass won't immediately re-sync the source it just refreshed.
+    runWith((store) => {
+      store.syncConnectedSource({ positions: drafts, sourceId, syncedAt: nowIso });
+      store.connectedSources.revaluePositions(sourceId, [], {
+        fetchedAt: nowIso,
+        freshnessState: "fresh",
+      });
+    }, _store);
   } catch {
     // A bad/expired key or unreachable Binance — surface a clear error. The
     // existing positions are left untouched (we never reached the write).
