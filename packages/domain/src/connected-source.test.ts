@@ -13,6 +13,7 @@ import {
   coinCollectionValueAtDate,
   coinValue,
   groupPositionsByMetal,
+  groupPositionsByToken,
   instrumentForAdapter,
   positionValue,
   projectConnectedSource,
@@ -226,6 +227,31 @@ describe("projectConnectedSource — Binance tokens roll up live-valued (ADR 002
     expect(holdings[0]!.valueMinor).toBe(2_500_000);
     expect(holdings[0]!.positions).toHaveLength(2);
   });
+
+  test("the SAME token on two market wallets sums into ONE market holding value (#247)", () => {
+    const holdings = projectConnectedSource(binanceSource, [
+      token({
+        id: "t1",
+        externalId: "BTC:spot",
+        symbol: "BTC",
+        balance: "0.5",
+        unitPrice: "50000",
+      }), // 25 000 €
+      token({
+        id: "t2",
+        externalId: "BTC:funding",
+        symbol: "BTC",
+        balance: "0.1",
+        unitPrice: "50000",
+      }), // 5 000 €
+    ]);
+
+    // Both wallets are market-rung → one holding whose value sums the two positions.
+    expect(holdings).toHaveLength(1);
+    expect(holdings[0]!.liquidityTier).toBe("market");
+    expect(holdings[0]!.valueMinor).toBe(3_000_000);
+    expect(holdings[0]!.positions).toHaveLength(2);
+  });
 });
 
 describe("instrumentForAdapter — the holding instrument a source projects into", () => {
@@ -258,6 +284,68 @@ describe("groupPositionsByMetal — the detail-page lens (grouped by metal)", ()
     expect(groups[0]!.metal).toBe("plata");
     expect(groups[1]!.metal).toBeNull();
     expect(groups[1]!.subtotalMinor).toBe(50_000);
+  });
+});
+
+describe("groupPositionsByToken — the Binance detail lens (grouped by symbol, #247)", () => {
+  test("a token across spot+funding+flexible-earn groups into ONE summed token group", () => {
+    const groups = groupPositionsByToken([
+      token({
+        id: "t1",
+        externalId: "BTC:spot",
+        wallet: "spot",
+        symbol: "BTC",
+        balance: "0.5",
+        unitPrice: "50000",
+      }), // 25 000 €
+      token({
+        id: "t2",
+        externalId: "BTC:funding",
+        wallet: "funding",
+        symbol: "BTC",
+        balance: "0.1",
+        unitPrice: "50000",
+      }), // 5 000 €
+      token({
+        id: "t3",
+        externalId: "BTC:flexible-earn",
+        wallet: "flexible-earn",
+        symbol: "BTC",
+        balance: "0.4",
+        unitPrice: "50000",
+      }), // 20 000 €
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ symbol: "BTC", subtotalMinor: 5_000_000 });
+    expect(groups[0]!.positions).toHaveLength(3);
+    // Wallet origin survives as per-position metadata on the group.
+    expect(groups[0]!.positions.map((p) => p.wallet)).toEqual([
+      "spot",
+      "funding",
+      "flexible-earn",
+    ]);
+  });
+
+  test("orders most valuable token first, ties broken by symbol asc", () => {
+    const groups = groupPositionsByToken([
+      token({ id: "t1", symbol: "ETH", balance: "2", unitPrice: "2000" }), // 4 000 €
+      token({ id: "t2", symbol: "BTC", balance: "0.5", unitPrice: "50000" }), // 25 000 €
+    ]);
+
+    expect(groups.map((g) => g.symbol)).toEqual(["BTC", "ETH"]);
+    expect(groups[0]).toMatchObject({ symbol: "BTC", subtotalMinor: 2_500_000 });
+    expect(groups[1]).toMatchObject({ symbol: "ETH", subtotalMinor: 400_000 });
+  });
+
+  test("an unpriceable token still groups with subtotal 0 (value-at-0 case)", () => {
+    const groups = groupPositionsByToken([
+      token({ id: "t1", symbol: "WAGMI", balance: "100", unitPrice: null }),
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ symbol: "WAGMI", subtotalMinor: 0 });
+    expect(groups[0]!.positions).toHaveLength(1);
   });
 });
 

@@ -8,7 +8,13 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getSpotBalances, signQuery } from "./binance";
+import {
+  getFlexibleEarnBalances,
+  getFundingBalances,
+  getMarketBalances,
+  getSpotBalances,
+  signQuery,
+} from "./binance";
 
 const creds = { apiKey: "KEY", apiSecret: "test-secret" };
 
@@ -83,5 +89,168 @@ describe("getSpotBalances — signed GET /api/v3/account", () => {
   it("throws a Binance-tagged error on a non-2xx (bad key / outage)", async () => {
     vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 401 } as Response);
     await expect(getSpotBalances(creds, { nowMs: 1 })).rejects.toThrow(/Binance/);
+  });
+});
+
+describe("getFundingBalances — signed POST /sapi/v1/asset/get-funding-asset", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("signs a POSTed timestamp, sums free+locked+freeze+withdrawing, and tags wallet funding", async () => {
+    const fetchMock = vi.mocked(fetch).mockResolvedValueOnce(
+      okJson([
+        {
+          asset: "BTC",
+          free: "0.10000000",
+          locked: "0.20000000",
+          freeze: "0.30000000",
+          withdrawing: "0.40000000",
+        },
+        { asset: "USDT", free: "100.00000000" },
+      ]),
+    );
+
+    const balances = await getFundingBalances(creds, { nowMs: 1_700_000_000_000 });
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toContain("/sapi/v1/asset/get-funding-asset?timestamp=1700000000000");
+    expect(url).toContain(
+      "signature=dccf2651b1d8329665bfddb0798eccd4650d986a9cfe5547b2f5822131e7620b",
+    );
+    expect((init as RequestInit).method).toBe("POST");
+    expect((init as RequestInit).headers).toMatchObject({ "X-MBX-APIKEY": "KEY" });
+
+    // Funding balance = free + locked + freeze + withdrawing (all owned; an in-flight
+    // withdrawal hasn't left the account yet). Missing buckets count as 0.
+    expect(balances).toEqual([
+      { asset: "BTC", wallet: "funding", balance: "1" }, // 0.1 + 0.2 + 0.3 + 0.4
+      { asset: "USDT", wallet: "funding", balance: "100" },
+    ]);
+  });
+
+  it("drops zero balances so they never become positions", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      okJson([
+        { asset: "BTC", free: "0.5", locked: "0", freeze: "0" },
+        { asset: "DUST", free: "0", locked: "0", freeze: "0" },
+      ]),
+    );
+
+    const balances = await getFundingBalances(creds, { nowMs: 1 });
+    expect(balances).toEqual([{ asset: "BTC", wallet: "funding", balance: "0.5" }]);
+  });
+
+  it("throws a Binance-tagged error on a non-2xx", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 401 } as Response);
+    await expect(getFundingBalances(creds, { nowMs: 1 })).rejects.toThrow(/Binance/);
+  });
+});
+
+describe("getFlexibleEarnBalances — signed GET /sapi/v1/simple-earn/flexible/position", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("parses totalAmount per row and tags wallet flexible-earn", async () => {
+    const fetchMock = vi.mocked(fetch).mockResolvedValueOnce(
+      okJson({
+        rows: [
+          { asset: "USDT", totalAmount: "500.00000000" },
+          { asset: "ETH", totalAmount: "1.50000000" },
+        ],
+        total: 2,
+      }),
+    );
+
+    const balances = await getFlexibleEarnBalances(creds, { nowMs: 1 });
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toContain("/sapi/v1/simple-earn/flexible/position?");
+    expect(url).toContain("size=100");
+    expect((init as RequestInit).headers).toMatchObject({ "X-MBX-APIKEY": "KEY" });
+
+    expect(balances).toEqual([
+      { asset: "USDT", wallet: "flexible-earn", balance: "500" },
+      { asset: "ETH", wallet: "flexible-earn", balance: "1.5" },
+    ]);
+  });
+
+  it("drops zero balances so they never become positions", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      okJson({
+        rows: [
+          { asset: "USDT", totalAmount: "500" },
+          { asset: "ZERO", totalAmount: "0" },
+        ],
+        total: 2,
+      }),
+    );
+
+    const balances = await getFlexibleEarnBalances(creds, { nowMs: 1 });
+    expect(balances).toEqual([
+      { asset: "USDT", wallet: "flexible-earn", balance: "500" },
+    ]);
+  });
+
+  it("throws a Binance-tagged error on a non-2xx", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 500 } as Response);
+    await expect(getFlexibleEarnBalances(creds, { nowMs: 1 })).rejects.toThrow(/Binance/);
+  });
+});
+
+describe("getMarketBalances — spot + funding + flexible Earn into one rung", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("concatenates all three wallets' balances (all market rung)", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/v3/account")) {
+        return okJson({ balances: [{ asset: "BTC", free: "0.5", locked: "0" }] });
+      }
+      if (url.includes("/sapi/v1/asset/get-funding-asset")) {
+        return okJson([{ asset: "BTC", free: "0.1", locked: "0", freeze: "0" }]);
+      }
+      if (url.includes("/sapi/v1/simple-earn/flexible/position")) {
+        return okJson({ rows: [{ asset: "USDT", totalAmount: "500" }], total: 1 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const balances = await getMarketBalances(creds, { nowMs: 1 });
+
+    expect(balances).toEqual([
+      { asset: "BTC", wallet: "spot", balance: "0.5" },
+      { asset: "BTC", wallet: "funding", balance: "0.1" },
+      { asset: "USDT", wallet: "flexible-earn", balance: "500" },
+    ]);
+  });
+
+  it("aborts the whole read if one wallet endpoint fails (spot work is discarded)", async () => {
+    // A read-only key/transient outage that fails funding must not partial-commit:
+    // getMarketBalances rejects, and the action's catch leaves positions untouched.
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/v3/account")) {
+        return okJson({ balances: [{ asset: "BTC", free: "0.5", locked: "0" }] });
+      }
+      if (url.includes("/sapi/v1/asset/get-funding-asset")) {
+        return { ok: false, status: 401 } as Response;
+      }
+      return okJson({ rows: [], total: 0 });
+    });
+
+    await expect(getMarketBalances(creds, { nowMs: 1 })).rejects.toThrow(/Binance/);
   });
 });

@@ -143,25 +143,36 @@ describe("syncBinanceAction", () => {
     expect(store.connectedSources.readPositions(sourceId)).toHaveLength(1);
   });
 
-  test("pulls balances + live prices and replaces positions (stubbed fetch)", async () => {
+  test("pulls spot+funding+flexible-Earn balances + live prices and merges positions (stubbed fetch)", async () => {
     const store = createInMemoryStore();
     const { sourceId } = seedWithSource(store);
 
-    // Stub global fetch: the signed Binance account endpoint, then CoinGecko.
+    // Stub global fetch: the three signed Binance wallet endpoints, then CoinGecko.
+    // BTC sits on spot AND funding; ETH on flexible Earn (#247 fold-in).
     const fetchStub = vi.fn(async (input: string | URL) => {
       const url = String(input);
-      if (url.includes("api.binance.com")) {
+      if (url.includes("/api/v3/account")) {
         return {
           ok: true,
-          json: async () => ({
-            balances: [{ asset: "BTC", free: "0.5", locked: "0" }],
-          }),
+          json: async () => ({ balances: [{ asset: "BTC", free: "0.5", locked: "0" }] }),
+        } as unknown as Response;
+      }
+      if (url.includes("/sapi/v1/asset/get-funding-asset")) {
+        return {
+          ok: true,
+          json: async () => [{ asset: "BTC", free: "0.1", locked: "0", freeze: "0" }],
+        } as unknown as Response;
+      }
+      if (url.includes("/sapi/v1/simple-earn/flexible/position")) {
+        return {
+          ok: true,
+          json: async () => ({ rows: [{ asset: "ETH", totalAmount: "2" }], total: 1 }),
         } as unknown as Response;
       }
       if (url.includes("api.coingecko.com")) {
         return {
           ok: true,
-          json: async () => ({ bitcoin: { eur: 50_000 } }),
+          json: async () => ({ bitcoin: { eur: 50_000 }, ethereum: { eur: 2_000 } }),
         } as unknown as Response;
       }
       throw new Error(`unexpected fetch: ${url}`);
@@ -175,14 +186,13 @@ describe("syncBinanceAction", () => {
     );
 
     expect(digest).toContain("ok=binance_synced");
+
+    // One position per (asset, wallet) — BTC split spot/funding, ETH on Earn.
     const positions = store.connectedSources.readPositions(sourceId);
-    expect(positions).toHaveLength(1);
-    expect(positions[0]).toMatchObject({
-      kind: "token",
-      symbol: "BTC",
-      balance: "0.5",
-      unitPrice: "50000",
-    });
+    expect(positions).toHaveLength(3);
+    expect(
+      positions.map((p) => (p.kind === "token" ? `${p.symbol}:${p.wallet}` : "")).sort(),
+    ).toEqual(["BTC:funding", "BTC:spot", "ETH:flexible-earn"]);
   });
 
   test("a Binance outage leaves existing positions untouched and surfaces an error", async () => {

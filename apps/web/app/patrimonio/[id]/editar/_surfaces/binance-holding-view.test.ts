@@ -6,7 +6,11 @@
 import type { TokenPosition } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
-import { buildBinanceHoldingView, tokenBasisTag } from "./binance-holding-view";
+import {
+  buildBinanceHoldingView,
+  formatWallets,
+  tokenBasisTag,
+} from "./binance-holding-view";
 
 function token(over: Partial<TokenPosition> & { id: string }): TokenPosition {
   return {
@@ -38,6 +42,40 @@ describe("buildBinanceHoldingView", () => {
     expect(view.tokenCount).toBe(2);
   });
 
+  test("groups a token spanning wallets into ONE row with the summed value (#247)", () => {
+    const view = buildBinanceHoldingView([
+      token({
+        id: "1",
+        symbol: "BTC",
+        wallet: "spot",
+        balance: "0.5",
+        unitPrice: "50000",
+      }), // 25 000 €
+      token({
+        id: "2",
+        symbol: "BTC",
+        wallet: "funding",
+        balance: "0.1",
+        unitPrice: "50000",
+      }), // 5 000 €
+      token({
+        id: "3",
+        symbol: "BTC",
+        wallet: "flexible-earn",
+        balance: "0.4",
+        unitPrice: "50000",
+      }), // 20 000 €
+    ]);
+
+    // ONE BTC row, value summed across the three wallets.
+    expect(view.tokenCount).toBe(1);
+    expect(view.rows).toHaveLength(1);
+    expect(view.rows[0]).toMatchObject({ symbol: "BTC", valueMinor: 5_000_000 });
+    expect(view.totalMinor).toBe(5_000_000);
+    // Wallet origin surfaces as metadata on the row.
+    expect(view.rows[0]!.wallets).toEqual(["spot", "funding", "flexible-earn"]);
+  });
+
   test("an unpriceable token is kept with value 0 and the zero basis", () => {
     const view = buildBinanceHoldingView([
       token({ id: "1", symbol: "BTC", balance: "0.5", unitPrice: "50000" }),
@@ -64,5 +102,15 @@ describe("tokenBasisTag", () => {
   test("labels market vs zero with the shared tag classes", () => {
     expect(tokenBasisTag("market")).toEqual({ label: "Mercado", cls: "coinTagMetal" });
     expect(tokenBasisTag("zero")).toEqual({ label: "Valor 0", cls: "coinTagZero" });
+  });
+});
+
+describe("formatWallets", () => {
+  test("labels and dot-joins the wallets a token spans, de-duplicating (#247)", () => {
+    expect(formatWallets(["spot", "funding", "flexible-earn"])).toBe(
+      "spot · funding · Earn flexible",
+    );
+    expect(formatWallets(["spot", "spot"])).toBe("spot");
+    expect(formatWallets([])).toBe("");
   });
 });
