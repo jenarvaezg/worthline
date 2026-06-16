@@ -95,6 +95,54 @@ describe("disconnectBinanceAction", () => {
     expect(store.assets.readAssets().some((a) => a.id === assetId)).toBe(false);
   });
 
+  test("removes BOTH the market and term-locked assets of a multi-rung source (#248)", async () => {
+    const store = createInMemoryStore();
+    const { sourceId } = seedWithSource(store);
+
+    // Spot (market) + locked-earn (term-locked) → two materialized assets.
+    store.connectedSources.syncPositions(
+      sourceId,
+      [
+        {
+          kind: "token",
+          externalId: "BTC:spot",
+          name: "BTC",
+          symbol: "BTC",
+          balance: "0.5",
+          wallet: "spot",
+          liquidityTier: "market",
+          unitPrice: "50000",
+          currency: "EUR",
+        },
+        {
+          kind: "token",
+          externalId: "ETH:locked-earn",
+          name: "ETH",
+          symbol: "ETH",
+          balance: "3",
+          wallet: "locked-earn",
+          liquidityTier: "term-locked",
+          unitPrice: "2000",
+          currency: "EUR",
+        },
+      ],
+      "2026-06-16T10:00:00.000Z",
+    );
+
+    expect(store.connectedSources.listSourceAssetIds(sourceId)).toHaveLength(2);
+
+    const digest = await runAction(
+      disconnectBinanceAction,
+      form({ currentUrl: "/ajustes", sourceId }),
+      store,
+    );
+
+    expect(digest).toContain("ok=binance_disconnected");
+    expect(store.connectedSources.listSources()).toHaveLength(0);
+    // No crypto asset survives — both rungs were removed, positions cascaded.
+    expect(store.assets.readAssets().some((a) => a.instrument === "crypto")).toBe(false);
+  });
+
   test("errors when no source id is supplied", async () => {
     const store = createInMemoryStore();
     seedWithSource(store);
@@ -167,6 +215,12 @@ describe("syncBinanceAction", () => {
         return {
           ok: true,
           json: async () => ({ rows: [{ asset: "ETH", totalAmount: "2" }], total: 1 }),
+        } as unknown as Response;
+      }
+      if (url.includes("/sapi/v1/simple-earn/locked/position")) {
+        return {
+          ok: true,
+          json: async () => ({ rows: [], total: 0 }),
         } as unknown as Response;
       }
       if (url.includes("api.coingecko.com")) {

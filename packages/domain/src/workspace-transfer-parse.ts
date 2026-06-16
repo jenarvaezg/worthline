@@ -144,6 +144,7 @@ const assetSchema = z.object({
   valuationMethod: valuationMethodSchema.optional(),
   annualAppreciationRate: nonEmptyString.optional(),
   valuationAnchors: z.array(valuationAnchorSchema).optional(),
+  connectedSourceId: nonEmptyString.optional(),
   ownership: z.array(ownershipShareSchema),
   investment: investmentMetaSchema.optional(),
   deletedAt: nonEmptyString.optional(),

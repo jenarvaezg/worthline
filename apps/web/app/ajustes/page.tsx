@@ -29,6 +29,7 @@ import {
   disconnectBinanceAction,
   syncBinanceAction,
 } from "./binance-actions";
+import { aggregateSourceValueMinor } from "./binance-helpers";
 import DisconnectNumistaFold from "./disconnect-numista-fold";
 import { connectNumistaAction, syncNumistaAction } from "./numista-actions";
 import { formatLastSync } from "./numista-helpers";
@@ -84,17 +85,22 @@ export default async function AjustesPage({
         }
       : null;
 
-    // The connected Binance source (PRD #245), if any. Like Numista the holding's
-    // value comes from the asset row; the token count is the number of token lines.
+    // The connected Binance source (PRD #245/#248), if any. A source now spans
+    // rungs — one asset per occupied rung (market + term-locked) — so the tile
+    // AGGREGATES across the source's assets: value = Σ asset values, token count =
+    // all the source's token positions. "Ver →" links to the market (primary) asset.
     const binanceRow = store.connectedSources
       .listSources()
       .find((source) => source.adapter === "binance");
     const binancePositions = binanceRow
       ? store.connectedSources.readPositions(binanceRow.id)
       : [];
-    const binanceAsset = binanceRow
-      ? (store.assets.readAssets().find((a) => a.id === binanceRow.assetId) ?? null)
-      : null;
+    const binanceAssetIds = binanceRow
+      ? new Set(store.connectedSources.listSourceAssetIds(binanceRow.id))
+      : new Set<string>();
+    const binanceValueMinor = binanceRow
+      ? aggregateSourceValueMinor(store.assets.readAssets(), binanceAssetIds)
+      : 0;
     const binanceSource = binanceRow
       ? {
           id: binanceRow.id,
@@ -102,7 +108,7 @@ export default async function AjustesPage({
           label: binanceRow.label,
           lastSyncAt: binanceRow.lastSyncAt,
           tokenCount: binancePositions.filter((p) => p.kind === "token").length,
-          valueMinor: binanceAsset?.currentValue.amountMinor ?? 0,
+          valueMinor: binanceValueMinor,
         }
       : null;
 

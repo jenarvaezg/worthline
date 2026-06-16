@@ -192,6 +192,177 @@ describe("syncPositions (Binance) re-rolls the holding LIVE as Σ(balance × pri
   });
 });
 
+describe("syncPositions (Binance) materializes ONE asset per rung (S3, #248)", () => {
+  test("spot + locked-earn → a market crypto asset AND a term-locked one, both linked", () => {
+    const store = createInMemoryStore();
+    seed(store);
+    const { sourceId, assetId } = connectBinance(store);
+
+    store.connectedSources.syncPositions(
+      sourceId,
+      [
+        token({
+          externalId: "BTC:spot",
+          symbol: "BTC",
+          balance: "0.5",
+          unitPrice: "50000",
+          wallet: "spot",
+          liquidityTier: "market",
+        }), // 25 000 € on market
+        token({
+          externalId: "ETH:locked-earn",
+          symbol: "ETH",
+          balance: "3",
+          unitPrice: "2000",
+          wallet: "locked-earn",
+          liquidityTier: "term-locked",
+        }), // 6 000 € on term-locked
+      ],
+      "2026-06-16T10:00:00.000Z",
+    );
+
+    const crypto = store.assets
+      .readAssets()
+      .filter((a) => a.instrument === "crypto")
+      .sort((a, b) => a.liquidityTier.localeCompare(b.liquidityTier));
+    expect(crypto).toHaveLength(2);
+
+    const byTier = new Map(crypto.map((a) => [a.liquidityTier, a]));
+    expect(byTier.get("market")!.id).toBe(assetId); // the primary asset keeps the id
+    expect(byTier.get("market")!.currentValue.amountMinor).toBe(2_500_000);
+    expect(byTier.get("term-locked")!.currentValue.amountMinor).toBe(600_000);
+
+    const termLockedAssetId = byTier.get("term-locked")!.id;
+
+    // Both assets are linked to the source; listSourceAssetIds returns both.
+    const ids = store.connectedSources.listSourceAssetIds(sourceId);
+    expect(ids).toHaveLength(2);
+    expect(ids).toContain(assetId);
+    expect(ids).toContain(termLockedAssetId);
+
+    // readSourceIdForAsset resolves the source from EITHER rung asset (#248): the
+    // market (primary) one AND the term-locked one — the term-locked asset's id is
+    // distinct from connected_sources.asset_id (the primary), yet still routes back.
+    expect(store.connectedSources.readSourceIdForAsset(assetId)).toBe(sourceId);
+    expect(store.connectedSources.readSourceIdForAsset(termLockedAssetId)).toBe(sourceId);
+    expect(termLockedAssetId).not.toBe(assetId);
+
+    // The term-locked asset inherits the source's ownership (the ownership-copy
+    // branch in rerollSourceHoldings) — 100 % the connecting member.
+    const termLocked = store.assets.readAssets().find((a) => a.id === termLockedAssetId)!;
+    expect(termLocked.ownership).toEqual([{ memberId: MEMBER_ID, shareBps: 10_000 }]);
+    store.close();
+  });
+
+  test("a later sync that empties the locked rung sets the term-locked asset to 0 (kept, not deleted)", () => {
+    const store = createInMemoryStore();
+    seed(store);
+    const { sourceId } = connectBinance(store);
+
+    store.connectedSources.syncPositions(
+      sourceId,
+      [
+        token({
+          externalId: "BTC:spot",
+          symbol: "BTC",
+          balance: "0.5",
+          unitPrice: "50000",
+        }),
+        token({
+          externalId: "ETH:locked-earn",
+          symbol: "ETH",
+          balance: "3",
+          unitPrice: "2000",
+          wallet: "locked-earn",
+          liquidityTier: "term-locked",
+        }),
+      ],
+      "2026-06-16T10:00:00.000Z",
+    );
+
+    const lockedId = store.connectedSources.listSourceAssetIds(sourceId).find((id) => {
+      const a = store.assets.readAssets().find((x) => x.id === id)!;
+      return a.liquidityTier === "term-locked";
+    })!;
+
+    // A later sync redeemed the locked position — only spot remains.
+    store.connectedSources.syncPositions(
+      sourceId,
+      [
+        token({
+          externalId: "BTC:spot",
+          symbol: "BTC",
+          balance: "0.5",
+          unitPrice: "50000",
+        }),
+      ],
+      "2026-06-17T10:00:00.000Z",
+    );
+
+    // The term-locked asset survives (snapshots/identity) but is valued 0 now.
+    const locked = store.assets.readAssets().find((a) => a.id === lockedId);
+    expect(locked).toBeDefined();
+    expect(locked!.currentValue.amountMinor).toBe(0);
+    // It is still the source's asset, so the link is intact.
+    expect(store.connectedSources.listSourceAssetIds(sourceId)).toContain(lockedId);
+    store.close();
+  });
+
+  test("re-sync materializes a FRESH live asset for a rung whose prior asset was trashed (#248, FIX 6)", () => {
+    const store = createInMemoryStore();
+    seed(store);
+    const { sourceId } = connectBinance(store);
+
+    store.connectedSources.syncPositions(
+      sourceId,
+      [
+        token({
+          externalId: "ETH:locked-earn",
+          symbol: "ETH",
+          balance: "3",
+          unitPrice: "2000",
+          wallet: "locked-earn",
+          liquidityTier: "term-locked",
+        }),
+      ],
+      "2026-06-16T10:00:00.000Z",
+    );
+
+    const trashedId = store.connectedSources.listSourceAssetIds(sourceId).find((id) => {
+      const a = store.assets.readAssets().find((x) => x.id === id)!;
+      return a.liquidityTier === "term-locked";
+    })!;
+
+    // Trash the term-locked rung asset, then re-sync the SAME rung.
+    store.assets.softDeleteAsset(trashedId, "2026-06-17T09:00:00.000Z");
+
+    store.connectedSources.syncPositions(
+      sourceId,
+      [
+        token({
+          externalId: "ETH:locked-earn",
+          symbol: "ETH",
+          balance: "3",
+          unitPrice: "2000",
+          wallet: "locked-earn",
+          liquidityTier: "term-locked",
+        }),
+      ],
+      "2026-06-17T10:00:00.000Z",
+    );
+
+    // Reroll ignores the trashed asset (deletedAt IS NULL filter) and materializes a
+    // fresh LIVE one — it does NOT resurrect the trashed row.
+    const live = store.assets
+      .readAssets()
+      .filter((a) => a.liquidityTier === "term-locked");
+    expect(live).toHaveLength(1);
+    expect(live[0]!.id).not.toBe(trashedId);
+    expect(live[0]!.currentValue.amountMinor).toBe(600_000);
+    store.close();
+  });
+});
+
 describe("manual crypto coexists with Binance (no duplicate detection)", () => {
   test("a hand-entered crypto investment and a Binance BTC both count", () => {
     const store = createInMemoryStore();

@@ -36,6 +36,25 @@ export function instrumentForAdapter(adapter: SourceAdapter): Instrument {
   return adapter === "numista" ? "coin_collection" : "crypto";
 }
 
+/**
+ * The liquidity rung a Binance wallet projects onto (ADR 0016/0021, S3 #248).
+ * Spot, funding and flexible Earn are all market-liquid (redeemable on demand) →
+ * the `market` rung. Locked Earn / locked staking is committed for a fixed term →
+ * the `term-locked` rung, a SEPARATE holding. This is the single mapping the sync
+ * stamps onto each draft and the seam that lets ONE source span rungs. Any wallet
+ * outside this table (an unforeseen surface) defaults to `market` — the most
+ * conservative liquidity claim, never over-stating how locked a balance is.
+ */
+export function rungForWallet(wallet: string): LiquidityTier {
+  switch (wallet) {
+    case "locked-earn":
+    case "staking":
+      return "term-locked";
+    default:
+      return "market";
+  }
+}
+
 /** A connected source: an external account worthline mirrors read-only (ADR 0016). */
 export interface ConnectedSource {
   id: string;

@@ -65,6 +65,34 @@ describe("syncBinanceAccount — balances → live-valued token drafts", () => {
     expect(drafts[0]).toMatchObject({ symbol: "BTC", unitPrice: null });
   });
 
+  test("maps a locked-earn balance to a TERM-LOCKED rung draft (S3, #248)", async () => {
+    const drafts = await syncBinanceAccount({
+      listBalances: async () => [
+        { asset: "BTC", wallet: "spot", balance: "0.5" },
+        { asset: "ETH", wallet: "locked-earn", balance: "3" },
+      ],
+      priceEur: async (id) => ({ bitcoin: 50_000, ethereum: 2_000 })[id] ?? null,
+    });
+
+    const byWallet = new Map(drafts.map((d) => [d.wallet, d]));
+    // spot stays market; locked-earn lifts onto the term-locked rung.
+    expect(byWallet.get("spot")?.liquidityTier).toBe("market");
+    expect(byWallet.get("locked-earn")?.liquidityTier).toBe("term-locked");
+    expect(byWallet.get("locked-earn")?.externalId).toBe("ETH:locked-earn");
+  });
+
+  test("funding and flexible-earn stay on the market rung", async () => {
+    const drafts = await syncBinanceAccount({
+      listBalances: async () => [
+        { asset: "BTC", wallet: "funding", balance: "0.1" },
+        { asset: "USDT", wallet: "flexible-earn", balance: "500" },
+      ],
+      priceEur: async (id) => ({ bitcoin: 50_000, tether: 1 })[id] ?? null,
+    });
+
+    expect(drafts.every((d) => d.liquidityTier === "market")).toBe(true);
+  });
+
   test("resolves each CoinGecko id at most once even across repeated symbols", async () => {
     const seen: string[] = [];
     await syncBinanceAccount({

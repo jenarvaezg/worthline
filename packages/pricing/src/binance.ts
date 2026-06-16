@@ -65,6 +65,13 @@ interface RawFlexibleEarnRow {
   totalAmount: string;
 }
 
+/** The raw locked-Earn position row (GET /sapi/v1/simple-earn/locked/position).
+ *  Unlike flexible Earn the owned quantity is `amount`. */
+interface RawLockedEarnRow {
+  asset: string;
+  amount: string;
+}
+
 /**
  * The canonical HMAC-SHA256 hex signature of a query string under the API secret
  * — the credential Binance's SIGNED endpoints verify. Pure and deterministic.
@@ -197,19 +204,67 @@ export async function getFlexibleEarnBalances(
 }
 
 /**
- * List ALL market-rung balances: spot + funding + flexible Earn, concatenated into
- * one `BinanceWalletBalance[]` (#247). Every wallet here is market-liquid, so each
- * line keeps its `wallet` tag (origin metadata) while folding into the same live
- * holding downstream (the sync makes one position per (asset, wallet); the holding
- * sums them). Fetched sequentially — three calls per sync stay well under the
- * rate cap and keep the failure surface simple (any throw aborts the whole sync).
+ * List the LOCKED Earn / locked-staking balances (GET
+ * /sapi/v1/simple-earn/locked/position, SIGNED). Unlike flexible Earn, locked Earn
+ * principal is committed for a fixed term — redeemable only at maturity — so it
+ * projects onto the **term-locked** rung, a SEPARATE holding from the market one
+ * (ADR 0016/0021, S3). Each row's owned quantity is its `amount`. A non-2xx throws
+ * a Binance-tagged error; zero balances are dropped.
+ *
+ * Binance folded most of what used to be "staking" under locked Earn (ETH 2.0
+ * staking, DOT/ADA term products, …). Any on-chain / ETH-staking-specific endpoint
+ * is bounded and intentionally out of scope here — locked Earn is the one
+ * term-locked surface this slice mirrors. One page (size=100) is requested;
+ * pagination beyond it is bounded and out of scope, as in flexible Earn.
  */
-export async function getMarketBalances(
+export async function getLockedEarnBalances(
+  credentials: BinanceCredentials,
+  deps: BinanceRequestDeps,
+): Promise<BinanceWalletBalance[]> {
+  const query = `size=100&timestamp=${deps.nowMs}`;
+  const signature = signQuery(query, credentials.apiSecret);
+
+  const res = await fetch(
+    `${BINANCE_BASE}/sapi/v1/simple-earn/locked/position?${query}&signature=${signature}`,
+    {
+      headers: { "X-MBX-APIKEY": credentials.apiKey },
+      signal: AbortSignal.timeout(8000),
+    },
+  );
+
+  if (!res.ok) {
+    throw new Error(
+      `Binance GET /sapi/v1/simple-earn/locked/position failed (HTTP ${res.status}).`,
+    );
+  }
+
+  const data = (await res.json()) as { rows?: RawLockedEarnRow[] };
+  return (data.rows ?? [])
+    .map((row) => ({
+      asset: row.asset,
+      wallet: "locked-earn",
+      balance: addUnits(row.amount, "0"),
+    }))
+    .filter((row) => compareUnits(row.balance, "0") > 0);
+}
+
+/**
+ * List ALL balances worthline mirrors: spot + funding + flexible Earn (market) +
+ * locked Earn (term-locked), concatenated into one `BinanceWalletBalance[]`
+ * (#247/#248). Each line keeps its `wallet` tag (origin metadata); the sync maps
+ * that wallet to a liquidity rung (market vs term-locked), so a source spans rungs
+ * — the first real exercise of ADR 0016's one-holding-per-rung projection. Futures
+ * and margin are deliberately NOT fetched. Fetched sequentially — four calls per
+ * sync stay well under the rate cap and keep the failure surface simple (any throw
+ * aborts the whole sync; the action's catch leaves existing positions untouched).
+ */
+export async function getAllBalances(
   credentials: BinanceCredentials,
   deps: BinanceRequestDeps,
 ): Promise<BinanceWalletBalance[]> {
   const spot = await getSpotBalances(credentials, deps);
   const funding = await getFundingBalances(credentials, deps);
   const flexibleEarn = await getFlexibleEarnBalances(credentials, deps);
-  return [...spot, ...funding, ...flexibleEarn];
+  const lockedEarn = await getLockedEarnBalances(credentials, deps);
+  return [...spot, ...funding, ...flexibleEarn, ...lockedEarn];
 }

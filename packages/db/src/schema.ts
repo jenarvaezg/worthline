@@ -114,6 +114,17 @@ export const assets = sqliteTable(
      * domain/caller, not as a SQL constraint (PRD #108, slice 4 / pattern R9).
      */
     annualAppreciationRate: text("annual_appreciation_rate"),
+    /**
+     * The connected source this asset materializes a rung of (ADR 0016/0021, #248);
+     * null for a hand-maintained holding. A source now materializes ONE asset per
+     * occupied liquidity rung (Binance market + term-locked), so the back-link lives
+     * here on the asset rather than only on `connected_sources.asset_id` (which
+     * names a single primary asset). DELIBERATELY a plain column with NO `.references`:
+     * `connected_sources.asset_id → assets ON DELETE cascade` already points the other
+     * way, and a reciprocal FK would form a cascade cycle SQLite rejects. The link is
+     * enforced/maintained by the store (connect, reroll, disconnect), not by a FK.
+     */
+    connectedSourceId: text("connected_source_id"),
     deletedAt: text("deleted_at"),
     createdAt: timestamp("created_at"),
     updatedAt: timestamp("updated_at"),
