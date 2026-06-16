@@ -31,6 +31,7 @@ import {
   securesHousingAsset,
   tierOfAsset,
 } from "./classification";
+import type { LiquidityTier } from "./classification";
 import { coinCollectionValueAtDate } from "./connected-source";
 import type { SourcePosition } from "./connected-source";
 import type { DebtBalanceAnchor } from "./debt-balance";
@@ -489,6 +490,80 @@ export function historicalCapturedAt(dateKey: string): string {
   return `${dateKey}T12:00:00.000Z`;
 }
 
+/**
+ * One snapshot's frozen capture of a holding's classification (#242): the
+ * liquidity tier and the two housing flags that were frozen on its row at some
+ * date, decoupled from the snapshot's value. Supplied to a recalc by the db
+ * layer (a targeted read of one holding's frozen rows across every snapshot)
+ * so the domain can recover the holding's CONTEMPORANEOUS frozen identity when
+ * it must generate a brand-new row at a date/scope that never carried one —
+ * instead of leaking the holding's LIVE identity into frozen history (ADR 0008).
+ */
+export interface FrozenIdentityCapture {
+  /** The YYYY-MM-DD date the classification was frozen at. */
+  dateKey: string;
+  liquidityTier: LiquidityTier | null;
+  countsAsHousing: boolean;
+  securesHousing: boolean;
+}
+
+/** A holding's frozen classification for one recalc, resolved by `resolveFrozenIdentity`. */
+interface ResolvedFrozenIdentity {
+  liquidityTier: LiquidityTier | null;
+  countsAsHousing: boolean;
+  securesHousing: boolean;
+}
+
+/**
+ * The single frozen-vs-live identity seam (#242). Resolves the FROZEN
+ * classification (liquidity tier + the two housing flags) a recalc must freeze
+ * onto a holding's row, in ONE place rather than re-read independently by each
+ * recalc path. Precedence:
+ *
+ *  1. the value frozen on THIS snapshot's `existingRow` (preserves the #180/#181
+ *     guarantee that an existing row is never reclassified);
+ *  2. else the holding's frozen classification recovered from its rows in OTHER
+ *     snapshots — the capture on-or-before `targetDate` (the contemporaneous
+ *     freeze), else the nearest capture after it. A holding's tier/housing is
+ *     frozen identically across captures until a reclassification, so this
+ *     recovers the contemporaneous frozen identity for a brand-new row;
+ *  3. else (no frozen capture exists in ANY snapshot — a genuinely first-ever
+ *     row) the LIVE classification. Not a bug: there is no frozen record to
+ *     recover, so live is the only available basis (matches the capture path).
+ */
+function resolveFrozenIdentity(input: {
+  existingRow: SnapshotHoldingRow | undefined;
+  frozenIdentity: readonly FrozenIdentityCapture[];
+  targetDate: string;
+  live: ResolvedFrozenIdentity;
+}): ResolvedFrozenIdentity {
+  if (input.existingRow !== undefined) {
+    return {
+      countsAsHousing: input.existingRow.countsAsHousing,
+      liquidityTier: input.existingRow.liquidityTier,
+      securesHousing: input.existingRow.securesHousing,
+    };
+  }
+
+  // The contemporaneous frozen capture: the latest on-or-before the target date,
+  // else (none on-or-before) the earliest after it. Both directions are picked
+  // off the same captures, sorted ascending by date once.
+  const sorted = [...input.frozenIdentity].sort((a, b) =>
+    a.dateKey < b.dateKey ? -1 : a.dateKey > b.dateKey ? 1 : 0,
+  );
+  const onOrBefore = sorted.filter((c) => c.dateKey <= input.targetDate).at(-1);
+  const contemporaneous = onOrBefore ?? sorted.at(0);
+  if (contemporaneous !== undefined) {
+    return {
+      countsAsHousing: contemporaneous.countsAsHousing,
+      liquidityTier: contemporaneous.liquidityTier,
+      securesHousing: contemporaneous.securesHousing,
+    };
+  }
+
+  return input.live;
+}
+
 export interface RecalculateSnapshotInput {
   /** The existing snapshot to recalculate (its id, scope, date, capturedAt are preserved). */
   snapshot: NetWorthSnapshot;
@@ -499,6 +574,13 @@ export interface RecalculateSnapshotInput {
   workspace: Workspace;
   /** Every operation for that asset. */
   operations: InvestmentOperation[];
+  /**
+   * This asset's frozen classification captures across every snapshot (#242).
+   * Lets a row newly generated at a date this snapshot never carried recover the
+   * asset's CONTEMPORANEOUS frozen tier instead of leaking the live one. Omitted
+   * → the seam falls back to live (no recovery basis), preserving old behaviour.
+   */
+  frozenIdentity?: readonly FrozenIdentityCapture[];
 }
 
 /**
@@ -566,16 +648,26 @@ export function recalculateSnapshotForAsset(
     });
 
     if (totalShareBps > 0) {
+      // Resolve the FROZEN classification through the one seam (#242): existing
+      // row, else the contemporaneous frozen capture from other snapshots, else
+      // live. An investment is never housing / never secures housing.
+      const identity = resolveFrozenIdentity({
+        existingRow,
+        frozenIdentity: input.frozenIdentity ?? [],
+        live: {
+          countsAsHousing: false,
+          liquidityTier: tierOfAsset(input.asset),
+          securesHousing: false,
+        },
+        targetDate,
+      });
       rows.push({
-        // Preserve the frozen flag for an existing row; for a newly-appearing
-        // investment row, freeze false (investments are never housing assets).
-        countsAsHousing: existingRow?.countsAsHousing ?? false,
+        countsAsHousing: identity.countsAsHousing,
         holdingId: input.asset.id,
         kind: "asset",
         label: existingRow?.label ?? input.asset.name,
-        liquidityTier: existingRow?.liquidityTier ?? tierOfAsset(input.asset),
-        // An asset never secures housing — the signal is liability-only (#180).
-        securesHousing: false,
+        liquidityTier: identity.liquidityTier,
+        securesHousing: identity.securesHousing,
         valueMinor: ownedMinor,
         ...(valuation.units !== undefined ? { units: valuation.units } : {}),
         ...(valuation.unitPrice !== undefined ? { unitPrice: valuation.unitPrice } : {}),
@@ -616,6 +708,13 @@ export interface RecalculateHousingSnapshotInput {
   workspace: Workspace;
   /** "Today" as YYYY-MM-DD — forwarded to the curve for forward extrapolation. */
   today: string;
+  /**
+   * This asset's frozen classification captures across every snapshot (#242).
+   * Routes the newly-appearing housing row through the same frozen-vs-live seam
+   * the asset ripple uses, for uniformity (housing tier is forced illiquid, so
+   * this is not independently triggerable today). Omitted → live fallback.
+   */
+  frozenIdentity?: readonly FrozenIdentityCapture[];
 }
 
 /**
@@ -671,17 +770,27 @@ export function recalculateSnapshotForHousing(
   });
 
   if (totalShareBps > 0) {
+    // Resolve the FROZEN classification through the one seam (#242): existing row,
+    // else the contemporaneous frozen capture, else live. This ripple is called
+    // only for housing assets, so live is countsAsHousing=true / illiquid tier,
+    // matching the capture path; an asset never secures housing (#180).
+    const identity = resolveFrozenIdentity({
+      existingRow,
+      frozenIdentity: input.frozenIdentity ?? [],
+      live: {
+        countsAsHousing: true,
+        liquidityTier: tierOfAsset(input.asset),
+        securesHousing: false,
+      },
+      targetDate,
+    });
     rows.push({
-      // This ripple is called only for housing assets — freeze true, matching the
-      // capture path (buildSnapshotHoldingRows sets countsAsHousing=true for housing
-      // assets). Preserve the frozen flag for an existing row.
-      countsAsHousing: existingRow?.countsAsHousing ?? true,
+      countsAsHousing: identity.countsAsHousing,
       holdingId: input.asset.id,
       kind: "asset",
       label: existingRow?.label ?? input.asset.name,
-      liquidityTier: existingRow?.liquidityTier ?? tierOfAsset(input.asset),
-      // An asset never secures housing — the signal is liability-only (#180).
-      securesHousing: false,
+      liquidityTier: identity.liquidityTier,
+      securesHousing: identity.securesHousing,
       valueMinor: ownedMinor,
     });
   }
@@ -919,6 +1028,14 @@ export interface RecalculateOwnershipSnapshotInput {
    */
   globalValueMinor: number;
   workspace: Workspace;
+  /**
+   * This holding's frozen classification captures across every snapshot (#242).
+   * Lets a row newly generated in a scope that never carried one (a member who
+   * gains a stake) recover the holding's CONTEMPORANEOUS frozen housing-ness /
+   * tier instead of leaking the live (possibly reclassified) one. Omitted → the
+   * seam falls back to live (no recovery basis), preserving old behaviour.
+   */
+  frozenIdentity?: readonly FrozenIdentityCapture[];
 }
 
 /**
@@ -972,38 +1089,45 @@ export function recalculateSnapshotForOwnership(
         .filter((row) => row.kind === "asset" && row.liquidityTier !== null)
         .map((row) => [row.holdingId, row.liquidityTier!] as const),
     );
+    // The LIVE classification (the precedence-3 fallback): mirrors the capture
+    // path — an asset's housing-ness/tier from its live identity, an associated
+    // debt's rung from its asset's frozen rung (unassociated → null), a debt's
+    // securesHousing from the live housing-asset set; assets never secure housing.
+    const live: ResolvedFrozenIdentity =
+      holding.kind === "asset"
+        ? {
+            countsAsHousing: isHousingAsset(holding.asset),
+            liquidityTier: tierOfAsset(holding.asset),
+            securesHousing: false,
+          }
+        : {
+            countsAsHousing: false,
+            liquidityTier: holding.liability.associatedAssetId
+              ? rungForLiability(holding.liability, assetRungById)
+              : null,
+            securesHousing: securesHousingAsset(
+              holding.liability,
+              holding.housingAssetIds,
+            ),
+          };
+    // Resolve through the one frozen-vs-live seam (#242): existing row, else the
+    // contemporaneous frozen capture from other snapshots (a member gaining a
+    // stake recovers the holding's frozen housing-ness/tier), else live.
+    const identity = resolveFrozenIdentity({
+      existingRow,
+      frozenIdentity: input.frozenIdentity ?? [],
+      live,
+      targetDate: input.snapshot.dateKey,
+    });
     rows.push({
-      // Preserve the frozen housing-membership flag for an existing row. For a
-      // newly-appearing asset row freeze it from the live classification (same as
-      // capture); for a liability row always false. After this, housingEquity is
-      // fully row-derived — the live `isHousingAsset` call is gone (#181 completion).
-      countsAsHousing: existingRow
-        ? existingRow.countsAsHousing
-        : holding.kind === "asset"
-          ? isHousingAsset(holding.asset)
-          : false,
+      countsAsHousing: identity.countsAsHousing,
       holdingId,
       kind: holding.kind,
       label:
         existingRow?.label ??
         (holding.kind === "asset" ? holding.asset.name : holding.liability.name),
-      // Preserve the frozen rung for an existing row; else mirror the capture path:
-      // an asset's tier from tierOfAsset, an associated debt's from its asset's
-      // frozen rung, an unassociated debt's null (#181 parity).
-      liquidityTier: existingRow
-        ? existingRow.liquidityTier
-        : holding.kind === "asset"
-          ? tierOfAsset(holding.asset)
-          : holding.liability.associatedAssetId
-            ? rungForLiability(holding.liability, assetRungById)
-            : null,
-      // Preserve the frozen signal for an existing row; else freeze it from the
-      // same classification the figures use — assets never secure housing (#180).
-      securesHousing: existingRow
-        ? existingRow.securesHousing
-        : holding.kind === "liability"
-          ? securesHousingAsset(holding.liability, holding.housingAssetIds)
-          : false,
+      liquidityTier: identity.liquidityTier,
+      securesHousing: identity.securesHousing,
       valueMinor: ownedMinor,
       ...(existingRow?.units !== undefined ? { units: existingRow.units } : {}),
       ...(existingRow?.unitPrice !== undefined
@@ -1039,6 +1163,13 @@ export interface RecalculateCoinAcquisitionSnapshotInput {
    */
   globalDeltaMinor: number;
   workspace: Workspace;
+  /**
+   * This coin collection's frozen classification captures across every snapshot
+   * (#242). Routes the (re)created coin row through the same frozen-vs-live seam
+   * the other ripples use, for uniformity (a coin collection is constant illiquid
+   * / never housing, so this is not independently triggerable). Omitted → live.
+   */
+  frozenIdentity?: readonly FrozenIdentityCapture[];
 }
 
 /**
@@ -1080,14 +1211,26 @@ export function recalculateSnapshotForCoinAcquisition(
   // scope's share of the new coin. Keep an existing row even when this scope gains
   // no stake (totalShareBps 0), so a re-weight to zero never silently drops it.
   if (existingRow !== undefined || totalShareBps > 0) {
+    // Resolve through the one frozen-vs-live seam (#242): existing row, else the
+    // contemporaneous frozen capture, else live. A coin collection is constant
+    // illiquid, never a housing asset, never secures housing.
+    const identity = resolveFrozenIdentity({
+      existingRow,
+      frozenIdentity: input.frozenIdentity ?? [],
+      live: {
+        countsAsHousing: false,
+        liquidityTier: tierOfAsset(input.asset),
+        securesHousing: false,
+      },
+      targetDate: input.snapshot.dateKey,
+    });
     rows.push({
-      // A coin collection is never a housing asset and never secures housing.
-      countsAsHousing: false,
+      countsAsHousing: identity.countsAsHousing,
       holdingId: input.asset.id,
       kind: "asset",
       label: existingRow?.label ?? input.asset.name,
-      liquidityTier: existingRow?.liquidityTier ?? tierOfAsset(input.asset),
-      securesHousing: false,
+      liquidityTier: identity.liquidityTier,
+      securesHousing: identity.securesHousing,
       valueMinor: (existingRow?.valueMinor ?? 0) + (totalShareBps > 0 ? ownedMinor : 0),
     });
   }
