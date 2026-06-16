@@ -6,8 +6,9 @@
  * compounds the rate backward (CONTEXT.md: "extrapolate where no market appraisal
  * exists — before the first appraisal or after the last"). The action used to
  * ripple only from the first anchor's date, so a pre-appraisal snapshot kept its
- * stale value. The fix reuses the current-value ripple's earliest-affected-date
- * logic (`firstHousingCurrentValueRippleDate`) so the whole rate-valued range
+ * stale value. The fix moves the earliest-affected-date derivation (ADR 0020)
+ * behind the seam: `setAnnualAppreciationRateAndRipple` computes
+ * min(first anchor, earliest snapshot) internally so the whole rate-valued range
  * recomputes. The negative case asserts a snapshot pinned by an interpolating
  * appraisal segment is left untouched (the rate does not value it).
  */

@@ -46,18 +46,17 @@ function addMarketAnchor(
   valuationDate: string,
   valueMinor: number,
 ): void {
-  store.assets.addValuationAnchor({
-    adjustsPriorCurve: true,
-    assetId: "piso",
-    id: anchorId,
-    valuationDate,
-    valueMinor,
-  });
-  store.rippleHistoricalSnapshotsForValuation({
-    assetId: "piso",
-    fromDateKey: valuationDate,
-    today: TODAY,
-  });
+  // ADR 0020: the persist-and-ripple pair rides ONE store seam method.
+  store.addValuationAnchorAndRipple(
+    {
+      adjustsPriorCurve: true,
+      assetId: "piso",
+      id: anchorId,
+      valuationDate,
+      valueMinor,
+    },
+    { today: TODAY },
+  );
 }
 
 describe("historical snapshots from housing anchors", () => {
@@ -118,12 +117,11 @@ describe("historical snapshots from housing anchors", () => {
     addMarketAnchor(store, "a1", "2024-01-01", 100_000_00);
     expect(grossAt(store, "2024-01-01")).toBe(100_000_00);
 
-    store.assets.updateValuationAnchor("a1", { valueMinor: 110_000_00 });
-    store.rippleHistoricalSnapshotsForValuation({
-      assetId: "piso",
-      fromDateKey: "2024-01-01",
-      today: TODAY,
-    });
+    store.updateValuationAnchorAndRipple(
+      "a1",
+      { valueMinor: 110_000_00 },
+      { today: TODAY },
+    );
 
     expect(grossAt(store, "2024-01-01")).toBe(110_000_00);
     store.close();
@@ -139,13 +137,7 @@ describe("historical snapshots from housing anchors", () => {
 
     // Delete the 2024-01-01 anchor. Now the only appraisal is 2025-01-01 at 120k,
     // with no rate → flat back-extrapolation: 2024-01-01 is worth 120k too.
-    const fromDateKey = "2024-01-01";
-    store.assets.deleteValuationAnchor("a1");
-    store.rippleHistoricalSnapshotsForValuation({
-      assetId: "piso",
-      fromDateKey,
-      today: TODAY,
-    });
+    store.deleteValuationAnchorAndRipple("a1", { today: TODAY });
 
     expect(grossAt(store, "2024-01-01")).toBe(120_000_00);
     store.close();
@@ -160,13 +152,8 @@ describe("historical snapshots from housing anchors", () => {
     addMarketAnchor(store, "a2", "2025-01-01", 100_000_00); // flat, no rate yet
     expect(grossAt(store, "2025-01-01")).toBe(100_000_00);
 
-    // Declare a 3% rate; ripple from the first anchor date forward.
-    store.assets.setAnnualAppreciationRate("piso", "0.03");
-    store.rippleHistoricalSnapshotsForValuation({
-      assetId: "piso",
-      fromDateKey: "2024-01-01",
-      today: TODAY,
-    });
+    // Declare a 3% rate; ripple from the first anchor date forward (seam derives it).
+    store.setAnnualAppreciationRateAndRipple("piso", "0.03", { today: TODAY });
 
     // 2024-01-01 is the (only/first) appraisal at 100k still; 2025-01-01 is the
     // second appraisal and stays its own truth (100k) regardless of rate.
@@ -179,18 +166,16 @@ describe("historical snapshots from housing anchors", () => {
     const store = createInMemoryStore();
     seed(store);
 
-    store.assets.addValuationAnchor({
-      adjustsPriorCurve: true,
-      assetId: "piso",
-      id: "future",
-      valuationDate: "2099-01-01",
-      valueMinor: 200_000_00,
-    });
-    store.rippleHistoricalSnapshotsForValuation({
-      assetId: "piso",
-      fromDateKey: "2099-01-01",
-      today: TODAY,
-    });
+    store.addValuationAnchorAndRipple(
+      {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "future",
+        valuationDate: "2099-01-01",
+        valueMinor: 200_000_00,
+      },
+      { today: TODAY },
+    );
 
     expect(store.snapshots.readSnapshots()).toHaveLength(0);
     store.close();
@@ -250,18 +235,16 @@ describe("housing historical snapshots — household scope weighting", () => {
       type: "real_estate",
     });
 
-    store.assets.addValuationAnchor({
-      adjustsPriorCurve: true,
-      assetId: "piso",
-      id: "a1",
-      valuationDate: "2024-01-01",
-      valueMinor: 100_000_00,
-    });
-    store.rippleHistoricalSnapshotsForValuation({
-      assetId: "piso",
-      fromDateKey: "2024-01-01",
-      today: TODAY,
-    });
+    store.addValuationAnchorAndRipple(
+      {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "a1",
+        valuationDate: "2024-01-01",
+        valueMinor: 100_000_00,
+      },
+      { today: TODAY },
+    );
 
     const at = store.snapshots.readSnapshots().filter((s) => s.dateKey === "2024-01-01");
     const grosses = at.map((s) => s.grossAssets.amountMinor).sort((a, b) => b - a);
@@ -337,22 +320,20 @@ describe("housing historical snapshots — empty-curve basis consistency (fix 1)
     store.assets.updateAssetValuation("piso", 170_000_00);
 
     // Declare a market anchor at 2024-01-01 = 100k → generates a snapshot.
-    store.assets.addValuationAnchor({
-      adjustsPriorCurve: true,
-      assetId: "piso",
-      id: "a1",
-      valuationDate: "2024-01-01",
-      valueMinor: 100_000_00,
-    });
-    store.rippleHistoricalSnapshotsForValuation({
-      assetId: "piso",
-      fromDateKey: "2024-01-01",
-      today: TODAY,
-    });
+    store.addValuationAnchorAndRipple(
+      {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "a1",
+        valuationDate: "2024-01-01",
+        valueMinor: 100_000_00,
+      },
+      { today: TODAY },
+    );
     expect(grossAt(store, "2024-01-01")).toBe(100_000_00);
 
-    // Now delete the only anchor. The curve becomes empty.
-    store.assets.deleteValuationAnchor("a1");
+    // Now delete the only anchor (and ripple). The curve becomes empty.
+    store.deleteValuationAnchorAndRipple("a1", { today: TODAY });
     // Update current valuation to 200k (so the flat-currentValue bug would return 200k).
     store.assets.updateAssetValuation("piso", 200_000_00);
 
@@ -406,27 +387,20 @@ describe("housing historical snapshots — empty-curve basis consistency (fix 1)
     // written at the current clock time (which in tests resolves to a real clock
     // call). We drive the fromDateKey far ahead of the audit-entry date so that
     // lastKnownValueAtDate will find the history entry.
-    store.assets.addValuationAnchor({
-      adjustsPriorCurve: true,
-      assetId: "piso",
-      id: "a1",
-      valuationDate: "2028-01-01",
-      valueMinor: 100_000_00,
-    });
-    store.rippleHistoricalSnapshotsForValuation({
-      assetId: "piso",
-      fromDateKey: "2028-01-01",
-      today: FUTURE_TODAY,
-    });
+    store.addValuationAnchorAndRipple(
+      {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "a1",
+        valuationDate: "2028-01-01",
+        valueMinor: 100_000_00,
+      },
+      { today: FUTURE_TODAY },
+    );
     expect(grossAt(store, "2028-01-01")).toBe(100_000_00);
 
-    // Delete the anchor → empty curve.
-    store.assets.deleteValuationAnchor("a1");
-    store.rippleHistoricalSnapshotsForValuation({
-      assetId: "piso",
-      fromDateKey: "2028-01-01",
-      today: FUTURE_TODAY,
-    });
+    // Delete the anchor (and ripple) → empty curve.
+    store.deleteValuationAnchorAndRipple("a1", { today: FUTURE_TODAY });
 
     // With empty curve and no history reaching back to 2028-01-01 (the
     // updateAssetValuation audit entry, if any, was made at real-clock "now"
@@ -436,6 +410,159 @@ describe("housing historical snapshots — empty-curve basis consistency (fix 1)
     const gross = grossAt(store, "2028-01-01");
     expect(gross).not.toBe(100_000_00); // deleted anchor must not persist
     expect(gross).toBe(200_000_00); // currentValue fallback
+    store.close();
+  });
+});
+
+describe("housing fully-behind-seam methods (ADR 0020)", () => {
+  test("recordHousingValuationAndRipple upserts today anchor and ripples from the first past anchor", () => {
+    const store = createInMemoryStore();
+    seed(store);
+
+    // Create a past anchor so the from-date = 2024-01-01 (first past anchor).
+    store.addValuationAnchorAndRipple(
+      {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "a1",
+        valuationDate: "2024-01-01",
+        valueMinor: 100_000_00,
+      },
+      { today: TODAY },
+    );
+    expect(grossAt(store, "2024-01-01")).toBe(100_000_00);
+
+    // Update current value via the full seam: upserts a today-anchor and ripples.
+    store.recordHousingValuationAndRipple("piso", 150_000_00, { today: TODAY });
+
+    // The 2024-01-01 snapshot must be re-derived (curve now has 150k today + 100k at 2024).
+    // With two market anchors the 2024 snapshot stays 100k (it IS the appraisal).
+    expect(grossAt(store, "2024-01-01")).toBe(100_000_00);
+    // A today-dated anchor was upserted with 150k.
+    const anchors = store.assets.readValuationAnchors("piso");
+    const todayAnchor = anchors.find((a) => a.valuationDate === TODAY);
+    expect(todayAnchor?.valueMinor).toBe(150_000_00);
+    store.close();
+  });
+
+  test("recordHousingValuationAndRipple with no past anchors ripples from earliest snapshot", () => {
+    const store = createInMemoryStore();
+    seed(store);
+
+    // Manually create a past snapshot by adding+deleting an anchor (empty curve).
+    store.addValuationAnchorAndRipple(
+      {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "tmp",
+        valuationDate: "2024-01-01",
+        valueMinor: 100_000_00,
+      },
+      { today: TODAY },
+    );
+    store.deleteValuationAnchorAndRipple("tmp", { today: TODAY });
+    // Now we have a snapshot at 2024-01-01 but no anchors.
+
+    // recordHousingValuationAndRipple: no past anchors → ripples from earliest snapshot.
+    store.recordHousingValuationAndRipple("piso", 200_000_00, { today: TODAY });
+
+    // The today anchor was upserted.
+    const anchors = store.assets.readValuationAnchors("piso");
+    expect(anchors.some((a) => a.valuationDate === TODAY)).toBe(true);
+    store.close();
+  });
+
+  test("rippleHousingAfterAssetEdit ripples from the first anchor/snapshot date", () => {
+    const store = createInMemoryStore();
+    seed(store);
+
+    // Add a past anchor so there's a snapshot to ripple.
+    store.addValuationAnchorAndRipple(
+      {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "a1",
+        valuationDate: "2024-01-01",
+        valueMinor: 100_000_00,
+      },
+      { today: TODAY },
+    );
+    expect(grossAt(store, "2024-01-01")).toBe(100_000_00);
+
+    // Update ownership (a non-dated-fact metadata change), then call the seam.
+    store.assets.updateAsset("piso", {
+      name: "Piso Editado",
+      type: "real_estate",
+      liquidityTier: "illiquid",
+      isPrimaryResidence: false,
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    store.rippleHousingAfterAssetEdit("piso", { today: TODAY });
+
+    // Snapshot still reflects the curve correctly after metadata edit.
+    expect(grossAt(store, "2024-01-01")).toBe(100_000_00);
+    store.close();
+  });
+
+  test("setAnnualAppreciationRateAndRipple (no fromDateKey) ripples from min(firstAnchor, earliestSnapshot)", () => {
+    const store = createInMemoryStore();
+    seed(store);
+
+    // Two anchors: 2024-01-01 and 2025-01-01.
+    store.addValuationAnchorAndRipple(
+      {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "a1",
+        valuationDate: "2024-01-01",
+        valueMinor: 100_000_00,
+      },
+      { today: TODAY },
+    );
+    store.addValuationAnchorAndRipple(
+      {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "a2",
+        valuationDate: "2025-01-01",
+        valueMinor: 120_000_00,
+      },
+      { today: TODAY },
+    );
+    expect(grossAt(store, "2025-01-01")).toBe(120_000_00);
+
+    // Setting 3% rate via the no-arg seam ripples from first anchor (2024-01-01).
+    store.setAnnualAppreciationRateAndRipple("piso", "0.03", { today: TODAY });
+
+    // Both anchor snapshots stay at their appraisal values (market truth wins).
+    expect(grossAt(store, "2024-01-01")).toBe(100_000_00);
+    expect(grossAt(store, "2025-01-01")).toBe(120_000_00);
+    store.close();
+  });
+
+  test("setAnnualAppreciationRateAndRipple (no fromDateKey) with no anchors ripples from earliest snapshot", () => {
+    const store = createInMemoryStore();
+    seed(store);
+
+    // Create a snapshot via add+delete (empty curve, but snapshot exists).
+    store.addValuationAnchorAndRipple(
+      {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "tmp",
+        valuationDate: "2024-01-01",
+        valueMinor: 100_000_00,
+      },
+      { today: TODAY },
+    );
+    store.deleteValuationAnchorAndRipple("tmp", { today: TODAY });
+
+    // No anchors remain, but snapshot at 2024-01-01 exists.
+    // Setting a rate must still ripple from the earliest snapshot.
+    store.setAnnualAppreciationRateAndRipple("piso", "0.03", { today: TODAY });
+
+    // Snapshot should still exist (re-derived from currentValue fallback + rate).
+    expect(grossAt(store, "2024-01-01")).toBeDefined();
     store.close();
   });
 });

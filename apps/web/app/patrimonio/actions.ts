@@ -12,7 +12,6 @@ import { redirect } from "next/navigation";
 
 import {
   appendParam,
-  createStableId,
   errorRedirectUrl,
   mapDomainViolation,
   parseAppreciationRateStrict,
@@ -311,20 +310,12 @@ export async function updateAssetValuationAction(
   }
 
   runWith((store) => {
-    store.assets.updateAssetValuation(id, currentValue);
-
     if (asset?.type === "real_estate") {
-      const today = new Date().toISOString().slice(0, 10);
-      upsertTodayMarketValuationAnchor(store, id, currentValue, today);
-
-      const fromDateKey = firstHousingCurrentValueRippleDate(store, id, today);
-      if (fromDateKey) {
-        store.rippleHistoricalSnapshotsForValuation({
-          assetId: id,
-          fromDateKey,
-          today,
-        });
-      }
+      // Full atomic seam (ADR 0020): updateAssetValuation + upsert-today-anchor
+      // + ripple all behind one transaction; from-date derived inside the seam.
+      store.recordHousingValuationAndRipple(id, currentValue);
+    } else {
+      store.assets.updateAssetValuation(id, currentValue);
     }
   });
   redirect(successRedirectUrl("/patrimonio", "saved", id));
@@ -597,16 +588,8 @@ export async function editAssetAction(
     });
 
     if (type === "real_estate") {
-      const today = new Date().toISOString().slice(0, 10);
-      const fromDateKey = firstHousingEventDate(store, id, today);
-
-      if (fromDateKey) {
-        store.rippleHistoricalSnapshotsForValuation({
-          assetId: id,
-          fromDateKey,
-          today,
-        });
-      }
+      // Ripple-only seam (ADR 0020): from-date derived inside the seam.
+      store.rippleHousingAfterAssetEdit(id);
     } else if (ownershipDidChange && before) {
       store.rippleHistoricalSnapshotsForOwnership({
         holdingId: id,
@@ -629,8 +612,8 @@ export async function editAssetAction(
  * Housing valuation editing (PRD #108, slice 6). All mutations of an asset's
  * appreciation rate and valuation anchors flow through these server actions.
  * Domain guard (R9): only a real_estate asset can carry a rate or anchors —
- * any other type is rejected with a Spanish message. After every mutation with
- * a past `fromDateKey` we ripple historical snapshots so /historico reflects the
+ * any other type is rejected with a Spanish message. After every past-dated
+ * mutation the seam ripples historical snapshots so /historico reflects the
  * recomputed curve (slice 4/5 wiring; the #114 E2E acceptance lives here).
  */
 
@@ -642,99 +625,6 @@ function editUrl(id: string): string {
 /** Read an asset by id, or null. Shared by the housing actions for the R9 guard. */
 function findAsset(store: WorthlineStore, id: string) {
   return store.assets.readAssets().find((a) => a.id === id) ?? null;
-}
-
-function upsertTodayMarketValuationAnchor(
-  store: WorthlineStore,
-  assetId: string,
-  valueMinor: number,
-  today: string,
-): void {
-  const existing = store.assets
-    .readValuationAnchors(assetId)
-    .find((anchor) => anchor.valuationDate === today);
-
-  if (existing) {
-    store.assets.updateValuationAnchor(existing.id, {
-      adjustsPriorCurve: true,
-      valueMinor,
-    });
-    return;
-  }
-
-  store.assets.addValuationAnchor({
-    adjustsPriorCurve: true,
-    assetId,
-    id: createStableId("anchor", `${assetId}_${today}`, Date.now()),
-    valuationDate: today,
-    valueMinor,
-  });
-}
-
-/**
- * The earliest dateKey strictly before `today` of an existing snapshot that
- * carries this asset's row, or null. Shared by the housing ripples to find the
- * earliest snapshot a curve change could affect — including ones dated before
- * the first anchor (where the appreciation rate compounds backward, #184).
- */
-function earliestHousingSnapshotDate(
-  store: WorthlineStore,
-  assetId: string,
-  today: string,
-): string | null {
-  return (
-    store.snapshots
-      // Targeted read (#207): the store filters by this asset's frozen rows
-      // through the (holding_id, kind) index instead of scanning every frozen row.
-      .readSnapshotHoldings({ holdingId: assetId, kind: "asset" })
-      .map((row) => row.dateKey)
-      .filter((dateKey) => dateKey < today)
-      .sort()[0] ?? null
-  );
-}
-
-function firstHousingCurrentValueRippleDate(
-  store: WorthlineStore,
-  assetId: string,
-  today: string,
-): string | null {
-  const firstPastAnchorDate = store.assets
-    .readValuationAnchors(assetId)
-    .map((anchor) => anchor.valuationDate)
-    .filter((dateKey) => dateKey < today)
-    .sort()[0];
-
-  if (firstPastAnchorDate) {
-    return firstPastAnchorDate;
-  }
-
-  return earliestHousingSnapshotDate(store, assetId, today);
-}
-
-function firstHousingEventDate(
-  store: WorthlineStore,
-  assetId: string,
-  today: string,
-): string | null {
-  const firstAnchorDate = store.assets
-    .readValuationAnchors(assetId)
-    .map((anchor) => anchor.valuationDate)
-    .filter((dateKey) => dateKey <= today)
-    .sort()[0];
-
-  if (firstAnchorDate) {
-    return firstAnchorDate;
-  }
-
-  const firstSnapshotDate = store.snapshots
-    // Targeted read (#207): only this asset's frozen rows, via the
-    // (holding_id, kind) index — no full snapshot_holdings scan.
-    .readSnapshotHoldings({ holdingId: assetId, kind: "asset" })
-    .map((row) => row.dateKey)
-    .filter((dateKey) => dateKey <= today)
-    .sort()[0];
-
-  return firstSnapshotDate ?? null;
 }
 
 export async function setAppreciationRateAction(
@@ -765,7 +655,6 @@ export async function setAppreciationRateAction(
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
   const result = runWith((store) => {
     const asset = findAsset(store, id);
 
@@ -780,27 +669,9 @@ export async function setAppreciationRateAction(
       };
     }
 
-    store.assets.setAnnualAppreciationRate(id, parsed.rate);
-
-    // A rate change ripples over the WHOLE rate-valued range (#184): the curve
-    // compounds the rate BACKWARD before the first appraisal, so a snapshot dated
-    // before the first anchor is rate-valued too. Ripple from the EARLIEST
-    // affected snapshot date — min(first anchor, earliest existing snapshot
-    // carrying this asset) — reusing the current-value ripple's earliest-snapshot
-    // logic, so the pre-appraisal range is recomputed and not left stale.
-    const firstAnchorDate = store.assets.readValuationAnchors(id)[0]?.valuationDate;
-    const earliestSnapshotDate = earliestHousingSnapshotDate(store, id, today);
-    const fromDateKey = [firstAnchorDate, earliestSnapshotDate]
-      .filter((dateKey): dateKey is string => dateKey != null)
-      .sort()[0];
-
-    if (fromDateKey && fromDateKey <= today) {
-      store.rippleHistoricalSnapshotsForValuation({
-        assetId: id,
-        fromDateKey,
-        today,
-      });
-    }
+    // The persist + from-date derivation + ripple all ride the seam (ADR 0020).
+    // The seam derives min(first anchor, earliest snapshot) behind the seam (#184).
+    store.setAnnualAppreciationRateAndRipple(id, parsed.rate);
 
     return { ok: true };
   });
@@ -856,12 +727,8 @@ export async function addValuationAnchorAction(
       return { ok: false, error: "Solo los inmuebles pueden tener tasaciones." };
     }
 
-    store.assets.addValuationAnchor(parsed.command);
-    store.rippleHistoricalSnapshotsForValuation({
-      assetId: id,
-      fromDateKey: parsed.command.valuationDate,
-      today,
-    });
+    // Persist + ripple ride the valuation seam (ADR 0020), atomically.
+    store.addValuationAnchorAndRipple(parsed.command, { today });
 
     return { ok: true };
   });
@@ -914,29 +781,24 @@ export async function updateValuationAnchorAction(
       return { ok: false, error: "Solo los inmuebles pueden tener tasaciones." };
     }
 
-    // The new date may differ from the old one; ripple from the earlier of the
-    // two so every snapshot the edit could affect is recomputed.
-    const previous = store.assets.readValuationAnchors(id).find((a) => a.id === anchorId);
-    const changes = store.assets.updateValuationAnchor(anchorId, {
-      adjustsPriorCurve: parsed.command.adjustsPriorCurve,
-      valuationDate: parsed.command.valuationDate,
-      valueMinor: parsed.command.valueMinor,
-    });
+    // Persist + ripple ride the valuation seam (ADR 0020): it reads the previous
+    // anchor, ripples from the earlier of the old/new date, and guards the
+    // future, all atomically.
+    const changes = store.updateValuationAnchorAndRipple(
+      anchorId,
+      {
+        adjustsPriorCurve: parsed.command.adjustsPriorCurve,
+        valuationDate: parsed.command.valuationDate,
+        valueMinor: parsed.command.valueMinor,
+      },
+      { today },
+    );
 
     if (changes === 0) {
       return {
         ok: false,
         error: "No se encontró la tasación — puede que ya se haya eliminado.",
       };
-    }
-
-    const fromDateKey =
-      previous && previous.valuationDate < parsed.command.valuationDate
-        ? previous.valuationDate
-        : parsed.command.valuationDate;
-
-    if (fromDateKey <= today) {
-      store.rippleHistoricalSnapshotsForValuation({ assetId: id, fromDateKey, today });
     }
 
     return { ok: true };
@@ -979,22 +841,15 @@ export async function deleteValuationAnchorAction(
       return { ok: false, error: "Solo los inmuebles pueden tener tasaciones." };
     }
 
-    const removed = store.assets.readValuationAnchors(id).find((a) => a.id === anchorId);
-    const changes = store.assets.deleteValuationAnchor(anchorId);
+    // Delete + ripple ride the valuation seam (ADR 0020): it captures the deleted
+    // anchor's date behind the seam and guards the future, atomically.
+    const changes = store.deleteValuationAnchorAndRipple(anchorId, { today });
 
     if (changes === 0) {
       return {
         ok: false,
         error: "No se encontró la tasación — puede que ya se haya eliminado.",
       };
-    }
-
-    if (removed && removed.valuationDate <= today) {
-      store.rippleHistoricalSnapshotsForValuation({
-        assetId: id,
-        fromDateKey: removed.valuationDate,
-        today,
-      });
     }
 
     return { ok: true };
@@ -1157,23 +1012,23 @@ export async function saveAmortizationPlanAction(
 
     const existing = store.liabilities.readAmortizationPlan(id);
 
+    // Persist + ripple ride the debt seam (ADR 0020), atomically; the
+    // amortizable-plan ripple derives its per-cuota date series behind the seam.
     if (existing) {
-      store.liabilities.updateAmortizationPlan(existing.id, {
-        annualInterestRate: parsed.command.annualInterestRate,
-        disbursementDate: parsed.command.disbursementDate,
-        firstPaymentDate: parsed.command.firstPaymentDate,
-        initialCapitalMinor: parsed.command.initialCapitalMinor,
-        termMonths: parsed.command.termMonths,
-      });
+      store.updateAmortizationPlanAndRipple(
+        existing.id,
+        {
+          annualInterestRate: parsed.command.annualInterestRate,
+          disbursementDate: parsed.command.disbursementDate,
+          firstPaymentDate: parsed.command.firstPaymentDate,
+          initialCapitalMinor: parsed.command.initialCapitalMinor,
+          termMonths: parsed.command.termMonths,
+        },
+        { liabilityId: id, today },
+      );
     } else {
-      store.liabilities.createAmortizationPlan(parsed.command);
+      store.createAmortizationPlanAndRipple(parsed.command, { today });
     }
-
-    store.rippleHistoricalSnapshotsForDebt({
-      kind: "amortizable-plan",
-      liabilityId: id,
-      today,
-    });
 
     return { ok: true as const };
   });
@@ -1210,40 +1065,22 @@ export async function deleteAmortizationPlanAction(
       return guard;
     }
 
-    // Capture the plan's disbursement date BEFORE deleting — the earliest date the
-    // debt existed, the floor for the planless ripple (ADR 0019, #188).
-    const plan = store.liabilities.readAmortizationPlan(id);
-
-    if (!plan) {
-      return {
-        ok: false as const,
-        error: "No se encontró el plan — puede que ya se haya eliminado.",
-      };
-    }
-
-    const startDate = plan.disbursementDate;
-    const changes = store.liabilities.deleteAmortizationPlan(plan.id);
+    // Delete + ripple ride the debt seam (ADR 0020): it captures the plan's
+    // disbursement date BEFORE deleting (the floor for the planless ripple,
+    // ADR 0019 #188), then recalculates every snapshot ≥ that floor against the
+    // now-planless curve (the amortizable-revision kind, which falls back to
+    // currentBalance), all atomically. `planId` selects the row; the liability is
+    // resolved from `id`.
+    const changes = store.deleteAmortizationPlanAndRipple({
+      liabilityId: id,
+      today,
+    });
 
     if (changes === 0) {
       return {
         ok: false as const,
         error: "No se encontró el plan — puede que ya se haya eliminado.",
       };
-    }
-
-    // Ripple AFTER deleting so the curve has no plan. The "amortizable-revision"
-    // kind (generateDates=[], recalcFrom=startDate) recalculates every existing
-    // snapshot ≥ startDate against the now-planless curve, which falls back to
-    // currentBalance — correctly reflecting the plan's removal in history.
-    // (The "amortizable-plan" kind cannot be used here because it early-returns
-    // when curve.plan is null.)
-    if (startDate <= today) {
-      store.rippleHistoricalSnapshotsForDebt({
-        fromDateKey: startDate,
-        kind: "amortizable-revision",
-        liabilityId: id,
-        today,
-      });
     }
 
     return { ok: true as const };
@@ -1293,16 +1130,9 @@ export async function addInterestRateRevisionAction(
       return guard;
     }
 
-    store.liabilities.addInterestRateRevision(parsed.command);
-
-    if (parsed.command.revisionDate <= today) {
-      store.rippleHistoricalSnapshotsForDebt({
-        fromDateKey: parsed.command.revisionDate,
-        kind: "amortizable-revision",
-        liabilityId: id,
-        today,
-      });
-    }
+    // Persist + ripple ride the debt seam (ADR 0020); the future guard moves
+    // behind the seam.
+    store.addInterestRateRevisionAndRipple(parsed.command, { liabilityId: id, today });
 
     return { ok: true as const };
   });
@@ -1354,34 +1184,30 @@ export async function updateInterestRateRevisionAction(
       return guard;
     }
 
-    // Ripple from the earlier of the old/new date so every affected snapshot recomputes.
+    // Persist + ripple ride the debt seam (ADR 0020): it ripples from the earlier
+    // of the old/new date and guards the future. The previous revision date is
+    // read here and passed in (defaulting to the new date when the row is gone).
     const previous = store.liabilities
       .readInterestRateRevisions(planId)
       .find((r) => r.id === revisionId);
-    const changes = store.liabilities.updateInterestRateRevision(revisionId, {
-      newAnnualInterestRate: parsed.command.newAnnualInterestRate,
-      revisionDate: parsed.command.revisionDate,
-    });
+    const changes = store.updateInterestRateRevisionAndRipple(
+      revisionId,
+      {
+        newAnnualInterestRate: parsed.command.newAnnualInterestRate,
+        revisionDate: parsed.command.revisionDate,
+      },
+      {
+        liabilityId: id,
+        previousRevisionDate: previous?.revisionDate ?? parsed.command.revisionDate,
+        today,
+      },
+    );
 
     if (changes === 0) {
       return {
         ok: false as const,
         error: "No se encontró la revisión — puede que ya se haya eliminado.",
       };
-    }
-
-    const fromDateKey =
-      previous && previous.revisionDate < parsed.command.revisionDate
-        ? previous.revisionDate
-        : parsed.command.revisionDate;
-
-    if (fromDateKey <= today) {
-      store.rippleHistoricalSnapshotsForDebt({
-        fromDateKey,
-        kind: "amortizable-revision",
-        liabilityId: id,
-        today,
-      });
     }
 
     return { ok: true as const };
@@ -1425,25 +1251,23 @@ export async function deleteInterestRateRevisionAction(
       return guard;
     }
 
+    // Delete + ripple ride the debt seam (ADR 0020): it recalculates from the
+    // removed revision's date and guards the future. A not-found delete (the row
+    // is gone) ripples nothing — passing the read date keeps that guard intact.
     const removed = store.liabilities
       .readInterestRateRevisions(planId)
       .find((r) => r.id === revisionId);
-    const changes = store.liabilities.deleteInterestRateRevision(revisionId);
+    const changes = store.deleteInterestRateRevisionAndRipple(revisionId, {
+      liabilityId: id,
+      previousRevisionDate: removed?.revisionDate ?? today,
+      today,
+    });
 
     if (changes === 0) {
       return {
         ok: false as const,
         error: "No se encontró la revisión — puede que ya se haya eliminado.",
       };
-    }
-
-    if (removed && removed.revisionDate <= today) {
-      store.rippleHistoricalSnapshotsForDebt({
-        fromDateKey: removed.revisionDate,
-        kind: "amortizable-revision",
-        liabilityId: id,
-        today,
-      });
     }
 
     return { ok: true as const };
@@ -1493,18 +1317,10 @@ export async function addEarlyRepaymentAction(
       return guard;
     }
 
-    store.liabilities.addEarlyRepayment(parsed.command);
-
-    // A past repayment is a dated fact: generate the snapshot at its date and
-    // recalculate the ones after it (ADR 0012, the "amortizable-repayment" kind).
-    if (parsed.command.repaymentDate <= today) {
-      store.rippleHistoricalSnapshotsForDebt({
-        fromDateKey: parsed.command.repaymentDate,
-        kind: "amortizable-repayment",
-        liabilityId: id,
-        today,
-      });
-    }
+    // Persist + ripple ride the debt seam (ADR 0020): a past repayment is a dated
+    // fact that generates its own snapshot (the "amortizable-repayment" kind); the
+    // future guard moves behind the seam.
+    store.addEarlyRepaymentAndRipple(parsed.command, { liabilityId: id, today });
 
     return { ok: true as const };
   });
@@ -1556,35 +1372,31 @@ export async function updateEarlyRepaymentAction(
       return guard;
     }
 
-    // Ripple from the earlier of the old/new date so every affected snapshot recomputes.
+    // Persist + ripple ride the debt seam (ADR 0020): it ripples from the earlier
+    // of the old/new date and guards the future. The previous repayment date is
+    // read here and passed in (defaulting to the new date when the row is gone).
     const previous = store.liabilities
       .readEarlyRepayments(planId)
       .find((r) => r.id === repaymentId);
-    const changes = store.liabilities.updateEarlyRepayment(repaymentId, {
-      amountMinor: parsed.command.amountMinor,
-      mode: parsed.command.mode,
-      repaymentDate: parsed.command.repaymentDate,
-    });
+    const changes = store.updateEarlyRepaymentAndRipple(
+      repaymentId,
+      {
+        amountMinor: parsed.command.amountMinor,
+        mode: parsed.command.mode,
+        repaymentDate: parsed.command.repaymentDate,
+      },
+      {
+        liabilityId: id,
+        previousRepaymentDate: previous?.repaymentDate ?? parsed.command.repaymentDate,
+        today,
+      },
+    );
 
     if (changes === 0) {
       return {
         ok: false as const,
         error: "No se encontró la amortización — puede que ya se haya eliminado.",
       };
-    }
-
-    const fromDateKey =
-      previous && previous.repaymentDate < parsed.command.repaymentDate
-        ? previous.repaymentDate
-        : parsed.command.repaymentDate;
-
-    if (fromDateKey <= today) {
-      store.rippleHistoricalSnapshotsForDebt({
-        fromDateKey,
-        kind: "amortizable-repayment",
-        liabilityId: id,
-        today,
-      });
     }
 
     return { ok: true as const };
@@ -1628,28 +1440,24 @@ export async function deleteEarlyRepaymentAction(
       return guard;
     }
 
+    // Delete + ripple ride the debt seam (ADR 0020): deleting a dated fact
+    // recalculates from its date forward without generating (the
+    // "amortizable-revision" kind — the curve no longer carries the repayment);
+    // the future guard moves behind the seam.
     const removed = store.liabilities
       .readEarlyRepayments(planId)
       .find((r) => r.id === repaymentId);
-    const changes = store.liabilities.deleteEarlyRepayment(repaymentId);
+    const changes = store.deleteEarlyRepaymentAndRipple(repaymentId, {
+      liabilityId: id,
+      previousRepaymentDate: removed?.repaymentDate ?? today,
+      today,
+    });
 
     if (changes === 0) {
       return {
         ok: false as const,
         error: "No se encontró la amortización — puede que ya se haya eliminado.",
       };
-    }
-
-    // Deleting a dated fact recalculates the snapshots from its date forward
-    // (ADR 0012). Recalc-only via the "amortizable-revision" kind — no
-    // generation, the curve now has no repayment there (mirrors plan deletion).
-    if (removed && removed.repaymentDate <= today) {
-      store.rippleHistoricalSnapshotsForDebt({
-        fromDateKey: removed.repaymentDate,
-        kind: "amortizable-revision",
-        liabilityId: id,
-        today,
-      });
     }
 
     return { ok: true as const };
@@ -1698,13 +1506,9 @@ export async function addBalanceAnchorAction(
       return guard;
     }
 
-    store.liabilities.addBalanceAnchor(parsed.command);
-    store.rippleHistoricalSnapshotsForDebt({
-      fromDateKey: parsed.command.anchorDate,
-      kind: "anchor",
-      liabilityId: id,
-      today,
-    });
+    // Persist + ripple ride the debt seam (ADR 0020), atomically; the from-date is
+    // the anchor's own date.
+    store.addBalanceAnchorAndRipple(parsed.command, { today });
 
     return { ok: true as const };
   });
@@ -1755,33 +1559,30 @@ export async function updateBalanceAnchorAction(
       return guard;
     }
 
+    // Persist + ripple ride the debt seam (ADR 0020): it ripples from the earlier
+    // of the old/new date and guards the future. The previous anchor date is read
+    // here and passed in (defaulting to the new date when the row is gone).
     const previous = store.liabilities
       .readBalanceAnchors(id)
       .find((a) => a.id === anchorId);
-    const changes = store.liabilities.updateBalanceAnchor(anchorId, {
-      anchorDate: parsed.command.anchorDate,
-      balanceMinor: parsed.command.balanceMinor,
-    });
+    const changes = store.updateBalanceAnchorAndRipple(
+      anchorId,
+      {
+        anchorDate: parsed.command.anchorDate,
+        balanceMinor: parsed.command.balanceMinor,
+      },
+      {
+        liabilityId: id,
+        previousAnchorDate: previous?.anchorDate ?? parsed.command.anchorDate,
+        today,
+      },
+    );
 
     if (changes === 0) {
       return {
         ok: false as const,
         error: "No se encontró el saldo — puede que ya se haya eliminado.",
       };
-    }
-
-    const fromDateKey =
-      previous && previous.anchorDate < parsed.command.anchorDate
-        ? previous.anchorDate
-        : parsed.command.anchorDate;
-
-    if (fromDateKey <= today) {
-      store.rippleHistoricalSnapshotsForDebt({
-        fromDateKey,
-        kind: "anchor",
-        liabilityId: id,
-        today,
-      });
     }
 
     return { ok: true as const };
@@ -1824,25 +1625,23 @@ export async function deleteBalanceAnchorAction(
       return guard;
     }
 
+    // Delete + ripple ride the debt seam (ADR 0020): it recalculates from the
+    // removed anchor's date and guards the future. The previous anchor date is
+    // read here and passed in (defaulting to today when the row is gone).
     const removed = store.liabilities
       .readBalanceAnchors(id)
       .find((a) => a.id === anchorId);
-    const changes = store.liabilities.deleteBalanceAnchor(anchorId);
+    const changes = store.deleteBalanceAnchorAndRipple(anchorId, {
+      liabilityId: id,
+      previousAnchorDate: removed?.anchorDate ?? today,
+      today,
+    });
 
     if (changes === 0) {
       return {
         ok: false as const,
         error: "No se encontró el saldo — puede que ya se haya eliminado.",
       };
-    }
-
-    if (removed && removed.anchorDate <= today) {
-      store.rippleHistoricalSnapshotsForDebt({
-        fromDateKey: removed.anchorDate,
-        kind: "anchor",
-        liabilityId: id,
-        today,
-      });
     }
 
     return { ok: true as const };
