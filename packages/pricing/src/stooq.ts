@@ -2,7 +2,6 @@ import { PRICE_FAILURE_REASONS, type PriceProvider } from "./index";
 
 export const stooqProvider: PriceProvider = {
   name: "stooq",
-  canFetch: (ctx) => Boolean(ctx.symbol),
   fetchPrice: async (ctx) => {
     const url =
       "https://stooq.com/q/l/?s=" +

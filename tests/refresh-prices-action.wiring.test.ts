@@ -28,7 +28,6 @@ function setupStore() {
 function mockProvider(results: Record<string, { price: string } | null>): PriceProvider {
   return {
     name: "stooq",
-    canFetch: () => true,
     fetchPrice: vi.fn().mockImplementation(async (ctx: { symbol: string }) => {
       const result = results[ctx.symbol];
       if (!result) return null;
@@ -40,7 +39,6 @@ function mockProvider(results: Record<string, { price: string } | null>): PriceP
 function throwingProvider(): PriceProvider {
   return {
     name: "stooq",
-    canFetch: () => true,
     fetchPrice: vi.fn().mockRejectedValue(new Error("network down")),
   };
 }

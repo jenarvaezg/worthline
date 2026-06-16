@@ -2,7 +2,6 @@ import type { PriceProvider } from "./index";
 
 export const ecbProvider: PriceProvider = {
   name: "ecb",
-  canFetch: (ctx) => Boolean(ctx.symbol) && ctx.symbol !== "EUR",
   fetchPrice: async (ctx) => {
     const url =
       "https://data-api.ecb.europa.eu/service/data/EXR/D." +

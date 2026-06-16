@@ -34,15 +34,25 @@ export const PRICE_FAILURE_REASONS = {
   httpError: (status: number) => `El proveedor respondió con un error (${status})`,
 } as const;
 
+/**
+ * A price provider behind the multi-provider seam (ADR 0011). A provider only
+ * knows how to fetch from its own source; routing and fallback are decided by
+ * policy (see `./registry` — `providerRegistry`, `fallbackChains`,
+ * `fetchWithFallback`), not by the provider body.
+ *
+ * There is intentionally no `canFetch` pre-check (issue #243): it was never
+ * consulted on the refresh path, and a provider already signals its inability
+ * by returning `null` / a `PriceProviderFailure` from `fetchPrice`. A redundant
+ * gate would only add ceremony and a second place to keep in sync.
+ */
 export interface PriceProvider {
   name: PriceSource;
-  canFetch(ctx: PriceProviderContext): boolean;
   fetchPrice(
     ctx: PriceProviderContext,
   ): Promise<PriceProviderResult | PriceProviderFailure | null>;
 }
 
-function isProviderFailure(
+export function isProviderFailure(
   result: PriceProviderResult | PriceProviderFailure | null,
 ): result is PriceProviderFailure {
   return result !== null && "failed" in result && result.failed === true;
@@ -94,6 +104,14 @@ export { searchSymbols, searchYahooSymbols } from "./search";
 export type { SymbolCandidate } from "./search";
 export { stooqProvider } from "./stooq";
 export { yahooProvider } from "./yahoo";
+export {
+  fallbackChains,
+  fetchWithFallback,
+  providerRegistry,
+  resolveProvider,
+  runFallbackChain,
+} from "./registry";
+export type { RegisteredSource } from "./registry";
 export { refreshStalePrices } from "./refresh-stale-prices";
 export {
   getCollectedItems,
