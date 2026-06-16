@@ -1,5 +1,6 @@
 import type { LocalPersistenceStatus } from "@worthline/domain";
 import type {
+  CreateInvestmentOperationInput,
   DebtBalanceCurveInputs,
   DebtModel,
   DecimalString,
@@ -67,7 +68,11 @@ import { migrate, type MigrateResult } from "./migrate";
 
 export { SCHEMA_VERSION } from "./migrate";
 import { createLiabilityStore, type LiabilityStore } from "./liability-store";
-import { createOperationsStore, type OperationsStore } from "./operations-store";
+import {
+  createOperationsStore,
+  type OperationsStore,
+  type UpdateInvestmentOperationInput,
+} from "./operations-store";
 import {
   createSnapshotStore,
   readSnapshotHoldings,
@@ -242,6 +247,46 @@ export interface WorthlineStore {
     operationDateKeys: string[];
     today: string;
   }) => void;
+  /**
+   * Operation dated-fact seam (ADR 0020): persist ONE investment operation AND
+   * ripple the snapshots it affects, atomically in a single transaction. The
+   * caller no longer derives `today` nor makes a separate ripple call — both ride
+   * this one method. `today` defaults to the current date; pass it to control the
+   * cut-off in tests. Wraps `recordOperation` + the per-operation record ripple.
+   */
+  recordOperationAndRipple: (
+    input: CreateInvestmentOperationInput,
+    opts?: { today?: string },
+  ) => void;
+  /**
+   * Batched operation dated-fact seam for a statement load (ADR 0020 / 0018):
+   * persist every created and overwritten operation AND run ONE batched ripple
+   * over all the dates they touch, atomically in a single transaction. The
+   * affected from-date window is derived behind the seam from the persisted
+   * operations themselves, never by the caller. `today` defaults to the current
+   * date; pass it to control the cut-off in tests. Wraps `recordOperation` /
+   * `updateOperation` + the batched operations ripple.
+   */
+  recordOperationsAndRipple: (params: {
+    assetId: string;
+    creates: CreateInvestmentOperationInput[];
+    overwrites: UpdateInvestmentOperationInput[];
+    today?: string;
+  }) => void;
+  /**
+   * Operation dated-fact seam (ADR 0020): delete ONE investment operation AND
+   * ripple the snapshots dated ≥ its date, atomically in a single transaction.
+   * The asset id and from-date are derived behind the seam from the deleted row
+   * itself — the caller passes only the operation id. Returns the deleted
+   * operation's asset id and date, or null if not found (a not-found delete
+   * ripples nothing). `today` defaults to the current date; pass it to control
+   * the cut-off in tests. Wraps `deleteOperation` + the per-operation delete
+   * ripple.
+   */
+  deleteOperationAndRipple: (params: {
+    operationId: string;
+    today?: string;
+  }) => { assetId: string; executedAt: string } | null;
   /**
    * Generate/recalculate historical snapshots after a housing valuation change
    * (PRD #108): a declared/edited/deleted valuation anchor with a past date, or
@@ -599,6 +644,68 @@ function buildStore(
         store.snapshots.saveSnapshot,
         params,
       );
+    },
+    recordOperationAndRipple: (input, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      // One transaction so the persist + ripple commit or roll back together —
+      // the dated-fact contract is unrepresentable as "persisted, forgot to
+      // ripple" (ADR 0020; better-sqlite3 nests via savepoints).
+      ctx.transaction(() => {
+        operationsStore.recordOperation(input);
+        const workspace = getWorkspace();
+        if (!workspace) return;
+        rippleHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, {
+          assetId: input.assetId,
+          mode: "record",
+          operationDateKey: input.executedAt.slice(0, 10),
+          today,
+        });
+      });
+    },
+    recordOperationsAndRipple: ({ assetId, creates, overwrites, today: todayOpt }) => {
+      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
+      // One transaction so every create/overwrite + the single batched ripple
+      // commit or roll back together (ADR 0020 / 0018). The affected from-date
+      // window is derived here from the persisted operations, never by the caller.
+      ctx.transaction(() => {
+        const operationDateKeys: string[] = [];
+        for (const input of creates) {
+          operationsStore.recordOperation(input);
+          operationDateKeys.push(input.executedAt.slice(0, 10));
+        }
+        for (const input of overwrites) {
+          const result = operationsStore.updateOperation(input);
+          if (result) operationDateKeys.push(result.executedAt.slice(0, 10));
+        }
+        const workspace = getWorkspace();
+        if (!workspace) return;
+        rippleHistoricalSnapshotsForOperations(
+          ctx,
+          workspace,
+          store.snapshots.saveSnapshot,
+          { assetId, operationDateKeys, today },
+        );
+      });
+    },
+    deleteOperationAndRipple: ({ operationId, today: todayOpt }) => {
+      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
+      // One transaction so the delete + ripple commit or roll back together
+      // (ADR 0020). The asset id and from-date come from the deleted row itself;
+      // a not-found delete ripples nothing.
+      return ctx.transaction(() => {
+        const result = operationsStore.deleteOperation(operationId);
+        if (!result) return null;
+        const workspace = getWorkspace();
+        if (workspace) {
+          rippleHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, {
+            assetId: result.assetId,
+            mode: "delete",
+            operationDateKey: result.executedAt.slice(0, 10),
+            today,
+          });
+        }
+        return result;
+      });
     },
     rippleHistoricalSnapshotsForValuation: (params) => {
       const workspace = getWorkspace();

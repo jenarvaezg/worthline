@@ -142,17 +142,9 @@ export async function recordOperationAction(
     redirect(operationErrorUrl(mapDomainViolation(domainResult.violations[0])));
   }
 
-  const operationDateKey = domainResult.value.executedAt.slice(0, 10);
-  runWith((store) => {
-    store.operations.recordOperation(domainResult.value);
-    // Backdated operation → reconstruct/ripple historical snapshots (PRD #107).
-    store.rippleHistoricalSnapshotsForOperation({
-      assetId: domainResult.value.assetId,
-      mode: "record",
-      operationDateKey,
-      today,
-    });
-  });
+  // One seam call persists the operation AND ripples its snapshots atomically
+  // (ADR 0020; backdated operation → reconstruct history, PRD #107).
+  runWith((store) => store.recordOperationAndRipple(domainResult.value, { today }));
 
   redirect(successRedirectUrl(returnUrl, "saved"));
 }
@@ -314,8 +306,12 @@ export async function confirmStatementAction(
     // the file does not mention survive untouched. Anomalous dates are set aside.
     const plan = planStatementMerge(rows, store.operations.readOperations(routeAssetId));
 
-    plan.toCreate.forEach((row, i) => {
-      store.operations.recordOperation({
+    // One seam call persists every create + overwrite AND runs ONE batched ripple
+    // over the dates they touch, atomically (ADR 0020 / 0018). The action no longer
+    // derives the affected-date window — the seam derives it from the operations.
+    store.recordOperationsAndRipple({
+      assetId: routeAssetId,
+      creates: plan.toCreate.map((row, i) => ({
         assetId: routeAssetId,
         currency: row.currency,
         executedAt: row.dateKey,
@@ -324,28 +320,15 @@ export async function confirmStatementAction(
         kind: row.kind,
         pricePerUnit: row.pricePerUnit,
         units: row.units,
-      });
-    });
-
-    for (const { operationId, row } of plan.toOverwrite) {
-      store.operations.updateOperation({
+      })),
+      overwrites: plan.toOverwrite.map(({ operationId, row }) => ({
         currency: row.currency,
         feesMinor: row.feesMinor,
         id: operationId,
         kind: row.kind,
         pricePerUnit: row.pricePerUnit,
         units: row.units,
-      });
-    }
-
-    // One batched ripple over every date this load created or overwrote.
-    const affectedDateKeys = [
-      ...plan.toCreate.map((row) => row.dateKey),
-      ...plan.toOverwrite.map(({ row }) => row.dateKey),
-    ];
-    store.rippleHistoricalSnapshotsForOperations({
-      assetId: routeAssetId,
-      operationDateKeys: affectedDateKeys,
+      })),
       today,
     });
 
@@ -536,20 +519,11 @@ export async function deleteOperationAction(
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-  const deleted = runWith((store) => {
-    const result = store.operations.deleteOperation(operationId);
-    if (result) {
-      // Deleting a backdated operation ripples snapshots ≥ its date (PRD #107).
-      store.rippleHistoricalSnapshotsForOperation({
-        assetId: result.assetId,
-        mode: "delete",
-        operationDateKey: result.executedAt.slice(0, 10),
-        today,
-      });
-    }
-    return result;
-  });
+  // One seam call deletes the operation AND ripples snapshots ≥ its date,
+  // atomically (ADR 0020; deleting a backdated operation, PRD #107). The seam
+  // derives the asset id, from-date, and `today` itself — the action passes only
+  // the operation id.
+  const deleted = runWith((store) => store.deleteOperationAndRipple({ operationId }));
 
   if (!deleted) {
     redirect(
