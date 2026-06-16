@@ -23,6 +23,7 @@ import type { PriceFreshnessState, SourcePosition } from "@worthline/domain";
 import DisconnectNumistaFold from "../../../../ajustes/disconnect-numista-fold";
 import { syncNumistaAction } from "../../../../ajustes/numista-actions";
 import { formatLastSync } from "../../../../ajustes/numista-helpers";
+import { PendingSubmit } from "../../../../pending-submit";
 import {
   basisTag,
   buildCoinCollectionView,
@@ -88,7 +89,9 @@ export function CoinCollectionSection({
           <form action={syncNumistaAction} className="coinSyncForm">
             <input name="currentUrl" type="hidden" value={currentUrl} />
             <input name="sourceId" type="hidden" value={sourceId} />
-            <button type="submit">Sincronizar Numista</button>
+            <PendingSubmit pendingLabel="Sincronizando…">
+              Sincronizar Numista
+            </PendingSubmit>
           </form>
         ) : null}
       </div>

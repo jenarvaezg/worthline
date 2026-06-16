@@ -103,6 +103,22 @@ button:hover {
   background: var(--blue);
 }
 
+/* In-flight / disabled: dim and lock the button so a slow server-action POST
+   (e.g. Numista sync) reads as working instead of frozen. aria-busy adds the
+   progress cursor; disabled neutralizes the hover tint. */
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+button:disabled:hover {
+  background: var(--ink);
+}
+
+button[aria-busy="true"] {
+  cursor: progress;
+}
+
 :focus-visible {
   outline: 3px solid var(--blue);
   outline-offset: 2px;

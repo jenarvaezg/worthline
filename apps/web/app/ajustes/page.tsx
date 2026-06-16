@@ -12,6 +12,7 @@ import {
   SCOPE_COOKIE_NAME,
 } from "../intake";
 import ImportWorkspaceForm from "../import-workspace-form";
+import { PendingSubmit } from "../pending-submit";
 import Shell from "../shell";
 import {
   createMemberAction,
@@ -384,7 +385,9 @@ export default async function AjustesPage({
                 <form action={syncNumistaAction} className="coinSyncForm">
                   <input name="currentUrl" type="hidden" value={currentUrl} />
                   <input name="sourceId" type="hidden" value={numistaSource.id} />
-                  <button type="submit">Sincronizar Numista</button>
+                  <PendingSubmit pendingLabel="Sincronizando…">
+                    Sincronizar Numista
+                  </PendingSubmit>
                 </form>
                 <Link
                   className="actionLink"
