@@ -96,6 +96,44 @@ describe("syncPositions (Binance) re-rolls the holding LIVE as Σ(balance × pri
     store.close();
   });
 
+  test("the SAME token on spot + funding sums into one holding value (#247)", () => {
+    const store = createInMemoryStore();
+    seed(store);
+    const { sourceId, assetId } = connectBinance(store);
+
+    // BTC parked on two market wallets — distinct externalIds, one symbol.
+    store.connectedSources.syncPositions(
+      sourceId,
+      [
+        token({
+          externalId: "BTC:spot",
+          wallet: "spot",
+          balance: "0.5",
+          unitPrice: "50000",
+        }), // 25 000 €
+        token({
+          externalId: "BTC:funding",
+          wallet: "funding",
+          balance: "0.1",
+          unitPrice: "50000",
+        }), // 5 000 €
+      ],
+      "2026-06-16T10:00:00.000Z",
+    );
+
+    const asset = store.assets.readAssets().find((a) => a.id === assetId)!;
+    expect(asset.currentValue.amountMinor).toBe(3_000_000); // both wallets summed
+
+    // Both positions persist with their wallet origin (#247 metadata).
+    const positions = store.connectedSources.readPositions(sourceId);
+    expect(positions).toHaveLength(2);
+    expect(positions.map((p) => (p.kind === "token" ? p.wallet : null)).sort()).toEqual([
+      "funding",
+      "spot",
+    ]);
+    store.close();
+  });
+
   test("an unpriceable token (null price) contributes 0 but is still persisted", () => {
     const store = createInMemoryStore();
     seed(store);

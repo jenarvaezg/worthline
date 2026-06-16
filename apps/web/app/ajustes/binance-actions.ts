@@ -3,7 +3,7 @@
 import { withStore, type WorthlineStore } from "@worthline/db";
 import {
   fetchCoinGeckoPriceEur,
-  getSpotBalances,
+  getMarketBalances,
   syncBinanceAccount,
 } from "@worthline/pricing";
 import { cookies } from "next/headers";
@@ -28,8 +28,9 @@ import {
  *
  * connect: create the derived `crypto` holding on the MARKET rung + the source
  * row, owned 100 % by the connecting member, with the pasted API key + secret
- * stored locally. sync: pull the account's spot balances (signed), resolve each
- * token's live EUR unit price, and replace the source's positions — which
+ * stored locally. sync: pull the account's market-rung balances (spot + funding +
+ * flexible Earn, signed), resolve each token's live EUR unit price, and replace
+ * the source's positions — which
  * re-rolls the holding's value (tokens ripple no history; their value is live).
  * disconnect: drop the holding (the FK cascade removes the source + positions).
  *
@@ -164,11 +165,12 @@ export async function syncBinanceAction(
   const nowMs = now.getTime();
   const nowIso = now.toISOString();
 
-  // 2) Network: pull the spot balances (signed) and value each token live. On any
+  // 2) Network: pull the market-rung balances — spot + funding + flexible Earn,
+  // all live-valued in one holding (#247) — and value each token live. On any
   // failure, redirect with a clear message and DO NOT touch existing positions.
   try {
     const drafts = await syncBinanceAccount({
-      listBalances: () => getSpotBalances(credentials, { nowMs }),
+      listBalances: () => getMarketBalances(credentials, { nowMs }),
       priceEur: (id) => fetchCoinGeckoPriceEur(id, nowIso),
     });
 

@@ -142,7 +142,13 @@ export type {
 } from "./coin-valuation";
 export { fetchMetalSpotEur, syncNumistaCollection } from "./numista-sync";
 export type { NumistaSyncDeps, PositionDraft } from "./numista-sync";
-export { getSpotBalances, signQuery } from "./binance";
+export {
+  getFlexibleEarnBalances,
+  getFundingBalances,
+  getMarketBalances,
+  getSpotBalances,
+  signQuery,
+} from "./binance";
 export type {
   BinanceCredentials,
   BinanceRequestDeps,
