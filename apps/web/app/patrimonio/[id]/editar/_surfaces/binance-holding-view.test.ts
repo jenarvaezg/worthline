@@ -3,13 +3,14 @@
  * live value, descending sort, total, and the basis tag. No React, no DB.
  */
 
-import type { TokenPosition } from "@worthline/domain";
+import type { CoinPosition, TokenPosition } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import {
   buildBinanceHoldingView,
   formatWallets,
   tokenBasisTag,
+  tokenPositionsOnRung,
 } from "./binance-holding-view";
 
 function token(over: Partial<TokenPosition> & { id: string }): TokenPosition {
@@ -23,6 +24,31 @@ function token(over: Partial<TokenPosition> & { id: string }): TokenPosition {
     wallet: "spot",
     liquidityTier: "market",
     unitPrice: null,
+    currency: "EUR",
+    ...over,
+  };
+}
+
+function coin(over: Partial<CoinPosition> & { id: string }): CoinPosition {
+  return {
+    kind: "coin",
+    sourceId: "src",
+    externalId: `coin-${over.id}`,
+    catalogueId: "1",
+    name: "Moneda",
+    grade: "MBC",
+    quantity: 1,
+    year: null,
+    liquidityTier: "illiquid",
+    metal: "gold",
+    issueId: null,
+    finenessMillis: null,
+    weightGrams: null,
+    purchaseDate: null,
+    metalValueMinor: null,
+    numismaticValueMinor: null,
+    numismaticFetchedAt: null,
+    purchasePriceMinor: null,
     currency: "EUR",
     ...over,
   };
@@ -112,5 +138,54 @@ describe("formatWallets", () => {
     );
     expect(formatWallets(["spot", "spot"])).toBe("spot");
     expect(formatWallets([])).toBe("");
+  });
+
+  test("labels the locked-earn (term-locked) wallet (#248)", () => {
+    expect(formatWallets(["locked-earn"])).toBe("Earn bloqueado");
+  });
+});
+
+describe("tokenPositionsOnRung", () => {
+  test("the market rung returns only the market token positions (#248)", () => {
+    const rows = tokenPositionsOnRung(
+      [
+        token({ id: "1", symbol: "BTC", liquidityTier: "market" }),
+        token({ id: "2", symbol: "ETH", liquidityTier: "market" }),
+        token({ id: "3", symbol: "ADA", liquidityTier: "term-locked" }),
+      ],
+      "market",
+    );
+
+    expect(rows.map((p) => p.symbol)).toEqual(["BTC", "ETH"]);
+    expect(rows.every((p) => p.liquidityTier === "market")).toBe(true);
+  });
+
+  test("the term-locked rung returns only the locked token positions (#248)", () => {
+    const rows = tokenPositionsOnRung(
+      [
+        token({ id: "1", symbol: "BTC", liquidityTier: "market" }),
+        token({ id: "2", symbol: "ETH", liquidityTier: "term-locked" }),
+      ],
+      "term-locked",
+    );
+
+    expect(rows.map((p) => p.symbol)).toEqual(["ETH"]);
+    expect(rows[0]!.liquidityTier).toBe("term-locked");
+  });
+
+  test("coin positions and tokens on other rungs are excluded", () => {
+    const rows = tokenPositionsOnRung(
+      [
+        token({ id: "1", symbol: "BTC", liquidityTier: "market" }),
+        token({ id: "2", symbol: "ETH", liquidityTier: "term-locked" }),
+        coin({ id: "3", liquidityTier: "market" }), // a coin on the market rung
+        coin({ id: "4", liquidityTier: "illiquid" }),
+      ],
+      "market",
+    );
+
+    // Only the market TOKEN — the same-rung coin and the locked token are dropped.
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: "token", symbol: "BTC" });
   });
 });

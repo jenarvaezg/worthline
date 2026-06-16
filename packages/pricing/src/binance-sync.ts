@@ -15,6 +15,7 @@
  */
 
 import type { DistributiveOmit, TokenPosition } from "@worthline/domain";
+import { rungForWallet } from "@worthline/domain";
 
 import { resolveCoinGeckoId } from "./binance-symbols";
 import { resolveProvider } from "./registry";
@@ -25,7 +26,7 @@ export type TokenPositionDraft = DistributiveOmit<TokenPosition, "id" | "sourceI
 /** The external reads the sync needs, injected for testability. */
 export interface BinanceSyncDeps {
   /** List the account's non-zero wallet balances (spot in S1; funding + flexible
-   *  Earn fold in at S2). */
+   *  Earn fold in at S2; locked Earn on the term-locked rung at S3). */
   listBalances: () => Promise<{ asset: string; wallet: string; balance: string }[]>;
   /** The live EUR price for a CoinGecko id, or null on a miss/outage. */
   priceEur: (coingeckoId: string) => Promise<number | null>;
@@ -60,7 +61,9 @@ export async function syncBinanceAccount(
       symbol: line.asset,
       balance: line.balance,
       wallet: line.wallet,
-      liquidityTier: "market",
+      // The wallet's rung: spot/funding/flexible-earn → market; locked-earn/
+      // staking → term-locked (ADR 0016/0021, S3 #248). One source spans rungs.
+      liquidityTier: rungForWallet(line.wallet),
       unitPrice: price === null ? null : String(price),
       currency: "EUR",
     });

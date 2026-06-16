@@ -6,7 +6,7 @@ import {
   valuationMethodOfAsset,
   valuationMethodOfLiability,
 } from "@worthline/domain";
-import type { CoinPosition, TokenPosition, ValuationMethod } from "@worthline/domain";
+import type { CoinPosition, ValuationMethod } from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -33,6 +33,7 @@ import {
   deleteLiabilityAction,
 } from "../../actions";
 import { BinanceHoldingSection } from "./_surfaces/binance-holding-section";
+import { tokenPositionsOnRung } from "./_surfaces/binance-holding-view";
 import { CoinCollectionSection } from "./_surfaces/coin-collection-section";
 import { DebtModelSection } from "./_surfaces/debt-model-section";
 import { AssetEditForm, LiabilityEditForm } from "./_surfaces/holding-forms";
@@ -101,21 +102,30 @@ export default async function EditarPage({
 
     // A connected Binance crypto holding is `derived` too (instrument `crypto`),
     // but — like Numista — its sub-detail is mirrored token positions, not
-    // investment operations (ADR 0021). Distinguish it from a MANUAL crypto
-    // investment (no connected source) by resolving a `binance` source for this
-    // asset id; only then route to the read-only Binance surface.
-    const binanceSourceRow =
+    // investment operations (ADR 0021). A source now materializes ONE asset per
+    // rung (market + term-locked, #248), so the term-locked asset's id does NOT
+    // match `connected_sources.asset_id`. Resolve the source via the asset's OWN
+    // `connected_source_id` back-link instead, then show only the positions on
+    // THIS asset's rung — opening the market asset lists market tokens, opening the
+    // term-locked asset lists the locked ones. Distinguishes a connected holding
+    // from a MANUAL crypto investment (which has no source link).
+    const assetSourceId =
       asset?.instrument === "crypto"
-        ? (store.connectedSources
-            .listSources()
-            .find((s) => s.assetId === id && s.adapter === "binance") ?? null)
+        ? store.connectedSources.readSourceIdForAsset(id)
         : null;
+    const binanceSourceRow = assetSourceId
+      ? (store.connectedSources
+          .listSources()
+          .find((s) => s.id === assetSourceId && s.adapter === "binance") ?? null)
+      : null;
     const isBinanceHolding = binanceSourceRow !== null;
-    const binancePositions = binanceSourceRow
-      ? store.connectedSources
-          .readPositions(binanceSourceRow.id)
-          .filter((p): p is TokenPosition => p.kind === "token")
-      : [];
+    const binancePositions =
+      binanceSourceRow && asset
+        ? tokenPositionsOnRung(
+            store.connectedSources.readPositions(binanceSourceRow.id),
+            asset.liquidityTier,
+          )
+        : [];
 
     // derived (investment): the operations editor + its derived position (ADR 0006).
     // A coin collection / Binance holding is derived but routed to its own surface,

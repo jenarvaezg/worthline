@@ -9,9 +9,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  getAllBalances,
   getFlexibleEarnBalances,
   getFundingBalances,
-  getMarketBalances,
+  getLockedEarnBalances,
   getSpotBalances,
   signQuery,
 } from "./binance";
@@ -205,7 +206,7 @@ describe("getFlexibleEarnBalances — signed GET /sapi/v1/simple-earn/flexible/p
   });
 });
 
-describe("getMarketBalances — spot + funding + flexible Earn into one rung", () => {
+describe("getLockedEarnBalances — signed GET /sapi/v1/simple-earn/locked/position", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
   });
@@ -213,7 +214,60 @@ describe("getMarketBalances — spot + funding + flexible Earn into one rung", (
     vi.unstubAllGlobals();
   });
 
-  it("concatenates all three wallets' balances (all market rung)", async () => {
+  it("parses amount per row and tags wallet locked-earn (term-locked rung origin)", async () => {
+    const fetchMock = vi.mocked(fetch).mockResolvedValueOnce(
+      okJson({
+        rows: [
+          { asset: "ETH", amount: "3.00000000" },
+          { asset: "DOT", amount: "120.00000000" },
+        ],
+        total: 2,
+      }),
+    );
+
+    const balances = await getLockedEarnBalances(creds, { nowMs: 1 });
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toContain("/sapi/v1/simple-earn/locked/position?");
+    expect(url).toContain("size=100");
+    expect((init as RequestInit).headers).toMatchObject({ "X-MBX-APIKEY": "KEY" });
+
+    expect(balances).toEqual([
+      { asset: "ETH", wallet: "locked-earn", balance: "3" },
+      { asset: "DOT", wallet: "locked-earn", balance: "120" },
+    ]);
+  });
+
+  it("drops zero balances so they never become positions", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      okJson({
+        rows: [
+          { asset: "ETH", amount: "3" },
+          { asset: "ZERO", amount: "0" },
+        ],
+        total: 2,
+      }),
+    );
+
+    const balances = await getLockedEarnBalances(creds, { nowMs: 1 });
+    expect(balances).toEqual([{ asset: "ETH", wallet: "locked-earn", balance: "3" }]);
+  });
+
+  it("throws a Binance-tagged error on a non-2xx", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 500 } as Response);
+    await expect(getLockedEarnBalances(creds, { nowMs: 1 })).rejects.toThrow(/Binance/);
+  });
+});
+
+describe("getAllBalances — spot + funding + flexible + locked Earn across rungs", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("concatenates all four wallets' balances (market rungs + locked-earn)", async () => {
     vi.mocked(fetch).mockImplementation(async (input) => {
       const url = String(input);
       if (url.includes("/api/v3/account")) {
@@ -225,21 +279,25 @@ describe("getMarketBalances — spot + funding + flexible Earn into one rung", (
       if (url.includes("/sapi/v1/simple-earn/flexible/position")) {
         return okJson({ rows: [{ asset: "USDT", totalAmount: "500" }], total: 1 });
       }
+      if (url.includes("/sapi/v1/simple-earn/locked/position")) {
+        return okJson({ rows: [{ asset: "ETH", amount: "3" }], total: 1 });
+      }
       throw new Error(`unexpected fetch: ${url}`);
     });
 
-    const balances = await getMarketBalances(creds, { nowMs: 1 });
+    const balances = await getAllBalances(creds, { nowMs: 1 });
 
     expect(balances).toEqual([
       { asset: "BTC", wallet: "spot", balance: "0.5" },
       { asset: "BTC", wallet: "funding", balance: "0.1" },
       { asset: "USDT", wallet: "flexible-earn", balance: "500" },
+      { asset: "ETH", wallet: "locked-earn", balance: "3" },
     ]);
   });
 
   it("aborts the whole read if one wallet endpoint fails (spot work is discarded)", async () => {
     // A read-only key/transient outage that fails funding must not partial-commit:
-    // getMarketBalances rejects, and the action's catch leaves positions untouched.
+    // getAllBalances rejects, and the action's catch leaves positions untouched.
     vi.mocked(fetch).mockImplementation(async (input) => {
       const url = String(input);
       if (url.includes("/api/v3/account")) {
@@ -251,6 +309,6 @@ describe("getMarketBalances — spot + funding + flexible Earn into one rung", (
       return okJson({ rows: [], total: 0 });
     });
 
-    await expect(getMarketBalances(creds, { nowMs: 1 })).rejects.toThrow(/Binance/);
+    await expect(getAllBalances(creds, { nowMs: 1 })).rejects.toThrow(/Binance/);
   });
 });

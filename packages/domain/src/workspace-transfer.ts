@@ -152,6 +152,10 @@ export interface ExportedAsset {
   annualAppreciationRate?: DecimalString;
   /** Housing valuation anchors (market appraisals + improvements); ordered by date. */
   valuationAnchors?: ExportedValuationAnchor[];
+  /** The connected source this asset materializes a rung of (ADR 0016/0021, #248);
+   *  absent for a hand-maintained holding. Carried so a multi-rung source's link
+   *  round-trips (the source row in `connectedSources` names only the primary asset). */
+  connectedSourceId?: string;
   ownership: OwnershipShare[];
   investment?: ExportedInvestmentMeta;
   deletedAt?: string;
