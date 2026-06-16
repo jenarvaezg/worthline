@@ -18,7 +18,16 @@ import { createHmac } from "node:crypto";
 import { addUnits, compareUnits } from "@worthline/domain";
 import type { DecimalString } from "@worthline/domain";
 
-const BINANCE_BASE = "https://api.binance.com";
+/**
+ * The Binance API origin. Defaults to the real host; overridable via
+ * `WORTHLINE_BINANCE_BASE_URL` so an e2e run (or a self-host proxy) can point the
+ * signed calls at a local stub server. Read per call (not a module const) so a
+ * test can set the env after import, and so the server process picks it up at
+ * request time. Never affects auth — the HMAC signature is over the query only.
+ */
+function binanceBaseUrl(): string {
+  return process.env.WORTHLINE_BINANCE_BASE_URL ?? "https://api.binance.com";
+}
 
 /** Local-only credentials (ADR 0016): an API key + the signing secret. Never
  *  exported; the secret is more dangerous than Numista's read key (it can sign
@@ -108,7 +117,7 @@ export async function getSpotBalances(
   const signature = signQuery(query, credentials.apiSecret);
 
   const res = await fetch(
-    `${BINANCE_BASE}/api/v3/account?${query}&signature=${signature}`,
+    `${binanceBaseUrl()}/api/v3/account?${query}&signature=${signature}`,
     {
       headers: { "X-MBX-APIKEY": credentials.apiKey },
       signal: AbortSignal.timeout(8000),
@@ -146,7 +155,7 @@ export async function getAccountSnapshots(
   const signature = signQuery(query, credentials.apiSecret);
 
   const res = await fetch(
-    `${BINANCE_BASE}/sapi/v1/accountSnapshot?${query}&signature=${signature}`,
+    `${binanceBaseUrl()}/sapi/v1/accountSnapshot?${query}&signature=${signature}`,
     {
       headers: { "X-MBX-APIKEY": credentials.apiKey },
       signal: AbortSignal.timeout(8000),
@@ -184,7 +193,7 @@ export async function getFundingBalances(
   const signature = signQuery(query, credentials.apiSecret);
 
   const res = await fetch(
-    `${BINANCE_BASE}/sapi/v1/asset/get-funding-asset?${query}&signature=${signature}`,
+    `${binanceBaseUrl()}/sapi/v1/asset/get-funding-asset?${query}&signature=${signature}`,
     {
       method: "POST",
       headers: { "X-MBX-APIKEY": credentials.apiKey },
@@ -230,7 +239,7 @@ export async function getFlexibleEarnBalances(
   const signature = signQuery(query, credentials.apiSecret);
 
   const res = await fetch(
-    `${BINANCE_BASE}/sapi/v1/simple-earn/flexible/position?${query}&signature=${signature}`,
+    `${binanceBaseUrl()}/sapi/v1/simple-earn/flexible/position?${query}&signature=${signature}`,
     {
       headers: { "X-MBX-APIKEY": credentials.apiKey },
       signal: AbortSignal.timeout(8000),
@@ -275,7 +284,7 @@ export async function getLockedEarnBalances(
   const signature = signQuery(query, credentials.apiSecret);
 
   const res = await fetch(
-    `${BINANCE_BASE}/sapi/v1/simple-earn/locked/position?${query}&signature=${signature}`,
+    `${binanceBaseUrl()}/sapi/v1/simple-earn/locked/position?${query}&signature=${signature}`,
     {
       headers: { "X-MBX-APIKEY": credentials.apiKey },
       signal: AbortSignal.timeout(8000),
