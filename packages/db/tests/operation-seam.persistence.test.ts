@@ -5,9 +5,9 @@
  * single transaction, deriving `today` and the from-date window behind the seam.
  * These tests exercise the OPERATION seam methods directly at the store (not
  * through Next.js actions): one call must both persist the operation AND ripple
- * the snapshots it affects. The legacy public `rippleHistoricalSnapshotsFor*`
- * methods stay callable (other paths rely on them) — these methods wrap the same
- * ripple logic behind the seam.
+ * the snapshots it affects. The public `rippleHistoricalSnapshotsFor*` methods no
+ * longer exist on the store surface (ADR 0020): every persist+ripple pair rides a
+ * seam method, which wraps the standalone ripple logic behind a single transaction.
  */
 import { describe, expect, test } from "vitest";
 

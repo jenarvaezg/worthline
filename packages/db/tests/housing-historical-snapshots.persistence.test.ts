@@ -269,22 +269,19 @@ describe("housing historical snapshots — no curve regression", () => {
       name: "Fondo",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     });
-    store.operations.recordOperation({
-      assetId: "fund",
-      currency: "EUR",
-      executedAt: "2024-01-10",
-      feesMinor: 0,
-      id: "op1",
-      kind: "buy",
-      pricePerUnit: "100",
-      units: "10",
-    });
-    store.rippleHistoricalSnapshotsForOperation({
-      assetId: "fund",
-      mode: "record",
-      operationDateKey: "2024-01-10",
-      today: TODAY,
-    });
+    store.recordOperationAndRipple(
+      {
+        assetId: "fund",
+        currency: "EUR",
+        executedAt: "2024-01-10",
+        feesMinor: 0,
+        id: "op1",
+        kind: "buy",
+        pricePerUnit: "100",
+        units: "10",
+      },
+      { today: TODAY },
+    );
 
     // The piso has no anchors and no rate → it uses its current value (130k) as
     // the last-known-value fallback, exactly as before PRD #108.
@@ -346,11 +343,9 @@ describe("housing historical snapshots — empty-curve basis consistency (fix 1)
     // 2024-01-01, so lastKnownValueAtDate returns undefined → falls back to
     // currentValueMinor (200k). That is still correct and consistent with
     // buildSnapshotAtDate: both use currentValue when no history reaches back.
-    store.rippleHistoricalSnapshotsForValuation({
-      assetId: "piso",
-      fromDateKey: "2024-01-01",
-      today: TODAY,
-    });
+    // The value edit is a non-dated metadata change → the housing-after-edit seam
+    // re-derives history; its from-date resolves to the surviving 2024-01-01 snapshot.
+    store.rippleHousingAfterAssetEdit("piso", { today: TODAY });
 
     // In the test environment all audit entries are timestamped "now" (TODAY),
     // which is after the snapshot date 2024-01-01. So lastKnownValueAtDate

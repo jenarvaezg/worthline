@@ -1,6 +1,7 @@
 import type { LocalPersistenceStatus } from "@worthline/domain";
 import type {
   CreateInvestmentOperationInput,
+  CreateManualAssetInput,
   DebtBalanceCurveInputs,
   DebtModel,
   DecimalString,
@@ -61,6 +62,7 @@ import {
   createAssetStore,
   type AddValuationAnchorInput,
   type AssetStore,
+  type UpdateAssetInput,
   type UpdateValuationAnchorInput,
 } from "./asset-store";
 import {
@@ -83,6 +85,7 @@ import {
   type UpdateBalanceAnchorInput,
   type UpdateEarlyRepaymentInput,
   type UpdateInterestRateRevisionInput,
+  type UpdateLiabilityInput,
 } from "./liability-store";
 import {
   createOperationsStore,
@@ -198,6 +201,24 @@ export interface TrashView {
 }
 
 /**
+ * The full real_estate creation command for {@link WorthlineStore.createHousingHoldingAndRipple}.
+ * The caller resolves the anchor ids (a determinism source — `createStableId`/seed
+ * plumbing) and passes the acquisition anchor (and an optional initial valuation)
+ * fully formed; the seam derives only the from-date (the acquisition date) and
+ * `today`.
+ */
+export interface CreateHousingHoldingCommand {
+  /** The asset row to create (must be `type: "real_estate"`). */
+  asset: CreateManualAssetInput;
+  /** The acquisition valuation anchor (carries its own resolved id). */
+  acquisitionAnchor: AddValuationAnchorInput;
+  /** The appreciation rate to set, or null to leave it unset. */
+  annualAppreciationRate: DecimalString | null;
+  /** An optional initial valuation anchor (carries its own resolved id). */
+  initialValuation?: AddValuationAnchorInput;
+}
+
+/**
  * The WorthlineStore is a pure composite (Slice R6, PRD #120): the five focused
  * sub-stores expose every per-domain operation, and the store itself owns only
  * the cross-cutting concerns that span domains or have no natural home in a
@@ -231,38 +252,6 @@ export interface WorthlineStore {
   readAuditLog: (filter?: { entityId?: string }) => AuditLogEntry[];
   readFireConfig: () => Record<string, FireScopeConfig>;
   saveFireConfig: (scopeId: string, config: FireScopeConfig) => void;
-  /**
-   * Generate/recalculate historical snapshots after a backdated operation
-   * change to one investment (ADR 0012, PRD #107). record(D) generates a fresh
-   * snapshot at D when none exists there (and D is in the past), then
-   * recalculates every existing snapshot dated ≥ D; delete(D) recalculates
-   * every existing snapshot dated ≥ D. Recalculation only ever touches the
-   * given asset's row in each snapshot, and skips legacy captures that have no
-   * holding rows. Generation at D is a no-op when D is today or in the future
-   * (the daily capture owns today).
-   */
-  rippleHistoricalSnapshotsForOperation: (params: {
-    assetId: string;
-    mode: "record" | "delete";
-    operationDateKey: string;
-    today: string;
-  }) => void;
-  /**
-   * Batched variant of `rippleHistoricalSnapshotsForOperation` for a statement
-   * load that creates many backdated operations at once (ADR 0018, #174). Like
-   * the amortization-plan exception in ADR 0012: generate a fresh snapshot at
-   * EACH affected past operation date that has none yet, then run a SINGLE
-   * forward recalculation of every existing snapshot dated ≥ the earliest
-   * affected date, re-evaluating only this asset's row. One history rebuild per
-   * load regardless of the number of operation dates — the guard against the
-   * #158 O(N×snapshots) cliff. A date today or in the future generates no
-   * history. A no-op when the asset is unknown or no dates are given.
-   */
-  rippleHistoricalSnapshotsForOperations: (params: {
-    assetId: string;
-    operationDateKeys: string[];
-    today: string;
-  }) => void;
   /**
    * Operation dated-fact seam (ADR 0020): persist ONE investment operation AND
    * ripple the snapshots it affects, atomically in a single transaction. The
@@ -369,6 +358,47 @@ export interface WorthlineStore {
    * `today` defaults to the current date.
    */
   rippleHousingAfterAssetEdit: (assetId: string, opts?: { today?: string }) => void;
+  /**
+   * Ownership scope-axis seam (ADR 0020): patch ONE asset AND, if its ownership
+   * split actually changed, re-derive history along the SCOPE axis, atomically.
+   * The previous ownership and the did-it-change comparison are derived behind the
+   * seam (the caller no longer reads `before` or compares splits). For a
+   * `real_estate` asset the housing curve ripple is run instead — it already
+   * re-weights every affected snapshot from the asset's new split — so a home
+   * ownership edit folds into the same single seam call. `today` defaults to the
+   * current date. Wraps `assets.updateAsset` + the ownership/housing ripple.
+   */
+  updateAssetAndRippleOwnership: (
+    assetId: string,
+    patch: UpdateAssetInput,
+    opts?: { today?: string },
+  ) => void;
+  /**
+   * Ownership scope-axis seam (ADR 0020): patch ONE liability AND, if its ownership
+   * split actually changed, re-derive history along the SCOPE axis, atomically. The
+   * previous ownership and the did-it-change comparison are derived behind the seam.
+   * `today` defaults to the current date. Wraps `liabilities.updateLiability` + the
+   * ownership ripple.
+   */
+  updateLiabilityAndRippleOwnership: (
+    liabilityId: string,
+    patch: UpdateLiabilityInput,
+    opts?: { today?: string },
+  ) => void;
+  /**
+   * Housing-creation dated-fact seam (ADR 0020): create ONE real_estate holding —
+   * the asset row, its acquisition anchor, its appreciation rate, and an optional
+   * initial valuation — AND ripple historical snapshots from the acquisition date,
+   * all atomically. The from-date (the acquisition date) and `today` are derived
+   * behind the seam; the caller resolves the anchor ids (a determinism source) and
+   * passes them in the command. Wraps `assets.createManualAsset` +
+   * `assets.addValuationAnchor` + `assets.setAnnualAppreciationRate` + the
+   * valuation ripple.
+   */
+  createHousingHoldingAndRipple: (
+    command: CreateHousingHoldingCommand,
+    opts?: { today?: string },
+  ) => void;
   /**
    * Debt dated-fact seam (ADR 0020): create ONE amortization plan AND ripple the
    * per-cuota history it implies, atomically. The affected dates are derived
@@ -500,79 +530,6 @@ export interface WorthlineStore {
     opts: { liabilityId: string; previousAnchorDate: string; today?: string },
   ) => number;
   /**
-   * Generate/recalculate historical snapshots after a housing valuation change
-   * (PRD #108): a declared/edited/deleted valuation anchor with a past date, or
-   * a changed appreciation rate. Generates a fresh snapshot at `fromDateKey`
-   * when it is in the past and none exists there (valuing the housing asset from
-   * its current curve), then recalculates every existing snapshot dated ≥
-   * `fromDateKey` by re-evaluating only the housing asset's row from the curve.
-   * For a rate change, pass the first anchor's date as `fromDateKey`. A
-   * `fromDateKey` today or in the future generates no history (future anchors
-   * produce no snapshot). Skips legacy captures with no holding rows. A no-op
-   * when the asset is not housing or has no curve.
-   */
-  rippleHistoricalSnapshotsForValuation: (params: {
-    assetId: string;
-    fromDateKey: string;
-    today: string;
-  }) => void;
-  /**
-   * Generate/recalculate historical snapshots after a debt-balance change (PRD
-   * #109, slice 9). The liability is valued from its debt curve
-   * (`debtBalanceAtDate`) on each affected date.
-   *
-   * - `kind: "amortizable-plan"` (a created/edited plan): generate a fresh
-   *   snapshot at EVERY past payment-boundary date that has none yet (the "one
-   *   snapshot per past cuota" density — the deliberate exception to ADR 0012
-   *   recognised by PRD #109), then recalculate every existing snapshot dated ≥
-   *   the loan start by re-valuing only the liability's row from the curve.
-   * - `kind: "amortizable-revision"`: pass the revision's date as `fromDateKey`;
-   *   recalculates every existing snapshot dated ≥ it (no new generation — the
-   *   revision only changes existing balances after it).
-   * - `kind: "anchor"` (a declared/edited/deleted balance anchor for a
-   *   revolving/informal debt): pass the anchor date as `fromDateKey`; generates
-   *   a fresh snapshot at it when in the past and none exists, then recalculates
-   *   every existing snapshot dated ≥ it.
-   *
-   * A date today or in the future never generates history (the daily capture
-   * owns today, the future is not history). Only the liability's row in each
-   * snapshot is recomputed; every other frozen row is preserved, and legacy
-   * captures with no holding rows are skipped. A no-op when the liability has no
-   * debt model or curve data.
-   */
-  rippleHistoricalSnapshotsForDebt: (
-    params:
-      | { liabilityId: string; kind: "amortizable-plan"; today: string }
-      | {
-          liabilityId: string;
-          kind: "amortizable-revision" | "anchor" | "amortizable-repayment";
-          fromDateKey: string;
-          today: string;
-        },
-  ) => void;
-  /**
-   * Re-derive existing snapshots after one holding's OWNERSHIP SPLIT changed
-   * (#172). An ownership split has no date dimension — it only weights a
-   * holding's global value into each scope — so this NEVER generates a new
-   * snapshot date: it re-weights the edited holding's row in every existing
-   * scope snapshot using the new split. The whole-holding (global) value at each
-   * date is recovered from the household-scope frozen row divided by the share
-   * the household held under `previousOwnership` (the household row is the
-   * members' COMBINED stake — 100% of the value when no external co-owner, less
-   * when the holding is partially owned). Every scope is then re-weighted from
-   * that global value: a holding fully owned within the household leaves the
-   * household figure unchanged, while a co-owned holding's household figure moves
-   * with the members' combined share. Only the edited holding's row moves; every
-   * other frozen row is preserved, the reconciliation invariant holds (ADR 0008),
-   * and legacy captures with no holding rows are skipped. A no-op when the
-   * household held no stake before, or no household snapshot carries the holding.
-   */
-  rippleHistoricalSnapshotsForOwnership: (params: {
-    holdingId: string;
-    kind: "asset" | "liability";
-    previousOwnership: OwnershipShare[];
-  }) => void;
-  /**
    * One-shot backfill (ADR 0012, PRD #107): generate a historical snapshot for
    * every past operation date that has no snapshot yet, across all scopes.
    * Existing snapshots are never recalculated — only gaps are filled. Idempotent.
@@ -688,6 +645,18 @@ export function createWorthlineStore(
   return buildStore(sqlite, migrateResult);
 }
 
+/**
+ * Whether two ownership splits differ — the signal that an edit must ripple the
+ * scope axis (ADR 0020). A reorder of the same members/shares is NOT a change;
+ * an added/removed member or a moved share IS. Lives behind the ownership seam so
+ * the action layer no longer derives "did ownership change".
+ */
+function ownershipChanged(before: OwnershipShare[], after: OwnershipShare[]): boolean {
+  if (before.length !== after.length) return true;
+  const beforeByMember = new Map(before.map((share) => [share.memberId, share.shareBps]));
+  return after.some((share) => beforeByMember.get(share.memberId) !== share.shareBps);
+}
+
 function buildStore(
   sqlite: DatabaseConnection,
   migrateResult: MigrateResult,
@@ -728,6 +697,39 @@ function buildStore(
         .filter((dateKey) => dateKey < today)
         .sort()[0] ?? null
     );
+  }
+
+  /**
+   * Re-derive the housing snapshots after a non-dated-fact edit to a real_estate
+   * asset (the `firstHousingEventDate` rule, ADR 0020): from-date = first
+   * anchor/snapshot date ≤ today. Skips when nothing exists to ripple. Used by
+   * both `rippleHousingAfterAssetEdit` (the editAsset ripple-only seam) and the
+   * real_estate branch of `updateAssetAndRippleOwnership` (a home ownership edit
+   * re-weights through the curve ripple, which honors the asset's new split). The
+   * caller wraps it in the enclosing transaction.
+   */
+  function rippleHousingAfterEdit(assetId: string, today: string): void {
+    const firstAnchorDate = assetStore
+      .readValuationAnchors(assetId)
+      .map((a) => a.valuationDate)
+      .filter((d) => d <= today)
+      .sort()[0];
+    const fromDateKey =
+      firstAnchorDate ??
+      snapshotStore
+        .readSnapshotHoldings({ holdingId: assetId, kind: "asset" })
+        .map((r) => r.dateKey)
+        .filter((d) => d <= today)
+        .sort()[0] ??
+      null;
+    if (fromDateKey === null || fromDateKey > today) return;
+    const workspace = getWorkspace();
+    if (!workspace) return;
+    rippleHistoricalSnapshotsForValuation(ctx, workspace, store.snapshots.saveSnapshot, {
+      assetId,
+      fromDateKey,
+      today,
+    });
   }
 
   const store: WorthlineStore = {
@@ -857,21 +859,6 @@ function buildStore(
         entityType: row.entityType,
         id: row.id,
       }));
-    },
-    rippleHistoricalSnapshotsForOperation: (params) => {
-      const workspace = getWorkspace();
-      if (!workspace) return;
-      rippleHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, params);
-    },
-    rippleHistoricalSnapshotsForOperations: (params) => {
-      const workspace = getWorkspace();
-      if (!workspace) return;
-      rippleHistoricalSnapshotsForOperations(
-        ctx,
-        workspace,
-        store.snapshots.saveSnapshot,
-        params,
-      );
     },
     recordOperationAndRipple: (input, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
@@ -1085,22 +1072,97 @@ function buildStore(
     rippleHousingAfterAssetEdit: (assetId, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       // Ripple-only seam for editAsset (ADR 0020): no dated fact persisted here.
-      // From-date = first anchor/snapshot date <= today (firstHousingEventDate rule).
-      const firstAnchorDate = assetStore
-        .readValuationAnchors(assetId)
-        .map((a) => a.valuationDate)
-        .filter((d) => d <= today)
-        .sort()[0];
-      const fromDateKey =
-        firstAnchorDate ??
-        store.snapshots
-          .readSnapshotHoldings({ holdingId: assetId, kind: "asset" })
-          .map((r) => r.dateKey)
-          .filter((d) => d <= today)
-          .sort()[0] ??
-        null;
-      if (fromDateKey === null || fromDateKey > today) return;
       ctx.transaction(() => {
+        rippleHousingAfterEdit(assetId, today);
+      });
+    },
+    updateAssetAndRippleOwnership: (assetId, patch, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      // One transaction so the patch + the scope-axis ripple commit or roll back
+      // together (ADR 0020). The previous ownership and the did-it-change
+      // comparison are read behind the seam, not at the call site.
+      ctx.transaction(() => {
+        const before = assetStore.readAssets().find((a) => a.id === assetId) ?? null;
+        assetStore.updateAsset(assetId, patch);
+        // A real_estate asset re-weights through the housing curve ripple — it
+        // already re-derives every affected snapshot from the asset's new split,
+        // so it covers an ownership edit too (and a from-date in the future is
+        // guarded inside the helper).
+        const type = patch.type ?? before?.type;
+        if (type === "real_estate") {
+          rippleHousingAfterEdit(assetId, today);
+          return;
+        }
+        // A non-real_estate ownership-split change rides the scope-axis ripple;
+        // a cosmetic edit (same split) ripples nothing.
+        if (
+          before &&
+          patch.ownership &&
+          ownershipChanged(before.ownership, patch.ownership)
+        ) {
+          const workspace = getWorkspace();
+          if (workspace) {
+            rippleHistoricalSnapshotsForOwnership(
+              ctx,
+              workspace,
+              store.snapshots.saveSnapshot,
+              {
+                holdingId: assetId,
+                kind: "asset",
+                previousOwnership: before.ownership,
+              },
+            );
+          }
+        }
+      });
+    },
+    updateLiabilityAndRippleOwnership: (liabilityId, patch) => {
+      // An ownership edit has no time axis, so the liability seam takes no `today`
+      // (the uniform `opts` is accepted at the type level for symmetry with the
+      // asset seam, but unused here).
+      // One transaction so the patch + the scope-axis ripple commit or roll back
+      // together (ADR 0020). The previous ownership and the did-it-change
+      // comparison are read behind the seam.
+      ctx.transaction(() => {
+        const before =
+          liabilityStore.readLiabilities().find((l) => l.id === liabilityId) ?? null;
+        liabilityStore.updateLiability(liabilityId, patch);
+        if (
+          before &&
+          patch.ownership &&
+          ownershipChanged(before.ownership, patch.ownership)
+        ) {
+          const workspace = getWorkspace();
+          if (workspace) {
+            rippleHistoricalSnapshotsForOwnership(
+              ctx,
+              workspace,
+              store.snapshots.saveSnapshot,
+              {
+                holdingId: liabilityId,
+                kind: "liability",
+                previousOwnership: before.ownership,
+              },
+            );
+          }
+        }
+      });
+    },
+    createHousingHoldingAndRipple: (command, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      // One transaction so the create + anchor/rate seeding + ripple commit or
+      // roll back together (ADR 0020). The from-date is the acquisition date,
+      // derived behind the seam from the command's own acquisition anchor.
+      ctx.transaction(() => {
+        assetStore.createManualAsset(command.asset);
+        assetStore.addValuationAnchor(command.acquisitionAnchor);
+        assetStore.setAnnualAppreciationRate(
+          command.asset.id,
+          command.annualAppreciationRate,
+        );
+        if (command.initialValuation) {
+          assetStore.addValuationAnchor(command.initialValuation);
+        }
         const workspace = getWorkspace();
         if (!workspace) return;
         rippleHistoricalSnapshotsForValuation(
@@ -1108,8 +1170,8 @@ function buildStore(
           workspace,
           store.snapshots.saveSnapshot,
           {
-            assetId,
-            fromDateKey,
+            assetId: command.asset.id,
+            fromDateKey: command.acquisitionAnchor.valuationDate,
             today,
           },
         );
@@ -1382,36 +1444,6 @@ function buildStore(
         }
         return changes;
       });
-    },
-    rippleHistoricalSnapshotsForValuation: (params) => {
-      const workspace = getWorkspace();
-      if (!workspace) return;
-      rippleHistoricalSnapshotsForValuation(
-        ctx,
-        workspace,
-        store.snapshots.saveSnapshot,
-        params,
-      );
-    },
-    rippleHistoricalSnapshotsForDebt: (params) => {
-      const workspace = getWorkspace();
-      if (!workspace) return;
-      rippleHistoricalSnapshotsForDebt(
-        ctx,
-        workspace,
-        store.snapshots.saveSnapshot,
-        params,
-      );
-    },
-    rippleHistoricalSnapshotsForOwnership: (params) => {
-      const workspace = getWorkspace();
-      if (!workspace) return;
-      rippleHistoricalSnapshotsForOwnership(
-        ctx,
-        workspace,
-        store.snapshots.saveSnapshot,
-        params,
-      );
     },
     backfillHistoricalSnapshots: (today) => {
       const workspace = getWorkspace();

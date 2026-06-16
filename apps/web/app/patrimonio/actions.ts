@@ -7,7 +7,6 @@ import {
   isHousingAsset,
   isValueUpdateEligible,
 } from "@worthline/domain";
-import type { OwnershipShare } from "@worthline/domain";
 import { redirect } from "next/navigation";
 
 import {
@@ -435,17 +434,6 @@ export async function batchValueUpdateAction(
   );
 }
 
-/**
- * Whether two ownership splits differ (order-independent). Gates the #172
- * ripple: an ownership-split change re-derives history, a cosmetic edit (rename)
- * leaves the split — and therefore the frozen snapshots — untouched.
- */
-function ownershipChanged(before: OwnershipShare[], after: OwnershipShare[]): boolean {
-  if (before.length !== after.length) return true;
-  const beforeByMember = new Map(before.map((share) => [share.memberId, share.shareBps]));
-  return after.some((share) => beforeByMember.get(share.memberId) !== share.shareBps);
-}
-
 export async function editAssetAction(
   formData: FormData,
   _store?: WorthlineStore,
@@ -517,27 +505,16 @@ export async function editAssetAction(
         return { ok: false, error: mapDomainViolation(splitViolation) };
       }
 
-      // #172: an ownership-split change is a retroactive parameter edit that
-      // ripples per-member snapshot history; a rename (same split) does not.
-      const before = store.liabilities.readLiabilities().find((l) => l.id === id) ?? null;
-      const ownershipDidChange = before
-        ? ownershipChanged(before.ownership, ownership)
-        : false;
-
-      store.liabilities.updateLiability(id, {
+      // #172 / ADR 0020: an ownership-split change is a retroactive parameter
+      // edit that ripples per-member snapshot history; a rename (same split) does
+      // not. The ownership seam folds the persist + the conditional scope-axis
+      // ripple into one atomic call, capturing the previous split behind the seam.
+      store.updateLiabilityAndRippleOwnership(id, {
         name,
         type: liabilityType,
         associatedAssetId,
         ownership,
       });
-
-      if (ownershipDidChange && before) {
-        store.rippleHistoricalSnapshotsForOwnership({
-          holdingId: id,
-          kind: "liability",
-          previousOwnership: before.ownership,
-        });
-      }
 
       return { ok: true };
     });
@@ -571,32 +548,18 @@ export async function editAssetAction(
       return { ok: false, error: mapDomainViolation(splitViolation) };
     }
 
-    // #172: an ownership-split change ripples per-member snapshot history. For a
-    // real_estate asset the valuation ripple below already re-weights every
-    // affected snapshot from the asset's new split, so it covers this case.
-    const before = store.assets.readAssets().find((a) => a.id === id) ?? null;
-    const ownershipDidChange = before
-      ? ownershipChanged(before.ownership, ownership)
-      : false;
-
-    store.assets.updateAsset(id, {
+    // #172 / ADR 0020: an ownership-split change ripples per-member snapshot
+    // history. The ownership seam folds the persist + the conditional scope-axis
+    // ripple into one atomic call; for a real_estate asset it dispatches to the
+    // housing curve ripple, which already re-weights every affected snapshot from
+    // the asset's new split. The previous split is captured behind the seam.
+    store.updateAssetAndRippleOwnership(id, {
       name,
       type,
       liquidityTier,
       isPrimaryResidence,
       ownership,
     });
-
-    if (type === "real_estate") {
-      // Ripple-only seam (ADR 0020): from-date derived inside the seam.
-      store.rippleHousingAfterAssetEdit(id);
-    } else if (ownershipDidChange && before) {
-      store.rippleHistoricalSnapshotsForOwnership({
-        holdingId: id,
-        kind: "asset",
-        previousOwnership: before.ownership,
-      });
-    }
 
     return { ok: true };
   });

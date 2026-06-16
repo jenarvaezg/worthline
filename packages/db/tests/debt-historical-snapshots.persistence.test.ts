@@ -360,38 +360,33 @@ describe("historical housing equity from a real mortgage curve", () => {
     });
     store.liabilities.setDebtModel("mortgage", "amortizable");
 
-    // Housing curve: an appraisal anchor in the past.
-    store.assets.addValuationAnchor({
-      adjustsPriorCurve: true,
-      assetId: "piso",
-      id: "v1",
-      valuationDate: "2025-01-01",
-      valueMinor: 180_000_00,
-    });
-    // Mortgage amortization plan starting in the past.
-    store.liabilities.createAmortizationPlan({
-      annualInterestRate: "0.03",
-      id: "plan1",
-      initialCapitalMinor: 150_000_00,
-      liabilityId: "mortgage",
-      disbursementDate: "2024-01-01",
+    // Housing curve: an appraisal anchor in the past. The anchor persist + ripple
+    // ride the valuation seam (generates the 2025-01-01 snapshot).
+    store.addValuationAnchorAndRipple(
+      {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "v1",
+        valuationDate: "2025-01-01",
+        valueMinor: 180_000_00,
+      },
+      { today: TODAY },
+    );
+    // Mortgage amortization plan starting in the past — the plan persist + ripple
+    // ride the debt seam, re-valuing the debt on the 2025-01-01 snapshot too.
+    store.createAmortizationPlanAndRipple(
+      {
+        annualInterestRate: "0.03",
+        id: "plan1",
+        initialCapitalMinor: 150_000_00,
+        liabilityId: "mortgage",
+        disbursementDate: "2024-01-01",
 
-      firstPaymentDate: "2024-02-01",
-      termMonths: 240,
-    });
-
-    // Ripple the housing anchor first (generates the 2025-01-01 snapshot), then
-    // the mortgage plan, which must re-value the debt on that snapshot too.
-    store.rippleHistoricalSnapshotsForValuation({
-      assetId: "piso",
-      fromDateKey: "2025-01-01",
-      today: TODAY,
-    });
-    store.rippleHistoricalSnapshotsForDebt({
-      liabilityId: "mortgage",
-      kind: "amortizable-plan",
-      today: TODAY,
-    });
+        firstPaymentDate: "2024-02-01",
+        termMonths: 240,
+      },
+      { today: TODAY },
+    );
 
     // Housing value at 2025-01-01 is the appraisal (180k). The mortgage balance
     // is the REAL curve balance on 2025-01-01, NOT the last-known 100k.
@@ -508,24 +503,23 @@ describe("plan deletion recalculates snapshots to currentBalance basis", () => {
     );
   }
 
-  test("RED: ripple-before-delete leaves snapshots frozen at plan balances, not currentBalance", () => {
-    // Documents the BROKEN action wiring: ripple(amortizable-plan) then delete.
-    // The plan ripple early-returns when called after delete (curve.plan is null),
-    // so doing it before delete means snapshots keep plan-derived balances forever.
-    // This test asserts that specific (wrong) outcome so we can confirm it is what
-    // the pre-fix action produces.
+  test("RED: a plain plan delete (no ripple) leaves snapshots frozen at plan balances, not currentBalance", () => {
+    // Documents the BROKEN action wiring: the seed already rippled the plan
+    // (createAmortizationPlanAndRipple), so the snapshot carries the plan balance.
+    // A plain deleteAmortizationPlan (no ripple) cannot reset it — the plan ripple
+    // early-returns once curve.plan is null — so the snapshot keeps the plan-
+    // derived balance forever. This is exactly why the delete must ride the seam
+    // (the GREEN test below), which captures startDate and ripples the planless
+    // curve. We assert the wrong outcome here to pin the contrast.
     const store = createInMemoryStore();
     seedAmortizableForDelete(store);
 
     const planBalance = store.liabilities.debtBalanceAtDate("mortgage", "2026-01-15");
     expect(planBalance).not.toBe(100_000_00); // plan balance ≠ currentBalance
+    // The seed's seam ripple already froze the snapshot at the plan balance.
+    expect(debtsAt(store, "2026-01-15")).toBe(planBalance);
 
-    // Broken wiring: ripple with the plan still present, then delete.
-    store.rippleHistoricalSnapshotsForDebt({
-      liabilityId: "mortgage",
-      kind: "amortizable-plan",
-      today: TODAY,
-    });
+    // Broken wiring: a plain delete with no ripple.
     store.liabilities.deleteAmortizationPlan("plan1");
 
     // Snapshot is still frozen at the plan balance — NOT reset to currentBalance.

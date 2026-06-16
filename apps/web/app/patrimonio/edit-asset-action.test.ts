@@ -58,20 +58,18 @@ function seed(store: WorthlineStore): void {
     type: "mortgage",
   });
   store.liabilities.setDebtModel("mortgage", "amortizable");
-  store.liabilities.createAmortizationPlan({
-    annualInterestRate: "0.03",
-    id: "plan1",
-    initialCapitalMinor: 150_000_00,
-    liabilityId: "mortgage",
-    disbursementDate: "2026-01-15",
-    firstPaymentDate: "2026-02-15",
-    termMonths: 240,
-  });
-  store.rippleHistoricalSnapshotsForDebt({
-    kind: "amortizable-plan",
-    liabilityId: "mortgage",
-    today: TODAY,
-  });
+  store.createAmortizationPlanAndRipple(
+    {
+      annualInterestRate: "0.03",
+      id: "plan1",
+      initialCapitalMinor: 150_000_00,
+      liabilityId: "mortgage",
+      disbursementDate: "2026-01-15",
+      firstPaymentDate: "2026-02-15",
+      termMonths: 240,
+    },
+    { today: TODAY },
+  );
 }
 
 function debtsAt(store: WorthlineStore, scopeId: string): number | undefined {
@@ -138,20 +136,18 @@ describe("editAssetAction — ownership-split ripple (#172)", () => {
       type: "mortgage",
     });
     store.liabilities.setDebtModel("mortgage", "amortizable");
-    store.liabilities.createAmortizationPlan({
-      annualInterestRate: "0.03",
-      id: "plan1",
-      initialCapitalMinor: 150_000_00,
-      liabilityId: "mortgage",
-      disbursementDate: "2026-01-15",
-      firstPaymentDate: "2026-02-15",
-      termMonths: 240,
-    });
-    store.rippleHistoricalSnapshotsForDebt({
-      kind: "amortizable-plan",
-      liabilityId: "mortgage",
-      today: TODAY,
-    });
+    store.createAmortizationPlanAndRipple(
+      {
+        annualInterestRate: "0.03",
+        id: "plan1",
+        initialCapitalMinor: 150_000_00,
+        liabilityId: "mortgage",
+        disbursementDate: "2026-01-15",
+        firstPaymentDate: "2026-02-15",
+        termMonths: 240,
+      },
+      { today: TODAY },
+    );
 
     return runAction(
       form({
