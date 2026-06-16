@@ -12,6 +12,7 @@ import {
   globalHoldingValueAtDate,
   recalculateSnapshotForAsset,
   recalculateSnapshotForCoinAcquisition,
+  recalculateSnapshotForConnectedValue,
   recalculateSnapshotForHousing,
   recalculateSnapshotForLiability,
   recalculateSnapshotForOwnership,
@@ -2328,5 +2329,215 @@ describe("recalculateSnapshotForCoinAcquisition", () => {
     expect(row.valueMinor).toBe(500_00);
     expect(result.snapshot.grossAssets.amountMinor).toBe(1_500_00);
     expect(result.snapshot.liquidNetWorth.amountMinor).toBe(1_000_00);
+  });
+});
+
+describe("recalculateSnapshotForConnectedValue", () => {
+  const eur = (amountMinor: number) => ({ amountMinor, currency: "EUR" });
+
+  // The materialized Binance crypto holding: a derived market-rung investment
+  // (ADR 0021) whose past value is SET from the reconstructed monthly history.
+  function cryptoHolding(workspace: Workspace): ManualAsset {
+    return createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 0,
+      id: "asset_binance",
+      instrument: "crypto",
+      liquidityTier: "market",
+      name: "Binance",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "investment",
+    });
+  }
+
+  function cashRow(valueMinor: number): SnapshotHoldingRow {
+    return {
+      countsAsHousing: false,
+      holdingId: "asset_cash",
+      kind: "asset",
+      label: "Cuenta",
+      liquidityTier: "cash",
+      securesHousing: false,
+      valueMinor,
+    };
+  }
+
+  // A snapshot holding only cash, self-consistent under the five-figure invariant.
+  function cashSnapshot(valueMinor: number): NetWorthSnapshot {
+    return {
+      capturedAt: "2024-06-01T12:00:00.000Z",
+      dateKey: "2024-06-01",
+      debts: eur(0),
+      grossAssets: eur(valueMinor),
+      housingEquity: eur(0),
+      id: "snap_x",
+      isMonthlyClose: false,
+      liquidNetWorth: eur(valueMinor),
+      monthKey: "2024-06",
+      scopeId: "member_jose",
+      scopeLabel: "Jose",
+      totalNetWorth: eur(valueMinor),
+      warnings: [],
+    };
+  }
+
+  test("sets a fresh market row when the snapshot carried none", () => {
+    const workspace = makeWorkspace();
+    const result = recalculateSnapshotForConnectedValue({
+      asset: cryptoHolding(workspace),
+      frozenHoldings: [cashRow(1_000_00)],
+      globalValueMinor: 300_00, // balance × price on this date
+      snapshot: cashSnapshot(1_000_00),
+      workspace,
+    })!;
+
+    const row = result.holdings.find((h) => h.holdingId === "asset_binance")!;
+    expect(row.valueMinor).toBe(300_00);
+    expect(row.liquidityTier).toBe("market");
+    // A market holding is liquid (never housing): gross + total + liquid all grow.
+    expect(result.snapshot.grossAssets.amountMinor).toBe(1_300_00);
+    expect(result.snapshot.totalNetWorth.amountMinor).toBe(1_300_00);
+    expect(result.snapshot.liquidNetWorth.amountMinor).toBe(1_300_00);
+    expect(result.snapshot.housingEquity.amountMinor).toBe(0);
+  });
+
+  test("REPLACES an existing binance row's value (set, not add)", () => {
+    const workspace = makeWorkspace();
+    const binanceRow: SnapshotHoldingRow = {
+      countsAsHousing: false,
+      holdingId: "asset_binance",
+      kind: "asset",
+      label: "Binance",
+      liquidityTier: "market",
+      securesHousing: false,
+      valueMinor: 200_00, // a stale/base value to be overridden
+    };
+    const result = recalculateSnapshotForConnectedValue({
+      asset: cryptoHolding(workspace),
+      frozenHoldings: [cashRow(1_000_00), binanceRow],
+      globalValueMinor: 500_00, // the correct historical value
+      snapshot: {
+        ...cashSnapshot(1_000_00),
+        grossAssets: eur(1_200_00),
+        liquidNetWorth: eur(1_200_00),
+        totalNetWorth: eur(1_200_00),
+      },
+      workspace,
+    })!;
+
+    // SET to 500 (not 200 + 500 = 700): the row is replaced, never accumulated.
+    const row = result.holdings.find((h) => h.holdingId === "asset_binance")!;
+    expect(row.valueMinor).toBe(500_00);
+    expect(result.snapshot.grossAssets.amountMinor).toBe(1_500_00);
+    expect(result.snapshot.liquidNetWorth.amountMinor).toBe(1_500_00);
+  });
+
+  test("preserves every other frozen row verbatim", () => {
+    const workspace = makeWorkspace();
+    const housingRow: SnapshotHoldingRow = {
+      countsAsHousing: true,
+      holdingId: "asset_piso",
+      kind: "asset",
+      label: "Piso",
+      liquidityTier: "illiquid",
+      securesHousing: false,
+      valueMinor: 300_000_00,
+    };
+    const result = recalculateSnapshotForConnectedValue({
+      asset: cryptoHolding(workspace),
+      frozenHoldings: [cashRow(1_000_00), housingRow],
+      globalValueMinor: 50_00,
+      snapshot: {
+        ...cashSnapshot(1_000_00),
+        grossAssets: eur(301_000_00),
+        housingEquity: eur(300_000_00),
+        liquidNetWorth: eur(1_000_00),
+        totalNetWorth: eur(301_000_00),
+      },
+      workspace,
+    })!;
+
+    // The piso and cash rows are byte-identical; only the binance row is new.
+    expect(result.holdings.find((h) => h.holdingId === "asset_piso")).toEqual(housingRow);
+    expect(result.holdings.find((h) => h.holdingId === "asset_cash")).toEqual(
+      cashRow(1_000_00),
+    );
+    expect(result.snapshot.housingEquity.amountMinor).toBe(300_000_00);
+    expect(result.snapshot.liquidNetWorth.amountMinor).toBe(1_050_00);
+  });
+
+  test("scope-weights the global value by ownership", () => {
+    const household = createWorkspace({
+      baseCurrency: "EUR",
+      members: [
+        { id: "mJ", name: "Jose" },
+        { id: "mA", name: "Ana" },
+      ],
+      mode: "household",
+    });
+    const shared = createManualAsset(household, {
+      currency: "EUR",
+      currentValueMinor: 0,
+      id: "asset_binance",
+      instrument: "crypto",
+      liquidityTier: "market",
+      name: "Binance",
+      ownership: [
+        { memberId: "mJ", shareBps: 7_000 },
+        { memberId: "mA", shareBps: 3_000 },
+      ],
+      type: "investment",
+    });
+    const result = recalculateSnapshotForConnectedValue({
+      asset: shared,
+      frozenHoldings: [
+        {
+          countsAsHousing: false,
+          holdingId: "asset_cash",
+          kind: "asset",
+          label: "Cuenta",
+          liquidityTier: "cash",
+          securesHousing: false,
+          valueMinor: 1_000_00,
+        },
+      ],
+      globalValueMinor: 1_000_00, // 100% of the holding
+      snapshot: {
+        capturedAt: "2024-06-01T12:00:00.000Z",
+        dateKey: "2024-06-01",
+        debts: eur(0),
+        grossAssets: eur(1_000_00),
+        housingEquity: eur(0),
+        id: "snap_jose",
+        isMonthlyClose: false,
+        liquidNetWorth: eur(1_000_00),
+        monthKey: "2024-06",
+        scopeId: "mJ", // Jose's scope: 70% share
+        scopeLabel: "Jose",
+        totalNetWorth: eur(1_000_00),
+        warnings: [],
+      },
+      workspace: household,
+    })!;
+
+    // Jose's scope freezes 70% of the global value (700.00), not the full 1000.
+    const row = result.holdings.find((h) => h.holdingId === "asset_binance")!;
+    expect(row.valueMinor).toBe(700_00);
+    expect(result.snapshot.liquidNetWorth.amountMinor).toBe(1_700_00);
+  });
+
+  test("a zero value records the row at 0 (the holding existed at 0)", () => {
+    const workspace = makeWorkspace();
+    const result = recalculateSnapshotForConnectedValue({
+      asset: cryptoHolding(workspace),
+      frozenHoldings: [cashRow(1_000_00)],
+      globalValueMinor: 0, // a held-but-unpriceable month (ADR 0021)
+      snapshot: cashSnapshot(1_000_00),
+      workspace,
+    })!;
+
+    const row = result.holdings.find((h) => h.holdingId === "asset_binance")!;
+    expect(row.valueMinor).toBe(0);
+    expect(result.snapshot.grossAssets.amountMinor).toBe(1_000_00);
   });
 });

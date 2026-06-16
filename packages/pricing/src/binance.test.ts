@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  getAccountSnapshots,
   getAllBalances,
   getFlexibleEarnBalances,
   getFundingBalances,
@@ -256,6 +257,88 @@ describe("getLockedEarnBalances — signed GET /sapi/v1/simple-earn/locked/posit
   it("throws a Binance-tagged error on a non-2xx", async () => {
     vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 500 } as Response);
     await expect(getLockedEarnBalances(creds, { nowMs: 1 })).rejects.toThrow(/Binance/);
+  });
+});
+
+describe("getAccountSnapshots — signed GET /sapi/v1/accountSnapshot (daily SPOT)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("signs type=SPOT&limit=30, sends the key header, and derives a UTC dateKey per snapshot", async () => {
+    const fetchMock = vi.mocked(fetch).mockResolvedValueOnce(
+      okJson({
+        snapshotVos: [
+          {
+            // 2026-03-01T00:00:00Z
+            updateTime: Date.UTC(2026, 2, 1),
+            data: {
+              balances: [
+                { asset: "BTC", free: "0.50000000", locked: "0.00000000" },
+                { asset: "ETH", free: "1.00000000", locked: "0.50000000" },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+
+    const snapshots = await getAccountSnapshots(creds, { nowMs: 1_700_000_000_000 });
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toContain("/sapi/v1/accountSnapshot?type=SPOT&limit=30");
+    expect(url).toContain("timestamp=1700000000000");
+    expect(url).toContain(
+      "signature=8e3975cdb067fd384efd6c82b2c1aad70ae92488035e8e8945744509b39df11d",
+    );
+    expect((init as RequestInit).headers).toMatchObject({ "X-MBX-APIKEY": "KEY" });
+
+    // dateKey is the UTC YYYY-MM-DD of updateTime; balance = free + locked.
+    expect(snapshots).toEqual([
+      {
+        dateKey: "2026-03-01",
+        balances: [
+          { asset: "BTC", balance: "0.5" },
+          { asset: "ETH", balance: "1.5" },
+        ],
+      },
+    ]);
+  });
+
+  it("zero-filters per-snapshot balances", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      okJson({
+        snapshotVos: [
+          {
+            updateTime: Date.UTC(2026, 2, 31),
+            data: {
+              balances: [
+                { asset: "BTC", free: "0.5", locked: "0" },
+                { asset: "GAS", free: "0", locked: "0" },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+
+    const snapshots = await getAccountSnapshots(creds, { nowMs: 1 });
+    expect(snapshots).toEqual([
+      { dateKey: "2026-03-31", balances: [{ asset: "BTC", balance: "0.5" }] },
+    ]);
+  });
+
+  it("returns an empty list when the account has no snapshots", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(okJson({ snapshotVos: [] }));
+    expect(await getAccountSnapshots(creds, { nowMs: 1 })).toEqual([]);
+  });
+
+  it("throws a Binance-tagged error on a non-2xx", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 401 } as Response);
+    await expect(getAccountSnapshots(creds, { nowMs: 1 })).rejects.toThrow(/Binance/);
   });
 });
 

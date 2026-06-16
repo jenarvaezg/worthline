@@ -254,6 +254,92 @@ describe("syncBinanceAction", () => {
     expect(freshness?.freshnessState).toBe("fresh");
   });
 
+  test("step 4 backfills the reconstructed monthly history into snapshots (accountSnapshot + range stubbed)", async () => {
+    const store = createInMemoryStore();
+    const { sourceId, assetId } = seedWithSource(store);
+
+    // The action reads the wall clock (`new Date()`) — it takes NO injected clock —
+    // so the backfill anchor must be a month deterministically COMPLETED relative to
+    // any real run. 2020-01 is decades in the past, so its month-end 2020-01-31 is
+    // always strictly before the current month and reliably materializes.
+    const SNAPSHOT_MS = Date.UTC(2020, 0, 31); // 2020-01-31 → completed month-end
+
+    const fetchStub = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      // Live positions sync (step 3): a single spot BTC balance.
+      if (url.includes("/api/v3/account")) {
+        return {
+          ok: true,
+          json: async () => ({ balances: [{ asset: "BTC", free: "0.5", locked: "0" }] }),
+        } as unknown as Response;
+      }
+      if (url.includes("/sapi/v1/asset/get-funding-asset")) {
+        return { ok: true, json: async () => [] } as unknown as Response;
+      }
+      if (url.includes("/sapi/v1/simple-earn/flexible/position")) {
+        return {
+          ok: true,
+          json: async () => ({ rows: [], total: 0 }),
+        } as unknown as Response;
+      }
+      if (url.includes("/sapi/v1/simple-earn/locked/position")) {
+        return {
+          ok: true,
+          json: async () => ({ rows: [], total: 0 }),
+        } as unknown as Response;
+      }
+      // Step 4 reconstruction: the signed daily SPOT snapshot horizon — one
+      // completed month-end with 0.5 BTC.
+      if (url.includes("/sapi/v1/accountSnapshot")) {
+        return {
+          ok: true,
+          json: async () => ({
+            snapshotVos: [
+              {
+                updateTime: SNAPSHOT_MS,
+                data: { balances: [{ asset: "BTC", free: "0.5", locked: "0" }] },
+              },
+            ],
+          }),
+        } as unknown as Response;
+      }
+      // Step 4 price series — MUST be matched before the generic coingecko live
+      // price below, since both share the `api.coingecko.com` host.
+      if (url.includes("/market_chart/range")) {
+        return {
+          ok: true,
+          json: async () => ({ prices: [[Date.UTC(2020, 0, 31, 12, 0), 30_000]] }),
+        } as unknown as Response;
+      }
+      // Live unit price (step 3 revaluation).
+      if (url.includes("api.coingecko.com")) {
+        return {
+          ok: true,
+          json: async () => ({ bitcoin: { eur: 50_000 } }),
+        } as unknown as Response;
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchStub);
+
+    const digest = await runAction(
+      syncBinanceAction,
+      form({ currentUrl: "/ajustes", sourceId }),
+      store,
+    );
+
+    expect(digest).toContain("ok=binance_synced");
+
+    // The backfill froze a binance row into the 2020-01-31 month-end snapshot at the
+    // reconstructed gross: balance × that-day price = 0.5 × 30000 = 15000.00.
+    const binanceRows = store.snapshots
+      .readSnapshotHoldings({ holdingId: assetId })
+      .filter((row) => row.kind === "asset" && row.dateKey === "2020-01-31");
+    expect(binanceRows.length).toBeGreaterThan(0);
+    const household = binanceRows.find((row) => row.scopeId === "mJ");
+    expect(household?.valueMinor).toBe(15_000_00);
+  });
+
   test("a Binance outage leaves existing positions untouched and surfaces an error", async () => {
     const store = createInMemoryStore();
     const { sourceId } = seedWithSource(store);
