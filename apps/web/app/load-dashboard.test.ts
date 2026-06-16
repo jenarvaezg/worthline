@@ -507,6 +507,123 @@ describe("loadDashboard — deltas", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Framed headline deltas (#244) — the figures that reach the hero chips
+// ---------------------------------------------------------------------------
+
+describe("loadDashboard — framed headline deltas", () => {
+  test("computes vs-previous and vs-monthly-close in the total framing", async () => {
+    const store = createInMemoryStore();
+    makeWorkspace(store);
+    makeAsset(store);
+
+    // End of May: total 100 000 €
+    await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-05-31",
+      now: "2026-05-31T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    // June: total 120 000 €
+    store.assets.updateAssetValuation("asset_cash", 120_000_00);
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    // vs previous and vs monthly close are the same here (single prior snapshot,
+    // which is also May's close), framed to the total figure.
+    expect(result.headlineDeltas.sincePrevious).toEqual({
+      change: { amountMinor: 20_000_00, currency: "EUR" },
+      pct: 20,
+    });
+    expect(result.headlineDeltas.sinceMonthlyClose).toEqual({
+      change: { amountMinor: 20_000_00, currency: "EUR" },
+      pct: 20,
+    });
+
+    store.close();
+  });
+
+  test("framed to the liquid figure when the liquid view is selected", async () => {
+    const store = createInMemoryStore();
+    makeWorkspace(store);
+    // A cash asset (liquid) plus a property (illiquid, not liquid) so total and
+    // liquid diverge and the framing changes the delta.
+    makeAsset(store);
+    store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 200_000_00,
+      id: "asset_piso",
+      liquidityTier: "illiquid",
+      name: "Piso",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "real_estate",
+    });
+
+    // Day 1: liquid 100 000 €, total 300 000 €
+    await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "liquid",
+      today: "2026-06-09",
+      now: "2026-06-09T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    // Day 2: cash grows to 150 000 €, property unchanged → liquid +50 000 €,
+    // total +50 000 € too, but the liquid base (100 000 €) makes pct +50%.
+    store.assets.updateAssetValuation("asset_cash", 150_000_00);
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "liquid",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    expect(result.headlineDeltas.sincePrevious).toEqual({
+      change: { amountMinor: 50_000_00, currency: "EUR" },
+      pct: 50,
+    });
+
+    store.close();
+  });
+
+  test("null chips when there is no prior snapshot to compare against", async () => {
+    const store = createInMemoryStore();
+    makeWorkspace(store);
+    makeAsset(store);
+
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    expect(result.headlineDeltas.sincePrevious).toBeNull();
+    expect(result.headlineDeltas.sinceMonthlyClose).toBeNull();
+
+    store.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Pricing failure degradation
 // ---------------------------------------------------------------------------
 
@@ -762,6 +879,76 @@ describe("loadDashboard — composition range and density", () => {
     });
     expect(y1.compositionSeries.length).toBe(12);
     expect(y1.compositionSeries.length).toBeLessThan(all.compositionSeries.length);
+
+    store.close();
+  });
+
+  test("the active range windows the drilldown and the composition through one window", async () => {
+    const store = createInMemoryStore();
+    makeWorkspace(store);
+    makeAsset(store);
+
+    // Build 14 monthly snapshots: 2025-05 .. 2026-06 (a ~13-month span), each a
+    // distinct cash valuation so a windowed sparkline differs from the full one.
+    for (let i = 0; i < 14; i++) {
+      const total = 2025 * 12 + 4 + i;
+      const y = Math.floor(total / 12);
+      const m = (total % 12) + 1;
+      const today = `${y}-${String(m).padStart(2, "0")}-15`;
+      store.assets.updateAssetValuation("asset_cash", 100_000_00 + i * 1_000_00);
+      await loadDashboard({
+        store,
+        persistence: makePersistence(),
+        scopeId: undefined,
+        selectedView: "total",
+        today,
+        now: `${today}T10:00:00.000Z`,
+        refreshPrices: noOpRefresh,
+      });
+    }
+
+    // Drill the liquid group both unbounded and through the 1y window. Both the
+    // composition series and the drill must read the SAME windowed rows — the
+    // bounded drill sees only the twelve in-window dates, exactly as the chart.
+    const all = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      drill: "liquid",
+      today: "2026-06-15",
+      now: "2026-06-15T12:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+    const windowed = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      drill: "liquid",
+      range: "1y",
+      today: "2026-06-15",
+      now: "2026-06-15T12:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    // The composition windows to twelve closes; the drill sparkline windows to
+    // the same twelve dates — one window feeds both, so they agree.
+    expect(windowed.compositionSeries.length).toBe(12);
+    const allCash = all.drilldown!.holdings.find((h) => h.holdingId === "asset_cash")!;
+    const windowedCash = windowed.drilldown!.holdings.find(
+      (h) => h.holdingId === "asset_cash",
+    )!;
+    const vertexCount = (geometry: { linePoints: string }) =>
+      geometry.linePoints.trim().split(/\s+/).length;
+    // The bounded drill plots only the in-window captures (twelve), fewer than
+    // the full fourteen — the same window the composition series uses.
+    expect(vertexCount(windowedCash.sparkline)).toBe(12);
+    expect(vertexCount(windowedCash.sparkline)).toBeLessThan(
+      vertexCount(allCash.sparkline),
+    );
+    // The windowed drill's latest value is still the current (open-period) value.
+    expect(windowedCash.currentValueMinor).toBe(113_000_00);
 
     store.close();
   });

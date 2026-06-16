@@ -8,10 +8,9 @@ import {
 import type {
   CompositionRange,
   DrilldownKey,
+  FramedDelta,
   LiquidityTier,
-  MoneyMinor,
   NetWorthFraming,
-  NetWorthSnapshot,
 } from "@worthline/domain";
 import { refreshStalePrices } from "@worthline/pricing";
 import { createWorthlineStore, runBootstrapHealthcheck } from "@worthline/db";
@@ -71,43 +70,6 @@ const ONBOARDING_LINKS: Record<string, string> = {
   snapshot: "/",
 };
 
-/** Headline value of a snapshot under the active framing. */
-function snapshotValueMinor(
-  snapshot: NetWorthSnapshot,
-  framing: NetWorthFraming,
-): number {
-  return framing === "liquid"
-    ? snapshot.liquidNetWorth.amountMinor
-    : snapshot.totalNetWorth.amountMinor;
-}
-
-interface DeltaWithPct {
-  change: MoneyMinor;
-  /** Percent vs the base snapshot; null when the base value is zero. */
-  pct: number | null;
-}
-
-/** Delta of the current snapshot vs a base one, in the active framing. */
-function deltaWithPct(
-  current: NetWorthSnapshot | undefined,
-  base: NetWorthSnapshot | undefined,
-  framing: NetWorthFraming,
-): DeltaWithPct | null {
-  if (!current || !base) return null;
-
-  const currentMinor = snapshotValueMinor(current, framing);
-  const baseMinor = snapshotValueMinor(base, framing);
-
-  return {
-    change: {
-      amountMinor: currentMinor - baseMinor,
-      currency: current.totalNetWorth.currency,
-    },
-    pct:
-      baseMinor === 0 ? null : ((currentMinor - baseMinor) / Math.abs(baseMinor)) * 100,
-  };
-}
-
 /** "+3,6 %" with es-ES decimal comma; sign always explicit. */
 function formatPct(pct: number): string {
   const sign = pct > 0 ? "+" : pct < 0 ? "−" : "";
@@ -116,7 +78,7 @@ function formatPct(pct: number): string {
 }
 
 /** Sign-colored delta pill: amount, percent and period label. */
-function DeltaChip({ delta, label }: { delta: DeltaWithPct | null; label: string }) {
+function DeltaChip({ delta, label }: { delta: FramedDelta | null; label: string }) {
   if (!delta) {
     return <span className="deltaChip zero">{label}: sin dato</span>;
   }
@@ -227,6 +189,7 @@ export default async function DashboardPage({
     deltas,
     fireResult,
     fireScopeConfig,
+    headlineDeltas,
     onboarding,
     presentation,
     pyramid,
@@ -269,18 +232,10 @@ export default async function DashboardPage({
     })),
   };
 
-  // Hero delta chips — change vs previous snapshot and vs monthly close,
-  // with percent, in the active framing.
-  const vsPrevious = deltaWithPct(
-    deltas?.snapshot,
-    deltas?.previousSnapshot,
-    selectedView,
-  );
-  const vsMonthlyClose = deltaWithPct(
-    deltas?.snapshot,
-    deltas?.previousMonthlyClose,
-    selectedView,
-  );
+  // Hero delta chips — change vs previous snapshot and vs monthly close, with
+  // percent, framed and computed behind the read contract (#244). The page only
+  // renders them.
+  const { sincePrevious: vsPrevious, sinceMonthlyClose: vsMonthlyClose } = headlineDeltas;
 
   return (
     <Shell {...shellProps}>

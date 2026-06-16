@@ -102,6 +102,8 @@ export {
 
 export type {
   CreateNetWorthSnapshotInput,
+  FramedDelta,
+  FramedSnapshotDeltas,
   NetWorthSnapshot,
   SnapshotDeltas,
   ValuedNetWorthSnapshot,
@@ -111,6 +113,7 @@ export {
   captureNetWorthSnapshot,
   captureValuedNetWorthSnapshot,
   createNetWorthSnapshot,
+  deriveFramedSnapshotDeltas,
 } from "./snapshot-types";
 
 export type { DashboardShell } from "./dashboard-shell";
