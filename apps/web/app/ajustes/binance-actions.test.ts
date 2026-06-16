@@ -156,6 +156,66 @@ describe("disconnectBinanceAction", () => {
     expect(digest).toContain("error=");
     expect(store.connectedSources.listSources()).toHaveLength(1);
   });
+
+  test("mode=freeze keeps EVERY rung as a hand-valued holding instead of removing it", async () => {
+    const store = createInMemoryStore();
+    const { sourceId, assetId } = seedWithSource(store);
+
+    // Market spot + term-locked locked-earn → two materialized crypto assets.
+    store.connectedSources.syncPositions(
+      sourceId,
+      [
+        {
+          kind: "token",
+          externalId: "BTC:spot",
+          name: "BTC",
+          symbol: "BTC",
+          balance: "0.5",
+          wallet: "spot",
+          liquidityTier: "market",
+          unitPrice: "50000",
+          currency: "EUR",
+        },
+        {
+          kind: "token",
+          externalId: "ETH:locked-earn",
+          name: "ETH",
+          symbol: "ETH",
+          balance: "3",
+          wallet: "locked-earn",
+          liquidityTier: "term-locked",
+          unitPrice: "2000",
+          currency: "EUR",
+        },
+      ],
+      "2026-06-16T10:00:00.000Z",
+    );
+    const termLockedId = store.connectedSources
+      .listSourceAssetIds(sourceId)
+      .find((id) => id !== assetId)!;
+
+    const digest = await runAction(
+      disconnectBinanceAction,
+      form({ currentUrl: "/ajustes", sourceId, mode: "freeze" }),
+      store,
+    );
+
+    expect(digest).toContain("ok=binance_frozen");
+    // The source is gone but BOTH rung holdings survive as plain hand-valued
+    // `other` assets (no longer crypto, no longer connected).
+    expect(store.connectedSources.listSources()).toHaveLength(0);
+    const surviving = store.assets
+      .readAssets()
+      .filter((a) => a.id === assetId || a.id === termLockedId);
+    expect(surviving).toHaveLength(2);
+    expect(surviving.every((a) => a.instrument === "other")).toBe(true);
+    expect(store.assets.readAssets().some((a) => a.instrument === "crypto")).toBe(false);
+
+    // The freeze DETACHES both rung assets end-to-end — neither routes back to the
+    // (now deleted) source any more.
+    expect(store.connectedSources.readSourceIdForAsset(assetId)).toBeNull();
+    expect(store.connectedSources.readSourceIdForAsset(termLockedId)).toBeNull();
+  });
 });
 
 describe("syncBinanceAction", () => {

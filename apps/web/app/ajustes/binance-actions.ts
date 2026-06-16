@@ -234,6 +234,11 @@ export async function disconnectBinanceAction(
 ): Promise<never> {
   const sourceId = parseEntityId(formData, "sourceId");
   const returnUrl = currentUrlOf(formData);
+  // The disconnect CHOICE (PRD #245 S6, ADR 0016/0021), mirroring Numista:
+  // "freeze" keeps every rung holding as a plain hand-maintained one; anything
+  // else (the default) removes the live holdings while frozen snapshots keep the
+  // history. Binance spans rungs (#248), so both paths act on ALL rung assets.
+  const freeze = (formData.get("mode") as string) === "freeze";
 
   if (!sourceId) {
     redirect(
@@ -250,24 +255,36 @@ export async function disconnectBinanceAction(
       return { ok: false as const, error: "No se encontró la cuenta conectada." };
     }
 
-    // REMOVE path (freeze-into-stored is a later slice): a source materializes one
-    // asset per rung now (market + term-locked, #248). `removeSourceHoldings` drops
-    // ALL of them in ONE transaction — deleting the market (primary) asset cascades
-    // the source row (and its positions) away; the other-rung assets (no back-FK)
-    // are removed explicitly — so a mid-loop failure can never leave a
-    // partially-deleted source.
+    if (freeze) {
+      // FREEZE path: drop the source (cascading positions) and flip EVERY rung
+      // asset (market + term-locked) from the live `crypto` instrument to a
+      // hand-valued `other` one, fully detached. Frozen snapshots are untouched.
+      const frozen = store.connectedSources.freezeIntoStoredHolding(sourceId);
+
+      if (!frozen) {
+        return { ok: false as const, error: "No se pudo congelar la cuenta." };
+      }
+
+      return { ok: true as const, message: "binance_frozen" as const };
+    }
+
+    // REMOVE path: a source materializes one asset per rung now (market +
+    // term-locked, #248). `removeSourceHoldings` drops ALL of them in ONE
+    // transaction — deleting the market (primary) asset cascades the source row
+    // (and its positions) away; the other-rung assets (no back-FK) are removed
+    // explicitly — so a mid-loop failure can never leave a partially-deleted source.
     const { removed } = store.connectedSources.removeSourceHoldings(sourceId);
 
     if (removed === 0) {
       return { ok: false as const, error: "No se pudo desconectar la cuenta." };
     }
 
-    return { ok: true as const };
+    return { ok: true as const, message: "binance_disconnected" as const };
   }, _store);
 
   if (!result.ok) {
     redirect(errorRedirectUrl(returnUrl, { message: result.error }));
   }
 
-  redirect(appendParam(returnUrl, "ok", "binance_disconnected"));
+  redirect(appendParam(returnUrl, "ok", result.message));
 }

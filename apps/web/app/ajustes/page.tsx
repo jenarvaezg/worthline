@@ -24,12 +24,9 @@ import {
   saveFireConfigAction,
   updateMemberAction,
 } from "./actions";
-import {
-  connectBinanceAction,
-  disconnectBinanceAction,
-  syncBinanceAction,
-} from "./binance-actions";
+import { connectBinanceAction, syncBinanceAction } from "./binance-actions";
 import { aggregateSourceValueMinor } from "./binance-helpers";
+import DisconnectBinanceFold from "./disconnect-binance-fold";
 import DisconnectNumistaFold from "./disconnect-numista-fold";
 import { connectNumistaAction, syncNumistaAction } from "./numista-actions";
 import { formatLastSync } from "./numista-helpers";
@@ -511,19 +508,11 @@ export default async function AjustesPage({
                 >
                   Ver →
                 </Link>
-                <form action={disconnectBinanceAction}>
-                  <input name="currentUrl" type="hidden" value={currentUrl} />
-                  <input name="sourceId" type="hidden" value={binanceSource.id} />
-                  <details className="confirmDelete">
-                    <summary>Desconectar</summary>
-                    <p className="dangerExplain">
-                      Las credenciales se borran de este dispositivo y el activo se
-                      elimina; tu cuenta en Binance no se toca. Los snapshots ya guardados
-                      conservan el histórico.
-                    </p>
-                    <button type="submit">Eliminar y conservar histórico</button>
-                  </details>
-                </form>
+                <DisconnectBinanceFold
+                  currentUrl={currentUrl}
+                  sourceId={binanceSource.id}
+                  summary="Desconectar"
+                />
               </div>
             </div>
           ) : (

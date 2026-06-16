@@ -22,11 +22,9 @@
 import { formatMoneyMinor } from "@worthline/domain";
 import type { TokenPosition } from "@worthline/domain";
 
-import {
-  disconnectBinanceAction,
-  syncBinanceAction,
-} from "../../../../ajustes/binance-actions";
+import { syncBinanceAction } from "../../../../ajustes/binance-actions";
 import { formatLastSync } from "../../../../ajustes/binance-helpers";
+import DisconnectBinanceFold from "../../../../ajustes/disconnect-binance-fold";
 import { PendingSubmit } from "../../../../pending-submit";
 import {
   buildBinanceHoldingView,
@@ -127,22 +125,10 @@ export function BinanceHoldingSection({
         </div>
       )}
 
-      {/* ── Disconnect (folded) — S1 remove path only ──────────────────────── */}
+      {/* ── Disconnect (folded) — remove vs freeze-into-stored (S6 #251) ────── */}
       {sourceId ? (
         <div className="coinDisconnect">
-          <form action={disconnectBinanceAction}>
-            <input name="currentUrl" type="hidden" value={currentUrl} />
-            <input name="sourceId" type="hidden" value={sourceId} />
-            <details className="confirmDelete">
-              <summary>Desconectar Binance</summary>
-              <p className="dangerExplain">
-                Las credenciales se borran de este dispositivo y el activo se elimina; tu
-                cuenta en Binance no se toca. Los snapshots ya guardados conservan el
-                histórico.
-              </p>
-              <button type="submit">Eliminar y conservar histórico</button>
-            </details>
-          </form>
+          <DisconnectBinanceFold currentUrl={currentUrl} sourceId={sourceId} />
         </div>
       ) : null}
     </section>
