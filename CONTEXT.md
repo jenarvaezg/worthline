@@ -307,15 +307,17 @@ An external account worthline links to and mirrors — read-only — to obtain
 never writes back, and refreshes by **syncing** on demand. A generic shape, not
 a one-off: each source has an adapter (authentication + position listing) and a
 projection into the portfolio. The first source is Numista (a numismatic
-collection); a brokerage or an exchange would be the same shape pointed
-elsewhere.
+collection); the second is Binance (a crypto exchange), which adds the two cases
+Numista never exercised — a source whose holdings are **valued live** (not frozen)
+and one that **spans liquidity rungs**.
 _Avoid_: integration, account (overloaded — see **scope**), import (a one-shot
 full-workspace replace, not a live mirror).
 
 **Position**:
 A single line a **connected source** mirrors — what you hold, where it lives.
 For Numista a position is a coin you own (its catalogue id, **grade**, and how
-many); for a hypothetical exchange it would be a token balance. A position is
+many), valued by a frozen candidate value; for Binance it is a token balance,
+**valued live** (balance × unit price). A position is
 not a **holding**: it is method-specific sub-detail beneath one, the way an
 **operation** sits beneath an **investment**. Each position carries grouping
 metadata (a coin's metal, a token's symbol) so the holding's detail page can
@@ -354,10 +356,10 @@ Distinct from a **snapshot** (a frozen capture worthline derives) and from an
 **Projection**:
 How a **connected source**'s **positions** roll up into the portfolio: one
 **holding** per source per **liquidity tier** rung. Numista's coins are all
-**illiquid**, so the collection is a single line; a source spanning rungs would
-surface one line per rung, keeping the **liquidity breakdown** honest. Finer
-grouping (by metal, by token) is a lens on the holding's detail page, not extra
-lines.
+**illiquid**, so the collection is a single line; Binance spans rungs (spot and
+flexible Earn on **market**, locked Earn on **term-locked**), so it surfaces one
+line per rung, keeping the **liquidity breakdown** honest. Finer grouping (by
+metal, by token) is a lens on the holding's detail page, not extra lines.
 
 ## Relationships
 
