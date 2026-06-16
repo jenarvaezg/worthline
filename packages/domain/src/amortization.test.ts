@@ -4,6 +4,7 @@ import {
   amortizableBalanceAtDate,
   assertEventWithinTerm,
   firstCuota,
+  suggestFirstPaymentDate,
 } from "./amortization";
 import type {
   AmortizationPlanInput,
@@ -812,5 +813,28 @@ describe("assertEventWithinTerm — reject events after the loan's final boundar
     expect(() =>
       assertEventWithinTerm(FINITE_LOAN, "2020-01-10", "Repayment date"),
     ).not.toThrow();
+  });
+});
+
+describe("suggestFirstPaymentDate — editable first-payment default (ADR 0019, #189)", () => {
+  test("mid-month firma → the 1st, two calendar months later (ING stub)", () => {
+    // 2026-06-15: rest of June + a full July → first payment 2026-08-01.
+    expect(suggestFirstPaymentDate("2026-06-15")).toBe("2026-08-01");
+  });
+
+  test("the day-of-month is always pinned to 01, whatever the firma day", () => {
+    expect(suggestFirstPaymentDate("2026-06-01")).toBe("2026-08-01");
+    expect(suggestFirstPaymentDate("2026-06-30")).toBe("2026-08-01");
+  });
+
+  test("two-month offset rolls the year over December", () => {
+    expect(suggestFirstPaymentDate("2026-11-15")).toBe("2027-01-01");
+    expect(suggestFirstPaymentDate("2026-12-20")).toBe("2027-02-01");
+  });
+
+  test("a day-31 firma in a short target month still lands on the 1st", () => {
+    // addMonths(2026-12-31, 2) clamps to 2027-02-28, but the suggestion pins the
+    // day to 01, so the clamp never leaks into the result.
+    expect(suggestFirstPaymentDate("2026-12-31")).toBe("2027-02-01");
   });
 });

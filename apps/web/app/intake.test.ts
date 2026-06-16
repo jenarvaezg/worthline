@@ -1438,7 +1438,8 @@ describe("parseAmortizationPlanStrict", () => {
         initialCapital: "200000",
         annualInterestRate: "2,5",
         termMonths: "360",
-        startDate: "2020-01-01",
+        disbursementDate: "2020-01-15",
+        firstPaymentDate: "2020-03-01",
       }),
       "loan",
       7,
@@ -1451,20 +1452,21 @@ describe("parseAmortizationPlanStrict", () => {
     expect(result.command.initialCapitalMinor).toBe(200_000_00);
     expect(result.command.annualInterestRate).toBe("0.025");
     expect(result.command.termMonths).toBe(360);
-    // The single date input maps to BOTH plan dates (ADR 0019, #188): the
-    // disbursement is the input, the first payment one month after it.
-    expect(result.command.disbursementDate).toBe("2020-01-01");
-    expect(result.command.firstPaymentDate).toBe("2020-02-01");
+    // Two dates captured explicitly (ADR 0019, #189): a mid-month firma and a
+    // 1st-of-month first payment, taken verbatim — never re-derived.
+    expect(result.command.disbursementDate).toBe("2020-01-15");
+    expect(result.command.firstPaymentDate).toBe("2020-03-01");
     expect(result.command.id).toContain("plan_");
   });
 
-  test("rejects a future start date", () => {
+  test("rejects a future disbursement date", () => {
     const result = parseAmortizationPlanStrict(
       form({
         initialCapital: "200000",
         annualInterestRate: "3",
         termMonths: "360",
-        startDate: "2027-01-01",
+        disbursementDate: "2027-01-01",
+        firstPaymentDate: "2027-03-01",
       }),
       "loan",
       1,
@@ -1481,7 +1483,8 @@ describe("parseAmortizationPlanStrict", () => {
         initialCapital: "0",
         annualInterestRate: "3",
         termMonths: "360",
-        startDate: "2020-01-01",
+        disbursementDate: "2020-01-01",
+        firstPaymentDate: "2020-03-01",
       }),
       "loan",
       1,
@@ -1498,7 +1501,8 @@ describe("parseAmortizationPlanStrict", () => {
         initialCapital: "200000",
         annualInterestRate: "3",
         termMonths: "12,5",
-        startDate: "2020-01-01",
+        disbursementDate: "2020-01-01",
+        firstPaymentDate: "2020-03-01",
       }),
       "loan",
       1,
@@ -1511,7 +1515,8 @@ describe("parseAmortizationPlanStrict", () => {
         initialCapital: "200000",
         annualInterestRate: "3",
         termMonths: "0",
-        startDate: "2020-01-01",
+        disbursementDate: "2020-01-01",
+        firstPaymentDate: "2020-03-01",
       }),
       "loan",
       1,
@@ -1528,7 +1533,8 @@ describe("parseAmortizationPlanStrict", () => {
         initialCapital: "200000",
         annualInterestRate: "-1",
         termMonths: "360",
-        startDate: "2020-01-01",
+        disbursementDate: "2020-01-01",
+        firstPaymentDate: "2020-03-01",
       }),
       "loan",
       1,
@@ -1539,16 +1545,72 @@ describe("parseAmortizationPlanStrict", () => {
     expect(result.error).toContain("tipo");
   });
 
-  test("rejects a missing start date", () => {
+  test("rejects a missing disbursement date", () => {
     const result = parseAmortizationPlanStrict(
-      form({ initialCapital: "200000", annualInterestRate: "3", termMonths: "360" }),
+      form({
+        initialCapital: "200000",
+        annualInterestRate: "3",
+        termMonths: "360",
+        firstPaymentDate: "2020-03-01",
+      }),
       "loan",
       1,
       TODAY,
     );
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toContain("fecha");
+    expect(result.error).toContain("firma");
+  });
+
+  test("rejects a missing first-payment date", () => {
+    const result = parseAmortizationPlanStrict(
+      form({
+        initialCapital: "200000",
+        annualInterestRate: "3",
+        termMonths: "360",
+        disbursementDate: "2020-01-15",
+      }),
+      "loan",
+      1,
+      TODAY,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("primer pago");
+  });
+
+  test("rejects a first payment before the disbursement", () => {
+    const result = parseAmortizationPlanStrict(
+      form({
+        initialCapital: "200000",
+        annualInterestRate: "3",
+        termMonths: "360",
+        disbursementDate: "2020-01-15",
+        firstPaymentDate: "2020-01-10",
+      }),
+      "loan",
+      1,
+      TODAY,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("anterior a la fecha de firma");
+  });
+
+  test("accepts a first payment on the same day as the disbursement", () => {
+    const result = parseAmortizationPlanStrict(
+      form({
+        initialCapital: "200000",
+        annualInterestRate: "3",
+        termMonths: "360",
+        disbursementDate: "2020-01-15",
+        firstPaymentDate: "2020-01-15",
+      }),
+      "loan",
+      1,
+      TODAY,
+    );
+    expect(result.ok).toBe(true);
   });
 });
 

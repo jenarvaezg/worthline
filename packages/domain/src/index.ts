@@ -286,6 +286,7 @@ export {
   amortizableBalanceAtDate,
   assertEventWithinTerm,
   firstCuota,
+  suggestFirstPaymentDate,
 } from "./amortization";
 
 export type { DebtBalanceAnchor, DebtBalanceAtDateInput } from "./debt-balance";

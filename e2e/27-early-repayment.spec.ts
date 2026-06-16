@@ -58,7 +58,8 @@ test("early repayment: add reduce-payment, edit to reduce-term, future rejected,
   await planForm.getByLabel("Capital inicial en EUR").fill("200000");
   await planForm.getByLabel("Tipo de interés anual (%)").fill("2,5");
   await planForm.getByLabel("Plazo en meses").fill("360");
-  await planForm.getByLabel("Fecha de inicio").fill(planStart);
+  await planForm.getByLabel("Fecha de firma").fill(planStart);
+  await planForm.getByLabel("Fecha del primer pago").fill(planStart);
   await page.getByRole("button", { name: "Guardar plan" }).click();
   await expect(page.getByRole("status")).toHaveText("Plan de amortización guardado.");
 

@@ -27,7 +27,6 @@ import type {
   PriceFreshnessState,
 } from "@worthline/domain";
 import {
-  addMonths,
   parseDecimal,
   parseDecimalStrict,
   parseDecimalToMinorStrict,
@@ -982,11 +981,12 @@ function parseAnnualRatePercent(
 }
 
 /**
- * Strict amortization-plan parser (PRD #109, slice 10). Builds a
- * CreateAmortizationPlanInput from the plan form. Validates server-side: a
- * positive initial capital (EUR → minor), a non-negative annual interest rate
- * (% → decimal string), a positive whole-month term, and a present, ISO,
- * non-future start date (a future start would generate no history). The caller
+ * Strict amortization-plan parser (PRD #109, slice 10; two dates ADR 0019, #189).
+ * Builds a CreateAmortizationPlanInput from the plan form. Validates server-side:
+ * a positive initial capital (EUR → minor), a non-negative annual interest rate
+ * (% → decimal string), a positive whole-month term, a present, ISO, non-future
+ * disbursement date (a future disbursement would generate no history), and a
+ * present, ISO first-payment date on or after the disbursement. The caller
  * redirects on error.
  */
 export function parseAmortizationPlanStrict(
@@ -1016,30 +1016,48 @@ export function parseAmortizationPlanStrict(
     };
   }
 
-  const startDate = String(formData.get("startDate") ?? "").trim();
+  const disbursementDate = String(formData.get("disbursementDate") ?? "").trim();
 
-  if (!startDate) {
-    return { ok: false, error: "La fecha de inicio es obligatoria." };
+  if (!disbursementDate) {
+    return { ok: false, error: "La fecha de firma es obligatoria." };
   }
 
-  if (!ISO_DATE.test(startDate)) {
-    return { ok: false, error: "La fecha de inicio no es válida." };
+  if (!ISO_DATE.test(disbursementDate)) {
+    return { ok: false, error: "La fecha de firma no es válida." };
   }
 
-  if (startDate > today) {
-    return { ok: false, error: "La fecha no puede ser futura." };
+  if (disbursementDate > today) {
+    return { ok: false, error: "La fecha de firma no puede ser futura." };
   }
 
-  // This slice (#188) keeps the form's single date input. It maps to BOTH plan
-  // dates (ADR 0019): the disbursement is the input, and the first payment is one
-  // month after it — exactly the migration's backfill, so the curve is unchanged
-  // until the form slice (#189) captures the two dates explicitly.
+  const firstPaymentDate = String(formData.get("firstPaymentDate") ?? "").trim();
+
+  if (!firstPaymentDate) {
+    return { ok: false, error: "La fecha del primer pago es obligatoria." };
+  }
+
+  if (!ISO_DATE.test(firstPaymentDate)) {
+    return { ok: false, error: "La fecha del primer pago no es válida." };
+  }
+
+  if (firstPaymentDate < disbursementDate) {
+    return {
+      ok: false,
+      error: "El primer pago no puede ser anterior a la fecha de firma.",
+    };
+  }
+
+  // Two-date model (ADR 0019, #189): the form captures both dates explicitly.
+  // The disbursement is when the debt exists at its initial capital; the
+  // first-payment day-of-month anchors the schedule. The suggestion that
+  // pre-fills the first payment is a client-side default the user may override,
+  // so it is never re-derived here — whatever the form submits is the model.
   return {
     ok: true,
     command: {
       annualInterestRate: rate.rate,
-      disbursementDate: startDate,
-      firstPaymentDate: addMonths(startDate, 1),
+      disbursementDate,
+      firstPaymentDate,
       id: createStableId("plan", liabilityId, seed),
       initialCapitalMinor,
       liabilityId,

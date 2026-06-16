@@ -1141,7 +1141,8 @@ export async function saveAmortizationPlanAction(
           "initialCapital",
           "annualInterestRate",
           "termMonths",
-          "startDate",
+          "disbursementDate",
+          "firstPaymentDate",
         ]),
       }),
     );
