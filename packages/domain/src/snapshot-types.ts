@@ -1,5 +1,6 @@
 import type { MoneyMinor } from "./money";
 import { subtractMoney } from "./money";
+import type { NetWorthFraming } from "./net-worth";
 import type { DomainWarning } from "./warnings";
 import { collectWarnings } from "./warnings";
 import { deriveMonthlyCloses } from "./snapshot-policy";
@@ -197,5 +198,67 @@ export function calculateSnapshotDeltas(
           previousMonthlyClose,
         }
       : {}),
+  };
+}
+
+/** A headline change in the active framing: the amount plus its percent. */
+export interface FramedDelta {
+  change: MoneyMinor;
+  /** Percent vs the base snapshot's framed value; `null` when that base is zero. */
+  pct: number | null;
+}
+
+/** The two headline change chips, each in the active framing or `null`. */
+export interface FramedSnapshotDeltas {
+  /** Change vs the immediately previous snapshot. */
+  sincePrevious: FramedDelta | null;
+  /** Change vs the most recent prior-month close. */
+  sinceMonthlyClose: FramedDelta | null;
+}
+
+/** The headline figure of a snapshot under the active framing. */
+function framedSnapshotValueMinor(
+  snapshot: NetWorthSnapshot,
+  framing: NetWorthFraming,
+): number {
+  return framing === "liquid"
+    ? snapshot.liquidNetWorth.amountMinor
+    : snapshot.totalNetWorth.amountMinor;
+}
+
+function framedDelta(
+  current: NetWorthSnapshot,
+  base: NetWorthSnapshot | undefined,
+  framing: NetWorthFraming,
+): FramedDelta | null {
+  if (!base) return null;
+
+  const currentMinor = framedSnapshotValueMinor(current, framing);
+  const baseMinor = framedSnapshotValueMinor(base, framing);
+
+  return {
+    change: {
+      amountMinor: currentMinor - baseMinor,
+      currency: current.totalNetWorth.currency,
+    },
+    pct:
+      baseMinor === 0 ? null : ((currentMinor - baseMinor) / Math.abs(baseMinor)) * 100,
+  };
+}
+
+/**
+ * The two headline change chips the dashboard renders, computed in the active
+ * framing (#244). Pure figure math over the snapshots the deltas already carry:
+ * it re-frames the change from `total` (the raw delta figure) to the chosen
+ * framing's headline value, so a mobile client reading the same contract gets
+ * the figures that reach the screen without re-deriving them.
+ */
+export function deriveFramedSnapshotDeltas(
+  deltas: SnapshotDeltas,
+  framing: NetWorthFraming,
+): FramedSnapshotDeltas {
+  return {
+    sinceMonthlyClose: framedDelta(deltas.snapshot, deltas.previousMonthlyClose, framing),
+    sincePrevious: framedDelta(deltas.snapshot, deltas.previousSnapshot, framing),
   };
 }

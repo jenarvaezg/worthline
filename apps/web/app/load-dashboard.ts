@@ -28,6 +28,7 @@ import {
   buildCompositionSeries,
   buildDrilldown,
   captureSnapshotForScope,
+  deriveFramedSnapshotDeltas,
   housingAssetIdsOf,
   listScopeOptions,
   monthsBetween,
@@ -37,6 +38,7 @@ import {
 import type {
   CompositionSeriesPoint,
   DashboardState,
+  FramedSnapshotDeltas,
   LocalPersistenceStatus,
 } from "@worthline/domain";
 
@@ -126,6 +128,14 @@ export interface LoadDashboardResult extends DashboardState {
    * entry means the range control should hide itself. Empty when there is no scope.
    */
   compositionRanges: CompositionRange[];
+  /**
+   * The two hero delta chips (#244), each pre-computed in the active framing —
+   * the change vs the previous snapshot and vs the prior-month close, with
+   * percent. The page renders these directly; it never re-derives a figure from
+   * raw snapshots. Each chip is `null` when there is no base to compare against.
+   * Mirrors `presentation`, which already carries the framed headline figure.
+   */
+  headlineDeltas: FramedSnapshotDeltas;
 }
 
 export async function loadDashboard(
@@ -236,12 +246,24 @@ export async function loadDashboard(
   const housingHoldingIds = [...housingAssetIdsOf(assets)];
   const activeRange = range ?? "all";
 
-  // ── 4a. Composition chart (#142, #144) — windowed net-worth composition ──
+  // ── 4a. Range window (#144) — owned ONCE here, fed to both consumers ──────
+  // The active range's cutoff and the holding rows it keeps are computed a single
+  // time and shared by the composition chart and the drilldown, so neither
+  // re-derives the window. A null cutoff (`all`) keeps the full history. The
+  // composition still buckets the windowed snapshots by density internally, but
+  // it now reads the SAME windowed rows the drill does — every plotted close
+  // sits inside the window, so its rows survive regardless (byte-identical).
+  const rangeCutoff = rangeStartMonthKey(input.today, activeRange);
+  const windowedRows = rangeCutoff
+    ? holdingRows.filter((row) => row.dateKey.slice(0, 7) >= rangeCutoff)
+    : holdingRows;
+
+  // ── 4b. Composition chart (#142, #144) — windowed net-worth composition ──
   // The selected range windows the series; density then adapts to the span.
   const compositionSeries = buildCompositionSeries({
     housingHoldingIds,
     range: activeRange,
-    rows: holdingRows,
+    rows: windowedRows,
     snapshots,
     today: input.today,
   });
@@ -258,12 +280,9 @@ export async function loadDashboard(
     earliestMonthKey ? monthsBetween(earliestMonthKey, input.today.slice(0, 7)) : 0,
   );
 
-  // ── 4b. Drilldown (#76, #77, #145) — drill view state from frozen rows ───
-  // Window the rows to the same range so a drill mirrors the chart's window.
-  const rangeCutoff = rangeStartMonthKey(input.today, activeRange);
-  const windowedRows = rangeCutoff
-    ? holdingRows.filter((row) => row.dateKey.slice(0, 7) >= rangeCutoff)
-    : holdingRows;
+  // ── 4c. Drilldown (#76, #77, #145) — drill view state from frozen rows ───
+  // Reads the SAME windowed rows the composition chart does (§4a), so a drill
+  // always mirrors the chart's window — one window owner, two consumers.
   const drilldown =
     drill && selectedScope
       ? buildDrilldown(drill, {
@@ -292,11 +311,19 @@ export async function loadDashboard(
     workspace,
   });
 
+  // ── 6. Headline delta chips (#244) — framed figures, computed once ────────
+  // The two hero chips are figure math (snapshots + framing), so they live
+  // behind the contract instead of in the page: the page renders, never derives.
+  const headlineDeltas: FramedSnapshotDeltas = state.deltas
+    ? deriveFramedSnapshotDeltas(state.deltas, selectedView)
+    : { sinceMonthlyClose: null, sincePrevious: null };
+
   return {
     ...state,
     compositionRanges,
     compositionSeries,
     drilldown,
+    headlineDeltas,
     needsOnboarding: false,
     pricingErrors,
   };
@@ -332,6 +359,7 @@ function buildEmptyResult(
     compositionRanges: [],
     compositionSeries: [],
     drilldown: null,
+    headlineDeltas: { sinceMonthlyClose: null, sincePrevious: null },
     needsOnboarding: true,
     pricingErrors,
   };
