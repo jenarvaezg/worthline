@@ -277,6 +277,16 @@ export {
 } from "./portfolio-grouping";
 
 export type { DecimalString } from "./decimal";
+export {
+  addUnits,
+  averageUnitCost,
+  compareUnits,
+  divideUnits,
+  multiplyToMinor,
+  normalizeDecimal,
+  proportionMinor,
+  subtractUnits,
+} from "./decimal";
 
 export type {
   HousingValuationAnchor,
