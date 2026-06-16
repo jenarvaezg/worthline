@@ -29,12 +29,36 @@ import type {
 import {
   parseDecimal,
   parseDecimalStrict,
-  parseDecimalToMinorStrict,
   PORTFOLIO_GROUP_KEYS,
 } from "@worthline/domain";
 
+import {
+  normalizeDecimalString,
+  normalizeNonNegativeDecimalString,
+  type OwnershipPreset,
+  parseIsoDateField,
+  parseMoneyMinor,
+  parsePercentToDecimal,
+  resolveOwnershipSplit,
+  type ShortfallCompletion,
+} from "./intake-primitives";
+
 // Re-export types needed by #58 inversiones functions
 export type { CreateInvestmentAssetInput };
+
+// Re-export the intake primitives so existing consumers that import them from
+// `./intake` keep working (stage 1 of #241: extract + route through primitives).
+export {
+  ISO_DATE,
+  normalizeDecimalString,
+  normalizeNonNegativeDecimalString,
+  type OwnershipPreset,
+  parseIsoDateField,
+  parseMoneyMinor,
+  parsePercentToDecimal,
+  resolveOwnershipSplit,
+  type ShortfallCompletion,
+} from "./intake-primitives";
 
 /**
  * The web intake seam: turns raw HTML form input into validated domain command
@@ -475,91 +499,7 @@ export function parseEntityId(formData: FormData, field = "id"): string | null {
 }
 
 export function parseMoneyMinorField(formData: FormData, field: string): number | null {
-  return parseDecimalToMinorStrict(String(formData.get(field) ?? ""));
-}
-
-export type OwnershipPreset = "scope" | "even" | "custom";
-
-/**
- * Resolve an ownership split from form input. A single active member always owns
- * 100%. Presets: "scope" (100% to the active scope member), "even" (split
- * equally, distributing the remainder deterministically), and "custom" (honor
- * entered bps, auto-completing shortfalls only across unset members).
- */
-export function resolveOwnershipSplit(input: {
-  activeMembers: Member[];
-  scopeMemberId?: string | undefined;
-  preset: OwnershipPreset;
-  customBps?: Record<string, number> | undefined;
-  completeShortfall?: boolean | undefined;
-}): OwnershipShare[] {
-  const members = input.activeMembers;
-
-  if (members.length === 0) {
-    return [];
-  }
-
-  const scopeMember =
-    members.find((member) => member.id === input.scopeMemberId) ?? members[0]!;
-
-  if (members.length === 1 && input.preset !== "custom") {
-    return [{ memberId: scopeMember.id, shareBps: 10_000 }];
-  }
-
-  if (input.preset === "scope") {
-    return [{ memberId: scopeMember.id, shareBps: 10_000 }];
-  }
-
-  if (input.preset === "even") {
-    return evenSplit(members);
-  }
-
-  const customBps = input.customBps ?? {};
-  const entries = members.map((member) => ({
-    memberId: member.id,
-    shareBps: Math.max(0, Math.round(customBps[member.id] ?? 0)),
-  }));
-  const provided = entries.reduce((sum, entry) => sum + entry.shareBps, 0);
-
-  if (provided === 0) {
-    return [{ memberId: scopeMember.id, shareBps: 10_000 }];
-  }
-
-  if ((input.completeShortfall ?? true) && provided < 10_000) {
-    const unset = entries.filter((entry) => entry.shareBps === 0);
-
-    if (unset.length > 0) {
-      distributeRemainder(unset, 10_000 - provided);
-    }
-  }
-
-  return entries.filter((entry) => entry.shareBps > 0);
-}
-
-function evenSplit(members: Member[]): OwnershipShare[] {
-  const base = Math.floor(10_000 / members.length);
-  let remainder = 10_000 - base * members.length;
-
-  return members.map((member) => {
-    const extra = remainder > 0 ? 1 : 0;
-    remainder -= extra;
-
-    return { memberId: member.id, shareBps: base + extra };
-  });
-}
-
-function distributeRemainder(
-  entries: Array<{ memberId: string; shareBps: number }>,
-  amount: number,
-): void {
-  const base = Math.floor(amount / entries.length);
-  let remainder = amount - base * entries.length;
-
-  for (const entry of entries) {
-    const extra = remainder > 0 ? 1 : 0;
-    remainder -= extra;
-    entry.shareBps = base + extra;
-  }
+  return parseMoneyMinor(String(formData.get(field) ?? ""));
 }
 
 export function parseOwnership(
@@ -577,12 +517,20 @@ export function parseOwnership(
     ]),
   );
 
+  // The historical default was to silently complete a partial split to full
+  // ownership; preserve that for callers that don't opt out (#241 makes the
+  // choice explicit at the primitive's seam while keeping this public default).
+  const shortfall: ShortfallCompletion =
+    options.completeShortfall === false
+      ? "leave-as-entered"
+      : "complete-to-full-ownership";
+
   return resolveOwnershipSplit({
     activeMembers,
-    completeShortfall: options.completeShortfall,
     customBps,
     preset,
     scopeMemberId,
+    shortfall,
   });
 }
 
@@ -693,8 +641,6 @@ export interface HousingCreationData {
   };
 }
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
 function parseHousingCreationData(
   formData: FormData,
   type: CreateManualAssetInput["type"],
@@ -727,13 +673,16 @@ function parseHousingCreationData(
     };
   }
 
-  if (!ISO_DATE.test(date)) {
-    return { ok: false, error: "La fecha de adquisición no es válida." };
-  }
-
   const today = new Date().toISOString().slice(0, 10);
-  if (date > today) {
-    return { ok: false, error: "La fecha de adquisición no puede ser futura." };
+  const acquisition = parseIsoDateField(date, {
+    invalidMessage: "La fecha de adquisición no es válida.",
+    rejectFuture: true,
+    today,
+    futureMessage: "La fecha de adquisición no puede ser futura.",
+  });
+
+  if (!acquisition.ok) {
+    return { ok: false, error: acquisition.error };
   }
 
   const valueMinor = parseMoneyMinorField(formData, "acquisitionValue");
@@ -796,12 +745,15 @@ function parseInitialValuation(
     };
   }
 
-  if (!ISO_DATE.test(valuationDate)) {
-    return { ok: false, error: "La fecha de la tasación inicial no es válida." };
-  }
+  const validated = parseIsoDateField(valuationDate, {
+    invalidMessage: "La fecha de la tasación inicial no es válida.",
+    rejectFuture: true,
+    today,
+    futureMessage: "La fecha de la tasación inicial no puede ser futura.",
+  });
 
-  if (valuationDate > today) {
-    return { ok: false, error: "La fecha de la tasación inicial no puede ser futura." };
+  if (!validated.ok) {
+    return { ok: false, error: validated.error };
   }
 
   if (valuationDate === acquisitionDate) {
@@ -870,12 +822,15 @@ export function parseValuationAnchorStrict(
     return { ok: false, error: "La fecha de la tasación es obligatoria." };
   }
 
-  if (!ISO_DATE.test(valuationDate)) {
-    return { ok: false, error: "La fecha de la tasación no es válida." };
-  }
+  const validated = parseIsoDateField(valuationDate, {
+    invalidMessage: "La fecha de la tasación no es válida.",
+    rejectFuture: true,
+    today,
+    futureMessage: "La fecha no puede ser futura.",
+  });
 
-  if (valuationDate > today) {
-    return { ok: false, error: "La fecha no puede ser futura." };
+  if (!validated.ok) {
+    return { ok: false, error: validated.error };
   }
 
   const valueMinor = parseMoneyMinorField(formData, "anchorValue");
@@ -924,14 +879,9 @@ export function parseAppreciationRateStrict(formData: FormData): AppreciationRat
     return { ok: false, error: "La tasa de revalorización no puede ser negativa." };
   }
 
-  // Convert percent → decimal, then trim trailing-zero/float noise to a clean
-  // decimal string the store accepts (e.g. 2.5 % → "0.025", 3 % → "0.03").
-  const decimal = pct / 100;
-  const rate = (
-    Number.isInteger(decimal) ? String(decimal) : decimal.toString()
-  ) as DecimalString;
-
-  return { ok: true, rate };
+  // Percent → clean decimal string ("0.025", "0.03") lives in the shared
+  // primitive; here we only own the field-specific null/negative messages.
+  return { ok: true, rate: parsePercentToDecimal(raw)! };
 }
 
 /** Result of parsing the debt-model selector: ok with the model (or null = clear). */
@@ -959,28 +909,6 @@ export function parseDebtModelStrict(formData: FormData): DebtModelResult {
 }
 
 /**
- * Convert a user-typed annual percentage (e.g. "3", es-ES "2,5") into the
- * decimal string the store persists ("0.03", "0.025"). Rejects a blank or
- * negative value. Mirrors the percent→decimal logic of parseAppreciationRateStrict.
- */
-function parseAnnualRatePercent(
-  raw: string,
-): { ok: true; rate: DecimalString } | { ok: false } {
-  const pct = parseDecimalStrict(raw.trim());
-
-  if (pct === null || pct < 0) {
-    return { ok: false };
-  }
-
-  const decimal = pct / 100;
-  const rate = (
-    Number.isInteger(decimal) ? String(decimal) : decimal.toString()
-  ) as DecimalString;
-
-  return { ok: true, rate };
-}
-
-/**
  * Strict amortization-plan parser (PRD #109, slice 10; two dates ADR 0019, #189).
  * Builds a CreateAmortizationPlanInput from the plan form. Validates server-side:
  * a positive initial capital (EUR → minor), a non-negative annual interest rate
@@ -1001,9 +929,9 @@ export function parseAmortizationPlanStrict(
     return { ok: false, error: "El capital inicial debe ser un número positivo." };
   }
 
-  const rate = parseAnnualRatePercent(String(formData.get("annualInterestRate") ?? ""));
+  const rate = parsePercentToDecimal(String(formData.get("annualInterestRate") ?? ""));
 
-  if (!rate.ok) {
+  if (rate === null) {
     return { ok: false, error: "El tipo de interés anual no es válido." };
   }
 
@@ -1022,12 +950,15 @@ export function parseAmortizationPlanStrict(
     return { ok: false, error: "La fecha de firma es obligatoria." };
   }
 
-  if (!ISO_DATE.test(disbursementDate)) {
-    return { ok: false, error: "La fecha de firma no es válida." };
-  }
+  const disbursement = parseIsoDateField(disbursementDate, {
+    invalidMessage: "La fecha de firma no es válida.",
+    rejectFuture: true,
+    today,
+    futureMessage: "La fecha de firma no puede ser futura.",
+  });
 
-  if (disbursementDate > today) {
-    return { ok: false, error: "La fecha de firma no puede ser futura." };
+  if (!disbursement.ok) {
+    return { ok: false, error: disbursement.error };
   }
 
   const firstPaymentDate = String(formData.get("firstPaymentDate") ?? "").trim();
@@ -1036,8 +967,13 @@ export function parseAmortizationPlanStrict(
     return { ok: false, error: "La fecha del primer pago es obligatoria." };
   }
 
-  if (!ISO_DATE.test(firstPaymentDate)) {
-    return { ok: false, error: "La fecha del primer pago no es válida." };
+  const firstPayment = parseIsoDateField(firstPaymentDate, {
+    invalidMessage: "La fecha del primer pago no es válida.",
+    rejectFuture: false,
+  });
+
+  if (!firstPayment.ok) {
+    return { ok: false, error: firstPayment.error };
   }
 
   if (firstPaymentDate < disbursementDate) {
@@ -1055,7 +991,7 @@ export function parseAmortizationPlanStrict(
   return {
     ok: true,
     command: {
-      annualInterestRate: rate.rate,
+      annualInterestRate: rate,
       disbursementDate,
       firstPaymentDate,
       id: createStableId("plan", liabilityId, seed),
@@ -1084,19 +1020,20 @@ export function parseInterestRateRevisionStrict(
     return { ok: false, error: "La fecha de la revisión es obligatoria." };
   }
 
-  if (!ISO_DATE.test(revisionDate)) {
-    return { ok: false, error: "La fecha de la revisión no es válida." };
+  const validated = parseIsoDateField(revisionDate, {
+    invalidMessage: "La fecha de la revisión no es válida.",
+    rejectFuture: true,
+    today,
+    futureMessage: "La fecha no puede ser futura.",
+  });
+
+  if (!validated.ok) {
+    return { ok: false, error: validated.error };
   }
 
-  if (revisionDate > today) {
-    return { ok: false, error: "La fecha no puede ser futura." };
-  }
+  const rate = parsePercentToDecimal(String(formData.get("newAnnualInterestRate") ?? ""));
 
-  const rate = parseAnnualRatePercent(
-    String(formData.get("newAnnualInterestRate") ?? ""),
-  );
-
-  if (!rate.ok) {
+  if (rate === null) {
     return { ok: false, error: "El nuevo tipo de interés no es válido." };
   }
 
@@ -1104,7 +1041,7 @@ export function parseInterestRateRevisionStrict(
     ok: true,
     command: {
       id: createStableId("rev", planId, seed),
-      newAnnualInterestRate: rate.rate,
+      newAnnualInterestRate: rate,
       planId,
       revisionDate,
     },
@@ -1130,12 +1067,15 @@ export function parseBalanceAnchorStrict(
     return { ok: false, error: "La fecha del saldo es obligatoria." };
   }
 
-  if (!ISO_DATE.test(anchorDate)) {
-    return { ok: false, error: "La fecha del saldo no es válida." };
-  }
+  const validated = parseIsoDateField(anchorDate, {
+    invalidMessage: "La fecha del saldo no es válida.",
+    rejectFuture: true,
+    today,
+    futureMessage: "La fecha no puede ser futura.",
+  });
 
-  if (anchorDate > today) {
-    return { ok: false, error: "La fecha no puede ser futura." };
+  if (!validated.ok) {
+    return { ok: false, error: validated.error };
   }
 
   const balanceMinor = parseMoneyMinorField(formData, "balance");
@@ -1174,12 +1114,15 @@ export function parseEarlyRepaymentStrict(
     return { ok: false, error: "La fecha de la amortización es obligatoria." };
   }
 
-  if (!ISO_DATE.test(repaymentDate)) {
-    return { ok: false, error: "La fecha de la amortización no es válida." };
-  }
+  const validated = parseIsoDateField(repaymentDate, {
+    invalidMessage: "La fecha de la amortización no es válida.",
+    rejectFuture: true,
+    today,
+    futureMessage: "La fecha no puede ser futura.",
+  });
 
-  if (repaymentDate > today) {
-    return { ok: false, error: "La fecha no puede ser futura." };
+  if (!validated.ok) {
+    return { ok: false, error: validated.error };
   }
 
   const amountMinor = parseMoneyMinorField(formData, "amount");
@@ -1230,7 +1173,7 @@ export function parseValueUpdatePass(
       continue;
     }
 
-    const newValueMinor = parseDecimalToMinorStrict(String(raw));
+    const newValueMinor = parseMoneyMinor(String(raw));
 
     if (newValueMinor === null) {
       commands.push({ id: asset.id, error: `Valor inválido para ${asset.id}.` });
@@ -1254,7 +1197,7 @@ export function parseFireConfigFormStrict(
   formData: FormData,
 ): StrictParseResult<FireScopeConfig> {
   const monthlySpendingRaw = (formData.get("monthlySpending") as string) ?? "";
-  const monthlySpendingMinor = parseDecimalToMinorStrict(monthlySpendingRaw);
+  const monthlySpendingMinor = parseMoneyMinor(monthlySpendingRaw);
 
   if (monthlySpendingMinor === null || monthlySpendingMinor <= 0) {
     return {
@@ -1523,12 +1466,9 @@ export function parseInvestmentAssetCommandStrict(
   let manualPrice: DecimalString | undefined;
 
   if (manualPriceRaw) {
-    // Normalize es-ES format then validate — must be a positive number.
-    const normalized = manualPriceRaw.includes(",")
-      ? manualPriceRaw.replace(/\./g, "").replace(",", ".")
-      : manualPriceRaw;
+    const normalized = normalizeNonNegativeDecimalString(manualPriceRaw);
 
-    if (!/^\d+(\.\d+)?$/.test(normalized) || parseFloat(normalized) < 0) {
+    if (normalized === null) {
       return {
         ok: false,
         error:
@@ -1595,17 +1535,11 @@ export function parseRouteOperationCommand(
     return { ok: false, error: "El precio por unidad es obligatorio." };
   }
 
-  const normalizeDecimal = (raw: string): string => {
-    const trimmed = raw.trim();
-    const normalized = trimmed.includes(",")
-      ? trimmed.replace(/\./g, "").replace(",", ".")
-      : trimmed;
+  const normalizeOperationDecimal = (raw: string): DecimalString =>
+    normalizeDecimalString(raw, { allowNegative: true, fallback: "0" }) as DecimalString;
 
-    return /^-?\d+(\.\d+)?$/.test(normalized) ? normalized : "0";
-  };
-
-  const units = normalizeDecimal(unitsRaw) as DecimalString;
-  const pricePerUnit = normalizeDecimal(priceRaw) as DecimalString;
+  const units = normalizeOperationDecimal(unitsRaw);
+  const pricePerUnit = normalizeOperationDecimal(priceRaw);
 
   if (units === "0") {
     return { ok: false, error: "Las unidades deben ser un número positivo." };
@@ -1616,7 +1550,7 @@ export function parseRouteOperationCommand(
   }
 
   const feesRaw = String(formData.get("fees") ?? "0");
-  const feesMinor = parseDecimalToMinorStrict(feesRaw);
+  const feesMinor = parseMoneyMinor(feesRaw);
 
   if (feesMinor === null || feesMinor < 0) {
     return { ok: false, error: "Las comisiones no son válidas." };
@@ -1667,11 +1601,9 @@ export function parseUpdateInvestmentCommand(
   let manualPrice: DecimalString | undefined;
 
   if (manualPriceRaw) {
-    const normalized = manualPriceRaw.includes(",")
-      ? manualPriceRaw.replace(/\./g, "").replace(",", ".")
-      : manualPriceRaw;
+    const normalized = normalizeNonNegativeDecimalString(manualPriceRaw);
 
-    if (!/^\d+(\.\d+)?$/.test(normalized) || parseFloat(normalized) < 0) {
+    if (normalized === null) {
       return {
         ok: false,
         error:
