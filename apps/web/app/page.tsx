@@ -33,6 +33,7 @@ import type { RefreshPricesResult } from "./load-dashboard";
 import CompositionChart from "./composition-chart";
 import CompositionRangeControls from "./composition-range-controls";
 import DrilldownPanel from "./drilldown-panel";
+import { runBinanceRefresh } from "./ajustes/binance-refresh";
 import { runNumistaCoinRefresh } from "./ajustes/numista-coin-refresh";
 import { refreshAndPersistStalePrices } from "./refresh-prices";
 import Shell from "./shell";
@@ -175,6 +176,7 @@ export default async function DashboardPage({
         });
       },
       refreshCoinValuations: () => runNumistaCoinRefresh(store, now),
+      refreshBinanceSources: () => runBinanceRefresh(store, now),
     });
   } finally {
     store.close();
