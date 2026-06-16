@@ -11,7 +11,7 @@ import {
   instrumentForAdapter,
   projectConnectedSource,
 } from "@worthline/domain";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 
 import {
   assetOwnerships,
@@ -20,7 +20,11 @@ import {
   connectedSources,
   positions,
 } from "./schema";
-import { readAssetOwnerships, type StoreContext } from "./store-context";
+import {
+  hardDeleteAssetTx,
+  readAssetOwnerships,
+  type StoreContext,
+} from "./store-context";
 
 /** Connect a new source: the caller resolves ownership (default 100% the
  *  connecting member) before handing it here. */
@@ -73,6 +77,30 @@ export interface ConnectedSourceStore {
   saveToken(sourceId: string, tokenJson: string): void;
   readSource(sourceId: string): ConnectedSourceRow | null;
   listSources(): ConnectedSourceRow[];
+  /**
+   * Every asset id this source materialized — one per occupied rung (ADR 0016,
+   * #248). The market (primary) asset is `connected_sources.asset_id`; the others
+   * (e.g. term-locked) carry the source id only via `assets.connected_source_id`
+   * (no back-FK), so disconnect must delete them explicitly. Ordered by rung.
+   */
+  listSourceAssetIds(sourceId: string): string[];
+  /**
+   * Remove ALL of a source's materialized holdings in ONE transaction (ADR 0016,
+   * #248): for each rung asset (market + term-locked) soft-delete then hard-delete,
+   * so deleting the market (primary) asset cascades the source row + its positions
+   * away while the other-rung assets (no back-FK) are removed explicitly — all
+   * committing or rolling back together (no partially-deleted source on a mid-loop
+   * failure). Returns the number of asset rows removed (0 when nothing matched).
+   */
+  removeSourceHoldings(sourceId: string): { removed: number };
+  /**
+   * The connected source id an asset materializes a rung of (ADR 0016, #248), or
+   * null for a hand-maintained holding. Resolves the source from ANY of the
+   * source's rung assets — the market (primary) one OR the term-locked one — so the
+   * detail page can route both to the read-only surface (the term-locked asset's id
+   * never matches `connected_sources.asset_id`).
+   */
+  readSourceIdForAsset(assetId: string): string | null;
   readPositions(sourceId: string): SourcePosition[];
   /** Replace the source's positions, re-roll the holding's value, stamp last sync. */
   syncPositions(
@@ -249,36 +277,146 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
       .all()
       .map(mapPositionRow);
 
-  /** Re-roll the source's materialized holding from its positions and persist the
-   *  value on the asset. The asset sits on ONE rung (Numista → illiquid, Binance →
-   *  market in S1/S2), so the value is the projected holding on the asset's own
-   *  tier (0 when the source now holds nothing on it). A multi-rung source (S3)
-   *  will materialize one asset per rung; this still picks the right one by tier. */
-  const rerollHoldingValue = (source: ConnectedSourceRow): number => {
+  // Returns ALL of a source's materialized assets — INCLUDING soft-deleted
+  // (trashed) ones — so disconnect (`removeSourceHoldings`) cleans up every rung
+  // asset, even one a prior reroll left trashed. This differs deliberately from
+  // `rerollSourceHoldings`' `existing` lookup, which filters `deletedAt IS NULL`
+  // so reroll only reconciles LIVE rung assets (#248, FIX 6).
+  const listSourceAssetIds = (sourceId: string): string[] =>
+    db
+      .select({ id: assets.id })
+      .from(assets)
+      .where(eq(assets.connectedSourceId, sourceId))
+      .orderBy(asc(assets.liquidityTier), asc(assets.createdAt), asc(assets.id))
+      .all()
+      .map((row) => row.id);
+
+  const assetTierOf = (assetId: string) =>
+    db
+      .select({ tier: assets.liquidityTier })
+      .from(assets)
+      .where(eq(assets.id, assetId))
+      .get()?.tier;
+
+  const readSourceIdForAsset = (assetId: string): string | null =>
+    db
+      .select({ sourceId: assets.connectedSourceId })
+      .from(assets)
+      .where(eq(assets.id, assetId))
+      .get()?.sourceId ?? null;
+
+  /**
+   * Project ALL the source's positions and reconcile its materialized assets with
+   * the result — one asset per occupied liquidity rung (ADR 0016, #248). For each
+   * projected holding: find this source's asset on that rung
+   * (`connected_source_id = source.id AND liquidity_tier = rung`); UPDATE its value
+   * if it exists, else CREATE it (a derived holding of the adapter's instrument on
+   * the rung, linked back to the source, inheriting the source's ownership). Any
+   * existing source asset whose rung is NOT in the projection is set to value 0
+   * (never deleted — frozen snapshots/identity must survive an emptied rung).
+   *
+   * The market (primary) asset (`connected_sources.asset_id`) is always among them
+   * and is the one `revaluePositions` stamps its freshness row on. Returns the value
+   * of that primary asset (parity with the prior single-asset reroll's return).
+   */
+  const rerollSourceHoldings = (source: ConnectedSourceRow): number => {
+    const ownership = readAssetOwnerships(db).get(source.assetId) ?? [];
     const domainSource: ConnectedSource = {
       adapter: source.adapter,
       id: source.id,
       label: source.label,
-      ownership: readAssetOwnerships(db).get(source.assetId) ?? [],
+      ownership,
     };
     const holdings = projectConnectedSource(
       domainSource,
       readPositionsForSource(source.id),
     );
-    const assetTier = db
-      .select({ tier: assets.liquidityTier })
-      .from(assets)
-      .where(eq(assets.id, source.assetId))
-      .get()?.tier;
-    const valueMinor =
-      holdings.find((holding) => holding.liquidityTier === assetTier)?.valueMinor ?? 0;
+    const instrument = instrumentForAdapter(source.adapter);
+    const projectedTiers = new Set(holdings.map((holding) => holding.liquidityTier));
 
-    db.update(assets)
-      .set({ currentValueMinor: valueMinor, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(assets.id, source.assetId))
-      .run();
+    let primaryValueMinor = 0;
+    const now = sql`CURRENT_TIMESTAMP`;
 
-    return valueMinor;
+    for (const holding of holdings) {
+      // Reconcile only LIVE rung assets: a trashed (soft-deleted) rung asset must
+      // NOT be updated or resurrected here — if the prior rung asset was trashed,
+      // materialize a fresh live one instead. (listSourceAssetIds, by contrast,
+      // returns ALL source assets including trashed ones, so disconnect still cleans
+      // them up.)
+      const existing = db
+        .select({ id: assets.id })
+        .from(assets)
+        .where(
+          and(
+            eq(assets.connectedSourceId, source.id),
+            eq(assets.liquidityTier, holding.liquidityTier),
+            isNull(assets.deletedAt),
+          ),
+        )
+        .get();
+
+      if (existing) {
+        db.update(assets)
+          .set({ currentValueMinor: holding.valueMinor, updatedAt: now })
+          .where(eq(assets.id, existing.id))
+          .run();
+      } else {
+        // A newly-occupied rung (e.g. the first locked-Earn balance). Materialize a
+        // derived holding for it, named per rung: the primary keeps the source
+        // label, a term-locked one is tagged "(bloqueado)" so the two are
+        // distinguishable in the patrimonio list. valuation_method stays null —
+        // derived at runtime from the instrument, like the primary asset.
+        const assetId = ctx.newId();
+        const name =
+          holding.liquidityTier === "term-locked"
+            ? `${source.label} (bloqueado)`
+            : source.label;
+
+        db.insert(assets)
+          .values({
+            connectedSourceId: source.id,
+            currency: "EUR",
+            currentValueMinor: holding.valueMinor,
+            id: assetId,
+            instrument,
+            isPrimaryResidence: 0,
+            liquidityTier: holding.liquidityTier,
+            name,
+            type: "manual",
+          })
+          .run();
+
+        if (ownership.length > 0) {
+          db.insert(assetOwnerships)
+            .values(
+              ownership.map((share) => ({
+                assetId,
+                memberId: share.memberId,
+                shareBps: share.shareBps,
+              })),
+            )
+            .run();
+        }
+      }
+
+      if (holding.liquidityTier === assetTierOf(source.assetId)) {
+        primaryValueMinor = holding.valueMinor;
+      }
+    }
+
+    // Zero out any source asset on a rung the projection no longer occupies — keep
+    // the row (snapshots/identity), just drop its live value to 0.
+    for (const assetId of listSourceAssetIds(source.id)) {
+      const tier = assetTierOf(assetId);
+      if (tier && !projectedTiers.has(tier)) {
+        db.update(assets)
+          .set({ currentValueMinor: 0, updatedAt: now })
+          .where(eq(assets.id, assetId))
+          .run();
+      }
+    }
+
+    return primaryValueMinor;
   };
 
   return {
@@ -305,6 +443,10 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
         // the instrument, exactly like other asset rows.
         db.insert(assets)
           .values({
+            // Link the materialized asset back to its source (ADR 0016, #248): the
+            // market (primary) asset is the source's default-rung holding; later
+            // syncs materialize one asset per occupied rung, each carrying this id.
+            connectedSourceId: sourceId,
             currency: "EUR",
             currentValueMinor: 0,
             id: assetId,
@@ -358,6 +500,30 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
         .from(connectedSources)
         .orderBy(asc(connectedSources.createdAt), asc(connectedSources.id))
         .all(),
+    listSourceAssetIds,
+    removeSourceHoldings: (sourceId) => {
+      const removed = ctx.transaction(() => {
+        // ONE transaction: soft-delete then hard-delete every rung asset (market +
+        // term-locked, including any trashed one). Deleting the market (primary)
+        // asset cascades the source row + its positions away; the other-rung assets
+        // have no back-FK, so they are removed explicitly. hardDeleteAssetTx only
+        // deletes a TRASHED asset, so soft-delete each one (stamp deleted_at) first.
+        const now = new Date().toISOString();
+        let count = 0;
+        for (const assetId of listSourceAssetIds(sourceId)) {
+          db.update(assets).set({ deletedAt: now }).where(eq(assets.id, assetId)).run();
+          count += hardDeleteAssetTx(ctx, assetId);
+        }
+        return count;
+      });
+
+      ctx.writeAuditEntry("disconnect_source", "connected_source", sourceId, {
+        removed,
+      });
+
+      return { removed };
+    },
+    readSourceIdForAsset,
     readPositions: readPositionsForSource,
     syncPositions: (sourceId, incoming, syncedAt) => {
       ctx.transaction(() => {
@@ -383,10 +549,11 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
           db.insert(positions).values(inserted.map(positionInsertValues)).run();
         }
 
-        // Re-roll the holding's value from the freshly-written positions (ADR
-        // 0016), dispatched per kind (frozen coin vs live token); the holding
-        // derives 0 when the source now holds nothing on its rung.
-        rerollHoldingValue(source);
+        // Re-roll EVERY rung's holding from the freshly-written positions (ADR
+        // 0016, #248), dispatched per kind (frozen coin vs live token): one asset
+        // per occupied rung is updated/created, and a rung the source no longer
+        // occupies is zeroed (kept for snapshots), never deleted.
+        rerollSourceHoldings(source);
 
         db.update(connectedSources)
           .set({ lastSyncAt: syncedAt, updatedAt: sql`CURRENT_TIMESTAMP` })
@@ -419,7 +586,7 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
             .run();
         }
 
-        const valueMinor = rerollHoldingValue(source);
+        const valueMinor = rerollSourceHoldings(source);
 
         // Upsert the holding's single valuation-freshness row, sourced by the
         // adapter ("numista" | "binance"): the staleness indicator the detail

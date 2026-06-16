@@ -32,6 +32,7 @@ CREATE TABLE \`assets\` (
 	\`valuation_method\` text,
 	\`instrument\` text,
 	\`annual_appreciation_rate\` text,
+	\`connected_source_id\` text,
 	\`deleted_at\` text,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL

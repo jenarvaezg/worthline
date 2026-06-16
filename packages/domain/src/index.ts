@@ -172,6 +172,7 @@ export {
   positionValue,
   projectConnectedSource,
   projectedPositionValue,
+  rungForWallet,
 } from "./connected-source";
 
 export type {

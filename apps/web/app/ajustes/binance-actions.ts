@@ -3,7 +3,7 @@
 import { withStore, type WorthlineStore } from "@worthline/db";
 import {
   fetchCoinGeckoPriceEur,
-  getMarketBalances,
+  getAllBalances,
   syncBinanceAccount,
 } from "@worthline/pricing";
 import { cookies } from "next/headers";
@@ -165,17 +165,19 @@ export async function syncBinanceAction(
   const nowMs = now.getTime();
   const nowIso = now.toISOString();
 
-  // 2) Network: pull the market-rung balances — spot + funding + flexible Earn,
-  // all live-valued in one holding (#247) — and value each token live. On any
+  // 2) Network: pull ALL balances — spot + funding + flexible Earn (market) +
+  // locked Earn (term-locked) — and value each token live. The source spans rungs
+  // now (S3, #248), so the write materializes one holding per occupied rung. On any
   // failure, redirect with a clear message and DO NOT touch existing positions.
   try {
     const drafts = await syncBinanceAccount({
-      listBalances: () => getMarketBalances(credentials, { nowMs }),
+      listBalances: () => getAllBalances(credentials, { nowMs }),
       priceEur: (id) => fetchCoinGeckoPriceEur(id, nowIso),
     });
 
-    // 3) Write: replace positions and re-roll the holding value. Tokens ripple no
-    // history (their value is live, never dated), so this is a pure value re-roll.
+    // 3) Write: replace positions and re-roll EVERY rung's holding value. Tokens
+    // ripple no history (their value is live, never dated), so this is a pure
+    // value re-roll across the source's market + term-locked assets.
     runWith(
       (store) =>
         store.syncConnectedSource({ positions: drafts, sourceId, syncedAt: nowIso }),
@@ -217,11 +219,13 @@ export async function disconnectBinanceAction(
       return { ok: false as const, error: "No se encontró la cuenta conectada." };
     }
 
-    // S1 supports the REMOVE path only (freeze-into-stored is a later slice):
-    // deleting the holding cascade-deletes the source + positions (schema FKs).
-    // hardDeleteAsset only deletes from the trash, so soft-delete first.
-    store.assets.softDeleteAsset(source.assetId, new Date().toISOString());
-    const removed = store.assets.hardDeleteAsset(source.assetId);
+    // REMOVE path (freeze-into-stored is a later slice): a source materializes one
+    // asset per rung now (market + term-locked, #248). `removeSourceHoldings` drops
+    // ALL of them in ONE transaction — deleting the market (primary) asset cascades
+    // the source row (and its positions) away; the other-rung assets (no back-FK)
+    // are removed explicitly — so a mid-loop failure can never leave a
+    // partially-deleted source.
+    const { removed } = store.connectedSources.removeSourceHoldings(sourceId);
 
     if (removed === 0) {
       return { ok: false as const, error: "No se pudo desconectar la cuenta." };

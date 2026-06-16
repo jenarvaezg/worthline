@@ -489,6 +489,9 @@ function importWorkspace(
       db.insert(assets)
         .values({
           annualAppreciationRate: asset.annualAppreciationRate ?? null,
+          // The connected-source back-link (ADR 0016/0021, #248), restored verbatim
+          // — a plain column, no FK (the source's FK already points the other way).
+          connectedSourceId: asset.connectedSourceId ?? null,
           currency: asset.currency,
           // Investments are stored at zero like createInvestmentAsset does:
           // their value is derived from operations and prices on read, never
@@ -906,6 +909,10 @@ function buildWorkspaceExport(db: StoreDb, workspace: Workspace | null): Workspa
         ? { annualAppreciationRate: row.annualAppreciationRate }
         : {}),
       ...(anchors.length > 0 ? { valuationAnchors: anchors } : {}),
+      // The connected-source back-link (ADR 0016/0021, #248), so a multi-rung
+      // source's per-rung assets round-trip their link (the source row names only
+      // the primary asset).
+      ...(row.connectedSourceId ? { connectedSourceId: row.connectedSourceId } : {}),
       ownership: ownershipByAsset.get(row.id) ?? [],
       ...(row.type === "investment" && meta
         ? {

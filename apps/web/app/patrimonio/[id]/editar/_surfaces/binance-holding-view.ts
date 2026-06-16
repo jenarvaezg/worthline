@@ -12,7 +12,28 @@
  */
 
 import { addUnits, groupPositionsByToken } from "@worthline/domain";
-import type { TokenPosition, TokenValuationBasis } from "@worthline/domain";
+import type {
+  LiquidityTier,
+  SourcePosition,
+  TokenPosition,
+  TokenValuationBasis,
+} from "@worthline/domain";
+
+/**
+ * The source's TOKEN positions on ONE liquidity rung — the detail page shows only
+ * the positions on the asset's own rung (#248): opening the market asset lists the
+ * market tokens, opening the term-locked asset lists the locked ones. Coin
+ * positions and tokens on other rungs are excluded. Pure so the page stays thin
+ * glue and this filter is unit-testable without a DB.
+ */
+export function tokenPositionsOnRung(
+  positions: readonly SourcePosition[],
+  rung: LiquidityTier,
+): TokenPosition[] {
+  return positions.filter(
+    (p): p is TokenPosition => p.kind === "token" && p.liquidityTier === rung,
+  );
+}
 
 /** A view row for one token (summed across its wallets): identity, total balance,
  *  unit price, live value + basis, and the wallets the balance came from. */
@@ -51,6 +72,7 @@ const WALLET_LABELS: Record<string, string> = {
   spot: "spot",
   funding: "funding",
   "flexible-earn": "Earn flexible",
+  "locked-earn": "Earn bloqueado",
 };
 
 /**

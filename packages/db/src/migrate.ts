@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 25;
+export const SCHEMA_VERSION = 26;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -37,17 +37,18 @@ export interface MigrateResult {
 }
 
 /**
- * Run an index-creating DDL statement, tolerating ONLY a missing target table.
+ * Run any DDL/DML statement, tolerating ONLY a missing target table.
  *
- * The v23/v24 index migrations run over tables that every real v<N DB carries
- * (created at v<2 by schema-sql), but a minimal synthetic upgrade fixture may
- * stand up only a subset — so a `CREATE INDEX` over an absent table must be a
- * no-op rather than aborting the ladder. A bare `catch {}` would ALSO swallow a
- * genuine DDL bug (a column typo, malformed SQL) while still bumping
- * `user_version`; this narrows the tolerance to "no such table" and rethrows
- * everything else so a real migration error surfaces instead of failing silent.
+ * The v23/v24 index migrations and the v26 backfill UPDATE run over tables that
+ * every real v<N DB carries (created at v<2 by schema-sql), but a minimal
+ * synthetic upgrade fixture may stand up only a subset — so a statement over an
+ * absent table must be a no-op rather than aborting the ladder. A bare `catch {}`
+ * would ALSO swallow a genuine DDL/DML bug (a column typo, malformed SQL) while
+ * still bumping `user_version`; this narrows the tolerance to "no such table" and
+ * rethrows everything else so a real migration error surfaces instead of failing
+ * silent.
  */
-export function createIndexToleratingMissingTable(
+export function execToleratingMissingTable(
   sqlite: DatabaseConnection,
   sql: string,
 ): void {
@@ -580,20 +581,20 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // IF NOT EXISTS because a fresh DB already created these via schema-sql at v<2.
     // Each statement tolerates only a missing target table (synthetic upgrade
     // fixtures may stand up a subset); a real DDL error still surfaces — see
-    // createIndexToleratingMissingTable.
-    createIndexToleratingMissingTable(
+    // execToleratingMissingTable.
+    execToleratingMissingTable(
       sqlite,
       "CREATE INDEX IF NOT EXISTS asset_operations_asset_executed_idx ON asset_operations (asset_id, executed_at, id);",
     );
-    createIndexToleratingMissingTable(
+    execToleratingMissingTable(
       sqlite,
       "CREATE INDEX IF NOT EXISTS audit_log_entity_created_idx ON audit_log (entity_id, created_at);",
     );
-    createIndexToleratingMissingTable(
+    execToleratingMissingTable(
       sqlite,
       "CREATE INDEX IF NOT EXISTS assets_deleted_at_idx ON assets (name) WHERE deleted_at IS NOT NULL;",
     );
-    createIndexToleratingMissingTable(
+    execToleratingMissingTable(
       sqlite,
       "CREATE INDEX IF NOT EXISTS liabilities_deleted_at_idx ON liabilities (name) WHERE deleted_at IS NOT NULL;",
     );
@@ -611,7 +612,7 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // IF NOT EXISTS / missing-table-tolerant like the v23 indexes: a fresh DB
     // already created it via schema-sql, and a minimal synthetic upgrade fixture
     // may lack the table — but a real DDL error still surfaces.
-    createIndexToleratingMissingTable(
+    execToleratingMissingTable(
       sqlite,
       "CREATE INDEX IF NOT EXISTS snapshot_holdings_holding_kind_idx ON snapshot_holdings (holding_id, kind);",
     );
@@ -708,6 +709,33 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       sqlite.pragma("foreign_keys = ON");
     }
     sqlite.pragma("user_version = 25");
+  }
+
+  if (version < 26) {
+    // ADR 0016/0021 (#248): a connected source now materializes ONE asset per
+    // occupied liquidity rung (Binance market + term-locked), so each materialized
+    // asset carries a `connected_source_id` back-link. It is a plain TEXT column
+    // with NO foreign key ON PURPOSE: `connected_sources.asset_id → assets ON
+    // DELETE cascade` already points the other way, and a reciprocal FK would form
+    // a cascade cycle SQLite rejects. The link is maintained by the store, not a FK.
+    //
+    // Additive ALTER (try/catch like v20/v22): a fresh DB already has the column
+    // from schema-sql, so the duplicate is ignored. Then BACKFILL the existing
+    // S1/S2 market assets: each connected source's `asset_id` is its first
+    // materialized asset, so link that asset back to its source.
+    try {
+      sqlite.exec("ALTER TABLE assets ADD COLUMN connected_source_id TEXT");
+    } catch {}
+    // Backfill tolerates a missing `assets`/`connected_sources` table: a minimal
+    // synthetic upgrade fixture may stand up only a subset (like the v23/v24
+    // indexes). A real DB carries both; a genuine SQL error still surfaces.
+    execToleratingMissingTable(
+      sqlite,
+      `UPDATE assets SET connected_source_id = (
+         SELECT cs.id FROM connected_sources cs WHERE cs.asset_id = assets.id
+       ) WHERE id IN (SELECT asset_id FROM connected_sources);`,
+    );
+    sqlite.pragma("user_version = 26");
   }
 
   return { ranV18Backfill };

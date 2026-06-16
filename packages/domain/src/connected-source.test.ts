@@ -17,6 +17,7 @@ import {
   instrumentForAdapter,
   positionValue,
   projectConnectedSource,
+  rungForWallet,
 } from "./connected-source";
 import type { CoinPosition, ConnectedSource, TokenPosition } from "./connected-source";
 
@@ -251,6 +252,57 @@ describe("projectConnectedSource — Binance tokens roll up live-valued (ADR 002
     expect(holdings[0]!.liquidityTier).toBe("market");
     expect(holdings[0]!.valueMinor).toBe(3_000_000);
     expect(holdings[0]!.positions).toHaveLength(2);
+  });
+
+  test("market + locked positions split into TWO holdings, one per rung (S3, #248)", () => {
+    const holdings = projectConnectedSource(binanceSource, [
+      token({
+        id: "t1",
+        externalId: "BTC:spot",
+        symbol: "BTC",
+        balance: "0.5",
+        unitPrice: "50000",
+        liquidityTier: "market",
+      }), // 25 000 € on market
+      token({
+        id: "t2",
+        externalId: "ETH:locked-earn",
+        symbol: "ETH",
+        balance: "3",
+        unitPrice: "2000",
+        liquidityTier: "term-locked",
+      }), // 6 000 € on term-locked
+    ]);
+
+    expect(holdings).toHaveLength(2);
+    const byTier = new Map(holdings.map((h) => [h.liquidityTier, h]));
+
+    const market = byTier.get("market")!;
+    expect(market.instrument).toBe("crypto");
+    expect(market.valueMinor).toBe(2_500_000);
+    expect(market.positions).toHaveLength(1);
+
+    const locked = byTier.get("term-locked")!;
+    expect(locked.instrument).toBe("crypto");
+    expect(locked.valueMinor).toBe(600_000);
+    expect(locked.positions).toHaveLength(1);
+  });
+});
+
+describe("rungForWallet — Binance wallet → liquidity rung (ADR 0016, S3)", () => {
+  test("spot, funding and flexible-earn are market-liquid", () => {
+    expect(rungForWallet("spot")).toBe("market");
+    expect(rungForWallet("funding")).toBe("market");
+    expect(rungForWallet("flexible-earn")).toBe("market");
+  });
+
+  test("locked-earn and staking are term-locked", () => {
+    expect(rungForWallet("locked-earn")).toBe("term-locked");
+    expect(rungForWallet("staking")).toBe("term-locked");
+  });
+
+  test("an unforeseen wallet defaults to market (most conservative claim)", () => {
+    expect(rungForWallet("mystery")).toBe("market");
   });
 });
 
