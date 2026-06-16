@@ -7,7 +7,7 @@
  * - Compute dashboard state via prepareDashboardState
  * - Pricing failures degrade to last-known values with an explicit signal
  */
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { createInMemoryStore } from "@worthline/db";
 import type { WorthlineStore } from "@worthline/db";
@@ -719,6 +719,32 @@ describe("loadDashboard — pricing failure degradation", () => {
 
     expect(Array.isArray(result.pricingErrors)).toBe(true);
     expect(result.pricingErrors).toHaveLength(0);
+
+    store.close();
+  });
+
+  test("awaits refreshBinanceSources when provided and merges its errors (PRD #245 S4)", async () => {
+    const store = createInMemoryStore();
+    makeWorkspace(store);
+    makeAsset(store);
+
+    const refreshBinanceSources = vi.fn(async () => ({
+      errors: ["Binance: revisa la conexión."],
+    }));
+
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+      refreshBinanceSources,
+    });
+
+    expect(refreshBinanceSources).toHaveBeenCalledTimes(1);
+    expect(result.pricingErrors).toContain("Binance: revisa la conexión.");
 
     store.close();
   });

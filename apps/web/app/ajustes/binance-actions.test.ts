@@ -193,7 +193,7 @@ describe("syncBinanceAction", () => {
 
   test("pulls spot+funding+flexible-Earn balances + live prices and merges positions (stubbed fetch)", async () => {
     const store = createInMemoryStore();
-    const { sourceId } = seedWithSource(store);
+    const { sourceId, assetId } = seedWithSource(store);
 
     // Stub global fetch: the three signed Binance wallet endpoints, then CoinGecko.
     // BTC sits on spot AND funding; ETH on flexible Earn (#247 fold-in).
@@ -247,6 +247,11 @@ describe("syncBinanceAction", () => {
     expect(
       positions.map((p) => (p.kind === "token" ? `${p.symbol}:${p.wallet}` : "")).sort(),
     ).toEqual(["BTC:funding", "BTC:spot", "ETH:flexible-earn"]);
+
+    // A manual sync stamps the `binance` freshness row fresh (PRD #245 S4) so the
+    // daily stale-price pass won't immediately re-sync the source it just synced.
+    const freshness = store.operations.readPriceCache(assetId);
+    expect(freshness?.freshnessState).toBe("fresh");
   });
 
   test("a Binance outage leaves existing positions untouched and surfaces an error", async () => {

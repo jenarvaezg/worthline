@@ -97,6 +97,14 @@ export interface LoadDashboardInput {
    * Returns one message per source that failed, merged into `pricingErrors`.
    */
   refreshCoinValuations?: () => Promise<{ errors: string[] }>;
+  /**
+   * Optional: keep connected Binance sources current before snapshot capture
+   * (PRD #245 S4, ADR 0007/0021). Re-reads each stale source's balances and
+   * re-values them live, so today's snapshot freezes the freshly-valued holdings.
+   * Production binds the Binance-backed orchestration; omitted in tests.
+   * Returns one message per source that failed, merged into `pricingErrors`.
+   */
+  refreshBinanceSources?: () => Promise<{ errors: string[] }>;
 }
 
 export interface LoadDashboardResult extends DashboardState {
@@ -173,6 +181,16 @@ export async function loadDashboard(
   // capture so today's snapshot freezes the freshly-valued coins.
   if (input.refreshCoinValuations) {
     const { errors } = await input.refreshCoinValuations();
+    pricingErrors = [...pricingErrors, ...errors];
+  }
+
+  // ── 1c. Refresh stale Binance sources (PRD #245 S4) ───────────────────────
+  // Keeps connected Binance accounts current on the same daily pass: re-reads
+  // each stale source's balances and re-values them LIVE (ADR 0021). Degrades to
+  // last-known on an outage (never zeroed); runs before snapshot capture so
+  // today's snapshot freezes the freshly-valued holdings.
+  if (input.refreshBinanceSources) {
+    const { errors } = await input.refreshBinanceSources();
     pricingErrors = [...pricingErrors, ...errors];
   }
 
