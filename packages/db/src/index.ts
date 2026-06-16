@@ -1,5 +1,6 @@
 import type { LocalPersistenceStatus } from "@worthline/domain";
 import type {
+  BinanceHistoryCurve,
   CreateInvestmentOperationInput,
   CreateManualAssetInput,
   DebtBalanceCurveInputs,
@@ -21,8 +22,12 @@ import type {
 } from "@worthline/domain";
 import {
   amortizationPaymentDatesUpTo,
+  binanceCurveStartDate,
+  binanceValueAtDate,
   buildSnapshotAtDate,
   coinValue,
+  completedMonthEndDates,
+  createNetWorthSnapshot,
   globalHoldingValueAtDate,
   historicalCapturedAt,
   housingAssetIdsOf,
@@ -30,6 +35,7 @@ import {
   listScopeOptions,
   recalculateSnapshotForAsset,
   recalculateSnapshotForCoinAcquisition,
+  recalculateSnapshotForConnectedValue,
   recalculateSnapshotForHousing,
   recalculateSnapshotForLiability,
   recalculateSnapshotForOwnership,
@@ -555,6 +561,21 @@ export interface WorthlineStore {
     sourceId: string;
     positions: SourcePositionInput[];
     syncedAt: string;
+  }) => void;
+  /**
+   * Backfill a connected Binance source's monthly value history into snapshots
+   * (PRD #245 S5 / #250, ADR 0021). Values the reconstructed `BinanceHistoryCurve`
+   * (balance step-function × that-day historical price) at every completed
+   * month-end and every existing snapshot in the curve's window, FREEZING the
+   * result into the market holding's row (SET, not additive). Append-only: a date
+   * whose snapshot already carries the binance row is skipped (a re-sync only adds
+   * newly-completed months, never rewrites a past value). A null curve start is a
+   * no-op. `today` defaults to the current date; pass it to control the cut-off.
+   */
+  applyBinanceHistoryAndRipple: (params: {
+    sourceId: string;
+    curve: BinanceHistoryCurve;
+    today?: string;
   }) => void;
 }
 
@@ -1504,6 +1525,19 @@ function buildStore(
           store.snapshots.saveSnapshot,
           { assetId: source.assetId, newTrades: newDatedTrades },
         );
+      });
+    },
+    applyBinanceHistoryAndRipple: (params) => {
+      const workspace = getWorkspace();
+      if (!workspace) return; // no workspace → no scopes, no history to backfill
+
+      const source = store.connectedSources.readSource(params.sourceId);
+      if (!source) return;
+
+      backfillBinanceHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, {
+        assetId: source.assetId,
+        curve: params.curve,
+        today: params.today ?? new Date().toISOString().slice(0, 10),
       });
     },
   };
@@ -2762,6 +2796,178 @@ function readInvestmentIdentity(db: StoreDb, assetId: string): ManualAsset | nul
     type: row.type,
     ...(row.instrument ? { instrument: row.instrument } : {}),
   };
+}
+
+/**
+ * Backfill a connected Binance source's monthly value history into snapshots
+ * (PRD #245 S5 / #250, ADR 0021). The reconstructed `BinanceHistoryCurve` is
+ * valued at every completed month-end (and every existing snapshot in the curve's
+ * window) and the result is FROZEN into the market holding's row — SET, not
+ * additive — generating the base whole-portfolio snapshot when none exists.
+ * Append-only/frozen: a date whose snapshot already carries the binance row is
+ * left exactly as captured (a re-sync only adds newly-completed months).
+ *
+ * Atomic (one transaction). A null curve start is a no-op. Binance only — no
+ * coins/Numista interaction.
+ */
+function backfillBinanceHistoricalSnapshots(
+  ctx: StoreContext,
+  workspace: Workspace,
+  saveSnapshot: (input: SaveSnapshotInput) => void,
+  params: { assetId: string; curve: BinanceHistoryCurve; today: string },
+): void {
+  const { db } = ctx;
+  const { assetId, curve, today } = params;
+
+  // The market asset's identity — read including trashed, since it existed on the
+  // snapshot dates regardless (ADR 0012).
+  const asset = readInvestmentIdentity(db, assetId);
+  if (!asset) return;
+
+  // The curve's earliest valuable date; below it nothing is valued (ADR 0021).
+  const start = binanceCurveStartDate(curve);
+  if (start === null) return;
+
+  // The asset's frozen classification captures across every snapshot (#242), read
+  // ONCE before any recalc mutates rows (see rippleHistoricalSnapshots).
+  const frozenIdentity = readFrozenIdentityCaptures(db, assetId, "asset");
+
+  // Every completed month-end (never the current partial month) — the same anchors
+  // across every scope (the curve is portfolio-wide). Built once.
+  const monthEnds = completedMonthEndDates(curve, today);
+
+  // Build deps once — the same for every scope (lesson from #114).
+  const deps = buildHistoricalSnapshotDeps(db, workspace);
+
+  ctx.transaction(() => {
+    for (const scope of listScopeOptions(workspace)) {
+      const existing = readSnapshots(db, scope.id);
+      const existingByDate = new Map(existing.map((snap) => [snap.dateKey, snap]));
+
+      // Affected dates = the UNION of the completed month-ends and every existing
+      // snapshot date in [start, today) — ascending, deduped. An existing snapshot
+      // in the window gets the binance value added even if it is not a month-end.
+      // Month-ends are lower-bounded by `start` too: a month-end below the curve's
+      // first valuable day values to 0, so anchoring there would only materialize a
+      // spurious zero-valued snapshot and drag the UI's "Datos desde" before the
+      // real curve start (#250 review).
+      const affected = new Set<string>(monthEnds.filter((d) => d >= start && d < today));
+      for (const snap of existing) {
+        if (snap.dateKey >= start && snap.dateKey < today) affected.add(snap.dateKey);
+      }
+      const dates = [...affected].sort();
+
+      // Read the scope's frozen rows for the whole [start, today) band in ONE
+      // batched query (#205), grouped by date in memory (one read per scope).
+      const frozenByDate = groupFrozenHoldingsByDate(
+        readSnapshotHoldings(db, { scopeId: scope.id, from: start }),
+      );
+
+      for (const dateKey of dates) {
+        const frozenHoldings = frozenByDate.get(dateKey) ?? [];
+
+        // Append-only/frozen: a date whose snapshot already carries the binance
+        // asset's frozen row is left exactly as captured (never rewritten).
+        const alreadyHasBinanceRow = frozenHoldings.some(
+          (row) => row.holdingId === assetId && row.kind === "asset",
+        );
+        if (alreadyHasBinanceRow) continue;
+
+        const valueMinor = binanceValueAtDate(curve, dateKey);
+        const snap = existingByDate.get(dateKey);
+
+        if (snap !== undefined) {
+          // An existing snapshot at this date → SET the binance row to the
+          // reconstructed value. A legacy capture predating holdings (ADR 0008)
+          // has nothing to reconcile against — leave it frozen.
+          if (frozenHoldings.length === 0) continue;
+          const recalculated = recalculateSnapshotForConnectedValue({
+            asset,
+            frozenHoldings,
+            frozenIdentity,
+            globalValueMinor: valueMinor,
+            snapshot: snap,
+            workspace,
+          });
+          if (recalculated) {
+            saveSnapshot({
+              holdings: recalculated.holdings,
+              replace: true,
+              snapshot: recalculated.snapshot,
+            });
+          }
+          continue;
+        }
+
+        // No snapshot at this date → generate the base whole-portfolio snapshot
+        // (mirror the `rippleHistoricalSnapshots` generate branch), then OVERRIDE
+        // its binance row to the reconstructed value: the base values the holding
+        // at its stored/live basis (wrong for the past) — the SET corrects it.
+        const built = buildSnapshotAtDate({
+          assets: deps.assets,
+          capturedAt: historicalCapturedAt(dateKey),
+          coinPositionsByAsset: deps.coinPositionsByAsset,
+          costBasisAssetIds: deps.costBasisAssetIds,
+          debtBalanceByLiability: deps.debtBalanceByLiability,
+          housingValuationByAsset: deps.housingValuationByAsset,
+          id: `histsnap_${scope.id}_${dateKey}`,
+          liabilities: deps.liabilities,
+          manualValueHistory: deps.manualValueHistory,
+          operationsByAsset: deps.operationsByAsset,
+          scopeId: scope.id,
+          scopeLabel: scope.label,
+          targetDate: dateKey,
+          today,
+          workspace,
+        });
+
+        // The base built nothing AND the binance value is 0 → an entirely empty
+        // snapshot. Skip it (the portfolio held nothing valuable that day).
+        if (!built && valueMinor === 0) continue;
+
+        const base = built ?? {
+          holdings: [],
+          snapshot: createNetWorthSnapshot({
+            capturedAt: historicalCapturedAt(dateKey),
+            id: `histsnap_${scope.id}_${dateKey}`,
+            isMonthlyClose: false,
+            scopeId: scope.id,
+            scopeLabel: scope.label,
+            summary: {
+              debts: { amountMinor: 0, currency: workspace.baseCurrency },
+              grossAssets: { amountMinor: 0, currency: workspace.baseCurrency },
+              housingEquity: { amountMinor: 0, currency: workspace.baseCurrency },
+              liquidNetWorth: { amountMinor: 0, currency: workspace.baseCurrency },
+              scopeId: scope.id,
+              totalNetWorth: { amountMinor: 0, currency: workspace.baseCurrency },
+            },
+            warnings: [],
+          }),
+        };
+
+        const overridden = recalculateSnapshotForConnectedValue({
+          asset,
+          frozenHoldings: base.holdings,
+          frozenIdentity,
+          globalValueMinor: valueMinor,
+          snapshot: base.snapshot,
+          workspace,
+        });
+        if (overridden) {
+          saveSnapshot({
+            holdings: overridden.holdings,
+            replace: false,
+            snapshot: overridden.snapshot,
+          });
+        }
+      }
+    }
+
+    ctx.writeAuditEntry("backfill_binance_history", "asset", assetId, {
+      monthEnds: monthEnds.length,
+      start,
+    });
+  });
 }
 
 /** Options for {@link gapFillHistoricalSnapshots}. */

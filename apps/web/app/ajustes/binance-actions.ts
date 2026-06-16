@@ -2,8 +2,11 @@
 
 import { withStore, type WorthlineStore } from "@worthline/db";
 import {
+  fetchCoinGeckoHistoryEur,
   fetchCoinGeckoPriceEur,
+  getAccountSnapshots,
   getAllBalances,
+  reconstructBinanceHistory,
   syncBinanceAccount,
 } from "@worthline/pricing";
 import { cookies } from "next/headers";
@@ -187,6 +190,30 @@ export async function syncBinanceAction(
         freshnessState: "fresh",
       });
     }, _store);
+
+    // 4) Backfill the reconstructed monthly history into snapshots (PRD #245 S5,
+    // #250, ADR 0021). BEST-EFFORT: positions are already synced (step 3), so a
+    // failure here (Binance snapshot horizon / CoinGecko range outage) must NOT
+    // fail the sync — swallow and fall through to the fresh-stamp + ok redirect.
+    // The reconstruction awaits the network OUTSIDE the store write; the backfill
+    // is then a sync `applyBinanceHistoryAndRipple` (atomic, append-only/frozen).
+    try {
+      const curve = await reconstructBinanceHistory({
+        accountSnapshots: () => getAccountSnapshots(credentials, { nowMs }),
+        historicalPriceEur: (id, from, to) =>
+          fetchCoinGeckoHistoryEur(
+            id,
+            Date.parse(from),
+            Date.parse(`${to}T23:59:59Z`),
+            nowIso,
+          ),
+      });
+      runWith((store) => {
+        store.applyBinanceHistoryAndRipple({ sourceId, curve });
+      }, _store);
+    } catch {
+      // History is best-effort; the positions sync already committed.
+    }
   } catch {
     // A bad/expired key or unreachable Binance — surface a clear error. The
     // existing positions are left untouched (we never reached the write).
