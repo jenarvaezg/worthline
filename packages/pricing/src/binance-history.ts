@@ -17,8 +17,7 @@
 import type { BinanceHistoryCurve, DecimalString } from "@worthline/domain";
 
 import { resolveCoinGeckoId } from "./binance-symbols";
-
-const COINGECKO_BASE = "https://api.coingecko.com/api/v3";
+import { coingeckoBaseUrl } from "./coingecko";
 
 /** One normalized daily SPOT snapshot (mirrors `BinanceAccountSnapshot`). */
 interface AccountSnapshot {
@@ -124,7 +123,7 @@ export async function fetchCoinGeckoHistoryEur(
   const fromSec = Math.floor(fromMs / 1000);
   const toSec = Math.floor(cappedToMs / 1000);
   const url =
-    `${COINGECKO_BASE}/coins/${encodeURIComponent(coingeckoId)}/market_chart/range` +
+    `${coingeckoBaseUrl()}/coins/${encodeURIComponent(coingeckoId)}/market_chart/range` +
     `?vs_currency=eur&from=${fromSec}&to=${toSec}`;
 
   try {
