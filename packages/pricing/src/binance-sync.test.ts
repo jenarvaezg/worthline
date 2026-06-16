@@ -6,9 +6,9 @@
  * Every external dependency is injected, so this is a pure unit of work testable
  * without the network — the web action wires the real balance reader + price fetch.
  */
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { syncBinanceAccount } from "./binance-sync";
+import { fetchCoinGeckoPriceEur, syncBinanceAccount } from "./binance-sync";
 
 describe("syncBinanceAccount — balances → live-valued token drafts", () => {
   test("maps spot balances to market-rung token drafts with the live EUR price", async () => {
@@ -79,5 +79,57 @@ describe("syncBinanceAccount — balances → live-valued token drafts", () => {
     });
 
     expect(seen).toEqual(["bitcoin"]); // one lookup, reused for both BTC lines
+  });
+});
+
+describe("fetchCoinGeckoPriceEur — the real live-price seam (ADR 0021 consistency)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("resolves the EUR quote through the shared CoinGecko provider", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ bitcoin: { eur: 50_000 } }),
+    } as Response);
+
+    expect(await fetchCoinGeckoPriceEur("bitcoin", "2026-06-16T00:00:00.000Z")).toBe(
+      50_000,
+    );
+  });
+
+  test("a provider miss (non-OK / no quote) normalizes to null — token valued 0 + warning", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 429 } as Response);
+    expect(
+      await fetchCoinGeckoPriceEur("bitcoin", "2026-06-16T00:00:00.000Z"),
+    ).toBeNull();
+
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ bitcoin: {} }), // no eur field
+    } as Response);
+    expect(
+      await fetchCoinGeckoPriceEur("bitcoin", "2026-06-16T00:00:00.000Z"),
+    ).toBeNull();
+  });
+
+  test("a non-positive price normalizes to null (never a 0/negative unit price)", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ bitcoin: { eur: 0 } }),
+    } as Response);
+    expect(
+      await fetchCoinGeckoPriceEur("bitcoin", "2026-06-16T00:00:00.000Z"),
+    ).toBeNull();
+  });
+
+  test("a thrown provider error is swallowed to null (never aborts the whole sync)", async () => {
+    vi.mocked(fetch).mockRejectedValueOnce(new Error("network down"));
+    expect(
+      await fetchCoinGeckoPriceEur("bitcoin", "2026-06-16T00:00:00.000Z"),
+    ).toBeNull();
   });
 });
