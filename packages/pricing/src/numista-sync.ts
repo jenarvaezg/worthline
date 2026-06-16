@@ -15,10 +15,11 @@
 
 import type { SourcePosition } from "@worthline/domain";
 
+import { coinValuation } from "./coin-valuation";
 import { ecbProvider } from "./ecb";
 import type { MetalKind } from "./metal";
-import { metalValueMinor, parseComposition, STOOQ_METAL_SYMBOL } from "./metal";
-import { mapCollectedItem, numismaticEstimateMinor } from "./numista";
+import { parseComposition, STOOQ_METAL_SYMBOL } from "./metal";
+import { mapCollectedItem } from "./numista";
 import type { NumistaCollectedItem, NumistaPrices, NumistaTypeDetail } from "./numista";
 import { stooqProvider } from "./stooq";
 
@@ -67,24 +68,31 @@ export async function syncNumistaCollection(
       spot = spotByMetal.get(composition.metal) ?? null;
     }
 
-    const metalValue = metalValueMinor({
+    // Fetch the per-grade estimate when the coin can be priced (issue + grade);
+    // null until then — that drives the long-TTL refetch gate the module owns.
+    let prices: NumistaPrices | null = null;
+    let numismaticFetchedAt: string | null = null;
+    if (base.issueId !== null && base.grade) {
+      prices = await deps.prices(typeId, base.issueId);
+      numismaticFetchedAt = nowIso;
+    }
+
+    // The coin-value module owns both candidate computations and the decision;
+    // the sync only supplies the freshly-fetched spot/prices (the I/O).
+    const valuation = coinValuation({
       metal: composition.metal,
       finenessMillis: composition.finenessMillis,
       weightGrams: detail.weightGrams,
       quantity: item.quantity,
+      grade: base.grade,
       spotPerOzEur: spot,
+      prices: prices?.prices ?? null,
+      numismaticFetchedAt,
+      purchasePriceMinor: base.purchasePriceMinor,
+      lastMetalValueMinor: null,
+      lastNumismaticValueMinor: null,
+      nowIso,
     });
-
-    let numismaticValue: number | null = null;
-    // null until we actually read an estimate — drives the long-TTL refetch gate.
-    let numismaticFetchedAt: string | null = null;
-    if (base.issueId !== null && base.grade) {
-      const priced = await deps.prices(typeId, base.issueId);
-      const perCoin = priced ? numismaticEstimateMinor(priced.prices, base.grade) : null;
-      // The estimate is per single coin; a position of N coins is worth N times it.
-      numismaticValue = perCoin === null ? null : perCoin * item.quantity;
-      numismaticFetchedAt = nowIso;
-    }
 
     drafts.push({
       externalId: String(item.id),
@@ -99,8 +107,8 @@ export async function syncNumistaCollection(
       finenessMillis: composition.finenessMillis,
       weightGrams: detail.weightGrams,
       purchaseDate: base.purchaseDate,
-      metalValueMinor: metalValue,
-      numismaticValueMinor: numismaticValue,
+      metalValueMinor: valuation.metal.minor,
+      numismaticValueMinor: valuation.numismatic.minor,
       numismaticFetchedAt,
       purchasePriceMinor: base.purchasePriceMinor,
       currency: base.currency,

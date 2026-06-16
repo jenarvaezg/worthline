@@ -31,8 +31,11 @@ export const PRICE_TTL_DAYS: Record<PriceSource, number> = {
   finect: 1,
   // The coin-collection holding's valuation freshness (PRD #160, ADR 0017): a
   // daily cadence so metal-spot moves show up the next day. The numismatic
-  // estimate's long TTL is enforced per position inside the valuation refresh,
-  // keeping the daily pass well under Numista's request cap.
+  // estimate rides a separate long TTL (30 days) so the daily pass stays well
+  // under Numista's request cap. Both coin-value cadences live together in the
+  // single coin-value staleness config — `COIN_VALUE_TTL_DAYS` in
+  // packages/pricing/src/coin-valuation.ts (#240), which sources `metalSpot`
+  // FROM this `numista` entry. Keep them in step: this is the metal-spot clock.
   numista: 1,
 };
 
