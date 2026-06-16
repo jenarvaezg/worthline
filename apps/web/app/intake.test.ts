@@ -166,9 +166,13 @@ describe("resolveOwnershipSplit", () => {
     shares.reduce((sum, share) => sum + share.shareBps, 0);
 
   test("a single active member always owns 100%", () => {
-    expect(resolveOwnershipSplit({ activeMembers: [jose], preset: "even" })).toEqual([
-      { memberId: "member_jose", shareBps: 10_000 },
-    ]);
+    expect(
+      resolveOwnershipSplit({
+        activeMembers: [jose],
+        preset: "even",
+        shortfall: "complete-to-full-ownership",
+      }),
+    ).toEqual([{ memberId: "member_jose", shareBps: 10_000 }]);
   });
 
   test("the scope preset gives 100% to the active scope member", () => {
@@ -177,23 +181,29 @@ describe("resolveOwnershipSplit", () => {
         activeMembers: [ana, jose],
         scopeMemberId: "member_jose",
         preset: "scope",
+        shortfall: "complete-to-full-ownership",
       }),
     ).toEqual([{ memberId: "member_jose", shareBps: 10_000 }]);
   });
 
   test("the even preset splits equally and totals 100%", () => {
-    expect(resolveOwnershipSplit({ activeMembers: [ana, jose], preset: "even" })).toEqual(
-      [
-        { memberId: "member_ana", shareBps: 5_000 },
-        { memberId: "member_jose", shareBps: 5_000 },
-      ],
-    );
+    expect(
+      resolveOwnershipSplit({
+        activeMembers: [ana, jose],
+        preset: "even",
+        shortfall: "complete-to-full-ownership",
+      }),
+    ).toEqual([
+      { memberId: "member_ana", shareBps: 5_000 },
+      { memberId: "member_jose", shareBps: 5_000 },
+    ]);
   });
 
   test("an even split of three distributes the remainder to total exactly 100%", () => {
     const split = resolveOwnershipSplit({
       activeMembers: [ana, jose, lia],
       preset: "even",
+      shortfall: "complete-to-full-ownership",
     });
     expect(total(split)).toBe(10_000);
     expect(split.map((share) => share.shareBps)).toEqual([3_334, 3_333, 3_333]);
@@ -205,6 +215,7 @@ describe("resolveOwnershipSplit", () => {
         activeMembers: [ana, jose],
         preset: "custom",
         customBps: { member_ana: 3_000, member_jose: 7_000 },
+        shortfall: "complete-to-full-ownership",
       }),
     ).toEqual([
       { memberId: "member_ana", shareBps: 3_000 },
@@ -217,6 +228,7 @@ describe("resolveOwnershipSplit", () => {
       activeMembers: [ana, jose],
       preset: "custom",
       customBps: { member_ana: 3_000 },
+      shortfall: "complete-to-full-ownership",
     });
     expect(total(split)).toBe(10_000);
     expect(split.find((share) => share.memberId === "member_jose")?.shareBps).toBe(7_000);
@@ -227,6 +239,7 @@ describe("resolveOwnershipSplit", () => {
       activeMembers: [ana, jose],
       preset: "custom",
       customBps: { member_ana: 3_000, member_jose: 4_000 },
+      shortfall: "complete-to-full-ownership",
     });
 
     expect(split).toEqual([
@@ -240,6 +253,7 @@ describe("resolveOwnershipSplit", () => {
       activeMembers: [ana, jose],
       preset: "custom",
       customBps: { member_ana: 6_000, member_jose: 6_000 },
+      shortfall: "complete-to-full-ownership",
     });
 
     expect(split).toEqual([
