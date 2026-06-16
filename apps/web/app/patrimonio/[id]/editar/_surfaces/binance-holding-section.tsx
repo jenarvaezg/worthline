@@ -30,6 +30,7 @@ import { formatLastSync } from "../../../../ajustes/binance-helpers";
 import { PendingSubmit } from "../../../../pending-submit";
 import {
   buildBinanceHoldingView,
+  formatBinanceSince,
   formatWallets,
   tokenBasisTag,
 } from "./binance-holding-view";
@@ -41,14 +42,20 @@ export function BinanceHoldingSection({
   positions,
   sourceId,
   lastSyncAt,
+  sinceDateKey,
   currentUrl,
 }: {
   positions: TokenPosition[];
   sourceId: string | null;
   lastSyncAt: string | null;
+  /** The earliest snapshot dateKey carrying this asset's frozen row — how far back
+   *  the reconstructed monthly history reaches (PRD #245 S5, #250). Null until a
+   *  backfill has run. Rendered as "Datos desde DD/MM/YYYY" when present. */
+  sinceDateKey: string | null;
   currentUrl: string;
 }) {
   const view = buildBinanceHoldingView(positions);
+  const since = formatBinanceSince(sinceDateKey);
 
   return (
     <section className="coinCollection" aria-label="Cuenta Binance">
@@ -69,6 +76,12 @@ export function BinanceHoldingSection({
               <dt>Valor</dt>
               <dd className="coinNum">{eur(view.totalMinor)}</dd>
             </div>
+            {since ? (
+              <div>
+                <dt>Histórico</dt>
+                <dd>{since}</dd>
+              </div>
+            ) : null}
           </dl>
         </div>
 

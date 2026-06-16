@@ -126,6 +126,18 @@ export default async function EditarPage({
             asset.liquidityTier,
           )
         : [];
+    // The curve start (PRD #245 S5, #250): the earliest snapshot dateKey carrying
+    // this asset's frozen row — how far back the reconstructed monthly history
+    // reaches. Null until a backfill has run. Surfaced as "Datos desde DD/MM".
+    const binanceSinceDateKey =
+      binanceSourceRow && asset
+        ? (store.snapshots
+            .readSnapshotHoldings({ holdingId: id, kind: "asset" })
+            .reduce<
+              string | null
+            >((min, row) => (min === null || row.dateKey < min ? row.dateKey : min), null) ??
+          null)
+        : null;
 
     // derived (investment): the operations editor + its derived position (ADR 0006).
     // A coin collection / Binance holding is derived but routed to its own surface,
@@ -170,6 +182,7 @@ export default async function EditarPage({
       assets: assets.filter((a) => a.type !== "investment"),
       balanceAnchors,
       binancePositions,
+      binanceSinceDateKey,
       binanceSource: binanceSourceRow,
       coinPositions,
       coinSource,
@@ -205,6 +218,7 @@ export default async function EditarPage({
     assets,
     balanceAnchors,
     binancePositions,
+    binanceSinceDateKey,
     binanceSource,
     coinPositions,
     coinSource,
@@ -372,6 +386,7 @@ export default async function EditarPage({
             currentUrl={currentUrl}
             lastSyncAt={binanceSource?.lastSyncAt ?? null}
             positions={binancePositions}
+            sinceDateKey={binanceSinceDateKey}
             sourceId={binanceSource?.id ?? null}
           />
         ) : null}

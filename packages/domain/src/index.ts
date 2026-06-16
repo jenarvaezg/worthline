@@ -340,6 +340,7 @@ export type {
   GlobalHoldingValueInput,
   HousingCurveInputs,
   RecalculateCoinAcquisitionSnapshotInput,
+  RecalculateConnectedValueSnapshotInput,
   RecalculateHousingSnapshotInput,
   RecalculateLiabilitySnapshotInput,
   RecalculateOwnershipSnapshotInput,
@@ -347,6 +348,12 @@ export type {
 } from "./historical-snapshot";
 export type { ManualValuePoint } from "./value-history";
 export { lastKnownValueAtDate } from "./value-history";
+export type { BinanceHistoryCurve } from "./binance-history";
+export {
+  binanceCurveStartDate,
+  binanceValueAtDate,
+  completedMonthEndDates,
+} from "./binance-history";
 export {
   amortizationPaymentDatesUpTo,
   buildSnapshotAtDate,
@@ -354,6 +361,7 @@ export {
   historicalCapturedAt,
   recalculateSnapshotForAsset,
   recalculateSnapshotForCoinAcquisition,
+  recalculateSnapshotForConnectedValue,
   recalculateSnapshotForHousing,
   recalculateSnapshotForLiability,
   recalculateSnapshotForOwnership,

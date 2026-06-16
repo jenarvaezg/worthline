@@ -8,6 +8,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   buildBinanceHoldingView,
+  formatBinanceSince,
   formatWallets,
   tokenBasisTag,
   tokenPositionsOnRung,
@@ -187,5 +188,16 @@ describe("tokenPositionsOnRung", () => {
     // Only the market TOKEN — the same-rung coin and the locked token are dropped.
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ kind: "token", symbol: "BTC" });
+  });
+});
+
+describe("formatBinanceSince", () => {
+  test("renders a DD/MM/YYYY es-ES label from the curve-start date key", () => {
+    expect(formatBinanceSince("2026-03-31")).toBe("Datos desde 31/03/2026");
+    expect(formatBinanceSince("2026-01-01")).toBe("Datos desde 01/01/2026");
+  });
+
+  test("is null when there is no curve start", () => {
+    expect(formatBinanceSince(null)).toBeNull();
   });
 });

@@ -143,6 +143,7 @@ export type {
 export { fetchMetalSpotEur, syncNumistaCollection } from "./numista-sync";
 export type { NumistaSyncDeps, PositionDraft } from "./numista-sync";
 export {
+  getAccountSnapshots,
   getAllBalances,
   getFlexibleEarnBalances,
   getFundingBalances,
@@ -151,6 +152,7 @@ export {
   signQuery,
 } from "./binance";
 export type {
+  BinanceAccountSnapshot,
   BinanceCredentials,
   BinanceRequestDeps,
   BinanceWalletBalance,
@@ -158,6 +160,8 @@ export type {
 export { resolveCoinGeckoId } from "./binance-symbols";
 export { fetchCoinGeckoPriceEur, syncBinanceAccount } from "./binance-sync";
 export type { BinanceSyncDeps, TokenPositionDraft } from "./binance-sync";
+export { fetchCoinGeckoHistoryEur, reconstructBinanceHistory } from "./binance-history";
+export type { ReconstructBinanceHistoryDeps } from "./binance-history";
 export { NUMISMATIC_TTL_DAYS, refreshCoinValuations } from "./numista-revalue";
 export type {
   RevalueDeps,

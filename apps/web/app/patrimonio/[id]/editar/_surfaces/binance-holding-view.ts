@@ -128,3 +128,22 @@ export function buildBinanceHoldingView(
 
   return { totalMinor, tokenCount: rows.length, rows };
 }
+
+/**
+ * The "Datos desde DD/MM/YYYY" label for the curve start (PRD #245 S5, #250): the
+ * earliest snapshot dateKey carrying this holding's frozen row — how far back the
+ * reconstructed monthly history reaches. Renders an es-ES `DD/MM/YYYY` date from
+ * the YYYY-MM-DD key (parsed as UTC so the day never shifts across a timezone).
+ * Null when there is no curve start (no backfilled history yet). Pure — no React,
+ * no DB — so the page stays thin glue.
+ */
+export function formatBinanceSince(dateKey: string | null): string | null {
+  if (dateKey === null) return null;
+  const label = new Date(`${dateKey}T00:00:00Z`).toLocaleDateString("es-ES", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  return `Datos desde ${label}`;
+}

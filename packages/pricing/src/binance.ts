@@ -49,6 +49,19 @@ interface RawSpotBalance {
   locked: string;
 }
 
+/** One daily SPOT snapshot row (GET /sapi/v1/accountSnapshot). */
+interface RawAccountSnapshotVo {
+  updateTime: number;
+  data: { balances: RawSpotBalance[] };
+}
+
+/** A normalized daily SPOT snapshot: the date it covers + its non-zero balances. */
+export interface BinanceAccountSnapshot {
+  /** The UTC YYYY-MM-DD the snapshot was taken. */
+  dateKey: string;
+  balances: { asset: string; balance: DecimalString }[];
+}
+
 /** The raw funding-wallet balance line (POST /sapi/v1/asset/get-funding-asset).
  *  `locked`/`freeze`/`withdrawing` are optional — Binance omits them when zero. */
 interface RawFundingBalance {
@@ -114,6 +127,43 @@ export async function getSpotBalances(
       balance: addUnits(line.free, line.locked),
     }))
     .filter((line) => compareUnits(line.balance, "0") > 0);
+}
+
+/**
+ * Fetch the account's daily SPOT snapshots (GET /sapi/v1/accountSnapshot, SIGNED).
+ * One cheap call: `type=SPOT&limit=30` returns up to ~30 daily SPOT balance
+ * snapshots — the API-cheap horizon is weeks-to-a-month, NOT years (so the monthly
+ * history this feeds is faithfully bounded by what Binance hands back, never
+ * fabricated past it). Each snapshot's per-asset balance is `free + locked` (same
+ * decimal seam as the live spot read), zero-filtered; the `dateKey` is the UTC
+ * YYYY-MM-DD of `updateTime`. A non-2xx throws a Binance-tagged error.
+ */
+export async function getAccountSnapshots(
+  credentials: BinanceCredentials,
+  deps: BinanceRequestDeps,
+): Promise<BinanceAccountSnapshot[]> {
+  const query = `type=SPOT&limit=30&timestamp=${deps.nowMs}`;
+  const signature = signQuery(query, credentials.apiSecret);
+
+  const res = await fetch(
+    `${BINANCE_BASE}/sapi/v1/accountSnapshot?${query}&signature=${signature}`,
+    {
+      headers: { "X-MBX-APIKEY": credentials.apiKey },
+      signal: AbortSignal.timeout(8000),
+    },
+  );
+
+  if (!res.ok) {
+    throw new Error(`Binance GET /sapi/v1/accountSnapshot failed (HTTP ${res.status}).`);
+  }
+
+  const data = (await res.json()) as { snapshotVos?: RawAccountSnapshotVo[] };
+  return (data.snapshotVos ?? []).map((vo) => ({
+    dateKey: new Date(vo.updateTime).toISOString().slice(0, 10),
+    balances: (vo.data.balances ?? [])
+      .map((line) => ({ asset: line.asset, balance: addUnits(line.free, line.locked) }))
+      .filter((line) => compareUnits(line.balance, "0") > 0),
+  }));
 }
 
 /**
