@@ -27,6 +27,7 @@ type FormAction = (formData: FormData) => void | Promise<void>;
 export function AssetEditForm({
   asset,
   investment,
+  isBinanceHolding = false,
   isCoinCollection = false,
   members,
   method,
@@ -36,6 +37,7 @@ export function AssetEditForm({
 }: {
   asset: ManualAsset;
   investment?: InvestmentAssetFull | null;
+  isBinanceHolding?: boolean;
   isCoinCollection?: boolean;
   members: Member[];
   method: ValuationMethod;
@@ -45,11 +47,11 @@ export function AssetEditForm({
 }) {
   const isInvestment = asset.type === "investment";
 
-  // A connected-source coin collection (Numista) is `derived`, like an
-  // investment: its name/type/liquidity are fixed by the source and its value is
-  // computed from its mirrored positions (ADR 0016). Lock the identity fields,
-  // hide the manual value form, but keep ownership editable below.
-  if (isCoinCollection) {
+  // A connected-source holding (Numista coins / Binance crypto) is `derived`, like
+  // an investment: its name/type/liquidity are fixed by the source and its value
+  // is computed from its mirrored positions (ADR 0016/0021). Lock the identity
+  // fields, hide the manual value form, but keep ownership editable below.
+  if (isCoinCollection || isBinanceHolding) {
     return (
       <>
         <form action={editAssetAction} className="stackForm">
@@ -70,9 +72,9 @@ export function AssetEditForm({
           </label>
 
           <p className="infoNote">
-            Es una colección conectada de Numista. Su valor se calcula a partir de las
-            monedas (ADR 0016) y se actualiza al sincronizar; aquí solo editas la
-            propiedad.
+            {isBinanceHolding
+              ? "Es una cuenta conectada de Binance. Su valor se calcula en vivo a partir de tus tokens (ADR 0021) y se actualiza al sincronizar; aquí solo editas la propiedad."
+              : "Es una colección conectada de Numista. Su valor se calcula a partir de las monedas (ADR 0016) y se actualiza al sincronizar; aquí solo editas la propiedad."}
           </p>
 
           <OwnershipInputs

@@ -24,6 +24,11 @@ import {
   saveFireConfigAction,
   updateMemberAction,
 } from "./actions";
+import {
+  connectBinanceAction,
+  disconnectBinanceAction,
+  syncBinanceAction,
+} from "./binance-actions";
 import DisconnectNumistaFold from "./disconnect-numista-fold";
 import { connectNumistaAction, syncNumistaAction } from "./numista-actions";
 import { formatLastSync } from "./numista-helpers";
@@ -79,7 +84,30 @@ export default async function AjustesPage({
         }
       : null;
 
+    // The connected Binance source (PRD #245), if any. Like Numista the holding's
+    // value comes from the asset row; the token count is the number of token lines.
+    const binanceRow = store.connectedSources
+      .listSources()
+      .find((source) => source.adapter === "binance");
+    const binancePositions = binanceRow
+      ? store.connectedSources.readPositions(binanceRow.id)
+      : [];
+    const binanceAsset = binanceRow
+      ? (store.assets.readAssets().find((a) => a.id === binanceRow.assetId) ?? null)
+      : null;
+    const binanceSource = binanceRow
+      ? {
+          id: binanceRow.id,
+          assetId: binanceRow.assetId,
+          label: binanceRow.label,
+          lastSyncAt: binanceRow.lastSyncAt,
+          tokenCount: binancePositions.filter((p) => p.kind === "token").length,
+          valueMinor: binanceAsset?.currentValue.amountMinor ?? 0,
+        }
+      : null;
+
     return {
+      binanceSource,
       fireConfig: store.readFireConfig(),
       numistaSource,
       overrides: store.readWarningOverrides(),
@@ -96,8 +124,15 @@ export default async function AjustesPage({
   // prepareDashboardState needs assets/liabilities/etc — for ajustes we only
   // need the workspace, scopes, and warnings-related data. Build the minimal
   // state subset needed for the shell.
-  const { scopes, selectedScope, workspace, fireConfig, overrides, numistaSource } =
-    storeData;
+  const {
+    scopes,
+    selectedScope,
+    workspace,
+    fireConfig,
+    overrides,
+    numistaSource,
+    binanceSource,
+  } = storeData;
   const fireScopeConfig = selectedScope ? fireConfig[selectedScope.id] : undefined;
 
   // Build warnings for the shell rail (read from full store to be accurate).
@@ -351,7 +386,7 @@ export default async function AjustesPage({
         <section className="ajustesPanel" aria-label="Fuentes conectadas">
           <div className="panelHeader">
             <h2>Fuentes conectadas</h2>
-            <span>Numista</span>
+            <span>Numista y Binance</span>
           </div>
 
           {formError?.formId === "numista" ? (
@@ -422,6 +457,99 @@ export default async function AjustesPage({
                 ilíquido con valor calculado. La clave se guarda solo en este dispositivo.
               </p>
               <button type="submit">Conectar Numista</button>
+            </form>
+          )}
+
+          {/* ── Binance (PRD #245, ADR 0021) ─────────────────────────── */}
+          {formError?.formId === "binance" ? (
+            <p className="formError" role="alert">
+              {formError.message}
+            </p>
+          ) : null}
+
+          {binanceSource ? (
+            <div className="coinSourceTile">
+              <div className="coinSourceStatus">
+                <span className="coinStatusPill">Conectado</span>
+                <dl className="coinSourceStats">
+                  <div>
+                    <dt>Última sincronización</dt>
+                    <dd>{formatLastSync(binanceSource.lastSyncAt)}</dd>
+                  </div>
+                  <div>
+                    <dt>Tokens</dt>
+                    <dd className="coinNum">{binanceSource.tokenCount}</dd>
+                  </div>
+                  <div>
+                    <dt>Valor</dt>
+                    <dd className="coinNum">
+                      {formatMoneyMinor({
+                        amountMinor: binanceSource.valueMinor,
+                        currency: "EUR",
+                      })}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+              <div className="coinSourceActions">
+                <form action={syncBinanceAction} className="coinSyncForm">
+                  <input name="currentUrl" type="hidden" value={currentUrl} />
+                  <input name="sourceId" type="hidden" value={binanceSource.id} />
+                  <PendingSubmit pendingLabel="Sincronizando…">
+                    Sincronizar Binance
+                  </PendingSubmit>
+                </form>
+                <Link
+                  className="actionLink"
+                  href={`/patrimonio/${binanceSource.assetId}/editar`}
+                >
+                  Ver →
+                </Link>
+                <form action={disconnectBinanceAction}>
+                  <input name="currentUrl" type="hidden" value={currentUrl} />
+                  <input name="sourceId" type="hidden" value={binanceSource.id} />
+                  <details className="confirmDelete">
+                    <summary>Desconectar</summary>
+                    <p className="dangerExplain">
+                      Las credenciales se borran de este dispositivo y el activo se
+                      elimina; tu cuenta en Binance no se toca. Los snapshots ya guardados
+                      conservan el histórico.
+                    </p>
+                    <button type="submit">Eliminar y conservar histórico</button>
+                  </details>
+                </form>
+              </div>
+            </div>
+          ) : (
+            <form action={connectBinanceAction} className="stackForm">
+              <input name="currentUrl" type="hidden" value={currentUrl} />
+              <label>
+                Clave de API de Binance
+                <input
+                  aria-label="Clave de API de Binance"
+                  autoComplete="off"
+                  name="apiKey"
+                  placeholder="Pega aquí tu clave de API"
+                  type="password"
+                />
+              </label>
+              <label>
+                Secreto de API de Binance
+                <input
+                  aria-label="Secreto de API de Binance"
+                  autoComplete="off"
+                  name="apiSecret"
+                  placeholder="Pega aquí tu secreto de API"
+                  type="password"
+                />
+              </label>
+              <p className="muted">
+                Conecta tu cuenta de Binance para reflejar tus tokens como un activo
+                valorado en vivo. Usa una clave de <strong>solo lectura</strong> («Enable
+                Reading»), sin permisos de trading ni de retiro. La clave y el secreto se
+                guardan solo en este dispositivo y nunca se exportan.
+              </p>
+              <button type="submit">Conectar Binance</button>
             </form>
           )}
         </section>

@@ -6,7 +6,7 @@ import {
   valuationMethodOfAsset,
   valuationMethodOfLiability,
 } from "@worthline/domain";
-import type { CoinPosition, ValuationMethod } from "@worthline/domain";
+import type { CoinPosition, TokenPosition, ValuationMethod } from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -32,6 +32,7 @@ import {
   deleteAssetAction,
   deleteLiabilityAction,
 } from "../../actions";
+import { BinanceHoldingSection } from "./_surfaces/binance-holding-section";
 import { CoinCollectionSection } from "./_surfaces/coin-collection-section";
 import { DebtModelSection } from "./_surfaces/debt-model-section";
 import { AssetEditForm, LiabilityEditForm } from "./_surfaces/holding-forms";
@@ -98,9 +99,28 @@ export default async function EditarPage({
           .filter((p): p is CoinPosition => p.kind === "coin")
       : [];
 
+    // A connected Binance crypto holding is `derived` too (instrument `crypto`),
+    // but — like Numista — its sub-detail is mirrored token positions, not
+    // investment operations (ADR 0021). Distinguish it from a MANUAL crypto
+    // investment (no connected source) by resolving a `binance` source for this
+    // asset id; only then route to the read-only Binance surface.
+    const binanceSourceRow =
+      asset?.instrument === "crypto"
+        ? (store.connectedSources
+            .listSources()
+            .find((s) => s.assetId === id && s.adapter === "binance") ?? null)
+        : null;
+    const isBinanceHolding = binanceSourceRow !== null;
+    const binancePositions = binanceSourceRow
+      ? store.connectedSources
+          .readPositions(binanceSourceRow.id)
+          .filter((p): p is TokenPosition => p.kind === "token")
+      : [];
+
     // derived (investment): the operations editor + its derived position (ADR 0006).
-    // A coin collection is derived but routed to its own surface, so skip these.
-    const isDerived = assetMethod === "derived" && !isCoinCollection;
+    // A coin collection / Binance holding is derived but routed to its own surface,
+    // so skip these.
+    const isDerived = assetMethod === "derived" && !isCoinCollection && !isBinanceHolding;
     const investment = isDerived ? store.assets.readInvestmentAssetById(id) : null;
     const operations = isDerived ? store.operations.readOperations(id) : [];
     const priceCache = isDerived ? store.operations.readPriceCache(id) : null;
@@ -139,11 +159,14 @@ export default async function EditarPage({
       assetMethod,
       assets: assets.filter((a) => a.type !== "investment"),
       balanceAnchors,
+      binancePositions,
+      binanceSource: binanceSourceRow,
       coinPositions,
       coinSource,
       coinValuationCache,
       debtModel,
       earlyRepayments,
+      isBinanceHolding,
       isCoinCollection,
       investment,
       liability,
@@ -171,11 +194,14 @@ export default async function EditarPage({
     assetMethod,
     assets,
     balanceAnchors,
+    binancePositions,
+    binanceSource,
     coinPositions,
     coinSource,
     coinValuationCache,
     debtModel,
     earlyRepayments,
+    isBinanceHolding,
     isCoinCollection,
     investment,
     liability,
@@ -296,6 +322,7 @@ export default async function EditarPage({
           <AssetEditForm
             asset={asset}
             investment={investment}
+            isBinanceHolding={isBinanceHolding}
             isCoinCollection={isCoinCollection}
             members={activeMembers}
             method={method}
@@ -328,8 +355,19 @@ export default async function EditarPage({
           />
         ) : null}
 
+        {/* crypto + binance source: the read-only token list — derived, but its
+            sub-detail is mirrored token positions, not operations (PRD #245, ADR 0021). */}
+        {asset && isBinanceHolding ? (
+          <BinanceHoldingSection
+            currentUrl={currentUrl}
+            lastSyncAt={binanceSource?.lastSyncAt ?? null}
+            positions={binancePositions}
+            sourceId={binanceSource?.id ?? null}
+          />
+        ) : null}
+
         {/* derived: the investment's operations editor (the single place units change) */}
-        {asset && method === "derived" && !isCoinCollection ? (
+        {asset && method === "derived" && !isCoinCollection && !isBinanceHolding ? (
           <OperationsEditor
             assetName={asset.name}
             context={{
@@ -352,7 +390,7 @@ export default async function EditarPage({
         ) : null}
 
         {/* derived: load operations from a broker statement (ADR 0018, #174/#176) */}
-        {asset && method === "derived" && !isCoinCollection ? (
+        {asset && method === "derived" && !isCoinCollection && !isBinanceHolding ? (
           <StatementUploadSection
             confirmAction={boundConfirmStatementAction}
             currentUrl={currentUrl}
