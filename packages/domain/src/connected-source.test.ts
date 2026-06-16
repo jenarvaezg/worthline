@@ -12,6 +12,7 @@ import { describe, expect, test } from "vitest";
 import {
   coinCollectionValueAtDate,
   coinValue,
+  frozenInstrumentForAdapter,
   groupPositionsByMetal,
   groupPositionsByToken,
   instrumentForAdapter,
@@ -20,6 +21,7 @@ import {
   rungForWallet,
 } from "./connected-source";
 import type { CoinPosition, ConnectedSource, TokenPosition } from "./connected-source";
+import { defaultsFor } from "./instrument-catalog";
 
 const source: ConnectedSource = {
   id: "src-numista",
@@ -310,6 +312,27 @@ describe("instrumentForAdapter — the holding instrument a source projects into
   test("Numista projects a coin_collection; Binance a crypto holding", () => {
     expect(instrumentForAdapter("numista")).toBe("coin_collection");
     expect(instrumentForAdapter("binance")).toBe("crypto");
+  });
+});
+
+describe("frozenInstrumentForAdapter — the hand-valued instrument a disconnect freeze keeps", () => {
+  test("the frozen instrument is a STORED (hand-valued) one, never the live/derived source instrument", () => {
+    // Freezing a disconnected source turns the derived/live holding into a plain
+    // hand-maintained one (ADR 0016). The target must therefore be a `stored`
+    // instrument — its value no longer tracks positions or a live price.
+    expect(defaultsFor(frozenInstrumentForAdapter("numista")).valuationMethod).toBe(
+      "stored",
+    );
+    expect(defaultsFor(frozenInstrumentForAdapter("binance")).valuationMethod).toBe(
+      "stored",
+    );
+  });
+
+  test("Numista freezes a coin collection into precious_metal; Binance crypto into a generic stored holding", () => {
+    // A coin collection's physical nature is precious metal; crypto has no
+    // hand-valued kind of its own, so it lands on the neutral `other` bucket.
+    expect(frozenInstrumentForAdapter("numista")).toBe("precious_metal");
+    expect(frozenInstrumentForAdapter("binance")).toBe("other");
   });
 });
 

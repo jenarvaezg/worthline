@@ -166,6 +166,7 @@ export type {
 export {
   coinCollectionValueAtDate,
   coinValue,
+  frozenInstrumentForAdapter,
   groupPositionsByMetal,
   groupPositionsByToken,
   instrumentForAdapter,
