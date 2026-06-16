@@ -9,7 +9,9 @@
  * Two parts, in order:
  *  1. Connected-source tile: status pill + «Sincronizar Binance» + last-sync /
  *     tokens / value stats, mirroring the Numista tile.
- *  2. Token list: one row per token (symbol · unit price | balance | live value),
+ *  2. Token list: one row per token, GROUPED across wallets (#247) — a token held
+ *     on spot · funding · flexible Earn shows once with the summed value and a
+ *     wallet caption (symbol · unit price · wallets | balance | live value),
  *     sorted by value desc; an unpriceable token shows a "valor 0" warning tag.
  *
  * Server-rendered, no client JS (ADR 0009): the list is plain markup, sync /
@@ -26,7 +28,11 @@ import {
 } from "../../../../ajustes/binance-actions";
 import { formatLastSync } from "../../../../ajustes/binance-helpers";
 import { PendingSubmit } from "../../../../pending-submit";
-import { buildBinanceHoldingView, tokenBasisTag } from "./binance-holding-view";
+import {
+  buildBinanceHoldingView,
+  formatWallets,
+  tokenBasisTag,
+} from "./binance-holding-view";
 
 const eur = (amountMinor: number): string =>
   formatMoneyMinor({ amountMinor, currency: "EUR" });
@@ -85,6 +91,7 @@ export function BinanceHoldingSection({
         <div className="coinList">
           {view.rows.map((row) => {
             const tag = tokenBasisTag(row.basis);
+            const wallets = formatWallets(row.wallets);
             return (
               <div className="coinLine" key={row.id}>
                 <span className="coinName">
@@ -93,6 +100,7 @@ export function BinanceHoldingSection({
                     {row.unitPrice !== null
                       ? ` · ${eur(Math.round(Number(row.unitPrice) * 100))} / ud.`
                       : " · sin precio"}
+                    {wallets ? ` · ${wallets}` : ""}
                   </small>
                 </span>
                 <span className="coinNum">{row.balance}</span>

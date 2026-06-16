@@ -49,6 +49,22 @@ interface RawSpotBalance {
   locked: string;
 }
 
+/** The raw funding-wallet balance line (POST /sapi/v1/asset/get-funding-asset).
+ *  `locked`/`freeze`/`withdrawing` are optional — Binance omits them when zero. */
+interface RawFundingBalance {
+  asset: string;
+  free: string;
+  locked?: string;
+  freeze?: string;
+  withdrawing?: string;
+}
+
+/** The raw flexible-Earn position row (GET /sapi/v1/simple-earn/flexible/position). */
+interface RawFlexibleEarnRow {
+  asset: string;
+  totalAmount: string;
+}
+
 /**
  * The canonical HMAC-SHA256 hex signature of a query string under the API secret
  * — the credential Binance's SIGNED endpoints verify. Pure and deterministic.
@@ -91,4 +107,109 @@ export async function getSpotBalances(
       balance: addUnits(line.free, line.locked),
     }))
     .filter((line) => compareUnits(line.balance, "0") > 0);
+}
+
+/**
+ * List the FUNDING-wallet balances (POST /sapi/v1/asset/get-funding-asset, SIGNED).
+ * Same market-rung tokens as spot, just parked in the funding wallet (P2P / Pay /
+ * card top-ups) — so they fold into the same live-valued holding (#247). The owned
+ * quantity is `free + locked + freeze + withdrawing` — all still owned (an in-flight
+ * `withdrawing` amount has left `free` but not yet the account), summed through the
+ * decimal seam (Binance omits the optional buckets when zero) so a withdrawal in
+ * progress doesn't make the holding dip. Zero balances are dropped; a non-2xx
+ * throws a Binance-tagged error.
+ */
+export async function getFundingBalances(
+  credentials: BinanceCredentials,
+  deps: BinanceRequestDeps,
+): Promise<BinanceWalletBalance[]> {
+  const query = `timestamp=${deps.nowMs}`;
+  const signature = signQuery(query, credentials.apiSecret);
+
+  const res = await fetch(
+    `${BINANCE_BASE}/sapi/v1/asset/get-funding-asset?${query}&signature=${signature}`,
+    {
+      method: "POST",
+      headers: { "X-MBX-APIKEY": credentials.apiKey },
+      signal: AbortSignal.timeout(8000),
+    },
+  );
+
+  if (!res.ok) {
+    throw new Error(
+      `Binance POST /sapi/v1/asset/get-funding-asset failed (HTTP ${res.status}).`,
+    );
+  }
+
+  const data = (await res.json()) as RawFundingBalance[];
+  return (data ?? [])
+    .map((line) => ({
+      asset: line.asset,
+      wallet: "funding",
+      balance: addUnits(
+        addUnits(addUnits(line.free, line.locked ?? "0"), line.freeze ?? "0"),
+        line.withdrawing ?? "0",
+      ),
+    }))
+    .filter((line) => compareUnits(line.balance, "0") > 0);
+}
+
+/**
+ * List the FLEXIBLE Earn balances (GET /sapi/v1/simple-earn/flexible/position,
+ * SIGNED). Flexible Earn principal is still market-liquid (redeemable on demand),
+ * so it folds into the same live-valued holding as spot + funding (#247). Each
+ * row's owned quantity is its `totalAmount`. A non-2xx throws a Binance-tagged
+ * error; zero balances are dropped.
+ *
+ * One page (size=100) is requested. Pagination beyond a single page is bounded and
+ * intentionally out of scope here (a portfolio with >100 distinct Earn assets is
+ * not a case this slice targets).
+ */
+export async function getFlexibleEarnBalances(
+  credentials: BinanceCredentials,
+  deps: BinanceRequestDeps,
+): Promise<BinanceWalletBalance[]> {
+  const query = `size=100&timestamp=${deps.nowMs}`;
+  const signature = signQuery(query, credentials.apiSecret);
+
+  const res = await fetch(
+    `${BINANCE_BASE}/sapi/v1/simple-earn/flexible/position?${query}&signature=${signature}`,
+    {
+      headers: { "X-MBX-APIKEY": credentials.apiKey },
+      signal: AbortSignal.timeout(8000),
+    },
+  );
+
+  if (!res.ok) {
+    throw new Error(
+      `Binance GET /sapi/v1/simple-earn/flexible/position failed (HTTP ${res.status}).`,
+    );
+  }
+
+  const data = (await res.json()) as { rows?: RawFlexibleEarnRow[] };
+  return (data.rows ?? [])
+    .map((row) => ({
+      asset: row.asset,
+      wallet: "flexible-earn",
+      balance: addUnits(row.totalAmount, "0"),
+    }))
+    .filter((row) => compareUnits(row.balance, "0") > 0);
+}
+
+/**
+ * List ALL market-rung balances: spot + funding + flexible Earn, concatenated into
+ * one `BinanceWalletBalance[]` (#247). Every wallet here is market-liquid, so each
+ * line keeps its `wallet` tag (origin metadata) while folding into the same live
+ * holding downstream (the sync makes one position per (asset, wallet); the holding
+ * sums them). Fetched sequentially — three calls per sync stay well under the
+ * rate cap and keep the failure surface simple (any throw aborts the whole sync).
+ */
+export async function getMarketBalances(
+  credentials: BinanceCredentials,
+  deps: BinanceRequestDeps,
+): Promise<BinanceWalletBalance[]> {
+  const spot = await getSpotBalances(credentials, deps);
+  const funding = await getFundingBalances(credentials, deps);
+  const flexibleEarn = await getFlexibleEarnBalances(credentials, deps);
+  return [...spot, ...funding, ...flexibleEarn];
 }

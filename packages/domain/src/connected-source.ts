@@ -346,3 +346,45 @@ export function groupPositionsByMetal(positions: CoinPosition[]): MetalGroup[] {
     );
   });
 }
+
+/** One token's positions within a Binance holding, with their summed live value
+ *  (#247). A token held across wallets (spot · funding · flexible-Earn) collects
+ *  here under one symbol; each position keeps its `wallet`, so the wallet origin is
+ *  available as per-position metadata. */
+export interface TokenGroup {
+  symbol: string;
+  positions: TokenPosition[];
+  subtotalMinor: number;
+}
+
+/**
+ * Group a Binance holding's positions by token symbol for the detail-page lens
+ * (the mirror of `groupPositionsByMetal`, #247). A token spanning several wallets
+ * folds into ONE group whose `subtotalMinor` sums each position's live value
+ * (`balance × unitPrice`); an unpriceable position contributes 0 but still groups.
+ * Most valuable token first, ties broken by symbol ascending for a stable order.
+ * Unlike `groupPositionsByMetal`, a token's `symbol` is always present, so there is
+ * no null group to sink to the bottom.
+ */
+export function groupPositionsByToken(positions: TokenPosition[]): TokenGroup[] {
+  const bySymbol = new Map<string, TokenPosition[]>();
+  for (const position of positions) {
+    const group = bySymbol.get(position.symbol) ?? [];
+    group.push(position);
+    bySymbol.set(position.symbol, group);
+  }
+
+  const groups: TokenGroup[] = [...bySymbol.entries()].map(([symbol, group]) => ({
+    symbol,
+    positions: group,
+    subtotalMinor: group.reduce(
+      (sum, position) => sum + positionValue(position.balance, position.unitPrice).minor,
+      0,
+    ),
+  }));
+
+  return groups.sort(
+    (left, right) =>
+      right.subtotalMinor - left.subtotalMinor || left.symbol.localeCompare(right.symbol),
+  );
+}
