@@ -39,22 +39,19 @@ function recordBuy(
   units: string,
   price: string,
 ): void {
-  store.operations.recordOperation({
-    assetId: "fund",
-    currency: "EUR",
-    executedAt,
-    feesMinor: 0,
-    id: `op_${executedAt}_${units}`,
-    kind: "buy",
-    pricePerUnit: price,
-    units,
-  });
-  store.rippleHistoricalSnapshotsForOperation({
-    assetId: "fund",
-    mode: "record",
-    operationDateKey: executedAt,
-    today: TODAY,
-  });
+  store.recordOperationAndRipple(
+    {
+      assetId: "fund",
+      currency: "EUR",
+      executedAt,
+      feesMinor: 0,
+      id: `op_${executedAt}_${units}`,
+      kind: "buy",
+      pricePerUnit: price,
+      units,
+    },
+    { today: TODAY },
+  );
 }
 
 function connectNumista(store: WorthlineStore): { sourceId: string; assetId: string } {

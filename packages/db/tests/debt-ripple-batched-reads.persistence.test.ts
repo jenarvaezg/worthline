@@ -94,25 +94,24 @@ function seedBandWithMortgage(store: WorthlineStore): {
   // day, each generating that day's snapshot.
   for (let i = 0; i < BAND_SNAPSHOTS; i += 1) {
     const dateKey = addDays(BAND_START, i);
-    store.operations.recordOperation({
-      assetId: "seedfund",
-      currency: "EUR",
-      executedAt: dateKey,
-      id: `seedop_${dateKey}`,
-      kind: "buy",
-      pricePerUnit: "100",
-      units: "1",
-    });
-    store.rippleHistoricalSnapshotsForOperation({
-      assetId: "seedfund",
-      mode: "record",
-      operationDateKey: dateKey,
-      today: TODAY,
-    });
+    store.recordOperationAndRipple(
+      {
+        assetId: "seedfund",
+        currency: "EUR",
+        executedAt: dateKey,
+        id: `seedop_${dateKey}`,
+        kind: "buy",
+        pricePerUnit: "100",
+        units: "1",
+      },
+      { today: TODAY },
+    );
   }
 
   // The mortgage we ripple — its amortizable plan is disbursed at the band start
   // so every snapshot in the band is recalculated from the disbursement forward.
+  // The plan persist + ripple ride the seam in the test body (after `reset()`),
+  // so seed only the liability and its debt model here.
   store.liabilities.createLiability({
     balanceMinor: 100_000_00,
     currency: "EUR",
@@ -122,18 +121,20 @@ function seedBandWithMortgage(store: WorthlineStore): {
     type: "mortgage",
   });
   store.liabilities.setDebtModel("mortgage", "amortizable");
-  store.liabilities.createAmortizationPlan({
-    annualInterestRate: "0.03",
-    id: "plan1",
-    initialCapitalMinor: 150_000_00,
-    liabilityId: "mortgage",
-    disbursementDate: BAND_START,
-    firstPaymentDate: addDays(BAND_START, 31),
-    termMonths: 240,
-  });
 
   return { snapshotCount: BAND_SNAPSHOTS, startDate: BAND_START };
 }
+
+/** The amortizable plan the band tests create + ripple through the debt seam. */
+const PLAN_INPUT = {
+  annualInterestRate: "0.03",
+  id: "plan1",
+  initialCapitalMinor: 150_000_00,
+  liabilityId: "mortgage",
+  disbursementDate: BAND_START,
+  firstPaymentDate: addDays(BAND_START, 31),
+  termMonths: 240,
+} as const;
 
 function debtsAt(store: WorthlineStore, dateKey: string): number | undefined {
   return store.snapshots
@@ -161,13 +162,11 @@ describe("debt ripple batches frozen reads (#206)", () => {
       .reduce((acc, snap) => acc.add(snap.scopeId), new Set<string>()).size;
 
     // An amortizable plan disbursed at the band start ripples the WHOLE band per
-    // scope (recalc from the disbursement date forward, ADR 0019).
+    // scope (recalc from the disbursement date forward, ADR 0019). The plan
+    // persist runs no `snapshot_holdings` SELECT, so resetting just before the
+    // seam call still counts only the ripple's reads.
     reset();
-    store.rippleHistoricalSnapshotsForDebt({
-      liabilityId: "mortgage",
-      kind: "amortizable-plan",
-      today: TODAY,
-    });
+    store.createAmortizationPlanAndRipple(PLAN_INPUT, { today: TODAY });
 
     // BATCHED: the frozen-row reads are a small constant per scope/range, never
     // ~one per recalculated snapshot. With ~40 snapshots per scope, the old
@@ -192,11 +191,7 @@ describe("debt ripple batches frozen reads (#206)", () => {
       expect(grossAt(store, dateKey)).toBe(seedGrossAt(i));
     }
 
-    store.rippleHistoricalSnapshotsForDebt({
-      liabilityId: "mortgage",
-      kind: "amortizable-plan",
-      today: TODAY,
-    });
+    store.createAmortizationPlanAndRipple(PLAN_INPUT, { today: TODAY });
 
     // Behavior check across the WHOLE band: every snapshot ≥ disbursement now
     // values the mortgage at its curve balance, and every seed asset row is
@@ -219,11 +214,7 @@ describe("debt ripple batches frozen reads (#206)", () => {
   test("a mid-band rate revision recalculates only the dates on or after it", () => {
     const { store } = createCountingStore();
     const { startDate, snapshotCount } = seedBandWithMortgage(store);
-    store.rippleHistoricalSnapshotsForDebt({
-      liabilityId: "mortgage",
-      kind: "amortizable-plan",
-      today: TODAY,
-    });
+    store.createAmortizationPlanAndRipple(PLAN_INPUT, { today: TODAY });
 
     const revisionDate = addDays(startDate, 20);
     const beforeRevision: number[] = [];
@@ -232,18 +223,15 @@ describe("debt ripple batches frozen reads (#206)", () => {
     }
 
     const planId = store.liabilities.readAmortizationPlan("mortgage")!.id;
-    store.liabilities.addInterestRateRevision({
-      id: "rev1",
-      newAnnualInterestRate: "0.09",
-      planId,
-      revisionDate,
-    });
-    store.rippleHistoricalSnapshotsForDebt({
-      liabilityId: "mortgage",
-      kind: "amortizable-revision",
-      fromDateKey: revisionDate,
-      today: TODAY,
-    });
+    store.addInterestRateRevisionAndRipple(
+      {
+        id: "rev1",
+        newAnnualInterestRate: "0.09",
+        planId,
+        revisionDate,
+      },
+      { liabilityId: "mortgage", today: TODAY },
+    );
 
     // Dates before the revision are untouched; dates on/after it match the new
     // curve.

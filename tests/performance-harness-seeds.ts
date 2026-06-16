@@ -278,33 +278,37 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
     type: "mortgage",
   });
   store.liabilities.setDebtModel("liability_mortgage", "amortizable");
-  store.liabilities.createAmortizationPlan({
-    annualInterestRate: "0.021",
-    disbursementDate: dateMonthsAgo(20),
-    firstPaymentDate: dateMonthsAgo(19),
-    id: "plan_mortgage",
-    initialCapitalMinor: 200_000_00,
-    liabilityId: "liability_mortgage",
-    termMonths: 300,
-  });
-  store.liabilities.addEarlyRepayment({
-    amountMinor: 5_000_00,
-    id: "repayment_mortgage",
-    mode: "reduce-term",
-    planId: "plan_mortgage",
-    repaymentDate: dateMonthsAgo(6),
-  });
+  // The mortgage plan ripple lays down one snapshot per past cuota (ADR 0012
+  // exception, PRD #109) — it rides the debt seam together with the plan persist.
+  store.createAmortizationPlanAndRipple(
+    {
+      annualInterestRate: "0.021",
+      disbursementDate: dateMonthsAgo(20),
+      firstPaymentDate: dateMonthsAgo(19),
+      id: "plan_mortgage",
+      initialCapitalMinor: 200_000_00,
+      liabilityId: "liability_mortgage",
+      termMonths: 300,
+    },
+    { today: SEED_TODAY },
+  );
+  // A past early repayment re-derives the curve from its date forward — persist +
+  // ripple ride the debt seam.
+  store.addEarlyRepaymentAndRipple(
+    {
+      amountMinor: 5_000_00,
+      id: "repayment_mortgage",
+      mode: "reduce-term",
+      planId: "plan_mortgage",
+      repaymentDate: dateMonthsAgo(6),
+    },
+    { liabilityId: "liability_mortgage", today: SEED_TODAY },
+  );
 
   // ── Generate the historical snapshots ───────────────────────────────────────
-  // The mortgage plan ripple lays down one snapshot per past cuota (ADR 0012
-  // exception, PRD #109), and the full backfill fills every other past
-  // operation/anchor date. Together they seed the dense history the dashboard
-  // and ripple paths read.
-  store.rippleHistoricalSnapshotsForDebt({
-    kind: "amortizable-plan",
-    liabilityId: "liability_mortgage",
-    today: SEED_TODAY,
-  });
+  // The full backfill fills every other past operation/anchor date. Together with
+  // the debt-seam ripples above they seed the dense history the dashboard and
+  // ripple paths read.
   store.backfillHistoricalSnapshots(SEED_TODAY);
 
   // Add a dense run of recent daily snapshots (≈ 2 months) on top of the
@@ -314,11 +318,19 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
     // Re-value the checking account fractionally so each day is a distinct,
     // deterministic capture rather than a same-day upsert.
     store.assets.updateAssetValuation("asset_checking", 42_000_00 + daysAgo * 1_00);
-    store.rippleHistoricalSnapshotsForValuation({
-      assetId: "asset_home",
-      fromDateKey: dateKey,
-      today: SEED_TODAY,
-    });
+    // Generate a snapshot at this day via the valuation seam: a zero-value home
+    // improvement is a dated fact that lands a fresh snapshot at `dateKey` (folding
+    // the re-valued checking row) while leaving the home's curve value unchanged.
+    store.addValuationAnchorAndRipple(
+      {
+        adjustsPriorCurve: false,
+        assetId: "asset_home",
+        id: `daily_${dateKey}`,
+        valuationDate: dateKey,
+        valueMinor: 0,
+      },
+      { today: SEED_TODAY },
+    );
   }
 
   return {

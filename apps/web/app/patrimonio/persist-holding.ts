@@ -36,34 +36,37 @@ export function persistManualAssetCreation(
     return { ok: false, error: mapDomainViolation(domainResult.violations[0]) };
   }
 
-  store.assets.createManualAsset(assetCommand);
-
   if (assetCommand.type === "real_estate" && acquisitionDate && acquisitionValueMinor) {
-    store.assets.addValuationAnchor({
-      adjustsPriorCurve: true,
-      assetId: assetCommand.id,
-      id: createStableId("anchor", `${assetCommand.id}_acquisition`, seed),
-      valuationDate: acquisitionDate,
-      valueMinor: acquisitionValueMinor,
-    });
-    store.assets.setAnnualAppreciationRate(
-      assetCommand.id,
-      annualAppreciationRate ?? null,
+    // ADR 0020: the whole real_estate creation sequence (asset + acquisition
+    // anchor + rate + optional initial valuation) and its ripple ride ONE atomic
+    // store seam. The anchor ids stay resolved here — `createStableId`/`seed` is a
+    // determinism source, not clock/ripple arithmetic — and the from-date
+    // (acquisition date) lives behind the seam.
+    store.createHousingHoldingAndRipple(
+      {
+        asset: assetCommand,
+        acquisitionAnchor: {
+          adjustsPriorCurve: true,
+          assetId: assetCommand.id,
+          id: createStableId("anchor", `${assetCommand.id}_acquisition`, seed),
+          valuationDate: acquisitionDate,
+          valueMinor: acquisitionValueMinor,
+        },
+        annualAppreciationRate: annualAppreciationRate ?? null,
+        ...(initialValuation
+          ? {
+              initialValuation: {
+                ...initialValuation,
+                assetId: assetCommand.id,
+                id: createStableId("anchor", `${assetCommand.id}_initial`, seed + 1),
+              },
+            }
+          : {}),
+      },
+      { today },
     );
-
-    if (initialValuation) {
-      store.assets.addValuationAnchor({
-        ...initialValuation,
-        assetId: assetCommand.id,
-        id: createStableId("anchor", `${assetCommand.id}_initial`, seed + 1),
-      });
-    }
-
-    store.rippleHistoricalSnapshotsForValuation({
-      assetId: assetCommand.id,
-      fromDateKey: acquisitionDate,
-      today,
-    });
+  } else {
+    store.assets.createManualAsset(assetCommand);
   }
 
   return { ok: true, id: assetCommand.id };

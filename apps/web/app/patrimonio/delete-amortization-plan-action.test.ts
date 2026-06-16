@@ -88,22 +88,20 @@ describe("deleteAmortizationPlanAction — ripple correctness", () => {
 
     // Use a fixed past start date so snapshot dates are deterministic regardless
     // of when this test runs.
-    store.liabilities.createAmortizationPlan({
-      annualInterestRate: "0.03",
-      id: "plan1",
-      initialCapitalMinor: 150_000_00,
-      liabilityId: "mortgage",
-      disbursementDate: "2026-01-15",
-      firstPaymentDate: "2026-02-15",
-      termMonths: 240,
-    });
-
-    // Ripple to generate plan-derived historical snapshots.
-    store.rippleHistoricalSnapshotsForDebt({
-      liabilityId: "mortgage",
-      kind: "amortizable-plan",
-      today: TODAY,
-    });
+    // The plan persist + ripple ride one seam call, generating plan-derived
+    // historical snapshots.
+    store.createAmortizationPlanAndRipple(
+      {
+        annualInterestRate: "0.03",
+        id: "plan1",
+        initialCapitalMinor: 150_000_00,
+        liabilityId: "mortgage",
+        disbursementDate: "2026-01-15",
+        firstPaymentDate: "2026-02-15",
+        termMonths: 240,
+      },
+      { today: TODAY },
+    );
 
     // Pre-condition: at least one snapshot exists with a plan-derived balance
     // (which is ≠ currentBalance of 100_000_00).

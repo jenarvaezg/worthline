@@ -6,8 +6,9 @@
  * compounds the rate backward (CONTEXT.md: "extrapolate where no market appraisal
  * exists — before the first appraisal or after the last"). The action used to
  * ripple only from the first anchor's date, so a pre-appraisal snapshot kept its
- * stale value. The fix reuses the current-value ripple's earliest-affected-date
- * logic (`firstHousingCurrentValueRippleDate`) so the whole rate-valued range
+ * stale value. The fix moves the earliest-affected-date derivation (ADR 0020)
+ * behind the seam: `setAnnualAppreciationRateAndRipple` computes
+ * min(first anchor, earliest snapshot) internally so the whole rate-valued range
  * recomputes. The negative case asserts a snapshot pinned by an interpolating
  * appraisal segment is left untouched (the rate does not value it).
  */
@@ -68,18 +69,16 @@ function addMarketAnchor(
   valuationDate: string,
   valueMinor: number,
 ): void {
-  store.assets.addValuationAnchor({
-    adjustsPriorCurve: true,
-    assetId: "piso",
-    id: anchorId,
-    valuationDate,
-    valueMinor,
-  });
-  store.rippleHistoricalSnapshotsForValuation({
-    assetId: "piso",
-    fromDateKey: valuationDate,
-    today: "2026-06-14",
-  });
+  store.addValuationAnchorAndRipple(
+    {
+      adjustsPriorCurve: true,
+      assetId: "piso",
+      id: anchorId,
+      valuationDate,
+      valueMinor,
+    },
+    { today: "2026-06-14" },
+  );
 }
 
 describe("setAppreciationRateAction — ripple range (#184)", () => {
@@ -94,12 +93,7 @@ describe("setAppreciationRateAction — ripple range (#184)", () => {
     // Drop the 2024 appraisal: now the ONLY appraisal is 2025-01-01, so the
     // 2024-01-01 snapshot sits BEFORE the first appraisal and is valued by the
     // rate compounded backward — yet its snapshot already exists and survives.
-    store.assets.deleteValuationAnchor("a0");
-    store.rippleHistoricalSnapshotsForValuation({
-      assetId: "piso",
-      fromDateKey: "2024-01-01",
-      today: "2026-06-14",
-    });
+    store.deleteValuationAnchorAndRipple("a0", { today: "2026-06-14" });
 
     const before = grossAt(store, "2024-01-01");
     expect(before).toBeDefined();

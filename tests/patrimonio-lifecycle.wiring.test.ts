@@ -321,22 +321,19 @@ describe("updateAssetValuationAction wiring", () => {
       currency: "EUR",
       ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
     });
-    store.operations.recordOperation({
-      assetId: "asset_fund",
-      currency: "EUR",
-      executedAt: "2025-01-01",
-      feesMinor: 0,
-      id: "op_2025",
-      kind: "buy",
-      pricePerUnit: "1",
-      units: "1",
-    });
-    store.rippleHistoricalSnapshotsForOperation({
-      assetId: "asset_fund",
-      mode: "record",
-      operationDateKey: "2025-01-01",
-      today: "2026-06-12",
-    });
+    store.recordOperationAndRipple(
+      {
+        assetId: "asset_fund",
+        currency: "EUR",
+        executedAt: "2025-01-01",
+        feesMinor: 0,
+        id: "op_2025",
+        kind: "buy",
+        pricePerUnit: "1",
+        units: "1",
+      },
+      { today: "2026-06-12" },
+    );
 
     const housingValueAt2025Before = () =>
       store.snapshots
@@ -397,18 +394,16 @@ describe("editAssetAction wiring", () => {
       liquidityTier: "housing",
       ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
     });
-    store.assets.addValuationAnchor({
-      adjustsPriorCurve: true,
-      assetId: "asset_home",
-      id: "anchor_purchase",
-      valuationDate: "2024-01-01",
-      valueMinor: 100_000_00,
-    });
-    store.rippleHistoricalSnapshotsForValuation({
-      assetId: "asset_home",
-      fromDateKey: "2024-01-01",
-      today: "2026-06-12",
-    });
+    store.addValuationAnchorAndRipple(
+      {
+        adjustsPriorCurve: true,
+        assetId: "asset_home",
+        id: "anchor_purchase",
+        valuationDate: "2024-01-01",
+        valueMinor: 100_000_00,
+      },
+      { today: "2026-06-12" },
+    );
 
     expect(
       store.snapshots

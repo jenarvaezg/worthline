@@ -1,0 +1,108 @@
+/**
+ * Housing-creation dated-fact seam (ADR 0020, #239).
+ *
+ * Creating a real_estate holding persists the asset, its acquisition anchor, its
+ * appreciation rate, an optional initial valuation, AND ripples historical
+ * snapshots from the acquisition date — all in ONE atomic store seam method, with
+ * the from-date (acquisition date) and `today` derived behind the seam. These
+ * tests exercise `createHousingHoldingAndRipple` directly at the store.
+ */
+import { describe, expect, test } from "vitest";
+
+import { createInMemoryStore } from "../src/index";
+import type { WorthlineStore } from "../src/index";
+
+const TODAY = "2026-06-12";
+
+function seedWorkspace(store: WorthlineStore): void {
+  store.workspace.initializeWorkspace({
+    members: [{ id: "mJ", name: "Jose" }],
+    mode: "individual",
+  });
+}
+
+function grossAt(store: WorthlineStore, dateKey: string): number | undefined {
+  return store.snapshots.readSnapshots().find((snap) => snap.dateKey === dateKey)
+    ?.grossAssets.amountMinor;
+}
+
+describe("createHousingHoldingAndRipple (housing creation seam, ADR 0020)", () => {
+  test("one call creates the home, seeds the acquisition anchor + rate, AND ripples from the acquisition date", () => {
+    const store = createInMemoryStore();
+    seedWorkspace(store);
+
+    store.createHousingHoldingAndRipple(
+      {
+        asset: {
+          currency: "EUR",
+          currentValueMinor: 100_000_00,
+          id: "piso",
+          liquidityTier: "illiquid",
+          name: "Piso",
+          ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+          type: "real_estate",
+        },
+        acquisitionAnchor: {
+          adjustsPriorCurve: true,
+          assetId: "piso",
+          id: "anchor_acq",
+          valuationDate: "2024-01-01",
+          valueMinor: 100_000_00,
+        },
+        annualAppreciationRate: null,
+      },
+      { today: TODAY },
+    );
+
+    // The persist happened: the asset exists.
+    expect(store.assets.readAssets().find((a) => a.id === "piso")).toBeDefined();
+    // The acquisition anchor was seeded.
+    expect(store.assets.readValuationAnchors("piso")).toHaveLength(1);
+    // The ripple happened: a snapshot was generated at the acquisition date.
+    expect(grossAt(store, "2024-01-01")).toBe(100_000_00);
+    store.close();
+  });
+
+  test("seeds an optional initial valuation anchor too", () => {
+    const store = createInMemoryStore();
+    seedWorkspace(store);
+
+    store.createHousingHoldingAndRipple(
+      {
+        asset: {
+          currency: "EUR",
+          currentValueMinor: 130_000_00,
+          id: "piso",
+          liquidityTier: "illiquid",
+          name: "Piso",
+          ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+          type: "real_estate",
+        },
+        acquisitionAnchor: {
+          adjustsPriorCurve: true,
+          assetId: "piso",
+          id: "anchor_acq",
+          valuationDate: "2024-01-01",
+          valueMinor: 100_000_00,
+        },
+        annualAppreciationRate: "0.03",
+        initialValuation: {
+          adjustsPriorCurve: true,
+          assetId: "piso",
+          id: "anchor_init",
+          valuationDate: "2025-01-01",
+          valueMinor: 130_000_00,
+        },
+      },
+      { today: TODAY },
+    );
+
+    expect(store.assets.readValuationAnchors("piso")).toHaveLength(2);
+    // The single ripple from the acquisition date generates history along the
+    // curve (mirroring persistManualAssetCreation, which ripples once from
+    // acquisition). The acquisition-date snapshot is present and on-curve; the
+    // later anchor refines the curve.
+    expect(grossAt(store, "2024-01-01")).toBeDefined();
+    store.close();
+  });
+});

@@ -52,21 +52,19 @@ function seed(store: WorthlineStore): void {
     type: "mortgage",
   });
   store.liabilities.setDebtModel("mortgage", "amortizable");
-  store.liabilities.createAmortizationPlan({
-    annualInterestRate: "0.03",
-    id: "plan1",
-    initialCapitalMinor: 150_000_00,
-    liabilityId: "mortgage",
-    disbursementDate: "2026-01-15",
+  store.createAmortizationPlanAndRipple(
+    {
+      annualInterestRate: "0.03",
+      id: "plan1",
+      initialCapitalMinor: 150_000_00,
+      liabilityId: "mortgage",
+      disbursementDate: "2026-01-15",
 
-    firstPaymentDate: "2026-02-15",
-    termMonths: 240,
-  });
-  store.rippleHistoricalSnapshotsForDebt({
-    kind: "amortizable-plan",
-    liabilityId: "mortgage",
-    today: TODAY,
-  });
+      firstPaymentDate: "2026-02-15",
+      termMonths: 240,
+    },
+    { today: TODAY },
+  );
 }
 
 function debtsAt(
@@ -109,19 +107,13 @@ describe("ownership-split ripple over historical snapshots (#172)", () => {
 
     const datesBefore = store.snapshots.readSnapshots("mJ").length;
 
-    // Correct the mortgage split from 50/50 to 70/30 and ripple.
-    store.liabilities.updateLiability("mortgage", {
+    // Correct the mortgage split from 50/50 to 70/30 — one atomic seam call
+    // persists the patch and ripples the scope axis (previous split read behind
+    // the seam).
+    store.updateLiabilityAndRippleOwnership("mortgage", {
       ownership: [
         { memberId: "mJ", shareBps: 7_000 },
         { memberId: "mA", shareBps: 3_000 },
-      ],
-    });
-    store.rippleHistoricalSnapshotsForOwnership({
-      holdingId: "mortgage",
-      kind: "liability",
-      previousOwnership: [
-        { memberId: "mJ", shareBps: 5_000 },
-        { memberId: "mA", shareBps: 5_000 },
       ],
     });
 
@@ -147,27 +139,18 @@ describe("ownership-split ripple over historical snapshots (#172)", () => {
     const store = createInMemoryStore();
     seed(store);
 
-    store.liabilities.updateLiability("mortgage", {
+    store.updateLiabilityAndRippleOwnership("mortgage", {
       ownership: [
         { memberId: "mJ", shareBps: 7_000 },
         { memberId: "mA", shareBps: 3_000 },
       ],
     });
-    store.rippleHistoricalSnapshotsForOwnership({
-      holdingId: "mortgage",
-      kind: "liability",
-      previousOwnership: [
-        { memberId: "mJ", shareBps: 5_000 },
-        { memberId: "mA", shareBps: 5_000 },
-      ],
-    });
     const first = PAST_DATES.map((d) => debtsAt(store, d, "mJ"));
 
-    // Re-running with the now-current split must be a no-op (rows already 70/30).
-    store.rippleHistoricalSnapshotsForOwnership({
-      holdingId: "mortgage",
-      kind: "liability",
-      previousOwnership: [
+    // Re-applying the now-current split is a no-op: the seam sees the stored split
+    // already equals the patch, so it ripples nothing (rows already 70/30).
+    store.updateLiabilityAndRippleOwnership("mortgage", {
+      ownership: [
         { memberId: "mJ", shareBps: 7_000 },
         { memberId: "mA", shareBps: 3_000 },
       ],
@@ -253,21 +236,19 @@ function seedCoOwnedHome(store: WorthlineStore): void {
     type: "mortgage",
   });
   store.liabilities.setDebtModel("mortgage", "amortizable");
-  store.liabilities.createAmortizationPlan({
-    annualInterestRate: "0.0317",
-    id: "plan1",
-    initialCapitalMinor: 210_000_00,
-    liabilityId: "mortgage",
-    disbursementDate: "2026-01-15",
+  store.createAmortizationPlanAndRipple(
+    {
+      annualInterestRate: "0.0317",
+      id: "plan1",
+      initialCapitalMinor: 210_000_00,
+      liabilityId: "mortgage",
+      disbursementDate: "2026-01-15",
 
-    firstPaymentDate: "2026-02-15",
-    termMonths: 240,
-  });
-  store.rippleHistoricalSnapshotsForDebt({
-    kind: "amortizable-plan",
-    liabilityId: "mortgage",
-    today: TODAY,
-  });
+      firstPaymentDate: "2026-02-15",
+      termMonths: 240,
+    },
+    { today: TODAY },
+  );
 }
 
 function homeRowAt(
@@ -292,19 +273,14 @@ describe("ownership-split ripple recovers the global value losslessly for a co-o
 
     // Correct the INTERNAL member split (40/25 → 30/35) — the household combined
     // share stays 65%, so the household row is invariant, but each member's row
-    // is re-derived from the (lossless) global value under the new split.
-    store.assets.updateAsset("piso", {
+    // is re-derived from the (lossless) global value under the new split. A home
+    // ownership edit rides the seam, which dispatches a real_estate asset to the
+    // housing curve ripple — losslessly re-deriving the home from its flat curve
+    // value (HOME_GLOBAL_MINOR), never by dividing the rounded household row (#187).
+    store.updateAssetAndRippleOwnership("piso", {
       ownership: [
         { memberId: "mJ", shareBps: 3_000 },
         { memberId: "mA", shareBps: 3_500 },
-      ],
-    });
-    store.rippleHistoricalSnapshotsForOwnership({
-      holdingId: "piso",
-      kind: "asset",
-      previousOwnership: [
-        { memberId: "mJ", shareBps: 4_000 },
-        { memberId: "mA", shareBps: 2_500 },
       ],
     });
 
@@ -344,18 +320,10 @@ describe("ownership-split ripple recovers the global value losslessly for a co-o
       cashRow(d, "mA"),
     ]);
 
-    store.assets.updateAsset("piso", {
+    store.updateAssetAndRippleOwnership("piso", {
       ownership: [
         { memberId: "mJ", shareBps: 3_000 },
         { memberId: "mA", shareBps: 3_500 },
-      ],
-    });
-    store.rippleHistoricalSnapshotsForOwnership({
-      holdingId: "piso",
-      kind: "asset",
-      previousOwnership: [
-        { memberId: "mJ", shareBps: 4_000 },
-        { memberId: "mA", shareBps: 2_500 },
       ],
     });
 
@@ -425,20 +393,18 @@ function seedFundFrozenThenLedgerless(store: WorthlineStore): void {
     type: "mortgage",
   });
   store.liabilities.setDebtModel("mortgage", "amortizable");
-  store.liabilities.createAmortizationPlan({
-    annualInterestRate: "0.0317",
-    id: "plan1",
-    initialCapitalMinor: 210_000_00,
-    liabilityId: "mortgage",
-    disbursementDate: "2026-01-15",
-    firstPaymentDate: "2026-02-15",
-    termMonths: 240,
-  });
-  store.rippleHistoricalSnapshotsForDebt({
-    kind: "amortizable-plan",
-    liabilityId: "mortgage",
-    today: TODAY,
-  });
+  store.createAmortizationPlanAndRipple(
+    {
+      annualInterestRate: "0.0317",
+      id: "plan1",
+      initialCapitalMinor: 210_000_00,
+      liabilityId: "mortgage",
+      disbursementDate: "2026-01-15",
+      firstPaymentDate: "2026-02-15",
+      termMonths: 240,
+    },
+    { today: TODAY },
+  );
 }
 
 describe("ownership-split ripple leaves the frozen row untouched when the global is unrecoverable (#212)", () => {
@@ -488,18 +454,10 @@ describe("ownership-split ripple leaves the frozen row untouched when the global
     // re-weighting the already-allocated row would reconstruct the frozen member
     // rows from a value the live ledger can no longer justify (#187 lossiness) —
     // the ripple must SKIP these dates and leave every frozen row untouched.
-    store.assets.updateAsset("fondo", {
+    store.updateAssetAndRippleOwnership("fondo", {
       ownership: [
         { memberId: "mJ", shareBps: 7_000 },
         { memberId: "mA", shareBps: 3_000 },
-      ],
-    });
-    store.rippleHistoricalSnapshotsForOwnership({
-      holdingId: "fondo",
-      kind: "asset",
-      previousOwnership: [
-        { memberId: "mJ", shareBps: 6_000 },
-        { memberId: "mA", shareBps: 4_000 },
       ],
     });
 
