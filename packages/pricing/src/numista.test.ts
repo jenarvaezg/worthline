@@ -105,20 +105,25 @@ describe("Numista readers — parse the live response shapes (fixtures, spike #1
     vi.unstubAllGlobals();
   });
 
-  it("getCollectedItems reads the user's coins (bearer token + api key header)", async () => {
+  it("getCollectedItems reads the user's whole collection — coins and non-coins (bearer token + api key header)", async () => {
     const fetchMock = vi
       .mocked(fetch)
       .mockResolvedValueOnce(okJson(collectedItemsFixture));
 
     const items = await getCollectedItems(creds, "tok-abc", 574660);
 
-    expect(items).toHaveLength(3);
+    expect(items).toHaveLength(4);
     expect(items[0]!.type.id).toBe(1493);
     expect(items[0]!.grade).toBe("unc");
+    // Non-coin collectibles are mirrored too (a 1 oz silver round filed under
+    // exonumia) — they are holdings with real value (#160 follow-up).
+    expect(items.some((item) => item.type.category === "exonumia")).toBe(true);
 
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(String(url)).toContain("/users/574660/collected_items");
-    expect(String(url)).toContain("category=coin");
+    // The whole collection is pulled — NO category filter, so exonumia/banknotes
+    // are not silently dropped.
+    expect(String(url)).not.toContain("category=");
     const headers = init!.headers as Record<string, string>;
     expect(headers["Numista-API-Key"]).toBe("KEY");
     expect(headers["Authorization"]).toBe("Bearer tok-abc");
