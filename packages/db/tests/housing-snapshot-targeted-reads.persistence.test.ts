@@ -82,53 +82,46 @@ function seedManyUnrelatedRows(store: WorthlineStore): void {
 
   // pisoB's earliest snapshot is BEFORE pisoA's, so if the read leaked pisoB rows
   // the earliest date would be wrong (EARLIEST_B, not EARLIEST_A).
-  store.assets.addValuationAnchor({
-    adjustsPriorCurve: true,
-    assetId: "pisoB",
-    id: "bAnchor",
-    valuationDate: EARLIEST_B,
-    valueMinor: 200_000_00,
-  });
-  store.rippleHistoricalSnapshotsForValuation({
-    assetId: "pisoB",
-    fromDateKey: EARLIEST_B,
-    today: TODAY,
-  });
+  store.addValuationAnchorAndRipple(
+    {
+      adjustsPriorCurve: true,
+      assetId: "pisoB",
+      id: "bAnchor",
+      valuationDate: EARLIEST_B,
+      valueMinor: 200_000_00,
+    },
+    { today: TODAY },
+  );
 
   // A daily band of investment-backed snapshots gives MANY frozen rows whose
   // earliest is also before pisoA — more unrelated noise the read must ignore.
   for (let i = 0; i < BAND; i += 1) {
     const dateKey = addDays(EARLIEST_B, i);
-    store.operations.recordOperation({
-      assetId: "fund",
-      currency: "EUR",
-      executedAt: dateKey,
-      id: `op_${dateKey}`,
-      kind: "buy",
-      pricePerUnit: "100",
-      units: "1",
-    });
-    store.rippleHistoricalSnapshotsForOperation({
-      assetId: "fund",
-      mode: "record",
-      operationDateKey: dateKey,
-      today: TODAY,
-    });
+    store.recordOperationAndRipple(
+      {
+        assetId: "fund",
+        currency: "EUR",
+        executedAt: dateKey,
+        id: `op_${dateKey}`,
+        kind: "buy",
+        pricePerUnit: "100",
+        units: "1",
+      },
+      { today: TODAY },
+    );
   }
 
   // The TARGET asset's earliest appraisal — later than all the noise above.
-  store.assets.addValuationAnchor({
-    adjustsPriorCurve: true,
-    assetId: "pisoA",
-    id: "aAnchor",
-    valuationDate: EARLIEST_A,
-    valueMinor: 130_000_00,
-  });
-  store.rippleHistoricalSnapshotsForValuation({
-    assetId: "pisoA",
-    fromDateKey: EARLIEST_A,
-    today: TODAY,
-  });
+  store.addValuationAnchorAndRipple(
+    {
+      adjustsPriorCurve: true,
+      assetId: "pisoA",
+      id: "aAnchor",
+      valuationDate: EARLIEST_A,
+      valueMinor: 130_000_00,
+    },
+    { today: TODAY },
+  );
 }
 
 /** The single-line query-plan text for a statement, joined for easy matching. */

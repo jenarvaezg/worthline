@@ -139,6 +139,8 @@ export interface AssetStore {
   addValuationAnchor: (input: AddValuationAnchorInput) => void;
   /** Read an asset's valuation anchors, ordered ascending by date. */
   readValuationAnchors: (assetId: string) => ValuationAnchorRecord[];
+  /** Read ONE valuation anchor by its id, or null. Used by the dated-fact seam. */
+  readValuationAnchorById: (anchorId: string) => ValuationAnchorRecord | null;
   /** Delete a valuation anchor by id. Returns 1 if removed, 0 if not found. */
   deleteValuationAnchor: (anchorId: string) => number;
   /**
@@ -177,6 +179,7 @@ export function createAssetStore(ctx: StoreContext): AssetStore {
       ctx.sqlite.transaction(() => hardDeleteAssetTx(ctx, assetId))(),
     addValuationAnchor: (input) => addValuationAnchor(ctx, input),
     readValuationAnchors: (assetId) => readValuationAnchors(ctx, assetId),
+    readValuationAnchorById: (anchorId) => readValuationAnchorById(ctx, anchorId),
     deleteValuationAnchor: (anchorId) => deleteValuationAnchor(ctx, anchorId),
     updateValuationAnchor: (anchorId, input) =>
       updateValuationAnchor(ctx, anchorId, input),
@@ -241,6 +244,27 @@ function readValuationAnchors(
     valuationDate: row.valuationDate,
     valueMinor: row.valueMinor,
   }));
+}
+
+function readValuationAnchorById(
+  ctx: StoreContext,
+  anchorId: string,
+): ValuationAnchorRecord | null {
+  const row = ctx.db
+    .select()
+    .from(assetValuations)
+    .where(eq(assetValuations.id, anchorId))
+    .get();
+
+  if (!row) return null;
+
+  return {
+    adjustsPriorCurve: row.adjustsPriorCurve === 1,
+    assetId: row.assetId,
+    id: row.id,
+    valuationDate: row.valuationDate,
+    valueMinor: row.valueMinor,
+  };
 }
 
 function deleteValuationAnchor(ctx: StoreContext, anchorId: string): number {

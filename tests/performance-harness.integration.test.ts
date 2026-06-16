@@ -198,21 +198,18 @@ function runHarness(): Measurement[] {
       "operationRipple",
       () => beforeOperationRipple,
       () => {
-        store.operations.recordOperation({
-          assetId: seed.rippleInvestmentId,
-          currency: "EUR",
-          executedAt: seed.rippleOperationDateKey,
-          id: "perf_backdated_buy",
-          kind: "buy",
-          pricePerUnit: "55",
-          units: "2",
-        });
-        store.rippleHistoricalSnapshotsForOperation({
-          assetId: seed.rippleInvestmentId,
-          mode: "record",
-          operationDateKey: seed.rippleOperationDateKey,
-          today: SEED_TODAY,
-        });
+        store.recordOperationAndRipple(
+          {
+            assetId: seed.rippleInvestmentId,
+            currency: "EUR",
+            executedAt: seed.rippleOperationDateKey,
+            id: "perf_backdated_buy",
+            kind: "buy",
+            pricePerUnit: "55",
+            units: "2",
+          },
+          { today: SEED_TODAY },
+        );
       },
     ),
   );
@@ -223,18 +220,16 @@ function runHarness(): Measurement[] {
       "valuationRipple",
       () => beforeOperationRipple,
       () => {
-        store.assets.addValuationAnchor({
-          adjustsPriorCurve: true,
-          assetId: seed.rippleHousingId,
-          id: "perf_backdated_appraisal",
-          valuationDate: seed.rippleValuationDateKey,
-          valueMinor: 305_000_00,
-        });
-        store.rippleHistoricalSnapshotsForValuation({
-          assetId: seed.rippleHousingId,
-          fromDateKey: seed.rippleValuationDateKey,
-          today: SEED_TODAY,
-        });
+        store.addValuationAnchorAndRipple(
+          {
+            adjustsPriorCurve: true,
+            assetId: seed.rippleHousingId,
+            id: "perf_backdated_appraisal",
+            valuationDate: seed.rippleValuationDateKey,
+            valueMinor: 305_000_00,
+          },
+          { today: SEED_TODAY },
+        );
       },
     ),
   );
@@ -245,19 +240,16 @@ function runHarness(): Measurement[] {
       "debtRipple",
       () => beforeOperationRipple,
       () => {
-        store.liabilities.addEarlyRepayment({
-          amountMinor: 3_000_00,
-          id: "perf_extra_repayment",
-          mode: "reduce-payment",
-          planId: "plan_mortgage",
-          repaymentDate: seed.rippleValuationDateKey,
-        });
-        store.rippleHistoricalSnapshotsForDebt({
-          fromDateKey: seed.rippleValuationDateKey,
-          kind: "amortizable-repayment",
-          liabilityId: seed.rippleDebtId,
-          today: SEED_TODAY,
-        });
+        store.addEarlyRepaymentAndRipple(
+          {
+            amountMinor: 3_000_00,
+            id: "perf_extra_repayment",
+            mode: "reduce-payment",
+            planId: "plan_mortgage",
+            repaymentDate: seed.rippleValuationDateKey,
+          },
+          { liabilityId: seed.rippleDebtId, today: SEED_TODAY },
+        );
       },
     ),
   );

@@ -34,22 +34,20 @@ function recordBuy(
   units: string,
   pricePerUnit: string,
 ): void {
-  store.operations.recordOperation({
-    assetId: "fund",
-    currency: "EUR",
-    executedAt,
-    feesMinor: 0,
-    id: `op_${executedAt}_${units}`,
-    kind: "buy",
-    pricePerUnit,
-    units,
-  });
-  store.rippleHistoricalSnapshotsForOperation({
-    assetId: "fund",
-    mode: "record",
-    operationDateKey: executedAt,
-    today: TODAY,
-  });
+  // ADR 0020: the persist-and-ripple loop rides ONE store seam method.
+  store.recordOperationAndRipple(
+    {
+      assetId: "fund",
+      currency: "EUR",
+      executedAt,
+      feesMinor: 0,
+      id: `op_${executedAt}_${units}`,
+      kind: "buy",
+      pricePerUnit,
+      units,
+    },
+    { today: TODAY },
+  );
 }
 
 function grossAt(store: WorthlineStore, dateKey: string): number | undefined {
@@ -151,17 +149,14 @@ describe("historical snapshots from operations", () => {
     // No-price fund frozen at cost basis (10×100 + 5×200), not last-op price (#183).
     expect(grossAt(store, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00 + 1_000_00);
 
-    // Delete the 2024-01-10 buy.
+    // Delete the 2024-01-10 buy through the seam (persist + ripple, ADR 0020).
     const ops = store.operations.readOperations("fund");
     const target = ops.find((op) => op.executedAt === "2024-01-10")!;
-    const deleted = store.operations.deleteOperation(target.id);
-    expect(deleted).not.toBeNull();
-    store.rippleHistoricalSnapshotsForOperation({
-      assetId: "fund",
-      mode: "delete",
-      operationDateKey: "2024-01-10",
+    const deleted = store.deleteOperationAndRipple({
+      operationId: target.id,
       today: TODAY,
     });
+    expect(deleted).not.toBeNull();
 
     // 2024-01-10: fund no longer has an operation ≤ that date → cash only.
     expect(grossAt(store, "2024-01-10")).toBe(1_000_00);
@@ -238,11 +233,8 @@ describe("ripple preserves frozen history (ADR 0012)", () => {
     const op = store.operations
       .readOperations("fund")
       .find((o) => o.executedAt === "2024-01-10")!;
-    store.operations.deleteOperation(op.id);
-    store.rippleHistoricalSnapshotsForOperation({
-      assetId: "fund",
-      mode: "delete",
-      operationDateKey: "2024-01-10",
+    store.deleteOperationAndRipple({
+      operationId: op.id,
       today: TODAY,
     });
 

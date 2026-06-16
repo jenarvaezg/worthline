@@ -99,21 +99,18 @@ function seedManySnapshots(store: WorthlineStore): {
   const snapshotCount = 40;
   for (let i = 0; i < snapshotCount; i += 1) {
     const dateKey = addDays(startDate, i);
-    store.operations.recordOperation({
-      assetId: "seedfund",
-      currency: "EUR",
-      executedAt: dateKey,
-      id: `seedop_${dateKey}`,
-      kind: "buy",
-      pricePerUnit: "100",
-      units: "1",
-    });
-    store.rippleHistoricalSnapshotsForOperation({
-      assetId: "seedfund",
-      mode: "record",
-      operationDateKey: dateKey,
-      today: TODAY,
-    });
+    store.recordOperationAndRipple(
+      {
+        assetId: "seedfund",
+        currency: "EUR",
+        executedAt: dateKey,
+        id: `seedop_${dateKey}`,
+        kind: "buy",
+        pricePerUnit: "100",
+        units: "1",
+      },
+      { today: TODAY },
+    );
   }
 
   return { snapshotCount, startDate };
@@ -138,25 +135,23 @@ describe("operation ripple batches frozen reads (#205)", () => {
       .readSnapshots()
       .reduce((acc, snap) => acc.add(snap.scopeId), new Set<string>()).size;
 
-    // A backdated buy at the very start ripples the WHOLE band per scope.
+    // A backdated buy at the very start ripples the WHOLE band per scope. The
+    // record persist runs no `snapshot_holdings` SELECT (a pure INSERT), so
+    // resetting just before the seam call still counts only the ripple's reads.
     const operationDateKey = startDate;
-    store.operations.recordOperation({
-      assetId: "fund",
-      currency: "EUR",
-      executedAt: operationDateKey,
-      id: "op_backdated",
-      kind: "buy",
-      pricePerUnit: "100",
-      units: "10",
-    });
-
     reset();
-    store.rippleHistoricalSnapshotsForOperation({
-      assetId: "fund",
-      mode: "record",
-      operationDateKey,
-      today: TODAY,
-    });
+    store.recordOperationAndRipple(
+      {
+        assetId: "fund",
+        currency: "EUR",
+        executedAt: operationDateKey,
+        id: "op_backdated",
+        kind: "buy",
+        pricePerUnit: "100",
+        units: "10",
+      },
+      { today: TODAY },
+    );
 
     // BATCHED: the frozen-row reads are a small constant per scope/range, never
     // ~one per rippled snapshot. With ~40 snapshots per scope, the old shape was
@@ -177,21 +172,18 @@ describe("operation ripple batches frozen reads (#205)", () => {
 
     // Record a backdated buy at the start: every snapshot ≥ start folds 10 units
     // at the captured price 100 = 1000.00, on top of the 1000.00 cash baseline.
-    store.operations.recordOperation({
-      assetId: "fund",
-      currency: "EUR",
-      executedAt: startDate,
-      id: "op_backdated",
-      kind: "buy",
-      pricePerUnit: "100",
-      units: "10",
-    });
-    store.rippleHistoricalSnapshotsForOperation({
-      assetId: "fund",
-      mode: "record",
-      operationDateKey: startDate,
-      today: TODAY,
-    });
+    store.recordOperationAndRipple(
+      {
+        assetId: "fund",
+        currency: "EUR",
+        executedAt: startDate,
+        id: "op_backdated",
+        kind: "buy",
+        pricePerUnit: "100",
+        units: "10",
+      },
+      { today: TODAY },
+    );
 
     // Behavior check across the WHOLE band. At day i, `seedfund` has folded i+1
     // daily 1-unit buys = (i+1) × 100.00; `fund` adds its 10 units × 100.00 on
@@ -205,16 +197,13 @@ describe("operation ripple batches frozen reads (#205)", () => {
     expect(grossAt(store, lastDate)).toBe(seedAt(snapshotCount - 1) + fundValue);
 
     // Delete the backdated buy: every snapshot ≥ its date recalculates back to
-    // seedfund-only, none is left showing the now-deleted operation's value.
+    // seedfund-only, none is left showing the now-deleted operation's value. The
+    // delete seam derives the asset id and from-date from the deleted row itself.
     const ops = store.operations.readOperations("fund");
     const target = ops.find((op) => op.executedAt === startDate)!;
-    expect(store.operations.deleteOperation(target.id)).not.toBeNull();
-    store.rippleHistoricalSnapshotsForOperation({
-      assetId: "fund",
-      mode: "delete",
-      operationDateKey: startDate,
-      today: TODAY,
-    });
+    expect(
+      store.deleteOperationAndRipple({ operationId: target.id, today: TODAY }),
+    ).not.toBeNull();
 
     for (let i = 0; i < snapshotCount; i += 1) {
       const dateKey = addDays(startDate, i);

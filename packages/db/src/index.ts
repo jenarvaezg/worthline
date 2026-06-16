@@ -1,5 +1,7 @@
 import type { LocalPersistenceStatus } from "@worthline/domain";
 import type {
+  CreateInvestmentOperationInput,
+  CreateManualAssetInput,
   DebtBalanceCurveInputs,
   DebtModel,
   DecimalString,
@@ -56,7 +58,13 @@ import {
   snapshots,
   warningOverrides,
 } from "./schema";
-import { createAssetStore, type AssetStore } from "./asset-store";
+import {
+  createAssetStore,
+  type AddValuationAnchorInput,
+  type AssetStore,
+  type UpdateAssetInput,
+  type UpdateValuationAnchorInput,
+} from "./asset-store";
 import {
   createConnectedSourceStore,
   mapPositionRow,
@@ -66,8 +74,24 @@ import {
 import { migrate, type MigrateResult } from "./migrate";
 
 export { SCHEMA_VERSION } from "./migrate";
-import { createLiabilityStore, type LiabilityStore } from "./liability-store";
-import { createOperationsStore, type OperationsStore } from "./operations-store";
+import {
+  createLiabilityStore,
+  type AddBalanceAnchorInput,
+  type AddEarlyRepaymentInput,
+  type AddInterestRateRevisionInput,
+  type CreateAmortizationPlanInput,
+  type LiabilityStore,
+  type UpdateAmortizationPlanInput,
+  type UpdateBalanceAnchorInput,
+  type UpdateEarlyRepaymentInput,
+  type UpdateInterestRateRevisionInput,
+  type UpdateLiabilityInput,
+} from "./liability-store";
+import {
+  createOperationsStore,
+  type OperationsStore,
+  type UpdateInvestmentOperationInput,
+} from "./operations-store";
 import {
   createSnapshotStore,
   readSnapshotHoldings,
@@ -177,6 +201,24 @@ export interface TrashView {
 }
 
 /**
+ * The full real_estate creation command for {@link WorthlineStore.createHousingHoldingAndRipple}.
+ * The caller resolves the anchor ids (a determinism source — `createStableId`/seed
+ * plumbing) and passes the acquisition anchor (and an optional initial valuation)
+ * fully formed; the seam derives only the from-date (the acquisition date) and
+ * `today`.
+ */
+export interface CreateHousingHoldingCommand {
+  /** The asset row to create (must be `type: "real_estate"`). */
+  asset: CreateManualAssetInput;
+  /** The acquisition valuation anchor (carries its own resolved id). */
+  acquisitionAnchor: AddValuationAnchorInput;
+  /** The appreciation rate to set, or null to leave it unset. */
+  annualAppreciationRate: DecimalString | null;
+  /** An optional initial valuation anchor (carries its own resolved id). */
+  initialValuation?: AddValuationAnchorInput;
+}
+
+/**
  * The WorthlineStore is a pure composite (Slice R6, PRD #120): the five focused
  * sub-stores expose every per-domain operation, and the store itself owns only
  * the cross-cutting concerns that span domains or have no natural home in a
@@ -211,110 +253,282 @@ export interface WorthlineStore {
   readFireConfig: () => Record<string, FireScopeConfig>;
   saveFireConfig: (scopeId: string, config: FireScopeConfig) => void;
   /**
-   * Generate/recalculate historical snapshots after a backdated operation
-   * change to one investment (ADR 0012, PRD #107). record(D) generates a fresh
-   * snapshot at D when none exists there (and D is in the past), then
-   * recalculates every existing snapshot dated ≥ D; delete(D) recalculates
-   * every existing snapshot dated ≥ D. Recalculation only ever touches the
-   * given asset's row in each snapshot, and skips legacy captures that have no
-   * holding rows. Generation at D is a no-op when D is today or in the future
-   * (the daily capture owns today).
+   * Operation dated-fact seam (ADR 0020): persist ONE investment operation AND
+   * ripple the snapshots it affects, atomically in a single transaction. The
+   * caller no longer derives `today` nor makes a separate ripple call — both ride
+   * this one method. `today` defaults to the current date; pass it to control the
+   * cut-off in tests. Wraps `recordOperation` + the per-operation record ripple.
    */
-  rippleHistoricalSnapshotsForOperation: (params: {
-    assetId: string;
-    mode: "record" | "delete";
-    operationDateKey: string;
-    today: string;
-  }) => void;
-  /**
-   * Batched variant of `rippleHistoricalSnapshotsForOperation` for a statement
-   * load that creates many backdated operations at once (ADR 0018, #174). Like
-   * the amortization-plan exception in ADR 0012: generate a fresh snapshot at
-   * EACH affected past operation date that has none yet, then run a SINGLE
-   * forward recalculation of every existing snapshot dated ≥ the earliest
-   * affected date, re-evaluating only this asset's row. One history rebuild per
-   * load regardless of the number of operation dates — the guard against the
-   * #158 O(N×snapshots) cliff. A date today or in the future generates no
-   * history. A no-op when the asset is unknown or no dates are given.
-   */
-  rippleHistoricalSnapshotsForOperations: (params: {
-    assetId: string;
-    operationDateKeys: string[];
-    today: string;
-  }) => void;
-  /**
-   * Generate/recalculate historical snapshots after a housing valuation change
-   * (PRD #108): a declared/edited/deleted valuation anchor with a past date, or
-   * a changed appreciation rate. Generates a fresh snapshot at `fromDateKey`
-   * when it is in the past and none exists there (valuing the housing asset from
-   * its current curve), then recalculates every existing snapshot dated ≥
-   * `fromDateKey` by re-evaluating only the housing asset's row from the curve.
-   * For a rate change, pass the first anchor's date as `fromDateKey`. A
-   * `fromDateKey` today or in the future generates no history (future anchors
-   * produce no snapshot). Skips legacy captures with no holding rows. A no-op
-   * when the asset is not housing or has no curve.
-   */
-  rippleHistoricalSnapshotsForValuation: (params: {
-    assetId: string;
-    fromDateKey: string;
-    today: string;
-  }) => void;
-  /**
-   * Generate/recalculate historical snapshots after a debt-balance change (PRD
-   * #109, slice 9). The liability is valued from its debt curve
-   * (`debtBalanceAtDate`) on each affected date.
-   *
-   * - `kind: "amortizable-plan"` (a created/edited plan): generate a fresh
-   *   snapshot at EVERY past payment-boundary date that has none yet (the "one
-   *   snapshot per past cuota" density — the deliberate exception to ADR 0012
-   *   recognised by PRD #109), then recalculate every existing snapshot dated ≥
-   *   the loan start by re-valuing only the liability's row from the curve.
-   * - `kind: "amortizable-revision"`: pass the revision's date as `fromDateKey`;
-   *   recalculates every existing snapshot dated ≥ it (no new generation — the
-   *   revision only changes existing balances after it).
-   * - `kind: "anchor"` (a declared/edited/deleted balance anchor for a
-   *   revolving/informal debt): pass the anchor date as `fromDateKey`; generates
-   *   a fresh snapshot at it when in the past and none exists, then recalculates
-   *   every existing snapshot dated ≥ it.
-   *
-   * A date today or in the future never generates history (the daily capture
-   * owns today, the future is not history). Only the liability's row in each
-   * snapshot is recomputed; every other frozen row is preserved, and legacy
-   * captures with no holding rows are skipped. A no-op when the liability has no
-   * debt model or curve data.
-   */
-  rippleHistoricalSnapshotsForDebt: (
-    params:
-      | { liabilityId: string; kind: "amortizable-plan"; today: string }
-      | {
-          liabilityId: string;
-          kind: "amortizable-revision" | "anchor" | "amortizable-repayment";
-          fromDateKey: string;
-          today: string;
-        },
+  recordOperationAndRipple: (
+    input: CreateInvestmentOperationInput,
+    opts?: { today?: string },
   ) => void;
   /**
-   * Re-derive existing snapshots after one holding's OWNERSHIP SPLIT changed
-   * (#172). An ownership split has no date dimension — it only weights a
-   * holding's global value into each scope — so this NEVER generates a new
-   * snapshot date: it re-weights the edited holding's row in every existing
-   * scope snapshot using the new split. The whole-holding (global) value at each
-   * date is recovered from the household-scope frozen row divided by the share
-   * the household held under `previousOwnership` (the household row is the
-   * members' COMBINED stake — 100% of the value when no external co-owner, less
-   * when the holding is partially owned). Every scope is then re-weighted from
-   * that global value: a holding fully owned within the household leaves the
-   * household figure unchanged, while a co-owned holding's household figure moves
-   * with the members' combined share. Only the edited holding's row moves; every
-   * other frozen row is preserved, the reconciliation invariant holds (ADR 0008),
-   * and legacy captures with no holding rows are skipped. A no-op when the
-   * household held no stake before, or no household snapshot carries the holding.
+   * Batched operation dated-fact seam for a statement load (ADR 0020 / 0018):
+   * persist every created and overwritten operation AND run ONE batched ripple
+   * over all the dates they touch, atomically in a single transaction. The
+   * affected from-date window is derived behind the seam from the persisted
+   * operations themselves, never by the caller. `today` defaults to the current
+   * date; pass it to control the cut-off in tests. Wraps `recordOperation` /
+   * `updateOperation` + the batched operations ripple.
    */
-  rippleHistoricalSnapshotsForOwnership: (params: {
-    holdingId: string;
-    kind: "asset" | "liability";
-    previousOwnership: OwnershipShare[];
+  recordOperationsAndRipple: (params: {
+    assetId: string;
+    creates: CreateInvestmentOperationInput[];
+    overwrites: UpdateInvestmentOperationInput[];
+    today?: string;
   }) => void;
+  /**
+   * Operation dated-fact seam (ADR 0020): delete ONE investment operation AND
+   * ripple the snapshots dated ≥ its date, atomically in a single transaction.
+   * The asset id and from-date are derived behind the seam from the deleted row
+   * itself — the caller passes only the operation id. Returns the deleted
+   * operation's asset id and date, or null if not found (a not-found delete
+   * ripples nothing). `today` defaults to the current date; pass it to control
+   * the cut-off in tests. Wraps `deleteOperation` + the per-operation delete
+   * ripple.
+   */
+  deleteOperationAndRipple: (params: {
+    operationId: string;
+    today?: string;
+  }) => { assetId: string; executedAt: string } | null;
+  /**
+   * Valuation dated-fact seam (ADR 0020): persist ONE housing valuation anchor
+   * AND ripple the snapshots from its date, atomically in one transaction. The
+   * from-date is the anchor's own date, derived behind the seam; `today` defaults
+   * to the current date (pass it to control the cut-off in tests). A future anchor
+   * generates no history. Wraps `assets.addValuationAnchor` + the valuation ripple.
+   */
+  addValuationAnchorAndRipple: (
+    input: AddValuationAnchorInput,
+    opts?: { today?: string },
+  ) => void;
+  /**
+   * Valuation dated-fact seam (ADR 0020): patch ONE valuation anchor AND ripple
+   * the affected snapshots, atomically. The from-date is the earlier of the old
+   * and new anchor dates, derived behind the seam from the row being edited; the
+   * ripple is skipped when nothing changed or the from-date is in the future.
+   * Returns 1 if updated, 0 if not found. Wraps `assets.updateValuationAnchor`.
+   */
+  updateValuationAnchorAndRipple: (
+    anchorId: string,
+    input: UpdateValuationAnchorInput,
+    opts?: { today?: string },
+  ) => number;
+  /**
+   * Valuation dated-fact seam (ADR 0020): delete ONE valuation anchor AND ripple
+   * the snapshots from its date, atomically. The from-date is the deleted anchor's
+   * own date, captured behind the seam before the delete; a not-found delete
+   * ripples nothing and a future date generates no history. Returns 1 if removed,
+   * 0 if not found. Wraps `assets.deleteValuationAnchor` + the valuation ripple.
+   */
+  deleteValuationAnchorAndRipple: (anchorId: string, opts?: { today?: string }) => number;
+  /**
+   * Valuation dated-fact seam (ADR 0020): set (or clear) the appreciation rate AND
+   * ripple the rate-valued range, atomically. The earliest affected snapshot date
+   * is derived behind the seam as min(first anchor date, earliest existing snapshot
+   * carrying this asset) — covering the backward-compounding case (#184). The ripple
+   * is skipped when there is nothing to ripple or the from-date is in the future.
+   * `today` defaults to the current date. Wraps `assets.setAnnualAppreciationRate`
+   * + the valuation ripple.
+   */
+  setAnnualAppreciationRateAndRipple: (
+    assetId: string,
+    rate: DecimalString | null,
+    opts?: { today?: string },
+  ) => void;
+  /**
+   * Valuation dated-fact seam (ADR 0020): persist the current housing value
+   * (updateAssetValuation + upsert-today-market-anchor) AND ripple historical
+   * snapshots, all atomically. The from-date is derived behind the seam as
+   * min(first past anchor date, earliest existing snapshot) — the full
+   * `firstHousingCurrentValueRippleDate` rule. `today` defaults to the current
+   * date. The action passes only `(assetId, currentValue)`.
+   */
+  recordHousingValuationAndRipple: (
+    assetId: string,
+    currentValue: number,
+    opts?: { today?: string },
+  ) => void;
+  /**
+   * Valuation dated-fact seam (ADR 0020): re-derive the housing snapshots after a
+   * non-dated-fact metadata edit (editAsset). No dated fact is persisted here; the
+   * from-date is derived behind the seam as the first anchor/snapshot date
+   * (`firstHousingEventDate` rule). Skips when nothing exists to ripple.
+   * `today` defaults to the current date.
+   */
+  rippleHousingAfterAssetEdit: (assetId: string, opts?: { today?: string }) => void;
+  /**
+   * Ownership scope-axis seam (ADR 0020): patch ONE asset AND, if its ownership
+   * split actually changed, re-derive history along the SCOPE axis, atomically.
+   * The previous ownership and the did-it-change comparison are derived behind the
+   * seam (the caller no longer reads `before` or compares splits). For a
+   * `real_estate` asset the housing curve ripple is run instead — it already
+   * re-weights every affected snapshot from the asset's new split — so a home
+   * ownership edit folds into the same single seam call. `today` defaults to the
+   * current date. Wraps `assets.updateAsset` + the ownership/housing ripple.
+   */
+  updateAssetAndRippleOwnership: (
+    assetId: string,
+    patch: UpdateAssetInput,
+    opts?: { today?: string },
+  ) => void;
+  /**
+   * Ownership scope-axis seam (ADR 0020): patch ONE liability AND, if its ownership
+   * split actually changed, re-derive history along the SCOPE axis, atomically. The
+   * previous ownership and the did-it-change comparison are derived behind the seam.
+   * `today` defaults to the current date. Wraps `liabilities.updateLiability` + the
+   * ownership ripple.
+   */
+  updateLiabilityAndRippleOwnership: (
+    liabilityId: string,
+    patch: UpdateLiabilityInput,
+    opts?: { today?: string },
+  ) => void;
+  /**
+   * Housing-creation dated-fact seam (ADR 0020): create ONE real_estate holding —
+   * the asset row, its acquisition anchor, its appreciation rate, and an optional
+   * initial valuation — AND ripple historical snapshots from the acquisition date,
+   * all atomically. The from-date (the acquisition date) and `today` are derived
+   * behind the seam; the caller resolves the anchor ids (a determinism source) and
+   * passes them in the command. Wraps `assets.createManualAsset` +
+   * `assets.addValuationAnchor` + `assets.setAnnualAppreciationRate` + the
+   * valuation ripple.
+   */
+  createHousingHoldingAndRipple: (
+    command: CreateHousingHoldingCommand,
+    opts?: { today?: string },
+  ) => void;
+  /**
+   * Debt dated-fact seam (ADR 0020): create ONE amortization plan AND ripple the
+   * per-cuota history it implies, atomically. The affected dates are derived
+   * behind the seam from the plan's own schedule (the `amortizable-plan` kind);
+   * `today` defaults to the current date. Wraps `liabilities.createAmortizationPlan`.
+   */
+  createAmortizationPlanAndRipple: (
+    input: CreateAmortizationPlanInput,
+    opts?: { today?: string },
+  ) => void;
+  /**
+   * Debt dated-fact seam (ADR 0020): patch ONE amortization plan AND re-ripple the
+   * per-cuota history, atomically (the `amortizable-plan` kind). Returns 1 if
+   * updated, 0 if not found. Wraps `liabilities.updateAmortizationPlan`.
+   */
+  updateAmortizationPlanAndRipple: (
+    planId: string,
+    input: UpdateAmortizationPlanInput,
+    opts: { liabilityId: string; today?: string },
+  ) => number;
+  /**
+   * Debt dated-fact seam (ADR 0020): delete ONE amortization plan AND ripple the
+   * now-planless curve, atomically. The plan's disbursement date is captured behind
+   * the seam before the delete and used as the recalc floor (the `amortizable-revision`
+   * kind, which recalculates without generating — the curve falls back to
+   * currentBalance, ADR 0019). Returns 1 if removed, 0 if not found. Wraps
+   * `liabilities.deleteAmortizationPlan`.
+   */
+  deleteAmortizationPlanAndRipple: (opts: {
+    liabilityId: string;
+    today?: string;
+  }) => number;
+  /**
+   * Debt dated-fact seam (ADR 0020): add ONE interest-rate revision AND recalculate
+   * the snapshots from its date forward, atomically (the `amortizable-revision`
+   * kind — a revision generates no new snapshot). The future guard rides the seam.
+   * Wraps `liabilities.addInterestRateRevision`.
+   */
+  addInterestRateRevisionAndRipple: (
+    input: AddInterestRateRevisionInput,
+    opts: { liabilityId: string; today?: string },
+  ) => void;
+  /**
+   * Debt dated-fact seam (ADR 0020): patch ONE interest-rate revision AND
+   * recalculate snapshots from the earlier of the old/new date, atomically. The
+   * caller passes the previous revision date (read at the call site); the seam
+   * picks the earlier date, applies the future guard, and ripples. Returns 1 if
+   * updated, 0 if not found. Wraps `liabilities.updateInterestRateRevision`.
+   */
+  updateInterestRateRevisionAndRipple: (
+    revisionId: string,
+    input: UpdateInterestRateRevisionInput,
+    opts: { liabilityId: string; previousRevisionDate: string; today?: string },
+  ) => number;
+  /**
+   * Debt dated-fact seam (ADR 0020): delete ONE interest-rate revision AND
+   * recalculate snapshots from its date forward, atomically (the
+   * `amortizable-revision` kind). The caller passes the removed revision date; the
+   * future guard rides the seam. Returns 1 if removed, 0 if not found. Wraps
+   * `liabilities.deleteInterestRateRevision`.
+   */
+  deleteInterestRateRevisionAndRipple: (
+    revisionId: string,
+    opts: { liabilityId: string; previousRevisionDate: string; today?: string },
+  ) => number;
+  /**
+   * Debt dated-fact seam (ADR 0020): add ONE early repayment AND generate/recalculate
+   * snapshots from its date, atomically (the `amortizable-repayment` kind — a past
+   * repayment is a dated fact that generates its own snapshot). The future guard
+   * rides the seam. Wraps `liabilities.addEarlyRepayment`.
+   */
+  addEarlyRepaymentAndRipple: (
+    input: AddEarlyRepaymentInput,
+    opts: { liabilityId: string; today?: string },
+  ) => void;
+  /**
+   * Debt dated-fact seam (ADR 0020): patch ONE early repayment AND ripple from the
+   * earlier of the old/new date, atomically (the `amortizable-repayment` kind). The
+   * caller passes the previous repayment date; the seam picks the earlier date,
+   * applies the future guard, and ripples. Returns 1 if updated, 0 if not found.
+   * Wraps `liabilities.updateEarlyRepayment`.
+   */
+  updateEarlyRepaymentAndRipple: (
+    repaymentId: string,
+    input: UpdateEarlyRepaymentInput,
+    opts: { liabilityId: string; previousRepaymentDate: string; today?: string },
+  ) => number;
+  /**
+   * Debt dated-fact seam (ADR 0020): delete ONE early repayment AND recalculate
+   * snapshots from its date forward, atomically. Deleting a dated fact recalculates
+   * without generating, so it uses the `amortizable-revision` kind (the curve no
+   * longer carries the repayment). The future guard rides the seam. Returns 1 if
+   * removed, 0 if not found. Wraps `liabilities.deleteEarlyRepayment`.
+   */
+  deleteEarlyRepaymentAndRipple: (
+    repaymentId: string,
+    opts: { liabilityId: string; previousRepaymentDate: string; today?: string },
+  ) => number;
+  /**
+   * Debt dated-fact seam (ADR 0020): add ONE balance anchor AND generate/recalculate
+   * snapshots from its date, atomically (the `anchor` kind). The from-date is the
+   * anchor's own date; a future anchor generates no history. Wraps
+   * `liabilities.addBalanceAnchor`.
+   */
+  addBalanceAnchorAndRipple: (
+    input: AddBalanceAnchorInput,
+    opts?: { today?: string },
+  ) => void;
+  /**
+   * Debt dated-fact seam (ADR 0020): patch ONE balance anchor AND ripple from the
+   * earlier of the old/new date, atomically (the `anchor` kind). The caller passes
+   * the previous anchor date; the seam picks the earlier date, applies the future
+   * guard, and ripples. Returns 1 if updated, 0 if not found. Wraps
+   * `liabilities.updateBalanceAnchor`.
+   */
+  updateBalanceAnchorAndRipple: (
+    anchorId: string,
+    input: UpdateBalanceAnchorInput,
+    opts: { liabilityId: string; previousAnchorDate: string; today?: string },
+  ) => number;
+  /**
+   * Debt dated-fact seam (ADR 0020): delete ONE balance anchor AND recalculate
+   * snapshots from its date forward, atomically (the `anchor` kind). The caller
+   * passes the removed anchor date; the future guard rides the seam. Returns 1 if
+   * removed, 0 if not found. Wraps `liabilities.deleteBalanceAnchor`.
+   */
+  deleteBalanceAnchorAndRipple: (
+    anchorId: string,
+    opts: { liabilityId: string; previousAnchorDate: string; today?: string },
+  ) => number;
   /**
    * One-shot backfill (ADR 0012, PRD #107): generate a historical snapshot for
    * every past operation date that has no snapshot yet, across all scopes.
@@ -431,6 +645,18 @@ export function createWorthlineStore(
   return buildStore(sqlite, migrateResult);
 }
 
+/**
+ * Whether two ownership splits differ — the signal that an edit must ripple the
+ * scope axis (ADR 0020). A reorder of the same members/shares is NOT a change;
+ * an added/removed member or a moved share IS. Lives behind the ownership seam so
+ * the action layer no longer derives "did ownership change".
+ */
+function ownershipChanged(before: OwnershipShare[], after: OwnershipShare[]): boolean {
+  if (before.length !== after.length) return true;
+  const beforeByMember = new Map(before.map((share) => [share.memberId, share.shareBps]));
+  return after.some((share) => beforeByMember.get(share.memberId) !== share.shareBps);
+}
+
 function buildStore(
   sqlite: DatabaseConnection,
   migrateResult: MigrateResult,
@@ -456,6 +682,55 @@ function buildStore(
   });
 
   const { getWorkspace } = ctx;
+
+  /**
+   * The earliest dateKey strictly before `today` of an existing snapshot that
+   * carries this asset's row, or null. Used by the fully-behind-seam housing
+   * methods to find the earliest snapshot a curve change could affect —
+   * including ones dated before the first anchor (rate compounds backward, #184).
+   */
+  function housingEarliestSnapshotDate(assetId: string, today: string): string | null {
+    return (
+      snapshotStore
+        .readSnapshotHoldings({ holdingId: assetId, kind: "asset" })
+        .map((row) => row.dateKey)
+        .filter((dateKey) => dateKey < today)
+        .sort()[0] ?? null
+    );
+  }
+
+  /**
+   * Re-derive the housing snapshots after a non-dated-fact edit to a real_estate
+   * asset (the `firstHousingEventDate` rule, ADR 0020): from-date = first
+   * anchor/snapshot date ≤ today. Skips when nothing exists to ripple. Used by
+   * both `rippleHousingAfterAssetEdit` (the editAsset ripple-only seam) and the
+   * real_estate branch of `updateAssetAndRippleOwnership` (a home ownership edit
+   * re-weights through the curve ripple, which honors the asset's new split). The
+   * caller wraps it in the enclosing transaction.
+   */
+  function rippleHousingAfterEdit(assetId: string, today: string): void {
+    const firstAnchorDate = assetStore
+      .readValuationAnchors(assetId)
+      .map((a) => a.valuationDate)
+      .filter((d) => d <= today)
+      .sort()[0];
+    const fromDateKey =
+      firstAnchorDate ??
+      snapshotStore
+        .readSnapshotHoldings({ holdingId: assetId, kind: "asset" })
+        .map((r) => r.dateKey)
+        .filter((d) => d <= today)
+        .sort()[0] ??
+      null;
+    if (fromDateKey === null || fromDateKey > today) return;
+    const workspace = getWorkspace();
+    if (!workspace) return;
+    rippleHistoricalSnapshotsForValuation(ctx, workspace, store.snapshots.saveSnapshot, {
+      assetId,
+      fromDateKey,
+      today,
+    });
+  }
 
   const store: WorthlineStore = {
     snapshots: snapshotStore,
@@ -585,50 +860,590 @@ function buildStore(
         id: row.id,
       }));
     },
-    rippleHistoricalSnapshotsForOperation: (params) => {
-      const workspace = getWorkspace();
-      if (!workspace) return;
-      rippleHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, params);
+    recordOperationAndRipple: (input, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      // One transaction so the persist + ripple commit or roll back together —
+      // the dated-fact contract is unrepresentable as "persisted, forgot to
+      // ripple" (ADR 0020; better-sqlite3 nests via savepoints).
+      ctx.transaction(() => {
+        operationsStore.recordOperation(input);
+        const workspace = getWorkspace();
+        if (!workspace) return;
+        rippleHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, {
+          assetId: input.assetId,
+          mode: "record",
+          operationDateKey: input.executedAt.slice(0, 10),
+          today,
+        });
+      });
     },
-    rippleHistoricalSnapshotsForOperations: (params) => {
-      const workspace = getWorkspace();
-      if (!workspace) return;
-      rippleHistoricalSnapshotsForOperations(
-        ctx,
-        workspace,
-        store.snapshots.saveSnapshot,
-        params,
-      );
+    recordOperationsAndRipple: ({ assetId, creates, overwrites, today: todayOpt }) => {
+      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
+      // One transaction so every create/overwrite + the single batched ripple
+      // commit or roll back together (ADR 0020 / 0018). The affected from-date
+      // window is derived here from the persisted operations, never by the caller.
+      ctx.transaction(() => {
+        const operationDateKeys: string[] = [];
+        for (const input of creates) {
+          operationsStore.recordOperation(input);
+          operationDateKeys.push(input.executedAt.slice(0, 10));
+        }
+        for (const input of overwrites) {
+          const result = operationsStore.updateOperation(input);
+          if (result) operationDateKeys.push(result.executedAt.slice(0, 10));
+        }
+        const workspace = getWorkspace();
+        if (!workspace) return;
+        rippleHistoricalSnapshotsForOperations(
+          ctx,
+          workspace,
+          store.snapshots.saveSnapshot,
+          { assetId, operationDateKeys, today },
+        );
+      });
     },
-    rippleHistoricalSnapshotsForValuation: (params) => {
-      const workspace = getWorkspace();
-      if (!workspace) return;
-      rippleHistoricalSnapshotsForValuation(
-        ctx,
-        workspace,
-        store.snapshots.saveSnapshot,
-        params,
-      );
+    deleteOperationAndRipple: ({ operationId, today: todayOpt }) => {
+      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
+      // One transaction so the delete + ripple commit or roll back together
+      // (ADR 0020). The asset id and from-date come from the deleted row itself;
+      // a not-found delete ripples nothing.
+      return ctx.transaction(() => {
+        const result = operationsStore.deleteOperation(operationId);
+        if (!result) return null;
+        const workspace = getWorkspace();
+        if (workspace) {
+          rippleHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, {
+            assetId: result.assetId,
+            mode: "delete",
+            operationDateKey: result.executedAt.slice(0, 10),
+            today,
+          });
+        }
+        return result;
+      });
     },
-    rippleHistoricalSnapshotsForDebt: (params) => {
-      const workspace = getWorkspace();
-      if (!workspace) return;
-      rippleHistoricalSnapshotsForDebt(
-        ctx,
-        workspace,
-        store.snapshots.saveSnapshot,
-        params,
-      );
+    addValuationAnchorAndRipple: (input, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      // One transaction so the persist + ripple commit or roll back together
+      // (ADR 0020). The from-date is the anchor's own date.
+      ctx.transaction(() => {
+        assetStore.addValuationAnchor(input);
+        const workspace = getWorkspace();
+        if (!workspace) return;
+        rippleHistoricalSnapshotsForValuation(
+          ctx,
+          workspace,
+          store.snapshots.saveSnapshot,
+          {
+            assetId: input.assetId,
+            fromDateKey: input.valuationDate,
+            today,
+          },
+        );
+      });
     },
-    rippleHistoricalSnapshotsForOwnership: (params) => {
-      const workspace = getWorkspace();
-      if (!workspace) return;
-      rippleHistoricalSnapshotsForOwnership(
-        ctx,
-        workspace,
-        store.snapshots.saveSnapshot,
-        params,
-      );
+    updateValuationAnchorAndRipple: (anchorId, input, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      // Atomic persist + ripple (ADR 0020). The new date may differ from the old
+      // one; ripple from the earlier of the two so every affected snapshot is
+      // recomputed. The previous row is read behind the seam before the patch.
+      return ctx.transaction(() => {
+        const previous = assetStore.readValuationAnchorById(anchorId);
+        const changes = assetStore.updateValuationAnchor(anchorId, input);
+        if (changes === 0 || !previous) return changes;
+        const assetId = previous.assetId;
+        const newDate = input.valuationDate ?? previous.valuationDate;
+        const fromDateKey =
+          previous.valuationDate < newDate ? previous.valuationDate : newDate;
+        if (fromDateKey <= today) {
+          const workspace = getWorkspace();
+          if (workspace) {
+            rippleHistoricalSnapshotsForValuation(
+              ctx,
+              workspace,
+              store.snapshots.saveSnapshot,
+              { assetId, fromDateKey, today },
+            );
+          }
+        }
+        return changes;
+      });
+    },
+    deleteValuationAnchorAndRipple: (anchorId, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      // Atomic delete + ripple (ADR 0020). The asset id and from-date come from the
+      // deleted row itself, captured before the delete; a future date generates no
+      // history and a not-found delete ripples nothing.
+      return ctx.transaction(() => {
+        const removed = assetStore.readValuationAnchorById(anchorId);
+        const changes = assetStore.deleteValuationAnchor(anchorId);
+        if (changes === 0 || !removed) return changes;
+        if (removed.valuationDate <= today) {
+          const workspace = getWorkspace();
+          if (workspace) {
+            rippleHistoricalSnapshotsForValuation(
+              ctx,
+              workspace,
+              store.snapshots.saveSnapshot,
+              { assetId: removed.assetId, fromDateKey: removed.valuationDate, today },
+            );
+          }
+        }
+        return changes;
+      });
+    },
+    setAnnualAppreciationRateAndRipple: (assetId, rate, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      // Atomic persist + ripple (ADR 0020). The earliest affected snapshot date is
+      // derived behind the seam: min(first anchor date, earliest existing snapshot
+      // carrying this asset) — covers the backward-compounding case (#184).
+      ctx.transaction(() => {
+        assetStore.setAnnualAppreciationRate(assetId, rate);
+        const firstAnchorDate =
+          assetStore.readValuationAnchors(assetId)[0]?.valuationDate;
+        const earliestSnapshotDate = housingEarliestSnapshotDate(assetId, today);
+        const fromDateKey =
+          [firstAnchorDate, earliestSnapshotDate]
+            .filter((d): d is string => d != null)
+            .sort()[0] ?? null;
+        if (fromDateKey === null || fromDateKey > today) return;
+        const workspace = getWorkspace();
+        if (!workspace) return;
+        rippleHistoricalSnapshotsForValuation(
+          ctx,
+          workspace,
+          store.snapshots.saveSnapshot,
+          {
+            assetId,
+            fromDateKey,
+            today,
+          },
+        );
+      });
+    },
+    recordHousingValuationAndRipple: (assetId, currentValue, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      // Full persist + upsert-today-anchor + ripple, all atomic (ADR 0020).
+      // The from-date is min(first past anchor, earliest snapshot) — same rule as
+      // firstHousingCurrentValueRippleDate in the old action layer.
+      ctx.transaction(() => {
+        assetStore.updateAssetValuation(assetId, currentValue);
+        // Upsert a today-dated market anchor (adjustsPriorCurve: true).
+        const existing = assetStore
+          .readValuationAnchors(assetId)
+          .find((a) => a.valuationDate === today);
+        if (existing) {
+          assetStore.updateValuationAnchor(existing.id, {
+            adjustsPriorCurve: true,
+            valueMinor: currentValue,
+          });
+        } else {
+          assetStore.addValuationAnchor({
+            adjustsPriorCurve: true,
+            assetId,
+            id: ctx.newId(),
+            valuationDate: today,
+            valueMinor: currentValue,
+          });
+        }
+        // Derive from-date: first past anchor, else earliest snapshot (see #184).
+        const firstPastAnchorDate = assetStore
+          .readValuationAnchors(assetId)
+          .map((a) => a.valuationDate)
+          .filter((d) => d < today)
+          .sort()[0];
+        const fromDateKey =
+          firstPastAnchorDate ?? housingEarliestSnapshotDate(assetId, today);
+        if (fromDateKey === null || fromDateKey > today) return;
+        const workspace = getWorkspace();
+        if (!workspace) return;
+        rippleHistoricalSnapshotsForValuation(
+          ctx,
+          workspace,
+          store.snapshots.saveSnapshot,
+          {
+            assetId,
+            fromDateKey,
+            today,
+          },
+        );
+      });
+    },
+    rippleHousingAfterAssetEdit: (assetId, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      // Ripple-only seam for editAsset (ADR 0020): no dated fact persisted here.
+      ctx.transaction(() => {
+        rippleHousingAfterEdit(assetId, today);
+      });
+    },
+    updateAssetAndRippleOwnership: (assetId, patch, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      // One transaction so the patch + the scope-axis ripple commit or roll back
+      // together (ADR 0020). The previous ownership and the did-it-change
+      // comparison are read behind the seam, not at the call site.
+      ctx.transaction(() => {
+        const before = assetStore.readAssets().find((a) => a.id === assetId) ?? null;
+        assetStore.updateAsset(assetId, patch);
+        // A real_estate asset re-weights through the housing curve ripple — it
+        // already re-derives every affected snapshot from the asset's new split,
+        // so it covers an ownership edit too (and a from-date in the future is
+        // guarded inside the helper).
+        const type = patch.type ?? before?.type;
+        if (type === "real_estate") {
+          rippleHousingAfterEdit(assetId, today);
+          return;
+        }
+        // A non-real_estate ownership-split change rides the scope-axis ripple;
+        // a cosmetic edit (same split) ripples nothing.
+        if (
+          before &&
+          patch.ownership &&
+          ownershipChanged(before.ownership, patch.ownership)
+        ) {
+          const workspace = getWorkspace();
+          if (workspace) {
+            rippleHistoricalSnapshotsForOwnership(
+              ctx,
+              workspace,
+              store.snapshots.saveSnapshot,
+              {
+                holdingId: assetId,
+                kind: "asset",
+                previousOwnership: before.ownership,
+              },
+            );
+          }
+        }
+      });
+    },
+    updateLiabilityAndRippleOwnership: (liabilityId, patch) => {
+      // An ownership edit has no time axis, so the liability seam takes no `today`
+      // (the uniform `opts` is accepted at the type level for symmetry with the
+      // asset seam, but unused here).
+      // One transaction so the patch + the scope-axis ripple commit or roll back
+      // together (ADR 0020). The previous ownership and the did-it-change
+      // comparison are read behind the seam.
+      ctx.transaction(() => {
+        const before =
+          liabilityStore.readLiabilities().find((l) => l.id === liabilityId) ?? null;
+        liabilityStore.updateLiability(liabilityId, patch);
+        if (
+          before &&
+          patch.ownership &&
+          ownershipChanged(before.ownership, patch.ownership)
+        ) {
+          const workspace = getWorkspace();
+          if (workspace) {
+            rippleHistoricalSnapshotsForOwnership(
+              ctx,
+              workspace,
+              store.snapshots.saveSnapshot,
+              {
+                holdingId: liabilityId,
+                kind: "liability",
+                previousOwnership: before.ownership,
+              },
+            );
+          }
+        }
+      });
+    },
+    createHousingHoldingAndRipple: (command, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      // One transaction so the create + anchor/rate seeding + ripple commit or
+      // roll back together (ADR 0020). The from-date is the acquisition date,
+      // derived behind the seam from the command's own acquisition anchor.
+      ctx.transaction(() => {
+        assetStore.createManualAsset(command.asset);
+        assetStore.addValuationAnchor(command.acquisitionAnchor);
+        assetStore.setAnnualAppreciationRate(
+          command.asset.id,
+          command.annualAppreciationRate,
+        );
+        if (command.initialValuation) {
+          assetStore.addValuationAnchor(command.initialValuation);
+        }
+        const workspace = getWorkspace();
+        if (!workspace) return;
+        rippleHistoricalSnapshotsForValuation(
+          ctx,
+          workspace,
+          store.snapshots.saveSnapshot,
+          {
+            assetId: command.asset.id,
+            fromDateKey: command.acquisitionAnchor.valuationDate,
+            today,
+          },
+        );
+      });
+    },
+    createAmortizationPlanAndRipple: (input, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      // Atomic persist + ripple (ADR 0020). The plan ripple derives its per-cuota
+      // date series internally from the plan's own schedule.
+      ctx.transaction(() => {
+        liabilityStore.createAmortizationPlan(input);
+        const workspace = getWorkspace();
+        if (!workspace) return;
+        rippleHistoricalSnapshotsForDebt(ctx, workspace, store.snapshots.saveSnapshot, {
+          kind: "amortizable-plan",
+          liabilityId: input.liabilityId,
+          today,
+        });
+      });
+    },
+    updateAmortizationPlanAndRipple: (planId, input, opts) => {
+      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      return ctx.transaction(() => {
+        const changes = liabilityStore.updateAmortizationPlan(planId, input);
+        if (changes === 0) return 0;
+        const workspace = getWorkspace();
+        if (workspace) {
+          rippleHistoricalSnapshotsForDebt(ctx, workspace, store.snapshots.saveSnapshot, {
+            kind: "amortizable-plan",
+            liabilityId: opts.liabilityId,
+            today,
+          });
+        }
+        return changes;
+      });
+    },
+    deleteAmortizationPlanAndRipple: (opts) => {
+      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      // Capture the disbursement date BEFORE deleting — the earliest date the debt
+      // existed (ADR 0019), the recalc floor for the now-planless curve. The
+      // "amortizable-revision" kind recalculates without generating, so the curve
+      // falls back to currentBalance (the "amortizable-plan" kind early-returns
+      // when curve.plan is null and cannot be used here). The liability owns
+      // exactly one plan (1:1), so it is resolved from the liability id.
+      return ctx.transaction(() => {
+        const plan = liabilityStore.readAmortizationPlan(opts.liabilityId);
+        if (!plan) return 0;
+        const startDate = plan.disbursementDate;
+        const changes = liabilityStore.deleteAmortizationPlan(plan.id);
+        if (changes === 0) return changes;
+        if (startDate <= today) {
+          const workspace = getWorkspace();
+          if (workspace) {
+            rippleHistoricalSnapshotsForDebt(
+              ctx,
+              workspace,
+              store.snapshots.saveSnapshot,
+              {
+                fromDateKey: startDate,
+                kind: "amortizable-revision",
+                liabilityId: opts.liabilityId,
+                today,
+              },
+            );
+          }
+        }
+        return changes;
+      });
+    },
+    addInterestRateRevisionAndRipple: (input, opts) => {
+      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      ctx.transaction(() => {
+        liabilityStore.addInterestRateRevision(input);
+        if (input.revisionDate > today) return;
+        const workspace = getWorkspace();
+        if (!workspace) return;
+        rippleHistoricalSnapshotsForDebt(ctx, workspace, store.snapshots.saveSnapshot, {
+          fromDateKey: input.revisionDate,
+          kind: "amortizable-revision",
+          liabilityId: opts.liabilityId,
+          today,
+        });
+      });
+    },
+    updateInterestRateRevisionAndRipple: (revisionId, input, opts) => {
+      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      // Ripple from the earlier of the old/new date so every affected snapshot
+      // recomputes. The previous date is read at the call site and passed in.
+      return ctx.transaction(() => {
+        const changes = liabilityStore.updateInterestRateRevision(revisionId, input);
+        if (changes === 0) return 0;
+        const newDate = input.revisionDate ?? opts.previousRevisionDate;
+        const fromDateKey =
+          opts.previousRevisionDate < newDate ? opts.previousRevisionDate : newDate;
+        if (fromDateKey <= today) {
+          const workspace = getWorkspace();
+          if (workspace) {
+            rippleHistoricalSnapshotsForDebt(
+              ctx,
+              workspace,
+              store.snapshots.saveSnapshot,
+              {
+                fromDateKey,
+                kind: "amortizable-revision",
+                liabilityId: opts.liabilityId,
+                today,
+              },
+            );
+          }
+        }
+        return changes;
+      });
+    },
+    deleteInterestRateRevisionAndRipple: (revisionId, opts) => {
+      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      return ctx.transaction(() => {
+        const changes = liabilityStore.deleteInterestRateRevision(revisionId);
+        if (changes === 0) return 0;
+        if (opts.previousRevisionDate <= today) {
+          const workspace = getWorkspace();
+          if (workspace) {
+            rippleHistoricalSnapshotsForDebt(
+              ctx,
+              workspace,
+              store.snapshots.saveSnapshot,
+              {
+                fromDateKey: opts.previousRevisionDate,
+                kind: "amortizable-revision",
+                liabilityId: opts.liabilityId,
+                today,
+              },
+            );
+          }
+        }
+        return changes;
+      });
+    },
+    addEarlyRepaymentAndRipple: (input, opts) => {
+      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      // A past repayment is a dated fact: generate the snapshot at its date and
+      // recalculate the ones after it (the "amortizable-repayment" kind).
+      ctx.transaction(() => {
+        liabilityStore.addEarlyRepayment(input);
+        if (input.repaymentDate > today) return;
+        const workspace = getWorkspace();
+        if (!workspace) return;
+        rippleHistoricalSnapshotsForDebt(ctx, workspace, store.snapshots.saveSnapshot, {
+          fromDateKey: input.repaymentDate,
+          kind: "amortizable-repayment",
+          liabilityId: opts.liabilityId,
+          today,
+        });
+      });
+    },
+    updateEarlyRepaymentAndRipple: (repaymentId, input, opts) => {
+      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      return ctx.transaction(() => {
+        const changes = liabilityStore.updateEarlyRepayment(repaymentId, input);
+        if (changes === 0) return 0;
+        const newDate = input.repaymentDate ?? opts.previousRepaymentDate;
+        const fromDateKey =
+          opts.previousRepaymentDate < newDate ? opts.previousRepaymentDate : newDate;
+        if (fromDateKey <= today) {
+          const workspace = getWorkspace();
+          if (workspace) {
+            rippleHistoricalSnapshotsForDebt(
+              ctx,
+              workspace,
+              store.snapshots.saveSnapshot,
+              {
+                fromDateKey,
+                kind: "amortizable-repayment",
+                liabilityId: opts.liabilityId,
+                today,
+              },
+            );
+          }
+        }
+        return changes;
+      });
+    },
+    deleteEarlyRepaymentAndRipple: (repaymentId, opts) => {
+      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      // Deleting a dated fact recalculates from its date forward without generating
+      // — the "amortizable-revision" kind, since the curve no longer carries it.
+      return ctx.transaction(() => {
+        const changes = liabilityStore.deleteEarlyRepayment(repaymentId);
+        if (changes === 0) return 0;
+        if (opts.previousRepaymentDate <= today) {
+          const workspace = getWorkspace();
+          if (workspace) {
+            rippleHistoricalSnapshotsForDebt(
+              ctx,
+              workspace,
+              store.snapshots.saveSnapshot,
+              {
+                fromDateKey: opts.previousRepaymentDate,
+                kind: "amortizable-revision",
+                liabilityId: opts.liabilityId,
+                today,
+              },
+            );
+          }
+        }
+        return changes;
+      });
+    },
+    addBalanceAnchorAndRipple: (input, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      // Atomic persist + ripple (ADR 0020). The from-date is the anchor's own date.
+      ctx.transaction(() => {
+        liabilityStore.addBalanceAnchor(input);
+        const workspace = getWorkspace();
+        if (!workspace) return;
+        rippleHistoricalSnapshotsForDebt(ctx, workspace, store.snapshots.saveSnapshot, {
+          fromDateKey: input.anchorDate,
+          kind: "anchor",
+          liabilityId: input.liabilityId,
+          today,
+        });
+      });
+    },
+    updateBalanceAnchorAndRipple: (anchorId, input, opts) => {
+      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      return ctx.transaction(() => {
+        const changes = liabilityStore.updateBalanceAnchor(anchorId, input);
+        if (changes === 0) return 0;
+        const newDate = input.anchorDate ?? opts.previousAnchorDate;
+        const fromDateKey =
+          opts.previousAnchorDate < newDate ? opts.previousAnchorDate : newDate;
+        if (fromDateKey <= today) {
+          const workspace = getWorkspace();
+          if (workspace) {
+            rippleHistoricalSnapshotsForDebt(
+              ctx,
+              workspace,
+              store.snapshots.saveSnapshot,
+              {
+                fromDateKey,
+                kind: "anchor",
+                liabilityId: opts.liabilityId,
+                today,
+              },
+            );
+          }
+        }
+        return changes;
+      });
+    },
+    deleteBalanceAnchorAndRipple: (anchorId, opts) => {
+      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      return ctx.transaction(() => {
+        const changes = liabilityStore.deleteBalanceAnchor(anchorId);
+        if (changes === 0) return 0;
+        if (opts.previousAnchorDate <= today) {
+          const workspace = getWorkspace();
+          if (workspace) {
+            rippleHistoricalSnapshotsForDebt(
+              ctx,
+              workspace,
+              store.snapshots.saveSnapshot,
+              {
+                fromDateKey: opts.previousAnchorDate,
+                kind: "anchor",
+                liabilityId: opts.liabilityId,
+                today,
+              },
+            );
+          }
+        }
+        return changes;
+      });
     },
     backfillHistoricalSnapshots: (today) => {
       const workspace = getWorkspace();
