@@ -7,7 +7,7 @@
  * the source stale (it retries next pass) instead of throwing. Every effect is
  * injected, so the staleness gate and outage handling are tested without I/O.
  */
-import type { AssetPrice, SourcePosition } from "@worthline/domain";
+import type { AssetPrice, CoinPosition } from "@worthline/domain";
 import { describe, expect, it, vi } from "vitest";
 
 import { refreshStaleCoinValuations } from "./refresh-coin-valuations";
@@ -27,8 +27,9 @@ function freshness(overrides: Partial<AssetPrice> = {}): AssetPrice {
   };
 }
 
-function position(): SourcePosition {
+function position(): CoinPosition {
   return {
+    kind: "coin",
     catalogueId: "1493",
     currency: "EUR",
     externalId: "ext-1493",

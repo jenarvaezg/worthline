@@ -11,11 +11,11 @@ import type {
   HousingCurveInputs,
   InvestmentOperation,
   Liability,
+  CoinPosition,
   ManualValuePoint,
   ManualAsset,
   OwnershipShare,
   SnapshotHoldingKind,
-  SourcePosition,
   WarningOverride,
   Workspace,
 } from "@worthline/domain";
@@ -1491,7 +1491,8 @@ function buildStore(
         const newDatedTrades = store.connectedSources
           .readPositions(params.sourceId)
           .filter(
-            (position) =>
+            (position): position is CoinPosition =>
+              position.kind === "coin" &&
               !knownExternalIds.has(position.externalId) &&
               position.purchaseDate !== null,
           );
@@ -1552,7 +1553,7 @@ interface HistoricalSnapshotDeps {
    * asset id (ADR 0017, #167). Lets fresh generation value a coin collection by
    * purchase-date accretion instead of its full current value.
    */
-  coinPositionsByAsset: Map<string, SourcePosition[]>;
+  coinPositionsByAsset: Map<string, CoinPosition[]>;
   /**
    * Investment asset ids with no provider/manual price — valued at COST BASIS in
    * fresh generation, mirroring live capture's ADR-0006 fallback, so a generated
@@ -1617,8 +1618,8 @@ function buildHistoricalSnapshotDeps(
  * rather than its full current value. Reads positions including those whose
  * source's asset was later trashed — the asset existed on the snapshot dates.
  */
-function readCoinPositionsByAsset(db: StoreDb): Map<string, SourcePosition[]> {
-  const byAsset = new Map<string, SourcePosition[]>();
+function readCoinPositionsByAsset(db: StoreDb): Map<string, CoinPosition[]> {
+  const byAsset = new Map<string, CoinPosition[]>();
   const assetBySource = new Map<string, string>();
   for (const source of db
     .select({ id: connectedSources.id, assetId: connectedSources.assetId })
@@ -1631,8 +1632,12 @@ function readCoinPositionsByAsset(db: StoreDb): Map<string, SourcePosition[]> {
   for (const row of db.select().from(positions).all()) {
     const assetId = assetBySource.get(row.sourceId);
     if (assetId === undefined) continue;
+    // Purchase-date accretion is a coin-only history path (ADR 0017); a Binance
+    // token's history is the monthly builder (ADR 0021, S5), not this map.
+    const position = mapPositionRow(row);
+    if (position.kind !== "coin") continue;
     const list = byAsset.get(assetId) ?? [];
-    list.push(mapPositionRow(row));
+    list.push(position);
     byAsset.set(assetId, list);
   }
   return byAsset;
@@ -2616,7 +2621,7 @@ function rippleHistoricalSnapshotsForCoinAcquisition(
   ctx: StoreContext,
   workspace: Workspace,
   saveSnapshot: (input: SaveSnapshotInput) => void,
-  params: { assetId: string; newTrades: readonly SourcePosition[] },
+  params: { assetId: string; newTrades: readonly CoinPosition[] },
 ): void {
   const { db } = ctx;
 

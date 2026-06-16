@@ -1,11 +1,16 @@
 import type {
   ConnectedSource,
+  DistributiveOmit,
   OwnershipShare,
   PriceFreshnessState,
   SourceAdapter,
   SourcePosition,
 } from "@worthline/domain";
-import { projectConnectedSource } from "@worthline/domain";
+import {
+  defaultsFor,
+  instrumentForAdapter,
+  projectConnectedSource,
+} from "@worthline/domain";
 import { and, asc, eq, sql } from "drizzle-orm";
 
 import {
@@ -37,8 +42,9 @@ export interface ConnectedSourceRow {
   lastSyncAt: string | null;
 }
 
-/** A position to persist — the store assigns id + sourceId. */
-export type SourcePositionInput = Omit<SourcePosition, "id" | "sourceId">;
+/** A position to persist — the store assigns id + sourceId. Distributes over the
+ *  coin/token union so each variant keeps its discriminated fields. */
+export type SourcePositionInput = DistributiveOmit<SourcePosition, "id" | "sourceId">;
 
 /** A refreshed coin's candidate values, applied to an existing position by id
  *  (PRD #166). Structurally compatible with pricing's `RevaluedPosition`. */
@@ -110,34 +116,117 @@ const sourceColumns = {
 
 /**
  * Map a raw `positions` row to a domain {@link SourcePosition} — the single source
- * of truth for the column→field shape, shared by the store reader and the
- * historical-snapshot deps builder (#167). Numeric columns are coerced; a legacy
- * row with no `external_id` falls back to its (stable, unique) internal id so the
- * cross-sync diff key is never null.
+ * of truth for the column→field shape, shared by the store reader, the export
+ * serializer, and the historical-snapshot deps builder (#167). Dispatches on the
+ * `kind` discriminant (ADR 0021): a token row reads symbol/balance/wallet/price; a
+ * coin row reads the catalogue/grade/metal/candidate columns. Numeric columns are
+ * coerced; a row with no `external_id` (pre-v20) falls back to its (stable, unique)
+ * internal id so the cross-sync diff key is never null.
  */
 export function mapPositionRow(row: typeof positions.$inferSelect): SourcePosition {
-  return {
-    catalogueId: row.catalogueId,
-    currency: row.currency,
-    externalId: row.externalId ?? row.id,
-    finenessMillis: row.finenessMillis === null ? null : Number(row.finenessMillis),
-    grade: row.grade,
+  const core = {
     id: row.id,
-    issueId: row.issueId === null ? null : Number(row.issueId),
-    liquidityTier: row.liquidityTier,
-    metal: row.metal,
-    metalValueMinor: row.metalValueMinor === null ? null : Number(row.metalValueMinor),
+    sourceId: row.sourceId,
+    externalId: row.externalId ?? row.id,
     name: row.name,
-    numismaticFetchedAt: row.numismaticFetchedAt,
+    liquidityTier: row.liquidityTier,
+    currency: row.currency,
+  };
+
+  if (row.kind === "token") {
+    return {
+      ...core,
+      kind: "token",
+      symbol: row.symbol ?? "",
+      balance: row.balance ?? "0",
+      wallet: row.wallet ?? "",
+      unitPrice: row.unitPrice,
+    };
+  }
+
+  return {
+    ...core,
+    kind: "coin",
+    catalogueId: row.catalogueId ?? "",
+    issueId: row.issueId === null ? null : Number(row.issueId),
+    grade: row.grade ?? "",
+    quantity: Number(row.quantity ?? 0),
+    year: row.year === null ? null : Number(row.year),
+    metal: row.metal,
+    finenessMillis: row.finenessMillis === null ? null : Number(row.finenessMillis),
+    weightGrams: row.weightGrams === null ? null : Number(row.weightGrams),
+    purchaseDate: row.purchaseDate,
+    metalValueMinor: row.metalValueMinor === null ? null : Number(row.metalValueMinor),
     numismaticValueMinor:
       row.numismaticValueMinor === null ? null : Number(row.numismaticValueMinor),
-    purchaseDate: row.purchaseDate,
+    numismaticFetchedAt: row.numismaticFetchedAt,
     purchasePriceMinor:
       row.purchasePriceMinor === null ? null : Number(row.purchasePriceMinor),
-    quantity: Number(row.quantity),
-    sourceId: row.sourceId,
-    weightGrams: row.weightGrams === null ? null : Number(row.weightGrams),
-    year: row.year === null ? null : Number(row.year),
+  };
+}
+
+/**
+ * The full `positions` column set for one domain position — the single source of
+ * truth for the field→column write shape, shared by `syncPositions` and the
+ * import path (ADR 0021). Dispatches on `kind`: the OTHER kind's columns are
+ * written null so every batched row carries a uniform column set (drizzle requires
+ * it). The caller assigns `id`/`sourceId` on the position before handing it here.
+ */
+export function positionInsertValues(
+  position: SourcePosition,
+): typeof positions.$inferInsert {
+  const core = {
+    id: position.id,
+    sourceId: position.sourceId,
+    kind: position.kind,
+    externalId: position.externalId,
+    name: position.name,
+    liquidityTier: position.liquidityTier,
+    currency: position.currency,
+  };
+
+  if (position.kind === "token") {
+    return {
+      ...core,
+      catalogueId: null,
+      issueId: null,
+      grade: null,
+      quantity: null,
+      year: null,
+      metal: null,
+      finenessMillis: null,
+      weightGrams: null,
+      purchaseDate: null,
+      purchasePriceMinor: null,
+      metalValueMinor: null,
+      numismaticValueMinor: null,
+      numismaticFetchedAt: null,
+      symbol: position.symbol,
+      balance: position.balance,
+      wallet: position.wallet,
+      unitPrice: position.unitPrice,
+    };
+  }
+
+  return {
+    ...core,
+    catalogueId: position.catalogueId,
+    issueId: position.issueId,
+    grade: position.grade,
+    quantity: position.quantity,
+    year: position.year,
+    metal: position.metal,
+    finenessMillis: position.finenessMillis,
+    weightGrams: position.weightGrams,
+    purchaseDate: position.purchaseDate,
+    purchasePriceMinor: position.purchasePriceMinor,
+    metalValueMinor: position.metalValueMinor,
+    numismaticValueMinor: position.numismaticValueMinor,
+    numismaticFetchedAt: position.numismaticFetchedAt,
+    symbol: null,
+    balance: null,
+    wallet: null,
+    unitPrice: null,
   };
 }
 
@@ -160,8 +249,11 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
       .all()
       .map(mapPositionRow);
 
-  /** Re-roll the source's illiquid coin-collection holding from its positions
-   *  (the single rung Numista occupies) and persist it on the materialized asset. */
+  /** Re-roll the source's materialized holding from its positions and persist the
+   *  value on the asset. The asset sits on ONE rung (Numista → illiquid, Binance →
+   *  market in S1/S2), so the value is the projected holding on the asset's own
+   *  tier (0 when the source now holds nothing on it). A multi-rung source (S3)
+   *  will materialize one asset per rung; this still picks the right one by tier. */
   const rerollHoldingValue = (source: ConnectedSourceRow): number => {
     const domainSource: ConnectedSource = {
       adapter: source.adapter,
@@ -173,8 +265,13 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
       domainSource,
       readPositionsForSource(source.id),
     );
+    const assetTier = db
+      .select({ tier: assets.liquidityTier })
+      .from(assets)
+      .where(eq(assets.id, source.assetId))
+      .get()?.tier;
     const valueMinor =
-      holdings.find((holding) => holding.liquidityTier === "illiquid")?.valueMinor ?? 0;
+      holdings.find((holding) => holding.liquidityTier === assetTier)?.valueMinor ?? 0;
 
     db.update(assets)
       .set({ currentValueMinor: valueMinor, updatedAt: sql`CURRENT_TIMESTAMP` })
@@ -194,19 +291,26 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
       const assetId = ctx.newId();
       const sourceId = ctx.newId();
 
+      // The materialized holding the source projects into is the adapter's
+      // instrument and its default rung (ADR 0016/0021): Numista → an illiquid
+      // coin_collection, Binance → a market-rung crypto holding. The single
+      // adapter→instrument→rung mapping the projection also reads, so the
+      // materialized holding and the projected one never disagree.
+      const instrument = instrumentForAdapter(input.adapter);
+      const { rung } = defaultsFor(instrument);
+
       ctx.transaction(() => {
-        // The materialized rolled-up holding the source projects into: a derived,
-        // illiquid coin collection valued from its positions (ADR 0016). No
-        // valuation_method is set — it is nullable and derived at runtime from the
-        // instrument, exactly like other asset rows.
+        // A derived holding valued from its positions (ADR 0016), never hand-set.
+        // No valuation_method is set — it is nullable and derived at runtime from
+        // the instrument, exactly like other asset rows.
         db.insert(assets)
           .values({
             currency: "EUR",
             currentValueMinor: 0,
             id: assetId,
-            instrument: "coin_collection",
+            instrument,
             isPrimaryResidence: 0,
-            liquidityTier: "illiquid",
+            liquidityTier: rung,
             name: input.label,
             type: "manual",
           })
@@ -266,43 +370,22 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
         // new one appears), assigning each a fresh id + the source id.
         db.delete(positions).where(eq(positions.sourceId, sourceId)).run();
 
-        const inserted: SourcePosition[] = incoming.map((position) => ({
-          ...position,
-          id: ctx.newId(),
-          sourceId,
-        }));
+        // Narrow per kind so the spread reconstructs the discriminated variant
+        // (a bare `{ ...union }` collapses to the common core and loses the
+        // coin/token fields). Both arms look alike but `position` is narrowed.
+        const inserted: SourcePosition[] = incoming.map((position) =>
+          position.kind === "coin"
+            ? { ...position, id: ctx.newId(), sourceId }
+            : { ...position, id: ctx.newId(), sourceId },
+        );
 
         if (inserted.length > 0) {
-          db.insert(positions)
-            .values(
-              inserted.map((position) => ({
-                catalogueId: position.catalogueId,
-                currency: position.currency,
-                externalId: position.externalId,
-                finenessMillis: position.finenessMillis,
-                grade: position.grade,
-                id: position.id,
-                issueId: position.issueId,
-                liquidityTier: position.liquidityTier,
-                metal: position.metal,
-                metalValueMinor: position.metalValueMinor,
-                name: position.name,
-                numismaticFetchedAt: position.numismaticFetchedAt,
-                numismaticValueMinor: position.numismaticValueMinor,
-                purchaseDate: position.purchaseDate,
-                purchasePriceMinor: position.purchasePriceMinor,
-                quantity: position.quantity,
-                sourceId,
-                weightGrams: position.weightGrams,
-                year: position.year,
-              })),
-            )
-            .run();
+          db.insert(positions).values(inserted.map(positionInsertValues)).run();
         }
 
         // Re-roll the holding's value from the freshly-written positions (ADR
-        // 0016). Numista's coins all sit on the single illiquid rung; the holding
-        // derives 0 when the source now holds nothing.
+        // 0016), dispatched per kind (frozen coin vs live token); the holding
+        // derives 0 when the source now holds nothing on its rung.
         rerollHoldingValue(source);
 
         db.update(connectedSources)
@@ -338,10 +421,11 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
 
         const valueMinor = rerollHoldingValue(source);
 
-        // Upsert the coin-collection's single valuation-freshness row (source
-        // "numista"): the staleness indicator the detail surface reads, and the
-        // entry the daily stale-price pass selects to trigger the next refresh.
-        // `price` carries the rolled-up value for parity with other cache rows.
+        // Upsert the holding's single valuation-freshness row, sourced by the
+        // adapter ("numista" | "binance"): the staleness indicator the detail
+        // surface reads, and the entry the daily stale-price pass selects to
+        // trigger the next refresh. `price` carries the rolled-up value for parity
+        // with other cache rows.
         const now = new Date().toISOString();
         const row = {
           assetId: source.assetId,
@@ -349,7 +433,7 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
           fetchedAt: freshness.fetchedAt,
           freshnessState: freshness.freshnessState,
           price: String(valueMinor),
-          source: "numista" as const,
+          source: source.adapter,
           staleReason: freshness.staleReason ?? null,
         };
         db.insert(assetPriceCache)

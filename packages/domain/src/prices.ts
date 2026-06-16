@@ -7,7 +7,8 @@ export type PriceSource =
   | "stooq"
   | "yahoo"
   | "finect"
-  | "numista";
+  | "numista"
+  | "binance";
 export type InvestmentPriceProvider = "yahoo" | "stooq" | "finect" | "coingecko";
 export type PriceFreshnessState = "fresh" | "stale" | "failed" | "manual";
 
@@ -37,6 +38,10 @@ export const PRICE_TTL_DAYS: Record<PriceSource, number> = {
   // packages/pricing/src/coin-valuation.ts (#240), which sources `metalSpot`
   // FROM this `numista` entry. Keep them in step: this is the metal-spot clock.
   numista: 1,
+  // The Binance holding's live valuation freshness (ADR 0021): a daily cadence so
+  // a fresh CoinGecko price (and re-read balances) show up the next day on the
+  // stale-price pass (#249), the same cadence the manual crypto path rides.
+  binance: 1,
 };
 
 export function defaultInvestmentPriceProvider(

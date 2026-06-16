@@ -13,7 +13,7 @@
  * deduped to stay within Numista's request cap.
  */
 
-import type { SourcePosition } from "@worthline/domain";
+import type { CoinPosition } from "@worthline/domain";
 
 import type { PriceProvider } from "./index";
 import { coinValuation } from "./coin-valuation";
@@ -23,8 +23,8 @@ import { mapCollectedItem } from "./numista";
 import type { NumistaCollectedItem, NumistaPrices, NumistaTypeDetail } from "./numista";
 import { resolveProvider } from "./registry";
 
-/** A position ready to persist — the store assigns its id + sourceId. */
-export type PositionDraft = Omit<SourcePosition, "id" | "sourceId">;
+/** A coin position ready to persist — the store assigns its id + sourceId. */
+export type PositionDraft = Omit<CoinPosition, "id" | "sourceId">;
 
 /** The external reads the sync needs, injected for testability. */
 export interface NumistaSyncDeps {
@@ -95,6 +95,7 @@ export async function syncNumistaCollection(
     });
 
     drafts.push({
+      kind: "coin",
       externalId: String(item.id),
       catalogueId: base.catalogueId,
       issueId: base.issueId,

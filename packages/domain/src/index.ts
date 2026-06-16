@@ -149,19 +149,27 @@ export {
 } from "./asset-projection";
 
 export type {
+  CoinPosition,
   CoinValuation,
   ConnectedSource,
+  DistributiveOmit,
   MetalGroup,
+  PositionValuation,
   ProjectedHolding,
   SourceAdapter,
   SourcePosition,
+  TokenPosition,
+  TokenValuationBasis,
   ValuationBasis,
 } from "./connected-source";
 export {
   coinCollectionValueAtDate,
   coinValue,
   groupPositionsByMetal,
+  instrumentForAdapter,
+  positionValue,
   projectConnectedSource,
+  projectedPositionValue,
 } from "./connected-source";
 
 export type {
@@ -269,6 +277,16 @@ export {
 } from "./portfolio-grouping";
 
 export type { DecimalString } from "./decimal";
+export {
+  addUnits,
+  averageUnitCost,
+  compareUnits,
+  divideUnits,
+  multiplyToMinor,
+  normalizeDecimal,
+  proportionMinor,
+  subtractUnits,
+} from "./decimal";
 
 export type {
   HousingValuationAnchor,

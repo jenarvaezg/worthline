@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 24;
+export const SCHEMA_VERSION = 25;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -616,6 +616,98 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       "CREATE INDEX IF NOT EXISTS snapshot_holdings_holding_kind_idx ON snapshot_holdings (holding_id, kind);",
     );
     sqlite.pragma("user_version = 24");
+  }
+
+  if (version < 25) {
+    // ADR 0021 (#246): generalize `positions` to carry a second adapter's shape —
+    // a Binance token balance — beside the Numista coin. A discriminant `kind`
+    // ('coin' | 'token') tags each row; the coin columns become NULLABLE (a token
+    // has none) and four token columns are added (symbol, balance, wallet,
+    // unit_price). SQLite cannot drop a NOT NULL constraint in place, so the table
+    // is REBUILT.
+    //
+    // This is a DEFENSIVE rebuild (per the positions-table drift lesson, memory):
+    // the target shape is created fresh and only the columns the OLD table ACTUALLY
+    // has are copied across — so an intermediate build that left `positions` in a
+    // half-migrated shape (e.g. missing metal_value_minor) still converges instead
+    // of throwing "no such column". Every existing row is a coin, so `kind`
+    // defaults to 'coin'. Guarded by the absence of `kind` so a fresh DB — already
+    // created at the new shape by schema-sql — skips the rebuild (idempotent).
+    //
+    // FKs are toggled OFF for the rebuild (SQLite docs: PRAGMA outside any
+    // transaction); the steps are wrapped in one transaction so a crash between
+    // DROP and RENAME cannot leave the DB without a `positions` table. No other
+    // table references `positions`, and its own FK to connected_sources resolves
+    // by name after the rename.
+    const positionCols = (
+      sqlite.prepare("PRAGMA table_info(positions)").all() as { name: string }[]
+    ).map((c) => c.name);
+
+    if (positionCols.length > 0 && !positionCols.includes("kind")) {
+      // The columns shared by the old and new shapes — copied verbatim; any the old
+      // (possibly drifted) table lacks are simply skipped and default/NULL in the new.
+      const carry = [
+        "id",
+        "source_id",
+        "external_id",
+        "catalogue_id",
+        "issue_id",
+        "name",
+        "grade",
+        "quantity",
+        "year",
+        "liquidity_tier",
+        "metal",
+        "fineness_millis",
+        "weight_grams",
+        "purchase_date",
+        "purchase_price_minor",
+        "metal_value_minor",
+        "numismatic_value_minor",
+        "numismatic_fetched_at",
+        "currency",
+        "created_at",
+      ].filter((c) => positionCols.includes(c));
+      const carryList = carry.join(", ");
+
+      sqlite.pragma("foreign_keys = OFF");
+      sqlite.exec(`BEGIN;
+        CREATE TABLE positions_new (
+          id TEXT PRIMARY KEY NOT NULL,
+          source_id TEXT NOT NULL,
+          kind TEXT DEFAULT 'coin' NOT NULL,
+          external_id TEXT,
+          name TEXT NOT NULL,
+          liquidity_tier TEXT NOT NULL,
+          currency TEXT NOT NULL,
+          catalogue_id TEXT,
+          issue_id INTEGER,
+          grade TEXT,
+          quantity INTEGER,
+          year INTEGER,
+          metal TEXT,
+          fineness_millis INTEGER,
+          weight_grams REAL,
+          purchase_date TEXT,
+          purchase_price_minor INTEGER,
+          metal_value_minor INTEGER,
+          numismatic_value_minor INTEGER,
+          numismatic_fetched_at TEXT,
+          symbol TEXT,
+          balance TEXT,
+          wallet TEXT,
+          unit_price TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          FOREIGN KEY (source_id) REFERENCES connected_sources(id) ON UPDATE no action ON DELETE cascade
+        );
+        INSERT INTO positions_new (${carryList})
+          SELECT ${carryList} FROM positions;
+        DROP TABLE positions;
+        ALTER TABLE positions_new RENAME TO positions;
+        COMMIT;`);
+      sqlite.pragma("foreign_keys = ON");
+    }
+    sqlite.pragma("user_version = 25");
   }
 
   return { ranV18Backfill };

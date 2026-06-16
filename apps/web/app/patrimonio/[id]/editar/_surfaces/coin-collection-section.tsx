@@ -18,7 +18,7 @@
  */
 
 import { coinValue, formatMoneyMinor, groupPositionsByMetal } from "@worthline/domain";
-import type { PriceFreshnessState, SourcePosition } from "@worthline/domain";
+import type { CoinPosition, PriceFreshnessState } from "@worthline/domain";
 
 import DisconnectNumistaFold from "../../../../ajustes/disconnect-numista-fold";
 import { syncNumistaAction } from "../../../../ajustes/numista-actions";
@@ -43,7 +43,7 @@ export function CoinCollectionSection({
   valuationFreshness = null,
   valuationStaleReason = null,
 }: {
-  positions: SourcePosition[];
+  positions: CoinPosition[];
   sourceId: string | null;
   lastSyncAt: string | null;
   currentUrl: string;
