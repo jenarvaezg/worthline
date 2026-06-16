@@ -37,6 +37,21 @@ export function instrumentForAdapter(adapter: SourceAdapter): Instrument {
 }
 
 /**
+ * The hand-valued instrument a source's holding becomes when a disconnect FREEZES
+ * it into a plain stored holding (PRD #160 story 21 / #245 S6, ADR 0016). The
+ * live/derived source instrument ({@link instrumentForAdapter}) flips to a `stored`
+ * one so the holding keeps its last value by hand, no longer tracking positions or
+ * a live price: a Numista coin collection's physical nature is `precious_metal`;
+ * crypto has no hand-valued kind of its own, so it lands on the neutral `other`
+ * stored bucket. The effective valuation method is read off the instrument
+ * (`defaultsFor(instrumentOfAsset(asset))`), so flipping the instrument is what
+ * makes the holding hand-valued — setting the column alone would not.
+ */
+export function frozenInstrumentForAdapter(adapter: SourceAdapter): Instrument {
+  return adapter === "numista" ? "precious_metal" : "other";
+}
+
+/**
  * The liquidity rung a Binance wallet projects onto (ADR 0016/0021, S3 #248).
  * Spot, funding and flexible Earn are all market-liquid (redeemable on demand) →
  * the `market` rung. Locked Earn / locked staking is committed for a fixed term →

@@ -10,7 +10,9 @@ import {
   isValueUpdateEligible,
   parseWorkspaceExport,
   valuationMethodOfAsset,
+  type BinanceHistoryCurve,
   type CoinPosition,
+  type DecimalString,
   type ManualAsset,
   type SourcePosition,
 } from "@worthline/domain";
@@ -77,6 +79,41 @@ function holding(store: WorthlineStore, assetId: string): ManualAsset {
   const asset = store.assets.readAssets().find((a) => a.id === assetId);
   expect(asset).toBeDefined();
   return asset!;
+}
+
+function connectBinance(store: WorthlineStore): { sourceId: string; assetId: string } {
+  return store.connectedSources.connect({
+    adapter: "binance",
+    label: "Binance",
+    credentialsJson: JSON.stringify({ apiKey: "k", apiSecret: "s" }),
+    ownership: ownerAll,
+  });
+}
+
+/** A Binance token-position draft to sync, with sensible market-spot defaults. */
+const tk = (o: Partial<SourcePosition> & { kind?: "token" }) => ({
+  kind: "token" as const,
+  externalId: "BTC:spot",
+  name: "BTC",
+  symbol: "BTC",
+  balance: "0.5",
+  wallet: "spot",
+  liquidityTier: "market" as const,
+  unitPrice: "50000",
+  currency: "EUR" as const,
+  ...o,
+});
+
+/** A Binance history curve from per-month BTC balances + per-date BTC prices —
+ *  enough to freeze a monthly-close snapshot row at a completed past month. */
+function btcCurve(input: {
+  monthEndBalances: Record<string, DecimalString>;
+  dailyPrices: Record<string, DecimalString>;
+}): BinanceHistoryCurve {
+  return {
+    monthEndBalances: new Map([["BTC", new Map(Object.entries(input.monthEndBalances))]]),
+    dailyPriceBySymbol: new Map([["BTC", new Map(Object.entries(input.dailyPrices))]]),
+  };
 }
 
 describe("connected-source store — connect", () => {
@@ -403,6 +440,10 @@ describe("connected-source store — freezeIntoStoredHolding", () => {
 
     // The orphaned connected-source price-cache row is cleared.
     expect(store.operations.readPriceCache(assetId)).toBeNull();
+
+    // The asset no longer references the (now deleted) source — a fully detached,
+    // plain holding with no dangling connected_source_id (S6 #251).
+    expect(store.connectedSources.readSourceIdForAsset(assetId)).toBeNull();
   });
 
   test("returns null for an unknown source and changes nothing", () => {
@@ -413,6 +454,173 @@ describe("connected-source store — freezeIntoStoredHolding", () => {
     expect(store.connectedSources.freezeIntoStoredHolding("missing")).toBeNull();
     expect(store.connectedSources.listSources()).toHaveLength(1);
     expect(holding(store, assetId).instrument).toBe("coin_collection");
+  });
+});
+
+describe("connected-source store — freezeIntoStoredHolding (Binance, multi-rung)", () => {
+  test("freezes EVERY rung into a hand-valued `other` holding, keeping value/name/ownership/rung, fully detached", () => {
+    const store = createInMemoryStore();
+    seed(store);
+    const { sourceId, assetId } = connectBinance(store);
+
+    store.connectedSources.syncPositions(
+      sourceId,
+      [
+        tk({}), // 0.5 BTC × 50 000 = 25 000 € on market
+        tk({
+          externalId: "ETH:locked-earn",
+          name: "ETH",
+          symbol: "ETH",
+          balance: "3",
+          unitPrice: "2000",
+          wallet: "locked-earn",
+          liquidityTier: "term-locked",
+        }), // 3 ETH × 2 000 = 6 000 € on term-locked
+      ],
+      "2026-06-16T10:00:00.000Z",
+    );
+    // A live-valued source carries a `binance` valuation-freshness price-cache row.
+    store.connectedSources.revaluePositions(sourceId, [], {
+      fetchedAt: "2026-06-16T10:00:00.000Z",
+      freshnessState: "fresh",
+    });
+
+    const assetIdsBefore = store.connectedSources.listSourceAssetIds(sourceId);
+    expect(assetIdsBefore).toHaveLength(2);
+    const termLockedId = assetIdsBefore.find((id) => id !== assetId)!;
+    expect(store.operations.readPriceCache(assetId)).not.toBeNull();
+
+    const result = store.connectedSources.freezeIntoStoredHolding(sourceId);
+    // Returns the primary (market) asset id, like the Numista freeze.
+    expect(result).toEqual({ assetId });
+
+    // The source + ALL its positions are gone; frozen snapshots are untouched.
+    expect(store.connectedSources.listSources()).toHaveLength(0);
+    expect(store.connectedSources.readPositions(sourceId)).toHaveLength(0);
+
+    // BOTH rung assets survive as plain hand-valued `other` holdings, keeping
+    // their value, name, ownership AND rung — now editable by hand (stored).
+    const market = holding(store, assetId);
+    expect(market.instrument).toBe("other");
+    expect(market.liquidityTier).toBe("market");
+    expect(market.currentValue.amountMinor).toBe(2_500_000);
+    expect(market.ownership).toEqual(ownerAll);
+    expect(valuationMethodOfAsset(market)).toBe("stored");
+    expect(isValueUpdateEligible(market)).toBe(true);
+
+    const termLocked = holding(store, termLockedId);
+    expect(termLocked.instrument).toBe("other");
+    expect(termLocked.liquidityTier).toBe("term-locked");
+    expect(termLocked.currentValue.amountMinor).toBe(600_000);
+    expect(valuationMethodOfAsset(termLocked)).toBe("stored");
+
+    // Fully detached: neither asset references the deleted source any more.
+    expect(store.connectedSources.readSourceIdForAsset(assetId)).toBeNull();
+    expect(store.connectedSources.readSourceIdForAsset(termLockedId)).toBeNull();
+
+    // The orphaned valuation-freshness row is cleared.
+    expect(store.operations.readPriceCache(assetId)).toBeNull();
+  });
+
+  test("leaves frozen snapshots intact — a disconnect freeze never rewrites history (#251)", () => {
+    const store = createInMemoryStore();
+    seed(store);
+    const { sourceId, assetId } = connectBinance(store);
+    store.connectedSources.syncPositions(
+      sourceId,
+      [tk({})], // 0.5 BTC spot, market rung
+      "2026-06-16T10:00:00.000Z",
+    );
+    // Freeze a monthly-close snapshot row for a completed past month (ADR 0008).
+    store.applyBinanceHistoryAndRipple({
+      sourceId,
+      curve: btcCurve({
+        monthEndBalances: { "2026-03": "0.5" },
+        dailyPrices: { "2026-03-31": "40000" },
+      }),
+      today: "2026-06-16",
+    });
+    const before = store.snapshots.readSnapshotHoldings({ holdingId: assetId });
+    expect(before.length).toBeGreaterThan(0);
+
+    store.connectedSources.freezeIntoStoredHolding(sourceId);
+
+    // The frozen rows are byte-identical — history is never touched by a disconnect.
+    expect(store.snapshots.readSnapshotHoldings({ holdingId: assetId })).toEqual(before);
+  });
+
+  test("a frozen source round-trips through export/import as a hand-valued (stored) holding (#251)", () => {
+    const store = createInMemoryStore();
+    seed(store);
+    const { sourceId, assetId } = connectBinance(store);
+    store.connectedSources.syncPositions(sourceId, [tk({})], "2026-06-16T10:00:00.000Z");
+    store.connectedSources.freezeIntoStoredHolding(sourceId);
+
+    const doc = store.workspace.exportWorkspace();
+    // No connected source survives the freeze — it became a plain holding.
+    expect(doc.connectedSources).toHaveLength(0);
+
+    const parsed = parseWorkspaceExport(doc);
+    if (!parsed.ok) throw new Error(parsed.errors.join("; "));
+    const fresh = createInMemoryStore();
+    fresh.workspace.importWorkspace(parsed.value);
+
+    // The INSTRUMENT (not the type-derived exported method column) governs the
+    // effective method across a round-trip: still hand-valued + editable.
+    const restored = fresh.assets.readAssets().find((a) => a.id === assetId)!;
+    expect(restored.instrument).toBe("other");
+    expect(valuationMethodOfAsset(restored)).toBe("stored");
+    expect(isValueUpdateEligible(restored)).toBe(true);
+  });
+});
+
+describe("connected-source store — removeSourceHoldings (Binance, multi-rung)", () => {
+  test("drops BOTH rung assets + the source + positions, but frozen snapshots survive (#251)", () => {
+    const store = createInMemoryStore();
+    seed(store);
+    const { sourceId, assetId } = connectBinance(store);
+    store.connectedSources.syncPositions(
+      sourceId,
+      [
+        tk({}), // market
+        tk({
+          externalId: "ETH:locked-earn",
+          name: "ETH",
+          symbol: "ETH",
+          balance: "3",
+          unitPrice: "2000",
+          wallet: "locked-earn",
+          liquidityTier: "term-locked",
+        }), // term-locked
+      ],
+      "2026-06-16T10:00:00.000Z",
+    );
+    // Freeze a past month-end row so we can prove the REMOVE path keeps history too.
+    store.applyBinanceHistoryAndRipple({
+      sourceId,
+      curve: btcCurve({
+        monthEndBalances: { "2026-03": "0.5" },
+        dailyPrices: { "2026-03-31": "40000" },
+      }),
+      today: "2026-06-16",
+    });
+    const frozenBefore = store.snapshots.readSnapshotHoldings({ holdingId: assetId });
+    expect(frozenBefore.length).toBeGreaterThan(0);
+    expect(store.connectedSources.listSourceAssetIds(sourceId)).toHaveLength(2);
+
+    const { removed } = store.connectedSources.removeSourceHoldings(sourceId);
+
+    // Both rung assets, the source and all positions are gone…
+    expect(removed).toBe(2);
+    expect(store.connectedSources.listSources()).toHaveLength(0);
+    expect(store.connectedSources.readPositions(sourceId)).toHaveLength(0);
+    expect(store.assets.readAssets().some((a) => a.instrument === "crypto")).toBe(false);
+
+    // …but the frozen snapshot rows survive untouched (a hard delete never touches
+    // history — ADR 0008/0016).
+    expect(store.snapshots.readSnapshotHoldings({ holdingId: assetId })).toEqual(
+      frozenBefore,
+    );
   });
 });
 
@@ -486,6 +694,120 @@ describe("connected-source store — export/import round-trip", () => {
     const restoredHolding = fresh.assets.readAssets().find((a) => a.id === assetId);
     expect(restoredHolding?.instrument).toBe("coin_collection");
     expect(restoredHolding?.currentValue.amountMinor).toBe(12_500);
+  });
+
+  test("round-trips a multi-rung Binance source (token positions across both rungs), without credentials (S6 #251)", () => {
+    const store = createInMemoryStore();
+    seed(store);
+    const { sourceId, assetId } = store.connectedSources.connect({
+      adapter: "binance",
+      label: "Binance",
+      // Distinctive sentinels for BOTH secrets (key + signing secret are both
+      // local-only, ADR 0015/0021) so the "no secrets in the export" assertion bites.
+      credentialsJson: JSON.stringify({
+        apiKey: "topsecretkeyvalue",
+        apiSecret: "topsecretvalue",
+      }),
+      ownership: ownerAll,
+    });
+
+    // Spot (market) + locked-earn (term-locked) → two materialized crypto assets,
+    // each with a live token position carrying balance/wallet/unitPrice.
+    store.connectedSources.syncPositions(
+      sourceId,
+      [
+        {
+          kind: "token",
+          externalId: "BTC:spot",
+          name: "BTC",
+          symbol: "BTC",
+          balance: "0.5",
+          wallet: "spot",
+          liquidityTier: "market",
+          unitPrice: "50000",
+          currency: "EUR",
+        },
+        {
+          kind: "token",
+          externalId: "ETH:locked-earn",
+          name: "ETH",
+          symbol: "ETH",
+          balance: "3",
+          wallet: "locked-earn",
+          liquidityTier: "term-locked",
+          unitPrice: "2000",
+          currency: "EUR",
+        },
+      ],
+      "2026-06-16T10:00:00.000Z",
+    );
+    const termLockedId = store.connectedSources
+      .listSourceAssetIds(sourceId)
+      .find((id) => id !== assetId)!;
+    // Position identities to preserve across the round-trip (#251).
+    const positionIdsBefore = store.connectedSources
+      .readPositions(sourceId)
+      .map((p) => p.id)
+      .sort();
+
+    const doc = store.workspace.exportWorkspace();
+
+    // The export carries the source with its TOKEN positions, and BOTH rung assets
+    // carry the connected_source_id back-link (the source row names only the
+    // primary, #248) — but NEVER either secret (key or signing secret).
+    expect(doc.connectedSources).toHaveLength(1);
+    const exported = doc.connectedSources[0]!;
+    expect(exported).toMatchObject({ id: sourceId, adapter: "binance", assetId });
+    expect(exported.positions).toHaveLength(2);
+    expect(JSON.stringify(doc)).not.toContain("topsecretvalue");
+    expect(JSON.stringify(doc)).not.toContain("topsecretkeyvalue");
+    const exportedRungAssets = doc.assets.filter((a) => a.connectedSourceId === sourceId);
+    expect(exportedRungAssets.map((a) => a.id).sort()).toEqual(
+      [assetId, termLockedId].sort(),
+    );
+
+    // Validates and restores all-or-nothing into a fresh store.
+    const parsed = parseWorkspaceExport(doc);
+    if (!parsed.ok) throw new Error(parsed.errors.join("; "));
+    const fresh = createInMemoryStore();
+    fresh.workspace.importWorkspace(parsed.value);
+
+    // The source is back, credentials unusable (a re-sync needs the key re-entered).
+    const restored = fresh.connectedSources.listSources();
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({ id: sourceId, adapter: "binance", assetId });
+    const restoredCreds = JSON.parse(restored[0]!.credentialsJson) as {
+      apiKey?: string;
+      apiSecret?: string;
+    };
+    expect(restoredCreds.apiKey).toBeUndefined();
+    expect(restoredCreds.apiSecret).toBeUndefined();
+
+    // Both rung assets re-attach to the source (identities preserved), and the
+    // token positions round-trip faithfully (balance/wallet/unitPrice intact) —
+    // including their own ids (preserving identities, ADR 0015).
+    expect(fresh.connectedSources.listSourceAssetIds(sourceId).sort()).toEqual(
+      [assetId, termLockedId].sort(),
+    );
+    const restoredPositions = fresh.connectedSources.readPositions(sourceId);
+    expect(restoredPositions).toHaveLength(2);
+    expect(restoredPositions.map((p) => p.id).sort()).toEqual(positionIdsBefore);
+    const btc = restoredPositions.find((p) => p.kind === "token" && p.symbol === "BTC");
+    expect(btc).toMatchObject({
+      kind: "token",
+      balance: "0.5",
+      wallet: "spot",
+      unitPrice: "50000",
+    });
+
+    // Both projected holdings round-trip as crypto with their live-rolled values.
+    const market = fresh.assets.readAssets().find((a) => a.id === assetId);
+    expect(market?.instrument).toBe("crypto");
+    expect(market?.currentValue.amountMinor).toBe(2_500_000);
+    const termLocked = fresh.assets.readAssets().find((a) => a.id === termLockedId);
+    expect(termLocked?.instrument).toBe("crypto");
+    expect(termLocked?.liquidityTier).toBe("term-locked");
+    expect(termLocked?.currentValue.amountMinor).toBe(600_000);
   });
 });
 
