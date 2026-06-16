@@ -1,6 +1,5 @@
 import type { PriceProvider } from "./index";
-import { ecbProvider } from "./ecb";
-import { stooqProvider } from "./stooq";
+import { resolveProvider } from "./registry";
 
 interface YahooChartResponse {
   chart?: {
@@ -28,9 +27,13 @@ type YahooChartResult = NonNullable<
 
 const YAHOO_CHART_URL = "https://query2.finance.yahoo.com/v8/finance/chart/";
 
+// Yahoo only fetches from Yahoo. The Yahoo→Stooq fallback is policy, declared
+// in `./registry` (`fallbackChains`) and applied by `fetchWithFallback`, so a
+// Yahoo miss returns null here and the runner reaches for Stooq (issue #243).
+// The EUR conversion (Yahoo→ECB FX) stays — it is a composition pipeline, not a
+// fallback — but resolves ECB via the registry rather than a hardcoded import.
 export const yahooProvider: PriceProvider = {
   name: "yahoo",
-  canFetch: (ctx) => Boolean(ctx.symbol),
   fetchPrice: async (ctx) => {
     try {
       const url =
@@ -40,7 +43,7 @@ export const yahooProvider: PriceProvider = {
         signal: AbortSignal.timeout(8000),
       });
 
-      if (!res.ok) return fetchStooqFallback(ctx);
+      if (!res.ok) return null;
 
       const data = (await res.json()) as YahooChartResponse;
       const result = data.chart?.result?.[0];
@@ -48,7 +51,7 @@ export const yahooProvider: PriceProvider = {
       const seriesPrice = latestSeriesPrice(result);
       const price = seriesPrice?.price ?? meta?.regularMarketPrice;
 
-      if (price == null || !Number.isFinite(price)) return fetchStooqFallback(ctx);
+      if (price == null || !Number.isFinite(price)) return null;
 
       const currency = meta?.currency ?? ctx.currency;
       const priceInEur = await convertYahooPriceToEur(
@@ -63,9 +66,9 @@ export const yahooProvider: PriceProvider = {
             currency: "EUR",
             ...(seriesPrice?.priceDate ? { priceDate: seriesPrice.priceDate } : {}),
           }
-        : fetchStooqFallback(ctx);
+        : null;
     } catch {
-      return fetchStooqFallback(ctx);
+      return null;
     }
   },
 };
@@ -107,23 +110,14 @@ async function convertYahooPriceToEur(
 ): Promise<string | null> {
   if (currency === "EUR") return price;
 
-  const fx = await ecbProvider.fetchPrice({ ...ctx, symbol: currency });
+  // FX conversion is a pipeline (Yahoo price × ECB rate must both succeed), not
+  // a fallback — but ECB resolves through the registry so no cross-provider
+  // import is buried in this body (issue #243).
+  const fx = await resolveProvider("ecb").fetchPrice({ ...ctx, symbol: currency });
   if (!fx || "failed" in fx) return null;
 
   const converted = Number(price) * Number(fx.price);
   if (!Number.isFinite(converted)) return null;
 
   return String(Math.round((converted + Number.EPSILON) * 100000000) / 100000000);
-}
-
-async function fetchStooqFallback(
-  ctx: Parameters<PriceProvider["fetchPrice"]>[0],
-): ReturnType<PriceProvider["fetchPrice"]> {
-  const fallback = await stooqProvider.fetchPrice(ctx);
-
-  // Propagate Stooq's failure reason (or null) verbatim; only stamp the source
-  // on a successful quote so the cache records where the price actually came from.
-  if (!fallback || "failed" in fallback) return fallback;
-
-  return { ...fallback, source: stooqProvider.name };
 }

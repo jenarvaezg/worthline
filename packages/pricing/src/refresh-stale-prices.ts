@@ -5,11 +5,8 @@ import type {
 } from "@worthline/domain";
 import { defaultInvestmentPriceProvider, selectStalePrices } from "@worthline/domain";
 
-import { coingeckoProvider } from "./coingecko";
-import { finectProvider } from "./finect";
-import { fetchAndCachePrice } from "./index";
-import { stooqProvider } from "./stooq";
-import { yahooProvider } from "./yahoo";
+import { fetchAndCachePrice, type PriceProvider } from "./index";
+import { fetchWithFallback, providerRegistry, type RegisteredSource } from "./registry";
 
 export interface InvestmentAssetRef {
   id: string;
@@ -128,19 +125,23 @@ export async function refreshStalePrices(
   };
 }
 
-function resolveInvestmentPriceProvider(asset: InvestmentAssetRef) {
-  const providerName =
+/**
+ * Resolve the investment's source name (explicit override, else the tier
+ * default) and return a provider that fetches through the declared fallback
+ * POLICY (issue #243, ADR 0011). Adding a provider is a single `providerRegistry`
+ * entry — there is no routing switch to extend here. The tier default stays in
+ * `domain` (`defaultInvestmentPriceProvider`); only the name→provider resolution
+ * lives behind the registry seam.
+ */
+function resolveInvestmentPriceProvider(asset: InvestmentAssetRef): PriceProvider {
+  const source: RegisteredSource =
     asset.priceProvider ??
     defaultInvestmentPriceProvider(asset.liquidityTier ?? "market");
 
-  switch (providerName) {
-    case "finect":
-      return finectProvider;
-    case "stooq":
-      return stooqProvider;
-    case "yahoo":
-      return yahooProvider;
-    case "coingecko":
-      return coingeckoProvider;
-  }
+  // A thin adapter so `fetchAndCachePrice` drives the source through its
+  // fallback chain; `name` is the primary so a total miss still records it.
+  return {
+    name: providerRegistry[source].name,
+    fetchPrice: (ctx) => fetchWithFallback(source, ctx),
+  };
 }

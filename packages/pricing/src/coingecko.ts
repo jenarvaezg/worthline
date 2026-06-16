@@ -2,7 +2,6 @@ import type { PriceProvider } from "./index";
 
 export const coingeckoProvider: PriceProvider = {
   name: "coingecko",
-  canFetch: (ctx) => Boolean(ctx.symbol.trim()),
   fetchPrice: async (ctx) => {
     // CoinGecko's /simple/price keys both the `ids` query and the response by
     // the lowercase coin id (e.g. "bitcoin"), so normalize the stored symbol.

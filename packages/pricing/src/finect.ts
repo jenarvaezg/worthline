@@ -4,7 +4,6 @@ const FINECT_BASE_URL = "https://www.finect.com/planes-pensiones/";
 
 export const finectProvider: PriceProvider = {
   name: "finect",
-  canFetch: (ctx) => Boolean(ctx.symbol),
   fetchPrice: async (ctx) => {
     const res = await fetch(FINECT_BASE_URL + encodeURIComponent(ctx.symbol), {
       signal: AbortSignal.timeout(8000),

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { coingeckoProvider } from "./coingecko";
 import { finectProvider } from "./finect";
 import { fetchAndCachePrice } from "./index";
+import { fetchWithFallback } from "./registry";
 import { stooqProvider } from "./stooq";
 import { yahooProvider } from "./yahoo";
 
@@ -21,14 +22,6 @@ describe("coingeckoProvider", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
-  });
-
-  it("canFetch returns true when symbol is present", () => {
-    expect(coingeckoProvider.canFetch(baseCtx)).toBe(true);
-  });
-
-  it("canFetch returns false when symbol is empty", () => {
-    expect(coingeckoProvider.canFetch({ ...baseCtx, symbol: "" })).toBe(false);
   });
 
   it("fetchPrice returns price and currency on successful response", async () => {
@@ -86,10 +79,6 @@ describe("stooqProvider", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
-  });
-
-  it("canFetch returns true when symbol is present", () => {
-    expect(stooqProvider.canFetch({ ...baseCtx, symbol: "aapl.us" })).toBe(true);
   });
 
   it("parses valid CSV with header + data line", async () => {
@@ -259,6 +248,10 @@ describe("yahooProvider", () => {
     expect(result).toEqual({ price: "80", currency: "EUR" });
   });
 
+  // The Yahoo→Stooq fallback is now POLICY (issue #243): the chain lives in
+  // `./registry` and is applied by `fetchWithFallback`, not inside yahoo.ts.
+  // These assert the same observable outcome through the policy runner +
+  // `fetchAndCachePrice` (which honours the deliverer's stamped `source`).
   it("falls back to Stooq and records Stooq as the source when Yahoo has no price", async () => {
     const csv =
       "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2024-01-15,16:00:00,4.10,4.30,4.05,4.25,55000000";
@@ -269,10 +262,10 @@ describe("yahooProvider", () => {
         text: async () => csv,
       } as Response);
 
-    const result = await fetchAndCachePrice(yahooProvider, {
-      ...baseCtx,
-      symbol: "SAN.MC",
-    });
+    const result = await fetchAndCachePrice(
+      { name: "yahoo", fetchPrice: (ctx) => fetchWithFallback("yahoo", ctx) },
+      { ...baseCtx, symbol: "SAN.MC" },
+    );
 
     expect(result.freshnessState).toBe("fresh");
     expect(result.price).toBe("4.25");
@@ -286,10 +279,10 @@ describe("yahooProvider", () => {
       .mockResolvedValueOnce({ ok: false, status: 404 } as Response)
       .mockResolvedValueOnce({ ok: true, text: async () => csv } as Response);
 
-    const result = await fetchAndCachePrice(yahooProvider, {
-      ...baseCtx,
-      symbol: "NOPE.MC",
-    });
+    const result = await fetchAndCachePrice(
+      { name: "yahoo", fetchPrice: (ctx) => fetchWithFallback("yahoo", ctx) },
+      { ...baseCtx, symbol: "NOPE.MC" },
+    );
 
     expect(result.freshnessState).toBe("failed");
     expect(result.staleReason).toBe("El proveedor no devolvió cotización");
@@ -305,10 +298,10 @@ describe("yahooProvider", () => {
         text: async () => csv,
       } as Response);
 
-    const result = await fetchAndCachePrice(yahooProvider, {
-      ...baseCtx,
-      symbol: "SAN.MC",
-    });
+    const result = await fetchAndCachePrice(
+      { name: "yahoo", fetchPrice: (ctx) => fetchWithFallback("yahoo", ctx) },
+      { ...baseCtx, symbol: "SAN.MC" },
+    );
 
     expect(result.freshnessState).toBe("fresh");
     expect(result.source).toBe("stooq");
@@ -385,7 +378,6 @@ describe("fetchAndCachePrice", () => {
   it("returns failed AssetPrice when provider returns null", async () => {
     const provider = {
       name: "stooq" as const,
-      canFetch: () => true,
       fetchPrice: async () => null,
     };
 
@@ -400,7 +392,6 @@ describe("fetchAndCachePrice", () => {
   it("surfaces a discriminated provider failure reason as staleReason", async () => {
     const provider = {
       name: "finect" as const,
-      canFetch: () => true,
       fetchPrice: async () => ({
         failed: true as const,
         reason: "Símbolo no encontrado en el proveedor",
@@ -417,7 +408,6 @@ describe("fetchAndCachePrice", () => {
   it("returns failed AssetPrice when provider throws", async () => {
     const provider = {
       name: "coingecko" as const,
-      canFetch: () => true,
       fetchPrice: async (): Promise<null> => {
         throw new Error("Network timeout");
       },
@@ -432,7 +422,6 @@ describe("fetchAndCachePrice", () => {
   it("returns fresh AssetPrice on successful fetch", async () => {
     const provider = {
       name: "stooq" as const,
-      canFetch: () => true,
       fetchPrice: async () => ({
         price: "42.50",
         currency: "EUR",
