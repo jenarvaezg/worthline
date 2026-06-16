@@ -18,6 +18,15 @@ to Stooq silently. The `asset_price_cache.source` records the provider that
 actually delivered the price. No warning is raised unless **all** providers
 fail for that asset.
 
+The fallback and routing are POLICY behind the provider seam, not provider-body
+logic (issue #243): a single `providerRegistry` is the one place a source name
+resolves to a provider, and `fallbackChains` declares the Yahoo→Stooq rescue as
+data that `fetchWithFallback` runs (currency conversions stay composition
+pipelines, not fallbacks). Adding a provider is one registry entry; reordering a
+chain is one data edit. The seam dropped the never-consulted `canFetch`
+pre-check: a provider already signals inability by returning `null`/a failure,
+so the gate was redundant ceremony.
+
 ## Symbol format
 
 The `provider_symbol` field uses Yahoo-format tickers as canonical

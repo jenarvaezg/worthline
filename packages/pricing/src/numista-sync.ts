@@ -15,13 +15,13 @@
 
 import type { SourcePosition } from "@worthline/domain";
 
+import type { PriceProvider } from "./index";
 import { coinValuation } from "./coin-valuation";
-import { ecbProvider } from "./ecb";
 import type { MetalKind } from "./metal";
 import { parseComposition, STOOQ_METAL_SYMBOL } from "./metal";
 import { mapCollectedItem } from "./numista";
 import type { NumistaCollectedItem, NumistaPrices, NumistaTypeDetail } from "./numista";
-import { stooqProvider } from "./stooq";
+import { resolveProvider } from "./registry";
 
 /** A position ready to persist — the store assigns its id + sourceId. */
 export type PositionDraft = Omit<SourcePosition, "id" | "sourceId">;
@@ -120,7 +120,7 @@ export async function syncNumistaCollection(
 
 /** A provider result that carries a usable numeric price. */
 function priceOf(
-  result: Awaited<ReturnType<typeof stooqProvider.fetchPrice>>,
+  result: Awaited<ReturnType<PriceProvider["fetchPrice"]>>,
 ): number | null {
   if (!result || "failed" in result) {
     return null;
@@ -140,8 +140,11 @@ export async function fetchMetalSpotEur(
   nowIso: string,
 ): Promise<number | null> {
   try {
+    // Resolve both legs through the registry (issue #243) so no cross-provider
+    // import is buried here; the metal spot stays a composition pipeline (both
+    // legs must succeed), NOT a fallback chain.
     const usdPerOz = priceOf(
-      await stooqProvider.fetchPrice({
+      await resolveProvider("stooq").fetchPrice({
         assetId: "metal-spot",
         symbol: STOOQ_METAL_SYMBOL[metal],
         currency: "USD",
@@ -152,7 +155,7 @@ export async function fetchMetalSpotEur(
       return null;
     }
     const eurPerUsd = priceOf(
-      await ecbProvider.fetchPrice({
+      await resolveProvider("ecb").fetchPrice({
         assetId: "fx",
         symbol: "USD",
         currency: "EUR",
