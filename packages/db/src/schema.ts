@@ -381,32 +381,44 @@ export const connectedSources = sqliteTable("connected_sources", {
 });
 
 /**
- * One line a connected source mirrors — for Numista, a coin you own (PRD #160,
- * ADR 0017). Sits beneath the projected holding as sub-detail, the way an
- * operation sits beneath an investment (ADR 0014). `liquidity_tier` ∈ the ladder
- * vocabulary is enforced in TS (no CHECK); `metal` is grouping metadata for the
- * detail-page lens, null when the source records no metal.
+ * One line a connected source mirrors — a Numista coin or a Binance token balance
+ * (PRD #160/#245, ADR 0017/0021). Sits beneath the projected holding as
+ * sub-detail, the way an operation sits beneath an investment (ADR 0014).
+ *
+ * `kind` ('coin' | 'token') is the polymorphism discriminant (ADR 0021). The coin
+ * columns (catalogue/grade/quantity/metal/…) and the token columns
+ * (symbol/balance/wallet/unit_price) are ALL nullable: a row of one kind leaves
+ * the other kind's columns null, with per-kind required-ness enforced in TS
+ * (CoinPosition / TokenPosition) rather than by SQL CHECKs — like `liquidity_tier`
+ * and `valuation_method`. `liquidity_tier` ∈ the ladder vocabulary; `metal`/
+ * `symbol` are the detail-page grouping lenses.
  */
 export const positions = sqliteTable("positions", {
   id: text("id").primaryKey(),
   sourceId: text("source_id")
     .notNull()
     .references(() => connectedSources.id, { onDelete: "cascade" }),
-  // Numista's stable collected-item id — the cross-sync trade key (ADR 0017, #167).
-  // Nullable only for legacy rows written before v20; every sync now sets it.
+  // Polymorphism discriminant (ADR 0021): 'coin' (Numista) | 'token' (Binance).
+  // Defaults to 'coin' so rows written before v25 (all coins) classify correctly.
+  kind: text("kind").$type<"coin" | "token">().notNull().default("coin"),
+  // The source's stable per-line id — the cross-sync identity key (a Numista
+  // collected-item id, ADR 0017 #167; or a Binance `SYMBOL:wallet` key). Nullable
+  // only for legacy rows written before v20; every sync now sets it.
   externalId: text("external_id"),
-  catalogueId: text("catalogue_id").notNull(),
+  name: text("name").notNull(),
+  liquidityTier: text("liquidity_tier").$type<LiquidityTier>().notNull(),
+  currency: text("currency").notNull(),
+  // ── Coin fields (Numista) — null on a token row. ─────────────────────────────
+  catalogueId: text("catalogue_id"),
   // Numista issue id within the type; null when the source records none. Persisted
   // so the valuation refresh can refetch the per-grade estimate without re-listing
   // the collection (#166).
   issueId: integer("issue_id"),
-  name: text("name").notNull(),
-  grade: text("grade").notNull(),
-  quantity: integer("quantity").notNull(),
+  grade: text("grade"),
+  quantity: integer("quantity"),
   // The coin's mint year from the source's issue (#215); null when the catalogue
   // records none. Distinct from purchase_date (when it was acquired).
   year: integer("year"),
-  liquidityTier: text("liquidity_tier").$type<LiquidityTier>().notNull(),
   metal: text("metal"),
   // Indefinite coin detail (ADR 0017): parsed fineness + weight, stamped once at
   // sync and never refetched — the valuation refresh recomputes melt value from
@@ -423,7 +435,20 @@ export const positions = sqliteTable("positions", {
   // When the numismatic estimate was last fetched (ISO); null until first fetched.
   // Drives the long-TTL refetch gate in the valuation refresh (#166).
   numismaticFetchedAt: text("numismatic_fetched_at"),
-  currency: text("currency").notNull(),
+  // ── Token fields (Binance, ADR 0021) — null on a coin row. ───────────────────
+  // The Binance asset symbol (e.g. "BTC") — the detail-page grouping lens and the
+  // symbol→CoinGecko-id resolver key.
+  symbol: text("symbol"),
+  // The token BALANCE (a quantity, decimal string) — not a frozen value; the
+  // holding's value is derived live as balance × unit_price (ADR 0021).
+  balance: text("balance"),
+  // Which Binance wallet the balance came from (e.g. "spot"); a token held across
+  // wallets is summed into one position (#247).
+  wallet: text("wallet"),
+  // The last-fetched live EUR unit price (decimal string); null when the symbol
+  // cannot be mapped/priced → value 0 + "value at 0" warning. Refreshed by sync/
+  // the stale-price pass (#249).
+  unitPrice: text("unit_price"),
   createdAt: timestamp("created_at"),
 });
 

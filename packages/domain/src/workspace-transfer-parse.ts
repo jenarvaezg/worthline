@@ -247,7 +247,10 @@ const priceSchema = z.object({
 
 // ── Connected sources (ADR 0016): the source + its positions, never secrets ──
 
-const positionSchema = z.object({
+// A coin position (Numista). `kind` defaults to "coin" so a file written before
+// the polymorphism existed (ADR 0021) — which has no `kind` — still imports.
+const coinPositionSchema = z.object({
+  kind: z.literal("coin").default("coin"),
   id: nonEmptyString,
   externalId: nonEmptyString,
   catalogueId: nonEmptyString,
@@ -268,9 +271,30 @@ const positionSchema = z.object({
   currency: nonEmptyString,
 });
 
+// A token balance (Binance, ADR 0021): symbol/balance/wallet + the last live
+// unit price; carried by export/import like any other position (credentials
+// never are — they live on `connected_sources`, not here).
+const tokenPositionSchema = z.object({
+  kind: z.literal("token"),
+  id: nonEmptyString,
+  externalId: nonEmptyString,
+  name: nonEmptyString,
+  liquidityTier: liquidityTierSchema,
+  currency: nonEmptyString,
+  symbol: nonEmptyString,
+  balance: nonEmptyString,
+  wallet: z.string(),
+  unitPrice: nonEmptyString.nullable(),
+});
+
+// First match wins: a token position fails the coin schema (no catalogue/quantity)
+// and parses as a token; a coin position (with or without an explicit `kind`)
+// parses as a coin.
+const positionSchema = z.union([coinPositionSchema, tokenPositionSchema]);
+
 const connectedSourceSchema = z.object({
   id: nonEmptyString,
-  adapter: z.enum(["numista"]),
+  adapter: z.enum(["numista", "binance"]),
   label: nonEmptyString,
   assetId: nonEmptyString,
   lastSyncAt: nonEmptyString.optional(),

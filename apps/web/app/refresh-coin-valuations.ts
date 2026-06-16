@@ -1,4 +1,4 @@
-import type { AssetPrice, SourcePosition } from "@worthline/domain";
+import type { AssetPrice, CoinPosition, SourcePosition } from "@worthline/domain";
 import { selectStalePrices } from "@worthline/domain";
 import type { ValuationFreshness } from "@worthline/db";
 import type { MetalKind, RevaluedPosition, RevaluePosition } from "@worthline/pricing";
@@ -58,8 +58,8 @@ export interface RefreshCoinValuationsResult {
   errors: string[];
 }
 
-/** Map a stored position to the valuation-refresh input shape. */
-function toRevaluePosition(position: SourcePosition): RevaluePosition {
+/** Map a stored coin position to the valuation-refresh input shape. */
+function toRevaluePosition(position: CoinPosition): RevaluePosition {
   return {
     id: position.id,
     typeId: Number(position.catalogueId),
@@ -92,7 +92,10 @@ export async function refreshStaleCoinValuations(
       continue;
     }
 
-    const positions = input.readPositions(source.sourceId).map(toRevaluePosition);
+    const positions = input
+      .readPositions(source.sourceId)
+      .filter((position): position is CoinPosition => position.kind === "coin")
+      .map(toRevaluePosition);
 
     try {
       const updates = await input.revalue(source.sourceId, positions, input.nowIso);

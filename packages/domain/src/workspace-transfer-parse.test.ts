@@ -967,6 +967,7 @@ describe("parseWorkspaceExport — connected sources (ADR 0016)", () => {
         lastSyncAt: "2026-06-10T18:00:00.000Z",
         positions: [
           {
+            kind: "coin",
             id: "p1",
             externalId: "ext-1",
             catalogueId: "n1",

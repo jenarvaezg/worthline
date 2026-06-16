@@ -10,14 +10,21 @@ import {
   isValueUpdateEligible,
   parseWorkspaceExport,
   valuationMethodOfAsset,
+  type CoinPosition,
   type ManualAsset,
+  type SourcePosition,
 } from "@worthline/domain";
 import Database from "better-sqlite3";
 import { describe, expect, test } from "vitest";
 
 import { createInMemoryStore } from "../src/index";
-import type { SourcePositionInput, WorthlineStore } from "../src/index";
+import type { WorthlineStore } from "../src/index";
 import { migrate, SCHEMA_VERSION } from "../src/migrate";
+
+const asCoin = (p: SourcePosition): CoinPosition => {
+  if (p.kind !== "coin") throw new Error("expected coin");
+  return p;
+};
 
 const MEMBER_ID = "mJ";
 
@@ -29,8 +36,11 @@ function seed(store: WorthlineStore): void {
 }
 
 /** A position to sync, with sensible defaults the test can override. */
-function position(overrides: Partial<SourcePositionInput> = {}): SourcePositionInput {
+function position(
+  overrides: Partial<Omit<CoinPosition, "id" | "sourceId">> = {},
+): Omit<CoinPosition, "id" | "sourceId"> {
   return {
+    kind: "coin",
     catalogueId: "n123",
     currency: "EUR",
     externalId: overrides.catalogueId ?? "n123",
@@ -126,7 +136,7 @@ describe("connected-source store — syncPositions", () => {
 
     expect(holding(store, assetId).currentValue.amountMinor).toBe(12_500);
 
-    const stored = store.connectedSources.readPositions(sourceId);
+    const stored = store.connectedSources.readPositions(sourceId).map(asCoin);
     expect(stored).toHaveLength(2);
     expect(stored.map((p) => p.catalogueId).sort()).toEqual(["n1", "n2"]);
     // The Numista collected-item id round-trips — the cross-sync trade key (#167).
@@ -170,7 +180,7 @@ describe("connected-source store — syncPositions", () => {
       "2024-07-01T10:00:00.000Z",
     );
 
-    const stored = store.connectedSources.readPositions(sourceId);
+    const stored = store.connectedSources.readPositions(sourceId).map(asCoin);
     expect(stored.map((p) => p.catalogueId).sort()).toEqual(["keep", "new"]);
     expect(stored.some((p) => p.catalogueId === "drop")).toBe(false);
     expect(holding(store, assetId).currentValue.amountMinor).toBe(8_000);
@@ -222,7 +232,7 @@ describe("connected-source store — syncPositions", () => {
 
     expect(holding(store, assetId).currentValue.amountMinor).toBe(4_000);
 
-    const stored = store.connectedSources.readPositions(sourceId);
+    const stored = store.connectedSources.readPositions(sourceId).map(asCoin);
     expect(stored).toHaveLength(2);
     const unpriced = stored.find((p) => p.catalogueId === "unpriced");
     expect(unpriced?.purchasePriceMinor).toBeNull();
@@ -256,7 +266,7 @@ describe("connected-source store — revaluePositions", () => {
     // value = Σ max(metal, numismatic): 7558 + 4051 = 11609
     expect(holding(store, assetId).currentValue.amountMinor).toBe(11609);
 
-    const stored = store.connectedSources.readPositions(sourceId);
+    const stored = store.connectedSources.readPositions(sourceId).map(asCoin);
     const eagle = stored.find((p) => p.catalogueId === "1493")!;
     const pesetas = stored.find((p) => p.catalogueId === "5678")!;
 
@@ -282,7 +292,7 @@ describe("connected-source store — revaluePositions", () => {
     // eagle max(3000, 7558)=7558; pesetas max(4500, 2400)=4500 → 12058
     expect(holding(store, assetId).currentValue.amountMinor).toBe(12058);
 
-    const reread = store.connectedSources.readPositions(sourceId);
+    const reread = store.connectedSources.readPositions(sourceId).map(asCoin);
     expect(reread.find((p) => p.catalogueId === "1493")).toMatchObject({
       metalValueMinor: 3000,
       numismaticFetchedAt: "2026-07-15T12:00:00.000Z",
@@ -312,7 +322,7 @@ describe("connected-source store — revaluePositions", () => {
       ],
       "2026-06-15T12:00:00.000Z",
     );
-    const eagle = store.connectedSources.readPositions(sourceId)[0]!;
+    const eagle = asCoin(store.connectedSources.readPositions(sourceId)[0]!);
 
     // Outage: keep last-known candidate values, mark the row stale with a reason.
     store.connectedSources.revaluePositions(
@@ -357,12 +367,15 @@ describe("connected-source store — freezeIntoStoredHolding", () => {
     // A connected source carries a valuation-freshness price-cache row.
     store.connectedSources.revaluePositions(
       sourceId,
-      store.connectedSources.readPositions(sourceId).map((p) => ({
-        id: p.id,
-        metalValueMinor: p.metalValueMinor,
-        numismaticValueMinor: p.numismaticValueMinor,
-        numismaticFetchedAt: p.numismaticFetchedAt,
-      })),
+      store.connectedSources
+        .readPositions(sourceId)
+        .map(asCoin)
+        .map((p) => ({
+          id: p.id,
+          metalValueMinor: p.metalValueMinor,
+          numismaticValueMinor: p.numismaticValueMinor,
+          numismaticFetchedAt: p.numismaticFetchedAt,
+        })),
       { fetchedAt: "2024-06-01T10:00:00.000Z", freshnessState: "fresh" },
     );
     expect(holding(store, assetId).currentValue.amountMinor).toBe(12_500);

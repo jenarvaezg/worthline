@@ -11,6 +11,8 @@
  */
 import { describe, expect, test } from "vitest";
 
+import type { CoinPosition } from "@worthline/domain";
+
 import { createInMemoryStore } from "../src/index";
 import type { SourcePositionInput, WorthlineStore } from "../src/index";
 
@@ -69,9 +71,10 @@ function coin(
   externalId: string,
   purchaseDate: string | null,
   valueMinor: number,
-  overrides: Partial<SourcePositionInput> = {},
-): SourcePositionInput {
+  overrides: Partial<Omit<CoinPosition, "id" | "sourceId">> = {},
+): Omit<CoinPosition, "id" | "sourceId"> {
   return {
+    kind: "coin",
     catalogueId: `cat-${externalId}`,
     currency: "EUR",
     externalId,

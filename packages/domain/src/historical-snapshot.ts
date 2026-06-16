@@ -33,7 +33,7 @@ import {
 } from "./classification";
 import type { LiquidityTier } from "./classification";
 import { coinCollectionValueAtDate } from "./connected-source";
-import type { SourcePosition } from "./connected-source";
+import type { CoinPosition } from "./connected-source";
 import type { DebtBalanceAnchor } from "./debt-balance";
 import type { DecimalString } from "./decimal";
 import { valueAt } from "./holding-valuation";
@@ -213,7 +213,7 @@ export interface BuildSnapshotAtDateInput {
    * before its coins were bought. An asset absent from the map keeps the stored
    * basis (no regression).
    */
-  coinPositionsByAsset?: ReadonlyMap<string, readonly SourcePosition[]>;
+  coinPositionsByAsset?: ReadonlyMap<string, readonly CoinPosition[]>;
   /**
    * "Today" as YYYY-MM-DD — forwarded to the housing curve for forward
    * extrapolation. Defaults to the target date when omitted (a target ≤ today

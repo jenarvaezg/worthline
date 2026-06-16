@@ -14,14 +14,27 @@
  * persists what this projection describes.
  */
 
+import { multiplyToMinor } from "./decimal";
+import type { DecimalString } from "./decimal";
 import type { Instrument } from "./instrument-catalog";
 import { LIQUIDITY_LADDER } from "./liquidity-ladder";
 import type { LiquidityTier } from "./liquidity-ladder";
 import type { CurrencyCode } from "./money";
 import type { OwnershipShare } from "./workspace-types";
 
-/** Which external account an adapter speaks to. Numista is the first. */
-export type SourceAdapter = "numista";
+/** Which external account an adapter speaks to. Numista was the first; Binance is
+ *  the first live-valued, rung-spanning source (ADR 0021). */
+export type SourceAdapter = "numista" | "binance";
+
+/**
+ * The holding instrument a source projects into (ADR 0016/0021). Numista mirrors a
+ * frozen, illiquid coin collection; Binance mirrors live-valued crypto. The single
+ * adapter→instrument mapping the projection and `connect` both read so the
+ * materialized holding and the projected one never disagree.
+ */
+export function instrumentForAdapter(adapter: SourceAdapter): Instrument {
+  return adapter === "numista" ? "coin_collection" : "crypto";
+}
 
 /** A connected source: an external account worthline mirrors read-only (ADR 0016). */
 export interface ConnectedSource {
@@ -38,38 +51,47 @@ export interface ConnectedSource {
 }
 
 /**
- * A single line a connected source mirrors — for Numista, a coin you own. Sits
- * beneath the projected holding as sub-detail, the way an operation sits beneath
- * an investment (ADR 0014). Carries grouping metadata (a coin's metal) for the
- * detail-page lens.
+ * The fields every connected-source position carries, regardless of adapter (ADR
+ * 0016/0021). A position sits beneath the projected holding as sub-detail, the way
+ * an operation sits beneath an investment (ADR 0014).
  */
-export interface SourcePosition {
+export interface PositionCore {
   id: string;
   sourceId: string;
   /**
-   * The source's STABLE per-line id (Numista's collected-item id) — the identity
-   * that survives a wholesale re-sync, distinct from worthline's internal `id`
-   * (reassigned each sync) and from `catalogueId` (the type, shared by two coins
-   * of the same kind). Diffing on it tells a genuinely new trade (ripple it into
-   * history, ADR 0017) from a coin already frozen in past snapshots.
+   * The source's STABLE per-line id — the identity that survives a wholesale
+   * re-sync, distinct from worthline's internal `id` (reassigned each sync). For
+   * Numista it is the collected-item id (diffing on it tells a genuinely new trade
+   * from a coin already frozen in past snapshots, ADR 0017); for Binance it keys a
+   * token to its wallet (e.g. `BTC:spot`).
    */
   externalId: string;
+  /** Denormalized display name for the detail list. */
+  name: string;
+  /** The liquidity rung this position projects onto. */
+  liquidityTier: LiquidityTier;
+  currency: CurrencyCode;
+}
+
+/**
+ * A coin position — what a Numista source mirrors (ADR 0017). Carries grouping
+ * metadata (the coin's metal) for the detail-page lens and the two frozen
+ * candidate values (`max(metal, numismatic)`).
+ */
+export interface CoinPosition extends PositionCore {
+  kind: "coin";
   /** The source's catalogue id for this line (Numista type id). */
   catalogueId: string;
   /** The source's issue id within the catalogue type (Numista issue id); null
    *  when the source records none. Persisted so the valuation refresh can refetch
    *  the per-grade numismatic estimate without re-listing the collection (#166). */
   issueId: number | null;
-  /** Denormalized display name for the catalogue detail list. */
-  name: string;
   /** Condition rating assigned on Numista, read-only here (ADR 0017). */
   grade: string;
   quantity: number;
   /** The coin's MINT year, read from the source's issue (#215); null when the
    *  catalogue records none. Distinct from `purchaseDate` (when it was acquired). */
   year: number | null;
-  /** The liquidity rung this position projects onto (Numista coins: "illiquid"). */
-  liquidityTier: LiquidityTier;
   /** Grouping metadata for the holding's detail lens (a coin's metal); null when
    *  the source records no metal for the line. */
   metal: string | null;
@@ -94,8 +116,46 @@ export interface SourcePosition {
   /** What was paid for the position, minor units; null when Numista records no
    *  trade price (an optional field — many users record none). */
   purchasePriceMinor: number | null;
-  currency: CurrencyCode;
 }
+
+/**
+ * A token balance — what a Binance source mirrors (ADR 0021). Unlike a coin's
+ * frozen candidate values, a token stores its **balance** (a quantity, not a
+ * value) and the last-fetched live unit price; the holding's value is derived
+ * **live** as `balance × unitPrice`, refreshed on the stale-price pass.
+ */
+export interface TokenPosition extends PositionCore {
+  kind: "token";
+  /** The Binance asset symbol (e.g. `BTC`) — the grouping lens on the detail page,
+   *  and the key the symbol→CoinGecko-id resolver maps to a priceable coin. */
+  symbol: string;
+  /** The token balance (a quantity, decimal string) — NOT a frozen value: the
+   *  value is derived live as balance × unit price (ADR 0021). */
+  balance: DecimalString;
+  /** Which Binance wallet the balance came from (e.g. `spot`). A token held across
+   *  several wallets is summed into one position (#247). */
+  wallet: string;
+  /** The last-fetched live EUR unit price (decimal string) from CoinGecko, or null
+   *  when the symbol cannot be mapped/priced — then the position is valued 0 with
+   *  the "value at 0" warning, still shown in detail (never silently dropped). */
+  unitPrice: DecimalString | null;
+}
+
+/**
+ * A single line a connected source mirrors. Polymorphic by adapter (ADR 0021): a
+ * frozen `coin` (Numista) or a live-valued token `balance` (Binance).
+ */
+export type SourcePosition = CoinPosition | TokenPosition;
+
+/**
+ * `Omit` that DISTRIBUTES over a union. Plain `Omit<A | B, K>` collapses to the
+ * shared keys (TS computes `keyof (A | B)` as the intersection), silently dropping
+ * each variant's discriminated fields — so an "input" / "exported" view of a
+ * `SourcePosition` must omit per-member to keep the coin/token shapes intact.
+ */
+export type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
+  ? Omit<T, K>
+  : never;
 
 /** Which figure a coin's value came from — governs the detail-row label. */
 export type ValuationBasis = "metal" | "numismatic" | "purchase" | "zero";
@@ -114,7 +174,12 @@ export interface CoinValuation {
  * count as "known" — only a positive metal/numismatic value wins over the
  * purchase-price fallback.
  */
-export function coinValue(position: SourcePosition): CoinValuation {
+export function coinValue(
+  position: Pick<
+    CoinPosition,
+    "metalValueMinor" | "numismaticValueMinor" | "purchasePriceMinor"
+  >,
+): CoinValuation {
   const metal = position.metalValueMinor ?? 0;
   const numismatic = position.numismaticValueMinor ?? 0;
 
@@ -140,7 +205,7 @@ export function coinValue(position: SourcePosition): CoinValuation {
  * fetches a coin's historical price.
  */
 export function coinCollectionValueAtDate(
-  positions: readonly SourcePosition[],
+  positions: readonly CoinPosition[],
   targetDate: string,
 ): number {
   return positions.reduce((sum, position) => {
@@ -151,15 +216,55 @@ export function coinCollectionValueAtDate(
   }, 0);
 }
 
+/** Which figure a token's value came from — governs the detail-row label. A token
+ *  is valued live (`market`); an unmapped/unpriceable one falls to `zero`. */
+export type TokenValuationBasis = "market" | "zero";
+
+/** A token position's value with the basis that produced it. */
+export interface PositionValuation {
+  minor: number;
+  basis: TokenValuationBasis;
+}
+
+/**
+ * The value of one token position (ADR 0021): its balance × the current EUR unit
+ * price, in minor units. Unlike a coin's frozen `max(metal, numismatic)`, a token
+ * is valued **live** — the price is the freshly-fetched CoinGecko quote, refreshed
+ * on the stale-price pass. A token that cannot be mapped or priced carries a null
+ * price and falls to value 0 with the `zero` basis — the "value at 0" case, still
+ * shown in the holding's detail, never silently dropped.
+ */
+export function positionValue(
+  balance: DecimalString,
+  unitPrice: DecimalString | null,
+): PositionValuation {
+  if (unitPrice === null) {
+    return { minor: 0, basis: "zero" };
+  }
+  return { minor: multiplyToMinor(balance, unitPrice), basis: "market" };
+}
+
+/**
+ * The value of one position, dispatched by kind (ADR 0021): a coin's frozen
+ * `max(metal, numismatic)` vs a token's live `balance × unit price`. The single
+ * per-position rule the projection sums and the detail page reads.
+ */
+export function projectedPositionValue(position: SourcePosition): number {
+  return position.kind === "coin"
+    ? coinValue(position).minor
+    : positionValue(position.balance, position.unitPrice).minor;
+}
+
 /** A connected source's rolled-up holding on one liquidity rung (ADR 0016). */
 export interface ProjectedHolding {
   /** Stable holding id, derived from the source and rung. */
   id: string;
   name: string;
   liquidityTier: LiquidityTier;
-  /** Always `coin_collection` for Numista — derived, illiquid (ADR 0016). */
+  /** The instrument this source projects into — `coin_collection` for Numista,
+   *  `crypto` for Binance (ADR 0016/0021). Always derived. */
   instrument: Instrument;
-  /** Derived value: the sum of its positions' coin values, minor units. */
+  /** Derived value: the sum of its positions' values, minor units. */
   valueMinor: number;
   currency: CurrencyCode;
   ownership: OwnershipShare[];
@@ -170,13 +275,16 @@ export interface ProjectedHolding {
 /**
  * Project a connected source's positions into the portfolio: one rolled-up
  * holding per liquidity rung the positions occupy (ADR 0016). Numista's coins
- * are all illiquid, so it yields a single holding; a source whose positions
- * spanned rungs would split into one holding per rung.
+ * are all illiquid, so it yields a single holding; Binance spans rungs (market +
+ * term-locked), so it splits into one holding per rung. The holding instrument is
+ * the adapter's (`coin_collection` / `crypto`); the value sums each position's
+ * value by kind (frozen coin vs live token).
  */
 export function projectConnectedSource(
   source: ConnectedSource,
   positions: SourcePosition[],
 ): ProjectedHolding[] {
+  const instrument = instrumentForAdapter(source.adapter);
   const byRung = new Map<LiquidityTier, SourcePosition[]>();
   for (const position of positions) {
     const rung = byRung.get(position.liquidityTier) ?? [];
@@ -191,9 +299,9 @@ export function projectConnectedSource(
       id: `${source.id}:${rung}`,
       name: source.label,
       liquidityTier: rung,
-      instrument: "coin_collection",
+      instrument,
       valueMinor: rungPositions.reduce(
-        (sum, position) => sum + coinValue(position).minor,
+        (sum, position) => sum + projectedPositionValue(position),
         0,
       ),
       currency: rungPositions[0]!.currency,
@@ -207,7 +315,7 @@ export function projectConnectedSource(
 export interface MetalGroup {
   /** The coin metal, or null for positions the source records no metal for. */
   metal: string | null;
-  positions: SourcePosition[];
+  positions: CoinPosition[];
   subtotalMinor: number;
 }
 
@@ -216,8 +324,8 @@ export interface MetalGroup {
  * collection is presented, CONTEXT). Most valuable group first; positions with
  * no metal collect under one group that always sinks to the bottom.
  */
-export function groupPositionsByMetal(positions: SourcePosition[]): MetalGroup[] {
-  const byMetal = new Map<string | null, SourcePosition[]>();
+export function groupPositionsByMetal(positions: CoinPosition[]): MetalGroup[] {
+  const byMetal = new Map<string | null, CoinPosition[]>();
   for (const position of positions) {
     const group = byMetal.get(position.metal) ?? [];
     group.push(position);
