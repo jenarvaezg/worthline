@@ -9,9 +9,9 @@
  */
 
 import type {
+  CoinPosition,
   CoinValuation,
   MetalGroup,
-  SourcePosition,
   ValuationBasis,
 } from "@worthline/domain";
 
@@ -123,7 +123,7 @@ export function metalCoinCount(positions: MetalGroup["positions"]): number {
  * position's `year` — NOT its acquisition date. Null (no label) when the
  * catalogue records no year, so nothing is fabricated.
  */
-export function coinYear(position: Pick<SourcePosition, "year">): string | null {
+export function coinYear(position: Pick<CoinPosition, "year">): string | null {
   return position.year === null ? null : String(position.year);
 }
 

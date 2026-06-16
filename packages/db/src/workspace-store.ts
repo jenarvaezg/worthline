@@ -28,7 +28,7 @@ import {
 import { asc, count, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
-import { mapPositionRow } from "./connected-source-store";
+import { mapPositionRow, positionInsertValues } from "./connected-source-store";
 import {
   amortizationPlans,
   appSettings,
@@ -788,29 +788,18 @@ function importWorkspace(
         .run();
 
       if (source.positions.length > 0) {
+        // Re-attach each exported position to its source and write the full column
+        // set per kind (coin | token) through the shared insert shape (ADR 0021),
+        // so a Binance token round-trips its symbol/balance/wallet/price too.
         db.insert(positions)
           .values(
-            source.positions.map((position) => ({
-              catalogueId: position.catalogueId,
-              currency: position.currency,
-              externalId: position.externalId,
-              finenessMillis: position.finenessMillis,
-              grade: position.grade,
-              id: position.id,
-              issueId: position.issueId,
-              liquidityTier: position.liquidityTier,
-              metal: position.metal,
-              metalValueMinor: position.metalValueMinor,
-              name: position.name,
-              numismaticFetchedAt: position.numismaticFetchedAt,
-              numismaticValueMinor: position.numismaticValueMinor,
-              purchaseDate: position.purchaseDate,
-              purchasePriceMinor: position.purchasePriceMinor,
-              quantity: position.quantity,
-              sourceId: source.id,
-              weightGrams: position.weightGrams,
-              year: position.year,
-            })),
+            source.positions.map((position) =>
+              // Narrow per kind so the spread reconstructs the discriminated
+              // variant (a bare `{ ...union }` collapses to the common core).
+              position.kind === "coin"
+                ? positionInsertValues({ ...position, sourceId: source.id })
+                : positionInsertValues({ ...position, sourceId: source.id }),
+            ),
           )
           .run();
       }

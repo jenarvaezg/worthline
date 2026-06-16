@@ -6,7 +6,7 @@ import {
   valuationMethodOfAsset,
   valuationMethodOfLiability,
 } from "@worthline/domain";
-import type { ValuationMethod } from "@worthline/domain";
+import type { CoinPosition, ValuationMethod } from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -93,7 +93,9 @@ export default async function EditarPage({
       ? (store.connectedSources.listSources().find((s) => s.assetId === id) ?? null)
       : null;
     const coinPositions = coinSource
-      ? store.connectedSources.readPositions(coinSource.id)
+      ? store.connectedSources
+          .readPositions(coinSource.id)
+          .filter((p): p is CoinPosition => p.kind === "coin")
       : [];
 
     // derived (investment): the operations editor + its derived position (ADR 0006).

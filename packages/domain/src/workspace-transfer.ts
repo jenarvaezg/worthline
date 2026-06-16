@@ -14,7 +14,7 @@
 
 import type { EarlyRepaymentMode } from "./amortization";
 import type { LiquidityTier } from "./classification";
-import type { SourceAdapter, SourcePosition } from "./connected-source";
+import type { DistributiveOmit, SourceAdapter, SourcePosition } from "./connected-source";
 import type { DecimalString } from "./decimal";
 import type { ValuationMethod } from "./holding-valuation";
 import type { Instrument } from "./instrument-catalog";
@@ -192,7 +192,7 @@ export interface ExportedLiability {
  * restore. The `sourceId` is implied by nesting under the source, so it is
  * omitted here.
  */
-export type ExportedPosition = Omit<SourcePosition, "sourceId">;
+export type ExportedPosition = DistributiveOmit<SourcePosition, "sourceId">;
 
 /**
  * One connected source in the file (ADR 0016): the adapter, its label, the

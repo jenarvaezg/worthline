@@ -71,7 +71,10 @@ export default async function AjustesPage({
           assetId: numistaRow.assetId,
           label: numistaRow.label,
           lastSyncAt: numistaRow.lastSyncAt,
-          coinCount: numistaPositions.reduce((sum, p) => sum + p.quantity, 0),
+          coinCount: numistaPositions.reduce(
+            (sum, p) => sum + (p.kind === "coin" ? p.quantity : 0),
+            0,
+          ),
           valueMinor: numistaAsset?.currentValue.amountMinor ?? 0,
         }
       : null;

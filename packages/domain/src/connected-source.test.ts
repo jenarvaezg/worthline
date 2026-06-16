@@ -13,9 +13,11 @@ import {
   coinCollectionValueAtDate,
   coinValue,
   groupPositionsByMetal,
+  instrumentForAdapter,
+  positionValue,
   projectConnectedSource,
 } from "./connected-source";
-import type { ConnectedSource, SourcePosition } from "./connected-source";
+import type { CoinPosition, ConnectedSource, TokenPosition } from "./connected-source";
 
 const source: ConnectedSource = {
   id: "src-numista",
@@ -24,8 +26,16 @@ const source: ConnectedSource = {
   ownership: [{ memberId: "m1", shareBps: 10_000 }],
 };
 
-function coin(overrides: Partial<SourcePosition> = {}): SourcePosition {
+const binanceSource: ConnectedSource = {
+  id: "src-binance",
+  adapter: "binance",
+  label: "Binance",
+  ownership: [{ memberId: "m1", shareBps: 10_000 }],
+};
+
+function coin(overrides: Partial<CoinPosition> = {}): CoinPosition {
   return {
+    kind: "coin",
     id: "p1",
     sourceId: "src-numista",
     externalId: "ext-p1",
@@ -48,6 +58,51 @@ function coin(overrides: Partial<SourcePosition> = {}): SourcePosition {
     ...overrides,
   };
 }
+
+function token(overrides: Partial<TokenPosition> = {}): TokenPosition {
+  return {
+    kind: "token",
+    id: "t1",
+    sourceId: "src-binance",
+    externalId: "BTC:spot",
+    name: "Bitcoin",
+    symbol: "BTC",
+    balance: "0.5",
+    wallet: "spot",
+    liquidityTier: "market",
+    unitPrice: "50000",
+    currency: "EUR",
+    ...overrides,
+  };
+}
+
+describe("positionValue — a token balance valued live (balance × price, ADR 0021)", () => {
+  test("values a token balance as balance × unit price → minor units", () => {
+    // 0.5 BTC × 50 000.50 €/BTC = 25 000.25 € = 2 500 025 minor.
+    expect(positionValue("0.5", "50000.50")).toEqual({
+      minor: 2_500_025,
+      basis: "market",
+    });
+  });
+
+  test("handles fractional crypto balances at full precision", () => {
+    // 1.23456789 ETH × 2 000 €/ETH = 2 469.13578 € → 246 914 minor (half-up).
+    expect(positionValue("1.23456789", "2000")).toEqual({
+      minor: 246_914,
+      basis: "market",
+    });
+  });
+
+  test("falls to value 0 with a 'zero' basis when the token cannot be priced", () => {
+    // An unmapped/unpriceable symbol carries a null price → 0 + warning basis,
+    // never silently dropped (ADR 0021).
+    expect(positionValue("0.5", null)).toEqual({ minor: 0, basis: "zero" });
+  });
+
+  test("a zero balance is worth 0 on the market basis (priced, just empty)", () => {
+    expect(positionValue("0", "50000")).toEqual({ minor: 0, basis: "market" });
+  });
+});
 
 describe("coinValue — max(metal, numismatic) → purchase price → 0 (ADR 0017)", () => {
   test("takes the metal value when it beats the numismatic estimate", () => {
@@ -141,6 +196,42 @@ describe("projectConnectedSource — positions roll up into one holding per rung
 
     expect(holdings[0]!.valueMinor).toBe(30_000);
     expect(holdings[0]!.positions).toHaveLength(2);
+  });
+});
+
+describe("projectConnectedSource — Binance tokens roll up live-valued (ADR 0021)", () => {
+  test("spot tokens project to one market crypto holding valued Σ(balance × price)", () => {
+    const holdings = projectConnectedSource(binanceSource, [
+      token({ id: "t1", symbol: "BTC", balance: "0.5", unitPrice: "50000" }), // 25 000 €
+      token({ id: "t2", symbol: "ETH", balance: "2", unitPrice: "2000" }), // 4 000 €
+    ]);
+
+    expect(holdings).toHaveLength(1);
+    const holding = holdings[0]!;
+    expect(holding.liquidityTier).toBe("market");
+    expect(holding.instrument).toBe("crypto");
+    expect(holding.name).toBe("Binance");
+    expect(holding.currency).toBe("EUR");
+    expect(holding.valueMinor).toBe(2_900_000);
+    expect(holding.ownership).toEqual(binanceSource.ownership);
+    expect(holding.positions).toHaveLength(2);
+  });
+
+  test("an unpriceable token contributes 0 but stays in the holding (value-at-0 case)", () => {
+    const holdings = projectConnectedSource(binanceSource, [
+      token({ id: "t1", symbol: "BTC", balance: "0.5", unitPrice: "50000" }),
+      token({ id: "t2", symbol: "WAT", balance: "100", unitPrice: null }),
+    ]);
+
+    expect(holdings[0]!.valueMinor).toBe(2_500_000);
+    expect(holdings[0]!.positions).toHaveLength(2);
+  });
+});
+
+describe("instrumentForAdapter — the holding instrument a source projects into", () => {
+  test("Numista projects a coin_collection; Binance a crypto holding", () => {
+    expect(instrumentForAdapter("numista")).toBe("coin_collection");
+    expect(instrumentForAdapter("binance")).toBe("crypto");
   });
 });
 

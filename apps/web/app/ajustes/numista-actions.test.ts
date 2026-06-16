@@ -61,6 +61,7 @@ describe("disconnectNumistaAction", () => {
       sourceId,
       [
         {
+          kind: "coin",
           catalogueId: "1",
           externalId: "ni-1",
           issueId: null,
@@ -134,6 +135,7 @@ describe("disconnectNumistaAction", () => {
       sourceId,
       [
         {
+          kind: "coin",
           catalogueId: "1",
           externalId: "ni-1",
           issueId: null,
@@ -180,6 +182,7 @@ describe("syncNumistaAction", () => {
       sourceId,
       [
         {
+          kind: "coin",
           catalogueId: "1",
           externalId: "ni-1",
           issueId: null,

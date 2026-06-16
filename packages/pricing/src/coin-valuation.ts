@@ -15,7 +15,7 @@
  */
 
 import { coinValue, PRICE_TTL_DAYS } from "@worthline/domain";
-import type { CoinValuation, SourcePosition } from "@worthline/domain";
+import type { CoinValuation } from "@worthline/domain";
 
 import type { MetalKind } from "./metal";
 import { metalValueMinor } from "./metal";
@@ -131,14 +131,12 @@ export function coinValuation(input: CoinValuationInput): CoinValueResult {
   }
 
   // ── Decision: delegate the rule to the domain (single source of truth).
-  const decisionPosition = {
-    metalValueMinor: metalMinor,
-    numismaticValueMinor: numismaticMinor,
-    purchasePriceMinor: input.purchasePriceMinor,
-  } as SourcePosition;
-
   return {
-    value: coinValue(decisionPosition),
+    value: coinValue({
+      metalValueMinor: metalMinor,
+      numismaticValueMinor: numismaticMinor,
+      purchasePriceMinor: input.purchasePriceMinor,
+    }),
     metal: { minor: metalMinor, fresh: metalFresh },
     numismatic: {
       minor: numismaticMinor,

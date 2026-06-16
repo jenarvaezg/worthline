@@ -5,7 +5,7 @@
  * metal-identity fallbacks — no React, no DB.
  */
 
-import type { MetalGroup, SourcePosition } from "@worthline/domain";
+import type { CoinPosition, MetalGroup } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -18,8 +18,9 @@ import {
   MIN_SHARE_PCT,
 } from "./coin-collection-view";
 
-function position(overrides: Partial<SourcePosition> = {}): SourcePosition {
+function position(overrides: Partial<CoinPosition> = {}): CoinPosition {
   return {
+    kind: "coin",
     id: "p1",
     sourceId: "s1",
     externalId: "ext-p1",
