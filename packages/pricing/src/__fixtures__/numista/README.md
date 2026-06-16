@@ -26,7 +26,7 @@ identifiers before committing (replace with `***`).
 | File                   | Endpoint                                                     | Used for                                     |
 | ---------------------- | ------------------------------------------------------------ | -------------------------------------------- |
 | `oauth-token.json`     | `POST /oauth_token` (client_credentials)                     | token mint/expiry parsing                    |
-| `collected-items.json` | `GET /users/{user_id}/collected_items?category=coin`         | position sync (S2 #163)                      |
+| `collected-items.json` | `GET /users/{user_id}/collected_items` (whole collection)    | position sync (S2 #163)                      |
 | `type-detail.json`     | `GET /types/{type_id}`                                       | composition/weight/metal (later slices)      |
 | `type-prices.json`     | `GET /types/{type_id}/issues/{issue_id}/prices?currency=EUR` | per-grade numismatic estimate (later slices) |
 

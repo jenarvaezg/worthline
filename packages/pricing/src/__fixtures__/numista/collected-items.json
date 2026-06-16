@@ -1,8 +1,8 @@
 {
-  "_comment": "Representative GET /users/{id}/collected_items?category=coin response (spike #161). Shape is real (captured live); identifiers/contents are anonymized for this public repo. Intentionally mixes items WITHOUT a recorded price/acquisition_date (the common case — value falls back) and one WITH both (exercises the price + purchase-date mapping). Numista returns the whole collection in one call — no pagination.",
-  "item_count": 3,
+  "_comment": "Representative GET /users/{id}/collected_items response — the WHOLE collection, NO category filter (#160 follow-up). Shape is real (captured live); identifiers/contents are anonymized for this public repo. Mixes coins AND a non-coin collectible (exonumia: a silver round) to prove non-coins are mirrored, items WITHOUT a recorded price/acquisition_date (the common case — value falls back), and one WITH both (exercises the price + purchase-date mapping). Numista returns the whole collection in one call — no pagination.",
+  "item_count": 4,
   "item_for_swap_count": 0,
-  "item_type_count": 2,
+  "item_type_count": 3,
   "item_type_for_swap_count": 0,
   "items": [
     {
@@ -57,6 +57,19 @@
         "mint_letter": "W",
         "comment": "Proof"
       },
+      "for_swap": false,
+      "grade": "unc"
+    },
+    {
+      "id": 78085123,
+      "quantity": 1,
+      "type": {
+        "id": 24680,
+        "title": "1 Onza",
+        "category": "exonumia",
+        "issuer": { "code": "non-attribue", "name": "Sin atribuir" }
+      },
+      "issue": { "id": 88500, "is_dated": false },
       "for_swap": false,
       "grade": "unc"
     }

@@ -94,7 +94,8 @@ export function isTokenValid(token: NumistaToken, nowMs: number): boolean {
 
 // ── Catalogue + collection readers ──────────────────────────────────────────
 
-/** One coin in a user's collection (GET /users/{id}/collected_items). The price
+/** One item in a user's collection (GET /users/{id}/collected_items) — a coin or a
+ *  non-coin collectible (exonumia/banknote); `type.category` says which. The price
  *  and acquisition_date fields are optional — present only when the user set them. */
 export interface NumistaCollectedItem {
   id: number;
@@ -147,9 +148,13 @@ async function numistaGet<T>(path: string, apiKey: string, token?: string): Prom
 }
 
 /**
- * List the coins in a user's collection (OAuth-gated). Numista returns the whole
- * collection in one call — there is no pagination (spike #161). The `category`
- * filter narrows to coins.
+ * List ALL items in a user's collection (OAuth-gated): coins AND non-coin
+ * collectibles — exonumia (medals, bullion rounds) and banknotes. They are
+ * holdings with real value too, so the whole collection is mirrored with NO
+ * `category` filter (#160 follow-up: a 1 oz silver round, which Numista files
+ * under `exonumia`, was being silently dropped). Each item is valued by the same
+ * metal/numismatic path regardless of category. Numista returns the whole
+ * collection in one call — there is no pagination (spike #161).
  */
 export async function getCollectedItems(
   credentials: NumistaCredentials,
@@ -157,7 +162,7 @@ export async function getCollectedItems(
   userId: number,
 ): Promise<NumistaCollectedItem[]> {
   const data = await numistaGet<{ items?: NumistaCollectedItem[] }>(
-    `/users/${userId}/collected_items?category=coin&lang=${LANG}`,
+    `/users/${userId}/collected_items?lang=${LANG}`,
     credentials.apiKey,
     accessToken,
   );
