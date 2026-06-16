@@ -134,6 +134,44 @@ describe("reconstructBinanceHistory — snapshots → month-end balances + daily
   });
 });
 
+describe("fetchCoinGeckoHistoryEur — base URL override (e2e / self-host seam)", () => {
+  const ORIGINAL = process.env.WORTHLINE_COINGECKO_BASE_URL;
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (ORIGINAL === undefined) delete process.env.WORTHLINE_COINGECKO_BASE_URL;
+    else process.env.WORTHLINE_COINGECKO_BASE_URL = ORIGINAL;
+  });
+
+  it("requests the overridden host when WORTHLINE_COINGECKO_BASE_URL is set", async () => {
+    process.env.WORTHLINE_COINGECKO_BASE_URL = "http://127.0.0.1:9931/coingecko/api/v3";
+    const fetchMock = vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ prices: [] }),
+    } as Response);
+    await fetchCoinGeckoHistoryEur("bitcoin", 0, 1);
+    const [url] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toMatch(
+      /^http:\/\/127\.0\.0\.1:9931\/coingecko\/api\/v3\/coins\/bitcoin\/market_chart\/range/,
+    );
+  });
+
+  it("defaults to the real CoinGecko host when the env var is absent", async () => {
+    delete process.env.WORTHLINE_COINGECKO_BASE_URL;
+    const fetchMock = vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ prices: [] }),
+    } as Response);
+    await fetchCoinGeckoHistoryEur("bitcoin", 0, 1);
+    const [url] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toMatch(
+      /^https:\/\/api\.coingecko\.com\/api\/v3\/coins\/bitcoin\/market_chart\/range/,
+    );
+  });
+});
+
 describe("fetchCoinGeckoHistoryEur — /market_chart/range → dateKey→price (last wins)", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());

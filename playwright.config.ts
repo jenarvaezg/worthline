@@ -27,6 +27,16 @@ const e2eDbPath = join(e2eDbDir, "test.sqlite");
 const e2ePort = Number(process.env.E2E_PORT ?? 3001);
 const e2eBaseUrl = `http://127.0.0.1:${e2ePort}`;
 
+// A stand-alone fake Binance + CoinGecko server (e2e/fake-binance-server.mjs) the
+// Next.js process is pointed at for the Binance journey (#252): the connect/sync
+// fetches run SERVER-side, which page.route() can't stub, so we override the
+// pricing base URLs to this local server instead. The +901 offset keeps it clear
+// of THIS run's Next port and the dev :3000 in the default single-checkout case;
+// concurrent checkouts must give each a well-spaced E2E_PORT (or set E2E_FAKE_PORT
+// explicitly) — a clash binds loudly (EADDRINUSE) at startup, never silently.
+const fakeApiPort = Number(process.env.E2E_FAKE_PORT ?? e2ePort + 901);
+const fakeApiBaseUrl = `http://127.0.0.1:${fakeApiPort}`;
+
 // In CI we run against a PRODUCTION build (`next start`) instead of `next dev`.
 // `next dev` compiles routes on demand, and the dashboard `/` route is heavy
 // enough that the first compile on a (slower) CI runner overran the 15s
@@ -63,21 +73,37 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
-  webServer: {
-    // next dev/start read --port from CLI args; pass it explicitly so they
-    // don't collide with the developer's default :3000 server. In CI we serve
-    // the production build (precompiled routes → deterministic latency).
-    command: isCI
-      ? `npm run start --workspace @worthline/web -- --port ${e2ePort}`
-      : `npm run dev --workspace @worthline/web -- --port ${e2ePort}`,
-    url: e2eBaseUrl,
-    reuseExistingServer: false,
-    env: {
-      WORTHLINE_DB_PATH: e2eDbPath,
+  webServer: [
+    // The fake Binance + CoinGecko server — started before Next.js so the signed
+    // server-side fetches in the Binance journey hit deterministic stubs.
+    {
+      command: `node ./e2e/fake-binance-server.mjs`,
+      url: `${fakeApiBaseUrl}/__health`,
+      reuseExistingServer: false,
+      env: { FAKE_PORT: String(fakeApiPort) },
+      timeout: 30_000,
+      stdout: "pipe",
+      stderr: "pipe",
     },
-    // Give Next.js up to 60s to start on first cold run.
-    timeout: 60_000,
-    stdout: "pipe",
-    stderr: "pipe",
-  },
+    {
+      // next dev/start read --port from CLI args; pass it explicitly so they
+      // don't collide with the developer's default :3000 server. In CI we serve
+      // the production build (precompiled routes → deterministic latency).
+      command: isCI
+        ? `npm run start --workspace @worthline/web -- --port ${e2ePort}`
+        : `npm run dev --workspace @worthline/web -- --port ${e2ePort}`,
+      url: e2eBaseUrl,
+      reuseExistingServer: false,
+      env: {
+        WORTHLINE_DB_PATH: e2eDbPath,
+        // Point the Binance + CoinGecko clients at the fake server (#252).
+        WORTHLINE_BINANCE_BASE_URL: fakeApiBaseUrl,
+        WORTHLINE_COINGECKO_BASE_URL: `${fakeApiBaseUrl}/coingecko/api/v3`,
+      },
+      // Give Next.js up to 60s to start on first cold run.
+      timeout: 60_000,
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  ],
 });

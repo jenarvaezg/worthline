@@ -39,6 +39,34 @@ describe("signQuery — HMAC-SHA256 over the API secret", () => {
   });
 });
 
+describe("base URL override — WORTHLINE_BINANCE_BASE_URL (e2e / self-host seam)", () => {
+  const ORIGINAL = process.env.WORTHLINE_BINANCE_BASE_URL;
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (ORIGINAL === undefined) delete process.env.WORTHLINE_BINANCE_BASE_URL;
+    else process.env.WORTHLINE_BINANCE_BASE_URL = ORIGINAL;
+  });
+
+  it("routes signed calls at the overridden host when the env var is set", async () => {
+    process.env.WORTHLINE_BINANCE_BASE_URL = "http://127.0.0.1:9931";
+    vi.mocked(fetch).mockResolvedValueOnce(okJson({ balances: [] }));
+    await getSpotBalances(creds, { nowMs: 1 });
+    const [url] = vi.mocked(fetch).mock.calls[0]!;
+    expect(String(url)).toMatch(/^http:\/\/127\.0\.0\.1:9931\/api\/v3\/account/);
+  });
+
+  it("defaults to the real Binance host when the env var is absent", async () => {
+    delete process.env.WORTHLINE_BINANCE_BASE_URL;
+    vi.mocked(fetch).mockResolvedValueOnce(okJson({ balances: [] }));
+    await getSpotBalances(creds, { nowMs: 1 });
+    const [url] = vi.mocked(fetch).mock.calls[0]!;
+    expect(String(url)).toMatch(/^https:\/\/api\.binance\.com\/api\/v3\/account/);
+  });
+});
+
 describe("getSpotBalances — signed GET /api/v3/account", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
