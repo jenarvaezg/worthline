@@ -32,9 +32,10 @@ function row(input: {
   kind?: SnapshotHoldingKind;
   dateKey?: string;
   securesHousing?: boolean;
+  countsAsHousing?: boolean;
 }): DatedSnapshotHoldingRow {
   return {
-    countsAsHousing: false,
+    countsAsHousing: input.countsAsHousing ?? false,
     dateKey: input.dateKey ?? "2026-06-30",
     holdingId: input.holdingId,
     kind: input.kind ?? "asset",
@@ -98,13 +99,10 @@ function seriesPoint(
 
 describe("deriveCompositionBands", () => {
   test("sums asset rows into their rung band and liabilities into debts; net worth is assets − debts", () => {
-    const bands = deriveCompositionBands(
-      [
-        row({ holdingId: "a_cash", tier: "cash", valueMinor: 100_00 }),
-        row({ holdingId: "l_card", tier: null, valueMinor: 30_00, kind: "liability" }),
-      ],
-      [],
-    );
+    const bands = deriveCompositionBands([
+      row({ holdingId: "a_cash", tier: "cash", valueMinor: 100_00 }),
+      row({ holdingId: "l_card", tier: null, valueMinor: 30_00, kind: "liability" }),
+    ]);
 
     expect(bands).toEqual({
       cashMinor: 100_00,
@@ -118,14 +116,30 @@ describe("deriveCompositionBands", () => {
     });
   });
 
-  test("carves housing out of the illiquid rung by holding id, never double-counting", () => {
-    const bands = deriveCompositionBands(
-      [
-        row({ holdingId: "a_house", tier: "illiquid", valueMinor: 300_000_00 }),
-        row({ holdingId: "a_art", tier: "illiquid", valueMinor: 20_000_00 }),
-      ],
-      ["a_house"],
-    );
+  test("buckets a post-migration house onto the housing rung; art on illiquid, never double-counting", () => {
+    // After the v28 recut a house freezes with liquidityTier 'housing' (ADR 0022).
+    const bands = deriveCompositionBands([
+      row({ holdingId: "a_house", tier: "housing", valueMinor: 300_000_00 }),
+      row({ holdingId: "a_art", tier: "illiquid", valueMinor: 20_000_00 }),
+    ]);
+
+    expect(bands.housingMinor).toBe(300_000_00);
+    expect(bands.illiquidMinor).toBe(20_000_00);
+  });
+
+  test("defensive: a pre-migration house (frozen illiquid but countsAsHousing) still buckets to housing", () => {
+    // Historical rows captured before the recut carry liquidityTier 'illiquid' yet
+    // countsAsHousing true; the band derivation falls back to countsAsHousing so the
+    // chart never double-counts a legacy house into the illiquid rung.
+    const bands = deriveCompositionBands([
+      row({
+        holdingId: "a_house",
+        tier: "illiquid",
+        valueMinor: 300_000_00,
+        countsAsHousing: true,
+      }),
+      row({ holdingId: "a_art", tier: "illiquid", valueMinor: 20_000_00 }),
+    ]);
 
     expect(bands.housingMinor).toBe(300_000_00);
     expect(bands.illiquidMinor).toBe(20_000_00);
@@ -137,16 +151,16 @@ describe("deriveCompositionBands", () => {
       row({ holdingId: "a_fund", tier: "market", valueMinor: 50_000_00 }),
       row({ holdingId: "a_pension", tier: "term-locked", valueMinor: 30_000_00 }),
       row({ holdingId: "a_art", tier: "illiquid", valueMinor: 5_000_00 }),
-      row({ holdingId: "a_house", tier: "illiquid", valueMinor: 250_000_00 }),
+      row({ holdingId: "a_house", tier: "housing", valueMinor: 250_000_00 }),
       row({
         holdingId: "l_mortgage",
-        tier: "illiquid",
+        tier: "housing",
         valueMinor: 120_000_00,
         kind: "liability",
       }),
     ];
 
-    const bands = deriveCompositionBands(rows, ["a_house"]);
+    const bands = deriveCompositionBands(rows);
     const grossMinor =
       bands.cashMinor +
       bands.marketMinor +
@@ -160,27 +174,24 @@ describe("deriveCompositionBands", () => {
   });
 
   test("carves housing-secured debt into its own breakdown while debts still sum ALL liabilities (ADR 0008)", () => {
-    const bands = deriveCompositionBands(
-      [
-        row({ holdingId: "a_cash", tier: "cash", valueMinor: 100_00 }),
-        row({ holdingId: "a_house", tier: "illiquid", valueMinor: 300_000_00 }),
-        row({
-          holdingId: "l_mortgage",
-          tier: "illiquid",
-          valueMinor: 120_000_00,
-          kind: "liability",
-          securesHousing: true,
-        }),
-        row({
-          holdingId: "l_card",
-          tier: null,
-          valueMinor: 5_000_00,
-          kind: "liability",
-          securesHousing: false,
-        }),
-      ],
-      ["a_house"],
-    );
+    const bands = deriveCompositionBands([
+      row({ holdingId: "a_cash", tier: "cash", valueMinor: 100_00 }),
+      row({ holdingId: "a_house", tier: "housing", valueMinor: 300_000_00 }),
+      row({
+        holdingId: "l_mortgage",
+        tier: "housing",
+        valueMinor: 120_000_00,
+        kind: "liability",
+        securesHousing: true,
+      }),
+      row({
+        holdingId: "l_card",
+        tier: null,
+        valueMinor: 5_000_00,
+        kind: "liability",
+        securesHousing: false,
+      }),
+    ]);
 
     // The carve mirrors the housing asset carve: it is a breakdown, not a
     // replacement — `debtsMinor` still aggregates EVERY liability so the
@@ -191,20 +202,17 @@ describe("deriveCompositionBands", () => {
   });
 
   test("housing-secured carve keys off securesHousing, NOT type/tier (ADR 0013): an unsecured illiquid debt stays out", () => {
-    const bands = deriveCompositionBands(
-      [
-        row({ holdingId: "a_house", tier: "illiquid", valueMinor: 300_000_00 }),
-        // Illiquid rung but NOT securing housing — must not be carved.
-        row({
-          holdingId: "l_loan",
-          tier: "illiquid",
-          valueMinor: 10_000_00,
-          kind: "liability",
-          securesHousing: false,
-        }),
-      ],
-      ["a_house"],
-    );
+    const bands = deriveCompositionBands([
+      row({ holdingId: "a_house", tier: "housing", valueMinor: 300_000_00 }),
+      // Illiquid rung but NOT securing housing — must not be carved.
+      row({
+        holdingId: "l_loan",
+        tier: "illiquid",
+        valueMinor: 10_000_00,
+        kind: "liability",
+        securesHousing: false,
+      }),
+    ]);
 
     expect(bands.debtsSecuredByHousingMinor).toBe(0);
     expect(bands.debtsMinor).toBe(10_000_00);
@@ -273,7 +281,6 @@ describe("buildCompositionSeries", () => {
     ];
 
     const series = buildCompositionSeries({
-      housingHoldingIds: [],
       rows,
       snapshots,
       today: "2026-06-13",
@@ -317,7 +324,6 @@ describe("buildCompositionSeries", () => {
     ];
 
     const series = buildCompositionSeries({
-      housingHoldingIds: [],
       rows,
       snapshots,
       today: "2026-06-30",
@@ -674,7 +680,6 @@ describe("buildCompositionSeries — range window and adaptive density", () => {
   test("'all' over a long history buckets coarser than monthly (density adapts)", () => {
     const { rows, snapshots } = genMonthlyHistory(2021, 1, 66); // 2021-01 .. 2026-06
     const series = buildCompositionSeries({
-      housingHoldingIds: [],
       range: "all",
       rows,
       snapshots,
@@ -692,7 +697,6 @@ describe("buildCompositionSeries — range window and adaptive density", () => {
   test("'1y' windows to the last twelve months at monthly density", () => {
     const { rows, snapshots } = genMonthlyHistory(2021, 1, 66);
     const series = buildCompositionSeries({
-      housingHoldingIds: [],
       range: "1y",
       rows,
       snapshots,
@@ -718,7 +722,6 @@ describe("buildCompositionSeries — range window and adaptive density", () => {
   test("omitting range defaults to 'all' — unchanged behavior for short histories", () => {
     const { rows, snapshots } = genMonthlyHistory(2026, 1, 6); // 6 months, monthly
     const series = buildCompositionSeries({
-      housingHoldingIds: [],
       rows,
       snapshots,
       today: "2026-06-28",

@@ -126,13 +126,13 @@ describe("buildSnapshotHoldingRows — row production and denormalization", () =
       valueMinor: 50_000_00,
     });
 
-    // Primary residence resolves to the illiquid rung (tierOfAsset), not the
-    // stored liquidityTier.
+    // Primary residence resolves to the housing rung (tierOfAsset, ADR 0022), not
+    // the stored liquidityTier.
     const homeRow = rows.find((row) => row.holdingId === "asset_home");
     expect(homeRow).toMatchObject({
       kind: "asset",
       label: "Piso",
-      liquidityTier: "illiquid",
+      liquidityTier: "housing",
       valueMinor: 300_000_00,
     });
   });
@@ -146,11 +146,12 @@ describe("buildSnapshotHoldingRows — row production and denormalization", () =
       workspace,
     });
 
+    // The mortgage inherits its house's rung — now the housing rung (ADR 0022).
     const mortgageRow = rows.find((row) => row.holdingId === "liability_mortgage");
     expect(mortgageRow).toMatchObject({
       kind: "liability",
       label: "Hipoteca",
-      liquidityTier: "illiquid",
+      liquidityTier: "housing",
       valueMinor: 120_000_00,
     });
 

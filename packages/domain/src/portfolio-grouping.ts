@@ -57,6 +57,7 @@ export interface PortfolioGroup {
 
 const RUNG_LABELS: Record<LiquidityTier, string> = {
   cash: "Caja",
+  housing: "Vivienda",
   illiquid: "Ilíquido",
   market: "Mercado",
   "term-locked": "A plazo",

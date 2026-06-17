@@ -8,6 +8,7 @@ import {
   createLiability,
   createManualAsset,
   createWorkspace,
+  filterFireEligibleAssets,
 } from "./index";
 
 const workspace = createWorkspace({
@@ -44,10 +45,10 @@ describe("asset classification", () => {
     expect(tierOfAsset(asset("b", "term-locked"))).toBe("term-locked");
   });
 
-  test("real estate and the primary residence sit on illiquid regardless of declared rung", () => {
-    expect(tierOfAsset(asset("home", "cash", { type: "real_estate" }))).toBe("illiquid");
+  test("real estate and the primary residence sit on the housing rung regardless of declared rung", () => {
+    expect(tierOfAsset(asset("home", "cash", { type: "real_estate" }))).toBe("housing");
     expect(tierOfAsset(asset("flat", "market", { isPrimaryResidence: true }))).toBe(
-      "illiquid",
+      "housing",
     );
   });
 
@@ -67,6 +68,19 @@ describe("asset classification", () => {
     expect(isLiquid(tierOfAsset(home))).toBe(false);
   });
 
+  test("a rental property sits on the housing rung yet stays FIRE-eligible (FIRE excludes only the primary residence)", () => {
+    // A property instrument that is NOT the primary residence: it lands on the
+    // housing rung (housing-ness is the instrument, not isPrimaryResidence), but
+    // FIRE eligibility is keyed on isPrimaryResidence, so it still counts.
+    const rental = asset("rental", "illiquid", {
+      type: "real_estate",
+      isPrimaryResidence: false,
+    });
+    expect(isHousingAsset(rental)).toBe(true);
+    expect(tierOfAsset(rental)).toBe("housing");
+    expect(filterFireEligibleAssets([rental]).map((a) => a.id)).toEqual(["rental"]);
+  });
+
   test("housing is sourced from the instrument, not the legacy type (#149)", () => {
     // An explicit instrument wins over the type-derived default: a property
     // instrument makes a non-real_estate asset housing…
@@ -75,7 +89,7 @@ describe("asset classification", () => {
       instrument: "property",
     });
     expect(isHousingAsset(declaredProperty)).toBe(true);
-    expect(tierOfAsset(declaredProperty)).toBe("illiquid"); // housing → illiquid
+    expect(tierOfAsset(declaredProperty)).toBe("housing"); // property → housing rung
 
     // …and a non-property instrument makes a real_estate-typed asset NOT housing.
     const reclassified = asset("reit", "market", {
@@ -171,14 +185,18 @@ describe("summary and breakdown reconcile on debt classification", () => {
     const tierDebt = (tier: LiquidityTier) =>
       pyramid.find((breakdown) => breakdown.tier === tier)?.debts.amountMinor ?? 0;
 
-    // Hand-computed expectations — the headline figures are unchanged by the recut.
+    // Hand-computed expectations — the headline figures are UNCHANGED by the recut
+    // (housing becomes its own rung, but isLiquid and the housing-equity derivation
+    // are untouched, so liquid/total/housing figures cannot move).
     expect(summary.debts.amountMinor).toBe(210_000);
     expect(summary.housingEquity.amountMinor).toBe(120_000); // 300k - 180k mortgage
     expect(summary.liquidNetWorth.amountMinor).toBe(140_000); // (100k+50k) - 10k cash debt
 
-    // The mortgage nets against its house on the illiquid rung; the pension-backed
+    // The mortgage nets against its house on the housing rung; the pension-backed
     // debt sits term-locked; only the unassociated card erodes liquid net worth.
-    expect(tierDebt("illiquid")).toBe(180_000);
+    // The illiquid rung no longer holds the house, so it carries no debt.
+    expect(tierDebt("housing")).toBe(180_000);
+    expect(tierDebt("illiquid")).toBe(0);
     expect(tierDebt("term-locked")).toBe(20_000);
     expect(tierDebt("cash") + tierDebt("market")).toBe(10_000);
 
@@ -187,10 +205,12 @@ describe("summary and breakdown reconcile on debt classification", () => {
       tierDebt("cash") +
         tierDebt("market") +
         tierDebt("term-locked") +
-        tierDebt("illiquid"),
+        tierDebt("illiquid") +
+        tierDebt("housing"),
     ).toBe(summary.debts.amountMinor);
-    // The only illiquid asset is the house, so that rung's net equals housing equity.
-    expect(pyramid.find((b) => b.tier === "illiquid")?.netValue.amountMinor).toBe(
+    // The house and its mortgage are the only holdings on the housing rung, so that
+    // rung's net equals housing equity.
+    expect(pyramid.find((b) => b.tier === "housing")?.netValue.amountMinor).toBe(
       summary.housingEquity.amountMinor,
     );
   });

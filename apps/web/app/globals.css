@@ -1424,6 +1424,10 @@ svg a:hover .compositionBand {
   background: var(--tier-illiquid);
 }
 
+.decompositionLegend .housing i {
+  background: var(--tier-housing);
+}
+
 .drillBand.term-locked {
   fill: var(--tier-term-locked);
 }
@@ -1432,12 +1436,20 @@ svg a:hover .compositionBand {
   fill: var(--tier-illiquid);
 }
 
+.drillBand.housing {
+  fill: var(--tier-housing);
+}
+
 .drillLine.term-locked {
   stroke: var(--tier-term-locked);
 }
 
 .drillLine.illiquid {
   stroke: var(--tier-illiquid);
+}
+
+.drillLine.housing {
+  stroke: var(--tier-housing);
 }
 
 .drillSparkline.term-locked polyline {

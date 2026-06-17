@@ -98,14 +98,15 @@ describe("groupPortfolio — by rung", () => {
   const groups = groupPortfolio(projection, "rung");
 
   test("groups follow ladder order and only non-empty rungs appear", () => {
-    expect(groups.map((g) => g.label)).toEqual(["Caja", "Mercado", "Ilíquido"]);
+    // Housing is the last rung now (ADR 0022); the home + mortgage land there.
+    expect(groups.map((g) => g.label)).toEqual(["Caja", "Mercado", "Vivienda"]);
   });
 
-  test("the market rung holds the investment; illiquid holds home + its mortgage", () => {
+  test("the market rung holds the investment; housing holds home + its mortgage", () => {
     const market = groups.find((g) => g.key === "market")!;
     expect(market.holdings.map((h) => h.id)).toEqual(["asset_broker"]);
-    const illiquid = groups.find((g) => g.key === "illiquid")!;
-    expect(illiquid.holdings.map((h) => h.id).sort()).toEqual(
+    const housing = groups.find((g) => g.key === "housing")!;
+    expect(housing.holdings.map((h) => h.id).sort()).toEqual(
       ["asset_home", "debt_mortgage"].sort(),
     );
   });

@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 27;
+export const SCHEMA_VERSION = 28;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -749,6 +749,25 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       sqlite.exec("ALTER TABLE positions ADD COLUMN obverse_thumb_url TEXT");
     } catch {}
     sqlite.pragma("user_version = 27");
+  }
+
+  if (version < 28) {
+    // ADR 0022 (#267): housing becomes the fifth, least-accessible liquidity rung,
+    // so every surface classifies the home identically. The frozen snapshot-holding
+    // rows that counted as housing sat on the OLD `illiquid` tier (the pre-#267
+    // carve), so relabel them to the new `housing` rung — keyed off the frozen
+    // `counts_as_housing` flag (#181), the same basis the chart's defensive
+    // fallback reads. The snapshots' frozen FIGURES are never touched, so historical
+    // net worth, liquid net worth and housing equity stay byte-identical (ADR 0008).
+    // The live `assets` table needs NO migration: `tierOfAsset` overrides every
+    // property instrument to `housing` at read time, regardless of the stored tier.
+    // Tolerates a missing `snapshot_holdings` table (a minimal synthetic fixture),
+    // like the other relabel migrations.
+    execToleratingMissingTable(
+      sqlite,
+      "UPDATE snapshot_holdings SET liquidity_tier = 'housing' WHERE counts_as_housing = 1;",
+    );
+    sqlite.pragma("user_version = 28");
   }
 
   return { ranV18Backfill };

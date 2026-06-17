@@ -433,7 +433,7 @@ describe("loadDashboard — rest and housing drilldowns", () => {
       currentValueMinor: 320_000_00,
       holdingId: "asset_piso",
       label: "Piso",
-      tier: "illiquid",
+      tier: "housing",
     });
 
     store.close();
