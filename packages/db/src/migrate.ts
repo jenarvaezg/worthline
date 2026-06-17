@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 26;
+export const SCHEMA_VERSION = 27;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -736,6 +736,19 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
        ) WHERE id IN (SELECT asset_id FROM connected_sources);`,
     );
     sqlite.pragma("user_version = 26");
+  }
+
+  if (version < 27) {
+    // #272 (x100 coins): persist the coin's obverse photo thumbnail on each
+    // position so the collection renders as a visual gallery — stamped once at
+    // sync from the type-detail call the sync already makes (ADR 0017, like
+    // fineness/weight). Additive ALTER (try/catch like v20/v22): a fresh DB
+    // already has the column from schema-sql, so the duplicate is ignored.
+    // Existing rows get NULL (a metal-glyph fallback) and a thumbnail on next sync.
+    try {
+      sqlite.exec("ALTER TABLE positions ADD COLUMN obverse_thumb_url TEXT");
+    } catch {}
+    sqlite.pragma("user_version = 27");
   }
 
   return { ranV18Backfill };

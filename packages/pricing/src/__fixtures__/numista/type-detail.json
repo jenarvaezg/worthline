@@ -1,5 +1,5 @@
 {
-  "_comment": "Trimmed GET /types/{id} response (spike #161). Real catalogue data (public). Only the value-relevant fields are kept: composition.text + weight drive the metal-value resolver (later slice); value/title/issuer are for display. The live response also carries obverse/reverse/comments/references/edge/mints, omitted here.",
+  "_comment": "Trimmed GET /types/{id} response (spike #161). Real catalogue data (public). Value-relevant fields drive the metal-value resolver; value/title/issuer are for display; obverse.thumbnail is the catalogue photo the coin gallery renders (#272 x100). The live response also carries reverse/comments/references/edge/mints, omitted here.",
   "id": 1493,
   "url": "https://es.numista.com/1493",
   "title": "1 Dollar \"American Silver Eagle\" (Bullion Coin)",
@@ -7,6 +7,14 @@
   "issuer": { "code": "etats-unis", "name": "Estados Unidos" },
   "min_year": 1986,
   "max_year": 2021,
+  "obverse": {
+    "picture": "https://en.numista.com/catalogue/photos/etats-unis/g1493.jpg",
+    "thumbnail": "https://en.numista.com/catalogue/photos/etats-unis/1493-180.jpg"
+  },
+  "reverse": {
+    "picture": "https://en.numista.com/catalogue/photos/etats-unis/g1493r.jpg",
+    "thumbnail": "https://en.numista.com/catalogue/photos/etats-unis/1493r-180.jpg"
+  },
   "value": {
     "text": "1 Dollar",
     "numeric_value": 1,

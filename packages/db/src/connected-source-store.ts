@@ -196,6 +196,7 @@ export function mapPositionRow(row: typeof positions.$inferSelect): SourcePositi
     numismaticFetchedAt: row.numismaticFetchedAt,
     purchasePriceMinor:
       row.purchasePriceMinor === null ? null : Number(row.purchasePriceMinor),
+    obverseThumbUrl: row.obverseThumbUrl ?? null,
   };
 }
 
@@ -232,6 +233,7 @@ export function positionInsertValues(
       weightGrams: null,
       purchaseDate: null,
       purchasePriceMinor: null,
+      obverseThumbUrl: null,
       metalValueMinor: null,
       numismaticValueMinor: null,
       numismaticFetchedAt: null,
@@ -254,6 +256,7 @@ export function positionInsertValues(
     weightGrams: position.weightGrams,
     purchaseDate: position.purchaseDate,
     purchasePriceMinor: position.purchasePriceMinor,
+    obverseThumbUrl: position.obverseThumbUrl,
     metalValueMinor: position.metalValueMinor,
     numismaticValueMinor: position.numismaticValueMinor,
     numismaticFetchedAt: position.numismaticFetchedAt,

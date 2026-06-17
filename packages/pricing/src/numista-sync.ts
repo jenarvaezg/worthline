@@ -112,6 +112,7 @@ export async function syncNumistaCollection(
       numismaticValueMinor: valuation.numismatic.minor,
       numismaticFetchedAt,
       purchasePriceMinor: base.purchasePriceMinor,
+      obverseThumbUrl: detail.obverseThumbUrl,
       currency: base.currency,
     });
   }

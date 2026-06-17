@@ -50,6 +50,7 @@ function coin(over: Partial<CoinPosition> & { id: string }): CoinPosition {
     numismaticValueMinor: null,
     numismaticFetchedAt: null,
     purchasePriceMinor: null,
+    obverseThumbUrl: null,
     currency: "EUR",
     ...over,
   };

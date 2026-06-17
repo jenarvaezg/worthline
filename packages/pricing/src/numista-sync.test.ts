@@ -36,8 +36,19 @@ function deps(overrides: Partial<Parameters<typeof syncNumistaCollection>[0]> = 
     listItems: vi.fn(async () => [SILVER_EAGLE, PESETAS]),
     typeDetail: vi.fn(async (typeId: number) =>
       typeId === 1493
-        ? { title: "Silver Eagle", compositionText: "Plata 999", weightGrams: 31.103 }
-        : { title: "5 Pesetas", compositionText: "Plata 900", weightGrams: 25 },
+        ? {
+            title: "Silver Eagle",
+            compositionText: "Plata 999",
+            weightGrams: 31.103,
+            obverseThumbUrl:
+              "https://en.numista.com/catalogue/photos/etats-unis/1493-180.jpg",
+          }
+        : {
+            title: "5 Pesetas",
+            compositionText: "Plata 900",
+            weightGrams: 25,
+            obverseThumbUrl: null,
+          },
     ),
     prices: vi.fn(async (typeId: number) =>
       typeId === 1493
@@ -86,7 +97,14 @@ describe("syncNumistaCollection — drafts carry both candidate values", () => {
       finenessMillis: 999, // parsed from "Plata 999"
       weightGrams: 31.103,
       numismaticFetchedAt: NOW, // estimate just read → stamps the long-TTL clock
+      // The obverse photo, stamped once at sync like the other indefinite detail,
+      // so the coin gallery can render it without a per-render Numista call (#272).
+      obverseThumbUrl: "https://en.numista.com/catalogue/photos/etats-unis/1493-180.jpg",
     });
+
+    // A coin whose catalogue has no obverse photo carries a null thumb (no broken img).
+    const pesetas = drafts.find((d) => d.catalogueId === "5678")!;
+    expect(pesetas.obverseThumbUrl).toBeNull();
   });
 
   it("leaves numismatic fetched-at null when the coin has no issue/grade to price", async () => {
@@ -128,6 +146,7 @@ describe("syncNumistaCollection — drafts carry both candidate values", () => {
         title: "100 Pesetas",
         compositionText: "Cuproníquel",
         weightGrams: 9.25,
+        obverseThumbUrl: null,
       })),
       prices: vi.fn(async () => ({
         currency: "EUR",
