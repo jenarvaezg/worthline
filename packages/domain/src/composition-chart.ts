@@ -3,12 +3,11 @@
  * historical chart, replacing the separate evolution + decomposition charts.
  *
  * Mirrors the domain equation `gross assets − debts = net worth` directly: gross
- * asset components stack above zero in five bands — the four liquidity-ladder
- * rungs (cash · market · term-locked · illiquid) plus a Vivienda band sourced
- * from the `property` instrument by holding id (the ADR 0013 bridge — the exact
- * carve the drilldown uses, so chart and drill never disagree) — one aggregated
- * debt stack below zero, and a net-worth line over the resulting total. Pure
- * presentation math: no React, no SVG, just numbers and strings.
+ * asset components stack above zero in five bands — the five liquidity-ladder
+ * rungs (cash · market · term-locked · illiquid · housing), where housing is now a
+ * real rung (ADR 0022), so chart, donut and drill classify the home identically —
+ * one aggregated debt stack below zero, and a net-worth line over the resulting
+ * total. Pure presentation math: no React, no SVG, just numbers and strings.
  */
 
 import type { DatedSnapshotHoldingRow } from "./drilldown";
@@ -42,9 +41,9 @@ export interface CompositionBands {
   cashMinor: number;
   marketMinor: number;
   termLockedMinor: number;
-  /** Illiquid rung EXCLUDING housing — housing is carved into its own band. */
+  /** Illiquid rung — housing now sits on its own `housing` rung, never here. */
   illiquidMinor: number;
-  /** Holdings whose instrument is `property` (sourced by id, ADR 0013 bridge). */
+  /** The housing rung — every property instrument (ADR 0022). */
   housingMinor: number;
   /** All liabilities, aggregated (the single negative stack). */
   debtsMinor: number;
@@ -64,16 +63,16 @@ export interface CompositionBands {
 
 /**
  * Aggregates one snapshot's frozen holding rows into the composition bands.
- * Housing is sourced by id (`housingHoldingIds`), never by rung: a house sits on
- * `illiquid` but belongs to the Vivienda band, so it is excluded from `illiquid`
- * and never double-counted — the identical carve the drilldown applies.
+ * Housing is the dedicated `housing` rung (ADR 0022): a post-recut house freezes
+ * with `liquidityTier === "housing"` and buckets straight into the Vivienda band.
+ * Pre-migration historical rows can still carry a legacy `illiquid` tier with
+ * `countsAsHousing` true — the DEFENSIVE fallback `countsAsHousing ? "housing" :
+ * liquidityTier` routes those to the Vivienda band too, so a legacy house is never
+ * double-counted into `illiquid`.
  */
 export function deriveCompositionBands(
   rows: readonly DatedSnapshotHoldingRow[],
-  housingHoldingIds: readonly string[],
 ): CompositionBands {
-  const housingIds = new Set(housingHoldingIds);
-
   let cashMinor = 0;
   let marketMinor = 0;
   let termLockedMinor = 0;
@@ -94,11 +93,10 @@ export function deriveCompositionBands(
       }
       continue;
     }
-    if (housingIds.has(row.holdingId)) {
-      housingMinor += row.valueMinor;
-      continue;
-    }
-    switch (row.liquidityTier) {
+    // The row's effective rung: its frozen tier, but a legacy house (frozen
+    // illiquid before the v28 recut) still buckets to housing via countsAsHousing.
+    const rung = row.countsAsHousing ? "housing" : row.liquidityTier;
+    switch (rung) {
       case "cash":
         cashMinor += row.valueMinor;
         break;
@@ -110,6 +108,9 @@ export function deriveCompositionBands(
         break;
       case "illiquid":
         illiquidMinor += row.valueMinor;
+        break;
+      case "housing":
+        housingMinor += row.valueMinor;
         break;
       default:
         // Unreachable for asset rows: `buildSnapshotHoldingRows` always freezes a
@@ -281,8 +282,6 @@ export interface BuildCompositionSeriesInput {
   snapshots: readonly { dateKey: string; monthKey: string }[];
   /** The scope's frozen holding rows across the window (any dates). */
   rows: readonly DatedSnapshotHoldingRow[];
-  /** Ids of the scope's housing holdings (sourced by id, ADR 0013 bridge). */
-  housingHoldingIds: readonly string[];
   /** "Today" as YYYY-MM-DD — defines the open (current) period and the window. */
   today: string;
   /**
@@ -336,10 +335,7 @@ export function buildCompositionSeries(
       // bands reconcile to the snapshot's headline net worth.
       .filter((entry) => rowsByDate.has(entry.dateKey))
       .map((entry) => ({
-        ...deriveCompositionBands(
-          rowsByDate.get(entry.dateKey)!,
-          input.housingHoldingIds,
-        ),
+        ...deriveCompositionBands(rowsByDate.get(entry.dateKey)!),
         dateKey: entry.dateKey,
         isOpenPeriod: entry.isOpenPeriod,
       }))

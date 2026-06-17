@@ -162,7 +162,7 @@ describe("projectPortfolio — household scope", () => {
     const broker = assets.find((r) => r.id === "asset_broker")!;
     expect(broker.tierLabel).toBe("Mercado");
     const housing = assets.find((r) => r.id === "asset_home")!;
-    expect(housing.tierLabel).toBe("Ilíquido");
+    expect(housing.tierLabel).toBe("Vivienda");
   });
 
   test("reconciliation: asset row sum equals grossAssets from calculateNetWorth", () => {

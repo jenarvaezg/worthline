@@ -29,7 +29,6 @@ import {
   buildDrilldown,
   captureSnapshotForScope,
   deriveFramedSnapshotDeltas,
-  housingAssetIdsOf,
   listScopeOptions,
   monthsBetween,
   prepareDashboardState,
@@ -256,12 +255,12 @@ export async function loadDashboard(
   const snapshots = selectedScope ? store.snapshots.readSnapshots(selectedScope.id) : [];
 
   // Frozen holding rows of the scope, read once and shared by the composition
-  // chart (always) and the drilldown (when active). Housing is sourced by id,
-  // not by rung (ADR 0013 bridge): real-estate holdings.
+  // chart (always) and the drilldown (when active). Housing is its own rung now
+  // (ADR 0022): the chart buckets it by rung and the drill selects it by rung, so
+  // no by-id housing carve is threaded through any more.
   const holdingRows = selectedScope
     ? store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id })
     : [];
-  const housingHoldingIds = [...housingAssetIdsOf(assets)];
   const activeRange = range ?? "all";
 
   // ── 4a. Range window (#144) — owned ONCE here, fed to both consumers ──────
@@ -279,7 +278,6 @@ export async function loadDashboard(
   // ── 4b. Composition chart (#142, #144) — windowed net-worth composition ──
   // The selected range windows the series; density then adapts to the span.
   const compositionSeries = buildCompositionSeries({
-    housingHoldingIds,
     range: activeRange,
     rows: windowedRows,
     snapshots,
@@ -313,7 +311,6 @@ export async function loadDashboard(
             ...assets.map((asset) => asset.id),
             ...liabilities.map((liability) => liability.id),
           ],
-          housingHoldingIds,
           rows: windowedRows,
           trashedHoldingIds: [
             ...trash.assets.map((asset) => asset.id),

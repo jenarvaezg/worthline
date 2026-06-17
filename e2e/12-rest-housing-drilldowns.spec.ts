@@ -34,9 +34,7 @@ test("rest drilldown: band/legend link → stack panel → breadcrumb back", asy
   //    breadcrumb + heading, and either the retirement-vs-illiquid chart or
   //    its placeholder (single-day data ⇒ placeholder is correct behavior).
   await expect(page.locator(".drillPanel")).toBeVisible();
-  await expect(page.locator(".drillHeader h3")).toHaveText(
-    "Resto · jubilación e ilíquido",
-  );
+  await expect(page.locator(".drillHeader h3")).toHaveText("Resto · a plazo e ilíquido");
   await expect(
     page.locator(".drillChart").or(page.locator(".drillEmpty")).first(),
   ).toBeVisible();

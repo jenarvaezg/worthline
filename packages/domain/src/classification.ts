@@ -20,13 +20,16 @@ export function instrumentOfAsset(asset: ManualAsset): Instrument {
 }
 
 /**
- * An asset's rung on the liquidity ladder (ADR 0013). Housing — among the
- * least-liquid holdings there are — sits on `illiquid` regardless of any declared
- * tier. Housing-ness is now the instrument (`property`), not a rung of its own.
+ * An asset's rung on the liquidity ladder (ADR 0013, ADR 0022). Housing — the
+ * least-accessible holdings there are — sits on the dedicated `housing` rung
+ * regardless of any declared tier, populated by every `property` instrument
+ * (`isHousingAsset`). A housing-secured mortgage inherits this rung, so the
+ * housing rung's net is housing equity. Housing-ness remains the instrument
+ * (`property`); the rung is derived from it, never picked by hand.
  */
 export function tierOfAsset(asset: ManualAsset): LiquidityTier {
   if (isHousingAsset(asset)) {
-    return "illiquid";
+    return "housing";
   }
 
   return asset.liquidityTier;

@@ -37,15 +37,17 @@ function row(input: {
   valueMinor: number;
   kind?: SnapshotHoldingKind;
   label?: string;
+  countsAsHousing?: boolean;
+  securesHousing?: boolean;
 }): DatedSnapshotHoldingRow {
   return {
-    countsAsHousing: false,
+    countsAsHousing: input.countsAsHousing ?? false,
     dateKey: input.dateKey,
     holdingId: input.holdingId,
     kind: input.kind ?? "asset",
     label: input.label ?? input.holdingId,
     liquidityTier: input.tier,
-    securesHousing: false,
+    securesHousing: input.securesHousing ?? false,
     valueMinor: input.valueMinor,
   };
 }
@@ -90,7 +92,6 @@ describe("buildLiquidDrilldown — group resolution", () => {
 
     const state = buildLiquidDrilldown({
       currentHoldingIds: ["a_cash"],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -115,7 +116,6 @@ describe("buildLiquidDrilldown — per-tier stacked series", () => {
 
     const state = buildLiquidDrilldown({
       currentHoldingIds: ["a_cash", "a_fund"],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -167,7 +167,6 @@ describe("buildLiquidDrilldown — per-tier stacked series", () => {
 
     const state = buildLiquidDrilldown({
       currentHoldingIds: [],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -220,7 +219,6 @@ describe("buildLiquidDrilldown — per-tier stacked series", () => {
 
     const state = buildLiquidDrilldown({
       currentHoldingIds: [],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -250,7 +248,6 @@ describe("buildLiquidDrilldown — per-tier stacked series", () => {
 
     const state = buildLiquidDrilldown({
       currentHoldingIds: [],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -287,7 +284,6 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
 
     const state = buildLiquidDrilldown({
       currentHoldingIds: ["a_cash", "a_fund"],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -308,7 +304,6 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
 
     const state = buildLiquidDrilldown({
       currentHoldingIds: ["a_cash"],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -328,7 +323,6 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
 
     const state = buildLiquidDrilldown({
       currentHoldingIds: ["a_cash"],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -353,7 +347,6 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
 
     const state = buildLiquidDrilldown({
       currentHoldingIds: [],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -380,7 +373,6 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
 
     const state = buildLiquidDrilldown({
       currentHoldingIds: ["a_x"],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -396,7 +388,6 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
 
     const state = buildLiquidDrilldown({
       currentHoldingIds: ["a_cash"],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -438,7 +429,6 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
 
     const state = buildLiquidDrilldown({
       currentHoldingIds: [],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -465,8 +455,9 @@ describe("buildRestDrilldown — group resolution (#77)", () => {
       row({
         dateKey: "2026-06-01",
         holdingId: "a_house",
-        tier: "illiquid",
+        tier: "housing",
         valueMinor: 999,
+        countsAsHousing: true,
       }),
       row({
         dateKey: "2026-06-01",
@@ -492,13 +483,13 @@ describe("buildRestDrilldown — group resolution (#77)", () => {
 
     const state = buildRestDrilldown({
       currentHoldingIds: ["a_pension", "a_art"],
-      housingHoldingIds: ["a_house"],
       rows,
     });
 
     expect(state.key).toBe("rest");
     expect(state.stack).not.toBeNull();
     expect(state.stack!.bands.map((b) => b.band)).toEqual(["term-locked", "illiquid"]);
+    // The house sits on the housing rung, never in rest — no double-count.
     expect(state.holdings.map((h) => h.holdingId)).toEqual(["a_art", "a_pension"]);
   });
 
@@ -540,7 +531,6 @@ describe("buildRestDrilldown — group resolution (#77)", () => {
     // Illiquid net dips below zero on day 2 → the whole window becomes lines.
     const state = buildRestDrilldown({
       currentHoldingIds: [],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -563,7 +553,6 @@ describe("buildRestDrilldown — group resolution (#77)", () => {
 
     const state = buildRestDrilldown({
       currentHoldingIds: ["a_pension"],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -572,15 +561,16 @@ describe("buildRestDrilldown — group resolution (#77)", () => {
   });
 });
 
-describe("buildHousingDrilldown — single-tier group (#77)", () => {
-  test("only housing rows participate and the key is housing", () => {
+describe("buildHousingDrilldown — single-tier group (#77, ADR 0022)", () => {
+  test("only housing-rung rows participate and the key is housing", () => {
     const rows = [
       row({
         dateKey: "2026-06-01",
         holdingId: "a_piso",
-        tier: "illiquid",
+        tier: "housing",
         valueMinor: 300_000_00,
         label: "Piso",
+        countsAsHousing: true,
       }),
       row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 999 }),
       row({
@@ -589,18 +579,20 @@ describe("buildHousingDrilldown — single-tier group (#77)", () => {
         tier: "term-locked",
         valueMinor: 999,
       }),
+      // A non-housing illiquid holding (art) must NOT be selected into housing.
+      row({ dateKey: "2026-06-01", holdingId: "a_art", tier: "illiquid", valueMinor: 1 }),
       row({
         dateKey: "2026-06-02",
         holdingId: "a_piso",
-        tier: "illiquid",
+        tier: "housing",
         valueMinor: 320_000_00,
         label: "Piso",
+        countsAsHousing: true,
       }),
     ];
 
     const state = buildHousingDrilldown({
       currentHoldingIds: ["a_piso"],
-      housingHoldingIds: ["a_piso"],
       rows,
     });
 
@@ -608,25 +600,131 @@ describe("buildHousingDrilldown — single-tier group (#77)", () => {
     expect(state.holdings.map((h) => h.holdingId)).toEqual(["a_piso"]);
   });
 
-  test("never builds a stack, even with multi-day data", () => {
+  test("defensive: a pre-migration property frozen on illiquid but countsAsHousing is still selected", () => {
     const rows = [
       row({
         dateKey: "2026-06-01",
         holdingId: "a_piso",
         tier: "illiquid",
         valueMinor: 300_000_00,
+        label: "Piso",
+        countsAsHousing: true,
       }),
+      row({ dateKey: "2026-06-01", holdingId: "a_art", tier: "illiquid", valueMinor: 1 }),
       row({
         dateKey: "2026-06-02",
         holdingId: "a_piso",
         tier: "illiquid",
         valueMinor: 320_000_00,
+        label: "Piso",
+        countsAsHousing: true,
       }),
     ];
 
     const state = buildHousingDrilldown({
       currentHoldingIds: ["a_piso"],
-      housingHoldingIds: ["a_piso"],
+      rows,
+    });
+
+    expect(state.holdings.map((h) => h.holdingId)).toEqual(["a_piso"]);
+  });
+
+  test("defensive: a pre-migration mortgage (frozen illiquid, securesHousing=true) lands in housing drill alongside its house", () => {
+    // Legacy capture: v28 migration had not run yet, so both rows are frozen with
+    // liquidityTier='illiquid'. The house carries countsAsHousing=true; the mortgage
+    // carries securesHousing=true. effectiveRung must resolve both to "housing" so the
+    // housing drill nets house − mortgage, and neither appears in rest.
+    const rows = [
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_piso",
+        tier: "illiquid",
+        valueMinor: 300_000_00,
+        label: "Piso",
+        countsAsHousing: true,
+      }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "l_hipoteca",
+        tier: "illiquid",
+        valueMinor: -200_000_00,
+        kind: "liability",
+        label: "Hipoteca",
+        securesHousing: true,
+      }),
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_art",
+        tier: "illiquid",
+        valueMinor: 5_000_00,
+        label: "Arte",
+      }),
+      // Second capture so each holding has ≥2 rows and passes the sparkline guard
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_piso",
+        tier: "illiquid",
+        valueMinor: 305_000_00,
+        label: "Piso",
+        countsAsHousing: true,
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "l_hipoteca",
+        tier: "illiquid",
+        valueMinor: -199_000_00,
+        kind: "liability",
+        label: "Hipoteca",
+        securesHousing: true,
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_art",
+        tier: "illiquid",
+        valueMinor: 5_100_00,
+        label: "Arte",
+      }),
+    ];
+
+    const housingState = buildHousingDrilldown({
+      currentHoldingIds: ["a_piso", "l_hipoteca"],
+      rows,
+    });
+    const restState = buildRestDrilldown({
+      currentHoldingIds: ["a_piso", "a_art"],
+      rows,
+    });
+
+    // Both house and mortgage land in housing drill
+    expect(housingState.holdings.map((h) => h.holdingId).sort()).toEqual(
+      ["a_piso", "l_hipoteca"].sort(),
+    );
+    // Mortgage does NOT appear in rest
+    expect(restState.holdings.map((h) => h.holdingId)).not.toContain("l_hipoteca");
+    // Only art in rest
+    expect(restState.holdings.map((h) => h.holdingId)).toContain("a_art");
+  });
+
+  test("never builds a stack, even with multi-day data", () => {
+    const rows = [
+      row({
+        dateKey: "2026-06-01",
+        holdingId: "a_piso",
+        tier: "housing",
+        valueMinor: 300_000_00,
+        countsAsHousing: true,
+      }),
+      row({
+        dateKey: "2026-06-02",
+        holdingId: "a_piso",
+        tier: "housing",
+        valueMinor: 320_000_00,
+        countsAsHousing: true,
+      }),
+    ];
+
+    const state = buildHousingDrilldown({
+      currentHoldingIds: ["a_piso"],
       rows,
     });
 
@@ -638,36 +736,39 @@ describe("buildHousingDrilldown — single-tier group (#77)", () => {
       row({
         dateKey: "2026-06-01",
         holdingId: "a_piso",
-        tier: "illiquid",
+        tier: "housing",
         valueMinor: 300_000_00,
         label: "Piso",
+        countsAsHousing: true,
       }),
       row({
         dateKey: "2026-06-01",
         holdingId: "a_atico",
-        tier: "illiquid",
+        tier: "housing",
         valueMinor: 200_000_00,
         label: "Ático",
+        countsAsHousing: true,
       }),
       row({
         dateKey: "2026-06-02",
         holdingId: "a_piso",
-        tier: "illiquid",
+        tier: "housing",
         valueMinor: 320_000_00,
         label: "Piso",
+        countsAsHousing: true,
       }),
       row({
         dateKey: "2026-06-02",
         holdingId: "a_atico",
-        tier: "illiquid",
+        tier: "housing",
         valueMinor: 200_000_00,
         label: "Ático",
+        countsAsHousing: true,
       }),
     ];
 
     const state = buildHousingDrilldown({
       currentHoldingIds: ["a_piso", "a_atico"],
-      housingHoldingIds: ["a_piso", "a_atico"],
       rows,
     });
 
@@ -676,7 +777,7 @@ describe("buildHousingDrilldown — single-tier group (#77)", () => {
       200_000_00, 320_000_00,
     ]);
     for (const holding of state.holdings) {
-      expect(holding.tier).toBe("illiquid");
+      expect(holding.tier).toBe("housing");
       expect(holding.sparkline.linePoints.length).toBeGreaterThan(0);
     }
   });
@@ -719,7 +820,6 @@ describe("buildLiquidDrilldown — no-longer-held holdings (#78)", () => {
 
     const state = buildLiquidDrilldown({
       currentHoldingIds: ["a_cash"],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -755,7 +855,6 @@ describe("buildLiquidDrilldown — no-longer-held holdings (#78)", () => {
 
     const state = buildLiquidDrilldown({
       currentHoldingIds: ["a_cash"],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -824,7 +923,6 @@ describe("buildLiquidDrilldown — no-longer-held holdings (#78)", () => {
 
     const state = buildLiquidDrilldown({
       currentHoldingIds: ["a_held_z", "a_held_m"],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -844,19 +942,23 @@ describe("DRILL_GROUP_BY_TIER — tier → drill group mapping (#79)", () => {
       market: "liquid",
       "term-locked": "rest",
       illiquid: "rest",
+      housing: "housing",
     });
   });
 
-  test("is consistent with the group tier constants", () => {
+  test("is consistent with the group tier constants (housing is its own single-rung group)", () => {
     const tiersByGroup = {
       liquid: LIQUID_DRILL_TIERS,
       rest: REST_DRILL_TIERS,
     } as const;
 
     for (const [tier, group] of Object.entries(DRILL_GROUP_BY_TIER)) {
-      // No liquidity rung maps to the housing drill — housing is sourced by id,
-      // not by tier (ADR 0013 bridge), so every mapped group is a tier group.
-      expect(group).not.toBe("housing");
+      // The housing rung maps to the housing drill (ADR 0022) — a single-rung
+      // group with no stack constant; every other rung is a tier group.
+      if (group === "housing") {
+        expect(tier).toBe("housing");
+        continue;
+      }
       expect(tiersByGroup[group as "liquid" | "rest"]).toContain(tier);
     }
   });
@@ -923,7 +1025,6 @@ describe("buildDebtsDrilldown — aggregate debts series + per-debt multiples (#
   test("aggregates every liability (secured AND unsecured) into one 'debts' series", () => {
     const state = buildDebtsDrilldown({
       currentHoldingIds: ["l_mortgage", "l_card"],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -940,7 +1041,6 @@ describe("buildDebtsDrilldown — aggregate debts series + per-debt multiples (#
   test("lists each contributing debt as a multiple; assets are excluded", () => {
     const state = buildDebtsDrilldown({
       currentHoldingIds: ["l_mortgage", "l_card"],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -956,7 +1056,6 @@ describe("buildDebtsDrilldown — aggregate debts series + per-debt multiples (#
     // l_card has left the portfolio but keeps its captured history.
     const state = buildDebtsDrilldown({
       currentHoldingIds: ["l_mortgage"],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -970,7 +1069,6 @@ describe("buildDebtsDrilldown — aggregate debts series + per-debt multiples (#
   test("buildDrilldown dispatches the 'debts' key", () => {
     const state = buildDrilldown("debts", {
       currentHoldingIds: ["l_mortgage", "l_card"],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -1032,7 +1130,6 @@ describe("build*Drilldown — Papelera vs retired holdings (#268)", () => {
     buildLiquidDrilldown({
       currentHoldingIds: ["a_live"],
       trashedHoldingIds: ["a_trashed"],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -1059,7 +1156,6 @@ describe("build*Drilldown — Papelera vs retired holdings (#268)", () => {
   test("without trashedHoldingIds, an absent holding is still kept and flagged retired", () => {
     const fallback = buildLiquidDrilldown({
       currentHoldingIds: ["a_live"],
-      housingHoldingIds: [],
       rows,
     });
 

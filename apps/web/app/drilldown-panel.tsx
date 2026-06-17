@@ -14,6 +14,7 @@ import type { DrilldownKey, DrilldownState, LiquidityTier } from "@worthline/dom
 const BAND_LABELS: Record<LiquidityTier | "debts", string> = {
   cash: "Caja",
   debts: "Deudas",
+  housing: "Vivienda",
   illiquid: "Ilíquido",
   market: "Mercado",
   "term-locked": "A plazo",
@@ -57,11 +58,11 @@ const GROUP_COPY: Record<
   rest: {
     multiplesAria: "Posiciones del grupo resto",
     stackCopy: {
-      chartAria: "Evolución del resto: jubilación e ilíquido",
-      empty: "La evolución de jubilación e ilíquido aparecerá cuando haya más capturas.",
+      chartAria: "Evolución del resto: a plazo e ilíquido",
+      empty: "La evolución de a plazo e ilíquido aparecerá cuando haya más capturas.",
       legendAria: "Capas del grupo resto",
     },
-    title: "Resto · jubilación e ilíquido",
+    title: "Resto · a plazo e ilíquido",
   },
 };
 

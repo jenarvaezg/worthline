@@ -93,6 +93,9 @@ const RUNG_LABEL: Record<LiquidityTier, string> = {
   market: "Mercado",
   "term-locked": "A plazo",
   illiquid: "Ilíquido",
+  // Type-completeness only: housing is instrument-derived (a `property` instrument
+  // resolves to the housing rung via defaultsFor), never a manual rung pick.
+  housing: "Vivienda",
 };
 
 const METHOD_LABEL: Record<ValuationMethod, string> = {

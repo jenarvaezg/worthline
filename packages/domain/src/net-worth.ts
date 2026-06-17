@@ -72,6 +72,7 @@ export interface LiquidityTierBreakdown {
 }
 
 export const defaultLiquidityTierOrder = [
+  "housing",
   "illiquid",
   "term-locked",
   "market",

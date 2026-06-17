@@ -3,9 +3,9 @@
  * server-rendered drill view that replaces the decomposition chart.
  *
  * A drill key resolves a group: "liquid" (cash + market rungs), "rest" (the
- * term-locked + illiquid rungs, minus housing), and "housing" — the scope's
- * real-estate holdings, sourced by holding id rather than by rung, since
- * housing is no longer a tier (ADR 0013 bridge).
+ * term-locked + illiquid rungs), and "housing" — the scope's real-estate
+ * holdings, now a real fifth rung of the ladder (ADR 0022), so every surface
+ * classifies the home identically.
  * Everything is derived exclusively from frozen snapshot holding rows
  * (per-tier aggregates are never stored, ADR 0008): a per-tier stacked series
  * over time (net per frozen tier = asset rows − liability rows), reusing the
@@ -37,14 +37,14 @@ export const LIQUID_DRILL_TIERS = ["cash", "market"] as const;
 
 export type LiquidDrillTier = (typeof LIQUID_DRILL_TIERS)[number];
 
-/** The rest group: the term-locked and illiquid rungs, minus housing (#77). */
+/** The rest group: the term-locked and illiquid rungs (#77). Housing has its own
+ *  rung now (ADR 0022), so it is naturally excluded from this group. */
 export const REST_DRILL_TIERS = ["term-locked", "illiquid"] as const;
 
 export type RestDrillTier = (typeof REST_DRILL_TIERS)[number];
 
-// The housing group has no tier constant: housing is no longer a rung (ADR 0013
-// bridge). It is sourced by holding id — see `buildHousingDrilldown` — and its
-// drill never stacks (#77).
+// The housing group has no stack tier constant: housing is a single rung, so its
+// drill skips the stack and goes straight to the per-property multiples (#77).
 
 /**
  * The drill group each liquidity tier resolves to (#79): the inverse of the
@@ -54,6 +54,7 @@ export type RestDrillTier = (typeof REST_DRILL_TIERS)[number];
  */
 export const DRILL_GROUP_BY_TIER: Record<LiquidityTier, DrilldownKey> = {
   cash: "liquid",
+  housing: "housing",
   illiquid: "rest",
   market: "liquid",
   "term-locked": "rest",
@@ -79,14 +80,6 @@ export interface LiquidDrilldownInput {
    * truly retired, the prior behaviour.
    */
   trashedHoldingIds?: readonly string[];
-  /**
-   * Ids of the scope's housing holdings (real-estate). Housing is sourced by id,
-   * not by rung (ADR 0013 bridge): the housing drill takes exactly these, and the
-   * tier groups exclude them so a house on `illiquid` is never double-counted.
-   * Required (pass `[]` when the scope has no housing) so the no-double-count
-   * invariant can never hinge on a caller forgetting an optional field.
-   */
-  housingHoldingIds: readonly string[];
 }
 
 /** Every drill group builds from the same input shape (#77). */
@@ -153,7 +146,7 @@ export type LiquidDrilldownState = GroupDrilldownState<"liquid", LiquidDrillTier
 
 export type RestDrilldownState = GroupDrilldownState<"rest", RestDrillTier>;
 
-// Housing is sourced by id, not a rung, so its drill never stacks (Tier = never).
+// Housing is a single rung (ADR 0022), so its drill never stacks (Tier = never).
 export type HousingDrilldownState = GroupDrilldownState<"housing", never>;
 
 /** The single synthetic band of the aggregate debt series (#145). */
@@ -300,7 +293,7 @@ export function buildDrillHoldingMultiples(
           label: latest.label,
           noLongerHeld,
           sparkline,
-          tier: latest.liquidityTier,
+          tier: effectiveRung(latest),
         } satisfies DrillHoldingMultiple,
       ];
     })
@@ -340,29 +333,40 @@ function buildGroupStack<Tier extends LiquidityTier>(
 }
 
 /**
- * Selects the frozen rows of a tier group (liquid, rest): rows whose frozen rung
- * is in `tiers`, excluding housing holdings — a house sits on `illiquid` but
- * belongs to the housing drill, never to `rest`, so it is never double-counted
- * (ADR 0013 bridge).
+ * The effective rung a frozen row drills into: its frozen tier, but a legacy
+ * house (frozen `illiquid` before the v28 recut) still resolves to `housing` via
+ * `countsAsHousing`, and a legacy housing-secured mortgage resolves to `housing`
+ * via `securesHousing` — so both sides of housing equity bucket identically
+ * regardless of stored tier (ADR 0022).
  */
-function tierGroupSelect(
-  tiers: readonly LiquidityTier[],
-  housingHoldingIds: readonly string[],
-): (row: DrillGroupRow) => boolean {
-  const tierSet = new Set<LiquidityTier>(tiers);
-  const housingIds = new Set(housingHoldingIds);
-  return (row) => tierSet.has(row.liquidityTier) && !housingIds.has(row.holdingId);
+function effectiveRung<Tier extends LiquidityTier | null>(row: {
+  liquidityTier: Tier;
+  countsAsHousing: boolean;
+  securesHousing: boolean;
+}): "housing" | Tier {
+  return row.countsAsHousing || row.securesHousing ? "housing" : row.liquidityTier;
 }
 
 /**
- * Selects the frozen rows of the housing group: exactly the scope's housing
- * holdings, sourced by id rather than by rung (ADR 0013 bridge).
+ * Selects the frozen rows of a tier group (liquid, rest): rows whose effective
+ * rung is in `tiers`. Housing now has its own `housing` rung (ADR 0022), so a
+ * house resolves to `housing` and is naturally excluded from `rest` — no
+ * by-id carve, no double-count.
  */
-function housingSelect(
-  housingHoldingIds: readonly string[],
+function tierGroupSelect(
+  tiers: readonly LiquidityTier[],
 ): (row: DrillGroupRow) => boolean {
-  const housingIds = new Set(housingHoldingIds);
-  return (row) => housingIds.has(row.holdingId);
+  const tierSet = new Set<LiquidityTier>(tiers);
+  return (row) => tierSet.has(effectiveRung(row));
+}
+
+/**
+ * Selects the frozen rows of the housing group: rows whose effective rung is
+ * `housing` (ADR 0022) — every property instrument, plus a legacy house frozen
+ * `illiquid` with `countsAsHousing` true.
+ */
+function housingSelect(): (row: DrillGroupRow) => boolean {
+  return (row) => effectiveRung(row) === "housing";
 }
 
 /**
@@ -408,7 +412,7 @@ export function buildLiquidDrilldown(input: LiquidDrilldownInput): LiquidDrilldo
   return buildGroupDrilldown(
     "liquid",
     input,
-    tierGroupSelect(LIQUID_DRILL_TIERS, input.housingHoldingIds),
+    tierGroupSelect(LIQUID_DRILL_TIERS),
     LIQUID_DRILL_TIERS,
   );
 }
@@ -421,23 +425,18 @@ export function buildRestDrilldown(input: DrilldownInput): RestDrilldownState {
   return buildGroupDrilldown(
     "rest",
     input,
-    tierGroupSelect(REST_DRILL_TIERS, input.housingHoldingIds),
+    tierGroupSelect(REST_DRILL_TIERS),
     REST_DRILL_TIERS,
   );
 }
 
 /**
- * Builds the housing drill view state (#77): sourced by holding id, so there is
- * no stack — straight to the per-property small multiples, answering "which
- * property revalued more".
+ * Builds the housing drill view state (#77): the housing rung is a single tier
+ * (ADR 0022), so there is no stack — straight to the per-property small
+ * multiples, answering "which property revalued more".
  */
 export function buildHousingDrilldown(input: DrilldownInput): HousingDrilldownState {
-  return buildGroupDrilldown<"housing", never>(
-    "housing",
-    input,
-    housingSelect(input.housingHoldingIds),
-    null,
-  );
+  return buildGroupDrilldown<"housing", never>("housing", input, housingSelect(), null);
 }
 
 /**

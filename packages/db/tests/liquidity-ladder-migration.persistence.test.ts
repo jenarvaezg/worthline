@@ -83,7 +83,10 @@ describe("liquidity-ladder schema migration (v12)", () => {
       ).t;
 
     expect(tierOf("sh_pension")).toBe("term-locked");
-    expect(tierOf("sh_home")).toBe("illiquid");
+    // Migrate runs the FULL ladder: v12 recuts housing → illiquid, then v17
+    // backfills counts_as_housing=1 for this property row, and v28 (ADR 0022)
+    // relabels every counts_as_housing row to the new `housing` rung.
+    expect(tierOf("sh_home")).toBe("housing");
     expect(tierOf("sh_cash")).toBe("cash");
     expect(tierOf("sh_loan")).toBeNull();
   });

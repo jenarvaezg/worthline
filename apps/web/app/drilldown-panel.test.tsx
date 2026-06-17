@@ -55,7 +55,6 @@ describe("DrilldownPanel — debts drilldown (#145)", () => {
   test("renders the aggregate debt series, its title, each debt, and a Vista-preserving breadcrumb", () => {
     const drilldown = buildDebtsDrilldown({
       currentHoldingIds: ["l_mortgage", "l_card"],
-      housingHoldingIds: [],
       rows,
     });
 
@@ -79,7 +78,6 @@ describe("DrilldownPanel — debts drilldown (#145)", () => {
   test("a debt no longer live is kept and marked 'Ya no vigente'", () => {
     const drilldown = buildDebtsDrilldown({
       currentHoldingIds: ["l_mortgage"], // l_card has left the portfolio
-      housingHoldingIds: [],
       rows,
     });
 
@@ -96,7 +94,6 @@ describe("DrilldownPanel — Papelera vs retired holdings (#268)", () => {
     const drilldown = buildLiquidDrilldown({
       currentHoldingIds: ["a_live"],
       trashedHoldingIds: ["a_trashed"],
-      housingHoldingIds: [],
       rows: [
         assetRow("2026-06-01", "a_live", "Cuenta", 100, "cash"),
         assetRow("2026-06-03", "a_live", "Cuenta", 200, "cash"),
@@ -119,7 +116,6 @@ describe("DrilldownPanel — Papelera vs retired holdings (#268)", () => {
     const drilldown = buildLiquidDrilldown({
       currentHoldingIds: ["a_live"],
       trashedHoldingIds: [],
-      housingHoldingIds: [],
       rows: [
         assetRow("2026-06-01", "a_live", "Cuenta", 100, "cash"),
         assetRow("2026-06-03", "a_live", "Cuenta", 200, "cash"),

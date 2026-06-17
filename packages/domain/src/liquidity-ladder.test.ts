@@ -4,8 +4,14 @@ import type { LiquidityTier } from "./liquidity-ladder";
 import { isLiquid, LIQUIDITY_LADDER, rungForLiability } from "./liquidity-ladder";
 
 describe("liquidity ladder", () => {
-  test("rungs are ordered most to least liquid", () => {
-    expect(LIQUIDITY_LADDER).toEqual(["cash", "market", "term-locked", "illiquid"]);
+  test("rungs are ordered most to least liquid, ending in housing", () => {
+    expect(LIQUIDITY_LADDER).toEqual([
+      "cash",
+      "market",
+      "term-locked",
+      "illiquid",
+      "housing",
+    ]);
   });
 
   test("isLiquid is true only for the top two rungs (cash, market)", () => {
@@ -13,6 +19,7 @@ describe("liquidity ladder", () => {
     expect(isLiquid("market")).toBe(true);
     expect(isLiquid("term-locked")).toBe(false);
     expect(isLiquid("illiquid")).toBe(false);
+    expect(isLiquid("housing")).toBe(false);
   });
 });
 
