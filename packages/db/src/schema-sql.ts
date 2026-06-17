@@ -271,6 +271,7 @@ CREATE TABLE \`positions\` (
 	\`weight_grams\` real,
 	\`purchase_date\` text,
 	\`purchase_price_minor\` integer,
+	\`obverse_thumb_url\` text,
 	\`metal_value_minor\` integer,
 	\`numismatic_value_minor\` integer,
 	\`numismatic_fetched_at\` text,

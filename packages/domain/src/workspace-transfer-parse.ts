@@ -269,6 +269,9 @@ const coinPositionSchema = z.object({
   numismaticValueMinor: z.number().int().nullable(),
   numismaticFetchedAt: nonEmptyString.nullable(),
   purchasePriceMinor: z.number().int().nullable(),
+  // The obverse photo URL (#272). Defaults to null so a file written before the
+  // gallery existed still imports; re-fetched on the next sync.
+  obverseThumbUrl: nonEmptyString.nullable().default(null),
   currency: nonEmptyString,
 });
 

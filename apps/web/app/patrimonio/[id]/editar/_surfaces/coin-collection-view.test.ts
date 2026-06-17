@@ -40,6 +40,7 @@ function position(overrides: Partial<CoinPosition> = {}): CoinPosition {
     numismaticValueMinor: null,
     numismaticFetchedAt: null,
     purchasePriceMinor: null,
+    obverseThumbUrl: null,
     currency: "EUR",
     ...overrides,
   };

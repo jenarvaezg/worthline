@@ -985,6 +985,7 @@ describe("parseWorkspaceExport — connected sources (ADR 0016)", () => {
             numismaticValueMinor: null,
             numismaticFetchedAt: null,
             purchasePriceMinor: 5_000,
+            obverseThumbUrl: "https://en.numista.com/catalogue/photos/x/n1-180.jpg",
             currency: "EUR",
           },
         ],
@@ -1000,6 +1001,28 @@ describe("parseWorkspaceExport — connected sources (ADR 0016)", () => {
     if (result.ok) {
       expect(result.value.connectedSources).toHaveLength(1);
       expect(result.value.connectedSources[0]!.positions).toHaveLength(1);
+      // The coin's obverse photo round-trips through export/import (#272 x100).
+      expect(result.value.connectedSources[0]!.positions[0]).toMatchObject({
+        obverseThumbUrl: "https://en.numista.com/catalogue/photos/x/n1-180.jpg",
+      });
+    }
+  });
+
+  test("a position from a pre-gallery file defaults its obverse thumbnail to null", () => {
+    const document = makeDocument((doc) => {
+      withConnectedSource(doc);
+      // A file written before the gallery existed carries no obverseThumbUrl.
+      delete (doc.connectedSources[0]!.positions[0] as { obverseThumbUrl?: unknown })
+        .obverseThumbUrl;
+    });
+
+    const result = parseWorkspaceExport(document);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.connectedSources[0]!.positions[0]).toMatchObject({
+        obverseThumbUrl: null,
+      });
     }
   });
 

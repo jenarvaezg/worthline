@@ -43,6 +43,7 @@ function position(): CoinPosition {
     name: "Silver Eagle",
     numismaticFetchedAt: NOW,
     numismaticValueMinor: 7558,
+    obverseThumbUrl: null,
     purchaseDate: null,
     purchasePriceMinor: null,
     quantity: 1,

@@ -116,6 +116,9 @@ export interface NumistaTypeDetail {
   compositionText: string | null;
   /** Weight in grams; null when the catalogue has none. */
   weightGrams: number | null;
+  /** The obverse photo's thumbnail URL — the catalogue image the coin gallery
+   *  renders (#272 x100); null when the catalogue has no obverse photo. */
+  obverseThumbUrl: string | null;
 }
 
 /** A per-grade price estimate (GET /types/{id}/issues/{issue}/prices). */
@@ -178,11 +181,13 @@ export async function getTypeDetail(
     title: string;
     composition?: { text?: string };
     weight?: number;
+    obverse?: { thumbnail?: string };
   }>(`/types/${typeId}?lang=${LANG}`, credentials.apiKey);
   return {
     title: data.title,
     compositionText: data.composition?.text ?? null,
     weightGrams: data.weight ?? null,
+    obverseThumbUrl: data.obverse?.thumbnail ?? null,
   };
 }
 

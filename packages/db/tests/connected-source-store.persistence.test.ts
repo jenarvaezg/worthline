@@ -55,6 +55,7 @@ function position(
     name: "8 reales",
     numismaticFetchedAt: null,
     numismaticValueMinor: null,
+    obverseThumbUrl: null,
     purchaseDate: "2024-01-01",
     purchasePriceMinor: 5_000,
     quantity: 1,
@@ -160,6 +161,7 @@ describe("connected-source store — syncPositions", () => {
           externalId: "ext-1",
           name: "Coin A",
           purchasePriceMinor: 5_000,
+          obverseThumbUrl: "https://en.numista.com/catalogue/photos/x/n1-180.jpg",
         }),
         position({
           catalogueId: "n2",
@@ -190,6 +192,8 @@ describe("connected-source store — syncPositions", () => {
       purchasePriceMinor: 5_000,
       quantity: 1,
       sourceId,
+      // The obverse photo round-trips through the store so the gallery can render it (#272).
+      obverseThumbUrl: "https://en.numista.com/catalogue/photos/x/n1-180.jpg",
     });
   });
 

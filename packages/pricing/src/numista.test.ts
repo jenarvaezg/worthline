@@ -137,6 +137,20 @@ describe("Numista readers — parse the live response shapes (fixtures, spike #1
     expect(detail.title).toContain("American Silver Eagle");
     expect(detail.compositionText).toBe("Plata 999");
     expect(detail.weightGrams).toBe(31.103);
+    // The obverse thumbnail is the catalogue photo the coin gallery renders (#272 x100).
+    expect(detail.obverseThumbUrl).toBe(
+      "https://en.numista.com/catalogue/photos/etats-unis/1493-180.jpg",
+    );
+  });
+
+  it("getTypeDetail leaves the thumbnail null when the catalogue has no obverse photo", async () => {
+    const noPhoto: Record<string, unknown> = { ...typeDetailFixture };
+    delete noPhoto.obverse;
+    vi.mocked(fetch).mockResolvedValueOnce(okJson(noPhoto));
+
+    const detail = await getTypeDetail(creds, 1493);
+
+    expect(detail.obverseThumbUrl).toBeNull();
   });
 
   it("getPrices reads the per-grade EUR estimates", async () => {

@@ -150,6 +150,10 @@ export interface CoinPosition extends PositionCore {
   /** What was paid for the position, minor units; null when Numista records no
    *  trade price (an optional field — many users record none). */
   purchasePriceMinor: number | null;
+  /** The obverse photo's thumbnail URL from Numista, stamped once at sync (ADR
+   *  0017, like fineness/weight); null when the catalogue has no photo. Drives the
+   *  coin gallery's image, falling back to a metal glyph when null (#272 x100). */
+  obverseThumbUrl: string | null;
 }
 
 /**

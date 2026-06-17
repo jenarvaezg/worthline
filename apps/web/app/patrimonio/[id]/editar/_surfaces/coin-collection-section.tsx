@@ -162,6 +162,24 @@ export function CoinCollectionSection({
                       const numistaUrl = coinNumistaUrl(position.catalogueId);
                       return (
                         <div className="coinLine" key={position.id}>
+                          <span className="coinThumb">
+                            {position.obverseThumbUrl ? (
+                              // A remote Numista CDN photo, server-rendered (ADR 0009); no
+                              // next/image optimizer for an external, list-scale thumb.
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                alt=""
+                                className="coinThumbImg"
+                                height={44}
+                                loading="lazy"
+                                referrerPolicy="no-referrer"
+                                src={position.obverseThumbUrl}
+                                width={44}
+                              />
+                            ) : (
+                              <span className="coinThumbFallback" aria-hidden="true" />
+                            )}
+                          </span>
                           <span className="coinName">
                             {numistaUrl ? (
                               <a
@@ -185,7 +203,7 @@ export function CoinCollectionSection({
                               {year ? ` · ${year}` : ""}
                             </small>
                           </span>
-                          <span className="coinNum">×{position.quantity}</span>
+                          <span className="coinQty coinNum">×{position.quantity}</span>
                           <span className="coinAmount coinNum">
                             <strong>{eur(valuation.minor)}</strong>
                             <span className={`coinTag ${tag.cls}`}>{tag.label}</span>
