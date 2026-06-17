@@ -71,6 +71,15 @@ export interface LiquidDrilldownInput {
   /** Ids of the holdings currently in the portfolio (assets and liabilities). */
   currentHoldingIds: readonly string[];
   /**
+   * Ids of holdings sitting in the Papelera — soft-deleted, recoverable (#268).
+   * They are absent from `currentHoldingIds` (the live portfolio); rather than
+   * reading "Ya no en cartera", they are dropped from the per-holding multiples
+   * entirely (their past value still lives in the aggregate history). Optional —
+   * omit (or pass `[]`) when nothing is trashed, and an absent holding reads as
+   * truly retired, the prior behaviour.
+   */
+  trashedHoldingIds?: readonly string[];
+  /**
    * Ids of the scope's housing holdings (real-estate). Housing is sourced by id,
    * not by rung (ADR 0013 bridge): the housing drill takes exactly these, and the
    * tier groups exclude them so a house on `illiquid` is never double-counted.
@@ -112,7 +121,12 @@ export interface DrillHoldingMultiple {
    * portfolio; `null` when no longer held.
    */
   currentValueMinor: number | null;
-  /** True when the holding has left the portfolio (sold, written off, deleted). */
+  /**
+   * True when the holding has left the portfolio for good — sold, written off,
+   * hard-deleted. Holdings in the Papelera (soft-deleted, recoverable) never
+   * reach the multiples at all (#268), so a flagged card is always a genuine
+   * retirement.
+   */
   noLongerHeld: boolean;
 }
 
@@ -240,6 +254,7 @@ function buildSparkline(
 export function buildDrillHoldingMultiples(
   groupRows: readonly DatedSnapshotHoldingRow[],
   currentHoldingIds: readonly string[],
+  trashedHoldingIds: readonly string[] = [],
 ): DrillHoldingMultiple[] {
   const sortedRows = [...groupRows].sort((a, b) => a.dateKey.localeCompare(b.dateKey));
 
@@ -255,9 +270,16 @@ export function buildDrillHoldingMultiples(
   }
 
   const heldIds = new Set(currentHoldingIds);
+  const trashedIds = new Set(trashedHoldingIds);
 
   return [...rowsByHolding.entries()]
     .flatMap(([holdingId, rows]) => {
+      // Holdings in the Papelera (soft-deleted, recoverable) are not retired —
+      // they should not surface in the drill at all (#268). Their past value
+      // still lives in the aggregate stack/composition history (frozen rows,
+      // ADR 0008); only the per-holding card is dropped.
+      if (trashedIds.has(holdingId)) return [];
+
       const sparkline = buildSparkline(
         rows.map((row) => row.dateKey),
         rows.map((row) => row.valueMinor),
@@ -369,7 +391,11 @@ function buildGroupDrilldown<Key extends DrilldownKey, Tier extends LiquidityTie
   const stack = stackTiers
     ? buildGroupStack(groupRows as Array<GroupRow<Tier>>, stackTiers)
     : null;
-  const holdings = buildDrillHoldingMultiples(groupRows, input.currentHoldingIds);
+  const holdings = buildDrillHoldingMultiples(
+    groupRows,
+    input.currentHoldingIds,
+    input.trashedHoldingIds,
+  );
 
   return { holdings, key, stack };
 }
@@ -436,7 +462,11 @@ export function buildDebtsDrilldown(input: DrilldownInput): DebtsDrilldownState 
   const stack = buildStackedChartGeometry<DebtDrillBand>(dateKeys, [
     { band: "debts", values: dateKeys.map((dateKey) => totalByDate.get(dateKey)!) },
   ]);
-  const holdings = buildDrillHoldingMultiples(debtRows, input.currentHoldingIds);
+  const holdings = buildDrillHoldingMultiples(
+    debtRows,
+    input.currentHoldingIds,
+    input.trashedHoldingIds,
+  );
 
   return { holdings, key: "debts", stack };
 }

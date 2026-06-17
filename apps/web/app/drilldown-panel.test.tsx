@@ -1,5 +1,5 @@
-import { buildDebtsDrilldown } from "@worthline/domain";
-import type { DatedSnapshotHoldingRow } from "@worthline/domain";
+import { buildDebtsDrilldown, buildLiquidDrilldown } from "@worthline/domain";
+import type { DatedSnapshotHoldingRow, LiquidityTier } from "@worthline/domain";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
@@ -17,6 +17,25 @@ function liabilityRow(
     holdingId,
     countsAsHousing: false,
     kind: "liability",
+    label,
+    liquidityTier: tier,
+    securesHousing: false,
+    valueMinor,
+  };
+}
+
+function assetRow(
+  dateKey: string,
+  holdingId: string,
+  label: string,
+  valueMinor: number,
+  tier: LiquidityTier,
+): DatedSnapshotHoldingRow {
+  return {
+    dateKey,
+    holdingId,
+    countsAsHousing: false,
+    kind: "asset",
     label,
     liquidityTier: tier,
     securesHousing: false,
@@ -69,5 +88,51 @@ describe("DrilldownPanel — debts drilldown (#145)", () => {
     );
 
     expect(markup).toContain("Ya no vigente");
+  });
+});
+
+describe("DrilldownPanel — Papelera vs retired holdings (#268)", () => {
+  test("a holding in the Papelera does not appear in the drill at all", () => {
+    const drilldown = buildLiquidDrilldown({
+      currentHoldingIds: ["a_live"],
+      trashedHoldingIds: ["a_trashed"],
+      housingHoldingIds: [],
+      rows: [
+        assetRow("2026-06-01", "a_live", "Cuenta", 100, "cash"),
+        assetRow("2026-06-03", "a_live", "Cuenta", 200, "cash"),
+        assetRow("2026-06-01", "a_trashed", "Traspasada", 100, "market"),
+        assetRow("2026-06-03", "a_trashed", "Traspasada", 200, "market"),
+      ],
+    });
+
+    const markup = renderToStaticMarkup(
+      <DrilldownPanel backHref="/" currency="EUR" drilldown={drilldown} />,
+    );
+
+    // Neither its label nor any "gone" tag — it is simply absent.
+    expect(markup).not.toContain("Traspasada");
+    expect(markup).not.toContain("Ya no en cartera");
+    expect(markup).toContain("Cuenta");
+  });
+
+  test("a truly retired asset still shows 'Ya no en cartera' (AC3)", () => {
+    const drilldown = buildLiquidDrilldown({
+      currentHoldingIds: ["a_live"],
+      trashedHoldingIds: [],
+      housingHoldingIds: [],
+      rows: [
+        assetRow("2026-06-01", "a_live", "Cuenta", 100, "cash"),
+        assetRow("2026-06-03", "a_live", "Cuenta", 200, "cash"),
+        assetRow("2026-06-01", "a_gone", "Retirada", 100, "market"),
+        assetRow("2026-06-03", "a_gone", "Retirada", 200, "market"),
+      ],
+    });
+
+    const markup = renderToStaticMarkup(
+      <DrilldownPanel backHref="/" currency="EUR" drilldown={drilldown} />,
+    );
+
+    expect(markup).toContain("Retirada");
+    expect(markup).toContain("Ya no en cartera");
   });
 });
