@@ -56,6 +56,21 @@ export function metalIdentity(metal: string | null): MetalIdentity {
   return METAL_IDENTITY[metal.toLowerCase()] ?? { label: metal, tone: "var(--line)" };
 }
 
+/** Numista's public catalogue host; a coin's ficha lives at `{host}/{type id}`
+ *  (e.g. https://es.numista.com/1493 — confirmed by the type-detail fixture's own
+ *  `url`). es-ES to match the app's locale. */
+const NUMISTA_CATALOGUE_BASE = "https://es.numista.com";
+
+/**
+ * The public Numista ficha URL for a coin built from its `catalogueId` (the
+ * Numista type id), or null when the position carries no catalogue id — then the
+ * name renders as plain text rather than a broken link (#272).
+ */
+export function coinNumistaUrl(catalogueId: string): string | null {
+  const id = catalogueId.trim();
+  return id === "" ? null : `${NUMISTA_CATALOGUE_BASE}/${id}`;
+}
+
 /** The es-ES label + CSS class for a coin's valuation basis (the row's tag). */
 export interface BasisTag {
   label: string;

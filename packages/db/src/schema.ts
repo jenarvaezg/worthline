@@ -439,6 +439,9 @@ export const positions = sqliteTable("positions", {
   // Optional Numista fields — present only when the user recorded them (#161).
   purchaseDate: text("purchase_date"),
   purchasePriceMinor: integer("purchase_price_minor"),
+  // The obverse photo's thumbnail URL from Numista, stamped once at sync (#272);
+  // null when the catalogue has no photo → the gallery shows a metal glyph.
+  obverseThumbUrl: text("obverse_thumb_url"),
   // The two candidate values (ADR 0017); null when not resolved (base-metal coin
   // with no spot / no numismatic estimate). Refreshed between syncs (#166).
   metalValueMinor: integer("metal_value_minor"),

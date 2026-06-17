@@ -27,6 +27,7 @@ import { PendingSubmit } from "../../../../pending-submit";
 import {
   basisTag,
   buildCoinCollectionView,
+  coinNumistaUrl,
   coinYear,
   formatSharePct,
   metalCoinCount,
@@ -158,17 +159,51 @@ export function CoinCollectionSection({
                       const valuation = coinValue(position);
                       const tag = basisTag(valuation.basis);
                       const year = coinYear(position);
+                      const numistaUrl = coinNumistaUrl(position.catalogueId);
                       return (
                         <div className="coinLine" key={position.id}>
+                          <span className="coinThumb">
+                            {position.obverseThumbUrl ? (
+                              // A remote Numista CDN photo, server-rendered (ADR 0009); no
+                              // next/image optimizer for an external, list-scale thumb.
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                alt=""
+                                className="coinThumbImg"
+                                height={44}
+                                loading="lazy"
+                                referrerPolicy="no-referrer"
+                                src={position.obverseThumbUrl}
+                                width={44}
+                              />
+                            ) : (
+                              <span className="coinThumbFallback" aria-hidden="true" />
+                            )}
+                          </span>
                           <span className="coinName">
-                            {position.name}
+                            {numistaUrl ? (
+                              <a
+                                className="coinNameLink"
+                                href={numistaUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title={`Ver «${position.name}» en Numista`}
+                              >
+                                {position.name}
+                                <span className="coinExtIcon" aria-hidden="true">
+                                  ↗
+                                </span>
+                              </a>
+                            ) : (
+                              position.name
+                            )}
                             <small>
                               {" "}
                               · {position.grade}
                               {year ? ` · ${year}` : ""}
                             </small>
                           </span>
-                          <span className="coinNum">×{position.quantity}</span>
+                          <span className="coinQty coinNum">×{position.quantity}</span>
                           <span className="coinAmount coinNum">
                             <strong>{eur(valuation.minor)}</strong>
                             <span className={`coinTag ${tag.cls}`}>{tag.label}</span>

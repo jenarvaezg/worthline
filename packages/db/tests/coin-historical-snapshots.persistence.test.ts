@@ -87,6 +87,7 @@ function coin(
     name: `Coin ${externalId}`,
     numismaticFetchedAt: null,
     numismaticValueMinor: valueMinor,
+    obverseThumbUrl: null,
     purchaseDate,
     purchasePriceMinor: null,
     quantity: 1,
