@@ -174,4 +174,102 @@ describe("calculateFireForScope", () => {
     // alice's eligible: 200000 (etf full) + 50000 (bonds half) = 250000
     expect(aliceResult.eligibleAssets.amountMinor).toBe(250_000);
   });
+
+  it("lists the primary residence as an excluded asset", () => {
+    const assets = [
+      makeAsset("house", 500_000_00, true),
+      makeAsset("stocks", 100_000_00, false),
+    ];
+
+    const result = calculateFireForScope(
+      {
+        monthlySpendingMinor: 100_000,
+        safeWithdrawalRate: 0.04,
+        expectedRealReturn: 0.07,
+      },
+      assets,
+      workspace,
+      "household",
+    );
+
+    expect(result.excludedAssets).toEqual([
+      { id: "house", name: "house", reason: "primary_residence" },
+    ]);
+    // The formula is untouched: only stocks count.
+    expect(result.eligibleAssets.amountMinor).toBe(100_000_00);
+  });
+
+  it("lists manually-excluded assets with reason 'manual'", () => {
+    const assets = [makeAsset("pension", 80_000_00), makeAsset("stocks", 100_000_00)];
+
+    const result = calculateFireForScope(
+      {
+        monthlySpendingMinor: 100_000,
+        safeWithdrawalRate: 0.04,
+        expectedRealReturn: 0.07,
+        excludedAssetIds: ["pension"],
+      },
+      assets,
+      workspace,
+      "household",
+    );
+
+    expect(result.excludedAssets).toEqual([
+      { id: "pension", name: "pension", reason: "manual" },
+    ]);
+    expect(result.eligibleAssets.amountMinor).toBe(100_000_00);
+  });
+
+  it("reports no excluded assets when everything counts", () => {
+    const assets = [makeAsset("stocks", 100_000_00), makeAsset("cash", 20_000_00)];
+
+    const result = calculateFireForScope(
+      {
+        monthlySpendingMinor: 100_000,
+        safeWithdrawalRate: 0.04,
+        expectedRealReturn: 0.07,
+      },
+      assets,
+      workspace,
+      "household",
+    );
+
+    expect(result.excludedAssets).toEqual([]);
+  });
+
+  it("omits an excluded asset the scope does not own (zero owned value)", () => {
+    // The primary residence belongs entirely to bob; alice's scope holds none.
+    const assets = [
+      makeAsset("house", 500_000_00, true, [{ memberId: "bob", shareBps: 10_000 }]),
+      makeAsset("stocks", 100_000_00, false, [{ memberId: "alice", shareBps: 10_000 }]),
+    ];
+
+    const result = calculateFireForScope(
+      {
+        monthlySpendingMinor: 100_000,
+        safeWithdrawalRate: 0.04,
+        expectedRealReturn: 0.07,
+      },
+      assets,
+      workspace,
+      "alice",
+    );
+
+    expect(result.excludedAssets).toEqual([]);
+    expect(result.eligibleAssets.amountMinor).toBe(100_000_00);
+  });
+
+  it("calculateFire returns an empty excludedAssets list", () => {
+    const result = calculateFire(
+      {
+        monthlySpendingMinor: 200_000,
+        safeWithdrawalRate: 0.04,
+        expectedRealReturn: 0.07,
+      },
+      30_000_000,
+      "EUR",
+    );
+
+    expect(result.excludedAssets).toEqual([]);
+  });
 });

@@ -1560,6 +1560,50 @@ code {
   font-variant-numeric: tabular-nums;
 }
 
+/* "¿Qué cuenta como elegible?" disclosure (#266): explains the FIRE eligibility
+   rule and lists the assets held out of the total, with the reason. */
+.fireEligibleNote {
+  margin-top: -6px;
+}
+
+.fireEligibleNote summary {
+  cursor: pointer;
+  color: var(--blue);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.fireEligibleRule {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.fireExcludedList {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.fireExcludedList li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--hairline);
+  font-size: 0.82rem;
+}
+
+.fireExcludedReason {
+  color: var(--muted);
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+
 /* FIRE unconfigured state. */
 .fireEmpty {
   display: grid;

@@ -450,6 +450,32 @@ export default async function DashboardPage({
                 <span>Activos elegibles</span>
                 <strong>{formatMoneyMinor(fireResult.eligibleAssets)}</strong>
               </div>
+              <details className="fireEligibleNote">
+                <summary>¿Qué cuenta como elegible?</summary>
+                <p className="fireEligibleRule">
+                  Suma todos tus activos del ámbito actual salvo tu vivienda principal y
+                  los que excluyas a mano; cada activo cuenta según tu porcentaje de
+                  propiedad.
+                </p>
+                {fireResult.excludedAssets.length > 0 ? (
+                  <ul className="fireExcludedList">
+                    {fireResult.excludedAssets.map((asset) => (
+                      <li key={asset.id}>
+                        <span>{asset.name}</span>
+                        <span className="fireExcludedReason">
+                          {asset.reason === "primary_residence"
+                            ? "Vivienda principal"
+                            : "Excluido a mano"}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="fireEligibleRule">
+                    Ahora mismo no se excluye ningún activo: todos cuentan.
+                  </p>
+                )}
+              </details>
               {fireResult.coastFireRequired ? (
                 <div className="fireMetric">
                   <span>Coast FIRE requerido</span>
