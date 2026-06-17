@@ -401,7 +401,8 @@ describe("historical housing equity from a real mortgage curve", () => {
     // mortgage row secures the housing asset → true; the housing asset itself
     // is an asset → false. No live foreign key into holdings is consulted.
     const rows = store.snapshots.readSnapshotHoldings({
-      scopeId: "mJ",
+      // Individual mode freezes rows under the single household scope (#269).
+      scopeId: "household",
       from: "2025-01-01",
       to: "2025-01-01",
     });
