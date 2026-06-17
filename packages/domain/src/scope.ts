@@ -11,6 +11,17 @@ export interface ScopeOption {
 export function listScopeOptions(workspace: Workspace): ScopeOption[] {
   const members = workspace.members.filter((member) => !member.disabledAt);
 
+  // In individual mode the household and its single person are the same scope,
+  // so offering both ("Hogar" + the name) is redundant noise (#269). Collapse to
+  // a single household scope: every consumer then treats an individual workspace
+  // as one scope — the topbar's `scopes.length > 1` guard hides the selector, and
+  // the per-scope snapshot/backfill loops stop double-capturing identical data.
+  // The id stays "household" so the default selected scope and any existing
+  // household-keyed snapshots / FIRE config carry over untouched.
+  if (workspace.mode === "individual") {
+    return [{ id: "household", label: "Hogar", type: "household" }];
+  }
+
   return [
     { id: "household", label: "Hogar", type: "household" },
     ...members.map((member) => ({

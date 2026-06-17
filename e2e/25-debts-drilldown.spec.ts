@@ -36,18 +36,21 @@
 
 import { test, expect } from "./fixtures";
 
-/** Pin the Hogar (household) scope — it aggregates every member's liabilities. */
+/** Pin the Hogar (household) scope — it aggregates every member's liabilities.
+ * By the time this journey runs the serial workspace is individual (journey 19
+ * re-onboards solo, journey 20 imports an individual file), so the scope
+ * selector is hidden — the lone person IS the household (#269) and it is already
+ * the only, active, default scope. The click is a no-op then; in a household
+ * workspace (multiple members) we click "Hogar" as before. */
 async function pinHouseholdScope(page: import("@playwright/test").Page): Promise<void> {
   await page.goto("/");
-  await page
-    .getByRole("navigation", { name: "Selector de scope" })
-    .getByRole("button", { name: "Hogar" })
-    .click();
-  await expect(
-    page
-      .getByRole("navigation", { name: "Selector de scope" })
-      .getByRole("button", { name: "Hogar" }),
-  ).toHaveClass(/active/);
+  const scopeNav = page.getByRole("navigation", { name: "Selector de scope" });
+  if ((await scopeNav.count()) === 0) {
+    return;
+  }
+  const hogar = scopeNav.getByRole("button", { name: "Hogar" });
+  await hogar.click();
+  await expect(hogar).toHaveClass(/active/);
 }
 
 test("debts drilldown: band/legend link → aggregate series + per-debt multiples → breadcrumb back", async ({

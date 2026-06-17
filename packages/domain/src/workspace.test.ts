@@ -40,6 +40,35 @@ describe("workspace scopes", () => {
     ]);
   });
 
+  test("individual mode collapses to a single household scope (#269)", () => {
+    const workspace = createWorkspace({
+      mode: "individual",
+      members: [{ id: "member_jose", name: "Jose" }],
+    });
+
+    // Household and the lone person are the same scope, so the selector must not
+    // offer both — only the household option is listed, which the topbar then
+    // hides (length <= 1). The scope still resolves to that single member.
+    expect(listScopeOptions(workspace)).toEqual([
+      { id: "household", label: "Hogar", type: "household" },
+    ]);
+    expect(resolveScopeMemberIds(workspace, "household")).toEqual(["member_jose"]);
+  });
+
+  test("household mode with a single member still lists both scopes (#269)", () => {
+    const workspace = createWorkspace({
+      mode: "household",
+      members: [{ id: "member_jose", name: "Jose" }],
+    });
+
+    // The selector stays visible for households regardless of member count — only
+    // individual mode collapses. Two scopes → topbar renders the bar.
+    expect(listScopeOptions(workspace)).toEqual([
+      { id: "household", label: "Hogar", type: "household" },
+      { id: "member_jose", label: "Jose", type: "member" },
+    ]);
+  });
+
   test("disabled members are excluded from household scope", () => {
     const workspace = createWorkspace({
       mode: "household",

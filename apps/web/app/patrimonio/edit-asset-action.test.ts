@@ -170,8 +170,8 @@ describe("editAssetAction — ownership-split ripple (#172)", () => {
         ownership: [{ memberId: "mJ", shareBps: 7_500 }],
         scopeMemberIds: new Set(["mJ"]),
       }).ownedMinor;
-      // History re-weighted to 75% of the curve balance — both member and household.
-      expect(debtsAt(store, "mJ")).toBe(expected);
+      // History re-weighted to 75% of the curve balance. Individual mode has a
+      // single scope — the household, which is the lone person (#269).
       expect(debtsAt(store, "household")).toBe(expected);
     });
   });

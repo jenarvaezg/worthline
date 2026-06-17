@@ -224,7 +224,8 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
 
     // The binance asset's frozen rows — by date and value.
     const binanceRows = store.snapshots
-      .readSnapshotHoldings({ holdingId: assetId, scopeId: MEMBER_ID })
+      // Individual mode freezes rows under the single household scope (#269).
+      .readSnapshotHoldings({ holdingId: assetId, scopeId: "household" })
       .filter((row) => row.kind === "asset")
       .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
 
