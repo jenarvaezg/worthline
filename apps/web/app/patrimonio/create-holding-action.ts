@@ -78,6 +78,19 @@ function parseInstrument(value: FormDataEntryValue | null): Instrument | null {
   return (INSTRUMENTS as readonly string[]).includes(raw) ? (raw as Instrument) : null;
 }
 
+/**
+ * The debt model a `loan` is created with (#273): the user picks «Amortizable»
+ * (a French-amortization plan, set up later in the ficha) or «Informal» (declared
+ * balances, no plan/term/first-payment). Defaults to amortizable when the choice
+ * is absent or unrecognized, preserving the pre-#273 behavior. Mortgage and
+ * credit_card keep their fixed models — only the loan offers the choice.
+ */
+function parseLoanDebtModel(formData: FormData): DebtModel {
+  return String(formData.get("debtModel_loan") ?? "").trim() === "informal"
+    ? "informal"
+    : "amortizable";
+}
+
 /** The suffixed field keys an instrument may post — preserved on a validation error. */
 const FIELD_KEYS = [
   "name",
@@ -90,6 +103,7 @@ const FIELD_KEYS = [
   "balance",
   "assoc",
   "inheritOwnership",
+  "debtModel",
 ];
 
 /** Copy a suffixed field onto a canonical name, when present. */
@@ -299,6 +313,10 @@ export async function createHoldingAction(
   const liabilitySpec = LIABILITY_SPEC[instrument];
 
   if (liabilitySpec) {
+    // A loan lets the user choose its model at creation (#273); mortgage/credit_card
+    // keep the fixed model the catalog assigns.
+    const debtModel =
+      instrument === "loan" ? parseLoanDebtModel(formData) : liabilitySpec.debtModel;
     const scoped = scopedLiabilityForm(formData, instrument, liabilitySpec.type);
 
     if (!String(scoped.get("name") ?? "").trim()) {
@@ -350,7 +368,7 @@ export async function createHoldingAction(
       }
 
       store.liabilities.createLiability(resolved);
-      store.liabilities.setDebtModel(resolved.id, liabilitySpec.debtModel);
+      store.liabilities.setDebtModel(resolved.id, debtModel);
 
       return { ok: true as const, id: resolved.id };
     });

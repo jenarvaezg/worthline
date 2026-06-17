@@ -10,7 +10,10 @@
  */
 import { createInMemoryStore } from "@worthline/db";
 import type { WorthlineStore } from "@worthline/db";
-import { defaultInstrumentForLiability } from "@worthline/domain";
+import {
+  defaultInstrumentForLiability,
+  valuationMethodOfLiability,
+} from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import { createHoldingAction } from "./create-holding-action";
@@ -297,6 +300,51 @@ describe("createHoldingAction — debts", () => {
     expect(liability.type).toBe("debt");
     expect(store.liabilities.readDebtModel(liability.id)).toBe("amortizable");
     expect(defaultInstrumentForLiability("debt", "amortizable")).toBe("loan");
+  });
+
+  test("loan + debtModel=informal → debt liability with the informal model, valued anchored (#273)", async () => {
+    const store = seedStore();
+
+    await runAction(
+      form({
+        instrument: "loan",
+        name_loan: "Préstamo a mi hermano",
+        balance_loan: "3.000,00",
+        debtModel_loan: "informal",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const liability = store.liabilities.readLiabilities()[0]!;
+    expect(liability.type).toBe("debt");
+    expect(liability.currentBalance.amountMinor).toBe(300_000);
+    const debtModel = store.liabilities.readDebtModel(liability.id);
+    expect(debtModel).toBe("informal");
+    // AC#4: an informal loan is valued by declared balances (anchored), not a plan.
+    expect(valuationMethodOfLiability(debtModel)).toBe("anchored");
+    // It still recovers to the `loan` instrument (type + model).
+    expect(defaultInstrumentForLiability("debt", "informal")).toBe("loan");
+  });
+
+  test("loan + debtModel=amortizable (explicit) keeps the amortizable model (#273)", async () => {
+    const store = seedStore();
+
+    await runAction(
+      form({
+        instrument: "loan",
+        name_loan: "Préstamo coche",
+        balance_loan: "8.000,00",
+        debtModel_loan: "amortizable",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const liability = store.liabilities.readLiabilities()[0]!;
+    expect(store.liabilities.readDebtModel(liability.id)).toBe("amortizable");
   });
 
   test("credit_card → debt liability with the revolving model (derives to credit_card)", async () => {

@@ -78,7 +78,7 @@ const FAMILIES: Family[] = [
     label: "Deuda",
     instruments: [
       { id: "mortgage", label: "Hipoteca", hint: "Amortización francesa" },
-      { id: "loan", label: "Préstamo", hint: "Amortización francesa" },
+      { id: "loan", label: "Préstamo", hint: "Amortizable o informal" },
       { id: "credit_card", label: "Tarjeta de crédito", hint: "Saldos declarados" },
     ],
   },
@@ -493,6 +493,19 @@ function MethodFields({
             />
           </label>
         </>
+      ) : null}
+
+      {id === "loan" ? (
+        <label>
+          Modelo de deuda
+          <select name={`debtModel_${id}`} defaultValue={v("debtModel") ?? "amortizable"}>
+            <option value="amortizable">Amortizable · cuadro de amortización</option>
+            <option value="informal">Informal · saldos declarados</option>
+          </select>
+          <small>
+            Informal no necesita plazo ni fecha de primer pago: registras saldos.
+          </small>
+        </label>
       ) : null}
 
       {method === "amortized" || method === "anchored" ? (
