@@ -301,6 +301,11 @@ export async function loadDashboard(
   // ── 4c. Drilldown (#76, #77, #145) — drill view state from frozen rows ───
   // Reads the SAME windowed rows the composition chart does (§4a), so a drill
   // always mirrors the chart's window — one window owner, two consumers.
+  // Holdings in the Papelera (soft-deleted, recoverable) are dropped from the
+  // drill rather than mislabelled "Ya no en cartera" (#268). Read only when a
+  // drill is open.
+  const trash =
+    drill && selectedScope ? store.readTrash() : { assets: [], liabilities: [] };
   const drilldown =
     drill && selectedScope
       ? buildDrilldown(drill, {
@@ -310,6 +315,10 @@ export async function loadDashboard(
           ],
           housingHoldingIds,
           rows: windowedRows,
+          trashedHoldingIds: [
+            ...trash.assets.map((asset) => asset.id),
+            ...trash.liabilities.map((liability) => liability.id),
+          ],
         })
       : null;
 

@@ -977,3 +977,93 @@ describe("buildDebtsDrilldown — aggregate debts series + per-debt multiples (#
     expect(state.key).toBe("debts");
   });
 });
+
+describe("build*Drilldown — Papelera vs retired holdings (#268)", () => {
+  // Three holdings, two of which have left the current portfolio: one was
+  // transferred and now sits in the Papelera (soft delete, recoverable), the
+  // other was truly retired (hard-deleted / written off). The retired one shows
+  // as "Ya no en cartera"; the trashed one is dropped from the drill entirely.
+  const rows = [
+    row({
+      dateKey: "2026-06-01",
+      holdingId: "a_live",
+      tier: "cash",
+      valueMinor: 100,
+      label: "Viva",
+    }),
+    row({
+      dateKey: "2026-06-03",
+      holdingId: "a_live",
+      tier: "cash",
+      valueMinor: 200,
+      label: "Viva",
+    }),
+    row({
+      dateKey: "2026-06-01",
+      holdingId: "a_trashed",
+      tier: "market",
+      valueMinor: 100,
+      label: "Traspasada",
+    }),
+    row({
+      dateKey: "2026-06-03",
+      holdingId: "a_trashed",
+      tier: "market",
+      valueMinor: 200,
+      label: "Traspasada",
+    }),
+    row({
+      dateKey: "2026-06-01",
+      holdingId: "a_gone",
+      tier: "market",
+      valueMinor: 100,
+      label: "Retirada",
+    }),
+    row({
+      dateKey: "2026-06-03",
+      holdingId: "a_gone",
+      tier: "market",
+      valueMinor: 200,
+      label: "Retirada",
+    }),
+  ];
+
+  const state = () =>
+    buildLiquidDrilldown({
+      currentHoldingIds: ["a_live"],
+      trashedHoldingIds: ["a_trashed"],
+      housingHoldingIds: [],
+      rows,
+    });
+
+  test("a holding transferred to the Papelera is dropped from the drill entirely", () => {
+    expect(state().holdings.map((h) => h.holdingId)).not.toContain("a_trashed");
+  });
+
+  test("the live and the truly-retired holdings remain, retired one flagged", () => {
+    const holdings = state().holdings;
+
+    const live = holdings.find((h) => h.holdingId === "a_live")!;
+    expect(live.noLongerHeld).toBe(false);
+    expect(live.currentValueMinor).toBe(200);
+
+    const gone = holdings.find((h) => h.holdingId === "a_gone")!;
+    expect(gone.noLongerHeld).toBe(true);
+    expect(gone.currentValueMinor).toBeNull();
+  });
+
+  test("ordering: only live then retired survive (Papelera excluded)", () => {
+    expect(state().holdings.map((h) => h.holdingId)).toEqual(["a_live", "a_gone"]);
+  });
+
+  test("without trashedHoldingIds, an absent holding is still kept and flagged retired", () => {
+    const fallback = buildLiquidDrilldown({
+      currentHoldingIds: ["a_live"],
+      housingHoldingIds: [],
+      rows,
+    });
+
+    const kept = fallback.holdings.find((h) => h.holdingId === "a_trashed")!;
+    expect(kept.noLongerHeld).toBe(true);
+  });
+});
