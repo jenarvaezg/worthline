@@ -396,7 +396,8 @@ describe("syncBinanceAction", () => {
       .readSnapshotHoldings({ holdingId: assetId })
       .filter((row) => row.kind === "asset" && row.dateKey === "2020-01-31");
     expect(binanceRows.length).toBeGreaterThan(0);
-    const household = binanceRows.find((row) => row.scopeId === "mJ");
+    // Individual mode captures the single household scope — the lone person (#269).
+    const household = binanceRows.find((row) => row.scopeId === "household");
     expect(household?.valueMinor).toBe(15_000_00);
   });
 

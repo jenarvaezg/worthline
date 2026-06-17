@@ -11,6 +11,7 @@ coverage/
 test-results/
 playwright-report/
 playwright-report-first-run/
+playwright-report-first-run-*/
 
 .local/
 .scratch/

@@ -167,7 +167,17 @@ describe("loadDashboard — snapshot capture policy", () => {
 describe("loadDashboard — snapshot holding rows", () => {
   test("captures holding rows alongside the snapshot for every scope", async () => {
     const store = createInMemoryStore();
-    makeWorkspace(store);
+    // A household (not individual) so there is genuinely more than one scope:
+    // individual mode collapses to the lone household scope (#269), which would
+    // make "every scope" vacuous. member_jose owns the asset outright, so both
+    // the (viewed) household scope and the (non-viewed) member scope capture it.
+    store.workspace.initializeWorkspace({
+      members: [
+        { id: "member_jose", name: "Jose" },
+        { id: "member_ana", name: "Ana" },
+      ],
+      mode: "household",
+    });
     makeAsset(store);
 
     await loadDashboard({

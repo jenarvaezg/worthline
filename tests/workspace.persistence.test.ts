@@ -18,10 +18,9 @@ describe("local workspace persistence", () => {
 
     expect(workspace?.baseCurrency).toBe("EUR");
     expect(workspace?.mode).toBe("individual");
-    expect(listScopeOptions(workspace!).map((scope) => scope.id)).toEqual([
-      "household",
-      "member_jose",
-    ]);
+    // Individual mode collapses to the single household scope — the lone person
+    // is the household, so the selector never offers both (#269).
+    expect(listScopeOptions(workspace!).map((scope) => scope.id)).toEqual(["household"]);
   });
 
   test("persists household members, groups, edits, and soft-disabled members", () => {

@@ -28,6 +28,13 @@ test("first run solo: empezar → / with valid scope and onboarding checklist", 
   // 5. Brand heading is visible — shell rendered
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("worthline");
 
+  // 5b. Individual mode: the scope selector ("Hogar" + the person) is redundant,
+  // so it must not render — household and person are the same scope here (#269).
+  // The household-mode counterpart (02-first-run-hogar) asserts it IS visible.
+  await expect(page.getByRole("navigation", { name: "Selector de scope" })).toHaveCount(
+    0,
+  );
+
   // 6. Onboarding checklist section should appear (some steps still pending)
   await expect(page.getByRole("region", { name: "Primeros pasos" })).toBeVisible();
 
