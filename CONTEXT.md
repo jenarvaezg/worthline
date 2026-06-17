@@ -16,14 +16,15 @@ _Avoid_: total net worth (redundant qualifier), housing-inclusive net worth.
 
 **Liquid net worth**:
 Net worth counting only holdings on the two liquid rungs of the **liquidity ladder** —
-**cash** and **market**. Excludes everything **term-locked** or **illiquid** (pensions,
-deposits, property, and other hard-to-sell holdings).
+**cash** and **market**. Excludes everything **term-locked**, **illiquid**, or **housing**
+(pensions, deposits, collectibles, property, and other hard-to-sell holdings).
 
 **Housing equity**:
 The value of property (real-estate) holdings minus the debts secured against them. A
-derived component of net worth, not a separate framing of it — and, since the
-**liquidity ladder** recut, not a rung of its own: property sits on the **illiquid** rung
-and its equity is surfaced as a figure.
+derived component of net worth, not a separate framing of it. Property sits on its own
+**housing** rung of the **liquidity ladder**, but the equity figure is derived from the
+property and secured-debt holdings themselves, never read off the rung — so it stays
+stable however the ladder is bucketed.
 
 **Gross assets**:
 The sum of a scope's asset values before any debt is subtracted.
@@ -177,18 +178,20 @@ informal debts the balance stays constant until the next anchor (step function).
 
 **Liquidity ladder**:
 The ordered classification of holdings by how quickly and cheaply they convert to cash —
-the dashboard's primary axis. Four rungs, most to least accessible: **cash** (available
+the dashboard's primary axis. Five rungs, most to least accessible: **cash** (available
 instantly), **market** (realizable in days at minimal cost), **term-locked** (locked until
 a date or age — deposits, pension plans), **illiquid** (sellable only with friction or a
-haircut, over weeks to months — precious metals, vehicles, collectibles, property). The
-two top rungs together are **liquid net worth**.
+haircut, over weeks to months — precious metals, vehicles, collectibles), **housing**
+(property; sold over months, and tracked as its own rung because households reason about
+the home and its mortgage separately from other illiquid assets). The two top rungs
+together are **liquid net worth**.
 
 **Liquidity tier**:
 A holding's rung on the **liquidity ladder**. Finer real-world distinctions within a rung
-(a pension vs a deposit; a flat vs gold) live in the holding's instrument, not in extra
+(a pension vs a deposit; gold vs a vehicle) live in the holding's instrument, not in extra
 rungs.
-_Avoid_: treating retirement or housing as tiers — they were instrument purposes, not
-liquidity levels (see Flagged ambiguities).
+_Avoid_: treating retirement as a tier — it named why a holding is locked (a purpose), not
+a level; pensions fall on **term-locked** (see Flagged ambiguities).
 
 **Liquidity breakdown**:
 The split of a scope's holdings across the rungs of the **liquidity ladder**, each rung
@@ -384,7 +387,8 @@ metal, by token) is a lens on the holding's detail page, not extra lines.
 - "total net worth" vs "housing-inclusive net worth" — were listed as distinct concepts but are the **same** figure (all assets incl. home equity, minus all debts). Resolved: canonical term is **net worth**; "housing-inclusive net worth" is retired.
 - "liquidity pyramid" — the pyramid shape implied a ranked/proportional form it never had (only 3 of 5 tiers were even styled). Resolved: retired in favor of **liquidity breakdown**, where each tier's visual size encodes its share of **gross assets** (the specific encoding — bars, donut — is presentation, not language).
 - "kind" / `AssetType` (cash, manual, real*estate, investment) — treated as a holding's identity, but it bundles independent axes. Resolved: a **holding** is the unit and its "kind" is a \_derived label*; the real attributes are what the holding is (its instrument), how its value is obtained (set by hand vs derived from units × price), its **liquidity tier**, and whether it is owned or owed. "manual" and "cash" were the same stored-value holding; "investment" just means the value is derived.
-- "liquidity tier" as a flat set {cash, market, retirement, illiquid, housing} — two were not liquidity levels: **retirement** named _why_ a holding is locked (a purpose) and **housing** named _what_ it is (an instrument). Resolved: the axis is an ordered **liquidity ladder** of pure accessibility rungs — cash, market, term-locked, illiquid. Pensions fall on term-locked, property on illiquid, and **housing equity** survives as a derived figure, not a rung.
+- "liquidity tier" as a flat set {cash, market, retirement, illiquid, housing} — two were not liquidity levels: **retirement** named _why_ a holding is locked (a purpose) and **housing** named _what_ it is (an instrument). Resolved: the axis is an ordered **liquidity ladder** of pure accessibility rungs — cash, market, term-locked, illiquid. Pensions fall on term-locked, property on illiquid, and **housing equity** survives as a derived figure, not a rung. _(Superseded for housing — see next bullet.)_
+- "housing as a rung" — removing it (above) left the home folded into **illiquid**, but the three dashboard surfaces disagreed on whether to show it separately: Evolución and the drilldown carved property out by holding id, while the **liquidity breakdown** did not, so the same home counted inside Ilíquido in one place and as its own band in another. Resolved (ADR 0022): housing is re-promoted to a fifth **liquidity ladder** rung so all surfaces bucket it identically by construction and the by-id carve disappears. The ladder is no longer "pure accessibility" — housing is a recognised carve-out households track separately. **Housing equity** stays a flag-derived figure and **FIRE** stays keyed on the primary-residence flag, so both remain decoupled from the rung.
 - "debt model" (amortizable / revolving / informal) vs the asset-side valuation behaviours — the same axis. Resolved: a debt's model is its **valuation method** — amortizable = **amortized**; revolving/informal = **anchored**, differing only by interpolation (linear vs step). One concept (**valuation method**) spans assets and debts.
 
 ## Current Architecture
