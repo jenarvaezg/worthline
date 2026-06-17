@@ -27,6 +27,7 @@ import { PendingSubmit } from "../../../../pending-submit";
 import {
   basisTag,
   buildCoinCollectionView,
+  coinNumistaUrl,
   coinYear,
   formatSharePct,
   metalCoinCount,
@@ -158,10 +159,26 @@ export function CoinCollectionSection({
                       const valuation = coinValue(position);
                       const tag = basisTag(valuation.basis);
                       const year = coinYear(position);
+                      const numistaUrl = coinNumistaUrl(position.catalogueId);
                       return (
                         <div className="coinLine" key={position.id}>
                           <span className="coinName">
-                            {position.name}
+                            {numistaUrl ? (
+                              <a
+                                className="coinNameLink"
+                                href={numistaUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title={`Ver «${position.name}» en Numista`}
+                              >
+                                {position.name}
+                                <span className="coinExtIcon" aria-hidden="true">
+                                  ↗
+                                </span>
+                              </a>
+                            ) : (
+                              position.name
+                            )}
                             <small>
                               {" "}
                               · {position.grade}

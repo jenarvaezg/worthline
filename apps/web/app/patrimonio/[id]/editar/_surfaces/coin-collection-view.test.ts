@@ -11,6 +11,7 @@ import { describe, expect, test } from "vitest";
 import {
   basisTag,
   buildCoinCollectionView,
+  coinNumistaUrl,
   coinYear,
   formatSharePct,
   metalCoinCount,
@@ -47,6 +48,21 @@ function position(overrides: Partial<CoinPosition> = {}): CoinPosition {
 function group(overrides: Partial<MetalGroup>): MetalGroup {
   return { metal: "gold", positions: [], subtotalMinor: 0, ...overrides };
 }
+
+describe("coinNumistaUrl", () => {
+  test("builds the public es.numista.com link from the catalogue id (the Numista type id)", () => {
+    expect(coinNumistaUrl("1493")).toBe("https://es.numista.com/1493");
+  });
+
+  test("trims surrounding whitespace before building the link", () => {
+    expect(coinNumistaUrl("  1493 ")).toBe("https://es.numista.com/1493");
+  });
+
+  test("returns null for a blank catalogue id so the name renders as plain text, not a broken link", () => {
+    expect(coinNumistaUrl("")).toBeNull();
+    expect(coinNumistaUrl("   ")).toBeNull();
+  });
+});
 
 describe("coinYear", () => {
   test("shows the coin's mint year from the position, not its acquisition date", () => {
