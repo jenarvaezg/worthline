@@ -14,10 +14,28 @@ export interface FireScopeConfig {
   excludedAssetIds?: string[];
 }
 
+/**
+ * Why an asset is held out of the FIRE-eligible total. `primary_residence`
+ * comes from the asset's own flag; `manual` comes from `config.excludedAssetIds`.
+ */
+export type FireExclusionReason = "primary_residence" | "manual";
+
+export interface FireExcludedAsset {
+  id: string;
+  name: string;
+  reason: FireExclusionReason;
+}
+
 export interface FireResult {
   fireNumber: MoneyMinor;
   eligibleAssets: MoneyMinor;
   percentFunded: number;
+  /**
+   * Assets owned within the scope that were left OUT of `eligibleAssets`, with
+   * the reason. Powers the dashboard "¿Qué cuenta como elegible?" disclosure
+   * (#266). Empty for `calculateFire` (it only sees a total, not the assets).
+   */
+  excludedAssets: FireExcludedAsset[];
   coastFireRequired?: MoneyMinor;
   coastFireAge?: number;
   isAlreadyAtCoastFire?: boolean;
@@ -50,6 +68,7 @@ export function calculateFire(
     fireNumber: money(fireNumberMinor, currency),
     eligibleAssets: money(eligibleAssetsMinor, currency),
     percentFunded,
+    excludedAssets: [],
   };
 
   if (config.currentAge !== undefined) {
@@ -79,17 +98,38 @@ export function calculateFireForScope(
   scopeId: string,
 ): FireResult {
   const scopeMemberIds = new Set(resolveScopeMemberIds(workspace, scopeId));
-  const eligible = filterFireEligibleAssets(assets, config.excludedAssetIds);
+  const excludedSet = new Set(config.excludedAssetIds ?? []);
 
-  const eligibleAssetsMinor = eligible.reduce((sum, asset) => {
-    return (
-      sum +
-      allocateScopedHolding(asset.currentValue.amountMinor, {
-        ownership: asset.ownership,
-        scopeMemberIds,
-      }).ownedMinor
-    );
-  }, 0);
+  let eligibleAssetsMinor = 0;
+  const excludedAssets: FireExcludedAsset[] = [];
 
-  return calculateFire(config, eligibleAssetsMinor, workspace.baseCurrency);
+  for (const asset of assets) {
+    const ownedMinor = allocateScopedHolding(asset.currentValue.amountMinor, {
+      ownership: asset.ownership,
+      scopeMemberIds,
+    }).ownedMinor;
+
+    const reason: FireExclusionReason | null = asset.isPrimaryResidence
+      ? "primary_residence"
+      : excludedSet.has(asset.id)
+        ? "manual"
+        : null;
+
+    if (reason === null) {
+      eligibleAssetsMinor += ownedMinor;
+      continue;
+    }
+
+    // Scope-relative: only surface what the scope actually holds. An excluded
+    // asset owned entirely outside this scope contributes nothing either way,
+    // so listing it would just be noise.
+    if (ownedMinor > 0) {
+      excludedAssets.push({ id: asset.id, name: asset.name, reason });
+    }
+  }
+
+  return {
+    ...calculateFire(config, eligibleAssetsMinor, workspace.baseCurrency),
+    excludedAssets,
+  };
 }
