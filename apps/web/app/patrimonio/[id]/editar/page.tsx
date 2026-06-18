@@ -12,6 +12,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import OperationsEditor from "../../../_components/operations-editor";
+import { detailRefreshCaption } from "../../../price-refresh";
 import {
   parseFormError,
   parseScopeCookie,
@@ -398,7 +399,17 @@ export default async function EditarPage({
             context={{
               ...(position ? { currentUnits: position.currentUnits } : {}),
               ...(priceCache
-                ? { unitPrice: priceCache.price, priceFreshness: freshness }
+                ? {
+                    unitPrice: priceCache.price,
+                    priceFreshness: freshness,
+                    // Visible caption (#303): when + by which source the cached
+                    // unit price was last refreshed (absolute es-ES date). Null for
+                    // a manual quote (its `source` is `manual`, so no provider date).
+                    priceRefreshCaption: detailRefreshCaption(
+                      priceCache.source === "manual" ? null : priceCache.fetchedAt,
+                      priceCache.source === "manual" ? null : priceCache.source,
+                    ),
+                  }
                 : {}),
               ...(position?.marketValue ? { marketValue: position.marketValue } : {}),
               ...(position?.unrealizedPnl

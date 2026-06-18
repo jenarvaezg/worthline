@@ -18,6 +18,7 @@ import type { Instrument, LiquidityTier } from "./classification";
 import { instrumentOfAsset, rungForLiability, tierOfAsset } from "./classification";
 import { defaultInstrumentForLiability } from "./instrument-catalog";
 import type { MoneyMinor } from "./money";
+import type { PriceSource } from "./prices";
 import { money } from "./money";
 import { allocateScopedHolding } from "./scope-allocation";
 import type { ScopeOption } from "./scope";
@@ -77,6 +78,19 @@ export interface ProjectedAssetRow {
    * NOT the row's actions: every row edits/deletes through its ficha (#154, S8).
    */
   valueIsDerived: boolean;
+  /**
+   * When the value was derived from a cached provider price, the ISO instant that
+   * price was last refreshed (issue #303); null for hand-valued holdings, for an
+   * investment with no cached price yet, and for connected sources (`type: manual`).
+   * The UI turns it into a relative ("hace 2 días") / absolute ("8 jun 2026") date.
+   */
+  priceFetchedAt: string | null;
+  /**
+   * The source that supplied the cached price (`yahoo`/`stooq`/`finect`/…), paired
+   * with `priceFetchedAt` (issue #303); null in exactly the same cases. The UI maps
+   * the raw code to a display label.
+   */
+  priceSource: PriceSource | null;
   /** Every row links to its ficha — the single place a holding is edited/managed (#154). */
   detailHref: string;
   ownership: RowOwnership;
@@ -124,11 +138,25 @@ export interface PortfolioProjection {
 
 // ── Input ────────────────────────────────────────────────────────────────────
 
+/** When + by which source an asset's cached unit price was last refreshed (#303). */
+export interface PriceRefreshMeta {
+  /** ISO instant the cached price was last fetched. */
+  fetchedAt: string;
+  /** The source that supplied the cached price. */
+  source: PriceSource;
+}
+
 export interface PortfolioProjectionInput {
   workspace: Workspace;
   scope: ScopeOption;
   assets: ManualAsset[];
   liabilities: Liability[];
+  /**
+   * Price-refresh metadata keyed by asset id (issue #303), read from the asset
+   * price cache. Optional — when absent every row's metadata stays null. Only
+   * `type: "investment"` rows ever surface it; entries for other kinds are ignored.
+   */
+  priceMetaByAsset?: Map<string, PriceRefreshMeta>;
 }
 
 // ── Implementation ────────────────────────────────────────────────────────────
@@ -140,7 +168,7 @@ export interface PortfolioProjectionInput {
  *   sum(rows[liabilities].balanceMinor) === calculateNetWorth(...).debts.amountMinor
  */
 export function projectPortfolio(input: PortfolioProjectionInput): PortfolioProjection {
-  const { workspace, scope, assets, liabilities } = input;
+  const { workspace, scope, assets, liabilities, priceMetaByAsset } = input;
   const currency = workspace.baseCurrency;
 
   const scopeMemberIds = new Set(resolveScopeMemberIds(workspace, scope.id));
@@ -169,6 +197,12 @@ export function projectPortfolio(input: PortfolioProjectionInput): PortfolioProj
       totalShareBps: shareBps,
     };
 
+    // Price-refresh metadata rides ONLY investments valued from a cached provider
+    // price (#303): connected sources are `type: "manual"` and so never match, and
+    // a manual-priced investment has no cache entry, so both stay null.
+    const priceMeta =
+      asset.type === "investment" ? (priceMetaByAsset?.get(asset.id) ?? null) : null;
+
     assetRows.push({
       id: asset.id,
       name: asset.name,
@@ -180,6 +214,8 @@ export function projectPortfolio(input: PortfolioProjectionInput): PortfolioProj
       // renders it read-only — but the ROW is a first-class holding (#154, S8):
       // it edits/manages through its ficha like any other, no longer a ghost.
       valueIsDerived: asset.type === "investment",
+      priceFetchedAt: priceMeta?.fetchedAt ?? null,
+      priceSource: priceMeta?.source ?? null,
       // Every holding's ficha is /patrimonio/[id]/editar — the single place it is
       // managed since S6 (#152) dispatches by valuation method (investments get
       // the operations editor, not the transitional /inversiones view).
