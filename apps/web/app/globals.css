@@ -3646,3 +3646,166 @@ td.rowActions > * {
     display: none;
   }
 }
+
+/* ===================================================================== */
+
+/* === #270 histórico: drill por día (qué cambió) ====================== */
+
+/* Liquidity-tier dot, shared with the tier family (--tier-*). */
+.tierDot {
+  border-radius: 999px;
+  display: inline-block;
+  height: 8px;
+  margin-right: 6px;
+  vertical-align: middle;
+  width: 8px;
+}
+.tierDot--cash {
+  background: var(--tier-cash);
+}
+.tierDot--market {
+  background: var(--tier-market);
+}
+.tierDot--term-locked {
+  background: var(--tier-term-locked);
+}
+.tierDot--illiquid {
+  background: var(--tier-illiquid);
+}
+.tierDot--housing {
+  background: var(--tier-housing);
+}
+.tierDot--none {
+  background: var(--muted);
+}
+
+.historicoMuted {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.historicoDrill {
+  padding: 0 4px 8px;
+}
+
+.historicoDrillHead {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  display: grid;
+  font-size: 0.72rem;
+  font-weight: 700;
+  grid-template-columns: 1fr 160px 140px 44px;
+  letter-spacing: 0.06em;
+  padding: 10px 16px;
+  text-transform: uppercase;
+}
+
+.historicoDrillRow {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.historicoDrillRow > summary {
+  align-items: center;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 1fr 160px 140px 44px;
+  list-style: none;
+  padding: 10px 16px;
+}
+.historicoDrillRow > summary::-webkit-details-marker {
+  display: none;
+}
+.historicoDrillRow > summary:hover {
+  background: var(--paper);
+}
+.historicoDrillRow.monthlyClose > summary {
+  background: color-mix(in srgb, var(--blue) 5%, var(--paper-strong));
+}
+
+.historicoDrillCue {
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-align: right;
+}
+
+.historicoBridge {
+  padding: 8px 16px 16px;
+}
+
+.historicoBridgeRow {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr 120px 120px;
+  padding: 5px 0;
+}
+
+.historicoBridgeLabel {
+  align-items: center;
+  display: flex;
+  font-size: 0.85rem;
+  gap: 2px;
+  min-width: 0;
+}
+
+.historicoMoverTag {
+  background: var(--paper);
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-style: normal;
+  margin-left: 6px;
+  padding: 1px 6px;
+  text-transform: uppercase;
+}
+
+.historicoBridgeTrack {
+  background: rgba(23, 32, 30, 0.07);
+  border-radius: 2px;
+  height: 8px;
+  overflow: hidden;
+}
+.historicoBridgeFill {
+  display: block;
+  height: 100%;
+}
+.historicoBridgeFill.pos {
+  background: var(--green);
+}
+.historicoBridgeFill.neg {
+  background: var(--red);
+}
+
+.historicoBridgeFoot {
+  border-top: 1px dashed var(--line-soft);
+  color: var(--muted);
+  display: flex;
+  font-size: 0.78rem;
+  font-weight: 700;
+  justify-content: space-between;
+  letter-spacing: 0.04em;
+  margin-top: 8px;
+  padding-top: 8px;
+  text-transform: uppercase;
+}
+
+@media (max-width: 640px) {
+  .historicoDrillHead,
+  .historicoDrillRow > summary {
+    grid-template-columns: 1fr 110px;
+  }
+  .historicoDrillHead span:nth-child(3),
+  .historicoDrillHead span:nth-child(4),
+  .historicoDrillRow > summary > :nth-child(3),
+  .historicoDrillRow > summary > :nth-child(4) {
+    display: none;
+  }
+  .historicoBridgeRow {
+    grid-template-columns: 1fr 90px;
+  }
+  .historicoBridgeTrack {
+    display: none;
+  }
+}
