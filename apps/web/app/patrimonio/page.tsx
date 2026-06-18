@@ -5,7 +5,7 @@ import {
   listScopeOptions,
   projectPortfolio,
 } from "@worthline/domain";
-import type { PortfolioGroupKey } from "@worthline/domain";
+import type { PortfolioGroupKey, PriceRefreshMeta } from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -54,10 +54,24 @@ export default async function PatrimonioPage({
     const selectedScope =
       scopes.find((scope) => scope.id === selectedScopeId) ?? scopes[0];
 
+    // Price-refresh metadata for the derived-value badge hover (#303): when + by
+    // which source each cached unit price was last fetched, keyed by asset id. The
+    // projection attaches it to investment rows only; non-investment entries are
+    // ignored downstream.
+    const priceMetaByAsset = new Map<string, PriceRefreshMeta>(
+      store.operations
+        .readAllPriceCacheEntries()
+        .map((entry) => [
+          entry.assetId,
+          { fetchedAt: entry.fetchedAt, source: entry.source },
+        ]),
+    );
+
     return {
       assets: store.assets.readAssets(),
       liabilities: store.liabilities.readLiabilities(),
       overrides: store.readWarningOverrides(),
+      priceMetaByAsset,
       scopes,
       selectedScope,
       trash: store.readTrash(),
@@ -69,13 +83,27 @@ export default async function PatrimonioPage({
     redirect("/empezar");
   }
 
-  const { assets, liabilities, overrides, scopes, selectedScope, trash, workspace } =
-    storeData;
+  const {
+    assets,
+    liabilities,
+    overrides,
+    priceMetaByAsset,
+    scopes,
+    selectedScope,
+    trash,
+    workspace,
+  } = storeData;
 
   const warnings = collectWarnings(assets, overrides);
 
   const projection = selectedScope
-    ? projectPortfolio({ workspace, scope: selectedScope, assets, liabilities })
+    ? projectPortfolio({
+        workspace,
+        scope: selectedScope,
+        assets,
+        liabilities,
+        priceMetaByAsset,
+      })
     : null;
 
   // The one unified list, grouped by the selected axis (#154, S8). The selected
@@ -135,6 +163,7 @@ export default async function PatrimonioPage({
         currentUrl={currentUrl}
         groups={groups}
         isHousehold={isHousehold}
+        nowIso={persistence.checkedAt}
         trash={trash}
         warnings={warnings}
       />

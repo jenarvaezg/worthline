@@ -25,6 +25,11 @@ export interface OperationsEditorContext {
   unitPrice?: string;
   /** Freshness of the cached price, for the small status chip. */
   priceFreshness?: PriceFreshnessState | null;
+  /**
+   * Visible caption with the absolute price-refresh date + source (#303), e.g.
+   * "Precio actualizado el 8 jun 2026 · Yahoo". Null/absent for a manual quote.
+   */
+  priceRefreshCaption?: string | null;
   /** The derived market value (units × price), when priced. */
   marketValue?: { amountMinor: number; currency: string } | null;
   /** The unrealized profit/loss, when priced. */
@@ -77,6 +82,11 @@ export default function OperationsEditor({
                   <small className={`priceStatus ${context.priceFreshness ?? "unknown"}`}>
                     {priceFreshnessLabel(context.priceFreshness ?? null)}
                   </small>
+                  {context.priceRefreshCaption ? (
+                    <small className="priceRefreshCaption">
+                      {context.priceRefreshCaption}
+                    </small>
+                  ) : null}
                 </span>
               </>
             ) : null}

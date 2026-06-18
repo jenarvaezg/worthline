@@ -2133,6 +2133,16 @@ code {
   letter-spacing: 0.04em;
 }
 
+/* The price-refresh caption (#303): a small muted secondary line under the unit
+   price — "Precio actualizado el 8 jun 2026 · Yahoo". Block so it sits beneath
+   the freshness chip rather than running on the same line. */
+.priceRefreshCaption {
+  display: block;
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin-top: 2px;
+}
+
 .recentOpsPanel {
   margin-top: 24px;
 }

@@ -3,6 +3,8 @@ import type { DomainWarning, PortfolioGroup, UnifiedHolding } from "@worthline/d
 import { formatMoneyMinor } from "@worthline/domain";
 import Link from "next/link";
 
+import { boardRefreshHover } from "../price-refresh";
+
 import {
   acknowledgeWarningAction,
   deleteAssetAction,
@@ -114,6 +116,7 @@ function HoldingRow({
   currentUrl,
   sectionDenom,
   showTierLabel,
+  nowIso,
 }: {
   holding: UnifiedHolding;
   currency: Currency;
@@ -123,6 +126,7 @@ function HoldingRow({
   currentUrl: string;
   sectionDenom: number;
   showTierLabel: boolean;
+  nowIso: string;
 }) {
   const h = holding;
   const rowWarnings = isAsset
@@ -130,6 +134,13 @@ function HoldingRow({
     : [];
   const ack = rowWarnings.find((w) => w.severity === "overrideable");
   const derived = h.direction === "asset" && h.valueIsDerived;
+  // Enrich the derived-value badge's native hover with WHEN/WHO last priced it
+  // (#303). Only an investment valued from the price cache carries this; null for
+  // a manual-priced one, so the title stays just "Valor calculado (…)".
+  const refreshHover =
+    h.direction === "asset"
+      ? boardRefreshHover(h.priceFetchedAt, h.priceSource, nowIso)
+      : null;
   const own = ownershipLabel(h, isHousehold);
   const pct = (magnitude(h) / sectionDenom) * 100;
   const deleteAction = isAsset ? deleteAssetAction : deleteLiabilityAction;
@@ -160,7 +171,7 @@ function HoldingRow({
           <abbr
             className="balanceCalc"
             aria-label="Valor calculado"
-            title="Valor calculado (unidades × precio)"
+            title={`Valor calculado (unidades × precio)${refreshHover ?? ""}`}
           >
             ≈
           </abbr>
@@ -214,6 +225,7 @@ function Pane({
   isHousehold,
   warnings,
   currentUrl,
+  nowIso,
 }: {
   title: string;
   total: number;
@@ -223,6 +235,7 @@ function Pane({
   isHousehold: boolean;
   warnings: DomainWarning[];
   currentUrl: string;
+  nowIso: string;
 }) {
   const { denom, segments } = paneSegments(sections, isAsset);
   const showSubs = sections.length > 1;
@@ -281,6 +294,7 @@ function Pane({
                   isAsset={isAsset}
                   isHousehold={isHousehold}
                   key={h.id}
+                  nowIso={nowIso}
                   sectionDenom={secDenom}
                   showTierLabel={!showSubs}
                   warnings={warnings}
@@ -337,6 +351,8 @@ export interface BalanceBoardProps {
   warnings: DomainWarning[];
   trash: TrashView;
   currentUrl: string;
+  /** Server render instant — anchors the derived-value badge's relative date (#303). */
+  nowIso: string;
 }
 
 export default function BalanceBoard({
@@ -345,6 +361,7 @@ export default function BalanceBoard({
   warnings,
   trash,
   currentUrl,
+  nowIso,
 }: BalanceBoardProps) {
   const currency: Currency = groups[0]?.totalMinor.currency ?? "EUR";
   const assetSections = sectionsFor(groups, "asset");
@@ -371,6 +388,7 @@ export default function BalanceBoard({
         currentUrl={currentUrl}
         isAsset
         isHousehold={isHousehold}
+        nowIso={nowIso}
         sections={assetSections}
         title="Activos"
         total={grossAssets}
@@ -381,6 +399,7 @@ export default function BalanceBoard({
         currentUrl={currentUrl}
         isAsset={false}
         isHousehold={isHousehold}
+        nowIso={nowIso}
         sections={debtSections}
         title="Pasivos"
         total={totalDebts}

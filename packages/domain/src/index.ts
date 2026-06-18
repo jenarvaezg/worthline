@@ -271,6 +271,7 @@ export type {
   LiabilitiesSection,
   ProjectedAssetRow,
   ProjectedLiabilityRow,
+  PriceRefreshMeta,
   RowOwnership,
 } from "./portfolio-projection";
 export { projectPortfolio } from "./portfolio-projection";
