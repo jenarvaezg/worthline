@@ -310,9 +310,51 @@ describe("historical snapshots from balance anchors", () => {
     store.updateBalanceAnchorAndRipple(
       "an1",
       { balanceMinor: 3_500_00 },
-      { liabilityId: "card", previousAnchorDate: "2025-01-01", today: TODAY },
+      { today: TODAY },
     );
     expect(debtsAt(store, "2025-01-01")).toBe(3_500_00);
+    store.close();
+  });
+
+  test("editing an anchor's date derives the ripple from-date behind the seam (ADR 0025)", () => {
+    const store = createInMemoryStore();
+    seedRevolving(store);
+    // Earlier anchor (3_000_00) and a later one (8_000_00). The 2025-01-01 snapshot
+    // is pinned to its own anchor (3_000_00) while an1 sits on that date.
+    store.addBalanceAnchorAndRipple(
+      {
+        anchorDate: "2025-01-01",
+        balanceMinor: 3_000_00,
+        id: "an1",
+        liabilityId: "card",
+      },
+      { today: TODAY },
+    );
+    store.addBalanceAnchorAndRipple(
+      {
+        anchorDate: "2025-06-01",
+        balanceMinor: 8_000_00,
+        id: "an2",
+        liabilityId: "card",
+      },
+      { today: TODAY },
+    );
+    expect(debtsAt(store, "2025-01-01")).toBe(3_000_00);
+
+    // Move an1 LATER (2025-01-01 → 2025-09-01) WITHOUT telling the seam the old
+    // date. The from-date must be min(old, new) = the OLD date (2025-01-01), so the
+    // stale 2025-01-01 snapshot is recalculated. With an1 gone from that date, the
+    // earliest anchor is now an2 (8_000_00), and "before the first anchor is flat at
+    // the first balance" → the 2025-01-01 snapshot must flip 3_000_00 → 8_000_00. If
+    // the seam wrongly rippled from the NEW date (2025-09-01), it would stay stale.
+    const changes = store.updateBalanceAnchorAndRipple(
+      "an1",
+      { anchorDate: "2025-09-01" },
+      { today: TODAY },
+    );
+
+    expect(changes).toBe(1);
+    expect(debtsAt(store, "2025-01-01")).toBe(8_000_00);
     store.close();
   });
 
@@ -840,11 +882,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
 
     // Deleting the earlier anchor: 2025-01-01 now back-extrapolates from the only
     // remaining anchor (6_000_00 flat, no curve).
-    const changes = store.deleteBalanceAnchorAndRipple("an1", {
-      liabilityId: "card",
-      previousAnchorDate: "2025-01-01",
-      today: TODAY,
-    });
+    const changes = store.deleteBalanceAnchorAndRipple("an1", { today: TODAY });
 
     expect(changes).toBe(1);
     expect(debtsAt(store, "2025-01-01")).toBe(6_000_00);

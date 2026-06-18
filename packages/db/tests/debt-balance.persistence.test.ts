@@ -121,7 +121,7 @@ describe("balance anchors — CRUD", () => {
       store.liabilities.updateBalanceAnchor("a1", {
         anchorDate: "2024-02-01",
         balanceMinor: 8_000_00,
-      }),
+      }).changes,
     ).toBe(1);
 
     expect(store.liabilities.readBalanceAnchors("card")).toEqual([
@@ -136,7 +136,9 @@ describe("balance anchors — CRUD", () => {
   test("updating a missing anchor returns 0", () => {
     const store = createInMemoryStore();
     seed(store);
-    expect(store.liabilities.updateBalanceAnchor("nope", { balanceMinor: 1 })).toBe(0);
+    expect(
+      store.liabilities.updateBalanceAnchor("nope", { balanceMinor: 1 }).changes,
+    ).toBe(0);
   });
 
   test("delete an anchor by id", () => {
@@ -148,9 +150,9 @@ describe("balance anchors — CRUD", () => {
       id: "a1",
       liabilityId: "card",
     });
-    expect(store.liabilities.deleteBalanceAnchor("a1")).toBe(1);
+    expect(store.liabilities.deleteBalanceAnchor("a1").changes).toBe(1);
     expect(store.liabilities.readBalanceAnchors("card")).toEqual([]);
-    expect(store.liabilities.deleteBalanceAnchor("a1")).toBe(0);
+    expect(store.liabilities.deleteBalanceAnchor("a1").changes).toBe(0);
   });
 });
 
