@@ -247,6 +247,7 @@ export { resolveStatementIsinGuard } from "./statement-isin";
 
 export type {
   BuildSnapshotHoldingRowsInput,
+  HoldingDelta,
   InvestmentCaptureDetail,
   SnapshotHoldingKind,
   SnapshotHoldingRow,
@@ -255,6 +256,7 @@ export type {
 export {
   assertSnapshotHoldingsReconcile,
   buildSnapshotHoldingRows,
+  deriveHoldingDeltas,
 } from "./snapshot-holdings";
 
 export type {
@@ -329,7 +331,11 @@ export type { DonutArcSegment, DonutGeometry } from "./donut";
 export { donutArcSegments } from "./donut";
 
 export type { CaptureDecision, SnapshotPolicyEntry } from "./snapshot-policy";
-export { deriveMonthlyCloses, planSnapshotCapture } from "./snapshot-policy";
+export {
+  deriveConfirmedMonthlyCloseIds,
+  deriveMonthlyCloses,
+  planSnapshotCapture,
+} from "./snapshot-policy";
 
 export type { CaptureSnapshotInput, CaptureSnapshotOutput } from "./capture-snapshot";
 export { buildSnapshotId, captureSnapshotForScope } from "./capture-snapshot";

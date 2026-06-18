@@ -58,7 +58,7 @@ export function planSnapshotCapture(
  * date-based and scoped externally by the caller filtering by scopeId first.
  */
 export function deriveMonthlyCloses(
-  snapshots: SnapshotPolicyEntry[],
+  snapshots: readonly SnapshotPolicyEntry[],
 ): Map<string, string> {
   const closeByMonth = new Map<string, string>();
 
@@ -70,4 +70,46 @@ export function deriveMonthlyCloses(
   }
 
   return closeByMonth;
+}
+
+/** Whether "YYYY-MM-DD" falls on the last calendar day of its month. */
+function isLastCalendarDayOfMonth(dateKey: string): boolean {
+  const parts = dateKey.split("-");
+  const year = Number(parts[0]);
+  const month = Number(parts[1]);
+  const day = Number(parts[2]);
+  // Day 0 of the next month is the last day of this one.
+  return day === new Date(year, month, 0).getDate();
+}
+
+/**
+ * Derives the snapshot ids that are CONFIRMED monthly closes as of `today`.
+ *
+ * A month's close (its last snapshot, per `deriveMonthlyCloses`) is confirmed
+ * only once the month has fully elapsed — i.e. its `monthKey` is strictly before
+ * `today`'s month, or the close snapshot literally falls on the last calendar
+ * day of its month. The in-progress month's trailing snapshot is therefore NOT
+ * shown as a close mid-month (#270): a snapshot taken today, on a day that is not
+ * month-end, is just the latest capture, not "Cierre de mes".
+ *
+ * `today` is a "YYYY-MM-DD" date key, passed in to keep the function pure.
+ * Scope isolation is the caller's job — filter by scopeId first, as with
+ * `deriveMonthlyCloses`.
+ */
+export function deriveConfirmedMonthlyCloseIds(
+  snapshots: readonly SnapshotPolicyEntry[],
+  today: string,
+): Set<string> {
+  const dateKeyById = new Map(snapshots.map((s) => [s.id, s.dateKey]));
+  const todayMonthKey = today.slice(0, 7);
+
+  const confirmed = new Set<string>();
+  for (const [monthKey, id] of deriveMonthlyCloses(snapshots)) {
+    const dateKey = dateKeyById.get(id);
+    if (dateKey === undefined) continue;
+    if (monthKey < todayMonthKey || isLastCalendarDayOfMonth(dateKey)) {
+      confirmed.add(id);
+    }
+  }
+  return confirmed;
 }

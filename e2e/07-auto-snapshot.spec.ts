@@ -19,11 +19,9 @@ test("auto-snapshot: / load captures snapshot → historico shows entry", async 
   await page.goto("/historico");
   await expect(page.getByRole("heading", { name: "Histórico" })).toBeVisible();
 
-  // 3. The table should have at least one data row (from the auto-capture above)
-  const rows = page.getByRole("table").getByRole("row");
-  // At least header row + 1 data row
-  const rowCount = await rows.count();
-  expect(rowCount).toBeGreaterThanOrEqual(2);
+  // 3. The drill should have at least one data row (from the auto-capture above)
+  const dataRows = page.locator(".historicoDrillRow");
+  expect(await dataRows.count()).toBeGreaterThanOrEqual(1);
 
   // 4. A date key cell exists with a YYYY-MM-DD pattern
   const dateCells = page.locator(".dateKey");
@@ -31,8 +29,9 @@ test("auto-snapshot: / load captures snapshot → historico shows entry", async 
   const dateText = await dateCells.first().textContent();
   expect(dateText).toMatch(/\d{4}-\d{2}-\d{2}/);
 
-  // 5. Monthly close badge: the first (and so far only) snapshot of the month
-  //    is automatically the monthly close
+  // 5. Monthly close badge: the seeded prior-month snapshot is a confirmed close
+  //    (its month has fully elapsed), so its badge is shown. The in-progress
+  //    month's latest capture is NOT badged "Cierre de mes" mid-month (#270).
   await expect(page.getByText("Cierre de mes").first()).toBeVisible();
 
   // 6. Back on /, the Evolución panel reflects the captured snapshot. Since

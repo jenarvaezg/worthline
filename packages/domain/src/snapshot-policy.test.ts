@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { deriveMonthlyCloses, planSnapshotCapture } from "./snapshot-policy";
+import {
+  deriveConfirmedMonthlyCloseIds,
+  deriveMonthlyCloses,
+  planSnapshotCapture,
+} from "./snapshot-policy";
 
 // Minimal snapshot shape — only the fields the policy cares about.
 function snap(id: string, dateKey: string, scopeId = "household") {
@@ -125,5 +129,56 @@ describe("deriveMonthlyCloses", () => {
     expect(closes.get("2026-06")).toBe("s3");
     expect([...closes.values()]).not.toContain("s1");
     expect([...closes.values()]).not.toContain("s2");
+  });
+});
+
+describe("deriveConfirmedMonthlyCloseIds", () => {
+  test("confirms the close of a fully elapsed month", () => {
+    const snapshots = [snap("may", "2026-05-20"), snap("jun", "2026-06-10")];
+    const closes = deriveConfirmedMonthlyCloseIds(snapshots, "2026-06-10");
+
+    // May has fully elapsed by 10 Jun, so its last snapshot is a real close
+    // even though it does not fall on the last calendar day.
+    expect(closes.has("may")).toBe(true);
+  });
+
+  test("does NOT confirm the in-progress month's trailing snapshot mid-month (#270)", () => {
+    const snapshots = [snap("may", "2026-05-20"), snap("today", "2026-06-10")];
+    const closes = deriveConfirmedMonthlyCloseIds(snapshots, "2026-06-10");
+
+    // June is still running on the 10th — today is the latest capture, not a close.
+    expect(closes.has("today")).toBe(false);
+  });
+
+  test("confirms the in-progress month's snapshot when it lands on month-end", () => {
+    const snapshots = [snap("today", "2026-06-30")];
+    const closes = deriveConfirmedMonthlyCloseIds(snapshots, "2026-06-30");
+
+    // The last calendar day of June IS a real close, even though June is "current".
+    expect(closes.has("today")).toBe(true);
+  });
+
+  test("confirms the LAST snapshot of an elapsed month, not a middle one", () => {
+    const snapshots = [
+      snap("early", "2026-05-02"),
+      snap("late", "2026-05-28"),
+      snap("now", "2026-06-05"),
+    ];
+    const closes = deriveConfirmedMonthlyCloseIds(snapshots, "2026-06-05");
+
+    expect(closes.has("late")).toBe(true);
+    expect(closes.has("early")).toBe(false);
+  });
+
+  test("empty snapshots → empty set", () => {
+    expect(deriveConfirmedMonthlyCloseIds([], "2026-06-10").size).toBe(0);
+  });
+
+  test("confirms December's close once the year has turned", () => {
+    const snapshots = [snap("dec", "2025-12-20"), snap("jan", "2026-01-04")];
+    const closes = deriveConfirmedMonthlyCloseIds(snapshots, "2026-01-04");
+
+    expect(closes.has("dec")).toBe(true);
+    expect(closes.has("jan")).toBe(false);
   });
 });

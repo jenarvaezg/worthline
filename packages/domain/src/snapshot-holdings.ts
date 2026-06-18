@@ -321,3 +321,63 @@ export function assertSnapshotHoldingsReconcile(
     }
   }
 }
+
+/**
+ * One holding's contribution to the net-worth change between two consecutive
+ * snapshots (#270). Label and tier are taken from the day the holding is present
+ * (current preferred), mirroring how the frozen rows denormalize them.
+ */
+export interface HoldingDelta {
+  holdingId: string;
+  kind: SnapshotHoldingKind;
+  label: string;
+  liquidityTier: LiquidityTier | null;
+  /**
+   * Contribution to the NET-WORTH delta in minor units: an asset's value rise is
+   * positive, a liability's balance rise is negative (paying a debt down lifts
+   * net worth). Because the frozen rows reconcile to the headline figures each
+   * day (ADR 0008), the contributions sum exactly to the day's net-worth change.
+   */
+  contributionMinor: number;
+  /** `new` if absent the previous day, `gone` if absent the current day. */
+  status: "new" | "gone" | "changed";
+}
+
+/**
+ * Derive the per-holding contributions to the net-worth change from `previous`
+ * to `current` — the two days' frozen holding rows (ADR 0008). Holdings whose
+ * value did not move are omitted; the rest are sorted by contribution magnitude,
+ * largest first. A holding present on only one day contributes its full value
+ * (status `new`/`gone`).
+ */
+export function deriveHoldingDeltas(
+  previous: readonly SnapshotHoldingRow[],
+  current: readonly SnapshotHoldingRow[],
+): HoldingDelta[] {
+  const previousById = new Map(previous.map((r) => [r.holdingId, r]));
+  const currentById = new Map(current.map((r) => [r.holdingId, r]));
+  const ids = new Set([...previousById.keys(), ...currentById.keys()]);
+
+  const deltas: HoldingDelta[] = [];
+  for (const id of ids) {
+    const cur = currentById.get(id);
+    const prev = previousById.get(id);
+    const ref = cur ?? prev;
+    if (!ref) continue;
+
+    const diff = (cur?.valueMinor ?? 0) - (prev?.valueMinor ?? 0);
+    if (diff === 0) continue;
+
+    deltas.push({
+      holdingId: id,
+      kind: ref.kind,
+      label: ref.label,
+      liquidityTier: ref.liquidityTier,
+      contributionMinor: ref.kind === "asset" ? diff : -diff,
+      status: !prev ? "new" : !cur ? "gone" : "changed",
+    });
+  }
+
+  deltas.sort((a, b) => Math.abs(b.contributionMinor) - Math.abs(a.contributionMinor));
+  return deltas;
+}
