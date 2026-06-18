@@ -194,7 +194,7 @@ fn compute_boundaries(input: &BalanceAtDateInput) -> Vec<BigDecimal> {
             )
         })
         .collect();
-    sorted_revisions.sort_by(|a, b| a.0.cmp(&b.0)); // stable, preserves input order within a month
+    sorted_revisions.sort_by_key(|a| a.0); // stable, preserves input order within a month
 
     // Early repayments grouped by the month boundary they land on; input order
     // within a month is preserved for determinism.
