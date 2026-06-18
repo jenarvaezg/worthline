@@ -25,12 +25,7 @@ import type {
   EarlyRepayment,
   InterestRateRevision,
 } from "./amortization";
-import {
-  isHousingAsset,
-  rungForLiability,
-  securesHousingAsset,
-  tierOfAsset,
-} from "./classification";
+import { isHousingAsset } from "./classification";
 import type { LiquidityTier } from "./classification";
 import { coinCollectionValueAtDate } from "./connected-source";
 import type { CoinPosition } from "./connected-source";
@@ -45,8 +40,6 @@ import type { NetWorthSnapshot, ValuedNetWorthSnapshot } from "./snapshot-types"
 import { captureValuedNetWorthSnapshot, createNetWorthSnapshot } from "./snapshot-types";
 import { assertSnapshotHoldingsReconcile, deriveRowAxes } from "./snapshot-holdings";
 import { money } from "./money";
-import { resolveScopeMemberIds } from "./scope";
-import { allocateScopedHolding } from "./scope-allocation";
 import type { InvestmentCaptureDetail, SnapshotHoldingRow } from "./snapshot-holdings";
 import type { ManualValuePoint } from "./value-history";
 
@@ -95,9 +88,11 @@ export interface DebtBalanceCurveInputs {
  * place a curve becomes a method-specific valuation input, shared by the fresh
  * capture (`liabilityValuationInput`) and the ripple (`recalculateSnapshotFor
  * Liability`). Returns null for a null model, leaving the manual stored fallback
- * to the caller (which sources its current value differently).
+ * to the caller (which sources its current value differently). Exported as part
+ * of the amendment seam (ADR 0028, #321): the anchor ripple
+ * (`recalculateSnapshotForLiability`) dispatches the liability's curve through it.
  */
-function debtCurveValuationInput(
+export function debtCurveValuationInput(
   curve: DebtBalanceCurveInputs,
 ): HoldingValuationInput | null {
   if (curve.debtModel === "amortizable") {
@@ -508,7 +503,7 @@ export interface FrozenIdentityCapture {
 }
 
 /** A holding's frozen classification for one recalc, resolved by `resolveFrozenIdentity`. */
-interface ResolvedFrozenIdentity {
+export interface ResolvedFrozenIdentity {
   liquidityTier: LiquidityTier | null;
   countsAsHousing: boolean;
   securesHousing: boolean;
@@ -562,239 +557,6 @@ export function resolveFrozenIdentity(input: {
   }
 
   return input.live;
-}
-
-export interface RecalculateHousingSnapshotInput {
-  /** The existing snapshot to recalculate (its id, scope, date, capturedAt are preserved). */
-  snapshot: NetWorthSnapshot;
-  /** The snapshot's currently frozen holding rows. */
-  frozenHoldings: SnapshotHoldingRow[];
-  /** The identity of the single real-estate asset whose curve changed. */
-  asset: ManualAsset;
-  /**
-   * That asset's curve inputs (anchors + rate + current value). When the curve
-   * has neither anchors nor a rate (e.g. the last anchor was deleted), the
-   * housing row falls back to the last-known-value / currentValue basis from
-   * `manualValueHistory` — matching the `buildSnapshotAtDate` manual-holding
-   * path so both paths stay consistent.
-   */
-  curve: HousingCurveInputs;
-  /**
-   * Audit history of manual values for this asset, keyed by asset id. Used
-   * when the curve is empty (no anchors, no rate) to resolve the last-known
-   * value at the snapshot date via the same basis as `buildSnapshotAtDate`.
-   * Omit (or pass an empty map) when the curve is guaranteed non-empty.
-   */
-  manualValueHistory?: ReadonlyMap<string, ManualValuePoint[]>;
-  workspace: Workspace;
-  /** "Today" as YYYY-MM-DD — forwarded to the curve for forward extrapolation. */
-  today: string;
-  /**
-   * This asset's frozen classification captures across every snapshot (#242).
-   * Routes the newly-appearing housing row through the same frozen-vs-live seam
-   * the asset ripple uses, for uniformity (housing tier is forced illiquid, so
-   * this is not independently triggerable today). Omitted → live fallback.
-   */
-  frozenIdentity?: readonly FrozenIdentityCapture[];
-}
-
-/**
- * Recalculate an existing snapshot after one real-estate asset's valuation
- * curve changed (PRD #108 ripple) — a declared/edited/deleted anchor or a
- * changed rate. The housing asset's row is recomputed from the curve at the
- * snapshot's date; every other frozen row is preserved verbatim, exactly like
- * the operation ripple. Figures are adjusted by the housing asset's value delta
- * against the snapshot's own frozen figures (a housing tier, so gross + housing
- * equity + total move; liquid does not), so the frozen tier classification of
- * every untouched holding survives.
- *
- * Returns null when no holdings remain (the caller drops the snapshot). The
- * housing asset is scope-weighted with the same allocation the headline figures
- * use, so the reconciliation invariant holds by construction.
- */
-export function recalculateSnapshotForHousing(
-  input: RecalculateHousingSnapshotInput,
-): ValuedNetWorthSnapshot | null {
-  const targetDate = input.snapshot.dateKey;
-  const currency = input.workspace.baseCurrency;
-  const scopeMemberIds = new Set(
-    resolveScopeMemberIds(input.workspace, input.snapshot.scopeId),
-  );
-
-  const existingRow = input.frozenHoldings.find(
-    (row) => row.holdingId === input.asset.id && row.kind === "asset",
-  );
-  const rows = input.frozenHoldings.filter((row) => row.holdingId !== input.asset.id);
-
-  // Value the housing asset on the target date via the same dispatcher (#148):
-  // the appreciating method already encodes "curve when active, else the
-  // last-known-value / currentValue basis" — keeping this ripple consistent with
-  // buildSnapshotAtDate (fix 1, PRD #108).
-  const points = input.manualValueHistory?.get(input.asset.id);
-  const rate = input.curve.annualAppreciationRate;
-  const fullValueMinor =
-    valueAt(
-      {
-        anchors: input.curve.anchors,
-        currentValueMinor: input.curve.currentValueMinor,
-        method: "appreciating",
-        today: input.today,
-        ...(rate != null && rate !== "" ? { annualAppreciationRate: rate } : {}),
-        ...(points !== undefined ? { valueHistory: points } : {}),
-      },
-      targetDate,
-    ).valueMinor ?? input.curve.currentValueMinor;
-
-  const { ownedMinor, totalShareBps } = allocateScopedHolding(fullValueMinor, {
-    ownership: input.asset.ownership,
-    scopeMemberIds,
-  });
-
-  if (totalShareBps > 0) {
-    // Resolve the FROZEN classification through the one seam (#242): existing row,
-    // else the contemporaneous frozen capture, else live. This ripple is called
-    // only for housing assets, so live is countsAsHousing=true / illiquid tier,
-    // matching the capture path; an asset never secures housing (#180).
-    const identity = resolveFrozenIdentity({
-      existingRow,
-      frozenIdentity: input.frozenIdentity ?? [],
-      live: {
-        countsAsHousing: true,
-        liquidityTier: tierOfAsset(input.asset),
-        securesHousing: false,
-      },
-      targetDate,
-    });
-    rows.push({
-      countsAsHousing: identity.countsAsHousing,
-      holdingId: input.asset.id,
-      kind: "asset",
-      label: existingRow?.label ?? input.asset.name,
-      liquidityTier: identity.liquidityTier,
-      securesHousing: identity.securesHousing,
-      valueMinor: ownedMinor,
-    });
-  }
-
-  // housingEquity is now fully row-derived from the frozen countsAsHousing flags
-  // on asset rows (#181 completion) — the helper needs no delta parameter.
-  return assembleRippleSnapshot({
-    currency,
-    frozenHoldings: input.frozenHoldings,
-    rows,
-    snapshot: input.snapshot,
-  });
-}
-
-export interface RecalculateLiabilitySnapshotInput {
-  /** The existing snapshot to recalculate (its id, scope, date, capturedAt are preserved). */
-  snapshot: NetWorthSnapshot;
-  /** The snapshot's currently frozen holding rows. */
-  frozenHoldings: SnapshotHoldingRow[];
-  /** The identity of the single liability whose debt curve changed. */
-  liability: Liability;
-  /** That liability's debt-balance curve inputs (model + anchors/plan/revisions). */
-  curve: DebtBalanceCurveInputs;
-  /**
-   * Ids of the scope's housing assets (real estate / primary residence). A debt
-   * securing one of these nets housing equity; the liquidity rung alone can no
-   * longer tell housing from other illiquid holdings (ADR 0013 bridge).
-   */
-  housingAssetIds: ReadonlySet<string>;
-  workspace: Workspace;
-}
-
-/**
- * Recalculate an existing snapshot after one liability's debt curve changed
- * (PRD #109, slice 9 ripple) — a declared/edited/deleted plan, anchor, or rate
- * revision. Only that liability's row is recomputed from `debtBalanceAtDate` at
- * the snapshot's date; every other frozen row is preserved verbatim, exactly
- * like the asset/housing ripples. Figures are adjusted by the liability's value
- * delta against the snapshot's own frozen figures: debts move by +delta and
- * total net worth by -delta (a higher balance lowers net worth). Housing equity
- * moves by -delta when the debt secures a housing asset (`housingAssetIds`);
- * otherwise liquid net worth moves by -delta when the debt sits on a liquid
- * rung — resolved from the frozen asset rows, since the frozen liability row's
- * own tier is null for an unassociated debt (ADR 0013).
- *
- * Returns null when no holdings remain (the caller drops the snapshot). The
- * liability is scope-weighted with the same allocation the headline figures use,
- * so the reconciliation invariant holds by construction.
- */
-export function recalculateSnapshotForLiability(
-  input: RecalculateLiabilitySnapshotInput,
-): ValuedNetWorthSnapshot | null {
-  const targetDate = input.snapshot.dateKey;
-  const currency = input.workspace.baseCurrency;
-  const scopeMemberIds = new Set(
-    resolveScopeMemberIds(input.workspace, input.snapshot.scopeId),
-  );
-
-  const existingRow = input.frozenHoldings.find(
-    (row) => row.holdingId === input.liability.id && row.kind === "liability",
-  );
-  const rows = input.frozenHoldings.filter((row) => row.holdingId !== input.liability.id);
-
-  // Value the liability on the target date via the unified dispatcher (#150
-  // carry-over): the curve's model picks amortized / anchored, and a null model
-  // falls back to the curve's current balance — byte-identical to the engines
-  // this used to inline, but now threading early repayments in one place.
-  const curveInput = debtCurveValuationInput(input.curve);
-  const fullBalanceMinor =
-    (curveInput ? valueAt(curveInput, targetDate).valueMinor : null) ??
-    input.curve.currentBalanceMinor;
-  const { ownedMinor, totalShareBps } = allocateScopedHolding(fullBalanceMinor, {
-    ownership: input.liability.ownership,
-    scopeMemberIds,
-  });
-
-  // The new row keeps the SAME existence rule the capture path applies (a row for
-  // any scope stake, even a zero balance) so every ripple and the capture produce
-  // the same row set for a date (#181). Its rung is resolved consistently with the
-  // live calculateNetWorth path: an associated debt inherits its asset's frozen
-  // rung from the surviving asset rows, else `cash` (rungForLiability) — never
-  // null, so a non-housing associated debt lands on the right liquid axis.
-  if (totalShareBps > 0) {
-    const assetRungById = new Map(
-      rows
-        .filter((row) => row.kind === "asset" && row.liquidityTier !== null)
-        .map((row) => [row.holdingId, row.liquidityTier!] as const),
-    );
-    rows.push({
-      // Liabilities never count as housing assets (#181).
-      countsAsHousing: false,
-      holdingId: input.liability.id,
-      kind: "liability",
-      label: existingRow?.label ?? input.liability.name,
-      // Preserve the frozen rung for an existing row; for a newly-appearing row
-      // mirror the capture path EXACTLY (buildSnapshotHoldingRows): an associated
-      // debt freezes its asset's rung (resolved from the frozen asset rows like
-      // the live net-worth path), an unassociated debt freezes null — so every
-      // ripple and the capture produce the same row set for a date (#181).
-      liquidityTier: existingRow
-        ? existingRow.liquidityTier
-        : input.liability.associatedAssetId
-          ? rungForLiability(input.liability, assetRungById)
-          : null,
-      // Preserve the frozen signal for an existing row; for a newly-appearing
-      // row freeze it from the same classification the figures use (#180).
-      securesHousing: existingRow
-        ? existingRow.securesHousing
-        : securesHousingAsset(input.liability, input.housingAssetIds),
-      valueMinor: ownedMinor,
-    });
-  }
-
-  // A liability never moves the housing-ASSET axis; its housing/liquid effect is
-  // re-derived from the frozen rows (frozen securesHousing + frozen rung) inside
-  // the shared helper — never from a live securesHousingAsset / housingAssetIds
-  // lookup, so a later reclassification can't drift historical figures (#181).
-  return assembleRippleSnapshot({
-    currency,
-    frozenHoldings: input.frozenHoldings,
-    rows,
-    snapshot: input.snapshot,
-  });
 }
 
 /**
@@ -885,159 +647,14 @@ export function globalHoldingValueAtDate(
   return valueAt(valuationInput, targetDate).valueMinor;
 }
 
-/** The edited holding's identity, carrying its NEW ownership split (#172). */
-export type OwnershipRippleHolding =
-  | { kind: "asset"; asset: ManualAsset }
-  | { kind: "liability"; liability: Liability; housingAssetIds: ReadonlySet<string> };
-
-export interface RecalculateOwnershipSnapshotInput {
-  /** The existing snapshot to recalculate (its id, scope, date, capturedAt are preserved). */
-  snapshot: NetWorthSnapshot;
-  /** The snapshot's currently frozen holding rows. */
-  frozenHoldings: SnapshotHoldingRow[];
-  /** The edited holding's identity with its NEW ownership split. */
-  holding: OwnershipRippleHolding;
-  /**
-   * The holding's GLOBAL value (the whole holding, 100% of the split) on this
-   * snapshot's date, re-derived losslessly from the holding's curve / operations /
-   * stored basis (`globalHoldingValueAtDate`, #187) — NOT recovered by dividing
-   * the rounded household row, which drifts ±1–2 minor units for a holding
-   * co-owned with a non-member. Invariant under an ownership-split edit (the split
-   * only re-weights it). Positive; for a liability it is the outstanding balance.
-   * The new per-scope row is this value re-weighted by the new split
-   * (`allocateScopedHolding`).
-   */
-  globalValueMinor: number;
-  workspace: Workspace;
-  /**
-   * This holding's frozen classification captures across every snapshot (#242).
-   * Lets a row newly generated in a scope that never carried one (a member who
-   * gains a stake) recover the holding's CONTEMPORANEOUS frozen housing-ness /
-   * tier instead of leaking the live (possibly reclassified) one. Omitted → the
-   * seam falls back to live (no recovery basis), preserving old behaviour.
-   */
-  frozenIdentity?: readonly FrozenIdentityCapture[];
-}
-
-/**
- * Recalculate an existing snapshot after one holding's OWNERSHIP SPLIT changed
- * (#172 ripple). An ownership split has no date dimension — it weights the
- * holding's global value into each member's scope — so a correction re-derives
- * every per-scope snapshot's row for that holding by re-weighting its (unchanged)
- * global value with the new split. Only that holding's row is recomputed; every
- * other frozen row is preserved verbatim, exactly like the operation / housing /
- * debt ripples. The household scope is invariant (its split always sums to 100%),
- * so callers skip it; passing a household snapshot here is a genuine no-op
- * (delta 0). Figures are adjusted by the holding's value delta against the
- * snapshot's own frozen figures, on the same axes the value ripples use (an asset
- * moves gross + total, plus housing or liquid by its tier; a liability moves debts
- * + total, plus housing equity or liquid). No new snapshot dates are created.
- *
- * Returns null when no holdings remain (the caller drops the snapshot). The
- * holding is scope-weighted with the same allocation the headline figures use, so
- * the reconciliation invariant (ADR 0008) holds by construction.
- */
-export function recalculateSnapshotForOwnership(
-  input: RecalculateOwnershipSnapshotInput,
-): ValuedNetWorthSnapshot | null {
-  const currency = input.workspace.baseCurrency;
-  const scopeMemberIds = new Set(
-    resolveScopeMemberIds(input.workspace, input.snapshot.scopeId),
-  );
-
-  const { holding } = input;
-  const holdingId = holding.kind === "asset" ? holding.asset.id : holding.liability.id;
-  const ownership =
-    holding.kind === "asset" ? holding.asset.ownership : holding.liability.ownership;
-
-  const existingRow = input.frozenHoldings.find(
-    (row) => row.holdingId === holdingId && row.kind === holding.kind,
-  );
-  const rows = input.frozenHoldings.filter((row) => row.holdingId !== holdingId);
-
-  // Re-weight the holding's global value into THIS scope by the new split.
-  const { ownedMinor, totalShareBps } = allocateScopedHolding(input.globalValueMinor, {
-    ownership,
-    scopeMemberIds,
-  });
-
-  // Keep the SAME existence rule the capture path applies (a row for any scope
-  // stake) so every ripple and the capture produce the same row set for a date
-  // (#181) — a re-weight to a zero value still keeps the row.
-  if (totalShareBps > 0) {
-    const assetRungById = new Map(
-      rows
-        .filter((row) => row.kind === "asset" && row.liquidityTier !== null)
-        .map((row) => [row.holdingId, row.liquidityTier!] as const),
-    );
-    // The LIVE classification (the precedence-3 fallback): mirrors the capture
-    // path — an asset's housing-ness/tier from its live identity, an associated
-    // debt's rung from its asset's frozen rung (unassociated → null), a debt's
-    // securesHousing from the live housing-asset set; assets never secure housing.
-    const live: ResolvedFrozenIdentity =
-      holding.kind === "asset"
-        ? {
-            countsAsHousing: isHousingAsset(holding.asset),
-            liquidityTier: tierOfAsset(holding.asset),
-            securesHousing: false,
-          }
-        : {
-            countsAsHousing: false,
-            liquidityTier: holding.liability.associatedAssetId
-              ? rungForLiability(holding.liability, assetRungById)
-              : null,
-            securesHousing: securesHousingAsset(
-              holding.liability,
-              holding.housingAssetIds,
-            ),
-          };
-    // Resolve through the one frozen-vs-live seam (#242): existing row, else the
-    // contemporaneous frozen capture from other snapshots (a member gaining a
-    // stake recovers the holding's frozen housing-ness/tier), else live.
-    const identity = resolveFrozenIdentity({
-      existingRow,
-      frozenIdentity: input.frozenIdentity ?? [],
-      live,
-      targetDate: input.snapshot.dateKey,
-    });
-    rows.push({
-      countsAsHousing: identity.countsAsHousing,
-      holdingId,
-      kind: holding.kind,
-      label:
-        existingRow?.label ??
-        (holding.kind === "asset" ? holding.asset.name : holding.liability.name),
-      liquidityTier: identity.liquidityTier,
-      securesHousing: identity.securesHousing,
-      valueMinor: ownedMinor,
-      ...(existingRow?.units !== undefined ? { units: existingRow.units } : {}),
-      ...(existingRow?.unitPrice !== undefined
-        ? { unitPrice: existingRow.unitPrice }
-        : {}),
-    });
-  }
-
-  // housingEquity is now fully row-derived from the frozen countsAsHousing flags
-  // on asset rows (#181 completion) — no live isHousingAsset call, no delta
-  // parameter. A housing asset's re-weight carries its frozen flag onto the new
-  // row; the helper reads it from there.
-  return assembleRippleSnapshot({
-    currency,
-    frozenHoldings: input.frozenHoldings,
-    rows,
-    snapshot: input.snapshot,
-  });
-}
-
 /**
  * Re-export the trigger modules' recalc functions and their input types from the
- * core (ADR 0028, #320). Splitting them into their own modules keeps the core's
- * relative-path surface byte-stable: `./historical-snapshot` still resolves
- * `recalculateSnapshotForAsset` / `recalculateSnapshotForCoinAcquisition` /
- * `recalculateSnapshotForConnectedValue` (and their `Recalculate*Input` types)
- * for the barrel and the existing tests, while the implementations now live in
- * `./historical-snapshot-operation-ripple` and
- * `./historical-snapshot-position-ripple`.
+ * core (ADR 0028, #320 + #321). Splitting them into their own modules keeps the
+ * core's relative-path surface byte-stable: `./historical-snapshot` still
+ * resolves all six `recalculateSnapshotFor*` functions (and their
+ * `Recalculate*Input` / `OwnershipRippleHolding` types) for the barrel and the
+ * existing tests, while the implementations now live in the four trigger
+ * modules. The barrel and the relative-path importers resolve unchanged.
  */
 export { recalculateSnapshotForAsset } from "./historical-snapshot-operation-ripple";
 export type { RecalculateSnapshotInput } from "./historical-snapshot-operation-ripple";
@@ -1049,3 +666,16 @@ export type {
   RecalculateCoinAcquisitionSnapshotInput,
   RecalculateConnectedValueSnapshotInput,
 } from "./historical-snapshot-position-ripple";
+export {
+  recalculateSnapshotForHousing,
+  recalculateSnapshotForLiability,
+} from "./historical-snapshot-anchor-ripple";
+export type {
+  RecalculateHousingSnapshotInput,
+  RecalculateLiabilitySnapshotInput,
+} from "./historical-snapshot-anchor-ripple";
+export { recalculateSnapshotForOwnership } from "./historical-snapshot-ownership-ripple";
+export type {
+  OwnershipRippleHolding,
+  RecalculateOwnershipSnapshotInput,
+} from "./historical-snapshot-ownership-ripple";
