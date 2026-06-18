@@ -61,13 +61,62 @@ describe("defaultsFor — instrument defaults (#149)", () => {
   });
 });
 
+describe("defaultsFor — storage defaults the create-holding seam reads (#309)", () => {
+  // The catalog owns the per-instrument storage knowledge the create-holding
+  // action used to carry as inline dispatch maps: which legacy AssetType an
+  // asset instrument persists as, and how a debt instrument persists (its
+  // LiabilityType + the debt model that fixes its valuation method).
+
+  test("each stored/appreciating asset instrument carries its legacy AssetType", () => {
+    expect(defaultsFor("current_account").assetType).toBe("cash");
+    expect(defaultsFor("term_deposit").assetType).toBe("manual");
+    expect(defaultsFor("precious_metal").assetType).toBe("manual");
+    expect(defaultsFor("vehicle").assetType).toBe("manual");
+    expect(defaultsFor("other").assetType).toBe("manual");
+    expect(defaultsFor("property").assetType).toBe("real_estate");
+  });
+
+  test("a derived investment instrument carries no legacy AssetType", () => {
+    // Investments persist through the investment path, not the manual-asset
+    // path, so they declare no stored AssetType.
+    expect(defaultsFor("fund").assetType).toBeUndefined();
+    expect(defaultsFor("crypto").assetType).toBeUndefined();
+    expect(defaultsFor("pension_plan").assetType).toBeUndefined();
+  });
+
+  test("each debt instrument carries its LiabilityType + default debt model", () => {
+    expect(defaultsFor("mortgage").liability).toEqual({
+      type: "mortgage",
+      debtModel: "amortizable",
+    });
+    expect(defaultsFor("loan").liability).toEqual({
+      type: "debt",
+      debtModel: "amortizable",
+    });
+    expect(defaultsFor("credit_card").liability).toEqual({
+      type: "debt",
+      debtModel: "revolving",
+    });
+  });
+
+  test("a non-debt instrument carries no liability spec", () => {
+    expect(defaultsFor("current_account").liability).toBeUndefined();
+    expect(defaultsFor("property").liability).toBeUndefined();
+    expect(defaultsFor("fund").liability).toBeUndefined();
+  });
+});
+
 describe("defaultsFor — covers every instrument (#149 AC)", () => {
   // The whole catalog, asserted as a table: every instrument must have an entry,
   // and the methods mirror the S2 valuation_method backfill so a later slice can
   // make the instrument authoritative for valuation without shifting any figure.
   const EXPECTED: Record<Instrument, InstrumentDefaults> = {
-    current_account: { rung: "cash", valuationMethod: "stored" },
-    term_deposit: { rung: "term-locked", valuationMethod: "stored" },
+    current_account: { rung: "cash", valuationMethod: "stored", assetType: "cash" },
+    term_deposit: {
+      rung: "term-locked",
+      valuationMethod: "stored",
+      assetType: "manual",
+    },
     fund: { rung: "market", valuationMethod: "derived", priceProvider: "yahoo" },
     etf: { rung: "market", valuationMethod: "derived", priceProvider: "yahoo" },
     stock: { rung: "market", valuationMethod: "derived", priceProvider: "yahoo" },
@@ -78,13 +127,29 @@ describe("defaultsFor — covers every instrument (#149 AC)", () => {
       priceProvider: "finect",
     },
     crypto: { rung: "market", valuationMethod: "derived", priceProvider: "coingecko" },
-    precious_metal: { rung: "illiquid", valuationMethod: "stored" },
-    vehicle: { rung: "illiquid", valuationMethod: "stored" },
-    property: { rung: "illiquid", valuationMethod: "appreciating" },
-    mortgage: { rung: "illiquid", valuationMethod: "amortized" },
-    loan: { rung: "cash", valuationMethod: "amortized" },
-    credit_card: { rung: "cash", valuationMethod: "anchored" },
-    other: { rung: "illiquid", valuationMethod: "stored" },
+    precious_metal: { rung: "illiquid", valuationMethod: "stored", assetType: "manual" },
+    vehicle: { rung: "illiquid", valuationMethod: "stored", assetType: "manual" },
+    property: {
+      rung: "illiquid",
+      valuationMethod: "appreciating",
+      assetType: "real_estate",
+    },
+    mortgage: {
+      rung: "illiquid",
+      valuationMethod: "amortized",
+      liability: { type: "mortgage", debtModel: "amortizable" },
+    },
+    loan: {
+      rung: "cash",
+      valuationMethod: "amortized",
+      liability: { type: "debt", debtModel: "amortizable" },
+    },
+    credit_card: {
+      rung: "cash",
+      valuationMethod: "anchored",
+      liability: { type: "debt", debtModel: "revolving" },
+    },
+    other: { rung: "illiquid", valuationMethod: "stored", assetType: "manual" },
     coin_collection: { rung: "illiquid", valuationMethod: "derived" },
   };
 

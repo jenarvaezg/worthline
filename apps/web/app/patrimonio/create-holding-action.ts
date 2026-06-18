@@ -50,29 +50,6 @@ const INSTRUMENTS: readonly Instrument[] = [
   "credit_card",
 ];
 
-/** The legacy AssetType an asset instrument persists as (its rung comes from the catalog). */
-const ASSET_TYPE: Partial<Record<Instrument, "cash" | "manual" | "real_estate">> = {
-  current_account: "cash",
-  term_deposit: "manual",
-  precious_metal: "manual",
-  vehicle: "manual",
-  other: "manual",
-  property: "real_estate",
-};
-
-/**
- * How a debt instrument persists: its LiabilityType + the debt model that gives
- * it the right valuation method. The liability's instrument is recoverable from
- * this pair (defaultInstrumentForLiability), so it needs no separate column.
- */
-const LIABILITY_SPEC: Partial<
-  Record<Instrument, { type: LiabilityType; debtModel: DebtModel }>
-> = {
-  mortgage: { type: "mortgage", debtModel: "amortizable" },
-  loan: { type: "debt", debtModel: "amortizable" },
-  credit_card: { type: "debt", debtModel: "revolving" },
-};
-
 function parseInstrument(value: FormDataEntryValue | null): Instrument | null {
   const raw = String(value ?? "").trim();
   return (INSTRUMENTS as readonly string[]).includes(raw) ? (raw as Instrument) : null;
@@ -227,11 +204,14 @@ export async function createHoldingAction(
       ),
     });
 
+  // The catalog owns every per-instrument storage decision: the rung, valuation
+  // method and provider, plus the legacy AssetType a stored asset persists as
+  // and how a debt persists (its type + default model). The action only reads it.
   const defaults = defaultsFor(instrument);
 
   // Assets — stored (cash/manual) and appreciating (property). Reuse the strict
   // asset parser + shared persistence, stamping the chosen instrument.
-  const assetType = ASSET_TYPE[instrument];
+  const assetType = defaults.assetType;
 
   if (assetType) {
     const scoped = scopedAssetForm(formData, instrument, assetType, defaults.rung);
@@ -308,9 +288,10 @@ export async function createHoldingAction(
     redirect(successRedirectUrl("/patrimonio", "investment_added", result.id));
   }
 
-  // Debts — the instrument fixes the type + debt model so the holding's valuation
-  // method is right from creation (loan → amortizable, credit_card → revolving).
-  const liabilitySpec = LIABILITY_SPEC[instrument];
+  // Debts — the catalog fixes the type + default debt model so the holding's
+  // valuation method is right from creation (loan → amortizable, credit_card →
+  // revolving).
+  const liabilitySpec = defaults.liability;
 
   if (liabilitySpec) {
     // A loan lets the user choose its model at creation (#273); mortgage/credit_card
