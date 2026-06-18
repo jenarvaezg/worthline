@@ -6,12 +6,8 @@ import type {
   SourceAdapter,
   SourcePosition,
 } from "@worthline/domain";
-import {
-  defaultsFor,
-  frozenInstrumentForAdapter,
-  instrumentForAdapter,
-  projectConnectedSource,
-} from "@worthline/domain";
+import { defaultsFor, projectConnectedSource } from "@worthline/domain";
+import { adapterForTag } from "@worthline/pricing";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 
 import {
@@ -125,7 +121,7 @@ export interface ConnectedSourceStore {
    * (PRD #160 story 21 / #245 S6, ADR 0016): drop the source — cascading its
    * positions — and flip EVERY rung asset it materialized (one for Numista, market
    * + term-locked for Binance) from the derived/live source instrument to its
-   * hand-valued counterpart ({@link frozenInstrumentForAdapter}: coin_collection →
+   * hand-valued counterpart (the adapter's `frozenInstrument`: coin_collection →
    * precious_metal, crypto → other). Each asset keeps its frozen value, name,
    * ownership and rung but is fully detached (its `connected_source_id` cleared) so
    * nothing routes it back to the gone source or re-values it; the effective
@@ -340,7 +336,11 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
       domainSource,
       readPositionsForSource(source.id),
     );
-    const instrument = instrumentForAdapter(source.adapter);
+    // Resolve the provider's instrument + term-locked label off the adapter (ADR
+    // 0027, #319) instead of re-branching on the tag here — the store stays
+    // provider-agnostic, reading these as metadata.
+    const adapter = adapterForTag(source.adapter);
+    const instrument = adapter.liveInstrument;
     const projectedTiers = new Set(holdings.map((holding) => holding.liquidityTier));
 
     let primaryValueMinor = 0;
@@ -372,13 +372,14 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
       } else {
         // A newly-occupied rung (e.g. the first locked-Earn balance). Materialize a
         // derived holding for it, named per rung: the primary keeps the source
-        // label, a term-locked one is tagged "(bloqueado)" so the two are
-        // distinguishable in the patrimonio list. valuation_method stays null —
-        // derived at runtime from the instrument, like the primary asset.
+        // label, a term-locked one is tagged with the adapter's suffix (e.g.
+        // "(bloqueado)") so the two are distinguishable in the patrimonio list. The
+        // suffix is read off the adapter (ADR 0027, #319), not hardcoded here.
+        // valuation_method stays null — derived at runtime from the instrument.
         const assetId = ctx.newId();
         const name =
-          holding.liquidityTier === "term-locked"
-            ? `${source.label} (bloqueado)`
+          holding.liquidityTier === "term-locked" && adapter.termLockedSuffix
+            ? `${source.label} ${adapter.termLockedSuffix}`
             : source.label;
 
         db.insert(assets)
@@ -440,10 +441,10 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
 
       // The materialized holding the source projects into is the adapter's
       // instrument and its default rung (ADR 0016/0021): Numista → an illiquid
-      // coin_collection, Binance → a market-rung crypto holding. The single
-      // adapter→instrument→rung mapping the projection also reads, so the
+      // coin_collection, Binance → a market-rung crypto holding. Read off the
+      // adapter (ADR 0027, #319); the projection reads the same instrument, so the
       // materialized holding and the projected one never disagree.
-      const instrument = instrumentForAdapter(input.adapter);
+      const instrument = adapterForTag(input.adapter).liveInstrument;
       const { rung } = defaultsFor(instrument);
 
       ctx.transaction(() => {
@@ -636,7 +637,9 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
       // delete; deleting the source row leaves `assets.connected_source_id` intact
       // (no back-FK), so the lookup is unaffected, but read it up front for clarity.
       const assetIds = listSourceAssetIds(sourceId);
-      const frozenInstrument = frozenInstrumentForAdapter(source.adapter);
+      // The hand-valued instrument the holding flips to is read off the adapter
+      // (ADR 0027, #319): coin_collection → precious_metal, crypto → other.
+      const frozenInstrument = adapterForTag(source.adapter).frozenInstrument;
 
       ctx.transaction(() => {
         // Drop the source first — the FK cascade removes its positions. The assets

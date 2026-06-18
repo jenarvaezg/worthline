@@ -181,3 +181,19 @@ export type {
   RefreshOptions,
   RefreshStalePricesResult,
 } from "./refresh-stale-prices";
+export { numistaAdapter } from "./adapters/numista";
+export type { NumistaCreds } from "./adapters/numista";
+export { binanceAdapter } from "./adapters/binance";
+export type { BinanceCreds } from "./adapters/binance";
+export { adapterForTag } from "./adapters/registry";
+export type { SourceAdapterMetadata } from "./adapters/registry";
+export type {
+  ConnectedSourceAdapter,
+  HistoryContext,
+  PositionDraft as AdapterPositionDraft,
+  PositionValuationUpdate as AdapterPositionValuationUpdate,
+  RevalueContext,
+  RevaluePositionInput,
+  SourceHistory,
+  SyncContext,
+} from "./adapters/types";
