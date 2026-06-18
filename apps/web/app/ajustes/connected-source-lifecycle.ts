@@ -1,5 +1,3 @@
-"use server";
-
 import { withStore, type WorthlineStore } from "@worthline/db";
 import type {
   AdapterPositionDraft,
