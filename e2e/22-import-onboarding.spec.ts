@@ -13,7 +13,7 @@
  * onboarding. Absent sections import as empty — the papelera ends up vacía.
  */
 
-import { test, expect } from "./fixtures";
+import { test, expect, holdingRow } from "./fixtures";
 
 /**
  * A live-state-only version-2 export document, as an externally-prepared file
@@ -113,16 +113,14 @@ test("fresh install imports a live-state-only file from /empezar and lands on th
   await liquidityPanel.locator("details.tier.cash > summary").click();
   await expect(liquidityPanel.getByText("+ Cuenta onboarding 22")).toBeVisible();
 
-  // Both imported assets are in the holdings table.
+  // Both imported assets are in the holdings listing.
   await page.goto("/patrimonio");
-  await expect(page.getByRole("cell", { name: "Cuenta onboarding 22" })).toBeVisible();
-  await expect(page.getByRole("cell", { name: "Coche onboarding 22" })).toBeVisible();
+  await expect(holdingRow(page, "Cuenta onboarding 22")).toBeVisible();
+  await expect(holdingRow(page, "Coche onboarding 22")).toBeVisible();
 
   // Absent sections were left empty: the papelera is vacía.
-  const papelera = page.getByRole("region", { name: "Papelera" });
-  await expect(papelera.locator("details.trashPanel > summary")).toHaveText(
-    /Papelera \(0\)/,
-  );
-  await papelera.locator("details.trashPanel > summary").click();
+  const papelera = page.locator("details.balanceTrash");
+  await expect(papelera.locator("> summary")).toHaveText(/Papelera \(0\)/);
+  await papelera.locator("> summary").click();
   await expect(papelera.getByText("La papelera está vacía.")).toBeVisible();
 });

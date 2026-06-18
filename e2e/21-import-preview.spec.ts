@@ -10,7 +10,7 @@
  * error and offers NO confirm button. This journey never confirms an import.
  */
 
-import { test, expect, addHolding } from "./fixtures";
+import { test, expect, addHolding, holdingRow } from "./fixtures";
 
 /** A valid version-2 export document with known per-section counts. */
 const previewDoc = {
@@ -69,7 +69,7 @@ test("import preview: summary + data-loss warning for a valid file; inline error
     value: "777",
   });
   await expect(page).toHaveURL(/\/patrimonio/);
-  await expect(page.getByRole("cell", { name: "Activo preexistente 21" })).toBeVisible();
+  await expect(holdingRow(page, "Activo preexistente 21")).toBeVisible();
 
   // ── Valid file: preview shows summary, warning, reminder, then confirm ──
   await page.goto("/ajustes");
@@ -132,5 +132,5 @@ test("import preview: summary + data-loss warning for a valid file; inline error
 
   // Nothing was imported: the pre-existing workspace is intact.
   await page.goto("/patrimonio");
-  await expect(page.getByRole("cell", { name: "Activo preexistente 21" })).toBeVisible();
+  await expect(holdingRow(page, "Activo preexistente 21")).toBeVisible();
 });

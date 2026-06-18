@@ -5,7 +5,7 @@
  * one action and verifies both are gone.
  */
 
-import { test, expect, addHolding } from "./fixtures";
+import { test, expect, addHolding, deleteHolding } from "./fixtures";
 
 async function createAndTrash(page: import("@playwright/test").Page, name: string) {
   await addHolding(page, {
@@ -15,10 +15,7 @@ async function createAndTrash(page: import("@playwright/test").Page, name: strin
   });
   await expect(page).toHaveURL(/\/patrimonio/);
 
-  const row = page.getByRole("row", { name: new RegExp(name) });
-  const del = row.locator("details.confirmDelete");
-  await del.locator("summary").click();
-  await del.getByRole("button", { name: "Confirmar" }).click();
+  await deleteHolding(page, name);
   await expect(page.getByRole("status")).toContainText("Papelera");
 }
 
@@ -27,12 +24,12 @@ test("vaciar papelera removes every trashed holding at once", async ({ page }) =
   await createAndTrash(page, "Vaciar Dos");
 
   // Open the Papelera (its own summary) — both items present
-  await page.locator("details.trashPanel > summary").click();
-  await expect(page.locator(".trashRow", { hasText: "Vaciar Uno" })).toBeVisible();
-  await expect(page.locator(".trashRow", { hasText: "Vaciar Dos" })).toBeVisible();
+  await page.locator("details.balanceTrash > summary").click();
+  await expect(page.locator(".balanceTrashRow", { hasText: "Vaciar Uno" })).toBeVisible();
+  await expect(page.locator(".balanceTrashRow", { hasText: "Vaciar Dos" })).toBeVisible();
 
   // Empty the whole trash (two-step confirm)
-  const emptyAll = page.locator("form.trashEmptyAll details.confirmDelete");
+  const emptyAll = page.locator("form.balanceTrashEmptyAll details.confirmDelete");
   await emptyAll.locator("summary").click();
   await emptyAll.getByRole("button", { name: "Confirmar vaciado de papelera" }).click();
 
@@ -40,6 +37,8 @@ test("vaciar papelera removes every trashed holding at once", async ({ page }) =
   // label so the check does not depend on the (collapsed) panel being reopened.
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toContainText("vaciada");
-  await expect(page.locator(".trashRow")).toHaveCount(0);
-  await expect(page.locator("details.trashPanel > summary")).toHaveText(/Papelera \(0\)/);
+  await expect(page.locator(".balanceTrashRow")).toHaveCount(0);
+  await expect(page.locator("details.balanceTrash > summary")).toHaveText(
+    /Papelera \(0\)/,
+  );
 });

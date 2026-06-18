@@ -8,7 +8,7 @@
  * holdings it adds don't perturb earlier journeys' totals.
  */
 
-import { test, expect } from "./fixtures";
+import { test, expect, holdingRow } from "./fixtures";
 
 /** Pick an instrument by clicking its gallery chip (the radio is visually hidden). */
 async function pickInstrument(page: import("@playwright/test").Page, instrument: string) {
@@ -29,7 +29,7 @@ test("stored asset: current_account → Activo añadido on the cash rung", async
 
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toHaveText("Activo añadido.");
-  await expect(page.getByRole("cell", { name: "Cuenta unificada" })).toBeVisible();
+  await expect(holdingRow(page, "Cuenta unificada")).toBeVisible();
 });
 
 test("appreciating: property → Activo añadido with acquisition", async ({ page }) => {
@@ -43,7 +43,7 @@ test("appreciating: property → Activo añadido with acquisition", async ({ pag
 
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toHaveText("Activo añadido.");
-  await expect(page.getByRole("cell", { name: "Piso unificado" })).toBeVisible();
+  await expect(holdingRow(page, "Piso unificado")).toBeVisible();
 });
 
 test("derived investment: stock → Inversión añadida", async ({ page }) => {
@@ -56,7 +56,7 @@ test("derived investment: stock → Inversión añadida", async ({ page }) => {
 
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toHaveText("Inversión añadida.");
-  await expect(page.getByRole("cell", { name: "Acción unificada" })).toBeVisible();
+  await expect(holdingRow(page, "Acción unificada")).toBeVisible();
 });
 
 test("debt: credit_card → Deuda añadida", async ({ page }) => {
@@ -69,5 +69,5 @@ test("debt: credit_card → Deuda añadida", async ({ page }) => {
 
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toHaveText("Deuda añadida.");
-  await expect(page.getByRole("cell", { name: "Tarjeta unificada" })).toBeVisible();
+  await expect(holdingRow(page, "Tarjeta unificada")).toBeVisible();
 });
