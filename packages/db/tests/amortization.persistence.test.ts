@@ -252,7 +252,7 @@ describe("interest-rate revisions — CRUD", () => {
       store.liabilities.updateInterestRateRevision("r1", {
         newAnnualInterestRate: "0.04",
         revisionDate: "2022-06-01",
-      }),
+      }).changes,
     ).toBe(1);
 
     const [revision] = store.liabilities.readInterestRateRevisions("plan1");
@@ -269,7 +269,7 @@ describe("interest-rate revisions — CRUD", () => {
     expect(
       store.liabilities.updateInterestRateRevision("nope", {
         newAnnualInterestRate: "0.04",
-      }),
+      }).changes,
     ).toBe(0);
   });
 
@@ -283,9 +283,9 @@ describe("interest-rate revisions — CRUD", () => {
       revisionDate: "2022-01-01",
     });
 
-    expect(store.liabilities.deleteInterestRateRevision("r1")).toBe(1);
+    expect(store.liabilities.deleteInterestRateRevision("r1").changes).toBe(1);
     expect(store.liabilities.readInterestRateRevisions("plan1")).toHaveLength(0);
-    expect(store.liabilities.deleteInterestRateRevision("r1")).toBe(0);
+    expect(store.liabilities.deleteInterestRateRevision("r1").changes).toBe(0);
   });
 
   test("rejects a malformed revision date", () => {
@@ -449,7 +449,7 @@ describe("early repayments — CRUD", () => {
         amountMinor: 25_000_00,
         mode: "reduce-term",
         repaymentDate: "2022-06-01",
-      }),
+      }).changes,
     ).toBe(1);
 
     const [repayment] = store.liabilities.readEarlyRepayments("plan1");
@@ -464,7 +464,9 @@ describe("early repayments — CRUD", () => {
   test("update returns 0 for an unknown repayment", () => {
     const store = createInMemoryStore();
     seedPlan(store);
-    expect(store.liabilities.updateEarlyRepayment("nope", { amountMinor: 1_00 })).toBe(0);
+    expect(
+      store.liabilities.updateEarlyRepayment("nope", { amountMinor: 1_00 }).changes,
+    ).toBe(0);
   });
 
   test("delete a repayment by id", () => {
@@ -478,9 +480,9 @@ describe("early repayments — CRUD", () => {
       repaymentDate: "2022-01-01",
     });
 
-    expect(store.liabilities.deleteEarlyRepayment("e1")).toBe(1);
+    expect(store.liabilities.deleteEarlyRepayment("e1").changes).toBe(1);
     expect(store.liabilities.readEarlyRepayments("plan1")).toHaveLength(0);
-    expect(store.liabilities.deleteEarlyRepayment("e1")).toBe(0);
+    expect(store.liabilities.deleteEarlyRepayment("e1").changes).toBe(0);
   });
 
   test("rejects a malformed repayment date", () => {

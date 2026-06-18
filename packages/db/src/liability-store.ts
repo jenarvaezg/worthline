@@ -98,6 +98,20 @@ export interface UpdateInterestRateRevisionInput {
   newAnnualInterestRate?: DecimalString;
 }
 
+/**
+ * Result of an in-place interest-rate-revision write (ADR 0025). `changes` is the
+ * 0/1 not-found contract; on a hit, `revisionDate`/`liabilityId` carry the OLD date
+ * and owning liability the write read by id (resolving `planId → liability`) inside
+ * the transaction, so the seam derives the ripple from-date without the caller
+ * re-reading the row.
+ */
+export interface InterestRateRevisionWriteResult {
+  changes: number;
+  revisionDate?: string;
+  /** Resolved `planId → liability`; `undefined` only if the plan row is gone. */
+  liabilityId?: string | undefined;
+}
+
 /** Input for a single early repayment (PRD #146, slice S4). */
 export interface AddEarlyRepaymentInput {
   id: string;
@@ -121,6 +135,20 @@ export interface UpdateEarlyRepaymentInput {
   repaymentDate?: string;
   amountMinor?: number;
   mode?: EarlyRepaymentMode;
+}
+
+/**
+ * Result of an in-place early-repayment write (ADR 0025). `changes` is the 0/1
+ * not-found contract; on a hit, `repaymentDate`/`liabilityId` carry the OLD date
+ * and owning liability the write read by id (resolving `planId → liability`) inside
+ * the transaction, so the seam derives the ripple from-date without the caller
+ * re-reading the row.
+ */
+export interface EarlyRepaymentWriteResult {
+  changes: number;
+  repaymentDate?: string;
+  /** Resolved `planId → liability`; `undefined` only if the plan row is gone. */
+  liabilityId?: string | undefined;
 }
 
 /** Input for a single balance anchor of a revolving/informal liability (slice 8). */
@@ -192,21 +220,36 @@ export interface LiabilityStore {
   addInterestRateRevision: (input: AddInterestRateRevisionInput) => void;
   /** Read a plan's rate revisions, ordered ascending by date. */
   readInterestRateRevisions: (planId: string) => InterestRateRevisionRecord[];
-  /** Update a rate revision in place. Returns 1 if updated, 0 if not found. */
+  /**
+   * Update a rate revision in place. `changes` is 1 if updated, 0 if not found; on
+   * a hit it also returns the OLD date + owning liability read by id (ADR 0025).
+   */
   updateInterestRateRevision: (
     revisionId: string,
     input: UpdateInterestRateRevisionInput,
-  ) => number;
-  /** Delete a rate revision by id. Returns 1 if removed, 0 if not found. */
-  deleteInterestRateRevision: (revisionId: string) => number;
+  ) => InterestRateRevisionWriteResult;
+  /**
+   * Delete a rate revision by id. `changes` is 1 if removed, 0 if not found; on a
+   * hit it also returns the removed date + owning liability read by id (ADR 0025).
+   */
+  deleteInterestRateRevision: (revisionId: string) => InterestRateRevisionWriteResult;
   /** Add an early repayment to a plan. */
   addEarlyRepayment: (input: AddEarlyRepaymentInput) => void;
   /** Read a plan's early repayments, ordered ascending by date. */
   readEarlyRepayments: (planId: string) => EarlyRepaymentRecord[];
-  /** Update an early repayment in place. Returns 1 if updated, 0 if not found. */
-  updateEarlyRepayment: (repaymentId: string, input: UpdateEarlyRepaymentInput) => number;
-  /** Delete an early repayment by id. Returns 1 if removed, 0 if not found. */
-  deleteEarlyRepayment: (repaymentId: string) => number;
+  /**
+   * Update an early repayment in place. `changes` is 1 if updated, 0 if not found;
+   * on a hit it also returns the OLD date + owning liability read by id (ADR 0025).
+   */
+  updateEarlyRepayment: (
+    repaymentId: string,
+    input: UpdateEarlyRepaymentInput,
+  ) => EarlyRepaymentWriteResult;
+  /**
+   * Delete an early repayment by id. `changes` is 1 if removed, 0 if not found; on
+   * a hit it also returns the removed date + owning liability read by id (ADR 0025).
+   */
+  deleteEarlyRepayment: (repaymentId: string) => EarlyRepaymentWriteResult;
   /**
    * Outstanding principal of an amortizable liability on `targetDate`
    * (YYYY-MM-DD): reads the plan + revisions + early repayments and delegates to
@@ -555,11 +598,21 @@ function readInterestRateRevisions(
   }));
 }
 
+/** Resolve the owning liability of an amortization plan, or undefined if gone. */
+function readLiabilityIdForPlan(ctx: StoreContext, planId: string): string | undefined {
+  const row = ctx.db
+    .select({ liabilityId: amortizationPlans.liabilityId })
+    .from(amortizationPlans)
+    .where(eq(amortizationPlans.id, planId))
+    .get();
+  return row?.liabilityId;
+}
+
 function updateInterestRateRevision(
   ctx: StoreContext,
   revisionId: string,
   input: UpdateInterestRateRevisionInput,
-): number {
+): InterestRateRevisionWriteResult {
   if (input.revisionDate !== undefined) {
     assertIsoDate(input.revisionDate, "Revision date");
   }
@@ -567,13 +620,19 @@ function updateInterestRateRevision(
     assertDecimalString(input.newAnnualInterestRate, "Annual interest rate");
   }
 
+  // Widened by-id select (ADR 0025): the OLD date and owning plan are read here,
+  // inside the transaction, so the seam derives the ripple from-date itself without
+  // the caller re-reading the row first.
   const existing = ctx.db
-    .select({ planId: interestRateRevisions.planId })
+    .select({
+      planId: interestRateRevisions.planId,
+      revisionDate: interestRateRevisions.revisionDate,
+    })
     .from(interestRateRevisions)
     .where(eq(interestRateRevisions.id, revisionId))
     .get();
 
-  if (!existing) return 0;
+  if (!existing) return { changes: 0 };
 
   // #210: an edited date that lands past the loan's final boundary would be
   // silently dropped just like an out-of-range add — reject it the same way.
@@ -600,17 +659,31 @@ function updateInterestRateRevision(
       ...input,
     });
   }
-  return result.changes;
+  return {
+    changes: result.changes,
+    liabilityId: readLiabilityIdForPlan(ctx, existing.planId),
+    revisionDate: existing.revisionDate,
+  };
 }
 
-function deleteInterestRateRevision(ctx: StoreContext, revisionId: string): number {
+function deleteInterestRateRevision(
+  ctx: StoreContext,
+  revisionId: string,
+): InterestRateRevisionWriteResult {
+  // Widened by-id select (ADR 0025): the row's date and owning plan are read inside
+  // the transaction so the seam ripples from the removed revision's own date.
   const row = ctx.db
-    .select({ planId: interestRateRevisions.planId })
+    .select({
+      planId: interestRateRevisions.planId,
+      revisionDate: interestRateRevisions.revisionDate,
+    })
     .from(interestRateRevisions)
     .where(eq(interestRateRevisions.id, revisionId))
     .get();
 
-  if (!row) return 0;
+  if (!row) return { changes: 0 };
+
+  const liabilityId = readLiabilityIdForPlan(ctx, row.planId);
 
   const result = ctx.db
     .delete(interestRateRevisions)
@@ -622,7 +695,11 @@ function deleteInterestRateRevision(ctx: StoreContext, revisionId: string): numb
       revisionId,
     });
   }
-  return result.changes;
+  return {
+    changes: result.changes,
+    liabilityId,
+    revisionDate: row.revisionDate,
+  };
 }
 
 function addEarlyRepayment(ctx: StoreContext, input: AddEarlyRepaymentInput): void {
@@ -678,7 +755,7 @@ function updateEarlyRepayment(
   ctx: StoreContext,
   repaymentId: string,
   input: UpdateEarlyRepaymentInput,
-): number {
+): EarlyRepaymentWriteResult {
   if (input.repaymentDate !== undefined) {
     assertIsoDate(input.repaymentDate, "Repayment date");
   }
@@ -686,13 +763,19 @@ function updateEarlyRepayment(
     throw new Error("Money must be stored as integer minor units.");
   }
 
+  // Widened by-id select (ADR 0025): the OLD date and owning plan are read here,
+  // inside the transaction, so the seam derives the ripple from-date itself without
+  // the caller re-reading the row first.
   const existing = ctx.db
-    .select({ planId: earlyRepayments.planId })
+    .select({
+      planId: earlyRepayments.planId,
+      repaymentDate: earlyRepayments.repaymentDate,
+    })
     .from(earlyRepayments)
     .where(eq(earlyRepayments.id, repaymentId))
     .get();
 
-  if (!existing) return 0;
+  if (!existing) return { changes: 0 };
 
   // #210: an edited date that lands past the loan's final boundary would be
   // silently dropped just like an out-of-range add — reject it the same way.
@@ -718,17 +801,31 @@ function updateEarlyRepayment(
       ...input,
     });
   }
-  return result.changes;
+  return {
+    changes: result.changes,
+    liabilityId: readLiabilityIdForPlan(ctx, existing.planId),
+    repaymentDate: existing.repaymentDate,
+  };
 }
 
-function deleteEarlyRepayment(ctx: StoreContext, repaymentId: string): number {
+function deleteEarlyRepayment(
+  ctx: StoreContext,
+  repaymentId: string,
+): EarlyRepaymentWriteResult {
+  // Widened by-id select (ADR 0025): the row's date and owning plan are read inside
+  // the transaction so the seam ripples from the removed repayment's own date.
   const row = ctx.db
-    .select({ planId: earlyRepayments.planId })
+    .select({
+      planId: earlyRepayments.planId,
+      repaymentDate: earlyRepayments.repaymentDate,
+    })
     .from(earlyRepayments)
     .where(eq(earlyRepayments.id, repaymentId))
     .get();
 
-  if (!row) return 0;
+  if (!row) return { changes: 0 };
+
+  const liabilityId = readLiabilityIdForPlan(ctx, row.planId);
 
   const result = ctx.db
     .delete(earlyRepayments)
@@ -740,7 +837,11 @@ function deleteEarlyRepayment(ctx: StoreContext, repaymentId: string): number {
       repaymentId,
     });
   }
-  return result.changes;
+  return {
+    changes: result.changes,
+    liabilityId,
+    repaymentDate: row.repaymentDate,
+  };
 }
 
 function amortizableBalanceAtDateFor(

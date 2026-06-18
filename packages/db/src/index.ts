@@ -450,27 +450,29 @@ export interface WorthlineStore {
     opts: { liabilityId: string; today?: string },
   ) => void;
   /**
-   * Debt dated-fact seam (ADR 0020): patch ONE interest-rate revision AND
+   * Debt dated-fact seam (ADR 0020 / 0025): patch ONE interest-rate revision AND
    * recalculate snapshots from the earlier of the old/new date, atomically. The
-   * caller passes the previous revision date (read at the call site); the seam
-   * picks the earlier date, applies the future guard, and ripples. Returns 1 if
-   * updated, 0 if not found. Wraps `liabilities.updateInterestRateRevision`.
+   * seam reads the OLD date + owning liability from the row it selects by id inside
+   * the transaction, picks the earlier date, applies the future guard, and ripples.
+   * Returns 1 if updated, 0 if not found. Wraps
+   * `liabilities.updateInterestRateRevision`.
    */
   updateInterestRateRevisionAndRipple: (
     revisionId: string,
     input: UpdateInterestRateRevisionInput,
-    opts: { liabilityId: string; previousRevisionDate: string; today?: string },
+    opts?: { today?: string },
   ) => number;
   /**
-   * Debt dated-fact seam (ADR 0020): delete ONE interest-rate revision AND
+   * Debt dated-fact seam (ADR 0020 / 0025): delete ONE interest-rate revision AND
    * recalculate snapshots from its date forward, atomically (the
-   * `amortizable-revision` kind). The caller passes the removed revision date; the
-   * future guard rides the seam. Returns 1 if removed, 0 if not found. Wraps
+   * `amortizable-revision` kind). The seam reads the removed date + owning liability
+   * from the row it selects by id inside the transaction; the future guard rides the
+   * seam. Returns 1 if removed, 0 if not found. Wraps
    * `liabilities.deleteInterestRateRevision`.
    */
   deleteInterestRateRevisionAndRipple: (
     revisionId: string,
-    opts: { liabilityId: string; previousRevisionDate: string; today?: string },
+    opts?: { today?: string },
   ) => number;
   /**
    * Debt dated-fact seam (ADR 0020): add ONE early repayment AND generate/recalculate
@@ -483,27 +485,30 @@ export interface WorthlineStore {
     opts: { liabilityId: string; today?: string },
   ) => void;
   /**
-   * Debt dated-fact seam (ADR 0020): patch ONE early repayment AND ripple from the
-   * earlier of the old/new date, atomically (the `amortizable-repayment` kind). The
-   * caller passes the previous repayment date; the seam picks the earlier date,
-   * applies the future guard, and ripples. Returns 1 if updated, 0 if not found.
-   * Wraps `liabilities.updateEarlyRepayment`.
+   * Debt dated-fact seam (ADR 0020 / 0025): patch ONE early repayment AND ripple
+   * from the earlier of the old/new date, atomically (the `amortizable-repayment`
+   * kind). The seam reads the OLD date + owning liability from the row it selects by
+   * id inside the transaction, picks the earlier date, applies the future guard, and
+   * ripples. Returns 1 if updated, 0 if not found. Wraps
+   * `liabilities.updateEarlyRepayment`.
    */
   updateEarlyRepaymentAndRipple: (
     repaymentId: string,
     input: UpdateEarlyRepaymentInput,
-    opts: { liabilityId: string; previousRepaymentDate: string; today?: string },
+    opts?: { today?: string },
   ) => number;
   /**
-   * Debt dated-fact seam (ADR 0020): delete ONE early repayment AND recalculate
-   * snapshots from its date forward, atomically. Deleting a dated fact recalculates
-   * without generating, so it uses the `amortizable-revision` kind (the curve no
-   * longer carries the repayment). The future guard rides the seam. Returns 1 if
-   * removed, 0 if not found. Wraps `liabilities.deleteEarlyRepayment`.
+   * Debt dated-fact seam (ADR 0020 / 0025): delete ONE early repayment AND
+   * recalculate snapshots from its date forward, atomically. Deleting a dated fact
+   * recalculates without generating, so it uses the `amortizable-revision` kind (the
+   * curve no longer carries the repayment). The seam reads the removed date + owning
+   * liability from the row it selects by id inside the transaction; the future guard
+   * rides the seam. Returns 1 if removed, 0 if not found. Wraps
+   * `liabilities.deleteEarlyRepayment`.
    */
   deleteEarlyRepaymentAndRipple: (
     repaymentId: string,
-    opts: { liabilityId: string; previousRepaymentDate: string; today?: string },
+    opts?: { today?: string },
   ) => number;
   /**
    * Debt dated-fact seam (ADR 0020): add ONE balance anchor AND generate/recalculate
@@ -1278,15 +1283,27 @@ function buildStore(
       });
     },
     updateInterestRateRevisionAndRipple: (revisionId, input, opts) => {
-      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       // Ripple from the earlier of the old/new date so every affected snapshot
-      // recomputes. The previous date is read at the call site and passed in.
+      // recomputes. The seam reads the OLD date itself (ADR 0025).
       return ctx.transaction(() => {
-        const changes = liabilityStore.updateInterestRateRevision(revisionId, input);
-        if (changes === 0) return 0;
-        const newDate = input.revisionDate ?? opts.previousRevisionDate;
+        // The seam reads the OLD date + owning liability from the row by id inside
+        // the transaction (ADR 0025): the caller no longer pre-reads them.
+        const {
+          changes,
+          revisionDate: previousRevisionDate,
+          liabilityId,
+        } = liabilityStore.updateInterestRateRevision(revisionId, input);
+        if (
+          changes === 0 ||
+          previousRevisionDate === undefined ||
+          liabilityId === undefined
+        )
+          return 0;
+        const newDate = input.revisionDate ?? previousRevisionDate;
+        // From-date math unchanged: the earlier of the old/new date.
         const fromDateKey =
-          opts.previousRevisionDate < newDate ? opts.previousRevisionDate : newDate;
+          previousRevisionDate < newDate ? previousRevisionDate : newDate;
         if (fromDateKey <= today) {
           const workspace = getWorkspace();
           if (workspace) {
@@ -1297,7 +1314,7 @@ function buildStore(
               {
                 fromDateKey,
                 kind: "amortizable-revision",
-                liabilityId: opts.liabilityId,
+                liabilityId,
                 today,
               },
             );
@@ -1307,11 +1324,23 @@ function buildStore(
       });
     },
     deleteInterestRateRevisionAndRipple: (revisionId, opts) => {
-      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       return ctx.transaction(() => {
-        const changes = liabilityStore.deleteInterestRateRevision(revisionId);
-        if (changes === 0) return 0;
-        if (opts.previousRevisionDate <= today) {
+        // The seam reads the removed date + owning liability from the row by id
+        // inside the transaction (ADR 0025): the caller no longer pre-reads them.
+        const {
+          changes,
+          revisionDate: previousRevisionDate,
+          liabilityId,
+        } = liabilityStore.deleteInterestRateRevision(revisionId);
+        if (
+          changes === 0 ||
+          previousRevisionDate === undefined ||
+          liabilityId === undefined
+        )
+          return 0;
+        // From-date unchanged: the removed revision's own date.
+        if (previousRevisionDate <= today) {
           const workspace = getWorkspace();
           if (workspace) {
             rippleHistoricalSnapshotsForDebt(
@@ -1319,9 +1348,9 @@ function buildStore(
               workspace,
               store.snapshots.saveSnapshot,
               {
-                fromDateKey: opts.previousRevisionDate,
+                fromDateKey: previousRevisionDate,
                 kind: "amortizable-revision",
-                liabilityId: opts.liabilityId,
+                liabilityId,
                 today,
               },
             );
@@ -1348,13 +1377,25 @@ function buildStore(
       });
     },
     updateEarlyRepaymentAndRipple: (repaymentId, input, opts) => {
-      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       return ctx.transaction(() => {
-        const changes = liabilityStore.updateEarlyRepayment(repaymentId, input);
-        if (changes === 0) return 0;
-        const newDate = input.repaymentDate ?? opts.previousRepaymentDate;
+        // The seam reads the OLD date + owning liability from the row by id inside
+        // the transaction (ADR 0025): the caller no longer pre-reads them.
+        const {
+          changes,
+          repaymentDate: previousRepaymentDate,
+          liabilityId,
+        } = liabilityStore.updateEarlyRepayment(repaymentId, input);
+        if (
+          changes === 0 ||
+          previousRepaymentDate === undefined ||
+          liabilityId === undefined
+        )
+          return 0;
+        const newDate = input.repaymentDate ?? previousRepaymentDate;
+        // From-date math unchanged: the earlier of the old/new date.
         const fromDateKey =
-          opts.previousRepaymentDate < newDate ? opts.previousRepaymentDate : newDate;
+          previousRepaymentDate < newDate ? previousRepaymentDate : newDate;
         if (fromDateKey <= today) {
           const workspace = getWorkspace();
           if (workspace) {
@@ -1365,7 +1406,7 @@ function buildStore(
               {
                 fromDateKey,
                 kind: "amortizable-repayment",
-                liabilityId: opts.liabilityId,
+                liabilityId,
                 today,
               },
             );
@@ -1375,13 +1416,25 @@ function buildStore(
       });
     },
     deleteEarlyRepaymentAndRipple: (repaymentId, opts) => {
-      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       // Deleting a dated fact recalculates from its date forward without generating
       // — the "amortizable-revision" kind, since the curve no longer carries it.
       return ctx.transaction(() => {
-        const changes = liabilityStore.deleteEarlyRepayment(repaymentId);
-        if (changes === 0) return 0;
-        if (opts.previousRepaymentDate <= today) {
+        // The seam reads the removed date + owning liability from the row by id
+        // inside the transaction (ADR 0025): the caller no longer pre-reads them.
+        const {
+          changes,
+          repaymentDate: previousRepaymentDate,
+          liabilityId,
+        } = liabilityStore.deleteEarlyRepayment(repaymentId);
+        if (
+          changes === 0 ||
+          previousRepaymentDate === undefined ||
+          liabilityId === undefined
+        )
+          return 0;
+        // From-date unchanged: the removed repayment's own date.
+        if (previousRepaymentDate <= today) {
           const workspace = getWorkspace();
           if (workspace) {
             rippleHistoricalSnapshotsForDebt(
@@ -1389,9 +1442,9 @@ function buildStore(
               workspace,
               store.snapshots.saveSnapshot,
               {
-                fromDateKey: opts.previousRepaymentDate,
+                fromDateKey: previousRepaymentDate,
                 kind: "amortizable-revision",
-                liabilityId: opts.liabilityId,
+                liabilityId,
                 today,
               },
             );
