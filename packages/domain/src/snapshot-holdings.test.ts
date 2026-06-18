@@ -23,6 +23,7 @@ import {
   createLiability,
   createManualAsset,
   createWorkspace,
+  deriveHoldingDeltas,
 } from "./index";
 
 function makeWorkspace(): Workspace {
@@ -508,5 +509,141 @@ describe("assertSnapshotHoldingsReconcile — five-figure invariant (#181)", () 
         housingEquityMinor: 79_000_00,
       }),
     ).toThrow(/housing equity/i);
+  });
+});
+
+describe("deriveHoldingDeltas", () => {
+  function row(partial: Partial<SnapshotHoldingRow> = {}): SnapshotHoldingRow {
+    return {
+      holdingId: "h",
+      kind: "asset",
+      label: "Holding",
+      liquidityTier: "market",
+      countsAsHousing: false,
+      securesHousing: false,
+      valueMinor: 0,
+      ...partial,
+    };
+  }
+
+  test("an asset that gains value contributes the rise positively", () => {
+    const previous = [row({ holdingId: "fund", label: "Fondo", valueMinor: 1_000 })];
+    const current = [row({ holdingId: "fund", label: "Fondo", valueMinor: 1_500 })];
+
+    const deltas = deriveHoldingDeltas(previous, current);
+
+    expect(deltas).toHaveLength(1);
+    expect(deltas[0]).toMatchObject({
+      holdingId: "fund",
+      contributionMinor: 500,
+      status: "changed",
+    });
+  });
+
+  test("a liability paid down contributes positively to net worth", () => {
+    const previous = [
+      row({
+        holdingId: "loan",
+        kind: "liability",
+        label: "Hipoteca",
+        valueMinor: 10_000,
+      }),
+    ];
+    const current = [
+      row({ holdingId: "loan", kind: "liability", label: "Hipoteca", valueMinor: 9_200 }),
+    ];
+
+    const deltas = deriveHoldingDeltas(previous, current);
+
+    // Balance fell by 800 → net worth rose by 800.
+    expect(deltas[0]?.contributionMinor).toBe(800);
+  });
+
+  test("a holding present only on the current day is new and contributes its full value", () => {
+    const current = [row({ holdingId: "gold", label: "Oro", valueMinor: 1_200 })];
+
+    const deltas = deriveHoldingDeltas([], current);
+
+    expect(deltas[0]).toMatchObject({
+      holdingId: "gold",
+      contributionMinor: 1_200,
+      status: "new",
+    });
+  });
+
+  test("a holding present only on the previous day is gone and subtracts its value", () => {
+    const previous = [
+      row({ holdingId: "sold", label: "Acción vendida", valueMinor: 3_000 }),
+    ];
+
+    const deltas = deriveHoldingDeltas(previous, []);
+
+    expect(deltas[0]).toMatchObject({
+      holdingId: "sold",
+      contributionMinor: -3_000,
+      status: "gone",
+    });
+  });
+
+  test("holdings whose value did not move are omitted", () => {
+    const previous = [
+      row({ holdingId: "flat", valueMinor: 5_000 }),
+      row({ holdingId: "fund", valueMinor: 1_000 }),
+    ];
+    const current = [
+      row({ holdingId: "flat", valueMinor: 5_000 }),
+      row({ holdingId: "fund", valueMinor: 1_400 }),
+    ];
+
+    const deltas = deriveHoldingDeltas(previous, current);
+
+    expect(deltas).toHaveLength(1);
+    expect(deltas[0]?.holdingId).toBe("fund");
+  });
+
+  test("sorted by contribution magnitude, largest first", () => {
+    const previous = [
+      row({ holdingId: "small", valueMinor: 100 }),
+      row({ holdingId: "big", valueMinor: 100 }),
+      row({ holdingId: "mid", valueMinor: 100 }),
+    ];
+    const current = [
+      row({ holdingId: "small", valueMinor: 110 }),
+      row({ holdingId: "big", valueMinor: 100 - 5_000 + 100 }), // drops by ~5000
+      row({ holdingId: "mid", valueMinor: 1_100 }),
+    ];
+
+    const deltas = deriveHoldingDeltas(previous, current);
+
+    expect(deltas.map((d) => d.holdingId)).toEqual(["big", "mid", "small"]);
+  });
+
+  test("contributions sum exactly to the aggregate net-worth change (ADR 0008)", () => {
+    const previous = [
+      row({ holdingId: "cash", valueMinor: 50_000 }),
+      row({ holdingId: "fund", valueMinor: 20_000 }),
+      row({ holdingId: "loan", kind: "liability", valueMinor: 30_000 }),
+    ];
+    const current = [
+      row({ holdingId: "cash", valueMinor: 51_000 }), // +1000 asset
+      row({ holdingId: "fund", valueMinor: 19_500 }), // −500 asset
+      row({ holdingId: "loan", kind: "liability", valueMinor: 29_400 }), // −600 debt → +600
+      row({ holdingId: "gold", valueMinor: 2_000 }), // new asset → +2000
+    ];
+
+    const sum = (rows: SnapshotHoldingRow[]) =>
+      rows.reduce(
+        (net, r) => net + (r.kind === "asset" ? r.valueMinor : -r.valueMinor),
+        0,
+      );
+    const aggregateDelta = sum(current) - sum(previous);
+
+    const totalContribution = deriveHoldingDeltas(previous, current).reduce(
+      (acc, d) => acc + d.contributionMinor,
+      0,
+    );
+
+    expect(totalContribution).toBe(aggregateDelta);
+    expect(totalContribution).toBe(3_100);
   });
 });

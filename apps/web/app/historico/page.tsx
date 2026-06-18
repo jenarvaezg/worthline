@@ -1,20 +1,11 @@
 import { runBootstrapHealthcheck, withStore } from "@worthline/db";
-import {
-  deriveMonthlyCloses,
-  formatMoneyMinor,
-  listScopeOptions,
-  moneySign,
-} from "@worthline/domain";
+import { listScopeOptions } from "@worthline/domain";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import {
-  buildCurrentUrl,
-  parseScopeCookie,
-  scaleSignedBar,
-  SCOPE_COOKIE_NAME,
-} from "../intake";
+import { buildCurrentUrl, parseScopeCookie, SCOPE_COOKIE_NAME } from "../intake";
 import Shell from "../shell";
+import { buildHistoricoRows, HistoricoTable } from "./historico-table";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +14,7 @@ export default async function HistoricoPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const resolvedSearchParams = await searchParams;
+  const resolvedSearchParams = (await searchParams) ?? {};
   const persistence = runBootstrapHealthcheck();
   const currentUrl = buildCurrentUrl(resolvedSearchParams);
 
@@ -42,37 +33,22 @@ export default async function HistoricoPage({
     const snapshots = selectedScope
       ? store.snapshots.readSnapshots(selectedScope.id)
       : [];
+    // Frozen per-holding rows (ADR 0008) drive the per-day breakdown of movers.
+    const holdingRecords = selectedScope
+      ? store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id })
+      : [];
 
-    return { scopes, selectedScope, snapshots };
+    return { scopes, selectedScope, snapshots, holdingRecords };
   });
 
   if (!storeData) {
     redirect("/empezar");
   }
 
-  const { scopes, selectedScope, snapshots } = storeData;
+  const { scopes, selectedScope, snapshots, holdingRecords } = storeData;
 
-  // Derive which snapshot ids are monthly closes (last snapshot of each calendar month).
-  const monthlyCloseIds = new Set(deriveMonthlyCloses(snapshots).values());
-
-  // Build rows in a single ascending pass (O(n)), then reverse for newest-first display.
-  // delta = total − previous total; undefined for the first snapshot (no predecessor).
-  const rows = snapshots
-    .map((snapshot, idx) => {
-      const prev = snapshots[idx - 1];
-      const delta = prev
-        ? {
-            amountMinor:
-              snapshot.totalNetWorth.amountMinor - prev.totalNetWorth.amountMinor,
-            currency: snapshot.totalNetWorth.currency,
-          }
-        : undefined;
-      return { snapshot, delta, isMonthlyClose: monthlyCloseIds.has(snapshot.id) };
-    })
-    .reverse();
-
-  // Collect all per-row deltas for proportional bar scaling.
-  const allDeltas = rows.map((row) => row.delta);
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = buildHistoricoRows(snapshots, holdingRecords, today);
 
   return (
     <Shell
@@ -98,54 +74,7 @@ export default async function HistoricoPage({
             captura. Vuelve mañana para ver tu primera comparativa.
           </p>
         ) : (
-          <div className="tableScroll">
-            <table className="historicoTable">
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th className="numCol">Patrimonio neto</th>
-                  <th className="numCol">Δ vs anterior</th>
-                  <th className="barCol" aria-label="Variación relativa"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(({ snapshot, delta, isMonthlyClose }) => {
-                  const barWidth = scaleSignedBar(delta, allDeltas);
-                  const deltaSign = delta ? moneySign(delta) : undefined;
-
-                  return (
-                    <tr
-                      key={snapshot.id}
-                      className={isMonthlyClose ? "monthlyCloseRow" : undefined}
-                    >
-                      <td className="dateCell">
-                        <span className="dateKey">{snapshot.dateKey}</span>
-                        {isMonthlyClose ? (
-                          <span className="monthlyCloseBadge" aria-label="Cierre de mes">
-                            Cierre de mes
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className={`numCol ${moneySign(snapshot.totalNetWorth)}`}>
-                        {formatMoneyMinor(snapshot.totalNetWorth)}
-                      </td>
-                      <td className={`numCol ${deltaSign ?? ""}`}>
-                        {delta ? formatMoneyMinor(delta) : "—"}
-                      </td>
-                      <td className="barCol" aria-hidden="true">
-                        {barWidth > 0 ? (
-                          <span
-                            className={`deltaBar ${deltaSign ?? ""}`}
-                            style={{ width: `${barWidth}%` }}
-                          />
-                        ) : null}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <HistoricoTable rows={rows} />
         )}
       </section>
     </Shell>
