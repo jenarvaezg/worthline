@@ -32,7 +32,7 @@ import { yahooProvider } from "./yahoo";
  *
  * Defined with getters so each provider binding is read lazily (live binding) at
  * lookup time rather than captured at module-eval time. This keeps the registry
- * robust to the import cycle it sits in: `yahoo`/`numista-sync` resolve other
+ * robust to the import cycle it sits in: `yahoo`/`numista-valuation` resolve other
  * providers FROM this registry (issue #243), so they import this module while it
  * is still initialising — a plain object literal would snapshot some bindings as
  * `undefined`.

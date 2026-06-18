@@ -9,7 +9,7 @@
  * connect reads the scope cookie from next/headers, so `cookies` is mocked. The
  * sync test uses a tiny fake adapter so the persisted value is deterministic and
  * the assertion is about the SEAM (adapter → store), not Numista response parsing
- * (which numista-sync.test.ts already covers); connect/disconnect use the real
+ * (which numista-valuation's tests already cover); connect/disconnect use the real
  * `numistaAdapter` (they touch no network).
  */
 
