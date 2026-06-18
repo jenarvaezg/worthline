@@ -23,9 +23,10 @@ import {
   defaultInstrumentForLiability,
   defaultValuationMethodForAssetType,
   defaultValuationMethodForDebtModel,
+  listScopeOptions,
   serializeWorkspaceExport,
 } from "@worthline/domain";
-import { asc, count, eq, sql } from "drizzle-orm";
+import { asc, count, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 import { mapPositionRow, positionInsertValues } from "./connected-source-store";
@@ -351,12 +352,62 @@ function updateMember(ctx: StoreContext, member: Pick<Member, "id" | "name">): v
   ctx.invalidateWorkspace();
 }
 
-function disableMember(ctx: StoreContext, memberId: string, disabledAt: string): void {
-  ctx.db
-    .update(members)
-    .set({ disabledAt, updatedAt: sql`CURRENT_TIMESTAMP` })
-    .where(eq(members.id, memberId))
+/**
+ * Enforce "live scopes only" (#306): delete every snapshot — and its frozen
+ * holding rows (ADR 0008) — whose `scope_id` is no longer one `listScopeOptions`
+ * offers. Call AFTER the scope-dropping write and AFTER invalidating the cached
+ * workspace, INSIDE the same transaction, so the drop and the purge commit (or
+ * roll back) together. No `rippleHistoricalSnapshots*` path ever revisits an
+ * orphaned scope (they all iterate `listScopeOptions`), so its snapshots would
+ * otherwise rot — stale frozen rows that contradict the live operation ledger.
+ *
+ * The `household` scope is always in `listScopeOptions`, so it is never purged
+ * and the canonical history survives any composition change. Frozen rows are
+ * deleted first, then the parent snapshots — explicit (not FK-cascade-reliant)
+ * so the purge is correct regardless of the connection's foreign-key pragma.
+ */
+function purgeOrphanedScopeSnapshots(ctx: StoreContext): void {
+  const { db } = ctx;
+  const workspace = ctx.getWorkspace();
+
+  // No workspace ⇒ nothing offers any scope; leave snapshots untouched (a reset
+  // owns that wipe). With a workspace, the offered scope ids are the survivors.
+  if (!workspace) {
+    return;
+  }
+
+  const liveScopeIds = listScopeOptions(workspace).map((option) => option.id);
+
+  // Frozen rows of every snapshot whose scope is no longer offered.
+  const orphanSnapshotIds = db
+    .select({ id: snapshots.id })
+    .from(snapshots)
+    .where(notInArray(snapshots.scopeId, liveScopeIds))
+    .all()
+    .map((row) => row.id);
+
+  if (orphanSnapshotIds.length === 0) {
+    return;
+  }
+
+  db.delete(snapshotHoldings)
+    .where(inArray(snapshotHoldings.snapshotId, orphanSnapshotIds))
     .run();
+  db.delete(snapshots).where(inArray(snapshots.id, orphanSnapshotIds)).run();
+}
+
+function disableMember(ctx: StoreContext, memberId: string, disabledAt: string): void {
+  ctx.transaction(() => {
+    ctx.db
+      .update(members)
+      .set({ disabledAt, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(members.id, memberId))
+      .run();
+    // The disabled member's scope is no longer offered — purge its snapshots in
+    // the same transaction as the drop (#306).
+    ctx.invalidateWorkspace();
+    purgeOrphanedScopeSnapshots(ctx);
+  });
   ctx.invalidateWorkspace();
 }
 
@@ -401,10 +452,23 @@ function hardDeleteMember(ctx: StoreContext, memberId: string): number {
     return 0;
   }
 
-  const result = db.delete(members).where(eq(members.id, memberId)).run();
+  const result = ctx.transaction(() => {
+    const deleted = db.delete(members).where(eq(members.id, memberId)).run();
+
+    if (deleted.changes > 0) {
+      ctx.writeAuditEntry("hard_delete_member", "member", memberId, {
+        name: member.name,
+      });
+      // The deleted member's scope is no longer offered — purge its snapshots in
+      // the same transaction as the drop (#306).
+      ctx.invalidateWorkspace();
+      purgeOrphanedScopeSnapshots(ctx);
+    }
+
+    return deleted;
+  });
 
   if (result.changes > 0) {
-    ctx.writeAuditEntry("hard_delete_member", "member", memberId, { name: member.name });
     ctx.invalidateWorkspace();
   }
 
