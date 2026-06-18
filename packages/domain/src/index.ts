@@ -44,6 +44,7 @@ export type {
   Instrument,
   InstrumentDefaults,
   InstrumentPriceProvider,
+  LiabilityDefaults,
 } from "./instrument-catalog";
 export {
   defaultInstrumentForAssetType,
