@@ -6,6 +6,8 @@ import {
   checkOwnershipSplit,
   isHousingAsset,
   isValueUpdateEligible,
+  systemClock,
+  type Clock,
 } from "@worthline/domain";
 import { redirect } from "next/navigation";
 
@@ -50,6 +52,7 @@ function baseUrl(formData: FormData): string {
 export async function deleteAssetAction(
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ): Promise<never> {
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
@@ -63,9 +66,7 @@ export async function deleteAssetAction(
     );
   }
 
-  const changes = runWith((store) =>
-    store.assets.softDeleteAsset(id, new Date().toISOString()),
-  );
+  const changes = runWith((store) => store.assets.softDeleteAsset(id, _clock.now()));
 
   if (changes === 0) {
     redirect(
@@ -81,6 +82,7 @@ export async function deleteAssetAction(
 export async function deleteLiabilityAction(
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ): Promise<never> {
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
@@ -95,7 +97,7 @@ export async function deleteLiabilityAction(
   }
 
   const changes = runWith((store) =>
-    store.liabilities.softDeleteLiability(id, new Date().toISOString()),
+    store.liabilities.softDeleteLiability(id, _clock.now()),
   );
 
   if (changes === 0) {
@@ -649,6 +651,7 @@ export async function setAppreciationRateAction(
 export async function addValuationAnchorAction(
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ): Promise<never> {
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
@@ -662,7 +665,7 @@ export async function addValuationAnchorAction(
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _clock.today();
   const parsed = parseValuationAnchorStrict(formData, id, Date.now(), today);
 
   if (!parsed.ok) {
@@ -706,6 +709,7 @@ export async function addValuationAnchorAction(
 export async function updateValuationAnchorAction(
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ): Promise<never> {
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");
@@ -720,7 +724,7 @@ export async function updateValuationAnchorAction(
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _clock.today();
   const parsed = parseValuationAnchorStrict(formData, id, Date.now(), today);
 
   if (!parsed.ok) {
@@ -782,6 +786,7 @@ export async function updateValuationAnchorAction(
 export async function deleteValuationAnchorAction(
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ): Promise<never> {
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");
@@ -796,7 +801,7 @@ export async function deleteValuationAnchorAction(
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _clock.today();
   const result = runWith((store) => {
     const asset = findAsset(store, id);
 
@@ -934,6 +939,7 @@ type DebtModelGuard = "amortizable" | "anchorable";
 export async function saveAmortizationPlanAction(
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ): Promise<never> {
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
@@ -947,7 +953,7 @@ export async function saveAmortizationPlanAction(
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _clock.today();
   const parsed = parseAmortizationPlanStrict(formData, id, Date.now(), today);
 
   if (!parsed.ok) {
@@ -1006,6 +1012,7 @@ export async function saveAmortizationPlanAction(
 export async function deleteAmortizationPlanAction(
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ): Promise<never> {
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
@@ -1020,7 +1027,7 @@ export async function deleteAmortizationPlanAction(
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _clock.today();
   const result = runWith((store) => {
     const guard = requireDebtModel(store, id, "amortizable");
 
@@ -1059,6 +1066,7 @@ export async function deleteAmortizationPlanAction(
 export async function addInterestRateRevisionAction(
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ): Promise<never> {
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
@@ -1073,7 +1081,7 @@ export async function addInterestRateRevisionAction(
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _clock.today();
   const parsed = parseInterestRateRevisionStrict(formData, planId, Date.now(), today);
 
   if (!parsed.ok) {
@@ -1112,6 +1120,7 @@ export async function addInterestRateRevisionAction(
 export async function updateInterestRateRevisionAction(
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ): Promise<never> {
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
@@ -1127,7 +1136,7 @@ export async function updateInterestRateRevisionAction(
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _clock.today();
   const parsed = parseInterestRateRevisionStrict(formData, planId, Date.now(), today);
 
   if (!parsed.ok) {
@@ -1191,6 +1200,7 @@ export async function updateInterestRateRevisionAction(
 export async function deleteInterestRateRevisionAction(
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ): Promise<never> {
   const id = parseEntityId(formData);
   const revisionId = parseEntityId(formData, "revisionId");
@@ -1206,7 +1216,7 @@ export async function deleteInterestRateRevisionAction(
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _clock.today();
   const result = runWith((store) => {
     const guard = requireDebtModel(store, id, "amortizable");
 
@@ -1246,6 +1256,7 @@ export async function deleteInterestRateRevisionAction(
 export async function addEarlyRepaymentAction(
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ): Promise<never> {
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
@@ -1260,7 +1271,7 @@ export async function addEarlyRepaymentAction(
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _clock.today();
   const parsed = parseEarlyRepaymentStrict(formData, planId, Date.now(), today);
 
   if (!parsed.ok) {
@@ -1300,6 +1311,7 @@ export async function addEarlyRepaymentAction(
 export async function updateEarlyRepaymentAction(
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ): Promise<never> {
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
@@ -1315,7 +1327,7 @@ export async function updateEarlyRepaymentAction(
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _clock.today();
   const parsed = parseEarlyRepaymentStrict(formData, planId, Date.now(), today);
 
   if (!parsed.ok) {
@@ -1380,6 +1392,7 @@ export async function updateEarlyRepaymentAction(
 export async function deleteEarlyRepaymentAction(
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ): Promise<never> {
   const id = parseEntityId(formData);
   const repaymentId = parseEntityId(formData, "repaymentId");
@@ -1395,7 +1408,7 @@ export async function deleteEarlyRepaymentAction(
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _clock.today();
   const result = runWith((store) => {
     const guard = requireDebtModel(store, id, "amortizable");
 
@@ -1436,6 +1449,7 @@ export async function deleteEarlyRepaymentAction(
 export async function addBalanceAnchorAction(
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ): Promise<never> {
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
@@ -1449,7 +1463,7 @@ export async function addBalanceAnchorAction(
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _clock.today();
   const parsed = parseBalanceAnchorStrict(formData, id, Date.now(), today);
 
   if (!parsed.ok) {
@@ -1488,6 +1502,7 @@ export async function addBalanceAnchorAction(
 export async function updateBalanceAnchorAction(
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ): Promise<never> {
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");
@@ -1502,7 +1517,7 @@ export async function updateBalanceAnchorAction(
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _clock.today();
   const parsed = parseBalanceAnchorStrict(formData, id, Date.now(), today);
 
   if (!parsed.ok) {
@@ -1566,6 +1581,7 @@ export async function updateBalanceAnchorAction(
 export async function deleteBalanceAnchorAction(
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ): Promise<never> {
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");
@@ -1580,7 +1596,7 @@ export async function deleteBalanceAnchorAction(
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _clock.today();
   const result = runWith((store) => {
     const guard = requireDebtModel(store, id, "anchorable");
 

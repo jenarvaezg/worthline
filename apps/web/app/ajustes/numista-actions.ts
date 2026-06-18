@@ -1,6 +1,7 @@
 "use server";
 
 import { withStore, type WorthlineStore } from "@worthline/db";
+import { systemClock, type Clock } from "@worthline/domain";
 import {
   fetchMetalSpotEur,
   getCollectedItems,
@@ -215,6 +216,7 @@ export async function syncNumistaAction(
 export async function disconnectNumistaAction(
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ): Promise<never> {
   const sourceId = parseEntityId(formData, "sourceId");
   const returnUrl = currentUrlOf(formData);
@@ -253,7 +255,7 @@ export async function disconnectNumistaAction(
     // Remove the live holding: deleting it cascade-deletes the source + positions
     // (schema FKs). hardDeleteAsset only deletes from the trash, so soft-delete
     // first. Frozen snapshots keep the history (a hard delete never touches it).
-    store.assets.softDeleteAsset(source.assetId, new Date().toISOString());
+    store.assets.softDeleteAsset(source.assetId, _clock.now());
     const removed = store.assets.hardDeleteAsset(source.assetId);
 
     if (removed === 0) {

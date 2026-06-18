@@ -4,6 +4,8 @@ import { withStore, type WorthlineStore } from "@worthline/db";
 import {
   parseWorkspaceExport,
   summarizeWorkspaceExport,
+  systemClock,
+  type Clock,
   type WorkspaceExportSummary,
 } from "@worthline/domain";
 import { cookies } from "next/headers";
@@ -64,7 +66,11 @@ export async function updateMemberAction(formData: FormData, _store?: WorthlineS
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
-export async function disableMemberAction(formData: FormData, _store?: WorthlineStore) {
+export async function disableMemberAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
+) {
   const id = parseEntityId(formData);
 
   if (!id) {
@@ -75,7 +81,7 @@ export async function disableMemberAction(formData: FormData, _store?: Worthline
     );
   }
 
-  runWith((store) => store.workspace.disableMember(id, new Date().toISOString()), _store);
+  runWith((store) => store.workspace.disableMember(id, _clock.now()), _store);
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
