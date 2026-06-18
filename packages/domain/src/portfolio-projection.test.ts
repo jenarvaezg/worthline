@@ -359,3 +359,80 @@ describe("tier label translation", () => {
     expect(assets[0]!.tierLabel).toBe("Ilíquido");
   });
 });
+
+// ── price-refresh metadata (issue #303) ──────────────────────────────────────
+//
+// An investment row valued from the price cache carries WHEN its unit price was
+// last refreshed and by WHICH source, so the UI can surface "precio de hace N
+// días, vía Yahoo". The metadata rides ONLY investment rows (the only derived,
+// price-cache-valued kind); manual/hand-valued holdings leave it null. Connected
+// sources are `type: "manual"` and so never appear here.
+
+describe("projectPortfolio — price-refresh metadata (#303)", () => {
+  const input: PortfolioProjectionInput = {
+    assets: [sharedCash, joseBroker, home],
+    liabilities: [mortgage],
+    priceMetaByAsset: new Map([
+      ["asset_broker", { fetchedAt: "2026-06-08T09:30:00.000Z", source: "yahoo" }],
+    ]),
+    scope: { id: "household", label: "Hogar", type: "household" },
+    workspace,
+  };
+
+  test("an investment row carries its price-cache fetchedAt + source", () => {
+    const result = projectPortfolio(input);
+    const assets = result.sections[0]!.rows as ProjectedAssetRow[];
+    const broker = assets.find((r) => r.id === "asset_broker")!;
+    expect(broker.priceFetchedAt).toBe("2026-06-08T09:30:00.000Z");
+    expect(broker.priceSource).toBe("yahoo");
+  });
+
+  test("a hand-valued (non-investment) row leaves the metadata null", () => {
+    const result = projectPortfolio(input);
+    const assets = result.sections[0]!.rows as ProjectedAssetRow[];
+    const cash = assets.find((r) => r.id === "asset_cash")!;
+    expect(cash.priceFetchedAt).toBeNull();
+    expect(cash.priceSource).toBeNull();
+  });
+
+  test("an investment with NO price-cache entry leaves the metadata null", () => {
+    const result = projectPortfolio({
+      ...input,
+      priceMetaByAsset: new Map(),
+    });
+    const assets = result.sections[0]!.rows as ProjectedAssetRow[];
+    const broker = assets.find((r) => r.id === "asset_broker")!;
+    expect(broker.priceFetchedAt).toBeNull();
+    expect(broker.priceSource).toBeNull();
+  });
+
+  test("omitting priceMetaByAsset entirely leaves every row's metadata null", () => {
+    const result = projectPortfolio({
+      assets: [sharedCash, joseBroker, home],
+      liabilities: [mortgage],
+      scope: { id: "household", label: "Hogar", type: "household" },
+      workspace,
+    });
+    const assets = result.sections[0]!.rows as ProjectedAssetRow[];
+    for (const row of assets) {
+      expect(row.priceFetchedAt).toBeNull();
+      expect(row.priceSource).toBeNull();
+    }
+  });
+
+  // The map carries metadata for a `type: "manual"` connected-source holding too,
+  // but the projection only attaches it to `type: "investment"` rows — so a
+  // connected source (manual type) never surfaces a price-refresh on the board.
+  test("metadata is ignored for non-investment rows even if present in the map", () => {
+    const result = projectPortfolio({
+      ...input,
+      priceMetaByAsset: new Map([
+        ["asset_cash", { fetchedAt: "2026-06-08T09:30:00.000Z", source: "binance" }],
+      ]),
+    });
+    const assets = result.sections[0]!.rows as ProjectedAssetRow[];
+    const cash = assets.find((r) => r.id === "asset_cash")!;
+    expect(cash.priceFetchedAt).toBeNull();
+    expect(cash.priceSource).toBeNull();
+  });
+});

@@ -1,4 +1,9 @@
-import type { DomainWarning, PortfolioGroup, UnifiedHolding } from "@worthline/domain";
+import type {
+  DomainWarning,
+  PortfolioGroup,
+  PriceSource,
+  UnifiedHolding,
+} from "@worthline/domain";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
@@ -15,6 +20,8 @@ function assetRow(
     tierLabel?: string;
     derived?: boolean;
     shareBps?: number;
+    priceFetchedAt?: string | null;
+    priceSource?: PriceSource | null;
   } = {},
 ): UnifiedHolding {
   return {
@@ -26,6 +33,8 @@ function assetRow(
     tierLabel: opts.tierLabel ?? "Mercado",
     instrument: "fund",
     valueIsDerived: opts.derived ?? false,
+    priceFetchedAt: opts.priceFetchedAt ?? null,
+    priceSource: opts.priceSource ?? null,
     detailHref: `/patrimonio/${id}/editar`,
     ownership: { shares: [], totalShareBps: opts.shareBps ?? 10_000 },
   };
@@ -86,6 +95,7 @@ function render(props: Partial<Parameters<typeof BalanceBoard>[0]> = {}) {
       currentUrl="/patrimonio"
       groups={fixtureGroups()}
       isHousehold={false}
+      nowIso="2026-06-10T12:00:00.000Z"
       trash={emptyTrash}
       warnings={[]}
       {...props}
@@ -123,6 +133,51 @@ describe("BalanceBoard (#271)", () => {
     expect(html).toContain("Valor calculado");
     // A liability renders with a leading minus (U+2212 or hyphen; Intl uses NBSP).
     expect(html).toMatch(/[−-]\s?120\.000/u);
+  });
+
+  test("derived badge hover carries the relative price-refresh date + source (#303)", () => {
+    const html = renderToStaticMarkup(
+      <BalanceBoard
+        currentUrl="/patrimonio"
+        groups={[
+          group("market", "Mercado", 5_000_00, [
+            assetRow("a_priced", "Fondo Cotizado", 5_000_00, {
+              derived: true,
+              priceFetchedAt: "2026-06-08T08:00:00.000Z",
+              priceSource: "yahoo",
+            }),
+          ]),
+        ]}
+        isHousehold={false}
+        nowIso="2026-06-10T12:00:00.000Z"
+        trash={emptyTrash}
+        warnings={[]}
+      />,
+    );
+    // The native title still leads with the existing "Valor calculado" text and
+    // ALSO carries the relative refresh date + provider (one tooltip, no JS).
+    expect(html).toContain(
+      "Valor calculado (unidades × precio) · precio de hace 2 días, vía Yahoo",
+    );
+  });
+
+  test("a non-priced derived holding keeps the bare 'Valor calculado' hover (#303)", () => {
+    const html = renderToStaticMarkup(
+      <BalanceBoard
+        currentUrl="/patrimonio"
+        groups={[
+          group("market", "Mercado", 5_000_00, [
+            assetRow("a_manual", "Fondo Manual", 5_000_00, { derived: true }),
+          ]),
+        ]}
+        isHousehold={false}
+        nowIso="2026-06-10T12:00:00.000Z"
+        trash={emptyTrash}
+        warnings={[]}
+      />,
+    );
+    expect(html).toContain('title="Valor calculado (unidades × precio)"');
+    expect(html).not.toContain("vía");
   });
 
   test("shows ownership share only in household scope", () => {
