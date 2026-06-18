@@ -1,3 +1,4 @@
+import type { Instrument } from "@worthline/domain";
 import { searchSymbols } from "@worthline/pricing";
 import Link from "next/link";
 
@@ -18,14 +19,16 @@ export default async function SymbolSearch({
   query,
   pickedSymbol,
   currentParams,
+  instrument,
 }: {
   basePath: string;
   query?: string | undefined;
   pickedSymbol?: string | undefined;
   currentParams: Record<string, string | string[] | undefined>;
+  instrument?: Instrument | undefined;
 }) {
   const trimmed = query?.trim() ?? "";
-  const candidates = trimmed ? await searchSymbols(trimmed) : [];
+  const candidates = trimmed ? await searchSymbols(trimmed, instrument) : [];
   const preservedParams = buildSymbolSearchCurrentParams(currentParams);
 
   function prefillHref(symbol: string, name: string, provider: string): string {
@@ -109,6 +112,8 @@ function providerLabel(provider: string): string {
       return "Stooq";
     case "finect":
       return "Finect";
+    case "coingecko":
+      return "CoinGecko";
     default:
       return provider;
   }

@@ -100,7 +100,7 @@ export async function fetchAndCachePrice(
 export { coingeckoProvider } from "./coingecko";
 export { ecbProvider } from "./ecb";
 export { finectProvider, resolveFinectPlan } from "./finect";
-export { searchSymbols, searchYahooSymbols } from "./search";
+export { searchCoinGeckoSymbols, searchSymbols, searchYahooSymbols } from "./search";
 export type { SymbolCandidate } from "./search";
 export { stooqProvider } from "./stooq";
 export { yahooProvider } from "./yahoo";
