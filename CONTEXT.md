@@ -364,6 +364,27 @@ flexible Earn on **market**, locked Earn on **term-locked**), so it surfaces one
 line per rung, keeping the **liquidity breakdown** honest. Finer grouping (by
 metal, by token) is a lens on the holding's detail page, not extra lines.
 
+**Demo mode**:
+A read-only public showing of worthline backed by fictional data, so the product
+can be shown to people without exposing real holdings or running the live app.
+Every figure and history is computed by the same engine as the live app — only
+writing is turned off: declaring dated facts, editing, importing, resetting, and
+reaching **connected sources** are all disabled, while reading, browsing, and
+**exporting** stay live. The data is curated (never random) and frozen to a fixed
+as-of date, so the dashboards and history stay internally consistent however long
+after a build it is viewed.
+_Avoid_: sandbox, sample mode, test mode (it is a presentation of the product, not
+a place to try things — nothing the viewer does persists).
+
+**Persona**:
+One of the fictional profiles a **demo mode** visitor views — **joven**,
+**inversor**, or **familia** — each a self-contained fictional workspace shaped to
+show a different slice of the product (a starter saver; a markets-heavy investor; a
+two-member household with a home and mortgage). Choosing a persona swaps the entire
+workspace the viewer sees. A demo-only concept with no meaning in the live app.
+_Avoid_: profile, demo user (overloaded — a persona is a whole fictional workspace,
+not a login).
+
 ## Relationships
 
 - **Net worth** decomposes into **gross assets** − **debts**.
@@ -381,6 +402,7 @@ metal, by token) is a lens on the holding's detail page, not extra lines.
 - A **connected source** mirrors **positions** read-only and **projects** them into the portfolio as one **holding** per source per **liquidity tier** rung; the positions are sub-detail beneath that holding, the way **operations** sit beneath an **investment**. Such a holding's value is **derived** (computed from its positions, never hand-set), so it is excluded from the manual **value update pass** and re-valued through the **price provider** machinery.
 - A coin's **purchase date** is a dated fact that ripples existing **snapshots** from that date forward (frozen at ripple time); a **sync** that finds a new trade ripples only from its date, while a mere price move never rewrites a past snapshot.
 - Ownership of a **connected source** holding is worthline's own concern (the source has none): a normal **ownership split**, editable, defaulting to 100% the connecting **scope** member.
+- A **demo mode** deployment shows the live app over a fictional, read-only workspace; a **persona** selects which fictional workspace is shown. Both are presentation concerns — they add no figure and change no calculation, and exist only in the demo build.
 
 ## Flagged ambiguities
 
