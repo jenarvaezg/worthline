@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 28;
+export const SCHEMA_VERSION = 29;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -768,6 +768,46 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       "UPDATE snapshot_holdings SET liquidity_tier = 'housing' WHERE counts_as_housing = 1;",
     );
     sqlite.pragma("user_version = 28");
+  }
+
+  if (version < 29) {
+    // #305 one-off prune of already-orphaned fossil backfill snapshots. A
+    // backfilled snapshot (id prefix `histsnap_`, ADR 0012) exists on a date ONLY
+    // because an investment operation made it an event date. Older builds never
+    // removed such a snapshot when the operation(s) justifying its date were later
+    // deleted, so a fossil could persist — frozen with stale holdings — and show a
+    // derived investment as "not held" on a day it was held (a phantom dip in the
+    // /historico bridge). Going forward `deleteOperationAndRipple` prunes these
+    // transactionally; this migration clears the ones that already accumulated.
+    //
+    // Conservative, mirroring the runtime rule: prune ONLY `histsnap_%` snapshots
+    // whose YYYY-MM-DD `date_key` matches NO `asset_operations.executed_at`. A
+    // real daily capture (id `snapshot_…`) is never touched, even on an op-less
+    // date. Delete the frozen rows first, then the parent snapshots — explicit
+    // rather than relying on the FK cascade, so the prune is correct even where
+    // a minimal upgrade fixture has foreign keys off. Tolerates a missing table.
+    execToleratingMissingTable(
+      sqlite,
+      `DELETE FROM snapshot_holdings
+       WHERE snapshot_id IN (
+         SELECT id FROM snapshots
+         WHERE id LIKE 'histsnap_%'
+           AND NOT EXISTS (
+             SELECT 1 FROM asset_operations
+             WHERE substr(asset_operations.executed_at, 1, 10) = snapshots.date_key
+           )
+       );`,
+    );
+    execToleratingMissingTable(
+      sqlite,
+      `DELETE FROM snapshots
+       WHERE id LIKE 'histsnap_%'
+         AND NOT EXISTS (
+           SELECT 1 FROM asset_operations
+           WHERE substr(asset_operations.executed_at, 1, 10) = snapshots.date_key
+         );`,
+    );
+    sqlite.pragma("user_version = 29");
   }
 
   return { ranV18Backfill };
