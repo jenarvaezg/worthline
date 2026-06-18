@@ -9,3 +9,9 @@ publish = false
 [dependencies]
 bigdecimal = "0.4"
 num-traits = "0.2"
+
+[dev-dependencies]
+# Test-only: the golden-vector parity gate (#287) reads its fixture as JSON.
+# Kept out of the library so the WASM/edge target stays dependency-lean.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
