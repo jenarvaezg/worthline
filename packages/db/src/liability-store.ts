@@ -148,6 +148,18 @@ export interface UpdateBalanceAnchorInput {
 }
 
 /**
+ * Result of an in-place balance-anchor write (ADR 0025). `changes` is the 0/1
+ * not-found contract; on a hit, `anchorDate`/`liabilityId` carry the OLD date and
+ * owning liability the write read by id inside the transaction, so the seam can
+ * derive the ripple from-date without the caller re-reading the row.
+ */
+export interface BalanceAnchorWriteResult {
+  changes: number;
+  anchorDate?: string;
+  liabilityId?: string;
+}
+
+/**
  * Liability persistence (Slice R3 of the architectural refactor, PRD #120 / #123).
  * Owns the live liability rows, their ownership, the balance valuation, and the
  * trash (soft delete / restore / hard delete). Reads return domain Liabilities;
@@ -205,10 +217,19 @@ export interface LiabilityStore {
   addBalanceAnchor: (input: AddBalanceAnchorInput) => void;
   /** Read a liability's balance anchors, ordered ascending by date. */
   readBalanceAnchors: (liabilityId: string) => BalanceAnchorRecord[];
-  /** Update a balance anchor in place. Returns 1 if updated, 0 if not found. */
-  updateBalanceAnchor: (anchorId: string, input: UpdateBalanceAnchorInput) => number;
-  /** Delete a balance anchor by id. Returns 1 if removed, 0 if not found. */
-  deleteBalanceAnchor: (anchorId: string) => number;
+  /**
+   * Update a balance anchor in place. `changes` is 1 if updated, 0 if not found;
+   * on a hit it also returns the OLD date + owning liability read by id (ADR 0025).
+   */
+  updateBalanceAnchor: (
+    anchorId: string,
+    input: UpdateBalanceAnchorInput,
+  ) => BalanceAnchorWriteResult;
+  /**
+   * Delete a balance anchor by id. `changes` is 1 if removed, 0 if not found; on a
+   * hit it also returns the removed date + owning liability read by id (ADR 0025).
+   */
+  deleteBalanceAnchor: (anchorId: string) => BalanceAnchorWriteResult;
   /**
    * Outstanding balance of a liability on `targetDate` (YYYY-MM-DD) for any debt
    * model: reads the model + anchors (+ plan/revisions when amortizable) + the
@@ -806,7 +827,7 @@ function updateBalanceAnchor(
   ctx: StoreContext,
   anchorId: string,
   input: UpdateBalanceAnchorInput,
-): number {
+): BalanceAnchorWriteResult {
   if (input.balanceMinor !== undefined && !Number.isInteger(input.balanceMinor)) {
     throw new Error("Money must be stored as integer minor units.");
   }
@@ -814,13 +835,19 @@ function updateBalanceAnchor(
     assertIsoDate(input.anchorDate, "Anchor date");
   }
 
+  // Widened by-id select (ADR 0025): the OLD date and owning liability are read
+  // here, inside the transaction, so the seam derives the ripple from-date itself
+  // without the caller re-reading the row first.
   const existing = ctx.db
-    .select({ liabilityId: liabilityBalanceAnchors.liabilityId })
+    .select({
+      anchorDate: liabilityBalanceAnchors.anchorDate,
+      liabilityId: liabilityBalanceAnchors.liabilityId,
+    })
     .from(liabilityBalanceAnchors)
     .where(eq(liabilityBalanceAnchors.id, anchorId))
     .get();
 
-  if (!existing) return 0;
+  if (!existing) return { changes: 0 };
 
   const fields: Partial<typeof liabilityBalanceAnchors.$inferInsert> = {};
   if (input.balanceMinor !== undefined) fields.balanceMinor = input.balanceMinor;
@@ -838,17 +865,29 @@ function updateBalanceAnchor(
       ...input,
     });
   }
-  return result.changes;
+  return {
+    anchorDate: existing.anchorDate,
+    changes: result.changes,
+    liabilityId: existing.liabilityId,
+  };
 }
 
-function deleteBalanceAnchor(ctx: StoreContext, anchorId: string): number {
+function deleteBalanceAnchor(
+  ctx: StoreContext,
+  anchorId: string,
+): BalanceAnchorWriteResult {
+  // Widened by-id select (ADR 0025): the row's date and owning liability are read
+  // inside the transaction so the seam ripples from the removed anchor's own date.
   const row = ctx.db
-    .select({ liabilityId: liabilityBalanceAnchors.liabilityId })
+    .select({
+      anchorDate: liabilityBalanceAnchors.anchorDate,
+      liabilityId: liabilityBalanceAnchors.liabilityId,
+    })
     .from(liabilityBalanceAnchors)
     .where(eq(liabilityBalanceAnchors.id, anchorId))
     .get();
 
-  if (!row) return 0;
+  if (!row) return { changes: 0 };
 
   const result = ctx.db
     .delete(liabilityBalanceAnchors)
@@ -860,7 +899,11 @@ function deleteBalanceAnchor(ctx: StoreContext, anchorId: string): number {
       anchorId,
     });
   }
-  return result.changes;
+  return {
+    anchorDate: row.anchorDate,
+    changes: result.changes,
+    liabilityId: row.liabilityId,
+  };
 }
 
 function debtBalanceAtDateFor(
