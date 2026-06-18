@@ -18,7 +18,7 @@ import type { DistributiveOmit, TokenPosition } from "@worthline/domain";
 import { rungForWallet } from "@worthline/domain";
 
 import { resolveCoinGeckoId } from "./binance-symbols";
-import { resolveProvider } from "./registry";
+import { fetchPriceNow } from "./registry";
 
 /** A token position ready to persist — the store assigns its id + sourceId. */
 export type TokenPositionDraft = DistributiveOmit<TokenPosition, "id" | "sourceId">;
@@ -75,28 +75,26 @@ export async function syncBinanceAccount(
 /**
  * The live EUR price for a CoinGecko id, or null on any miss/outage — the real
  * `priceEur` the web action wires into the sync (parallel to `fetchMetalSpotEur`).
- * Resolves through the same CoinGecko provider the manual `crypto` path uses, so a
- * Binance BTC and a hand-entered BTC show the same unit price (ADR 0021). Never
- * throws: a transient failure leaves the token unpriceable (value 0 + warning)
- * rather than aborting the whole sync.
+ * Routes through the pricing seam (ADR 0026): `fetchPriceNow("coingecko", ctx)`
+ * applies whatever fallback chain is declared for `coingecko`, so a Binance token
+ * price now rides any future rescue the chain gains — the same fetch door the
+ * manual `crypto` path will use, keeping a Binance BTC and a hand-entered BTC on
+ * the same unit price (ADR 0021). CoinGecko quotes EUR (`vs_currencies=eur`), so
+ * the returned price is already in EUR. Never throws: `fetchPriceNow` degrades a
+ * miss to `null`, leaving the token unpriceable (value 0 + warning) rather than
+ * aborting the whole sync.
  */
 export async function fetchCoinGeckoPriceEur(
   coingeckoId: string,
   nowIso: string,
 ): Promise<number | null> {
-  try {
-    const result = await resolveProvider("coingecko").fetchPrice({
-      assetId: "binance-token",
-      symbol: coingeckoId,
-      currency: "EUR",
-      nowIso,
-    });
-    if (!result || "failed" in result) {
-      return null;
-    }
-    const value = Number(result.price);
-    return Number.isFinite(value) && value > 0 ? value : null;
-  } catch {
-    return null;
-  }
+  const fetched = await fetchPriceNow("coingecko", {
+    assetId: "binance-token",
+    symbol: coingeckoId,
+    currency: "EUR",
+    nowIso,
+  });
+  if (!fetched) return null;
+  const value = Number(fetched.price);
+  return Number.isFinite(value) && value > 0 ? value : null;
 }

@@ -168,6 +168,43 @@ describe("updateInvestmentAction wiring", () => {
     expect(decodeURIComponent(url)).toMatch(/precio/i);
   });
 
+  test("Yahoo miss rescued by Stooq: symbol validates through the seam (ok=saved)", async () => {
+    // Validation routes through fetchPriceNow now (ADR 0026), so it gains the
+    // Yahoo→Stooq fallback for free: a transient Yahoo miss no longer rejects a
+    // symbol Stooq can still price. Under the old Yahoo-only validation this
+    // would have error-redirected.
+    setupStoreWithInvestment();
+    const stooqOk =
+      "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2024-01-15,16:00:00,4.10,4.30,4.05,4.25,55000000";
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false } as Response)
+        .mockResolvedValueOnce({ ok: true, text: async () => stooqOk } as Response),
+    );
+
+    const url = await catchRedirect(() =>
+      updateInvestmentAction(
+        INVESTMENT_ID,
+        fd(
+          {
+            name: "Index Fund",
+            priceProvider: "yahoo",
+            providerSymbol: "SAN.MC",
+          },
+          "/inversiones",
+        ),
+        store,
+      ),
+    );
+
+    expect(url).toContain("ok=saved");
+    expect(store.assets.readInvestmentAssetById(INVESTMENT_ID)?.providerSymbol).toBe(
+      "SAN.MC",
+    );
+  });
+
   test("invalid Yahoo provider symbol: error redirect, asset unchanged", async () => {
     setupStoreWithInvestment();
     const stooqNoData =

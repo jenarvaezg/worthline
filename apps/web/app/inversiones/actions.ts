@@ -18,9 +18,8 @@ import type {
 } from "@worthline/domain";
 import {
   fetchAndCachePrice,
+  fetchPriceNow,
   refreshStalePrices,
-  stooqProvider,
-  yahooProvider,
   type PriceProvider,
 } from "@worthline/pricing";
 import { redirect } from "next/navigation";
@@ -76,31 +75,25 @@ async function validateInvestmentProviderSymbol(input: {
 
   // Finect NAVs can lag or disappear temporarily; per issue #106, Finect
   // validation is non-blocking at save time. CoinGecko (crypto, #151) is treated
-  // the same — its symbols are validated on price refresh, not at save.
+  // the same — its symbols are validated on price refresh, not at save. This is
+  // domain policy (which providers block on save), not the provider-resolution
+  // routing the registry now owns via `fetchPriceNow`.
   if (priceProvider === "finect" || priceProvider === "coingecko") return null;
 
-  const provider = providerForValidation(priceProvider);
-  const price = await fetchAndCachePrice(provider, {
+  // Route validation through the pricing seam (ADR 0026): a non-null price means
+  // the symbol resolves. This gains the registry's Yahoo→Stooq fallback for free
+  // (a transient Yahoo miss no longer rejects a symbol Stooq can still price) and
+  // drops the bespoke provider switch + the throwaway cache-row read.
+  const price = await fetchPriceNow(priceProvider, {
     assetId: input.assetId,
     currency: input.currency,
     nowIso: input.nowIso,
     symbol: input.providerSymbol,
   });
 
-  if (price.freshnessState === "fresh") return null;
+  if (price) return null;
 
   return `El símbolo no existe en ${providerLabel(priceProvider)}.`;
-}
-
-function providerForValidation(
-  provider: Exclude<InvestmentPriceProvider, "finect" | "coingecko">,
-): PriceProvider {
-  switch (provider) {
-    case "stooq":
-      return stooqProvider;
-    case "yahoo":
-      return yahooProvider;
-  }
 }
 
 function providerLabel(provider: InvestmentPriceProvider): string {
