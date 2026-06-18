@@ -6,9 +6,25 @@ description = "Portable Rust core for worthline's net-worth math. First slice: t
 license = "MIT"
 publish = false
 
+# cdylib for the WASM artifact (wasm-pack); rlib so native tests/consumers keep working.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 bigdecimal = "0.4"
 num-traits = "0.2"
+
+# The WASM binding (Module B, #290) is compiled ONLY for wasm32, so a native
+# `cargo build`/`cargo test` never pulls wasm-bindgen/serde — the pure engine
+# stays dependency-lean. serde(_json) marshal the coarse-grained JSON boundary
+# (decimal strings + integers only, no floats).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"
 
 [dev-dependencies]
 # Test-only: the golden-vector parity gate (#287) reads its fixture as JSON.

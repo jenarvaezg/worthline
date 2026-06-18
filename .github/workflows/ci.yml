@@ -52,9 +52,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # Toolchain for the worthline-core crate (PRD #280). The wasm32 target and
-      # wasm-pack are installed here as prep for the WASM binding (#290); this
-      # lane itself builds and tests the crate natively (incl. the #287 parity gate).
+      # Toolchain for the worthline-core crate (PRD #280): native build/test plus
+      # the wasm32 target and wasm-pack for the WASM binding (#290).
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -70,11 +69,17 @@ jobs:
       - name: Format check (rustfmt)
         run: cargo fmt --all -- --check
 
-      - name: Clippy (deny warnings)
+      - name: Clippy — native (deny warnings)
         run: cargo clippy --all-targets -- -D warnings
+
+      - name: Clippy — wasm32 binding (deny warnings)
+        run: cargo clippy --target wasm32-unknown-unknown -- -D warnings
 
       - name: Unit + parity tests (cargo test)
         run: cargo test
+
+      - name: WASM boundary tests (wasm-pack test --node)
+        run: wasm-pack test --node crates/worthline-core
 
   e2e:
     name: E2E (Playwright)

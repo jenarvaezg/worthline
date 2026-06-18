@@ -17,6 +17,8 @@
 //!   npx tsx crates/worthline-core/parity/generate-golden-vectors.ts
 
 #![allow(clippy::inconsistent_digit_grouping)]
+// Native-only: reads the fixture from disk via std::fs; not compiled for wasm32.
+#![cfg(not(target_arch = "wasm32"))]
 
 use serde::Deserialize;
 use worthline_core::{

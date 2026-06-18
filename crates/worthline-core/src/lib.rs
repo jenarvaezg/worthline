@@ -14,6 +14,11 @@ mod decimal;
 pub mod amortization;
 pub mod dates;
 
+// The JS↔WASM binding (Module B, #290) — only on wasm32, so native builds and
+// `cargo test` never pull wasm-bindgen.
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
+
 pub use amortization::{
     amortizable_balance_at_date, assert_event_within_term, first_cuota, AmortizationError,
     AmortizationPlan, BalanceAtDateInput, EarlyRepayment, EarlyRepaymentMode, FirstCuota,

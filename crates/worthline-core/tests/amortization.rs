@@ -10,6 +10,8 @@
 // The `200_000_00` grouping reads as euros_cents (200.000,00 €), carried
 // verbatim from the TS fixtures so the pinned figures line up one-to-one.
 #![allow(clippy::inconsistent_digit_grouping)]
+// Native-only: the wasm boundary is covered by tests/wasm_boundary.rs.
+#![cfg(not(target_arch = "wasm32"))]
 
 use worthline_core::{
     add_months, amortizable_balance_at_date, assert_event_within_term, first_cuota,
