@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchAndCachePrice, type PriceProvider } from "./index";
 import {
+  fetchPriceNow,
   fetchWithFallback,
   providerRegistry,
   resolveProvider,
@@ -150,5 +151,58 @@ describe("fetchWithFallback", () => {
     const rescued = await fetchWithFallback("yahoo", baseCtx);
 
     expect(rescued).toMatchObject({ source: "stooq" });
+  });
+});
+
+describe("fetchPriceNow", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns a FetchedPrice when the primary source delivers (source stamped to the primary)", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        chart: { result: [{ meta: { currency: "EUR", regularMarketPrice: 12.34 } }] },
+      }),
+    } as Response);
+
+    const result = await fetchPriceNow("yahoo", baseCtx);
+
+    expect(result).toMatchObject({ price: "12.34", currency: "EUR", source: "yahoo" });
+  });
+
+  it("exercises the fallback chain: a Yahoo miss is rescued by Stooq, stamped 'stooq'", async () => {
+    const csv =
+      "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2024-01-15,16:00:00,4.10,4.30,4.05,4.25,55000000";
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({ ok: false } as Response)
+      .mockResolvedValueOnce({ ok: true, text: async () => csv } as Response);
+
+    const result = await fetchPriceNow("yahoo", baseCtx);
+
+    expect(result).toMatchObject({ price: "4.25", currency: "EUR", source: "stooq" });
+  });
+
+  it("collapses a total miss (every link fails) to null", async () => {
+    // Yahoo not-ok then Stooq not-ok: the whole chain misses.
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({ ok: false } as Response)
+      .mockResolvedValueOnce({ ok: false } as Response);
+
+    const result = await fetchPriceNow("yahoo", baseCtx);
+
+    expect(result).toBeNull();
+  });
+
+  it("never throws: a provider that rejects degrades to null", async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error("network down"));
+
+    // stooq has no declared fallback, so the rejection is the whole chain.
+    await expect(fetchPriceNow("stooq", baseCtx)).resolves.toBeNull();
   });
 });

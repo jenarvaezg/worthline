@@ -72,9 +72,67 @@ export const fallbackChains: Partial<Record<RegisteredSource, readonly PriceSour
   yahoo: ["stooq"],
 };
 
+/**
+ * A price plus the source that actually delivered it, with no cache-row baggage
+ * (ADR 0026). The cache-free counterpart to the `AssetPrice` that
+ * `fetchAndCachePrice` builds; parallel to `SymbolCandidate` from the search
+ * seam — an implementation type, not a new domain noun.
+ */
+export interface FetchedPrice {
+  /** Decimal string, the provider's reported quote. */
+  price: string;
+  /** ISO currency the quote is in. */
+  currency: string;
+  /** Who actually delivered it (fallback-aware). */
+  source: PriceSource;
+  /** The provider's own as-of date, when given. */
+  priceDate?: string;
+}
+
 /** Resolve a source to its registered provider (the single resolution point). */
 export function resolveProvider(source: RegisteredSource): PriceProvider {
   return providerRegistry[source];
+}
+
+/**
+ * Fetch a price NOW for a registered source, applying its declared fallback
+ * chain (ADR 0026). Resolves to the delivering price + source, or `null` on a
+ * total miss (every link failed or returned no data). Never throws — misses
+ * degrade to `null`, mirroring the search seam's degrade-to-empty contract.
+ *
+ * This is the pure-fetch door onto the same fallback engine the refresh path
+ * uses: it calls `fetchWithFallback` and collapses its three-state
+ * (`PriceProviderResult | PriceProviderFailure | null`) to `FetchedPrice | null`.
+ * It deliberately discards the failure REASON — callers needing *why* a fetch
+ * failed keep `fetchAndCachePrice`/`staleReason`. It never touches the cache.
+ */
+export async function fetchPriceNow(
+  source: RegisteredSource,
+  ctx: PriceProviderContext,
+): Promise<FetchedPrice | null> {
+  return unwrapFetched(await fetchWithFallback(source, ctx), source);
+}
+
+/**
+ * Collapse a chain's three-state result into a `FetchedPrice | null`, stamping
+ * the delivering `source`. The single success-unwrap shared by `fetchPriceNow`
+ * (cache-free) and `fetchAndCachePrice`'s fresh-row construction, so both doors
+ * onto the fallback engine produce an identical success shape (ADR 0026).
+ *
+ * `runFallbackChain` always stamps `source` on a rescue; a primary's own success
+ * leaves it unset, so the resolved source name is the deliverer in that case.
+ */
+export function unwrapFetched(
+  result: PriceProviderResult | PriceProviderFailure | null,
+  source: PriceSource,
+): FetchedPrice | null {
+  if (!isUsable(result)) return null;
+  return {
+    price: result.price,
+    currency: result.currency,
+    source: result.source ?? source,
+    ...(result.priceDate ? { priceDate: result.priceDate } : {}),
+  };
 }
 
 /**

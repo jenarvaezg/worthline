@@ -587,15 +587,14 @@ export async function refreshPricesAction(
       };
     }
 
-    const forcedStaleCache = refreshable.map((asset) => ({
-      assetId: asset.id,
-      currency: asset.currency,
-      fetchedAt: "1970-01-01T00:00:00.000Z",
-      freshnessState: "fresh" as const,
-      price: "0",
-      source: "stooq" as const,
-    }));
-    const result = await refreshStalePrices(forcedStaleCache, investmentAssets, nowIso);
+    // Manual refresh refetches EVERY configured asset regardless of cache
+    // staleness (#317 / ADR 0026). `force: true` is the honest replacement for
+    // the old `forcedStaleCache` hack, which fabricated epoch-dated `stooq` rows
+    // purely to defeat `selectStalePrices`. The cache row is still the persist
+    // unit — refresh keeps owning cache policy.
+    const result = await refreshStalePrices([], investmentAssets, nowIso, {
+      force: true,
+    });
 
     for (const price of result.refreshed) {
       runWith((store) => store.operations.upsertPrice(price));
