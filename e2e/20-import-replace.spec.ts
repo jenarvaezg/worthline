@@ -11,7 +11,7 @@
  * while leaving the workspace untouched.
  */
 
-import { test, expect, addHolding } from "./fixtures";
+import { test, expect, addHolding, holdingRow } from "./fixtures";
 
 /** A valid version-2 export document, built inline (plain object literal). */
 const importedDoc = {
@@ -52,7 +52,7 @@ test("import replaces the whole workspace; an invalid file changes nothing", asy
     value: "1234",
   });
   await expect(page).toHaveURL(/\/patrimonio/);
-  await expect(page.getByRole("cell", { name: "Activo preexistente 20" })).toBeVisible();
+  await expect(holdingRow(page, "Activo preexistente 20")).toBeVisible();
 
   // ── Happy path: preview, then confirm, in the danger zone ────────────────
   await page.goto("/ajustes");
@@ -76,10 +76,8 @@ test("import replaces the whole workspace; an invalid file changes nothing", asy
 
   // The imported asset replaced the pre-existing one.
   await page.goto("/patrimonio");
-  await expect(page.getByRole("cell", { name: "Cuenta importada" })).toBeVisible();
-  await expect(
-    page.getByRole("cell", { name: "Activo preexistente 20" }),
-  ).not.toBeVisible();
+  await expect(holdingRow(page, "Cuenta importada")).toBeVisible();
+  await expect(holdingRow(page, "Activo preexistente 20")).toHaveCount(0);
 
   // ── Failure path: a wrong-version file is rejected at the preview step ───
   await page.goto("/ajustes");
@@ -101,5 +99,5 @@ test("import replaces the whole workspace; an invalid file changes nothing", asy
 
   // The previously imported workspace is fully intact.
   await page.goto("/patrimonio");
-  await expect(page.getByRole("cell", { name: "Cuenta importada" })).toBeVisible();
+  await expect(holdingRow(page, "Cuenta importada")).toBeVisible();
 });

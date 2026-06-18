@@ -13,7 +13,7 @@
  * the ficha now shows — re-surfacing P/L in the Patrimonio list is S8 (#154).
  */
 
-import { test, expect, addHolding } from "./fixtures";
+import { test, expect, addHolding, holdingRow } from "./fixtures";
 
 test("investment: create with manual price → buy operation → derived value visible", async ({
   page,
@@ -28,9 +28,9 @@ test("investment: create with manual price → buy operation → derived value v
 
   // 4. The investment is reachable from the unified Patrimonio list; open its ficha.
   await page.goto("/patrimonio");
-  const investmentRow = page.getByRole("row", { name: /Fondo Test E2E/ });
+  const investmentRow = holdingRow(page, "Fondo Test E2E");
   await expect(investmentRow).toBeVisible();
-  await investmentRow.getByRole("link", { name: "Fondo Test E2E" }).click();
+  await investmentRow.getByRole("link", { name: "Fondo Test E2E" }).first().click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
 
   // 5. The ficha shows the DERIVED operations surface (units × price), not a
@@ -92,9 +92,9 @@ test("investment: create with manual price → buy operation → derived value v
 
   // 11. The unified Patrimonio list shows the same derived value for the holding.
   //     Assert against the row's full text (not a positional cell) so the check
-  //     is robust to the optional household "Propiedad" column.
+  //     is robust to the optional household ownership label.
   await page.goto("/patrimonio");
-  const listRow = page.getByRole("row", { name: /Fondo Test E2E/ });
+  const listRow = holdingRow(page, "Fondo Test E2E");
   await expect(listRow).toBeVisible();
   const rowText = await listRow.textContent();
   expect(rowText).toBeTruthy();

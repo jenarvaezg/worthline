@@ -10,7 +10,7 @@
  * appreciating, amortized, anchored) must still render/edit from the detail page.
  */
 
-import { test, expect, addHolding } from "./fixtures";
+import { test, expect, addHolding, holdingRow } from "./fixtures";
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -28,9 +28,9 @@ test("derived: manage an investment's operations from /patrimonio/[id]/editar", 
   // 2. The investment is reachable from the unified Patrimonio list and its
   //    detail page is /patrimonio/[id]/editar.
   await page.goto("/patrimonio");
-  const row = page.getByRole("row", { name: /Fondo Ficha S6/ });
+  const row = holdingRow(page, "Fondo Ficha S6");
   await expect(row).toBeVisible();
-  await row.getByRole("link", { name: "Fondo Ficha S6" }).click();
+  await row.getByRole("link", { name: "Fondo Ficha S6" }).first().click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
   const assetId = new URL(page.url()).pathname.split("/")[2]!;
   expect(assetId).toBeTruthy();

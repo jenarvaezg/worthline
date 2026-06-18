@@ -6,7 +6,7 @@
  * active assets table.
  */
 
-import { test, expect, addHolding } from "./fixtures";
+import { test, expect, addHolding, holdingRow, deleteHolding } from "./fixtures";
 
 test("delete → papelera → restore round-trip", async ({ page }) => {
   // 1. Create a dedicated asset for this test
@@ -18,38 +18,33 @@ test("delete → papelera → restore round-trip", async ({ page }) => {
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toHaveText("Activo añadido.");
 
-  // 2. The asset row is visible in the active table
-  await expect(page.getByRole("cell", { name: "Activo Para Borrar" })).toBeVisible();
+  // 2. The asset row is visible in the active listing
+  await expect(holdingRow(page, "Activo Para Borrar")).toBeVisible();
 
-  // 3. Find the row and trigger the two-step delete
-  const assetRow = page.getByRole("row", { name: /Activo Para Borrar/ });
-  const deleteDetails = assetRow.locator("details.confirmDelete");
-  // Open the confirm panel
-  await deleteDetails.locator("summary").click();
-  // Confirm deletion
-  await deleteDetails.getByRole("button", { name: "Confirmar" }).click();
+  // 3. Soft-delete via the row's ⋯ menu → nested two-step confirm.
+  await deleteHolding(page, "Activo Para Borrar");
 
   // 4. Redirected to /patrimonio with "deleted_recoverable" success message
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toContainText("Papelera");
 
-  // 5. Asset no longer in the active table
-  await expect(page.getByRole("cell", { name: "Activo Para Borrar" })).not.toBeVisible();
+  // 5. Asset no longer in the active listing
+  await expect(holdingRow(page, "Activo Para Borrar")).toHaveCount(0);
 
   // 6. Open the Papelera section (its own summary — the trash now also nests
   //    per-row "Eliminar definitivamente" and a "Vaciar papelera" summary).
-  const trashPanel = page.locator("details.trashPanel");
+  const trashPanel = page.locator("details.balanceTrash");
   await trashPanel.locator("> summary").click();
   await expect(page.getByText("Activo Para Borrar")).toBeVisible();
 
   // 7. Restore the asset
-  const trashRow = page.locator(".trashRow", { hasText: "Activo Para Borrar" });
+  const trashRow = page.locator(".balanceTrashRow", { hasText: "Activo Para Borrar" });
   await trashRow.getByRole("button", { name: "Restaurar" }).click();
 
   // 8. Back on /patrimonio with success message
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toContainText("Restaurado");
 
-  // 9. Asset is back in the active table
-  await expect(page.getByRole("cell", { name: "Activo Para Borrar" })).toBeVisible();
+  // 9. Asset is back in the active listing
+  await expect(holdingRow(page, "Activo Para Borrar")).toBeVisible();
 });

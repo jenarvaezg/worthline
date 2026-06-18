@@ -34,6 +34,39 @@ export const test = base.extend({
 
 export { expect };
 
+/**
+ * A holding's row in the /patrimonio balance board (#271). Scoped by its visible
+ * name so callers locate it the same way a user would — by reading the list.
+ */
+export function holdingRow(page: import("@playwright/test").Page, name: string) {
+  return page.locator(".balanceRow", { hasText: name });
+}
+
+/** Open a holding row's ⋯ actions popover (the menu hides Editar/Eliminar/ack). */
+export async function openHoldingMenu(
+  page: import("@playwright/test").Page,
+  name: string,
+) {
+  await page.getByLabel(`Acciones para ${name}`).click();
+}
+
+/** Soft-delete a holding from the listing: open the ⋯ menu → confirm in its nested details. */
+export async function deleteHolding(page: import("@playwright/test").Page, name: string) {
+  await openHoldingMenu(page, name);
+  const del = holdingRow(page, name).locator("details.confirmDelete");
+  await del.locator("summary").click();
+  await del.getByRole("button", { name: "Confirmar" }).click();
+}
+
+/** Override a row's warning from the listing: open the ⋯ menu → "Es intencional". */
+export async function acknowledgeWarning(
+  page: import("@playwright/test").Page,
+  name: string,
+) {
+  await openHoldingMenu(page, name);
+  await holdingRow(page, name).getByRole("button", { name: "Es intencional" }).click();
+}
+
 export async function addHolding(
   page: import("@playwright/test").Page,
   fields: {
