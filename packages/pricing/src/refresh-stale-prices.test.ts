@@ -358,7 +358,7 @@ describe("refreshStalePrices concurrency bounding (issue #202)", () => {
       ids.map((id) => stalePrice(id)),
       ids.map((id) => stooqAsset(id)),
       "2026-06-09T10:00:00Z",
-      (price) => seen.push(price.assetId),
+      { onRefreshed: (price) => seen.push(price.assetId) },
     );
     releaseAll();
     await promise;

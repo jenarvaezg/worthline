@@ -70,11 +70,27 @@ export interface RefreshStalePricesResult {
   failures: RefreshFailure[];
 }
 
+/** Options controlling which entries the refresh pass picks up (#317). */
+export interface RefreshOptions {
+  /**
+   * Force a refetch of EVERY asset with a provider symbol, ignoring cache
+   * staleness (the manual "Actualizar precios" button, #317 / ADR 0026). The
+   * cached row's freshness is bypassed entirely — `cacheEntries` is not consulted
+   * for selection. Replaces the old `forcedStaleCache` hack, which fabricated
+   * epoch-dated rows to defeat `selectStalePrices`.
+   */
+  force?: boolean;
+  /** Invoked once per refreshed asset, with the resulting cache row. */
+  onRefreshed?: (price: AssetPrice) => void;
+}
+
 /**
- * Refreshes all stale prices in the cache for assets that have a provider symbol.
+ * Refreshes prices in the cache for assets that have a provider symbol.
  *
- * - Selects stale entries from the cache (>24h old, non-manual, non-failed).
- * - Fetches fresh prices from the provider for those assets only.
+ * - By default selects only stale entries (>24h old, non-manual, non-failed).
+ *   With `force: true`, refetches every asset with a provider symbol regardless
+ *   of cache staleness (manual refresh, #317).
+ * - Fetches fresh prices from the provider for the selected assets only.
  * - Never throws: provider failures degrade to freshnessState "failed".
  * - Returns the refreshed AssetPrice entries so callers can persist them and
  *   compose with auto-snapshot (#49): run refreshStalePrices before snapshot
@@ -84,14 +100,20 @@ export async function refreshStalePrices(
   cacheEntries: AssetPrice[],
   assets: InvestmentAssetRef[],
   nowIso: string,
-  onRefreshed?: (price: AssetPrice) => void,
+  options: RefreshOptions = {},
 ): Promise<RefreshStalePricesResult> {
-  const staleEntries = selectStalePrices(cacheEntries, nowIso);
-  const staleAssetIds = new Set(staleEntries.map((e) => e.assetId));
+  const { force = false, onRefreshed } = options;
 
-  const refreshable = assets.filter(
-    (asset) => staleAssetIds.has(asset.id) && Boolean(asset.providerSymbol),
-  );
+  const refreshable = force
+    ? assets.filter((asset) => Boolean(asset.providerSymbol))
+    : (() => {
+        const staleAssetIds = new Set(
+          selectStalePrices(cacheEntries, nowIso).map((e) => e.assetId),
+        );
+        return assets.filter(
+          (asset) => staleAssetIds.has(asset.id) && Boolean(asset.providerSymbol),
+        );
+      })();
 
   if (refreshable.length === 0) {
     return { refreshed: [], updated: 0, failedSymbols: [], failures: [] };

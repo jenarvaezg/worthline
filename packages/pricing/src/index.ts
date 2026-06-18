@@ -1,5 +1,7 @@
 import type { AssetPrice, InvestmentPriceProvider, PriceSource } from "@worthline/domain";
 
+import { unwrapFetched } from "./registry";
+
 export type { AssetPrice, InvestmentPriceProvider, PriceSource };
 
 export interface PriceProviderContext {
@@ -63,8 +65,12 @@ export async function fetchAndCachePrice(
   ctx: PriceProviderContext,
 ): Promise<AssetPrice> {
   try {
+    // Fetch once; `fetched` is the cache-free success unwrap shared with
+    // `fetchPriceNow` (ADR 0026). The `failed`-row branch reads the RAW result
+    // for its reason, which `fetchPriceNow` deliberately collapses to `null`.
     const result = await provider.fetchPrice(ctx);
-    if (!result || isProviderFailure(result)) {
+    const fetched = unwrapFetched(result, provider.name);
+    if (!fetched) {
       return {
         assetId: ctx.assetId,
         currency: ctx.currency,
@@ -72,17 +78,17 @@ export async function fetchAndCachePrice(
         source: provider.name,
         fetchedAt: ctx.nowIso,
         freshnessState: "failed",
-        staleReason: result ? result.reason : "No price returned",
+        staleReason: isProviderFailure(result) ? result.reason : "No price returned",
       };
     }
     return {
       assetId: ctx.assetId,
-      currency: result.currency,
-      price: result.price,
-      source: result.source ?? provider.name,
+      currency: fetched.currency,
+      price: fetched.price,
+      source: fetched.source,
       fetchedAt: ctx.nowIso,
       freshnessState: "fresh",
-      ...(result.priceDate ? { priceDate: result.priceDate } : {}),
+      ...(fetched.priceDate ? { priceDate: fetched.priceDate } : {}),
     };
   } catch (err) {
     return {
@@ -106,12 +112,13 @@ export { stooqProvider } from "./stooq";
 export { yahooProvider } from "./yahoo";
 export {
   fallbackChains,
+  fetchPriceNow,
   fetchWithFallback,
   providerRegistry,
   resolveProvider,
   runFallbackChain,
 } from "./registry";
-export type { RegisteredSource } from "./registry";
+export type { FetchedPrice, RegisteredSource } from "./registry";
 export { refreshStalePrices } from "./refresh-stale-prices";
 export {
   getCollectedItems,
@@ -171,5 +178,6 @@ export type {
 } from "./numista-revalue";
 export type {
   InvestmentAssetRef,
+  RefreshOptions,
   RefreshStalePricesResult,
 } from "./refresh-stale-prices";
