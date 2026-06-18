@@ -17,10 +17,20 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// One temporary DB file per process invocation — discarded when the OS cleans
-// up the temp dir. Never touches the developer's real data.
-const e2eDbDir = mkdtempSync(join(tmpdir(), "worthline-e2e-"));
-const e2eDbPath = join(e2eDbDir, "test.sqlite");
+// One temporary DB file for the WHOLE run — discarded when the OS cleans up the
+// temp dir. Never touches the developer's real data. Playwright re-imports this
+// config in the main runner AND in every worker process, so the path must be
+// computed once and shared: we carry it through a dedicated internal env var
+// (set by the main process, inherited by workers) rather than mkdtemp-ing per
+// import. Without this, a worker would create a fresh empty DB and a spec that
+// opens the store directly (e.g. seeding a price, journey 32) would not see the
+// data the webServer wrote. We key off our OWN var, never the public
+// WORTHLINE_DB_PATH, so a developer's pre-set WORTHLINE_DB_PATH can never make
+// the suite run against real data.
+const e2eDbPath =
+  process.env.WORTHLINE_E2E_DB_PATH ??
+  join(mkdtempSync(join(tmpdir(), "worthline-e2e-")), "test.sqlite");
+process.env.WORTHLINE_E2E_DB_PATH = e2eDbPath;
 
 // Overridable so concurrent checkouts (e.g. agent worktrees) can run the suite
 // side by side without colliding on the same port.
