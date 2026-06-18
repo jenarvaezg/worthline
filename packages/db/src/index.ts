@@ -516,27 +516,25 @@ export interface WorthlineStore {
     opts?: { today?: string },
   ) => void;
   /**
-   * Debt dated-fact seam (ADR 0020): patch ONE balance anchor AND ripple from the
-   * earlier of the old/new date, atomically (the `anchor` kind). The caller passes
-   * the previous anchor date; the seam picks the earlier date, applies the future
-   * guard, and ripples. Returns 1 if updated, 0 if not found. Wraps
-   * `liabilities.updateBalanceAnchor`.
+   * Debt dated-fact seam (ADR 0020 / 0025): patch ONE balance anchor AND ripple
+   * from the earlier of the old/new date, atomically (the `anchor` kind). The seam
+   * reads the OLD date + owning liability from the row it selects by id inside the
+   * transaction, picks the earlier date, applies the future guard, and ripples.
+   * Returns 1 if updated, 0 if not found. Wraps `liabilities.updateBalanceAnchor`.
    */
   updateBalanceAnchorAndRipple: (
     anchorId: string,
     input: UpdateBalanceAnchorInput,
-    opts: { liabilityId: string; previousAnchorDate: string; today?: string },
+    opts?: { today?: string },
   ) => number;
   /**
-   * Debt dated-fact seam (ADR 0020): delete ONE balance anchor AND recalculate
-   * snapshots from its date forward, atomically (the `anchor` kind). The caller
-   * passes the removed anchor date; the future guard rides the seam. Returns 1 if
+   * Debt dated-fact seam (ADR 0020 / 0025): delete ONE balance anchor AND
+   * recalculate snapshots from its date forward, atomically (the `anchor` kind).
+   * The seam reads the removed date + owning liability from the row it selects by
+   * id inside the transaction; the future guard rides the seam. Returns 1 if
    * removed, 0 if not found. Wraps `liabilities.deleteBalanceAnchor`.
    */
-  deleteBalanceAnchorAndRipple: (
-    anchorId: string,
-    opts: { liabilityId: string; previousAnchorDate: string; today?: string },
-  ) => number;
+  deleteBalanceAnchorAndRipple: (anchorId: string, opts?: { today?: string }) => number;
   /**
    * One-shot backfill (ADR 0012, PRD #107): generate a historical snapshot for
    * every past operation date that has no snapshot yet, across all scopes.
@@ -1418,13 +1416,24 @@ function buildStore(
       });
     },
     updateBalanceAnchorAndRipple: (anchorId, input, opts) => {
-      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       return ctx.transaction(() => {
-        const changes = liabilityStore.updateBalanceAnchor(anchorId, input);
-        if (changes === 0) return 0;
-        const newDate = input.anchorDate ?? opts.previousAnchorDate;
-        const fromDateKey =
-          opts.previousAnchorDate < newDate ? opts.previousAnchorDate : newDate;
+        // The seam reads the OLD date + owning liability from the row by id inside
+        // the transaction (ADR 0025): the caller no longer pre-reads them.
+        const {
+          changes,
+          anchorDate: previousAnchorDate,
+          liabilityId,
+        } = liabilityStore.updateBalanceAnchor(anchorId, input);
+        if (
+          changes === 0 ||
+          previousAnchorDate === undefined ||
+          liabilityId === undefined
+        )
+          return 0;
+        const newDate = input.anchorDate ?? previousAnchorDate;
+        // From-date math unchanged: the earlier of the old/new date.
+        const fromDateKey = previousAnchorDate < newDate ? previousAnchorDate : newDate;
         if (fromDateKey <= today) {
           const workspace = getWorkspace();
           if (workspace) {
@@ -1435,7 +1444,7 @@ function buildStore(
               {
                 fromDateKey,
                 kind: "anchor",
-                liabilityId: opts.liabilityId,
+                liabilityId,
                 today,
               },
             );
@@ -1445,11 +1454,23 @@ function buildStore(
       });
     },
     deleteBalanceAnchorAndRipple: (anchorId, opts) => {
-      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       return ctx.transaction(() => {
-        const changes = liabilityStore.deleteBalanceAnchor(anchorId);
-        if (changes === 0) return 0;
-        if (opts.previousAnchorDate <= today) {
+        // The seam reads the removed date + owning liability from the row by id
+        // inside the transaction (ADR 0025): the caller no longer pre-reads them.
+        const {
+          changes,
+          anchorDate: previousAnchorDate,
+          liabilityId,
+        } = liabilityStore.deleteBalanceAnchor(anchorId);
+        if (
+          changes === 0 ||
+          previousAnchorDate === undefined ||
+          liabilityId === undefined
+        )
+          return 0;
+        // From-date unchanged: the removed anchor's own date.
+        if (previousAnchorDate <= today) {
           const workspace = getWorkspace();
           if (workspace) {
             rippleHistoricalSnapshotsForDebt(
@@ -1457,9 +1478,9 @@ function buildStore(
               workspace,
               store.snapshots.saveSnapshot,
               {
-                fromDateKey: opts.previousAnchorDate,
+                fromDateKey: previousAnchorDate,
                 kind: "anchor",
-                liabilityId: opts.liabilityId,
+                liabilityId,
                 today,
               },
             );

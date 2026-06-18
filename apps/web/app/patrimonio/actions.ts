@@ -1537,23 +1537,16 @@ export async function updateBalanceAnchorAction(
       return guard;
     }
 
-    // Persist + ripple ride the debt seam (ADR 0020): it ripples from the earlier
-    // of the old/new date and guards the future. The previous anchor date is read
-    // here and passed in (defaulting to the new date when the row is gone).
-    const previous = store.liabilities
-      .readBalanceAnchors(id)
-      .find((a) => a.id === anchorId);
+    // Persist + ripple ride the debt seam (ADR 0020 / 0025): it reads the OLD
+    // anchor date behind the seam, ripples from the earlier of the old/new date,
+    // and guards the future. The action no longer pre-reads the row.
     const changes = store.updateBalanceAnchorAndRipple(
       anchorId,
       {
         anchorDate: parsed.command.anchorDate,
         balanceMinor: parsed.command.balanceMinor,
       },
-      {
-        liabilityId: id,
-        previousAnchorDate: previous?.anchorDate ?? parsed.command.anchorDate,
-        today,
-      },
+      { today },
     );
 
     if (changes === 0) {
@@ -1604,17 +1597,10 @@ export async function deleteBalanceAnchorAction(
       return guard;
     }
 
-    // Delete + ripple ride the debt seam (ADR 0020): it recalculates from the
-    // removed anchor's date and guards the future. The previous anchor date is
-    // read here and passed in (defaulting to today when the row is gone).
-    const removed = store.liabilities
-      .readBalanceAnchors(id)
-      .find((a) => a.id === anchorId);
-    const changes = store.deleteBalanceAnchorAndRipple(anchorId, {
-      liabilityId: id,
-      previousAnchorDate: removed?.anchorDate ?? today,
-      today,
-    });
+    // Delete + ripple ride the debt seam (ADR 0020 / 0025): it reads the removed
+    // anchor's date behind the seam, recalculates from it, and guards the future.
+    // The action no longer pre-reads the row.
+    const changes = store.deleteBalanceAnchorAndRipple(anchorId, { today });
 
     if (changes === 0) {
       return {
