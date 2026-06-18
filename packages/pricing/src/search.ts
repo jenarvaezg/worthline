@@ -1,5 +1,6 @@
-import type { InvestmentPriceProvider } from "@worthline/domain";
+import type { Instrument, InvestmentPriceProvider } from "@worthline/domain";
 
+import { coingeckoBaseUrl } from "./coingecko";
 import { resolveFinectPlan } from "./finect";
 
 /**
@@ -70,6 +71,50 @@ export async function searchYahooSymbols(query: string): Promise<SymbolCandidate
   }
 }
 
+interface CoinGeckoSearchResponse {
+  coins?: Array<{
+    id?: string;
+    name?: string;
+    symbol?: string;
+  }>;
+}
+
+/**
+ * Search CoinGecko's coin index by name or ticker. Crypto is priced by the
+ * CoinGecko provider keyed on the lowercase coin **id** (e.g. `bitcoin`), so the
+ * candidate's `symbol` is that id — not the exchange ticker — letting the alta
+ * flow store exactly what the price fetch keys on. The ticker (BTC) is surfaced
+ * as display metadata. Goes through `coingeckoBaseUrl()` so a test/e2e stub can
+ * redirect it.
+ *
+ * Never throws: a network error or non-OK response degrades to no results.
+ */
+export async function searchCoinGeckoSymbols(query: string): Promise<SymbolCandidate[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  try {
+    const url = `${coingeckoBaseUrl()}/search?query=${encodeURIComponent(trimmed)}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+
+    if (!res.ok) return [];
+
+    const data = (await res.json()) as CoinGeckoSearchResponse;
+
+    return (data.coins ?? [])
+      .filter((c) => c.id)
+      .map((c) => ({
+        provider: "coingecko" as const,
+        symbol: c.id!,
+        name: c.name ?? c.id!,
+        quoteType: "CRYPTOCURRENCY",
+        ...(c.symbol ? { exchange: c.symbol } : {}),
+      }));
+  } catch {
+    return [];
+  }
+}
+
 /**
  * A Finect pension-plan slug looks like `<DGS code>-<Manager>`, e.g.
  * `N5394-Myinvestor`. Finect has no server-queryable search API, so the only
@@ -97,15 +142,40 @@ async function resolveFinectCandidate(query: string): Promise<SymbolCandidate | 
 }
 
 /**
- * Search across providers for symbols matching a name, ISIN, or Finect slug.
+ * Search for symbols matching a name, ISIN, or Finect slug, routed by the
+ * selected instrument so each holding sees only its provider's hits (#304):
  *
- * - Yahoo handles free-text and ISIN search for funds, ETFs, stocks, indices.
- * - Finect has no search API; when the query looks like a plan slug it is
- *   resolved directly and surfaced (confirmed by its live NAV) at the top.
+ * - `crypto` → CoinGecko only (native coins; suppresses Yahoo equity/ETF noise).
+ * - `pension_plan` → Finect only (a slug resolved against its live NAV).
+ * - `fund`/`etf`/`stock`/`index` → Yahoo only (free-text and ISIN search).
+ * - no/unknown instrument → Yahoo + Finect-slug, the legacy mixed behaviour.
  *
  * Never throws: each provider degrades independently to no results.
  */
-export async function searchSymbols(query: string): Promise<SymbolCandidate[]> {
+export async function searchSymbols(
+  query: string,
+  instrument?: Instrument,
+): Promise<SymbolCandidate[]> {
+  if (instrument === "crypto") {
+    return searchCoinGeckoSymbols(query);
+  }
+
+  if (instrument === "pension_plan") {
+    const finect = looksLikeFinectSlug(query)
+      ? await resolveFinectCandidate(query)
+      : null;
+    return finect ? [finect] : [];
+  }
+
+  if (
+    instrument === "fund" ||
+    instrument === "etf" ||
+    instrument === "stock" ||
+    instrument === "index"
+  ) {
+    return searchYahooSymbols(query);
+  }
+
   const [yahoo, finect] = await Promise.all([
     searchYahooSymbols(query),
     looksLikeFinectSlug(query) ? resolveFinectCandidate(query) : Promise.resolve(null),

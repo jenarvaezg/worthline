@@ -427,6 +427,7 @@ function MethodFields({
         <>
           <SymbolSearch
             basePath="/patrimonio/anadir"
+            instrument={id}
             pickedSymbol={
               id === selectedInstrument
                 ? typeof resolvedParams["pfSymbol"] === "string"
