@@ -1,0 +1,11 @@
+[package]
+name = "worthline-core"
+version = "0.1.0"
+edition = "2021"
+description = "Portable Rust core for worthline's net-worth math. First slice: the French amortization engine (PRD #280, ADR 0019). Pure, no I/O, integer-minor-unit outputs at decimal parity with the big.js-backed TS engine."
+license = "MIT"
+publish = false
+
+[dependencies]
+bigdecimal = "0.4"
+num-traits = "0.2"
