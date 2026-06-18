@@ -46,6 +46,36 @@ jobs:
       - name: Build
         run: npm run build
 
+  rust:
+    name: Rust core (fmt · clippy · test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # Toolchain for the worthline-core crate (PRD #280). The wasm32 target and
+      # wasm-pack are installed here as prep for the WASM binding (#290); this
+      # lane itself builds and tests the crate natively (incl. the #287 parity gate).
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+
+      - name: Format check (rustfmt)
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Unit + parity tests (cargo test)
+        run: cargo test
+
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
