@@ -10,7 +10,7 @@
  * holding's own ficha (/patrimonio/[id]/editar).
  */
 
-import { test, expect, addHolding } from "./fixtures";
+import { test, expect, addHolding, holdingRow } from "./fixtures";
 
 test("record an operation, then delete it", async ({ page }) => {
   // 1. New investment with a manual price (no ticker → no network).
@@ -23,9 +23,9 @@ test("record an operation, then delete it", async ({ page }) => {
 
   // 2. Open the investment's ficha from the unified Patrimonio list.
   await page.goto("/patrimonio");
-  await page
-    .getByRole("row", { name: /Inv Op Borrado/ })
+  await holdingRow(page, "Inv Op Borrado")
     .getByRole("link", { name: "Inv Op Borrado" })
+    .first()
     .click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
   await expect(

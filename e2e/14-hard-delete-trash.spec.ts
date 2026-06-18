@@ -6,7 +6,7 @@
  * restorable). The trash is the only doorway to a hard delete.
  */
 
-import { test, expect, addHolding } from "./fixtures";
+import { test, expect, addHolding, holdingRow, deleteHolding } from "./fixtures";
 
 test("trash → eliminar definitivamente → gone for good", async ({ page }) => {
   // 1. Create a dedicated asset
@@ -17,17 +17,14 @@ test("trash → eliminar definitivamente → gone for good", async ({ page }) =>
   });
   await expect(page).toHaveURL(/\/patrimonio/);
 
-  // 2. Soft-delete it into the Papelera (two-step confirm in its row)
-  const assetRow = page.getByRole("row", { name: /Activo Borrado Duro/ });
-  const deleteDetails = assetRow.locator("details.confirmDelete");
-  await deleteDetails.locator("summary").click();
-  await deleteDetails.getByRole("button", { name: "Confirmar" }).click();
+  // 2. Soft-delete it into the Papelera (⋯ menu → nested two-step confirm).
+  await deleteHolding(page, "Activo Borrado Duro");
   await expect(page.getByRole("status")).toContainText("Papelera");
 
   // 3. Open the Papelera and hard-delete the item
-  const trashPanel = page.locator("details.trashPanel");
+  const trashPanel = page.locator("details.balanceTrash");
   await trashPanel.locator("summary").first().click();
-  const trashRow = page.locator(".trashRow", { hasText: "Activo Borrado Duro" });
+  const trashRow = page.locator(".balanceTrashRow", { hasText: "Activo Borrado Duro" });
   const hardDelete = trashRow.locator("details.confirmDelete");
   await hardDelete.locator("summary").click();
   await hardDelete.getByRole("button", { name: "Confirmar borrado definitivo" }).click();
@@ -36,11 +33,11 @@ test("trash → eliminar definitivamente → gone for good", async ({ page }) =>
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toContainText("definitivamente");
 
-  await page.locator("details.trashPanel").locator("summary").first().click();
-  await expect(page.locator(".trashRow", { hasText: "Activo Borrado Duro" })).toHaveCount(
-    0,
-  );
+  await page.locator("details.balanceTrash").locator("summary").first().click();
+  await expect(
+    page.locator(".balanceTrashRow", { hasText: "Activo Borrado Duro" }),
+  ).toHaveCount(0);
 
-  // 5. And it is not in the active table either
-  await expect(page.getByRole("cell", { name: "Activo Borrado Duro" })).not.toBeVisible();
+  // 5. And it is not in the active listing either
+  await expect(holdingRow(page, "Activo Borrado Duro")).toHaveCount(0);
 });

@@ -6,7 +6,7 @@
  * and is retractable.
  */
 
-import { test, expect, addHolding } from "./fixtures";
+import { test, expect, addHolding, openHoldingMenu } from "./fixtures";
 
 test("warning lifecycle: zero asset → warning badge → override → listed in ajustes → retractable", async ({
   page,
@@ -34,8 +34,10 @@ test("warning lifecycle: zero asset → warning badge → override → listed in
   await page.goto("/");
   await expect(page.getByRole("alert", { name: "Avisos" })).toBeVisible();
 
-  // 4. Back on /patrimonio, find the "Es intencional" button inside the specific row
+  // 4. Back on /patrimonio, open the row's ⋯ menu and find the "Es intencional"
+  //    button inside the specific row (#271 moved the action into the popover).
   await page.goto("/patrimonio");
+  await openHoldingMenu(page, "Activo Cero");
   const targetRow = page.locator(`#${assetId}`);
   const esIntencionalBtn = targetRow.getByRole("button", { name: "Es intencional" });
   await expect(esIntencionalBtn).toBeVisible();
@@ -44,8 +46,9 @@ test("warning lifecycle: zero asset → warning badge → override → listed in
   await page.goto("/ajustes");
   const beforeCount = await page.locator(".overrideRow").count();
 
-  // 6. Acknowledge the warning on that specific row
+  // 6. Acknowledge the warning on that specific row (open its ⋯ menu first).
   await page.goto("/patrimonio");
+  await openHoldingMenu(page, "Activo Cero");
   await page
     .locator(`#${assetId}`)
     .getByRole("button", { name: "Es intencional" })

@@ -2,7 +2,7 @@
  * Journey 3: Create asset → success lands at /patrimonio#<id> with success message
  */
 
-import { test, expect, addHolding } from "./fixtures";
+import { test, expect, addHolding, holdingRow } from "./fixtures";
 
 test("create asset: form → success banner → anchored row in /patrimonio", async ({
   page,
@@ -17,8 +17,8 @@ test("create asset: form → success banner → anchored row in /patrimonio", as
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toHaveText("Activo añadido.");
 
-  // The asset row must exist in the table
-  await expect(page.getByRole("cell", { name: "Cuenta ING" })).toBeVisible();
+  // The asset row must exist in the listing
+  await expect(holdingRow(page, "Cuenta ING")).toBeVisible();
 
   // URL should contain an anchor fragment pointing to the new asset row
   const url = page.url();

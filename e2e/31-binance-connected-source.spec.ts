@@ -36,10 +36,10 @@ test("binance: connect (stubbed API) → market + term-locked holdings → token
   //    (3 ETH × 2 000 = 6 000 €), tagged "(bloqueado)".
   await page.goto("/patrimonio");
   const marketRow = page
-    .getByRole("row")
+    .locator(".balanceRow")
     .filter({ has: page.getByRole("link", { name: "Binance", exact: true }) });
   await expect(marketRow).toContainText(/25\.000/);
-  const lockedRow = page.getByRole("row").filter({
+  const lockedRow = page.locator(".balanceRow").filter({
     has: page.getByRole("link", { name: "Binance (bloqueado)", exact: true }),
   });
   // es-ES omits the thousands separator below 10 000, so 6 000 renders "6000 €".

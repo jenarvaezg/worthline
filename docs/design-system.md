@@ -18,7 +18,7 @@ forms POST, `<details>` y `<title>` nativos.
 | `--paper`                                | `#eef2ef`              | Fondo de página (con cuadrícula sutil)                                                                           |
 | `--panel`                                | `#fffdf7`              | Superficie de tarjeta                                                                                            |
 | `--ink`                                  | `#17201e`              | Texto principal, botón primario, nav activa                                                                      |
-| `--ink-panel`                            | `#1d2724`              | **El único panel oscuro**: el hero del dashboard                                                                 |
+| `--ink-panel`                            | `#1d2724`              | Panel oscuro de cierre: hero del dashboard + pie de balance de /patrimonio (§3)                                  |
 | `--ink-panel-text` / `--ink-panel-muted` | `#e8ece7` / `#9fb0a9`  | Texto sobre el panel oscuro                                                                                      |
 | `--muted`                                | `#51605b`              | Texto secundario y labels (≥4.5:1 — testeado)                                                                    |
 | `--line` / `--line-strong`               | `#78877f` / `#5d6c66`  | Bordes con significado: controles de formulario, separadores funcionales (≥3:1 WCAG 1.4.11 — `contrast.test.ts`) |
@@ -52,8 +52,11 @@ explícito ("+3,6 %").
 
 - Tarjeta estándar: `background: var(--panel); border: 1px solid
 var(--line-soft); border-radius: var(--radius); box-shadow: var(--shadow)`.
-- **Un solo panel oscuro por app**: el hero del dashboard (`.heroPanel`).
-  Contiene el dato por el que existe el producto; nada más compite con él.
+- **El panel oscuro (`--ink-panel`) se reserva para la cifra que cierra/resume
+  una superficie**: el hero del dashboard (`.heroPanel`, el patrimonio neto) y el
+  pie de balance de `/patrimonio` (`.balanceRecon`, #271 — `Activos − Pasivos =
+Neto`). Ambos cierran su página con el dato que la define; ninguna otra
+  superficie compite con ellos. No introducir un tercer panel oscuro sin un ADR.
 - El footer de persistencia es una línea de texto muted **sin cromo de
   tarjeta** — estado, no contenido.
 - Separadores internos de tarjeta: `--hairline`. Bordes de formulario:
