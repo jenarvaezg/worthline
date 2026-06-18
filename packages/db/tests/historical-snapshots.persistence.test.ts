@@ -128,7 +128,7 @@ describe("historical snapshots from operations", () => {
     store.close();
   });
 
-  test("deleting a backdated operation ripples snapshots on or after its date", () => {
+  test("deleting a backdated operation prunes its now-orphaned snapshot and ripples later ones (#305)", () => {
     const store = createInMemoryStore();
     seed(store);
     // A cash asset keeps every snapshot non-empty after the fund is removed.
@@ -158,9 +158,13 @@ describe("historical snapshots from operations", () => {
     });
     expect(deleted).not.toBeNull();
 
-    // 2024-01-10: fund no longer has an operation ≤ that date → cash only.
-    expect(grossAt(store, "2024-01-10")).toBe(1_000_00);
-    // 2024-03-01: now only the 5-unit buy remains (priced at captured 200) + cash.
+    // 2024-01-10 was a backfilled (histsnap_) snapshot whose ONLY basis was this
+    // operation. With it gone, no operation justifies the date, so the snapshot is
+    // pruned outright (#305) — not left as a cash-only fossil the per-day bridge
+    // would misread as a fund dip.
+    expect(grossAt(store, "2024-01-10")).toBeUndefined();
+    // 2024-03-01: still justified by op_mar — only the 5-unit buy remains
+    // (priced at captured 200) + cash.
     expect(grossAt(store, "2024-03-01")).toBe(5 * 200_00 + 1_000_00);
     store.close();
   });

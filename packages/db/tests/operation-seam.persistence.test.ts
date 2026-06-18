@@ -249,8 +249,10 @@ describe("deleteOperationAndRipple (operation seam, ADR 0020)", () => {
     // The persist (delete) happened.
     expect(deleted).not.toBeNull();
     expect(store.operations.readOperations("fund")).toHaveLength(1);
-    // The ripple happened: 2024-01-10 now has cash only; 2024-03-01 the 5-unit buy.
-    expect(grossAt(store, "2024-01-10")).toBe(1_000_00);
+    // The ripple happened: 2024-01-10 was a backfilled snapshot justified ONLY by
+    // op_jan, so deleting it prunes the now-orphaned snapshot (#305) rather than
+    // leaving a cash-only fossil. 2024-03-01 (still justified by op_mar) survives.
+    expect(grossAt(store, "2024-01-10")).toBeUndefined();
     expect(grossAt(store, "2024-03-01")).toBe(5 * 200_00 + 1_000_00);
     store.close();
   });
