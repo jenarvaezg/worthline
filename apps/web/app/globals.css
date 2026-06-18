@@ -2490,8 +2490,9 @@ code {
   color: var(--red);
 }
 
-/* Reconciliation footer: Activos − Pasivos = Patrimonio neto, on the one dark panel
-   surface this list is allowed to borrow (the hero owns the only OTHER one). */
+/* Reconciliation footer: Activos − Pasivos = Patrimonio neto. A standard light card
+   (the dashboard hero keeps the app's only dark panel); the net stands out by size
+   and weight, and a negative net reads red per the design system. */
 .balanceRecon {
   grid-column: 1 / -1;
   display: flex;
@@ -2499,8 +2500,8 @@ code {
   gap: 10px 28px;
   align-items: baseline;
   justify-content: space-between;
-  background: var(--ink-panel);
-  color: var(--ink-panel-text);
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 16px 20px;
@@ -2510,7 +2511,7 @@ code {
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--ink-panel-muted);
+  color: var(--muted);
   font-weight: 650;
 }
 
@@ -2531,7 +2532,7 @@ code {
   font-size: 0.66rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--ink-panel-muted);
+  color: var(--muted);
 }
 
 .balanceReconValue {
@@ -2540,7 +2541,7 @@ code {
 }
 
 .balanceReconOp {
-  color: var(--ink-panel-muted);
+  color: var(--muted);
   font-weight: 600;
 }
 
@@ -2550,7 +2551,7 @@ code {
 }
 
 .balanceReconNeg {
-  color: var(--neg-on-dark);
+  color: var(--red);
 }
 
 /* Papelera — part of the board footer, not a stray panel. */
