@@ -758,7 +758,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
     const changes = store.updateInterestRateRevisionAndRipple(
       "rev1",
       { revisionDate: "2026-03-15" },
-      { liabilityId: "mortgage", previousRevisionDate: "2026-04-15", today: TODAY },
+      { today: TODAY },
     );
 
     expect(changes).toBe(1);
@@ -774,6 +774,73 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
     store.close();
   });
 
+  test("editing a revision's date derives the ripple from-date behind the seam (ADR 0025)", () => {
+    const store = createInMemoryStore();
+    seedAmortizable(store);
+    const planId = store.liabilities.readAmortizationPlan("mortgage")!.id;
+    store.addInterestRateRevisionAndRipple(
+      { id: "rev1", newAnnualInterestRate: "0.06", planId, revisionDate: "2026-04-15" },
+      { liabilityId: "mortgage", today: TODAY },
+    );
+    // 2026-05-15 is after the original revision (04-15) → it carries its effect.
+    const before0515 = debtsAt(store, "2026-05-15")!;
+
+    // Move the revision EARLIER (04-15 → 03-15) WITHOUT telling the seam the old
+    // date. The from-date must be min(old, new) = the OLD date (2026-04-15) so the
+    // 04-15 snapshot recomputes too; if the seam wrongly rippled only from the new
+    // date it would still recalc 04-15 here, so we also assert 05-15 moves (the
+    // new-rate curve now bites a month earlier across the window).
+    const changes = store.updateInterestRateRevisionAndRipple(
+      "rev1",
+      { revisionDate: "2026-03-15" },
+      { today: TODAY },
+    );
+
+    expect(changes).toBe(1);
+    for (const dateKey of ["2026-03-15", "2026-04-15", "2026-05-15"]) {
+      expect(debtsAt(store, dateKey)).toBe(
+        store.liabilities.debtBalanceAtDate("mortgage", dateKey),
+      );
+    }
+    expect(debtsAt(store, "2026-05-15")).not.toBe(before0515);
+    store.close();
+  });
+
+  test("editing a repayment's date derives the ripple from-date behind the seam (ADR 0025)", () => {
+    const store = createInMemoryStore();
+    seedAmortizable(store);
+    const planId = store.liabilities.readAmortizationPlan("mortgage")!.id;
+    store.addEarlyRepaymentAndRipple(
+      {
+        amountMinor: 20_000_00,
+        id: "erp1",
+        mode: "reduce-payment",
+        planId,
+        repaymentDate: "2026-04-15",
+      },
+      { liabilityId: "mortgage", today: TODAY },
+    );
+    const before0515 = debtsAt(store, "2026-05-15")!;
+
+    // Move the repayment EARLIER (04-15 → 03-15) WITHOUT telling the seam the old
+    // date. The from-date must be min(old, new) = the OLD date (2026-04-15), so the
+    // window from 03-15 forward recomputes against the moved-repayment curve.
+    const changes = store.updateEarlyRepaymentAndRipple(
+      "erp1",
+      { repaymentDate: "2026-03-15" },
+      { today: TODAY },
+    );
+
+    expect(changes).toBe(1);
+    for (const dateKey of ["2026-03-15", "2026-04-15", "2026-05-15"]) {
+      expect(debtsAt(store, dateKey)).toBe(
+        store.liabilities.debtBalanceAtDate("mortgage", dateKey),
+      );
+    }
+    expect(debtsAt(store, "2026-05-15")).not.toBe(before0515);
+    store.close();
+  });
+
   test("deleteInterestRateRevisionAndRipple recalculates the snapshots from its date", () => {
     const store = createInMemoryStore();
     seedAmortizable(store);
@@ -783,11 +850,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
       { liabilityId: "mortgage", today: TODAY },
     );
 
-    const changes = store.deleteInterestRateRevisionAndRipple("rev1", {
-      liabilityId: "mortgage",
-      previousRevisionDate: "2026-03-15",
-      today: TODAY,
-    });
+    const changes = store.deleteInterestRateRevisionAndRipple("rev1", { today: TODAY });
 
     expect(changes).toBe(1);
     // With the revision gone, on/after its date matches the plain-plan curve.
@@ -817,7 +880,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
     const changes = store.updateEarlyRepaymentAndRipple(
       "erp1",
       { repaymentDate: "2026-03-15" },
-      { liabilityId: "mortgage", previousRepaymentDate: "2026-04-15", today: TODAY },
+      { today: TODAY },
     );
 
     expect(changes).toBe(1);
@@ -842,11 +905,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
       { liabilityId: "mortgage", today: TODAY },
     );
 
-    const changes = store.deleteEarlyRepaymentAndRipple("erp1", {
-      liabilityId: "mortgage",
-      previousRepaymentDate: "2026-03-15",
-      today: TODAY,
-    });
+    const changes = store.deleteEarlyRepaymentAndRipple("erp1", { today: TODAY });
 
     expect(changes).toBe(1);
     for (const dateKey of ["2026-03-15", "2026-04-15", "2026-05-15"]) {

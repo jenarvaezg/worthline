@@ -1157,23 +1157,16 @@ export async function updateInterestRateRevisionAction(
       return guard;
     }
 
-    // Persist + ripple ride the debt seam (ADR 0020): it ripples from the earlier
-    // of the old/new date and guards the future. The previous revision date is
-    // read here and passed in (defaulting to the new date when the row is gone).
-    const previous = store.liabilities
-      .readInterestRateRevisions(planId)
-      .find((r) => r.id === revisionId);
+    // Persist + ripple ride the debt seam (ADR 0020 / 0025): it reads the OLD
+    // revision date behind the seam, ripples from the earlier of the old/new date,
+    // and guards the future. The action no longer pre-reads the row.
     const changes = store.updateInterestRateRevisionAndRipple(
       revisionId,
       {
         newAnnualInterestRate: parsed.command.newAnnualInterestRate,
         revisionDate: parsed.command.revisionDate,
       },
-      {
-        liabilityId: id,
-        previousRevisionDate: previous?.revisionDate ?? parsed.command.revisionDate,
-        today,
-      },
+      { today },
     );
 
     if (changes === 0) {
@@ -1225,17 +1218,10 @@ export async function deleteInterestRateRevisionAction(
       return guard;
     }
 
-    // Delete + ripple ride the debt seam (ADR 0020): it recalculates from the
-    // removed revision's date and guards the future. A not-found delete (the row
-    // is gone) ripples nothing — passing the read date keeps that guard intact.
-    const removed = store.liabilities
-      .readInterestRateRevisions(planId)
-      .find((r) => r.id === revisionId);
-    const changes = store.deleteInterestRateRevisionAndRipple(revisionId, {
-      liabilityId: id,
-      previousRevisionDate: removed?.revisionDate ?? today,
-      today,
-    });
+    // Delete + ripple ride the debt seam (ADR 0020 / 0025): it reads the removed
+    // revision's date behind the seam, recalculates from it, and guards the future.
+    // The action no longer pre-reads the row.
+    const changes = store.deleteInterestRateRevisionAndRipple(revisionId, { today });
 
     if (changes === 0) {
       return {
@@ -1348,12 +1334,9 @@ export async function updateEarlyRepaymentAction(
       return guard;
     }
 
-    // Persist + ripple ride the debt seam (ADR 0020): it ripples from the earlier
-    // of the old/new date and guards the future. The previous repayment date is
-    // read here and passed in (defaulting to the new date when the row is gone).
-    const previous = store.liabilities
-      .readEarlyRepayments(planId)
-      .find((r) => r.id === repaymentId);
+    // Persist + ripple ride the debt seam (ADR 0020 / 0025): it reads the OLD
+    // repayment date behind the seam, ripples from the earlier of the old/new date,
+    // and guards the future. The action no longer pre-reads the row.
     const changes = store.updateEarlyRepaymentAndRipple(
       repaymentId,
       {
@@ -1361,11 +1344,7 @@ export async function updateEarlyRepaymentAction(
         mode: parsed.command.mode,
         repaymentDate: parsed.command.repaymentDate,
       },
-      {
-        liabilityId: id,
-        previousRepaymentDate: previous?.repaymentDate ?? parsed.command.repaymentDate,
-        today,
-      },
+      { today },
     );
 
     if (changes === 0) {
@@ -1417,18 +1396,12 @@ export async function deleteEarlyRepaymentAction(
       return guard;
     }
 
-    // Delete + ripple ride the debt seam (ADR 0020): deleting a dated fact
+    // Delete + ripple ride the debt seam (ADR 0020 / 0025): deleting a dated fact
     // recalculates from its date forward without generating (the
-    // "amortizable-revision" kind — the curve no longer carries the repayment);
-    // the future guard moves behind the seam.
-    const removed = store.liabilities
-      .readEarlyRepayments(planId)
-      .find((r) => r.id === repaymentId);
-    const changes = store.deleteEarlyRepaymentAndRipple(repaymentId, {
-      liabilityId: id,
-      previousRepaymentDate: removed?.repaymentDate ?? today,
-      today,
-    });
+    // "amortizable-revision" kind — the curve no longer carries the repayment). The
+    // seam reads the removed repayment's date behind the seam and guards the future;
+    // the action no longer pre-reads the row.
+    const changes = store.deleteEarlyRepaymentAndRipple(repaymentId, { today });
 
     if (changes === 0) {
       return {
