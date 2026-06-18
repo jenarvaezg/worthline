@@ -360,18 +360,19 @@ export async function batchValueUpdateAction(
 
   const result = runWith((store) => {
     const allAssets = store.assets.readAssets();
-    const derivedIds = new Set(
-      allAssets.filter((a) => !isValueUpdateEligible(a)).map((a) => a.id),
-    );
+    // The catalog seam decides who the pass hand-updates: every holding whose
+    // valuation method is not derived (ADR 0014) — no inline instrument list.
     const manualAssets = allAssets.filter(isValueUpdateEligible);
+    const assetsById = new Map(allAssets.map((a) => [a.id, a]));
     const liabilities = store.liabilities.readLiabilities();
 
     // Reject submissions that name a derived holding (investment or connected-source
     // coin collection) — their value is computed from sub-detail, never hand-set.
+    // Ask the catalog seam per submitted holding instead of an inline id-set.
     for (const [key] of formData.entries()) {
       if (!key.startsWith("val_")) continue;
-      const assetId = key.slice(4);
-      if (derivedIds.has(assetId)) {
+      const asset = assetsById.get(key.slice(4));
+      if (asset && !isValueUpdateEligible(asset)) {
         return {
           ok: false,
           error: mapDomainViolation({ code: "value_update_investment_holding" }),
