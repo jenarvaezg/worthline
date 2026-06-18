@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 29;
+export const SCHEMA_VERSION = 30;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -947,6 +947,51 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
         .run(...amortizationList);
       sqlite.pragma("user_version = 29");
     }
+  }
+
+  if (version < 30) {
+    // #306 one-off cleanup of already-orphaned scope snapshots. A snapshot must
+    // exist only for a scope `listScopeOptions` currently offers (ADR 0008 freezes
+    // history per scope). Older builds dropped a scope — a household → individual
+    // mode switch, a disabled/removed member, a deleted group — without removing
+    // that scope's snapshots, so orphaned-scope fossils accumulated: stale frozen
+    // rows that contradict the live ledger and that no `rippleHistoricalSnapshots*`
+    // path revisits (they all iterate `listScopeOptions`). Going forward the member
+    // seams purge these transactionally; this migration clears the backlog.
+    //
+    // Reproduce `listScopeOptions` in SQL against the stored workspace:
+    //   - the `household` scope ALWAYS survives;
+    //   - in `individual` mode ONLY `household` is offered → every other scope is
+    //     orphaned;
+    //   - in `household` mode the active members (`disabled_at IS NULL`) and the
+    //     groups are also offered → any other scope is orphaned.
+    // The whole rule is one predicate: a snapshot is orphaned when its `scope_id`
+    // is neither `household`, nor (in household mode) an active member id, nor (in
+    // household mode) a group id. Delete the frozen rows first, then the parent
+    // snapshots — explicit rather than relying on the FK cascade, so the prune is
+    // correct even where a minimal upgrade fixture has foreign keys off. Tolerates
+    // a missing table (a synthetic upgrade fixture may stand up only a subset).
+    const orphanScopePredicate = `
+      snapshots.scope_id <> 'household'
+      AND NOT (
+        (SELECT mode FROM workspace WHERE id = 'default') = 'household'
+        AND (
+          snapshots.scope_id IN (SELECT id FROM members WHERE disabled_at IS NULL)
+          OR snapshots.scope_id IN (SELECT id FROM member_groups)
+        )
+      )`;
+    execToleratingMissingTable(
+      sqlite,
+      `DELETE FROM snapshot_holdings
+       WHERE snapshot_id IN (
+         SELECT id FROM snapshots WHERE ${orphanScopePredicate}
+       );`,
+    );
+    execToleratingMissingTable(
+      sqlite,
+      `DELETE FROM snapshots WHERE ${orphanScopePredicate};`,
+    );
+    sqlite.pragma("user_version = 30");
   }
 
   return { ranV18Backfill };
