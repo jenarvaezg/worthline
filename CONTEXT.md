@@ -35,8 +35,14 @@ A framing re-labels the hero number; it never introduces a new figure. UI label:
 _Avoid_: presentation mode (implementation term).
 
 **Scope**:
-The set of members whose holdings a figure covers (the whole household, or one member).
+The set of members whose holdings a figure covers: the whole household, one member,
+or a named group of members.
 _Avoid_: account.
+
+**Member group**:
+A named subset of active members that can be used as a **scope**. It is a reporting
+lens over ownership shares, not a separate owner and not a portfolio container.
+UI label: "Grupo".
 
 **Holding**:
 An asset or a debt in a scope's portfolio — the unit that **ownership splits** and
@@ -198,6 +204,10 @@ The split of a scope's holdings across the rungs of the **liquidity ladder**, ea
 shown as its share of **gross assets**. The **cash** and **market** rungs together are
 **liquid net worth**.
 _Avoid_: liquidity pyramid (implied a shape that never encoded amounts).
+
+**FIRE progress**:
+A scope's progress toward financial independence, calculated from FIRE-eligible assets,
+declared spending, withdrawal-rate, return, and age assumptions.
 
 **Ownership share**:
 A member's percentage stake in one holding.
@@ -385,6 +395,12 @@ workspace the viewer sees. A demo-only concept with no meaning in the live app.
 _Avoid_: profile, demo user (overloaded — a persona is a whole fictional workspace,
 not a login).
 
+
+**Agent view**:
+A read-only context surface over a **scope**'s financial facts, used by an agent
+to inspect and explain the user's full portfolio picture without changing live data.
+_Avoid_: connected source, account, financial advisor.
+
 ## Relationships
 
 - **Net worth** decomposes into **gross assets** − **debts**.
@@ -402,7 +418,12 @@ not a login).
 - A **connected source** mirrors **positions** read-only and **projects** them into the portfolio as one **holding** per source per **liquidity tier** rung; the positions are sub-detail beneath that holding, the way **operations** sit beneath an **investment**. Such a holding's value is **derived** (computed from its positions, never hand-set), so it is excluded from the manual **value update pass** and re-valued through the **price provider** machinery.
 - A coin's **purchase date** is a dated fact that ripples existing **snapshots** from that date forward (frozen at ripple time); a **sync** that finds a new trade ripples only from its date, while a mere price move never rewrites a past snapshot.
 - Ownership of a **connected source** holding is worthline's own concern (the source has none): a normal **ownership split**, editable, defaulting to 100% the connecting **scope** member.
+<<<<<<< HEAD
 - A **demo mode** deployment shows the live app over a fictional, read-only workspace; a **persona** selects which fictional workspace is shown. Both are presentation concerns — they add no figure and change no calculation, and exist only in the demo build.
+=======
+- **FIRE progress** counts FIRE-eligible assets in the selected **scope** and excludes the primary residence plus any assets manually excluded from FIRE.
+- An **agent view** reads a **scope**'s current portfolio, historical snapshots, **FIRE progress**, data-quality signals, and the calculation facts behind them; it defaults to the household **scope**, may be narrowed to one member or member group, preserves user-authored member, group, and holding labels, exposes context rather than recommendations, excludes secrets and transfer artifacts, never changes live data, and never refreshes or captures data as a side effect of being read.
+>>>>>>> 44f455a (Agent view adr + context)
 
 ## Flagged ambiguities
 
@@ -412,6 +433,7 @@ not a login).
 - "liquidity tier" as a flat set {cash, market, retirement, illiquid, housing} — two were not liquidity levels: **retirement** named _why_ a holding is locked (a purpose) and **housing** named _what_ it is (an instrument). Resolved: the axis is an ordered **liquidity ladder** of pure accessibility rungs — cash, market, term-locked, illiquid. Pensions fall on term-locked, property on illiquid, and **housing equity** survives as a derived figure, not a rung. _(Superseded for housing — see next bullet.)_
 - "housing as a rung" — removing it (above) left the home folded into **illiquid**, but the three dashboard surfaces disagreed on whether to show it separately: Evolución and the drilldown carved property out by holding id, while the **liquidity breakdown** did not, so the same home counted inside Ilíquido in one place and as its own band in another. Resolved (ADR 0022): housing is re-promoted to a fifth **liquidity ladder** rung so all surfaces bucket it identically by construction and the by-id carve disappears. The ladder is no longer "pure accessibility" — housing is a recognised carve-out households track separately. **Housing equity** stays a flag-derived figure and **FIRE** stays keyed on the primary-residence flag, so both remain decoupled from the rung.
 - "debt model" (amortizable / revolving / informal) vs the asset-side valuation behaviours — the same axis. Resolved: a debt's model is its **valuation method** — amortizable = **amortized**; revolving/informal = **anchored**, differing only by interpolation (linear vs step). One concept (**valuation method**) spans assets and debts.
+- "MCP for worthline" — MCP names an implementation channel, not a domain concept. Resolved: the product concept is an **agent view**, a read-only context surface for an agent.
 
 ## Current Architecture
 
