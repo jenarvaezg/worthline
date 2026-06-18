@@ -1,8 +1,13 @@
 "use server";
 
 import { withStore, type WorthlineStore } from "@worthline/db";
-import { checkOwnershipSplit, createLiabilitySafe, defaultsFor } from "@worthline/domain";
-import type { DebtModel, Instrument, LiabilityType } from "@worthline/domain";
+import {
+  checkOwnershipSplit,
+  createLiabilitySafe,
+  defaultsFor,
+  systemClock,
+} from "@worthline/domain";
+import type { Clock, DebtModel, Instrument, LiabilityType } from "@worthline/domain";
 import { redirect } from "next/navigation";
 
 import {
@@ -200,10 +205,12 @@ function scopedLiabilityForm(
 export async function createHoldingAction(
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ): Promise<never> {
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
     _store ? fn(_store) : withStore(fn);
 
+  const today = _clock.today();
   const instrument = parseInstrument(formData.get("instrument"));
 
   if (!instrument) {
@@ -242,7 +249,12 @@ export async function createHoldingAction(
         return { ok: false as const, error: "Workspace no inicializado." };
       }
 
-      const parsed = parseAssetCommandStrict(scoped, workspace.members, Date.now());
+      const parsed = parseAssetCommandStrict(
+        scoped,
+        workspace.members,
+        Date.now(),
+        today,
+      );
 
       if (!parsed.ok) {
         return { ok: false as const, error: parsed.error };
@@ -253,7 +265,7 @@ export async function createHoldingAction(
         workspace,
         { ...parsed.command, instrument },
         Date.now(),
-        new Date().toISOString().slice(0, 10),
+        today,
       );
     });
 
