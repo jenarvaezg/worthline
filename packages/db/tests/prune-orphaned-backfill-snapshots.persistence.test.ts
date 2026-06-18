@@ -18,11 +18,15 @@
  *  - the /historico bridge shows no phantom dip on the pruned date.
  */
 import { buildSnapshotId, deriveHoldingDeltas } from "@worthline/domain";
-import type { NetWorthSnapshot, SnapshotHoldingRow } from "@worthline/domain";
+import type {
+  CoinPosition,
+  NetWorthSnapshot,
+  SnapshotHoldingRow,
+} from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import { createInMemoryStore } from "../src/index";
-import type { WorthlineStore } from "../src/index";
+import type { SourcePositionInput, WorthlineStore } from "../src/index";
 
 const TODAY = "2026-06-12";
 
@@ -303,6 +307,227 @@ describe("prune orphaned backfill snapshots (#305)", () => {
       );
       expect(phantomDip).toBeUndefined();
     }
+    store.close();
+  });
+});
+
+/**
+ * #305 regression (maintainer review on PR #326): the prune must check EVERY
+ * dated fact that mints a `histsnap_` snapshot, not only investment operations.
+ * Debts (balance anchors, amortization cuotas, rate revisions, early repayments),
+ * housing valuation anchors, and connected-source coin acquisitions all make a
+ * date an event date. Deleting an UNRELATED investment operation must never prune
+ * a snapshot whose date one of these other facts still justifies — that would be
+ * real history data loss.
+ *
+ * Each test seeds a backfilled snapshot on a date D justified by a NON-operation
+ * fact, plus an unrelated investment operation on a different date; deletes the
+ * operation; and asserts D survives (with its frozen rows).
+ */
+describe("prune spares snapshots justified by a non-operation dated fact (#305 / PR #326)", () => {
+  const DATE_D = "2025-01-01";
+  const OP_DATE = "2024-06-01";
+
+  /** A household with a priced-at-cost fund, so deleting the fund op is a real
+   *  unrelated deletion whose ripple loop reaches D. */
+  function seedFundIndividual(store: WorthlineStore): void {
+    store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "fund",
+      liquidityTier: "market",
+      name: "Fondo indexado",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+  }
+
+  function recordFundBuy(store: WorthlineStore, executedAt: string): void {
+    store.recordOperationAndRipple(
+      {
+        assetId: "fund",
+        currency: "EUR",
+        executedAt,
+        feesMinor: 0,
+        id: `op_${executedAt}`,
+        kind: "buy",
+        pricePerUnit: "100",
+        units: "10",
+      },
+      { today: TODAY },
+    );
+  }
+
+  function deleteFundOp(store: WorthlineStore, executedAt: string): void {
+    const op = store.operations
+      .readOperations("fund")
+      .find((o) => o.executedAt === executedAt)!;
+    store.deleteOperationAndRipple({ operationId: op.id, today: TODAY });
+  }
+
+  function survivesAt(store: WorthlineStore, dateKey: string): boolean {
+    return snapshotIdsAt(store, dateKey).length > 0;
+  }
+
+  test("a balance-anchor date survives deleting an unrelated investment operation", () => {
+    const store = createInMemoryStore();
+    seedFundIndividual(store);
+    store.liabilities.createLiability({
+      balanceMinor: 1_000_00,
+      currency: "EUR",
+      id: "card",
+      name: "Tarjeta",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "debt",
+    });
+    store.liabilities.setDebtModel("card", "revolving");
+
+    // D is justified ONLY by a balance anchor (no operation on D).
+    store.addBalanceAnchorAndRipple(
+      { anchorDate: DATE_D, balanceMinor: 3_000_00, id: "an1", liabilityId: "card" },
+      { today: TODAY },
+    );
+    // An unrelated investment op on a different date.
+    recordFundBuy(store, OP_DATE);
+    const before = snapshotIdsAt(store, DATE_D);
+    expect(before.length).toBeGreaterThan(0);
+    expect(before.every((id) => id.startsWith("histsnap_"))).toBe(true);
+
+    deleteFundOp(store, OP_DATE);
+
+    expect(survivesAt(store, DATE_D)).toBe(true);
+    expect(
+      store.snapshots.readSnapshotHoldings({ from: DATE_D, to: DATE_D }).length,
+    ).toBeGreaterThan(0);
+    store.close();
+  });
+
+  test("a housing valuation-anchor date survives deleting an unrelated investment operation", () => {
+    const store = createInMemoryStore();
+    seedFundIndividual(store);
+    store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 180_000_00,
+      id: "piso",
+      isPrimaryResidence: true,
+      liquidityTier: "illiquid",
+      name: "Piso",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "real_estate",
+    });
+
+    // D is justified ONLY by a housing valuation anchor.
+    store.addValuationAnchorAndRipple(
+      {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "v1",
+        valuationDate: DATE_D,
+        valueMinor: 180_000_00,
+      },
+      { today: TODAY },
+    );
+    recordFundBuy(store, OP_DATE);
+    expect(snapshotIdsAt(store, DATE_D).length).toBeGreaterThan(0);
+
+    deleteFundOp(store, OP_DATE);
+
+    expect(survivesAt(store, DATE_D)).toBe(true);
+    store.close();
+  });
+
+  test("an amortization cuota date survives deleting an unrelated investment operation", () => {
+    const store = createInMemoryStore();
+    seedFundIndividual(store);
+    store.liabilities.createLiability({
+      balanceMinor: 150_000_00,
+      currency: "EUR",
+      id: "mortgage",
+      name: "Hipoteca",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+    store.liabilities.setDebtModel("mortgage", "amortizable");
+    // Disbursement 2024-01-01, first payment 2024-02-01. A computed cuota boundary
+    // lands on 2025-01-01 (= firstPayment + 11 months) — that is DATE_D, a date
+    // with NO operation, NO anchor; justified ONLY by the amortization curve.
+    store.createAmortizationPlanAndRipple(
+      {
+        annualInterestRate: "0.03",
+        disbursementDate: "2024-01-01",
+        firstPaymentDate: "2024-02-01",
+        id: "plan1",
+        initialCapitalMinor: 150_000_00,
+        liabilityId: "mortgage",
+        termMonths: 240,
+      },
+      { today: TODAY },
+    );
+    recordFundBuy(store, OP_DATE);
+    // The plan ripple generated a snapshot at every past cuota, including DATE_D.
+    const before = snapshotIdsAt(store, DATE_D);
+    expect(before.length).toBeGreaterThan(0);
+    expect(before.every((id) => id.startsWith("histsnap_"))).toBe(true);
+
+    deleteFundOp(store, OP_DATE);
+
+    expect(survivesAt(store, DATE_D)).toBe(true);
+    store.close();
+  });
+
+  test("a connected-source coin acquisition date survives deleting an unrelated investment operation", () => {
+    const store = createInMemoryStore();
+    seedFundIndividual(store);
+
+    // Seed a snapshot at D first (the coin ripple only touches EXISTING snapshots),
+    // via a backdated buy on D that we then leave in place by deleting a DIFFERENT op.
+    // To make D justified ONLY by the coin, we mint D through a SECOND op then delete
+    // it, but that would orphan D. Instead: record an op on OP_DATE only, and rely on
+    // the coin acquisition on D having generated nothing... — so create the D snapshot
+    // through the fund op on D, sync the coin onto it, then delete a SEPARATE op.
+    recordFundBuy(store, DATE_D); // generates the snapshot at D (and its frozen rows)
+    recordFundBuy(store, OP_DATE); // an unrelated, later op we will delete
+
+    const source = store.connectedSources.connect({
+      adapter: "numista",
+      credentialsJson: JSON.stringify({ apiKey: "secret" }),
+      label: "Colección Numista",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    const coinPosition: SourcePositionInput = {
+      kind: "coin",
+      catalogueId: "cat-c1",
+      currency: "EUR",
+      externalId: "c1",
+      finenessMillis: null,
+      grade: "unc",
+      issueId: null,
+      liquidityTier: "illiquid",
+      metal: "silver",
+      metalValueMinor: null,
+      name: "Moneda c1",
+      numismaticFetchedAt: null,
+      numismaticValueMinor: 300_00,
+      obverseThumbUrl: null,
+      purchaseDate: DATE_D,
+      purchasePriceMinor: null,
+      quantity: 1,
+      weightGrams: null,
+      year: null,
+    } satisfies Omit<CoinPosition, "id" | "sourceId">;
+    store.syncConnectedSource({
+      positions: [coinPosition],
+      sourceId: source.sourceId,
+      syncedAt: "2026-06-01T10:00:00.000Z",
+    });
+
+    // Now DELETE the fund op that ORIGINALLY justified D. D must SURVIVE because the
+    // coin acquisition on D still justifies it.
+    deleteFundOp(store, DATE_D);
+
+    expect(survivesAt(store, DATE_D)).toBe(true);
     store.close();
   });
 });

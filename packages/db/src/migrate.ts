@@ -17,16 +17,48 @@ function lastDayOfMonth(year: number, month: number): number {
  * rule to the day, keeping every existing snapshot byte-identical (ADR 0019).
  */
 function addOneMonthClamped(dateKey: string): string {
+  return addMonthsClamped(dateKey, 1);
+}
+
+/**
+ * The YYYY-MM-DD `count` whole months after `dateKey`, day clamped to the
+ * destination month's last valid day — the SAME `addMonths` rule the amortization
+ * engine (`amortizationPaymentDatesUpTo`) uses. Duplicated here (not imported)
+ * because migrate.ts is a leaf with no `@worthline/domain` dependency; the v29
+ * prune recomputes a plan's payment boundaries to spare backfill snapshots on a
+ * computed cuota date (#326 review), mirroring the engine to the day.
+ */
+function addMonthsClamped(dateKey: string, count: number): string {
   const year = Number(dateKey.slice(0, 4));
   const month = Number(dateKey.slice(5, 7));
   const day = Number(dateKey.slice(8, 10));
-  const zeroBased = month - 1 + 1;
+  const zeroBased = month - 1 + count;
   const newYear = year + Math.floor(zeroBased / 12);
   const newMonth = (zeroBased % 12) + 1;
   const clampedDay = Math.min(day, lastDayOfMonth(newYear, newMonth));
   const mm = String(newMonth).padStart(2, "0");
   const dd = String(clampedDay).padStart(2, "0");
   return `${newYear}-${mm}-${dd}`;
+}
+
+/**
+ * Every amortization payment-boundary date of a plan — boundary 0 is the
+ * disbursement, boundary m≥1 is `firstPaymentDate + (m−1) months` — exactly the
+ * set `amortizationPaymentDatesUpTo` generates (ADR 0019). Used by the v29 prune
+ * to spare a backfill snapshot on a COMPUTED cuota date (no stored column).
+ */
+function amortizationBoundaryDates(plan: {
+  disbursement_date: string;
+  first_payment_date: string;
+  term_months: number;
+}): string[] {
+  const dates: string[] = [];
+  for (let m = 0; m <= plan.term_months; m += 1) {
+    dates.push(
+      m === 0 ? plan.disbursement_date : addMonthsClamped(plan.first_payment_date, m - 1),
+    );
+  }
+  return dates;
 }
 
 export interface MigrateResult {
@@ -773,41 +805,148 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
   if (version < 29) {
     // #305 one-off prune of already-orphaned fossil backfill snapshots. A
     // backfilled snapshot (id prefix `histsnap_`, ADR 0012) exists on a date ONLY
-    // because an investment operation made it an event date. Older builds never
-    // removed such a snapshot when the operation(s) justifying its date were later
-    // deleted, so a fossil could persist — frozen with stale holdings — and show a
-    // derived investment as "not held" on a day it was held (a phantom dip in the
-    // /historico bridge). Going forward `deleteOperationAndRipple` prunes these
-    // transactionally; this migration clears the ones that already accumulated.
+    // because SOME dated fact made it an event date. Older builds never removed
+    // such a snapshot when the fact(s) justifying its date were later deleted, so a
+    // fossil could persist — frozen with stale holdings — and show a derived
+    // holding as "not held" on a day it was held (a phantom dip in the /historico
+    // bridge). Going forward the delete ripple prunes these transactionally; this
+    // migration clears the ones that already accumulated.
     //
-    // Conservative, mirroring the runtime rule: prune ONLY `histsnap_%` snapshots
-    // whose YYYY-MM-DD `date_key` matches NO `asset_operations.executed_at`. A
-    // real daily capture (id `snapshot_…`) is never touched, even on an op-less
-    // date. Delete the frozen rows first, then the parent snapshots — explicit
-    // rather than relying on the FK cascade, so the prune is correct even where
-    // a minimal upgrade fixture has foreign keys off. Tolerates a missing table.
-    execToleratingMissingTable(
-      sqlite,
-      `DELETE FROM snapshot_holdings
-       WHERE snapshot_id IN (
-         SELECT id FROM snapshots
-         WHERE id LIKE 'histsnap_%'
-           AND NOT EXISTS (
-             SELECT 1 FROM asset_operations
-             WHERE substr(asset_operations.executed_at, 1, 10) = snapshots.date_key
-           )
-       );`,
-    );
-    execToleratingMissingTable(
-      sqlite,
-      `DELETE FROM snapshots
-       WHERE id LIKE 'histsnap_%'
-         AND NOT EXISTS (
-           SELECT 1 FROM asset_operations
-           WHERE substr(asset_operations.executed_at, 1, 10) = snapshots.date_key
-         );`,
-    );
-    sqlite.pragma("user_version = 29");
+    // It applies the SAME widened "is this date still an event date" rule as the
+    // runtime prune (`dateHasJustifyingFact`, PR #326 review): a `histsnap_%` row
+    // is pruned ONLY when NO remaining dated fact falls on its `date_key`. The
+    // facts covered, each a `histsnap_`-minting source:
+    //   - investment operations    → asset_operations.executed_at (date prefix)
+    //   - housing valuation anchors → asset_valuations.valuation_date
+    //   - balance anchors          → liability_balance_anchors.anchor_date
+    //   - interest-rate revisions  → interest_rate_revisions.revision_date
+    //   - early repayments         → early_repayments.repayment_date
+    //   - coin acquisitions        → positions.purchase_date (kind = 'coin')
+    //   - amortization cuotas      → COMPUTED in JS from amortization_plans
+    //                                (disbursement, firstPayment + (m−1) months);
+    //                                no stored column, so the boundary dates are
+    //                                recomputed and excluded via a NOT IN list.
+    // Binance / connected-value history is the one source whose dates (curve
+    // month-ends) are reconstructed LIVE at sync and never stored, so the SQL
+    // context cannot recompute them. CONSERVATIVE fallback (data loss is the
+    // failure mode to avoid): if ANY `binance` connected source exists, skip the
+    // prune entirely — every `histsnap_%` row is KEPT. The migration thus covers
+    // all six stored/computed sources directly and conservatively keeps everything
+    // when a Binance history could justify a date it cannot see.
+    //
+    // A real daily capture (id `snapshot_…`) is never touched. Frozen rows are
+    // deleted first, then the parent snapshots — explicit rather than relying on
+    // the FK cascade, so the prune is correct even where a minimal upgrade fixture
+    // has foreign keys off. Every table read tolerates a missing table.
+    const tableExists = (name: string): boolean =>
+      sqlite
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+        .get(name) !== undefined;
+
+    // Conservative Binance short-circuit: any binance source → keep everything.
+    const hasBinanceSource =
+      tableExists("connected_sources") &&
+      sqlite
+        .prepare("SELECT 1 FROM connected_sources WHERE adapter = 'binance' LIMIT 1")
+        .get() !== undefined;
+
+    if (!tableExists("snapshots")) {
+      sqlite.pragma("user_version = 29");
+    } else if (hasBinanceSource) {
+      // Keep every histsnap_ row — the Binance history might justify any date.
+      sqlite.pragma("user_version = 29");
+    } else {
+      // Recompute amortization payment-boundary dates (the computed cuota source).
+      const amortizationDates = new Set<string>();
+      if (tableExists("amortization_plans")) {
+        const plans = sqlite
+          .prepare(
+            "SELECT disbursement_date, first_payment_date, term_months FROM amortization_plans",
+          )
+          .all() as {
+          disbursement_date: string;
+          first_payment_date: string;
+          term_months: number;
+        }[];
+        for (const plan of plans) {
+          for (const date of amortizationBoundaryDates(plan)) {
+            amortizationDates.add(date);
+          }
+        }
+      }
+
+      // Build the "justified date" predicate from the stored single-column facts
+      // that exist in this DB, plus the computed amortization boundaries. Each
+      // EXISTS clause is included only when its table is present, so a minimal
+      // upgrade fixture lacking a table simply omits that source rather than
+      // aborting. The amortization boundaries are bound as parameters in a
+      // `date_key NOT IN (...)` list (empty list → the clause is dropped).
+      const justifiedClauses: string[] = [];
+      if (tableExists("asset_operations")) {
+        justifiedClauses.push(
+          `EXISTS (SELECT 1 FROM asset_operations
+                   WHERE substr(asset_operations.executed_at, 1, 10) = s.date_key)`,
+        );
+      }
+      if (tableExists("asset_valuations")) {
+        justifiedClauses.push(
+          `EXISTS (SELECT 1 FROM asset_valuations
+                   WHERE asset_valuations.valuation_date = s.date_key)`,
+        );
+      }
+      if (tableExists("liability_balance_anchors")) {
+        justifiedClauses.push(
+          `EXISTS (SELECT 1 FROM liability_balance_anchors
+                   WHERE liability_balance_anchors.anchor_date = s.date_key)`,
+        );
+      }
+      if (tableExists("interest_rate_revisions")) {
+        justifiedClauses.push(
+          `EXISTS (SELECT 1 FROM interest_rate_revisions
+                   WHERE interest_rate_revisions.revision_date = s.date_key)`,
+        );
+      }
+      if (tableExists("early_repayments")) {
+        justifiedClauses.push(
+          `EXISTS (SELECT 1 FROM early_repayments
+                   WHERE early_repayments.repayment_date = s.date_key)`,
+        );
+      }
+      if (tableExists("positions")) {
+        justifiedClauses.push(
+          `EXISTS (SELECT 1 FROM positions
+                   WHERE positions.kind = 'coin' AND positions.purchase_date = s.date_key)`,
+        );
+      }
+
+      const amortizationList = [...amortizationDates];
+      if (amortizationList.length > 0) {
+        const placeholders = amortizationList.map(() => "?").join(", ");
+        justifiedClauses.push(`s.date_key IN (${placeholders})`);
+      }
+
+      // The orphan predicate: a backfilled snapshot justified by NO source. With
+      // no justified clauses at all (a fixture lacking every fact table), `NOT (0)`
+      // is true for every histsnap_ — there is genuinely nothing left to justify
+      // any date, so the prune fires (the v18-era behavior, just widened).
+      const justified = justifiedClauses.length > 0 ? justifiedClauses.join(" OR ") : "0";
+      const orphanWhere = `s.id LIKE 'histsnap_%' AND NOT (${justified})`;
+
+      if (tableExists("snapshot_holdings")) {
+        sqlite
+          .prepare(
+            `DELETE FROM snapshot_holdings
+             WHERE snapshot_id IN (
+               SELECT s.id FROM snapshots s WHERE ${orphanWhere}
+             );`,
+          )
+          .run(...amortizationList);
+      }
+      sqlite
+        .prepare(`DELETE FROM snapshots AS s WHERE ${orphanWhere};`)
+        .run(...amortizationList);
+      sqlite.pragma("user_version = 29");
+    }
   }
 
   return { ranV18Backfill };

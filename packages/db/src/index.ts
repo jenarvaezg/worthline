@@ -2011,20 +2011,127 @@ function readFrozenIdentityCaptures(
 const BACKFILL_SNAPSHOT_ID_PREFIX = "histsnap_";
 
 /**
- * Is a date justified by ANY investment operation, across every asset and scope
- * (#305)? A backfill generates a snapshot at a date only because an operation
- * fell on it (ADR 0012); a date with zero operations is no longer an event date.
- * Operations store `executed_at` as an ISO date or timestamp, so match on the
- * `YYYY-MM-DD` prefix — the same `slice(0, 10)` basis every ripple keys on.
+ * Is `dateKey` still an event date for ANY dated fact that mints a `histsnap_`
+ * snapshot — not just an investment operation (#305, PR #326 review)? A backfilled
+ * snapshot exists on a date only because SOME dated fact fell on it (ADR 0012);
+ * the prune may drop it only when NONE remains. The fix is comprehensive: every
+ * `histsnap_`-minting ripple in this file is covered, mapped to its date source —
+ *
+ *  - Investment operations (rippleHistoricalSnapshots ~2111/2258, gap-fill ~3164):
+ *    `asset_operations.executed_at` (ISO date or timestamp) LIKE `${dateKey}%` —
+ *    the same `slice(0, 10)` basis every ripple keys on.
+ *  - Housing valuation anchors (rippleHistoricalSnapshotsForValuation ~2381):
+ *    `asset_valuations.valuation_date = dateKey`.
+ *  - Balance anchors — revolving/informal debt (rippleHistoricalSnapshotsForDebt
+ *    "anchor" ~2530): `liability_balance_anchors.anchor_date = dateKey`.
+ *  - Interest-rate revisions (debt "amortizable-revision" — recalc only, but the
+ *    revision date stays an event date): `interest_rate_revisions.revision_date`.
+ *  - Early repayments (debt "amortizable-repayment" ~2530):
+ *    `early_repayments.repayment_date = dateKey`.
+ *  - Connected-source coin acquisitions — Numista (rippleHistoricalSnapshotsFor-
+ *    CoinAcquisition ~2820): `positions.purchase_date = dateKey` for a coin row.
+ *  - Amortization payment boundaries — amortized debt (debt "amortizable-plan"
+ *    ~2530): the date is COMPUTED, not stored (disbursement, or `firstPaymentDate
+ *    + (m−1) months`). Reuse the domain helper `amortizationPaymentDatesUpTo` to
+ *    rebuild each live plan's boundary set and test membership of `dateKey`.
+ *  - Binance / connected-value history (backfillBinanceHistoricalSnapshots
+ *    ~3047/3066): its dates are month-ends of a curve RECONSTRUCTED LIVE at sync
+ *    from the Binance + CoinGecko APIs — they are NOT persisted in any table, so
+ *    they cannot be recomputed here. Conservative fallback (data loss is the
+ *    failure mode to avoid): if ANY `binance` connected source exists, treat the
+ *    date as justified and KEEP the snapshot. The prune then never deletes a
+ *    snapshot a Binance history might justify.
+ *
+ * Conservative by construction: any uncertainty resolves to "justified" (keep).
  */
-function dateHasJustifyingOperation(db: StoreDb, dateKey: string): boolean {
-  const row = db
-    .select({ id: assetOperations.id })
+function dateHasJustifyingFact(db: StoreDb, dateKey: string): boolean {
+  // Investment operations: executed_at as a date or timestamp → match the prefix.
+  const storedFact = db
+    .select({ marker: assetOperations.id })
     .from(assetOperations)
     .where(like(assetOperations.executedAt, `${dateKey}%`))
     .limit(1)
     .get();
-  return row !== undefined;
+  if (storedFact !== undefined) return true;
+
+  const valuationAnchor = db
+    .select({ marker: assetValuations.id })
+    .from(assetValuations)
+    .where(eq(assetValuations.valuationDate, dateKey))
+    .limit(1)
+    .get();
+  if (valuationAnchor !== undefined) return true;
+
+  const balanceAnchor = db
+    .select({ marker: liabilityBalanceAnchors.id })
+    .from(liabilityBalanceAnchors)
+    .where(eq(liabilityBalanceAnchors.anchorDate, dateKey))
+    .limit(1)
+    .get();
+  if (balanceAnchor !== undefined) return true;
+
+  const revision = db
+    .select({ marker: interestRateRevisions.id })
+    .from(interestRateRevisions)
+    .where(eq(interestRateRevisions.revisionDate, dateKey))
+    .limit(1)
+    .get();
+  if (revision !== undefined) return true;
+
+  const repayment = db
+    .select({ marker: earlyRepayments.id })
+    .from(earlyRepayments)
+    .where(eq(earlyRepayments.repaymentDate, dateKey))
+    .limit(1)
+    .get();
+  if (repayment !== undefined) return true;
+
+  const coinAcquisition = db
+    .select({ marker: positions.id })
+    .from(positions)
+    .where(and(eq(positions.kind, "coin"), eq(positions.purchaseDate, dateKey)))
+    .limit(1)
+    .get();
+  if (coinAcquisition !== undefined) return true;
+
+  // Computed amortization payment boundaries: rebuild each live plan's boundary
+  // set up to the day AFTER `dateKey` (the helper excludes dates ≥ its target),
+  // so a boundary EQUAL to `dateKey` is included, and test membership.
+  const targetAfterDate = dayAfter(dateKey);
+  for (const plan of db.select().from(amortizationPlans).all()) {
+    const boundaries = amortizationPaymentDatesUpTo(
+      {
+        annualInterestRate: plan.annualInterestRate,
+        disbursementDate: plan.disbursementDate,
+        firstPaymentDate: plan.firstPaymentDate,
+        initialCapitalMinor: plan.initialCapitalMinor,
+        termMonths: plan.termMonths,
+      },
+      targetAfterDate,
+    );
+    if (boundaries.includes(dateKey)) return true;
+  }
+
+  // Binance history: month-ends of a live-reconstructed curve, not stored. Cannot
+  // recompute → keep when any binance source exists (conservative, #326).
+  const binanceSource = db
+    .select({ marker: connectedSources.id })
+    .from(connectedSources)
+    .where(eq(connectedSources.adapter, "binance"))
+    .limit(1)
+    .get();
+  if (binanceSource !== undefined) return true;
+
+  return false;
+}
+
+/** The YYYY-MM-DD calendar day immediately after `dateKey` (handles month/year
+ *  rollover; used only to make `amortizationPaymentDatesUpTo` include a boundary
+ *  EQUAL to `dateKey`, since the helper excludes dates ≥ its target). */
+function dayAfter(dateKey: string): string {
+  const next = new Date(`${dateKey}T00:00:00.000Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
 }
 
 /**
@@ -2035,11 +2142,13 @@ function dateHasJustifyingOperation(db: StoreDb, dateKey: string): boolean {
  * for whichever scope's snapshot this is; the caller iterates every scope. Runs
  * in the caller's transaction so the prune commits or rolls back with the ripple.
  * Conservative by construction: returns true (pruned) ONLY for a backfilled id on
- * a zero-operation date; in every other case it leaves the snapshot untouched.
+ * a date NO remaining dated fact justifies (`dateHasJustifyingFact` covers every
+ * `histsnap_`-minting source, #326); in every other case it leaves the snapshot
+ * untouched.
  */
 function pruneOrphanedBackfillSnapshot(db: StoreDb, snapshot: NetWorthSnapshot): boolean {
   if (!snapshot.id.startsWith(BACKFILL_SNAPSHOT_ID_PREFIX)) return false;
-  if (dateHasJustifyingOperation(db, snapshot.dateKey)) return false;
+  if (dateHasJustifyingFact(db, snapshot.dateKey)) return false;
   db.delete(snapshots).where(eq(snapshots.id, snapshot.id)).run();
   return true;
 }
@@ -2146,14 +2255,23 @@ function rippleHistoricalSnapshots(
       for (const snap of existing) {
         if (snap.dateKey < operationDateKey) continue;
 
-        // Prune an orphaned backfill snapshot (#305): deleting the last operation
-        // that made this date an event date leaves a `histsnap_` snapshot frozen
-        // with holdings that no operation justifies any more — a fossil that the
-        // /historico per-day bridge can misread as a phantom dip. Drop it (rows
-        // cascade) BEFORE recalculating, so a still-present unrelated holding does
-        // not keep the orphan alive. A daily capture or a date another operation
-        // still justifies is never pruned (guarded inside the helper).
-        if (mode === "delete" && pruneOrphanedBackfillSnapshot(db, snap)) {
+        // Prune an orphaned backfill snapshot (#305, PR #326): deleting ONE
+        // operation at date D can only newly-orphan date D ITSELF — every other
+        // date keeps its own independent justification — so only the snapshot
+        // dated exactly D is a prune candidate (Part A: was over-reaching to every
+        // date ≥ D). Deleting the last fact that made D an event date leaves a
+        // `histsnap_` fossil frozen with stale holdings, which the /historico
+        // per-day bridge misreads as a phantom dip. Drop it (rows cascade) BEFORE
+        // recalculating, so a still-present unrelated holding does not keep the
+        // orphan alive. A daily capture, or a date ANY remaining dated fact still
+        // justifies — an operation, balance/valuation anchor, amortization cuota,
+        // rate revision, early repayment, coin acquisition, or a Binance history
+        // (conservatively) — is never pruned (guarded inside the helper).
+        if (
+          mode === "delete" &&
+          snap.dateKey === operationDateKey &&
+          pruneOrphanedBackfillSnapshot(db, snap)
+        ) {
           continue;
         }
 
