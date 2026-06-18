@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { fetchCoinGeckoPriceEur, syncBinanceAccount } from "./binance-sync";
+import { fallbackChains } from "./registry";
 
 describe("syncBinanceAccount — balances → live-valued token drafts", () => {
   test("maps spot balances to market-rung token drafts with the live EUR price", async () => {
@@ -159,5 +160,33 @@ describe("fetchCoinGeckoPriceEur — the real live-price seam (ADR 0021 consiste
     expect(
       await fetchCoinGeckoPriceEur("bitcoin", "2026-06-16T00:00:00.000Z"),
     ).toBeNull();
+  });
+
+  test("routes through the pricing seam: a coingecko miss rides a declared fallback chain", async () => {
+    // The revalue now goes through fetchPriceNow("coingecko", ctx) (ADR 0026),
+    // so a token price participates in any chain declared for coingecko — under
+    // the old direct resolveProvider("coingecko") call a miss returned null
+    // regardless of any fallback. Declare a temporary coingecko→stooq chain and
+    // confirm a CoinGecko miss is rescued by Stooq's EUR quote.
+    const previous = fallbackChains.coingecko;
+    fallbackChains.coingecko = ["stooq"];
+    try {
+      vi.mocked(fetch)
+        // CoinGecko /simple/price miss (non-OK):
+        .mockResolvedValueOnce({ ok: false, status: 429 } as Response)
+        // Stooq rescue with a valid EUR close:
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () =>
+            "Symbol,Date,Time,Open,High,Low,Close,Volume\nBTC,2026-06-16,16:00:00,49000,51000,48000,50000,123",
+        } as Response);
+
+      expect(await fetchCoinGeckoPriceEur("bitcoin", "2026-06-16T00:00:00.000Z")).toBe(
+        50_000,
+      );
+    } finally {
+      if (previous === undefined) delete fallbackChains.coingecko;
+      else fallbackChains.coingecko = previous;
+    }
   });
 });
