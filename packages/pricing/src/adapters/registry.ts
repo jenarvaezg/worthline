@@ -6,10 +6,10 @@
  * `instrumentForAdapter`/`frozenInstrumentForAdapter`/action `=== "numista"`
  * switches): it looks the adapter up here once and dispatches.
  *
- * #319 fully migrates Numista. The Binance entry is a minimal SHIM (instrument /
- * suffix metadata + `classifyRung`) so the provider-agnostic store can resolve a
- * Binance row's metadata off an adapter without changing Binance behaviour — #322
- * folds Binance's real lifecycle into its adapter.
+ * #319 migrated Numista; #322 (ADR 0027) folds Binance's real lifecycle into its
+ * adapter (credential parsing, `listPositions`/`buildHistory`, the relocated
+ * wallet→rung `classifyRung`). Both entries are now real adapters — the store and
+ * the actions dispatch through them, never through a per-provider shim.
  */
 
 import type { Instrument, LiquidityTier, SourceAdapter } from "@worthline/domain";

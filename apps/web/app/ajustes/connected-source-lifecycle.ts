@@ -33,6 +33,12 @@ import { resolveConnectingOwnership } from "./numista-helpers";
  * It keeps the read-creds-sync / await-network / write-sync ordering the sync-only
  * `withStore` demands, the `_store?` test seam (`runWith`), and the redirect/error
  * vocabulary. The provider keeps ONLY its parsing + network (in the adapter/helpers).
+ *
+ * This is a plain shared library module, NOT a `"use server"` actions file: it
+ * exports sync helpers (`currentUrlOf`/`runWith`), the `BASE` const, and the typed
+ * messages/wiring interfaces alongside the async lifecycle functions. The
+ * `"use server"` boundary stays on the per-provider `*-actions.ts` files, which are
+ * the only modules bound to `<form action={...}>`; they call into here.
  */
 
 export const BASE = "/ajustes";

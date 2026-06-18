@@ -1,5 +1,6 @@
 import type { WorthlineStore } from "@worthline/db";
 import {
+  binanceAdapter,
   fetchCoinGeckoPriceEur,
   getAllBalances,
   syncBinanceAccount,
@@ -10,7 +11,6 @@ import {
   type BinanceSourceRef,
   type RefreshBinanceSourcesResult,
 } from "../refresh-binance-sources";
-import { readBinanceCredentials } from "./binance-helpers";
 
 /**
  * Production wiring for the Binance live-revalue refresh (PRD #245 S4, issue #249,
@@ -49,7 +49,9 @@ export async function runBinanceRefresh(
     sources,
     reSync: async (sourceId) => {
       const source = store.connectedSources.readSource(sourceId);
-      const creds = source ? readBinanceCredentials(source.credentialsJson) : null;
+      const creds = source
+        ? binanceAdapter.readCredentials(source.credentialsJson)
+        : null;
       if (!source || !creds) {
         throw new Error("Binance credentials unavailable.");
       }

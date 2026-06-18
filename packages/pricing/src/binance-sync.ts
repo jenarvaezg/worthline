@@ -15,8 +15,8 @@
  */
 
 import type { DistributiveOmit, TokenPosition } from "@worthline/domain";
-import { rungForWallet } from "@worthline/domain";
 
+import { rungForWallet } from "./adapters/binance-rung";
 import { resolveCoinGeckoId } from "./binance-symbols";
 import { fetchPriceNow } from "./registry";
 
