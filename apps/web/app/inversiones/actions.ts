@@ -7,8 +7,10 @@ import {
   parseStatement,
   planStatementMerge,
   resolveStatementIsinGuard,
+  systemClock,
 } from "@worthline/domain";
 import type {
+  Clock,
   InvestmentPriceProvider,
   LiquidityTier,
   ParsedStatement,
@@ -63,6 +65,7 @@ async function validateInvestmentProviderSymbol(input: {
   assetId: string;
   currency: string;
   liquidityTier: LiquidityTier;
+  nowIso: string;
   priceProvider?: InvestmentPriceProvider | undefined;
   providerSymbol?: string | undefined;
 }): Promise<string | null> {
@@ -80,7 +83,7 @@ async function validateInvestmentProviderSymbol(input: {
   const price = await fetchAndCachePrice(provider, {
     assetId: input.assetId,
     currency: input.currency,
-    nowIso: new Date().toISOString(),
+    nowIso: input.nowIso,
     symbol: input.providerSymbol,
   });
 
@@ -117,6 +120,7 @@ export async function recordOperationAction(
   routeAssetId: string,
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ) {
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const operationErrorUrl = (message: string) =>
@@ -129,7 +133,7 @@ export async function recordOperationAction(
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
     _store ? fn(_store) : withStore(fn);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _clock.today();
   const parsed = parseRouteOperationCommand(formData, routeAssetId, Date.now(), today);
 
   if (!parsed.ok) {
@@ -272,6 +276,7 @@ export async function confirmStatementAction(
   routeAssetId: string,
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ) {
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const statementErrorUrl = (message: string) =>
@@ -286,7 +291,7 @@ export async function confirmStatementAction(
   }
 
   const { isin, rows, skipped } = read.value;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _clock.today();
   const seed = Date.now();
 
   const applied = runWith((store) => {
@@ -359,6 +364,7 @@ export async function updateInvestmentAction(
   routeAssetId: string,
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ) {
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const editErrorUrl = (message: string) =>
@@ -392,6 +398,7 @@ export async function updateInvestmentAction(
     assetId: routeAssetId,
     currency: existing?.currency ?? "EUR",
     liquidityTier: nextLiquidityTier,
+    nowIso: _clock.now(),
     priceProvider: nextPriceProvider,
     providerSymbol: parsed.command.providerSymbol,
   });
@@ -412,6 +419,7 @@ export async function updateInvestmentAction(
 export async function deleteInvestmentAction(
   formData: FormData,
   _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
 ) {
   const id = parseEntityId(formData);
   const returnUrl = currentUrlOf(formData, "/patrimonio");
@@ -426,9 +434,7 @@ export async function deleteInvestmentAction(
     );
   }
 
-  const changes = runWith((store) =>
-    store.assets.softDeleteAsset(id, new Date().toISOString()),
-  );
+  const changes = runWith((store) => store.assets.softDeleteAsset(id, _clock.now()));
 
   if (changes === 0) {
     redirect(
@@ -540,9 +546,10 @@ export async function refreshPricesAction(
   formData: FormData,
   _store?: WorthlineStore,
   _provider?: PriceProvider,
+  _clock: Clock = systemClock(),
 ) {
   const returnUrl = currentUrlOf(formData, "/patrimonio");
-  const nowIso = new Date().toISOString();
+  const nowIso = _clock.now();
 
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
     _store ? fn(_store) : withStore(fn);

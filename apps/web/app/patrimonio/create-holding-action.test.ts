@@ -16,6 +16,8 @@ import {
 } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
+import { fixedClock } from "@worthline/domain";
+
 import { createHoldingAction } from "./create-holding-action";
 
 /** Build a FormData with the given key/value pairs. */
@@ -27,10 +29,16 @@ function form(entries: Record<string, string>): FormData {
   return fd;
 }
 
+/**
+ * A fixed "today" makes the acquisition-anchor ripple deterministic: it is well
+ * after every backdated acquisition date below, with no global Date mocking.
+ */
+const CLOCK = fixedClock("2026-06-15");
+
 /** Invoke the action (which always throws redirect()) and return the URL. */
 async function runAction(fd: FormData, store: WorthlineStore): Promise<string> {
   try {
-    await createHoldingAction(fd, store);
+    await createHoldingAction(fd, store, CLOCK);
     throw new Error("action did not redirect");
   } catch (err: unknown) {
     const e = err as { message?: string; digest?: string };

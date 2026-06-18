@@ -635,6 +635,7 @@ describe("parseAssetCommandStrict — required name, no ghost defaults", () => {
       }),
       members,
       1,
+      "2026-01-01",
     );
     expect(result).toEqual({
       ok: true,
@@ -657,6 +658,7 @@ describe("parseAssetCommandStrict — required name, no ghost defaults", () => {
       }),
       members,
       1,
+      "2026-01-01",
     );
 
     expect(result).toEqual({
@@ -681,6 +683,7 @@ describe("parseAssetCommandStrict — required name, no ghost defaults", () => {
       form({ name: "Casa", type: "real_estate" }),
       members,
       1,
+      "2026-01-01",
     );
 
     expect(result).toEqual({
@@ -694,6 +697,7 @@ describe("parseAssetCommandStrict — required name, no ghost defaults", () => {
       form({ name: "   ", type: "cash", currentValue: "100", liquidityTier: "cash" }),
       members,
       1,
+      "2026-01-01",
     );
     expect(result.ok).toBe(false);
     expect("error" in result && result.error).toBeTruthy();
@@ -704,6 +708,7 @@ describe("parseAssetCommandStrict — required name, no ghost defaults", () => {
       form({ type: "cash", currentValue: "100", liquidityTier: "cash" }),
       members,
       1,
+      "2026-01-01",
     );
     expect(result.ok).toBe(false);
   });

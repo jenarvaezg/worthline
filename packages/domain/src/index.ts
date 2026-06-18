@@ -54,6 +54,9 @@ export {
 
 export type { DomainResult, DomainViolation } from "./domain-result";
 
+export type { Clock } from "./clock";
+export { fixedClock, systemClock } from "./clock";
+
 export type {
   AssetType,
   CreateLiabilityInput,

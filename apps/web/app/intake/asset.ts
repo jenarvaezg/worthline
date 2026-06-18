@@ -27,6 +27,7 @@ export function parseAssetCommandStrict(
   formData: FormData,
   members: Member[],
   seed: number,
+  today: string,
 ): StrictParseResult<CreateManualAssetInput & HousingCreationData> {
   const name = String(formData.get("name") ?? "").trim();
 
@@ -40,7 +41,7 @@ export function parseAssetCommandStrict(
       ? "illiquid"
       : parseLiquidityTier(formData.get("liquidityTier"));
 
-  const housingData = parseHousingCreationData(formData, type);
+  const housingData = parseHousingCreationData(formData, type, today);
 
   if (!housingData.ok) {
     return { ok: false, error: housingData.error };
@@ -93,6 +94,7 @@ export interface HousingCreationData {
 function parseHousingCreationData(
   formData: FormData,
   type: CreateManualAssetInput["type"],
+  today: string,
 ): { ok: true; data: HousingCreationData } | { ok: false; error: string } {
   if (type !== "real_estate") {
     return { ok: true, data: {} };
@@ -122,7 +124,6 @@ function parseHousingCreationData(
     };
   }
 
-  const today = new Date().toISOString().slice(0, 10);
   const acquisition = parseIsoDateField(date, {
     invalidMessage: "La fecha de adquisición no es válida.",
     rejectFuture: true,
