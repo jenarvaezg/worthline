@@ -10,7 +10,7 @@
 import { NextRequest } from "next/server";
 import { describe, expect, test } from "vitest";
 
-import { POST } from "../apps/web/app/scope/route";
+import { POST } from "@web/scope/route";
 
 function request(fields: Record<string, string>): NextRequest {
   const body = new FormData();

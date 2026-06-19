@@ -19,7 +19,7 @@ import {
   updateInvestmentAction,
   deleteInvestmentAction,
   restoreInvestmentAction,
-} from "../apps/web/app/inversiones/actions";
+} from "@web/inversiones/actions";
 import { catchRedirect, fd } from "./helpers";
 
 // ------------------------------------------------------------- test fixtures --

@@ -18,7 +18,7 @@ vi.mock("next/headers", () => ({
 }));
 
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
-import { initSoloAction, initHogarAction } from "../apps/web/app/empezar/actions";
+import { initSoloAction, initHogarAction } from "@web/empezar/actions";
 import { catchRedirect, fd, errorMessageOf } from "./helpers";
 
 let store: WorthlineStore;

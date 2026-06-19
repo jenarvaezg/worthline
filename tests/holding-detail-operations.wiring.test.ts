@@ -16,10 +16,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
 import { valuationMethodOfAsset } from "@worthline/domain";
-import {
-  deleteOperationAction,
-  recordOperationAction,
-} from "../apps/web/app/inversiones/actions";
+import { deleteOperationAction, recordOperationAction } from "@web/inversiones/actions";
 import { catchRedirect, fd } from "./helpers";
 
 const MEMBER_ID = "member_yo";

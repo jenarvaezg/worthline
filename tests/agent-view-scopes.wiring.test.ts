@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 import Database from "better-sqlite3";
 
 import { createWorthlineStore } from "@worthline/db";
-import { GET } from "../apps/web/app/api/v1/agent-view/scopes/route";
+import { GET } from "@web/api/v1/agent-view/scopes/route";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
 
 const ORIGINAL_DB_PATH = process.env.WORTHLINE_DB_PATH;

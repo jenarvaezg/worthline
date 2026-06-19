@@ -18,7 +18,7 @@ import {
   reactivateMemberAction,
   saveFireConfigAction,
   retractWarningOverrideAction,
-} from "../apps/web/app/ajustes/actions";
+} from "@web/ajustes/actions";
 import { catchRedirect, fd } from "./helpers";
 
 // ------------------------------------------------------------- test fixtures --
