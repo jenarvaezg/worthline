@@ -715,6 +715,8 @@ function buildStore(
     readAssets: assetStore.readAssets,
     readLiabilities: liabilityStore.readLiabilities,
     readOperations: operationsStore.readOperations,
+    readSnapshotHoldings: snapshotStore.readSnapshotHoldings,
+    readSnapshots: (scopeId) => snapshotStore.readSnapshots(scopeId),
   });
   // importWorkspace's post-import gap-fill spans every domain and the snapshot
   // save path, so it stays in the monolith and is injected into the workspace
