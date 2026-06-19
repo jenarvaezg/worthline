@@ -10,8 +10,8 @@
  */
 import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore } from "../src/index";
-import type { SourcePositionInput, WorthlineStore } from "../src/index";
+import { createInMemoryStore } from "@db/index";
+import type { SourcePositionInput, WorthlineStore } from "@db/index";
 
 const MEMBER_ID = "mJ";
 

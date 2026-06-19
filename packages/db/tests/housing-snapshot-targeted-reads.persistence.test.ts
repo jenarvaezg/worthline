@@ -23,9 +23,9 @@
 import Database from "better-sqlite3";
 import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore, createStoreFromSqlite } from "../src/index";
-import type { WorthlineStore } from "../src/index";
-import { migrate } from "../src/migrate";
+import { createInMemoryStore, createStoreFromSqlite } from "@db/index";
+import type { WorthlineStore } from "@db/index";
+import { migrate } from "@db/migrate";
 
 const TODAY = "2026-06-12";
 

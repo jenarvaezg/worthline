@@ -16,9 +16,9 @@
 import Database from "better-sqlite3";
 import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore } from "../src/index";
-import { migrate, SCHEMA_VERSION } from "../src/migrate";
-import { schemaSql } from "../src/schema-sql";
+import { createInMemoryStore } from "@db/index";
+import { migrate, SCHEMA_VERSION } from "@db/migrate";
+import { schemaSql } from "@db/schema-sql";
 
 /** A pre-v26 DB at user_version 25: current schema minus the new asset column. */
 function seedV25(): Database.Database {

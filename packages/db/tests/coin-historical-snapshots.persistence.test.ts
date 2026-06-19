@@ -13,8 +13,8 @@ import { describe, expect, test } from "vitest";
 
 import type { CoinPosition } from "@worthline/domain";
 
-import { createInMemoryStore } from "../src/index";
-import type { SourcePositionInput, WorthlineStore } from "../src/index";
+import { createInMemoryStore } from "@db/index";
+import type { SourcePositionInput, WorthlineStore } from "@db/index";
 
 const TODAY = "2026-06-15";
 const MEMBER_ID = "mJ";

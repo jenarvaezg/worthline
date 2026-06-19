@@ -14,8 +14,8 @@
 import { allocateScopedHolding } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore } from "../src/index";
-import type { WorthlineStore } from "../src/index";
+import { createInMemoryStore } from "@db/index";
+import type { WorthlineStore } from "@db/index";
 
 const TODAY = "2026-06-13";
 const PAST_DATES = ["2026-01-15", "2026-02-15", "2026-03-15", "2026-04-15", "2026-05-15"];

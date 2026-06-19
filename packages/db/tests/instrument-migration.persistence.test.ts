@@ -13,8 +13,8 @@
 import Database from "better-sqlite3";
 import { describe, expect, test } from "vitest";
 
-import { migrate, SCHEMA_VERSION } from "../src/migrate";
-import { schemaSql } from "../src/schema-sql";
+import { migrate, SCHEMA_VERSION } from "@db/migrate";
+import { schemaSql } from "@db/schema-sql";
 
 function seedV13(): Database.Database {
   const db = new Database(":memory:");

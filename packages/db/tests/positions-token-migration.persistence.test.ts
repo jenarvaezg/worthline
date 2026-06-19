@@ -16,9 +16,9 @@
 import Database from "better-sqlite3";
 import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore } from "../src/index";
-import { migrate, SCHEMA_VERSION } from "../src/migrate";
-import { schemaSql } from "../src/schema-sql";
+import { createInMemoryStore } from "@db/index";
+import { migrate, SCHEMA_VERSION } from "@db/migrate";
+import { schemaSql } from "@db/schema-sql";
 
 /** The pre-v25 `positions` DDL: coin-only, NOT NULL coin columns, no `kind`/tokens. */
 const LEGACY_POSITIONS = `CREATE TABLE positions (

@@ -14,7 +14,7 @@
 import Database from "better-sqlite3";
 import { describe, expect, test } from "vitest";
 
-import { execToleratingMissingTable } from "../src/migrate";
+import { execToleratingMissingTable } from "@db/migrate";
 
 describe("execToleratingMissingTable (migration DDL/DML guard)", () => {
   test("creates the index when the table and columns exist", () => {

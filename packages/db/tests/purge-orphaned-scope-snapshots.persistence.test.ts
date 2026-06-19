@@ -22,8 +22,8 @@ import { listScopeOptions } from "@worthline/domain";
 import type { NetWorthSnapshot, SnapshotHoldingRow } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore } from "../src/index";
-import type { WorthlineStore } from "../src/index";
+import { createInMemoryStore } from "@db/index";
+import type { WorthlineStore } from "@db/index";
 
 function saveScopeSnapshot(
   store: WorthlineStore,
