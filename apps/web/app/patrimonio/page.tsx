@@ -1,4 +1,4 @@
-import { runBootstrapHealthcheck, withStore } from "@worthline/db";
+import { bootstrapHealthcheck, withStore } from "@web/store";
 import {
   collectWarnings,
   groupPortfolio,
@@ -32,7 +32,7 @@ export default async function PatrimonioPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolvedSearchParams = await searchParams;
-  const persistence = runBootstrapHealthcheck();
+  const persistence = await bootstrapHealthcheck();
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
   const currentUrl = buildCurrentUrlFor("/patrimonio", resolvedSearchParams);
@@ -42,7 +42,7 @@ export default async function PatrimonioPage({
   const queryScopeId = parseScopeParam(resolvedSearchParams?.scope);
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
-  const storeData = withStore((store) => {
+  const storeData = await withStore((store) => {
     const workspace = store.workspace.readWorkspace();
 
     if (!workspace) {

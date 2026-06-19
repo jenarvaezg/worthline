@@ -7,7 +7,7 @@
  * stand-in for backup/sync, and a human should be able to read it.
  */
 
-import { withStore } from "@worthline/db";
+import { withStore } from "@web/store";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +19,8 @@ function localDateStamp(now: Date): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-export function GET(): Response {
-  const doc = withStore((store) =>
+export async function GET(): Promise<Response> {
+  const doc = await withStore((store) =>
     store.workspace.readWorkspace() === null ? null : store.workspace.exportWorkspace(),
   );
 

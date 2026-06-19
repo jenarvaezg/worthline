@@ -12,6 +12,7 @@ import {
 } from "@worthline/pricing";
 
 import { parseEntityId } from "@web/intake";
+import { guardDemoWrite } from "@web/demo/write-guard";
 import {
   connectSource,
   currentUrlOf,
@@ -39,6 +40,7 @@ export async function connectNumistaAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
+  guardDemoWrite("/ajustes");
   return connectSource(
     numistaAdapter,
     formData,
@@ -58,6 +60,7 @@ export async function syncNumistaAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
+  guardDemoWrite(currentUrlOf(formData));
   const sourceId = parseEntityId(formData, "sourceId");
 
   return syncSource(
@@ -108,6 +111,7 @@ export async function disconnectNumistaAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
+  guardDemoWrite(currentUrlOf(formData));
   const sourceId = parseEntityId(formData, "sourceId");
   // The disconnect CHOICE (PRD #160 story 21, ADR 0016): "freeze" keeps the
   // holding as a plain hand-maintained one; anything else (the default) removes
