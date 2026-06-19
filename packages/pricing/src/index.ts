@@ -147,8 +147,20 @@ export type {
   CoinValueResult,
   NumismaticValuation,
 } from "./coin-valuation";
-export { fetchMetalSpotEur, syncNumistaCollection } from "./numista-sync";
-export type { NumistaSyncDeps, PositionDraft } from "./numista-sync";
+export {
+  NUMISMATIC_TTL_DAYS,
+  fetchMetalSpotEur,
+  refreshCoinValuations,
+  syncNumistaCollection,
+} from "./adapters/numista-valuation";
+export type {
+  NumistaSyncDeps,
+  PositionDraft,
+  RevalueDeps,
+  RevalueOptions,
+  RevaluedPosition,
+  RevaluePosition,
+} from "./adapters/numista-valuation";
 export {
   getAccountSnapshots,
   getAllBalances,
@@ -169,13 +181,6 @@ export { fetchCoinGeckoPriceEur, syncBinanceAccount } from "./binance-sync";
 export type { BinanceSyncDeps, TokenPositionDraft } from "./binance-sync";
 export { fetchCoinGeckoHistoryEur, reconstructBinanceHistory } from "./binance-history";
 export type { ReconstructBinanceHistoryDeps } from "./binance-history";
-export { NUMISMATIC_TTL_DAYS, refreshCoinValuations } from "./numista-revalue";
-export type {
-  RevalueDeps,
-  RevalueOptions,
-  RevaluedPosition,
-  RevaluePosition,
-} from "./numista-revalue";
 export type {
   InvestmentAssetRef,
   RefreshOptions,

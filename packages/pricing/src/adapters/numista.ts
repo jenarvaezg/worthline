@@ -8,15 +8,17 @@
  * no term-locked label.
  *
  * The adapter owns ONLY Numista-specific parsing + the API surface. Its
- * `listPositions`/`revalue` DELEGATE to the existing `numista-sync.ts` /
- * `numista-revalue.ts` orchestrators — #323 folds those two files into this
- * adapter. `buildHistory` is null: Numista's purchase-date accretion is generated
- * store-side from the synced coins (`coinCollectionValueAtDate`), not by the API.
+ * `listPositions`/`revalue` delegate to the consolidated `numista-valuation.ts`
+ * module the adapter owns — #323 folded the two former orchestrators
+ * (`numista-sync.ts` + `numista-revalue.ts`) into that one module so the response
+ * parsing, the request-cap dedup, the numismatic TTL gate, and the candidate-row
+ * construction live in ONE place shared by both modes. `buildHistory` is null:
+ * Numista's purchase-date accretion is generated store-side from the synced coins
+ * (`coinCollectionValueAtDate`), not by the API.
  */
 
 import type { NumistaCredentials, NumistaToken } from "../numista";
-import { refreshCoinValuations } from "../numista-revalue";
-import { syncNumistaCollection } from "../numista-sync";
+import { refreshCoinValuations, syncNumistaCollection } from "./numista-valuation";
 import type {
   ConnectedSourceAdapter,
   PositionDraft,

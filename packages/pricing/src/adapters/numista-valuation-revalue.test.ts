@@ -9,8 +9,8 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { NUMISMATIC_TTL_DAYS, refreshCoinValuations } from "./numista-revalue";
-import type { RevaluePosition } from "./numista-revalue";
+import { NUMISMATIC_TTL_DAYS, refreshCoinValuations } from "./numista-valuation";
+import type { RevaluePosition } from "./numista-valuation";
 
 const NOW = "2026-06-15T12:00:00.000Z";
 
