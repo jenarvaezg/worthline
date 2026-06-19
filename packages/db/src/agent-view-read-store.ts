@@ -1,6 +1,7 @@
 import type {
   DebtModel,
   ExportedPublicId,
+  FireScopeConfig,
   InvestmentOperation,
   Liability,
   ManualAsset,
@@ -96,6 +97,8 @@ export interface AgentViewReadStore {
   readEarlyRepayments: (planId: string) => EarlyRepaymentRecord[];
   /** A liability's balance anchors, ascending by date (#338). */
   readBalanceAnchors: (liabilityId: string) => BalanceAnchorRecord[];
+  /** FIRE configs keyed by internal scope id (`household` | member | group), #340. */
+  readFireConfig: () => Record<string, FireScopeConfig>;
 }
 
 export interface AgentViewReadStoreDeps {
@@ -119,6 +122,7 @@ export interface AgentViewReadStoreDeps {
   readInterestRateRevisions: (planId: string) => InterestRateRevisionRecord[];
   readEarlyRepayments: (planId: string) => EarlyRepaymentRecord[];
   readBalanceAnchors: (liabilityId: string) => BalanceAnchorRecord[];
+  readFireConfig: () => Record<string, FireScopeConfig>;
 }
 
 export function createAgentViewReadStore(
@@ -164,5 +168,6 @@ export function createAgentViewReadStore(
     readInterestRateRevisions: (planId) => deps.readInterestRateRevisions(planId),
     readEarlyRepayments: (planId) => deps.readEarlyRepayments(planId),
     readBalanceAnchors: (liabilityId) => deps.readBalanceAnchors(liabilityId),
+    readFireConfig: () => deps.readFireConfig(),
   };
 }

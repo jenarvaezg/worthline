@@ -192,6 +192,41 @@ export interface AgentViewExposure {
   };
 }
 
+/** Whether a scope has a FIRE configuration (PRD #328, #340). */
+export type AgentViewFireStatus = "configured" | "unconfigured";
+
+/**
+ * The FIRE assumptions a scope's figures rest on (PRD #328, #340). Rates are
+ * `0..1` decimal strings (e.g. `"0.04"`); `monthlySpending` is the configured
+ * monthly drawdown as money.
+ */
+export interface AgentViewFireAssumptions {
+  safeWithdrawalRate: string;
+  expectedRealReturn: string;
+  monthlySpending: AgentViewMoney;
+}
+
+/**
+ * The compact FIRE summary folded into the main financial context (PRD #328,
+ * #340). When `status` is `unconfigured` only the status is present — no figures
+ * are fabricated. When `configured`, `progressRatio` is `eligibleAssets /
+ * fireNumber` as a non-negative decimal string (exceeds `1` once over-funded)
+ * and `gap` is `fireNumber − eligibleAssets` (signed: negative once over-funded).
+ */
+export interface AgentViewFireSummary {
+  status: AgentViewFireStatus;
+  /** Present only when configured: `eligibleAssets / fireNumber` as a non-negative decimal string (`>1` once over-funded). */
+  progressRatio?: string;
+  /** Present only when configured. */
+  fireNumber?: AgentViewMoney;
+  /** Present only when configured: the scope-weighted FIRE-eligible total. */
+  eligibleAssets?: AgentViewMoney;
+  /** Present only when configured: `fireNumber − eligibleAssets`, signed. */
+  gap?: AgentViewMoney;
+  /** Present only when configured. */
+  assumptions?: AgentViewFireAssumptions;
+}
+
 /** Compact current-state package for a selected scope (PRD #328, #335). */
 export interface AgentViewFinancialContext {
   scope: AgentViewScope;
@@ -202,8 +237,81 @@ export interface AgentViewFinancialContext {
   exposure: AgentViewExposure;
   holdings: AgentViewHoldingsBlock;
   connectedSources: AgentViewConnectedSourceSummary[];
+  /** The scope's FIRE progress summary; status-only when unconfigured (#340). */
+  fire: AgentViewFireSummary;
   /** Drilldown endpoints for deeper facts (snapshots, FIRE, data quality, trash). */
   links: Record<string, string>;
+}
+
+/**
+ * One asset held out of a scope's FIRE-eligible total (PRD #328, #340). The
+ * `holding` reference carries the registry `wl_hld_` id; `reason` is the asset's
+ * own primary-residence flag or a manual exclusion in the FIRE config.
+ */
+export interface AgentViewFireExcludedAsset {
+  holding: AgentViewObjectReference;
+  reason: "primary_residence" | "manual";
+}
+
+/** A scope's stored FIRE configuration (PRD #328, #340). */
+export interface AgentViewFireConfig {
+  monthlySpending: AgentViewMoney;
+  safeWithdrawalRate: string;
+  expectedRealReturn: string;
+  currentAge?: number;
+  targetRetirementAge?: number;
+}
+
+/**
+ * The computed FIRE result for a scope (PRD #328, #340). `progressRatio` is
+ * `eligibleAssets / fireNumber` as a non-negative decimal string (`>1` once
+ * over-funded); `gap` is `fireNumber − eligibleAssets` (signed). Coast-FIRE facts appear only when the config
+ * carries an age (so they can be computed honestly).
+ */
+export interface AgentViewFireResult {
+  fireNumber: AgentViewMoney;
+  eligibleAssets: AgentViewMoney;
+  gap: AgentViewMoney;
+  progressRatio: string;
+  /** Present only when the config carries an age. */
+  coastFireRequired?: AgentViewMoney;
+  /** Present only when a coast-FIRE age could be derived. */
+  coastFireAge?: number;
+  /** Present only when the config carries an age. */
+  isAlreadyAtCoastFire?: boolean;
+}
+
+/**
+ * A data-quality-style signal on a FIRE-context read (PRD #328, #340). The full
+ * taxonomy is issue #341; here it surfaces the one honest signal this endpoint
+ * can raise — a scope with no FIRE configuration.
+ */
+export interface AgentViewFireQualitySignal {
+  category: "missing_configuration";
+  message: string;
+}
+
+/**
+ * The full FIRE context for a scope (PRD #328, #340). When `status` is
+ * `unconfigured`, `config`/`result` are absent and a `missing_configuration`
+ * quality signal is raised; nothing is invented. Historical FIRE is unsupported
+ * — any dated request is a documented `422`.
+ */
+export interface AgentViewFireContext {
+  scope: AgentViewScope;
+  status: AgentViewFireStatus;
+  /** Present only when configured. */
+  config?: AgentViewFireConfig;
+  /** Present only when configured. */
+  result?: AgentViewFireResult;
+  /** The scope-weighted FIRE-eligible total (0 when unconfigured). */
+  eligibleAssetsTotal: AgentViewMoney;
+  /** Assets excluded from the eligible total, with their reason. */
+  excludedAssets: AgentViewFireExcludedAsset[];
+  /** Present only when configured. */
+  assumptions?: AgentViewFireAssumptions;
+  /** Honest signals about the read (e.g. a scope with no FIRE config). */
+  qualitySignals: AgentViewFireQualitySignal[];
 }
 
 /**
