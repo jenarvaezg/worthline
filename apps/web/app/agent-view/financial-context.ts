@@ -1,16 +1,13 @@
 import type { AgentViewReadStore } from "@worthline/db";
 import {
-  addUnits,
   buildLiquidityBreakdown,
   calculateNetWorth,
   defaultsFor,
   listScopeOptions,
-  multiplyToMinor,
   projectPortfolio,
 } from "@worthline/domain";
 import type {
   Instrument,
-  InvestmentOperation,
   Liability,
   LiquidityTier,
   LiquidityTierBreakdown,
@@ -37,6 +34,7 @@ import {
   type AgentViewOperationSummary,
   type AgentViewOwnershipShare,
 } from "./contract";
+import { summarizeOperations } from "./operation-summary";
 import { publicIdMap, requirePublicId, resolveInternalScopeId } from "./scope-resolution";
 import { listAgentViewScopes } from "./scopes";
 
@@ -205,61 +203,6 @@ function buildHoldingSummaries(
   ];
 
   return summaries.sort(compareHoldings);
-}
-
-/**
- * Fold an investment holding's operations into compact totals (PRD #328). Raw
- * ledger amounts — not scope-weighted — since operations are facts about the
- * holding, not a member's slice. Returns undefined when there are no operations.
- */
-function summarizeOperations(
-  operations: InvestmentOperation[],
-  currency: string,
-): AgentViewOperationSummary | undefined {
-  if (operations.length === 0) {
-    return undefined;
-  }
-
-  const ordered = [...operations].sort((a, b) =>
-    a.executedAt === b.executedAt
-      ? a.id.localeCompare(b.id)
-      : a.executedAt.localeCompare(b.executedAt),
-  );
-  const first = ordered[0];
-  const last = ordered[ordered.length - 1];
-
-  if (!first || !last) {
-    return undefined;
-  }
-
-  let unitsBought = "0";
-  let unitsSold = "0";
-  let grossBuyMinor = 0;
-  let grossSellMinor = 0;
-  let feesMinor = 0;
-
-  for (const operation of operations) {
-    feesMinor += operation.feesMinor;
-    const amountMinor = multiplyToMinor(operation.units, operation.pricePerUnit);
-    if (operation.kind === "buy") {
-      unitsBought = addUnits(unitsBought, operation.units);
-      grossBuyMinor += amountMinor;
-    } else {
-      unitsSold = addUnits(unitsSold, operation.units);
-      grossSellMinor += amountMinor;
-    }
-  }
-
-  return {
-    feesTotal: moneyOf(feesMinor, currency),
-    firstOperationDate: first.executedAt,
-    grossBuyAmount: moneyOf(grossBuyMinor, currency),
-    grossSellAmount: moneyOf(grossSellMinor, currency),
-    latestOperationDate: last.executedAt,
-    operationCount: operations.length,
-    unitsBought,
-    unitsSold,
-  };
 }
 
 /**
