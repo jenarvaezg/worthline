@@ -22,7 +22,7 @@
     "backfill:snapshots": "tsx scripts/backfill-historical-snapshots.ts",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "format": "prettier --check .",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "lint-staged": {
     "{apps,packages,tests,e2e,scripts}/**/*.{ts,tsx,js,jsx,mjs}": [
