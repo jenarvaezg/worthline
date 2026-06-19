@@ -1,5 +1,5 @@
 /**
- * Declarative persona specs (PRD #297, ADR 0023). A spec is pure data — no store
+ * Declarative persona specs (PRD #297, ADR 0029). A spec is pure data — no store
  * calls — interpreted by {@link seedPersona}. Every date is expressed RELATIVE to
  * the pinned demo clock (`yearsAgo`/`monthsAgo`/`daysAgo`), so each persona's
  * history regenerates correctly whenever the demo's "now" is bumped.

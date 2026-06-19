@@ -1,5 +1,5 @@
 /**
- * Demo store provider (PRD #297, ADR 0023). The centralized store-opening seam
+ * Demo store provider (PRD #297, ADR 0029). The centralized store-opening seam
  * for demo mode: it opens a per-persona SQLite database in the platform's
  * writable temp dir, so the app's involuntary writes (bootstrap healthcheck,
  * auto-snapshot capture per ADR 0008, price-cache upsert) land on a throwaway

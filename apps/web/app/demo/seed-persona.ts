@@ -1,5 +1,5 @@
 /**
- * Persona seed builder (PRD #297, ADR 0023) — the deepest demo module.
+ * Persona seed builder (PRD #297, ADR 0029) — the deepest demo module.
  *
  * `seedPersona(store, spec, asOf)` constructs a persona's workspace ENTIRELY
  * through the public store API and the dated-fact / ripple seams (ADR 0020). The

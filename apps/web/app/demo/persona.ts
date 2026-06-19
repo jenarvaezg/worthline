@@ -1,5 +1,5 @@
 /**
- * Demo personas (PRD #297, ADR 0023). A persona is a curated, fictional
+ * Demo personas (PRD #297, ADR 0029). A persona is a curated, fictional
  * workspace the demo build seeds and renders. The id vocabulary is closed and
  * lives here — the single source of truth queried by the demo context resolver,
  * the store provider, the seed specs, and the /demo landing.

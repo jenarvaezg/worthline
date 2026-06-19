@@ -1,5 +1,5 @@
 /**
- * Demo write guard (PRD #297, S2 #300, ADR 0023). The read-only enforcement seam:
+ * Demo write guard (PRD #297, S2 #300, ADR 0029). The read-only enforcement seam:
  * every mutating server action calls it FIRST, before any store access. In demo
  * mode it short-circuits the mutation — redirecting with a friendly
  * "deshabilitado en la demo" message via the existing error-redirect intake — so
