@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "jsx": "preserve",
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "types": ["node"],
+    "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
+    "paths": {
+      "@web/*": ["apps/web/app/*"],
+      "@domain/*": ["packages/domain/src/*"],
+      "@db/*": ["packages/db/src/*"],
+      "@pricing/*": ["packages/pricing/src/*"],
+      "@tests/*": ["tests/*"],
+      "@e2e/*": ["e2e/*"],
+      "@scripts/*": ["scripts/*"]
+    }
+  },
+  "include": ["e2e/**/*.ts", "playwright.config.ts"]
+}
