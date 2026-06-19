@@ -35,6 +35,7 @@ import {
   type AgentViewOwnershipShare,
 } from "./contract";
 import { deriveSourcePublicId, toFreshnessSummary } from "./connected-source-positions";
+import { buildDataQualitySummary } from "./data-quality";
 import { buildFireSummary } from "./fire-context";
 import { summarizeOperations } from "./operation-summary";
 import { publicIdMap, requirePublicId, resolveInternalScopeId } from "./scope-resolution";
@@ -113,6 +114,7 @@ export function buildFinancialContext(
     asOf: options.asOf,
     baseCurrency: workspace.baseCurrency,
     connectedSources: buildConnectedSources(store, holdingSummaries),
+    dataQuality: buildDataQualitySummary(store, options.scopeId),
     exposure: buildExposure(holdingSummaries, summary.grossAssets),
     fire: buildFireSummary(store, options.scopeId),
     holdings: toHoldingsBlock(

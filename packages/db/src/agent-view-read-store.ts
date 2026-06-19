@@ -9,6 +9,7 @@ import type {
   PriceFreshnessState,
   SourceAdapter,
   SourcePosition,
+  WarningOverride,
   Workspace,
 } from "@worthline/domain";
 
@@ -51,6 +52,24 @@ export interface AgentViewSourceFreshness {
   freshnessState: PriceFreshnessState;
   /** When the value was last fetched (ISO). */
   fetchedAt: string;
+  /** Why the last fetch is degraded (a failed/stale signal), when recorded. */
+  staleReason?: string;
+}
+
+/**
+ * A priced asset's valuation freshness as the agent view sees it (PRD #328,
+ * #341): the staleness indicator stamped on its price-cache row, the fetch time,
+ * the providing source, and the failed-fetch reason when one is recorded.
+ * Secret-free by construction — it carries no provider payload, no token, and no
+ * price figure. Null when the asset has no cached price (a manual/derived asset
+ * with no provider quote). Drives the `price_freshness` data-quality category.
+ */
+export interface AgentViewPriceFreshness {
+  freshnessState: PriceFreshnessState;
+  /** When the price was last fetched (ISO). */
+  fetchedAt: string;
+  /** The provider that supplied the cached price. */
+  source: string;
   /** Why the last fetch is degraded (a failed/stale signal), when recorded. */
   staleReason?: string;
 }
@@ -99,6 +118,18 @@ export interface AgentViewReadStore {
   readBalanceAnchors: (liabilityId: string) => BalanceAnchorRecord[];
   /** FIRE configs keyed by internal scope id (`household` | member | group), #340. */
   readFireConfig: () => Record<string, FireScopeConfig>;
+  /**
+   * A priced asset's valuation freshness, or null if it has no cached price
+   * (#341). Sanitized: only the staleness signal, the fetch time, the providing
+   * source, and the failed-fetch reason — never the price figure or any secret.
+   */
+  readPriceFreshness: (assetId: string) => AgentViewPriceFreshness | null;
+  /**
+   * Persisted overrideable-warning acknowledgements (#341). A pure read — the
+   * agent view exposes which overrideable warnings the user marked intentional
+   * so it can label them, and NEVER writes a new override.
+   */
+  readWarningOverrides: () => WarningOverride[];
 }
 
 export interface AgentViewReadStoreDeps {
@@ -123,6 +154,14 @@ export interface AgentViewReadStoreDeps {
   readEarlyRepayments: (planId: string) => EarlyRepaymentRecord[];
   readBalanceAnchors: (liabilityId: string) => BalanceAnchorRecord[];
   readFireConfig: () => Record<string, FireScopeConfig>;
+  /** The price-cache row of any asset (its valuation freshness), or null. */
+  readPriceCache: (assetId: string) => {
+    freshnessState: PriceFreshnessState;
+    fetchedAt: string;
+    source: string;
+    staleReason?: string;
+  } | null;
+  readWarningOverrides: () => WarningOverride[];
 }
 
 export function createAgentViewReadStore(
@@ -169,5 +208,18 @@ export function createAgentViewReadStore(
     readEarlyRepayments: (planId) => deps.readEarlyRepayments(planId),
     readBalanceAnchors: (liabilityId) => deps.readBalanceAnchors(liabilityId),
     readFireConfig: () => deps.readFireConfig(),
+    readPriceFreshness: (assetId) => {
+      const cache = deps.readPriceCache(assetId);
+      if (!cache) {
+        return null;
+      }
+      return {
+        fetchedAt: cache.fetchedAt,
+        freshnessState: cache.freshnessState,
+        source: cache.source,
+        ...(cache.staleReason === undefined ? {} : { staleReason: cache.staleReason }),
+      };
+    },
+    readWarningOverrides: () => deps.readWarningOverrides(),
   };
 }
