@@ -20,7 +20,7 @@ import {
   editAssetAction,
   updateAssetValuationAction,
   updateLiabilityBalanceAction,
-} from "../../../actions";
+} from "@web/patrimonio/actions";
 
 type FormAction = (formData: FormData) => void | Promise<void>;
 

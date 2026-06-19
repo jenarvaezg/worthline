@@ -2,7 +2,11 @@ import type { WorthlineStore } from "@worthline/db";
 import { createManualAssetSafe } from "@worthline/domain";
 import type { CreateManualAssetInput, Workspace } from "@worthline/domain";
 
-import { createStableId, type HousingCreationData, mapDomainViolation } from "../intake";
+import {
+  createStableId,
+  type HousingCreationData,
+  mapDomainViolation,
+} from "@web/intake";
 
 /**
  * The persistence half of creating a manual asset, shared by the per-type add

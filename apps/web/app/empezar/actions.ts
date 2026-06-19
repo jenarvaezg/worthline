@@ -9,7 +9,7 @@ import {
   errorRedirectUrl,
   parseEmpezarHogar,
   parseEmpezarSolo,
-} from "../intake";
+} from "@web/intake";
 
 export async function initSoloAction(
   formData: FormData,

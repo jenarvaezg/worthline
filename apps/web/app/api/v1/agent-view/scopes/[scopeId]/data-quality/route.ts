@@ -1,7 +1,7 @@
 import { withStore } from "@worthline/db";
 import type { NextRequest, NextResponse } from "next/server";
 
-import { handleGetDataQuality } from "../../../../../../agent-view/http";
+import { handleGetDataQuality } from "@web/agent-view/http";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

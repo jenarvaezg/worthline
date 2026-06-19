@@ -16,9 +16,9 @@ import {
   parseScopeCookie,
   resolveOkMessage,
   SCOPE_COOKIE_NAME,
-} from "../../intake";
-import Shell from "../../shell";
-import { createHoldingAction } from "../create-holding-action";
+} from "@web/intake";
+import Shell from "@web/shell";
+import { createHoldingAction } from "@web/patrimonio/create-holding-action";
 import {
   addHoldingFieldValue,
   buildSymbolSearchCurrentParams,

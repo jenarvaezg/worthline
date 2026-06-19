@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { appendParam, SCOPE_COOKIE_NAME } from "../intake";
+import { appendParam, SCOPE_COOKIE_NAME } from "@web/intake";
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const formData = await request.formData();

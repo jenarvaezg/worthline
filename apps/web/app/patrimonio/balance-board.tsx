@@ -3,7 +3,7 @@ import type { DomainWarning, PortfolioGroup, UnifiedHolding } from "@worthline/d
 import { formatMoneyMinor } from "@worthline/domain";
 import Link from "next/link";
 
-import { boardRefreshHover } from "../price-refresh";
+import { boardRefreshHover } from "@web/price-refresh";
 
 import {
   acknowledgeWarningAction,

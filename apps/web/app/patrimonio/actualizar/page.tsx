@@ -14,9 +14,9 @@ import {
   parseScopeCookie,
   resolveOkMessage,
   SCOPE_COOKIE_NAME,
-} from "../../intake";
-import Shell from "../../shell";
-import { batchValueUpdateAction } from "../actions";
+} from "@web/intake";
+import Shell from "@web/shell";
+import { batchValueUpdateAction } from "@web/patrimonio/actions";
 
 export const dynamic = "force-dynamic";
 

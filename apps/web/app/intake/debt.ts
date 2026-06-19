@@ -7,7 +7,7 @@ import type {
 import type { CreateLiabilityInput, DebtModel, Member } from "@worthline/domain";
 import { parseDecimalStrict } from "@worthline/domain";
 
-import { parseIsoDateField, parsePercentToDecimal } from "../intake-primitives";
+import { parseIsoDateField, parsePercentToDecimal } from "@web/intake-primitives";
 import {
   createStableId,
   parseMoneyMinorField,

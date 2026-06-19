@@ -11,7 +11,7 @@ import {
   numistaAdapter,
 } from "@worthline/pricing";
 
-import { parseEntityId } from "../intake";
+import { parseEntityId } from "@web/intake";
 import {
   connectSource,
   currentUrlOf,
