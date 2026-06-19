@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 
 import type { WorthlineStore } from "@worthline/db";
+import { systemClock } from "@worthline/domain";
 
 import {
   AgentViewHttpError,
@@ -9,6 +10,7 @@ import {
   successEnvelope,
   type AgentViewErrorEnvelope,
 } from "./contract";
+import { buildFinancialContext } from "./financial-context";
 import { listAgentViewScopes } from "./scopes";
 
 type StoreRunner = <T>(run: (store: WorthlineStore) => T) => T;
@@ -31,6 +33,49 @@ export function handleListScopes(
   } catch (error) {
     return toErrorResponse(error);
   }
+}
+
+export function handleGetFinancialContext(
+  request: NextRequest,
+  scopeId: string,
+  runWithStore: StoreRunner,
+): NextResponse {
+  try {
+    guardAgentViewRequest(request, ["holdingLimit"]);
+
+    const asOf = systemClock().today();
+    const holdingLimit = parseHoldingLimit(
+      new URL(request.url).searchParams.get("holdingLimit"),
+    );
+
+    return json(
+      successEnvelope(
+        runWithStore((store) =>
+          buildFinancialContext(store.agentView, { asOf, holdingLimit, scopeId }),
+        ),
+      ),
+      200,
+    );
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+function parseHoldingLimit(raw: string | null): number | undefined {
+  if (raw === null) {
+    return undefined;
+  }
+
+  if (!/^\d+$/.test(raw) || Number(raw) < 1) {
+    throw new AgentViewHttpError({
+      code: "bad_request",
+      details: { holdingLimit: raw },
+      message: "holdingLimit must be a positive integer.",
+      status: 400,
+    });
+  }
+
+  return Number(raw);
 }
 
 function guardAgentViewRequest(request: NextRequest, allowedQueryParams: string[]): void {

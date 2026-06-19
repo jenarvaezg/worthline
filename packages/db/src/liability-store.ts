@@ -19,6 +19,10 @@ import type { AmortizationPlanInput } from "@worthline/domain";
 import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
 
 import {
+  ensureAgentViewPublicIds,
+  publicIdTargetsForHolding,
+} from "./agent-view-public-ids";
+import {
   amortizationPlans,
   earlyRepayments,
   interestRateRevisions,
@@ -1105,6 +1109,10 @@ function createLiabilityRecord(ctx: StoreContext, input: CreateLiabilityInput): 
         )
         .run();
     }
+
+    // Register the holding's agent-view public id on creation (#335) so the
+    // non-lazy read path never 500s on a missing id — mirrors createMember.
+    ensureAgentViewPublicIds(ctx, publicIdTargetsForHolding(liability.id));
   });
 
   ctx.writeAuditEntry("create_liability", "liability", liability.id);

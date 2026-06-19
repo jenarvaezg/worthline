@@ -16,6 +16,10 @@ import {
 } from "@worthline/domain";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
+import {
+  ensureAgentViewPublicIds,
+  publicIdTargetsForHolding,
+} from "./agent-view-public-ids";
 import { assetOwnerships, assets, assetValuations, investmentAssets } from "./schema";
 import { hardDeleteAssetTx, readAssets, type StoreContext } from "./store-context";
 
@@ -434,6 +438,10 @@ function createManualAssetRecord(ctx: StoreContext, input: CreateManualAssetInpu
         )
         .run();
     }
+
+    // Register the holding's agent-view public id on creation (#335) so the
+    // non-lazy read path never 500s on a missing id — mirrors createMember.
+    ensureAgentViewPublicIds(ctx, publicIdTargetsForHolding(asset.id));
   });
 
   ctx.writeAuditEntry("create_asset", "asset", asset.id);
@@ -507,6 +515,10 @@ function createInvestmentAsset(
         unitSymbol: input.unitSymbol ?? null,
       })
       .run();
+
+    // An investment is a holding too — register its agent-view public id on
+    // creation (#335) so the non-lazy read path never 500s on a missing id.
+    ensureAgentViewPublicIds(ctx, publicIdTargetsForHolding(asset.id));
   });
 }
 

@@ -215,7 +215,7 @@ export interface ExportedConnectedSource {
   positions: ExportedPosition[];
 }
 
-export type ExportedPublicIdEntityType = "scope" | "member" | "member_group";
+export type ExportedPublicIdEntityType = "scope" | "member" | "member_group" | "holding";
 
 export interface ExportedPublicId {
   entityType: ExportedPublicIdEntityType;
