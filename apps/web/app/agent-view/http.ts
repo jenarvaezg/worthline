@@ -20,6 +20,7 @@ import {
   type AgentViewSnapshotGranularity,
   type AgentViewSnapshotHistory,
   type AgentViewSnapshotSort,
+  type AgentViewTrashSummary,
 } from "./contract";
 import {
   buildHoldingConnectedSourcePositions,
@@ -46,6 +47,7 @@ import {
   DEFAULT_SNAPSHOT_LIMIT,
   MAX_SNAPSHOT_LIMIT,
 } from "./snapshot-history";
+import { buildTrashSummary, DEFAULT_TRASH_LIMIT, MAX_TRASH_LIMIT } from "./trash-summary";
 
 type StoreRunner = <T>(run: (store: WorthlineStore) => T) => T;
 
@@ -215,6 +217,31 @@ export function handleGetDataQuality(
   }
 }
 
+const TRASH_QUERY_PARAMS = ["limit", "cursor"];
+
+export function handleGetTrashSummary(
+  request: NextRequest,
+  scopeId: string,
+  runWithStore: StoreRunner,
+): NextResponse {
+  try {
+    guardAgentViewRequest(request, TRASH_QUERY_PARAMS);
+
+    const params = new URL(request.url).searchParams;
+    const options = {
+      cursor: params.get("cursor") ?? undefined,
+      limit: parseTrashLimit(params.get("limit")),
+      scopeId,
+    };
+
+    const summary = runWithStore((store) => buildTrashSummary(store.agentView, options));
+
+    return json(trashSummaryEnvelope(request, summary), 200);
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
 export function handleGetHoldingDetail(
   request: NextRequest,
   holdingId: string,
@@ -350,6 +377,24 @@ function dataQualityEnvelope(request: NextRequest, page: AgentViewDataQualityPag
   }
 
   return { data: page.signals, links, meta: page.meta };
+}
+
+/**
+ * Envelope a trash-summary page: the trashed holdings as `data`, the pagination
+ * facts as `meta`, and `links.self` plus `links.next` (the same URL carrying the
+ * `nextCursor`) when more pages remain — the same shape as a snapshot page.
+ */
+function trashSummaryEnvelope(request: NextRequest, summary: AgentViewTrashSummary) {
+  const self = new URL(request.url);
+  const links: Record<string, string> = { self: self.pathname + self.search };
+
+  if (summary.meta.nextCursor !== undefined) {
+    const next = new URL(request.url);
+    next.searchParams.set("cursor", summary.meta.nextCursor);
+    links.next = next.pathname + next.search;
+  }
+
+  return { data: summary.holdings, links, meta: summary.meta };
 }
 
 /**
@@ -530,6 +575,24 @@ function parseDataQualityLimit(raw: string | null): number {
   }
 
   return Math.min(Number(raw), MAX_DATA_QUALITY_LIMIT);
+}
+
+/** Parse the trash-summary `limit`: positive integer, clamped to the documented max. */
+function parseTrashLimit(raw: string | null): number {
+  if (raw === null) {
+    return DEFAULT_TRASH_LIMIT;
+  }
+
+  if (!/^\d+$/.test(raw) || Number(raw) < 1) {
+    throw new AgentViewHttpError({
+      code: "bad_request",
+      details: { limit: raw },
+      message: "limit must be a positive integer.",
+      status: 400,
+    });
+  }
+
+  return Math.min(Number(raw), MAX_TRASH_LIMIT);
 }
 
 /** Parse the data-quality `category` filter; an unknown value is a `400`. */

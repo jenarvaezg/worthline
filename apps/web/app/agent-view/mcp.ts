@@ -16,6 +16,7 @@ import type {
   AgentViewSnapshotEntry,
   AgentViewSnapshotGranularity,
   AgentViewSnapshotSort,
+  AgentViewTrashedHolding,
 } from "./contract";
 
 export interface AgentViewApiClient {
@@ -74,6 +75,15 @@ export interface GetDataQualityInput {
   category?: AgentViewDataQualityCategory;
   /** Restrict to one severity. */
   severity?: AgentViewDataQualitySeverity;
+  /** Page size (default 100, max 500). */
+  limit?: number;
+  /** Opaque cursor from a previous page's `meta.nextCursor`. */
+  cursor?: string;
+}
+
+export interface GetTrashSummaryInput {
+  /** Public scope ID; defaults to the household scope when omitted. */
+  scopeId?: string;
   /** Page size (default 100, max 500). */
   limit?: number;
   /** Opaque cursor from a previous page's `meta.nextCursor`. */
@@ -148,6 +158,10 @@ export interface AgentViewMcpToolCatalog {
   get_data_quality: AgentViewMcpTool<
     GetDataQualityInput,
     AgentViewEnvelope<AgentViewDataQualitySignal[]>
+  >;
+  get_trash_summary: AgentViewMcpTool<
+    GetTrashSummaryInput,
+    AgentViewEnvelope<AgentViewTrashedHolding[]>
   >;
   get_holding_detail: AgentViewMcpTool<
     GetHoldingDetailInput,
@@ -343,6 +357,27 @@ export function createAgentViewMcpToolCatalog(
       },
       name: "get_snapshot_history",
     },
+    get_trash_summary: {
+      description:
+        "Get a scope's trash summary (defaults to the household scope): the recoverable, soft-deleted holdings that live OUTSIDE the main financial context. Each trashed holding carries its public id, label, direction (asset/liability), instrument, stored value/balance when safely available, the date it was trashed when recorded, and read-only restore/hard-delete status facts. Sorted newest-deleted-first, with cursor pagination. Reads are side-effect-free — listing trash never restores, hard-deletes, or mutates anything.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          cursor: { type: "string" },
+          limit: { maximum: 500, minimum: 1, type: "integer" },
+          scopeId: { type: "string" },
+        },
+        type: "object",
+      },
+      invoke: async (input) => {
+        const scopeId = input.scopeId ?? (await defaultScopeId(client));
+        const query = trashSummaryQuery(input);
+        return client.get(
+          `${SCOPES_PATH}/${encodeURIComponent(scopeId)}/trash-summary${query}`,
+        );
+      },
+      name: "get_trash_summary",
+    },
     list_scopes: {
       description: "List available worthline agent-view scopes.",
       inputSchema: EMPTY_INPUT_SCHEMA,
@@ -357,6 +392,15 @@ function dataQualityQuery(input: GetDataQualityInput): string {
   const params = new URLSearchParams();
   if (input.category !== undefined) params.set("category", input.category);
   if (input.severity !== undefined) params.set("severity", input.severity);
+  if (input.limit !== undefined) params.set("limit", String(input.limit));
+  if (input.cursor !== undefined) params.set("cursor", input.cursor);
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+/** Serialize the trash-summary input into the API's query string (omitting `scopeId`). */
+function trashSummaryQuery(input: GetTrashSummaryInput): string {
+  const params = new URLSearchParams();
   if (input.limit !== undefined) params.set("limit", String(input.limit));
   if (input.cursor !== undefined) params.set("cursor", input.cursor);
   const query = params.toString();

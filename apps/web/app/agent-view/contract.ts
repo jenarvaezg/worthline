@@ -717,6 +717,42 @@ export interface AgentViewSnapshotHistory {
   meta: AgentViewPaginationMeta;
 }
 
+/**
+ * The read-only restore / hard-delete facts of a trashed holding (PRD #328, #342).
+ * Both flags are static truths about a trashed holding — it CAN be restored or
+ * hard-deleted — surfaced so an agent knows what is recoverable. The agent view
+ * itself never restores or hard-deletes; these are facts, not actions.
+ */
+export interface AgentViewTrashStatus {
+  restorable: true;
+  hardDeletable: true;
+}
+
+/**
+ * One trashed (soft-deleted) holding outside the main financial context (PRD
+ * #328, #342): a recoverable asset/liability with its public id, label, direction,
+ * instrument, stored value/balance (when safely available), deleted date (when
+ * recorded), and read-only restore/hard-delete status.
+ */
+export interface AgentViewTrashedHolding {
+  id: string;
+  object: "holding";
+  label: string;
+  direction: AgentViewHoldingDirection;
+  instrument: string;
+  /** Stored value (asset) / balance (liability); omitted when not safely available. */
+  value?: AgentViewMoney;
+  /** `YYYY-MM-DD` the holding was trashed; omitted when no stamp is recorded. */
+  deletedDate?: string;
+  status: AgentViewTrashStatus;
+}
+
+/** Cursor-paginated trash summary for a scope (PRD #328, #342). */
+export interface AgentViewTrashSummary {
+  holdings: AgentViewTrashedHolding[];
+  meta: AgentViewPaginationMeta;
+}
+
 /** Cursor-pagination metadata shared by every paginated agent-view collection. */
 export interface AgentViewPaginationMeta {
   limit: number;
