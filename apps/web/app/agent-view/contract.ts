@@ -24,7 +24,7 @@ export type AgentViewScopeType = "household" | "member" | "group";
 
 export interface AgentViewObjectReference {
   id: string;
-  object: "member" | "member_group" | "scope" | "holding";
+  object: "member" | "member_group" | "scope" | "holding" | "connected_source";
   label: string;
 }
 
@@ -227,6 +227,78 @@ export interface AgentViewFireSummary {
   assumptions?: AgentViewFireAssumptions;
 }
 
+/**
+ * The data-quality taxonomy a signal falls under (PRD #328, #341):
+ *  - `warning`: a domain warning (`collectWarnings`), blocking or overrideable.
+ *  - `price_freshness`: a priced asset's stale/failed/missing price quote.
+ *  - `source_freshness`: a connected source's stale/failed last sync.
+ *  - `missing_configuration`: a scope/holding missing the config it needs (FIRE
+ *    config, an amortized liability's debt model, …).
+ *  - `history_coverage`: sparse snapshots or a snapshot with no frozen holding rows.
+ *  - `projection_gap`: a connected-source position that could not be valued.
+ */
+export type AgentViewDataQualityCategory =
+  | "warning"
+  | "price_freshness"
+  | "source_freshness"
+  | "missing_configuration"
+  | "history_coverage"
+  | "projection_gap";
+
+/**
+ * The agent-view severity scale a data-quality signal normalizes to (PRD #328,
+ * #341): `high` is a blocking/failed condition, `medium` a degraded/overrideable
+ * one, `low` an informational note. Mapped consistently across categories — see
+ * `data-quality.ts` for the exact mapping per source.
+ */
+export type AgentViewDataQualitySeverity = "high" | "medium" | "low";
+
+/**
+ * One normalized data-quality signal (PRD #328, #341). The shape is uniform
+ * across every category so an agent reasons about data quality the same way
+ * regardless of source. The public `id` is derived from a stable natural key
+ * (`category:code:affectedEntityId`), so it survives export/import and never
+ * churns on row order. Side-effect-free — surfacing a `warning` signal never
+ * writes an override.
+ */
+export interface AgentViewDataQualitySignal {
+  id: string;
+  object: "data_quality_signal";
+  category: AgentViewDataQualityCategory;
+  severity: AgentViewDataQualitySeverity;
+  /** Human-readable description of the issue. */
+  label: string;
+  /** Stable machine-readable code (e.g. `STALE_PRICE`, `MISSING_FIRE_CONFIG`). */
+  code: string;
+  /** Whether the user can fix this in worthline (vs. a provider-side condition). */
+  fixable: boolean;
+  /** The object the signal concerns; omitted for purely scope-global signals. */
+  affected?: AgentViewObjectReference;
+  /** Date the condition was observed, as `YYYY-MM-DD` (e.g. a stale-price date). */
+  observedDate?: string;
+  /** The original domain warning `code`, present only for `warning` signals. */
+  originalWarningType?: string;
+}
+
+/**
+ * The data-quality summary folded into the main financial context (PRD #328,
+ * #341): counts of the scope's signals by severity and by category, plus the top
+ * `N` highest-severity signals in the canonical stable order. The full,
+ * filterable, paginated list lives at the `data-quality` drilldown.
+ */
+export interface AgentViewDataQualitySummary {
+  countsBySeverity: Record<AgentViewDataQualitySeverity, number>;
+  countsByCategory: Record<AgentViewDataQualityCategory, number>;
+  /** The top highest-severity signals (PRD #328: top 10), in stable order. */
+  topSignals: AgentViewDataQualitySignal[];
+}
+
+/** Cursor-paginated data-quality signals for a scope (PRD #328, #341). */
+export interface AgentViewDataQualityPage {
+  signals: AgentViewDataQualitySignal[];
+  meta: AgentViewPaginationMeta;
+}
+
 /** Compact current-state package for a selected scope (PRD #328, #335). */
 export interface AgentViewFinancialContext {
   scope: AgentViewScope;
@@ -239,6 +311,8 @@ export interface AgentViewFinancialContext {
   connectedSources: AgentViewConnectedSourceSummary[];
   /** The scope's FIRE progress summary; status-only when unconfigured (#340). */
   fire: AgentViewFireSummary;
+  /** The scope's data-quality summary: counts + the top signals (#341). */
+  dataQuality: AgentViewDataQualitySummary;
   /** Drilldown endpoints for deeper facts (snapshots, FIRE, data quality, trash). */
   links: Record<string, string>;
 }

@@ -10,6 +10,9 @@ import {
   successEnvelope,
   type AgentViewConnectedSourcePositionGroupPage,
   type AgentViewConnectedSourcePositionPage,
+  type AgentViewDataQualityCategory,
+  type AgentViewDataQualityPage,
+  type AgentViewDataQualitySeverity,
   type AgentViewErrorEnvelope,
   type AgentViewIncludeHoldingRows,
   type AgentViewOperationPage,
@@ -24,6 +27,11 @@ import {
   DEFAULT_POSITION_LIMIT,
   MAX_POSITION_LIMIT,
 } from "./connected-source-positions";
+import {
+  buildDataQuality,
+  DEFAULT_DATA_QUALITY_LIMIT,
+  MAX_DATA_QUALITY_LIMIT,
+} from "./data-quality";
 import { buildFinancialContext } from "./financial-context";
 import { buildFireContext } from "./fire-context";
 import { buildHoldingDetail } from "./holding-detail";
@@ -161,6 +169,52 @@ export function handleGetSnapshotHistory(
   }
 }
 
+const DATA_QUALITY_QUERY_PARAMS = ["category", "severity", "limit", "cursor"];
+
+const DATA_QUALITY_CATEGORIES: readonly AgentViewDataQualityCategory[] = [
+  "warning",
+  "price_freshness",
+  "source_freshness",
+  "missing_configuration",
+  "history_coverage",
+  "projection_gap",
+];
+
+const DATA_QUALITY_SEVERITIES: readonly AgentViewDataQualitySeverity[] = [
+  "high",
+  "medium",
+  "low",
+];
+
+export function handleGetDataQuality(
+  request: NextRequest,
+  scopeId: string,
+  runWithStore: StoreRunner,
+): NextResponse {
+  try {
+    guardAgentViewRequest(request, DATA_QUALITY_QUERY_PARAMS);
+
+    const params = new URL(request.url).searchParams;
+    const options = {
+      cursor: params.get("cursor") ?? undefined,
+      limit: parseDataQualityLimit(params.get("limit")),
+      scopeId,
+      ...(parseDataQualityCategory(params.get("category")) === undefined
+        ? {}
+        : { category: parseDataQualityCategory(params.get("category")) }),
+      ...(parseDataQualitySeverity(params.get("severity")) === undefined
+        ? {}
+        : { severity: parseDataQualitySeverity(params.get("severity")) }),
+    };
+
+    const page = runWithStore((store) => buildDataQuality(store.agentView, options));
+
+    return json(dataQualityEnvelope(request, page), 200);
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
 export function handleGetHoldingDetail(
   request: NextRequest,
   holdingId: string,
@@ -278,6 +332,24 @@ function snapshotEnvelope(request: NextRequest, history: AgentViewSnapshotHistor
   }
 
   return { data: history.entries, links, meta: history.meta };
+}
+
+/**
+ * Envelope a data-quality page: the signals as `data`, the pagination facts as
+ * `meta`, and `links.self` plus `links.next` (the same URL carrying the
+ * `nextCursor`) when more pages remain — the same shape as a snapshot page.
+ */
+function dataQualityEnvelope(request: NextRequest, page: AgentViewDataQualityPage) {
+  const self = new URL(request.url);
+  const links: Record<string, string> = { self: self.pathname + self.search };
+
+  if (page.meta.nextCursor !== undefined) {
+    const next = new URL(request.url);
+    next.searchParams.set("cursor", page.meta.nextCursor);
+    links.next = next.pathname + next.search;
+  }
+
+  return { data: page.signals, links, meta: page.meta };
 }
 
 /**
@@ -440,6 +512,54 @@ function parseSnapshotLimit(raw: string | null): number {
   }
 
   return Math.min(Number(raw), MAX_SNAPSHOT_LIMIT);
+}
+
+/** Parse the data-quality `limit`: positive integer, clamped to the documented max. */
+function parseDataQualityLimit(raw: string | null): number {
+  if (raw === null) {
+    return DEFAULT_DATA_QUALITY_LIMIT;
+  }
+
+  if (!/^\d+$/.test(raw) || Number(raw) < 1) {
+    throw new AgentViewHttpError({
+      code: "bad_request",
+      details: { limit: raw },
+      message: "limit must be a positive integer.",
+      status: 400,
+    });
+  }
+
+  return Math.min(Number(raw), MAX_DATA_QUALITY_LIMIT);
+}
+
+/** Parse the data-quality `category` filter; an unknown value is a `400`. */
+function parseDataQualityCategory(
+  raw: string | null,
+): AgentViewDataQualityCategory | undefined {
+  if (raw === null) {
+    return undefined;
+  }
+
+  if (!DATA_QUALITY_CATEGORIES.includes(raw as AgentViewDataQualityCategory)) {
+    throw enumError("category", raw);
+  }
+
+  return raw as AgentViewDataQualityCategory;
+}
+
+/** Parse the data-quality `severity` filter; an unknown value is a `400`. */
+function parseDataQualitySeverity(
+  raw: string | null,
+): AgentViewDataQualitySeverity | undefined {
+  if (raw === null) {
+    return undefined;
+  }
+
+  if (!DATA_QUALITY_SEVERITIES.includes(raw as AgentViewDataQualitySeverity)) {
+    throw enumError("severity", raw);
+  }
+
+  return raw as AgentViewDataQualitySeverity;
 }
 
 /** Validate an ISO calendar date (`YYYY-MM-DD`); rejects malformed and non-existent dates. */

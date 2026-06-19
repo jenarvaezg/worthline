@@ -161,6 +161,7 @@ export type {
 } from "./liability-store";
 export type {
   AgentViewConnectedSource,
+  AgentViewPriceFreshness,
   AgentViewReadStore,
   AgentViewSourceFreshness,
 } from "./agent-view-read-store";
@@ -722,6 +723,18 @@ function buildStore(
     readInterestRateRevisions: liabilityStore.readInterestRateRevisions,
     readLiabilities: liabilityStore.readLiabilities,
     readOperations: operationsStore.readOperations,
+    readPriceCache: (assetId) => {
+      const cache = operationsStore.readPriceCache(assetId);
+      if (!cache) {
+        return null;
+      }
+      return {
+        fetchedAt: cache.fetchedAt,
+        freshnessState: cache.freshnessState,
+        source: cache.source,
+        ...(cache.staleReason === undefined ? {} : { staleReason: cache.staleReason }),
+      };
+    },
     readSnapshotHoldings: snapshotStore.readSnapshotHoldings,
     readSnapshots: (scopeId) => snapshotStore.readSnapshots(scopeId),
     readSourcePositions: connectedSourceStore.readPositions,
@@ -737,6 +750,7 @@ function buildStore(
       };
     },
     readValuationAnchors: assetStore.readValuationAnchors,
+    readWarningOverrides: () => store.readWarningOverrides(),
   });
   // importWorkspace's post-import gap-fill spans every domain and the snapshot
   // save path, so it stays in the monolith and is injected into the workspace

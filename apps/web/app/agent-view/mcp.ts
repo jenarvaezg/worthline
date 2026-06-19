@@ -1,6 +1,9 @@
 import type {
   AgentViewConnectedSourcePosition,
   AgentViewConnectedSourcePositionGroup,
+  AgentViewDataQualityCategory,
+  AgentViewDataQualitySeverity,
+  AgentViewDataQualitySignal,
   AgentViewEnvelope,
   AgentViewErrorEnvelope,
   AgentViewFinancialContext,
@@ -62,6 +65,19 @@ export interface GetSnapshotHistoryInput {
   cursor?: string;
   /** Frozen-holding-row detail: `none` (default), `summary`, or `full`. */
   includeHoldingRows?: AgentViewIncludeHoldingRows;
+}
+
+export interface GetDataQualityInput {
+  /** Public scope ID; defaults to the household scope when omitted. */
+  scopeId?: string;
+  /** Restrict to one category. */
+  category?: AgentViewDataQualityCategory;
+  /** Restrict to one severity. */
+  severity?: AgentViewDataQualitySeverity;
+  /** Page size (default 100, max 500). */
+  limit?: number;
+  /** Opaque cursor from a previous page's `meta.nextCursor`. */
+  cursor?: string;
 }
 
 export interface GetHoldingDetailInput {
@@ -129,6 +145,10 @@ export interface AgentViewMcpToolCatalog {
     GetSnapshotHistoryInput,
     AgentViewEnvelope<AgentViewSnapshotEntry[]>
   >;
+  get_data_quality: AgentViewMcpTool<
+    GetDataQualityInput,
+    AgentViewEnvelope<AgentViewDataQualitySignal[]>
+  >;
   get_holding_detail: AgentViewMcpTool<
     GetHoldingDetailInput,
     AgentViewEnvelope<AgentViewHoldingDetail>
@@ -187,6 +207,39 @@ export function createAgentViewMcpToolCatalog(
         );
       },
       name: "get_connected_source_positions",
+    },
+    get_data_quality: {
+      description:
+        "Get a scope's data-quality signals (defaults to the household scope): domain warnings (blocking and overrideable), stale/failed prices, stale/failed connected-source syncs, missing configuration (e.g. no FIRE config), sparse/missing snapshot history, and connected-source positions that could not be valued. Each signal carries a category, a normalized severity (high/medium/low), the affected object, a human label, a machine code, an observed date when relevant, whether it is user-fixable, and the original domain warning type when one exists. Filter by category or severity; cursor-paginated. Reads are side-effect-free — surfacing a warning never writes an override.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          category: {
+            enum: [
+              "warning",
+              "price_freshness",
+              "source_freshness",
+              "missing_configuration",
+              "history_coverage",
+              "projection_gap",
+            ],
+            type: "string",
+          },
+          cursor: { type: "string" },
+          limit: { maximum: 500, minimum: 1, type: "integer" },
+          scopeId: { type: "string" },
+          severity: { enum: ["high", "medium", "low"], type: "string" },
+        },
+        type: "object",
+      },
+      invoke: async (input) => {
+        const scopeId = input.scopeId ?? (await defaultScopeId(client));
+        const query = dataQualityQuery(input);
+        return client.get(
+          `${SCOPES_PATH}/${encodeURIComponent(scopeId)}/data-quality${query}`,
+        );
+      },
+      name: "get_data_quality",
     },
     get_financial_context: {
       description:
@@ -297,6 +350,17 @@ export function createAgentViewMcpToolCatalog(
       name: "list_scopes",
     },
   };
+}
+
+/** Serialize the data-quality input into the API's query string (omitting `scopeId`). */
+function dataQualityQuery(input: GetDataQualityInput): string {
+  const params = new URLSearchParams();
+  if (input.category !== undefined) params.set("category", input.category);
+  if (input.severity !== undefined) params.set("severity", input.severity);
+  if (input.limit !== undefined) params.set("limit", String(input.limit));
+  if (input.cursor !== undefined) params.set("cursor", input.cursor);
+  const query = params.toString();
+  return query ? `?${query}` : "";
 }
 
 /** Serialize the snapshot-history input into the API's query string (omitting `scopeId`). */
