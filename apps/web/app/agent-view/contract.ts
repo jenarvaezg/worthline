@@ -175,11 +175,124 @@ export interface AgentViewFinancialContext {
 }
 
 /**
- * Minimal data-quality summary for a single holding (PRD #328, #337). Kept to a
- * boolean here — the full data-quality taxonomy is issue #341.
+ * The state of a holding's deeper calculation facts (PRD #328, #338). Surfaced
+ * only when a holding's configuration cannot produce the facts its valuation
+ * method needs — never as a fabricated value:
+ *  - `missing_configuration`: the holding's valuation method expects calculation
+ *    facts (an appreciating asset's anchors, an amortized liability's plan, an
+ *    anchored liability's balance anchors) but none are configured.
+ *  - `unsupported`: the holding's valuation method exposes no dated calculation
+ *    facts at all (stored/derived), so a deeper drilldown would have nothing to
+ *    show — distinct from a configured method that is simply missing its data.
+ */
+export type AgentViewHoldingFactsState = "missing_configuration" | "unsupported";
+
+/**
+ * Minimal data-quality summary for a single holding (PRD #328, #337). The
+ * boolean `hasWarnings` is the #341 placeholder; `facts` documents the
+ * calculation-fact state when the holding cannot honestly produce them (#338).
  */
 export interface AgentViewHoldingQualitySummary {
   hasWarnings: boolean;
+  /** Present only when calculation facts are missing or unsupported (#338). */
+  facts?: AgentViewHoldingFactsState;
+}
+
+/**
+ * One housing valuation anchor for an appreciating holding (PRD #328, #338).
+ * `kind` distinguishes a `market_appraisal` (a total-value truth that anchors
+ * the curve) from an `improvement` (an incremental reform layered on top). The
+ * public `id` is derived from the stable internal anchor id (`wl_van_…`).
+ */
+export interface AgentViewValuationAnchor {
+  id: string;
+  object: "valuation_anchor";
+  kind: "market_appraisal" | "improvement";
+  /** Date the anchor applies on, as `YYYY-MM-DD`. */
+  date: string;
+  /** Total value for an appraisal, increment for an improvement. */
+  value: AgentViewMoney;
+}
+
+/**
+ * One interest-rate revision against an amortization plan (PRD #328, #338). The
+ * public `id` is derived from the stable internal revision id (`wl_irr_…`).
+ */
+export interface AgentViewInterestRateRevision {
+  id: string;
+  object: "interest_rate_revision";
+  /** Date the new rate takes effect from, as `YYYY-MM-DD`. */
+  date: string;
+  /** New annual rate, as a decimal string (e.g. `"0.03"`). */
+  annualInterestRate: string;
+}
+
+/**
+ * One lump-sum early repayment against an amortization plan (PRD #328, #338).
+ * The public `id` is derived from the stable internal repayment id (`wl_erp_…`).
+ */
+export interface AgentViewEarlyRepayment {
+  id: string;
+  object: "early_repayment";
+  /** Date the repayment is made, as `YYYY-MM-DD`. */
+  date: string;
+  /** Principal repaid. */
+  amount: AgentViewMoney;
+  /** `reduce-payment` keeps the term; `reduce-term` keeps the cuota. */
+  mode: "reduce-payment" | "reduce-term";
+}
+
+/**
+ * The amortization plan facts of an amortized liability (PRD #328, #338),
+ * including its rate revisions and early repayments. The public `id` is derived
+ * from the stable internal plan id (`wl_amp_…`).
+ */
+export interface AgentViewAmortizationPlan {
+  id: string;
+  object: "amortization_plan";
+  /** Initial borrowed capital. */
+  initialCapital: AgentViewMoney;
+  /** Annual interest rate at disbursement, as a decimal string. */
+  annualInterestRate: string;
+  /** Loan term in whole months. */
+  termMonths: number;
+  /** Disbursement (firma / devengo) date, as `YYYY-MM-DD`. */
+  disbursementDate: string;
+  /** First-payment date, as `YYYY-MM-DD`. */
+  firstPaymentDate: string;
+}
+
+/** The amortization calculation facts of an amortized liability (PRD #328, #338). */
+export interface AgentViewAmortizationFacts {
+  plan: AgentViewAmortizationPlan;
+  interestRateRevisions: AgentViewInterestRateRevision[];
+  earlyRepayments: AgentViewEarlyRepayment[];
+}
+
+/**
+ * How an anchored liability's balance is read between its anchors (PRD #328,
+ * #338). `linear` (revolving) interpolates by calendar days, flat outside the
+ * anchor range; `step` (informal) holds the last anchor on or before a date.
+ * Documented so a client knows how intermediate balances are read — the agent
+ * view never computes a guessed intermediate value here.
+ */
+export type AgentViewBalanceInterpolation = "linear" | "step";
+
+/** One declared balance anchor of an anchored liability (PRD #328, #338). */
+export interface AgentViewBalanceAnchor {
+  id: string;
+  object: "balance_anchor";
+  /** Date the balance applies on, as `YYYY-MM-DD`. */
+  date: string;
+  /** Total owed on that date (interest already included). */
+  balance: AgentViewMoney;
+}
+
+/** The balance-anchor calculation facts of an anchored liability (PRD #328, #338). */
+export interface AgentViewBalanceAnchorFacts {
+  /** How intermediate balances are read between anchors. */
+  interpolation: AgentViewBalanceInterpolation;
+  anchors: AgentViewBalanceAnchor[];
 }
 
 /**
@@ -213,6 +326,12 @@ export interface AgentViewHoldingDetail {
   operationSummary?: AgentViewOperationSummary;
   /** Present only when a connected source materialized this holding. */
   sourceSummary?: AgentViewHoldingSourceSummary;
+  /** Present only for an appreciating asset that has valuation anchors (#338). */
+  valuationAnchors?: AgentViewValuationAnchor[];
+  /** Present only for an amortized liability that has an amortization plan (#338). */
+  amortization?: AgentViewAmortizationFacts;
+  /** Present only for an anchored liability that has balance anchors (#338). */
+  balanceAnchors?: AgentViewBalanceAnchorFacts;
 }
 
 export type AgentViewOperationSort = "date" | "-date";

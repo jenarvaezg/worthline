@@ -1,4 +1,5 @@
 import type {
+  DebtModel,
   ExportedPublicId,
   InvestmentOperation,
   Liability,
@@ -9,7 +10,14 @@ import type {
 } from "@worthline/domain";
 
 import { readAgentViewPublicIds } from "./agent-view-public-ids";
+import type { ValuationAnchorRecord } from "./asset-store";
 import type { ConnectedSourceRow } from "./connected-source-store";
+import type {
+  AmortizationPlanRecord,
+  BalanceAnchorRecord,
+  EarlyRepaymentRecord,
+  InterestRateRevisionRecord,
+} from "./liability-store";
 import type { SnapshotHoldingQuery, SnapshotHoldingRecord } from "./snapshot-store";
 import type { StoreContext } from "./store-context";
 
@@ -45,6 +53,18 @@ export interface AgentViewReadStore {
   readSnapshots: (scopeId: string) => NetWorthSnapshot[];
   /** Frozen holding rows, optionally filtered by scope and date-key window. */
   readSnapshotHoldings: (query: SnapshotHoldingQuery) => SnapshotHoldingRecord[];
+  /** An asset's housing valuation anchors, ascending by date (#338). */
+  readValuationAnchors: (assetId: string) => ValuationAnchorRecord[];
+  /** A liability's configured debt model, or null (#338). */
+  readDebtModel: (liabilityId: string) => DebtModel | null;
+  /** A liability's amortization plan, or null if it has none (#338). */
+  readAmortizationPlan: (liabilityId: string) => AmortizationPlanRecord | null;
+  /** A plan's interest-rate revisions, ascending by date (#338). */
+  readInterestRateRevisions: (planId: string) => InterestRateRevisionRecord[];
+  /** A plan's early repayments, ascending by date (#338). */
+  readEarlyRepayments: (planId: string) => EarlyRepaymentRecord[];
+  /** A liability's balance anchors, ascending by date (#338). */
+  readBalanceAnchors: (liabilityId: string) => BalanceAnchorRecord[];
 }
 
 export interface AgentViewReadStoreDeps {
@@ -55,6 +75,12 @@ export interface AgentViewReadStoreDeps {
   listSourceAssetIds: (sourceId: string) => string[];
   readSnapshots: (scopeId: string) => NetWorthSnapshot[];
   readSnapshotHoldings: (query: SnapshotHoldingQuery) => SnapshotHoldingRecord[];
+  readValuationAnchors: (assetId: string) => ValuationAnchorRecord[];
+  readDebtModel: (liabilityId: string) => DebtModel | null;
+  readAmortizationPlan: (liabilityId: string) => AmortizationPlanRecord | null;
+  readInterestRateRevisions: (planId: string) => InterestRateRevisionRecord[];
+  readEarlyRepayments: (planId: string) => EarlyRepaymentRecord[];
+  readBalanceAnchors: (liabilityId: string) => BalanceAnchorRecord[];
 }
 
 export function createAgentViewReadStore(
@@ -77,5 +103,11 @@ export function createAgentViewReadStore(
       })),
     readSnapshots: (scopeId) => deps.readSnapshots(scopeId),
     readSnapshotHoldings: (query) => deps.readSnapshotHoldings(query),
+    readValuationAnchors: (assetId) => deps.readValuationAnchors(assetId),
+    readDebtModel: (liabilityId) => deps.readDebtModel(liabilityId),
+    readAmortizationPlan: (liabilityId) => deps.readAmortizationPlan(liabilityId),
+    readInterestRateRevisions: (planId) => deps.readInterestRateRevisions(planId),
+    readEarlyRepayments: (planId) => deps.readEarlyRepayments(planId),
+    readBalanceAnchors: (liabilityId) => deps.readBalanceAnchors(liabilityId),
   };
 }
