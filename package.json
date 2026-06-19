@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "npm run dev --workspace @worthline/web",
     "build": "npm run build --workspaces --if-present",
-    "lint": "eslint apps packages tests --max-warnings=0",
+    "lint": "eslint apps packages tests e2e scripts --max-warnings=0",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:first-run": "npm run test:e2e:first-run:solo && npm run test:e2e:first-run:hogar",
@@ -24,7 +24,7 @@
     "prepare": "husky"
   },
   "lint-staged": {
-    "{apps,packages,tests,e2e}/**/*.{ts,tsx,js,jsx,mjs}": [
+    "{apps,packages,tests,e2e,scripts}/**/*.{ts,tsx,js,jsx,mjs}": [
       "eslint --max-warnings=0 --no-warn-ignored",
       "prettier --write"
     ],
