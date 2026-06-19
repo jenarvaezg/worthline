@@ -718,6 +718,7 @@ function buildStore(
     readBalanceAnchors: liabilityStore.readBalanceAnchors,
     readDebtModel: liabilityStore.readDebtModel,
     readEarlyRepayments: liabilityStore.readEarlyRepayments,
+    readFireConfig: () => store.readFireConfig(),
     readInterestRateRevisions: liabilityStore.readInterestRateRevisions,
     readLiabilities: liabilityStore.readLiabilities,
     readOperations: operationsStore.readOperations,
