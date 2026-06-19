@@ -17,6 +17,7 @@
     "test:e2e:first-run": "npm run test:e2e:first-run:solo && npm run test:e2e:first-run:hogar",
     "test:e2e:first-run:solo": "FIRST_RUN_SCENARIO=solo playwright test --config playwright.first-run.config.ts",
     "test:e2e:first-run:hogar": "FIRST_RUN_SCENARIO=hogar playwright test --config playwright.first-run.config.ts",
+    "test:e2e:demo": "npm run build --workspace @worthline/web && playwright test --config playwright.demo.config.ts",
     "test:watch": "vitest",
     "backfill:snapshots": "tsx scripts/backfill-historical-snapshots.ts",
     "typecheck": "npm run typecheck --workspaces --if-present",

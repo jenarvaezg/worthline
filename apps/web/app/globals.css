@@ -4072,3 +4072,130 @@ td.rowActions > * {
     display: none;
   }
 }
+
+/* ── Demo mode (PRD #297, ADR 0023) ───────────────────────────────────
+   A persistent status strip + the /demo landing. Light surfaces only — the
+   dark panel stays reserved for the dashboard hero. Action accents in --blue. */
+.demoBanner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 0.4rem 1rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.01em;
+}
+
+.demoBanner strong {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.demoBanner a {
+  color: var(--blue);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.demoBanner a:hover {
+  text-decoration: underline;
+}
+
+.demoLanding {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: clamp(2rem, 6vw, 4rem) 1.25rem;
+}
+
+.demoLandingHead {
+  margin-bottom: 2rem;
+}
+
+.demoKicker {
+  margin: 0 0 0.5rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.demoLandingHead h1 {
+  margin: 0 0 0.75rem;
+  color: var(--ink);
+  font-size: clamp(1.9rem, 4.5vw, 2.8rem);
+  font-weight: 760;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.demoLede {
+  max-width: 56ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.demoPersonaGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.demoPersonaCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  height: 100%;
+  padding: 1.25rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s ease;
+}
+
+.demoPersonaCard:hover {
+  border-color: var(--line-strong);
+}
+
+.demoPersonaCard h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
+.demoPersonaCard p {
+  flex: 1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.demoPersonaCta {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--blue);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+
+.demoPersonaCta:hover {
+  text-decoration: underline;
+}

@@ -15,6 +15,7 @@ import type { WorthlineStore } from "@worthline/db";
 import type { CurrencyCode } from "@worthline/domain";
 
 import type {
+  ConnectedSourceSpec,
   HousingSpec,
   InvestmentSpec,
   LiabilitySpec,
@@ -185,6 +186,23 @@ function seedLiability(
   }
 }
 
+function seedConnectedSource(
+  store: WorthlineStore,
+  source: ConnectedSourceSpec,
+  asOf: string,
+): void {
+  const { sourceId } = store.connectedSources.connect({
+    adapter: source.adapter,
+    credentialsJson: source.credentialsJson ?? "{}",
+    label: source.label,
+    ownership: source.ownership,
+  });
+  // Synced once with fixed positions; never refreshed (demo refreshers are no-ops),
+  // so the mirror's valuation is frozen in the fixture.
+  const syncedAt = `${resolveRelativeDate(asOf, source.syncedAt)}T12:00:00.000Z`;
+  store.connectedSources.syncPositions(sourceId, source.positions, syncedAt);
+}
+
 /**
  * Seed `spec` into `store`, generating its history relative to `asOf`
  * (YYYY-MM-DD). Deterministic and network-free — no provider is ever touched.
@@ -218,6 +236,10 @@ export function seedPersona(
 
   for (const liability of spec.liabilities ?? []) {
     seedLiability(store, liability, asOf);
+  }
+
+  for (const source of spec.connectedSources ?? []) {
+    seedConnectedSource(store, source, asOf);
   }
 
   for (const fire of spec.fire ?? []) {

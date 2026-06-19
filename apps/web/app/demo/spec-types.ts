@@ -7,6 +7,7 @@
  * Money is integer minor units; rates/prices/units are decimal strings; ownership
  * shares are basis points (10_000 = 100%).
  */
+import type { SourcePositionInput } from "@worthline/db";
 import type {
   CurrencyCode,
   DecimalString,
@@ -14,6 +15,7 @@ import type {
   LiquidityTier,
   Member,
   OwnershipShare,
+  SourceAdapter,
   WorkspaceMode,
 } from "@worthline/domain";
 
@@ -123,6 +125,22 @@ export interface FireSpec {
   config: FireScopeConfig;
 }
 
+/**
+ * A frozen connected source (ADR 0016): an external account mirrored read-only.
+ * In the demo it is synced once with fixed positions and never refreshed (the
+ * refreshers are no-ops in demo), so its valuation is frozen in the fixture.
+ */
+export interface ConnectedSourceSpec {
+  adapter: SourceAdapter;
+  label: string;
+  ownership: OwnershipShare[];
+  /** When the source was last synced (its positions' as-of). */
+  syncedAt: RelativeDate;
+  /** Adapter credentials JSON; defaults to "{}" (never used — demo never syncs). */
+  credentialsJson?: string;
+  positions: SourcePositionInput[];
+}
+
 export interface PersonaSpec {
   id: PersonaId;
   mode: WorkspaceMode;
@@ -131,5 +149,6 @@ export interface PersonaSpec {
   investments?: InvestmentSpec[];
   housing?: HousingSpec[];
   liabilities?: LiabilitySpec[];
+  connectedSources?: ConnectedSourceSpec[];
   fire?: FireSpec[];
 }

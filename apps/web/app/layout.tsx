@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 
+import DemoBanner from "@web/demo/demo-banner";
+import { isDemoMode } from "@web/demo/write-guard";
+
 import "./globals.css";
 
 // Editorial pairing, served offline (#44): Iosevka for numerals/mono,
@@ -43,7 +46,10 @@ export default function RootLayout({
 }>) {
   return (
     <html className={`${sans.variable} ${mono.variable}`} lang="es">
-      <body>{children}</body>
+      <body>
+        {isDemoMode() ? <DemoBanner /> : null}
+        {children}
+      </body>
     </html>
   );
 }

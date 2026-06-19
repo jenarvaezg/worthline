@@ -5,14 +5,18 @@
  * falls back to the familia spec for any persona without one yet — the demo must
  * always render something.
  */
-import { DEFAULT_PERSONA, type PersonaId } from "@web/demo/persona";
+import type { PersonaId } from "@web/demo/persona";
 import type { PersonaSpec } from "@web/demo/spec-types";
 import { FAMILIA_SPEC } from "@web/demo/specs/familia";
+import { INVERSOR_SPEC } from "@web/demo/specs/inversor";
+import { JOVEN_SPEC } from "@web/demo/specs/joven";
 
-export const PERSONA_SPECS: Partial<Record<PersonaId, PersonaSpec>> = {
+export const PERSONA_SPECS: Record<PersonaId, PersonaSpec> = {
   familia: FAMILIA_SPEC,
+  inversor: INVERSOR_SPEC,
+  joven: JOVEN_SPEC,
 };
 
 export function specForPersona(persona: PersonaId): PersonaSpec {
-  return PERSONA_SPECS[persona] ?? PERSONA_SPECS[DEFAULT_PERSONA] ?? FAMILIA_SPEC;
+  return PERSONA_SPECS[persona];
 }

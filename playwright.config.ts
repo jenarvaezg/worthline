@@ -65,7 +65,8 @@ export default defineConfig({
   tsconfig: "./tsconfig.e2e.json",
   globalSetup: "./e2e/global-setup.ts",
   testDir: "./e2e",
-  testIgnore: /first-run.*\.spec\.ts/,
+  // first-run and demo specs have their own configs (different server env).
+  testIgnore: [/first-run.*\.spec\.ts/, /demo\.spec\.ts/],
   // Serial: one worker, no parallelism. All tests share the same server + DB.
   workers: 1,
   fullyParallel: false,
