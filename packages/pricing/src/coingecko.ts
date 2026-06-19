@@ -11,6 +11,23 @@ export function coingeckoBaseUrl(): string {
   return process.env.WORTHLINE_COINGECKO_BASE_URL ?? "https://api.coingecko.com/api/v3";
 }
 
+/**
+ * Per-request headers for a CoinGecko call. When `WORTHLINE_COINGECKO_API_KEY` is
+ * set (a FREE "demo" key) every request carries the `x-cg-demo-api-key` header,
+ * which lifts the shared rate limit from the public unauthenticated tier (~5-15
+ * req/min, burst-throttled) to the demo tier (~30 req/min). That headroom is what
+ * keeps a Binance sync's history-range calls alive: they run right after the
+ * live-price burst and, on the public tier, 429 — which the history fetch swallows
+ * to an empty series, silently zeroing the reconstructed monthly history (so the
+ * holding lands only on today, "as if just bought"). Absent → the unauthenticated
+ * tier (unchanged default). Read per call so a test/deploy can set it after import;
+ * shared with the history-range fetch in `binance-history.ts`.
+ */
+export function coingeckoHeaders(): Record<string, string> {
+  const key = process.env.WORTHLINE_COINGECKO_API_KEY?.trim();
+  return key ? { "x-cg-demo-api-key": key } : {};
+}
+
 export const coingeckoProvider: PriceProvider = {
   name: "coingecko",
   fetchPrice: async (ctx) => {
@@ -21,7 +38,10 @@ export const coingeckoProvider: PriceProvider = {
       `${coingeckoBaseUrl()}/simple/price?ids=` +
       encodeURIComponent(id) +
       "&vs_currencies=eur";
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const res = await fetch(url, {
+      headers: coingeckoHeaders(),
+      signal: AbortSignal.timeout(8000),
+    });
     if (!res.ok) return null;
     const data = (await res.json()) as Record<string, { eur?: number }>;
     const eur = data?.[id]?.eur;

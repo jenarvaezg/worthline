@@ -172,6 +172,40 @@ describe("fetchCoinGeckoHistoryEur — base URL override (e2e / self-host seam)"
   });
 });
 
+describe("fetchCoinGeckoHistoryEur — demo-key header (rate-limit headroom)", () => {
+  const ORIGINAL = process.env.WORTHLINE_COINGECKO_API_KEY;
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (ORIGINAL === undefined) delete process.env.WORTHLINE_COINGECKO_API_KEY;
+    else process.env.WORTHLINE_COINGECKO_API_KEY = ORIGINAL;
+  });
+
+  it("sends the x-cg-demo-api-key header when WORTHLINE_COINGECKO_API_KEY is set", async () => {
+    process.env.WORTHLINE_COINGECKO_API_KEY = "CG-test-key";
+    const fetchMock = vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ prices: [] }),
+    } as Response);
+    await fetchCoinGeckoHistoryEur("bitcoin", 0, 1);
+    expect(fetchMock.mock.calls[0]![1]?.headers).toEqual({
+      "x-cg-demo-api-key": "CG-test-key",
+    });
+  });
+
+  it("sends no demo-key header when the key env is absent", async () => {
+    delete process.env.WORTHLINE_COINGECKO_API_KEY;
+    const fetchMock = vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ prices: [] }),
+    } as Response);
+    await fetchCoinGeckoHistoryEur("bitcoin", 0, 1);
+    expect(fetchMock.mock.calls[0]![1]?.headers).toEqual({});
+  });
+});
+
 describe("fetchCoinGeckoHistoryEur — /market_chart/range → dateKey→price (last wins)", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());

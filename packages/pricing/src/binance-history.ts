@@ -17,7 +17,7 @@
 import type { BinanceHistoryCurve, DecimalString } from "@worthline/domain";
 
 import { resolveCoinGeckoId } from "./binance-symbols";
-import { coingeckoBaseUrl } from "./coingecko";
+import { coingeckoBaseUrl, coingeckoHeaders } from "./coingecko";
 
 /** One normalized daily SPOT snapshot (mirrors `BinanceAccountSnapshot`). */
 interface AccountSnapshot {
@@ -127,7 +127,10 @@ export async function fetchCoinGeckoHistoryEur(
     `?vs_currency=eur&from=${fromSec}&to=${toSec}`;
 
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const res = await fetch(url, {
+      headers: coingeckoHeaders(),
+      signal: AbortSignal.timeout(8000),
+    });
     if (!res.ok) return new Map();
 
     const data = (await res.json()) as { prices?: RawPricePoint[] };
