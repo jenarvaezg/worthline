@@ -5,7 +5,9 @@ import type {
   Liability,
   ManualAsset,
   NetWorthSnapshot,
+  PriceFreshnessState,
   SourceAdapter,
+  SourcePosition,
   Workspace,
 } from "@worthline/domain";
 
@@ -31,8 +33,25 @@ export interface AgentViewConnectedSource {
   adapter: SourceAdapter;
   label: string;
   lastSyncAt: string | null;
+  /** The market (primary) asset this source materialized — its freshness anchor. */
+  assetId: string;
   /** Asset ids this source materialized — one per occupied rung. */
   assetIds: string[];
+}
+
+/**
+ * A connected source's valuation freshness as the agent view sees it (PRD #328,
+ * #339): the staleness indicator stamped on the source's primary price-cache row
+ * by `revaluePositions`, with the provider tag and the failed-fetch reason when
+ * one is recorded. Secret-free by construction — it carries no credentials,
+ * tokens, or raw provider payloads. Null when the source has never been valued.
+ */
+export interface AgentViewSourceFreshness {
+  freshnessState: PriceFreshnessState;
+  /** When the value was last fetched (ISO). */
+  fetchedAt: string;
+  /** Why the last fetch is degraded (a failed/stale signal), when recorded. */
+  staleReason?: string;
 }
 
 /**
@@ -49,6 +68,18 @@ export interface AgentViewReadStore {
   readLiabilities: () => Liability[];
   readOperations: (assetId: string) => InvestmentOperation[];
   readConnectedSources: () => AgentViewConnectedSource[];
+  /**
+   * A connected source's mirrored positions (PRD #328, #339). Pure read — never
+   * syncs or revalues. Credentials/tokens are not part of a position, so the
+   * shape is secret-free.
+   */
+  readSourcePositions: (sourceId: string) => SourcePosition[];
+  /**
+   * A connected source's valuation freshness, or null if it was never valued
+   * (PRD #328, #339). Sanitized: only the staleness signal, the fetch time, and
+   * the failed-fetch reason — never the provider's raw payload or any secret.
+   */
+  readSourceFreshness: (sourceId: string) => AgentViewSourceFreshness | null;
   /** Frozen snapshots for a scope, chronological (snapshot-store ordering). */
   readSnapshots: (scopeId: string) => NetWorthSnapshot[];
   /** Frozen holding rows, optionally filtered by scope and date-key window. */
@@ -73,6 +104,13 @@ export interface AgentViewReadStoreDeps {
   readOperations: (assetId: string) => InvestmentOperation[];
   listConnectedSources: () => ConnectedSourceRow[];
   listSourceAssetIds: (sourceId: string) => string[];
+  readSourcePositions: (sourceId: string) => SourcePosition[];
+  /** The price-cache row of a source's primary asset (its valuation freshness). */
+  readSourcePriceCache: (assetId: string) => {
+    freshnessState: PriceFreshnessState;
+    fetchedAt: string;
+    staleReason?: string;
+  } | null;
   readSnapshots: (scopeId: string) => NetWorthSnapshot[];
   readSnapshotHoldings: (query: SnapshotHoldingQuery) => SnapshotHoldingRecord[];
   readValuationAnchors: (assetId: string) => ValuationAnchorRecord[];
@@ -96,11 +134,28 @@ export function createAgentViewReadStore(
     readConnectedSources: () =>
       deps.listConnectedSources().map((row) => ({
         adapter: row.adapter,
+        assetId: row.assetId,
         assetIds: deps.listSourceAssetIds(row.id),
         id: row.id,
         label: row.label,
         lastSyncAt: row.lastSyncAt,
       })),
+    readSourcePositions: (sourceId) => deps.readSourcePositions(sourceId),
+    readSourceFreshness: (sourceId) => {
+      const source = deps.listConnectedSources().find((row) => row.id === sourceId);
+      if (!source) {
+        return null;
+      }
+      const cache = deps.readSourcePriceCache(source.assetId);
+      if (!cache) {
+        return null;
+      }
+      return {
+        fetchedAt: cache.fetchedAt,
+        freshnessState: cache.freshnessState,
+        ...(cache.staleReason === undefined ? {} : { staleReason: cache.staleReason }),
+      };
+    },
     readSnapshots: (scopeId) => deps.readSnapshots(scopeId),
     readSnapshotHoldings: (query) => deps.readSnapshotHoldings(query),
     readValuationAnchors: (assetId) => deps.readValuationAnchors(assetId),

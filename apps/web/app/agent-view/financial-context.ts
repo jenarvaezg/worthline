@@ -34,6 +34,7 @@ import {
   type AgentViewOperationSummary,
   type AgentViewOwnershipShare,
 } from "./contract";
+import { deriveSourcePublicId, toFreshnessSummary } from "./connected-source-positions";
 import { summarizeOperations } from "./operation-summary";
 import { publicIdMap, requirePublicId, resolveInternalScopeId } from "./scope-resolution";
 import { listAgentViewScopes } from "./scopes";
@@ -223,8 +224,13 @@ function buildConnectedSources(
     .readConnectedSources()
     .map((source) => ({
       adapter: source.adapter,
+      freshness: toFreshnessSummary(source, store.readSourceFreshness(source.id)) ?? {
+        status: "unknown" as const,
+      },
+      id: deriveSourcePublicId(source.id),
       label: source.label,
       lastSyncAt: source.lastSyncAt,
+      object: "connected_source" as const,
       projectedHoldings: source.assetIds
         .map((assetId) => holdingPublicIds.get(assetId))
         .filter(

@@ -162,6 +162,7 @@ export type {
 export type {
   AgentViewConnectedSource,
   AgentViewReadStore,
+  AgentViewSourceFreshness,
 } from "./agent-view-read-store";
 export type {
   ConnectSourceInput,
@@ -722,6 +723,18 @@ function buildStore(
     readOperations: operationsStore.readOperations,
     readSnapshotHoldings: snapshotStore.readSnapshotHoldings,
     readSnapshots: (scopeId) => snapshotStore.readSnapshots(scopeId),
+    readSourcePositions: connectedSourceStore.readPositions,
+    readSourcePriceCache: (assetId) => {
+      const cache = operationsStore.readPriceCache(assetId);
+      if (!cache) {
+        return null;
+      }
+      return {
+        fetchedAt: cache.fetchedAt,
+        freshnessState: cache.freshnessState,
+        ...(cache.staleReason === undefined ? {} : { staleReason: cache.staleReason }),
+      };
+    },
     readValuationAnchors: assetStore.readValuationAnchors,
   });
   // importWorkspace's post-import gap-fill spans every domain and the snapshot
