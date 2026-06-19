@@ -74,6 +74,15 @@ CREATE TABLE \`member_group_members\` (
 	FOREIGN KEY (\`member_id\`) REFERENCES \`members\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE TABLE \`agent_view_public_ids\` (
+	\`entity_type\` text NOT NULL,
+	\`entity_id\` text NOT NULL,
+	\`public_id\` text NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	PRIMARY KEY(\`entity_type\`, \`entity_id\`)
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX \`agent_view_public_ids_public_id_unique\` ON \`agent_view_public_ids\` (\`public_id\`);--> statement-breakpoint
 CREATE TABLE \`member_groups\` (
 	\`id\` text PRIMARY KEY NOT NULL,
 	\`name\` text NOT NULL,

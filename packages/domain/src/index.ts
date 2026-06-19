@@ -216,6 +216,8 @@ export type {
   ExportedInvestmentMeta,
   ExportedLiability,
   ExportedPosition,
+  ExportedPublicId,
+  ExportedPublicIdEntityType,
   ExportedSnapshot,
   ExportedTrash,
   ExportedValuationAnchor,

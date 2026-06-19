@@ -1,5 +1,6 @@
 import type {
   AssetPrice,
+  ExportedPublicId,
   ExportedAmortizationPlan,
   ExportedAsset,
   ExportedBalanceAnchor,
@@ -26,7 +27,7 @@ import {
   listScopeOptions,
   serializeWorkspaceExport,
 } from "@worthline/domain";
-import { asc, count, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, asc, count, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 import { mapPositionRow, positionInsertValues } from "./connected-source-store";
@@ -39,6 +40,7 @@ import {
   assetValuations,
   assets,
   connectedSources,
+  agentViewPublicIds,
   earlyRepayments,
   interestRateRevisions,
   liabilities,
@@ -54,6 +56,12 @@ import {
   warningOverrides,
   workspace as workspaceTable,
 } from "./schema";
+import {
+  ensureAgentViewPublicIds,
+  publicIdTargetsForMember,
+  publicIdTargetsForWorkspace,
+  readAgentViewPublicIds,
+} from "./agent-view-public-ids";
 import { readSnapshots } from "./snapshot-store";
 import {
   readAssetOwnerships,
@@ -127,6 +135,7 @@ const WORKSPACE_TABLES = [
   "liabilities",
   "assets",
   "member_group_members",
+  "agent_view_public_ids",
   "member_groups",
   "members",
   "workspace",
@@ -267,6 +276,7 @@ function initializeWorkspace(ctx: StoreContext, input: InitializeWorkspaceInput)
 
   ctx.transaction(() => {
     db.delete(memberGroupMembers).run();
+    db.delete(agentViewPublicIds).run();
     db.delete(memberGroups).run();
     db.delete(members).run();
     db.delete(workspaceTable).run();
@@ -306,6 +316,8 @@ function initializeWorkspace(ctx: StoreContext, input: InitializeWorkspaceInput)
           .run();
       }
     }
+
+    ensureAgentViewPublicIds(ctx, publicIdTargetsForWorkspace(workspace));
   });
 
   ctx.invalidateWorkspace();
@@ -332,14 +344,17 @@ function resetWorkspace(ctx: StoreContext): void {
 }
 
 function createMember(ctx: StoreContext, member: Member): void {
-  ctx.db
-    .insert(members)
-    .values({
-      disabledAt: member.disabledAt ?? null,
-      id: member.id,
-      name: member.name,
-    })
-    .run();
+  ctx.transaction(() => {
+    ctx.db
+      .insert(members)
+      .values({
+        disabledAt: member.disabledAt ?? null,
+        id: member.id,
+        name: member.name,
+      })
+      .run();
+    ensureAgentViewPublicIds(ctx, publicIdTargetsForMember(member));
+  });
   ctx.invalidateWorkspace();
 }
 
@@ -456,6 +471,14 @@ function hardDeleteMember(ctx: StoreContext, memberId: string): number {
     const deleted = db.delete(members).where(eq(members.id, memberId)).run();
 
     if (deleted.changes > 0) {
+      db.delete(agentViewPublicIds)
+        .where(
+          and(
+            eq(agentViewPublicIds.entityId, memberId),
+            inArray(agentViewPublicIds.entityType, ["member", "scope"]),
+          ),
+        )
+        .run();
       ctx.writeAuditEntry("hard_delete_member", "member", memberId, {
         name: member.name,
       });
@@ -548,6 +571,11 @@ function importWorkspace(
           .run();
       }
     }
+
+    if (doc.publicIds.length > 0) {
+      db.insert(agentViewPublicIds).values(toPublicIdRows(doc.publicIds)).run();
+    }
+    ensureAgentViewPublicIds(ctx, publicIdTargetsForWorkspace(doc));
 
     const writeAsset = (asset: ExportedAsset): void => {
       db.insert(assets)
@@ -1137,7 +1165,33 @@ function buildWorkspaceExport(db: StoreDb, workspace: Workspace | null): Workspa
     },
     priceCache,
     connectedSources: exportedConnectedSources,
+    publicIds: currentAgentViewPublicIds(db, workspace),
   });
+}
+
+function currentAgentViewPublicIds(
+  db: StoreDb,
+  workspace: Workspace,
+): ExportedPublicId[] {
+  const liveTargets = new Set(
+    publicIdTargetsForWorkspace(workspace).map(
+      (target) => `${target.entityType}:${target.entityId}`,
+    ),
+  );
+
+  return readAgentViewPublicIds(db).filter((row) =>
+    liveTargets.has(`${row.entityType}:${row.entityId}`),
+  );
+}
+
+function toPublicIdRows(
+  publicIds: ExportedPublicId[],
+): Array<typeof agentViewPublicIds.$inferInsert> {
+  return publicIds.map((publicId) => ({
+    entityId: publicId.entityId,
+    entityType: publicId.entityType,
+    publicId: publicId.publicId,
+  }));
 }
 
 /**
