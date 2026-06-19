@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "packageManager": "npm@11.14.1",
+  "engines": {
+    "node": "24.x"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"
