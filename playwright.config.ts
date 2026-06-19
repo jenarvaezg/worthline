@@ -60,6 +60,9 @@ const isCI = !!process.env.CI;
 process.env.WORTHLINE_DB_PATH = e2eDbPath;
 
 export default defineConfig({
+  // Resolve the zone-alias contract (#355) inside e2e specs. Playwright loads
+  // its own TS via esbuild and reads `paths` from this tsconfig (PW 1.49+).
+  tsconfig: "./tsconfig.e2e.json",
   globalSetup: "./e2e/global-setup.ts",
   testDir: "./e2e",
   testIgnore: /first-run.*\.spec\.ts/,
