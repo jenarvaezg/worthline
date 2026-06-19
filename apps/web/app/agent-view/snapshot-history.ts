@@ -18,6 +18,13 @@ import {
   type AgentViewSnapshotSort,
   type AgentViewSnapshotTierSummary,
 } from "./contract";
+import {
+  compareDateId,
+  decodeCursor,
+  dropAfterCursor,
+  encodeCursor,
+  type DateIdKey,
+} from "./cursor";
 import { publicIdMap, resolveInternalScopeId } from "./scope-resolution";
 import { listAgentViewScopes } from "./scopes";
 
@@ -102,10 +109,10 @@ export function buildSnapshotHistory(
       publicId: deriveSnapshotPublicId(internalScopeId, snapshot.dateKey),
       snapshot,
     }))
-    .sort((a, b) => compareSortKey(a, b, options.sort));
+    .sort((a, b) => compareDateId(snapshotKey(a), snapshotKey(b), options.sort));
 
   const afterCursor = options.cursor
-    ? dropThroughCursor(sorted, decodeCursor(options.cursor), options.sort)
+    ? dropAfterCursor(sorted, decodeCursor(options.cursor), options.sort, snapshotKey)
     : sorted;
 
   const page = afterCursor.slice(0, options.limit);
@@ -265,58 +272,9 @@ function toHoldingsSummary(
   return { byLiquidityTier, rowCount: records.length };
 }
 
-/** Stable sort key: `dateKey` then public snapshot ID (PRD #328 snapshot ordering). */
-function compareSortKey(
-  a: SortedSnapshot,
-  b: SortedSnapshot,
-  sort: AgentViewSnapshotSort,
-): number {
-  const byDate = a.snapshot.dateKey.localeCompare(b.snapshot.dateKey);
-  const base = byDate !== 0 ? byDate : a.publicId.localeCompare(b.publicId);
-  return sort === "-date" ? -base : base;
-}
-
-/**
- * Drop every item up to and including the cursor's position in the active sort
- * order, leaving only the items that strictly follow it — so a page never
- * repeats or skips a row across cursors.
- */
-function dropThroughCursor(
-  sorted: SortedSnapshot[],
-  cursor: { date: string; id: string },
-  sort: AgentViewSnapshotSort,
-): SortedSnapshot[] {
-  const cursorKey: SortedSnapshot = {
-    isMonthlyClose: false,
-    publicId: cursor.id,
-    snapshot: { dateKey: cursor.date } as NetWorthSnapshot,
-  };
-  return sorted.filter((entry) => compareSortKey(entry, cursorKey, sort) > 0);
-}
-
-function encodeCursor(date: string, id: string): string {
-  return Buffer.from(JSON.stringify({ d: date, i: id })).toString("base64url");
-}
-
-function decodeCursor(cursor: string): { date: string; id: string } {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
-  } catch {
-    throw invalidCursor();
-  }
-
-  if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    typeof (parsed as { d?: unknown }).d !== "string" ||
-    typeof (parsed as { i?: unknown }).i !== "string"
-  ) {
-    throw invalidCursor();
-  }
-
-  const record = parsed as { d: string; i: string };
-  return { date: record.d, id: record.i };
+/** This snapshot's stable sort key: its date then its derived public ID. */
+function snapshotKey(entry: SortedSnapshot): DateIdKey {
+  return { dateKey: entry.snapshot.dateKey, publicId: entry.publicId };
 }
 
 /**
@@ -354,13 +312,5 @@ function unknownScope(): AgentViewHttpError {
     code: "not_found",
     message: "Unknown scope.",
     status: 404,
-  });
-}
-
-function invalidCursor(): AgentViewHttpError {
-  return new AgentViewHttpError({
-    code: "bad_request",
-    message: "Invalid cursor.",
-    status: 400,
   });
 }

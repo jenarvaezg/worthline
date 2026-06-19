@@ -10,11 +10,19 @@ import {
   successEnvelope,
   type AgentViewErrorEnvelope,
   type AgentViewIncludeHoldingRows,
+  type AgentViewOperationPage,
+  type AgentViewOperationSort,
   type AgentViewSnapshotGranularity,
   type AgentViewSnapshotHistory,
   type AgentViewSnapshotSort,
 } from "./contract";
 import { buildFinancialContext } from "./financial-context";
+import { buildHoldingDetail } from "./holding-detail";
+import {
+  buildHoldingOperations,
+  DEFAULT_OPERATION_LIMIT,
+  MAX_OPERATION_LIMIT,
+} from "./holding-operations";
 import { listAgentViewScopes } from "./scopes";
 import {
   buildSnapshotHistory,
@@ -110,6 +118,55 @@ export function handleGetSnapshotHistory(
   }
 }
 
+export function handleGetHoldingDetail(
+  request: NextRequest,
+  holdingId: string,
+  runWithStore: StoreRunner,
+): NextResponse {
+  try {
+    guardAgentViewRequest(request, []);
+
+    return json(
+      successEnvelope(
+        runWithStore((store) => buildHoldingDetail(store.agentView, holdingId)),
+      ),
+      200,
+    );
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+const OPERATION_QUERY_PARAMS = ["from", "to", "sort", "limit", "cursor"];
+
+export function handleGetHoldingOperations(
+  request: NextRequest,
+  holdingId: string,
+  runWithStore: StoreRunner,
+): NextResponse {
+  try {
+    guardAgentViewRequest(request, OPERATION_QUERY_PARAMS);
+
+    const params = new URL(request.url).searchParams;
+    const options = {
+      cursor: params.get("cursor") ?? undefined,
+      from: parseIsoDate(params.get("from"), "from"),
+      holdingId,
+      limit: parseOperationLimit(params.get("limit")),
+      sort: parseOperationSort(params.get("sort")),
+      to: parseIsoDate(params.get("to"), "to"),
+    };
+
+    const page = runWithStore((store) =>
+      buildHoldingOperations(store.agentView, options),
+    );
+
+    return json(operationsEnvelope(request, page), 200);
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
 /**
  * Envelope a snapshot page: the entries as `data`, the pagination facts as
  * `meta`, and `links.self` plus `links.next` (the same URL carrying the
@@ -126,6 +183,55 @@ function snapshotEnvelope(request: NextRequest, history: AgentViewSnapshotHistor
   }
 
   return { data: history.entries, links, meta: history.meta };
+}
+
+/**
+ * Envelope an operations page: the rows as `data`, the pagination facts as
+ * `meta`, and `links.self` plus `links.next` (the same URL carrying the
+ * `nextCursor`) when more pages remain — the same shape as a snapshot page.
+ */
+function operationsEnvelope(request: NextRequest, page: AgentViewOperationPage) {
+  const self = new URL(request.url);
+  const links: Record<string, string> = { self: self.pathname + self.search };
+
+  if (page.meta.nextCursor !== undefined) {
+    const next = new URL(request.url);
+    next.searchParams.set("cursor", page.meta.nextCursor);
+    links.next = next.pathname + next.search;
+  }
+
+  return { data: page.operations, links, meta: page.meta };
+}
+
+/** Parse `sort` for operations; defaults newest-first (`-date`). */
+function parseOperationSort(raw: string | null): AgentViewOperationSort {
+  if (raw === null) {
+    return "-date";
+  }
+
+  if (raw !== "date" && raw !== "-date") {
+    throw enumError("sort", raw);
+  }
+
+  return raw;
+}
+
+/** Parse the operations `limit`: positive integer, clamped to the documented max. */
+function parseOperationLimit(raw: string | null): number {
+  if (raw === null) {
+    return DEFAULT_OPERATION_LIMIT;
+  }
+
+  if (!/^\d+$/.test(raw) || Number(raw) < 1) {
+    throw new AgentViewHttpError({
+      code: "bad_request",
+      details: { limit: raw },
+      message: "limit must be a positive integer.",
+      status: 400,
+    });
+  }
+
+  return Math.min(Number(raw), MAX_OPERATION_LIMIT);
 }
 
 function parseGranularity(raw: string | null): AgentViewSnapshotGranularity {
