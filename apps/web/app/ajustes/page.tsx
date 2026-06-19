@@ -11,6 +11,7 @@ import {
   resolveOkMessage,
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
+import { isDemoMode } from "@web/demo/write-guard";
 import ImportWorkspaceForm from "@web/import-workspace-form";
 import { PendingSubmit } from "@web/pending-submit";
 import Shell from "@web/shell";
@@ -43,6 +44,9 @@ export default async function AjustesPage({
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
   const currentUrl = buildCurrentUrlFor("/ajustes", resolvedSearchParams);
+  // Demo mode hides the irreversible affordances entirely (ADR 0023): reset and
+  // import are never offered. Export stays — it is read-only and harmless.
+  const demo = isDemoMode();
 
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
@@ -585,54 +589,56 @@ export default async function AjustesPage({
       </div>
 
       {/* ── Zona de peligro ──────────────────────────────────────────── */}
-      <section className="dangerZone" aria-label="Zona de peligro">
-        <div className="panelHeader">
-          <h2>Zona de peligro</h2>
-          <span>Acciones irreversibles</span>
-        </div>
+      {demo ? null : (
+        <section className="dangerZone" aria-label="Zona de peligro">
+          <div className="panelHeader">
+            <h2>Zona de peligro</h2>
+            <span>Acciones irreversibles</span>
+          </div>
 
-        {formError?.formId === "reset" ? (
-          <p className="formError" role="alert">
-            {formError.message}
+          {formError?.formId === "reset" ? (
+            <p className="formError" role="alert">
+              {formError.message}
+            </p>
+          ) : null}
+
+          <p className="dangerExplain">
+            Borrar todo elimina el workspace entero —miembros, patrimonio, inversiones,
+            operaciones, histórico y ajustes— y devuelve la app al inicio. No se puede
+            deshacer.
           </p>
-        ) : null}
 
-        <p className="dangerExplain">
-          Borrar todo elimina el workspace entero —miembros, patrimonio, inversiones,
-          operaciones, histórico y ajustes— y devuelve la app al inicio. No se puede
-          deshacer.
-        </p>
+          <form action={resetWorkspaceAction} className="stackForm">
+            <input name="currentUrl" type="hidden" value={currentUrl} />
+            <details className="confirmDelete">
+              <summary>Borrar todo</summary>
+              <label>
+                Escribe <strong>borrar todo</strong> para confirmar
+                <input
+                  aria-label="Frase de confirmación de borrado total"
+                  autoComplete="off"
+                  name="confirmation"
+                  placeholder="borrar todo"
+                />
+              </label>
+              <button type="submit">Borrar todo definitivamente</button>
+            </details>
+          </form>
 
-        <form action={resetWorkspaceAction} className="stackForm">
-          <input name="currentUrl" type="hidden" value={currentUrl} />
-          <details className="confirmDelete">
-            <summary>Borrar todo</summary>
-            <label>
-              Escribe <strong>borrar todo</strong> para confirmar
-              <input
-                aria-label="Frase de confirmación de borrado total"
-                autoComplete="off"
-                name="confirmation"
-                placeholder="borrar todo"
-              />
-            </label>
-            <button type="submit">Borrar todo definitivamente</button>
-          </details>
-        </form>
+          {formError?.formId === "import" ? (
+            <p className="formError" role="alert">
+              {formError.message}
+            </p>
+          ) : null}
 
-        {formError?.formId === "import" ? (
-          <p className="formError" role="alert">
-            {formError.message}
+          <p className="dangerExplain">
+            Importar un archivo de exportación reemplaza por completo el workspace actual;
+            nada de lo que existe ahora se conserva.
           </p>
-        ) : null}
 
-        <p className="dangerExplain">
-          Importar un archivo de exportación reemplaza por completo el workspace actual;
-          nada de lo que existe ahora se conserva.
-        </p>
-
-        <ImportWorkspaceForm currentUrl={currentUrl} showDataLossWarning />
-      </section>
+          <ImportWorkspaceForm currentUrl={currentUrl} showDataLossWarning />
+        </section>
+      )}
     </Shell>
   );
 }
