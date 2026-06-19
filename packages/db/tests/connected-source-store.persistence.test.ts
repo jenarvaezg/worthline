@@ -19,9 +19,9 @@ import {
 import Database from "better-sqlite3";
 import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore } from "../src/index";
-import type { WorthlineStore } from "../src/index";
-import { migrate, SCHEMA_VERSION } from "../src/migrate";
+import { createInMemoryStore } from "@db/index";
+import type { WorthlineStore } from "@db/index";
+import { migrate, SCHEMA_VERSION } from "@db/migrate";
 
 const asCoin = (p: SourcePosition): CoinPosition => {
   if (p.kind !== "coin") throw new Error("expected coin");

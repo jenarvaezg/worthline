@@ -4,8 +4,8 @@ import { join } from "node:path";
 import type { AssetPrice } from "@worthline/domain";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { createWorthlineStore } from "../src/index";
-import type { WorthlineStore } from "../src/index";
+import { createWorthlineStore } from "@db/index";
+import type { WorthlineStore } from "@db/index";
 
 const tempDirs: string[] = [];
 

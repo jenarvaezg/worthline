@@ -18,8 +18,8 @@ import type {
 import { deriveMonthlyCloses, serializeWorkspaceExport } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore } from "../src/index";
-import type { WorthlineStore } from "../src/index";
+import { createInMemoryStore } from "@db/index";
+import type { WorthlineStore } from "@db/index";
 
 const eur = (amountMinor: number): NetWorthSnapshot["debts"] => ({
   amountMinor,

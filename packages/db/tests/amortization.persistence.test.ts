@@ -7,8 +7,8 @@
  */
 import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore } from "../src/index";
-import type { WorthlineStore } from "../src/index";
+import { createInMemoryStore } from "@db/index";
+import type { WorthlineStore } from "@db/index";
 
 function seed(store: WorthlineStore): void {
   store.workspace.initializeWorkspace({

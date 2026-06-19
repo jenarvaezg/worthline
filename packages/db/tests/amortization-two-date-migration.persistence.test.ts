@@ -22,9 +22,9 @@
 import Database from "better-sqlite3";
 import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore, createStoreFromSqlite } from "../src/index";
-import { migrate, SCHEMA_VERSION } from "../src/migrate";
-import { schemaSql } from "../src/schema-sql";
+import { createInMemoryStore, createStoreFromSqlite } from "@db/index";
+import { migrate, SCHEMA_VERSION } from "@db/migrate";
+import { schemaSql } from "@db/schema-sql";
 
 /**
  * Build a genuinely pre-v18 database: rewrite the two-date columns in the runtime
