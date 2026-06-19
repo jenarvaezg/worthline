@@ -6,6 +6,8 @@ import type {
   AgentViewDataQualitySignal,
   AgentViewEnvelope,
   AgentViewErrorEnvelope,
+  AgentViewFigureExplanation,
+  AgentViewFigureName,
   AgentViewFinancialContext,
   AgentViewFireContext,
   AgentViewHoldingDetail,
@@ -18,6 +20,7 @@ import type {
   AgentViewSnapshotSort,
   AgentViewTrashedHolding,
 } from "./contract";
+import { FIGURE_NAMES } from "./figure-explanations";
 
 export interface AgentViewApiClient {
   get: <T>(path: string) => Promise<T>;
@@ -47,6 +50,15 @@ export interface GetFinancialContextInput {
 export interface GetFireContextInput {
   /** Public scope ID; defaults to the household scope when omitted. */
   scopeId?: string;
+}
+
+export interface ExplainFigureInput {
+  /** The current figure to explain. */
+  figure: AgentViewFigureName;
+  /** Public scope ID; defaults to the household scope when omitted. */
+  scopeId?: string;
+  /** Public holding ID (`wl_hld_…`); required for the `holding_value` figure. */
+  holdingId?: string;
 }
 
 export interface GetSnapshotHistoryInput {
@@ -151,6 +163,10 @@ export interface AgentViewMcpToolCatalog {
     GetFireContextInput,
     AgentViewEnvelope<AgentViewFireContext>
   >;
+  explain_figure: AgentViewMcpTool<
+    ExplainFigureInput,
+    AgentViewEnvelope<AgentViewFigureExplanation>
+  >;
   get_snapshot_history: AgentViewMcpTool<
     GetSnapshotHistoryInput,
     AgentViewEnvelope<AgentViewSnapshotEntry[]>
@@ -191,6 +207,31 @@ export function createAgentViewMcpToolCatalog(
   client: AgentViewApiClient,
 ): AgentViewMcpToolCatalog {
   return {
+    explain_figure: {
+      description:
+        "Explain how a scope's CURRENT figure is computed (defaults to the household scope): the value, a human-readable formula with its operand figures, the holdings that contribute (with scope-weighted values), the holdings held out and why, the relevant data-quality notes, and drilldown links. Supported figures: net_worth, liquid_net_worth, gross_assets, debts, housing_equity, liquidity_breakdown, holding_value (requires holdingId), fire_eligible_assets and fire_progress (require a FIRE config, current assumptions only — never a historical FIRE). An unknown figure is a 400; a figure the scope cannot honour is a 422. Reads are side-effect-free.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          figure: { enum: [...FIGURE_NAMES], type: "string" },
+          holdingId: { type: "string" },
+          scopeId: { type: "string" },
+        },
+        required: ["figure"],
+        type: "object",
+      },
+      invoke: async (input) => {
+        const scopeId = input.scopeId ?? (await defaultScopeId(client));
+        const query =
+          input.holdingId === undefined
+            ? ""
+            : `?holdingId=${encodeURIComponent(input.holdingId)}`;
+        return client.get(
+          `${SCOPES_PATH}/${encodeURIComponent(scopeId)}/figure-explanations/${encodeURIComponent(input.figure)}${query}`,
+        );
+      },
+      name: "explain_figure",
+    },
     get_connected_source_positions: {
       description:
         "Get connected-source positions (coins / token balances) projected into a holding or a source. Supply EXACTLY ONE of holdingId (one connected holding/rung's positions) or sourceId (all of a source's positions, grouped by projected holding/rung). Each position carries its adapter, source label, projected holding/rung, quantity, unit price when known, value, valuation basis, freshness, and quality signals. Reads are side-effect-free.",
