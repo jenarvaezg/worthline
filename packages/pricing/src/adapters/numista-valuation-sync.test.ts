@@ -8,8 +8,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { fetchMetalSpotEur, syncNumistaCollection } from "./numista-sync";
-import type { NumistaCollectedItem } from "./numista";
+import { fetchMetalSpotEur, syncNumistaCollection } from "./numista-valuation";
+import type { NumistaCollectedItem } from "../numista";
 
 const NOW = "2026-06-15T12:00:00.000Z";
 
