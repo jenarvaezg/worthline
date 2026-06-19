@@ -19,7 +19,7 @@ import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
 import {
   updateAssetValuationAction,
   batchValueUpdateAction,
-} from "../apps/web/app/patrimonio/actions";
+} from "@web/patrimonio/actions";
 import { catchRedirect } from "./helpers";
 
 // ------------------------------------------------------------- test fixtures --

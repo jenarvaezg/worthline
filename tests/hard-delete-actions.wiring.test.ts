@@ -13,15 +13,12 @@ import {
   emptyTrashAction,
   hardDeleteAssetAction,
   hardDeleteLiabilityAction,
-} from "../apps/web/app/patrimonio/actions";
+} from "@web/patrimonio/actions";
 import {
   deleteOperationAction,
   hardDeleteInvestmentAction,
-} from "../apps/web/app/inversiones/actions";
-import {
-  hardDeleteMemberAction,
-  resetWorkspaceAction,
-} from "../apps/web/app/ajustes/actions";
+} from "@web/inversiones/actions";
+import { hardDeleteMemberAction, resetWorkspaceAction } from "@web/ajustes/actions";
 import { catchRedirect, fd } from "./helpers";
 
 let store: WorthlineStore;

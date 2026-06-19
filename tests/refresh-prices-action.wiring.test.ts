@@ -4,7 +4,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
 import type { PriceProvider } from "@worthline/pricing";
-import { refreshPricesAction } from "../apps/web/app/inversiones/actions";
+import { refreshPricesAction } from "@web/inversiones/actions";
 import { catchRedirect, fd } from "./helpers";
 
 let store: WorthlineStore;

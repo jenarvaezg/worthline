@@ -24,7 +24,7 @@ import { valuationMethodOfAsset } from "@worthline/domain";
 import {
   addValuationAnchorAction,
   setAppreciationRateAction,
-} from "../apps/web/app/patrimonio/actions";
+} from "@web/patrimonio/actions";
 import { catchRedirect, errorMessageOf, fd } from "./helpers";
 
 const MEMBER_ID = "member_yo";

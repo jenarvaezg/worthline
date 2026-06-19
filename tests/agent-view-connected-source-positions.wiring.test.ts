@@ -3,12 +3,12 @@ import { NextRequest } from "next/server";
 
 import { createWorthlineStore } from "@worthline/db";
 import type { SourcePositionInput } from "@worthline/db";
-import { GET as getScopes } from "../apps/web/app/api/v1/agent-view/scopes/route";
-import { GET as getFinancialContext } from "../apps/web/app/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
-import { GET as getHoldingPositions } from "../apps/web/app/api/v1/agent-view/holdings/[holdingId]/connected-source-positions/route";
-import { GET as getSourcePositions } from "../apps/web/app/api/v1/agent-view/connected-sources/[sourceId]/positions/route";
-import { createAgentViewMcpToolCatalog } from "../apps/web/app/agent-view/mcp";
-import type { AgentViewApiClient } from "../apps/web/app/agent-view/mcp";
+import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
+import { GET as getFinancialContext } from "@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
+import { GET as getHoldingPositions } from "@web/api/v1/agent-view/holdings/[holdingId]/connected-source-positions/route";
+import { GET as getSourcePositions } from "@web/api/v1/agent-view/connected-sources/[sourceId]/positions/route";
+import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
+import type { AgentViewApiClient } from "@web/agent-view/mcp";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
 
 const ORIGINAL_DB_PATH = process.env.WORTHLINE_DB_PATH;
