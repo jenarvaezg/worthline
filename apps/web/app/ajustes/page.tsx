@@ -44,7 +44,7 @@ export default async function AjustesPage({
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
   const currentUrl = buildCurrentUrlFor("/ajustes", resolvedSearchParams);
-  // Demo mode hides the irreversible affordances entirely (ADR 0023): reset and
+  // Demo mode hides the irreversible affordances entirely (ADR 0029): reset and
   // import are never offered. Export stays — it is read-only and harmless.
   const demo = isDemoMode();
 

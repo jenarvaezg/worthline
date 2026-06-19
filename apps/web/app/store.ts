@@ -1,5 +1,5 @@
 /**
- * The web-level store seam (PRD #297, ADR 0023). One place that decides
+ * The web-level store seam (PRD #297, ADR 0029). One place that decides
  * demo-vs-live: in demo mode it opens the persona's writable temp copy and pins
  * the healthcheck clock; otherwise it behaves exactly like the underlying
  * `@worthline/db` helpers. Every read page and read route opens its store through

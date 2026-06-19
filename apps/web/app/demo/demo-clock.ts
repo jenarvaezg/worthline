@@ -1,5 +1,5 @@
 /**
- * Demo clock helpers (PRD #297, ADR 0023/0024). The demo's "now" is pinned by
+ * Demo clock helpers (PRD #297, ADR 0029/0024). The demo's "now" is pinned by
  * `WORTHLINE_DEMO_NOW`, carried on the resolved {@link DemoContext}. These turn
  * that raw value into the `Date` / date-key the app and seed read. A missing or
  * unparseable value degrades to the real clock — the demo keeps working, just

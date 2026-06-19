@@ -1,7 +1,7 @@
 import { DEFAULT_PERSONA, parsePersonaId, type PersonaId } from "@web/demo/persona";
 
 /**
- * The demo context resolver (PRD #297, ADR 0023). A pure function that derives
+ * The demo context resolver (PRD #297, ADR 0029). A pure function that derives
  * `{ enabled, now, persona }` from the environment and the persona cookie. It is
  * the single source of truth queried by the store provider, the write guard, and
  * the presentation layer for "are we in demo mode, as of when, as whom".

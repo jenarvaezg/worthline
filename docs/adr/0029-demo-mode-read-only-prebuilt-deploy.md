@@ -1,4 +1,4 @@
-# Demo mode is a read-only Vercel build of the live app
+# Demo mode is a read-only prebuilt deploy of the live app
 
 We want to show worthline to people without exposing real holdings and without running
 the live local app — a **demo mode** the public can click around. The obvious host was
@@ -64,10 +64,26 @@ Authenticated, mutable, persistent cloud hosting of the _real_ workspace is expl
   and a shareable `/demo?persona=…` deep-link; switching clears `wl_scope` so a stale member
   scope cannot point at a persona that lacks that member. A cold first visit defaults to
   **familia**.
-- The three fixtures are **generated at build** and bundled into the function via Next's
-  `outputFileTracingIncludes`; git stays free of binary blobs, the seed script is the single
-  source of truth, and the build clones only the public repo — it never reads `.local`, so
-  there is no path for real data to leak into the demo.
+- No fixtures are committed or pre-bundled: the store seam **lazily seeds** each persona's
+  SQLite into the writable `/tmp` on first use, from the declarative per-persona specs (the
+  seed builder is the single source of truth). Git stays free of binary blobs and the build
+  clones only the public repo — never `.local` — so there is no path for real data to leak
+  into the demo. (Build-time fixture generation + `outputFileTracingIncludes` was the original
+  plan — see the build-fixtures follow-up; deferred as an optimization, not needed for
+  correctness.)
+- **Deployment is _prebuilt_, not Vercel-built** (despite this ADR's original title). Vercel's
+  build sandbox silently kills the Next 16 production build — `exit 1` right after "Skipping
+  validation of types", on both Turbopack and webpack — on every Node version Vercel offers (22
+  and 24); only Node 26, which Vercel cannot run, is unaffected. The app itself is healthy: it
+  builds on Node 22/24/26 off Vercel (GitHub Actions, CI, Docker, locally), and `better-sqlite3`
+  loads fine on the Vercel lambda (verified) — the **builder**, not the native module, is the
+  blocker. So a GitHub Action (`.github/workflows/deploy-demo.yml`) builds the output on a
+  Node 24 runner and ships it with `vercel deploy --prebuilt`; Vercel never runs its own
+  builder. The build Node must equal the lambda Node (both 24 — Vercel's default; pinned via
+  `engines.node`) or the native `better-sqlite3` binary
+  ABI-mismatches at runtime. `vercel.json` disables Vercel's git auto-build (only the Action
+  deploys), and public access required turning off Vercel **Deployment Protection** (on by
+  default → 401 for everyone).
 - This does **not** solve hosting the real, authenticated, mutable workspace in the cloud —
   that needs auth and a persistent hosted DB (libSQL/Turso is the closest-to-SQLite path) and
   is left for a separate effort. The demo seam is deliberately shaped not to block it.

@@ -164,7 +164,7 @@ export default async function DashboardPage({
       range: selectedRange,
       today,
       now,
-      // Demo mode never reaches out (ADR 0023): the fixture is frozen, so price
+      // Demo mode never reaches out (ADR 0029): the fixture is frozen, so price
       // refresh is a no-op and the connected-source refreshers are omitted.
       refreshPrices: demo.enabled
         ? async (): Promise<RefreshPricesResult> => ({ priceCache: [], errors: [] })
