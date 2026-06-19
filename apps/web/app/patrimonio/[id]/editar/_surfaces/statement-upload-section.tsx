@@ -21,7 +21,7 @@
 
 import { startTransition, useActionState, useState } from "react";
 
-import type { StatementPreviewState } from "../../../../inversiones/actions";
+import type { StatementPreviewState } from "@web/inversiones/actions";
 
 const IDLE: StatementPreviewState = { status: "idle" };
 

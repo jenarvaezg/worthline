@@ -19,8 +19,8 @@ import {
   parseScopeCookie,
   resolveOkMessage,
   SCOPE_COOKIE_NAME,
-} from "../intake";
-import Shell from "../shell";
+} from "@web/intake";
+import Shell from "@web/shell";
 import BalanceBoard from "./balance-board";
 import PatrimonioGroupControls from "./group-controls";
 

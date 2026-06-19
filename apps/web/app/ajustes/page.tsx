@@ -10,10 +10,10 @@ import {
   parseScopeCookie,
   resolveOkMessage,
   SCOPE_COOKIE_NAME,
-} from "../intake";
-import ImportWorkspaceForm from "../import-workspace-form";
-import { PendingSubmit } from "../pending-submit";
-import Shell from "../shell";
+} from "@web/intake";
+import ImportWorkspaceForm from "@web/import-workspace-form";
+import { PendingSubmit } from "@web/pending-submit";
+import Shell from "@web/shell";
 import {
   createMemberAction,
   disableMemberAction,

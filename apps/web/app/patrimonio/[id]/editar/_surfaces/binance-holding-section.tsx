@@ -22,10 +22,10 @@
 import { formatMoneyMinor } from "@worthline/domain";
 import type { TokenPosition } from "@worthline/domain";
 
-import { syncBinanceAction } from "../../../../ajustes/binance-actions";
-import { formatLastSync } from "../../../../ajustes/binance-helpers";
-import DisconnectBinanceFold from "../../../../ajustes/disconnect-binance-fold";
-import { PendingSubmit } from "../../../../pending-submit";
+import { syncBinanceAction } from "@web/ajustes/binance-actions";
+import { formatLastSync } from "@web/ajustes/binance-helpers";
+import DisconnectBinanceFold from "@web/ajustes/disconnect-binance-fold";
+import { PendingSubmit } from "@web/pending-submit";
 import {
   buildBinanceHoldingView,
   formatBinanceSince,

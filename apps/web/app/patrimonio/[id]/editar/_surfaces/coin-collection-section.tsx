@@ -20,10 +20,10 @@
 import { coinValue, formatMoneyMinor, groupPositionsByMetal } from "@worthline/domain";
 import type { CoinPosition, PriceFreshnessState } from "@worthline/domain";
 
-import DisconnectNumistaFold from "../../../../ajustes/disconnect-numista-fold";
-import { syncNumistaAction } from "../../../../ajustes/numista-actions";
-import { formatLastSync } from "../../../../ajustes/numista-helpers";
-import { PendingSubmit } from "../../../../pending-submit";
+import DisconnectNumistaFold from "@web/ajustes/disconnect-numista-fold";
+import { syncNumistaAction } from "@web/ajustes/numista-actions";
+import { formatLastSync } from "@web/ajustes/numista-helpers";
+import { PendingSubmit } from "@web/pending-submit";
 import {
   basisTag,
   buildCoinCollectionView,

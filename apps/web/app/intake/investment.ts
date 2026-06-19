@@ -12,7 +12,7 @@ import {
   normalizeDecimalString,
   normalizeNonNegativeDecimalString,
   parseMoneyMinor,
-} from "../intake-primitives";
+} from "@web/intake-primitives";
 import { createStableId, parseOwnership, type StrictParseResult } from "./shared";
 
 /**

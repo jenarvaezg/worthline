@@ -28,7 +28,7 @@ import {
   parseValueUpdatePass,
   preserveFields,
   successRedirectUrl,
-} from "../intake";
+} from "@web/intake";
 
 /**
  * Server actions for the /patrimonio section.
