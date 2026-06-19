@@ -344,7 +344,33 @@ describe("parseWorkspaceExport — acceptance", () => {
       expect(result.value.snapshots).toEqual([]);
       expect(result.value.trash).toEqual({ assets: [], liabilities: [] });
       expect(result.value.priceCache).toEqual([]);
+      expect(result.value.publicIds).toEqual([]);
     }
+  });
+
+  test("public IDs must be prefixed, unique, and target exported scopes or members", () => {
+    const document = makeDocument((doc) => {
+      doc.publicIds = [
+        {
+          entityType: "scope",
+          entityId: "household",
+          publicId: "wl_scp_11111111111111111111111111111111",
+        },
+        {
+          entityType: "scope",
+          entityId: "m1",
+          publicId: "wl_scp_22222222222222222222222222222222",
+        },
+        { entityType: "member", entityId: "m1", publicId: "member_m1" },
+        {
+          entityType: "scope",
+          entityId: "ghost",
+          publicId: "wl_scp_33333333333333333333333333333333",
+        },
+      ];
+    });
+
+    expectRejection(document, /publicIds/);
   });
 
   test("a snapshot with an empty holdings array is accepted (pre-ADR-0008 capture)", () => {
