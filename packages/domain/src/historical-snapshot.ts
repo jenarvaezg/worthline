@@ -321,6 +321,74 @@ function liabilityValuationInput(
   };
 }
 
+function firstMarketAppraisalDate(
+  curve: HousingCurveInputs | undefined,
+): string | undefined {
+  const appraisals = (curve?.anchors ?? [])
+    .filter((anchor) => anchor.adjustsPriorCurve)
+    .map((anchor) => anchor.valuationDate)
+    .sort();
+
+  return appraisals[0];
+}
+
+function assetExistsAtHistoricalDate(
+  asset: ManualAsset,
+  input: Pick<HistoricalValuationContext, "housingValuationByAsset" | "targetDate">,
+): boolean {
+  // Investments remain operation-led even when legacy data flags them as a
+  // primary residence (#148). Their existence is decided by valueAt(...derived).
+  if (asset.type === "investment" || !isHousingAsset(asset)) {
+    return true;
+  }
+
+  const firstAppraisal = firstMarketAppraisalDate(
+    input.housingValuationByAsset?.get(asset.id),
+  );
+  return firstAppraisal === undefined || input.targetDate >= firstAppraisal;
+}
+
+function firstBalanceAnchorDate(
+  curve: DebtBalanceCurveInputs | undefined,
+): string | undefined {
+  const anchors = (curve?.anchors ?? []).map((anchor) => anchor.anchorDate).sort();
+  return anchors[0];
+}
+
+function liabilityExistsAtHistoricalDate(input: {
+  liability: Liability;
+  curve: DebtBalanceCurveInputs | undefined;
+  liveAssetIds: ReadonlySet<string>;
+  historicalAssetIds: ReadonlySet<string>;
+  targetDate: string;
+}): boolean {
+  const { curve, liability, targetDate } = input;
+
+  if (
+    liability.associatedAssetId !== undefined &&
+    input.liveAssetIds.has(liability.associatedAssetId) &&
+    !input.historicalAssetIds.has(liability.associatedAssetId)
+  ) {
+    return false;
+  }
+
+  if (curve?.debtModel === "amortizable" && curve.plan !== undefined) {
+    return targetDate >= curve.plan.disbursementDate;
+  }
+
+  if (
+    (curve?.debtModel === "revolving" || curve?.debtModel === "informal") &&
+    curve.initialCapitalMinor === undefined
+  ) {
+    const firstAnchor = firstBalanceAnchorDate(curve);
+    if (firstAnchor !== undefined && targetDate < firstAnchor) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 /**
  * The single place a ripple's recomputed rows become a five-figure summary,
  * reconciled, and wrapped in a snapshot (#181 + #181-completion). Every
@@ -419,9 +487,13 @@ export function buildSnapshotAtDate(
   }
 
   const historicalAssets: ManualAsset[] = [];
+  const historicalAssetIds = new Set<string>();
+  const liveAssetIds = new Set(input.assets.map((asset) => asset.id));
   const investmentDetails = new Map<string, InvestmentCaptureDetail>();
 
   for (const asset of input.assets) {
+    if (!assetExistsAtHistoricalDate(asset, input)) continue;
+
     // A connected coin collection is valued by purchase-date accretion (ADR 0017),
     // not the stored full-current-value basis — so a snapshot generated at a past
     // date only carries the coins acquired by then. A zero sum means no dated coin
@@ -434,6 +506,7 @@ export function buildSnapshotAtDate(
         ...asset,
         currentValue: money(coinValueMinor, asset.currency),
       });
+      historicalAssetIds.add(asset.id);
       continue;
     }
 
@@ -444,6 +517,7 @@ export function buildSnapshotAtDate(
       ...asset,
       currentValue: money(valuation.valueMinor, asset.currency),
     });
+    historicalAssetIds.add(asset.id);
 
     if (valuation.units !== undefined) {
       investmentDetails.set(asset.id, {
@@ -453,16 +527,34 @@ export function buildSnapshotAtDate(
     }
   }
 
-  const historicalLiabilities: Liability[] = input.liabilities.map((liability) => {
+  const historicalLiabilities: Liability[] = [];
+  for (const liability of input.liabilities) {
     const curve = input.debtBalanceByLiability?.get(liability.id);
+    if (
+      !liabilityExistsAtHistoricalDate({
+        curve,
+        historicalAssetIds,
+        liability,
+        liveAssetIds,
+        targetDate: input.targetDate,
+      })
+    ) {
+      continue;
+    }
+
     const valuation = valueAt(
       liabilityValuationInput(liability, curve, input),
       input.targetDate,
     );
-    return valuation.valueMinor !== null
-      ? { ...liability, currentBalance: money(valuation.valueMinor, liability.currency) }
-      : liability;
-  });
+    historicalLiabilities.push(
+      valuation.valueMinor !== null
+        ? {
+            ...liability,
+            currentBalance: money(valuation.valueMinor, liability.currency),
+          }
+        : liability,
+    );
+  }
 
   if (historicalAssets.length === 0 && historicalLiabilities.length === 0) {
     return null;

@@ -380,13 +380,13 @@ export interface SeedDimensions {
  */
 export const SEED_DIMENSIONS: SeedDimensions = {
   assets: 11,
-  householdHoldingRows: 1_162,
+  householdHoldingRows: 1_126,
   householdSnapshots: 83,
   liabilities: 3,
   members: 2,
   positions: 3,
   scopes: 3,
-  totalHoldingRows: 2_656,
+  totalHoldingRows: 2_576,
   totalSnapshots: 249,
 };
 

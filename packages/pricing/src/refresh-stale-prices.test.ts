@@ -119,6 +119,34 @@ describe("refreshStalePrices provider routing", () => {
     });
   });
 
+  test("investments without a cache row get their first automatic refresh", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ bitcoin: { eur: 61000 } }),
+    } as Response);
+
+    const result = await refreshStalePrices(
+      [],
+      [
+        {
+          id: "asset-btc",
+          currency: "EUR",
+          liquidityTier: "market",
+          priceProvider: "coingecko",
+          providerSymbol: "bitcoin",
+        },
+      ],
+      "2026-06-09T10:00:00Z",
+    );
+
+    expect(result.updated).toBe(1);
+    expect(result.refreshed[0]).toMatchObject({
+      assetId: "asset-btc",
+      price: "61000",
+      source: "coingecko",
+    });
+  });
+
   test("surfaces each failed symbol with its human-readable reason", async () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,

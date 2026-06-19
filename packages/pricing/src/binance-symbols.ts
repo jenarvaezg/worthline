@@ -42,6 +42,8 @@ const COINGECKO_ID_BY_SYMBOL: Record<string, string> = {
   DAI: "dai",
   SHIB: "shiba-inu",
   PEPE: "pepe",
+  WBETH: "wrapped-beacon-eth",
+  BETH: "binance-eth",
 };
 
 /**
@@ -52,5 +54,12 @@ const COINGECKO_ID_BY_SYMBOL: Record<string, string> = {
  */
 export function resolveCoinGeckoId(symbol: string): string | null {
   const normalized = symbol.trim().toUpperCase();
-  return COINGECKO_ID_BY_SYMBOL[normalized] ?? null;
+  const direct = COINGECKO_ID_BY_SYMBOL[normalized];
+  if (direct !== undefined) return direct;
+
+  if (normalized.startsWith("LD")) {
+    return COINGECKO_ID_BY_SYMBOL[normalized.slice(2)] ?? null;
+  }
+
+  return null;
 }
