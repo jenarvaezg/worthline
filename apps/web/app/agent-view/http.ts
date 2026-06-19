@@ -25,6 +25,7 @@ import {
   MAX_POSITION_LIMIT,
 } from "./connected-source-positions";
 import { buildFinancialContext } from "./financial-context";
+import { buildFireContext } from "./fire-context";
 import { buildHoldingDetail } from "./holding-detail";
 import {
   buildHoldingOperations,
@@ -78,6 +79,40 @@ export function handleGetFinancialContext(
         runWithStore((store) =>
           buildFinancialContext(store.agentView, { asOf, holdingLimit, scopeId }),
         ),
+      ),
+      200,
+    );
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+/**
+ * FIRE context is current-only (PRD #328, #340): the only honored query param is
+ * `date`, which is rejected as `422 unsupported_historical_fire` so a caller
+ * never receives an invented or nearest-date historical FIRE figure. Any other
+ * unknown param is the standard `400` from `guardAgentViewRequest`.
+ */
+export function handleGetFireContext(
+  request: NextRequest,
+  scopeId: string,
+  runWithStore: StoreRunner,
+): NextResponse {
+  try {
+    guardAgentViewRequest(request, ["date"]);
+
+    if (new URL(request.url).searchParams.has("date")) {
+      throw new AgentViewHttpError({
+        code: "unprocessable_entity",
+        details: { reason: "unsupported_historical_fire" },
+        message: "Historical FIRE is not supported.",
+        status: 422,
+      });
+    }
+
+    return json(
+      successEnvelope(
+        runWithStore((store) => buildFireContext(store.agentView, { scopeId })),
       ),
       200,
     );

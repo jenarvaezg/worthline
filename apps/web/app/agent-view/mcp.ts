@@ -4,6 +4,7 @@ import type {
   AgentViewEnvelope,
   AgentViewErrorEnvelope,
   AgentViewFinancialContext,
+  AgentViewFireContext,
   AgentViewHoldingDetail,
   AgentViewIncludeHoldingRows,
   AgentViewOperation,
@@ -37,6 +38,11 @@ export interface GetFinancialContextInput {
   scopeId?: string;
   /** Cap on summarized holdings (default 25, max 100). */
   holdingLimit?: number;
+}
+
+export interface GetFireContextInput {
+  /** Public scope ID; defaults to the household scope when omitted. */
+  scopeId?: string;
 }
 
 export interface GetSnapshotHistoryInput {
@@ -114,6 +120,10 @@ export interface AgentViewMcpToolCatalog {
   get_financial_context: AgentViewMcpTool<
     GetFinancialContextInput,
     AgentViewEnvelope<AgentViewFinancialContext>
+  >;
+  get_fire_context: AgentViewMcpTool<
+    GetFireContextInput,
+    AgentViewEnvelope<AgentViewFireContext>
   >;
   get_snapshot_history: AgentViewMcpTool<
     GetSnapshotHistoryInput,
@@ -198,6 +208,22 @@ export function createAgentViewMcpToolCatalog(
         );
       },
       name: "get_financial_context",
+    },
+    get_fire_context: {
+      description:
+        "Get the current FIRE context for a scope (defaults to the household scope): configured/unconfigured status, the FIRE config and assumptions, the computed result (FIRE number, eligible assets, gap, progress ratio, coast-FIRE facts when an age is set), the scope-weighted eligible total, and the assets excluded with their reason (primary residence or manual). Figures are current-only — a dated request is rejected. Reads are side-effect-free.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          scopeId: { type: "string" },
+        },
+        type: "object",
+      },
+      invoke: async (input) => {
+        const scopeId = input.scopeId ?? (await defaultScopeId(client));
+        return client.get(`${SCOPES_PATH}/${encodeURIComponent(scopeId)}/fire-context`);
+      },
+      name: "get_fire_context",
     },
     get_holding_detail: {
       description:
