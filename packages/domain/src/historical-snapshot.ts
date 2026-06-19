@@ -346,7 +346,7 @@ function liabilityValuationInput(
  *
  * Returns null when no holdings remain (the caller drops the snapshot).
  */
-function assembleRippleSnapshot(input: {
+export function assembleRippleSnapshot(input: {
   snapshot: NetWorthSnapshot;
   currency: string;
   /** The original frozen rows, before the operated holding was swapped out. */
@@ -531,7 +531,7 @@ interface ResolvedFrozenIdentity {
  *     row) the LIVE classification. Not a bug: there is no frozen record to
  *     recover, so live is the only available basis (matches the capture path).
  */
-function resolveFrozenIdentity(input: {
+export function resolveFrozenIdentity(input: {
   existingRow: SnapshotHoldingRow | undefined;
   frozenIdentity: readonly FrozenIdentityCapture[];
   targetDate: string;
@@ -562,125 +562,6 @@ function resolveFrozenIdentity(input: {
   }
 
   return input.live;
-}
-
-export interface RecalculateSnapshotInput {
-  /** The existing snapshot to recalculate (its id, scope, date, capturedAt are preserved). */
-  snapshot: NetWorthSnapshot;
-  /** The snapshot's currently frozen holding rows. */
-  frozenHoldings: SnapshotHoldingRow[];
-  /** The identity of the single investment whose operations changed. */
-  asset: ManualAsset;
-  workspace: Workspace;
-  /** Every operation for that asset. */
-  operations: InvestmentOperation[];
-  /**
-   * This asset's frozen classification captures across every snapshot (#242).
-   * Lets a row newly generated at a date this snapshot never carried recover the
-   * asset's CONTEMPORANEOUS frozen tier instead of leaking the live one. Omitted
-   * → the seam falls back to live (no recovery basis), preserving old behaviour.
-   */
-  frozenIdentity?: readonly FrozenIdentityCapture[];
-}
-
-/**
- * Recalculate an existing snapshot after one investment's operations changed
- * (ADR 0012 ripple). Only that asset's row is recomputed; every other frozen
- * row — manual holdings, liabilities (including ones frozen with a null tier),
- * other investments, and holdings later renamed, re-valued, or trashed — is
- * preserved verbatim. The five headline figures are adjusted by the operated
- * asset's value delta against the snapshot's own frozen figures, NOT re-derived
- * from rows, so the tier classification of every untouched holding survives
- * exactly as captured (rows alone cannot reproduce it — a null-tier debt could
- * be a mortgage or a loan). The asset keeps the unit price the snapshot already
- * captured; a newly-appearing asset uses the last operation price ≤ the date.
- *
- * Returns null when no holdings remain (the caller deletes the snapshot rather
- * than leaving it showing values derived from a now-deleted operation). Callers
- * must NOT invoke this for a snapshot with no frozen holding rows — a legacy
- * capture predating holdings (ADR 0008) has nothing to recompute against and
- * must be left frozen.
- */
-export function recalculateSnapshotForAsset(
-  input: RecalculateSnapshotInput,
-): ValuedNetWorthSnapshot | null {
-  const targetDate = input.snapshot.dateKey;
-  const currency = input.workspace.baseCurrency;
-  const scopeMemberIds = new Set(
-    resolveScopeMemberIds(input.workspace, input.snapshot.scopeId),
-  );
-
-  const existingRow = input.frozenHoldings.find(
-    (row) => row.holdingId === input.asset.id && row.kind === "asset",
-  );
-  const rows = input.frozenHoldings.filter((row) => row.holdingId !== input.asset.id);
-
-  // Recompute the operated asset's row at the snapshot's date via the same
-  // dispatcher the fresh capture uses (#150 carry-over): `derived` folds the
-  // ledger to the date, keeping the unit price the snapshot already captured
-  // (else the last operation price ≤ the date), and yields null when the asset
-  // was not held then — byte-identical to the positions math this used to inline.
-  //
-  // A derived row frozen with units but NO unitPrice was captured at cost basis
-  // (ADR 0006 fallback — no provider/manual price that day). Flag it so the
-  // ripple preserves cost basis instead of falling back to the latest operation
-  // price, which would shift a figure whose portfolio state never changed (#183).
-  const wasCapturedAtCostBasis =
-    existingRow?.units !== undefined && existingRow.unitPrice === undefined;
-  const valuation = valueAt(
-    {
-      assetId: input.asset.id,
-      currency: input.asset.currency,
-      method: "derived",
-      operations: input.operations,
-      ...(existingRow?.unitPrice !== undefined
-        ? { capturedUnitPrice: existingRow.unitPrice }
-        : {}),
-      ...(wasCapturedAtCostBasis ? { atCostBasis: true } : {}),
-    },
-    targetDate,
-  );
-
-  if (valuation.valueMinor !== null) {
-    const { ownedMinor, totalShareBps } = allocateScopedHolding(valuation.valueMinor, {
-      ownership: input.asset.ownership,
-      scopeMemberIds,
-    });
-
-    if (totalShareBps > 0) {
-      // Resolve the FROZEN classification through the one seam (#242): existing
-      // row, else the contemporaneous frozen capture from other snapshots, else
-      // live. An investment is never housing / never secures housing.
-      const identity = resolveFrozenIdentity({
-        existingRow,
-        frozenIdentity: input.frozenIdentity ?? [],
-        live: {
-          countsAsHousing: false,
-          liquidityTier: tierOfAsset(input.asset),
-          securesHousing: false,
-        },
-        targetDate,
-      });
-      rows.push({
-        countsAsHousing: identity.countsAsHousing,
-        holdingId: input.asset.id,
-        kind: "asset",
-        label: existingRow?.label ?? input.asset.name,
-        liquidityTier: identity.liquidityTier,
-        securesHousing: identity.securesHousing,
-        valueMinor: ownedMinor,
-        ...(valuation.units !== undefined ? { units: valuation.units } : {}),
-        ...(valuation.unitPrice !== undefined ? { unitPrice: valuation.unitPrice } : {}),
-      });
-    }
-  }
-
-  return assembleRippleSnapshot({
-    currency,
-    frozenHoldings: input.frozenHoldings,
-    rows,
-    snapshot: input.snapshot,
-  });
 }
 
 export interface RecalculateHousingSnapshotInput {
@@ -1148,198 +1029,23 @@ export function recalculateSnapshotForOwnership(
   });
 }
 
-export interface RecalculateCoinAcquisitionSnapshotInput {
-  /** The existing snapshot to recalculate (its id, scope, date, capturedAt are preserved). */
-  snapshot: NetWorthSnapshot;
-  /** The snapshot's currently frozen holding rows. */
-  frozenHoldings: SnapshotHoldingRow[];
-  /** The materialized coin-collection asset the source projects into (ADR 0016). */
-  asset: ManualAsset;
-  /**
-   * The newly-acquired coin's GLOBAL (100%, un-allocated) value, minor units,
-   * captured AT RIPPLE TIME and frozen (ADR 0017): worthline never fetches a
-   * coin's historical price, so a later price move never rewrites this. The new
-   * per-scope contribution is this value re-weighted by the collection's split.
-   */
-  globalDeltaMinor: number;
-  workspace: Workspace;
-  /**
-   * This coin collection's frozen classification captures across every snapshot
-   * (#242). Routes the (re)created coin row through the same frozen-vs-live seam
-   * the other ripples use, for uniformity (a coin collection is constant illiquid
-   * / never housing, so this is not independently triggerable). Omitted → live.
-   */
-  frozenIdentity?: readonly FrozenIdentityCapture[];
-}
-
 /**
- * Recalculate an existing snapshot after a coin's PURCHASE DATE places it on the
- * timeline (ADR 0017 ripple, S6/#167). Unlike the operation/curve ripples — which
- * re-derive one holding's whole value from its ledger — a coin acquisition is
- * ADDITIVE: the coin's frozen owned value is added to the coin-collection holding's
- * row (created if the snapshot had none), never recomputed from current positions.
- * This is what keeps history frozen (a later price move adds nothing) and lets a
- * sold coin stay in past snapshots (it is never subtracted): the orchestration
- * ripples a coin exactly once, when its trade is first seen on sync.
- *
- * Every other frozen row is preserved verbatim, like the sibling ripples. The
- * coin collection is illiquid and never housing, so only gross + total move; the
- * coin is scope-weighted with the same allocation the headline figures use, so the
- * reconciliation invariant (ADR 0008) holds by construction. Returns null when no
- * holdings remain (the caller drops the snapshot) — never expected here, since the
- * acquisition only ever adds value.
+ * Re-export the trigger modules' recalc functions and their input types from the
+ * core (ADR 0028, #320). Splitting them into their own modules keeps the core's
+ * relative-path surface byte-stable: `./historical-snapshot` still resolves
+ * `recalculateSnapshotForAsset` / `recalculateSnapshotForCoinAcquisition` /
+ * `recalculateSnapshotForConnectedValue` (and their `Recalculate*Input` types)
+ * for the barrel and the existing tests, while the implementations now live in
+ * `./historical-snapshot-operation-ripple` and
+ * `./historical-snapshot-position-ripple`.
  */
-export function recalculateSnapshotForCoinAcquisition(
-  input: RecalculateCoinAcquisitionSnapshotInput,
-): ValuedNetWorthSnapshot | null {
-  const currency = input.workspace.baseCurrency;
-  const scopeMemberIds = new Set(
-    resolveScopeMemberIds(input.workspace, input.snapshot.scopeId),
-  );
-
-  const existingRow = input.frozenHoldings.find(
-    (row) => row.holdingId === input.asset.id && row.kind === "asset",
-  );
-  const rows = input.frozenHoldings.filter((row) => row.holdingId !== input.asset.id);
-
-  const { ownedMinor, totalShareBps } = allocateScopedHolding(input.globalDeltaMinor, {
-    ownership: input.asset.ownership,
-    scopeMemberIds,
-  });
-
-  // Append the coin-collection row with its frozen value INCREMENTED by this
-  // scope's share of the new coin. Keep an existing row even when this scope gains
-  // no stake (totalShareBps 0), so a re-weight to zero never silently drops it.
-  if (existingRow !== undefined || totalShareBps > 0) {
-    // Resolve through the one frozen-vs-live seam (#242): existing row, else the
-    // contemporaneous frozen capture, else live. A coin collection is constant
-    // illiquid, never a housing asset, never secures housing.
-    const identity = resolveFrozenIdentity({
-      existingRow,
-      frozenIdentity: input.frozenIdentity ?? [],
-      live: {
-        countsAsHousing: false,
-        liquidityTier: tierOfAsset(input.asset),
-        securesHousing: false,
-      },
-      targetDate: input.snapshot.dateKey,
-    });
-    rows.push({
-      countsAsHousing: identity.countsAsHousing,
-      holdingId: input.asset.id,
-      kind: "asset",
-      label: existingRow?.label ?? input.asset.name,
-      liquidityTier: identity.liquidityTier,
-      securesHousing: identity.securesHousing,
-      valueMinor: (existingRow?.valueMinor ?? 0) + (totalShareBps > 0 ? ownedMinor : 0),
-    });
-  }
-
-  return assembleRippleSnapshot({
-    currency,
-    frozenHoldings: input.frozenHoldings,
-    rows,
-    snapshot: input.snapshot,
-  });
-}
-
-export interface RecalculateConnectedValueSnapshotInput {
-  /** The existing snapshot to recalculate (its id, scope, date, capturedAt are preserved). */
-  snapshot: NetWorthSnapshot;
-  /** The snapshot's currently frozen holding rows. */
-  frozenHoldings: SnapshotHoldingRow[];
-  /** The materialized connected market holding the source projects into (ADR 0021). */
-  asset: ManualAsset;
-  /**
-   * The connected holding's GLOBAL (100%, un-allocated) value on this snapshot's
-   * date, minor units — the reconstructed monthly history (Σ balance × that-day
-   * price, ADR 0021). The per-scope frozen row is SET to this value re-weighted by
-   * the holding's ownership split; a value of 0 still records the row (the holding
-   * existed at 0 that day — unpriceable, not absent). Frozen at backfill time.
-   */
-  globalValueMinor: number;
-  workspace: Workspace;
-  /**
-   * This holding's frozen classification captures across every snapshot (#242).
-   * Routes the (re)created market row through the same frozen-vs-live seam the
-   * other ripples use, for uniformity (a connected crypto holding is constant
-   * market / never housing, so this is not independently triggerable). Omitted →
-   * the seam falls back to live (no recovery basis), preserving old behaviour.
-   */
-  frozenIdentity?: readonly FrozenIdentityCapture[];
-}
-
-/**
- * Recalculate an existing snapshot after a connected market source (Binance, ADR
- * 0021) reconstructs its value on a past date. Unlike the coin-acquisition ripple
- * — which is ADDITIVE (a coin's frozen value is added once) — this SETS the
- * holding's row to the date's reconstructed value: the source carries a single
- * frozen monthly-history figure per date, not an accreting ledger of trades. The
- * row is created if the snapshot had none, REPLACED (never accumulated) if it had
- * one — so re-running with the same history is a no-op and a new month only sets
- * the dates it covers.
- *
- * Every other frozen row is preserved verbatim, like the sibling ripples. A crypto
- * holding is on the `market` rung — liquid, never housing, never secures housing —
- * so gross + total + liquid move; the holding is scope-weighted with the same
- * allocation the headline figures use, so the reconciliation invariant (ADR 0008)
- * holds by construction. Returns null when no holdings remain (the caller drops the
- * snapshot) — not expected here, since a market value is only ever set, never
- * removed.
- */
-export function recalculateSnapshotForConnectedValue(
-  input: RecalculateConnectedValueSnapshotInput,
-): ValuedNetWorthSnapshot | null {
-  const currency = input.workspace.baseCurrency;
-  const scopeMemberIds = new Set(
-    resolveScopeMemberIds(input.workspace, input.snapshot.scopeId),
-  );
-
-  const existingRow = input.frozenHoldings.find(
-    (row) => row.holdingId === input.asset.id && row.kind === "asset",
-  );
-  const rows = input.frozenHoldings.filter((row) => row.holdingId !== input.asset.id);
-
-  const { ownedMinor, totalShareBps } = allocateScopedHolding(input.globalValueMinor, {
-    ownership: input.asset.ownership,
-    scopeMemberIds,
-  });
-
-  // SET (replace) the market holding's row to this scope's share of the date's
-  // reconstructed value — never added onto the existing value (that is the
-  // coin-acquisition path's contract, not this one). Keep an existing row even
-  // when this scope gains no stake (totalShareBps 0), so a re-weight to zero never
-  // silently drops it; a zero value with a stake still records the row (the holding
-  // existed at 0 — unpriceable, ADR 0021).
-  if (existingRow !== undefined || totalShareBps > 0) {
-    // Resolve through the one frozen-vs-live seam (#242): existing row, else the
-    // contemporaneous frozen capture, else live. A connected crypto holding is
-    // constant market rung, never a housing asset, never secures housing.
-    const identity = resolveFrozenIdentity({
-      existingRow,
-      frozenIdentity: input.frozenIdentity ?? [],
-      live: {
-        countsAsHousing: false,
-        liquidityTier: tierOfAsset(input.asset),
-        securesHousing: false,
-      },
-      targetDate: input.snapshot.dateKey,
-    });
-    rows.push({
-      countsAsHousing: identity.countsAsHousing,
-      holdingId: input.asset.id,
-      kind: "asset",
-      label: existingRow?.label ?? input.asset.name,
-      liquidityTier: identity.liquidityTier,
-      securesHousing: identity.securesHousing,
-      valueMinor: totalShareBps > 0 ? ownedMinor : (existingRow?.valueMinor ?? 0),
-    });
-  }
-
-  return assembleRippleSnapshot({
-    currency,
-    frozenHoldings: input.frozenHoldings,
-    rows,
-    snapshot: input.snapshot,
-  });
-}
+export { recalculateSnapshotForAsset } from "./historical-snapshot-operation-ripple";
+export type { RecalculateSnapshotInput } from "./historical-snapshot-operation-ripple";
+export {
+  recalculateSnapshotForCoinAcquisition,
+  recalculateSnapshotForConnectedValue,
+} from "./historical-snapshot-position-ripple";
+export type {
+  RecalculateCoinAcquisitionSnapshotInput,
+  RecalculateConnectedValueSnapshotInput,
+} from "./historical-snapshot-position-ripple";
