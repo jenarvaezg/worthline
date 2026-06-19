@@ -15,6 +15,12 @@ describe("resolveCoinGeckoId — Binance symbol → CoinGecko id (ADR 0021)", ()
     expect(resolveCoinGeckoId("  ETH ")).toBe("ethereum");
   });
 
+  test("maps Binance liquid-staking wrappers and LD prefixed earn symbols", () => {
+    expect(resolveCoinGeckoId("WBETH")).toBe("wrapped-beacon-eth");
+    expect(resolveCoinGeckoId("LDWBETH")).toBe("wrapped-beacon-eth");
+    expect(resolveCoinGeckoId("LDBTC")).toBe("bitcoin");
+  });
+
   test("returns null for an unmapped symbol — the caller values it 0 + warns", () => {
     expect(resolveCoinGeckoId("WAGMI")).toBeNull();
     expect(resolveCoinGeckoId("")).toBeNull();

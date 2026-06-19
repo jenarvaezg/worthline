@@ -449,6 +449,47 @@ describe("buildSnapshotAtDate", () => {
     expect(result!.snapshot.housingEquity.amountMinor).toBe(117_486_34);
   });
 
+  test("omits a housing asset before its first market appraisal in a fresh backfill", () => {
+    const workspace = makeWorkspace();
+    const fund = investment(workspace, "asset_fund", "Fondo");
+    const piso = housing(workspace, "asset_piso", 300_000_00);
+
+    const result = buildSnapshotAtDate({
+      ...BASE,
+      assets: [fund, piso],
+      capturedAt: "2021-01-01T12:00:00.000Z",
+      housingValuationByAsset: new Map([
+        [
+          "asset_piso",
+          {
+            anchors: [
+              {
+                adjustsPriorCurve: true,
+                valuationDate: "2024-06-05",
+                valueMinor: 300_000_00,
+              },
+            ],
+            annualAppreciationRate: "0.10",
+            currentValueMinor: 300_000_00,
+          },
+        ],
+      ]),
+      liabilities: [],
+      manualValueHistory: new Map(),
+      operationsByAsset: new Map([
+        ["asset_fund", [buy("asset_fund", "op1", "2021-01-01", "10", "100")]],
+      ]),
+      targetDate: "2021-01-01",
+      today: "2026-06-12",
+      workspace,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.holdings.map((h) => h.holdingId)).toEqual(["asset_fund"]);
+    expect(result!.snapshot.grossAssets.amountMinor).toBe(1_000_00);
+    expect(result!.snapshot.housingEquity.amountMinor).toBe(0);
+  });
+
   test("a real_estate asset with no anchors and no rate keeps last-known-value (no regression)", () => {
     const workspace = makeWorkspace();
     const piso = housing(workspace, "asset_piso", 200_000_00);
@@ -1071,6 +1112,66 @@ describe("buildSnapshotAtDate with debtBalanceByLiability", () => {
     expect(built.snapshot.totalNetWorth.amountMinor).toBe(200_000_00 - balance2022);
   });
 
+  test("omits an associated mortgage before its home and plan exist in a fresh backfill", () => {
+    const workspace = makeWorkspace();
+    const fund = investment(workspace, "asset_fund", "Fondo");
+    const piso = housing(workspace, "asset_piso", 200_000_00);
+    const hipoteca = mortgage(workspace, "liab_h", 100_000_00);
+
+    const built = buildSnapshotAtDate({
+      ...BASE,
+      assets: [fund, piso],
+      capturedAt: "2021-01-01T12:00:00.000Z",
+      debtBalanceByLiability: new Map([
+        [
+          "liab_h",
+          {
+            anchors: [],
+            currentBalanceMinor: 100_000_00,
+            debtModel: "amortizable",
+            plan: {
+              annualInterestRate: "0.03",
+              initialCapitalMinor: 150_000_00,
+              disbursementDate: "2024-07-01",
+              firstPaymentDate: "2024-08-01",
+              termMonths: 240,
+            },
+            revisions: [],
+          },
+        ],
+      ]),
+      housingValuationByAsset: new Map([
+        [
+          "asset_piso",
+          {
+            anchors: [
+              {
+                adjustsPriorCurve: true,
+                valuationDate: "2024-06-05",
+                valueMinor: 200_000_00,
+              },
+            ],
+            annualAppreciationRate: "0.10",
+            currentValueMinor: 200_000_00,
+          },
+        ],
+      ]),
+      liabilities: [hipoteca],
+      manualValueHistory: new Map(),
+      operationsByAsset: new Map([
+        ["asset_fund", [buy("asset_fund", "op1", "2021-01-01", "10", "100")]],
+      ]),
+      targetDate: "2021-01-01",
+      today: "2026-06-12",
+      workspace,
+    })!;
+
+    expect(built.holdings.map((h) => h.holdingId)).toEqual(["asset_fund"]);
+    expect(built.snapshot.debts.amountMinor).toBe(0);
+    expect(built.snapshot.housingEquity.amountMinor).toBe(0);
+    expect(built.snapshot.totalNetWorth.amountMinor).toBe(1_000_00);
+  });
+
   test("the historical path freezes securesHousing on every row (#180)", () => {
     const workspace = makeWorkspace();
     const piso = housing(workspace, "asset_piso", 200_000_00);
@@ -1147,6 +1248,43 @@ describe("buildSnapshotAtDate with debtBalanceByLiability", () => {
     const debtRow = built.holdings.find((h) => h.holdingId === "liab_card")!;
     expect(debtRow.valueMinor).toBe(3_033_33);
     expect(built.snapshot.debts.amountMinor).toBe(3_033_33);
+  });
+
+  test("omits anchored liabilities before the first balance anchor when no initial capital exists", () => {
+    const workspace = makeWorkspace();
+    const loan = createLiability(workspace, {
+      balanceMinor: 15_000_00,
+      currency: "EUR",
+      id: "liab_loan",
+      name: "Prestamo familiar",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "debt",
+    });
+
+    const built = buildSnapshotAtDate({
+      ...BASE,
+      assets: [cash(workspace, "asset_cash", 5_000_00)],
+      capturedAt: "2021-01-01T12:00:00.000Z",
+      debtBalanceByLiability: new Map([
+        [
+          "liab_loan",
+          {
+            anchors: [{ anchorDate: "2024-11-18", balanceMinor: 15_000_00 }],
+            currentBalanceMinor: 15_000_00,
+            debtModel: "informal",
+          },
+        ],
+      ]),
+      liabilities: [loan],
+      manualValueHistory: new Map(),
+      operationsByAsset: new Map(),
+      targetDate: "2021-01-01",
+      workspace,
+    })!;
+
+    expect(built.holdings.map((h) => h.holdingId)).toEqual(["asset_cash"]);
+    expect(built.snapshot.debts.amountMinor).toBe(0);
+    expect(built.snapshot.totalNetWorth.amountMinor).toBe(5_000_00);
   });
 
   test("no regression: a liability without a debt model keeps last-known-value", () => {

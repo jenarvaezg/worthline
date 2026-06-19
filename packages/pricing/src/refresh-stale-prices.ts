@@ -87,7 +87,8 @@ export interface RefreshOptions {
 /**
  * Refreshes prices in the cache for assets that have a provider symbol.
  *
- * - By default selects only stale entries (>24h old, non-manual, non-failed).
+ * - By default selects stale entries (>24h old, non-manual, non-failed) and
+ *   assets with no cache row yet, so newly-created investments get a first quote.
  *   With `force: true`, refetches every asset with a provider symbol regardless
  *   of cache staleness (manual refresh, #317).
  * - Fetches fresh prices from the provider for the selected assets only.
@@ -107,12 +108,14 @@ export async function refreshStalePrices(
   const refreshable = force
     ? assets.filter((asset) => Boolean(asset.providerSymbol))
     : (() => {
+        const cachedAssetIds = new Set(cacheEntries.map((entry) => entry.assetId));
         const staleAssetIds = new Set(
           selectStalePrices(cacheEntries, nowIso).map((e) => e.assetId),
         );
-        return assets.filter(
-          (asset) => staleAssetIds.has(asset.id) && Boolean(asset.providerSymbol),
-        );
+        return assets.filter((asset) => {
+          if (!asset.providerSymbol) return false;
+          return !cachedAssetIds.has(asset.id) || staleAssetIds.has(asset.id);
+        });
       })();
 
   if (refreshable.length === 0) {

@@ -10,7 +10,7 @@ exports[`performance harness (integration, #200) > guards the set of measured ho
   {
     "ceilingMs": 250,
     "name": "fullHistoryRead",
-    "touched": 1176,
+    "touched": 1140,
   },
   {
     "ceilingMs": 250,
