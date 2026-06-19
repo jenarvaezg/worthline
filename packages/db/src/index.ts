@@ -78,6 +78,7 @@ import {
 import {
   createAgentViewReadStore,
   type AgentViewReadStore,
+  type AgentViewTrashedHolding,
 } from "./agent-view-read-store";
 import {
   createConnectedSourceStore,
@@ -164,6 +165,7 @@ export type {
   AgentViewPriceFreshness,
   AgentViewReadStore,
   AgentViewSourceFreshness,
+  AgentViewTrashedHolding,
 } from "./agent-view-read-store";
 export type {
   ConnectSourceInput,
@@ -749,6 +751,7 @@ function buildStore(
         ...(cache.staleReason === undefined ? {} : { staleReason: cache.staleReason }),
       };
     },
+    readTrashedHoldings: () => readTrashedHoldings(ctx.db),
     readValuationAnchors: assetStore.readValuationAnchors,
     readWarningOverrides: () => store.readWarningOverrides(),
   });
@@ -3061,6 +3064,97 @@ function readLiabilityIdentity(db: StoreDb, liabilityId: string): Liability | nu
     type: row.type,
     ...(row.associatedAssetId ? { associatedAssetId: row.associatedAssetId } : {}),
   };
+}
+
+/**
+ * Read the trashed (soft-deleted) holdings for the agent view (#342): every
+ * asset/liability WHERE `deleted_at IS NOT NULL`, with the stored value/balance,
+ * instrument, deleted stamp, and owner member ids the trash listing needs. A pure
+ * read — it never restores, hard-deletes, revalues, or writes an audit row, and it
+ * never touches the live context (the live reads exclude trash). No derived /
+ * investment valuation is computed here; the STORED current value/balance is
+ * exposed as-is, mirroring the trash listing the rest of the app shows.
+ */
+function readTrashedHoldings(db: StoreDb): AgentViewTrashedHolding[] {
+  const assetRows = db
+    .select({
+      currentValueMinor: assets.currentValueMinor,
+      deletedAt: assets.deletedAt,
+      id: assets.id,
+      instrument: assets.instrument,
+      name: assets.name,
+    })
+    .from(assets)
+    .where(isNotNull(assets.deletedAt))
+    .all();
+
+  const liabilityRows = db
+    .select({
+      currentBalanceMinor: liabilities.currentBalanceMinor,
+      deletedAt: liabilities.deletedAt,
+      id: liabilities.id,
+      instrument: liabilities.instrument,
+      name: liabilities.name,
+    })
+    .from(liabilities)
+    .where(isNotNull(liabilities.deletedAt))
+    .all();
+
+  const assetOwners = groupOwnerMemberIds(
+    db
+      .select({
+        holdingId: assetOwnerships.assetId,
+        memberId: assetOwnerships.memberId,
+      })
+      .from(assetOwnerships)
+      .all(),
+  );
+  const liabilityOwners = groupOwnerMemberIds(
+    db
+      .select({
+        holdingId: liabilityOwnerships.liabilityId,
+        memberId: liabilityOwnerships.memberId,
+      })
+      .from(liabilityOwnerships)
+      .all(),
+  );
+
+  return [
+    ...assetRows.map((row) => ({
+      deletedAt: row.deletedAt,
+      id: row.id,
+      instrument: row.instrument,
+      kind: "asset" as const,
+      name: row.name,
+      ownerMemberIds: assetOwners.get(row.id) ?? [],
+      valueMinor: row.currentValueMinor,
+    })),
+    ...liabilityRows.map((row) => ({
+      deletedAt: row.deletedAt,
+      id: row.id,
+      instrument: row.instrument,
+      kind: "liability" as const,
+      name: row.name,
+      ownerMemberIds: liabilityOwners.get(row.id) ?? [],
+      valueMinor: row.currentBalanceMinor,
+    })),
+  ];
+}
+
+/** Group flat `{ holdingId, memberId }` ownership rows into member ids per holding. */
+function groupOwnerMemberIds(
+  rows: { holdingId: string; memberId: string }[],
+): Map<string, string[]> {
+  const byHolding = new Map<string, string[]>();
+  for (const row of rows) {
+    const existing = byHolding.get(row.holdingId);
+    if (existing) {
+      existing.push(row.memberId);
+    } else {
+      byHolding.set(row.holdingId, [row.memberId]);
+    }
+  }
+  return byHolding;
 }
 
 /**
