@@ -7,6 +7,9 @@
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "module": "ESNext",
     "noEmit": true,
+    "paths": {
+      "@web/*": ["${configDir}/app/*"]
+    },
     "plugins": [
       {
         "name": "next"

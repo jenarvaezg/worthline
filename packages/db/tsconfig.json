@@ -1,7 +1,10 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "@db/*": ["${configDir}/src/*"]
+    }
   },
   "include": ["src/**/*.ts", "tests/**/*.ts"]
 }
