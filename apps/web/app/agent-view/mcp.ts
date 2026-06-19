@@ -1,5 +1,8 @@
 import type {
+  AgentViewConnectedSourcePosition,
+  AgentViewConnectedSourcePositionGroup,
   AgentViewEnvelope,
+  AgentViewErrorEnvelope,
   AgentViewFinancialContext,
   AgentViewHoldingDetail,
   AgentViewIncludeHoldingRows,
@@ -75,6 +78,34 @@ export interface GetOperationsInput {
   cursor?: string;
 }
 
+/**
+ * Selector for `get_connected_source_positions` (PRD #328, #339): EXACTLY ONE of
+ * `holdingId` (positions for a single connected holding/rung) or `sourceId` (all
+ * of a source's positions, grouped by holding/rung). Supplying both or neither is
+ * a documented `422`.
+ */
+export interface GetConnectedSourcePositionsInput {
+  /** Public holding ID (`wl_hld_…`) of a connected-source-backed holding. */
+  holdingId?: string;
+  /** Public source ID (`wl_src_…`). */
+  sourceId?: string;
+  /** Page size (default 100, max 500). */
+  limit?: number;
+  /** Opaque cursor from a previous page's `meta.nextCursor`. */
+  cursor?: string;
+}
+
+/**
+ * The shape of a `get_connected_source_positions` response (PRD #328, #339): a
+ * holding-scoped call returns a flat positions array; a source-scoped call
+ * returns positions grouped by projected holding/rung. The `422` selector error
+ * surfaces as the documented error envelope.
+ */
+export type GetConnectedSourcePositionsOutput =
+  | AgentViewEnvelope<AgentViewConnectedSourcePosition[]>
+  | AgentViewEnvelope<AgentViewConnectedSourcePositionGroup[]>
+  | AgentViewErrorEnvelope;
+
 export interface AgentViewMcpToolCatalog {
   list_scopes: AgentViewMcpTool<
     Record<string, never>,
@@ -96,6 +127,10 @@ export interface AgentViewMcpToolCatalog {
     GetOperationsInput,
     AgentViewEnvelope<AgentViewOperation[]>
   >;
+  get_connected_source_positions: AgentViewMcpTool<
+    GetConnectedSourcePositionsInput,
+    GetConnectedSourcePositionsOutput
+  >;
 }
 
 const EMPTY_INPUT_SCHEMA: AgentViewMcpInputSchema = {
@@ -106,11 +141,43 @@ const EMPTY_INPUT_SCHEMA: AgentViewMcpInputSchema = {
 
 const SCOPES_PATH = "/api/v1/agent-view/scopes";
 const HOLDINGS_PATH = "/api/v1/agent-view/holdings";
+const CONNECTED_SOURCES_PATH = "/api/v1/agent-view/connected-sources";
 
 export function createAgentViewMcpToolCatalog(
   client: AgentViewApiClient,
 ): AgentViewMcpToolCatalog {
   return {
+    get_connected_source_positions: {
+      description:
+        "Get connected-source positions (coins / token balances) projected into a holding or a source. Supply EXACTLY ONE of holdingId (one connected holding/rung's positions) or sourceId (all of a source's positions, grouped by projected holding/rung). Each position carries its adapter, source label, projected holding/rung, quantity, unit price when known, value, valuation basis, freshness, and quality signals. Reads are side-effect-free.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          cursor: { type: "string" },
+          holdingId: { type: "string" },
+          limit: { maximum: 500, minimum: 1, type: "integer" },
+          sourceId: { type: "string" },
+        },
+        type: "object",
+      },
+      invoke: async (input) => {
+        const selectorError = selectorErrorFor(input);
+        if (selectorError) {
+          return selectorError;
+        }
+
+        const query = positionsQuery(input);
+        if (input.holdingId !== undefined) {
+          return client.get(
+            `${HOLDINGS_PATH}/${encodeURIComponent(input.holdingId)}/connected-source-positions${query}`,
+          );
+        }
+        return client.get(
+          `${CONNECTED_SOURCES_PATH}/${encodeURIComponent(input.sourceId!)}/positions${query}`,
+        );
+      },
+      name: "get_connected_source_positions",
+    },
     get_financial_context: {
       description:
         "Get the compact current financial context for a scope (defaults to the household scope).",
@@ -218,6 +285,40 @@ function snapshotHistoryQuery(input: GetSnapshotHistoryInput): string {
   if (input.includeHoldingRows !== undefined) {
     params.set("includeHoldingRows", input.includeHoldingRows);
   }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+/**
+ * Enforce the XOR selector for `get_connected_source_positions` (PRD #328, #339):
+ * exactly one of `holdingId`/`sourceId`. Both or neither is a documented `422`
+ * error envelope — surfaced before any HTTP call so the contract is identical
+ * whichever layer rejects it.
+ */
+function selectorErrorFor(
+  input: GetConnectedSourcePositionsInput,
+): AgentViewErrorEnvelope | null {
+  const hasHolding = input.holdingId !== undefined;
+  const hasSource = input.sourceId !== undefined;
+
+  if (hasHolding === hasSource) {
+    return {
+      error: {
+        code: "unprocessable_entity",
+        message:
+          "Supply exactly one of holdingId or sourceId for connected-source positions.",
+      },
+    };
+  }
+
+  return null;
+}
+
+/** Serialize the connected-source positions input into the API's query string. */
+function positionsQuery(input: GetConnectedSourcePositionsInput): string {
+  const params = new URLSearchParams();
+  if (input.limit !== undefined) params.set("limit", String(input.limit));
+  if (input.cursor !== undefined) params.set("cursor", input.cursor);
   const query = params.toString();
   return query ? `?${query}` : "";
 }

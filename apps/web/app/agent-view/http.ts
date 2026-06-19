@@ -8,6 +8,8 @@ import {
   AgentViewHttpError,
   errorEnvelope,
   successEnvelope,
+  type AgentViewConnectedSourcePositionGroupPage,
+  type AgentViewConnectedSourcePositionPage,
   type AgentViewErrorEnvelope,
   type AgentViewIncludeHoldingRows,
   type AgentViewOperationPage,
@@ -16,6 +18,12 @@ import {
   type AgentViewSnapshotHistory,
   type AgentViewSnapshotSort,
 } from "./contract";
+import {
+  buildHoldingConnectedSourcePositions,
+  buildSourceConnectedSourcePositions,
+  DEFAULT_POSITION_LIMIT,
+  MAX_POSITION_LIMIT,
+} from "./connected-source-positions";
 import { buildFinancialContext } from "./financial-context";
 import { buildHoldingDetail } from "./holding-detail";
 import {
@@ -167,6 +175,58 @@ export function handleGetHoldingOperations(
   }
 }
 
+const POSITION_QUERY_PARAMS = ["limit", "cursor"];
+
+export function handleGetHoldingConnectedSourcePositions(
+  request: NextRequest,
+  holdingId: string,
+  runWithStore: StoreRunner,
+): NextResponse {
+  try {
+    guardAgentViewRequest(request, POSITION_QUERY_PARAMS);
+
+    const params = new URL(request.url).searchParams;
+    const options = {
+      cursor: params.get("cursor") ?? undefined,
+      holdingId,
+      limit: parsePositionLimit(params.get("limit")),
+    };
+
+    const page = runWithStore((store) =>
+      buildHoldingConnectedSourcePositions(store.agentView, options),
+    );
+
+    return json(holdingPositionsEnvelope(request, page), 200);
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+export function handleGetSourcePositions(
+  request: NextRequest,
+  sourceId: string,
+  runWithStore: StoreRunner,
+): NextResponse {
+  try {
+    guardAgentViewRequest(request, POSITION_QUERY_PARAMS);
+
+    const params = new URL(request.url).searchParams;
+    const options = {
+      cursor: params.get("cursor") ?? undefined,
+      limit: parsePositionLimit(params.get("limit")),
+      sourceId,
+    };
+
+    const page = runWithStore((store) =>
+      buildSourceConnectedSourcePositions(store.agentView, options),
+    );
+
+    return json(sourcePositionsEnvelope(request, page), 200);
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
 /**
  * Envelope a snapshot page: the entries as `data`, the pagination facts as
  * `meta`, and `links.self` plus `links.next` (the same URL carrying the
@@ -201,6 +261,65 @@ function operationsEnvelope(request: NextRequest, page: AgentViewOperationPage) 
   }
 
   return { data: page.operations, links, meta: page.meta };
+}
+
+/**
+ * Envelope a holding-scoped positions page: the positions as `data`, the
+ * pagination facts as `meta`, and `links.self`/`links.next` — the same shape as
+ * an operations page.
+ */
+function holdingPositionsEnvelope(
+  request: NextRequest,
+  page: AgentViewConnectedSourcePositionPage,
+) {
+  const self = new URL(request.url);
+  const links: Record<string, string> = { self: self.pathname + self.search };
+
+  if (page.meta.nextCursor !== undefined) {
+    const next = new URL(request.url);
+    next.searchParams.set("cursor", page.meta.nextCursor);
+    links.next = next.pathname + next.search;
+  }
+
+  return { data: page.positions, links, meta: page.meta };
+}
+
+/**
+ * Envelope a source-scoped positions page: the grouped positions as `data`, the
+ * pagination facts as `meta`, and `links.self`/`links.next` when more remain.
+ */
+function sourcePositionsEnvelope(
+  request: NextRequest,
+  page: AgentViewConnectedSourcePositionGroupPage,
+) {
+  const self = new URL(request.url);
+  const links: Record<string, string> = { self: self.pathname + self.search };
+
+  if (page.meta.nextCursor !== undefined) {
+    const next = new URL(request.url);
+    next.searchParams.set("cursor", page.meta.nextCursor);
+    links.next = next.pathname + next.search;
+  }
+
+  return { data: page.groups, links, meta: page.meta };
+}
+
+/** Parse the positions `limit`: positive integer, clamped to the documented max. */
+function parsePositionLimit(raw: string | null): number {
+  if (raw === null) {
+    return DEFAULT_POSITION_LIMIT;
+  }
+
+  if (!/^\d+$/.test(raw) || Number(raw) < 1) {
+    throw new AgentViewHttpError({
+      code: "bad_request",
+      details: { limit: raw },
+      message: "limit must be a positive integer.",
+      status: 400,
+    });
+  }
+
+  return Math.min(Number(raw), MAX_POSITION_LIMIT);
 }
 
 /** Parse `sort` for operations; defaults newest-first (`-date`). */
