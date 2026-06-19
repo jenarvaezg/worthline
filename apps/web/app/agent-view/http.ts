@@ -34,6 +34,7 @@ import {
   MAX_DATA_QUALITY_LIMIT,
 } from "./data-quality";
 import { buildFinancialContext } from "./financial-context";
+import { buildFigureExplanation, isFigureName } from "./figure-explanations";
 import { buildFireContext } from "./fire-context";
 import { buildHoldingDetail } from "./holding-detail";
 import {
@@ -123,6 +124,47 @@ export function handleGetFireContext(
     return json(
       successEnvelope(
         runWithStore((store) => buildFireContext(store.agentView, { scopeId })),
+      ),
+      200,
+    );
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+/**
+ * Explain one CURRENT figure for a scope (PRD #328, #343). The `{figure}` path
+ * param is validated against the known enum — an unknown name is a `400` carrying
+ * `details: { reason: "invalid_figure", figure }`. Only `holdingId` is allowlisted
+ * (the `holding_value` selector); `date` is NOT allowlisted, so a historical
+ * request is the standard `400` unknown-param (the dated path is issue #344).
+ */
+export function handleExplainFigure(
+  request: NextRequest,
+  scopeId: string,
+  figure: string,
+  runWithStore: StoreRunner,
+): NextResponse {
+  try {
+    guardAgentViewRequest(request, ["holdingId"]);
+
+    if (!isFigureName(figure)) {
+      throw new AgentViewHttpError({
+        code: "bad_request",
+        details: { figure, reason: "invalid_figure" },
+        message: "Unknown figure.",
+        status: 400,
+      });
+    }
+
+    const asOf = systemClock().today();
+    const holdingId = new URL(request.url).searchParams.get("holdingId") ?? undefined;
+
+    return json(
+      successEnvelope(
+        runWithStore((store) =>
+          buildFigureExplanation(store.agentView, { asOf, figure, holdingId, scopeId }),
+        ),
       ),
       200,
     );
