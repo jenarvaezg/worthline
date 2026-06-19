@@ -7,7 +7,7 @@
 import { isHousingAsset } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore } from "../src/index";
+import { createInMemoryStore } from "@db/index";
 
 const own = [{ memberId: "m1", shareBps: 10000 }];
 

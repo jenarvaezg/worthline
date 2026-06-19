@@ -15,9 +15,9 @@
 import Database from "better-sqlite3";
 import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore } from "../src/index";
-import { migrate, SCHEMA_VERSION } from "../src/migrate";
-import { schemaSql } from "../src/schema-sql";
+import { createInMemoryStore } from "@db/index";
+import { migrate, SCHEMA_VERSION } from "@db/migrate";
+import { schemaSql } from "@db/schema-sql";
 
 /** A pre-v27 DB at user_version 26: current schema minus the new position column,
  *  with one source + one coin position that predates the photo. */

@@ -23,7 +23,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { migrate } from "../src/migrate";
+import { migrate } from "@db/migrate";
 
 const tempDirs: string[] = [];
 

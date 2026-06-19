@@ -15,8 +15,8 @@ import { describe, expect, test } from "vitest";
 
 import type { BinanceHistoryCurve, DecimalString } from "@worthline/domain";
 
-import { createInMemoryStore } from "../src/index";
-import type { WorthlineStore } from "../src/index";
+import { createInMemoryStore } from "@db/index";
+import type { WorthlineStore } from "@db/index";
 
 const TODAY = "2026-06-15";
 const MEMBER_ID = "mJ";

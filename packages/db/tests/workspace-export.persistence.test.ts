@@ -2,8 +2,8 @@ import type { AssetPrice, NetWorthSnapshot } from "@worthline/domain";
 import { EXPORT_VERSION } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore } from "../src/index";
-import type { WorthlineStore } from "../src/index";
+import { createInMemoryStore } from "@db/index";
+import type { WorthlineStore } from "@db/index";
 
 /**
  * Seed a workspace that touches every export section through the public store
