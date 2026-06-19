@@ -133,11 +133,13 @@ export function handleGetFireContext(
 }
 
 /**
- * Explain one CURRENT figure for a scope (PRD #328, #343). The `{figure}` path
- * param is validated against the known enum — an unknown name is a `400` carrying
- * `details: { reason: "invalid_figure", figure }`. Only `holdingId` is allowlisted
- * (the `holding_value` selector); `date` is NOT allowlisted, so a historical
- * request is the standard `400` unknown-param (the dated path is issue #344).
+ * Explain one figure for a scope (PRD #328, #343, #344). The `{figure}` path param
+ * is validated against the known enum — an unknown name is a `400` carrying
+ * `details: { reason: "invalid_figure", figure }`. `holdingId` (the `holding_value`
+ * selector) and `date` are allowlisted. A `date` (`YYYY-MM-DD`, validated by
+ * `isIsoCalendarDate` — malformed is a `400`) switches the explanation to
+ * HISTORICAL mode against the scope's frozen snapshot for that exact day; no
+ * `date` keeps the CURRENT-mode behaviour (#343) unchanged.
  */
 export function handleExplainFigure(
   request: NextRequest,
@@ -146,7 +148,7 @@ export function handleExplainFigure(
   runWithStore: StoreRunner,
 ): NextResponse {
   try {
-    guardAgentViewRequest(request, ["holdingId"]);
+    guardAgentViewRequest(request, ["holdingId", "date"]);
 
     if (!isFigureName(figure)) {
       throw new AgentViewHttpError({
@@ -157,13 +159,21 @@ export function handleExplainFigure(
       });
     }
 
+    const params = new URL(request.url).searchParams;
     const asOf = systemClock().today();
-    const holdingId = new URL(request.url).searchParams.get("holdingId") ?? undefined;
+    const holdingId = params.get("holdingId") ?? undefined;
+    const date = parseIsoDate(params.get("date"), "date");
 
     return json(
       successEnvelope(
         runWithStore((store) =>
-          buildFigureExplanation(store.agentView, { asOf, figure, holdingId, scopeId }),
+          buildFigureExplanation(store.agentView, {
+            asOf,
+            figure,
+            holdingId,
+            scopeId,
+            ...(date === undefined ? {} : { date }),
+          }),
         ),
       ),
       200,

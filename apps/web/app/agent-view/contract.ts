@@ -624,16 +624,44 @@ export interface AgentViewFigureFreshness {
 }
 
 /**
- * A full explanation of one current figure for a selected scope (PRD #328, #343):
+ * The snapshot a historical explanation was read from (PRD #328, #344): the
+ * derived opaque public id (`wl_snp_…`), the object tag, and the snapshot date.
+ * Present only on a historical explanation; current-mode explanations omit it.
+ */
+export interface AgentViewFigureSnapshotReference {
+  id: string;
+  object: "snapshot";
+  /** The snapshot date, as `YYYY-MM-DD`. */
+  date: string;
+}
+
+/**
+ * How completely a historical figure could be decomposed from a snapshot's frozen
+ * holding rows (PRD #328, #344): `full` when the snapshot has frozen rows backing
+ * the figure (included/excluded holdings are real); `partial` when the snapshot
+ * stores only the headline figure (an old/legacy capture with no rows) — the value
+ * is still the honest stored figure, but the per-holding decomposition is absent
+ * and a `history_coverage` quality note explains why.
+ */
+export type AgentViewFigureDecompositionStatus = "full" | "partial";
+
+/**
+ * A full explanation of one figure for a selected scope (PRD #328, #343, #344):
  * its value, the human-readable formula and operand figures, the holdings that
  * contributed (with scope-weighted values), the holdings held out (with a reason),
  * the assumptions a FIRE figure rests on, freshness facts where they apply, the
  * relevant data-quality notes, and drilldown links. Reads mutate nothing. FIRE
  * figures use CURRENT assumptions only — never an implied historical FIRE.
+ *
+ * Current-mode (no `date`) explanations omit the historical fields. A historical
+ * (dated, #344) explanation reads a snapshot's FROZEN rows and additionally
+ * carries `historical: true`, the `snapshot` reference it was read from, and a
+ * `decompositionStatus` (`full` with frozen rows, `partial` for an old snapshot
+ * that stores only the headline figure).
  */
 export interface AgentViewFigureExplanation {
   scope: AgentViewScope;
-  /** The date the explained value describes, as `YYYY-MM-DD` (always current). */
+  /** The date the explained value describes, as `YYYY-MM-DD`. */
   asOf: string;
   figure: AgentViewFigureName;
   value: AgentViewFigureValue;
@@ -648,6 +676,12 @@ export interface AgentViewFigureExplanation {
   qualityNotes: AgentViewDataQualitySignal[];
   /** Drilldown endpoints for deeper facts (the compact context, FIRE, …). */
   links: Record<string, string>;
+  /** Present only on a historical (dated) explanation (#344): always `true`. */
+  historical?: true;
+  /** Present only on a historical explanation (#344): the snapshot read from. */
+  snapshot?: AgentViewFigureSnapshotReference;
+  /** Present only on a historical explanation (#344): `full` or `partial`. */
+  decompositionStatus?: AgentViewFigureDecompositionStatus;
 }
 
 export type AgentViewOperationSort = "date" | "-date";

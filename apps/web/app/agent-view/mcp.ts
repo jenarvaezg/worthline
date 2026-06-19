@@ -53,12 +53,18 @@ export interface GetFireContextInput {
 }
 
 export interface ExplainFigureInput {
-  /** The current figure to explain. */
+  /** The figure to explain. */
   figure: AgentViewFigureName;
   /** Public scope ID; defaults to the household scope when omitted. */
   scopeId?: string;
   /** Public holding ID (`wl_hld_…`); required for the `holding_value` figure. */
   holdingId?: string;
+  /**
+   * `YYYY-MM-DD` to explain the figure HISTORICALLY against that day's exact
+   * snapshot (#344); omitted explains the CURRENT figure. Historical FIRE is
+   * unsupported (a dated FIRE figure is a 422).
+   */
+  date?: string;
 }
 
 export interface GetSnapshotHistoryInput {
@@ -209,10 +215,11 @@ export function createAgentViewMcpToolCatalog(
   return {
     explain_figure: {
       description:
-        "Explain how a scope's CURRENT figure is computed (defaults to the household scope): the value, a human-readable formula with its operand figures, the holdings that contribute (with scope-weighted values), the holdings held out and why, the relevant data-quality notes, and drilldown links. Supported figures: net_worth, liquid_net_worth, gross_assets, debts, housing_equity, liquidity_breakdown, holding_value (requires holdingId), fire_eligible_assets and fire_progress (require a FIRE config, current assumptions only — never a historical FIRE). An unknown figure is a 400; a figure the scope cannot honour is a 422. Reads are side-effect-free.",
+        "Explain how a scope's figure is computed (defaults to the household scope): the value, a human-readable formula with its operand figures, the holdings that contribute (with scope-weighted values), the holdings held out and why, the relevant data-quality notes, and drilldown links. Supported figures: net_worth, liquid_net_worth, gross_assets, debts, housing_equity, liquidity_breakdown, holding_value (requires holdingId), fire_eligible_assets and fire_progress (require a FIRE config, current assumptions only — never a historical FIRE). Pass date (YYYY-MM-DD) to explain the figure HISTORICALLY against that day's exact snapshot: the result carries historical:true, a snapshot reference, and decompositionStatus (full with frozen rows, partial for an old snapshot that stores only the headline figure). A date with no exact snapshot is a 404 (snapshot_not_found, never the nearest); a dated FIRE figure is a 422 (unsupported_historical_fire). An unknown figure is a 400; a figure the scope cannot honour is a 422. Reads are side-effect-free.",
       inputSchema: {
         additionalProperties: false,
         properties: {
+          date: { type: "string" },
           figure: { enum: [...FIGURE_NAMES], type: "string" },
           holdingId: { type: "string" },
           scopeId: { type: "string" },
@@ -222,10 +229,7 @@ export function createAgentViewMcpToolCatalog(
       },
       invoke: async (input) => {
         const scopeId = input.scopeId ?? (await defaultScopeId(client));
-        const query =
-          input.holdingId === undefined
-            ? ""
-            : `?holdingId=${encodeURIComponent(input.holdingId)}`;
+        const query = explainFigureQuery(input);
         return client.get(
           `${SCOPES_PATH}/${encodeURIComponent(scopeId)}/figure-explanations/${encodeURIComponent(input.figure)}${query}`,
         );
@@ -426,6 +430,15 @@ export function createAgentViewMcpToolCatalog(
       name: "list_scopes",
     },
   };
+}
+
+/** Serialize the explain-figure input into the API's query string (omitting `scopeId`/`figure`). */
+function explainFigureQuery(input: ExplainFigureInput): string {
+  const params = new URLSearchParams();
+  if (input.holdingId !== undefined) params.set("holdingId", input.holdingId);
+  if (input.date !== undefined) params.set("date", input.date);
+  const query = params.toString();
+  return query ? `?${query}` : "";
 }
 
 /** Serialize the data-quality input into the API's query string (omitting `scopeId`). */
