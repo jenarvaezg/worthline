@@ -34,9 +34,30 @@ Which figure — **net worth** or **liquid net worth** — is shown as the headl
 A framing re-labels the hero number; it never introduces a new figure. UI label: "Vista".
 _Avoid_: presentation mode (implementation term).
 
+**Workspace**:
+A single self-contained financial world — one household's (or one person's)
+**members**, **holdings**, **snapshots** and history. The unit of tenancy: every
+figure is computed within exactly one workspace, and a workspace knows nothing of
+any other. It carries a **mode** (individual or household) that sets whether figures
+aggregate one person or several **members**, and it is the unit that is _shared_ —
+access to a workspace can be granted to one or more **users**.
+_Avoid_: account, tenant (implementation term).
+
+**User**:
+An authenticated identity that can sign in (e.g. via Google) and is granted access
+to one or more **workspaces**. A user is not a **member**: a member is a person whose
+holdings are tracked and weighted in net-worth math, whereas a user is simply someone
+allowed to open a workspace and never appears in any figure. The same human may be
+both — a member tracked in the household and a user who logs in — but the two are
+separate records. Granting a user access (_inviting_) is independent of switching a
+**workspace** to household **mode**: the first decides who may sign in, the second
+decides whose holdings are aggregated.
+_Avoid_: account, member, login, owner.
+
 **Scope**:
 The set of members whose holdings a figure covers: the whole household, one member,
-or a named group of members.
+or a named group of members. A scope is always read _within_ one **workspace** — it
+never spans workspaces.
 _Avoid_: account.
 
 **Member group**:
@@ -445,4 +466,4 @@ _Avoid_: connected source, account, financial advisor.
 - Money amounts are represented as integer minor units.
 - Decimal quantities, FX rates, and prices should use decimal strings.
 - Local data must stay outside git.
-- No auth, telemetry, cloud sync, or personal spreadsheet assumptions in the MVP.
+- No telemetry or personal-spreadsheet assumptions. Auth and per-**workspace** cloud storage — originally excluded in the MVP — are now part of the **hosted, multi-user** product (see ADR 0030): a **user** signs in and is granted access to workspaces. They add no figure and change no calculation; the app stays local-first and runs identically with auth off.
