@@ -712,11 +712,17 @@ function buildStore(
   const agentViewReadStore = createAgentViewReadStore(ctx, {
     listConnectedSources: connectedSourceStore.listSources,
     listSourceAssetIds: connectedSourceStore.listSourceAssetIds,
+    readAmortizationPlan: liabilityStore.readAmortizationPlan,
     readAssets: assetStore.readAssets,
+    readBalanceAnchors: liabilityStore.readBalanceAnchors,
+    readDebtModel: liabilityStore.readDebtModel,
+    readEarlyRepayments: liabilityStore.readEarlyRepayments,
+    readInterestRateRevisions: liabilityStore.readInterestRateRevisions,
     readLiabilities: liabilityStore.readLiabilities,
     readOperations: operationsStore.readOperations,
     readSnapshotHoldings: snapshotStore.readSnapshotHoldings,
     readSnapshots: (scopeId) => snapshotStore.readSnapshots(scopeId),
+    readValuationAnchors: assetStore.readValuationAnchors,
   });
   // importWorkspace's post-import gap-fill spans every domain and the snapshot
   // save path, so it stays in the monolith and is injected into the workspace

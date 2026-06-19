@@ -15,6 +15,11 @@ import {
   type AgentViewOwnershipShare,
 } from "./contract";
 import { ratioStringFromBps } from "./financial-context";
+import {
+  assetHoldingFacts,
+  liabilityHoldingFacts,
+  type HoldingFacts,
+} from "./holding-facts";
 import { summarizeOperations } from "./operation-summary";
 import {
   publicIdMap,
@@ -68,6 +73,8 @@ export function buildHoldingDetail(
       ? summarizeOperations(store.readOperations(internalHoldingId), currency)
       : undefined;
     const sourceSummary = buildSourceSummary(store, internalHoldingId);
+    const valuationMethod = defaultsFor(assetRow.instrument).valuationMethod;
+    const facts = assetHoldingFacts(store, internalHoldingId, valuationMethod, currency);
 
     return {
       currentValue: moneyOf(assetRow.valueMinor, currency),
@@ -78,14 +85,25 @@ export function buildHoldingDetail(
       liquidityTier: assetRow.tier,
       object: "holding",
       ownership: toOwnership(assetRow.ownership, common),
-      qualitySummary: { hasWarnings: holdingHasWarnings(assets, internalHoldingId) },
-      valuationMethod: defaultsFor(assetRow.instrument).valuationMethod,
+      qualitySummary: qualitySummary(
+        holdingHasWarnings(assets, internalHoldingId),
+        facts,
+      ),
+      valuationMethod,
       ...(operationSummary ? { operationSummary } : {}),
       ...(sourceSummary ? { sourceSummary } : {}),
+      ...factBlocks(facts),
     };
   }
 
   const row = liabilityRow!;
+  const valuationMethod = defaultsFor(row.instrument).valuationMethod;
+  const facts = liabilityHoldingFacts(
+    store,
+    internalHoldingId,
+    valuationMethod,
+    currency,
+  );
   return {
     currentValue: moneyOf(row.balanceMinor, currency),
     direction: "liability",
@@ -95,8 +113,31 @@ export function buildHoldingDetail(
     liquidityTier: row.tier,
     object: "holding",
     ownership: toOwnership(row.ownership, common),
-    qualitySummary: { hasWarnings: false },
-    valuationMethod: defaultsFor(row.instrument).valuationMethod,
+    qualitySummary: qualitySummary(false, facts),
+    valuationMethod,
+    ...factBlocks(facts),
+  };
+}
+
+/** Fold the holding's fact blocks into the detail, omitting any that are absent. */
+function factBlocks(facts: HoldingFacts) {
+  return {
+    ...(facts.valuationAnchors ? { valuationAnchors: facts.valuationAnchors } : {}),
+    ...(facts.amortization ? { amortization: facts.amortization } : {}),
+    ...(facts.balanceAnchors ? { balanceAnchors: facts.balanceAnchors } : {}),
+  };
+}
+
+/**
+ * The holding's quality summary: the #341 warnings boolean plus the #338
+ * calculation-fact state, surfaced only when the holding cannot honestly
+ * produce its method's facts (never `unsupported` is treated as a defect — it is
+ * a documented "no dated facts here" marker, so it rides the same field).
+ */
+function qualitySummary(hasWarnings: boolean, facts: HoldingFacts) {
+  return {
+    hasWarnings,
+    ...(facts.state ? { facts: facts.state } : {}),
   };
 }
 
