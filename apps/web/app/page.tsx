@@ -13,7 +13,6 @@ import type {
   NetWorthFraming,
 } from "@worthline/domain";
 import { refreshStalePrices } from "@worthline/pricing";
-import { createWorthlineStore, runBootstrapHealthcheck } from "@worthline/db";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -37,6 +36,8 @@ import { runBinanceRefresh } from "./ajustes/binance-refresh";
 import { runNumistaCoinRefresh } from "./ajustes/numista-coin-refresh";
 import { refreshAndPersistStalePrices } from "./refresh-prices";
 import Shell from "./shell";
+import { readDemoContext } from "@web/demo/read-demo-context";
+import { bootstrapHealthcheck, openStore } from "@web/store";
 
 export const dynamic = "force-dynamic";
 
@@ -125,7 +126,8 @@ export default async function DashboardPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolvedSearchParams = await searchParams;
-  const persistence = runBootstrapHealthcheck();
+  const persistence = await bootstrapHealthcheck();
+  const demo = await readDemoContext();
   const selectedView = parseViewParam(resolvedSearchParams?.view);
   const selectedDrill = parseDrillParam(resolvedSearchParams?.drill);
   const selectedRange = parseRangeParam(resolvedSearchParams?.range);
@@ -150,7 +152,7 @@ export default async function DashboardPage({
   const now = persistence.checkedAt;
   const today = now.slice(0, 10);
 
-  const store = createWorthlineStore();
+  const store = await openStore();
   let state;
   try {
     state = await loadDashboard({
@@ -162,22 +164,26 @@ export default async function DashboardPage({
       range: selectedRange,
       today,
       now,
-      refreshPrices: async ({
-        cacheEntries,
-        assets,
-        nowIso,
-      }): Promise<RefreshPricesResult> => {
-        return refreshAndPersistStalePrices({
-          cacheEntries,
-          assets,
-          nowIso,
-          refreshStalePrices,
-          upsertPrice: (price) => store.operations.upsertPrice(price),
-          readCache: () => store.operations.readAllPriceCacheEntries(),
-        });
-      },
-      refreshCoinValuations: () => runNumistaCoinRefresh(store, now),
-      refreshBinanceSources: () => runBinanceRefresh(store, now),
+      // Demo mode never reaches out (ADR 0023): the fixture is frozen, so price
+      // refresh is a no-op and the connected-source refreshers are omitted.
+      refreshPrices: demo.enabled
+        ? async (): Promise<RefreshPricesResult> => ({ priceCache: [], errors: [] })
+        : async ({ cacheEntries, assets, nowIso }): Promise<RefreshPricesResult> => {
+            return refreshAndPersistStalePrices({
+              cacheEntries,
+              assets,
+              nowIso,
+              refreshStalePrices,
+              upsertPrice: (price) => store.operations.upsertPrice(price),
+              readCache: () => store.operations.readAllPriceCacheEntries(),
+            });
+          },
+      ...(demo.enabled
+        ? {}
+        : {
+            refreshCoinValuations: () => runNumistaCoinRefresh(store, now),
+            refreshBinanceSources: () => runBinanceRefresh(store, now),
+          }),
     });
   } finally {
     store.close();

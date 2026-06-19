@@ -10,11 +10,13 @@ import {
   parseEmpezarHogar,
   parseEmpezarSolo,
 } from "@web/intake";
+import { guardDemoWrite } from "@web/demo/write-guard";
 
 export async function initSoloAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
+  guardDemoWrite("/empezar");
   const currentUrl = "/empezar?path=solo";
   const result = parseEmpezarSolo(formData);
 
@@ -52,6 +54,7 @@ export async function initHogarAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
+  guardDemoWrite("/empezar");
   const currentUrl = "/empezar?path=hogar";
   const result = parseEmpezarHogar(formData);
 

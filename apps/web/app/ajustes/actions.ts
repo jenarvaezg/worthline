@@ -19,6 +19,7 @@ import {
   parseNewMember,
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
+import { guardDemoWrite } from "@web/demo/write-guard";
 
 const BASE = "/ajustes";
 
@@ -33,6 +34,7 @@ function runWith<T>(fn: (store: WorthlineStore) => T, _store?: WorthlineStore): 
 // === Member actions ===
 
 export async function createMemberAction(formData: FormData, _store?: WorthlineStore) {
+  guardDemoWrite(currentUrlOf(formData));
   const member = parseNewMember(formData, Date.now());
 
   if (!member) {
@@ -49,6 +51,7 @@ export async function createMemberAction(formData: FormData, _store?: WorthlineS
 }
 
 export async function updateMemberAction(formData: FormData, _store?: WorthlineStore) {
+  guardDemoWrite(currentUrlOf(formData));
   const id = parseEntityId(formData);
   const name = String(formData.get("name") ?? "").trim();
 
@@ -71,6 +74,7 @@ export async function disableMemberAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ) {
+  guardDemoWrite(currentUrlOf(formData));
   const id = parseEntityId(formData);
 
   if (!id) {
@@ -89,6 +93,7 @@ export async function reactivateMemberAction(
   formData: FormData,
   _store?: WorthlineStore,
 ) {
+  guardDemoWrite(currentUrlOf(formData));
   const id = parseEntityId(formData);
 
   if (!id) {
@@ -107,6 +112,7 @@ export async function hardDeleteMemberAction(
   formData: FormData,
   _store?: WorthlineStore,
 ) {
+  guardDemoWrite(currentUrlOf(formData));
   const id = parseEntityId(formData);
 
   if (!id) {
@@ -165,6 +171,7 @@ export async function hardDeleteMemberAction(
 const RESET_CONFIRMATION_PHRASE = "borrar todo";
 
 export async function resetWorkspaceAction(formData: FormData, _store?: WorthlineStore) {
+  guardDemoWrite(currentUrlOf(formData));
   const confirmation = String(formData.get("confirmation") ?? "").trim();
 
   // The typed phrase is the gate: a wrong or empty phrase aborts harmlessly.
@@ -204,6 +211,7 @@ export async function previewImportAction(
   _prevState: ImportPreviewState,
   formData: FormData,
 ): Promise<ImportPreviewState> {
+  guardDemoWrite(currentUrlOf(formData));
   const file = formData.get("file");
 
   if (!(file instanceof File) || file.size === 0) {
@@ -240,6 +248,7 @@ export async function previewImportAction(
  * entire workspace with the file's contents.
  */
 export async function confirmImportAction(formData: FormData, _store?: WorthlineStore) {
+  guardDemoWrite(currentUrlOf(formData));
   const file = formData.get("file");
 
   if (!(file instanceof File) || file.size === 0) {
@@ -322,6 +331,7 @@ export async function confirmImportAction(formData: FormData, _store?: Worthline
 // === FIRE config action ===
 
 export async function saveFireConfigAction(formData: FormData, _store?: WorthlineStore) {
+  guardDemoWrite(currentUrlOf(formData));
   const scopeId = String(formData.get("scopeId") ?? "").trim() || "household";
   const result = parseFireConfigFormStrict(formData);
 
@@ -344,6 +354,7 @@ export async function retractWarningOverrideAction(
   formData: FormData,
   _store?: WorthlineStore,
 ) {
+  guardDemoWrite(currentUrlOf(formData));
   const code = String(formData.get("code") ?? "").trim();
   const entityId = String(formData.get("entityId") ?? "").trim();
 

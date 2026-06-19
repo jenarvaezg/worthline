@@ -12,6 +12,7 @@ test-results/
 playwright-report/
 playwright-report-first-run/
 playwright-report-first-run-*/
+playwright-report-demo/
 
 .local/
 .scratch/

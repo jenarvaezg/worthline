@@ -20,6 +20,7 @@ import {
   preserveFields,
   successRedirectUrl,
 } from "@web/intake";
+import { guardDemoWrite } from "@web/demo/write-guard";
 import { persistManualAssetCreation } from "./persist-holding";
 
 /**
@@ -184,6 +185,7 @@ export async function createHoldingAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ): Promise<never> {
+  guardDemoWrite(ADD_URL);
   const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
     _store ? fn(_store) : withStore(fn);
 
