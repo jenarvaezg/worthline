@@ -725,11 +725,20 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
     expect(groupGa.body.data.value).toEqual(eur(10_000_00));
   });
 
-  test("rejects the unsupported date query parameter with a 400", async () => {
+  test("a date with no exact snapshot is a 404 snapshot_not_found (#344)", async () => {
     seedHousehold("worthline-agent-view-figexp-date-");
     const scopeId = await householdScopeId();
 
-    const { response } = await explain(scopeId, "net_worth", "?date=2025-01-01");
+    const { body, response } = await explain(scopeId, "net_worth", "?date=2025-01-01");
+    expect(response.status).toBe(404);
+    expect(body.error.details.reason).toBe("snapshot_not_found");
+  });
+
+  test("a malformed date query is a 400 bad_request", async () => {
+    seedHousehold("worthline-agent-view-figexp-baddate-");
+    const scopeId = await householdScopeId();
+
+    const { response } = await explain(scopeId, "net_worth", "?date=not-a-date");
     expect(response.status).toBe(400);
   });
 

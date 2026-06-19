@@ -1,4 +1,4 @@
-import type { AgentViewReadStore } from "@worthline/db";
+import type { AgentViewReadStore, SnapshotHoldingRecord } from "@worthline/db";
 import {
   buildLiquidityBreakdown,
   calculateFireForScope,
@@ -19,6 +19,7 @@ import type {
   LiquidityTierBreakdown,
   ManualAsset,
   MoneyMinor,
+  NetWorthSnapshot,
   ScopeOption,
   Workspace,
 } from "@worthline/domain";
@@ -31,8 +32,10 @@ import {
   type AgentViewFigureFreshness,
   type AgentViewFigureIncludedHolding,
   type AgentViewFigureName,
+  type AgentViewFigureSnapshotReference,
   type AgentViewFireAssumptions,
   type AgentViewLiquidityRung,
+  type AgentViewLiquidityTier,
   type AgentViewMoney,
   type AgentViewObjectReference,
   type AgentViewScope,
@@ -47,6 +50,7 @@ import {
   resolveInternalScopeId,
 } from "./scope-resolution";
 import { listAgentViewScopes } from "./scopes";
+import { deriveSnapshotPublicId } from "./snapshot-history";
 
 /** The current figures `explain_figure` honors (PRD #328, #343). */
 export const FIGURE_NAMES: readonly AgentViewFigureName[] = [
@@ -72,9 +76,20 @@ export interface BuildFigureExplanationOptions {
   figure: AgentViewFigureName;
   /** Public holding ID (`wl_hld_…`); required for `holding_value`. */
   holdingId?: string | undefined;
-  /** Date the figures describe, as `YYYY-MM-DD` (always current). */
+  /** Date the figures describe, as `YYYY-MM-DD` (the current date in current mode). */
   asOf: string;
+  /**
+   * A `YYYY-MM-DD` to switch to HISTORICAL mode (#344) against that day's exact
+   * snapshot; absent keeps the CURRENT-mode behaviour (#343) unchanged.
+   */
+  date?: string | undefined;
 }
+
+/** The FIRE figures, which have no honest historical value (#344). */
+const FIRE_FIGURE_NAMES: ReadonlySet<AgentViewFigureName> = new Set([
+  "fire_eligible_assets",
+  "fire_progress",
+]);
 
 /**
  * The resolved scope plus the live facts every figure explanation reads, with no
@@ -106,6 +121,10 @@ export function buildFigureExplanation(
   store: AgentViewReadStore,
   options: BuildFigureExplanationOptions,
 ): AgentViewFigureExplanation {
+  if (options.date !== undefined) {
+    return buildHistoricalFigureExplanation(store, options, options.date);
+  }
+
   const facts = resolveScopeFacts(store, options.scopeId);
 
   switch (options.figure) {
@@ -128,6 +147,559 @@ export function buildFigureExplanation(
     case "fire_progress":
       return explainFireProgress(store, facts, options.asOf);
   }
+}
+
+// ── Historical figures (#344) ───────────────────────────────────────────────────
+
+/**
+ * The resolved scope plus the FROZEN snapshot a historical explanation reads
+ * (#344). The snapshot is the scope's exact-date snapshot (there is exactly one
+ * per scope per day); the frozen rows are its `snapshot_holdings` records — empty
+ * for an old/legacy capture that stored only the headline figures.
+ */
+interface HistoricalSnapshotFacts {
+  scope: AgentViewScope;
+  internalScopeId: string;
+  currency: string;
+  snapshot: NetWorthSnapshot;
+  /** The snapshot's frozen holding rows; empty for a legacy capture with none. */
+  rows: SnapshotHoldingRecord[];
+  /** The public snapshot reference (`wl_snp_…`) for the explanation. */
+  snapshotRef: AgentViewFigureSnapshotReference;
+  /** Live holding public ids (`wl_hld_…`), indexed by internal id. */
+  holdingPublicIds: Map<string, string>;
+  /** The date the explanation describes, as `YYYY-MM-DD`. */
+  date: string;
+}
+
+/**
+ * Explain one figure HISTORICALLY for a scope against an exact-date snapshot
+ * (PRD #328, #344), with no side effects. FIRE figures have no honest historical
+ * value, so a dated FIRE request fails fast (`422 unsupported_historical_fire`)
+ * BEFORE any snapshot lookup. Otherwise the scope's exact snapshot is resolved
+ * (a missing one is `404 snapshot_not_found`, never the nearest), and the figure
+ * is decomposed from the snapshot's FROZEN rows: `full` when rows back it,
+ * `partial` (the stored headline figure plus a `history_coverage` note) when the
+ * snapshot is an old capture with no rows. Reads mutate nothing.
+ */
+function buildHistoricalFigureExplanation(
+  store: AgentViewReadStore,
+  options: BuildFigureExplanationOptions,
+  date: string,
+): AgentViewFigureExplanation {
+  // FIRE has no honest historical value — reject before the snapshot lookup so a
+  // dated FIRE request fails fast regardless of whether a snapshot exists.
+  if (FIRE_FIGURE_NAMES.has(options.figure)) {
+    throw new AgentViewHttpError({
+      code: "unprocessable_entity",
+      details: { figure: options.figure, reason: "unsupported_historical_fire" },
+      message: "Historical FIRE is not supported.",
+      status: 422,
+    });
+  }
+
+  const facts = resolveHistoricalSnapshotFacts(store, options.scopeId, date);
+
+  switch (options.figure) {
+    case "net_worth":
+      return historicalNetWorth(facts);
+    case "gross_assets":
+      return historicalGrossAssets(facts);
+    case "debts":
+      return historicalDebts(facts);
+    case "liquid_net_worth":
+      return historicalLiquidNetWorth(facts);
+    case "housing_equity":
+      return historicalHousingEquity(facts);
+    case "liquidity_breakdown":
+      return historicalLiquidityBreakdown(facts);
+    case "holding_value":
+      return historicalHoldingValue(store, facts, options.holdingId);
+    case "fire_eligible_assets":
+    case "fire_progress":
+      // Already handled above; unreachable, but keeps the switch exhaustive.
+      throw new AgentViewHttpError({
+        code: "unprocessable_entity",
+        details: { figure: options.figure, reason: "unsupported_historical_fire" },
+        message: "Historical FIRE is not supported.",
+        status: 422,
+      });
+  }
+}
+
+function resolveHistoricalSnapshotFacts(
+  store: AgentViewReadStore,
+  publicScopeId: string,
+  date: string,
+): HistoricalSnapshotFacts {
+  const workspace = store.readWorkspace();
+
+  if (!workspace) {
+    throw unknownScope();
+  }
+
+  const scope = listAgentViewScopes(store).find(
+    (candidate) => candidate.id === publicScopeId,
+  );
+
+  if (!scope) {
+    throw unknownScope();
+  }
+
+  const internalScopeId = resolveInternalScopeId(store, publicScopeId);
+
+  // Exactly one snapshot per scope per day — never pick the nearest.
+  const snapshot = store
+    .readSnapshots(internalScopeId)
+    .find((candidate) => candidate.dateKey === date);
+
+  if (!snapshot) {
+    throw new AgentViewHttpError({
+      code: "not_found",
+      details: { reason: "snapshot_not_found" },
+      message: "No snapshot exists for the selected scope on that date.",
+      status: 404,
+    });
+  }
+
+  const rows = store.readSnapshotHoldings({
+    from: date,
+    scopeId: internalScopeId,
+    to: date,
+  });
+
+  return {
+    currency: workspace.baseCurrency,
+    date,
+    holdingPublicIds: publicIdMap(store.readPublicIds(), "holding"),
+    internalScopeId,
+    rows,
+    scope,
+    snapshot,
+    snapshotRef: {
+      date,
+      id: deriveSnapshotPublicId(internalScopeId, date),
+      object: "snapshot",
+    },
+  };
+}
+
+// ── Historical headline figures ─────────────────────────────────────────────────
+
+function historicalNetWorth(facts: HistoricalSnapshotFacts): AgentViewFigureExplanation {
+  const formula = {
+    expression: "grossAssets − debts",
+    operands: [
+      { label: "grossAssets", value: money(facts.snapshot.grossAssets) },
+      { label: "debts", value: money(facts.snapshot.debts) },
+    ],
+  };
+
+  if (facts.rows.length === 0) {
+    return partialHistorical(facts, "net_worth", money(facts.snapshot.totalNetWorth), {
+      formula,
+    });
+  }
+
+  const assetRows = facts.rows.filter((row) => row.kind === "asset");
+  const liabilityRows = facts.rows.filter((row) => row.kind === "liability");
+
+  return historicalBase(facts, {
+    decompositionStatus: "full",
+    excludedHoldings: liabilityRows.map((row) => ({
+      ...frozenHoldingRef(facts, row),
+      reason: "liability netted against gross assets",
+    })),
+    figure: "net_worth",
+    formula,
+    includedHoldings: assetRows.map((row) => frozenIncludedHolding(facts, row)),
+    value: money(facts.snapshot.totalNetWorth),
+  });
+}
+
+function historicalGrossAssets(
+  facts: HistoricalSnapshotFacts,
+): AgentViewFigureExplanation {
+  const formula = {
+    expression: "sum(assetHoldings)",
+    operands: [{ label: "grossAssets", value: money(facts.snapshot.grossAssets) }],
+  };
+
+  if (facts.rows.length === 0) {
+    return partialHistorical(facts, "gross_assets", money(facts.snapshot.grossAssets), {
+      formula,
+    });
+  }
+
+  return historicalBase(facts, {
+    decompositionStatus: "full",
+    excludedHoldings: [],
+    figure: "gross_assets",
+    formula,
+    includedHoldings: facts.rows
+      .filter((row) => row.kind === "asset")
+      .map((row) => frozenIncludedHolding(facts, row)),
+    value: money(facts.snapshot.grossAssets),
+  });
+}
+
+function historicalDebts(facts: HistoricalSnapshotFacts): AgentViewFigureExplanation {
+  const formula = {
+    expression: "sum(liabilityHoldings)",
+    operands: [{ label: "debts", value: money(facts.snapshot.debts) }],
+  };
+
+  if (facts.rows.length === 0) {
+    return partialHistorical(facts, "debts", money(facts.snapshot.debts), { formula });
+  }
+
+  return historicalBase(facts, {
+    decompositionStatus: "full",
+    excludedHoldings: [],
+    figure: "debts",
+    formula,
+    includedHoldings: facts.rows
+      .filter((row) => row.kind === "liability")
+      .map((row) => frozenIncludedHolding(facts, row)),
+    value: money(facts.snapshot.debts),
+  });
+}
+
+function historicalLiquidNetWorth(
+  facts: HistoricalSnapshotFacts,
+): AgentViewFigureExplanation {
+  const formula = {
+    expression: "liquidAssets − liquidDebts",
+    operands: [{ label: "liquidNetWorth", value: money(facts.snapshot.liquidNetWorth) }],
+  };
+
+  if (facts.rows.length === 0) {
+    return partialHistorical(
+      facts,
+      "liquid_net_worth",
+      money(facts.snapshot.liquidNetWorth),
+      { formula },
+    );
+  }
+
+  const included: AgentViewFigureIncludedHolding[] = [];
+  const excluded: AgentViewFigureExcludedHolding[] = [];
+
+  for (const row of facts.rows) {
+    if (row.kind === "asset") {
+      if (row.liquidityTier !== null && isLiquid(row.liquidityTier)) {
+        included.push(frozenIncludedHolding(facts, row));
+      } else {
+        excluded.push({
+          ...frozenHoldingRef(facts, row),
+          reason: `${row.liquidityTier ?? "illiquid"} rung is not liquid`,
+        });
+      }
+    } else if (row.securesHousing) {
+      excluded.push({
+        ...frozenHoldingRef(facts, row),
+        reason: "housing-securing debt nets against housing equity",
+      });
+    } else if (isLiquid(row.liquidityTier ?? "cash")) {
+      excluded.push({
+        ...frozenHoldingRef(facts, row),
+        reason: "liquid debt netted against liquid assets",
+      });
+    } else {
+      excluded.push({
+        ...frozenHoldingRef(facts, row),
+        reason: `debt on the ${row.liquidityTier ?? "cash"} rung is not liquid`,
+      });
+    }
+  }
+
+  return historicalBase(facts, {
+    decompositionStatus: "full",
+    excludedHoldings: excluded,
+    figure: "liquid_net_worth",
+    formula,
+    includedHoldings: included,
+    value: money(facts.snapshot.liquidNetWorth),
+  });
+}
+
+function historicalHousingEquity(
+  facts: HistoricalSnapshotFacts,
+): AgentViewFigureExplanation {
+  const formula = {
+    expression: "housingAssets − housingDebts",
+    operands: [{ label: "housingEquity", value: money(facts.snapshot.housingEquity) }],
+  };
+
+  if (facts.rows.length === 0) {
+    return partialHistorical(
+      facts,
+      "housing_equity",
+      money(facts.snapshot.housingEquity),
+      { formula },
+    );
+  }
+
+  const included: AgentViewFigureIncludedHolding[] = [];
+  const excluded: AgentViewFigureExcludedHolding[] = [];
+
+  for (const row of facts.rows) {
+    if (row.kind === "asset") {
+      if (row.countsAsHousing) {
+        included.push(frozenIncludedHolding(facts, row));
+      } else {
+        excluded.push({
+          ...frozenHoldingRef(facts, row),
+          reason: "not a housing asset",
+        });
+      }
+    } else if (row.securesHousing) {
+      excluded.push({
+        ...frozenHoldingRef(facts, row),
+        reason: "housing-securing debt netted against housing assets",
+      });
+    } else {
+      excluded.push({
+        ...frozenHoldingRef(facts, row),
+        reason: "debt does not secure a housing asset",
+      });
+    }
+  }
+
+  return historicalBase(facts, {
+    decompositionStatus: "full",
+    excludedHoldings: excluded,
+    figure: "housing_equity",
+    formula,
+    includedHoldings: included,
+    value: money(facts.snapshot.housingEquity),
+  });
+}
+
+/**
+ * The per-rung breakdown folded from the frozen rows (#344), mirroring the live
+ * `buildLiquidityBreakdown` and the snapshot-history `toHoldingsSummary`: asset
+ * rows bucket by their frozen rung, liability rows by their frozen rung (a
+ * null-rung debt lands on `cash`). Without rows the snapshot has no per-rung
+ * data, so it is `partial` with an empty breakdown and a `history_coverage` note.
+ */
+function historicalLiquidityBreakdown(
+  facts: HistoricalSnapshotFacts,
+): AgentViewFigureExplanation {
+  const formula = {
+    expression: "perRungNet(grossAssets − debts)",
+    operands: [
+      { label: "grossAssets", value: money(facts.snapshot.grossAssets) },
+      { label: "debts", value: money(facts.snapshot.debts) },
+    ],
+  };
+
+  if (facts.rows.length === 0) {
+    return partialHistorical(facts, "liquidity_breakdown", [], { formula });
+  }
+
+  const grossByTier = new Map<AgentViewLiquidityTier, number>();
+  const debtByTier = new Map<AgentViewLiquidityTier, number>();
+
+  for (const row of facts.rows) {
+    const tier = (row.liquidityTier ?? "cash") as AgentViewLiquidityTier;
+    if (row.kind === "asset") {
+      grossByTier.set(tier, (grossByTier.get(tier) ?? 0) + row.valueMinor);
+    } else {
+      debtByTier.set(tier, (debtByTier.get(tier) ?? 0) + row.valueMinor);
+    }
+  }
+
+  const totalGross = facts.snapshot.grossAssets.amountMinor;
+  const rungs: AgentViewLiquidityRung[] = HISTORICAL_LIQUIDITY_LADDER.map((tier) => {
+    const grossMinor = grossByTier.get(tier) ?? 0;
+    const debtMinor = debtByTier.get(tier) ?? 0;
+    return {
+      debts: moneyOf(debtMinor, facts.currency),
+      grossAssets: moneyOf(grossMinor, facts.currency),
+      netValue: moneyOf(grossMinor - debtMinor, facts.currency),
+      shareOfGross: ratioStringFromBps(
+        totalGross === 0 ? 0 : Math.round((grossMinor * 10_000) / totalGross),
+      ),
+      tier,
+    };
+  });
+
+  const included: AgentViewFigureIncludedHolding[] = facts.rows.map((row) =>
+    row.kind === "asset"
+      ? frozenIncludedHolding(facts, row)
+      : {
+          ...frozenHoldingRef(facts, row),
+          value: moneyOf(-row.valueMinor, facts.currency),
+        },
+  );
+
+  return historicalBase(facts, {
+    decompositionStatus: "full",
+    excludedHoldings: [],
+    figure: "liquidity_breakdown",
+    formula,
+    includedHoldings: included,
+    value: rungs,
+  });
+}
+
+/**
+ * The frozen value of one holding on the snapshot date (#344). Resolves the
+ * public id to its internal id (a 404 when the id names no holding at all, the
+ * same as current mode), then finds the holding's frozen row in the snapshot.
+ * No frozen row — either the snapshot has no rows at all, or the holding did not
+ * exist that day — is a `422 unsupported_figure`: there is no honest historical
+ * value to report, and we never fabricate one.
+ */
+function historicalHoldingValue(
+  store: AgentViewReadStore,
+  facts: HistoricalSnapshotFacts,
+  publicHoldingId: string | undefined,
+): AgentViewFigureExplanation {
+  if (publicHoldingId === undefined) {
+    throw new AgentViewHttpError({
+      code: "bad_request",
+      details: { reason: "missing_holding_id" },
+      message: "holding_value requires a holdingId selector.",
+      status: 400,
+    });
+  }
+
+  const internalHoldingId = resolveInternalHoldingId(store, publicHoldingId);
+  const row = facts.rows.find((candidate) => candidate.holdingId === internalHoldingId);
+
+  if (!row) {
+    throw unsupportedFigure("holding_value");
+  }
+
+  return historicalBase(facts, {
+    decompositionStatus: "full",
+    excludedHoldings: [],
+    figure: "holding_value",
+    formula: {
+      expression: "frozenHoldingValue",
+      operands: [
+        { label: "frozenValue", value: moneyOf(row.valueMinor, facts.currency) },
+      ],
+    },
+    includedHoldings: [frozenIncludedHolding(facts, row)],
+    value: moneyOf(row.valueMinor, facts.currency),
+  });
+}
+
+// ── Historical helpers ──────────────────────────────────────────────────────────
+
+/** Cash-first liquidity ladder, matching the live `liquidityBreakdown` order. */
+const HISTORICAL_LIQUIDITY_LADDER: readonly AgentViewLiquidityTier[] = [
+  "cash",
+  "market",
+  "term-locked",
+  "illiquid",
+  "housing",
+];
+
+/** Fields the figure-specific historical builders supply to `historicalBase`. */
+interface HistoricalFigureParts {
+  figure: AgentViewFigureName;
+  value: AgentViewFigureExplanation["value"];
+  formula: AgentViewFigureExplanation["formula"];
+  includedHoldings: AgentViewFigureIncludedHolding[];
+  excludedHoldings: AgentViewFigureExcludedHolding[];
+  decompositionStatus: "full" | "partial";
+  /** Extra quality notes beyond the row-derived defaults (e.g. history_coverage). */
+  extraQualityNotes?: AgentViewDataQualitySignal[];
+}
+
+/** Assemble a historical explanation envelope shared by every figure. */
+function historicalBase(
+  facts: HistoricalSnapshotFacts,
+  parts: HistoricalFigureParts,
+): AgentViewFigureExplanation {
+  return {
+    asOf: facts.date,
+    decompositionStatus: parts.decompositionStatus,
+    excludedHoldings: parts.excludedHoldings,
+    figure: parts.figure,
+    formula: parts.formula,
+    historical: true,
+    includedHoldings: parts.includedHoldings,
+    links: links(facts.scope.id),
+    qualityNotes: parts.extraQualityNotes ?? [],
+    scope: facts.scope,
+    snapshot: facts.snapshotRef,
+    value: parts.value,
+  };
+}
+
+/**
+ * A `partial` historical explanation for an old snapshot with no frozen rows
+ * (#344): the honest stored headline value plus a `history_coverage` note
+ * (`MISSING_SNAPSHOT_ROWS`) explaining the per-holding decomposition is absent.
+ * Included/excluded holdings are empty (none were frozen) — never fabricated.
+ */
+function partialHistorical(
+  facts: HistoricalSnapshotFacts,
+  figure: AgentViewFigureName,
+  value: AgentViewFigureExplanation["value"],
+  parts: { formula: AgentViewFigureExplanation["formula"] },
+): AgentViewFigureExplanation {
+  return historicalBase(facts, {
+    decompositionStatus: "partial",
+    excludedHoldings: [],
+    extraQualityNotes: [missingSnapshotRowsNote(facts)],
+    figure,
+    formula: parts.formula,
+    includedHoldings: [],
+    value,
+  });
+}
+
+/** The `history_coverage` signal for a snapshot that froze no holding rows (#341 shape). */
+function missingSnapshotRowsNote(
+  facts: HistoricalSnapshotFacts,
+): AgentViewDataQualitySignal {
+  return {
+    affected: { id: facts.scope.id, label: facts.scope.label, object: "scope" },
+    category: "history_coverage",
+    code: "MISSING_SNAPSHOT_ROWS",
+    fixable: false,
+    id: `dqs_hist_missing_rows_${facts.snapshot.id}`,
+    label: `La captura del ${facts.snapshot.dateKey} no tiene desglose de holdings.`,
+    object: "data_quality_signal",
+    observedDate: facts.snapshot.dateKey,
+    severity: "low",
+  };
+}
+
+/** An included holding from a frozen row: the frozen value, plus a `wl_hld_` ref when known. */
+function frozenIncludedHolding(
+  facts: HistoricalSnapshotFacts,
+  row: SnapshotHoldingRecord,
+): AgentViewFigureIncludedHolding {
+  return {
+    ...frozenHoldingRef(facts, row),
+    value: moneyOf(row.valueMinor, facts.currency),
+  };
+}
+
+/**
+ * The holding reference for a frozen row (#336's tolerant handling): the frozen
+ * `label` always, and the `holding` ref only when the holding's public id still
+ * exists (it may have been hard-deleted since the snapshot was frozen).
+ */
+function frozenHoldingRef(
+  facts: HistoricalSnapshotFacts,
+  row: SnapshotHoldingRecord,
+): { holding: AgentViewObjectReference } {
+  const publicId = facts.holdingPublicIds.get(row.holdingId);
+  return {
+    holding: {
+      ...(publicId === undefined ? {} : { id: publicId }),
+      label: row.label,
+      object: "holding",
+    } as AgentViewObjectReference,
+  };
 }
 
 // ── Headline figures ──────────────────────────────────────────────────────────
