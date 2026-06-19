@@ -1,4 +1,4 @@
-import { runBootstrapHealthcheck, withStore } from "@worthline/db";
+import { bootstrapHealthcheck, withStore } from "@web/store";
 import { collectWarnings, formatMoneyMinor, listScopeOptions } from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
@@ -39,7 +39,7 @@ export default async function AjustesPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolvedSearchParams = await searchParams;
-  const persistence = runBootstrapHealthcheck();
+  const persistence = await bootstrapHealthcheck();
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
   const currentUrl = buildCurrentUrlFor("/ajustes", resolvedSearchParams);
@@ -47,7 +47,7 @@ export default async function AjustesPage({
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
-  const storeData = withStore((store) => {
+  const storeData = await withStore((store) => {
     const workspace = store.workspace.readWorkspace();
 
     if (!workspace) {
@@ -139,7 +139,7 @@ export default async function AjustesPage({
   const fireScopeConfig = selectedScope ? fireConfig[selectedScope.id] : undefined;
 
   // Build warnings for the shell rail (read from full store to be accurate).
-  const warnings = withStore((store) => {
+  const warnings = await withStore((store) => {
     const assets = store.assets.readAssets();
     const warningOverrides = store.readWarningOverrides();
     return collectWarnings(assets, warningOverrides);

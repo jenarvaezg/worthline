@@ -1,4 +1,4 @@
-import { runBootstrapHealthcheck, withStore } from "@worthline/db";
+import { bootstrapHealthcheck, withStore } from "@web/store";
 import {
   collectWarnings,
   getPriceFreshness,
@@ -54,14 +54,14 @@ export default async function EditarPage({
 }) {
   const { id } = await params;
   const resolvedSearchParams = await searchParams;
-  const persistence = runBootstrapHealthcheck();
+  const persistence = await bootstrapHealthcheck();
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
 
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
-  const storeData = withStore((store) => {
+  const storeData = await withStore((store) => {
     const workspace = store.workspace.readWorkspace();
 
     if (!workspace) {

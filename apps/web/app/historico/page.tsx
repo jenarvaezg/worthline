@@ -1,4 +1,4 @@
-import { runBootstrapHealthcheck, withStore } from "@worthline/db";
+import { bootstrapHealthcheck, withStore } from "@web/store";
 import { listScopeOptions } from "@worthline/domain";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -15,13 +15,13 @@ export default async function HistoricoPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolvedSearchParams = (await searchParams) ?? {};
-  const persistence = runBootstrapHealthcheck();
+  const persistence = await bootstrapHealthcheck();
   const currentUrl = buildCurrentUrl(resolvedSearchParams);
 
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
-  const storeData = withStore((store) => {
+  const storeData = await withStore((store) => {
     const workspace = store.workspace.readWorkspace();
 
     if (!workspace) {
