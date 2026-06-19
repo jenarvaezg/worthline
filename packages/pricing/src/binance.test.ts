@@ -406,6 +406,44 @@ describe("getAllBalances — spot + funding + flexible + locked Earn across rung
     ]);
   });
 
+  it("drops the spot LD mirror of a flexible-Earn position (no double count)", async () => {
+    // Binance lists each Flexible Earn principal a second time in the SPOT account
+    // as an `LD`-prefixed mirror token (LDBTC = the flexible-savings BTC). The Earn
+    // endpoint already reports that principal under its real symbol on the market
+    // rung, so keeping the spot LD line double-counts it. Drop the spot `LD<X>`
+    // line only when a flexible-Earn position for `<X>` exists.
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/v3/account")) {
+        return okJson({
+          balances: [
+            { asset: "LDBTC", free: "0.5", locked: "0" }, // mirror of Earn BTC → dropped
+            { asset: "LDO", free: "10", locked: "0" }, // real Lido token, no Earn match → kept
+            { asset: "ETH", free: "2", locked: "0" }, // plain spot → kept
+          ],
+        });
+      }
+      if (url.includes("/sapi/v1/asset/get-funding-asset")) {
+        return okJson([]);
+      }
+      if (url.includes("/sapi/v1/simple-earn/flexible/position")) {
+        return okJson({ rows: [{ asset: "BTC", totalAmount: "0.55" }], total: 1 });
+      }
+      if (url.includes("/sapi/v1/simple-earn/locked/position")) {
+        return okJson({ rows: [], total: 0 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const balances = await getAllBalances(creds, { nowMs: 1 });
+
+    expect(balances).toEqual([
+      { asset: "LDO", wallet: "spot", balance: "10" },
+      { asset: "ETH", wallet: "spot", balance: "2" },
+      { asset: "BTC", wallet: "flexible-earn", balance: "0.55" },
+    ]);
+  });
+
   it("aborts the whole read if one wallet endpoint fails (spot work is discarded)", async () => {
     // A read-only key/transient outage that fails funding must not partial-commit:
     // getAllBalances rejects, and the action's catch leaves positions untouched.

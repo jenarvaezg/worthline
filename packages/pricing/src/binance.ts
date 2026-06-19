@@ -325,5 +325,21 @@ export async function getAllBalances(
   const funding = await getFundingBalances(credentials, deps);
   const flexibleEarn = await getFlexibleEarnBalances(credentials, deps);
   const lockedEarn = await getLockedEarnBalances(credentials, deps);
-  return [...spot, ...funding, ...flexibleEarn, ...lockedEarn];
+
+  // Binance lists each Flexible Earn principal a SECOND time in the spot account as
+  // an `LD`-prefixed mirror token (LDBTC = the flexible-savings BTC). The flexible
+  // Earn endpoint already reports that same principal under its real symbol on the
+  // market rung, so keeping the spot LD line would double-count it — both land on
+  // `market` and surface as two line items. Drop a spot `LD<X>` balance ONLY when a
+  // flexible-Earn position for `<X>` exists; an LD-prefixed spot token with no Earn
+  // counterpart (e.g. the real `LDO` Lido ticker) is genuine and kept. The historic
+  // SPOT-only snapshot path is untouched — there the LD token is the sole record of
+  // that balance and must still be valued (binance-history.ts).
+  const flexibleAssets = new Set(flexibleEarn.map((line) => line.asset.toUpperCase()));
+  const spotDeduped = spot.filter((line) => {
+    const upper = line.asset.toUpperCase();
+    return !(upper.startsWith("LD") && flexibleAssets.has(upper.slice(2)));
+  });
+
+  return [...spotDeduped, ...funding, ...flexibleEarn, ...lockedEarn];
 }
