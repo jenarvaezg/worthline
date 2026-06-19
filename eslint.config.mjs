@@ -25,12 +25,15 @@ export default defineConfig([
   ...nextVitals,
   ...nextTs,
   {
-    // #361 guardrail (see noUpwardRelativeImport). Scoped to the zones the root
-    // `lint` script covers (apps, packages, tests). NOTE: e2e/ and scripts/ are
-    // not part of the root lint path, so the rule is not enforced there yet —
-    // they currently have zero upward imports; widening the lint path to cover
-    // them is a separate follow-up.
-    files: ["apps/**/*.{ts,tsx}", "packages/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}"],
+    // #361 guardrail (see noUpwardRelativeImport). Covers every zone the root
+    // `lint` script lints: apps, packages, tests, e2e, scripts.
+    files: [
+      "apps/**/*.{ts,tsx}",
+      "packages/**/*.{ts,tsx}",
+      "tests/**/*.{ts,tsx}",
+      "e2e/**/*.ts",
+      "scripts/**/*.ts",
+    ],
     rules: {
       "no-restricted-imports": ["error", { patterns: [noUpwardRelativeImport] }],
     },
