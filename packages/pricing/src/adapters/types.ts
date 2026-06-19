@@ -28,8 +28,12 @@ import type {
   SourcePosition,
 } from "@worthline/domain";
 
-import type { MetalKind } from "../metal";
-import type { NumistaCollectedItem, NumistaPrices, NumistaTypeDetail } from "../numista";
+import type { MetalKind } from "@pricing/metal";
+import type {
+  NumistaCollectedItem,
+  NumistaPrices,
+  NumistaTypeDetail,
+} from "@pricing/numista";
 
 /** A position draft the store will persist (it assigns id + sourceId). Mirrors
  *  the db `SourcePositionInput` shape from domain primitives so the adapter stays

@@ -17,7 +17,7 @@
  * (`coinCollectionValueAtDate`), not by the API.
  */
 
-import type { NumistaCredentials, NumistaToken } from "../numista";
+import type { NumistaCredentials, NumistaToken } from "@pricing/numista";
 import { refreshCoinValuations, syncNumistaCollection } from "./numista-valuation";
 import type {
   ConnectedSourceAdapter,

@@ -17,9 +17,9 @@
  * the local DB only — never logged, never placed in a redirect URL.
  */
 
-import type { BinanceCredentials } from "../binance";
-import { reconstructBinanceHistory } from "../binance-history";
-import { syncBinanceAccount } from "../binance-sync";
+import type { BinanceCredentials } from "@pricing/binance";
+import { reconstructBinanceHistory } from "@pricing/binance-history";
+import { syncBinanceAccount } from "@pricing/binance-sync";
 import { rungForWallet } from "./binance-rung";
 import type { ConnectedSourceAdapter, PositionDraft, SourceHistory } from "./types";
 

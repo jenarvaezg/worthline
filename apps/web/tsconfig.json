@@ -7,8 +7,16 @@
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "module": "ESNext",
     "noEmit": true,
+    // Explicit override because Next/Turbopack does NOT expand the ${configDir}
+    // form used in tsconfig.base.json. @domain/@db/@pricing are NOT for
+    // app-authored imports (those cross the @worthline/* boundary) — they're
+    // needed to resolve the transpiled package source these aliases appear in.
+    // Do not remove them as "unused".
     "paths": {
-      "@web/*": ["${configDir}/app/*"]
+      "@web/*": ["./app/*"],
+      "@domain/*": ["../../packages/domain/src/*"],
+      "@db/*": ["../../packages/db/src/*"],
+      "@pricing/*": ["../../packages/pricing/src/*"]
     },
     "plugins": [
       {

@@ -18,13 +18,21 @@
 
 import type { CoinPosition } from "@worthline/domain";
 
-import { COIN_VALUE_TTL_DAYS, coinValuation, isNumismaticStale } from "../coin-valuation";
-import type { PriceProvider } from "../index";
-import type { MetalKind } from "../metal";
-import { parseComposition, STOOQ_METAL_SYMBOL } from "../metal";
-import { mapCollectedItem } from "../numista";
-import type { NumistaCollectedItem, NumistaPrices, NumistaTypeDetail } from "../numista";
-import { resolveProvider } from "../registry";
+import {
+  COIN_VALUE_TTL_DAYS,
+  coinValuation,
+  isNumismaticStale,
+} from "@pricing/coin-valuation";
+import type { PriceProvider } from "@pricing/index";
+import type { MetalKind } from "@pricing/metal";
+import { parseComposition, STOOQ_METAL_SYMBOL } from "@pricing/metal";
+import { mapCollectedItem } from "@pricing/numista";
+import type {
+  NumistaCollectedItem,
+  NumistaPrices,
+  NumistaTypeDetail,
+} from "@pricing/numista";
+import { resolveProvider } from "@pricing/registry";
 
 /** A coin position ready to persist — the store assigns its id + sourceId. */
 export type PositionDraft = Omit<CoinPosition, "id" | "sourceId">;
