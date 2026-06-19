@@ -9,8 +9,6 @@ import {
   projectPortfolio,
 } from "@worthline/domain";
 import type {
-  ExportedPublicId,
-  ExportedPublicIdEntityType,
   Instrument,
   InvestmentOperation,
   Liability,
@@ -39,6 +37,7 @@ import {
   type AgentViewOperationSummary,
   type AgentViewOwnershipShare,
 } from "./contract";
+import { publicIdMap, requirePublicId, resolveInternalScopeId } from "./scope-resolution";
 import { listAgentViewScopes } from "./scopes";
 
 export const DEFAULT_HOLDING_LIMIT = 25;
@@ -140,25 +139,6 @@ function buildLinks(publicScopeId: string): Record<string, string> {
     snapshots: `${base}/snapshots`,
     trashSummary: `${base}/trash-summary`,
   };
-}
-
-function resolveInternalScopeId(
-  store: AgentViewReadStore,
-  publicScopeId: string,
-): string {
-  const entry = store
-    .readPublicIds()
-    .find((row) => row.entityType === "scope" && row.publicId === publicScopeId);
-
-  if (!entry) {
-    throw new AgentViewHttpError({
-      code: "not_found",
-      message: "Unknown scope.",
-      status: 404,
-    });
-  }
-
-  return entry.entityId;
 }
 
 function toSummary(summary: NetWorthSummary): AgentViewFinancialSummary {
@@ -492,31 +472,6 @@ function clampHoldingLimit(requested: number | undefined): number {
   }
 
   return Math.max(1, Math.min(requested, MAX_HOLDING_LIMIT));
-}
-
-function publicIdMap(
-  publicIds: ExportedPublicId[],
-  entityType: ExportedPublicIdEntityType,
-): Map<string, string> {
-  return new Map(
-    publicIds
-      .filter((row) => row.entityType === entityType)
-      .map((row) => [row.entityId, row.publicId]),
-  );
-}
-
-function requirePublicId(byEntityId: Map<string, string>, entityId: string): string {
-  const publicId = byEntityId.get(entityId);
-
-  if (!publicId) {
-    throw new AgentViewHttpError({
-      code: "internal_error",
-      message: "Agent view public ID registry is incomplete.",
-      status: 500,
-    });
-  }
-
-  return publicId;
 }
 
 function money(value: MoneyMinor): AgentViewMoney {

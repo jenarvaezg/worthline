@@ -3,12 +3,14 @@ import type {
   InvestmentOperation,
   Liability,
   ManualAsset,
+  NetWorthSnapshot,
   SourceAdapter,
   Workspace,
 } from "@worthline/domain";
 
 import { readAgentViewPublicIds } from "./agent-view-public-ids";
 import type { ConnectedSourceRow } from "./connected-source-store";
+import type { SnapshotHoldingQuery, SnapshotHoldingRecord } from "./snapshot-store";
 import type { StoreContext } from "./store-context";
 
 /**
@@ -39,6 +41,10 @@ export interface AgentViewReadStore {
   readLiabilities: () => Liability[];
   readOperations: (assetId: string) => InvestmentOperation[];
   readConnectedSources: () => AgentViewConnectedSource[];
+  /** Frozen snapshots for a scope, chronological (snapshot-store ordering). */
+  readSnapshots: (scopeId: string) => NetWorthSnapshot[];
+  /** Frozen holding rows, optionally filtered by scope and date-key window. */
+  readSnapshotHoldings: (query: SnapshotHoldingQuery) => SnapshotHoldingRecord[];
 }
 
 export interface AgentViewReadStoreDeps {
@@ -47,6 +53,8 @@ export interface AgentViewReadStoreDeps {
   readOperations: (assetId: string) => InvestmentOperation[];
   listConnectedSources: () => ConnectedSourceRow[];
   listSourceAssetIds: (sourceId: string) => string[];
+  readSnapshots: (scopeId: string) => NetWorthSnapshot[];
+  readSnapshotHoldings: (query: SnapshotHoldingQuery) => SnapshotHoldingRecord[];
 }
 
 export function createAgentViewReadStore(
@@ -67,5 +75,7 @@ export function createAgentViewReadStore(
         label: row.label,
         lastSyncAt: row.lastSyncAt,
       })),
+    readSnapshots: (scopeId) => deps.readSnapshots(scopeId),
+    readSnapshotHoldings: (query) => deps.readSnapshotHoldings(query),
   };
 }
