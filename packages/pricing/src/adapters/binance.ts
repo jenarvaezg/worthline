@@ -1,31 +1,46 @@
 /**
- * The Binance connected-source adapter — MINIMAL SHIM for #319 (ADR 0027).
+ * The Binance connected-source adapter (ADR 0021/0027, #322).
  *
- * #319 migrates ONLY Numista behind the generic lifecycle. This shim exists so the
- * provider-agnostic store (`connected-source-store.ts`) can resolve a Binance row's
- * instrument/term-locked-suffix metadata off an adapter (instead of the old
- * `instrumentForAdapter`/`frozenInstrumentForAdapter` switch + the hardcoded
- * "(bloqueado)" label) WITHOUT changing any Binance behaviour. It carries exactly
- * today's facts:
- *   - liveInstrument `crypto` / frozenInstrument `other`  (instrumentForAdapter)
- *   - termLockedSuffix "(bloqueado)"                      (the store's old literal)
- *   - classifyRung = rungForWallet                        (today's wallet→rung map)
+ * Binance mirrors a LIVE-valued crypto account (ADR 0021): one `crypto` holding per
+ * occupied liquidity rung — spot/funding/flexible-Earn on the MARKET rung, locked
+ * Earn on the TERM-LOCKED rung — each worth `Σ balance × live price`. A
+ * disconnect-freeze flips every rung holding to a hand-valued `other` one.
  *
- * #322 OWNS THE REST: moving Binance connect/sync/disconnect onto the generic
- * lifecycle, folding the real credential parsing + `listPositions`/`buildHistory`
- * (syncBinanceAccount / reconstructBinanceHistory) into this adapter, and relocating
- * `rungForWallet` out of `@worthline/domain`. Until then the Binance ACTION path is
- * untouched and these IO methods are intentionally unused (the store reads only the
- * metadata above + classifyRung); calling them throws to flag the #322 gap.
+ * The adapter owns ONLY Binance-specific parsing + the API surface + the wallet→rung
+ * map (relocated here out of `@worthline/domain`, #322). Its `listPositions` /
+ * `buildHistory` DELEGATE to the existing `binance-sync.ts` / `binance-history.ts`
+ * orchestrators (each injects its network reads from the context). `revalue` is null:
+ * Binance has no in-place revalue — its revalue is a full re-list, so the lifecycle
+ * re-syncs (the daily stale-price pass, `binance-refresh.ts`).
+ *
+ * The API key + secret are SECRETS (ADR 0021): serialized into credentialsJson for
+ * the local DB only — never logged, never placed in a redirect URL.
  */
 
 import type { BinanceCredentials } from "../binance";
-import { rungForWallet } from "@worthline/domain";
+import { reconstructBinanceHistory } from "../binance-history";
+import { syncBinanceAccount } from "../binance-sync";
+import { rungForWallet } from "./binance-rung";
+import type { ConnectedSourceAdapter, PositionDraft, SourceHistory } from "./types";
 
-import type { ConnectedSourceAdapter } from "./types";
+export { rungForWallet } from "./binance-rung";
 
 /** Binance credentials: the API key + secret (both SECRETS, the secret signs). */
 export type BinanceCreds = BinanceCredentials;
+
+/**
+ * Normalize a pasted key + secret, returning null when either is blank. Both are
+ * trimmed; a Binance source needs both (the key for the header, the secret for
+ * signing), so a missing half is a no-go.
+ */
+function normalizeCreds(apiKey: unknown, apiSecret: unknown): BinanceCreds | null {
+  const key = String(apiKey ?? "").trim();
+  const secret = String(apiSecret ?? "").trim();
+  if (key === "" || secret === "") {
+    return null;
+  }
+  return { apiKey: key, apiSecret: secret };
+}
 
 export const binanceAdapter: ConnectedSourceAdapter<BinanceCreds, null> = {
   tag: "binance",
@@ -33,32 +48,63 @@ export const binanceAdapter: ConnectedSourceAdapter<BinanceCreds, null> = {
   frozenInstrument: "other",
   termLockedSuffix: "(bloqueado)",
 
-  // ── #322: credential parsing folds in from binance-helpers.ts. ──
-  parseConnectForm() {
-    throw new Error("Binance adapter: connect lifecycle is #322; use binance-actions.");
-  },
-  serializeCredentials() {
-    throw new Error("Binance adapter: connect lifecycle is #322; use binance-actions.");
-  },
-  readCredentials() {
-    throw new Error("Binance adapter: sync lifecycle is #322; use binance-actions.");
+  // ── Credential parsing (folded in from binance-helpers.ts, #322). ──
+  parseConnectForm(form) {
+    return normalizeCreds(form.get("apiKey"), form.get("apiSecret"));
   },
 
-  // ── #322: listPositions folds in syncBinanceAccount. ──
-  async listPositions() {
-    throw new Error("Binance adapter: sync lifecycle is #322; use binance-actions.");
+  serializeCredentials(creds) {
+    return JSON.stringify({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
   },
 
-  // The ONE Binance fact the store needs today: the relocated wallet→rung map.
-  // #322 moves `rungForWallet` out of @worthline/domain into here.
+  readCredentials(credentialsJson) {
+    try {
+      const parsed = JSON.parse(credentialsJson) as {
+        apiKey?: unknown;
+        apiSecret?: unknown;
+      };
+      return normalizeCreds(parsed.apiKey, parsed.apiSecret);
+    } catch {
+      return null;
+    }
+  },
+
+  // ── Position listing: list ALL wallet balances + price each live (#322). ──
+  // The signed balance reader + the CoinGecko price reader are wired into the
+  // context by the lifecycle; the rung is stamped per draft by `syncBinanceAccount`
+  // via the relocated `rungForWallet` (so one source spans rungs, ADR 0016/0021).
+  async listPositions(ctx): Promise<PositionDraft[]> {
+    if (!ctx.listBalances || !ctx.priceEur) {
+      throw new Error("Binance listPositions requires the balance + price readers.");
+    }
+    return syncBinanceAccount({
+      listBalances: ctx.listBalances,
+      priceEur: ctx.priceEur,
+    });
+  },
+
+  // The wallet→rung map relocated out of @worthline/domain (#322): a token's rung
+  // is its wallet's rung (spot/funding/flexible-earn → market; locked-earn/staking
+  // → term-locked). A coin (non-Binance) never reaches here, but for totality it
+  // defaults to market.
   classifyRung(position) {
     return position.kind === "token" ? rungForWallet(position.wallet) : "market";
   },
 
   // Binance has no in-place revalue — its revalue is a full re-list (the lifecycle
-  // re-syncs). Preserved for #322.
+  // re-syncs). See `binance-refresh.ts` (the daily stale-price re-sync).
   revalue: null,
 
-  // ── #322: buildHistory folds in reconstructBinanceHistory. ──
-  buildHistory: null,
+  // ── Monthly history: reconstruct the API-bounded curve (#322). ──
+  // Delegates to `reconstructBinanceHistory`; the signed snapshot reader + the
+  // CoinGecko range reader are wired into the context by the lifecycle's afterWrite.
+  async buildHistory(ctx): Promise<SourceHistory> {
+    if (!ctx.accountSnapshots || !ctx.historicalPriceEur) {
+      throw new Error("Binance buildHistory requires the snapshot + history readers.");
+    }
+    return reconstructBinanceHistory({
+      accountSnapshots: ctx.accountSnapshots,
+      historicalPriceEur: ctx.historicalPriceEur,
+    });
+  },
 };

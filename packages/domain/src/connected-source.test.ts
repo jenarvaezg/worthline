@@ -18,7 +18,6 @@ import {
   instrumentForAdapter,
   positionValue,
   projectConnectedSource,
-  rungForWallet,
 } from "./connected-source";
 import type { CoinPosition, ConnectedSource, TokenPosition } from "./connected-source";
 import { defaultsFor } from "./instrument-catalog";
@@ -292,22 +291,8 @@ describe("projectConnectedSource — Binance tokens roll up live-valued (ADR 002
   });
 });
 
-describe("rungForWallet — Binance wallet → liquidity rung (ADR 0016, S3)", () => {
-  test("spot, funding and flexible-earn are market-liquid", () => {
-    expect(rungForWallet("spot")).toBe("market");
-    expect(rungForWallet("funding")).toBe("market");
-    expect(rungForWallet("flexible-earn")).toBe("market");
-  });
-
-  test("locked-earn and staking are term-locked", () => {
-    expect(rungForWallet("locked-earn")).toBe("term-locked");
-    expect(rungForWallet("staking")).toBe("term-locked");
-  });
-
-  test("an unforeseen wallet defaults to market (most conservative claim)", () => {
-    expect(rungForWallet("mystery")).toBe("market");
-  });
-});
+// rungForWallet moved to the Binance adapter (#322, ADR 0027) — its tests now live
+// in packages/pricing/src/adapters/binance.test.ts (a Binance fact, not domain).
 
 describe("instrumentForAdapter — the holding instrument a source projects into", () => {
   test("Numista projects a coin_collection; Binance a crypto holding", () => {
