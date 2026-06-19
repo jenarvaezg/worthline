@@ -43,12 +43,12 @@ import {
   resolveScopeMemberIds,
   selectInvestmentPrice,
 } from "@worthline/domain";
-import Database from "better-sqlite3";
 import type { Database as DatabaseConnection } from "better-sqlite3";
 import { and, asc, eq, isNotNull, like } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/better-sqlite3";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+
+import { loadDatabaseCtor, openDrizzle } from "./native-sqlite";
 
 import {
   amortizationPlans,
@@ -604,11 +604,11 @@ export function runBootstrapHealthcheck(
   const databasePath = resolveDatabasePath(options);
   mkdirSync(dirname(databasePath), { recursive: true });
 
-  const sqlite = new Database(databasePath);
+  const sqlite = new (loadDatabaseCtor())(databasePath);
   try {
     migrate(sqlite);
 
-    const db = drizzle(sqlite);
+    const db = openDrizzle(sqlite);
     const checkedAt = (options.now ?? (() => new Date()))().toISOString();
 
     db.insert(appSettings)
@@ -659,7 +659,7 @@ export function runBootstrapHealthcheck(
  * (or use withStore with the store directly).
  */
 export function createInMemoryStore(): WorthlineStore {
-  const sqlite = new Database(":memory:");
+  const sqlite = new (loadDatabaseCtor())(":memory:");
   const migrateResult = migrate(sqlite);
   return buildStore(sqlite, migrateResult);
 }
@@ -682,7 +682,7 @@ export function createWorthlineStore(
   const databasePath = resolveDatabasePath(options);
   mkdirSync(dirname(databasePath), { recursive: true });
 
-  const sqlite = new Database(databasePath);
+  const sqlite = new (loadDatabaseCtor())(databasePath);
   const migrateResult = migrate(sqlite);
   return buildStore(sqlite, migrateResult);
 }

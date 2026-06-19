@@ -24,3 +24,6 @@ playwright-report-demo/
 
 transcript.txt
 .playwright-mcp/
+
+# Vercel CLI local artifacts
+.vercel

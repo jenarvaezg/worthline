@@ -11,8 +11,9 @@ import type {
 import { createLiability, projectAssets } from "@worthline/domain";
 import type { Database as DatabaseConnection } from "better-sqlite3";
 import { and, asc, eq, isNull } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/better-sqlite3";
 import { randomUUID } from "node:crypto";
+
+import { openDrizzle } from "./native-sqlite";
 
 import {
   agentViewPublicIds,
@@ -28,7 +29,7 @@ import {
 } from "./schema";
 
 /** The shared drizzle query builder type, bound to the better-sqlite3 driver. */
-export type StoreDb = ReturnType<typeof drizzle>;
+export type StoreDb = ReturnType<typeof openDrizzle>;
 
 /**
  * Shared substrate for every extracted *-Store (R1–R5 of the architectural
@@ -85,7 +86,7 @@ export function createStoreContext(
   let cachedWorkspace: Workspace | null | undefined;
 
   // One drizzle instance per store lifetime, bound to the shared connection.
-  const db = drizzle(sqlite);
+  const db = openDrizzle(sqlite);
 
   return {
     sqlite,
