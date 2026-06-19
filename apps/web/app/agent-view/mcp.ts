@@ -1,7 +1,10 @@
 import type {
   AgentViewEnvelope,
   AgentViewFinancialContext,
+  AgentViewHoldingDetail,
   AgentViewIncludeHoldingRows,
+  AgentViewOperation,
+  AgentViewOperationSort,
   AgentViewScope,
   AgentViewSnapshotEntry,
   AgentViewSnapshotGranularity,
@@ -52,6 +55,26 @@ export interface GetSnapshotHistoryInput {
   includeHoldingRows?: AgentViewIncludeHoldingRows;
 }
 
+export interface GetHoldingDetailInput {
+  /** Public holding ID (`wl_hld_…`). */
+  holdingId: string;
+}
+
+export interface GetOperationsInput {
+  /** Public holding ID (`wl_hld_…`) of an investment holding. */
+  holdingId: string;
+  /** Inclusive `YYYY-MM-DD` lower bound. */
+  from?: string;
+  /** Inclusive `YYYY-MM-DD` upper bound. */
+  to?: string;
+  /** Newest-first (`-date`, default) or chronological (`date`). */
+  sort?: AgentViewOperationSort;
+  /** Page size (default 100, max 500). */
+  limit?: number;
+  /** Opaque cursor from a previous page's `meta.nextCursor`. */
+  cursor?: string;
+}
+
 export interface AgentViewMcpToolCatalog {
   list_scopes: AgentViewMcpTool<
     Record<string, never>,
@@ -65,6 +88,14 @@ export interface AgentViewMcpToolCatalog {
     GetSnapshotHistoryInput,
     AgentViewEnvelope<AgentViewSnapshotEntry[]>
   >;
+  get_holding_detail: AgentViewMcpTool<
+    GetHoldingDetailInput,
+    AgentViewEnvelope<AgentViewHoldingDetail>
+  >;
+  get_operations: AgentViewMcpTool<
+    GetOperationsInput,
+    AgentViewEnvelope<AgentViewOperation[]>
+  >;
 }
 
 const EMPTY_INPUT_SCHEMA: AgentViewMcpInputSchema = {
@@ -74,6 +105,7 @@ const EMPTY_INPUT_SCHEMA: AgentViewMcpInputSchema = {
 };
 
 const SCOPES_PATH = "/api/v1/agent-view/scopes";
+const HOLDINGS_PATH = "/api/v1/agent-view/holdings";
 
 export function createAgentViewMcpToolCatalog(
   client: AgentViewApiClient,
@@ -99,6 +131,45 @@ export function createAgentViewMcpToolCatalog(
         );
       },
       name: "get_financial_context",
+    },
+    get_holding_detail: {
+      description:
+        "Get one holding's full detail by its public ID: value, ownership, instrument, valuation method, liquidity tier, and (for investments) an operation summary.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          holdingId: { type: "string" },
+        },
+        required: ["holdingId"],
+        type: "object",
+      },
+      invoke: (input) =>
+        client.get(`${HOLDINGS_PATH}/${encodeURIComponent(input.holdingId)}`),
+      name: "get_holding_detail",
+    },
+    get_operations: {
+      description:
+        "Get an investment holding's operations (buys and sells) with date filters and cursor pagination; newest-first by default. Non-investment holdings are rejected.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          cursor: { type: "string" },
+          from: { type: "string" },
+          holdingId: { type: "string" },
+          limit: { maximum: 500, minimum: 1, type: "integer" },
+          sort: { enum: ["date", "-date"], type: "string" },
+          to: { type: "string" },
+        },
+        required: ["holdingId"],
+        type: "object",
+      },
+      invoke: (input) => {
+        const query = operationsQuery(input);
+        return client.get(
+          `${HOLDINGS_PATH}/${encodeURIComponent(input.holdingId)}/operations${query}`,
+        );
+      },
+      name: "get_operations",
     },
     get_snapshot_history: {
       description:
@@ -147,6 +218,18 @@ function snapshotHistoryQuery(input: GetSnapshotHistoryInput): string {
   if (input.includeHoldingRows !== undefined) {
     params.set("includeHoldingRows", input.includeHoldingRows);
   }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+/** Serialize the operations input into the API's query string (omitting `holdingId`). */
+function operationsQuery(input: GetOperationsInput): string {
+  const params = new URLSearchParams();
+  if (input.from !== undefined) params.set("from", input.from);
+  if (input.to !== undefined) params.set("to", input.to);
+  if (input.sort !== undefined) params.set("sort", input.sort);
+  if (input.limit !== undefined) params.set("limit", String(input.limit));
+  if (input.cursor !== undefined) params.set("cursor", input.cursor);
   const query = params.toString();
   return query ? `?${query}` : "";
 }

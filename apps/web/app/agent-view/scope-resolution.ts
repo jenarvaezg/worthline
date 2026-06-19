@@ -27,6 +27,30 @@ export function resolveInternalScopeId(
   return entry.entityId;
 }
 
+/**
+ * Resolve a public holding ID (`wl_hld_…`) to its internal asset/liability id via
+ * the public-ID registry (a reverse lookup over the `holding` rows). A missing
+ * entry means the caller named a holding that does not exist, so it is a `404`.
+ */
+export function resolveInternalHoldingId(
+  store: AgentViewReadStore,
+  publicHoldingId: string,
+): string {
+  const internalId = [...publicIdMap(store.readPublicIds(), "holding").entries()].find(
+    ([, publicId]) => publicId === publicHoldingId,
+  )?.[0];
+
+  if (internalId === undefined) {
+    throw new AgentViewHttpError({
+      code: "not_found",
+      message: "Unknown holding.",
+      status: 404,
+    });
+  }
+
+  return internalId;
+}
+
 /** Index the public-ID registry rows of one entity type by their internal id. */
 export function publicIdMap(
   publicIds: ExportedPublicId[],

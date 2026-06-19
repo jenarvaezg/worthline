@@ -174,6 +174,72 @@ export interface AgentViewFinancialContext {
   links: Record<string, string>;
 }
 
+/**
+ * Minimal data-quality summary for a single holding (PRD #328, #337). Kept to a
+ * boolean here — the full data-quality taxonomy is issue #341.
+ */
+export interface AgentViewHoldingQualitySummary {
+  hasWarnings: boolean;
+}
+
+/**
+ * The connected source backing a single holding, when one materialized it
+ * (PRD #328, #337). Never includes credentials or tokens.
+ */
+export interface AgentViewHoldingSourceSummary {
+  label: string;
+  adapter: string;
+  lastSyncAt: string | null;
+}
+
+/**
+ * One holding's full detail (PRD #328, #337). Reuses the compact summary's
+ * fields and adds the quality summary, plus the operation summary and source
+ * summary when applicable. Deep valuation/debt facts (amortization, anchors,
+ * appreciation) are issue #338.
+ */
+export interface AgentViewHoldingDetail {
+  id: string;
+  object: "holding";
+  direction: AgentViewHoldingDirection;
+  label: string;
+  instrument: string;
+  valuationMethod: string;
+  liquidityTier: AgentViewLiquidityTier;
+  currentValue: AgentViewMoney;
+  ownership: AgentViewOwnershipShare[];
+  qualitySummary: AgentViewHoldingQualitySummary;
+  /** Present only for investment holdings with recorded operations. */
+  operationSummary?: AgentViewOperationSummary;
+  /** Present only when a connected source materialized this holding. */
+  sourceSummary?: AgentViewHoldingSourceSummary;
+}
+
+export type AgentViewOperationSort = "date" | "-date";
+
+/**
+ * One investment operation row (PRD #328, #337). Units and price are decimal
+ * strings; `grossAmount` is units × price as money (raw ledger amount, not
+ * scope-weighted). `id` is derived from the stable internal operation id.
+ */
+export interface AgentViewOperation {
+  id: string;
+  object: "operation";
+  /** Execution date, as `YYYY-MM-DD`. */
+  date: string;
+  kind: "buy" | "sell";
+  units: string;
+  pricePerUnit: string;
+  grossAmount: AgentViewMoney;
+  fees: AgentViewMoney;
+}
+
+/** Cursor-paginated operations for an investment holding (PRD #328, #337). */
+export interface AgentViewOperationPage {
+  operations: AgentViewOperation[];
+  meta: AgentViewPaginationMeta;
+}
+
 export type AgentViewSnapshotGranularity = "monthly-close" | "raw";
 
 export type AgentViewIncludeHoldingRows = "none" | "summary" | "full";
