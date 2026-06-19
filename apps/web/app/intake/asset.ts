@@ -3,7 +3,7 @@ import type { AddValuationAnchorInput } from "@worthline/db";
 import type { CreateManualAssetInput, Member } from "@worthline/domain";
 import { parseDecimalStrict } from "@worthline/domain";
 
-import { parseIsoDateField, parsePercentToDecimal } from "../intake-primitives";
+import { parseIsoDateField, parsePercentToDecimal } from "@web/intake-primitives";
 import {
   createStableId,
   parseMoneyMinorField,

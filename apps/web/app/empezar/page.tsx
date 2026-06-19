@@ -1,8 +1,8 @@
 import { withStore } from "@worthline/db";
 import { redirect } from "next/navigation";
 
-import ImportWorkspaceForm from "../import-workspace-form";
-import { parseFormError } from "../intake";
+import ImportWorkspaceForm from "@web/import-workspace-form";
+import { parseFormError } from "@web/intake";
 import { initHogarAction, initSoloAction } from "./actions";
 
 export const dynamic = "force-dynamic";

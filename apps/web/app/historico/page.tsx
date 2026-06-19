@@ -3,8 +3,8 @@ import { listScopeOptions } from "@worthline/domain";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { buildCurrentUrl, parseScopeCookie, SCOPE_COOKIE_NAME } from "../intake";
-import Shell from "../shell";
+import { buildCurrentUrl, parseScopeCookie, SCOPE_COOKIE_NAME } from "@web/intake";
+import Shell from "@web/shell";
 import { buildHistoricoRows, HistoricoTable } from "./historico-table";
 
 export const dynamic = "force-dynamic";

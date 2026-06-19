@@ -6,7 +6,7 @@ import {
   parseMoneyMinor,
   resolveOwnershipSplit,
   type ShortfallCompletion,
-} from "../intake-primitives";
+} from "@web/intake-primitives";
 
 /**
  * Shared parse helpers composed by every per-instrument parser family

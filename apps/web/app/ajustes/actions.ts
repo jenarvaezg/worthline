@@ -18,7 +18,7 @@ import {
   parseFireConfigFormStrict,
   parseNewMember,
   SCOPE_COOKIE_NAME,
-} from "../intake";
+} from "@web/intake";
 
 const BASE = "/ajustes";
 

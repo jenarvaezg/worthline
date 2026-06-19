@@ -10,13 +10,13 @@
 import type { ValuationAnchorRecord } from "@worthline/db";
 import { formatMoneyInput, formatMoneyMinor } from "@worthline/domain";
 
-import type { FormErrorContext } from "../../../../intake";
+import type { FormErrorContext } from "@web/intake";
 import {
   addValuationAnchorAction,
   deleteValuationAnchorAction,
   setAppreciationRateAction,
   updateValuationAnchorAction,
-} from "../../../actions";
+} from "@web/patrimonio/actions";
 
 /** Render a stored decimal rate ("0.03") back as the percent the user typed ("3"). */
 function rateToPercentInput(rate: string | null): string {

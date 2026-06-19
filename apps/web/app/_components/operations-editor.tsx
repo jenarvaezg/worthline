@@ -15,8 +15,8 @@
 import { formatMoneyMinor } from "@worthline/domain";
 import type { InvestmentOperation, PriceFreshnessState } from "@worthline/domain";
 
-import { priceFreshnessLabel } from "../intake";
-import type { FormErrorContext } from "../intake";
+import { priceFreshnessLabel } from "@web/intake";
+import type { FormErrorContext } from "@web/intake";
 
 export interface OperationsEditorContext {
   /** The current units held, as derived from the operations (PositionView). */

@@ -11,7 +11,7 @@ import {
   refreshStaleCoinValuations,
   type CoinSourceRef,
   type RefreshCoinValuationsResult,
-} from "../refresh-coin-valuations";
+} from "@web/refresh-coin-valuations";
 import { parseNumistaToken, readApiKey } from "./numista-helpers";
 
 /**

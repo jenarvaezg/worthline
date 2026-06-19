@@ -24,7 +24,7 @@ import {
 } from "@worthline/pricing";
 import { redirect } from "next/navigation";
 
-import type { FormErrorContext } from "../intake";
+import type { FormErrorContext } from "@web/intake";
 import {
   createStableId,
   errorRedirectUrl,
@@ -36,7 +36,7 @@ import {
   preserveFields,
   statementLoadedRedirectUrl,
   successRedirectUrl,
-} from "../intake";
+} from "@web/intake";
 
 // Field lists for error-preserve round-trips
 

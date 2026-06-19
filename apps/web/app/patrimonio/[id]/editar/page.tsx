@@ -11,14 +11,14 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import OperationsEditor from "../../../_components/operations-editor";
-import { detailRefreshCaption } from "../../../price-refresh";
+import OperationsEditor from "@web/_components/operations-editor";
+import { detailRefreshCaption } from "@web/price-refresh";
 import {
   parseFormError,
   parseScopeCookie,
   resolveOkMessage,
   SCOPE_COOKIE_NAME,
-} from "../../../intake";
+} from "@web/intake";
 import {
   confirmStatementAction,
   deleteOperationAction,
@@ -26,13 +26,13 @@ import {
   recordOperationAction,
   type StatementPreviewState,
   updateInvestmentAction,
-} from "../../../inversiones/actions";
-import Shell from "../../../shell";
+} from "@web/inversiones/actions";
+import Shell from "@web/shell";
 import {
   acknowledgeWarningAction,
   deleteAssetAction,
   deleteLiabilityAction,
-} from "../../actions";
+} from "@web/patrimonio/actions";
 import { BinanceHoldingSection } from "./_surfaces/binance-holding-section";
 import { tokenPositionsOnRung } from "./_surfaces/binance-holding-view";
 import { CoinCollectionSection } from "./_surfaces/coin-collection-section";

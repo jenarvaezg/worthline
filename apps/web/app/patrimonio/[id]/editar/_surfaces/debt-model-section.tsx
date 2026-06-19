@@ -18,7 +18,7 @@ import type {
 import { firstCuota, formatMoneyInput, formatMoneyMinor } from "@worthline/domain";
 import type { DebtModel, EarlyRepaymentMode } from "@worthline/domain";
 
-import type { FormErrorContext } from "../../../../intake";
+import type { FormErrorContext } from "@web/intake";
 import { PlanDateFields } from "./plan-date-fields";
 import {
   addBalanceAnchorAction,
@@ -33,7 +33,7 @@ import {
   updateBalanceAnchorAction,
   updateEarlyRepaymentAction,
   updateInterestRateRevisionAction,
-} from "../../../actions";
+} from "@web/patrimonio/actions";
 
 /** Render a stored decimal rate ("0.025") back as the percent the user typed ("2.5"). */
 function rateToPercent(rate: string): string {

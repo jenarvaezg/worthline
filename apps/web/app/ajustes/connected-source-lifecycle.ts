@@ -12,7 +12,7 @@ import {
   errorRedirectUrl,
   parseScopeCookie,
   SCOPE_COOKIE_NAME,
-} from "../intake";
+} from "@web/intake";
 import { resolveConnectingOwnership } from "./numista-helpers";
 
 /**

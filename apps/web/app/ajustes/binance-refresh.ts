@@ -10,7 +10,7 @@ import {
   refreshStaleBinanceSources,
   type BinanceSourceRef,
   type RefreshBinanceSourcesResult,
-} from "../refresh-binance-sources";
+} from "@web/refresh-binance-sources";
 
 /**
  * Production wiring for the Binance live-revalue refresh (PRD #245 S4, issue #249,

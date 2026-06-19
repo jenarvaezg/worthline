@@ -1,7 +1,7 @@
 import { withStore } from "@worthline/db";
 import type { NextRequest, NextResponse } from "next/server";
 
-import { handleGetFinancialContext } from "../../../../../../agent-view/http";
+import { handleGetFinancialContext } from "@web/agent-view/http";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

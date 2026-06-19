@@ -19,7 +19,7 @@ import {
   parseMoneyMinorField,
   preserveFields,
   successRedirectUrl,
-} from "../intake";
+} from "@web/intake";
 import { persistManualAssetCreation } from "./persist-holding";
 
 /**
