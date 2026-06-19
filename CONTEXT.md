@@ -142,14 +142,15 @@ _Avoid_: import (the full-workspace replace), pisar, sync (a connected source's 
 **Valuation anchor**:
 A declared value of a **holding** at a specific date. Used to reconstruct historical
 values for **snapshots**. Two kinds: **market appraisal** (reflects market movement,
-adjusts the interpolation curve) and **improvement** (discrete value increment such
+a control point on the appreciation curve) and **improvement** (discrete value increment such
 as a renovation, does not alter the underlying appreciation rate).
 _Avoid_: price point, historical value (too vague).
 
 **Market appraisal**:
 A **valuation anchor** that reflects what the market actually pays for the asset on
-that date. When present, it becomes a control point for linear interpolation between
-appraisals, overriding the declared **appreciation rate** in that segment. The
+that date. When present, it becomes a control point that overrides the declared
+**appreciation rate** in that segment; between control points the curve is sampled
+on the first of each month by default (see **Valuation cadence**). The
 appraised value is the total truth — it already includes any prior **improvements**.
 UI label: "Tasación de mercado".
 
@@ -162,14 +163,18 @@ UI label: "Mejora".
 **Appreciation rate**:
 An annual percentage declared by the user to extrapolate a holding's value where no
 **market appraisal** exists (before the first appraisal or after the last). Between
-two appraisals, linear interpolation takes precedence. UI label: "Revalorización anual".
+two appraisals, the appraised control points define the curve. By default the curve
+is sampled on the first of each month and held flat through it (a **valuation cadence**
+of `step`); the `interpolated` opt-in restores continuous daily drift. UI label:
+"Revalorización anual".
 
 **Debt model**:
 The calculation method for a liability's historical balance. Three kinds:
 **amortizable** (French amortization schedule from declared conditions),
-**revolving** (manual balance with **balance anchors**, linear interpolation between
-them), and **informal** (partial payments as balance anchors, step function — no
-interpolation). Stored on the liability.
+**revolving** (manual balance with **balance anchors**) and **informal** (partial
+payments as balance anchors). All three step between their events by default — the
+balance holds the last cuota or anchor and moves only on the next; see **Valuation
+cadence** for the per-holding `interpolated` opt-in. Stored on the liability.
 
 **Amortization plan**:
 The declared conditions of an **amortizable** debt: initial capital, annual interest
@@ -200,8 +205,22 @@ _Avoid_: overpayment.
 
 **Balance anchor**:
 A declared outstanding balance of a **revolving** or **informal** debt at a specific
-date. For revolving debts the system interpolates linearly between anchors; for
-informal debts the balance stays constant until the next anchor (step function).
+date. By default the balance steps — it holds the most recent anchor's value until
+the next — for both kinds; a **revolving** debt can opt into linear interpolation
+between anchors via its **valuation cadence**. An **informal** debt is always a step.
+
+**Valuation cadence**:
+Whether a **holding** whose value comes from a model changes in **steps** on its event
+dates (the default) or by **linear interpolation** between them (an opt-in). Applies to
+the modeled **valuation methods**: an **amortizable** debt steps on each cuota, a
+**revolving** debt on each **balance anchor**, and a real-estate asset's drift is
+resampled on the first of each month. It is ignored for market-priced holdings, whose
+daily movement is a real **price**, not interpolation, and for **informal** debts, which
+are always a step. Set per holding in its advanced editing surface; absent means `step`.
+A backdated change re-derives history like any parameter edit (**ripple recalculation**).
+See ADR 0031.
+_Avoid_: granularity, frequency (the **snapshot** cadence — at most one per day, ADR 0005 —
+is a separate thing).
 
 **Liquidity ladder**:
 The ordered classification of holdings by how quickly and cheaply they convert to cash —
