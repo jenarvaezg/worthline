@@ -3,10 +3,10 @@ import { NextRequest } from "next/server";
 
 import { createWorthlineStore } from "@worthline/db";
 import { captureValuedNetWorthSnapshot } from "@worthline/domain";
-import { GET as getScopes } from "../apps/web/app/api/v1/agent-view/scopes/route";
-import { GET as getSnapshots } from "../apps/web/app/api/v1/agent-view/scopes/[scopeId]/snapshots/route";
-import { createAgentViewMcpToolCatalog } from "../apps/web/app/agent-view/mcp";
-import type { AgentViewApiClient } from "../apps/web/app/agent-view/mcp";
+import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
+import { GET as getSnapshots } from "@web/api/v1/agent-view/scopes/[scopeId]/snapshots/route";
+import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
+import type { AgentViewApiClient } from "@web/agent-view/mcp";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
 
 const ORIGINAL_DB_PATH = process.env.WORTHLINE_DB_PATH;

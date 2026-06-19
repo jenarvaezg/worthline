@@ -21,7 +21,7 @@ import {
   updateLiabilityBalanceAction,
   updateAssetValuationAction,
   editAssetAction,
-} from "../apps/web/app/patrimonio/actions";
+} from "@web/patrimonio/actions";
 import { catchRedirect, fd } from "./helpers";
 
 // ------------------------------------------------------------- test fixtures --

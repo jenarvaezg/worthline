@@ -19,10 +19,7 @@ const withStoreSpy = vi.hoisted(() =>
 );
 vi.mock("@worthline/db", () => ({ withStore: withStoreSpy }));
 
-import {
-  previewImportAction,
-  type ImportPreviewState,
-} from "../apps/web/app/ajustes/actions";
+import { previewImportAction, type ImportPreviewState } from "@web/ajustes/actions";
 
 // ------------------------------------------------------------------ helpers --
 

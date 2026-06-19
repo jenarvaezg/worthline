@@ -2,11 +2,11 @@ import { afterEach, describe, expect, test } from "vitest";
 import { NextRequest } from "next/server";
 
 import { createWorthlineStore } from "@worthline/db";
-import { GET as getScopes } from "../apps/web/app/api/v1/agent-view/scopes/route";
-import { GET as getHolding } from "../apps/web/app/api/v1/agent-view/holdings/[holdingId]/route";
-import { GET as getOperations } from "../apps/web/app/api/v1/agent-view/holdings/[holdingId]/operations/route";
-import { createAgentViewMcpToolCatalog } from "../apps/web/app/agent-view/mcp";
-import type { AgentViewApiClient } from "../apps/web/app/agent-view/mcp";
+import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
+import { GET as getHolding } from "@web/api/v1/agent-view/holdings/[holdingId]/route";
+import { GET as getOperations } from "@web/api/v1/agent-view/holdings/[holdingId]/operations/route";
+import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
+import type { AgentViewApiClient } from "@web/agent-view/mcp";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
 
 const ORIGINAL_DB_PATH = process.env.WORTHLINE_DB_PATH;
@@ -84,7 +84,7 @@ async function holdingIdByLabel(scopeId: string, label: string): Promise<string>
   // target under test, so derive the id from the financial-context holdings.
   const body = await (
     await (
-      await import("../apps/web/app/api/v1/agent-view/scopes/[scopeId]/financial-context/route")
+      await import("@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route")
     ).GET(authedRequest(`/api/v1/agent-view/scopes/${scopeId}/financial-context`), {
       params: Promise.resolve({ scopeId }),
     })
