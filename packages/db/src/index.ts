@@ -159,7 +159,10 @@ export type {
   UpdateInterestRateRevisionInput,
   UpdateLiabilityInput,
 } from "./liability-store";
-export type { AgentViewReadStore } from "./agent-view-read-store";
+export type {
+  AgentViewConnectedSource,
+  AgentViewReadStore,
+} from "./agent-view-read-store";
 export type {
   ConnectSourceInput,
   ConnectedSourceRow,
@@ -706,7 +709,13 @@ function buildStore(
   const liabilityStore = createLiabilityStore(ctx);
   const operationsStore = createOperationsStore(ctx);
   const connectedSourceStore = createConnectedSourceStore(ctx);
-  const agentViewReadStore = createAgentViewReadStore(ctx);
+  const agentViewReadStore = createAgentViewReadStore(ctx, {
+    listConnectedSources: connectedSourceStore.listSources,
+    listSourceAssetIds: connectedSourceStore.listSourceAssetIds,
+    readAssets: assetStore.readAssets,
+    readLiabilities: liabilityStore.readLiabilities,
+    readOperations: operationsStore.readOperations,
+  });
   // importWorkspace's post-import gap-fill spans every domain and the snapshot
   // save path, so it stays in the monolith and is injected into the workspace
   // store as a dependency. The arrow defers reading store.snapshots.saveSnapshot until

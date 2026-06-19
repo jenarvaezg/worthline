@@ -58,6 +58,7 @@ import {
 } from "./schema";
 import {
   ensureAgentViewPublicIds,
+  publicIdTargetsForHolding,
   publicIdTargetsForMember,
   publicIdTargetsForWorkspace,
   readAgentViewPublicIds,
@@ -576,6 +577,18 @@ function importWorkspace(
       db.insert(agentViewPublicIds).values(toPublicIdRows(doc.publicIds)).run();
     }
     ensureAgentViewPublicIds(ctx, publicIdTargetsForWorkspace(doc));
+    // Holding public ids for every imported holding — live AND trashed assets
+    // and liabilities (#335). The file's own rows are inserted above; this mints
+    // any missing one (a pre-#335 file) so the non-lazy read path never 500s.
+    ensureAgentViewPublicIds(
+      ctx,
+      [
+        ...doc.assets,
+        ...doc.trash.assets,
+        ...doc.liabilities,
+        ...doc.trash.liabilities,
+      ].flatMap((holding) => publicIdTargetsForHolding(holding.id)),
+    );
 
     const writeAsset = (asset: ExportedAsset): void => {
       db.insert(assets)
@@ -1165,18 +1178,29 @@ function buildWorkspaceExport(db: StoreDb, workspace: Workspace | null): Workspa
     },
     priceCache,
     connectedSources: exportedConnectedSources,
-    publicIds: currentAgentViewPublicIds(db, workspace),
+    // Every holding id present in the DB (live + trashed) — assets and
+    // liabilities — so the export carries their holding public ids and filters
+    // out any stale registry row (#335).
+    publicIds: currentAgentViewPublicIds(
+      db,
+      workspace,
+      assetRows.map((row) => row.id),
+      liabilityRows.map((row) => row.id),
+    ),
   });
 }
 
 function currentAgentViewPublicIds(
   db: StoreDb,
   workspace: Workspace,
+  holdingIds: string[],
+  liabilityIds: string[],
 ): ExportedPublicId[] {
   const liveTargets = new Set(
-    publicIdTargetsForWorkspace(workspace).map(
-      (target) => `${target.entityType}:${target.entityId}`,
-    ),
+    [
+      ...publicIdTargetsForWorkspace(workspace),
+      ...[...holdingIds, ...liabilityIds].flatMap((id) => publicIdTargetsForHolding(id)),
+    ].map((target) => `${target.entityType}:${target.entityId}`),
   );
 
   return readAgentViewPublicIds(db).filter((row) =>

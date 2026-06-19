@@ -16,6 +16,7 @@ export interface AgentViewPublicIdTarget {
 }
 
 const PUBLIC_ID_PREFIX: Record<ExportedPublicIdEntityType, string> = {
+  holding: "wl_hld_",
   member: "wl_mbr_",
   member_group: "wl_grp_",
   scope: "wl_scp_",
@@ -57,6 +58,15 @@ export function publicIdTargetsForMemberGroup(
     { entityType: "member_group", entityId: group.id },
     { entityType: "scope", entityId: group.id },
   ];
+}
+
+/**
+ * The agent-view public-id target of one holding (#335): a single `holding`
+ * entry keyed by the asset/liability id. Both kinds share the `holding` entity
+ * type — the agent view exposes assets and liabilities under one opaque id space.
+ */
+export function publicIdTargetsForHolding(holdingId: string): AgentViewPublicIdTarget[] {
+  return [{ entityType: "holding", entityId: holdingId }];
 }
 
 export function ensureAgentViewPublicIds(

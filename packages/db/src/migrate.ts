@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 31;
+export const SCHEMA_VERSION = 32;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1042,6 +1042,29 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       FROM member_groups;`,
     );
     sqlite.pragma("user_version = 31");
+  }
+
+  if (version < 32) {
+    // PRD #328 / #335: extend the agent-view public-id registry to holdings —
+    // assets AND liabilities share the `holding` entity type. IDs are persisted
+    // ahead of reads; agent-view queries must never create them lazily. The
+    // `assets`/`liabilities` tables include trashed rows — backfill ALL of them
+    // so a trashed holding keeps its public id and a restore stays stable. No
+    // schema change is needed (entity_type is TEXT). Missing-table-tolerant like
+    // the v31 backfill (a minimal synthetic upgrade fixture may lack a table).
+    execToleratingMissingTable(
+      sqlite,
+      `INSERT OR IGNORE INTO agent_view_public_ids
+      (entity_type, entity_id, public_id)
+      SELECT 'holding', id, 'wl_hld_' || lower(hex(randomblob(16))) FROM assets;`,
+    );
+    execToleratingMissingTable(
+      sqlite,
+      `INSERT OR IGNORE INTO agent_view_public_ids
+      (entity_type, entity_id, public_id)
+      SELECT 'holding', id, 'wl_hld_' || lower(hex(randomblob(16))) FROM liabilities;`,
+    );
+    sqlite.pragma("user_version = 32");
   }
 
   return { ranV18Backfill };
