@@ -18,6 +18,7 @@ import { assertSnapshotHoldingsReconcile } from "./snapshot-holdings";
 import type {
   ExportedAsset,
   ExportedLiability,
+  ExportedPublicIdEntityType,
   WorkspaceExport,
 } from "./workspace-transfer";
 import { EXPORT_VERSION } from "./workspace-transfer";
@@ -305,6 +306,12 @@ const connectedSourceSchema = z.object({
   positions: z.array(positionSchema).default([]),
 });
 
+const publicIdSchema = z.object({
+  entityType: z.enum(["scope", "member", "member_group"]),
+  entityId: nonEmptyString,
+  publicId: nonEmptyString,
+});
+
 const documentSchema = z.object({
   version: z.literal(EXPORT_VERSION),
   workspace: z.object({
@@ -327,6 +334,7 @@ const documentSchema = z.object({
     .default({ assets: [], liabilities: [] }),
   priceCache: z.array(priceSchema).default([]),
   connectedSources: z.array(connectedSourceSchema).default([]),
+  publicIds: z.array(publicIdSchema).default([]),
 });
 
 // ── Entry point ──────────────────────────────────────────────────────────────
@@ -498,9 +506,84 @@ function collectDomainErrors(doc: WorkspaceExport): string[] {
   collectReferentialIntegrityErrors(errors, doc, allAssets, allLiabilities);
   collectConnectedSourceErrors(errors, doc, allAssets);
   collectDatabaseKeyErrors(errors, doc);
+  collectPublicIdErrors(errors, doc);
   collectSnapshotReconciliationErrors(errors, doc);
 
   return errors;
+}
+
+const publicIdPrefixByEntityType: Record<ExportedPublicIdEntityType, string> = {
+  member: "wl_mbr_",
+  member_group: "wl_grp_",
+  scope: "wl_scp_",
+};
+
+function collectPublicIdErrors(errors: string[], doc: WorkspaceExport): void {
+  if (doc.publicIds.length === 0) {
+    return;
+  }
+
+  const validTargets = new Set(publicIdTargetsForWorkspaceExport(doc));
+  const seenTargets = new Set<string>();
+  const seenPublicIds = new Set<string>();
+
+  for (const row of doc.publicIds) {
+    const target = `${row.entityType}\0${row.entityId}`;
+    const expectedPrefix = publicIdPrefixByEntityType[row.entityType];
+    const expectedShape = new RegExp(`^${expectedPrefix}[a-f0-9]{32}$`);
+
+    if (!expectedShape.test(row.publicId)) {
+      errors.push(
+        `El publicId "${row.publicId}" de publicIds no respeta el prefijo/formato de ${row.entityType}.`,
+      );
+    }
+
+    if (!validTargets.has(target)) {
+      errors.push(
+        `El registro publicIds ${row.entityType}/${row.entityId} no apunta a una entidad exportada.`,
+      );
+    }
+
+    if (seenTargets.has(target)) {
+      errors.push(
+        `El registro publicIds ${row.entityType}/${row.entityId} está duplicado.`,
+      );
+    }
+    seenTargets.add(target);
+
+    if (seenPublicIds.has(row.publicId)) {
+      errors.push(`El publicId "${row.publicId}" está duplicado.`);
+    }
+    seenPublicIds.add(row.publicId);
+  }
+
+  for (const target of validTargets) {
+    if (!seenTargets.has(target)) {
+      const [entityType, entityId] = target.split("\0");
+      errors.push(`Falta el registro publicIds ${entityType}/${entityId}.`);
+    }
+  }
+}
+
+function publicIdTargetsForWorkspaceExport(doc: WorkspaceExport): string[] {
+  return [
+    publicIdTarget("scope", "household"),
+    ...doc.members.flatMap((member) => [
+      publicIdTarget("member", member.id),
+      publicIdTarget("scope", member.id),
+    ]),
+    ...doc.groups.flatMap((group) => [
+      publicIdTarget("member_group", group.id),
+      publicIdTarget("scope", group.id),
+    ]),
+  ];
+}
+
+function publicIdTarget(
+  entityType: ExportedPublicIdEntityType,
+  entityId: string,
+): string {
+  return `${entityType}\0${entityId}`;
 }
 
 /**

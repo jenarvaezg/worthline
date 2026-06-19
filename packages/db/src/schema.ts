@@ -2,6 +2,7 @@ import type { LiquidityTier } from "@worthline/domain";
 import type {
   AssetType,
   DebtModel,
+  ExportedPublicIdEntityType,
   EarlyRepaymentMode,
   Instrument,
   InvestmentPriceProvider,
@@ -79,6 +80,20 @@ export const memberGroupMembers = sqliteTable(
     sortOrder: integer("sort_order").notNull(),
   },
   (table) => [primaryKey({ columns: [table.groupId, table.memberId] })],
+);
+
+export const agentViewPublicIds = sqliteTable(
+  "agent_view_public_ids",
+  {
+    entityType: text("entity_type").$type<ExportedPublicIdEntityType>().notNull(),
+    entityId: text("entity_id").notNull(),
+    publicId: text("public_id").notNull(),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.entityType, table.entityId] }),
+    uniqueIndex("agent_view_public_ids_public_id_unique").on(table.publicId),
+  ],
 );
 
 export const assets = sqliteTable(

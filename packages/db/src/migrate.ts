@@ -2,7 +2,7 @@ import type { Database as DatabaseConnection } from "better-sqlite3";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 30;
+export const SCHEMA_VERSION = 31;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -992,6 +992,56 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       `DELETE FROM snapshots WHERE ${orphanScopePredicate};`,
     );
     sqlite.pragma("user_version = 30");
+  }
+
+  if (version < 31) {
+    // PRD #328 / #334: public opaque IDs for the read-only agent view. IDs are
+    // persisted ahead of reads; agent-view queries must never create them lazily.
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS agent_view_public_ids (
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      public_id TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      PRIMARY KEY (entity_type, entity_id)
+    );`);
+    sqlite.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS agent_view_public_ids_public_id_unique
+       ON agent_view_public_ids (public_id);`,
+    );
+    execToleratingMissingTable(
+      sqlite,
+      `INSERT OR IGNORE INTO agent_view_public_ids
+      (entity_type, entity_id, public_id)
+      SELECT 'scope', 'household', 'wl_scp_' || lower(hex(randomblob(16)))
+      WHERE EXISTS (SELECT 1 FROM workspace WHERE id = 'default');`,
+    );
+    execToleratingMissingTable(
+      sqlite,
+      `INSERT OR IGNORE INTO agent_view_public_ids
+      (entity_type, entity_id, public_id)
+      SELECT 'member', id, 'wl_mbr_' || lower(hex(randomblob(16))) FROM members;`,
+    );
+    execToleratingMissingTable(
+      sqlite,
+      `INSERT OR IGNORE INTO agent_view_public_ids
+      (entity_type, entity_id, public_id)
+      SELECT 'scope', id, 'wl_scp_' || lower(hex(randomblob(16))) FROM members;`,
+    );
+    execToleratingMissingTable(
+      sqlite,
+      `INSERT OR IGNORE INTO agent_view_public_ids
+      (entity_type, entity_id, public_id)
+      SELECT 'member_group', id, 'wl_grp_' || lower(hex(randomblob(16)))
+      FROM member_groups;`,
+    );
+    execToleratingMissingTable(
+      sqlite,
+      `INSERT OR IGNORE INTO agent_view_public_ids
+      (entity_type, entity_id, public_id)
+      SELECT 'scope', id, 'wl_scp_' || lower(hex(randomblob(16)))
+      FROM member_groups;`,
+    );
+    sqlite.pragma("user_version = 31");
   }
 
   return { ranV18Backfill };

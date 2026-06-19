@@ -215,6 +215,14 @@ export interface ExportedConnectedSource {
   positions: ExportedPosition[];
 }
 
+export type ExportedPublicIdEntityType = "scope" | "member" | "member_group";
+
+export interface ExportedPublicId {
+  entityType: ExportedPublicIdEntityType;
+  entityId: string;
+  publicId: string;
+}
+
 /**
  * A frozen snapshot plus the valued portfolio behind its figures (ADR 0008).
  * Holdings may be empty for captures that predate snapshot holdings; when
@@ -245,11 +253,14 @@ export interface WorkspaceExportData {
   priceCache: AssetPrice[];
   /** Connected sources + their positions (ADR 0016); never their secrets. */
   connectedSources: ExportedConnectedSource[];
+  /** Public opaque IDs exposed by agent view; exported so restored workspaces keep references stable. */
+  publicIds?: ExportedPublicId[];
 }
 
 /** The versioned export document — the on-disk JSON shape. */
-export interface WorkspaceExport extends WorkspaceExportData {
+export interface WorkspaceExport extends Omit<WorkspaceExportData, "publicIds"> {
   version: typeof EXPORT_VERSION;
+  publicIds: ExportedPublicId[];
 }
 
 /**
@@ -305,5 +316,6 @@ export function serializeWorkspaceExport(data: WorkspaceExportData): WorkspaceEx
     trash: data.trash,
     priceCache: data.priceCache,
     connectedSources: data.connectedSources,
+    publicIds: data.publicIds ?? [],
   };
 }
