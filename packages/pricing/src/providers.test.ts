@@ -70,6 +70,40 @@ describe("coingeckoProvider", () => {
 
     expect(result).toBeNull();
   });
+
+  describe("WORTHLINE_COINGECKO_API_KEY — demo-key rate-limit headroom", () => {
+    const ORIGINAL = process.env.WORTHLINE_COINGECKO_API_KEY;
+    afterEach(() => {
+      if (ORIGINAL === undefined) delete process.env.WORTHLINE_COINGECKO_API_KEY;
+      else process.env.WORTHLINE_COINGECKO_API_KEY = ORIGINAL;
+    });
+
+    it("sends the x-cg-demo-api-key header when the key env is set", async () => {
+      process.env.WORTHLINE_COINGECKO_API_KEY = "  CG-test-key  ";
+      vi.mocked(fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ bitcoin: { eur: 50000 } }),
+      } as Response);
+
+      await coingeckoProvider.fetchPrice(baseCtx);
+
+      const init = vi.mocked(fetch).mock.calls[0]![1];
+      expect(init?.headers).toEqual({ "x-cg-demo-api-key": "CG-test-key" });
+    });
+
+    it("sends no demo-key header when the key env is absent", async () => {
+      delete process.env.WORTHLINE_COINGECKO_API_KEY;
+      vi.mocked(fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ bitcoin: { eur: 50000 } }),
+      } as Response);
+
+      await coingeckoProvider.fetchPrice(baseCtx);
+
+      const init = vi.mocked(fetch).mock.calls[0]![1];
+      expect(init?.headers).toEqual({});
+    });
+  });
 });
 
 describe("stooqProvider", () => {
