@@ -8,7 +8,10 @@
     "module": "ESNext",
     "noEmit": true,
     "paths": {
-      "@web/*": ["${configDir}/app/*"]
+      "@web/*": ["./app/*"],
+      "@domain/*": ["../../packages/domain/src/*"],
+      "@db/*": ["../../packages/db/src/*"],
+      "@pricing/*": ["../../packages/pricing/src/*"]
     },
     "plugins": [
       {

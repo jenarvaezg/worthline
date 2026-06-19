@@ -9,6 +9,15 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "noUncheckedIndexedAccess": true,
+    "paths": {
+      "@web/*": ["${configDir}/../../apps/web/app/*"],
+      "@domain/*": ["${configDir}/../../packages/domain/src/*"],
+      "@db/*": ["${configDir}/../../packages/db/src/*"],
+      "@pricing/*": ["${configDir}/../../packages/pricing/src/*"],
+      "@tests/*": ["${configDir}/../../tests/*"],
+      "@e2e/*": ["${configDir}/../../e2e/*"],
+      "@scripts/*": ["${configDir}/../../scripts/*"]
+    },
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "strict": true,
