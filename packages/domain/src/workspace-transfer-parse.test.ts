@@ -348,6 +348,110 @@ describe("parseWorkspaceExport — acceptance", () => {
     }
   });
 
+  // ── holding public IDs (#335): assets AND liabilities, live AND trashed ──────
+
+  /**
+   * The full, internally-consistent public-id set for the rich fixture: the
+   * household scope, every member (member + scope), every group (member_group +
+   * scope), and every holding (asset/liability, live + trashed) under `holding`.
+   * `collectPublicIdErrors` requires the COMPLETE set once `publicIds` is
+   * non-empty, so each helper case patches a copy of this.
+   */
+  function fullPublicIds(): WorkspaceExport["publicIds"] {
+    let n = 0;
+    // A unique 32-hex body per row (the import contract is ^prefix[a-f0-9]{32}$).
+    const body = (): string => (n++).toString(16).padStart(32, "0");
+    const mk = (entityType: string, entityId: string, prefix: string) => ({
+      entityType: entityType as WorkspaceExport["publicIds"][number]["entityType"],
+      entityId,
+      publicId: `${prefix}${body()}`,
+    });
+
+    return [
+      mk("scope", "household", "wl_scp_"),
+      mk("member", "m1", "wl_mbr_"),
+      mk("scope", "m1", "wl_scp_"),
+      mk("member", "m2", "wl_mbr_"),
+      mk("scope", "m2", "wl_scp_"),
+      mk("member_group", "g1", "wl_grp_"),
+      mk("scope", "g1", "wl_scp_"),
+      // Holdings: live assets a1/a2/a3, trashed asset a9, live liability l1.
+      mk("holding", "a1", "wl_hld_"),
+      mk("holding", "a2", "wl_hld_"),
+      mk("holding", "a3", "wl_hld_"),
+      mk("holding", "a9", "wl_hld_"),
+      mk("holding", "l1", "wl_hld_"),
+    ];
+  }
+
+  test("a full public-id set including holdings (live + trashed, assets + liabilities) parses", () => {
+    const document = makeDocument((doc) => {
+      doc.publicIds = fullPublicIds();
+    });
+
+    const result = parseWorkspaceExport(document);
+
+    expect(result.ok, result.ok ? "" : result.errors.join(" | ")).toBe(true);
+  });
+
+  test("a holding public id with the wrong prefix is rejected (#335)", () => {
+    const document = makeDocument((doc) => {
+      doc.publicIds = fullPublicIds();
+      doc.publicIds.find((row) => row.entityId === "a1")!.publicId =
+        "wl_scp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    });
+
+    expectRejection(document, /publicId.*no respeta el prefijo\/formato de holding/);
+  });
+
+  test("a holding public id with a malformed body is rejected (#335)", () => {
+    const document = makeDocument((doc) => {
+      doc.publicIds = fullPublicIds();
+      doc.publicIds.find((row) => row.entityId === "l1")!.publicId = "wl_hld_NOTHEX";
+    });
+
+    expectRejection(document, /no respeta el prefijo\/formato de holding/);
+  });
+
+  test("a holding public id targeting a holding not in the file is rejected (#335)", () => {
+    const document = makeDocument((doc) => {
+      doc.publicIds = [
+        ...fullPublicIds(),
+        {
+          entityType: "holding",
+          entityId: "ghost_holding",
+          publicId: "wl_hld_99999999999999999999999999999999",
+        },
+      ];
+    });
+
+    expectRejection(document, /holding\/ghost_holding no apunta a una entidad exportada/);
+  });
+
+  test("a missing holding public id is rejected (#335)", () => {
+    const document = makeDocument((doc) => {
+      doc.publicIds = fullPublicIds().filter((row) => row.entityId !== "a9");
+    });
+
+    expectRejection(document, /Falta el registro publicIds holding\/a9/);
+  });
+
+  test("a duplicate holding public-id target is rejected (#335)", () => {
+    const document = makeDocument((doc) => {
+      const rows = fullPublicIds();
+      doc.publicIds = [
+        ...rows,
+        {
+          entityType: "holding",
+          entityId: "a1",
+          publicId: "wl_hld_88888888888888888888888888888888",
+        },
+      ];
+    });
+
+    expectRejection(document, /holding\/a1 está duplicado/);
+  });
+
   test("public IDs must be prefixed, unique, and target exported scopes or members", () => {
     const document = makeDocument((doc) => {
       doc.publicIds = [

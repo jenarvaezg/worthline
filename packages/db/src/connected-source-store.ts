@@ -11,6 +11,10 @@ import { adapterForTag } from "@worthline/pricing";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 
 import {
+  ensureAgentViewPublicIds,
+  publicIdTargetsForHolding,
+} from "./agent-view-public-ids";
+import {
   assetOwnerships,
   assetPriceCache,
   assets,
@@ -407,6 +411,10 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
             )
             .run();
         }
+
+        // A connected source materializes this rung asset — register its
+        // holding agent-view public id so the non-lazy read path never 500s (#335).
+        ensureAgentViewPublicIds(ctx, publicIdTargetsForHolding(assetId));
       }
 
       if (holding.liquidityTier === assetTierOf(source.assetId)) {
@@ -491,6 +499,10 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
             tokenJson: null,
           })
           .run();
+
+        // The market (primary) asset the source materializes is a holding —
+        // register its agent-view public id so the read path never 500s (#335).
+        ensureAgentViewPublicIds(ctx, publicIdTargetsForHolding(assetId));
       });
 
       ctx.writeAuditEntry("connect_source", "connected_source", sourceId);

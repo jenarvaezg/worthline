@@ -10,11 +10,12 @@ import type {
 } from "@worthline/domain";
 import { createLiability, projectAssets } from "@worthline/domain";
 import type { Database as DatabaseConnection } from "better-sqlite3";
-import { asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { randomUUID } from "node:crypto";
 
 import {
+  agentViewPublicIds,
   assetOperations,
   assetOwnerships,
   assetPriceCache,
@@ -365,6 +366,16 @@ export function hardDeleteAssetTx(ctx: StoreContext, assetId: string): number {
   // the price cache. Frozen snapshot_holdings are intentionally never touched
   // (ADR 0008).
   db.delete(warningOverrides).where(eq(warningOverrides.entityId, assetId)).run();
+  // Drop the holding's agent-view public id on HARD delete only (#335); a
+  // soft-delete/trash keeps it so a restore stays stable.
+  db.delete(agentViewPublicIds)
+    .where(
+      and(
+        eq(agentViewPublicIds.entityType, "holding"),
+        eq(agentViewPublicIds.entityId, assetId),
+      ),
+    )
+    .run();
   const result = db.delete(assets).where(eq(assets.id, assetId)).run();
 
   ctx.writeAuditEntry("hard_delete_asset", "asset", assetId, {
@@ -477,6 +488,16 @@ export function hardDeleteLiabilityTx(ctx: StoreContext, liabilityId: string): n
   // FK cascade takes the ownerships; clear the warning overrides by hand (no FK
   // points at them); snapshots stay frozen (ADR 0008).
   db.delete(warningOverrides).where(eq(warningOverrides.entityId, liabilityId)).run();
+  // Drop the holding's agent-view public id on HARD delete only (#335); a
+  // soft-delete/trash keeps it so a restore stays stable.
+  db.delete(agentViewPublicIds)
+    .where(
+      and(
+        eq(agentViewPublicIds.entityType, "holding"),
+        eq(agentViewPublicIds.entityId, liabilityId),
+      ),
+    )
+    .run();
   const result = db.delete(liabilities).where(eq(liabilities.id, liabilityId)).run();
 
   ctx.writeAuditEntry("hard_delete_liability", "liability", liabilityId, {

@@ -307,7 +307,7 @@ const connectedSourceSchema = z.object({
 });
 
 const publicIdSchema = z.object({
-  entityType: z.enum(["scope", "member", "member_group"]),
+  entityType: z.enum(["scope", "member", "member_group", "holding"]),
   entityId: nonEmptyString,
   publicId: nonEmptyString,
 });
@@ -513,6 +513,7 @@ function collectDomainErrors(doc: WorkspaceExport): string[] {
 }
 
 const publicIdPrefixByEntityType: Record<ExportedPublicIdEntityType, string> = {
+  holding: "wl_hld_",
   member: "wl_mbr_",
   member_group: "wl_grp_",
   scope: "wl_scp_",
@@ -576,6 +577,14 @@ function publicIdTargetsForWorkspaceExport(doc: WorkspaceExport): string[] {
       publicIdTarget("member_group", group.id),
       publicIdTarget("scope", group.id),
     ]),
+    // Every holding — asset or liability, live AND trashed — carries a holding
+    // public id; trashed holdings keep theirs so a restore stays stable (#335).
+    ...[...doc.assets, ...doc.trash.assets].map((asset) =>
+      publicIdTarget("holding", asset.id),
+    ),
+    ...[...doc.liabilities, ...doc.trash.liabilities].map((liability) =>
+      publicIdTarget("holding", liability.id),
+    ),
   ];
 }
 
