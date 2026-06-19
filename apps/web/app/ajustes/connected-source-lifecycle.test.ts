@@ -15,7 +15,7 @@
 
 import { createInMemoryStore } from "@worthline/db";
 import type { WorthlineStore } from "@worthline/db";
-import { numistaAdapter } from "@worthline/pricing";
+import { binanceAdapter, numistaAdapter } from "@worthline/pricing";
 import type {
   AdapterPositionDraft,
   ConnectedSourceAdapter,
@@ -173,6 +173,75 @@ describe("connectSource (generic) — Numista", () => {
     expect(sources[0]!.adapter).toBe("numista");
     // The pasted key is serialized via the adapter into credentialsJson.
     expect(JSON.parse(sources[0]!.credentialsJson)).toEqual({ apiKey: "the-key" });
+  });
+});
+
+describe("connectSource (generic) — Binance", () => {
+  test("connects the first Binance source through the seam with the real adapter", async () => {
+    const store = createInMemoryStore();
+    store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+
+    const digest = await runRedirect(() =>
+      connectSource(
+        binanceAdapter,
+        form({ currentUrl: "/ajustes", apiKey: "the-key", apiSecret: "the-secret" }),
+        {
+          formId: "binance",
+          missingCredentials: "missing",
+          alreadyConnected: "already",
+          noOwner: "no owner",
+          label: "Binance",
+          okParam: "binance_connected",
+        },
+        store,
+      ),
+    );
+
+    expect(digest).toContain("ok=binance_connected");
+    const sources = store.connectedSources.listSources();
+    expect(sources).toHaveLength(1);
+    expect(sources[0]!.adapter).toBe("binance");
+    // The pasted key + secret are serialized via the adapter into credentialsJson.
+    expect(JSON.parse(sources[0]!.credentialsJson)).toEqual({
+      apiKey: "the-key",
+      apiSecret: "the-secret",
+    });
+  });
+
+  test("refuses a second Binance source", async () => {
+    const store = createInMemoryStore();
+    store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    store.connectedSources.connect({
+      adapter: "binance",
+      label: "Binance",
+      credentialsJson: JSON.stringify({ apiKey: "k", apiSecret: "s" }),
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+
+    const digest = await runRedirect(() =>
+      connectSource(
+        binanceAdapter,
+        form({ currentUrl: "/ajustes", apiKey: "k2", apiSecret: "s2" }),
+        {
+          formId: "binance",
+          missingCredentials: "missing",
+          alreadyConnected: "Ya hay una cuenta de Binance conectada.",
+          noOwner: "no owner",
+          label: "Binance",
+          okParam: "binance_connected",
+        },
+        store,
+      ),
+    );
+
+    expect(digest).toContain("error=");
+    expect(store.connectedSources.listSources()).toHaveLength(1);
   });
 });
 

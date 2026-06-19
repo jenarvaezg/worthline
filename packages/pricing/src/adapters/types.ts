@@ -20,6 +20,7 @@
 
 import type {
   BinanceHistoryCurve,
+  DecimalString,
   DistributiveOmit,
   Instrument,
   LiquidityTier,
@@ -111,18 +112,24 @@ export interface RevaluePositionInput {
 }
 
 /** The injected reads history reconstruction needs (Binance only). Mirrors
- *  `ReconstructBinanceHistoryDeps`. */
+ *  `ReconstructBinanceHistoryDeps`: the daily SPOT snapshot horizon + a CoinGecko
+ *  id's daily EUR series over a date range (deduped per id by the reconstructor). */
 export interface HistoryContext<Creds, Token = null> {
   creds: Creds;
   token: Token | null;
   nowIso: string;
   nowMs: number;
-  accountSnapshots?: () => Promise<unknown[]>;
+  /** The account's daily SPOT snapshots (newest-or-oldest order is irrelevant). */
+  accountSnapshots?: () => Promise<
+    { dateKey: string; balances: { asset: string; balance: DecimalString }[] }[]
+  >;
+  /** A CoinGecko id's daily EUR series over [fromDateKey, toDateKey], as
+   *  dateKey → price; empty on a miss/outage (never throws). */
   historicalPriceEur?: (
     coingeckoId: string,
-    from: string,
-    to: string,
-  ) => Promise<Record<string, number> | null>;
+    fromDateKey: string,
+    toDateKey: string,
+  ) => Promise<ReadonlyMap<string, DecimalString>>;
 }
 
 /**

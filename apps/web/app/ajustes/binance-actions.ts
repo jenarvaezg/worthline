@@ -1,130 +1,55 @@
 "use server";
 
-import { withStore, type WorthlineStore } from "@worthline/db";
+import { type WorthlineStore } from "@worthline/db";
 import {
+  binanceAdapter,
   fetchCoinGeckoHistoryEur,
   fetchCoinGeckoPriceEur,
   getAccountSnapshots,
   getAllBalances,
-  reconstructBinanceHistory,
-  syncBinanceAccount,
 } from "@worthline/pricing";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 
+import { parseEntityId } from "../intake";
 import {
-  appendParam,
-  errorRedirectUrl,
-  parseEntityId,
-  parseScopeCookie,
-  SCOPE_COOKIE_NAME,
-} from "../intake";
-import {
-  buildBinanceCredentialsJson,
-  normalizeBinanceCredentials,
-  readBinanceCredentials,
-  resolveConnectingOwnership,
-} from "./binance-helpers";
+  connectSource,
+  currentUrlOf,
+  disconnectSource,
+  syncSource,
+} from "./connected-source-lifecycle";
 
 /**
- * Server actions for the Binance connected source (PRD #245, ADR 0021).
+ * Server actions for the Binance connected source (PRD #245, ADR 0021). Since #322
+ * (ADR 0027) these are thin wrappers over the GENERIC connect/sync/disconnect
+ * lifecycle (`connected-source-lifecycle.ts`), parameterized by the Binance adapter
+ * (`binanceAdapter`). Binance-specific signing/parsing/valuation live in the adapter
+ * + helpers; this file only wires the real signed network readers into the sync
+ * context and the best-effort history backfill into the post-write hook.
  *
- * connect: create the derived `crypto` holding on the MARKET rung + the source
- * row, owned 100 % by the connecting member, with the pasted API key + secret
- * stored locally. sync: pull the account's market-rung balances (spot + funding +
- * flexible Earn, signed), resolve each token's live EUR unit price, and replace
- * the source's positions — which
- * re-rolls the holding's value (tokens ripple no history; their value is live).
- * disconnect: drop the holding (the FK cascade removes the source + positions).
- *
- * The API key + secret are SECRETS (the secret can sign): never logged, never
- * placed in a redirect URL/query. `withStore` is sync-only, so the sync action is
- * structured read creds → await the network → write positions, never awaiting
- * inside a store transaction.
+ * The API key + secret are SECRETS (ADR 0021): the secret can sign, so never logged,
+ * never placed in a redirect URL/query. `withStore` is sync-only, so the sync wiring
+ * lists balances + reconstructs history OUTSIDE the store, never awaiting inside a
+ * store transaction.
  */
 
-const BASE = "/ajustes";
 const BINANCE_LABEL = "Binance";
-
-function currentUrlOf(formData: FormData): string {
-  return (formData.get("currentUrl") as string) || BASE;
-}
-
-function runWith<T>(fn: (store: WorthlineStore) => T, _store?: WorthlineStore): T {
-  return _store ? fn(_store) : withStore(fn);
-}
-
-/** Resolve the active scope member id from the cookie (the connecting member). */
-async function scopeMemberId(): Promise<string | undefined> {
-  const jar = await cookies();
-  return parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
-}
 
 export async function connectBinanceAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  const credentials = normalizeBinanceCredentials(
-    formData.get("apiKey"),
-    formData.get("apiSecret"),
-  );
-  const returnUrl = currentUrlOf(formData);
-
-  if (!credentials) {
-    redirect(
-      errorRedirectUrl(returnUrl, {
-        formId: "binance",
-        message: "Pega tu clave de API y tu secreto de Binance (solo lectura).",
-      }),
-    );
-  }
-
-  const scoped = await scopeMemberId();
-
-  const result = runWith((store) => {
-    const workspace = store.workspace.readWorkspace();
-
-    if (!workspace) {
-      return { ok: false as const, error: "Workspace no inicializado." };
-    }
-
-    // For now only one Binance source is allowed — a second connect is refused so
-    // the settings page shows the existing one as connected instead.
-    const existing = store.connectedSources
-      .listSources()
-      .find((source) => source.adapter === "binance");
-
-    if (existing) {
-      return { ok: false as const, error: "Ya hay una cuenta de Binance conectada." };
-    }
-
-    const ownership = resolveConnectingOwnership(workspace.members, scoped);
-
-    if (!ownership) {
-      return {
-        ok: false as const,
-        error: "No hay ningún miembro activo que pueda ser propietario de la cuenta.",
-      };
-    }
-
-    store.connectedSources.connect({
-      adapter: "binance",
+  return connectSource(
+    binanceAdapter,
+    formData,
+    {
+      formId: "binance",
+      missingCredentials: "Pega tu clave de API y tu secreto de Binance (solo lectura).",
+      alreadyConnected: "Ya hay una cuenta de Binance conectada.",
+      noOwner: "No hay ningún miembro activo que pueda ser propietario de la cuenta.",
       label: BINANCE_LABEL,
-      credentialsJson: buildBinanceCredentialsJson(
-        credentials.apiKey,
-        credentials.apiSecret,
-      ),
-      ownership,
-    });
-
-    return { ok: true as const };
-  }, _store);
-
-  if (!result.ok) {
-    redirect(errorRedirectUrl(returnUrl, { formId: "binance", message: result.error }));
-  }
-
-  redirect(appendParam(returnUrl, "ok", "binance_connected"));
+      okParam: "binance_connected",
+    },
+    _store,
+  );
 }
 
 export async function syncBinanceAction(
@@ -132,100 +57,70 @@ export async function syncBinanceAction(
   _store?: WorthlineStore,
 ): Promise<never> {
   const sourceId = parseEntityId(formData, "sourceId");
-  const returnUrl = currentUrlOf(formData);
 
-  if (!sourceId) {
-    redirect(
-      errorRedirectUrl(returnUrl, {
-        message: "No se encontró la cuenta conectada de Binance.",
+  return syncSource(
+    binanceAdapter,
+    sourceId,
+    {
+      notFound: "No se encontró la cuenta conectada de Binance.",
+      missingCredentials:
+        "Las credenciales de Binance no están disponibles. Vuelve a conectar la cuenta.",
+      syncFailed:
+        "No se pudo sincronizar con Binance. Revisa la clave de API y la conexión.",
+      okParam: "binance_synced",
+      // Binance signs per request (no token to mint), so there is no cached token.
+      parseToken: () => null,
+      // Bind the signed all-balances reader (spot + funding + flexible Earn on the
+      // market rung + locked Earn on the term-locked rung) + a CoinGecko live price
+      // resolver. Awaited OUTSIDE the store write, as the sync ordering demands.
+      buildContext: async ({ creds, nowIso, nowMs, persistToken }) => ({
+        creds,
+        token: null,
+        saveToken: persistToken,
+        nowIso,
+        nowMs,
+        listBalances: () => getAllBalances(creds, { nowMs }),
+        priceEur: (id) => fetchCoinGeckoPriceEur(id, nowIso),
       }),
-    );
-  }
+      // Post-write (best-effort): a manual sync stamps the `binance` freshness row
+      // fresh (PRD #245 S4) so the daily stale-price pass won't immediately re-sync
+      // the source it just refreshed, then backfills the reconstructed monthly
+      // history into snapshots (PRD #245 S5, #250, ADR 0021). The reconstruction is
+      // awaited OUTSIDE the store write; a failure here (snapshot horizon / range
+      // outage) must NOT fail the sync — positions are already committed — so it is
+      // swallowed.
+      afterWrite: async ({ sourceId, nowIso, nowMs, creds, runWith }) => {
+        runWith((store) =>
+          store.connectedSources.revaluePositions(sourceId, [], {
+            fetchedAt: nowIso,
+            freshnessState: "fresh",
+          }),
+        );
 
-  // 1) Read the credentials (sync, inside the store).
-  const source = runWith((store) => store.connectedSources.readSource(sourceId), _store);
-
-  if (!source) {
-    redirect(
-      errorRedirectUrl(returnUrl, {
-        message: "No se encontró la cuenta conectada de Binance.",
-      }),
-    );
-  }
-
-  const credentials = readBinanceCredentials(source.credentialsJson);
-
-  if (!credentials) {
-    redirect(
-      errorRedirectUrl(returnUrl, {
-        message:
-          "Las credenciales de Binance no están disponibles. Vuelve a conectar la cuenta.",
-      }),
-    );
-  }
-
-  const now = new Date();
-  const nowMs = now.getTime();
-  const nowIso = now.toISOString();
-
-  // 2) Network: pull ALL balances — spot + funding + flexible Earn (market) +
-  // locked Earn (term-locked) — and value each token live. The source spans rungs
-  // now (S3, #248), so the write materializes one holding per occupied rung. On any
-  // failure, redirect with a clear message and DO NOT touch existing positions.
-  try {
-    const drafts = await syncBinanceAccount({
-      listBalances: () => getAllBalances(credentials, { nowMs }),
-      priceEur: (id) => fetchCoinGeckoPriceEur(id, nowIso),
-    });
-
-    // 3) Write: replace positions and re-roll EVERY rung's holding value. Tokens
-    // ripple no history (their value is live, never dated), so this is a pure
-    // value re-roll across the source's market + term-locked assets. A manual sync
-    // also stamps the `binance` freshness row fresh (PRD #245 S4) so the daily
-    // stale-price pass won't immediately re-sync the source it just refreshed.
-    runWith((store) => {
-      store.syncConnectedSource({ positions: drafts, sourceId, syncedAt: nowIso });
-      store.connectedSources.revaluePositions(sourceId, [], {
-        fetchedAt: nowIso,
-        freshnessState: "fresh",
-      });
-    }, _store);
-
-    // 4) Backfill the reconstructed monthly history into snapshots (PRD #245 S5,
-    // #250, ADR 0021). BEST-EFFORT: positions are already synced (step 3), so a
-    // failure here (Binance snapshot horizon / CoinGecko range outage) must NOT
-    // fail the sync — swallow and fall through to the fresh-stamp + ok redirect.
-    // The reconstruction awaits the network OUTSIDE the store write; the backfill
-    // is then a sync `applyBinanceHistoryAndRipple` (atomic, append-only/frozen).
-    try {
-      const curve = await reconstructBinanceHistory({
-        accountSnapshots: () => getAccountSnapshots(credentials, { nowMs }),
-        historicalPriceEur: (id, from, to) =>
-          fetchCoinGeckoHistoryEur(
-            id,
-            Date.parse(from),
-            Date.parse(`${to}T23:59:59Z`),
+        try {
+          const curve = await binanceAdapter.buildHistory!({
+            creds,
+            token: null,
             nowIso,
-          ),
-      });
-      runWith((store) => {
-        store.applyBinanceHistoryAndRipple({ sourceId, curve });
-      }, _store);
-    } catch {
-      // History is best-effort; the positions sync already committed.
-    }
-  } catch {
-    // A bad/expired key or unreachable Binance — surface a clear error. The
-    // existing positions are left untouched (we never reached the write).
-    redirect(
-      errorRedirectUrl(returnUrl, {
-        message:
-          "No se pudo sincronizar con Binance. Revisa la clave de API y la conexión.",
-      }),
-    );
-  }
-
-  redirect(appendParam(returnUrl, "ok", "binance_synced"));
+            nowMs,
+            accountSnapshots: () => getAccountSnapshots(creds, { nowMs }),
+            historicalPriceEur: (id, from, to) =>
+              fetchCoinGeckoHistoryEur(
+                id,
+                Date.parse(from),
+                Date.parse(`${to}T23:59:59Z`),
+                nowIso,
+              ),
+          });
+          runWith((store) => store.applyBinanceHistoryAndRipple({ sourceId, curve }));
+        } catch {
+          // History is best-effort; the positions sync already committed.
+        }
+      },
+    },
+    currentUrlOf(formData),
+    _store,
+  );
 }
 
 export async function disconnectBinanceAction(
@@ -233,58 +128,24 @@ export async function disconnectBinanceAction(
   _store?: WorthlineStore,
 ): Promise<never> {
   const sourceId = parseEntityId(formData, "sourceId");
-  const returnUrl = currentUrlOf(formData);
-  // The disconnect CHOICE (PRD #245 S6, ADR 0016/0021), mirroring Numista:
-  // "freeze" keeps every rung holding as a plain hand-maintained one; anything
-  // else (the default) removes the live holdings while frozen snapshots keep the
-  // history. Binance spans rungs (#248), so both paths act on ALL rung assets.
+  // The disconnect CHOICE (PRD #245 S6, ADR 0016/0021), mirroring Numista: "freeze"
+  // keeps every rung holding as a plain hand-maintained one; anything else (the
+  // default) removes the live holdings while frozen snapshots keep the history.
+  // Binance spans rungs (#248), so both paths act on ALL rung assets (the store's
+  // freeze/remove handle the cross-rung fan-out).
   const freeze = (formData.get("mode") as string) === "freeze";
 
-  if (!sourceId) {
-    redirect(
-      errorRedirectUrl(returnUrl, {
-        message: "No se encontró la cuenta conectada de Binance.",
-      }),
-    );
-  }
-
-  const result = runWith((store) => {
-    const source = store.connectedSources.readSource(sourceId);
-
-    if (!source) {
-      return { ok: false as const, error: "No se encontró la cuenta conectada." };
-    }
-
-    if (freeze) {
-      // FREEZE path: drop the source (cascading positions) and flip EVERY rung
-      // asset (market + term-locked) from the live `crypto` instrument to a
-      // hand-valued `other` one, fully detached. Frozen snapshots are untouched.
-      const frozen = store.connectedSources.freezeIntoStoredHolding(sourceId);
-
-      if (!frozen) {
-        return { ok: false as const, error: "No se pudo congelar la cuenta." };
-      }
-
-      return { ok: true as const, message: "binance_frozen" as const };
-    }
-
-    // REMOVE path: a source materializes one asset per rung now (market +
-    // term-locked, #248). `removeSourceHoldings` drops ALL of them in ONE
-    // transaction — deleting the market (primary) asset cascades the source row
-    // (and its positions) away; the other-rung assets (no back-FK) are removed
-    // explicitly — so a mid-loop failure can never leave a partially-deleted source.
-    const { removed } = store.connectedSources.removeSourceHoldings(sourceId);
-
-    if (removed === 0) {
-      return { ok: false as const, error: "No se pudo desconectar la cuenta." };
-    }
-
-    return { ok: true as const, message: "binance_disconnected" as const };
-  }, _store);
-
-  if (!result.ok) {
-    redirect(errorRedirectUrl(returnUrl, { message: result.error }));
-  }
-
-  redirect(appendParam(returnUrl, "ok", result.message));
+  return disconnectSource(
+    sourceId,
+    freeze,
+    {
+      notFound: "No se encontró la cuenta conectada de Binance.",
+      freezeFailed: "No se pudo congelar la cuenta.",
+      removeFailed: "No se pudo desconectar la cuenta.",
+      frozenParam: "binance_frozen",
+      disconnectedParam: "binance_disconnected",
+    },
+    currentUrlOf(formData),
+    _store,
+  );
 }
