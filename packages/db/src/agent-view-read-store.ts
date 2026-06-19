@@ -57,6 +57,29 @@ export interface AgentViewSourceFreshness {
 }
 
 /**
+ * A trashed (soft-deleted) holding as the agent view sees it (PRD #328, #342): a
+ * recoverable asset/liability that lives outside the main financial context. It
+ * carries only the stored facts a trash listing needs — never a derived/investment
+ * revaluation. `valueMinor` is the STORED current value (assets) / current balance
+ * (liabilities) when present, else null ("value/balance when safely available").
+ * `ownerMemberIds` are the members with a stake, so the service can scope the row
+ * the same way live holdings are scoped. A pure read — no restore, no hard-delete.
+ */
+export interface AgentViewTrashedHolding {
+  /** Internal asset/liability id — resolved to its `wl_hld_` public id by the service. */
+  id: string;
+  name: string;
+  kind: "asset" | "liability";
+  instrument: string | null;
+  /** When the holding was trashed (ISO), or null for a legacy row with no stamp. */
+  deletedAt: string | null;
+  /** Stored current value (asset) / current balance (liability), or null. */
+  valueMinor: number | null;
+  /** Member ids with an ownership share in this holding. */
+  ownerMemberIds: string[];
+}
+
+/**
  * A priced asset's valuation freshness as the agent view sees it (PRD #328,
  * #341): the staleness indicator stamped on its price-cache row, the fetch time,
  * the providing source, and the failed-fetch reason when one is recorded.
@@ -130,6 +153,13 @@ export interface AgentViewReadStore {
    * so it can label them, and NEVER writes a new override.
    */
   readWarningOverrides: () => WarningOverride[];
+  /**
+   * Trashed (soft-deleted) holdings with the stored facts a trash listing needs
+   * (#342). A pure read over `assets`/`liabilities` WHERE `deleted_at IS NOT NULL`
+   * — it never restores, hard-deletes, or revalues, and it never touches the live
+   * context (the live reads exclude trash by filtering `deleted_at IS NULL`).
+   */
+  readTrashedHoldings: () => AgentViewTrashedHolding[];
 }
 
 export interface AgentViewReadStoreDeps {
@@ -162,6 +192,7 @@ export interface AgentViewReadStoreDeps {
     staleReason?: string;
   } | null;
   readWarningOverrides: () => WarningOverride[];
+  readTrashedHoldings: () => AgentViewTrashedHolding[];
 }
 
 export function createAgentViewReadStore(
@@ -221,5 +252,6 @@ export function createAgentViewReadStore(
       };
     },
     readWarningOverrides: () => deps.readWarningOverrides(),
+    readTrashedHoldings: () => deps.readTrashedHoldings(),
   };
 }
