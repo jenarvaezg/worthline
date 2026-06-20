@@ -61,6 +61,26 @@ describe("database target resolution", () => {
     ).toThrow(/WORTHLINE_DB_AUTH_TOKEN/);
   });
 
+  test("explicit options URL overrides env and requires token for libsql://", () => {
+    expect(
+      resolveDatabaseTarget(
+        { url: "libsql://explicit.turso.io", authToken: "options-token" },
+        {
+          WORTHLINE_DB_URL: "libsql://env.turso.io",
+          WORTHLINE_DB_AUTH_TOKEN: "env-token",
+        },
+      ),
+    ).toEqual({
+      kind: "url",
+      url: "libsql://explicit.turso.io",
+      authToken: "options-token",
+    });
+
+    expect(() =>
+      resolveDatabaseTarget({ url: "libsql://explicit.turso.io" }, {}),
+    ).toThrow(/authToken/);
+  });
+
   test("withStore opens the env database URL", async () => {
     const databasePath = join(tempDir("worthline-url-target-"), "workspace.sqlite");
     const fallbackDataDir = tempDir("worthline-url-fallback-");
