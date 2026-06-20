@@ -299,8 +299,9 @@ export async function loadDashboard(
   // ── 4c. Drilldown (#76, #77, #145) — drill view state from frozen rows ───
   // Reads the SAME windowed rows the composition chart does (§4a), so a drill
   // always mirrors the chart's window — one window owner, two consumers.
-  // Holdings in the Papelera (soft-deleted, recoverable) are dropped from the
-  // drill rather than mislabelled "Ya no en cartera" (#268). Read only when a
+  // Only currently-held holdings get per-holding cards now (this design pass):
+  // Papelera (soft-deleted, #268) AND retired holdings are dropped from the
+  // grid, their history living on in the aggregate. Read trash only when a
   // drill is open.
   const trash =
     drill && selectedScope ? store.readTrash() : { assets: [], liabilities: [] };

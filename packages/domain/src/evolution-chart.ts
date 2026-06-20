@@ -44,6 +44,25 @@ export function timeProportionalXs(
 }
 
 /**
+ * Evenly-spaced CATEGORICAL x positions for a column chart: one equal slot per
+ * period, each bar centred in its own slot with half-slot margins at both edges
+ * so no column ever clips the viewBox. Used by the stacked-bar charts (the
+ * composition chart and the drilldown aggregate) — irregular capture spacing is
+ * ignored on purpose, since a stacked column chart reads cleanly only when every
+ * column is uniform (matches the reference spreadsheet). Returns the slot width
+ * alongside the centres so callers can size bars off the same slot.
+ */
+export function categoricalSlotXs(
+  count: number,
+  width: number,
+  insetX: number,
+): { xs: number[]; slotW: number } {
+  const slotW = (width - 2 * insetX) / count;
+  const xs = Array.from({ length: count }, (_, i) => round2(insetX + slotW * (i + 0.5)));
+  return { slotW, xs };
+}
+
+/**
  * Value domain fitted to the data range with ~10% padding on both sides
  * (never anchored at zero unless zero is in the range). Flat series still get
  * headroom so the line sits mid-chart instead of on an edge; the fallback pad

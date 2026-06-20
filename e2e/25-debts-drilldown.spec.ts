@@ -71,7 +71,9 @@ test("debts drilldown: band/legend link → aggregate series + per-debt multiple
   // 1b. The aggregated debt slab below the baseline is itself a native SVG
   //     anchor to the same drill (ADR 0009 — navigation with zero client JS).
   await expect(
-    page.locator('svg.compositionChart a[href*="drill=debts"] polygon.compositionDebt'),
+    page
+      .locator('svg.compositionChart a[href*="drill=debts"] rect.compositionDebt')
+      .first(),
   ).toBeVisible();
 
   // 2. Following the legend link opens the drill panel in place of the chart.
@@ -103,11 +105,11 @@ test("debts drilldown: band/legend link → aggregate series + per-debt multiple
   await expect(firstTile).toBeVisible();
   await expect(firstTile.locator(".drillMultipleLabel")).not.toBeEmpty();
   await expect(firstTile.locator("svg.drillSparkline")).toBeVisible();
-  // A still-live debt shows a money figure (with the € symbol), not the
-  // "Ya no vigente" placeholder.
-  const liveTile = multiples.locator(".drillMultiple:not(.noLongerHeld)").first();
+  // A live debt shows a money figure with the € symbol. Retired holdings are
+  // now dropped from the cards entirely (ADR 0032), so there is no "gone"
+  // placeholder to guard against.
+  const liveTile = multiples.locator(".drillMultiple").first();
   await expect(liveTile.locator("b")).toContainText("€");
-  await expect(liveTile.locator(".drillMultipleGone")).toHaveCount(0);
 
   // 5. Breadcrumb returns to the composition — no drill param, chart slot back.
   await page.locator(".drillBreadcrumb").click();

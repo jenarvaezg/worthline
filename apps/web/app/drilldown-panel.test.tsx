@@ -69,13 +69,15 @@ describe("DrilldownPanel — debts drilldown (#145)", () => {
     expect(markup).toContain("Deudas");
     expect(markup).toContain("Hipoteca");
     expect(markup).toContain("Tarjeta");
-    // The aggregate series carries the synthetic "debts" band class.
+    // The aggregate series carries the synthetic "debts" band class — now drawn
+    // as stacked bars in a <g> (this design pass), so the bars are <rect>s.
     expect(markup).toMatch(/drill(Band|Line) debts/);
+    expect(markup).toContain("<rect");
     // Breadcrumb back to the composition, preserving the Vista.
     expect(markup).toContain('href="/?view=liquid#composicion"');
   });
 
-  test("a debt no longer live is kept and marked 'Ya no vigente'", () => {
+  test("a debt no longer live is dropped from the cards entirely (no gone text)", () => {
     const drilldown = buildDebtsDrilldown({
       currentHoldingIds: ["l_mortgage"], // l_card has left the portfolio
       rows,
@@ -85,7 +87,13 @@ describe("DrilldownPanel — debts drilldown (#145)", () => {
       <DrilldownPanel backHref="/" currency="EUR" drilldown={drilldown} />,
     );
 
-    expect(markup).toContain("Ya no vigente");
+    // The retired card is gone, with no "Ya no vigente" / "Ya no en cartera"
+    // copy anywhere (this design pass removed retired cards entirely).
+    expect(markup).not.toContain("Tarjeta");
+    expect(markup).not.toContain("Ya no vigente");
+    expect(markup).not.toContain("Ya no en cartera");
+    // The live mortgage card stays.
+    expect(markup).toContain("Hipoteca");
   });
 });
 
@@ -112,7 +120,7 @@ describe("DrilldownPanel — Papelera vs retired holdings (#268)", () => {
     expect(markup).toContain("Cuenta");
   });
 
-  test("a truly retired asset still shows 'Ya no en cartera' (AC3)", () => {
+  test("a truly retired asset is dropped from the cards entirely (this design pass)", () => {
     const drilldown = buildLiquidDrilldown({
       currentHoldingIds: ["a_live"],
       trashedHoldingIds: [],
@@ -128,7 +136,30 @@ describe("DrilldownPanel — Papelera vs retired holdings (#268)", () => {
       <DrilldownPanel backHref="/" currency="EUR" drilldown={drilldown} />,
     );
 
-    expect(markup).toContain("Retirada");
-    expect(markup).toContain("Ya no en cartera");
+    // No retired card, no gone copy — only the live holding's card remains.
+    expect(markup).not.toContain("Retirada");
+    expect(markup).not.toContain("Ya no en cartera");
+    expect(markup).toContain("Cuenta");
+  });
+
+  test("each holding card renders a bar sparkline (<rect>s, not a polyline)", () => {
+    const drilldown = buildLiquidDrilldown({
+      currentHoldingIds: ["a_live"],
+      rows: [
+        assetRow("2026-06-01", "a_live", "Cuenta", 100, "cash"),
+        assetRow("2026-06-03", "a_live", "Cuenta", 200, "cash"),
+      ],
+    });
+
+    const markup = renderToStaticMarkup(
+      <DrilldownPanel backHref="/" currency="EUR" drilldown={drilldown} />,
+    );
+
+    // The sparkline is now bars: a tier-classed svg with <rect>s. (The only
+    // polyline left in the panel is the aggregate stack's total line, which
+    // rides over the per-period bars — also part of this design pass.)
+    expect(markup).toMatch(/drillSparkline cash/);
+    expect(markup).toContain("<rect");
+    expect(markup).toContain('class="drillTotalLine"');
   });
 });
