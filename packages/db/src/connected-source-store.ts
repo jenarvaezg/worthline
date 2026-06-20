@@ -14,6 +14,7 @@ import {
   ensureAgentViewPublicIds,
   publicIdTargetsForHolding,
 } from "./agent-view-public-ids";
+import { openSecret, sealSecret } from "./crypto";
 import {
   assetOwnerships,
   assetPriceCache,
@@ -270,12 +271,22 @@ export function positionInsertValues(
 export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceStore {
   const { db } = ctx;
 
-  const readSource = async (sourceId: string): Promise<ConnectedSourceRow | null> =>
-    (await db
+  // Secrets live encrypted at rest (ADR 0030, #387): seal on write, open on
+  // read, so the database holds only ciphertext while callers see plaintext.
+  const openRow = (row: ConnectedSourceRow): ConnectedSourceRow => ({
+    ...row,
+    credentialsJson: openSecret(row.credentialsJson),
+    tokenJson: row.tokenJson === null ? null : openSecret(row.tokenJson),
+  });
+
+  const readSource = async (sourceId: string): Promise<ConnectedSourceRow | null> => {
+    const row = await db
       .select(sourceColumns)
       .from(connectedSources)
       .where(eq(connectedSources.id, sourceId))
-      .get()) ?? null;
+      .get();
+    return row ? openRow(row) : null;
+  };
 
   const readPositionsForSource = async (sourceId: string): Promise<SourcePosition[]> => {
     const rows = await db
@@ -505,7 +516,7 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
           .values({
             adapter: input.adapter,
             assetId,
-            credentialsJson: input.credentialsJson,
+            credentialsJson: sealSecret(input.credentialsJson),
             id: sourceId,
             label: input.label,
             lastSyncAt: null,
@@ -525,17 +536,19 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
     saveToken: async (sourceId, tokenJson) => {
       await db
         .update(connectedSources)
-        .set({ tokenJson, updatedAt: sql`CURRENT_TIMESTAMP` })
+        .set({ tokenJson: sealSecret(tokenJson), updatedAt: sql`CURRENT_TIMESTAMP` })
         .where(eq(connectedSources.id, sourceId))
         .run();
     },
     readSource,
-    listSources: () =>
-      db
-        .select(sourceColumns)
-        .from(connectedSources)
-        .orderBy(asc(connectedSources.createdAt), asc(connectedSources.id))
-        .all(),
+    listSources: async () =>
+      (
+        await db
+          .select(sourceColumns)
+          .from(connectedSources)
+          .orderBy(asc(connectedSources.createdAt), asc(connectedSources.id))
+          .all()
+      ).map(openRow),
     listSourceAssetIds,
     removeSourceHoldings: async (sourceId) => {
       const removed = await ctx.transaction(async () => {

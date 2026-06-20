@@ -92,6 +92,13 @@ import { migrate, type MigrateResult } from "./migrate";
 export { SCHEMA_VERSION } from "./migrate";
 export { openLibsqlClient } from "./libsql-client";
 export {
+  ENCRYPTION_KEY_ENV,
+  makeSecretCrypto,
+  openSecret,
+  sealSecret,
+  type SecretCrypto,
+} from "./crypto";
+export {
   createControlPlaneStore,
   createInMemoryControlPlaneStore,
   type ControlPlaneStore,
