@@ -12,11 +12,11 @@
 
 import type { DatedSnapshotHoldingRow } from "./drilldown";
 import {
+  categoricalSlotXs,
   EVOLUTION_CHART_HEIGHT,
   EVOLUTION_CHART_INSET_X,
   EVOLUTION_CHART_WIDTH,
   paddedValueDomain,
-  timeProportionalXs,
   valueToY,
 } from "./evolution-chart";
 
@@ -429,25 +429,17 @@ function toPointsString(xs: number[], ys: number[]): string {
 }
 
 /** Fraction of a period's slot a bar fills — the rest is the inter-bar gutter. */
-const BAR_WIDTH_RATIO = 0.78;
+const BAR_WIDTH_RATIO = 0.85;
 
 /**
- * The bar width shared by every period: `BAR_WIDTH_RATIO` of the TYPICAL
- * (median) gap between adjacent x-centres. Using the median — not the smallest —
- * gap keeps bars full and even: one crowded pair (e.g. the open period sitting
- * right next to the last monthly close) no longer starves every bar down to the
- * floor, which was the "anaemic comb" look. A sensible floor keeps a bar visible.
+ * The bar width shared by every period: `BAR_WIDTH_RATIO` of the even
+ * categorical slot. With one equal slot per period (a column chart, not a time
+ * axis) the width is just `slotW * ratio` — no gap-scanning, no median — so
+ * every column is uniform and near-touching regardless of capture spacing. A
+ * small floor keeps a bar visible when slots get very narrow.
  */
-function barWidthFor(xs: number[]): number {
-  const gaps: number[] = [];
-  for (let i = 1; i < xs.length; i += 1) {
-    const gap = xs[i]! - xs[i - 1]!;
-    if (gap > 0) gaps.push(gap);
-  }
-  if (gaps.length === 0) return COMPOSITION_CHART_WIDTH * BAR_WIDTH_RATIO;
-  gaps.sort((a, b) => a - b);
-  const median = gaps[Math.floor((gaps.length - 1) / 2)]!;
-  return Math.max(2, median * BAR_WIDTH_RATIO);
+function barWidthFor(slotW: number): number {
+  return Math.max(2, slotW * BAR_WIDTH_RATIO);
 }
 
 /**
@@ -519,12 +511,14 @@ export function buildCompositionChartGeometry(
 ): CompositionChartGeometry | null {
   if (points.length < 2) return null;
 
-  const xs = timeProportionalXs(
-    points.map((p) => p.dateKey),
+  // Evenly-spaced categorical slots — a column chart, one equal slot per period
+  // (ADR 0009). Irregular capture spacing is intentionally ignored so columns
+  // stay uniform and never overlap; the net line rides over the same centres.
+  const { xs, slotW } = categoricalSlotXs(
+    points.length,
     COMPOSITION_CHART_WIDTH,
     COMPOSITION_CHART_INSET_X,
   );
-  if (!xs) return null;
 
   const housingMode = options.housingMode ?? "net";
   const excluded = new Set(options.excludedBands ?? []);
@@ -533,7 +527,7 @@ export function buildCompositionChartGeometry(
   const housingHidden = housingMode === "hidden" || excluded.has("housing");
   if (housingHidden) excluded.add("housing");
   const shownBands = COMPOSITION_ASSET_BANDS.filter((band) => !excluded.has(band));
-  const barWidth = barWidthFor(xs);
+  const barWidth = barWidthFor(slotW);
 
   // Whether the home's securing mortgage is folded out of the negative stack —
   // true in BOTH `"net"` (folded into the equity band) and when housing is hidden

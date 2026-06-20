@@ -340,13 +340,17 @@ describe("buildCompositionChartGeometry", () => {
     ).toBeNull();
   });
 
-  test("returns null for a degenerate zero-length time span", () => {
-    expect(
-      buildCompositionChartGeometry([
-        seriesPoint("2026-06-30", { cashMinor: 100_00 }),
-        seriesPoint("2026-06-30", { cashMinor: 200_00 }),
-      ]),
-    ).toBeNull();
+  test("categorical slots draw even though two points share a date (no time axis)", () => {
+    // The chart is a column chart: one equal slot per period regardless of dates,
+    // so two same-day captures still render two side-by-side columns rather than
+    // collapsing to a degenerate zero-length time span.
+    const geometry = buildCompositionChartGeometry([
+      seriesPoint("2026-06-30", { cashMinor: 100_00 }),
+      seriesPoint("2026-06-30", { cashMinor: 200_00 }),
+    ]);
+
+    expect(geometry).not.toBeNull();
+    expect(geometry!.periods).toHaveLength(2);
   });
 
   test("stacks five asset bands above zero, debt below, and a net-worth line over the total", () => {
@@ -399,6 +403,51 @@ describe("buildCompositionChartGeometry", () => {
     // Every period is exposed for hover, with its open/closed flag.
     expect(geometry.periods.map((p) => p.dateKey)).toEqual(["2026-05-31", "2026-06-30"]);
     expect(geometry.periods.map((p) => p.isOpenPeriod)).toEqual([false, true]);
+  });
+
+  test("draws even categorical slots with uniform bar widths, ignoring date spacing", () => {
+    // Deliberately irregular date gaps (1 day, then ~6 months): a time axis would
+    // crowd the first pair and stretch the last. The column chart instead puts one
+    // EQUAL slot per period — uniform spacing and uniform width regardless.
+    const points = [
+      seriesPoint("2026-01-01", { cashMinor: 100_00 }),
+      seriesPoint("2026-01-02", { cashMinor: 120_00 }),
+      seriesPoint("2026-06-30", { cashMinor: 140_00 }),
+    ];
+
+    const geometry = buildCompositionChartGeometry(points, { housingMode: "gross" })!;
+
+    const n = points.length;
+    const insetX = 4; // COMPOSITION_CHART_INSET_X
+    const width = 600; // COMPOSITION_CHART_WIDTH
+    const slotW = (width - 2 * insetX) / n;
+    const expectedXs = points.map((_, i) => insetX + slotW * (i + 0.5));
+    const expectedBarWidth = slotW * 0.85;
+
+    // Period x-centres are the even categorical slots (half-slot margins at edges).
+    const xs = geometry.periods.map((p) => p.netWorth.x);
+    xs.forEach((x, i) => expect(x).toBeCloseTo(expectedXs[i]!, 2));
+
+    // Adjacent gaps are all identical (one equal slot wide) — no crowding.
+    const gaps = xs.slice(1).map((x, i) => x - xs[i]!);
+    gaps.forEach((gap) => expect(gap).toBeCloseTo(slotW, 2));
+
+    // Every bar across every band shares the one uniform slot-derived width.
+    const allBars = geometry.assetBands.flatMap((band) => band.bars);
+    for (const bar of allBars) {
+      expect(bar.width).toBeCloseTo(expectedBarWidth, 2);
+    }
+
+    // No bar ever clips the viewBox: half-slot margins keep the first bar's left
+    // edge ≥ 0 and the last bar's right edge ≤ width.
+    const firstBar = geometry.assetBands[0]!.bars[0]!;
+    const lastBar = geometry.assetBands[0]!.bars.at(-1)!;
+    expect(firstBar.x).toBeGreaterThanOrEqual(0);
+    expect(lastBar.x + lastBar.width).toBeLessThanOrEqual(width);
+
+    // The net-worth line rides over the same categorical centres as the bars.
+    const lineXs = parseCoords(geometry.netWorthLine).map((c) => c.x);
+    lineXs.forEach((x, i) => expect(x).toBeCloseTo(expectedXs[i]!, 2));
   });
 
   test("default housingMode is 'net': folds the securing mortgage into a Vivienda equity band", () => {

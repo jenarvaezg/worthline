@@ -178,7 +178,8 @@ describe("buildLiquidDrilldown — per-tier stacked series", () => {
     expect(state.stack!.yMin).toBe(-18_00);
     expect(state.stack!.yMax).toBe(198_00);
     // Stacked mode now also emits per-period BARS and a stack-total line
-    // (this design pass), one rect per date key per band.
+    // (this design pass), one rect per date key per band, drawn on EVEN
+    // categorical slots (a column chart, not a time axis).
     expect(state.stack!.totalLine).not.toBeNull();
     for (const band of state.stack!.bands) {
       expect(band.areaPoints).not.toBeNull();
@@ -189,6 +190,23 @@ describe("buildLiquidDrilldown — per-tier stacked series", () => {
         expect(bar.width).toBeGreaterThan(0);
       }
     }
+    // Every bar across every band shares one uniform slot-derived width, and the
+    // per-period centres are evenly spaced (half-slot edge margins → no clip).
+    const cashBars = state.stack!.bands[0]!.bars!;
+    // (EVOLUTION_CHART_WIDTH − 2·INSET_X) / n, with WIDTH = 600, INSET_X = 4, n = 2.
+    const innerSlot = (600 - 2 * 4) / 2;
+    const widths = state.stack!.bands.flatMap((b) => b.bars!.map((r) => r.width));
+    expect(new Set(widths).size).toBe(1);
+    expect(widths[0]!).toBeCloseTo(innerSlot * 0.85, 2);
+    // Two columns → centres at 4 + slot·0.5 and 4 + slot·1.5, one slot apart.
+    const centre0 = cashBars[0]!.x + cashBars[0]!.width / 2;
+    const centre1 = cashBars[1]!.x + cashBars[1]!.width / 2;
+    expect(centre0).toBeCloseTo(4 + innerSlot * 0.5, 2);
+    expect(centre1).toBeCloseTo(4 + innerSlot * 1.5, 2);
+    expect(centre1 - centre0).toBeCloseTo(innerSlot, 2);
+    // No bar clips the viewBox.
+    expect(cashBars[0]!.x).toBeGreaterThanOrEqual(0);
+    expect(cashBars[1]!.x + cashBars[1]!.width).toBeLessThanOrEqual(600);
   });
 
   test("falls back to lines for the whole window when a tier net crosses zero", () => {

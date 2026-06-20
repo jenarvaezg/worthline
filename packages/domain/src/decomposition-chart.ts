@@ -15,6 +15,7 @@
  */
 
 import {
+  categoricalSlotXs,
   EVOLUTION_CHART_HEIGHT,
   EVOLUTION_CHART_INSET_X,
   EVOLUTION_CHART_WIDTH,
@@ -81,24 +82,17 @@ function toPointsString(xs: number[], ys: number[]): string {
 }
 
 /** Fraction of a period's slot a bar fills — the rest is the inter-bar gutter. */
-const BAR_WIDTH_RATIO = 0.78;
+const BAR_WIDTH_RATIO = 0.85;
 
 /**
- * The bar width shared by every period: `BAR_WIDTH_RATIO` of the TYPICAL
- * (median) gap between adjacent x-centres — not the smallest, so one crowded
- * pair never starves every bar down to the floor (the "anaemic comb"). Mirrors
- * the main composition chart's `barWidthFor` (#142).
+ * The bar width shared by every period: `BAR_WIDTH_RATIO` of the even
+ * categorical slot. The stacked-bar path draws on uniform column slots (not a
+ * time axis), so the width is just `slotW * ratio` — no gap-scanning, no median
+ * — and every column is uniform and near-touching. Mirrors the main composition
+ * chart's `barWidthFor` (#142). A small floor keeps a narrow bar visible.
  */
-function barWidthFor(xs: number[], width: number): number {
-  const gaps: number[] = [];
-  for (let i = 1; i < xs.length; i += 1) {
-    const gap = xs[i]! - xs[i - 1]!;
-    if (gap > 0) gaps.push(gap);
-  }
-  if (gaps.length === 0) return width * BAR_WIDTH_RATIO;
-  gaps.sort((a, b) => a - b);
-  const median = gaps[Math.floor((gaps.length - 1) / 2)]!;
-  return Math.max(2, median * BAR_WIDTH_RATIO);
+function barWidthFor(slotW: number): number {
+  return Math.max(2, slotW * BAR_WIDTH_RATIO);
 }
 
 /**
@@ -176,18 +170,29 @@ export function buildStackedChartGeometry<Id extends string>(
   const edgeYs = edges.map((edge) =>
     edge.map((v) => valueToY(v, yMin, yMax, EVOLUTION_CHART_HEIGHT)),
   );
-  const barWidth = barWidthFor(xs, EVOLUTION_CHART_WIDTH);
+  // Evenly-spaced categorical slots for the column chart — one equal slot per
+  // period, every bar uniform and centred (ADR 0009). The total line and the
+  // band areas/lines ride over these same centres. Lines-mode keeps the
+  // time-proportional `xs` above; only the bar path is categorical.
+  const { xs: barXs, slotW } = categoricalSlotXs(
+    dateKeys.length,
+    EVOLUTION_CHART_WIDTH,
+    EVOLUTION_CHART_INSET_X,
+  );
+  const barWidth = barWidthFor(slotW);
 
   return {
     bands: series.map((s, i) => ({
-      areaPoints: toAreaString(xs, edgeYs[i + 1]!, edgeYs[i]!),
+      areaPoints: toAreaString(barXs, edgeYs[i + 1]!, edgeYs[i]!),
       band: s.band,
-      bars: xs.map((x, p) => toBarRect(x, barWidth, edgeYs[i + 1]![p]!, edgeYs[i]![p]!)),
-      linePoints: toPointsString(xs, edgeYs[i + 1]!),
+      bars: barXs.map((x, p) =>
+        toBarRect(x, barWidth, edgeYs[i + 1]![p]!, edgeYs[i]![p]!),
+      ),
+      linePoints: toPointsString(barXs, edgeYs[i + 1]!),
     })),
     height: EVOLUTION_CHART_HEIGHT,
     mode: "stacked",
-    totalLine: toPointsString(xs, edgeYs.at(-1)!),
+    totalLine: toPointsString(barXs, edgeYs.at(-1)!),
     width: EVOLUTION_CHART_WIDTH,
     yMax,
     yMin,
