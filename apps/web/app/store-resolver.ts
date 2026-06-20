@@ -5,7 +5,15 @@ export type StoreTarget =
 
 export interface ResolveStoreTargetInput {
   env: Record<string, string | undefined>;
-  session: { user?: { email?: string | null } } | null;
+  session: {
+    user?: { email?: string | null };
+    /**
+     * The user's own workspace, resolved at sign-in (control plane +
+     * provision-on-first-login) and carried in the JWT (ADR 0030). Absent until
+     * a workspace has been provisioned.
+     */
+    workspace?: { id: string; dbUrl: string };
+  } | null;
 }
 
 export function resolveStoreTarget(input: ResolveStoreTargetInput): StoreTarget {
@@ -16,14 +24,17 @@ export function resolveStoreTarget(input: ResolveStoreTargetInput): StoreTarget 
     return { kind: "local" };
   }
 
-  if (!session) {
+  const workspace = session?.workspace;
+  if (!workspace) {
     return { kind: "unauthenticated" };
   }
 
+  // One shared Turso group token in env; the per-workspace URL comes from the
+  // control plane via the session.
   return {
     kind: "authenticated",
-    workspaceId: "default",
-    dbUrl: env.WORTHLINE_DB_URL ?? "",
+    workspaceId: workspace.id,
+    dbUrl: workspace.dbUrl,
     token: env.WORTHLINE_DB_AUTH_TOKEN ?? "",
   };
 }

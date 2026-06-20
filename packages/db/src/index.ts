@@ -91,6 +91,20 @@ import { migrate, type MigrateResult } from "./migrate";
 
 export { SCHEMA_VERSION } from "./migrate";
 export { openLibsqlClient } from "./libsql-client";
+export {
+  createControlPlaneStore,
+  createInMemoryControlPlaneStore,
+  type ControlPlaneStore,
+  type ControlPlaneStoreOptions,
+  type ControlPlaneUser,
+  type ControlPlaneWorkspace,
+  type ControlPlaneGrant,
+} from "./control-plane";
+export {
+  provisionWorkspaceForUser,
+  type TursoPort,
+  type ProvisionDeps,
+} from "./provisioner";
 import {
   createLiabilityStore,
   type AddBalanceAnchorInput,
