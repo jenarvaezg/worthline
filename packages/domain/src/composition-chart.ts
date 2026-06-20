@@ -260,17 +260,6 @@ export function selectPeriodicSeries(
     }));
 }
 
-/**
- * Monthly base points — the last snapshot of each calendar month (ADR 0009).
- * A thin wrapper over the general periodic selection at month granularity.
- */
-export function selectMonthlySeries(
-  snapshots: readonly { dateKey: string; monthKey: string }[],
-  today: string,
-): MonthlySeriesEntry[] {
-  return selectPeriodicSeries(snapshots, today, "month");
-}
-
 /** One base point of the chart: its date, open/closed flag, and banded figures. */
 export interface CompositionSeriesPoint extends CompositionBands {
   dateKey: string;

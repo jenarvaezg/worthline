@@ -1,7 +1,6 @@
 /**
  * Wiring suite: inversiones server actions
- * (createInvestmentAction, updateInvestmentAction,
- *  deleteInvestmentAction, restoreInvestmentAction).
+ * (createInvestmentAction, updateInvestmentAction).
  *
  * recordOperationAction is covered by operation-bounds-invariant.wiring.test.ts.
  * refreshPricesAction depends on an external network provider and is excluded
@@ -15,11 +14,7 @@ import { vi, describe, test, expect, afterEach } from "vitest";
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
-import {
-  updateInvestmentAction,
-  deleteInvestmentAction,
-  restoreInvestmentAction,
-} from "@web/inversiones/actions";
+import { updateInvestmentAction } from "@web/inversiones/actions";
 import { catchRedirect, fd } from "./helpers";
 
 // ------------------------------------------------------------- test fixtures --
@@ -235,81 +230,5 @@ describe("updateInvestmentAction wiring", () => {
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/símbolo/i);
     expect(store.assets.readInvestmentAssetById(INVESTMENT_ID)?.name).toBe("Index Fund");
-  });
-});
-
-// ========================================================== deleteInvestmentAction
-
-describe("deleteInvestmentAction wiring", () => {
-  test("happy path: investment soft-deleted, redirect to deleted_recoverable", async () => {
-    setupStoreWithInvestment();
-
-    const url = await catchRedirect(() =>
-      deleteInvestmentAction(fd({ id: INVESTMENT_ID }, "/inversiones"), store),
-    );
-
-    expect(url).toContain("ok=deleted_recoverable");
-    const trash = store.readTrash();
-    expect(trash.assets.some((a) => a.id === INVESTMENT_ID)).toBe(true);
-  });
-
-  test("missing id: error redirect", async () => {
-    setupStoreWithInvestment();
-
-    const url = await catchRedirect(() =>
-      deleteInvestmentAction(fd({ id: "" }, "/inversiones"), store),
-    );
-
-    expect(url).toContain("error=");
-    expect(decodeURIComponent(url)).toMatch(/identificador/i);
-  });
-
-  test("unknown id (changes=0): error redirect", async () => {
-    setupStoreWithInvestment();
-
-    const url = await catchRedirect(() =>
-      deleteInvestmentAction(fd({ id: "asset_nonexistent" }, "/inversiones"), store),
-    );
-
-    expect(url).toContain("error=");
-    expect(decodeURIComponent(url)).toMatch(/eliminado/i);
-  });
-});
-
-// ========================================================= restoreInvestmentAction
-
-describe("restoreInvestmentAction wiring", () => {
-  test("happy path: soft-deleted investment is restored", async () => {
-    setupStoreWithInvestment();
-    store.assets.softDeleteAsset(INVESTMENT_ID, new Date().toISOString());
-
-    const url = await catchRedirect(() =>
-      restoreInvestmentAction(fd({ id: INVESTMENT_ID }, "/inversiones"), store),
-    );
-
-    expect(url).toContain("ok=restored");
-    expect(store.assets.readInvestmentAssetsWithMeta()).toHaveLength(1);
-    expect(store.readTrash().assets).toHaveLength(0);
-  });
-
-  test("missing id: error redirect", async () => {
-    setupStoreWithInvestment();
-
-    const url = await catchRedirect(() =>
-      restoreInvestmentAction(fd({ id: "" }, "/inversiones"), store),
-    );
-
-    expect(url).toContain("error=");
-  });
-
-  test("investment not in trash (changes=0): error redirect", async () => {
-    setupStoreWithInvestment();
-
-    const url = await catchRedirect(() =>
-      restoreInvestmentAction(fd({ id: INVESTMENT_ID }, "/inversiones"), store),
-    );
-
-    expect(url).toContain("error=");
-    expect(decodeURIComponent(url)).toMatch(/papelera/i);
   });
 });

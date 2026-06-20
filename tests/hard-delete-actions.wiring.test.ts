@@ -14,10 +14,7 @@ import {
   hardDeleteAssetAction,
   hardDeleteLiabilityAction,
 } from "@web/patrimonio/actions";
-import {
-  deleteOperationAction,
-  hardDeleteInvestmentAction,
-} from "@web/inversiones/actions";
+import { deleteOperationAction } from "@web/inversiones/actions";
 import { hardDeleteMemberAction, resetWorkspaceAction } from "@web/ajustes/actions";
 import { catchRedirect, fd } from "./helpers";
 
@@ -126,45 +123,6 @@ describe("emptyTrashAction wiring", () => {
     const url = await catchRedirect(() => emptyTrashAction(fd({}), store));
     expect(url).toContain("ok=trash_emptied");
     expect(store.readTrash()).toEqual({ assets: [], liabilities: [] });
-  });
-});
-
-// ====================================================== inversiones: hard delete
-
-describe("hardDeleteInvestmentAction wiring", () => {
-  test("happy path: trashed investment destroyed", async () => {
-    setupStore();
-    store.assets.createInvestmentAsset({
-      currency: "EUR",
-      id: "inv1",
-      liquidityTier: "market",
-      name: "ETF",
-      ownership: [{ memberId: "m", shareBps: 10_000 }],
-    });
-    store.assets.softDeleteAsset("inv1", new Date().toISOString());
-
-    const url = await catchRedirect(() =>
-      hardDeleteInvestmentAction(fd({ id: "inv1" }, "/inversiones"), store),
-    );
-    expect(url).toContain("ok=hard_deleted");
-    expect(store.readTrash().assets).toEqual([]);
-  });
-
-  test("not in trash: error redirect", async () => {
-    setupStore();
-    store.assets.createInvestmentAsset({
-      currency: "EUR",
-      id: "inv1",
-      liquidityTier: "market",
-      name: "ETF",
-      ownership: [{ memberId: "m", shareBps: 10_000 }],
-    });
-
-    const url = await catchRedirect(() =>
-      hardDeleteInvestmentAction(fd({ id: "inv1" }, "/inversiones"), store),
-    );
-    expect(url).toContain("error=");
-    expect(decodeURIComponent(url)).toMatch(/papelera/i);
   });
 });
 

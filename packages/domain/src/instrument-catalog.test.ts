@@ -12,7 +12,6 @@ import {
   defaultInstrumentForAssetType,
   defaultInstrumentForLiability,
   defaultsFor,
-  instrumentForQuoteType,
 } from "./instrument-catalog";
 import type { Instrument, InstrumentDefaults } from "./instrument-catalog";
 
@@ -159,21 +158,6 @@ describe("defaultsFor — covers every instrument (#149 AC)", () => {
       expect(defaultsFor(instrument)).toEqual(EXPECTED[instrument]);
     },
   );
-});
-
-describe("instrumentForQuoteType — symbol-search prefill (#149, folds in #139)", () => {
-  test("maps each provider quote type to its instrument", () => {
-    expect(instrumentForQuoteType("MUTUALFUND")).toBe("fund");
-    expect(instrumentForQuoteType("ETF")).toBe("etf");
-    expect(instrumentForQuoteType("EQUITY")).toBe("stock");
-    expect(instrumentForQuoteType("INDEX")).toBe("index");
-    expect(instrumentForQuoteType("PENSIONPLAN")).toBe("pension_plan");
-  });
-
-  test("falls back to 'other' for an unknown or absent quote type", () => {
-    expect(instrumentForQuoteType("CRYPTOCURRENCY")).toBe("other");
-    expect(instrumentForQuoteType(undefined)).toBe("other");
-  });
 });
 
 describe("defaultInstrumentForAssetType — backfill from the legacy AssetType (#149)", () => {

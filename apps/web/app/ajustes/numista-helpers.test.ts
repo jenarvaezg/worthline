@@ -8,7 +8,6 @@ import type { Member } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import {
-  buildCredentialsJson,
   formatLastSync,
   normalizeApiKey,
   readApiKey,
@@ -61,11 +60,9 @@ describe("normalizeApiKey", () => {
   });
 });
 
-describe("credentials round-trip", () => {
-  test("buildCredentialsJson / readApiKey preserve the key", () => {
-    const json = buildCredentialsJson("secret-key");
-    expect(json).toBe('{"apiKey":"secret-key"}');
-    expect(readApiKey(json)).toBe("secret-key");
+describe("readApiKey", () => {
+  test("reads the stored apiKey back out of the credentials JSON", () => {
+    expect(readApiKey('{"apiKey":"secret-key"}')).toBe("secret-key");
   });
 
   test("readApiKey returns null on malformed or empty credentials", () => {

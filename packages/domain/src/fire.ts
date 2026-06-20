@@ -41,17 +41,6 @@ export interface FireResult {
   isAlreadyAtCoastFire?: boolean;
 }
 
-export function filterFireEligibleAssets(
-  assets: ManualAsset[],
-  excludedIds?: string[],
-): ManualAsset[] {
-  const excludedSet = new Set(excludedIds ?? []);
-
-  return assets.filter(
-    (asset) => !asset.isPrimaryResidence && !excludedSet.has(asset.id),
-  );
-}
-
 export function calculateFire(
   config: FireScopeConfig,
   eligibleAssetsMinor: number,

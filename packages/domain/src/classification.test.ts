@@ -4,11 +4,11 @@ import { describe, expect, test } from "vitest";
 import { isHousingAsset, isLiquid, tierOfAsset } from "./classification";
 import {
   buildLiquidityBreakdown,
+  calculateFireForScope,
   calculateNetWorth,
   createLiability,
   createManualAsset,
   createWorkspace,
-  filterFireEligibleAssets,
 } from "./index";
 
 const workspace = createWorkspace({
@@ -78,7 +78,18 @@ describe("asset classification", () => {
     });
     expect(isHousingAsset(rental)).toBe(true);
     expect(tierOfAsset(rental)).toBe("housing");
-    expect(filterFireEligibleAssets([rental]).map((a) => a.id)).toEqual(["rental"]);
+    const fire = calculateFireForScope(
+      {
+        monthlySpendingMinor: 100_000,
+        safeWithdrawalRate: 0.04,
+        expectedRealReturn: 0.07,
+      },
+      [rental],
+      workspace,
+      "household",
+    );
+    expect(fire.excludedAssets).toEqual([]);
+    expect(fire.eligibleAssets.amountMinor).toBeGreaterThan(0);
   });
 
   test("housing is sourced from the instrument, not the legacy type (#149)", () => {

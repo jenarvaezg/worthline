@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ManualAsset, Workspace } from "./index";
-import { calculateFire, calculateFireForScope, filterFireEligibleAssets } from "./fire";
+import { calculateFire, calculateFireForScope } from "./fire";
 
 const workspace: Workspace = {
   baseCurrency: "EUR",
@@ -33,39 +33,6 @@ function makeAsset(
     isPrimaryResidence,
   };
 }
-
-// ---------------------------------------------------------------------------
-// filterFireEligibleAssets
-// ---------------------------------------------------------------------------
-
-describe("filterFireEligibleAssets", () => {
-  it("excludes primary residence assets", () => {
-    const assets = [
-      makeAsset("house", 500_000_00, true),
-      makeAsset("stocks", 100_000_00, false),
-    ];
-
-    const result = filterFireEligibleAssets(assets);
-
-    expect(result.map((a) => a.id)).toEqual(["stocks"]);
-  });
-
-  it("excludes explicitly-named asset IDs", () => {
-    const assets = [makeAsset("pension", 80_000_00), makeAsset("stocks", 100_000_00)];
-
-    const result = filterFireEligibleAssets(assets, ["pension"]);
-
-    expect(result.map((a) => a.id)).toEqual(["stocks"]);
-  });
-
-  it("includes regular non-primary-residence assets", () => {
-    const assets = [makeAsset("stocks", 100_000_00), makeAsset("cash", 20_000_00)];
-
-    const result = filterFireEligibleAssets(assets);
-
-    expect(result.map((a) => a.id)).toEqual(["stocks", "cash"]);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // calculateFire

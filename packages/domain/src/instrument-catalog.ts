@@ -123,33 +123,13 @@ export function defaultsFor(instrument: Instrument): InstrumentDefaults {
   return INSTRUMENT_DEFAULTS[instrument];
 }
 
-/** Provider quote types we recognize when prefilling from a symbol search (#139). */
-const QUOTE_TYPE_TO_INSTRUMENT: Record<string, Instrument> = {
-  MUTUALFUND: "fund",
-  ETF: "etf",
-  EQUITY: "stock",
-  INDEX: "index",
-  PENSIONPLAN: "pension_plan",
-};
-
-/**
- * The instrument a symbol-search candidate's provider quote type suggests (#139):
- * Yahoo's MUTUALFUND/ETF/EQUITY/INDEX and Finect's PENSIONPLAN.
- */
-export function instrumentForQuoteType(quoteType: string | undefined): Instrument {
-  if (quoteType && quoteType in QUOTE_TYPE_TO_INSTRUMENT) {
-    return QUOTE_TYPE_TO_INSTRUMENT[quoteType]!;
-  }
-  return "other";
-}
-
 /**
  * The instrument an asset backfills to from its legacy `AssetType` (#149). A
  * primary residence is a `property` whatever its type — mirroring the old
  * `isHousingAsset` rule (real_estate OR primary residence) so housing equity stays
  * byte-identical when re-sourced from the instrument. The investment→`fund`
  * default is the coarse fallback; the migration refines it via the price provider
- * (finect→pension_plan), and new investments resolve via `instrumentForQuoteType`.
+ * (finect→pension_plan).
  */
 export function defaultInstrumentForAssetType(
   type: AssetType,

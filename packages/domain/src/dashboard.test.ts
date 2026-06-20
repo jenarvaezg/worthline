@@ -5,7 +5,6 @@ import {
   createWorkspace,
   largestRemainderPercentages,
   prepareDashboardState,
-  signedDeltaBarWidths,
 } from "./index";
 
 const workspace = createWorkspace({
@@ -114,33 +113,5 @@ describe("largestRemainderPercentages", () => {
     // 60% + 40% = exact split → no remainder needed.
     const result = largestRemainderPercentages([600, 400]);
     expect(result).toEqual([60, 40]);
-  });
-});
-
-describe("signedDeltaBarWidths", () => {
-  test("returns zeros for empty input", () => {
-    expect(signedDeltaBarWidths([])).toEqual([]);
-  });
-
-  test("single value gets max width 100", () => {
-    expect(signedDeltaBarWidths([500_00])).toEqual([100]);
-  });
-
-  test("negative value has same magnitude scaling as positive", () => {
-    const result = signedDeltaBarWidths([-1000_00, 1000_00]);
-    expect(result).toEqual([100, 100]);
-  });
-
-  test("zero delta gets width 0", () => {
-    const result = signedDeltaBarWidths([0, 1000_00]);
-    expect(result[0]).toBe(0);
-    expect(result[1]).toBe(100);
-  });
-
-  test("scales proportionally to the absolute max", () => {
-    // max = 200, first value = 100 → 50%
-    const result = signedDeltaBarWidths([100_00, 200_00]);
-    expect(result[0]).toBe(50);
-    expect(result[1]).toBe(100);
   });
 });

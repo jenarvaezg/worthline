@@ -56,22 +56,6 @@ export function largestRemainderPercentages(values: number[]): number[] {
   return floors;
 }
 
-/**
- * Scales an array of signed delta amounts (integer minor units) to bar widths
- * in the range [0, 100], proportional to the absolute maximum value.
- * Zero deltas produce width 0. Preserves input order and sign information
- * is kept by the caller (positive/negative class on the bar element).
- */
-export function signedDeltaBarWidths(deltas: number[]): number[] {
-  if (deltas.length === 0) return [];
-
-  const maxAbs = Math.max(...deltas.map((d) => Math.abs(d)));
-
-  if (maxAbs === 0) return deltas.map(() => 0);
-
-  return deltas.map((d) => Math.round((Math.abs(d) / maxAbs) * 100));
-}
-
 export interface OnboardingStep {
   id: string;
   label: string;

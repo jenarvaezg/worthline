@@ -31,7 +31,6 @@ const KEY_EXPORTS = [
   "valuationMethodOfLiability",
   // instrument-catalog
   "defaultsFor",
-  "instrumentForQuoteType",
   "defaultInstrumentForAssetType",
   "defaultInstrumentForLiability",
   // value-history
@@ -68,14 +67,11 @@ const KEY_EXPORTS = [
   "getPriceFreshness",
   // fire
   "calculateFire",
-  "filterFireEligibleAssets",
   // warnings
   "collectWarnings",
   // scope
   "listScopeOptions",
   "resolveScopeMemberIds",
-  // ownership
-  "allocateOwnedMoneyMinor",
   // scope-allocation
   "allocateScopedHolding",
   // workspace-transfer
@@ -90,7 +86,6 @@ const KEY_EXPORTS = [
   "projectPortfolio",
   // portfolio-grouping (#154)
   "groupPortfolio",
-  "instrumentLabel",
   // dashboard
   "prepareDashboardState",
   "deriveOnboardingProgress",
