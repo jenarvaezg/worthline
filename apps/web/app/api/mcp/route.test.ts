@@ -1,6 +1,10 @@
-import { describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 
 import { GET, POST } from "./route";
+
+vi.mock("next/headers", () => ({
+  cookies: async () => ({ get: () => undefined }),
+}));
 
 const MCP_URL = "http://localhost:3000/api/mcp";
 const PROTOCOL_VERSION = "2024-11-05";
@@ -58,7 +62,7 @@ describe("GET /api/mcp", () => {
   });
 });
 
-describe("POST /api/mcp", () => {
+describe("POST /api/mcp (non-demo mode)", () => {
   test("completes the initialize handshake", async () => {
     const response = await mcpRequest({
       jsonrpc: "2.0",
@@ -204,4 +208,125 @@ describe("POST /api/mcp", () => {
 
     expect(response.status).toBe(406);
   });
+});
+
+describe("POST /api/mcp (demo mode)", () => {
+  const originalDemo = process.env.DEMO;
+  const originalDemoNow = process.env.WORTHLINE_DEMO_NOW;
+
+  beforeAll(() => {
+    process.env.DEMO = "1";
+    process.env.WORTHLINE_DEMO_NOW = "2026-06-20";
+  });
+
+  afterAll(() => {
+    process.env.DEMO = originalDemo;
+    process.env.WORTHLINE_DEMO_NOW = originalDemoNow;
+  });
+
+  test("list_scopes returns real demo scopes", { timeout: 30000 }, async () => {
+    const response = await mcpRequest({
+      jsonrpc: "2.0",
+      id: 10,
+      method: "tools/call",
+      params: { name: "list_scopes", arguments: {} },
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await parseSingleMcpMessage(response)) as {
+      result: { content: Array<{ text: string }> };
+    };
+    const payload = JSON.parse(body.result.content[0]?.text ?? "") as {
+      data: Array<{ id: string; label: string; isDefault: boolean }>;
+    };
+    expect(payload.data.length).toBeGreaterThan(0);
+    expect(payload.data.some((scope) => scope.isDefault)).toBe(true);
+  });
+
+  test("get_financial_context returns real demo data", { timeout: 30000 }, async () => {
+    const response = await mcpRequest({
+      jsonrpc: "2.0",
+      id: 11,
+      method: "tools/call",
+      params: { name: "get_financial_context", arguments: {} },
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await parseSingleMcpMessage(response)) as {
+      result: { content: Array<{ text: string }> };
+    };
+    const payload = JSON.parse(body.result.content[0]?.text ?? "") as {
+      data: { summary: { netWorth: { amountMinor: number } }; holdings: unknown };
+    };
+    expect(payload.data.summary.netWorth.amountMinor).toBeGreaterThan(0);
+    expect(payload.data.holdings).toBeDefined();
+  });
+
+  test(
+    "explain_figure returns a real explanation for net_worth",
+    { timeout: 30000 },
+    async () => {
+      const response = await mcpRequest({
+        jsonrpc: "2.0",
+        id: 12,
+        method: "tools/call",
+        params: {
+          name: "explain_figure",
+          arguments: { figure: "net_worth" },
+        },
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await parseSingleMcpMessage(response)) as {
+        result: { content: Array<{ text: string }> };
+      };
+      const payload = JSON.parse(body.result.content[0]?.text ?? "") as {
+        data: { figure: string; value: { amountMinor: number } };
+      };
+      expect(payload.data.figure).toBe("net_worth");
+      expect(payload.data.value.amountMinor).toBeGreaterThan(0);
+    },
+  );
+
+  test("get_snapshot_history returns real demo history", { timeout: 30000 }, async () => {
+    const response = await mcpRequest({
+      jsonrpc: "2.0",
+      id: 13,
+      method: "tools/call",
+      params: { name: "get_snapshot_history", arguments: {} },
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await parseSingleMcpMessage(response)) as {
+      result: { content: Array<{ text: string }> };
+    };
+    const payload = JSON.parse(body.result.content[0]?.text ?? "") as {
+      data: Array<unknown>;
+      meta: { limit: number; hasNext: boolean };
+    };
+    expect(payload.data.length).toBeGreaterThan(0);
+    expect(payload.meta.limit).toBeGreaterThan(0);
+  });
+
+  test(
+    "get_fire_context returns real demo FIRE context",
+    { timeout: 30000 },
+    async () => {
+      const response = await mcpRequest({
+        jsonrpc: "2.0",
+        id: 14,
+        method: "tools/call",
+        params: { name: "get_fire_context", arguments: {} },
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await parseSingleMcpMessage(response)) as {
+        result: { content: Array<{ text: string }> };
+      };
+      const payload = JSON.parse(body.result.content[0]?.text ?? "") as {
+        data: { status: string };
+      };
+      expect(typeof payload.data.status).toBe("string");
+    },
+  );
 });

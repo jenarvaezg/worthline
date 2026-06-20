@@ -1,7 +1,7 @@
 import { createAgentViewMcpToolCatalog } from "./mcp";
 import type { AgentViewMcpServerTool } from "./mcp-server";
 
-const STUB_NOTICE = "This tool is not yet wired to real data.";
+export const STUB_NOTICE = "This tool is not yet wired to real data.";
 
 /**
  * Build a stub agent-view tool catalog for the public MCP endpoint (#399).
