@@ -125,6 +125,32 @@ describe("seedPersona — inversor (markets-heavy)", () => {
     store.close();
   });
 
+  it("backfills Binance value before today's open period", async () => {
+    const store = createInMemoryStore();
+    seedPersona(store, INVERSOR_SPEC, AS_OF);
+
+    await readDashboard(store);
+
+    const binance = store.connectedSources
+      .listSources()
+      .find((source) => source.adapter === "binance")!;
+    const rows = store.snapshots.readSnapshotHoldings({
+      holdingId: binance.assetId,
+      kind: "asset",
+      scopeId: "household",
+    });
+    const mayClose = rows.find((row) => row.dateKey === "2026-05-31");
+    const today = rows.find((row) => row.dateKey === AS_OF);
+
+    expect(mayClose?.valueMinor ?? 0).toBeGreaterThan(0);
+    expect(today?.valueMinor ?? 0).toBeGreaterThan(0);
+    expect(Math.abs((today?.valueMinor ?? 0) - (mayClose?.valueMinor ?? 0))).toBeLessThan(
+      5_000_00,
+    );
+
+    store.close();
+  });
+
   it("computes strong FIRE progress for the configured scope", async () => {
     const store = createInMemoryStore();
     seedPersona(store, INVERSOR_SPEC, AS_OF);

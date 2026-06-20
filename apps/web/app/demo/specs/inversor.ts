@@ -5,7 +5,11 @@
  * and earn balances, and a configured FIRE target with strong progress. All
  * figures are fictional.
  */
-import type { OperationSpec, PersonaSpec } from "@web/demo/spec-types";
+import type {
+  BinanceHistoryMonthSpec,
+  OperationSpec,
+  PersonaSpec,
+} from "@web/demo/spec-types";
 
 const LUCIA = "member_lucia";
 const FULL = [{ memberId: LUCIA, shareBps: 10_000 }];
@@ -26,6 +30,25 @@ function monthlyBuys(
     units,
     feesMinor: 120,
   }));
+}
+
+function binanceHistoryMonths(): BinanceHistoryMonthSpec[] {
+  return Array.from({ length: 18 }, (_, i) => {
+    const progress = i / 17;
+    return {
+      monthsAgo: 18 - i,
+      balances: {
+        BTC: (0.12 + 0.19 * progress).toFixed(4),
+        ETH: (1.8 + 1.65 * progress).toFixed(4),
+        SOL: (25 + 53 * progress).toFixed(2),
+      },
+      prices: {
+        BTC: (42_000 + 19_000 * progress).toFixed(2),
+        ETH: (2_200 + 1_150 * progress).toFixed(2),
+        SOL: (70 + 72 * progress).toFixed(2),
+      },
+    };
+  });
 }
 
 export const INVERSOR_SPEC: PersonaSpec = {
@@ -115,6 +138,7 @@ export const INVERSOR_SPEC: PersonaSpec = {
   connectedSources: [
     {
       adapter: "binance",
+      binanceHistory: binanceHistoryMonths(),
       label: "Binance · spot y earn",
       ownership: FULL,
       syncedAt: { daysAgo: 1 },

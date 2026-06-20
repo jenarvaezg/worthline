@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 
 import { createInMemoryStore } from "@worthline/db";
 import type { WorthlineStore } from "@worthline/db";
-import { valueHousingAtDate } from "@worthline/domain";
+import { amortizableBalanceAtDate, valueHousingAtDate } from "@worthline/domain";
 
 import { resolveRelativeDate, seedPersona } from "@web/demo/seed-persona";
 import { FAMILIA_SPEC } from "@web/demo/specs/familia";
@@ -139,6 +139,41 @@ describe("seedPersona — familia", () => {
     })[0];
 
     expect(todayHomeRow?.valueMinor).toBe(expectedAsOfValue);
+
+    store.close();
+  });
+
+  it("captures today's mortgage balance from the amortization curve", async () => {
+    const store = createInMemoryStore();
+    seedPersona(store, FAMILIA_SPEC, AS_OF);
+
+    await readDashboard(store);
+
+    const mortgageSpec = FAMILIA_SPEC.housing![0]!.mortgage!;
+    const expectedAsOfBalance = amortizableBalanceAtDate({
+      earlyRepayments: (mortgageSpec.earlyRepayments ?? []).map((repayment) => ({
+        amountMinor: repayment.amountMinor,
+        mode: repayment.mode,
+        repaymentDate: resolveRelativeDate(AS_OF, repayment.at),
+      })),
+      plan: {
+        annualInterestRate: mortgageSpec.annualInterestRate,
+        disbursementDate: resolveRelativeDate(AS_OF, mortgageSpec.disbursement),
+        firstPaymentDate: resolveRelativeDate(AS_OF, mortgageSpec.firstPayment),
+        initialCapitalMinor: mortgageSpec.initialCapitalMinor,
+        termMonths: mortgageSpec.termMonths,
+      },
+      targetDate: AS_OF,
+    });
+    const todayMortgageRow = store.snapshots.readSnapshotHoldings({
+      from: AS_OF,
+      holdingId: mortgageSpec.liabilityId,
+      kind: "liability",
+      scopeId: "household",
+      to: AS_OF,
+    })[0];
+
+    expect(todayMortgageRow?.valueMinor).toBe(expectedAsOfBalance);
 
     store.close();
   });

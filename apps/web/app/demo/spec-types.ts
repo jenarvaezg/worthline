@@ -139,6 +139,17 @@ export interface ConnectedSourceSpec {
   /** Adapter credentials JSON; defaults to "{}" (never used — demo never syncs). */
   credentialsJson?: string;
   positions: SourcePositionInput[];
+  /**
+   * Optional synthetic Binance history. Month offsets are relative to the demo
+   * clock; balances/prices are keyed by symbol and frozen at that month-end.
+   */
+  binanceHistory?: BinanceHistoryMonthSpec[];
+}
+
+export interface BinanceHistoryMonthSpec {
+  monthsAgo: number;
+  balances: Record<string, DecimalString>;
+  prices: Record<string, DecimalString>;
 }
 
 export interface PersonaSpec {

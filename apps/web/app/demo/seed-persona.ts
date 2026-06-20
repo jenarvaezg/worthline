@@ -12,10 +12,11 @@
  * through these same seams.
  */
 import type { WorthlineStore } from "@worthline/db";
-import type { CurrencyCode } from "@worthline/domain";
-import { valueHousingAtDate } from "@worthline/domain";
+import type { BinanceHistoryCurve, CurrencyCode, DecimalString } from "@worthline/domain";
+import { amortizableBalanceAtDate, valueHousingAtDate } from "@worthline/domain";
 
 import type {
+  BinanceHistoryMonthSpec,
   ConnectedSourceSpec,
   HousingSpec,
   InvestmentSpec,
@@ -26,6 +27,11 @@ import type {
 } from "@web/demo/spec-types";
 
 const DEFAULT_CURRENCY: CurrencyCode = "EUR";
+
+interface SeededConnectedSource {
+  sourceId: string;
+  spec: ConnectedSourceSpec;
+}
 
 /** Resolve a relative offset to a YYYY-MM-DD date-key, anchored at `asOf`. */
 export function resolveRelativeDate(asOf: string, when: RelativeDate): string {
@@ -85,32 +91,51 @@ function seedMortgage(
   });
   store.liabilities.setDebtModel(mortgage.liabilityId, "amortizable");
 
+  const plan = {
+    annualInterestRate: mortgage.annualInterestRate,
+    disbursementDate: resolveRelativeDate(asOf, mortgage.disbursement),
+    firstPaymentDate: resolveRelativeDate(asOf, mortgage.firstPayment),
+    initialCapitalMinor: mortgage.initialCapitalMinor,
+    termMonths: mortgage.termMonths,
+  };
+  const earlyRepayments = (mortgage.earlyRepayments ?? []).map((repayment) => ({
+    amountMinor: repayment.amountMinor,
+    id: repayment.id,
+    mode: repayment.mode,
+    repaymentDate: resolveRelativeDate(asOf, repayment.at),
+  }));
+
   // Persist plan + ripple per-cuota snapshots ride the debt seam together.
   store.createAmortizationPlanAndRipple(
     {
-      annualInterestRate: mortgage.annualInterestRate,
-      disbursementDate: resolveRelativeDate(asOf, mortgage.disbursement),
-      firstPaymentDate: resolveRelativeDate(asOf, mortgage.firstPayment),
+      ...plan,
       id: mortgage.planId,
-      initialCapitalMinor: mortgage.initialCapitalMinor,
       liabilityId: mortgage.liabilityId,
-      termMonths: mortgage.termMonths,
     },
     { today: asOf },
   );
 
-  for (const repayment of mortgage.earlyRepayments ?? []) {
+  for (const repayment of earlyRepayments) {
     store.addEarlyRepaymentAndRipple(
       {
         amountMinor: repayment.amountMinor,
         id: repayment.id,
         mode: repayment.mode,
         planId: mortgage.planId,
-        repaymentDate: resolveRelativeDate(asOf, repayment.at),
+        repaymentDate: repayment.repaymentDate,
       },
       { liabilityId: mortgage.liabilityId, today: asOf },
     );
   }
+
+  store.liabilities.updateLiabilityBalance(
+    mortgage.liabilityId,
+    amortizableBalanceAtDate({
+      earlyRepayments,
+      plan,
+      targetDate: asOf,
+    }),
+  );
 }
 
 function seedHousing(store: WorthlineStore, housing: HousingSpec, asOf: string): void {
@@ -216,7 +241,7 @@ function seedConnectedSource(
   store: WorthlineStore,
   source: ConnectedSourceSpec,
   asOf: string,
-): void {
+): SeededConnectedSource {
   const { sourceId } = store.connectedSources.connect({
     adapter: source.adapter,
     credentialsJson: source.credentialsJson ?? "{}",
@@ -227,6 +252,71 @@ function seedConnectedSource(
   // so the mirror's valuation is frozen in the fixture.
   const syncedAt = `${resolveRelativeDate(asOf, source.syncedAt)}T12:00:00.000Z`;
   store.connectedSources.syncPositions(sourceId, source.positions, syncedAt);
+  return { sourceId, spec: source };
+}
+
+function monthKeyMonthsAgo(asOf: string, monthsAgo: number): string {
+  const base = new Date(`${asOf}T00:00:00.000Z`);
+  base.setUTCDate(1);
+  base.setUTCMonth(base.getUTCMonth() - monthsAgo);
+  return base.toISOString().slice(0, 7);
+}
+
+function lastDayOfMonthKey(monthKey: string): string {
+  const year = Number(monthKey.slice(0, 4));
+  const month = Number(monthKey.slice(5, 7));
+  const day = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return `${monthKey}-${String(day).padStart(2, "0")}`;
+}
+
+function setNestedDecimal(
+  map: Map<string, Map<string, DecimalString>>,
+  symbol: string,
+  key: string,
+  value: DecimalString,
+): void {
+  const existing = map.get(symbol);
+  if (existing) {
+    existing.set(key, value);
+    return;
+  }
+
+  map.set(symbol, new Map([[key, value]]));
+}
+
+function buildBinanceHistoryCurve(
+  asOf: string,
+  history: BinanceHistoryMonthSpec[],
+): BinanceHistoryCurve {
+  const monthEndBalances = new Map<string, Map<string, DecimalString>>();
+  const dailyPriceBySymbol = new Map<string, Map<string, DecimalString>>();
+
+  for (const month of history) {
+    const monthKey = monthKeyMonthsAgo(asOf, month.monthsAgo);
+    const dateKey = lastDayOfMonthKey(monthKey);
+    for (const [symbol, balance] of Object.entries(month.balances)) {
+      setNestedDecimal(monthEndBalances, symbol, monthKey, balance);
+    }
+    for (const [symbol, price] of Object.entries(month.prices)) {
+      setNestedDecimal(dailyPriceBySymbol, symbol, dateKey, price);
+    }
+  }
+
+  return { dailyPriceBySymbol, monthEndBalances };
+}
+
+function applyConnectedSourceHistory(
+  store: WorthlineStore,
+  seeded: SeededConnectedSource,
+  asOf: string,
+): void {
+  if (seeded.spec.adapter !== "binance" || !seeded.spec.binanceHistory) return;
+
+  store.applyBinanceHistoryAndRipple({
+    curve: buildBinanceHistoryCurve(asOf, seeded.spec.binanceHistory),
+    sourceId: seeded.sourceId,
+    today: asOf,
+  });
 }
 
 /**
@@ -264,9 +354,9 @@ export function seedPersona(
     seedLiability(store, liability, asOf);
   }
 
-  for (const source of spec.connectedSources ?? []) {
-    seedConnectedSource(store, source, asOf);
-  }
+  const seededSources = (spec.connectedSources ?? []).map((source) =>
+    seedConnectedSource(store, source, asOf),
+  );
 
   for (const fire of spec.fire ?? []) {
     store.saveFireConfig(fire.scopeId, fire.config);
@@ -275,4 +365,8 @@ export function seedPersona(
   // Fill every gap between the milestone facts above and `asOf` so the Evolución
   // curve is a believable monthly history, not a sparse scatter (ADR 0012 backfill).
   store.backfillHistoricalSnapshots(asOf);
+
+  for (const seeded of seededSources) {
+    applyConnectedSourceHistory(store, seeded, asOf);
+  }
 }
