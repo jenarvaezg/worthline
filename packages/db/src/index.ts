@@ -210,6 +210,16 @@ export interface WorthlineStoreOptions {
   dataDir?: string;
 }
 
+export type DatabaseTarget =
+  | { kind: "path"; databasePath: string }
+  | { kind: "url"; url: string; authToken?: string };
+
+interface DatabaseTargetEnv extends Record<string, string | undefined> {
+  WORTHLINE_DB_AUTH_TOKEN?: string;
+  WORTHLINE_DB_PATH?: string;
+  WORTHLINE_DB_URL?: string;
+}
+
 export interface AuditLogEntry {
   id: string;
   action: string;
@@ -636,10 +646,8 @@ export interface WorthlineStore {
 export async function runBootstrapHealthcheck(
   options: BootstrapHealthcheckOptions = {},
 ): Promise<LocalPersistenceStatus> {
-  const databasePath = resolveDatabasePath(options);
-  mkdirSync(dirname(databasePath), { recursive: true });
-
-  const client = openLibsqlClient(databasePath);
+  const target = resolveDatabaseTarget(options);
+  const client = openDatabaseTarget(target);
   try {
     await migrate(client);
 
@@ -669,7 +677,7 @@ export async function runBootstrapHealthcheck(
       .get();
 
     if (!row) {
-      throw new Error("SQLite bootstrap check did not persist an app setting.");
+      throw new Error("Database bootstrap check did not persist an app setting.");
     }
 
     return {
@@ -677,8 +685,9 @@ export async function runBootstrapHealthcheck(
       checkKey: bootstrapKey,
       checkedAt,
       checkValue: row.value,
-      databasePath,
-      displayPath: toDisplayPath(databasePath),
+      databasePath: target.kind === "path" ? target.databasePath : target.url,
+      displayPath:
+        target.kind === "path" ? toDisplayPath(target.databasePath) : target.url,
     };
   } finally {
     client.close();
@@ -715,12 +724,19 @@ export async function createStoreFromSqlite(client: Client): Promise<WorthlineSt
 export async function createWorthlineStore(
   options: WorthlineStoreOptions = {},
 ): Promise<WorthlineStore> {
-  const databasePath = resolveDatabasePath(options);
-  mkdirSync(dirname(databasePath), { recursive: true });
-
-  const client = openLibsqlClient(databasePath);
+  const target = resolveDatabaseTarget(options);
+  const client = openDatabaseTarget(target);
   const migrateResult = await migrate(client);
   return buildStore(client, migrateResult);
+}
+
+function openDatabaseTarget(target: DatabaseTarget): Client {
+  if (target.kind === "path") {
+    mkdirSync(dirname(target.databasePath), { recursive: true });
+    return openLibsqlClient(target.databasePath);
+  }
+
+  return openLibsqlClient(target);
 }
 
 /**
@@ -3788,6 +3804,35 @@ export function resolveDatabasePath(options: BootstrapHealthcheckOptions = {}): 
   }
 
   return join(resolveDataDir(options), "worthline.sqlite");
+}
+
+export function resolveDatabaseTarget(
+  options: BootstrapHealthcheckOptions = {},
+  env: DatabaseTargetEnv = process.env,
+): DatabaseTarget {
+  if (options.databasePath) {
+    return { kind: "path", databasePath: resolveDatabasePath(options) };
+  }
+
+  if (env.WORTHLINE_DB_PATH) {
+    return { kind: "path", databasePath: resolve(env.WORTHLINE_DB_PATH) };
+  }
+
+  if (!env.WORTHLINE_DB_URL) {
+    return { kind: "path", databasePath: resolveDatabasePath(options) };
+  }
+
+  if (env.WORTHLINE_DB_URL.startsWith("libsql://") && !env.WORTHLINE_DB_AUTH_TOKEN) {
+    throw new Error(
+      "WORTHLINE_DB_AUTH_TOKEN is required when WORTHLINE_DB_URL is a libsql:// URL.",
+    );
+  }
+
+  return {
+    kind: "url",
+    url: env.WORTHLINE_DB_URL,
+    ...(env.WORTHLINE_DB_AUTH_TOKEN ? { authToken: env.WORTHLINE_DB_AUTH_TOKEN } : {}),
+  };
 }
 
 export function resolveDataDir(options: BootstrapHealthcheckOptions = {}): string {
