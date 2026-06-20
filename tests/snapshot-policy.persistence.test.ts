@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import {
   captureNetWorthSnapshot,
-  planSnapshotCapture,
+  findTodaySnapshotId,
   deriveMonthlyCloses,
 } from "@worthline/domain";
 import { createFileBackedStore, cleanupTempDirs } from "./helpers";
@@ -32,9 +32,8 @@ describe("snapshot-policy persistence", () => {
     const liabilities = store.liabilities.readLiabilities();
     const existingSnapshots = store.snapshots.readSnapshots("household");
 
-    const plan = planSnapshotCapture(existingSnapshots, "household", "2026-06-09");
-    expect(plan.shouldCapture).toBe(true);
-    expect(plan.replacesId).toBeUndefined();
+    const replacesId = findTodaySnapshotId(existingSnapshots, "household", "2026-06-09");
+    expect(replacesId).toBeUndefined();
 
     const snapshot = captureNetWorthSnapshot({
       assets,
@@ -86,10 +85,9 @@ describe("snapshot-policy persistence", () => {
     // Update asset value and recapture same day.
     store.assets.updateAssetValuation("asset_cash", 110_000);
     const existingSnapshots = store.snapshots.readSnapshots("household");
-    const plan = planSnapshotCapture(existingSnapshots, "household", "2026-06-09");
+    const replacesId = findTodaySnapshotId(existingSnapshots, "household", "2026-06-09");
 
-    expect(plan.shouldCapture).toBe(true);
-    expect(plan.replacesId).toBe("snapshot_morning");
+    expect(replacesId).toBe("snapshot_morning");
 
     const snapshot2 = captureNetWorthSnapshot({
       assets: store.assets.readAssets(),

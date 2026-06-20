@@ -94,7 +94,7 @@ const KEY_EXPORTS = [
   "donutArcSegments",
   // snapshot-policy
   "deriveMonthlyCloses",
-  "planSnapshotCapture",
+  "findTodaySnapshotId",
   // capture-snapshot
   "buildSnapshotId",
   "captureSnapshotForScope",

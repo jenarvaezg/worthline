@@ -11,7 +11,6 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ManualAsset, NetWorthSnapshot, Workspace } from "./index";
 import { captureNetWorthSnapshot, createManualAsset, createWorkspace } from "./index";
 import type { ScopeOption } from "./scope";
-import * as snapshotPolicy from "./snapshot-policy";
 
 import { buildSnapshotId, captureSnapshotForScope } from "./capture-snapshot";
 
@@ -69,13 +68,13 @@ describe("captureSnapshotForScope", () => {
     });
 
     expect(result).not.toBeNull();
-    expect(result!.snapshot.scopeId).toBe("household");
-    expect(result!.snapshot.scopeLabel).toBe("Hogar");
-    expect(result!.snapshot.dateKey).toBe("2026-06-12");
-    expect(result!.snapshot.totalNetWorth.amountMinor).toBe(50_000_00);
-    expect(result!.holdings).toHaveLength(1);
-    expect(result!.holdings[0]!.holdingId).toBe("asset_cash");
-    expect(result!.replace).toBe(false);
+    expect(result.snapshot.scopeId).toBe("household");
+    expect(result.snapshot.scopeLabel).toBe("Hogar");
+    expect(result.snapshot.dateKey).toBe("2026-06-12");
+    expect(result.snapshot.totalNetWorth.amountMinor).toBe(50_000_00);
+    expect(result.holdings).toHaveLength(1);
+    expect(result.holdings[0]!.holdingId).toBe("asset_cash");
+    expect(result.replace).toBe(false);
   });
 
   test("flags replace when a same-day snapshot already exists (latest wins)", () => {
@@ -90,7 +89,7 @@ describe("captureSnapshotForScope", () => {
     });
 
     expect(result).not.toBeNull();
-    expect(result!.replace).toBe(true);
+    expect(result.replace).toBe(true);
   });
 
   test("does not flag replace when the existing snapshot is from a prior day", () => {
@@ -105,32 +104,7 @@ describe("captureSnapshotForScope", () => {
     });
 
     expect(result).not.toBeNull();
-    expect(result!.replace).toBe(false);
-  });
-
-  test("returns null and skips capture when the policy declines", () => {
-    const workspace = makeWorkspace();
-    const generateId = vi.fn(() => "never-used");
-    const decline = vi
-      .spyOn(snapshotPolicy, "planSnapshotCapture")
-      .mockReturnValue({ shouldCapture: false });
-
-    const result = captureSnapshotForScope(
-      {
-        assets: makeAssets(workspace),
-        capturedAt: "2026-06-12T10:00:00.000Z",
-        existingSnapshots: [],
-        liabilities: [],
-        scope: HOUSEHOLD,
-        workspace,
-      },
-      { generateId },
-    );
-
-    expect(decline).toHaveBeenCalledWith([], "household", "2026-06-12");
-    expect(result).toBeNull();
-    // No id minted, no snapshot built — capture was skipped entirely.
-    expect(generateId).not.toHaveBeenCalled();
+    expect(result.replace).toBe(false);
   });
 
   test("calls injected generateId with scope id, capturedAt and the seed", () => {
@@ -152,7 +126,7 @@ describe("captureSnapshotForScope", () => {
 
     expect(seed).toHaveBeenCalledTimes(1);
     expect(generateId).toHaveBeenCalledWith("household", "2026-06-12T10:00:00.000Z", 42);
-    expect(result!.snapshot.id).toBe("snapshot_custom_id");
+    expect(result.snapshot.id).toBe("snapshot_custom_id");
   });
 
   test("defaults to buildSnapshotId when no generateId is injected", () => {
@@ -169,7 +143,7 @@ describe("captureSnapshotForScope", () => {
       { seed: () => 7 },
     );
 
-    expect(result!.snapshot.id).toBe("snapshot_household_2026_06_12_7");
+    expect(result.snapshot.id).toBe("snapshot_household_2026_06_12_7");
   });
 });
 

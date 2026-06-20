@@ -349,11 +349,11 @@ export {
 export type { DonutArcSegment, DonutGeometry } from "./donut";
 export { donutArcSegments } from "./donut";
 
-export type { CaptureDecision, SnapshotPolicyEntry } from "./snapshot-policy";
+export type { SnapshotPolicyEntry } from "./snapshot-policy";
 export {
   deriveConfirmedMonthlyCloseIds,
   deriveMonthlyCloses,
-  planSnapshotCapture,
+  findTodaySnapshotId,
 } from "./snapshot-policy";
 
 export type { CaptureSnapshotInput, CaptureSnapshotOutput } from "./capture-snapshot";

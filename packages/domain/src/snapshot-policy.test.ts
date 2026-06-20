@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   deriveConfirmedMonthlyCloseIds,
   deriveMonthlyCloses,
-  planSnapshotCapture,
+  findTodaySnapshotId,
 } from "./snapshot-policy";
 
 // Minimal snapshot shape — only the fields the policy cares about.
@@ -11,50 +11,33 @@ function snap(id: string, dateKey: string, scopeId = "household") {
   return { id, dateKey, monthKey: dateKey.slice(0, 7), scopeId };
 }
 
-describe("planSnapshotCapture", () => {
-  test("captures when there are no existing snapshots", () => {
-    const result = planSnapshotCapture([], "household", "2026-06-09");
-
-    expect(result.shouldCapture).toBe(true);
-    expect(result.replacesId).toBeUndefined();
+describe("findTodaySnapshotId", () => {
+  test("returns undefined when there are no existing snapshots", () => {
+    expect(findTodaySnapshotId([], "household", "2026-06-09")).toBeUndefined();
   });
 
-  test("captures when no snapshot exists for today in this scope", () => {
+  test("returns undefined when no snapshot exists for today in this scope", () => {
     const existing = [snap("s1", "2026-06-08")];
-    const result = planSnapshotCapture(existing, "household", "2026-06-09");
-
-    expect(result.shouldCapture).toBe(true);
-    expect(result.replacesId).toBeUndefined();
+    expect(findTodaySnapshotId(existing, "household", "2026-06-09")).toBeUndefined();
   });
 
-  test("replaces when a snapshot already exists for today in this scope (latest wins)", () => {
+  test("returns the existing snapshot id when one exists for today (latest wins)", () => {
     const existing = [snap("s1", "2026-06-09")];
-    const result = planSnapshotCapture(existing, "household", "2026-06-09");
-
-    expect(result.shouldCapture).toBe(true);
-    expect(result.replacesId).toBe("s1");
+    expect(findTodaySnapshotId(existing, "household", "2026-06-09")).toBe("s1");
   });
 
-  test("does not capture again when there is already one today and it is still the same scope", () => {
-    // Same-day re-open scenario: existing snapshot from this morning for the scope.
-    // The caller may decide to skip capture altogether or replace — we always say replace.
+  test("picks today's snapshot even when older same-scope snapshots exist", () => {
     const existing = [snap("s1", "2026-06-09"), snap("s2", "2026-06-08")];
-    const result = planSnapshotCapture(existing, "household", "2026-06-09");
-
-    expect(result.shouldCapture).toBe(true);
-    expect(result.replacesId).toBe("s1");
+    expect(findTodaySnapshotId(existing, "household", "2026-06-09")).toBe("s1");
   });
 
   test("ignores snapshots from other scopes when checking today", () => {
     const existing = [snap("s1", "2026-06-09", "member_jose")];
-    const result = planSnapshotCapture(existing, "household", "2026-06-09");
-
-    expect(result.shouldCapture).toBe(true);
-    expect(result.replacesId).toBeUndefined();
+    expect(findTodaySnapshotId(existing, "household", "2026-06-09")).toBeUndefined();
   });
 
   test("handles empty history — no errors on empty array", () => {
-    expect(() => planSnapshotCapture([], "household", "2026-06-09")).not.toThrow();
+    expect(() => findTodaySnapshotId([], "household", "2026-06-09")).not.toThrow();
   });
 });
 

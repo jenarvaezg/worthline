@@ -15,37 +15,20 @@ export interface SnapshotPolicyEntry {
   scopeId: string;
 }
 
-export interface CaptureDecision {
-  /** Whether a new snapshot should be captured now. */
-  shouldCapture: boolean;
-  /**
-   * When present, the existing snapshot for today that the new capture
-   * should replace (same-day latest-wins semantics).
-   */
-  replacesId?: string;
-}
-
 /**
- * Decides whether to capture a snapshot for `scopeId` on `today` and
- * whether it should replace an existing same-day snapshot.
+ * The id of the existing same-day snapshot for `scopeId` on `today`, if any —
+ * the snapshot a new capture should replace (same-day latest-wins, ADR 0005);
+ * `undefined` when today has no snapshot yet (the capture is the day's first).
  *
- * - First capture of the day → `{ shouldCapture: true }` (no replacesId).
- * - Recapture on same day → `{ shouldCapture: true, replacesId: <existing id> }`.
+ * Capture itself is unconditional (at most one per scope per day): this only
+ * resolves WHICH snapshot a recapture overwrites.
  */
-export function planSnapshotCapture(
+export function findTodaySnapshotId(
   existingSnapshots: SnapshotPolicyEntry[],
   scopeId: string,
   today: string,
-): CaptureDecision {
-  const todaySnapshot = existingSnapshots.find(
-    (s) => s.scopeId === scopeId && s.dateKey === today,
-  );
-
-  if (todaySnapshot) {
-    return { shouldCapture: true, replacesId: todaySnapshot.id };
-  }
-
-  return { shouldCapture: true };
+): string | undefined {
+  return existingSnapshots.find((s) => s.scopeId === scopeId && s.dateKey === today)?.id;
 }
 
 /**
