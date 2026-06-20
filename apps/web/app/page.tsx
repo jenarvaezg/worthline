@@ -11,6 +11,7 @@ import {
 } from "./intake";
 import Shell from "./shell";
 import { bootstrapHealthcheck, openStore } from "@web/store";
+import { requireStoreTarget } from "@web/read-store-target";
 import DashboardContent from "./dashboard-content";
 import DashboardSkeleton from "./dashboard-skeleton";
 
@@ -22,7 +23,8 @@ export default async function DashboardPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolvedSearchParams = await searchParams;
-  const persistence = await bootstrapHealthcheck();
+  const target = await requireStoreTarget();
+  const persistence = await bootstrapHealthcheck(target);
   const currentUrl = buildCurrentUrl(resolvedSearchParams);
 
   const jar = await cookies();
@@ -32,7 +34,7 @@ export default async function DashboardPage({
 
   // Load only the lightweight data needed to render the shell immediately.
   // The heavy dashboard body streams in via Suspense below.
-  const store = await openStore();
+  const store = await openStore(target);
   let shellData;
   try {
     const workspace = await store.workspace.readWorkspace();

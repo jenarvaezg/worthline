@@ -1778,6 +1778,44 @@ code {
   margin: 0 0 16px;
 }
 
+/* === #384 login === */
+
+.loginPage {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.loginCard {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 22rem;
+  padding: 32px;
+  width: 100%;
+}
+
+.loginBrand h1 {
+  font-size: 1.1rem;
+  font-weight: 850;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.loginCard form {
+  display: flex;
+}
+
+.loginCard button {
+  width: 100%;
+}
+
 /* === #59 historico === */
 
 .historicoPanel {

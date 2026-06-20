@@ -199,15 +199,15 @@ export type {
 
 const bootstrapKey = "bootstrap.last_healthcheck_at";
 
-export interface BootstrapHealthcheckOptions {
-  databasePath?: string;
-  dataDir?: string;
-  now?: () => Date;
-}
-
 export interface WorthlineStoreOptions {
   databasePath?: string;
   dataDir?: string;
+  url?: string;
+  authToken?: string;
+}
+
+export interface BootstrapHealthcheckOptions extends WorthlineStoreOptions {
+  now?: () => Date;
 }
 
 export type DatabaseTarget =
@@ -3812,6 +3812,17 @@ export function resolveDatabaseTarget(
 ): DatabaseTarget {
   if (options.databasePath) {
     return { kind: "path", databasePath: resolveDatabasePath(options) };
+  }
+
+  if (options.url) {
+    if (options.url.startsWith("libsql://") && !options.authToken) {
+      throw new Error("authToken is required when opening a libsql:// URL directly.");
+    }
+    return {
+      kind: "url",
+      url: options.url,
+      ...(options.authToken ? { authToken: options.authToken } : {}),
+    };
   }
 
   if (env.WORTHLINE_DB_PATH) {

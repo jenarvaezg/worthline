@@ -76,5 +76,27 @@ or:
 WORTHLINE_DB_PATH=/path/to/worthline.sqlite npm run dev
 ```
 
+## Authentication (optional)
+
+worthline can run in two modes:
+
+- **Local no-auth mode** (default): `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, and
+  `AUTH_SECRET` are unset. The app opens a local SQLite file and works offline,
+  exactly as before.
+- **Hosted mode**: set `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET`,
+  `WORTHLINE_DB_URL`, and `WORTHLINE_DB_AUTH_TOKEN`. Signed-out visitors are
+  redirected to `/login`; signed-in users open the configured remote libSQL
+  workspace.
+
+To set up Google sign-in:
+
+1. Create an OAuth 2.0 Web application credential in [Google Cloud Console](https://console.cloud.google.com/).
+2. Add the authorized redirect URI:
+   - Local: `http://localhost:3000/api/auth/callback/google`
+   - Production: `https://<your-domain>/api/auth/callback/google`
+3. Copy the Client ID and Client Secret into `.env.local` as `AUTH_GOOGLE_ID`
+   and `AUTH_GOOGLE_SECRET`.
+4. Generate `AUTH_SECRET` with `openssl rand -base64 32`.
+
 No auth, telemetry, cloud sync, personal spreadsheet data, or machine-specific absolute paths
 are required for the bootstrap slice.
