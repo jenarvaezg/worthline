@@ -103,13 +103,8 @@ export async function fetchAndCachePrice(
   }
 }
 
-export { coingeckoProvider } from "./coingecko";
-export { ecbProvider } from "./ecb";
-export { finectProvider, resolveFinectPlan } from "./finect";
-export { searchCoinGeckoSymbols, searchSymbols, searchYahooSymbols } from "./search";
+export { searchSymbols } from "./search";
 export type { SymbolCandidate } from "./search";
-export { stooqProvider } from "./stooq";
-export { yahooProvider } from "./yahoo";
 export {
   fallbackChains,
   fetchPriceNow,
@@ -127,7 +122,6 @@ export {
   isTokenValid,
   mapCollectedItem,
   mintNumistaToken,
-  numismaticEstimateMinor,
 } from "./numista";
 export type {
   CollectedItemDraft,
@@ -161,15 +155,7 @@ export type {
   RevaluedPosition,
   RevaluePosition,
 } from "./adapters/numista-valuation";
-export {
-  getAccountSnapshots,
-  getAllBalances,
-  getFlexibleEarnBalances,
-  getFundingBalances,
-  getLockedEarnBalances,
-  getSpotBalances,
-  signQuery,
-} from "./binance";
+export { getAccountSnapshots, getAllBalances } from "./binance";
 export type {
   BinanceAccountSnapshot,
   BinanceCredentials,
