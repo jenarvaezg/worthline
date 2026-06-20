@@ -10,17 +10,6 @@ function lastDayOfMonth(year: number, month: number): number {
 }
 
 /**
- * The YYYY-MM-DD exactly one month after `dateKey`, with the day clamped to the
- * destination month's last valid day — the SAME `addMonths(dateKey, 1)` the
- * amortization engine uses (e.g. 2020-01-31 → 2020-02-29). Inlined here so the
- * v18 backfill reproduces the engine's "first payment one month after start"
- * rule to the day, keeping every existing snapshot byte-identical (ADR 0019).
- */
-function addOneMonthClamped(dateKey: string): string {
-  return addMonthsClamped(dateKey, 1);
-}
-
-/**
  * The YYYY-MM-DD `count` whole months after `dateKey`, day clamped to the
  * destination month's last valid day — the SAME `addMonths` rule the amortization
  * engine (`amortizationPaymentDatesUpTo`) uses. Duplicated here (not imported)
@@ -474,7 +463,10 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
         "UPDATE amortization_plans SET disbursement_date = ?, first_payment_date = ? WHERE id = ?",
       );
       for (const plan of plans) {
-        backfill.run(plan.start_date, addOneMonthClamped(plan.start_date), plan.id);
+        // first_payment_date = start_date + 1 month, day-clamped — the engine's
+        // "first payment one month after start" rule to the day (ADR 0019), so
+        // existing snapshots stay byte-identical.
+        backfill.run(plan.start_date, addMonthsClamped(plan.start_date, 1), plan.id);
       }
 
       // Table-rebuild to drop start_date and enforce NOT NULL on the two dates,
