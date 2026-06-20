@@ -77,6 +77,12 @@ export interface ValuationFreshness {
 export interface ConnectedSourceStore {
   connect(input: ConnectSourceInput): Promise<{ sourceId: string; assetId: string }>;
   saveToken(sourceId: string, tokenJson: string): Promise<void>;
+  /**
+   * Replace a source's stored credentials (sealed at rest). Used by the sync
+   * engine (#388) to re-apply prod's secrets after a full-replace import wipes
+   * them, so a hosted push never severs the live connection (ADR 0030/0016).
+   */
+  updateCredentials(sourceId: string, credentialsJson: string): Promise<void>;
   readSource(sourceId: string): Promise<ConnectedSourceRow | null>;
   listSources(): Promise<ConnectedSourceRow[]>;
   /**
@@ -537,6 +543,16 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
       await db
         .update(connectedSources)
         .set({ tokenJson: sealSecret(tokenJson), updatedAt: sql`CURRENT_TIMESTAMP` })
+        .where(eq(connectedSources.id, sourceId))
+        .run();
+    },
+    updateCredentials: async (sourceId, credentialsJson) => {
+      await db
+        .update(connectedSources)
+        .set({
+          credentialsJson: sealSecret(credentialsJson),
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
         .where(eq(connectedSources.id, sourceId))
         .run();
     },
