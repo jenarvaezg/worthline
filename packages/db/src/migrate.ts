@@ -83,13 +83,13 @@ export async function execToleratingMissingTable(
 }
 
 export async function migrate(client: Client): Promise<MigrateResult> {
-  await client.execute("PRAGMA journal_mode = WAL");
-  await client.execute("PRAGMA foreign_keys = ON");
-
   const version = Number(
     (await client.execute("PRAGMA user_version")).rows[0]!.user_version,
   );
   if (version >= SCHEMA_VERSION) return { ranV18Backfill: false };
+
+  await client.execute("PRAGMA journal_mode = WAL");
+  await client.execute("PRAGMA foreign_keys = ON");
 
   // Set by the v18 block and returned at the end — must survive later migration
   // steps (v19+) rather than short-circuiting the ladder with an early return.
