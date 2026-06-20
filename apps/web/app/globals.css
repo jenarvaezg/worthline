@@ -4202,3 +4202,367 @@ td.rowActions > * {
 .demoPersonaCta:hover {
   text-decoration: underline;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PROTOTYPE — hero "hueco" fillers. Throwaway: three ?variant= takes plus a
+   dev-only floating switcher. DELETE when a direction is chosen and fold the
+   winner into the .heroStats area. (see hero-proto-extras.tsx)
+   ───────────────────────────────────────────────────────────────────────── */
+.proto {
+  border-top: 1px solid rgba(0, 111, 95, 0.14);
+  margin-top: 18px;
+  padding-top: 16px;
+}
+
+.proto h3 {
+  align-items: baseline;
+  color: var(--muted);
+  display: flex;
+  font-size: 0.7rem;
+  font-weight: 700;
+  gap: 6px;
+  letter-spacing: 0.06em;
+  margin: 0 0 10px;
+  text-transform: uppercase;
+}
+
+.proto h3 small {
+  color: var(--line);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.protoEmpty {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+/* "?" hover/focus hint — explains the debt sign convention */
+.protoHelp {
+  align-items: center;
+  background: rgba(23, 32, 30, 0.08);
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: help;
+  display: inline-flex;
+  font-size: 0.6rem;
+  font-weight: 700;
+  height: 14px;
+  justify-content: center;
+  line-height: 1;
+  margin-left: 6px;
+  padding: 0;
+  position: relative;
+  vertical-align: middle;
+  width: 14px;
+}
+
+.protoHelp:hover,
+.protoHelp:focus-visible {
+  background: var(--ink);
+  color: var(--paper-strong);
+  outline: none;
+}
+
+.protoHelpBubble {
+  background: var(--ink);
+  border-radius: var(--radius-sm);
+  bottom: calc(100% + 8px);
+  box-shadow: var(--shadow);
+  color: var(--paper-strong);
+  font-size: 0.72rem;
+  font-weight: 500;
+  left: 0;
+  letter-spacing: 0;
+  line-height: 1.4;
+  opacity: 0;
+  padding: 8px 10px;
+  pointer-events: none;
+  position: absolute;
+  text-transform: none;
+  transform: translateY(4px);
+  transition:
+    opacity 0.12s,
+    transform 0.12s;
+  visibility: hidden;
+  white-space: normal;
+  width: 220px;
+  z-index: 20;
+}
+
+.protoHelp:hover .protoHelpBubble,
+.protoHelp:focus .protoHelpBubble,
+.protoHelp:focus-within .protoHelpBubble {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+}
+
+/* shared header for the movers variants — title block + toggle controls */
+.protoMoversHead {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.protoMoversTitle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.protoMoversHead h3 {
+  margin: 0;
+}
+
+.protoMoversHead small {
+  color: var(--line);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+/* period (Mes/Año) and unit (€/%) segmented toggles */
+.protoControls {
+  display: flex;
+  gap: 8px;
+}
+
+.protoSeg {
+  background: rgba(23, 32, 30, 0.06);
+  border-radius: 999px;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+}
+
+.protoSeg button {
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 11px;
+}
+
+.protoSeg button[data-active="true"] {
+  background: var(--ink);
+  color: var(--paper-strong);
+}
+
+/* Variant A — Subieron / Bajaron split columns */
+.protoSplitCols {
+  display: grid;
+  gap: 22px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.protoCol h4 {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin: 0 0 6px;
+  text-transform: uppercase;
+}
+
+.protoCol h4.up {
+  color: var(--green);
+}
+
+.protoCol h4.down {
+  color: var(--red);
+}
+
+.protoHolding {
+  align-items: baseline;
+  column-gap: 8px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  padding: 5px 0;
+}
+
+.protoHoldingName {
+  color: var(--ink);
+  font-size: 0.84rem;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.protoHoldingVal {
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: right;
+}
+
+.protoHoldingPct {
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  grid-column: 2;
+  text-align: right;
+}
+
+.protoHoldingVal.pos,
+.protoHoldingPct.pos {
+  color: var(--green);
+}
+
+.protoHoldingVal.neg,
+.protoHoldingPct.neg {
+  color: var(--red);
+}
+
+/* tag chip — nuevo / vendido */
+.protoTag {
+  border-radius: 999px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin-left: 6px;
+  padding: 1px 6px;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.protoTag.nuevo {
+  background: rgba(0, 111, 95, 0.12);
+  color: var(--green);
+}
+
+.protoTag.vendido {
+  background: rgba(23, 32, 30, 0.08);
+  color: var(--muted);
+}
+
+/* Variant B — ranked diverging list */
+.protoMoverRow {
+  align-items: center;
+  column-gap: 10px;
+  display: grid;
+  grid-template-columns: minmax(90px, 1.2fr) 1fr auto auto;
+  padding: 5px 0;
+}
+
+.protoMoverLabel {
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.protoDiverge {
+  background: rgba(23, 32, 30, 0.06);
+  border-radius: 3px;
+  height: 8px;
+  position: relative;
+}
+
+.protoDiverge::before {
+  background: rgba(23, 32, 30, 0.18);
+  content: "";
+  inset: -2px auto -2px 50%;
+  position: absolute;
+  width: 1px;
+}
+
+.protoDivergeFill {
+  border-radius: 3px;
+  height: 100%;
+  position: absolute;
+  top: 0;
+}
+
+.protoDivergeFill.pos {
+  background: var(--green);
+  left: 50%;
+}
+
+.protoDivergeFill.neg {
+  background: var(--red);
+  right: 50%;
+}
+
+.protoMoverVal {
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: right;
+}
+
+.protoMoverPct {
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  min-width: 52px;
+  text-align: right;
+}
+
+.protoMoverVal.pos,
+.protoMoverPct.pos {
+  color: var(--green);
+}
+
+.protoMoverVal.neg,
+.protoMoverPct.neg {
+  color: var(--red);
+}
+
+/* Dev-only floating switcher */
+.protoSwitcher {
+  align-items: center;
+  background: var(--ink);
+  border-radius: 999px;
+  bottom: 18px;
+  box-shadow: var(--shadow);
+  color: var(--paper-strong);
+  display: flex;
+  gap: 4px;
+  left: 50%;
+  padding: 6px 8px;
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 9999;
+}
+
+.protoSwitcher span {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+.protoSwitcher button {
+  background: rgba(255, 255, 255, 0.12);
+  border: 0;
+  border-radius: 999px;
+  color: var(--paper-strong);
+  cursor: pointer;
+  font-size: 0.9rem;
+  height: 26px;
+  line-height: 1;
+  width: 26px;
+}
+
+.protoSwitcher button:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+@media (max-width: 640px) {
+  .protoSplitCols {
+    grid-template-columns: 1fr;
+  }
+}

@@ -2,6 +2,7 @@ import {
   DRILL_GROUP_BY_TIER,
   donutArcSegments,
   formatMoneyMinor,
+  isLiquid,
   largestRemainderPercentages,
   LIQUIDITY_TIER_LABELS,
   moneySign,
@@ -11,7 +12,9 @@ import type {
   CompositionRange,
   DrilldownKey,
   FramedDelta,
+  LiquidityTier,
   NetWorthFraming,
+  NetWorthSnapshot,
 } from "@worthline/domain";
 import { refreshStalePrices } from "@worthline/pricing";
 import { cookies } from "next/headers";
@@ -34,6 +37,14 @@ import type { RefreshPricesResult } from "./load-dashboard";
 import CompositionChart from "./composition-chart";
 import CompositionRangeControls from "./composition-range-controls";
 import DrilldownPanel from "./drilldown-panel";
+import HeroProtoExtras from "./hero-proto-extras";
+import type {
+  HeroProtoData,
+  HeroProtoPeriod,
+  HeroProtoUnit,
+  HeroProtoVariant,
+  HoldingMover,
+} from "./hero-proto-extras";
 import { runBinanceRefresh } from "./ajustes/binance-refresh";
 import { runNumistaCoinRefresh } from "./ajustes/numista-coin-refresh";
 import { refreshAndPersistStalePrices } from "./refresh-prices";
@@ -118,6 +129,245 @@ function compositionUrl(
   return anchor ? `${url}#composicion` : url;
 }
 
+// ── PROTOTYPE (throwaway) — hero "hueco" filler data ──────────────────────
+// Per-holding movers: which holdings moved net worth most over the selected
+// period (vs the previous monthly close, or YoY), ranked by € impact (or % when
+// toggled). Diffs the frozen snapshot holding rows behind the latest snapshot
+// and the period's base snapshot. Everything is preformatted to serializable
+// strings so the client stays dumb. DELETE when a direction is chosen.
+const PROTO_MAX_PER_COLUMN = 4;
+const PROTO_MAX_RANKED = 7;
+
+function protoMonthLabel(monthKey: string): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  return new Intl.DateTimeFormat("es-ES", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(y!, m! - 1, 1)));
+}
+
+/** The frozen holding-row fields the movers diff needs (reader returns more). */
+interface ProtoHoldingRow {
+  dateKey: string;
+  holdingId: string;
+  kind: "asset" | "liability";
+  label: string;
+  valueMinor: number;
+  liquidityTier: LiquidityTier | null;
+  securesHousing: boolean;
+}
+
+/**
+ * Whether a holding contributes to the Líquido figure (cash + market rungs),
+ * decided once per holding from its current classification so the same decision
+ * applies to both compared dates — otherwise frozen-flag drift across snapshots
+ * makes a long-standing holding read as a phantom "nuevo" mover.
+ *
+ * Mirrors calculateNetWorth's liquid membership: a liquid-tier asset; or a
+ * liability that doesn't secure housing and sits on a liquid rung — including an
+ * unsecured debt (frozen tier `null`), which resolves to the cash rung.
+ */
+function protoIsLiquidHolding(meta: {
+  kind: "asset" | "liability";
+  tier: LiquidityTier | null;
+  securesHousing: boolean;
+}): boolean {
+  if (meta.kind === "asset") return meta.tier !== null && isLiquid(meta.tier);
+  if (meta.securesHousing) return false;
+  return meta.tier === null || isLiquid(meta.tier);
+}
+
+/** A holding's signed contribution to net worth: assets +value, debts −value. */
+function protoContribMinor(row: ProtoHoldingRow): number {
+  return row.kind === "liability" ? -row.valueMinor : row.valueMinor;
+}
+
+/** es-ES percent with explicit sign and decimal comma, e.g. "+8,5 %". */
+function protoPctFmt(pct: number): string {
+  const sign = pct > 0 ? "+" : pct < 0 ? "−" : "";
+  return `${sign}${Math.abs(pct).toFixed(1).replace(".", ",")} %`;
+}
+
+/**
+ * The comparison base for the period: the last snapshot of a prior calendar
+ * month (month), or the close around 12 months ago (year). Daily "vs anterior"
+ * is intentionally not offered — it's market noise. Snapshots are ascending.
+ */
+function protoBaseSnapshot(
+  snapshots: NetWorthSnapshot[],
+  period: HeroProtoPeriod,
+): NetWorthSnapshot | undefined {
+  const latest = snapshots[snapshots.length - 1];
+  if (!latest) return undefined;
+  if (period === "year") {
+    const [y, m] = latest.monthKey.split("-");
+    const target = `${Number(y) - 1}-${m}`;
+    const candidates = snapshots.filter((s) => s.monthKey <= target);
+    return candidates[candidates.length - 1];
+  }
+  const candidates = snapshots.filter((s) => s.monthKey < latest.monthKey);
+  return candidates[candidates.length - 1];
+}
+
+interface ProtoMoverRaw {
+  label: string;
+  impactMinor: number;
+  pct: number | null;
+  tag: "nuevo" | "vendido" | null;
+}
+
+function buildHeroProtoData(params: {
+  snapshots: NetWorthSnapshot[];
+  selectedView: NetWorthFraming;
+  period: HeroProtoPeriod;
+  unit: HeroProtoUnit;
+  /** Frozen holding rows covering the base snapshot's date through the latest. */
+  holdingRows: ProtoHoldingRow[];
+  currency: string;
+}): HeroProtoData | null {
+  const { snapshots, selectedView, period, unit, holdingRows, currency } = params;
+  const latest = snapshots[snapshots.length - 1];
+  if (!latest) return null;
+
+  const base = protoBaseSnapshot(snapshots, period);
+  const vsLabel = base
+    ? period === "year"
+      ? `vs ${protoMonthLabel(base.monthKey)} (YoY)`
+      : `vs cierre ${protoMonthLabel(base.monthKey)}`
+    : period === "year"
+      ? "Año anterior"
+      : "Cierre anterior";
+  if (!base) {
+    return { vsLabel, hasBase: false, up: [], down: [], ranked: [] };
+  }
+
+  // Index each holding's contribution at the two dates, keyed by id+kind, and
+  // capture its classification from the latest row seen (current truth). Framing
+  // membership is decided per holding (below), never per row, so a holding is in
+  // or out for BOTH dates — no phantom "nuevo" from frozen-flag drift.
+  type Agg = {
+    label: string;
+    kind: "asset" | "liability";
+    base: number;
+    cur: number;
+    tier: LiquidityTier | null;
+    securesHousing: boolean;
+    latestSeen: boolean;
+  };
+  const byHolding = new Map<string, Agg>();
+  for (const row of holdingRows) {
+    if (row.dateKey !== latest.dateKey && row.dateKey !== base.dateKey) continue;
+    const key = `${row.kind}:${row.holdingId}`;
+    const entry =
+      byHolding.get(key) ??
+      ({
+        label: row.label,
+        kind: row.kind,
+        base: 0,
+        cur: 0,
+        tier: row.liquidityTier,
+        securesHousing: row.securesHousing,
+        latestSeen: false,
+      } satisfies Agg);
+    entry.label = row.label;
+    const isLatest = row.dateKey === latest.dateKey;
+    if (isLatest) entry.cur += protoContribMinor(row);
+    else entry.base += protoContribMinor(row);
+    if (isLatest || !entry.latestSeen) {
+      entry.tier = row.liquidityTier;
+      entry.securesHousing = row.securesHousing;
+      if (isLatest) entry.latestSeen = true;
+    }
+    byHolding.set(key, entry);
+  }
+
+  const raw: ProtoMoverRaw[] = [];
+  for (const e of byHolding.values()) {
+    if (selectedView === "liquid" && !protoIsLiquidHolding(e)) continue;
+    const impactMinor = e.cur - e.base;
+    if (impactMinor === 0) continue;
+    raw.push({
+      label: e.label,
+      impactMinor,
+      pct: e.base !== 0 ? (impactMinor / Math.abs(e.base)) * 100 : null,
+      tag: e.base === 0 ? "nuevo" : e.cur === 0 ? "vendido" : null,
+    });
+  }
+
+  if (raw.length === 0) {
+    return { vsLabel, hasBase: true, up: [], down: [], ranked: [] };
+  }
+
+  const maxAbsImpact = Math.max(1, ...raw.map((r) => Math.abs(r.impactMinor)));
+  const maxAbsPct = Math.max(
+    1,
+    ...raw.map((r) => (r.pct === null ? 0 : Math.abs(r.pct))),
+  );
+
+  const toMover = (r: ProtoMoverRaw): HoldingMover => ({
+    label: r.label,
+    changeFmt: `${r.impactMinor > 0 ? "+" : ""}${formatMoneyMinor({ amountMinor: r.impactMinor, currency })}`,
+    pctFmt: r.pct === null ? null : protoPctFmt(r.pct),
+    sign: r.impactMinor > 0 ? "pos" : r.impactMinor < 0 ? "neg" : "zero",
+    magnitudePct: Math.round((Math.abs(r.impactMinor) / maxAbsImpact) * 100),
+    pctMagnitude: r.pct === null ? 0 : Math.round((Math.abs(r.pct) / maxAbsPct) * 100),
+    tag: r.tag,
+  });
+
+  const byImpactDesc = [...raw].sort((a, b) => b.impactMinor - a.impactMinor);
+  // Variant B ranking follows the active unit: by |€| or by |%| (% drops the
+  // brand-new holdings that have no base to compute a percent against).
+  const ranked =
+    unit === "pct"
+      ? raw
+          .filter((r) => r.pct !== null)
+          .sort((a, b) => Math.abs(b.pct!) - Math.abs(a.pct!))
+      : [...raw].sort((a, b) => Math.abs(b.impactMinor) - Math.abs(a.impactMinor));
+
+  return {
+    vsLabel,
+    hasBase: true,
+    up: byImpactDesc
+      .filter((r) => r.impactMinor > 0)
+      .slice(0, PROTO_MAX_PER_COLUMN)
+      .map(toMover),
+    down: byImpactDesc
+      .filter((r) => r.impactMinor < 0)
+      .reverse()
+      .slice(0, PROTO_MAX_PER_COLUMN)
+      .map(toMover),
+    ranked: ranked.slice(0, PROTO_MAX_RANKED).map(toMover),
+  };
+}
+
+function parseProtoVariant(raw: string | string[] | undefined): HeroProtoVariant {
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return v === "B" ? "B" : "A";
+}
+
+function parseProtoPeriod(raw: string | string[] | undefined): HeroProtoPeriod {
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return v === "year" ? "year" : "month";
+}
+
+function parseProtoUnit(raw: string | string[] | undefined): HeroProtoUnit {
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return v === "pct" ? "pct" : "abs";
+}
+
+/** Read the frozen holding rows from the period's base snapshot through latest. */
+function readProtoHoldingRows(
+  store: Awaited<ReturnType<typeof openStore>>,
+  scopeId: string | undefined,
+  snapshots: NetWorthSnapshot[],
+  period: HeroProtoPeriod,
+): ProtoHoldingRow[] {
+  const base = protoBaseSnapshot(snapshots, period);
+  if (!scopeId || !base) return [];
+  return store.snapshots.readSnapshotHoldings({ scopeId, from: base.dateKey });
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -131,6 +381,11 @@ export default async function DashboardPage({
   const selectedRange = parseRangeParam(resolvedSearchParams?.range);
   const selectedHousingMode = parseViviendaParam(resolvedSearchParams?.vivienda);
   const currentUrl = buildCurrentUrl(resolvedSearchParams);
+
+  // PROTOTYPE (throwaway) — hero "hueco" movers controls (URL state).
+  const protoVariant = parseProtoVariant(resolvedSearchParams?.variant);
+  const protoPeriod = parseProtoPeriod(resolvedSearchParams?.mvp);
+  const protoUnit = parseProtoUnit(resolvedSearchParams?.mvu);
 
   // Drill navigation (#76, #77, #145): every URL preserves the selected Vista,
   // the temporal range (#144) AND the Vivienda presentation, so changing one
@@ -169,6 +424,9 @@ export default async function DashboardPage({
 
   const store = await openStore();
   let state;
+  // PROTOTYPE (throwaway) — frozen holding rows for the movers diff, read while
+  // the store is still open. Dev-only; DELETE with the rest of the prototype.
+  let protoHoldingRows: ProtoHoldingRow[] = [];
   try {
     state = await loadDashboard({
       store,
@@ -200,6 +458,14 @@ export default async function DashboardPage({
             refreshBinanceSources: () => runBinanceRefresh(store, now),
           }),
     });
+    if (process.env.NODE_ENV !== "production") {
+      protoHoldingRows = readProtoHoldingRows(
+        store,
+        state.selectedScope?.id,
+        state.snapshots,
+        protoPeriod,
+      );
+    }
   } finally {
     store.close();
   }
@@ -224,6 +490,16 @@ export default async function DashboardPage({
   } = state;
 
   const hasHoldings = state.assets.length + state.liabilities.length > 0;
+
+  // PROTOTYPE (throwaway) — hero "hueco" filler. See hero-proto-extras.tsx.
+  const heroProto = buildHeroProtoData({
+    snapshots,
+    selectedView,
+    period: protoPeriod,
+    unit: protoUnit,
+    holdingRows: protoHoldingRows,
+    currency: presentation?.headline.currency ?? "EUR",
+  });
 
   // Range controls (#144): the ranges this scope's history actually spans, each
   // a link that sets the range while preserving the Vista and any active drill.
@@ -317,6 +593,16 @@ export default async function DashboardPage({
                 </div>
               ))}
             </div>
+          ) : null}
+
+          {/* PROTOTYPE (throwaway) — fills the hero hueco; dev-only switcher. */}
+          {process.env.NODE_ENV !== "production" && heroProto ? (
+            <HeroProtoExtras
+              data={heroProto}
+              variant={protoVariant}
+              period={protoPeriod}
+              unit={protoUnit}
+            />
           ) : null}
         </section>
 
