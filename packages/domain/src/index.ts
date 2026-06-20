@@ -50,7 +50,6 @@ export {
   defaultInstrumentForAssetType,
   defaultInstrumentForLiability,
   defaultsFor,
-  instrumentForQuoteType,
 } from "./instrument-catalog";
 
 export type { DomainResult, DomainViolation } from "./domain-result";
@@ -193,15 +192,13 @@ export {
 } from "./prices";
 
 export type { FireScopeConfig, FireResult } from "./fire";
-export { filterFireEligibleAssets, calculateFire, calculateFireForScope } from "./fire";
+export { calculateFire, calculateFireForScope } from "./fire";
 
 export type { WarningSeverity, DomainWarning, WarningOverride } from "./warnings";
 export { collectWarnings } from "./warnings";
 
 export type { ScopeType, ScopeOption } from "./scope";
 export { listScopeOptions, resolveScopeMemberIds } from "./scope";
-
-export { allocateOwnedMoneyMinor } from "./ownership";
 
 export type { ScopedHolding } from "./scope-allocation";
 export { allocateScopedHolding } from "./scope-allocation";
@@ -282,11 +279,7 @@ export type {
   PortfolioGroupKey,
   UnifiedHolding,
 } from "./portfolio-grouping";
-export {
-  groupPortfolio,
-  instrumentLabel,
-  PORTFOLIO_GROUP_KEYS,
-} from "./portfolio-grouping";
+export { groupPortfolio, PORTFOLIO_GROUP_KEYS } from "./portfolio-grouping";
 
 export type { DecimalString } from "./decimal";
 export {
@@ -330,7 +323,6 @@ export {
   deriveOnboardingProgress,
   largestRemainderPercentages,
   prepareDashboardState,
-  signedDeltaBarWidths,
 } from "./dashboard";
 
 export type { DonutArcSegment, DonutGeometry } from "./donut";
@@ -424,7 +416,6 @@ export {
   granularityForSpanMonths,
   monthsBetween,
   rangeStartMonthKey,
-  selectMonthlySeries,
   selectPeriodicSeries,
 } from "./composition-chart";
 

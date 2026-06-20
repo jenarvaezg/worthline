@@ -83,11 +83,6 @@ const INSTRUMENT_LABELS: Record<Instrument, string> = {
   other: "Otro",
 };
 
-/** The es-ES label for an instrument — the instrument grouping header (#154). */
-export function instrumentLabel(instrument: Instrument): string {
-  return INSTRUMENT_LABELS[instrument];
-}
-
 // ── Grouping ─────────────────────────────────────────────────────────────────
 
 /** Flatten a projection's two sections into one direction-tagged holding list. */

@@ -43,11 +43,6 @@ export function normalizeApiKey(raw: FormDataEntryValue | null): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
-/** Serialize the Numista credentials for local storage (never logged/exported). */
-export function buildCredentialsJson(apiKey: string): string {
-  return JSON.stringify({ apiKey });
-}
-
 /** Read the stored API key back out of a source's credentialsJson, or null. */
 export function readApiKey(credentialsJson: string): string | null {
   try {

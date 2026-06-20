@@ -7,8 +7,7 @@
  *   - ownedMinor   : the scope's share of the amount, rounded half-up
  *   - totalShareBps: the sum of basis-point stakes belonging to scope members
  *
- * Rounding delegates entirely to allocateByBps (money.ts) so the behaviour is
- * identical to the existing allocateOwnedMoneyMinor helper.
+ * Rounding delegates entirely to allocateByBps (money.ts).
  *
  * Consumers: calculateNetWorth, buildLiquidityBreakdown, projectPortfolio,
  * calculateFireForScope.

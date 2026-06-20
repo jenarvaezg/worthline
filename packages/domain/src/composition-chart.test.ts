@@ -18,7 +18,6 @@ import {
   deriveCompositionBands,
   granularityForSpanMonths,
   rangeStartMonthKey,
-  selectMonthlySeries,
   selectPeriodicSeries,
 } from "./composition-chart";
 import type { CompositionSeriesPoint } from "./composition-chart";
@@ -216,39 +215,6 @@ describe("deriveCompositionBands", () => {
 
     expect(bands.debtsSecuredByHousingMinor).toBe(0);
     expect(bands.debtsMinor).toBe(10_000_00);
-  });
-});
-
-describe("selectMonthlySeries", () => {
-  test("keeps the last snapshot of each month; flags the current month as the open period", () => {
-    const snapshots = [
-      { dateKey: "2026-04-10", monthKey: "2026-04" },
-      { dateKey: "2026-04-28", monthKey: "2026-04" },
-      { dateKey: "2026-05-31", monthKey: "2026-05" },
-      { dateKey: "2026-06-05", monthKey: "2026-06" },
-      { dateKey: "2026-06-13", monthKey: "2026-06" },
-    ];
-
-    const series = selectMonthlySeries(snapshots, "2026-06-13");
-
-    expect(series).toEqual([
-      { dateKey: "2026-04-28", isOpenPeriod: false },
-      { dateKey: "2026-05-31", isOpenPeriod: false },
-      { dateKey: "2026-06-13", isOpenPeriod: true },
-    ]);
-  });
-
-  test("no current-month snapshot → every entry is a finalized close", () => {
-    const series = selectMonthlySeries(
-      [
-        { dateKey: "2026-04-28", monthKey: "2026-04" },
-        { dateKey: "2026-05-31", monthKey: "2026-05" },
-      ],
-      "2026-06-13",
-    );
-
-    expect(series.map((entry) => entry.dateKey)).toEqual(["2026-04-28", "2026-05-31"]);
-    expect(series.every((entry) => !entry.isOpenPeriod)).toBe(true);
   });
 });
 

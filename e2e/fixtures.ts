@@ -58,15 +58,6 @@ export async function deleteHolding(page: import("@playwright/test").Page, name:
   await del.getByRole("button", { name: "Confirmar" }).click();
 }
 
-/** Override a row's warning from the listing: open the ⋯ menu → "Es intencional". */
-export async function acknowledgeWarning(
-  page: import("@playwright/test").Page,
-  name: string,
-) {
-  await openHoldingMenu(page, name);
-  await holdingRow(page, name).getByRole("button", { name: "Es intencional" }).click();
-}
-
 export async function addHolding(
   page: import("@playwright/test").Page,
   fields: {
