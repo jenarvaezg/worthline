@@ -2,8 +2,16 @@ import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 
 import { GET, POST } from "./route";
 
+// The persona cookie is what flips the store seam into the read-only demo
+// (ADR 0030 — the deploy-wide DEMO flag retired). Default: absent ⇒ live/stub.
+let mockPersonaCookie: string | undefined;
 vi.mock("next/headers", () => ({
-  cookies: async () => ({ get: () => undefined }),
+  cookies: async () => ({
+    get: (name: string) =>
+      name === "wl_demo_persona" && mockPersonaCookie
+        ? { value: mockPersonaCookie }
+        : undefined,
+  }),
 }));
 
 const MCP_URL = "http://localhost:3000/api/mcp";
@@ -211,16 +219,16 @@ describe("POST /api/mcp (non-demo mode)", () => {
 });
 
 describe("POST /api/mcp (demo mode)", () => {
-  const originalDemo = process.env.DEMO;
   const originalDemoNow = process.env.WORTHLINE_DEMO_NOW;
 
   beforeAll(() => {
-    process.env.DEMO = "1";
+    // A logged-out persona cookie ⇒ the read-only demo, on a pinned clock.
+    mockPersonaCookie = "familia";
     process.env.WORTHLINE_DEMO_NOW = "2026-06-20";
   });
 
   afterAll(() => {
-    process.env.DEMO = originalDemo;
+    mockPersonaCookie = undefined;
     process.env.WORTHLINE_DEMO_NOW = originalDemoNow;
   });
 

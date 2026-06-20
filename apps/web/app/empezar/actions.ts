@@ -16,7 +16,7 @@ export async function initSoloAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  guardDemoWrite("/empezar");
+  await guardDemoWrite("/empezar");
   const currentUrl = "/empezar?path=solo";
   const result = parseEmpezarSolo(formData);
 
@@ -54,7 +54,7 @@ export async function initHogarAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  guardDemoWrite("/empezar");
+  await guardDemoWrite("/empezar");
   const currentUrl = "/empezar?path=hogar";
   const result = parseEmpezarHogar(formData);
 

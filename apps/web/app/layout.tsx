@@ -39,7 +39,7 @@ export const metadata: Metadata = {
   description: "Local-first net worth dashboard",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
@@ -47,7 +47,7 @@ export default function RootLayout({
   return (
     <html className={`${sans.variable} ${mono.variable}`} lang="es">
       <body>
-        {isDemoMode() ? <DemoBanner /> : null}
+        {(await isDemoMode()) ? <DemoBanner /> : null}
         {children}
       </body>
     </html>

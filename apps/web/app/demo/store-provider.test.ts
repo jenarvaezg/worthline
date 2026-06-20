@@ -1,72 +1,35 @@
 /**
- * Demo store provider tests (S1 #299). The provider is shallow I/O plumbing
+ * Demo store provider tests (S5 #386, ADR 0030). The provider is shallow plumbing
  * (the e2e journey is its main exercise), so these cover only its load-bearing
- * contract: in demo mode it opens a writable copy seeded with the persona's data,
- * memoizes that copy per persona, and NEVER mutates a bundled fixture.
+ * contract: it seeds a persona's workspace into a fresh ephemeral in-memory
+ * libSQL database, and each call yields an INDEPENDENT database — so a viewer's
+ * involuntary writes never leak from one request's store into the next.
  */
-import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { describe, expect, it } from "vitest";
 
-import { afterEach, describe, expect, it } from "vitest";
-
-import { createWorthlineStore } from "@worthline/db";
-
-import { seedPersona } from "@web/demo/seed-persona";
-import { FAMILIA_SPEC } from "@web/demo/specs/familia";
-import {
-  getDemoStorePath,
-  openDemoStore,
-  resetDemoStoreCache,
-} from "@web/demo/store-provider";
+import { seedDemoStore } from "@web/demo/store-provider";
 
 const AS_OF = "2026-06-19";
 
-afterEach(() => {
-  resetDemoStoreCache();
-  delete process.env.WORTHLINE_DEMO_FIXTURE_DIR;
-});
-
-function hashFile(path: string): string {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
-}
-
 describe("demo store provider", () => {
-  it("lazily seeds and opens a usable familia store when no fixture is bundled", async () => {
-    const store = await openDemoStore("familia", AS_OF);
+  it("seeds and opens a usable familia store in memory", async () => {
+    const store = await seedDemoStore("familia", AS_OF);
     const workspace = await store.workspace.readWorkspace();
     expect(workspace?.members.length).toBe(2);
     store.close();
   });
 
-  it("memoizes the temp copy per persona within a process", async () => {
-    const first = await getDemoStorePath("familia", AS_OF);
-    const second = await getDemoStorePath("familia", AS_OF);
-    expect(second).toBe(first);
-  });
+  it("gives each call an independent in-memory database (nothing persists)", async () => {
+    const first = await seedDemoStore("familia", AS_OF);
+    await first.assets.updateAssetValuation("asset_familia_checking", 99_999_00);
+    first.close();
 
-  it("opens a copy in a temp dir, never the bundled fixture, and leaves it intact", async () => {
-    // Build a "bundled" fixture on disk.
-    const fixtureDir = mkdtempSync(join(tmpdir(), "worthline-demo-fixtures-"));
-    const fixturePath = join(fixtureDir, "familia.sqlite");
-    const seed = await createWorthlineStore({ databasePath: fixturePath });
-    await seedPersona(seed, FAMILIA_SPEC, AS_OF);
-    seed.close();
-    const fixtureHashBefore = hashFile(fixturePath);
-
-    process.env.WORTHLINE_DEMO_FIXTURE_DIR = fixtureDir;
-    resetDemoStoreCache();
-
-    const openedPath = await getDemoStorePath("familia", AS_OF);
-    expect(openedPath).not.toBe(fixturePath);
-
-    // An involuntary write (as a page load would make) lands on the copy.
-    const store = await openDemoStore("familia", AS_OF);
-    await store.assets.updateAssetValuation("asset_familia_checking", 99_999_00);
-    store.close();
-
-    // The bundled fixture is byte-for-byte unchanged.
-    expect(hashFile(fixturePath)).toBe(fixtureHashBefore);
+    // A fresh seed is untouched by the previous store's involuntary write.
+    const second = await seedDemoStore("familia", AS_OF);
+    const checking = (await second.assets.readAssets()).find(
+      (a) => a.id === "asset_familia_checking",
+    );
+    expect(checking?.currentValue.amountMinor).not.toBe(99_999_00);
+    second.close();
   });
 });

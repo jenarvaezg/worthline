@@ -46,7 +46,7 @@ export default async function AjustesPage({
   const currentUrl = buildCurrentUrlFor("/ajustes", resolvedSearchParams);
   // Demo mode hides the irreversible affordances entirely (ADR 0029): reset and
   // import are never offered. Export stays — it is read-only and harmless.
-  const demo = isDemoMode();
+  const demo = await isDemoMode();
 
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);

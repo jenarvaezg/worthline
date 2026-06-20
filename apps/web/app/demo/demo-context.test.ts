@@ -1,38 +1,35 @@
 import { describe, expect, it } from "vitest";
 
-import { DEMO_PERSONA_COOKIE_NAME, resolveDemoContext } from "@web/demo/demo-context";
+import { DEMO_PERSONA_COOKIE_NAME, demoContextFromTarget } from "@web/demo/demo-context";
 
-describe("resolveDemoContext", () => {
-  it("reports disabled when the DEMO flag is unset", () => {
-    const ctx = resolveDemoContext({ demoNow: "2026-06-19T00:00:00.000Z" });
-    expect(ctx.enabled).toBe(false);
-  });
-
-  it("reports disabled for falsey DEMO flag values", () => {
-    for (const flag of ["", "0", "false", "off"]) {
-      expect(resolveDemoContext({ demoFlag: flag }).enabled).toBe(false);
-    }
-  });
-
-  it("is enabled when DEMO=1 and pins now to WORTHLINE_DEMO_NOW", () => {
-    const ctx = resolveDemoContext({
-      demoFlag: "1",
-      demoNow: "2026-06-19T00:00:00.000Z",
-      personaCookie: "inversor",
+describe("demoContextFromTarget", () => {
+  it("is enabled for a demo target, carrying its persona and pinned clock", () => {
+    const ctx = demoContextFromTarget({
+      kind: "demo",
+      persona: "inversor",
+      now: "2026-06-19T00:00:00.000Z",
     });
     expect(ctx.enabled).toBe(true);
-    expect(ctx.now).toBe("2026-06-19T00:00:00.000Z");
     expect(ctx.persona).toBe("inversor");
+    expect(ctx.now).toBe("2026-06-19T00:00:00.000Z");
   });
 
-  it("falls back to the familia persona when the cookie is absent or unknown", () => {
-    expect(resolveDemoContext({ demoFlag: "1", demoNow: "2026-06-19" }).persona).toBe(
-      "familia",
-    );
-    expect(
-      resolveDemoContext({ demoFlag: "1", demoNow: "2026-06-19", personaCookie: "ghost" })
-        .persona,
-    ).toBe("familia");
+  it("is disabled for non-demo targets, defaulting to the familia persona", () => {
+    for (const target of [
+      { kind: "local" } as const,
+      { kind: "unauthenticated" } as const,
+      {
+        kind: "authenticated" as const,
+        workspaceId: "ws",
+        dbUrl: "libsql://x",
+        token: "t",
+      },
+    ]) {
+      const ctx = demoContextFromTarget(target);
+      expect(ctx.enabled).toBe(false);
+      expect(ctx.persona).toBe("familia");
+      expect(ctx.now).toBe("");
+    }
   });
 
   it("exposes the persona cookie name (mirrors wl_scope)", () => {
