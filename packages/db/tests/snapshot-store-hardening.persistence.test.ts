@@ -48,17 +48,17 @@ function makeSnapshot(
   };
 }
 
-function seed(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seed(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jose" }],
     mode: "individual",
   });
 }
 
 describe("saveSnapshot reconciliation backstop (#185)", () => {
-  test("rejects a holdings set whose asset rows do not sum to gross assets, persisting nothing", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("rejects a holdings set whose asset rows do not sum to gross assets, persisting nothing", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
     // Asset row sums to 100000 but the headline gross assets claims 999999.
     const holdings: SnapshotHoldingRow[] = [
@@ -73,7 +73,7 @@ describe("saveSnapshot reconciliation backstop (#185)", () => {
       },
     ];
 
-    expect(() =>
+    await expect(
       store.snapshots.saveSnapshot({
         holdings,
         snapshot: makeSnapshot({
@@ -83,17 +83,17 @@ describe("saveSnapshot reconciliation backstop (#185)", () => {
           totalNetWorth: eur(999999),
         }),
       }),
-    ).toThrow(/reconcil/i);
+    ).rejects.toThrow(/reconcil/i);
 
     // Nothing persisted — neither the snapshot row nor its holdings.
-    expect(store.snapshots.readSnapshots()).toHaveLength(0);
-    expect(store.snapshots.readSnapshotHoldings()).toHaveLength(0);
+    expect(await store.snapshots.readSnapshots()).toHaveLength(0);
+    expect(await store.snapshots.readSnapshotHoldings()).toHaveLength(0);
     store.close();
   });
 
-  test("rejects a holdings set whose derived liquid axis contradicts the headline, persisting nothing", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("rejects a holdings set whose derived liquid axis contradicts the headline, persisting nothing", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
     // Asset/liability sums reconcile, but liquidNetWorth is wrong: a single
     // liquid cash asset of 100000 with no debts derives liquid = 100000, yet
@@ -110,7 +110,7 @@ describe("saveSnapshot reconciliation backstop (#185)", () => {
       },
     ];
 
-    expect(() =>
+    await expect(
       store.snapshots.saveSnapshot({
         holdings,
         snapshot: makeSnapshot({
@@ -120,16 +120,16 @@ describe("saveSnapshot reconciliation backstop (#185)", () => {
           totalNetWorth: eur(100000),
         }),
       }),
-    ).toThrow(/reconcil/i);
+    ).rejects.toThrow(/reconcil/i);
 
-    expect(store.snapshots.readSnapshots()).toHaveLength(0);
-    expect(store.snapshots.readSnapshotHoldings()).toHaveLength(0);
+    expect(await store.snapshots.readSnapshots()).toHaveLength(0);
+    expect(await store.snapshots.readSnapshotHoldings()).toHaveLength(0);
     store.close();
   });
 
-  test("persists a fully reconciling holdings set across all five figures", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("persists a fully reconciling holdings set across all five figures", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
     const holdings: SnapshotHoldingRow[] = [
       {
@@ -152,7 +152,7 @@ describe("saveSnapshot reconciliation backstop (#185)", () => {
       },
     ];
 
-    store.snapshots.saveSnapshot({
+    await store.snapshots.saveSnapshot({
       holdings,
       snapshot: makeSnapshot({
         dateKey: "2024-03-10",
@@ -164,20 +164,20 @@ describe("saveSnapshot reconciliation backstop (#185)", () => {
       }),
     });
 
-    expect(store.snapshots.readSnapshots()).toHaveLength(1);
-    expect(store.snapshots.readSnapshotHoldings()).toHaveLength(2);
+    expect(await store.snapshots.readSnapshots()).toHaveLength(1);
+    expect(await store.snapshots.readSnapshotHoldings()).toHaveLength(2);
     store.close();
   });
 });
 
 describe("derived monthly close survives the dead-branch removal (#185, ADR 0005)", () => {
-  test("the last snapshot of a calendar month is the derived close, regardless of the stored flag", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("the last snapshot of a calendar month is the derived close, regardless of the stored flag", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
     // Three reconciling snapshots in the same month; none declares isMonthlyClose.
     for (const dateKey of ["2024-04-05", "2024-04-15", "2024-04-28"]) {
-      store.snapshots.saveSnapshot({
+      await store.snapshots.saveSnapshot({
         holdings: [
           {
             countsAsHousing: false,
@@ -198,7 +198,7 @@ describe("derived monthly close survives the dead-branch removal (#185, ADR 0005
       });
     }
 
-    const snapshots = store.snapshots.readSnapshots();
+    const snapshots = await store.snapshots.readSnapshots();
     const closes = deriveMonthlyCloses(snapshots);
     // The derived close is the last snapshot of the month, not a stored flag.
     expect(closes.get("2024-04")).toBe("snap_2024-04-28");
@@ -207,13 +207,13 @@ describe("derived monthly close survives the dead-branch removal (#185, ADR 0005
 });
 
 describe("standalone backfill is atomic (#185)", () => {
-  test("a mid-run failure rolls the whole backfill back, leaving no partial history", () => {
-    const store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
+  test("a mid-run failure rolls the whole backfill back, leaving no partial history", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
       members: [{ id: "mJ", name: "Jose" }],
       mode: "individual",
     });
-    store.assets.createInvestmentAsset({
+    await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "fund",
       liquidityTier: "market",
@@ -226,7 +226,7 @@ describe("standalone backfill is atomic (#185)", () => {
     // will fill (one snapshot per scope per date). The scopes of an individual
     // workspace are [household, mJ], processed in order, dates ascending.
     for (const executedAt of ["2024-01-10", "2024-02-10"]) {
-      store.operations.recordOperation({
+      await store.operations.recordOperation({
         assetId: "fund",
         currency: "EUR",
         executedAt,
@@ -244,7 +244,7 @@ describe("standalone backfill is atomic (#185)", () => {
     // it and instead hits the id PK conflict mid-loop, after the earlier date has
     // already been inserted in the same transaction. An atomic backfill rolls the
     // whole thing back; a non-atomic one leaves the 2024-01-10 rows orphaned.
-    store.snapshots.saveSnapshot({
+    await store.snapshots.saveSnapshot({
       snapshot: {
         capturedAt: "2099-01-01T20:00:00.000Z",
         dateKey: "2099-01-01",
@@ -262,25 +262,27 @@ describe("standalone backfill is atomic (#185)", () => {
       },
     });
 
-    const before = store.snapshots.readSnapshots().map((s) => s.id);
+    const before = (await store.snapshots.readSnapshots()).map((s) => s.id);
     expect(before).toEqual(["histsnap_household_2024-02-10"]);
 
-    expect(() => store.backfillHistoricalSnapshots("2026-06-12")).toThrow();
+    await expect(store.backfillHistoricalSnapshots("2026-06-12")).rejects.toThrow();
 
     // Rollback: only the pre-seeded sentinel survives; no histsnap rows for
     // 2024-01-10 were left behind by the failed run.
-    const after = store.snapshots.readSnapshots().map((s) => s.id);
+    const after = (await store.snapshots.readSnapshots()).map((s) => s.id);
     expect(after).toEqual(["histsnap_household_2024-02-10"]);
     expect(
-      store.snapshots.readSnapshotHoldings().some((h) => h.dateKey === "2024-01-10"),
+      (await store.snapshots.readSnapshotHoldings()).some(
+        (h) => h.dateKey === "2024-01-10",
+      ),
     ).toBe(false);
     store.close();
   });
 });
 
 describe("post-import gap-fill surfaces its failure to the caller (#185)", () => {
-  test("a failing gap-fill returns gapFillError instead of swallowing it, import stays committed", () => {
-    const store = createInMemoryStore();
+  test("a failing gap-fill returns gapFillError instead of swallowing it, import stays committed", async () => {
+    const store = await createInMemoryStore();
 
     // A document with a backdated operation at 2026-05-15 (a gap-fill target) and
     // a snapshot whose id collides with the id the gap-fill will mint for
@@ -341,25 +343,27 @@ describe("post-import gap-fill surfaces its failure to the caller (#185)", () =>
       connectedSources: [],
     });
 
-    const result = store.workspace.importWorkspace(doc);
+    const result = await store.workspace.importWorkspace(doc);
 
     // The failure is surfaced, not swallowed.
     expect(result.gapFillError).toBeInstanceOf(Error);
 
     // The import itself committed (ADR 0010): the live state and the file's own
     // snapshot are present despite the gap-fill failure.
-    expect(store.workspace.readWorkspace()!.members.map((m) => m.id)).toEqual(["m1"]);
-    expect(store.assets.readAssets().map((a) => a.id)).toEqual(["inv"]);
+    expect((await store.workspace.readWorkspace())!.members.map((m) => m.id)).toEqual([
+      "m1",
+    ]);
+    expect((await store.assets.readAssets()).map((a) => a.id)).toEqual(["inv"]);
     expect(
-      store.snapshots
-        .readSnapshots()
-        .some((s) => s.id === "histsnap_household_2026-05-15"),
+      (await store.snapshots.readSnapshots()).some(
+        (s) => s.id === "histsnap_household_2026-05-15",
+      ),
     ).toBe(true);
     store.close();
   });
 
-  test("a clean import returns no gapFillError", () => {
-    const store = createInMemoryStore();
+  test("a clean import returns no gapFillError", async () => {
+    const store = await createInMemoryStore();
     const doc: WorkspaceExport = serializeWorkspaceExport({
       workspace: { mode: "individual", baseCurrency: "EUR" },
       members: [{ id: "m1", name: "Alice" }],
@@ -386,7 +390,7 @@ describe("post-import gap-fill surfaces its failure to the caller (#185)", () =>
       connectedSources: [],
     });
 
-    const result = store.workspace.importWorkspace(doc);
+    const result = await store.workspace.importWorkspace(doc);
     expect(result.gapFillError).toBeUndefined();
     store.close();
   });

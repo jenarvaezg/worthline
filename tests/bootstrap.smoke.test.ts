@@ -15,11 +15,11 @@ afterEach(() => {
 });
 
 describe("worthline bootstrap", () => {
-  test("loads a dashboard shell through domain logic and SQLite persistence", () => {
+  test("loads a dashboard shell through domain logic and SQLite persistence", async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "worthline-bootstrap-"));
     tempDirs.push(dataDir);
 
-    const persistence = runBootstrapHealthcheck({
+    const persistence = await runBootstrapHealthcheck({
       databasePath: join(dataDir, "worthline.sqlite"),
       now: () => new Date("2026-06-08T12:00:00.000Z"),
     });

@@ -16,10 +16,9 @@ import {
   type ManualAsset,
   type SourcePosition,
 } from "@worthline/domain";
-import Database from "better-sqlite3";
 import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore } from "@db/index";
+import { createInMemoryStore, openLibsqlClient } from "@db/index";
 import type { WorthlineStore } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 
@@ -30,8 +29,8 @@ const asCoin = (p: SourcePosition): CoinPosition => {
 
 const MEMBER_ID = "mJ";
 
-function seed(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seed(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [{ id: MEMBER_ID, name: "Jose" }],
     mode: "individual",
   });
@@ -67,8 +66,10 @@ function position(
 
 const ownerAll = [{ memberId: MEMBER_ID, shareBps: 10_000 }];
 
-function connectNumista(store: WorthlineStore): { sourceId: string; assetId: string } {
-  return store.connectedSources.connect({
+async function connectNumista(
+  store: WorthlineStore,
+): Promise<{ sourceId: string; assetId: string }> {
+  return await store.connectedSources.connect({
     adapter: "numista",
     credentialsJson: JSON.stringify({ apiKey: "secret" }),
     label: "Colección Numista",
@@ -76,14 +77,16 @@ function connectNumista(store: WorthlineStore): { sourceId: string; assetId: str
   });
 }
 
-function holding(store: WorthlineStore, assetId: string): ManualAsset {
-  const asset = store.assets.readAssets().find((a) => a.id === assetId);
+async function holding(store: WorthlineStore, assetId: string): Promise<ManualAsset> {
+  const asset = (await store.assets.readAssets()).find((a) => a.id === assetId);
   expect(asset).toBeDefined();
   return asset!;
 }
 
-function connectBinance(store: WorthlineStore): { sourceId: string; assetId: string } {
-  return store.connectedSources.connect({
+async function connectBinance(
+  store: WorthlineStore,
+): Promise<{ sourceId: string; assetId: string }> {
+  return await store.connectedSources.connect({
     adapter: "binance",
     label: "Binance",
     credentialsJson: JSON.stringify({ apiKey: "k", apiSecret: "s" }),
@@ -118,13 +121,13 @@ function btcCurve(input: {
 }
 
 describe("connected-source store — connect", () => {
-  test("materializes a derived, illiquid coin collection valued at 0, owned 100%", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("materializes a derived, illiquid coin collection valued at 0, owned 100%", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
-    const { sourceId, assetId } = connectNumista(store);
+    const { sourceId, assetId } = await connectNumista(store);
 
-    const asset = holding(store, assetId);
+    const asset = await holding(store, assetId);
     expect(asset.instrument).toBe("coin_collection");
     expect(asset.liquidityTier).toBe("illiquid");
     expect(asset.currentValue.amountMinor).toBe(0);
@@ -135,7 +138,7 @@ describe("connected-source store — connect", () => {
     expect(valuationMethodOfAsset(asset)).toBe("derived");
     expect(isValueUpdateEligible(asset)).toBe(false);
 
-    const source = store.connectedSources.readSource(sourceId);
+    const source = await store.connectedSources.readSource(sourceId);
     expect(source).toMatchObject({
       adapter: "numista",
       assetId,
@@ -143,17 +146,17 @@ describe("connected-source store — connect", () => {
       lastSyncAt: null,
       tokenJson: null,
     });
-    expect(store.connectedSources.listSources()).toHaveLength(1);
+    expect(await store.connectedSources.listSources()).toHaveLength(1);
   });
 });
 
 describe("connected-source store — syncPositions", () => {
-  test("persists positions and rolls the holding value to the sum of prices", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId, assetId } = connectNumista(store);
+  test("persists positions and rolls the holding value to the sum of prices", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectNumista(store);
 
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         position({
@@ -173,9 +176,9 @@ describe("connected-source store — syncPositions", () => {
       "2024-06-01T10:00:00.000Z",
     );
 
-    expect(holding(store, assetId).currentValue.amountMinor).toBe(12_500);
+    expect((await holding(store, assetId)).currentValue.amountMinor).toBe(12_500);
 
-    const stored = store.connectedSources.readPositions(sourceId).map(asCoin);
+    const stored = (await store.connectedSources.readPositions(sourceId)).map(asCoin);
     expect(stored).toHaveLength(2);
     expect(stored.map((p) => p.catalogueId).sort()).toEqual(["n1", "n2"]);
     // The Numista collected-item id round-trips — the cross-sync trade key (#167).
@@ -197,12 +200,12 @@ describe("connected-source store — syncPositions", () => {
     });
   });
 
-  test("re-sync replaces positions and re-rolls the value", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId, assetId } = connectNumista(store);
+  test("re-sync replaces positions and re-rolls the value", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectNumista(store);
 
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         position({ catalogueId: "keep", purchasePriceMinor: 5_000 }),
@@ -210,9 +213,9 @@ describe("connected-source store — syncPositions", () => {
       ],
       "2024-06-01T10:00:00.000Z",
     );
-    expect(holding(store, assetId).currentValue.amountMinor).toBe(14_000);
+    expect((await holding(store, assetId)).currentValue.amountMinor).toBe(14_000);
 
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         position({ catalogueId: "keep", purchasePriceMinor: 5_000 }),
@@ -221,18 +224,18 @@ describe("connected-source store — syncPositions", () => {
       "2024-07-01T10:00:00.000Z",
     );
 
-    const stored = store.connectedSources.readPositions(sourceId).map(asCoin);
+    const stored = (await store.connectedSources.readPositions(sourceId)).map(asCoin);
     expect(stored.map((p) => p.catalogueId).sort()).toEqual(["keep", "new"]);
     expect(stored.some((p) => p.catalogueId === "drop")).toBe(false);
-    expect(holding(store, assetId).currentValue.amountMinor).toBe(8_000);
+    expect((await holding(store, assetId)).currentValue.amountMinor).toBe(8_000);
   });
 
-  test("persists and round-trips the indefinite detail + numismatic fetched-at", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId } = connectNumista(store);
+  test("persists and round-trips the indefinite detail + numismatic fetched-at", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId } = await connectNumista(store);
 
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         position({
@@ -248,7 +251,7 @@ describe("connected-source store — syncPositions", () => {
       "2026-06-15T12:00:00.000Z",
     );
 
-    const stored = store.connectedSources.readPositions(sourceId);
+    const stored = await store.connectedSources.readPositions(sourceId);
     expect(stored[0]).toMatchObject({
       issueId: 32723,
       finenessMillis: 999,
@@ -257,12 +260,12 @@ describe("connected-source store — syncPositions", () => {
     });
   });
 
-  test("a null purchase price contributes 0 but is still stored", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId, assetId } = connectNumista(store);
+  test("a null purchase price contributes 0 but is still stored", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectNumista(store);
 
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         position({ catalogueId: "priced", purchasePriceMinor: 4_000 }),
@@ -271,9 +274,9 @@ describe("connected-source store — syncPositions", () => {
       "2024-06-01T10:00:00.000Z",
     );
 
-    expect(holding(store, assetId).currentValue.amountMinor).toBe(4_000);
+    expect((await holding(store, assetId)).currentValue.amountMinor).toBe(4_000);
 
-    const stored = store.connectedSources.readPositions(sourceId).map(asCoin);
+    const stored = (await store.connectedSources.readPositions(sourceId)).map(asCoin);
     expect(stored).toHaveLength(2);
     const unpriced = stored.find((p) => p.catalogueId === "unpriced");
     expect(unpriced?.purchasePriceMinor).toBeNull();
@@ -281,12 +284,12 @@ describe("connected-source store — syncPositions", () => {
 });
 
 describe("connected-source store — revaluePositions", () => {
-  test("updates candidates in place, re-rolls the holding, stamps freshness", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId, assetId } = connectNumista(store);
+  test("updates candidates in place, re-rolls the holding, stamps freshness", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectNumista(store);
 
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         position({
@@ -305,13 +308,13 @@ describe("connected-source store — revaluePositions", () => {
       "2026-06-15T12:00:00.000Z",
     );
     // value = Σ max(metal, numismatic): 7558 + 4051 = 11609
-    expect(holding(store, assetId).currentValue.amountMinor).toBe(11609);
+    expect((await holding(store, assetId)).currentValue.amountMinor).toBe(11609);
 
-    const stored = store.connectedSources.readPositions(sourceId).map(asCoin);
+    const stored = (await store.connectedSources.readPositions(sourceId)).map(asCoin);
     const eagle = stored.find((p) => p.catalogueId === "1493")!;
     const pesetas = stored.find((p) => p.catalogueId === "5678")!;
 
-    store.connectedSources.revaluePositions(
+    await store.connectedSources.revaluePositions(
       sourceId,
       [
         {
@@ -331,28 +334,28 @@ describe("connected-source store — revaluePositions", () => {
     );
 
     // eagle max(3000, 7558)=7558; pesetas max(4500, 2400)=4500 → 12058
-    expect(holding(store, assetId).currentValue.amountMinor).toBe(12058);
+    expect((await holding(store, assetId)).currentValue.amountMinor).toBe(12058);
 
-    const reread = store.connectedSources.readPositions(sourceId).map(asCoin);
+    const reread = (await store.connectedSources.readPositions(sourceId)).map(asCoin);
     expect(reread.find((p) => p.catalogueId === "1493")).toMatchObject({
       metalValueMinor: 3000,
       numismaticFetchedAt: "2026-07-15T12:00:00.000Z",
     });
 
     // The freshness row is the staleness indicator + the daily refresh trigger.
-    expect(store.operations.readPriceCache(assetId)).toMatchObject({
+    expect(await store.operations.readPriceCache(assetId)).toMatchObject({
       source: "numista",
       freshnessState: "fresh",
       fetchedAt: "2026-07-15T12:00:00.000Z",
     });
   });
 
-  test("an outage freshness (stale + reason) keeps the last-known value", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId, assetId } = connectNumista(store);
+  test("an outage freshness (stale + reason) keeps the last-known value", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectNumista(store);
 
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         position({
@@ -363,10 +366,10 @@ describe("connected-source store — revaluePositions", () => {
       ],
       "2026-06-15T12:00:00.000Z",
     );
-    const eagle = asCoin(store.connectedSources.readPositions(sourceId)[0]!);
+    const eagle = asCoin((await store.connectedSources.readPositions(sourceId))[0]!);
 
     // Outage: keep last-known candidate values, mark the row stale with a reason.
-    store.connectedSources.revaluePositions(
+    await store.connectedSources.revaluePositions(
       sourceId,
       [
         {
@@ -383,8 +386,8 @@ describe("connected-source store — revaluePositions", () => {
       },
     );
 
-    expect(holding(store, assetId).currentValue.amountMinor).toBe(7558);
-    expect(store.operations.readPriceCache(assetId)).toMatchObject({
+    expect((await holding(store, assetId)).currentValue.amountMinor).toBe(7558);
+    expect(await store.operations.readPriceCache(assetId)).toMatchObject({
       freshnessState: "stale",
       staleReason: "Numista no disponible",
     });
@@ -392,12 +395,12 @@ describe("connected-source store — revaluePositions", () => {
 });
 
 describe("connected-source store — freezeIntoStoredHolding", () => {
-  test("drops the source + positions, keeps the asset as a hand-valued precious_metal holding", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId, assetId } = connectNumista(store);
+  test("drops the source + positions, keeps the asset as a hand-valued precious_metal holding", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectNumista(store);
 
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         position({ catalogueId: "n1", externalId: "ext-1", purchasePriceMinor: 5_000 }),
@@ -406,34 +409,31 @@ describe("connected-source store — freezeIntoStoredHolding", () => {
       "2024-06-01T10:00:00.000Z",
     );
     // A connected source carries a valuation-freshness price-cache row.
-    store.connectedSources.revaluePositions(
+    await store.connectedSources.revaluePositions(
       sourceId,
-      store.connectedSources
-        .readPositions(sourceId)
-        .map(asCoin)
-        .map((p) => ({
-          id: p.id,
-          metalValueMinor: p.metalValueMinor,
-          numismaticValueMinor: p.numismaticValueMinor,
-          numismaticFetchedAt: p.numismaticFetchedAt,
-        })),
+      (await store.connectedSources.readPositions(sourceId)).map(asCoin).map((p) => ({
+        id: p.id,
+        metalValueMinor: p.metalValueMinor,
+        numismaticValueMinor: p.numismaticValueMinor,
+        numismaticFetchedAt: p.numismaticFetchedAt,
+      })),
       { fetchedAt: "2024-06-01T10:00:00.000Z", freshnessState: "fresh" },
     );
-    expect(holding(store, assetId).currentValue.amountMinor).toBe(12_500);
-    expect(store.operations.readPriceCache(assetId)).not.toBeNull();
+    expect((await holding(store, assetId)).currentValue.amountMinor).toBe(12_500);
+    expect(await store.operations.readPriceCache(assetId)).not.toBeNull();
 
-    const result = store.connectedSources.freezeIntoStoredHolding(sourceId);
+    const result = await store.connectedSources.freezeIntoStoredHolding(sourceId);
     expect(result).toEqual({ assetId });
 
     // The source + its positions are gone; frozen snapshots are untouched.
-    expect(store.connectedSources.listSources()).toHaveLength(0);
-    expect(store.connectedSources.readSource(sourceId)).toBeNull();
-    expect(store.connectedSources.readPositions(sourceId)).toHaveLength(0);
+    expect(await store.connectedSources.listSources()).toHaveLength(0);
+    expect(await store.connectedSources.readSource(sourceId)).toBeNull();
+    expect(await store.connectedSources.readPositions(sourceId)).toHaveLength(0);
 
     // The asset survives as a plain, hand-maintained precious-metal holding: same
     // frozen value, name and ownership, now valued by hand (stored) and eligible
     // for the manual value-update pass.
-    const frozen = holding(store, assetId);
+    const frozen = await holding(store, assetId);
     expect(frozen.instrument).toBe("precious_metal");
     expect(frozen.liquidityTier).toBe("illiquid");
     expect(frozen.currentValue.amountMinor).toBe(12_500);
@@ -443,31 +443,31 @@ describe("connected-source store — freezeIntoStoredHolding", () => {
     expect(isValueUpdateEligible(frozen)).toBe(true);
 
     // The orphaned connected-source price-cache row is cleared.
-    expect(store.operations.readPriceCache(assetId)).toBeNull();
+    expect(await store.operations.readPriceCache(assetId)).toBeNull();
 
     // The asset no longer references the (now deleted) source — a fully detached,
     // plain holding with no dangling connected_source_id (S6 #251).
-    expect(store.connectedSources.readSourceIdForAsset(assetId)).toBeNull();
+    expect(await store.connectedSources.readSourceIdForAsset(assetId)).toBeNull();
   });
 
-  test("returns null for an unknown source and changes nothing", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { assetId } = connectNumista(store);
+  test("returns null for an unknown source and changes nothing", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { assetId } = await connectNumista(store);
 
-    expect(store.connectedSources.freezeIntoStoredHolding("missing")).toBeNull();
-    expect(store.connectedSources.listSources()).toHaveLength(1);
-    expect(holding(store, assetId).instrument).toBe("coin_collection");
+    expect(await store.connectedSources.freezeIntoStoredHolding("missing")).toBeNull();
+    expect(await store.connectedSources.listSources()).toHaveLength(1);
+    expect((await holding(store, assetId)).instrument).toBe("coin_collection");
   });
 });
 
 describe("connected-source store — freezeIntoStoredHolding (Binance, multi-rung)", () => {
-  test("freezes EVERY rung into a hand-valued `other` holding, keeping value/name/ownership/rung, fully detached", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId, assetId } = connectBinance(store);
+  test("freezes EVERY rung into a hand-valued `other` holding, keeping value/name/ownership/rung, fully detached", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectBinance(store);
 
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         tk({}), // 0.5 BTC × 50 000 = 25 000 € on market
@@ -484,27 +484,27 @@ describe("connected-source store — freezeIntoStoredHolding (Binance, multi-run
       "2026-06-16T10:00:00.000Z",
     );
     // A live-valued source carries a `binance` valuation-freshness price-cache row.
-    store.connectedSources.revaluePositions(sourceId, [], {
+    await store.connectedSources.revaluePositions(sourceId, [], {
       fetchedAt: "2026-06-16T10:00:00.000Z",
       freshnessState: "fresh",
     });
 
-    const assetIdsBefore = store.connectedSources.listSourceAssetIds(sourceId);
+    const assetIdsBefore = await store.connectedSources.listSourceAssetIds(sourceId);
     expect(assetIdsBefore).toHaveLength(2);
     const termLockedId = assetIdsBefore.find((id) => id !== assetId)!;
-    expect(store.operations.readPriceCache(assetId)).not.toBeNull();
+    expect(await store.operations.readPriceCache(assetId)).not.toBeNull();
 
-    const result = store.connectedSources.freezeIntoStoredHolding(sourceId);
+    const result = await store.connectedSources.freezeIntoStoredHolding(sourceId);
     // Returns the primary (market) asset id, like the Numista freeze.
     expect(result).toEqual({ assetId });
 
     // The source + ALL its positions are gone; frozen snapshots are untouched.
-    expect(store.connectedSources.listSources()).toHaveLength(0);
-    expect(store.connectedSources.readPositions(sourceId)).toHaveLength(0);
+    expect(await store.connectedSources.listSources()).toHaveLength(0);
+    expect(await store.connectedSources.readPositions(sourceId)).toHaveLength(0);
 
     // BOTH rung assets survive as plain hand-valued `other` holdings, keeping
     // their value, name, ownership AND rung — now editable by hand (stored).
-    const market = holding(store, assetId);
+    const market = await holding(store, assetId);
     expect(market.instrument).toBe("other");
     expect(market.liquidityTier).toBe("market");
     expect(market.currentValue.amountMinor).toBe(2_500_000);
@@ -512,31 +512,31 @@ describe("connected-source store — freezeIntoStoredHolding (Binance, multi-run
     expect(valuationMethodOfAsset(market)).toBe("stored");
     expect(isValueUpdateEligible(market)).toBe(true);
 
-    const termLocked = holding(store, termLockedId);
+    const termLocked = await holding(store, termLockedId);
     expect(termLocked.instrument).toBe("other");
     expect(termLocked.liquidityTier).toBe("term-locked");
     expect(termLocked.currentValue.amountMinor).toBe(600_000);
     expect(valuationMethodOfAsset(termLocked)).toBe("stored");
 
     // Fully detached: neither asset references the deleted source any more.
-    expect(store.connectedSources.readSourceIdForAsset(assetId)).toBeNull();
-    expect(store.connectedSources.readSourceIdForAsset(termLockedId)).toBeNull();
+    expect(await store.connectedSources.readSourceIdForAsset(assetId)).toBeNull();
+    expect(await store.connectedSources.readSourceIdForAsset(termLockedId)).toBeNull();
 
     // The orphaned valuation-freshness row is cleared.
-    expect(store.operations.readPriceCache(assetId)).toBeNull();
+    expect(await store.operations.readPriceCache(assetId)).toBeNull();
   });
 
-  test("leaves frozen snapshots intact — a disconnect freeze never rewrites history (#251)", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId, assetId } = connectBinance(store);
-    store.connectedSources.syncPositions(
+  test("leaves frozen snapshots intact — a disconnect freeze never rewrites history (#251)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectBinance(store);
+    await store.connectedSources.syncPositions(
       sourceId,
       [tk({})], // 0.5 BTC spot, market rung
       "2026-06-16T10:00:00.000Z",
     );
     // Freeze a monthly-close snapshot row for a completed past month (ADR 0008).
-    store.applyBinanceHistoryAndRipple({
+    await store.applyBinanceHistoryAndRipple({
       sourceId,
       curve: btcCurve({
         monthEndBalances: { "2026-03": "0.5" },
@@ -544,34 +544,40 @@ describe("connected-source store — freezeIntoStoredHolding (Binance, multi-run
       }),
       today: "2026-06-16",
     });
-    const before = store.snapshots.readSnapshotHoldings({ holdingId: assetId });
+    const before = await store.snapshots.readSnapshotHoldings({ holdingId: assetId });
     expect(before.length).toBeGreaterThan(0);
 
-    store.connectedSources.freezeIntoStoredHolding(sourceId);
+    await store.connectedSources.freezeIntoStoredHolding(sourceId);
 
     // The frozen rows are byte-identical — history is never touched by a disconnect.
-    expect(store.snapshots.readSnapshotHoldings({ holdingId: assetId })).toEqual(before);
+    expect(await store.snapshots.readSnapshotHoldings({ holdingId: assetId })).toEqual(
+      before,
+    );
   });
 
-  test("a frozen source round-trips through export/import as a hand-valued (stored) holding (#251)", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId, assetId } = connectBinance(store);
-    store.connectedSources.syncPositions(sourceId, [tk({})], "2026-06-16T10:00:00.000Z");
-    store.connectedSources.freezeIntoStoredHolding(sourceId);
+  test("a frozen source round-trips through export/import as a hand-valued (stored) holding (#251)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectBinance(store);
+    await store.connectedSources.syncPositions(
+      sourceId,
+      [tk({})],
+      "2026-06-16T10:00:00.000Z",
+    );
+    await store.connectedSources.freezeIntoStoredHolding(sourceId);
 
-    const doc = store.workspace.exportWorkspace();
+    const doc = await store.workspace.exportWorkspace();
     // No connected source survives the freeze — it became a plain holding.
     expect(doc.connectedSources).toHaveLength(0);
 
     const parsed = parseWorkspaceExport(doc);
     if (!parsed.ok) throw new Error(parsed.errors.join("; "));
-    const fresh = createInMemoryStore();
-    fresh.workspace.importWorkspace(parsed.value);
+    const fresh = await createInMemoryStore();
+    await fresh.workspace.importWorkspace(parsed.value);
 
     // The INSTRUMENT (not the type-derived exported method column) governs the
     // effective method across a round-trip: still hand-valued + editable.
-    const restored = fresh.assets.readAssets().find((a) => a.id === assetId)!;
+    const restored = (await fresh.assets.readAssets()).find((a) => a.id === assetId)!;
     expect(restored.instrument).toBe("other");
     expect(valuationMethodOfAsset(restored)).toBe("stored");
     expect(isValueUpdateEligible(restored)).toBe(true);
@@ -579,11 +585,11 @@ describe("connected-source store — freezeIntoStoredHolding (Binance, multi-run
 });
 
 describe("connected-source store — removeSourceHoldings (Binance, multi-rung)", () => {
-  test("drops BOTH rung assets + the source + positions, but frozen snapshots survive (#251)", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId, assetId } = connectBinance(store);
-    store.connectedSources.syncPositions(
+  test("drops BOTH rung assets + the source + positions, but frozen snapshots survive (#251)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectBinance(store);
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         tk({}), // market
@@ -600,7 +606,7 @@ describe("connected-source store — removeSourceHoldings (Binance, multi-rung)"
       "2026-06-16T10:00:00.000Z",
     );
     // Freeze a past month-end row so we can prove the REMOVE path keeps history too.
-    store.applyBinanceHistoryAndRipple({
+    await store.applyBinanceHistoryAndRipple({
       sourceId,
       curve: btcCurve({
         monthEndBalances: { "2026-03": "0.5" },
@@ -608,37 +614,41 @@ describe("connected-source store — removeSourceHoldings (Binance, multi-rung)"
       }),
       today: "2026-06-16",
     });
-    const frozenBefore = store.snapshots.readSnapshotHoldings({ holdingId: assetId });
+    const frozenBefore = await store.snapshots.readSnapshotHoldings({
+      holdingId: assetId,
+    });
     expect(frozenBefore.length).toBeGreaterThan(0);
-    expect(store.connectedSources.listSourceAssetIds(sourceId)).toHaveLength(2);
+    expect(await store.connectedSources.listSourceAssetIds(sourceId)).toHaveLength(2);
 
-    const { removed } = store.connectedSources.removeSourceHoldings(sourceId);
+    const { removed } = await store.connectedSources.removeSourceHoldings(sourceId);
 
     // Both rung assets, the source and all positions are gone…
     expect(removed).toBe(2);
-    expect(store.connectedSources.listSources()).toHaveLength(0);
-    expect(store.connectedSources.readPositions(sourceId)).toHaveLength(0);
-    expect(store.assets.readAssets().some((a) => a.instrument === "crypto")).toBe(false);
+    expect(await store.connectedSources.listSources()).toHaveLength(0);
+    expect(await store.connectedSources.readPositions(sourceId)).toHaveLength(0);
+    expect((await store.assets.readAssets()).some((a) => a.instrument === "crypto")).toBe(
+      false,
+    );
 
     // …but the frozen snapshot rows survive untouched (a hard delete never touches
     // history — ADR 0008/0016).
-    expect(store.snapshots.readSnapshotHoldings({ holdingId: assetId })).toEqual(
+    expect(await store.snapshots.readSnapshotHoldings({ holdingId: assetId })).toEqual(
       frozenBefore,
     );
   });
 });
 
 describe("connected-source store — export/import round-trip", () => {
-  test("carries the source + positions through export→parse→import, without secrets", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId, assetId } = connectNumista(store);
+  test("carries the source + positions through export→parse→import, without secrets", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectNumista(store);
     // A minted token + the pasted API key are the local-only secrets.
-    store.connectedSources.saveToken(
+    await store.connectedSources.saveToken(
       sourceId,
       JSON.stringify({ accessToken: "secret-token", expiresAtMs: 999, userId: 1 }),
     );
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         position({ catalogueId: "n1", externalId: "ext-1", purchasePriceMinor: 5_000 }),
@@ -647,7 +657,7 @@ describe("connected-source store — export/import round-trip", () => {
       "2024-06-01T10:00:00.000Z",
     );
 
-    const doc = store.workspace.exportWorkspace();
+    const doc = await store.workspace.exportWorkspace();
 
     // The export carries the source + its positions…
     expect(doc.connectedSources).toHaveLength(1);
@@ -671,10 +681,10 @@ describe("connected-source store — export/import round-trip", () => {
     if (!parsed.ok) throw new Error(parsed.errors.join("; "));
 
     // …and restores into a fresh store: holding + source + positions are back.
-    const fresh = createInMemoryStore();
-    fresh.workspace.importWorkspace(parsed.value);
+    const fresh = await createInMemoryStore();
+    await fresh.workspace.importWorkspace(parsed.value);
 
-    const restored = fresh.connectedSources.listSources();
+    const restored = await fresh.connectedSources.listSources();
     expect(restored).toHaveLength(1);
     expect(restored[0]).toMatchObject({
       id: sourceId,
@@ -690,20 +700,22 @@ describe("connected-source store — export/import round-trip", () => {
       (JSON.parse(restored[0]!.credentialsJson) as { apiKey?: string }).apiKey,
     ).toBeUndefined();
 
-    const restoredPositions = fresh.connectedSources.readPositions(sourceId);
+    const restoredPositions = await fresh.connectedSources.readPositions(sourceId);
     expect(restoredPositions).toHaveLength(2);
     expect(restoredPositions.map((p) => p.externalId).sort()).toEqual(["ext-1", "ext-2"]);
 
     // The projected holding round-trips as a coin_collection with its rolled value.
-    const restoredHolding = fresh.assets.readAssets().find((a) => a.id === assetId);
+    const restoredHolding = (await fresh.assets.readAssets()).find(
+      (a) => a.id === assetId,
+    );
     expect(restoredHolding?.instrument).toBe("coin_collection");
     expect(restoredHolding?.currentValue.amountMinor).toBe(12_500);
   });
 
-  test("round-trips a multi-rung Binance source (token positions across both rungs), without credentials (S6 #251)", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId, assetId } = store.connectedSources.connect({
+  test("round-trips a multi-rung Binance source (token positions across both rungs), without credentials (S6 #251)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await store.connectedSources.connect({
       adapter: "binance",
       label: "Binance",
       // Distinctive sentinels for BOTH secrets (key + signing secret are both
@@ -717,7 +729,7 @@ describe("connected-source store — export/import round-trip", () => {
 
     // Spot (market) + locked-earn (term-locked) → two materialized crypto assets,
     // each with a live token position carrying balance/wallet/unitPrice.
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         {
@@ -745,16 +757,15 @@ describe("connected-source store — export/import round-trip", () => {
       ],
       "2026-06-16T10:00:00.000Z",
     );
-    const termLockedId = store.connectedSources
-      .listSourceAssetIds(sourceId)
-      .find((id) => id !== assetId)!;
+    const termLockedId = (await store.connectedSources.listSourceAssetIds(sourceId)).find(
+      (id) => id !== assetId,
+    )!;
     // Position identities to preserve across the round-trip (#251).
-    const positionIdsBefore = store.connectedSources
-      .readPositions(sourceId)
+    const positionIdsBefore = (await store.connectedSources.readPositions(sourceId))
       .map((p) => p.id)
       .sort();
 
-    const doc = store.workspace.exportWorkspace();
+    const doc = await store.workspace.exportWorkspace();
 
     // The export carries the source with its TOKEN positions, and BOTH rung assets
     // carry the connected_source_id back-link (the source row names only the
@@ -773,11 +784,11 @@ describe("connected-source store — export/import round-trip", () => {
     // Validates and restores all-or-nothing into a fresh store.
     const parsed = parseWorkspaceExport(doc);
     if (!parsed.ok) throw new Error(parsed.errors.join("; "));
-    const fresh = createInMemoryStore();
-    fresh.workspace.importWorkspace(parsed.value);
+    const fresh = await createInMemoryStore();
+    await fresh.workspace.importWorkspace(parsed.value);
 
     // The source is back, credentials unusable (a re-sync needs the key re-entered).
-    const restored = fresh.connectedSources.listSources();
+    const restored = await fresh.connectedSources.listSources();
     expect(restored).toHaveLength(1);
     expect(restored[0]).toMatchObject({ id: sourceId, adapter: "binance", assetId });
     const restoredCreds = JSON.parse(restored[0]!.credentialsJson) as {
@@ -790,10 +801,10 @@ describe("connected-source store — export/import round-trip", () => {
     // Both rung assets re-attach to the source (identities preserved), and the
     // token positions round-trip faithfully (balance/wallet/unitPrice intact) —
     // including their own ids (preserving identities, ADR 0015).
-    expect(fresh.connectedSources.listSourceAssetIds(sourceId).sort()).toEqual(
+    expect((await fresh.connectedSources.listSourceAssetIds(sourceId)).sort()).toEqual(
       [assetId, termLockedId].sort(),
     );
-    const restoredPositions = fresh.connectedSources.readPositions(sourceId);
+    const restoredPositions = await fresh.connectedSources.readPositions(sourceId);
     expect(restoredPositions).toHaveLength(2);
     expect(restoredPositions.map((p) => p.id).sort()).toEqual(positionIdsBefore);
     const btc = restoredPositions.find((p) => p.kind === "token" && p.symbol === "BTC");
@@ -805,10 +816,11 @@ describe("connected-source store — export/import round-trip", () => {
     });
 
     // Both projected holdings round-trip as crypto with their live-rolled values.
-    const market = fresh.assets.readAssets().find((a) => a.id === assetId);
+    const freshAssets = await fresh.assets.readAssets();
+    const market = freshAssets.find((a) => a.id === assetId);
     expect(market?.instrument).toBe("crypto");
     expect(market?.currentValue.amountMinor).toBe(2_500_000);
-    const termLocked = fresh.assets.readAssets().find((a) => a.id === termLockedId);
+    const termLocked = freshAssets.find((a) => a.id === termLockedId);
     expect(termLocked?.instrument).toBe("crypto");
     expect(termLocked?.liquidityTier).toBe("term-locked");
     expect(termLocked?.currentValue.amountMinor).toBe(600_000);
@@ -816,65 +828,70 @@ describe("connected-source store — export/import round-trip", () => {
 });
 
 describe("connected-source store — import replaces existing sources", () => {
-  test("a full-replace import wipes a pre-existing source + positions", () => {
-    const target = createInMemoryStore();
-    seed(target);
-    const { sourceId } = connectNumista(target);
-    target.connectedSources.syncPositions(
+  test("a full-replace import wipes a pre-existing source + positions", async () => {
+    const target = await createInMemoryStore();
+    await seed(target);
+    const { sourceId } = await connectNumista(target);
+    await target.connectedSources.syncPositions(
       sourceId,
       [position({ catalogueId: "old", externalId: "old-1" })],
       "2024-01-01T00:00:00.000Z",
     );
-    expect(target.connectedSources.listSources()).toHaveLength(1);
+    expect(await target.connectedSources.listSources()).toHaveLength(1);
 
     // A document with NO connected sources must leave none behind after import.
-    const empty = createInMemoryStore();
-    seed(empty);
-    const doc = empty.workspace.exportWorkspace();
+    const empty = await createInMemoryStore();
+    await seed(empty);
+    const doc = await empty.workspace.exportWorkspace();
     expect(doc.connectedSources).toHaveLength(0);
 
-    target.workspace.importWorkspace(doc);
+    await target.workspace.importWorkspace(doc);
 
-    expect(target.connectedSources.listSources()).toHaveLength(0);
-    expect(target.connectedSources.readPositions(sourceId)).toHaveLength(0);
+    expect(await target.connectedSources.listSources()).toHaveLength(0);
+    expect(await target.connectedSources.readPositions(sourceId)).toHaveLength(0);
   });
 });
 
 describe("connected-source store — token + last sync", () => {
-  test("saveToken round-trips and a sync stamps lastSyncAt", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId } = connectNumista(store);
+  test("saveToken round-trips and a sync stamps lastSyncAt", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId } = await connectNumista(store);
 
     const tokenJson = JSON.stringify({ accessToken: "abc", expiresAt: 123 });
-    store.connectedSources.saveToken(sourceId, tokenJson);
-    expect(store.connectedSources.readSource(sourceId)?.tokenJson).toBe(tokenJson);
-    expect(store.connectedSources.readSource(sourceId)?.lastSyncAt).toBeNull();
+    await store.connectedSources.saveToken(sourceId, tokenJson);
+    expect((await store.connectedSources.readSource(sourceId))?.tokenJson).toBe(
+      tokenJson,
+    );
+    expect((await store.connectedSources.readSource(sourceId))?.lastSyncAt).toBeNull();
 
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [position()],
       "2024-08-15T09:00:00.000Z",
     );
-    expect(store.connectedSources.readSource(sourceId)?.lastSyncAt).toBe(
+    expect((await store.connectedSources.readSource(sourceId))?.lastSyncAt).toBe(
       "2024-08-15T09:00:00.000Z",
     );
     // The token is untouched by a sync.
-    expect(store.connectedSources.readSource(sourceId)?.tokenJson).toBe(tokenJson);
+    expect((await store.connectedSources.readSource(sourceId))?.tokenJson).toBe(
+      tokenJson,
+    );
   });
 });
 
 describe("connected-source store — migration", () => {
-  // Fresh-DB table-existence + version assertion: a raw better-sqlite3 DB run
+  // Fresh-DB table-existence + version assertion: a raw libSQL client run
   // through `migrate` lands at SCHEMA_VERSION with both tables present, and the
   // positions table carries the v21 external_id column (the cross-sync trade key,
   // #167) added by the ladder after the v19 CREATE TABLE.
-  test("migrate creates connected_sources + positions and adds external_id", () => {
-    const db = new Database(":memory:");
-    migrate(db);
+  test("migrate creates connected_sources + positions and adds external_id", async () => {
+    const client = openLibsqlClient(":memory:");
+    await migrate(client);
 
     const tableNames = (
-      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
+      (await client.execute("SELECT name FROM sqlite_master WHERE type = 'table'"))
+        .rows as unknown as {
         name: string;
       }[]
     ).map((row) => row.name);
@@ -883,27 +900,33 @@ describe("connected-source store — migration", () => {
     expect(tableNames).toContain("positions");
 
     const positionColumns = (
-      db.prepare("PRAGMA table_info(positions)").all() as { name: string }[]
+      (await client.execute("PRAGMA table_info(positions)")).rows as unknown as {
+        name: string;
+      }[]
     ).map((row) => row.name);
     expect(positionColumns).toContain("external_id");
     // The v22 mint-year column (#215).
     expect(positionColumns).toContain("year");
 
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
+    expect(
+      Number((await client.execute("PRAGMA user_version")).rows[0]!.user_version),
+    ).toBe(SCHEMA_VERSION);
     expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(22);
 
-    db.close();
+    client.close();
   });
 
   // The v20 decoupled-valuation columns (PRD #166): present on a fresh DB and,
   // crucially, idempotent — the v20 ALTERs are guarded so a fresh DB (which gets
   // them from schema-sql) does not double-add and throw.
-  test("positions carries the v20 valuation-refresh columns", () => {
-    const db = new Database(":memory:");
-    migrate(db);
+  test("positions carries the v20 valuation-refresh columns", async () => {
+    const client = openLibsqlClient(":memory:");
+    await migrate(client);
 
     const columns = (
-      db.prepare("PRAGMA table_info(positions)").all() as { name: string }[]
+      (await client.execute("PRAGMA table_info(positions)")).rows as unknown as {
+        name: string;
+      }[]
     ).map((row) => row.name);
 
     expect(columns).toEqual(
@@ -915,16 +938,16 @@ describe("connected-source store — migration", () => {
       ]),
     );
 
-    db.close();
+    client.close();
   });
 
   // An existing v19 DB (connected_sources/positions present, old positions shape)
   // upgrades cleanly to v20: the ALTERs add the four columns to real data.
-  test("upgrades a v19 database to v20 by adding the columns", () => {
-    const db = new Database(":memory:");
+  test("upgrades a v19 database to v20 by adding the columns", async () => {
+    const client = openLibsqlClient(":memory:");
     // Stand up the v19 positions shape, then mark the DB as v19 so migrate runs
     // only the v20 step against it (the real upgrade path, not the fresh-DB path).
-    db.exec(`CREATE TABLE positions (
+    await client.executeMultiple(`CREATE TABLE positions (
       id TEXT PRIMARY KEY NOT NULL,
       source_id TEXT NOT NULL,
       catalogue_id TEXT NOT NULL,
@@ -940,12 +963,14 @@ describe("connected-source store — migration", () => {
       currency TEXT NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
     );`);
-    db.pragma("user_version = 19");
+    await client.execute("PRAGMA user_version = 19");
 
-    migrate(db);
+    await migrate(client);
 
     const columns = (
-      db.prepare("PRAGMA table_info(positions)").all() as { name: string }[]
+      (await client.execute("PRAGMA table_info(positions)")).rows as unknown as {
+        name: string;
+      }[]
     ).map((row) => row.name);
     expect(columns).toEqual(
       expect.arrayContaining([
@@ -955,8 +980,10 @@ describe("connected-source store — migration", () => {
         "numismatic_fetched_at",
       ]),
     );
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
+    expect(
+      Number((await client.execute("PRAGMA user_version")).rows[0]!.user_version),
+    ).toBe(SCHEMA_VERSION);
 
-    db.close();
+    client.close();
   });
 });

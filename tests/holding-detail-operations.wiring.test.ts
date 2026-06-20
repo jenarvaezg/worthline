@@ -29,13 +29,13 @@ afterEach(() => {
   store?.close();
 });
 
-function setupInvestment(): WorthlineStore {
-  store = createInMemoryStore();
-  store.workspace.initializeWorkspace({
+async function setupInvestment(): Promise<WorthlineStore> {
+  store = await createInMemoryStore();
+  await store.workspace.initializeWorkspace({
     members: [{ id: MEMBER_ID, name: "Yo" }],
     mode: "individual",
   });
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     id: ASSET_ID,
     name: "Fondo Ficha",
     currency: "EUR",
@@ -46,15 +46,15 @@ function setupInvestment(): WorthlineStore {
   return store;
 }
 
-function positionUnits(): string | undefined {
-  return store.snapshots.readPositions().find((p) => p.assetId === ASSET_ID)
+async function positionUnits(): Promise<string | undefined> {
+  return (await store.snapshots.readPositions()).find((p) => p.assetId === ASSET_ID)
     ?.currentUnits;
 }
 
 describe("holding detail — derived dispatch (#152)", () => {
-  test("an investment read off readAssets dispatches to the derived surface", () => {
-    setupInvestment();
-    const asset = store.assets.readAssets().find((a) => a.id === ASSET_ID)!;
+  test("an investment read off readAssets dispatches to the derived surface", async () => {
+    await setupInvestment();
+    const asset = (await store.assets.readAssets()).find((a) => a.id === ASSET_ID)!;
 
     expect(asset).toBeDefined();
     expect(valuationMethodOfAsset(asset)).toBe("derived");
@@ -65,7 +65,7 @@ describe("holding detail — derived dispatch (#152)", () => {
 
 describe("holding detail — operations surface loop from /patrimonio (#152)", () => {
   test("record buy from the detail page persists and returns to the detail url", async () => {
-    setupInvestment();
+    await setupInvestment();
 
     const url = await catchRedirect(() =>
       recordOperationAction(
@@ -86,12 +86,12 @@ describe("holding detail — operations surface loop from /patrimonio (#152)", (
 
     expect(url).toContain(DETAIL_URL);
     expect(url).toContain("ok=saved");
-    expect(store.operations.readOperations(ASSET_ID)).toHaveLength(1);
-    expect(positionUnits()).toBe("10");
+    expect(await store.operations.readOperations(ASSET_ID)).toHaveLength(1);
+    expect(await positionUnits()).toBe("10");
   });
 
   test("record sell reduces the derived units", async () => {
-    setupInvestment();
+    await setupInvestment();
 
     await catchRedirect(() =>
       recordOperationAction(
@@ -128,12 +128,12 @@ describe("holding detail — operations surface loop from /patrimonio (#152)", (
     );
 
     expect(url).toContain(DETAIL_URL);
-    expect(store.operations.readOperations(ASSET_ID)).toHaveLength(2);
-    expect(positionUnits()).toBe("6");
+    expect(await store.operations.readOperations(ASSET_ID)).toHaveLength(2);
+    expect(await positionUnits()).toBe("6");
   });
 
   test("delete an operation from the detail page reverts the units", async () => {
-    setupInvestment();
+    await setupInvestment();
 
     await catchRedirect(() =>
       recordOperationAction(
@@ -168,9 +168,9 @@ describe("holding detail — operations surface loop from /patrimonio (#152)", (
       ),
     );
 
-    const sellOp = store.operations
-      .readOperations(ASSET_ID)
-      .find((op) => op.kind === "sell")!;
+    const sellOp = (await store.operations.readOperations(ASSET_ID)).find(
+      (op) => op.kind === "sell",
+    )!;
 
     const url = await catchRedirect(() =>
       deleteOperationAction(ASSET_ID, fd({ operationId: sellOp.id }, DETAIL_URL), store),
@@ -178,7 +178,7 @@ describe("holding detail — operations surface loop from /patrimonio (#152)", (
 
     expect(url).toContain(DETAIL_URL);
     expect(url).toContain("ok=operation_deleted");
-    expect(store.operations.readOperations(ASSET_ID)).toHaveLength(1);
-    expect(positionUnits()).toBe("10");
+    expect(await store.operations.readOperations(ASSET_ID)).toHaveLength(1);
+    expect(await positionUnits()).toBe("10");
   });
 });

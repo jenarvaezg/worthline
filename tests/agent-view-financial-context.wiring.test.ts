@@ -73,14 +73,14 @@ function eur(amountMinor: number) {
 
 // A fingerprint of every mutation-prone read, to prove an agent read writes
 // nothing (no snapshots, price cache, public IDs, holdings).
-function fingerprint(databasePath: string): string {
-  const store = createWorthlineStore({ databasePath });
+async function fingerprint(databasePath: string): Promise<string> {
+  const store = await createWorthlineStore({ databasePath });
   const snapshot = JSON.stringify({
-    assets: store.assets.readAssets(),
-    liabilities: store.liabilities.readLiabilities(),
-    priceCache: store.operations.readAllPriceCacheEntries(),
-    publicIds: store.agentView.readPublicIds(),
-    snapshots: store.snapshots.readSnapshots("household"),
+    assets: await store.assets.readAssets(),
+    liabilities: await store.liabilities.readLiabilities(),
+    priceCache: await store.operations.readAllPriceCacheEntries(),
+    publicIds: await store.agentView.readPublicIds(),
+    snapshots: await store.snapshots.readSnapshots("household"),
   });
   store.close();
   return snapshot;
@@ -121,12 +121,12 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000_00,
       id: "asset_cash",
@@ -175,13 +175,13 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
     const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000_00,
       id: "asset_cash",
@@ -190,7 +190,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
       ownership: owner,
       type: "cash",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 20_000_00,
       id: "asset_market",
@@ -199,7 +199,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
       ownership: owner,
       type: "manual",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 200_000_00,
       id: "asset_home",
@@ -209,7 +209,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
       ownership: owner,
       type: "real_estate",
     });
-    store.liabilities.createLiability({
+    await store.liabilities.createLiability({
       associatedAssetId: "asset_home",
       balanceMinor: 100_000_00,
       currency: "EUR",
@@ -256,18 +256,18 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
     }
   });
 
-  function seedHoldings() {
+  async function seedHoldings(): Promise<void> {
     const databasePath = tempDatabasePath("worthline-agent-view-fc-holdings-");
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
     const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 30_000_00,
       id: "asset_fund",
@@ -276,7 +276,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
       ownership: owner,
       type: "manual",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000_00,
       id: "asset_cash",
@@ -285,7 +285,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
       ownership: owner,
       type: "cash",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 1_000_00,
       id: "asset_watch",
@@ -294,7 +294,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
       ownership: owner,
       type: "manual",
     });
-    store.liabilities.createLiability({
+    await store.liabilities.createLiability({
       balanceMinor: 5_000_00,
       currency: "EUR",
       id: "liab_loan",
@@ -306,7 +306,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
   }
 
   test("summarizes holdings sorted by absolute value with opaque IDs and ownership", async () => {
-    seedHoldings();
+    await seedHoldings();
 
     const { body } = await financialContext(await householdScopeId());
     const holdings = body.data.holdings;
@@ -347,7 +347,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
   });
 
   test("caps holdings at holdingLimit and reports omitted count and total value", async () => {
-    seedHoldings();
+    await seedHoldings();
 
     const { body } = await financialContext(await householdScopeId(), "?holdingLimit=2");
     const holdings = body.data.holdings;
@@ -363,7 +363,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
   });
 
   test("reports an exposure summary with top holdings, allocations, and concentration", async () => {
-    seedHoldings();
+    await seedHoldings();
 
     const { body } = await financialContext(await householdScopeId());
     const exposure = body.data.exposure;
@@ -398,27 +398,27 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
     const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
-    store.assets.createInvestmentAsset({
+    await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "asset_fund",
       liquidityTier: "market",
       name: "Fondo indexado",
       ownership: owner,
     });
-    const buy = (
+    const buy = async (
       executedAt: string,
       units: string,
       price: string,
       feesMinor = 0,
       kind = "buy",
     ) =>
-      store.recordOperationAndRipple(
+      await store.recordOperationAndRipple(
         {
           assetId: "asset_fund",
           currency: "EUR",
@@ -431,11 +431,11 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
         },
         { today: "2026-06-19" },
       );
-    buy("2026-01-10", "10", "100.00", 5_00);
-    buy("2026-02-15", "5", "120.00");
-    buy("2026-03-20", "3", "130.00", 0, "sell");
+    await buy("2026-01-10", "10", "100.00", 5_00);
+    await buy("2026-02-15", "5", "120.00");
+    await buy("2026-03-20", "3", "130.00", 0, "sell");
 
-    store.connectedSources.connect({
+    await store.connectedSources.connect({
       adapter: "numista",
       credentialsJson: JSON.stringify({ apiKey: "secret-key" }),
       label: "Colección Numista",
@@ -470,7 +470,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
   });
 
   test("MCP get_financial_context mirrors the HTTP shape and defaults to the household scope", async () => {
-    seedHoldings();
+    await seedHoldings();
 
     const household = await householdScopeId();
     const httpBody = await financialContext(household);
@@ -492,7 +492,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
   });
 
   test("returns 404 for an unknown scope id", async () => {
-    seedHoldings();
+    await seedHoldings();
 
     const { response, body } = await financialContext("wl_scp_doesnotexist");
 
@@ -501,7 +501,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
   });
 
   test("rejects unknown query parameters and invalid holdingLimit", async () => {
-    seedHoldings();
+    await seedHoldings();
     const scopeId = await householdScopeId();
 
     expect((await financialContext(scopeId, "?foo=bar")).response.status).toBe(400);
@@ -519,7 +519,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
   });
 
   test("requires the local capability token", async () => {
-    seedHoldings();
+    await seedHoldings();
     const scopeId = await householdScopeId();
 
     const response = await getFinancialContext(
@@ -534,14 +534,14 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
   });
 
   test("reads do not mutate persisted state", async () => {
-    seedHoldings();
+    await seedHoldings();
     const databasePath = process.env.WORTHLINE_DB_PATH as string;
     const scopeId = await householdScopeId();
 
-    const before = fingerprint(databasePath);
+    const before = await fingerprint(databasePath);
     await financialContext(scopeId);
     await financialContext(scopeId, "?holdingLimit=1");
-    const after = fingerprint(databasePath);
+    const after = await fingerprint(databasePath);
 
     expect(after).toBe(before);
   });
@@ -551,8 +551,8 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       groups: [
         { id: "group_adults", memberIds: ["member_ana", "member_jose"], name: "Adultos" },
       ],
@@ -563,7 +563,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
       mode: "household",
     });
     // One shared account split 50/50 between Ana and Jose.
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000_00,
       id: "asset_joint",

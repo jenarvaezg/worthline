@@ -44,12 +44,12 @@ describe("demo write guard", () => {
   });
 
   it("blocks a representative mutating action and leaves the store untouched", async () => {
-    const store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
       members: [{ id: "m1", name: "Uno" }],
       mode: "individual",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000_00,
       id: "asset_keep",
@@ -70,7 +70,7 @@ describe("demo write guard", () => {
     );
 
     // The asset is still there — the guard short-circuited before the store.
-    const assets = store.assets.readAssets();
+    const assets = await store.assets.readAssets();
     expect(assets.some((a) => a.id === "asset_keep")).toBe(true);
 
     store.close();

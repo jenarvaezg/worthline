@@ -10,9 +10,9 @@
     }
   },
   "dependencies": {
+    "@libsql/client": "latest",
     "@worthline/domain": "*",
     "@worthline/pricing": "*",
-    "better-sqlite3": "latest",
     "drizzle-orm": "latest"
   },
   "scripts": {

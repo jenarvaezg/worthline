@@ -130,7 +130,7 @@ export async function recordOperationAction(
       values: preserveFields(formData, OPERATION_FORM_FIELDS),
     });
 
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   const today = _clock.today();
@@ -148,7 +148,7 @@ export async function recordOperationAction(
 
   // One seam call persists the operation AND ripples its snapshots atomically
   // (ADR 0020; backdated operation → reconstruct history, PRD #107).
-  runWith((store) => store.recordOperationAndRipple(domainResult.value, { today }));
+  await runWith((store) => store.recordOperationAndRipple(domainResult.value, { today }));
 
   redirect(successRedirectUrl(returnUrl, "saved"));
 }
@@ -239,18 +239,21 @@ export async function previewStatementAction(
   }
 
   const { isin, rows, skipped } = read.value;
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
-  return runWith((store) => {
+  return runWith(async (store) => {
     // ISIN guard (S4): block a wrong-file slip before showing any summary.
-    const asset = store.assets.readInvestmentAssetById(routeAssetId);
+    const asset = await store.assets.readInvestmentAssetById(routeAssetId);
     const guard = resolveStatementIsinGuard(isin, asset?.isin ?? null);
     if (guard.status === "mismatch") {
       return { message: isinMismatchMessage(isin, asset?.isin ?? ""), status: "error" };
     }
 
-    const plan = planStatementMerge(rows, store.operations.readOperations(routeAssetId));
+    const plan = planStatementMerge(
+      rows,
+      await store.operations.readOperations(routeAssetId),
+    );
     return {
       anomalies: plan.anomalies.length,
       created: plan.toCreate.length,
@@ -284,7 +287,7 @@ export async function confirmStatementAction(
   const statementErrorUrl = (message: string) =>
     errorRedirectUrl(returnUrl, { formId: "statement", message });
 
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   const read = await readStatementFromForm(formData);
@@ -296,27 +299,30 @@ export async function confirmStatementAction(
   const today = _clock.today();
   const seed = Date.now();
 
-  const applied = runWith((store) => {
+  const applied = await runWith(async (store) => {
     // ISIN guard (S4): block a mismatch before any write; backfill an empty asset
     // so a later upload to the same holding is guarded too.
-    const asset = store.assets.readInvestmentAssetById(routeAssetId);
+    const asset = await store.assets.readInvestmentAssetById(routeAssetId);
     const guard = resolveStatementIsinGuard(isin, asset?.isin ?? null);
     if (guard.status === "mismatch") {
       return { error: isinMismatchMessage(isin, asset?.isin ?? "") } as const;
     }
     if (guard.status === "backfill") {
-      store.assets.backfillInvestmentIsin(routeAssetId, guard.isin);
+      await store.assets.backfillInvestmentIsin(routeAssetId, guard.isin);
     }
 
     // Merge by date (S2): plan against the asset's current operations so an
     // overlapping date overwrites in place instead of duplicating, and operations
     // the file does not mention survive untouched. Anomalous dates are set aside.
-    const plan = planStatementMerge(rows, store.operations.readOperations(routeAssetId));
+    const plan = planStatementMerge(
+      rows,
+      await store.operations.readOperations(routeAssetId),
+    );
 
     // One seam call persists every create + overwrite AND runs ONE batched ripple
     // over the dates they touch, atomically (ADR 0020 / 0018). The action no longer
     // derives the affected-date window — the seam derives it from the operations.
-    store.recordOperationsAndRipple({
+    await store.recordOperationsAndRipple({
       assetId: routeAssetId,
       creates: plan.toCreate.map((row, i) => ({
         assetId: routeAssetId,
@@ -377,7 +383,7 @@ export async function updateInvestmentAction(
       values: preserveFields(formData, EDIT_INVESTMENT_FIELDS),
     });
 
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   const parsed = parseUpdateInvestmentCommand(formData, routeAssetId);
@@ -386,7 +392,9 @@ export async function updateInvestmentAction(
     redirect(editErrorUrl(parsed.error));
   }
 
-  const existing = runWith((store) => store.assets.readInvestmentAssetById(routeAssetId));
+  const existing = await runWith((store) =>
+    store.assets.readInvestmentAssetById(routeAssetId),
+  );
   const nextLiquidityTier =
     parsed.command.liquidityTier ?? existing?.liquidityTier ?? "market";
   const nextPriceProvider =
@@ -410,10 +418,10 @@ export async function updateInvestmentAction(
     redirect(editErrorUrl(validationError));
   }
 
-  runWith((store) => {
-    store.assets.updateInvestmentAsset(parsed.command);
+  await runWith(async (store) => {
+    await store.assets.updateInvestmentAsset(parsed.command);
     if (priceConfigChanged) {
-      store.operations.clearPriceCache(routeAssetId);
+      await store.operations.clearPriceCache(routeAssetId);
     }
   });
   redirect(successRedirectUrl(returnUrl, "saved"));
@@ -427,7 +435,7 @@ export async function deleteOperationAction(
   guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const operationId = parseEntityId(formData, "operationId");
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!operationId) {
@@ -442,7 +450,9 @@ export async function deleteOperationAction(
   // atomically (ADR 0020; deleting a backdated operation, PRD #107). The seam
   // derives the asset id, from-date, and `today` itself — the action passes only
   // the operation id.
-  const deleted = runWith((store) => store.deleteOperationAndRipple({ operationId }));
+  const deleted = await runWith((store) =>
+    store.deleteOperationAndRipple({ operationId }),
+  );
 
   if (!deleted) {
     redirect(
@@ -482,19 +492,19 @@ export type PriceBackfillPreviewState =
  * for this asset, or null when it is not eligible (no provider symbol, no
  * operations, or no cost-basis history) — neither path then writes anything.
  */
-function readBackfillCandidate(
+async function readBackfillCandidate(
   store: WorthlineStore,
   assetId: string,
-): PriceBackfillCandidate | null {
-  const investment = store.assets.readInvestmentAssetById(assetId);
+): Promise<PriceBackfillCandidate | null> {
+  const investment = await store.assets.readInvestmentAssetById(assetId);
   if (!investment) return null;
 
   return detectSingleAssetBackfillCandidate({
     assetId,
-    operations: store.operations.readOperations(assetId),
+    operations: await store.operations.readOperations(assetId),
     priceProvider: investment.priceProvider,
     ...(investment.providerSymbol ? { providerSymbol: investment.providerSymbol } : {}),
-    snapshotRows: store.snapshots.readSnapshotHoldings({
+    snapshotRows: await store.snapshots.readSnapshotHoldings({
       holdingId: assetId,
       kind: "asset",
     }),
@@ -528,10 +538,10 @@ export async function previewPriceBackfillAction(
   guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const today = _clock.today();
 
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
-  const candidate = runWith((store) => readBackfillCandidate(store, routeAssetId));
+  const candidate = await runWith((store) => readBackfillCandidate(store, routeAssetId));
   if (!candidate) return { status: "not_eligible" };
 
   const series = await _source.fetchSeriesEur(
@@ -540,7 +550,7 @@ export async function previewPriceBackfillAction(
     dateKeyToMs(today),
   );
 
-  const result = runWith((store) =>
+  const result = await runWith((store) =>
     store.backfillInvestmentPricesAndRipple({
       assetId: routeAssetId,
       dryRun: true,
@@ -578,10 +588,10 @@ export async function confirmPriceBackfillAction(
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const today = _clock.today();
 
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
-  const candidate = runWith((store) => readBackfillCandidate(store, routeAssetId));
+  const candidate = await runWith((store) => readBackfillCandidate(store, routeAssetId));
   if (!candidate) {
     redirect(
       errorRedirectUrl(returnUrl, {
@@ -596,7 +606,7 @@ export async function confirmPriceBackfillAction(
     dateKeyToMs(today),
   );
 
-  const result = runWith((store) =>
+  const result = await runWith((store) =>
     store.backfillInvestmentPricesAndRipple({
       assetId: routeAssetId,
       pricesByDate: series.pricesByDate,
@@ -618,10 +628,10 @@ export async function refreshPricesAction(
   const returnUrl = currentUrlOf(formData, "/patrimonio");
   const nowIso = _clock.now();
 
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
-  const investmentAssets = runWith((store) =>
+  const investmentAssets = await runWith((store) =>
     store.assets.readInvestmentAssetsWithMeta(),
   );
   const refreshable = investmentAssets.filter((asset) => Boolean(asset.providerSymbol));
@@ -637,7 +647,7 @@ export async function refreshPricesAction(
             currency: asset.currency,
             nowIso,
           });
-          runWith((store) => store.operations.upsertPrice(price));
+          await runWith((store) => store.operations.upsertPrice(price));
 
           return { price, symbol: asset.providerSymbol! };
         }),
@@ -664,7 +674,7 @@ export async function refreshPricesAction(
     });
 
     for (const price of result.refreshed) {
-      runWith((store) => store.operations.upsertPrice(price));
+      await runWith((store) => store.operations.upsertPrice(price));
     }
 
     return {

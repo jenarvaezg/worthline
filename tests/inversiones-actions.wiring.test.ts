@@ -29,18 +29,18 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function setupStore() {
-  store = createInMemoryStore();
-  store.workspace.initializeWorkspace({
+async function setupStore() {
+  store = await createInMemoryStore();
+  await store.workspace.initializeWorkspace({
     members: [{ id: MEMBER_ID, name: "Yo" }],
     mode: "individual",
   });
   return store;
 }
 
-function setupStoreWithInvestment() {
-  setupStore();
-  store.assets.createInvestmentAsset({
+async function setupStoreWithInvestment() {
+  await setupStore();
+  await store.assets.createInvestmentAsset({
     id: INVESTMENT_ID,
     name: "Index Fund",
     currency: "EUR",
@@ -56,7 +56,7 @@ function setupStoreWithInvestment() {
 
 describe("updateInvestmentAction wiring", () => {
   test("happy path: name updated", async () => {
-    setupStoreWithInvestment();
+    await setupStoreWithInvestment();
 
     const url = await catchRedirect(() =>
       updateInvestmentAction(
@@ -70,12 +70,12 @@ describe("updateInvestmentAction wiring", () => {
     );
 
     expect(url).toContain("ok=saved");
-    const asset = store.assets.readInvestmentAssetById(INVESTMENT_ID);
+    const asset = await store.assets.readInvestmentAssetById(INVESTMENT_ID);
     expect(asset?.name).toBe("MSCI World Renamed");
   });
 
   test("happy path: ticker symbol updated", async () => {
-    setupStoreWithInvestment();
+    await setupStoreWithInvestment();
 
     const url = await catchRedirect(() =>
       updateInvestmentAction(
@@ -92,20 +92,20 @@ describe("updateInvestmentAction wiring", () => {
     );
 
     expect(url).toContain("ok=saved");
-    const asset = store.assets.readInvestmentAssetById(INVESTMENT_ID);
+    const asset = await store.assets.readInvestmentAssetById(INVESTMENT_ID);
     expect(asset?.unitSymbol).toBe("VWRL.UK");
   });
 
   test("changing provider symbol clears the old cached price", async () => {
-    setupStoreWithInvestment();
-    store.assets.updateInvestmentAsset({
+    await setupStoreWithInvestment();
+    await store.assets.updateInvestmentAsset({
       id: INVESTMENT_ID,
       name: "Index Fund",
       liquidityTier: "market",
       priceProvider: "yahoo",
       providerSymbol: "OLD.MC",
     });
-    store.operations.upsertPrice({
+    await store.operations.upsertPrice({
       assetId: INVESTMENT_ID,
       currency: "EUR",
       fetchedAt: "2026-06-08T10:00:00Z",
@@ -130,14 +130,14 @@ describe("updateInvestmentAction wiring", () => {
     );
 
     expect(url).toContain("ok=saved");
-    expect(store.assets.readInvestmentAssetById(INVESTMENT_ID)?.providerSymbol).toBe(
-      "N5394",
-    );
-    expect(store.operations.readPriceCache(INVESTMENT_ID)).toBeNull();
+    expect(
+      (await store.assets.readInvestmentAssetById(INVESTMENT_ID))?.providerSymbol,
+    ).toBe("N5394");
+    expect(await store.operations.readPriceCache(INVESTMENT_ID)).toBeNull();
   });
 
   test("blank name: error redirect, asset unchanged", async () => {
-    setupStoreWithInvestment();
+    await setupStoreWithInvestment();
 
     const url = await catchRedirect(() =>
       updateInvestmentAction(INVESTMENT_ID, fd({ name: "" }, "/inversiones"), store),
@@ -145,11 +145,13 @@ describe("updateInvestmentAction wiring", () => {
 
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/nombre/i);
-    expect(store.assets.readInvestmentAssetById(INVESTMENT_ID)?.name).toBe("Index Fund");
+    expect((await store.assets.readInvestmentAssetById(INVESTMENT_ID))?.name).toBe(
+      "Index Fund",
+    );
   });
 
   test("invalid manual price: error redirect", async () => {
-    setupStoreWithInvestment();
+    await setupStoreWithInvestment();
 
     const url = await catchRedirect(() =>
       updateInvestmentAction(
@@ -168,7 +170,7 @@ describe("updateInvestmentAction wiring", () => {
     // Yahoo→Stooq fallback for free: a transient Yahoo miss no longer rejects a
     // symbol Stooq can still price. Under the old Yahoo-only validation this
     // would have error-redirected.
-    setupStoreWithInvestment();
+    await setupStoreWithInvestment();
     const stooqOk =
       "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2024-01-15,16:00:00,4.10,4.30,4.05,4.25,55000000";
     vi.stubGlobal(
@@ -195,13 +197,13 @@ describe("updateInvestmentAction wiring", () => {
     );
 
     expect(url).toContain("ok=saved");
-    expect(store.assets.readInvestmentAssetById(INVESTMENT_ID)?.providerSymbol).toBe(
-      "SAN.MC",
-    );
+    expect(
+      (await store.assets.readInvestmentAssetById(INVESTMENT_ID))?.providerSymbol,
+    ).toBe("SAN.MC");
   });
 
   test("invalid Yahoo provider symbol: error redirect, asset unchanged", async () => {
-    setupStoreWithInvestment();
+    await setupStoreWithInvestment();
     const stooqNoData =
       "Symbol,Date,Time,Open,High,Low,Close,Volume\nBAD,N/D,N/D,N/D,N/D,N/D,N/D,0";
     vi.stubGlobal(
@@ -229,6 +231,8 @@ describe("updateInvestmentAction wiring", () => {
 
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/símbolo/i);
-    expect(store.assets.readInvestmentAssetById(INVESTMENT_ID)?.name).toBe("Index Fund");
+    expect((await store.assets.readInvestmentAssetById(INVESTMENT_ID))?.name).toBe(
+      "Index Fund",
+    );
   });
 });

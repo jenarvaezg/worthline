@@ -16,9 +16,10 @@
  * Frozen holding rows of pruned snapshots go too; `user_version` reaches
  * SCHEMA_VERSION; a second run is a no-op behind the `version < 30` guard.
  */
-import Database from "better-sqlite3";
+import type { Client } from "@libsql/client";
 import { describe, expect, test } from "vitest";
 
+import { openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import { schemaSql } from "@db/schema-sql";
 
@@ -37,91 +38,97 @@ function seedSnapshot(scopeId: string, suffix: string): string {
 }
 
 /** Household workspace: Jose active, Ana disabled, one group. */
-function seedHouseholdV29(): Database.Database {
-  const db = new Database(":memory:");
-  db.exec(schemaSql);
-  db.pragma("user_version = 29");
+async function seedHouseholdV29(): Promise<Client> {
+  const client = openLibsqlClient(":memory:");
+  await client.executeMultiple(schemaSql);
+  await client.execute("PRAGMA user_version = 29");
 
-  db.exec(`
+  await client.executeMultiple(`
     INSERT INTO workspace (id, mode, base_currency) VALUES ('default', 'household', 'EUR');
     INSERT INTO members (id, name, disabled_at) VALUES
       ('mJ', 'Jose', NULL),
       ('mA', 'Ana', '2024-05-01T00:00:00.000Z');
     INSERT INTO member_groups (id, name) VALUES ('gP', 'Pareja');
   `);
-  db.exec(seedSnapshot("household", "household")); // survives (always)
-  db.exec(seedSnapshot("mJ", "mJ")); // survives (active member)
-  db.exec(seedSnapshot("gP", "gP")); // survives (group)
-  db.exec(seedSnapshot("mA", "mA")); // ORPHAN: member disabled → not offered
-  db.exec(seedSnapshot("gGone", "gGone")); // ORPHAN: group no longer exists
+  await client.executeMultiple(seedSnapshot("household", "household")); // survives (always)
+  await client.executeMultiple(seedSnapshot("mJ", "mJ")); // survives (active member)
+  await client.executeMultiple(seedSnapshot("gP", "gP")); // survives (group)
+  await client.executeMultiple(seedSnapshot("mA", "mA")); // ORPHAN: member disabled → not offered
+  await client.executeMultiple(seedSnapshot("gGone", "gGone")); // ORPHAN: group no longer exists
 
-  return db;
+  return client;
 }
 
 /** Individual workspace: only the household scope is ever offered. */
-function seedIndividualV29(): Database.Database {
-  const db = new Database(":memory:");
-  db.exec(schemaSql);
-  db.pragma("user_version = 29");
+async function seedIndividualV29(): Promise<Client> {
+  const client = openLibsqlClient(":memory:");
+  await client.executeMultiple(schemaSql);
+  await client.execute("PRAGMA user_version = 29");
 
-  db.exec(`
+  await client.executeMultiple(`
     INSERT INTO workspace (id, mode, base_currency) VALUES ('default', 'individual', 'EUR');
     INSERT INTO members (id, name, disabled_at) VALUES ('mJ', 'Jose', NULL);
   `);
-  db.exec(seedSnapshot("household", "household")); // survives (always)
-  db.exec(seedSnapshot("mJ", "mJ")); // ORPHAN: individual mode offers only household
-  db.exec(seedSnapshot("gP", "gP")); // ORPHAN
+  await client.executeMultiple(seedSnapshot("household", "household")); // survives (always)
+  await client.executeMultiple(seedSnapshot("mJ", "mJ")); // ORPHAN: individual mode offers only household
+  await client.executeMultiple(seedSnapshot("gP", "gP")); // ORPHAN
 
-  return db;
+  return client;
 }
 
-const snapshotIds = (db: Database.Database): string[] =>
-  (db.prepare("SELECT id FROM snapshots ORDER BY id").all() as { id: string }[]).map(
-    (r) => r.id,
-  );
-
-const holdingIds = (db: Database.Database): string[] =>
+const snapshotIds = async (client: Client): Promise<string[]> =>
   (
-    db.prepare("SELECT id FROM snapshot_holdings ORDER BY id").all() as {
+    (await client.execute("SELECT id FROM snapshots ORDER BY id")).rows as unknown as {
       id: string;
     }[]
   ).map((r) => r.id);
 
+const holdingIds = async (client: Client): Promise<string[]> =>
+  (
+    (await client.execute("SELECT id FROM snapshot_holdings ORDER BY id"))
+      .rows as unknown as {
+      id: string;
+    }[]
+  ).map((r) => r.id);
+
+const userVersion = async (client: Client): Promise<number> =>
+  Number((await client.execute("PRAGMA user_version")).rows[0]!.user_version);
+
 describe("purge-orphaned-scope schema migration (v30, #306)", () => {
-  test("household: prunes disabled-member and deleted-group scopes, keeps household / active member / group", () => {
-    const db = seedHouseholdV29();
-    migrate(db);
+  test("household: prunes disabled-member and deleted-group scopes, keeps household / active member / group", async () => {
+    const client = await seedHouseholdV29();
+    await migrate(client);
 
-    expect(snapshotIds(db)).toEqual(["snap_gP", "snap_household", "snap_mJ"]);
-    expect(holdingIds(db)).toEqual(["sh_gP", "sh_household", "sh_mJ"]);
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
+    expect(await snapshotIds(client)).toEqual(["snap_gP", "snap_household", "snap_mJ"]);
+    expect(await holdingIds(client)).toEqual(["sh_gP", "sh_household", "sh_mJ"]);
+    expect(await userVersion(client)).toBe(SCHEMA_VERSION);
   });
 
-  test("individual: prunes every scope but household", () => {
-    const db = seedIndividualV29();
-    migrate(db);
+  test("individual: prunes every scope but household", async () => {
+    const client = await seedIndividualV29();
+    await migrate(client);
 
-    expect(snapshotIds(db)).toEqual(["snap_household"]);
-    expect(holdingIds(db)).toEqual(["sh_household"]);
+    expect(await snapshotIds(client)).toEqual(["snap_household"]);
+    expect(await holdingIds(client)).toEqual(["sh_household"]);
   });
 
-  test("never prunes the household scope", () => {
-    const householdDb = seedHouseholdV29();
-    migrate(householdDb);
-    expect(snapshotIds(householdDb)).toContain("snap_household");
+  test("never prunes the household scope", async () => {
+    const householdClient = await seedHouseholdV29();
+    await migrate(householdClient);
+    expect(await snapshotIds(householdClient)).toContain("snap_household");
 
-    const individualDb = seedIndividualV29();
-    migrate(individualDb);
-    expect(snapshotIds(individualDb)).toContain("snap_household");
+    const individualClient = await seedIndividualV29();
+    await migrate(individualClient);
+    expect(await snapshotIds(individualClient)).toContain("snap_household");
   });
 
-  test("is idempotent on a second run", () => {
-    const db = seedHouseholdV29();
-    migrate(db);
+  test("is idempotent on a second run", async () => {
+    const client = await seedHouseholdV29();
+    await migrate(client);
 
-    const before = snapshotIds(db);
-    migrate(db); // second run sits behind `version < 30` → no-op
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
-    expect(snapshotIds(db)).toEqual(before);
+    const before = await snapshotIds(client);
+    await migrate(client); // second run sits behind `version < 30` → no-op
+    expect(await userVersion(client)).toBe(SCHEMA_VERSION);
+    expect(await snapshotIds(client)).toEqual(before);
   });
 });

@@ -15,9 +15,9 @@ export interface RefreshAndPersistInput {
     nowIso: string,
   ) => Promise<RefreshStalePricesResult>;
   /** Injected: persist a single refreshed price entry. */
-  upsertPrice: (price: AssetPrice) => void;
+  upsertPrice: (price: AssetPrice) => void | Promise<void>;
   /** Injected: read the current price cache after persisting. */
-  readCache: () => AssetPrice[];
+  readCache: () => AssetPrice[] | Promise<AssetPrice[]>;
 }
 
 export interface RefreshAndPersistResult {
@@ -58,7 +58,7 @@ export async function refreshAndPersistStalePrices(
     );
 
     for (const price of result.refreshed) {
-      input.upsertPrice(price);
+      await input.upsertPrice(price);
     }
 
     errors = result.failedSymbols;
@@ -66,6 +66,6 @@ export async function refreshAndPersistStalePrices(
     errors = [err instanceof Error ? err.message : "Unknown refresh error"];
   }
 
-  const priceCache = input.readCache();
+  const priceCache = await input.readCache();
   return { priceCache, errors };
 }

@@ -322,12 +322,12 @@ function parseMoversPeriod(raw: string | string[] | undefined): MoversPeriod {
 }
 
 /** Read the frozen holding rows from the period's base snapshot through latest. */
-function readMoversHoldingRows(
+async function readMoversHoldingRows(
   store: Awaited<ReturnType<typeof openStore>>,
   scopeId: string | undefined,
   snapshots: NetWorthSnapshot[],
   period: MoversPeriod,
-): MoversHoldingRow[] {
+): Promise<MoversHoldingRow[]> {
   const base = moversBaseSnapshot(snapshots, period);
   if (!scopeId || !base) return [];
   return store.snapshots.readSnapshotHoldings({ scopeId, from: base.dateKey });
@@ -420,7 +420,7 @@ export default async function DashboardPage({
             refreshBinanceSources: () => runBinanceRefresh(store, now),
           }),
     });
-    moversHoldingRows = readMoversHoldingRows(
+    moversHoldingRows = await readMoversHoldingRows(
       store,
       state.selectedScope?.id,
       state.snapshots,

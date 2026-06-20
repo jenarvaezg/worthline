@@ -43,13 +43,13 @@ function buildOperationFormData(overrides: Record<string, string> = {}): FormDat
 let store: WorthlineStore;
 const ASSET_ID = "asset_test_123";
 
-function setupStoreWithInvestment(): WorthlineStore {
-  store = createInMemoryStore();
-  store.workspace.initializeWorkspace({
+async function setupStoreWithInvestment(): Promise<WorthlineStore> {
+  store = await createInMemoryStore();
+  await store.workspace.initializeWorkspace({
     members: [{ id: "member_yo", name: "Yo" }],
     mode: "individual",
   });
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     id: ASSET_ID,
     name: "Test Fund",
     currency: "EUR",
@@ -138,7 +138,7 @@ describe("createInvestmentOperationSafe — operation bounds invariants", () => 
 
 describe("recordOperationAction — operation bounds wiring", () => {
   test("valid operation persists and redirects to success", async () => {
-    setupStoreWithInvestment();
+    await setupStoreWithInvestment();
 
     const fd = buildOperationFormData({
       units: "5",
@@ -151,11 +151,11 @@ describe("recordOperationAction — operation bounds wiring", () => {
     );
 
     expect(redirectUrl).toContain("ok=saved");
-    expect(store.operations.readOperations(ASSET_ID)).toHaveLength(1);
+    expect(await store.operations.readOperations(ASSET_ID)).toHaveLength(1);
   });
 
   test("parser rejection: zero units redirects with the positive-units message and persists nothing", async () => {
-    setupStoreWithInvestment();
+    await setupStoreWithInvestment();
 
     const fd = buildOperationFormData({ units: "0" });
 
@@ -167,11 +167,11 @@ describe("recordOperationAction — operation bounds wiring", () => {
     expect(errorMessageOf(redirectUrl)).toBe(
       "Las unidades deben ser un número positivo.",
     );
-    expect(store.operations.readOperations(ASSET_ID)).toHaveLength(0);
+    expect(await store.operations.readOperations(ASSET_ID)).toHaveLength(0);
   });
 
   test("domain rejection: negative units redirects with the positive-units message and persists nothing", async () => {
-    setupStoreWithInvestment();
+    await setupStoreWithInvestment();
 
     const fd = buildOperationFormData({ units: "-5" });
 
@@ -183,11 +183,11 @@ describe("recordOperationAction — operation bounds wiring", () => {
     expect(errorMessageOf(redirectUrl)).toBe(
       "Las unidades deben ser un número positivo.",
     );
-    expect(store.operations.readOperations(ASSET_ID)).toHaveLength(0);
+    expect(await store.operations.readOperations(ASSET_ID)).toHaveLength(0);
   });
 
   test("domain rejection: negative price redirects with the invalid-price message and persists nothing", async () => {
-    setupStoreWithInvestment();
+    await setupStoreWithInvestment();
 
     const fd = buildOperationFormData({ pricePerUnit: "-1" });
 
@@ -197,11 +197,11 @@ describe("recordOperationAction — operation bounds wiring", () => {
 
     expect(redirectUrl).toContain("error=");
     expect(errorMessageOf(redirectUrl)).toBe("El precio por unidad no es válido.");
-    expect(store.operations.readOperations(ASSET_ID)).toHaveLength(0);
+    expect(await store.operations.readOperations(ASSET_ID)).toHaveLength(0);
   });
 
   test("parser rejection: negative fees redirects with the invalid-fees message and persists nothing", async () => {
-    setupStoreWithInvestment();
+    await setupStoreWithInvestment();
 
     const fd = buildOperationFormData({ fees: "-5" });
 
@@ -211,6 +211,6 @@ describe("recordOperationAction — operation bounds wiring", () => {
 
     expect(redirectUrl).toContain("error=");
     expect(errorMessageOf(redirectUrl)).toBe("Las comisiones no son válidas.");
-    expect(store.operations.readOperations(ASSET_ID)).toHaveLength(0);
+    expect(await store.operations.readOperations(ASSET_ID)).toHaveLength(0);
   });
 });

@@ -4,10 +4,10 @@ import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 
 afterEach(cleanupTempDirs);
 
-function setupStore() {
-  const store = createFileBackedStore("worthline-audit-");
+async function setupStore() {
+  const store = await createFileBackedStore("worthline-audit-");
 
-  store.workspace.initializeWorkspace({
+  await store.workspace.initializeWorkspace({
     members: [{ id: "member_a", name: "Ana" }],
     mode: "individual",
   });
@@ -16,10 +16,10 @@ function setupStore() {
 }
 
 describe("soft delete - assets", () => {
-  test("softDeleteAsset hides asset from readAssets()", () => {
-    const store = setupStore();
+  test("softDeleteAsset hides asset from readAssets()", async () => {
+    const store = await setupStore();
 
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000,
       id: "asset_1",
@@ -29,17 +29,17 @@ describe("soft delete - assets", () => {
       type: "cash",
     });
 
-    expect(store.assets.readAssets()).toHaveLength(1);
+    expect(await store.assets.readAssets()).toHaveLength(1);
 
-    store.assets.softDeleteAsset("asset_1", new Date().toISOString());
+    await store.assets.softDeleteAsset("asset_1", new Date().toISOString());
 
-    expect(store.assets.readAssets()).toHaveLength(0);
+    expect(await store.assets.readAssets()).toHaveLength(0);
   });
 
-  test("restoreAsset makes it reappear", () => {
-    const store = setupStore();
+  test("restoreAsset makes it reappear", async () => {
+    const store = await setupStore();
 
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000,
       id: "asset_1",
@@ -49,19 +49,19 @@ describe("soft delete - assets", () => {
       type: "cash",
     });
 
-    store.assets.softDeleteAsset("asset_1", new Date().toISOString());
-    expect(store.assets.readAssets()).toHaveLength(0);
+    await store.assets.softDeleteAsset("asset_1", new Date().toISOString());
+    expect(await store.assets.readAssets()).toHaveLength(0);
 
-    store.assets.restoreAsset("asset_1");
-    expect(store.assets.readAssets()).toHaveLength(1);
+    await store.assets.restoreAsset("asset_1");
+    expect(await store.assets.readAssets()).toHaveLength(1);
   });
 });
 
 describe("soft delete - liabilities", () => {
-  test("softDeleteLiability hides liability from readLiabilities()", () => {
-    const store = setupStore();
+  test("softDeleteLiability hides liability from readLiabilities()", async () => {
+    const store = await setupStore();
 
-    store.liabilities.createLiability({
+    await store.liabilities.createLiability({
       balanceMinor: 5_000,
       currency: "EUR",
       id: "liab_1",
@@ -70,19 +70,19 @@ describe("soft delete - liabilities", () => {
       type: "debt",
     });
 
-    expect(store.liabilities.readLiabilities()).toHaveLength(1);
+    expect(await store.liabilities.readLiabilities()).toHaveLength(1);
 
-    store.liabilities.softDeleteLiability("liab_1", new Date().toISOString());
+    await store.liabilities.softDeleteLiability("liab_1", new Date().toISOString());
 
-    expect(store.liabilities.readLiabilities()).toHaveLength(0);
+    expect(await store.liabilities.readLiabilities()).toHaveLength(0);
   });
 });
 
 describe("audit log", () => {
-  test("creating an asset records an audit entry with action 'create_asset'", () => {
-    const store = setupStore();
+  test("creating an asset records an audit entry with action 'create_asset'", async () => {
+    const store = await setupStore();
 
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000,
       id: "asset_1",
@@ -92,16 +92,16 @@ describe("audit log", () => {
       type: "cash",
     });
 
-    const log = store.readAuditLog();
+    const log = await store.readAuditLog();
     expect(log.some((e) => e.action === "create_asset" && e.entityId === "asset_1")).toBe(
       true,
     );
   });
 
-  test("updateAssetValuation records an audit entry with action 'update_valuation'", () => {
-    const store = setupStore();
+  test("updateAssetValuation records an audit entry with action 'update_valuation'", async () => {
+    const store = await setupStore();
 
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000,
       id: "asset_1",
@@ -110,18 +110,18 @@ describe("audit log", () => {
       ownership: [{ memberId: "member_a", shareBps: 10_000 }],
       type: "cash",
     });
-    store.assets.updateAssetValuation("asset_1", 20_000);
+    await store.assets.updateAssetValuation("asset_1", 20_000);
 
-    const log = store.readAuditLog();
+    const log = await store.readAuditLog();
     expect(
       log.some((e) => e.action === "update_valuation" && e.entityId === "asset_1"),
     ).toBe(true);
   });
 
-  test("softDeleteAsset records audit entry with action 'delete_asset'", () => {
-    const store = setupStore();
+  test("softDeleteAsset records audit entry with action 'delete_asset'", async () => {
+    const store = await setupStore();
 
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000,
       id: "asset_1",
@@ -130,18 +130,18 @@ describe("audit log", () => {
       ownership: [{ memberId: "member_a", shareBps: 10_000 }],
       type: "cash",
     });
-    store.assets.softDeleteAsset("asset_1", new Date().toISOString());
+    await store.assets.softDeleteAsset("asset_1", new Date().toISOString());
 
-    const log = store.readAuditLog();
+    const log = await store.readAuditLog();
     expect(log.some((e) => e.action === "delete_asset" && e.entityId === "asset_1")).toBe(
       true,
     );
   });
 
-  test("readAuditLog filtered by entityId returns only that entity's entries", () => {
-    const store = setupStore();
+  test("readAuditLog filtered by entityId returns only that entity's entries", async () => {
+    const store = await setupStore();
 
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000,
       id: "asset_1",
@@ -150,7 +150,7 @@ describe("audit log", () => {
       ownership: [{ memberId: "member_a", shareBps: 10_000 }],
       type: "cash",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 5_000,
       id: "asset_2",
@@ -160,7 +160,7 @@ describe("audit log", () => {
       type: "manual",
     });
 
-    const log = store.readAuditLog({ entityId: "asset_1" });
+    const log = await store.readAuditLog({ entityId: "asset_1" });
     expect(log.every((e) => e.entityId === "asset_1")).toBe(true);
     expect(log.length).toBeGreaterThan(0);
   });

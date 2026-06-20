@@ -38,7 +38,6 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
-    "@types/better-sqlite3": "latest",
     "@types/node": "latest",
     "drizzle-kit": "^0.31.10",
     "eslint": "latest",

@@ -165,25 +165,25 @@ const token = (
  * numismatic-valued) and a Binance source (a priced BTC and an unpriced token),
  * then sync positions. Numista is also revalued so it carries a freshness row.
  */
-function seedSources(): void {
+async function seedSources(): Promise<void> {
   const databasePath = tempDatabasePath("worthline-agent-view-csp-");
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = createWorthlineStore({ databasePath });
-  store.workspace.initializeWorkspace({
+  const store = await createWorthlineStore({ databasePath });
+  await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
   });
   const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
 
-  const numista = store.connectedSources.connect({
+  const numista = await store.connectedSources.connect({
     adapter: "numista",
     credentialsJson: JSON.stringify({ apiKey: NUMISTA_SECRET }),
     label: "Colección Numista",
     ownership: owner,
   });
-  store.connectedSources.syncPositions(
+  await store.connectedSources.syncPositions(
     numista.sourceId,
     [
       coin({
@@ -205,8 +205,8 @@ function seedSources(): void {
     ],
     "2026-06-15T12:00:00.000Z",
   );
-  const coins = store.connectedSources.readPositions(numista.sourceId);
-  store.connectedSources.revaluePositions(
+  const coins = await store.connectedSources.readPositions(numista.sourceId);
+  await store.connectedSources.revaluePositions(
     numista.sourceId,
     coins.map((position) => ({
       id: position.id,
@@ -218,13 +218,13 @@ function seedSources(): void {
     { fetchedAt: "2026-06-16T09:00:00.000Z", freshnessState: "fresh" },
   );
 
-  const binance = store.connectedSources.connect({
+  const binance = await store.connectedSources.connect({
     adapter: "binance",
     credentialsJson: JSON.stringify({ apiKey: BINANCE_KEY, apiSecret: BINANCE_SECRET }),
     label: "Binance",
     ownership: owner,
   });
-  store.connectedSources.syncPositions(
+  await store.connectedSources.syncPositions(
     binance.sourceId,
     [
       token({
@@ -285,7 +285,7 @@ const routeClient: AgentViewApiClient = {
 
 describe("connected-source summaries in the financial context", () => {
   test("extends each source summary with id, adapter, freshness, and projected holdings", async () => {
-    seedSources();
+    await seedSources();
     const sources = await connectedSourceSummaries();
 
     const numista = sources.find((s) => s.adapter === "numista")!;
@@ -311,25 +311,25 @@ describe("connected-source summaries in the financial context", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
     const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
-    const numista = store.connectedSources.connect({
+    const numista = await store.connectedSources.connect({
       adapter: "numista",
       credentialsJson: JSON.stringify({ apiKey: NUMISTA_SECRET }),
       label: "Colección Numista",
       ownership: owner,
     });
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       numista.sourceId,
       [coin({ externalId: "coin-eagle", numismaticValueMinor: 7_558 })],
       "2026-06-15T12:00:00.000Z",
     );
-    const eagle = store.connectedSources.readPositions(numista.sourceId)[0]!;
-    store.connectedSources.revaluePositions(
+    const eagle = (await store.connectedSources.readPositions(numista.sourceId))[0]!;
+    await store.connectedSources.revaluePositions(
       numista.sourceId,
       [
         {
@@ -357,7 +357,7 @@ describe("connected-source summaries in the financial context", () => {
   });
 
   test("never serializes the source credential secret in the summary", async () => {
-    seedSources();
+    await seedSources();
     const sources = await connectedSourceSummaries();
     const serialized = JSON.stringify(sources);
     expect(serialized).not.toContain(NUMISTA_SECRET);
@@ -368,7 +368,7 @@ describe("connected-source summaries in the financial context", () => {
 
 describe("GET /api/v1/agent-view/holdings/{holdingId}/connected-source-positions", () => {
   test("returns the Numista coin positions for the connected holding", async () => {
-    seedSources();
+    await seedSources();
     const { numistaHoldingPublicId } = await resolveIds();
 
     const { body, response } = await holdingPositions(numistaHoldingPublicId);
@@ -423,7 +423,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/connected-source-positions
   });
 
   test("returns Binance token positions priced live, with valuation basis and freshness", async () => {
-    seedSources();
+    await seedSources();
     const { binanceHoldingPublicId } = await resolveIds();
 
     const { body } = await holdingPositions(binanceHoldingPublicId);
@@ -460,7 +460,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/connected-source-positions
   });
 
   test("paginates with stable cursors, walking every position exactly once", async () => {
-    seedSources();
+    await seedSources();
     const { numistaSourcePublicId } = await resolveIds();
 
     const first = await sourcePositions(numistaSourcePublicId, "?limit=1");
@@ -494,12 +494,12 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/connected-source-positions
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000_00,
       id: "asset_cash",
@@ -522,14 +522,14 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/connected-source-positions
   });
 
   test("unknown holding id → 404 not_found", async () => {
-    seedSources();
+    await seedSources();
     const { body, response } = await holdingPositions("wl_hld_doesnotexist");
     expect(response.status).toBe(404);
     expect(body.error.code).toBe("not_found");
   });
 
   test("never serializes source secrets in the position response", async () => {
-    seedSources();
+    await seedSources();
     const { numistaHoldingPublicId, binanceHoldingPublicId } = await resolveIds();
 
     const numistaSerialized = JSON.stringify(
@@ -546,7 +546,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/connected-source-positions
   });
 
   test("position public ids are stable across a re-sync (externalId-derived)", async () => {
-    seedSources();
+    await seedSources();
     const { numistaHoldingPublicId } = await resolveIds();
 
     const before = (await holdingPositions(numistaHoldingPublicId)).body.data as Array<{
@@ -556,11 +556,11 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/connected-source-positions
 
     // Re-sync the SAME externalIds (worthline reassigns internal ids each sync).
     const databasePath = process.env.WORTHLINE_DB_PATH as string;
-    const store = createWorthlineStore({ databasePath });
-    const numista = store.connectedSources
-      .listSources()
-      .find((s) => s.adapter === "numista")!;
-    store.connectedSources.syncPositions(
+    const store = await createWorthlineStore({ databasePath });
+    const numista = (await store.connectedSources.listSources()).find(
+      (s) => s.adapter === "numista",
+    )!;
+    await store.connectedSources.syncPositions(
       numista.id,
       [
         coin({
@@ -597,7 +597,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/connected-source-positions
 
 describe("GET /api/v1/agent-view/connected-sources/{sourceId}/positions", () => {
   test("returns all of a source's positions grouped by projected holding/rung", async () => {
-    seedSources();
+    await seedSources();
     const { numistaSourcePublicId, numistaHoldingPublicId } = await resolveIds();
 
     const { body, response } = await sourcePositions(numistaSourcePublicId);
@@ -619,14 +619,14 @@ describe("GET /api/v1/agent-view/connected-sources/{sourceId}/positions", () => 
   });
 
   test("unknown source id → 404 not_found", async () => {
-    seedSources();
+    await seedSources();
     const { body, response } = await sourcePositions("wl_src_doesnotexist");
     expect(response.status).toBe(404);
     expect(body.error.code).toBe("not_found");
   });
 
   test("rejects unknown query parameters and invalid limits", async () => {
-    seedSources();
+    await seedSources();
     const { numistaSourcePublicId } = await resolveIds();
 
     expect(
@@ -645,7 +645,7 @@ describe("GET /api/v1/agent-view/connected-sources/{sourceId}/positions", () => 
   });
 
   test("requires the local capability token", async () => {
-    seedSources();
+    await seedSources();
     const { numistaSourcePublicId } = await resolveIds();
 
     const response = await getSourcePositions(
@@ -661,7 +661,7 @@ describe("GET /api/v1/agent-view/connected-sources/{sourceId}/positions", () => 
 
 describe("MCP get_connected_source_positions", () => {
   test("holding-scoped form mirrors the HTTP shape", async () => {
-    seedSources();
+    await seedSources();
     const { numistaHoldingPublicId } = await resolveIds();
     const httpBody = (await holdingPositions(numistaHoldingPublicId)).body;
 
@@ -674,7 +674,7 @@ describe("MCP get_connected_source_positions", () => {
   });
 
   test("source-scoped form mirrors the HTTP shape", async () => {
-    seedSources();
+    await seedSources();
     const { numistaSourcePublicId } = await resolveIds();
     const httpBody = (await sourcePositions(numistaSourcePublicId)).body;
 
@@ -687,7 +687,7 @@ describe("MCP get_connected_source_positions", () => {
   });
 
   test("supplying both holdingId and sourceId → 422 unprocessable_entity", async () => {
-    seedSources();
+    await seedSources();
     const { numistaHoldingPublicId, numistaSourcePublicId } = await resolveIds();
 
     const catalog = createAgentViewMcpToolCatalog(routeClient);
@@ -700,7 +700,7 @@ describe("MCP get_connected_source_positions", () => {
   });
 
   test("supplying neither selector → 422 unprocessable_entity", async () => {
-    seedSources();
+    await seedSources();
 
     const catalog = createAgentViewMcpToolCatalog(routeClient);
     const result = (await catalog.get_connected_source_positions.invoke({})) as {
@@ -715,12 +715,12 @@ describe("MCP get_connected_source_positions", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000_00,
       id: "asset_cash",
@@ -748,18 +748,18 @@ describe("MCP get_connected_source_positions", () => {
 
 describe("connected-source position reads are side-effect-free", () => {
   test("reads do not mutate positions, price cache, sources, or public ids", async () => {
-    seedSources();
+    await seedSources();
     const databasePath = process.env.WORTHLINE_DB_PATH as string;
     const { numistaHoldingPublicId, numistaSourcePublicId, binanceHoldingPublicId } =
       await resolveIds();
 
-    const before = fingerprint(databasePath);
+    const before = await fingerprint(databasePath);
     await holdingPositions(numistaHoldingPublicId);
     await holdingPositions(binanceHoldingPublicId);
     await sourcePositions(numistaSourcePublicId);
     await sourcePositions(numistaSourcePublicId, "?limit=1");
     await connectedSourceSummaries();
-    const after = fingerprint(databasePath);
+    const after = await fingerprint(databasePath);
 
     expect(after).toBe(before);
   });
@@ -767,17 +767,19 @@ describe("connected-source position reads are side-effect-free", () => {
 
 // A fingerprint of every mutation-prone read, to prove a position read writes
 // nothing (no positions re-synced, no price cache, no sources, no public IDs).
-function fingerprint(databasePath: string): string {
-  const store = createWorthlineStore({ databasePath });
-  const sources = store.connectedSources.listSources();
+async function fingerprint(databasePath: string): Promise<string> {
+  const store = await createWorthlineStore({ databasePath });
+  const sources = await store.connectedSources.listSources();
   const snapshot = JSON.stringify({
-    assets: store.assets.readAssets(),
-    positions: sources.map((source) => ({
-      positions: store.connectedSources.readPositions(source.id),
-      sourceId: source.id,
-    })),
-    priceCache: store.operations.readAllPriceCacheEntries(),
-    publicIds: store.agentView.readPublicIds(),
+    assets: await store.assets.readAssets(),
+    positions: await Promise.all(
+      sources.map(async (source) => ({
+        positions: await store.connectedSources.readPositions(source.id),
+        sourceId: source.id,
+      })),
+    ),
+    priceCache: await store.operations.readAllPriceCacheEntries(),
+    publicIds: await store.agentView.readPublicIds(),
     sources,
   });
   store.close();

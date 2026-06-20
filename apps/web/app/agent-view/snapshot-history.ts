@@ -69,17 +69,17 @@ interface SortedSnapshot {
  * persisted snapshots and frozen rows only — never captures, replaces, or
  * ripples (ADR 0023).
  */
-export function buildSnapshotHistory(
+export async function buildSnapshotHistory(
   store: AgentViewReadStore,
   options: BuildSnapshotHistoryOptions,
-): AgentViewSnapshotHistory {
-  const workspace = store.readWorkspace();
+): Promise<AgentViewSnapshotHistory> {
+  const workspace = await store.readWorkspace();
 
   if (!workspace) {
     throw unknownScope();
   }
 
-  const scope = listAgentViewScopes(store).find(
+  const scope = (await listAgentViewScopes(store)).find(
     (candidate) => candidate.id === options.scopeId,
   );
 
@@ -87,8 +87,8 @@ export function buildSnapshotHistory(
     throw unknownScope();
   }
 
-  const internalScopeId = resolveInternalScopeId(store, options.scopeId);
-  const allSnapshots = store.readSnapshots(internalScopeId);
+  const internalScopeId = await resolveInternalScopeId(store, options.scopeId);
+  const allSnapshots = await store.readSnapshots(internalScopeId);
   const closeIds = new Set(deriveMonthlyCloses(allSnapshots).values());
 
   const selected =
@@ -120,16 +120,18 @@ export function buildSnapshotHistory(
   const nextCursor =
     hasNext && last ? encodeCursor(last.snapshot.dateKey, last.publicId) : undefined;
 
-  const rowsBySnapshotId = readHoldingRows(store, internalScopeId, page, options);
+  const rowsBySnapshotId = await readHoldingRows(store, internalScopeId, page, options);
 
   return {
-    entries: page.map((entry) =>
-      toEntry(
-        entry,
-        workspace.baseCurrency,
-        options.includeHoldingRows,
-        rowsBySnapshotId,
-        store,
+    entries: await Promise.all(
+      page.map((entry) =>
+        toEntry(
+          entry,
+          workspace.baseCurrency,
+          options.includeHoldingRows,
+          rowsBySnapshotId,
+          store,
+        ),
       ),
     ),
     meta: {
@@ -140,13 +142,13 @@ export function buildSnapshotHistory(
   };
 }
 
-function toEntry(
+async function toEntry(
   entry: SortedSnapshot,
   currency: string,
   includeHoldingRows: AgentViewIncludeHoldingRows,
   rowsBySnapshotId: Map<string, SnapshotHoldingRecord[]>,
   store: AgentViewReadStore,
-): AgentViewSnapshotEntry {
+): Promise<AgentViewSnapshotEntry> {
   const records = rowsBySnapshotId.get(entry.snapshot.id) ?? [];
 
   return {
@@ -159,7 +161,11 @@ function toEntry(
       ? { holdingRowsSummary: toHoldingsSummary(records, currency) }
       : {}),
     ...(includeHoldingRows === "full"
-      ? { holdingRows: records.map((record) => toHoldingRow(record, currency, store)) }
+      ? {
+          holdingRows: await Promise.all(
+            records.map((record) => toHoldingRow(record, currency, store)),
+          ),
+        }
       : {}),
   };
 }
@@ -182,12 +188,12 @@ function toSummary(
  * Narrowed to the page's date window so a large history reads only the rows it
  * serves. Skipped entirely when holding rows are not requested.
  */
-function readHoldingRows(
+async function readHoldingRows(
   store: AgentViewReadStore,
   internalScopeId: string,
   page: SortedSnapshot[],
   options: BuildSnapshotHistoryOptions,
-): Map<string, SnapshotHoldingRecord[]> {
+): Promise<Map<string, SnapshotHoldingRecord[]>> {
   if (options.includeHoldingRows === "none" || page.length === 0) {
     return new Map();
   }
@@ -195,7 +201,7 @@ function readHoldingRows(
   const dateKeys = page.map((entry) => entry.snapshot.dateKey).sort();
   const from = dateKeys[0];
   const to = dateKeys[dateKeys.length - 1];
-  const records = store.readSnapshotHoldings({
+  const records = await store.readSnapshotHoldings({
     scopeId: internalScopeId,
     ...(from === undefined ? {} : { from }),
     ...(to === undefined ? {} : { to }),
@@ -213,12 +219,12 @@ function readHoldingRows(
   return grouped;
 }
 
-function toHoldingRow(
+async function toHoldingRow(
   record: SnapshotHoldingRecord,
   currency: string,
   store: AgentViewReadStore,
-): AgentViewSnapshotHoldingRow {
-  const publicId = holdingPublicId(store, record.holdingId);
+): Promise<AgentViewSnapshotHoldingRow> {
+  const publicId = await holdingPublicId(store, record.holdingId);
 
   return {
     kind: record.kind,
@@ -287,11 +293,11 @@ export function deriveSnapshotPublicId(internalScopeId: string, dateKey: string)
   return derivePublicId("snp", `${internalScopeId} ${dateKey}`);
 }
 
-function holdingPublicId(
+async function holdingPublicId(
   store: AgentViewReadStore,
   holdingId: string,
-): string | undefined {
-  return publicIdMap(store.readPublicIds(), "holding").get(holdingId);
+): Promise<string | undefined> {
+  return publicIdMap(await store.readPublicIds(), "holding").get(holdingId);
 }
 
 function money(value: MoneyMinor, currency: string): AgentViewMoney {

@@ -10,20 +10,21 @@
  * captured figure (ADR 0008). The live `assets` table needs no migration: the
  * runtime `tierOfAsset` already routes every property instrument to `housing`.
  */
-import Database from "better-sqlite3";
+import type { Client } from "@libsql/client";
 import { describe, expect, test } from "vitest";
 
+import { openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import { schemaSql } from "@db/schema-sql";
 
-function seedV27(): Database.Database {
-  const db = new Database(":memory:");
-  db.exec(schemaSql);
+async function seedV27(): Promise<Client> {
+  const client = openLibsqlClient(":memory:");
+  await client.executeMultiple(schemaSql);
   // Pretend this database predates the housing-rung recut so migrate() runs only
   // the v28 step.
-  db.pragma("user_version = 27");
+  await client.execute("PRAGMA user_version = 27");
 
-  db.exec(`
+  await client.executeMultiple(`
     INSERT INTO snapshots
       (id, scope_id, scope_label, captured_at, date_key, month_key, currency,
        total_net_worth_minor, liquid_net_worth_minor, housing_equity_minor,
@@ -42,15 +43,21 @@ function seedV27(): Database.Database {
       ('sh_loan', 'snap1', 'l_loan', 'liability', 'Préstamo', NULL, 10000, 0, 0);
   `);
 
-  return db;
+  return client;
 }
 
-const tierOf = (db: Database.Database, id: string) =>
+const tierOf = async (client: Client, id: string) =>
   (
-    db
-      .prepare("SELECT liquidity_tier AS t FROM snapshot_holdings WHERE id = ?")
-      .get(id) as { t: string | null }
+    (
+      await client.execute({
+        sql: "SELECT liquidity_tier AS t FROM snapshot_holdings WHERE id = ?",
+        args: [id],
+      })
+    ).rows[0] as unknown as { t: string | null }
   ).t;
+
+const userVersion = async (client: Client) =>
+  Number((await client.execute("PRAGMA user_version")).rows[0]!.user_version);
 
 const FIGURE_COLUMNS = [
   "total_net_worth_minor",
@@ -61,41 +68,45 @@ const FIGURE_COLUMNS = [
 ] as const;
 
 describe("housing-rung schema migration (v28)", () => {
-  test("relabels every counts_as_housing row to the housing rung", () => {
-    const db = seedV27();
-    migrate(db);
+  test("relabels every counts_as_housing row to the housing rung", async () => {
+    const client = await seedV27();
+    await migrate(client);
 
     // The housing asset moves illiquid → housing.
-    expect(tierOf(db, "sh_home")).toBe("housing");
+    expect(await tierOf(client, "sh_home")).toBe("housing");
     // Non-housing rows keep their frozen tier; the null-tier loan stays null.
-    expect(tierOf(db, "sh_art")).toBe("illiquid");
-    expect(tierOf(db, "sh_cash")).toBe("cash");
-    expect(tierOf(db, "sh_mortgage")).toBe("illiquid");
-    expect(tierOf(db, "sh_loan")).toBeNull();
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
+    expect(await tierOf(client, "sh_art")).toBe("illiquid");
+    expect(await tierOf(client, "sh_cash")).toBe("cash");
+    expect(await tierOf(client, "sh_mortgage")).toBe("illiquid");
+    expect(await tierOf(client, "sh_loan")).toBeNull();
+    expect(await userVersion(client)).toBe(SCHEMA_VERSION);
   });
 
-  test("the five frozen figures of an existing snapshot are byte-identical after the recut", () => {
-    const db = seedV27();
+  test("the five frozen figures of an existing snapshot are byte-identical after the recut", async () => {
+    const client = await seedV27();
     const select = `SELECT ${FIGURE_COLUMNS.join(", ")} FROM snapshots WHERE id = 'snap1'`;
-    const before = db.prepare(select).get();
+    const before = (await client.execute(select)).rows[0];
 
-    migrate(db);
+    await migrate(client);
 
-    expect(db.prepare(select).get()).toEqual(before);
+    expect((await client.execute(select)).rows[0]).toEqual(before);
   });
 
-  test("is idempotent on a second run", () => {
-    const db = seedV27();
-    migrate(db);
+  test("is idempotent on a second run", async () => {
+    const client = await seedV27();
+    await migrate(client);
 
-    const before = db
-      .prepare("SELECT id, liquidity_tier FROM snapshot_holdings ORDER BY id")
-      .all();
-    migrate(db); // a second run sits behind `version < 28` → no-op
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
+    const before = (
+      await client.execute("SELECT id, liquidity_tier FROM snapshot_holdings ORDER BY id")
+    ).rows;
+    await migrate(client); // a second run sits behind `version < 28` → no-op
+    expect(await userVersion(client)).toBe(SCHEMA_VERSION);
     expect(
-      db.prepare("SELECT id, liquidity_tier FROM snapshot_holdings ORDER BY id").all(),
+      (
+        await client.execute(
+          "SELECT id, liquidity_tier FROM snapshot_holdings ORDER BY id",
+        )
+      ).rows,
     ).toEqual(before);
   });
 });

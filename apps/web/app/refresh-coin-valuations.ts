@@ -35,7 +35,7 @@ export interface RefreshCoinValuationsInput {
   /** The connected coin sources to consider. */
   sources: CoinSourceRef[];
   /** Read a source's stored positions. */
-  readPositions: (sourceId: string) => SourcePosition[];
+  readPositions: (sourceId: string) => SourcePosition[] | Promise<SourcePosition[]>;
   /** Run the live valuation refresh for a source (mints token + fetches);
    *  throws on a hard failure (bad credentials / total outage). */
   revalue: (
@@ -48,7 +48,7 @@ export interface RefreshCoinValuationsInput {
     sourceId: string,
     updates: RevaluedPosition[],
     freshness: ValuationFreshness,
-  ) => void;
+  ) => void | Promise<void>;
 }
 
 export interface RefreshCoinValuationsResult {
@@ -83,14 +83,13 @@ export async function refreshStaleCoinValuations(
       continue;
     }
 
-    const positions = input
-      .readPositions(source.sourceId)
+    const positions = (await input.readPositions(source.sourceId))
       .filter((position): position is CoinPosition => position.kind === "coin")
       .map(toRevaluePosition);
 
     try {
       const updates = await input.revalue(source.sourceId, positions, input.nowIso);
-      input.persist(source.sourceId, updates, {
+      await input.persist(source.sourceId, updates, {
         fetchedAt: input.nowIso,
         freshnessState: "fresh",
       });
@@ -99,7 +98,7 @@ export async function refreshStaleCoinValuations(
       // and mark the source stale — leaving the prior fetched-at so the next pass
       // retries it. The reason rides the staleness banner via `errors`.
       errors.push(err instanceof Error ? err.message : "Unknown coin-refresh error");
-      input.persist(source.sourceId, [], {
+      await input.persist(source.sourceId, [], {
         fetchedAt: source.freshness?.fetchedAt ?? input.nowIso,
         freshnessState: "stale",
         staleReason:

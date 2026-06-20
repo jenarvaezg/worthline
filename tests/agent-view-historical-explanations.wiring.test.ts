@@ -71,27 +71,32 @@ async function explain(scopeId: string, figure: string, query = "") {
   return { body: await response.json(), response };
 }
 
-function holdingPublicId(databasePath: string, internalId: string): string {
-  const store = createWorthlineStore({ databasePath });
-  const publicId = store.agentView
-    .readPublicIds()
-    .find((row) => row.entityType === "holding" && row.entityId === internalId)!.publicId;
+async function holdingPublicId(
+  databasePath: string,
+  internalId: string,
+): Promise<string> {
+  const store = await createWorthlineStore({ databasePath });
+  const publicId = (await store.agentView.readPublicIds()).find(
+    (row) => row.entityType === "holding" && row.entityId === internalId,
+  )!.publicId;
   store.close();
   return publicId;
 }
 
 // A fingerprint of every mutation-prone read, to prove a historical explanation
 // read writes nothing (no snapshots, frozen rows, price cache, public IDs, …).
-function fingerprint(databasePath: string): string {
-  const store = createWorthlineStore({ databasePath });
+async function fingerprint(databasePath: string): Promise<string> {
+  const store = await createWorthlineStore({ databasePath });
   const snapshot = JSON.stringify({
-    assets: store.assets.readAssets(),
-    fireConfig: store.readFireConfig(),
-    liabilities: store.liabilities.readLiabilities(),
-    priceCache: store.operations.readAllPriceCacheEntries(),
-    publicIds: store.agentView.readPublicIds(),
-    snapshotHoldings: store.snapshots.readSnapshotHoldings({ scopeId: "household" }),
-    snapshots: store.snapshots.readSnapshots("household"),
+    assets: await store.assets.readAssets(),
+    fireConfig: await store.readFireConfig(),
+    liabilities: await store.liabilities.readLiabilities(),
+    priceCache: await store.operations.readAllPriceCacheEntries(),
+    publicIds: await store.agentView.readPublicIds(),
+    snapshotHoldings: await store.snapshots.readSnapshotHoldings({
+      scopeId: "household",
+    }),
+    snapshots: await store.snapshots.readSnapshots("household"),
   });
   store.close();
   return snapshot;
@@ -130,18 +135,18 @@ const routeClient: AgentViewApiClient = {
  * WITH frozen holding rows at D1, and a legacy snapshot WITHOUT holding rows at
  * D2 (headline figures only). Returns the database path.
  */
-function seedHistorical(prefix = "worthline-agent-view-histexp-"): string {
+async function seedHistorical(prefix = "worthline-agent-view-histexp-"): Promise<string> {
   const databasePath = tempDatabasePath(prefix);
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = createWorthlineStore({ databasePath });
-  store.workspace.initializeWorkspace({
+  const store = await createWorthlineStore({ databasePath });
+  await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
   });
   const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 10_000_00,
     id: "asset_cash",
@@ -150,7 +155,7 @@ function seedHistorical(prefix = "worthline-agent-view-histexp-"): string {
     ownership: owner,
     type: "cash",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 20_000_00,
     id: "asset_fund",
@@ -159,7 +164,7 @@ function seedHistorical(prefix = "worthline-agent-view-histexp-"): string {
     ownership: owner,
     type: "manual",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 200_000_00,
     id: "asset_home",
@@ -169,7 +174,7 @@ function seedHistorical(prefix = "worthline-agent-view-histexp-"): string {
     ownership: owner,
     type: "real_estate",
   });
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     associatedAssetId: "asset_home",
     balanceMinor: 100_000_00,
     currency: "EUR",
@@ -178,7 +183,7 @@ function seedHistorical(prefix = "worthline-agent-view-histexp-"): string {
     ownership: owner,
     type: "mortgage",
   });
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     balanceMinor: 5_000_00,
     currency: "EUR",
     id: "liab_loan",
@@ -187,31 +192,34 @@ function seedHistorical(prefix = "worthline-agent-view-histexp-"): string {
     type: "debt",
   });
 
-  const workspace = store.workspace.readWorkspace()!;
+  const workspace = (await store.workspace.readWorkspace())!;
 
   // D2: a legacy snapshot WITHOUT frozen holding rows (headline figures only).
   const legacy = captureNetWorthSnapshot({
-    assets: store.assets.readAssets(),
+    assets: await store.assets.readAssets(),
     capturedAt: `${D2}T12:00:00.000Z`,
     id: "snapshot_legacy",
-    liabilities: store.liabilities.readLiabilities(),
+    liabilities: await store.liabilities.readLiabilities(),
     scopeId: "household",
     scopeLabel: "Hogar",
     workspace,
   });
-  store.snapshots.saveSnapshot({ snapshot: legacy });
+  await store.snapshots.saveSnapshot({ snapshot: legacy });
 
   // D1: a valued snapshot WITH frozen holding rows.
   const valued = captureValuedNetWorthSnapshot({
-    assets: store.assets.readAssets(),
+    assets: await store.assets.readAssets(),
     capturedAt: `${D1}T12:00:00.000Z`,
     id: "snapshot_valued",
-    liabilities: store.liabilities.readLiabilities(),
+    liabilities: await store.liabilities.readLiabilities(),
     scopeId: "household",
     scopeLabel: "Hogar",
     workspace,
   });
-  store.snapshots.saveSnapshot({ holdings: valued.holdings, snapshot: valued.snapshot });
+  await store.snapshots.saveSnapshot({
+    holdings: valued.holdings,
+    snapshot: valued.snapshot,
+  });
 
   store.close();
   return databasePath;
@@ -219,7 +227,7 @@ function seedHistorical(prefix = "worthline-agent-view-histexp-"): string {
 
 describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", () => {
   test("net_worth at D1 (with rows) is historical:full, value = the snapshot figure", async () => {
-    seedHistorical("worthline-agent-view-histexp-nw-");
+    await seedHistorical("worthline-agent-view-histexp-nw-");
     const scopeId = await householdScopeId();
 
     const { body, response } = await explain(scopeId, "net_worth", `?date=${D1}`);
@@ -250,7 +258,7 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
   });
 
   test("gross_assets / debts at D1 sum the frozen asset / liability rows", async () => {
-    seedHistorical("worthline-agent-view-histexp-ga-");
+    await seedHistorical("worthline-agent-view-histexp-ga-");
     const scopeId = await householdScopeId();
 
     const ga = await explain(scopeId, "gross_assets", `?date=${D1}`);
@@ -271,7 +279,7 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
   });
 
   test("liquid_net_worth at D1 is liquid frozen assets − liquid non-housing debts", async () => {
-    seedHistorical("worthline-agent-view-histexp-lnw-");
+    await seedHistorical("worthline-agent-view-histexp-lnw-");
     const scopeId = await householdScopeId();
 
     const { body } = await explain(scopeId, "liquid_net_worth", `?date=${D1}`);
@@ -285,7 +293,7 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
   });
 
   test("housing_equity at D1 is frozen housing assets − housing-securing debts", async () => {
-    seedHistorical("worthline-agent-view-histexp-he-");
+    await seedHistorical("worthline-agent-view-histexp-he-");
     const scopeId = await householdScopeId();
 
     const { body } = await explain(scopeId, "housing_equity", `?date=${D1}`);
@@ -299,7 +307,7 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
   });
 
   test("liquidity_breakdown at D1 folds the frozen rows per rung", async () => {
-    seedHistorical("worthline-agent-view-histexp-liq-");
+    await seedHistorical("worthline-agent-view-histexp-liq-");
     const scopeId = await householdScopeId();
 
     const { body } = await explain(scopeId, "liquidity_breakdown", `?date=${D1}`);
@@ -321,9 +329,9 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
   });
 
   test("holding_value at D1 returns the frozen row for the holding", async () => {
-    const databasePath = seedHistorical("worthline-agent-view-histexp-hv-");
+    const databasePath = await seedHistorical("worthline-agent-view-histexp-hv-");
     const scopeId = await householdScopeId();
-    const fundPublic = holdingPublicId(databasePath, "asset_fund");
+    const fundPublic = await holdingPublicId(databasePath, "asset_fund");
 
     const { body, response } = await explain(
       scopeId,
@@ -341,7 +349,7 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
   });
 
   test("the five headline figures at D2 (no rows) are partial + history_coverage", async () => {
-    seedHistorical("worthline-agent-view-histexp-partial-");
+    await seedHistorical("worthline-agent-view-histexp-partial-");
     const scopeId = await householdScopeId();
 
     for (const [figure, expected] of [
@@ -366,7 +374,7 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
   });
 
   test("liquidity_breakdown at D2 (no rows) is partial + history_coverage", async () => {
-    seedHistorical("worthline-agent-view-histexp-liq-partial-");
+    await seedHistorical("worthline-agent-view-histexp-liq-partial-");
     const scopeId = await householdScopeId();
 
     const { body, response } = await explain(
@@ -384,9 +392,9 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
   });
 
   test("holding_value at D2 (no rows) is 422 unsupported_figure", async () => {
-    const databasePath = seedHistorical("worthline-agent-view-histexp-hv-partial-");
+    const databasePath = await seedHistorical("worthline-agent-view-histexp-hv-partial-");
     const scopeId = await householdScopeId();
-    const fundPublic = holdingPublicId(databasePath, "asset_fund");
+    const fundPublic = await holdingPublicId(databasePath, "asset_fund");
 
     const { body, response } = await explain(
       scopeId,
@@ -399,12 +407,12 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
   });
 
   test("holding_value at D1 for a holding absent that day is 422 unsupported_figure", async () => {
-    const databasePath = seedHistorical("worthline-agent-view-histexp-hv-absent-");
+    const databasePath = await seedHistorical("worthline-agent-view-histexp-hv-absent-");
     const scopeId = await householdScopeId();
     // Create a NEW asset after the snapshots so it has a public id but no frozen
     // row at D1.
-    const store = createWorthlineStore({ databasePath });
-    store.assets.createManualAsset({
+    const store = await createWorthlineStore({ databasePath });
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 1_000_00,
       id: "asset_late",
@@ -414,7 +422,7 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
       type: "cash",
     });
     store.close();
-    const latePublic = holdingPublicId(databasePath, "asset_late");
+    const latePublic = await holdingPublicId(databasePath, "asset_late");
 
     const { response } = await explain(
       scopeId,
@@ -425,7 +433,7 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
   });
 
   test("a date with no exact snapshot is 404 snapshot_not_found", async () => {
-    seedHistorical("worthline-agent-view-histexp-404-");
+    await seedHistorical("worthline-agent-view-histexp-404-");
     const scopeId = await householdScopeId();
 
     const { body, response } = await explain(scopeId, "net_worth", "?date=2026-01-01");
@@ -435,7 +443,7 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
   });
 
   test("historical FIRE is 422 unsupported_historical_fire (before snapshot lookup)", async () => {
-    seedHistorical("worthline-agent-view-histexp-fire-");
+    await seedHistorical("worthline-agent-view-histexp-fire-");
     const scopeId = await householdScopeId();
 
     for (const figure of ["fire_eligible_assets", "fire_progress"]) {
@@ -448,7 +456,7 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
   });
 
   test("an invalid figure name with a date is still 400 invalid_figure", async () => {
-    seedHistorical("worthline-agent-view-histexp-invalid-");
+    await seedHistorical("worthline-agent-view-histexp-invalid-");
     const scopeId = await householdScopeId();
 
     const { body, response } = await explain(scopeId, "not_a_figure", `?date=${D1}`);
@@ -457,7 +465,7 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
   });
 
   test("an invalid date format is a 400 bad_request", async () => {
-    seedHistorical("worthline-agent-view-histexp-baddate-");
+    await seedHistorical("worthline-agent-view-histexp-baddate-");
     const scopeId = await householdScopeId();
 
     const { response } = await explain(scopeId, "net_worth", "?date=2026-13-40");
@@ -469,8 +477,8 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       groups: [
         { id: "group_adults", memberIds: ["member_ana", "member_jose"], name: "Adultos" },
       ],
@@ -480,7 +488,7 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
       ],
       mode: "household",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000_00,
       id: "asset_joint",
@@ -492,18 +500,18 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
       ],
       type: "cash",
     });
-    const workspace = store.workspace.readWorkspace()!;
+    const workspace = (await store.workspace.readWorkspace())!;
     for (const scope of ["household", "member_ana", "group_adults"]) {
       const valued = captureValuedNetWorthSnapshot({
-        assets: store.assets.readAssets(),
+        assets: await store.assets.readAssets(),
         capturedAt: `${D1}T12:00:00.000Z`,
         id: `snapshot_${scope}`,
-        liabilities: store.liabilities.readLiabilities(),
+        liabilities: await store.liabilities.readLiabilities(),
         scopeId: scope,
         scopeLabel: scope,
         workspace,
       });
-      store.snapshots.saveSnapshot({
+      await store.snapshots.saveSnapshot({
         holdings: valued.holdings,
         snapshot: valued.snapshot,
       });
@@ -526,7 +534,7 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
   });
 
   test("MCP explain_figure threads date and mirrors the HTTP historical shape", async () => {
-    seedHistorical("worthline-agent-view-histexp-mcp-");
+    await seedHistorical("worthline-agent-view-histexp-mcp-");
     const household = await householdScopeId();
 
     const httpBody = await explain(household, "net_worth", `?date=${D1}`);
@@ -543,7 +551,7 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
   });
 
   test("MCP explain_figure mirrors the 404 snapshot_not_found error", async () => {
-    seedHistorical("worthline-agent-view-histexp-mcp-404-");
+    await seedHistorical("worthline-agent-view-histexp-mcp-404-");
     const household = await householdScopeId();
 
     const httpBody = await explain(household, "net_worth", "?date=2026-01-01");
@@ -562,18 +570,18 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
   });
 
   test("historical reads do not mutate persisted state", async () => {
-    const databasePath = seedHistorical("worthline-agent-view-histexp-nomut-");
+    const databasePath = await seedHistorical("worthline-agent-view-histexp-nomut-");
     const scopeId = await householdScopeId();
-    const fundPublic = holdingPublicId(databasePath, "asset_fund");
+    const fundPublic = await holdingPublicId(databasePath, "asset_fund");
 
-    const before = fingerprint(databasePath);
+    const before = await fingerprint(databasePath);
     await explain(scopeId, "net_worth", `?date=${D1}`);
     await explain(scopeId, "liquidity_breakdown", `?date=${D1}`);
     await explain(scopeId, "holding_value", `?holdingId=${fundPublic}&date=${D1}`);
     await explain(scopeId, "gross_assets", `?date=${D2}`);
     await explain(scopeId, "net_worth", "?date=2026-01-01");
     await explain(scopeId, "fire_progress", `?date=${D1}`);
-    const after = fingerprint(databasePath);
+    const after = await fingerprint(databasePath);
 
     expect(after).toBe(before);
   });

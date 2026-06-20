@@ -50,21 +50,23 @@ import {
 } from "./snapshot-history";
 import { buildTrashSummary, DEFAULT_TRASH_LIMIT, MAX_TRASH_LIMIT } from "./trash-summary";
 
-type StoreRunner = <T>(run: (store: WorthlineStore) => T) => T;
+type StoreRunner = <T>(run: (store: WorthlineStore) => T | Promise<T>) => Promise<T>;
 
 const NO_STORE_HEADERS = {
   "Cache-Control": "no-store",
 };
 
-export function handleListScopes(
+export async function handleListScopes(
   request: NextRequest,
   runWithStore: StoreRunner,
-): NextResponse {
+): Promise<NextResponse> {
   try {
     guardAgentViewRequest(request, []);
 
     return json(
-      successEnvelope(runWithStore((store) => listAgentViewScopes(store.agentView))),
+      successEnvelope(
+        await runWithStore((store) => listAgentViewScopes(store.agentView)),
+      ),
       200,
     );
   } catch (error) {
@@ -72,11 +74,11 @@ export function handleListScopes(
   }
 }
 
-export function handleGetFinancialContext(
+export async function handleGetFinancialContext(
   request: NextRequest,
   scopeId: string,
   runWithStore: StoreRunner,
-): NextResponse {
+): Promise<NextResponse> {
   try {
     guardAgentViewRequest(request, ["holdingLimit"]);
 
@@ -87,7 +89,7 @@ export function handleGetFinancialContext(
 
     return json(
       successEnvelope(
-        runWithStore((store) =>
+        await runWithStore((store) =>
           buildFinancialContext(store.agentView, { asOf, holdingLimit, scopeId }),
         ),
       ),
@@ -104,11 +106,11 @@ export function handleGetFinancialContext(
  * never receives an invented or nearest-date historical FIRE figure. Any other
  * unknown param is the standard `400` from `guardAgentViewRequest`.
  */
-export function handleGetFireContext(
+export async function handleGetFireContext(
   request: NextRequest,
   scopeId: string,
   runWithStore: StoreRunner,
-): NextResponse {
+): Promise<NextResponse> {
   try {
     guardAgentViewRequest(request, ["date"]);
 
@@ -123,7 +125,7 @@ export function handleGetFireContext(
 
     return json(
       successEnvelope(
-        runWithStore((store) => buildFireContext(store.agentView, { scopeId })),
+        await runWithStore((store) => buildFireContext(store.agentView, { scopeId })),
       ),
       200,
     );
@@ -141,12 +143,12 @@ export function handleGetFireContext(
  * HISTORICAL mode against the scope's frozen snapshot for that exact day; no
  * `date` keeps the CURRENT-mode behaviour (#343) unchanged.
  */
-export function handleExplainFigure(
+export async function handleExplainFigure(
   request: NextRequest,
   scopeId: string,
   figure: string,
   runWithStore: StoreRunner,
-): NextResponse {
+): Promise<NextResponse> {
   try {
     guardAgentViewRequest(request, ["holdingId", "date"]);
 
@@ -166,7 +168,7 @@ export function handleExplainFigure(
 
     return json(
       successEnvelope(
-        runWithStore((store) =>
+        await runWithStore((store) =>
           buildFigureExplanation(store.agentView, {
             asOf,
             figure,
@@ -193,11 +195,11 @@ const SNAPSHOT_QUERY_PARAMS = [
   "includeHoldingRows",
 ];
 
-export function handleGetSnapshotHistory(
+export async function handleGetSnapshotHistory(
   request: NextRequest,
   scopeId: string,
   runWithStore: StoreRunner,
-): NextResponse {
+): Promise<NextResponse> {
   try {
     guardAgentViewRequest(request, SNAPSHOT_QUERY_PARAMS);
 
@@ -213,7 +215,7 @@ export function handleGetSnapshotHistory(
       to: parseIsoDate(params.get("to"), "to"),
     };
 
-    const history = runWithStore((store) =>
+    const history = await runWithStore((store) =>
       buildSnapshotHistory(store.agentView, options),
     );
 
@@ -240,11 +242,11 @@ const DATA_QUALITY_SEVERITIES: readonly AgentViewDataQualitySeverity[] = [
   "low",
 ];
 
-export function handleGetDataQuality(
+export async function handleGetDataQuality(
   request: NextRequest,
   scopeId: string,
   runWithStore: StoreRunner,
-): NextResponse {
+): Promise<NextResponse> {
   try {
     guardAgentViewRequest(request, DATA_QUALITY_QUERY_PARAMS);
 
@@ -261,7 +263,9 @@ export function handleGetDataQuality(
         : { severity: parseDataQualitySeverity(params.get("severity")) }),
     };
 
-    const page = runWithStore((store) => buildDataQuality(store.agentView, options));
+    const page = await runWithStore((store) =>
+      buildDataQuality(store.agentView, options),
+    );
 
     return json(dataQualityEnvelope(request, page), 200);
   } catch (error) {
@@ -271,11 +275,11 @@ export function handleGetDataQuality(
 
 const TRASH_QUERY_PARAMS = ["limit", "cursor"];
 
-export function handleGetTrashSummary(
+export async function handleGetTrashSummary(
   request: NextRequest,
   scopeId: string,
   runWithStore: StoreRunner,
-): NextResponse {
+): Promise<NextResponse> {
   try {
     guardAgentViewRequest(request, TRASH_QUERY_PARAMS);
 
@@ -286,7 +290,9 @@ export function handleGetTrashSummary(
       scopeId,
     };
 
-    const summary = runWithStore((store) => buildTrashSummary(store.agentView, options));
+    const summary = await runWithStore((store) =>
+      buildTrashSummary(store.agentView, options),
+    );
 
     return json(trashSummaryEnvelope(request, summary), 200);
   } catch (error) {
@@ -294,17 +300,17 @@ export function handleGetTrashSummary(
   }
 }
 
-export function handleGetHoldingDetail(
+export async function handleGetHoldingDetail(
   request: NextRequest,
   holdingId: string,
   runWithStore: StoreRunner,
-): NextResponse {
+): Promise<NextResponse> {
   try {
     guardAgentViewRequest(request, []);
 
     return json(
       successEnvelope(
-        runWithStore((store) => buildHoldingDetail(store.agentView, holdingId)),
+        await runWithStore((store) => buildHoldingDetail(store.agentView, holdingId)),
       ),
       200,
     );
@@ -315,11 +321,11 @@ export function handleGetHoldingDetail(
 
 const OPERATION_QUERY_PARAMS = ["from", "to", "sort", "limit", "cursor"];
 
-export function handleGetHoldingOperations(
+export async function handleGetHoldingOperations(
   request: NextRequest,
   holdingId: string,
   runWithStore: StoreRunner,
-): NextResponse {
+): Promise<NextResponse> {
   try {
     guardAgentViewRequest(request, OPERATION_QUERY_PARAMS);
 
@@ -333,7 +339,7 @@ export function handleGetHoldingOperations(
       to: parseIsoDate(params.get("to"), "to"),
     };
 
-    const page = runWithStore((store) =>
+    const page = await runWithStore((store) =>
       buildHoldingOperations(store.agentView, options),
     );
 
@@ -345,11 +351,11 @@ export function handleGetHoldingOperations(
 
 const POSITION_QUERY_PARAMS = ["limit", "cursor"];
 
-export function handleGetHoldingConnectedSourcePositions(
+export async function handleGetHoldingConnectedSourcePositions(
   request: NextRequest,
   holdingId: string,
   runWithStore: StoreRunner,
-): NextResponse {
+): Promise<NextResponse> {
   try {
     guardAgentViewRequest(request, POSITION_QUERY_PARAMS);
 
@@ -360,7 +366,7 @@ export function handleGetHoldingConnectedSourcePositions(
       limit: parsePositionLimit(params.get("limit")),
     };
 
-    const page = runWithStore((store) =>
+    const page = await runWithStore((store) =>
       buildHoldingConnectedSourcePositions(store.agentView, options),
     );
 
@@ -370,11 +376,11 @@ export function handleGetHoldingConnectedSourcePositions(
   }
 }
 
-export function handleGetSourcePositions(
+export async function handleGetSourcePositions(
   request: NextRequest,
   sourceId: string,
   runWithStore: StoreRunner,
-): NextResponse {
+): Promise<NextResponse> {
   try {
     guardAgentViewRequest(request, POSITION_QUERY_PARAMS);
 
@@ -385,7 +391,7 @@ export function handleGetSourcePositions(
       sourceId,
     };
 
-    const page = runWithStore((store) =>
+    const page = await runWithStore((store) =>
       buildSourceConnectedSourcePositions(store.agentView, options),
     );
 

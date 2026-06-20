@@ -49,9 +49,9 @@ async function runAction(fd: FormData, store: WorthlineStore): Promise<string> {
   }
 }
 
-function seedStore(): WorthlineStore {
-  const store = createInMemoryStore();
-  store.workspace.initializeWorkspace({
+async function seedStore(): Promise<WorthlineStore> {
+  const store = await createInMemoryStore();
+  await store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jose" }],
     mode: "individual",
   });
@@ -59,16 +59,16 @@ function seedStore(): WorthlineStore {
 }
 
 /** A 2-member household with a piso owned 65 % Jose / 35 % Ana (for #171). */
-function seedHousehold(): WorthlineStore {
-  const store = createInMemoryStore();
-  store.workspace.initializeWorkspace({
+async function seedHousehold(): Promise<WorthlineStore> {
+  const store = await createInMemoryStore();
+  await store.workspace.initializeWorkspace({
     members: [
       { id: "mJ", name: "Jose" },
       { id: "mA", name: "Ana" },
     ],
     mode: "household",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 200_000_00,
     id: "piso",
@@ -83,14 +83,14 @@ function seedHousehold(): WorthlineStore {
   return store;
 }
 
-function ownershipByMember(store: WorthlineStore): Record<string, number> {
-  const liability = store.liabilities.readLiabilities()[0]!;
+async function ownershipByMember(store: WorthlineStore): Promise<Record<string, number>> {
+  const liability = (await store.liabilities.readLiabilities())[0]!;
   return Object.fromEntries(liability.ownership.map((o) => [o.memberId, o.shareBps]));
 }
 
 describe("createHoldingAction — stored assets", () => {
   test("current_account → manual asset on the cash rung, instrument persisted", async () => {
-    const store = seedStore();
+    const store = await seedStore();
 
     const url = await runAction(
       form({
@@ -106,7 +106,7 @@ describe("createHoldingAction — stored assets", () => {
     expect(url).toContain("/patrimonio");
     expect(url).toContain("ok=");
 
-    const assets = store.assets.readAssets();
+    const assets = await store.assets.readAssets();
     expect(assets).toHaveLength(1);
     const asset = assets[0]!;
     expect(asset.name).toBe("Cuenta BBVA");
@@ -117,7 +117,7 @@ describe("createHoldingAction — stored assets", () => {
   });
 
   test("vehicle → manual asset on the illiquid rung, instrument persisted", async () => {
-    const store = seedStore();
+    const store = await seedStore();
 
     await runAction(
       form({
@@ -130,7 +130,7 @@ describe("createHoldingAction — stored assets", () => {
       store,
     );
 
-    const asset = store.assets.readAssets()[0]!;
+    const asset = (await store.assets.readAssets())[0]!;
     expect(asset.type).toBe("manual");
     expect(asset.liquidityTier).toBe("illiquid");
     expect(asset.instrument).toBe("vehicle");
@@ -138,7 +138,7 @@ describe("createHoldingAction — stored assets", () => {
   });
 
   test("ignores the hidden fields of the non-selected instruments", async () => {
-    const store = seedStore();
+    const store = await seedStore();
 
     // Both current_account and vehicle fields POST; only current_account is chosen.
     await runAction(
@@ -154,7 +154,7 @@ describe("createHoldingAction — stored assets", () => {
       store,
     );
 
-    const assets = store.assets.readAssets();
+    const assets = await store.assets.readAssets();
     expect(assets).toHaveLength(1);
     expect(assets[0]!.name).toBe("Cuenta BBVA");
     expect(assets[0]!.instrument).toBe("current_account");
@@ -163,7 +163,7 @@ describe("createHoldingAction — stored assets", () => {
 
 describe("createHoldingAction — appreciating (property)", () => {
   test("property → real_estate on illiquid, with acquisition anchor + instrument", async () => {
-    const store = seedStore();
+    const store = await seedStore();
 
     const url = await runAction(
       form({
@@ -180,14 +180,14 @@ describe("createHoldingAction — appreciating (property)", () => {
 
     expect(url).toContain("ok=");
 
-    const asset = store.assets.readAssets()[0]!;
+    const asset = (await store.assets.readAssets())[0]!;
     expect(asset.type).toBe("real_estate");
     expect(asset.liquidityTier).toBe("illiquid");
     expect(asset.instrument).toBe("property");
     expect(asset.currentValue.amountMinor).toBe(18_000_000);
 
     // The acquisition seeds a valuation anchor (the curve's base).
-    const anchors = store.assets.readValuationAnchors(asset.id);
+    const anchors = await store.assets.readValuationAnchors(asset.id);
     expect(anchors.length).toBeGreaterThanOrEqual(1);
     expect(anchors.some((a) => a.valuationDate === "2020-01-15")).toBe(true);
   });
@@ -195,7 +195,7 @@ describe("createHoldingAction — appreciating (property)", () => {
 
 describe("createHoldingAction — derived investments", () => {
   test("stock → investment with instrument=stock and the yahoo provider", async () => {
-    const store = seedStore();
+    const store = await seedStore();
 
     const url = await runAction(
       form({
@@ -210,19 +210,19 @@ describe("createHoldingAction — derived investments", () => {
 
     expect(url).toContain("ok=");
 
-    const meta = store.assets.readInvestmentAssetsWithMeta();
+    const meta = await store.assets.readInvestmentAssetsWithMeta();
     expect(meta).toHaveLength(1);
     expect(meta[0]!.priceProvider).toBe("yahoo");
     expect(meta[0]!.providerSymbol).toBe("AAPL");
 
     // The chosen instrument is persisted distinctly — not collapsed to "fund".
-    const asset = store.assets.readAssets().find((a) => a.id === meta[0]!.id);
+    const asset = (await store.assets.readAssets()).find((a) => a.id === meta[0]!.id);
     expect(asset?.instrument).toBe("stock");
     expect(asset?.liquidityTier).toBe("market");
   });
 
   test("crypto → investment with instrument=crypto and the coingecko provider", async () => {
-    const store = seedStore();
+    const store = await seedStore();
 
     await runAction(
       form({
@@ -235,15 +235,15 @@ describe("createHoldingAction — derived investments", () => {
       store,
     );
 
-    const meta = store.assets.readInvestmentAssetsWithMeta()[0]!;
+    const meta = (await store.assets.readInvestmentAssetsWithMeta())[0]!;
     expect(meta.priceProvider).toBe("coingecko");
 
-    const asset = store.assets.readAssets().find((a) => a.id === meta.id);
+    const asset = (await store.assets.readAssets()).find((a) => a.id === meta.id);
     expect(asset?.instrument).toBe("crypto");
   });
 
   test("pension_plan → investment with instrument=pension_plan and finect provider", async () => {
-    const store = seedStore();
+    const store = await seedStore();
 
     await runAction(
       form({
@@ -256,10 +256,10 @@ describe("createHoldingAction — derived investments", () => {
       store,
     );
 
-    const meta = store.assets.readInvestmentAssetsWithMeta()[0]!;
+    const meta = (await store.assets.readInvestmentAssetsWithMeta())[0]!;
     expect(meta.priceProvider).toBe("finect");
 
-    const asset = store.assets.readAssets().find((a) => a.id === meta.id);
+    const asset = (await store.assets.readAssets()).find((a) => a.id === meta.id);
     expect(asset?.instrument).toBe("pension_plan");
     expect(asset?.liquidityTier).toBe("term-locked");
   });
@@ -267,7 +267,7 @@ describe("createHoldingAction — derived investments", () => {
 
 describe("createHoldingAction — debts", () => {
   test("mortgage → mortgage liability with the amortizable model", async () => {
-    const store = seedStore();
+    const store = await seedStore();
 
     const url = await runAction(
       form({
@@ -282,16 +282,16 @@ describe("createHoldingAction — debts", () => {
 
     expect(url).toContain("ok=");
 
-    const liability = store.liabilities.readLiabilities()[0]!;
+    const liability = (await store.liabilities.readLiabilities())[0]!;
     expect(liability.type).toBe("mortgage");
     expect(liability.currentBalance.amountMinor).toBe(12_000_000);
-    expect(store.liabilities.readDebtModel(liability.id)).toBe("amortizable");
+    expect(await store.liabilities.readDebtModel(liability.id)).toBe("amortizable");
     // The instrument is recoverable from (type, debtModel).
     expect(defaultInstrumentForLiability("mortgage", "amortizable")).toBe("mortgage");
   });
 
   test("loan → debt liability with the amortizable model (derives to loan)", async () => {
-    const store = seedStore();
+    const store = await seedStore();
 
     await runAction(
       form({
@@ -304,14 +304,14 @@ describe("createHoldingAction — debts", () => {
       store,
     );
 
-    const liability = store.liabilities.readLiabilities()[0]!;
+    const liability = (await store.liabilities.readLiabilities())[0]!;
     expect(liability.type).toBe("debt");
-    expect(store.liabilities.readDebtModel(liability.id)).toBe("amortizable");
+    expect(await store.liabilities.readDebtModel(liability.id)).toBe("amortizable");
     expect(defaultInstrumentForLiability("debt", "amortizable")).toBe("loan");
   });
 
   test("loan + debtModel=informal → debt liability with the informal model, valued anchored (#273)", async () => {
-    const store = seedStore();
+    const store = await seedStore();
 
     await runAction(
       form({
@@ -325,10 +325,10 @@ describe("createHoldingAction — debts", () => {
       store,
     );
 
-    const liability = store.liabilities.readLiabilities()[0]!;
+    const liability = (await store.liabilities.readLiabilities())[0]!;
     expect(liability.type).toBe("debt");
     expect(liability.currentBalance.amountMinor).toBe(300_000);
-    const debtModel = store.liabilities.readDebtModel(liability.id);
+    const debtModel = await store.liabilities.readDebtModel(liability.id);
     expect(debtModel).toBe("informal");
     // AC#4: an informal loan is valued by declared balances (anchored), not a plan.
     expect(valuationMethodOfLiability(debtModel)).toBe("anchored");
@@ -337,7 +337,7 @@ describe("createHoldingAction — debts", () => {
   });
 
   test("loan + debtModel=amortizable (explicit) keeps the amortizable model (#273)", async () => {
-    const store = seedStore();
+    const store = await seedStore();
 
     await runAction(
       form({
@@ -351,12 +351,12 @@ describe("createHoldingAction — debts", () => {
       store,
     );
 
-    const liability = store.liabilities.readLiabilities()[0]!;
-    expect(store.liabilities.readDebtModel(liability.id)).toBe("amortizable");
+    const liability = (await store.liabilities.readLiabilities())[0]!;
+    expect(await store.liabilities.readDebtModel(liability.id)).toBe("amortizable");
   });
 
   test("credit_card → debt liability with the revolving model (derives to credit_card)", async () => {
-    const store = seedStore();
+    const store = await seedStore();
 
     await runAction(
       form({
@@ -369,16 +369,16 @@ describe("createHoldingAction — debts", () => {
       store,
     );
 
-    const liability = store.liabilities.readLiabilities()[0]!;
+    const liability = (await store.liabilities.readLiabilities())[0]!;
     expect(liability.type).toBe("debt");
-    expect(store.liabilities.readDebtModel(liability.id)).toBe("revolving");
+    expect(await store.liabilities.readDebtModel(liability.id)).toBe("revolving");
     expect(defaultInstrumentForLiability("debt", "revolving")).toBe("credit_card");
   });
 });
 
 describe("createHoldingAction — debt ownership inheritance (#171)", () => {
   test("a mortgage associated to an asset, inherit on, copies the asset's split", async () => {
-    const store = seedHousehold();
+    const store = await seedHousehold();
 
     await runAction(
       form({
@@ -394,14 +394,14 @@ describe("createHoldingAction — debt ownership inheritance (#171)", () => {
       store,
     );
 
-    const liability = store.liabilities.readLiabilities()[0]!;
+    const liability = (await store.liabilities.readLiabilities())[0]!;
     expect(liability.associatedAssetId).toBe("piso");
     // Equals the piso's split (65/35), not the footer's 100% Jose.
-    expect(ownershipByMember(store)).toEqual({ mJ: 6_500, mA: 3_500 });
+    expect(await ownershipByMember(store)).toEqual({ mJ: 6_500, mA: 3_500 });
   });
 
   test("inherit off uses the footer ownership inputs exactly as today", async () => {
-    const store = seedHousehold();
+    const store = await seedHousehold();
 
     await runAction(
       form({
@@ -416,19 +416,19 @@ describe("createHoldingAction — debt ownership inheritance (#171)", () => {
     );
 
     // The footer's even split wins — NOT the piso's 65/35.
-    expect(ownershipByMember(store)).toEqual({ mJ: 5_000, mA: 5_000 });
+    expect(await ownershipByMember(store)).toEqual({ mJ: 5_000, mA: 5_000 });
   });
 
   test("inherits a partially-owned home's split and accepts it (single member, 75%)", async () => {
     // A home co-owned with a non-member: 75% Jose, 25% external. The mortgage on
     // it mirrors the 75% — a debt on a co-owned home is a known partial (#171),
     // not rejected by the "totals 100%" rule that standalone debts obey.
-    const store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
       members: [{ id: "mJ", name: "Jose" }],
       mode: "individual",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 200_000_00,
       id: "piso",
@@ -452,11 +452,11 @@ describe("createHoldingAction — debt ownership inheritance (#171)", () => {
     );
 
     expect(url).toContain("ok="); // accepted, not rejected as "must sum to 100%"
-    expect(ownershipByMember(store)).toEqual({ mJ: 7_500 });
+    expect(await ownershipByMember(store)).toEqual({ mJ: 7_500 });
   });
 
   test("inherit on but no asset associated falls back to the footer preset (no crash)", async () => {
-    const store = seedHousehold();
+    const store = await seedHousehold();
 
     await runAction(
       form({
@@ -471,11 +471,11 @@ describe("createHoldingAction — debt ownership inheritance (#171)", () => {
       store,
     );
 
-    expect(ownershipByMember(store)).toEqual({ mJ: 10_000 });
+    expect(await ownershipByMember(store)).toEqual({ mJ: 10_000 });
   });
 
   test("the inherited split is a one-time copy — a later asset edit does not move it", async () => {
-    const store = seedHousehold();
+    const store = await seedHousehold();
 
     await runAction(
       form({
@@ -489,17 +489,17 @@ describe("createHoldingAction — debt ownership inheritance (#171)", () => {
       }),
       store,
     );
-    expect(ownershipByMember(store)).toEqual({ mJ: 6_500, mA: 3_500 });
+    expect(await ownershipByMember(store)).toEqual({ mJ: 6_500, mA: 3_500 });
 
     // Changing the asset's split afterwards must NOT follow into the liability:
     // the inheritance is a copy at creation, not a live link (CONTEXT.md).
-    store.assets.updateAsset("piso", {
+    await store.assets.updateAsset("piso", {
       ownership: [
         { memberId: "mJ", shareBps: 9_000 },
         { memberId: "mA", shareBps: 1_000 },
       ],
     });
 
-    expect(ownershipByMember(store)).toEqual({ mJ: 6_500, mA: 3_500 });
+    expect(await ownershipByMember(store)).toEqual({ mJ: 6_500, mA: 3_500 });
   });
 });

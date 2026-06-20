@@ -44,12 +44,12 @@ import {
   resolveScopeMemberIds,
   selectInvestmentPrice,
 } from "@worthline/domain";
-import type { Database as DatabaseConnection } from "better-sqlite3";
+import type { Client } from "@libsql/client";
 import { and, asc, eq, isNotNull, like } from "drizzle-orm";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
-import { loadDatabaseCtor, openDrizzle } from "./native-sqlite";
+import { openDrizzle, openLibsqlClient } from "./libsql-client";
 
 import {
   amortizationPlans,
@@ -90,6 +90,7 @@ import {
 import { migrate, type MigrateResult } from "./migrate";
 
 export { SCHEMA_VERSION } from "./migrate";
+export { openLibsqlClient } from "./libsql-client";
 import {
   createLiabilityStore,
   type AddBalanceAnchorInput,
@@ -268,15 +269,15 @@ export interface WorthlineStore {
   // ── Cross-cutting (no per-domain home) ──────────────────────────────────────
 
   close: () => void;
-  acknowledgeWarning: (code: string, entityId: string) => number;
-  removeWarningOverride: (code: string, entityId: string) => void;
-  readWarningOverrides: () => WarningOverride[];
-  readTrash: () => TrashView;
+  acknowledgeWarning: (code: string, entityId: string) => Promise<number>;
+  removeWarningOverride: (code: string, entityId: string) => Promise<void>;
+  readWarningOverrides: () => Promise<WarningOverride[]>;
+  readTrash: () => Promise<TrashView>;
   /** Hard-delete every trashed holding atomically. Returns how many of each kind were removed. */
-  emptyTrash: () => { assets: number; liabilities: number };
-  readAuditLog: (filter?: { entityId?: string }) => AuditLogEntry[];
-  readFireConfig: () => Record<string, FireScopeConfig>;
-  saveFireConfig: (scopeId: string, config: FireScopeConfig) => void;
+  emptyTrash: () => Promise<{ assets: number; liabilities: number }>;
+  readAuditLog: (filter?: { entityId?: string }) => Promise<AuditLogEntry[]>;
+  readFireConfig: () => Promise<Record<string, FireScopeConfig>>;
+  saveFireConfig: (scopeId: string, config: FireScopeConfig) => Promise<void>;
   /**
    * Operation dated-fact seam (ADR 0020): persist ONE investment operation AND
    * ripple the snapshots it affects, atomically in a single transaction. The
@@ -287,7 +288,7 @@ export interface WorthlineStore {
   recordOperationAndRipple: (
     input: CreateInvestmentOperationInput,
     opts?: { today?: string },
-  ) => void;
+  ) => Promise<void>;
   /**
    * Batched operation dated-fact seam for a statement load (ADR 0020 / 0018):
    * persist every created and overwritten operation AND run ONE batched ripple
@@ -302,7 +303,7 @@ export interface WorthlineStore {
     creates: CreateInvestmentOperationInput[];
     overwrites: UpdateInvestmentOperationInput[];
     today?: string;
-  }) => void;
+  }) => Promise<void>;
   /**
    * Historical-price backfill seam (#380, ADR 0033): freeze a provider's
    * historical unit prices onto ONE investment's monthly snapshots, atomically in
@@ -326,7 +327,7 @@ export interface WorthlineStore {
     source: string;
     today?: string;
     dryRun?: boolean;
-  }) => { created: number; updated: number; gaps: string[]; source: string };
+  }) => Promise<{ created: number; updated: number; gaps: string[]; source: string }>;
   /**
    * Operation dated-fact seam (ADR 0020): delete ONE investment operation AND
    * ripple the snapshots dated ≥ its date, atomically in a single transaction.
@@ -340,7 +341,7 @@ export interface WorthlineStore {
   deleteOperationAndRipple: (params: {
     operationId: string;
     today?: string;
-  }) => { assetId: string; executedAt: string } | null;
+  }) => Promise<{ assetId: string; executedAt: string } | null>;
   /**
    * Valuation dated-fact seam (ADR 0020): persist ONE housing valuation anchor
    * AND ripple the snapshots from its date, atomically in one transaction. The
@@ -351,7 +352,7 @@ export interface WorthlineStore {
   addValuationAnchorAndRipple: (
     input: AddValuationAnchorInput,
     opts?: { today?: string },
-  ) => void;
+  ) => Promise<void>;
   /**
    * Valuation dated-fact seam (ADR 0020): patch ONE valuation anchor AND ripple
    * the affected snapshots, atomically. The from-date is the earlier of the old
@@ -363,7 +364,7 @@ export interface WorthlineStore {
     anchorId: string,
     input: UpdateValuationAnchorInput,
     opts?: { today?: string },
-  ) => number;
+  ) => Promise<number>;
   /**
    * Valuation dated-fact seam (ADR 0020): delete ONE valuation anchor AND ripple
    * the snapshots from its date, atomically. The from-date is the deleted anchor's
@@ -371,7 +372,10 @@ export interface WorthlineStore {
    * ripples nothing and a future date generates no history. Returns 1 if removed,
    * 0 if not found. Wraps `assets.deleteValuationAnchor` + the valuation ripple.
    */
-  deleteValuationAnchorAndRipple: (anchorId: string, opts?: { today?: string }) => number;
+  deleteValuationAnchorAndRipple: (
+    anchorId: string,
+    opts?: { today?: string },
+  ) => Promise<number>;
   /**
    * Valuation dated-fact seam (ADR 0020): set (or clear) the appreciation rate AND
    * ripple the rate-valued range, atomically. The earliest affected snapshot date
@@ -385,7 +389,7 @@ export interface WorthlineStore {
     assetId: string,
     rate: DecimalString | null,
     opts?: { today?: string },
-  ) => void;
+  ) => Promise<void>;
   /**
    * Valuation dated-fact seam (ADR 0020): persist the current housing value
    * (updateAssetValuation + upsert-today-market-anchor) AND ripple historical
@@ -398,7 +402,7 @@ export interface WorthlineStore {
     assetId: string,
     currentValue: number,
     opts?: { today?: string },
-  ) => void;
+  ) => Promise<void>;
   /**
    * Valuation dated-fact seam (ADR 0020): re-derive the housing snapshots after a
    * non-dated-fact metadata edit (editAsset). No dated fact is persisted here; the
@@ -406,7 +410,10 @@ export interface WorthlineStore {
    * (`firstHousingEventDate` rule). Skips when nothing exists to ripple.
    * `today` defaults to the current date.
    */
-  rippleHousingAfterAssetEdit: (assetId: string, opts?: { today?: string }) => void;
+  rippleHousingAfterAssetEdit: (
+    assetId: string,
+    opts?: { today?: string },
+  ) => Promise<void>;
   /**
    * Ownership scope-axis seam (ADR 0020): patch ONE asset AND, if its ownership
    * split actually changed, re-derive history along the SCOPE axis, atomically.
@@ -421,7 +428,7 @@ export interface WorthlineStore {
     assetId: string,
     patch: UpdateAssetInput,
     opts?: { today?: string },
-  ) => void;
+  ) => Promise<void>;
   /**
    * Ownership scope-axis seam (ADR 0020): patch ONE liability AND, if its ownership
    * split actually changed, re-derive history along the SCOPE axis, atomically. The
@@ -433,7 +440,7 @@ export interface WorthlineStore {
     liabilityId: string,
     patch: UpdateLiabilityInput,
     opts?: { today?: string },
-  ) => void;
+  ) => Promise<void>;
   /**
    * Housing-creation dated-fact seam (ADR 0020): create ONE real_estate holding —
    * the asset row, its acquisition anchor, its appreciation rate, and an optional
@@ -447,7 +454,7 @@ export interface WorthlineStore {
   createHousingHoldingAndRipple: (
     command: CreateHousingHoldingCommand,
     opts?: { today?: string },
-  ) => void;
+  ) => Promise<void>;
   /**
    * Debt dated-fact seam (ADR 0020): create ONE amortization plan AND ripple the
    * per-cuota history it implies, atomically. The affected dates are derived
@@ -457,7 +464,7 @@ export interface WorthlineStore {
   createAmortizationPlanAndRipple: (
     input: CreateAmortizationPlanInput,
     opts?: { today?: string },
-  ) => void;
+  ) => Promise<void>;
   /**
    * Debt dated-fact seam (ADR 0020): patch ONE amortization plan AND re-ripple the
    * per-cuota history, atomically (the `amortizable-plan` kind). Returns 1 if
@@ -467,7 +474,7 @@ export interface WorthlineStore {
     planId: string,
     input: UpdateAmortizationPlanInput,
     opts: { liabilityId: string; today?: string },
-  ) => number;
+  ) => Promise<number>;
   /**
    * Debt dated-fact seam (ADR 0020): delete ONE amortization plan AND ripple the
    * now-planless curve, atomically. The plan's disbursement date is captured behind
@@ -479,7 +486,7 @@ export interface WorthlineStore {
   deleteAmortizationPlanAndRipple: (opts: {
     liabilityId: string;
     today?: string;
-  }) => number;
+  }) => Promise<number>;
   /**
    * Debt dated-fact seam (ADR 0020): add ONE interest-rate revision AND recalculate
    * the snapshots from its date forward, atomically (the `amortizable-revision`
@@ -489,7 +496,7 @@ export interface WorthlineStore {
   addInterestRateRevisionAndRipple: (
     input: AddInterestRateRevisionInput,
     opts: { liabilityId: string; today?: string },
-  ) => void;
+  ) => Promise<void>;
   /**
    * Debt dated-fact seam (ADR 0020 / 0025): patch ONE interest-rate revision AND
    * recalculate snapshots from the earlier of the old/new date, atomically. The
@@ -502,7 +509,7 @@ export interface WorthlineStore {
     revisionId: string,
     input: UpdateInterestRateRevisionInput,
     opts?: { today?: string },
-  ) => number;
+  ) => Promise<number>;
   /**
    * Debt dated-fact seam (ADR 0020 / 0025): delete ONE interest-rate revision AND
    * recalculate snapshots from its date forward, atomically (the
@@ -514,7 +521,7 @@ export interface WorthlineStore {
   deleteInterestRateRevisionAndRipple: (
     revisionId: string,
     opts?: { today?: string },
-  ) => number;
+  ) => Promise<number>;
   /**
    * Debt dated-fact seam (ADR 0020): add ONE early repayment AND generate/recalculate
    * snapshots from its date, atomically (the `amortizable-repayment` kind — a past
@@ -524,7 +531,7 @@ export interface WorthlineStore {
   addEarlyRepaymentAndRipple: (
     input: AddEarlyRepaymentInput,
     opts: { liabilityId: string; today?: string },
-  ) => void;
+  ) => Promise<void>;
   /**
    * Debt dated-fact seam (ADR 0020 / 0025): patch ONE early repayment AND ripple
    * from the earlier of the old/new date, atomically (the `amortizable-repayment`
@@ -537,7 +544,7 @@ export interface WorthlineStore {
     repaymentId: string,
     input: UpdateEarlyRepaymentInput,
     opts?: { today?: string },
-  ) => number;
+  ) => Promise<number>;
   /**
    * Debt dated-fact seam (ADR 0020 / 0025): delete ONE early repayment AND
    * recalculate snapshots from its date forward, atomically. Deleting a dated fact
@@ -550,7 +557,7 @@ export interface WorthlineStore {
   deleteEarlyRepaymentAndRipple: (
     repaymentId: string,
     opts?: { today?: string },
-  ) => number;
+  ) => Promise<number>;
   /**
    * Debt dated-fact seam (ADR 0020): add ONE balance anchor AND generate/recalculate
    * snapshots from its date, atomically (the `anchor` kind). The from-date is the
@@ -560,7 +567,7 @@ export interface WorthlineStore {
   addBalanceAnchorAndRipple: (
     input: AddBalanceAnchorInput,
     opts?: { today?: string },
-  ) => void;
+  ) => Promise<void>;
   /**
    * Debt dated-fact seam (ADR 0020 / 0025): patch ONE balance anchor AND ripple
    * from the earlier of the old/new date, atomically (the `anchor` kind). The seam
@@ -572,7 +579,7 @@ export interface WorthlineStore {
     anchorId: string,
     input: UpdateBalanceAnchorInput,
     opts?: { today?: string },
-  ) => number;
+  ) => Promise<number>;
   /**
    * Debt dated-fact seam (ADR 0020 / 0025): delete ONE balance anchor AND
    * recalculate snapshots from its date forward, atomically (the `anchor` kind).
@@ -580,14 +587,17 @@ export interface WorthlineStore {
    * id inside the transaction; the future guard rides the seam. Returns 1 if
    * removed, 0 if not found. Wraps `liabilities.deleteBalanceAnchor`.
    */
-  deleteBalanceAnchorAndRipple: (anchorId: string, opts?: { today?: string }) => number;
+  deleteBalanceAnchorAndRipple: (
+    anchorId: string,
+    opts?: { today?: string },
+  ) => Promise<number>;
   /**
    * One-shot backfill (ADR 0012, PRD #107): generate a historical snapshot for
    * every past operation date that has no snapshot yet, across all scopes.
    * Existing snapshots are never recalculated — only gaps are filled. Idempotent.
    * `today` defaults to the current date; pass it to control the cut-off in tests.
    */
-  backfillHistoricalSnapshots: (today?: string) => void;
+  backfillHistoricalSnapshots: (today?: string) => Promise<void>;
   /**
    * Sync a connected source's positions AND ripple coin purchase dates into
    * history (ADR 0017, S6 / #167). Replaces the source's positions wholesale and
@@ -605,7 +615,7 @@ export interface WorthlineStore {
     sourceId: string;
     positions: SourcePositionInput[];
     syncedAt: string;
-  }) => void;
+  }) => Promise<void>;
   /**
    * Backfill a connected Binance source's monthly value history into snapshots
    * (PRD #245 S5 / #250, ADR 0021). Values the reconstructed `BinanceHistoryCurve`
@@ -620,23 +630,24 @@ export interface WorthlineStore {
     sourceId: string;
     curve: BinanceHistoryCurve;
     today?: string;
-  }) => void;
+  }) => Promise<void>;
 }
 
-export function runBootstrapHealthcheck(
+export async function runBootstrapHealthcheck(
   options: BootstrapHealthcheckOptions = {},
-): LocalPersistenceStatus {
+): Promise<LocalPersistenceStatus> {
   const databasePath = resolveDatabasePath(options);
   mkdirSync(dirname(databasePath), { recursive: true });
 
-  const sqlite = new (loadDatabaseCtor())(databasePath);
+  const client = openLibsqlClient(databasePath);
   try {
-    migrate(sqlite);
+    await migrate(client);
 
-    const db = openDrizzle(sqlite);
+    const db = openDrizzle(client);
     const checkedAt = (options.now ?? (() => new Date()))().toISOString();
 
-    db.insert(appSettings)
+    await db
+      .insert(appSettings)
       .values({
         key: bootstrapKey,
         updatedAt: checkedAt,
@@ -651,7 +662,7 @@ export function runBootstrapHealthcheck(
       })
       .run();
 
-    const row = db
+    const row = await db
       .select()
       .from(appSettings)
       .where(eq(appSettings.key, bootstrapKey))
@@ -670,7 +681,7 @@ export function runBootstrapHealthcheck(
       displayPath: toDisplayPath(databasePath),
     };
   } finally {
-    sqlite.close();
+    client.close();
   }
 }
 
@@ -683,10 +694,10 @@ export function runBootstrapHealthcheck(
  * safe and no files are left behind.  Callers must call store.close() when done
  * (or use withStore with the store directly).
  */
-export function createInMemoryStore(): WorthlineStore {
-  const sqlite = new (loadDatabaseCtor())(":memory:");
-  const migrateResult = migrate(sqlite);
-  return buildStore(sqlite, migrateResult);
+export async function createInMemoryStore(): Promise<WorthlineStore> {
+  const client = openLibsqlClient(":memory:");
+  const migrateResult = await migrate(client);
+  return buildStore(client, migrateResult);
 }
 
 /**
@@ -696,20 +707,20 @@ export function createInMemoryStore(): WorthlineStore {
  * after migration — without going through the file-path lifecycle of
  * `createWorthlineStore`.
  */
-export function createStoreFromSqlite(sqlite: DatabaseConnection): WorthlineStore {
-  const migrateResult = migrate(sqlite);
-  return buildStore(sqlite, migrateResult);
+export async function createStoreFromSqlite(client: Client): Promise<WorthlineStore> {
+  const migrateResult = await migrate(client);
+  return buildStore(client, migrateResult);
 }
 
-export function createWorthlineStore(
+export async function createWorthlineStore(
   options: WorthlineStoreOptions = {},
-): WorthlineStore {
+): Promise<WorthlineStore> {
   const databasePath = resolveDatabasePath(options);
   mkdirSync(dirname(databasePath), { recursive: true });
 
-  const sqlite = new (loadDatabaseCtor())(databasePath);
-  const migrateResult = migrate(sqlite);
-  return buildStore(sqlite, migrateResult);
+  const client = openLibsqlClient(databasePath);
+  const migrateResult = await migrate(client);
+  return buildStore(client, migrateResult);
 }
 
 /**
@@ -724,14 +735,14 @@ function ownershipChanged(before: OwnershipShare[], after: OwnershipShare[]): bo
   return after.some((share) => beforeByMember.get(share.memberId) !== share.shareBps);
 }
 
-function buildStore(
-  sqlite: DatabaseConnection,
+async function buildStore(
+  client: Client,
   migrateResult: MigrateResult,
-): WorthlineStore {
+): Promise<WorthlineStore> {
   // Shared substrate for the extracted *-Store slices (R1–R5, PRD #120): the
   // connection, id generation, transaction wrapping, audit logging, and the
   // per-unit-of-work workspace cache all live in one place.
-  const ctx = createStoreContext(sqlite, readWorkspace);
+  const ctx = createStoreContext(client, readWorkspace);
   const { writeAuditEntry } = ctx;
   const snapshotStore = createSnapshotStore(ctx);
   const assetStore = createAssetStore(ctx);
@@ -750,8 +761,8 @@ function buildStore(
     readInterestRateRevisions: liabilityStore.readInterestRateRevisions,
     readLiabilities: liabilityStore.readLiabilities,
     readOperations: operationsStore.readOperations,
-    readPriceCache: (assetId) => {
-      const cache = operationsStore.readPriceCache(assetId);
+    readPriceCache: async (assetId) => {
+      const cache = await operationsStore.readPriceCache(assetId);
       if (!cache) {
         return null;
       }
@@ -765,8 +776,8 @@ function buildStore(
     readSnapshotHoldings: snapshotStore.readSnapshotHoldings,
     readSnapshots: (scopeId) => snapshotStore.readSnapshots(scopeId),
     readSourcePositions: connectedSourceStore.readPositions,
-    readSourcePriceCache: (assetId) => {
-      const cache = operationsStore.readPriceCache(assetId);
+    readSourcePriceCache: async (assetId) => {
+      const cache = await operationsStore.readPriceCache(assetId);
       if (!cache) {
         return null;
       }
@@ -798,10 +809,16 @@ function buildStore(
    * methods to find the earliest snapshot a curve change could affect —
    * including ones dated before the first anchor (rate compounds backward, #184).
    */
-  function housingEarliestSnapshotDate(assetId: string, today: string): string | null {
+  async function housingEarliestSnapshotDate(
+    assetId: string,
+    today: string,
+  ): Promise<string | null> {
+    const rows = await snapshotStore.readSnapshotHoldings({
+      holdingId: assetId,
+      kind: "asset",
+    });
     return (
-      snapshotStore
-        .readSnapshotHoldings({ holdingId: assetId, kind: "asset" })
+      rows
         .map((row) => row.dateKey)
         .filter((dateKey) => dateKey < today)
         .sort()[0] ?? null
@@ -817,28 +834,36 @@ function buildStore(
    * re-weights through the curve ripple, which honors the asset's new split). The
    * caller wraps it in the enclosing transaction.
    */
-  function rippleHousingAfterEdit(assetId: string, today: string): void {
-    const firstAnchorDate = assetStore
-      .readValuationAnchors(assetId)
+  async function rippleHousingAfterEdit(assetId: string, today: string): Promise<void> {
+    const anchors = await assetStore.readValuationAnchors(assetId);
+    const firstAnchorDate = anchors
       .map((a) => a.valuationDate)
       .filter((d) => d <= today)
       .sort()[0];
+    const snapshotHoldings = await snapshotStore.readSnapshotHoldings({
+      holdingId: assetId,
+      kind: "asset",
+    });
     const fromDateKey =
       firstAnchorDate ??
-      snapshotStore
-        .readSnapshotHoldings({ holdingId: assetId, kind: "asset" })
+      snapshotHoldings
         .map((r) => r.dateKey)
         .filter((d) => d <= today)
         .sort()[0] ??
       null;
     if (fromDateKey === null || fromDateKey > today) return;
-    const workspace = getWorkspace();
+    const workspace = await getWorkspace();
     if (!workspace) return;
-    rippleHistoricalSnapshotsForValuation(ctx, workspace, store.snapshots.saveSnapshot, {
-      assetId,
-      fromDateKey,
-      today,
-    });
+    await rippleHistoricalSnapshotsForValuation(
+      ctx,
+      workspace,
+      store.snapshots.saveSnapshot,
+      {
+        assetId,
+        fromDateKey,
+        today,
+      },
+    );
   }
 
   const store: WorthlineStore = {
@@ -850,11 +875,11 @@ function buildStore(
     connectedSources: connectedSourceStore,
     agentView: agentViewReadStore,
     close: () => {
-      sqlite.close();
+      client.close();
     },
-    readFireConfig: () => {
+    readFireConfig: async () => {
       const { db } = ctx;
-      const row = db
+      const row = await db
         .select({ value: appSettings.value })
         .from(appSettings)
         .where(eq(appSettings.key, "fire.config"))
@@ -866,9 +891,9 @@ function buildStore(
 
       return JSON.parse(row.value) as Record<string, FireScopeConfig>;
     },
-    saveFireConfig: (scopeId, config) => {
+    saveFireConfig: async (scopeId, config) => {
       const { db } = ctx;
-      const existing = db
+      const existing = await db
         .select({ value: appSettings.value })
         .from(appSettings)
         .where(eq(appSettings.key, "fire.config"))
@@ -880,7 +905,8 @@ function buildStore(
       const merged = { ...current, [scopeId]: config };
       const updatedAt = new Date().toISOString();
 
-      db.insert(appSettings)
+      await db
+        .insert(appSettings)
         .values({ key: "fire.config", updatedAt, value: JSON.stringify(merged) })
         .onConflictDoUpdate({
           set: { updatedAt, value: JSON.stringify(merged) },
@@ -888,41 +914,41 @@ function buildStore(
         })
         .run();
     },
-    acknowledgeWarning: (code, entityId) => {
-      const result = ctx.db
+    acknowledgeWarning: async (code, entityId) => {
+      const result = await ctx.db
         .insert(warningOverrides)
         .values({ code, entityId })
         .onConflictDoNothing({
           target: [warningOverrides.code, warningOverrides.entityId],
         })
         .run();
-      if (result.changes > 0) {
-        writeAuditEntry("acknowledge_warning", "asset", entityId, { code });
+      if (result.rowsAffected > 0) {
+        await writeAuditEntry("acknowledge_warning", "asset", entityId, { code });
       }
-      return result.changes;
+      return result.rowsAffected;
     },
-    removeWarningOverride: (code, entityId) => {
-      ctx.db
+    removeWarningOverride: async (code, entityId) => {
+      await ctx.db
         .delete(warningOverrides)
         .where(
           and(eq(warningOverrides.code, code), eq(warningOverrides.entityId, entityId)),
         )
         .run();
-      writeAuditEntry("unacknowledge_warning", "asset", entityId, { code });
+      await writeAuditEntry("unacknowledge_warning", "asset", entityId, { code });
     },
     readWarningOverrides: () =>
       ctx.db
         .select({ code: warningOverrides.code, entityId: warningOverrides.entityId })
         .from(warningOverrides)
         .all(),
-    readTrash: () => ({
-      assets: ctx.db
+    readTrash: async () => ({
+      assets: await ctx.db
         .select({ id: assets.id, name: assets.name })
         .from(assets)
         .where(isNotNull(assets.deletedAt))
         .orderBy(asc(assets.name))
         .all(),
-      liabilities: ctx.db
+      liabilities: await ctx.db
         .select({ id: liabilities.id, name: liabilities.name })
         .from(liabilities)
         .where(isNotNull(liabilities.deletedAt))
@@ -930,13 +956,13 @@ function buildStore(
         .all(),
     }),
     emptyTrash: () =>
-      ctx.transaction(() => {
-        const trashedAssets = ctx.db
+      ctx.transaction(async () => {
+        const trashedAssets = await ctx.db
           .select({ id: assets.id })
           .from(assets)
           .where(isNotNull(assets.deletedAt))
           .all();
-        const trashedLiabilities = ctx.db
+        const trashedLiabilities = await ctx.db
           .select({ id: liabilities.id })
           .from(liabilities)
           .where(isNotNull(liabilities.deletedAt))
@@ -944,22 +970,23 @@ function buildStore(
 
         let assetsRemoved = 0;
         let liabilitiesRemoved = 0;
-        for (const row of trashedAssets) assetsRemoved += hardDeleteAssetTx(ctx, row.id);
+        for (const row of trashedAssets)
+          assetsRemoved += await hardDeleteAssetTx(ctx, row.id);
         for (const row of trashedLiabilities)
-          liabilitiesRemoved += hardDeleteLiabilityTx(ctx, row.id);
+          liabilitiesRemoved += await hardDeleteLiabilityTx(ctx, row.id);
 
         return { assets: assetsRemoved, liabilities: liabilitiesRemoved };
       }),
-    readAuditLog: (filter) => {
+    readAuditLog: async (filter) => {
       const { db } = ctx;
       const rows = filter?.entityId
-        ? db
+        ? await db
             .select()
             .from(auditLog)
             .where(eq(auditLog.entityId, filter.entityId))
             .orderBy(asc(auditLog.createdAt))
             .all()
-        : db.select().from(auditLog).orderBy(asc(auditLog.createdAt)).all();
+        : await db.select().from(auditLog).orderBy(asc(auditLog.createdAt)).all();
 
       return rows.map((row) => ({
         action: row.action,
@@ -970,16 +997,16 @@ function buildStore(
         id: row.id,
       }));
     },
-    recordOperationAndRipple: (input, opts) => {
+    recordOperationAndRipple: async (input, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       // One transaction so the persist + ripple commit or roll back together —
       // the dated-fact contract is unrepresentable as "persisted, forgot to
-      // ripple" (ADR 0020; better-sqlite3 nests via savepoints).
-      ctx.transaction(() => {
-        operationsStore.recordOperation(input);
-        const workspace = getWorkspace();
+      // ripple" (ADR 0020).
+      await ctx.transaction(async () => {
+        await operationsStore.recordOperation(input);
+        const workspace = await getWorkspace();
         if (!workspace) return;
-        rippleHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, {
+        await rippleHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, {
           assetId: input.assetId,
           mode: "record",
           operationDateKey: input.executedAt.slice(0, 10),
@@ -987,24 +1014,29 @@ function buildStore(
         });
       });
     },
-    recordOperationsAndRipple: ({ assetId, creates, overwrites, today: todayOpt }) => {
+    recordOperationsAndRipple: async ({
+      assetId,
+      creates,
+      overwrites,
+      today: todayOpt,
+    }) => {
       const today = todayOpt ?? new Date().toISOString().slice(0, 10);
       // One transaction so every create/overwrite + the single batched ripple
       // commit or roll back together (ADR 0020 / 0018). The affected from-date
       // window is derived here from the persisted operations, never by the caller.
-      ctx.transaction(() => {
+      await ctx.transaction(async () => {
         const operationDateKeys: string[] = [];
         for (const input of creates) {
-          operationsStore.recordOperation(input);
+          await operationsStore.recordOperation(input);
           operationDateKeys.push(input.executedAt.slice(0, 10));
         }
         for (const input of overwrites) {
-          const result = operationsStore.updateOperation(input);
+          const result = await operationsStore.updateOperation(input);
           if (result) operationDateKeys.push(result.executedAt.slice(0, 10));
         }
-        const workspace = getWorkspace();
+        const workspace = await getWorkspace();
         if (!workspace) return;
-        rippleHistoricalSnapshotsForOperations(
+        await rippleHistoricalSnapshotsForOperations(
           ctx,
           workspace,
           store.snapshots.saveSnapshot,
@@ -1025,13 +1057,15 @@ function buildStore(
       // pure (planPriceBackfill); only the apply touches the db. A dry run runs
       // the identical scope loop (counting only) so the preview shares this one
       // code path and can never diverge from what the apply writes.
-      return ctx.transaction(() => {
-        const operations = readAllOperations(ctx.db).get(assetId) ?? [];
+      return ctx.transaction(async () => {
+        const operations = (await readAllOperations(ctx.db)).get(assetId) ?? [];
         // Dates this asset already has a snapshot on (any scope) → create vs update.
+        const existingSnapshotHoldings = await readSnapshotHoldings(ctx.db, {
+          holdingId: assetId,
+          kind: "asset",
+        });
         const existingSnapshotDates = new Set(
-          readSnapshotHoldings(ctx.db, { holdingId: assetId, kind: "asset" }).map(
-            (row) => row.dateKey,
-          ),
+          existingSnapshotHoldings.map((row) => row.dateKey),
         );
 
         const plan = planPriceBackfill({
@@ -1042,12 +1076,12 @@ function buildStore(
           today,
         });
 
-        const workspace = getWorkspace();
+        const workspace = await getWorkspace();
         if (!workspace) {
           return { created: 0, gaps: plan.gaps, source: plan.source, updated: 0 };
         }
 
-        const { created, updated } = rippleHistoricalSnapshotsForPriceBackfill(
+        const { created, updated } = await rippleHistoricalSnapshotsForPriceBackfill(
           ctx,
           workspace,
           store.snapshots.saveSnapshot,
@@ -1069,12 +1103,12 @@ function buildStore(
       // One transaction so the delete + ripple commit or roll back together
       // (ADR 0020). The asset id and from-date come from the deleted row itself;
       // a not-found delete ripples nothing.
-      return ctx.transaction(() => {
-        const result = operationsStore.deleteOperation(operationId);
+      return ctx.transaction(async () => {
+        const result = await operationsStore.deleteOperation(operationId);
         if (!result) return null;
-        const workspace = getWorkspace();
+        const workspace = await getWorkspace();
         if (workspace) {
-          rippleHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, {
+          await rippleHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, {
             assetId: result.assetId,
             mode: "delete",
             operationDateKey: result.executedAt.slice(0, 10),
@@ -1084,15 +1118,15 @@ function buildStore(
         return result;
       });
     },
-    addValuationAnchorAndRipple: (input, opts) => {
+    addValuationAnchorAndRipple: async (input, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       // One transaction so the persist + ripple commit or roll back together
       // (ADR 0020). The from-date is the anchor's own date.
-      ctx.transaction(() => {
-        assetStore.addValuationAnchor(input);
-        const workspace = getWorkspace();
+      await ctx.transaction(async () => {
+        await assetStore.addValuationAnchor(input);
+        const workspace = await getWorkspace();
         if (!workspace) return;
-        rippleHistoricalSnapshotsForValuation(
+        await rippleHistoricalSnapshotsForValuation(
           ctx,
           workspace,
           store.snapshots.saveSnapshot,
@@ -1109,18 +1143,18 @@ function buildStore(
       // Atomic persist + ripple (ADR 0020). The new date may differ from the old
       // one; ripple from the earlier of the two so every affected snapshot is
       // recomputed. The previous row is read behind the seam before the patch.
-      return ctx.transaction(() => {
-        const previous = assetStore.readValuationAnchorById(anchorId);
-        const changes = assetStore.updateValuationAnchor(anchorId, input);
+      return ctx.transaction(async () => {
+        const previous = await assetStore.readValuationAnchorById(anchorId);
+        const changes = await assetStore.updateValuationAnchor(anchorId, input);
         if (changes === 0 || !previous) return changes;
         const assetId = previous.assetId;
         const newDate = input.valuationDate ?? previous.valuationDate;
         const fromDateKey =
           previous.valuationDate < newDate ? previous.valuationDate : newDate;
         if (fromDateKey <= today) {
-          const workspace = getWorkspace();
+          const workspace = await getWorkspace();
           if (workspace) {
-            rippleHistoricalSnapshotsForValuation(
+            await rippleHistoricalSnapshotsForValuation(
               ctx,
               workspace,
               store.snapshots.saveSnapshot,
@@ -1136,14 +1170,14 @@ function buildStore(
       // Atomic delete + ripple (ADR 0020). The asset id and from-date come from the
       // deleted row itself, captured before the delete; a future date generates no
       // history and a not-found delete ripples nothing.
-      return ctx.transaction(() => {
-        const removed = assetStore.readValuationAnchorById(anchorId);
-        const changes = assetStore.deleteValuationAnchor(anchorId);
+      return ctx.transaction(async () => {
+        const removed = await assetStore.readValuationAnchorById(anchorId);
+        const changes = await assetStore.deleteValuationAnchor(anchorId);
         if (changes === 0 || !removed) return changes;
         if (removed.valuationDate <= today) {
-          const workspace = getWorkspace();
+          const workspace = await getWorkspace();
           if (workspace) {
-            rippleHistoricalSnapshotsForValuation(
+            await rippleHistoricalSnapshotsForValuation(
               ctx,
               workspace,
               store.snapshots.saveSnapshot,
@@ -1154,24 +1188,24 @@ function buildStore(
         return changes;
       });
     },
-    setAnnualAppreciationRateAndRipple: (assetId, rate, opts) => {
+    setAnnualAppreciationRateAndRipple: async (assetId, rate, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       // Atomic persist + ripple (ADR 0020). The earliest affected snapshot date is
       // derived behind the seam: min(first anchor date, earliest existing snapshot
       // carrying this asset) — covers the backward-compounding case (#184).
-      ctx.transaction(() => {
-        assetStore.setAnnualAppreciationRate(assetId, rate);
-        const firstAnchorDate =
-          assetStore.readValuationAnchors(assetId)[0]?.valuationDate;
-        const earliestSnapshotDate = housingEarliestSnapshotDate(assetId, today);
+      await ctx.transaction(async () => {
+        await assetStore.setAnnualAppreciationRate(assetId, rate);
+        const firstAnchorDate = (await assetStore.readValuationAnchors(assetId))[0]
+          ?.valuationDate;
+        const earliestSnapshotDate = await housingEarliestSnapshotDate(assetId, today);
         const fromDateKey =
           [firstAnchorDate, earliestSnapshotDate]
             .filter((d): d is string => d != null)
             .sort()[0] ?? null;
         if (fromDateKey === null || fromDateKey > today) return;
-        const workspace = getWorkspace();
+        const workspace = await getWorkspace();
         if (!workspace) return;
-        rippleHistoricalSnapshotsForValuation(
+        await rippleHistoricalSnapshotsForValuation(
           ctx,
           workspace,
           store.snapshots.saveSnapshot,
@@ -1183,24 +1217,24 @@ function buildStore(
         );
       });
     },
-    recordHousingValuationAndRipple: (assetId, currentValue, opts) => {
+    recordHousingValuationAndRipple: async (assetId, currentValue, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       // Full persist + upsert-today-anchor + ripple, all atomic (ADR 0020).
       // The from-date is min(first past anchor, earliest snapshot) — same rule as
       // firstHousingCurrentValueRippleDate in the old action layer.
-      ctx.transaction(() => {
-        assetStore.updateAssetValuation(assetId, currentValue);
+      await ctx.transaction(async () => {
+        await assetStore.updateAssetValuation(assetId, currentValue);
         // Upsert a today-dated market anchor (adjustsPriorCurve: true).
-        const existing = assetStore
-          .readValuationAnchors(assetId)
-          .find((a) => a.valuationDate === today);
+        const existing = (await assetStore.readValuationAnchors(assetId)).find(
+          (a) => a.valuationDate === today,
+        );
         if (existing) {
-          assetStore.updateValuationAnchor(existing.id, {
+          await assetStore.updateValuationAnchor(existing.id, {
             adjustsPriorCurve: true,
             valueMinor: currentValue,
           });
         } else {
-          assetStore.addValuationAnchor({
+          await assetStore.addValuationAnchor({
             adjustsPriorCurve: true,
             assetId,
             id: ctx.newId(),
@@ -1209,17 +1243,16 @@ function buildStore(
           });
         }
         // Derive from-date: first past anchor, else earliest snapshot (see #184).
-        const firstPastAnchorDate = assetStore
-          .readValuationAnchors(assetId)
+        const firstPastAnchorDate = (await assetStore.readValuationAnchors(assetId))
           .map((a) => a.valuationDate)
           .filter((d) => d < today)
           .sort()[0];
         const fromDateKey =
-          firstPastAnchorDate ?? housingEarliestSnapshotDate(assetId, today);
+          firstPastAnchorDate ?? (await housingEarliestSnapshotDate(assetId, today));
         if (fromDateKey === null || fromDateKey > today) return;
-        const workspace = getWorkspace();
+        const workspace = await getWorkspace();
         if (!workspace) return;
-        rippleHistoricalSnapshotsForValuation(
+        await rippleHistoricalSnapshotsForValuation(
           ctx,
           workspace,
           store.snapshots.saveSnapshot,
@@ -1231,28 +1264,29 @@ function buildStore(
         );
       });
     },
-    rippleHousingAfterAssetEdit: (assetId, opts) => {
+    rippleHousingAfterAssetEdit: async (assetId, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       // Ripple-only seam for editAsset (ADR 0020): no dated fact persisted here.
-      ctx.transaction(() => {
-        rippleHousingAfterEdit(assetId, today);
+      await ctx.transaction(async () => {
+        await rippleHousingAfterEdit(assetId, today);
       });
     },
-    updateAssetAndRippleOwnership: (assetId, patch, opts) => {
+    updateAssetAndRippleOwnership: async (assetId, patch, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       // One transaction so the patch + the scope-axis ripple commit or roll back
       // together (ADR 0020). The previous ownership and the did-it-change
       // comparison are read behind the seam, not at the call site.
-      ctx.transaction(() => {
-        const before = assetStore.readAssets().find((a) => a.id === assetId) ?? null;
-        assetStore.updateAsset(assetId, patch);
+      await ctx.transaction(async () => {
+        const before =
+          (await assetStore.readAssets()).find((a) => a.id === assetId) ?? null;
+        await assetStore.updateAsset(assetId, patch);
         // A real_estate asset re-weights through the housing curve ripple — it
         // already re-derives every affected snapshot from the asset's new split,
         // so it covers an ownership edit too (and a from-date in the future is
         // guarded inside the helper).
         const type = patch.type ?? before?.type;
         if (type === "real_estate") {
-          rippleHousingAfterEdit(assetId, today);
+          await rippleHousingAfterEdit(assetId, today);
           return;
         }
         // A non-real_estate ownership-split change rides the scope-axis ripple;
@@ -1262,9 +1296,9 @@ function buildStore(
           patch.ownership &&
           ownershipChanged(before.ownership, patch.ownership)
         ) {
-          const workspace = getWorkspace();
+          const workspace = await getWorkspace();
           if (workspace) {
-            rippleHistoricalSnapshotsForOwnership(
+            await rippleHistoricalSnapshotsForOwnership(
               ctx,
               workspace,
               store.snapshots.saveSnapshot,
@@ -1285,18 +1319,19 @@ function buildStore(
       // One transaction so the patch + the scope-axis ripple commit or roll back
       // together (ADR 0020). The previous ownership and the did-it-change
       // comparison are read behind the seam.
-      ctx.transaction(() => {
+      return ctx.transaction(async () => {
         const before =
-          liabilityStore.readLiabilities().find((l) => l.id === liabilityId) ?? null;
-        liabilityStore.updateLiability(liabilityId, patch);
+          (await liabilityStore.readLiabilities()).find((l) => l.id === liabilityId) ??
+          null;
+        await liabilityStore.updateLiability(liabilityId, patch);
         if (
           before &&
           patch.ownership &&
           ownershipChanged(before.ownership, patch.ownership)
         ) {
-          const workspace = getWorkspace();
+          const workspace = await getWorkspace();
           if (workspace) {
-            rippleHistoricalSnapshotsForOwnership(
+            await rippleHistoricalSnapshotsForOwnership(
               ctx,
               workspace,
               store.snapshots.saveSnapshot,
@@ -1310,24 +1345,24 @@ function buildStore(
         }
       });
     },
-    createHousingHoldingAndRipple: (command, opts) => {
+    createHousingHoldingAndRipple: async (command, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       // One transaction so the create + anchor/rate seeding + ripple commit or
       // roll back together (ADR 0020). The from-date is the acquisition date,
       // derived behind the seam from the command's own acquisition anchor.
-      ctx.transaction(() => {
-        assetStore.createManualAsset(command.asset);
-        assetStore.addValuationAnchor(command.acquisitionAnchor);
-        assetStore.setAnnualAppreciationRate(
+      await ctx.transaction(async () => {
+        await assetStore.createManualAsset(command.asset);
+        await assetStore.addValuationAnchor(command.acquisitionAnchor);
+        await assetStore.setAnnualAppreciationRate(
           command.asset.id,
           command.annualAppreciationRate,
         );
         if (command.initialValuation) {
-          assetStore.addValuationAnchor(command.initialValuation);
+          await assetStore.addValuationAnchor(command.initialValuation);
         }
-        const workspace = getWorkspace();
+        const workspace = await getWorkspace();
         if (!workspace) return;
-        rippleHistoricalSnapshotsForValuation(
+        await rippleHistoricalSnapshotsForValuation(
           ctx,
           workspace,
           store.snapshots.saveSnapshot,
@@ -1339,33 +1374,43 @@ function buildStore(
         );
       });
     },
-    createAmortizationPlanAndRipple: (input, opts) => {
+    createAmortizationPlanAndRipple: async (input, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       // Atomic persist + ripple (ADR 0020). The plan ripple derives its per-cuota
       // date series internally from the plan's own schedule.
-      ctx.transaction(() => {
-        liabilityStore.createAmortizationPlan(input);
-        const workspace = getWorkspace();
+      await ctx.transaction(async () => {
+        await liabilityStore.createAmortizationPlan(input);
+        const workspace = await getWorkspace();
         if (!workspace) return;
-        rippleHistoricalSnapshotsForDebt(ctx, workspace, store.snapshots.saveSnapshot, {
-          kind: "amortizable-plan",
-          liabilityId: input.liabilityId,
-          today,
-        });
+        await rippleHistoricalSnapshotsForDebt(
+          ctx,
+          workspace,
+          store.snapshots.saveSnapshot,
+          {
+            kind: "amortizable-plan",
+            liabilityId: input.liabilityId,
+            today,
+          },
+        );
       });
     },
     updateAmortizationPlanAndRipple: (planId, input, opts) => {
       const today = opts.today ?? new Date().toISOString().slice(0, 10);
-      return ctx.transaction(() => {
-        const changes = liabilityStore.updateAmortizationPlan(planId, input);
+      return ctx.transaction(async () => {
+        const changes = await liabilityStore.updateAmortizationPlan(planId, input);
         if (changes === 0) return 0;
-        const workspace = getWorkspace();
+        const workspace = await getWorkspace();
         if (workspace) {
-          rippleHistoricalSnapshotsForDebt(ctx, workspace, store.snapshots.saveSnapshot, {
-            kind: "amortizable-plan",
-            liabilityId: opts.liabilityId,
-            today,
-          });
+          await rippleHistoricalSnapshotsForDebt(
+            ctx,
+            workspace,
+            store.snapshots.saveSnapshot,
+            {
+              kind: "amortizable-plan",
+              liabilityId: opts.liabilityId,
+              today,
+            },
+          );
         }
         return changes;
       });
@@ -1378,16 +1423,16 @@ function buildStore(
       // falls back to currentBalance (the "amortizable-plan" kind early-returns
       // when curve.plan is null and cannot be used here). The liability owns
       // exactly one plan (1:1), so it is resolved from the liability id.
-      return ctx.transaction(() => {
-        const plan = liabilityStore.readAmortizationPlan(opts.liabilityId);
+      return ctx.transaction(async () => {
+        const plan = await liabilityStore.readAmortizationPlan(opts.liabilityId);
         if (!plan) return 0;
         const startDate = plan.disbursementDate;
-        const changes = liabilityStore.deleteAmortizationPlan(plan.id);
+        const changes = await liabilityStore.deleteAmortizationPlan(plan.id);
         if (changes === 0) return changes;
         if (startDate <= today) {
-          const workspace = getWorkspace();
+          const workspace = await getWorkspace();
           if (workspace) {
-            rippleHistoricalSnapshotsForDebt(
+            await rippleHistoricalSnapshotsForDebt(
               ctx,
               workspace,
               store.snapshots.saveSnapshot,
@@ -1403,33 +1448,38 @@ function buildStore(
         return changes;
       });
     },
-    addInterestRateRevisionAndRipple: (input, opts) => {
+    addInterestRateRevisionAndRipple: async (input, opts) => {
       const today = opts.today ?? new Date().toISOString().slice(0, 10);
-      ctx.transaction(() => {
-        liabilityStore.addInterestRateRevision(input);
+      await ctx.transaction(async () => {
+        await liabilityStore.addInterestRateRevision(input);
         if (input.revisionDate > today) return;
-        const workspace = getWorkspace();
+        const workspace = await getWorkspace();
         if (!workspace) return;
-        rippleHistoricalSnapshotsForDebt(ctx, workspace, store.snapshots.saveSnapshot, {
-          fromDateKey: input.revisionDate,
-          kind: "amortizable-revision",
-          liabilityId: opts.liabilityId,
-          today,
-        });
+        await rippleHistoricalSnapshotsForDebt(
+          ctx,
+          workspace,
+          store.snapshots.saveSnapshot,
+          {
+            fromDateKey: input.revisionDate,
+            kind: "amortizable-revision",
+            liabilityId: opts.liabilityId,
+            today,
+          },
+        );
       });
     },
     updateInterestRateRevisionAndRipple: (revisionId, input, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       // Ripple from the earlier of the old/new date so every affected snapshot
       // recomputes. The seam reads the OLD date itself (ADR 0025).
-      return ctx.transaction(() => {
+      return ctx.transaction(async () => {
         // The seam reads the OLD date + owning liability from the row by id inside
         // the transaction (ADR 0025): the caller no longer pre-reads them.
         const {
           changes,
           revisionDate: previousRevisionDate,
           liabilityId,
-        } = liabilityStore.updateInterestRateRevision(revisionId, input);
+        } = await liabilityStore.updateInterestRateRevision(revisionId, input);
         if (
           changes === 0 ||
           previousRevisionDate === undefined ||
@@ -1441,9 +1491,9 @@ function buildStore(
         const fromDateKey =
           previousRevisionDate < newDate ? previousRevisionDate : newDate;
         if (fromDateKey <= today) {
-          const workspace = getWorkspace();
+          const workspace = await getWorkspace();
           if (workspace) {
-            rippleHistoricalSnapshotsForDebt(
+            await rippleHistoricalSnapshotsForDebt(
               ctx,
               workspace,
               store.snapshots.saveSnapshot,
@@ -1461,14 +1511,14 @@ function buildStore(
     },
     deleteInterestRateRevisionAndRipple: (revisionId, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
-      return ctx.transaction(() => {
+      return ctx.transaction(async () => {
         // The seam reads the removed date + owning liability from the row by id
         // inside the transaction (ADR 0025): the caller no longer pre-reads them.
         const {
           changes,
           revisionDate: previousRevisionDate,
           liabilityId,
-        } = liabilityStore.deleteInterestRateRevision(revisionId);
+        } = await liabilityStore.deleteInterestRateRevision(revisionId);
         if (
           changes === 0 ||
           previousRevisionDate === undefined ||
@@ -1477,9 +1527,9 @@ function buildStore(
           return 0;
         // From-date unchanged: the removed revision's own date.
         if (previousRevisionDate <= today) {
-          const workspace = getWorkspace();
+          const workspace = await getWorkspace();
           if (workspace) {
-            rippleHistoricalSnapshotsForDebt(
+            await rippleHistoricalSnapshotsForDebt(
               ctx,
               workspace,
               store.snapshots.saveSnapshot,
@@ -1495,33 +1545,38 @@ function buildStore(
         return changes;
       });
     },
-    addEarlyRepaymentAndRipple: (input, opts) => {
+    addEarlyRepaymentAndRipple: async (input, opts) => {
       const today = opts.today ?? new Date().toISOString().slice(0, 10);
       // A past repayment is a dated fact: generate the snapshot at its date and
       // recalculate the ones after it (the "amortizable-repayment" kind).
-      ctx.transaction(() => {
-        liabilityStore.addEarlyRepayment(input);
+      await ctx.transaction(async () => {
+        await liabilityStore.addEarlyRepayment(input);
         if (input.repaymentDate > today) return;
-        const workspace = getWorkspace();
+        const workspace = await getWorkspace();
         if (!workspace) return;
-        rippleHistoricalSnapshotsForDebt(ctx, workspace, store.snapshots.saveSnapshot, {
-          fromDateKey: input.repaymentDate,
-          kind: "amortizable-repayment",
-          liabilityId: opts.liabilityId,
-          today,
-        });
+        await rippleHistoricalSnapshotsForDebt(
+          ctx,
+          workspace,
+          store.snapshots.saveSnapshot,
+          {
+            fromDateKey: input.repaymentDate,
+            kind: "amortizable-repayment",
+            liabilityId: opts.liabilityId,
+            today,
+          },
+        );
       });
     },
     updateEarlyRepaymentAndRipple: (repaymentId, input, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
-      return ctx.transaction(() => {
+      return ctx.transaction(async () => {
         // The seam reads the OLD date + owning liability from the row by id inside
         // the transaction (ADR 0025): the caller no longer pre-reads them.
         const {
           changes,
           repaymentDate: previousRepaymentDate,
           liabilityId,
-        } = liabilityStore.updateEarlyRepayment(repaymentId, input);
+        } = await liabilityStore.updateEarlyRepayment(repaymentId, input);
         if (
           changes === 0 ||
           previousRepaymentDate === undefined ||
@@ -1533,9 +1588,9 @@ function buildStore(
         const fromDateKey =
           previousRepaymentDate < newDate ? previousRepaymentDate : newDate;
         if (fromDateKey <= today) {
-          const workspace = getWorkspace();
+          const workspace = await getWorkspace();
           if (workspace) {
-            rippleHistoricalSnapshotsForDebt(
+            await rippleHistoricalSnapshotsForDebt(
               ctx,
               workspace,
               store.snapshots.saveSnapshot,
@@ -1555,14 +1610,14 @@ function buildStore(
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       // Deleting a dated fact recalculates from its date forward without generating
       // — the "amortizable-revision" kind, since the curve no longer carries it.
-      return ctx.transaction(() => {
+      return ctx.transaction(async () => {
         // The seam reads the removed date + owning liability from the row by id
         // inside the transaction (ADR 0025): the caller no longer pre-reads them.
         const {
           changes,
           repaymentDate: previousRepaymentDate,
           liabilityId,
-        } = liabilityStore.deleteEarlyRepayment(repaymentId);
+        } = await liabilityStore.deleteEarlyRepayment(repaymentId);
         if (
           changes === 0 ||
           previousRepaymentDate === undefined ||
@@ -1571,9 +1626,9 @@ function buildStore(
           return 0;
         // From-date unchanged: the removed repayment's own date.
         if (previousRepaymentDate <= today) {
-          const workspace = getWorkspace();
+          const workspace = await getWorkspace();
           if (workspace) {
-            rippleHistoricalSnapshotsForDebt(
+            await rippleHistoricalSnapshotsForDebt(
               ctx,
               workspace,
               store.snapshots.saveSnapshot,
@@ -1589,31 +1644,36 @@ function buildStore(
         return changes;
       });
     },
-    addBalanceAnchorAndRipple: (input, opts) => {
+    addBalanceAnchorAndRipple: async (input, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       // Atomic persist + ripple (ADR 0020). The from-date is the anchor's own date.
-      ctx.transaction(() => {
-        liabilityStore.addBalanceAnchor(input);
-        const workspace = getWorkspace();
+      await ctx.transaction(async () => {
+        await liabilityStore.addBalanceAnchor(input);
+        const workspace = await getWorkspace();
         if (!workspace) return;
-        rippleHistoricalSnapshotsForDebt(ctx, workspace, store.snapshots.saveSnapshot, {
-          fromDateKey: input.anchorDate,
-          kind: "anchor",
-          liabilityId: input.liabilityId,
-          today,
-        });
+        await rippleHistoricalSnapshotsForDebt(
+          ctx,
+          workspace,
+          store.snapshots.saveSnapshot,
+          {
+            fromDateKey: input.anchorDate,
+            kind: "anchor",
+            liabilityId: input.liabilityId,
+            today,
+          },
+        );
       });
     },
     updateBalanceAnchorAndRipple: (anchorId, input, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
-      return ctx.transaction(() => {
+      return ctx.transaction(async () => {
         // The seam reads the OLD date + owning liability from the row by id inside
         // the transaction (ADR 0025): the caller no longer pre-reads them.
         const {
           changes,
           anchorDate: previousAnchorDate,
           liabilityId,
-        } = liabilityStore.updateBalanceAnchor(anchorId, input);
+        } = await liabilityStore.updateBalanceAnchor(anchorId, input);
         if (
           changes === 0 ||
           previousAnchorDate === undefined ||
@@ -1624,9 +1684,9 @@ function buildStore(
         // From-date math unchanged: the earlier of the old/new date.
         const fromDateKey = previousAnchorDate < newDate ? previousAnchorDate : newDate;
         if (fromDateKey <= today) {
-          const workspace = getWorkspace();
+          const workspace = await getWorkspace();
           if (workspace) {
-            rippleHistoricalSnapshotsForDebt(
+            await rippleHistoricalSnapshotsForDebt(
               ctx,
               workspace,
               store.snapshots.saveSnapshot,
@@ -1644,14 +1704,14 @@ function buildStore(
     },
     deleteBalanceAnchorAndRipple: (anchorId, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
-      return ctx.transaction(() => {
+      return ctx.transaction(async () => {
         // The seam reads the removed date + owning liability from the row by id
         // inside the transaction (ADR 0025): the caller no longer pre-reads them.
         const {
           changes,
           anchorDate: previousAnchorDate,
           liabilityId,
-        } = liabilityStore.deleteBalanceAnchor(anchorId);
+        } = await liabilityStore.deleteBalanceAnchor(anchorId);
         if (
           changes === 0 ||
           previousAnchorDate === undefined ||
@@ -1660,9 +1720,9 @@ function buildStore(
           return 0;
         // From-date unchanged: the removed anchor's own date.
         if (previousAnchorDate <= today) {
-          const workspace = getWorkspace();
+          const workspace = await getWorkspace();
           if (workspace) {
-            rippleHistoricalSnapshotsForDebt(
+            await rippleHistoricalSnapshotsForDebt(
               ctx,
               workspace,
               store.snapshots.saveSnapshot,
@@ -1678,13 +1738,13 @@ function buildStore(
         return changes;
       });
     },
-    backfillHistoricalSnapshots: (today) => {
-      const workspace = getWorkspace();
+    backfillHistoricalSnapshots: async (today) => {
+      const workspace = await getWorkspace();
       if (!workspace) return;
       // Atomic: the whole backfill is one transaction (#185), so a mid-run
       // failure rolls every generated snapshot back rather than leaving a
       // partially filled history with no signal.
-      gapFillHistoricalSnapshots(
+      await gapFillHistoricalSnapshots(
         ctx,
         workspace,
         store.snapshots.saveSnapshot,
@@ -1692,20 +1752,20 @@ function buildStore(
         { atomic: true },
       );
     },
-    syncConnectedSource: (params) => {
-      const workspace = getWorkspace();
+    syncConnectedSource: async (params) => {
+      const workspace = await getWorkspace();
       // One transaction so the wholesale replace + every coin ripple commit or
-      // roll back together (better-sqlite3 nests via savepoints).
-      ctx.transaction(() => {
+      // roll back together.
+      await ctx.transaction(async () => {
         // Diff BEFORE the wholesale replace reassigns ids: the set of external
         // ids already mirrored — the coins already on the timeline.
         const knownExternalIds = new Set(
-          store.connectedSources
-            .readPositions(params.sourceId)
-            .map((position) => position.externalId),
+          (await store.connectedSources.readPositions(params.sourceId)).map(
+            (position) => position.externalId,
+          ),
         );
 
-        store.connectedSources.syncPositions(
+        await store.connectedSources.syncPositions(
           params.sourceId,
           params.positions,
           params.syncedAt,
@@ -1713,23 +1773,23 @@ function buildStore(
 
         if (!workspace) return; // no workspace → no scopes, no history to ripple
 
-        const source = store.connectedSources.readSource(params.sourceId);
+        const source = await store.connectedSources.readSource(params.sourceId);
         if (!source) return;
 
         // A genuinely new trade carrying a purchase date is the only dated fact to
         // ripple (ADR 0017): a coin seen before is frozen, a coin with no date has
         // no past fact (it counts from the live holding forward).
-        const newDatedTrades = store.connectedSources
-          .readPositions(params.sourceId)
-          .filter(
-            (position): position is CoinPosition =>
-              position.kind === "coin" &&
-              !knownExternalIds.has(position.externalId) &&
-              position.purchaseDate !== null,
-          );
+        const newDatedTrades = (
+          await store.connectedSources.readPositions(params.sourceId)
+        ).filter(
+          (position): position is CoinPosition =>
+            position.kind === "coin" &&
+            !knownExternalIds.has(position.externalId) &&
+            position.purchaseDate !== null,
+        );
         if (newDatedTrades.length === 0) return;
 
-        rippleHistoricalSnapshotsForCoinAcquisition(
+        await rippleHistoricalSnapshotsForCoinAcquisition(
           ctx,
           workspace,
           store.snapshots.saveSnapshot,
@@ -1737,18 +1797,23 @@ function buildStore(
         );
       });
     },
-    applyBinanceHistoryAndRipple: (params) => {
-      const workspace = getWorkspace();
+    applyBinanceHistoryAndRipple: async (params) => {
+      const workspace = await getWorkspace();
       if (!workspace) return; // no workspace → no scopes, no history to backfill
 
-      const source = store.connectedSources.readSource(params.sourceId);
+      const source = await store.connectedSources.readSource(params.sourceId);
       if (!source) return;
 
-      backfillBinanceHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, {
-        assetId: source.assetId,
-        curve: params.curve,
-        today: params.today ?? new Date().toISOString().slice(0, 10),
-      });
+      await backfillBinanceHistoricalSnapshots(
+        ctx,
+        workspace,
+        store.snapshots.saveSnapshot,
+        {
+          assetId: source.assetId,
+          curve: params.curve,
+          today: params.today ?? new Date().toISOString().slice(0, 10),
+        },
+      );
     },
   };
 
@@ -1760,17 +1825,22 @@ function buildStore(
   // addMonths(start,m)), so frozen snapshots must be corrected now — atomically
   // at migration time — rather than drifting silently on the next curve touch.
   if (migrateResult.ranV18Backfill) {
-    const workspace = getWorkspace();
+    const workspace = await getWorkspace();
     if (workspace) {
       const today = new Date().toISOString().slice(0, 10);
-      const deps = buildHistoricalSnapshotDeps(ctx.db, workspace);
+      const deps = await buildHistoricalSnapshotDeps(ctx.db, workspace);
       for (const [liabilityId, curve] of deps.debtBalanceByLiability) {
         if (curve.debtModel === "amortizable" && curve.plan) {
-          rippleHistoricalSnapshotsForDebt(ctx, workspace, store.snapshots.saveSnapshot, {
-            kind: "amortizable-plan",
-            liabilityId,
-            today,
-          });
+          await rippleHistoricalSnapshotsForDebt(
+            ctx,
+            workspace,
+            store.snapshots.saveSnapshot,
+            {
+              kind: "amortizable-plan",
+              liabilityId,
+              today,
+            },
+          );
         }
       }
     }
@@ -1816,13 +1886,16 @@ interface HistoricalSnapshotDeps {
  * "has a price today" is the only signal available — the same one live capture
  * reads through `selectInvestmentPrice`.
  */
-function readCostBasisAssetIds(db: StoreDb, assets: readonly ManualAsset[]): Set<string> {
+async function readCostBasisAssetIds(
+  db: StoreDb,
+  assets: readonly ManualAsset[],
+): Promise<Set<string>> {
   const ids = new Set<string>();
   const hasInvestments = assets.some((asset) => asset.type === "investment");
   if (!hasInvestments) return ids;
 
-  const metaByAsset = readInvestmentMeta(db);
-  const priceCacheByAsset = readAllPriceCache(db);
+  const metaByAsset = await readInvestmentMeta(db);
+  const priceCacheByAsset = await readAllPriceCache(db);
 
   for (const asset of assets) {
     if (asset.type !== "investment") continue;
@@ -1836,21 +1909,21 @@ function readCostBasisAssetIds(db: StoreDb, assets: readonly ManualAsset[]): Set
   return ids;
 }
 
-function buildHistoricalSnapshotDeps(
+async function buildHistoricalSnapshotDeps(
   db: StoreDb,
   workspace: Workspace,
-): HistoricalSnapshotDeps {
-  const reconstructedAssets = readAssets(db, workspace);
-  const reconstructedLiabilities = readLiabilities(db, workspace);
+): Promise<HistoricalSnapshotDeps> {
+  const reconstructedAssets = await readAssets(db, workspace);
+  const reconstructedLiabilities = await readLiabilities(db, workspace);
   return {
     assets: reconstructedAssets,
-    coinPositionsByAsset: readCoinPositionsByAsset(db),
-    costBasisAssetIds: readCostBasisAssetIds(db, reconstructedAssets),
-    debtBalanceByLiability: readDebtBalanceInputs(db, reconstructedLiabilities),
-    housingValuationByAsset: readHousingCurveInputs(db, reconstructedAssets),
+    coinPositionsByAsset: await readCoinPositionsByAsset(db),
+    costBasisAssetIds: await readCostBasisAssetIds(db, reconstructedAssets),
+    debtBalanceByLiability: await readDebtBalanceInputs(db, reconstructedLiabilities),
+    housingValuationByAsset: await readHousingCurveInputs(db, reconstructedAssets),
     liabilities: reconstructedLiabilities,
-    manualValueHistory: readManualValueHistory(db),
-    operationsByAsset: readAllOperations(db),
+    manualValueHistory: await readManualValueHistory(db),
+    operationsByAsset: await readAllOperations(db),
     scopes: listScopeOptions(workspace),
   };
 }
@@ -1862,18 +1935,22 @@ function buildHistoricalSnapshotDeps(
  * rather than its full current value. Reads positions including those whose
  * source's asset was later trashed — the asset existed on the snapshot dates.
  */
-function readCoinPositionsByAsset(db: StoreDb): Map<string, CoinPosition[]> {
+async function readCoinPositionsByAsset(
+  db: StoreDb,
+): Promise<Map<string, CoinPosition[]>> {
   const byAsset = new Map<string, CoinPosition[]>();
   const assetBySource = new Map<string, string>();
-  for (const source of db
+  const sourceRows = await db
     .select({ id: connectedSources.id, assetId: connectedSources.assetId })
     .from(connectedSources)
-    .all()) {
+    .all();
+  for (const source of sourceRows) {
     assetBySource.set(source.id, source.assetId);
   }
   if (assetBySource.size === 0) return byAsset;
 
-  for (const row of db.select().from(positions).all()) {
+  const positionRows = await db.select().from(positions).all();
+  for (const row of positionRows) {
     const assetId = assetBySource.get(row.sourceId);
     if (assetId === undefined) continue;
     // Purchase-date accretion is a coin-only history path (ADR 0017); a Binance
@@ -1895,15 +1972,15 @@ function readCoinPositionsByAsset(db: StoreDb): Map<string, CoinPosition[]> {
  * to the last-known-value basis. `currentValue` comes from the already-read
  * assets so the curve uses the same value the live read derived.
  */
-function readHousingCurveInputs(
+async function readHousingCurveInputs(
   db: StoreDb,
   liveAssets: readonly ManualAsset[],
-): Map<string, HousingCurveInputs> {
+): Promise<Map<string, HousingCurveInputs>> {
   const housingAssets = liveAssets.filter((asset) => isHousingAsset(asset));
   const inputs = new Map<string, HousingCurveInputs>();
   if (housingAssets.length === 0) return inputs;
 
-  const valuationRows = db.select().from(assetValuations).all();
+  const valuationRows = await db.select().from(assetValuations).all();
   const anchorsByAsset = new Map<string, HousingCurveInputs["anchors"][number][]>();
   for (const row of valuationRows) {
     const list = anchorsByAsset.get(row.assetId) ?? [];
@@ -1915,7 +1992,7 @@ function readHousingCurveInputs(
     anchorsByAsset.set(row.assetId, list);
   }
 
-  const rateRows = db
+  const rateRows = await db
     .select({ id: assets.id, rate: assets.annualAppreciationRate })
     .from(assets)
     .all();
@@ -1942,14 +2019,14 @@ function readHousingCurveInputs(
  * `currentBalance` comes from the already-read liabilities so the curve uses the
  * same fallback the live read derived.
  */
-function readDebtBalanceInputs(
+async function readDebtBalanceInputs(
   db: StoreDb,
   liveLiabilities: readonly Liability[],
-): Map<string, DebtBalanceCurveInputs> {
+): Promise<Map<string, DebtBalanceCurveInputs>> {
   const inputs = new Map<string, DebtBalanceCurveInputs>();
   if (liveLiabilities.length === 0) return inputs;
 
-  const modelRows = db
+  const modelRows = await db
     .select({ id: liabilities.id, debtModel: liabilities.debtModel })
     .from(liabilities)
     .all();
@@ -1957,7 +2034,7 @@ function readDebtBalanceInputs(
   for (const row of modelRows) modelById.set(row.id, row.debtModel ?? null);
 
   // Anchors (revolving/informal), grouped by liability.
-  const anchorRows = db.select().from(liabilityBalanceAnchors).all();
+  const anchorRows = await db.select().from(liabilityBalanceAnchors).all();
   const anchorsByLiability = new Map<
     string,
     { anchorDate: string; balanceMinor: number }[]
@@ -1969,11 +2046,11 @@ function readDebtBalanceInputs(
   }
 
   // Amortization plans, keyed by liability, plus revisions keyed by plan id.
-  const planRows = db.select().from(amortizationPlans).all();
+  const planRows = await db.select().from(amortizationPlans).all();
   const planByLiability = new Map<string, (typeof planRows)[number]>();
   for (const row of planRows) planByLiability.set(row.liabilityId, row);
 
-  const revisionRows = db.select().from(interestRateRevisions).all();
+  const revisionRows = await db.select().from(interestRateRevisions).all();
   const revisionsByPlan = new Map<
     string,
     { revisionDate: string; newAnnualInterestRate: DecimalString }[]
@@ -1987,7 +2064,7 @@ function readDebtBalanceInputs(
     revisionsByPlan.set(row.planId, list);
   }
 
-  const repaymentRows = db.select().from(earlyRepayments).all();
+  const repaymentRows = await db.select().from(earlyRepayments).all();
   const repaymentsByPlan = new Map<
     string,
     { repaymentDate: string; amountMinor: number; mode: EarlyRepaymentMode }[]
@@ -2047,8 +2124,10 @@ function readDebtBalanceInputs(
  * (PRD #107): each `update_valuation` / `update_balance` audit entry is a dated
  * value point. The entry's `created_at` date is when the value became known.
  */
-function readManualValueHistory(db: StoreDb): Map<string, ManualValuePoint[]> {
-  const rows = db.select().from(auditLog).orderBy(asc(auditLog.createdAt)).all();
+async function readManualValueHistory(
+  db: StoreDb,
+): Promise<Map<string, ManualValuePoint[]>> {
+  const rows = await db.select().from(auditLog).orderBy(asc(auditLog.createdAt)).all();
 
   const history = new Map<string, ManualValuePoint[]>();
 
@@ -2115,13 +2194,13 @@ function groupFrozenHoldingsByDate(
  * the first row seen for a date is representative). Empty when the holding has
  * never been captured — the seam then falls back to live (no recovery basis).
  */
-function readFrozenIdentityCaptures(
+async function readFrozenIdentityCaptures(
   db: StoreDb,
   holdingId: string,
   kind: SnapshotHoldingKind,
-): FrozenIdentityCapture[] {
+): Promise<FrozenIdentityCapture[]> {
   const byDate = new Map<string, FrozenIdentityCapture>();
-  for (const record of readSnapshotHoldings(db, { holdingId, kind })) {
+  for (const record of await readSnapshotHoldings(db, { holdingId, kind })) {
     if (byDate.has(record.dateKey)) continue;
     byDate.set(record.dateKey, {
       countsAsHousing: record.countsAsHousing,
@@ -2178,9 +2257,9 @@ const BACKFILL_SNAPSHOT_ID_PREFIX = "histsnap_";
  *
  * Conservative by construction: any uncertainty resolves to "justified" (keep).
  */
-function dateHasJustifyingFact(db: StoreDb, dateKey: string): boolean {
+async function dateHasJustifyingFact(db: StoreDb, dateKey: string): Promise<boolean> {
   // Investment operations: executed_at as a date or timestamp → match the prefix.
-  const storedFact = db
+  const storedFact = await db
     .select({ marker: assetOperations.id })
     .from(assetOperations)
     .where(like(assetOperations.executedAt, `${dateKey}%`))
@@ -2188,7 +2267,7 @@ function dateHasJustifyingFact(db: StoreDb, dateKey: string): boolean {
     .get();
   if (storedFact !== undefined) return true;
 
-  const valuationAnchor = db
+  const valuationAnchor = await db
     .select({ marker: assetValuations.id })
     .from(assetValuations)
     .where(eq(assetValuations.valuationDate, dateKey))
@@ -2196,7 +2275,7 @@ function dateHasJustifyingFact(db: StoreDb, dateKey: string): boolean {
     .get();
   if (valuationAnchor !== undefined) return true;
 
-  const balanceAnchor = db
+  const balanceAnchor = await db
     .select({ marker: liabilityBalanceAnchors.id })
     .from(liabilityBalanceAnchors)
     .where(eq(liabilityBalanceAnchors.anchorDate, dateKey))
@@ -2204,7 +2283,7 @@ function dateHasJustifyingFact(db: StoreDb, dateKey: string): boolean {
     .get();
   if (balanceAnchor !== undefined) return true;
 
-  const revision = db
+  const revision = await db
     .select({ marker: interestRateRevisions.id })
     .from(interestRateRevisions)
     .where(eq(interestRateRevisions.revisionDate, dateKey))
@@ -2212,7 +2291,7 @@ function dateHasJustifyingFact(db: StoreDb, dateKey: string): boolean {
     .get();
   if (revision !== undefined) return true;
 
-  const repayment = db
+  const repayment = await db
     .select({ marker: earlyRepayments.id })
     .from(earlyRepayments)
     .where(eq(earlyRepayments.repaymentDate, dateKey))
@@ -2220,7 +2299,7 @@ function dateHasJustifyingFact(db: StoreDb, dateKey: string): boolean {
     .get();
   if (repayment !== undefined) return true;
 
-  const coinAcquisition = db
+  const coinAcquisition = await db
     .select({ marker: positions.id })
     .from(positions)
     .where(and(eq(positions.kind, "coin"), eq(positions.purchaseDate, dateKey)))
@@ -2232,7 +2311,7 @@ function dateHasJustifyingFact(db: StoreDb, dateKey: string): boolean {
   // set up to the day AFTER `dateKey` (the helper excludes dates ≥ its target),
   // so a boundary EQUAL to `dateKey` is included, and test membership.
   const targetAfterDate = dayAfter(dateKey);
-  for (const plan of db.select().from(amortizationPlans).all()) {
+  for (const plan of await db.select().from(amortizationPlans).all()) {
     const boundaries = amortizationPaymentDatesUpTo(
       {
         annualInterestRate: plan.annualInterestRate,
@@ -2248,7 +2327,7 @@ function dateHasJustifyingFact(db: StoreDb, dateKey: string): boolean {
 
   // Binance history: month-ends of a live-reconstructed curve, not stored. Cannot
   // recompute → keep when any binance source exists (conservative, #326).
-  const binanceSource = db
+  const binanceSource = await db
     .select({ marker: connectedSources.id })
     .from(connectedSources)
     .where(eq(connectedSources.adapter, "binance"))
@@ -2280,10 +2359,13 @@ function dayAfter(dateKey: string): string {
  * `histsnap_`-minting source, #326); in every other case it leaves the snapshot
  * untouched.
  */
-function pruneOrphanedBackfillSnapshot(db: StoreDb, snapshot: NetWorthSnapshot): boolean {
+async function pruneOrphanedBackfillSnapshot(
+  db: StoreDb,
+  snapshot: NetWorthSnapshot,
+): Promise<boolean> {
   if (!snapshot.id.startsWith(BACKFILL_SNAPSHOT_ID_PREFIX)) return false;
-  if (dateHasJustifyingFact(db, snapshot.dateKey)) return false;
-  db.delete(snapshots).where(eq(snapshots.id, snapshot.id)).run();
+  if (await dateHasJustifyingFact(db, snapshot.dateKey)) return false;
+  await db.delete(snapshots).where(eq(snapshots.id, snapshot.id)).run();
   return true;
 }
 
@@ -2306,34 +2388,34 @@ function pruneOrphanedBackfillSnapshot(db: StoreDb, snapshot: NetWorthSnapshot):
  * unit price each snapshot already captured for an asset; only an asset absent
  * from a snapshot falls back to the last known operation price ≤ its date.
  */
-function rippleHistoricalSnapshots(
+async function rippleHistoricalSnapshots(
   ctx: StoreContext,
   workspace: Workspace,
-  saveSnapshot: (input: SaveSnapshotInput) => void,
+  saveSnapshot: (input: SaveSnapshotInput) => Promise<void>,
   params: {
     assetId: string;
     mode: "record" | "delete";
     operationDateKey: string;
     today: string;
   },
-): void {
+): Promise<void> {
   const { db } = ctx;
   const { assetId, mode, operationDateKey, today } = params;
 
   // The operated asset's identity — read including trashed, since it existed on
   // the snapshot dates even if it was trashed afterwards (ADR 0012).
-  const asset = readInvestmentIdentity(db, assetId);
+  const asset = await readInvestmentIdentity(db, assetId);
   if (!asset) return;
-  const operations = readAllOperations(db).get(assetId) ?? [];
+  const operations = (await readAllOperations(db)).get(assetId) ?? [];
 
   // The asset's frozen classification captures across every snapshot (#242),
   // read ONCE before any recalc mutates rows — the basis the domain seam recovers
   // a newly-appearing row's CONTEMPORANEOUS frozen tier from instead of the live.
-  const frozenIdentity = readFrozenIdentityCaptures(db, assetId, "asset");
+  const frozenIdentity = await readFrozenIdentityCaptures(db, assetId, "asset");
 
-  ctx.transaction(() => {
+  await ctx.transaction(async () => {
     for (const scope of listScopeOptions(workspace)) {
-      const existing = readSnapshots(db, scope.id);
+      const existing = await readSnapshots(db, scope.id);
       const existingByDate = new Map(existing.map((snap) => [snap.dateKey, snap]));
 
       // Generate a fresh whole-portfolio snapshot at the operation date when
@@ -2343,7 +2425,7 @@ function rippleHistoricalSnapshots(
         operationDateKey < today &&
         !existingByDate.has(operationDateKey)
       ) {
-        const deps = buildHistoricalSnapshotDeps(db, workspace);
+        const deps = await buildHistoricalSnapshotDeps(db, workspace);
         const built = buildSnapshotAtDate({
           assets: deps.assets,
           capturedAt: historicalCapturedAt(operationDateKey),
@@ -2362,7 +2444,7 @@ function rippleHistoricalSnapshots(
           workspace,
         });
         if (built) {
-          saveSnapshot({
+          await saveSnapshot({
             holdings: built.holdings,
             replace: false,
             snapshot: built.snapshot,
@@ -2379,7 +2461,7 @@ function rippleHistoricalSnapshots(
       // 0012 behavior exactly. A date absent from the map had no frozen rows (a
       // legacy capture predating holdings, ADR 0008) and is left untouched.
       const frozenByDate = groupFrozenHoldingsByDate(
-        readSnapshotHoldings(db, { scopeId: scope.id, from: operationDateKey }),
+        await readSnapshotHoldings(db, { scopeId: scope.id, from: operationDateKey }),
       );
 
       // Recalculate every affected existing snapshot — only the operated
@@ -2404,7 +2486,7 @@ function rippleHistoricalSnapshots(
         if (
           mode === "delete" &&
           snap.dateKey === operationDateKey &&
-          pruneOrphanedBackfillSnapshot(db, snap)
+          (await pruneOrphanedBackfillSnapshot(db, snap))
         ) {
           continue;
         }
@@ -2425,7 +2507,7 @@ function rippleHistoricalSnapshots(
         });
 
         if (recalculated) {
-          saveSnapshot({
+          await saveSnapshot({
             holdings: recalculated.holdings,
             replace: true,
             snapshot: recalculated.snapshot,
@@ -2433,7 +2515,7 @@ function rippleHistoricalSnapshots(
         } else {
           // No holdings remain (e.g. the deleted operation was the only basis):
           // drop the snapshot rather than leave it showing stale values.
-          db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
+          await db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
         }
       }
     }
@@ -2452,27 +2534,24 @@ function rippleHistoricalSnapshots(
  * stays a gap), nor any holding other than the backfilled one. Returns the
  * create/update counts for the audit summary.
  *
- * The inner `ctx.transaction` below is a deliberate savepoint nested inside the
- * caller's outer transaction (better-sqlite3 promotes a re-entrant transaction to
- * a SAVEPOINT). It is redundant for atomicity here (the caller already wraps the
- * whole backfill), but harmless on the current driver. NOTE: re-verify under
- * libSQL/Turso when #381 lands — not all libSQL drivers support nested
- * transactions/savepoints, and this may need to drop to a plain block then.
+ * The inner `ctx.transaction` below composes with the caller's outer transaction:
+ * StoreContext flattens nested transactions over the shared libSQL connection, so
+ * the backfill still commits or rolls back as one unit.
  *
  * With `dryRun`, the same scope loop runs (read + pure build/recalc) but no row is
  * persisted — only the counts are returned, so the preview shares this path.
  */
-function rippleHistoricalSnapshotsForPriceBackfill(
+async function rippleHistoricalSnapshotsForPriceBackfill(
   ctx: StoreContext,
   workspace: Workspace,
-  saveSnapshot: (input: SaveSnapshotInput) => void,
+  saveSnapshot: (input: SaveSnapshotInput) => Promise<void>,
   params: {
     assetId: string;
     points: readonly { dateKey: string; unitPriceDecimal: DecimalString }[];
     /** Count only — never persist (the preview's per-scope dry run). */
     dryRun?: boolean;
   },
-): { created: number; updated: number } {
+): Promise<{ created: number; updated: number }> {
   const { db } = ctx;
   const { assetId, points, dryRun = false } = params;
 
@@ -2483,22 +2562,22 @@ function rippleHistoricalSnapshotsForPriceBackfill(
 
   // The operated asset's identity — read including trashed (it existed on the
   // snapshot dates even if trashed afterwards, ADR 0012).
-  const asset = readInvestmentIdentity(db, assetId);
+  const asset = await readInvestmentIdentity(db, assetId);
   if (!asset) return { created, updated };
-  const operations = readAllOperations(db).get(assetId) ?? [];
+  const operations = (await readAllOperations(db)).get(assetId) ?? [];
 
   // The asset's frozen classification captures across every snapshot (#242),
   // read ONCE before any recalc mutates rows.
-  const frozenIdentity = readFrozenIdentityCaptures(db, assetId, "asset");
+  const frozenIdentity = await readFrozenIdentityCaptures(db, assetId, "asset");
 
-  ctx.transaction(() => {
+  await ctx.transaction(async () => {
     for (const scope of listScopeOptions(workspace)) {
-      const existing = readSnapshots(db, scope.id);
+      const existing = await readSnapshots(db, scope.id);
       const existingByDate = new Map(existing.map((snap) => [snap.dateKey, snap]));
 
       // Read this scope's frozen rows for the whole backfilled range in ONE query.
       const frozenByDate = groupFrozenHoldingsByDate(
-        readSnapshotHoldings(db, { scopeId: scope.id }),
+        await readSnapshotHoldings(db, { scopeId: scope.id }),
       );
 
       for (const point of points) {
@@ -2510,7 +2589,7 @@ function rippleHistoricalSnapshotsForPriceBackfill(
           // pricing THIS asset's row from the historical quote (capturedUnitPrices
           // wins over the cost-basis fallback). Other holdings are valued by the
           // same fresh-capture path the operation ripple uses.
-          const deps = buildHistoricalSnapshotDeps(db, workspace);
+          const deps = await buildHistoricalSnapshotDeps(db, workspace);
           const built = buildSnapshotAtDate({
             assets: deps.assets,
             capturedAt: historicalCapturedAt(dateKey),
@@ -2531,7 +2610,7 @@ function rippleHistoricalSnapshotsForPriceBackfill(
           });
           if (built) {
             if (!dryRun) {
-              saveSnapshot({
+              await saveSnapshot({
                 holdings: built.holdings,
                 replace: false,
                 snapshot: built.snapshot,
@@ -2561,7 +2640,7 @@ function rippleHistoricalSnapshotsForPriceBackfill(
 
         if (recalculated) {
           if (!dryRun) {
-            saveSnapshot({
+            await saveSnapshot({
               holdings: recalculated.holdings,
               replace: true,
               snapshot: recalculated.snapshot,
@@ -2591,29 +2670,29 @@ function rippleHistoricalSnapshotsForPriceBackfill(
  * history (the daily capture owns today). Legacy captures with no holding rows
  * are skipped (ADR 0008). A no-op when the asset is unknown or no dates given.
  */
-function rippleHistoricalSnapshotsForOperations(
+async function rippleHistoricalSnapshotsForOperations(
   ctx: StoreContext,
   workspace: Workspace,
-  saveSnapshot: (input: SaveSnapshotInput) => void,
+  saveSnapshot: (input: SaveSnapshotInput) => Promise<void>,
   params: {
     assetId: string;
     operationDateKeys: string[];
     today: string;
   },
-): void {
+): Promise<void> {
   const { db } = ctx;
   const { assetId, operationDateKeys, today } = params;
   if (operationDateKeys.length === 0) return;
 
   // The operated asset's identity — read including trashed, since it existed on
   // the snapshot dates even if it was trashed afterwards (ADR 0012).
-  const asset = readInvestmentIdentity(db, assetId);
+  const asset = await readInvestmentIdentity(db, assetId);
   if (!asset) return;
-  const operations = readAllOperations(db).get(assetId) ?? [];
+  const operations = (await readAllOperations(db)).get(assetId) ?? [];
 
   // The asset's frozen classification captures across every snapshot (#242), read
   // ONCE before any recalc mutates rows (see rippleHistoricalSnapshots).
-  const frozenIdentity = readFrozenIdentityCaptures(db, assetId, "asset");
+  const frozenIdentity = await readFrozenIdentityCaptures(db, assetId, "asset");
 
   // Unique affected dates, and the earliest from which existing snapshots recalc.
   const generateDates = [...new Set(operationDateKeys)];
@@ -2623,11 +2702,11 @@ function rippleHistoricalSnapshotsForOperations(
   );
 
   // Build deps once — the same for every scope (lesson from #114).
-  const deps = buildHistoricalSnapshotDeps(db, workspace);
+  const deps = await buildHistoricalSnapshotDeps(db, workspace);
 
-  ctx.transaction(() => {
+  await ctx.transaction(async () => {
     for (const scope of listScopeOptions(workspace)) {
-      const existing = readSnapshots(db, scope.id);
+      const existing = await readSnapshots(db, scope.id);
       const existingByDate = new Map(existing.map((snap) => [snap.dateKey, snap]));
 
       // Generate a fresh whole-portfolio snapshot at each affected past date that
@@ -2653,7 +2732,7 @@ function rippleHistoricalSnapshotsForOperations(
           workspace,
         });
         if (built) {
-          saveSnapshot({
+          await saveSnapshot({
             holdings: built.holdings,
             replace: false,
             snapshot: built.snapshot,
@@ -2665,7 +2744,7 @@ function rippleHistoricalSnapshotsForOperations(
       // ≥ recalc-from range (#205), then group them by snapshot date in memory —
       // one read per scope, not one per rippled snapshot nor one per operation.
       const frozenByDate = groupFrozenHoldingsByDate(
-        readSnapshotHoldings(db, { scopeId: scope.id, from: recalcFrom }),
+        await readSnapshotHoldings(db, { scopeId: scope.id, from: recalcFrom }),
       );
 
       // Recalculate every existing snapshot ≥ the earliest affected date by
@@ -2688,13 +2767,13 @@ function rippleHistoricalSnapshotsForOperations(
         });
 
         if (recalculated) {
-          saveSnapshot({
+          await saveSnapshot({
             holdings: recalculated.holdings,
             replace: true,
             snapshot: recalculated.snapshot,
           });
         } else {
-          db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
+          await db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
         }
       }
     }
@@ -2721,26 +2800,26 @@ function rippleHistoricalSnapshotsForOperations(
  * Only the housing asset's row in each snapshot is recomputed; every other
  * frozen row is preserved, and legacy captures with no holding rows are skipped.
  */
-function rippleHistoricalSnapshotsForValuation(
+async function rippleHistoricalSnapshotsForValuation(
   ctx: StoreContext,
   workspace: Workspace,
-  saveSnapshot: (input: SaveSnapshotInput) => void,
+  saveSnapshot: (input: SaveSnapshotInput) => Promise<void>,
   params: {
     assetId: string;
     fromDateKey: string;
     today: string;
   },
-): void {
+): Promise<void> {
   const { db } = ctx;
   const { assetId, fromDateKey, today } = params;
 
   // The housing asset's identity — read including trashed, since it existed on
   // the snapshot dates even if it was trashed afterwards.
-  const asset = readInvestmentIdentity(db, assetId);
+  const asset = await readInvestmentIdentity(db, assetId);
   if (!asset || !isHousingAsset(asset)) return;
 
   // Build deps once — they are the same for every scope (Fix 2: was per-scope).
-  const deps = buildHistoricalSnapshotDeps(db, workspace);
+  const deps = await buildHistoricalSnapshotDeps(db, workspace);
   const curve = deps.housingValuationByAsset.get(assetId);
   // No map entry means the asset is not housing or has been trashed with no
   // remaining live record — nothing to ripple.
@@ -2748,11 +2827,11 @@ function rippleHistoricalSnapshotsForValuation(
 
   // The asset's frozen classification captures across every snapshot (#242), read
   // ONCE before any recalc mutates rows (see rippleHistoricalSnapshots).
-  const frozenIdentity = readFrozenIdentityCaptures(db, assetId, "asset");
+  const frozenIdentity = await readFrozenIdentityCaptures(db, assetId, "asset");
 
-  ctx.transaction(() => {
+  await ctx.transaction(async () => {
     for (const scope of listScopeOptions(workspace)) {
-      const existing = readSnapshots(db, scope.id);
+      const existing = await readSnapshots(db, scope.id);
       const existingByDate = new Map(existing.map((snap) => [snap.dateKey, snap]));
 
       // Generate a fresh whole-portfolio snapshot at the change date when it is
@@ -2776,7 +2855,7 @@ function rippleHistoricalSnapshotsForValuation(
           workspace,
         });
         if (built) {
-          saveSnapshot({
+          await saveSnapshot({
             holdings: built.holdings,
             replace: false,
             snapshot: built.snapshot,
@@ -2790,7 +2869,7 @@ function rippleHistoricalSnapshotsForValuation(
       for (const snap of existing) {
         if (snap.dateKey < fromDateKey) continue;
 
-        const frozenHoldings = readSnapshotHoldings(db, {
+        const frozenHoldings = await readSnapshotHoldings(db, {
           scopeId: scope.id,
           from: snap.dateKey,
           to: snap.dateKey,
@@ -2811,13 +2890,13 @@ function rippleHistoricalSnapshotsForValuation(
         });
 
         if (recalculated) {
-          saveSnapshot({
+          await saveSnapshot({
             holdings: recalculated.holdings,
             replace: true,
             snapshot: recalculated.snapshot,
           });
         } else {
-          db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
+          await db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
         }
       }
     }
@@ -2847,10 +2926,10 @@ function rippleHistoricalSnapshotsForValuation(
  * preserved, and legacy captures with no holding rows are skipped. A no-op when
  * the liability has no debt model / curve.
  */
-function rippleHistoricalSnapshotsForDebt(
+async function rippleHistoricalSnapshotsForDebt(
   ctx: StoreContext,
   workspace: Workspace,
-  saveSnapshot: (input: SaveSnapshotInput) => void,
+  saveSnapshot: (input: SaveSnapshotInput) => Promise<void>,
   params:
     | { liabilityId: string; kind: "amortizable-plan"; today: string }
     | {
@@ -2859,17 +2938,17 @@ function rippleHistoricalSnapshotsForDebt(
         fromDateKey: string;
         today: string;
       },
-): void {
+): Promise<void> {
   const { db } = ctx;
   const { liabilityId, today } = params;
 
   // The liability's identity — including trashed, since it existed on the
   // snapshot dates even if it was trashed afterwards.
-  const liability = readLiabilityIdentity(db, liabilityId);
+  const liability = await readLiabilityIdentity(db, liabilityId);
   if (!liability) return;
 
   // Build deps once — the same for every scope (lesson from #114).
-  const deps = buildHistoricalSnapshotDeps(db, workspace);
+  const deps = await buildHistoricalSnapshotDeps(db, workspace);
   const curve = deps.debtBalanceByLiability.get(liabilityId);
   if (!curve || curve.debtModel === null) return; // no model → nothing to ripple
 
@@ -2898,9 +2977,9 @@ function rippleHistoricalSnapshotsForDebt(
     recalcFrom = fromDateKey;
   }
 
-  ctx.transaction(() => {
+  await ctx.transaction(async () => {
     for (const scope of listScopeOptions(workspace)) {
-      const existing = readSnapshots(db, scope.id);
+      const existing = await readSnapshots(db, scope.id);
       const existingByDate = new Map(existing.map((snap) => [snap.dateKey, snap]));
 
       // Generate a fresh whole-portfolio snapshot at each affected past date
@@ -2925,7 +3004,7 @@ function rippleHistoricalSnapshotsForDebt(
           workspace,
         });
         if (built) {
-          saveSnapshot({
+          await saveSnapshot({
             holdings: built.holdings,
             replace: false,
             snapshot: built.snapshot,
@@ -2943,7 +3022,7 @@ function rippleHistoricalSnapshotsForDebt(
       // map had no frozen rows (a legacy capture predating holdings, ADR 0008)
       // and is left untouched.
       const frozenByDate = groupFrozenHoldingsByDate(
-        readSnapshotHoldings(db, { scopeId: scope.id, from: recalcFrom }),
+        await readSnapshotHoldings(db, { scopeId: scope.id, from: recalcFrom }),
       );
 
       // Recalculate every existing snapshot on or after the change date by
@@ -2966,13 +3045,13 @@ function rippleHistoricalSnapshotsForDebt(
         });
 
         if (recalculated) {
-          saveSnapshot({
+          await saveSnapshot({
             holdings: recalculated.holdings,
             replace: true,
             snapshot: recalculated.snapshot,
           });
         } else {
-          db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
+          await db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
         }
       }
     }
@@ -3045,23 +3124,24 @@ function globalLiabilityValue(
  * legacy captures with no holding rows are skipped. A no-op when the household
  * held no stake before, or no household snapshot carries the holding.
  */
-function rippleHistoricalSnapshotsForOwnership(
+async function rippleHistoricalSnapshotsForOwnership(
   ctx: StoreContext,
   workspace: Workspace,
-  saveSnapshot: (input: SaveSnapshotInput) => void,
+  saveSnapshot: (input: SaveSnapshotInput) => Promise<void>,
   params: {
     holdingId: string;
     kind: "asset" | "liability";
     previousOwnership: OwnershipShare[];
   },
-): void {
+): Promise<void> {
   const { db } = ctx;
   const { holdingId, kind, previousOwnership } = params;
 
   // The edited holding's identity, carrying its NEW ownership split — read
   // including trashed, since it existed on the snapshot dates regardless.
-  const asset = kind === "asset" ? readInvestmentIdentity(db, holdingId) : null;
-  const liability = kind === "liability" ? readLiabilityIdentity(db, holdingId) : null;
+  const asset = kind === "asset" ? await readInvestmentIdentity(db, holdingId) : null;
+  const liability =
+    kind === "liability" ? await readLiabilityIdentity(db, holdingId) : null;
   if (!asset && !liability) return;
 
   // The combined stake the household held under the PREVIOUS split. Zero means the
@@ -3075,7 +3155,7 @@ function rippleHistoricalSnapshotsForOwnership(
   // The valuation deps `buildSnapshotAtDate` uses (operations, curves, manual
   // history): the lossless source the global value is RE-DERIVED from (#187),
   // never the rounded household row.
-  const deps = buildHistoricalSnapshotDeps(db, workspace);
+  const deps = await buildHistoricalSnapshotDeps(db, workspace);
   // A liability that secures the home nets housing equity (ADR 0013).
   const housingAssetIds =
     liability !== null ? housingAssetIdsOf(deps.assets) : new Set<string>();
@@ -3084,21 +3164,23 @@ function rippleHistoricalSnapshotsForOwnership(
   // read ONCE before any recalc mutates rows. A member gaining a stake gets a
   // brand-new row whose frozen housing-ness/tier the seam recovers from these
   // captures (e.g. the household scope's), not from the live identity.
-  const frozenIdentity = readFrozenIdentityCaptures(db, holdingId, kind);
+  const frozenIdentity = await readFrozenIdentityCaptures(db, holdingId, kind);
 
-  ctx.transaction(() => {
+  await ctx.transaction(async () => {
     // The dates to re-weight: exactly the household snapshots carrying the holding
     // (an ownership edit moves no other dates), each mapped to the LOSSLESS global
     // value re-derived from the holding's curve / operations / stored basis. The
     // household row's frozen unit price / cost-basis flag is honored so an
     // investment's re-valued global matches the price the snapshot captured.
     const globalByDate = new Map<string, number>();
-    for (const snap of readSnapshots(db, "household")) {
-      const row = readSnapshotHoldings(db, {
-        from: snap.dateKey,
-        scopeId: "household",
-        to: snap.dateKey,
-      }).find((r) => r.holdingId === holdingId && r.kind === kind);
+    for (const snap of await readSnapshots(db, "household")) {
+      const row = (
+        await readSnapshotHoldings(db, {
+          from: snap.dateKey,
+          scopeId: "household",
+          to: snap.dateKey,
+        })
+      ).find((r) => r.holdingId === holdingId && r.kind === kind);
       if (!row) continue;
 
       const globalValueMinor = asset
@@ -3119,11 +3201,11 @@ function rippleHistoricalSnapshotsForOwnership(
     if (globalByDate.size === 0) return; // no household basis → nothing to re-weight
 
     for (const scope of listScopeOptions(workspace)) {
-      for (const snap of readSnapshots(db, scope.id)) {
+      for (const snap of await readSnapshots(db, scope.id)) {
         const globalValueMinor = globalByDate.get(snap.dateKey);
         if (globalValueMinor === undefined) continue;
 
-        const frozenHoldings = readSnapshotHoldings(db, {
+        const frozenHoldings = await readSnapshotHoldings(db, {
           from: snap.dateKey,
           scopeId: scope.id,
           to: snap.dateKey,
@@ -3143,13 +3225,13 @@ function rippleHistoricalSnapshotsForOwnership(
         });
 
         if (recalculated) {
-          saveSnapshot({
+          await saveSnapshot({
             holdings: recalculated.holdings,
             replace: true,
             snapshot: recalculated.snapshot,
           });
         } else {
-          db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
+          await db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
         }
       }
     }
@@ -3173,22 +3255,22 @@ function rippleHistoricalSnapshotsForOwnership(
  * the five figures reconcile in one pass (ADR 0008). Legacy captures with no
  * holding rows are skipped, like the sibling ripples.
  */
-function rippleHistoricalSnapshotsForCoinAcquisition(
+async function rippleHistoricalSnapshotsForCoinAcquisition(
   ctx: StoreContext,
   workspace: Workspace,
-  saveSnapshot: (input: SaveSnapshotInput) => void,
+  saveSnapshot: (input: SaveSnapshotInput) => Promise<void>,
   params: { assetId: string; newTrades: readonly CoinPosition[] },
-): void {
+): Promise<void> {
   const { db } = ctx;
 
   // The coin-collection holding's identity (ownership, illiquid tier) — read
   // including trashed, since it existed on the snapshot dates regardless.
-  const asset = readInvestmentIdentity(db, params.assetId);
+  const asset = await readInvestmentIdentity(db, params.assetId);
   if (!asset) return;
 
   // The collection's frozen classification captures across every snapshot (#242),
   // read ONCE before any recalc mutates rows (see rippleHistoricalSnapshots).
-  const frozenIdentity = readFrozenIdentityCaptures(db, params.assetId, "asset");
+  const frozenIdentity = await readFrozenIdentityCaptures(db, params.assetId, "asset");
 
   // Each new trade reduced to its frozen GLOBAL value + the date it enters the
   // timeline. A zero-value coin adds nothing, so it never forces a recalculation.
@@ -3202,7 +3284,7 @@ function rippleHistoricalSnapshotsForCoinAcquisition(
   if (trades.length === 0) return;
 
   for (const scope of listScopeOptions(workspace)) {
-    for (const snap of readSnapshots(db, scope.id)) {
+    for (const snap of await readSnapshots(db, scope.id)) {
       // The combined value of every new coin acquired on/before this snapshot —
       // each trade ripples only from its OWN purchase date forward.
       const globalDeltaMinor = trades
@@ -3210,7 +3292,7 @@ function rippleHistoricalSnapshotsForCoinAcquisition(
         .reduce((sum, trade) => sum + trade.valueMinor, 0);
       if (globalDeltaMinor === 0) continue;
 
-      const frozenHoldings = readSnapshotHoldings(db, {
+      const frozenHoldings = await readSnapshotHoldings(db, {
         from: snap.dateKey,
         scopeId: scope.id,
         to: snap.dateKey,
@@ -3228,7 +3310,7 @@ function rippleHistoricalSnapshotsForCoinAcquisition(
       });
 
       if (recalculated) {
-        saveSnapshot({
+        await saveSnapshot({
           holdings: recalculated.holdings,
           replace: true,
           snapshot: recalculated.snapshot,
@@ -3243,8 +3325,11 @@ function rippleHistoricalSnapshotsForCoinAcquisition(
  * asset), including trashed liabilities — historical reconstruction needs the
  * identity of debts that existed on past dates even if they were trashed since.
  */
-function readLiabilityIdentity(db: StoreDb, liabilityId: string): Liability | null {
-  const row = db
+async function readLiabilityIdentity(
+  db: StoreDb,
+  liabilityId: string,
+): Promise<Liability | null> {
+  const row = await db
     .select({
       id: liabilities.id,
       name: liabilities.name,
@@ -3259,7 +3344,7 @@ function readLiabilityIdentity(db: StoreDb, liabilityId: string): Liability | nu
 
   if (!row) return null;
 
-  const ownership = db
+  const ownership = await db
     .select({
       memberId: liabilityOwnerships.memberId,
       shareBps: liabilityOwnerships.shareBps,
@@ -3288,8 +3373,8 @@ function readLiabilityIdentity(db: StoreDb, liabilityId: string): Liability | nu
  * investment valuation is computed here; the STORED current value/balance is
  * exposed as-is, mirroring the trash listing the rest of the app shows.
  */
-function readTrashedHoldings(db: StoreDb): AgentViewTrashedHolding[] {
-  const assetRows = db
+async function readTrashedHoldings(db: StoreDb): Promise<AgentViewTrashedHolding[]> {
+  const assetRows = await db
     .select({
       currentValueMinor: assets.currentValueMinor,
       deletedAt: assets.deletedAt,
@@ -3301,7 +3386,7 @@ function readTrashedHoldings(db: StoreDb): AgentViewTrashedHolding[] {
     .where(isNotNull(assets.deletedAt))
     .all();
 
-  const liabilityRows = db
+  const liabilityRows = await db
     .select({
       currentBalanceMinor: liabilities.currentBalanceMinor,
       deletedAt: liabilities.deletedAt,
@@ -3314,7 +3399,7 @@ function readTrashedHoldings(db: StoreDb): AgentViewTrashedHolding[] {
     .all();
 
   const assetOwners = groupOwnerMemberIds(
-    db
+    await db
       .select({
         holdingId: assetOwnerships.assetId,
         memberId: assetOwnerships.memberId,
@@ -3323,7 +3408,7 @@ function readTrashedHoldings(db: StoreDb): AgentViewTrashedHolding[] {
       .all(),
   );
   const liabilityOwners = groupOwnerMemberIds(
-    db
+    await db
       .select({
         holdingId: liabilityOwnerships.liabilityId,
         memberId: liabilityOwnerships.memberId,
@@ -3375,8 +3460,11 @@ function groupOwnerMemberIds(
  * including trashed assets — historical reconstruction needs the identity of
  * holdings that existed on past dates even if they were trashed since.
  */
-function readInvestmentIdentity(db: StoreDb, assetId: string): ManualAsset | null {
-  const row = db
+async function readInvestmentIdentity(
+  db: StoreDb,
+  assetId: string,
+): Promise<ManualAsset | null> {
+  const row = await db
     .select({
       id: assets.id,
       name: assets.name,
@@ -3392,7 +3480,7 @@ function readInvestmentIdentity(db: StoreDb, assetId: string): ManualAsset | nul
 
   if (!row) return null;
 
-  const ownership = db
+  const ownership = await db
     .select({ memberId: assetOwnerships.memberId, shareBps: assetOwnerships.shareBps })
     .from(assetOwnerships)
     .where(eq(assetOwnerships.assetId, assetId))
@@ -3423,18 +3511,18 @@ function readInvestmentIdentity(db: StoreDb, assetId: string): ManualAsset | nul
  * Atomic (one transaction). A null curve start is a no-op. Binance only — no
  * coins/Numista interaction.
  */
-function backfillBinanceHistoricalSnapshots(
+async function backfillBinanceHistoricalSnapshots(
   ctx: StoreContext,
   workspace: Workspace,
-  saveSnapshot: (input: SaveSnapshotInput) => void,
+  saveSnapshot: (input: SaveSnapshotInput) => Promise<void>,
   params: { assetId: string; curve: BinanceHistoryCurve; today: string },
-): void {
+): Promise<void> {
   const { db } = ctx;
   const { assetId, curve, today } = params;
 
   // The market asset's identity — read including trashed, since it existed on the
   // snapshot dates regardless (ADR 0012).
-  const asset = readInvestmentIdentity(db, assetId);
+  const asset = await readInvestmentIdentity(db, assetId);
   if (!asset) return;
 
   // The curve's earliest valuable date; below it nothing is valued (ADR 0021).
@@ -3443,18 +3531,18 @@ function backfillBinanceHistoricalSnapshots(
 
   // The asset's frozen classification captures across every snapshot (#242), read
   // ONCE before any recalc mutates rows (see rippleHistoricalSnapshots).
-  const frozenIdentity = readFrozenIdentityCaptures(db, assetId, "asset");
+  const frozenIdentity = await readFrozenIdentityCaptures(db, assetId, "asset");
 
   // Every completed month-end (never the current partial month) — the same anchors
   // across every scope (the curve is portfolio-wide). Built once.
   const monthEnds = completedMonthEndDates(curve, today);
 
   // Build deps once — the same for every scope (lesson from #114).
-  const deps = buildHistoricalSnapshotDeps(db, workspace);
+  const deps = await buildHistoricalSnapshotDeps(db, workspace);
 
-  ctx.transaction(() => {
+  await ctx.transaction(async () => {
     for (const scope of listScopeOptions(workspace)) {
-      const existing = readSnapshots(db, scope.id);
+      const existing = await readSnapshots(db, scope.id);
       const existingByDate = new Map(existing.map((snap) => [snap.dateKey, snap]));
 
       // Affected dates = the UNION of the completed month-ends and every existing
@@ -3473,7 +3561,7 @@ function backfillBinanceHistoricalSnapshots(
       // Read the scope's frozen rows for the whole [start, today) band in ONE
       // batched query (#205), grouped by date in memory (one read per scope).
       const frozenByDate = groupFrozenHoldingsByDate(
-        readSnapshotHoldings(db, { scopeId: scope.id, from: start }),
+        await readSnapshotHoldings(db, { scopeId: scope.id, from: start }),
       );
 
       for (const dateKey of dates) {
@@ -3503,7 +3591,7 @@ function backfillBinanceHistoricalSnapshots(
             workspace,
           });
           if (recalculated) {
-            saveSnapshot({
+            await saveSnapshot({
               holdings: recalculated.holdings,
               replace: true,
               snapshot: recalculated.snapshot,
@@ -3567,7 +3655,7 @@ function backfillBinanceHistoricalSnapshots(
           workspace,
         });
         if (overridden) {
-          saveSnapshot({
+          await saveSnapshot({
             holdings: overridden.holdings,
             replace: false,
             snapshot: overridden.snapshot,
@@ -3576,7 +3664,7 @@ function backfillBinanceHistoricalSnapshots(
       }
     }
 
-    ctx.writeAuditEntry("backfill_binance_history", "asset", assetId, {
+    await ctx.writeAuditEntry("backfill_binance_history", "asset", assetId, {
       monthEnds: monthEnds.length,
       start,
     });
@@ -3606,14 +3694,14 @@ interface GapFillOptions {
  * failure (#185); the post-import path runs best-effort and lets its caller
  * surface a thrown error instead of leaving silent partial history.
  */
-function gapFillHistoricalSnapshots(
+async function gapFillHistoricalSnapshots(
   ctx: StoreContext,
   workspace: Workspace,
-  saveSnapshot: (input: SaveSnapshotInput) => void,
+  saveSnapshot: (input: SaveSnapshotInput) => Promise<void>,
   today: string,
   options: GapFillOptions = {},
-): void {
-  const deps = buildHistoricalSnapshotDeps(ctx.db, workspace);
+): Promise<void> {
+  const deps = await buildHistoricalSnapshotDeps(ctx.db, workspace);
 
   const eventDates = new Set<string>();
   for (const operations of deps.operationsByAsset.values()) {
@@ -3624,10 +3712,10 @@ function gapFillHistoricalSnapshots(
   }
   const sortedDates = [...eventDates].sort();
 
-  const fill = (): void => {
+  const fill = async (): Promise<void> => {
     for (const scope of deps.scopes) {
       const existingDates = new Set(
-        readSnapshots(ctx.db, scope.id).map((snap) => snap.dateKey),
+        (await readSnapshots(ctx.db, scope.id)).map((snap) => snap.dateKey),
       );
 
       for (const dateKey of sortedDates) {
@@ -3652,7 +3740,7 @@ function gapFillHistoricalSnapshots(
         });
 
         if (built) {
-          saveSnapshot({
+          await saveSnapshot({
             holdings: built.holdings,
             replace: false,
             snapshot: built.snapshot,
@@ -3663,13 +3751,12 @@ function gapFillHistoricalSnapshots(
   };
 
   // Atomic standalone backfill: one transaction over the whole fill, so a
-  // mid-run throw rolls every generated snapshot back. saveSnapshot opens its
-  // own (now nested, savepoint-backed) transaction per date — the inner ones
-  // commit into this outer one, which is the unit that survives or rolls back.
+  // mid-run throw rolls every generated snapshot back. saveSnapshot's nested
+  // calls flatten into this outer unit, which is what survives or rolls back.
   if (options.atomic) {
-    ctx.transaction(fill);
+    await ctx.transaction(fill);
   } else {
-    fill();
+    await fill();
   }
 }
 
@@ -3678,14 +3765,14 @@ function gapFillHistoricalSnapshots(
  * connection is closed afterwards — even if the callback throws. This is the one
  * home for the open/use/close lifecycle so callers never leak a connection.
  */
-export function withStore<T>(
-  run: (store: WorthlineStore) => T,
+export async function withStore<T>(
+  run: (store: WorthlineStore) => T | Promise<T>,
   options: WorthlineStoreOptions = {},
-): T {
-  const store = createWorthlineStore(options);
+): Promise<T> {
+  const store = await createWorthlineStore(options);
 
   try {
-    return run(store);
+    return await run(store);
   } finally {
     store.close();
   }

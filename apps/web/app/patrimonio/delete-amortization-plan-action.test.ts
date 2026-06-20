@@ -50,8 +50,11 @@ async function runAction(
 }
 
 /** Debt total in a snapshot at the given dateKey (household / default scope). */
-function debtsAt(store: WorthlineStore, dateKey: string): number | undefined {
-  return store.snapshots.readSnapshots().find((s) => s.dateKey === dateKey)?.debts
+async function debtsAt(
+  store: WorthlineStore,
+  dateKey: string,
+): Promise<number | undefined> {
+  return (await store.snapshots.readSnapshots()).find((s) => s.dateKey === dateKey)?.debts
     .amountMinor;
 }
 
@@ -62,13 +65,13 @@ const TODAY = "2026-06-15";
 const CLOCK = fixedClock(TODAY);
 
 describe("deleteAmortizationPlanAction — ripple correctness", () => {
-  function seedStore(): WorthlineStore {
-    const store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
+  async function seedStore(): Promise<WorthlineStore> {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
       members: [{ id: "mJ", name: "Jose" }],
       mode: "individual",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000_00,
       id: "cash",
@@ -77,7 +80,7 @@ describe("deleteAmortizationPlanAction — ripple correctness", () => {
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
       type: "cash",
     });
-    store.liabilities.createLiability({
+    await store.liabilities.createLiability({
       balanceMinor: 100_000_00,
       currency: "EUR",
       id: "mortgage",
@@ -85,18 +88,18 @@ describe("deleteAmortizationPlanAction — ripple correctness", () => {
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
       type: "mortgage",
     });
-    store.liabilities.setDebtModel("mortgage", "amortizable");
+    await store.liabilities.setDebtModel("mortgage", "amortizable");
     return store;
   }
 
   test("after deleting a plan, existing historical snapshots reflect currentBalance (not the plan balance)", async () => {
-    const store = seedStore();
+    const store = await seedStore();
 
     // Use a fixed past start date so snapshot dates are deterministic regardless
     // of when this test runs.
     // The plan persist + ripple ride one seam call, generating plan-derived
     // historical snapshots.
-    store.createAmortizationPlanAndRipple(
+    await store.createAmortizationPlanAndRipple(
       {
         annualInterestRate: "0.03",
         id: "plan1",
@@ -111,9 +114,12 @@ describe("deleteAmortizationPlanAction — ripple correctness", () => {
 
     // Pre-condition: at least one snapshot exists with a plan-derived balance
     // (which is ≠ currentBalance of 100_000_00).
-    const planBalance = store.liabilities.debtBalanceAtDate("mortgage", "2026-01-15");
+    const planBalance = await store.liabilities.debtBalanceAtDate(
+      "mortgage",
+      "2026-01-15",
+    );
     expect(planBalance).not.toBe(100_000_00);
-    expect(debtsAt(store, "2026-01-15")).toBe(planBalance);
+    expect(await debtsAt(store, "2026-01-15")).toBe(planBalance);
 
     // Invoke the action.
     await runAction(
@@ -133,7 +139,7 @@ describe("deleteAmortizationPlanAction — ripple correctness", () => {
       "2026-04-15",
       "2026-05-15",
     ]) {
-      const snapshotDebt = debtsAt(store, dateKey);
+      const snapshotDebt = await debtsAt(store, dateKey);
       if (snapshotDebt !== undefined) {
         expect(snapshotDebt).toBe(100_000_00);
       }

@@ -20,15 +20,15 @@ const TODAY = "2026-06-13";
 const PAST_DATES = ["2026-01-15", "2026-02-15", "2026-03-15", "2026-04-15", "2026-05-15"];
 
 /** A 2-member household with a 50/50 mortgage whose backdated plan backfills snapshots. */
-function seed(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seed(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [
       { id: "mJ", name: "Jose" },
       { id: "mA", name: "Ana" },
     ],
     mode: "household",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 20_000_00,
     id: "cash",
@@ -40,7 +40,7 @@ function seed(store: WorthlineStore): void {
     ],
     type: "cash",
   });
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     balanceMinor: 100_000_00,
     currency: "EUR",
     id: "mortgage",
@@ -51,8 +51,8 @@ function seed(store: WorthlineStore): void {
     ],
     type: "mortgage",
   });
-  store.liabilities.setDebtModel("mortgage", "amortizable");
-  store.createAmortizationPlanAndRipple(
+  await store.liabilities.setDebtModel("mortgage", "amortizable");
+  await store.createAmortizationPlanAndRipple(
     {
       annualInterestRate: "0.03",
       id: "plan1",
@@ -67,19 +67,26 @@ function seed(store: WorthlineStore): void {
   );
 }
 
-function debtsAt(
+async function debtsAt(
   store: WorthlineStore,
   dateKey: string,
   scopeId: string,
-): number | undefined {
-  return store.snapshots.readSnapshots(scopeId).find((snap) => snap.dateKey === dateKey)
-    ?.debts.amountMinor;
+): Promise<number | undefined> {
+  return (await store.snapshots.readSnapshots(scopeId)).find(
+    (snap) => snap.dateKey === dateKey,
+  )?.debts.amountMinor;
 }
 
-function reconciles(store: WorthlineStore, dateKey: string, scopeId: string): boolean {
-  const snap = store.snapshots.readSnapshots(scopeId).find((s) => s.dateKey === dateKey);
+async function reconciles(
+  store: WorthlineStore,
+  dateKey: string,
+  scopeId: string,
+): Promise<boolean> {
+  const snap = (await store.snapshots.readSnapshots(scopeId)).find(
+    (s) => s.dateKey === dateKey,
+  );
   if (!snap) return false;
-  const rows = store.snapshots.readSnapshotHoldings({
+  const rows = await store.snapshots.readSnapshotHoldings({
     from: dateKey,
     scopeId,
     to: dateKey,
@@ -101,16 +108,16 @@ function owned(globalMinor: number, shareBps: number, memberId: string): number 
 }
 
 describe("ownership-split ripple over historical snapshots (#172)", () => {
-  test("re-weights every per-member snapshot to the new split; household unchanged; no new dates", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("re-weights every per-member snapshot to the new split; household unchanged; no new dates", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
-    const datesBefore = store.snapshots.readSnapshots("mJ").length;
+    const datesBefore = (await store.snapshots.readSnapshots("mJ")).length;
 
     // Correct the mortgage split from 50/50 to 70/30 — one atomic seam call
     // persists the patch and ripples the scope axis (previous split read behind
     // the seam).
-    store.updateLiabilityAndRippleOwnership("mortgage", {
+    await store.updateLiabilityAndRippleOwnership("mortgage", {
       ownership: [
         { memberId: "mJ", shareBps: 7_000 },
         { memberId: "mA", shareBps: 3_000 },
@@ -118,44 +125,47 @@ describe("ownership-split ripple over historical snapshots (#172)", () => {
     });
 
     for (const dateKey of PAST_DATES) {
-      const globalBalance = store.liabilities.debtBalanceAtDate("mortgage", dateKey)!;
+      const globalBalance = (await store.liabilities.debtBalanceAtDate(
+        "mortgage",
+        dateKey,
+      ))!;
       // Household always sees the full balance — the edit does not touch it.
-      expect(debtsAt(store, dateKey, "household")).toBe(globalBalance);
+      expect(await debtsAt(store, dateKey, "household")).toBe(globalBalance);
       // Each member's scope is re-weighted by the new split.
-      expect(debtsAt(store, dateKey, "mJ")).toBe(owned(globalBalance, 7_000, "mJ"));
-      expect(debtsAt(store, dateKey, "mA")).toBe(owned(globalBalance, 3_000, "mA"));
+      expect(await debtsAt(store, dateKey, "mJ")).toBe(owned(globalBalance, 7_000, "mJ"));
+      expect(await debtsAt(store, dateKey, "mA")).toBe(owned(globalBalance, 3_000, "mA"));
       // Reconciliation holds for every scope.
-      expect(reconciles(store, dateKey, "household")).toBe(true);
-      expect(reconciles(store, dateKey, "mJ")).toBe(true);
-      expect(reconciles(store, dateKey, "mA")).toBe(true);
+      expect(await reconciles(store, dateKey, "household")).toBe(true);
+      expect(await reconciles(store, dateKey, "mJ")).toBe(true);
+      expect(await reconciles(store, dateKey, "mA")).toBe(true);
     }
 
     // No new snapshot dates were created by the ownership edit.
-    expect(store.snapshots.readSnapshots("mJ").length).toBe(datesBefore);
+    expect((await store.snapshots.readSnapshots("mJ")).length).toBe(datesBefore);
     store.close();
   });
 
-  test("re-running the ripple is idempotent (stable under repeated edits)", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("re-running the ripple is idempotent (stable under repeated edits)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
-    store.updateLiabilityAndRippleOwnership("mortgage", {
+    await store.updateLiabilityAndRippleOwnership("mortgage", {
       ownership: [
         { memberId: "mJ", shareBps: 7_000 },
         { memberId: "mA", shareBps: 3_000 },
       ],
     });
-    const first = PAST_DATES.map((d) => debtsAt(store, d, "mJ"));
+    const first = await Promise.all(PAST_DATES.map((d) => debtsAt(store, d, "mJ")));
 
     // Re-applying the now-current split is a no-op: the seam sees the stored split
     // already equals the patch, so it ripples nothing (rows already 70/30).
-    store.updateLiabilityAndRippleOwnership("mortgage", {
+    await store.updateLiabilityAndRippleOwnership("mortgage", {
       ownership: [
         { memberId: "mJ", shareBps: 7_000 },
         { memberId: "mA", shareBps: 3_000 },
       ],
     });
-    const second = PAST_DATES.map((d) => debtsAt(store, d, "mJ"));
+    const second = await Promise.all(PAST_DATES.map((d) => debtsAt(store, d, "mJ")));
 
     expect(second).toEqual(first);
     store.close();
@@ -180,8 +190,8 @@ const HOME_GLOBAL_MINOR = 30_000_001;
  * appears on every date. A wholly-household cash holding (100% inside the
  * household) is present to prove it stays exact and unchanged.
  */
-function seedCoOwnedHome(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seedCoOwnedHome(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [
       { id: "mJ", name: "Jose" },
       { id: "mA", name: "Ana" },
@@ -189,7 +199,7 @@ function seedCoOwnedHome(store: WorthlineStore): void {
     mode: "household",
   });
   // A wholly-household holding (100% inside the household) — must stay exact.
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 20_000_00,
     id: "cash",
@@ -202,7 +212,7 @@ function seedCoOwnedHome(store: WorthlineStore): void {
     type: "cash",
   });
   // The home, co-owned 40/25 by the members + 35% a non-member (household 65%).
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: HOME_GLOBAL_MINOR,
     id: "piso",
@@ -215,7 +225,7 @@ function seedCoOwnedHome(store: WorthlineStore): void {
     type: "real_estate",
   });
   // Pin the home's global value flat at the drifting amount via one anchor.
-  store.assets.addValuationAnchor({
+  await store.assets.addValuationAnchor({
     adjustsPriorCurve: true,
     assetId: "piso",
     id: "anchor1",
@@ -224,7 +234,7 @@ function seedCoOwnedHome(store: WorthlineStore): void {
   });
   // A co-owned mortgage whose amortizable plan backfills one snapshot per past
   // cuota (PRD #109); each captured snapshot also freezes the home's row.
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     balanceMinor: 200_000_00,
     currency: "EUR",
     id: "mortgage",
@@ -235,8 +245,8 @@ function seedCoOwnedHome(store: WorthlineStore): void {
     ],
     type: "mortgage",
   });
-  store.liabilities.setDebtModel("mortgage", "amortizable");
-  store.createAmortizationPlanAndRipple(
+  await store.liabilities.setDebtModel("mortgage", "amortizable");
+  await store.createAmortizationPlanAndRipple(
     {
       annualInterestRate: "0.0317",
       id: "plan1",
@@ -251,24 +261,26 @@ function seedCoOwnedHome(store: WorthlineStore): void {
   );
 }
 
-function homeRowAt(
+async function homeRowAt(
   store: WorthlineStore,
   dateKey: string,
   scopeId: string,
-): number | undefined {
-  return store.snapshots
-    .readSnapshotHoldings({ from: dateKey, scopeId, to: dateKey })
-    .find((r) => r.holdingId === "piso")?.valueMinor;
+): Promise<number | undefined> {
+  return (
+    await store.snapshots.readSnapshotHoldings({ from: dateKey, scopeId, to: dateKey })
+  ).find((r) => r.holdingId === "piso")?.valueMinor;
 }
 
 describe("ownership-split ripple recovers the global value losslessly for a co-owned home (#187)", () => {
-  test("each member's re-weighted home row equals a from-scratch re-derivation EXACTLY (zero ±1 drift)", () => {
-    const store = createInMemoryStore();
-    seedCoOwnedHome(store);
+  test("each member's re-weighted home row equals a from-scratch re-derivation EXACTLY (zero ±1 drift)", async () => {
+    const store = await createInMemoryStore();
+    await seedCoOwnedHome(store);
 
     // The dates the mortgage backfilled (one per past cuota), each capturing the
     // home at its flat curve value HOME_GLOBAL_MINOR.
-    const dates = store.snapshots.readSnapshots("household").map((snap) => snap.dateKey);
+    const dates = (await store.snapshots.readSnapshots("household")).map(
+      (snap) => snap.dateKey,
+    );
     expect(dates.length).toBeGreaterThan(2);
 
     // Correct the INTERNAL member split (40/25 → 30/35) — the household combined
@@ -277,7 +289,7 @@ describe("ownership-split ripple recovers the global value losslessly for a co-o
     // ownership edit rides the seam, which dispatches a real_estate asset to the
     // housing curve ripple — losslessly re-deriving the home from its flat curve
     // value (HOME_GLOBAL_MINOR), never by dividing the rounded household row (#187).
-    store.updateAssetAndRippleOwnership("piso", {
+    await store.updateAssetAndRippleOwnership("piso", {
       ownership: [
         { memberId: "mJ", shareBps: 3_000 },
         { memberId: "mA", shareBps: 3_500 },
@@ -287,51 +299,58 @@ describe("ownership-split ripple recovers the global value losslessly for a co-o
     for (const dateKey of dates) {
       // The lossless source of truth: the home's global value, never recovered by
       // dividing the rounded household row.
-      expect(homeRowAt(store, dateKey, "household")).toBe(
+      expect(await homeRowAt(store, dateKey, "household")).toBe(
         owned(HOME_GLOBAL_MINOR, 6_500, "mJ"),
       );
       // Each member's row must match the from-scratch re-derivation EXACTLY — the
       // lossy recovery drifted these by ±1 cent (30_000_002 vs 30_000_001).
-      expect(homeRowAt(store, dateKey, "mJ")).toBe(owned(HOME_GLOBAL_MINOR, 3_000, "mJ"));
-      expect(homeRowAt(store, dateKey, "mA")).toBe(owned(HOME_GLOBAL_MINOR, 3_500, "mA"));
+      expect(await homeRowAt(store, dateKey, "mJ")).toBe(
+        owned(HOME_GLOBAL_MINOR, 3_000, "mJ"),
+      );
+      expect(await homeRowAt(store, dateKey, "mA")).toBe(
+        owned(HOME_GLOBAL_MINOR, 3_500, "mA"),
+      );
       // Reconciliation (ADR 0008) holds on every re-weighted snapshot.
-      expect(reconciles(store, dateKey, "household")).toBe(true);
-      expect(reconciles(store, dateKey, "mJ")).toBe(true);
-      expect(reconciles(store, dateKey, "mA")).toBe(true);
+      expect(await reconciles(store, dateKey, "household")).toBe(true);
+      expect(await reconciles(store, dateKey, "mJ")).toBe(true);
+      expect(await reconciles(store, dateKey, "mA")).toBe(true);
     }
 
     store.close();
   });
 
-  test("the wholly-household holding stays byte-identical after the same ownership edit", () => {
-    const store = createInMemoryStore();
-    seedCoOwnedHome(store);
+  test("the wholly-household holding stays byte-identical after the same ownership edit", async () => {
+    const store = await createInMemoryStore();
+    await seedCoOwnedHome(store);
 
-    const dates = store.snapshots.readSnapshots("mJ").map((snap) => snap.dateKey);
+    const dates = (await store.snapshots.readSnapshots("mJ")).map((snap) => snap.dateKey);
 
-    const cashRow = (dateKey: string, scopeId: string): number | undefined =>
-      store.snapshots
-        .readSnapshotHoldings({ from: dateKey, scopeId, to: dateKey })
-        .find((r) => r.holdingId === "cash")?.valueMinor;
+    const cashRow = async (
+      dateKey: string,
+      scopeId: string,
+    ): Promise<number | undefined> =>
+      (
+        await store.snapshots.readSnapshotHoldings({
+          from: dateKey,
+          scopeId,
+          to: dateKey,
+        })
+      ).find((r) => r.holdingId === "cash")?.valueMinor;
 
-    const before = dates.flatMap((d) => [
-      cashRow(d, "household"),
-      cashRow(d, "mJ"),
-      cashRow(d, "mA"),
-    ]);
+    const before = await Promise.all(
+      dates.flatMap((d) => [cashRow(d, "household"), cashRow(d, "mJ"), cashRow(d, "mA")]),
+    );
 
-    store.updateAssetAndRippleOwnership("piso", {
+    await store.updateAssetAndRippleOwnership("piso", {
       ownership: [
         { memberId: "mJ", shareBps: 3_000 },
         { memberId: "mA", shareBps: 3_500 },
       ],
     });
 
-    const after = dates.flatMap((d) => [
-      cashRow(d, "household"),
-      cashRow(d, "mJ"),
-      cashRow(d, "mA"),
-    ]);
+    const after = await Promise.all(
+      dates.flatMap((d) => [cashRow(d, "household"), cashRow(d, "mJ"), cashRow(d, "mA")]),
+    );
 
     expect(after).toEqual(before);
     store.close();
@@ -348,8 +367,8 @@ describe("ownership-split ripple recovers the global value losslessly for a co-o
  * leaves the live ledger unable to value it on any date, so its re-derived global
  * is null — the #212 unrecoverable-global case.
  */
-function seedFundFrozenThenLedgerless(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seedFundFrozenThenLedgerless(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [
       { id: "mJ", name: "Jose" },
       { id: "mA", name: "Ana" },
@@ -359,7 +378,7 @@ function seedFundFrozenThenLedgerless(store: WorthlineStore): void {
   // An investment fund split 60/40 by the members. Its only source of truth is
   // the operation ledger (no manual price), so deleting its operations makes the
   // live ledger no longer hold it on any date (re-derived global is null).
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "fondo",
     liquidityTier: "market",
@@ -369,7 +388,7 @@ function seedFundFrozenThenLedgerless(store: WorthlineStore): void {
       { memberId: "mA", shareBps: 4_000 },
     ],
   });
-  store.operations.recordOperation({
+  await store.operations.recordOperation({
     assetId: "fondo",
     currency: "EUR",
     executedAt: "2026-01-01",
@@ -381,7 +400,7 @@ function seedFundFrozenThenLedgerless(store: WorthlineStore): void {
   });
   // A mortgage whose amortizable plan backfills one snapshot per past cuota (PRD
   // #109); each captured snapshot also freezes the fund's row.
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     balanceMinor: 200_000_00,
     currency: "EUR",
     id: "mortgage",
@@ -392,8 +411,8 @@ function seedFundFrozenThenLedgerless(store: WorthlineStore): void {
     ],
     type: "mortgage",
   });
-  store.liabilities.setDebtModel("mortgage", "amortizable");
-  store.createAmortizationPlanAndRipple(
+  await store.liabilities.setDebtModel("mortgage", "amortizable");
+  await store.createAmortizationPlanAndRipple(
     {
       annualInterestRate: "0.0317",
       id: "plan1",
@@ -408,31 +427,40 @@ function seedFundFrozenThenLedgerless(store: WorthlineStore): void {
 }
 
 describe("ownership-split ripple leaves the frozen row untouched when the global is unrecoverable (#212)", () => {
-  test("a co-owned holding whose global cannot be re-derived for a date is NOT re-weighted", () => {
-    const store = createInMemoryStore();
-    seedFundFrozenThenLedgerless(store);
+  test("a co-owned holding whose global cannot be re-derived for a date is NOT re-weighted", async () => {
+    const store = await createInMemoryStore();
+    await seedFundFrozenThenLedgerless(store);
 
-    const fundRow = (dateKey: string, scopeId: string): number | undefined =>
-      store.snapshots
-        .readSnapshotHoldings({ from: dateKey, scopeId, to: dateKey })
-        .find((r) => r.holdingId === "fondo")?.valueMinor;
+    const fundRow = async (
+      dateKey: string,
+      scopeId: string,
+    ): Promise<number | undefined> =>
+      (
+        await store.snapshots.readSnapshotHoldings({
+          from: dateKey,
+          scopeId,
+          to: dateKey,
+        })
+      ).find((r) => r.holdingId === "fondo")?.valueMinor;
 
-    const dates = store.snapshots.readSnapshots("household").map((snap) => snap.dateKey);
+    const dates = (await store.snapshots.readSnapshots("household")).map(
+      (snap) => snap.dateKey,
+    );
     expect(dates.length).toBeGreaterThan(2);
     // The fund WAS frozen into every backfilled household snapshot.
     for (const dateKey of dates) {
-      expect(fundRow(dateKey, "household")).not.toBeUndefined();
+      expect(await fundRow(dateKey, "household")).not.toBeUndefined();
     }
 
     // Snapshot the frozen rows and headline figures BEFORE the edit, across all
     // scopes — these must be byte-identical after the ripple.
-    const figuresOf = (
+    const figuresOf = async (
       dateKey: string,
       scopeId: string,
-    ): Record<string, number> | undefined => {
-      const snap = store.snapshots
-        .readSnapshots(scopeId)
-        .find((s) => s.dateKey === dateKey);
+    ): Promise<Record<string, number> | undefined> => {
+      const snap = (await store.snapshots.readSnapshots(scopeId)).find(
+        (s) => s.dateKey === dateKey,
+      );
       if (!snap) return undefined;
       return {
         debts: snap.debts.amountMinor,
@@ -443,26 +471,34 @@ describe("ownership-split ripple leaves the frozen row untouched when the global
       };
     };
     const scopes = ["household", "mJ", "mA"];
-    const fundBefore = dates.flatMap((d) => scopes.map((s) => fundRow(d, s)));
-    const figuresBefore = dates.flatMap((d) => scopes.map((s) => figuresOf(d, s)));
+    const fundBefore = await Promise.all(
+      dates.flatMap((d) => scopes.map((s) => fundRow(d, s))),
+    );
+    const figuresBefore = await Promise.all(
+      dates.flatMap((d) => scopes.map((s) => figuresOf(d, s))),
+    );
 
     // Delete the fund's only operation: the live ledger no longer holds it on any
     // date, so its global value is unrecoverable for every frozen snapshot.
-    store.operations.deleteOperation("opBuy");
+    await store.operations.deleteOperation("opBuy");
 
     // Correct the member split (60/40 → 70/30). With the global unrecoverable,
     // re-weighting the already-allocated row would reconstruct the frozen member
     // rows from a value the live ledger can no longer justify (#187 lossiness) —
     // the ripple must SKIP these dates and leave every frozen row untouched.
-    store.updateAssetAndRippleOwnership("fondo", {
+    await store.updateAssetAndRippleOwnership("fondo", {
       ownership: [
         { memberId: "mJ", shareBps: 7_000 },
         { memberId: "mA", shareBps: 3_000 },
       ],
     });
 
-    const fundAfter = dates.flatMap((d) => scopes.map((s) => fundRow(d, s)));
-    const figuresAfter = dates.flatMap((d) => scopes.map((s) => figuresOf(d, s)));
+    const fundAfter = await Promise.all(
+      dates.flatMap((d) => scopes.map((s) => fundRow(d, s))),
+    );
+    const figuresAfter = await Promise.all(
+      dates.flatMap((d) => scopes.map((s) => figuresOf(d, s))),
+    );
 
     // The frozen fund rows are left untouched on every scope and date.
     expect(fundAfter).toEqual(fundBefore);
@@ -471,7 +507,7 @@ describe("ownership-split ripple leaves the frozen row untouched when the global
     // Reconciliation (ADR 0008) still holds on every snapshot.
     for (const dateKey of dates) {
       for (const scopeId of scopes) {
-        expect(reconciles(store, dateKey, scopeId)).toBe(true);
+        expect(await reconciles(store, dateKey, scopeId)).toBe(true);
       }
     }
 

@@ -47,12 +47,12 @@ export interface UpdateInvestmentOperationInput {
 }
 
 export interface OperationsStore {
-  recordOperation: (input: CreateInvestmentOperationInput) => void;
-  readOperations: (assetId: string) => InvestmentOperation[];
+  recordOperation: (input: CreateInvestmentOperationInput) => Promise<void>;
+  readOperations: (assetId: string) => Promise<InvestmentOperation[]>;
   /** Delete an operation. Returns the deleted operation's asset id and date, or null if not found. */
   deleteOperation: (
     operationId: string,
-  ) => { assetId: string; executedAt: string } | null;
+  ) => Promise<{ assetId: string; executedAt: string } | null>;
   /**
    * Overwrite an existing operation's value fields in place (statement merge,
    * ADR 0018). The id, asset, and `executedAt` date are the match key and never
@@ -61,16 +61,16 @@ export interface OperationsStore {
    */
   updateOperation: (
     input: UpdateInvestmentOperationInput,
-  ) => { assetId: string; executedAt: string } | null;
-  batchApplyValueUpdates: (commands: ValueUpdateCommand[]) => void;
+  ) => Promise<{ assetId: string; executedAt: string } | null>;
+  batchApplyValueUpdates: (commands: ValueUpdateCommand[]) => Promise<void>;
   batchApplyAllValueUpdates: (
     assetCommands: ValueUpdateCommand[],
     liabilityCommands: ValueUpdateCommand[],
-  ) => void;
-  upsertPrice: (price: AssetPrice) => void;
-  clearPriceCache: (assetId: string) => number;
-  readPriceCache: (assetId: string) => AssetPrice | null;
-  readAllPriceCacheEntries: () => AssetPrice[];
+  ) => Promise<void>;
+  upsertPrice: (price: AssetPrice) => Promise<void>;
+  clearPriceCache: (assetId: string) => Promise<number>;
+  readPriceCache: (assetId: string) => Promise<AssetPrice | null>;
+  readAllPriceCacheEntries: () => Promise<AssetPrice[]>;
 }
 
 export function createOperationsStore(ctx: StoreContext): OperationsStore {
@@ -89,12 +89,15 @@ export function createOperationsStore(ctx: StoreContext): OperationsStore {
   };
 }
 
-function recordOperation(ctx: StoreContext, input: CreateInvestmentOperationInput): void {
+async function recordOperation(
+  ctx: StoreContext,
+  input: CreateInvestmentOperationInput,
+): Promise<void> {
   const operation = createInvestmentOperation(input);
 
   // fees_minor has a DB default of 0; the domain constructor always supplies it,
   // matching the raw INSERT which also always passed @feesMinor.
-  ctx.db
+  await ctx.db
     .insert(assetOperations)
     .values({
       assetId: operation.assetId,
@@ -109,22 +112,25 @@ function recordOperation(ctx: StoreContext, input: CreateInvestmentOperationInpu
     .run();
 }
 
-function readOperations(ctx: StoreContext, assetId: string): InvestmentOperation[] {
-  return ctx.db
+async function readOperations(
+  ctx: StoreContext,
+  assetId: string,
+): Promise<InvestmentOperation[]> {
+  const rows = await ctx.db
     .select()
     .from(assetOperations)
     .where(eq(assetOperations.assetId, assetId))
     .orderBy(asc(assetOperations.executedAt), asc(assetOperations.id))
-    .all()
-    .map(toOperation);
+    .all();
+  return rows.map(toOperation);
 }
 
-function deleteOperation(
+async function deleteOperation(
   ctx: StoreContext,
   operationId: string,
-): { assetId: string; executedAt: string } | null {
+): Promise<{ assetId: string; executedAt: string } | null> {
   const { db } = ctx;
-  const row = db
+  const row = await db
     .select({
       assetId: assetOperations.assetId,
       kind: assetOperations.kind,
@@ -142,11 +148,11 @@ function deleteOperation(
     return null;
   }
 
-  db.delete(assetOperations).where(eq(assetOperations.id, operationId)).run();
+  await db.delete(assetOperations).where(eq(assetOperations.id, operationId)).run();
 
   // Audit against the owning asset so the deletion shows in its history;
   // the full operation is recorded, making manual re-entry a de facto undo.
-  ctx.writeAuditEntry("delete_operation", "asset", row.assetId, {
+  await ctx.writeAuditEntry("delete_operation", "asset", row.assetId, {
     currency: row.currency,
     executedAt: row.executedAt,
     feesMinor: row.feesMinor,
@@ -159,17 +165,17 @@ function deleteOperation(
   return { assetId: row.assetId, executedAt: row.executedAt };
 }
 
-function updateOperation(
+async function updateOperation(
   ctx: StoreContext,
   input: UpdateInvestmentOperationInput,
-): { assetId: string; executedAt: string } | null {
+): Promise<{ assetId: string; executedAt: string } | null> {
   const { db } = ctx;
 
   if (!Number.isInteger(input.feesMinor)) {
     throw new Error("Money must be stored as integer minor units.");
   }
 
-  const row = db
+  const row = await db
     .select({ assetId: assetOperations.assetId, executedAt: assetOperations.executedAt })
     .from(assetOperations)
     .where(eq(assetOperations.id, input.id))
@@ -179,7 +185,8 @@ function updateOperation(
     return null;
   }
 
-  db.update(assetOperations)
+  await db
+    .update(assetOperations)
     .set({
       currency: input.currency,
       feesMinor: input.feesMinor,
@@ -190,7 +197,7 @@ function updateOperation(
     .where(eq(assetOperations.id, input.id))
     .run();
 
-  ctx.writeAuditEntry("update_operation", "asset", row.assetId, {
+  await ctx.writeAuditEntry("update_operation", "asset", row.assetId, {
     currency: input.currency,
     executedAt: row.executedAt,
     feesMinor: input.feesMinor,
@@ -203,31 +210,35 @@ function updateOperation(
   return { assetId: row.assetId, executedAt: row.executedAt };
 }
 
-function batchApplyValueUpdates(ctx: StoreContext, commands: ValueUpdateCommand[]): void {
+async function batchApplyValueUpdates(
+  ctx: StoreContext,
+  commands: ValueUpdateCommand[],
+): Promise<void> {
   if (commands.length === 0) return;
 
   const { db, writeAuditEntry } = ctx;
-  ctx.transaction(() => {
+  await ctx.transaction(async () => {
     for (const cmd of commands) {
       if (!Number.isInteger(cmd.newValueMinor)) {
         throw new Error("Money must be stored as integer minor units.");
       }
-      db.update(assets)
+      await db
+        .update(assets)
         .set({ currentValueMinor: cmd.newValueMinor, updatedAt: sql`CURRENT_TIMESTAMP` })
         .where(eq(assets.id, cmd.id))
         .run();
-      writeAuditEntry("update_valuation", "asset", cmd.id, {
+      await writeAuditEntry("update_valuation", "asset", cmd.id, {
         currentValueMinor: cmd.newValueMinor,
       });
     }
   });
 }
 
-function batchApplyAllValueUpdates(
+async function batchApplyAllValueUpdates(
   ctx: StoreContext,
   assetCommands: ValueUpdateCommand[],
   liabilityCommands: ValueUpdateCommand[],
-): void {
+): Promise<void> {
   const allCommands = [...assetCommands, ...liabilityCommands];
   if (allCommands.length === 0) return;
 
@@ -240,36 +251,39 @@ function batchApplyAllValueUpdates(
     }
   }
 
-  ctx.transaction(() => {
+  await ctx.transaction(async () => {
     for (const cmd of assetCommands) {
-      db.update(assets)
+      await db
+        .update(assets)
         .set({ currentValueMinor: cmd.newValueMinor, updatedAt: sql`CURRENT_TIMESTAMP` })
         .where(eq(assets.id, cmd.id))
         .run();
-      writeAuditEntry("update_valuation", "asset", cmd.id, {
+      await writeAuditEntry("update_valuation", "asset", cmd.id, {
         currentValueMinor: cmd.newValueMinor,
       });
     }
     for (const cmd of liabilityCommands) {
-      db.update(liabilities)
+      await db
+        .update(liabilities)
         .set({
           currentBalanceMinor: cmd.newValueMinor,
           updatedAt: sql`CURRENT_TIMESTAMP`,
         })
         .where(eq(liabilities.id, cmd.id))
         .run();
-      writeAuditEntry("update_balance", "liability", cmd.id, {
+      await writeAuditEntry("update_balance", "liability", cmd.id, {
         balanceMinor: cmd.newValueMinor,
       });
     }
   });
 }
 
-function upsertPrice(ctx: StoreContext, price: AssetPrice): void {
+async function upsertPrice(ctx: StoreContext, price: AssetPrice): Promise<void> {
   const db = ctx.db;
   const now = new Date().toISOString();
 
-  db.insert(assetPriceCache)
+  await db
+    .insert(assetPriceCache)
     .values({
       assetId: price.assetId,
       currency: price.currency,
@@ -297,13 +311,19 @@ function upsertPrice(ctx: StoreContext, price: AssetPrice): void {
     .run();
 }
 
-function clearPriceCache(ctx: StoreContext, assetId: string): number {
-  return ctx.db.delete(assetPriceCache).where(eq(assetPriceCache.assetId, assetId)).run()
-    .changes;
+async function clearPriceCache(ctx: StoreContext, assetId: string): Promise<number> {
+  const result = await ctx.db
+    .delete(assetPriceCache)
+    .where(eq(assetPriceCache.assetId, assetId))
+    .run();
+  return result.rowsAffected;
 }
 
-function readPriceCache(ctx: StoreContext, assetId: string): AssetPrice | null {
-  const row = ctx.db
+async function readPriceCache(
+  ctx: StoreContext,
+  assetId: string,
+): Promise<AssetPrice | null> {
+  const row = await ctx.db
     .select()
     .from(assetPriceCache)
     .where(eq(assetPriceCache.assetId, assetId))
@@ -323,8 +343,8 @@ function readPriceCache(ctx: StoreContext, assetId: string): AssetPrice | null {
   };
 }
 
-function readAllPriceCacheEntries(ctx: StoreContext): AssetPrice[] {
-  const rows = ctx.db.select().from(assetPriceCache).all();
+async function readAllPriceCacheEntries(ctx: StoreContext): Promise<AssetPrice[]> {
+  const rows = await ctx.db.select().from(assetPriceCache).all();
 
   return rows.map((row) => ({
     assetId: row.assetId,

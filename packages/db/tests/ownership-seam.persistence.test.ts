@@ -21,15 +21,15 @@ const TODAY = "2026-06-13";
 const PAST_DATES = ["2026-01-15", "2026-02-15", "2026-03-15", "2026-04-15", "2026-05-15"];
 
 /** A 2-member household with a 50/50 mortgage whose backdated plan backfills snapshots. */
-function seed(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seed(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [
       { id: "mJ", name: "Jose" },
       { id: "mA", name: "Ana" },
     ],
     mode: "household",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 20_000_00,
     id: "cash",
@@ -41,7 +41,7 @@ function seed(store: WorthlineStore): void {
     ],
     type: "cash",
   });
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     balanceMinor: 100_000_00,
     currency: "EUR",
     id: "mortgage",
@@ -52,8 +52,8 @@ function seed(store: WorthlineStore): void {
     ],
     type: "mortgage",
   });
-  store.liabilities.setDebtModel("mortgage", "amortizable");
-  store.createAmortizationPlanAndRipple(
+  await store.liabilities.setDebtModel("mortgage", "amortizable");
+  await store.createAmortizationPlanAndRipple(
     {
       annualInterestRate: "0.03",
       id: "plan1",
@@ -67,19 +67,26 @@ function seed(store: WorthlineStore): void {
   );
 }
 
-function debtsAt(
+async function debtsAt(
   store: WorthlineStore,
   dateKey: string,
   scopeId: string,
-): number | undefined {
-  return store.snapshots.readSnapshots(scopeId).find((snap) => snap.dateKey === dateKey)
-    ?.debts.amountMinor;
+): Promise<number | undefined> {
+  return (await store.snapshots.readSnapshots(scopeId)).find(
+    (snap) => snap.dateKey === dateKey,
+  )?.debts.amountMinor;
 }
 
-function reconciles(store: WorthlineStore, dateKey: string, scopeId: string): boolean {
-  const snap = store.snapshots.readSnapshots(scopeId).find((s) => s.dateKey === dateKey);
+async function reconciles(
+  store: WorthlineStore,
+  dateKey: string,
+  scopeId: string,
+): Promise<boolean> {
+  const snap = (await store.snapshots.readSnapshots(scopeId)).find(
+    (s) => s.dateKey === dateKey,
+  );
   if (!snap) return false;
-  const rows = store.snapshots.readSnapshotHoldings({
+  const rows = await store.snapshots.readSnapshotHoldings({
     from: dateKey,
     scopeId,
     to: dateKey,
@@ -101,14 +108,14 @@ function owned(globalMinor: number, shareBps: number, memberId: string): number 
 }
 
 describe("updateLiabilityAndRippleOwnership (ownership seam, ADR 0020)", () => {
-  test("one call patches the split AND re-weights every per-member snapshot; household unchanged", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("one call patches the split AND re-weights every per-member snapshot; household unchanged", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
-    const datesBefore = store.snapshots.readSnapshots("mJ").length;
+    const datesBefore = (await store.snapshots.readSnapshots("mJ")).length;
 
     // One atomic call: persist the 50/50 → 70/30 split and ripple the scope axis.
-    store.updateLiabilityAndRippleOwnership(
+    await store.updateLiabilityAndRippleOwnership(
       "mortgage",
       {
         ownership: [
@@ -120,28 +127,31 @@ describe("updateLiabilityAndRippleOwnership (ownership seam, ADR 0020)", () => {
     );
 
     for (const dateKey of PAST_DATES) {
-      const globalBalance = store.liabilities.debtBalanceAtDate("mortgage", dateKey)!;
-      expect(debtsAt(store, dateKey, "household")).toBe(globalBalance);
-      expect(debtsAt(store, dateKey, "mJ")).toBe(owned(globalBalance, 7_000, "mJ"));
-      expect(debtsAt(store, dateKey, "mA")).toBe(owned(globalBalance, 3_000, "mA"));
-      expect(reconciles(store, dateKey, "household")).toBe(true);
-      expect(reconciles(store, dateKey, "mJ")).toBe(true);
-      expect(reconciles(store, dateKey, "mA")).toBe(true);
+      const globalBalance = (await store.liabilities.debtBalanceAtDate(
+        "mortgage",
+        dateKey,
+      ))!;
+      expect(await debtsAt(store, dateKey, "household")).toBe(globalBalance);
+      expect(await debtsAt(store, dateKey, "mJ")).toBe(owned(globalBalance, 7_000, "mJ"));
+      expect(await debtsAt(store, dateKey, "mA")).toBe(owned(globalBalance, 3_000, "mA"));
+      expect(await reconciles(store, dateKey, "household")).toBe(true);
+      expect(await reconciles(store, dateKey, "mJ")).toBe(true);
+      expect(await reconciles(store, dateKey, "mA")).toBe(true);
     }
 
     // No new snapshot dates were created by the ownership edit.
-    expect(store.snapshots.readSnapshots("mJ").length).toBe(datesBefore);
+    expect((await store.snapshots.readSnapshots("mJ")).length).toBe(datesBefore);
     store.close();
   });
 
-  test("a cosmetic edit (same split) persists the patch but ripples nothing", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("a cosmetic edit (same split) persists the patch but ripples nothing", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
-    const before = PAST_DATES.map((d) => debtsAt(store, d, "mJ"));
+    const before = await Promise.all(PAST_DATES.map((d) => debtsAt(store, d, "mJ")));
 
     // Rename only — the split is unchanged, so the seam must NOT ripple.
-    store.updateLiabilityAndRippleOwnership(
+    await store.updateLiabilityAndRippleOwnership(
       "mortgage",
       {
         name: "Hipoteca renombrada",
@@ -154,9 +164,9 @@ describe("updateLiabilityAndRippleOwnership (ownership seam, ADR 0020)", () => {
     );
 
     expect(
-      store.liabilities.readLiabilities().find((l) => l.id === "mortgage")?.name,
+      (await store.liabilities.readLiabilities()).find((l) => l.id === "mortgage")?.name,
     ).toBe("Hipoteca renombrada");
-    const after = PAST_DATES.map((d) => debtsAt(store, d, "mJ"));
+    const after = await Promise.all(PAST_DATES.map((d) => debtsAt(store, d, "mJ")));
     expect(after).toEqual(before);
     store.close();
   });
@@ -170,15 +180,15 @@ describe("updateLiabilityAndRippleOwnership (ownership seam, ADR 0020)", () => {
 const HOME_GLOBAL_MINOR = 30_000_001;
 
 /** A 2-member household owning a home co-owned 65% by the household (35% a non-member). */
-function seedCoOwnedHome(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seedCoOwnedHome(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [
       { id: "mJ", name: "Jose" },
       { id: "mA", name: "Ana" },
     ],
     mode: "household",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 20_000_00,
     id: "cash",
@@ -190,7 +200,7 @@ function seedCoOwnedHome(store: WorthlineStore): void {
     ],
     type: "cash",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: HOME_GLOBAL_MINOR,
     id: "piso",
@@ -202,7 +212,7 @@ function seedCoOwnedHome(store: WorthlineStore): void {
     ],
     type: "real_estate",
   });
-  store.addValuationAnchorAndRipple(
+  await store.addValuationAnchorAndRipple(
     {
       adjustsPriorCurve: true,
       assetId: "piso",
@@ -212,7 +222,7 @@ function seedCoOwnedHome(store: WorthlineStore): void {
     },
     { today: TODAY },
   );
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     balanceMinor: 200_000_00,
     currency: "EUR",
     id: "mortgage",
@@ -223,8 +233,8 @@ function seedCoOwnedHome(store: WorthlineStore): void {
     ],
     type: "mortgage",
   });
-  store.liabilities.setDebtModel("mortgage", "amortizable");
-  store.createAmortizationPlanAndRipple(
+  await store.liabilities.setDebtModel("mortgage", "amortizable");
+  await store.createAmortizationPlanAndRipple(
     {
       annualInterestRate: "0.0317",
       id: "plan1",
@@ -238,26 +248,28 @@ function seedCoOwnedHome(store: WorthlineStore): void {
   );
 }
 
-function homeRowAt(
+async function homeRowAt(
   store: WorthlineStore,
   dateKey: string,
   scopeId: string,
-): number | undefined {
-  return store.snapshots
-    .readSnapshotHoldings({ from: dateKey, scopeId, to: dateKey })
-    .find((r) => r.holdingId === "piso")?.valueMinor;
+): Promise<number | undefined> {
+  return (
+    await store.snapshots.readSnapshotHoldings({ from: dateKey, scopeId, to: dateKey })
+  ).find((r) => r.holdingId === "piso")?.valueMinor;
 }
 
 describe("updateAssetAndRippleOwnership for a real_estate holding (ADR 0020)", () => {
-  test("a real_estate ownership edit re-weights each member's home row losslessly via the curve ripple", () => {
-    const store = createInMemoryStore();
-    seedCoOwnedHome(store);
+  test("a real_estate ownership edit re-weights each member's home row losslessly via the curve ripple", async () => {
+    const store = await createInMemoryStore();
+    await seedCoOwnedHome(store);
 
-    const dates = store.snapshots.readSnapshots("household").map((snap) => snap.dateKey);
+    const dates = (await store.snapshots.readSnapshots("household")).map(
+      (snap) => snap.dateKey,
+    );
     expect(dates.length).toBeGreaterThan(2);
 
     // Correct the INTERNAL member split (40/25 → 30/35); household stays 65%.
-    store.updateAssetAndRippleOwnership(
+    await store.updateAssetAndRippleOwnership(
       "piso",
       {
         ownership: [
@@ -269,14 +281,18 @@ describe("updateAssetAndRippleOwnership for a real_estate holding (ADR 0020)", (
     );
 
     for (const dateKey of dates) {
-      expect(homeRowAt(store, dateKey, "household")).toBe(
+      expect(await homeRowAt(store, dateKey, "household")).toBe(
         owned(HOME_GLOBAL_MINOR, 6_500, "mJ"),
       );
-      expect(homeRowAt(store, dateKey, "mJ")).toBe(owned(HOME_GLOBAL_MINOR, 3_000, "mJ"));
-      expect(homeRowAt(store, dateKey, "mA")).toBe(owned(HOME_GLOBAL_MINOR, 3_500, "mA"));
-      expect(reconciles(store, dateKey, "household")).toBe(true);
-      expect(reconciles(store, dateKey, "mJ")).toBe(true);
-      expect(reconciles(store, dateKey, "mA")).toBe(true);
+      expect(await homeRowAt(store, dateKey, "mJ")).toBe(
+        owned(HOME_GLOBAL_MINOR, 3_000, "mJ"),
+      );
+      expect(await homeRowAt(store, dateKey, "mA")).toBe(
+        owned(HOME_GLOBAL_MINOR, 3_500, "mA"),
+      );
+      expect(await reconciles(store, dateKey, "household")).toBe(true);
+      expect(await reconciles(store, dateKey, "mJ")).toBe(true);
+      expect(await reconciles(store, dateKey, "mA")).toBe(true);
     }
 
     store.close();
@@ -284,16 +300,16 @@ describe("updateAssetAndRippleOwnership for a real_estate holding (ADR 0020)", (
 });
 
 describe("updateAssetAndRippleOwnership for a non-real_estate holding (ADR 0020)", () => {
-  test("re-weights a co-owned fund's member rows from the new split", () => {
-    const store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
+  test("re-weights a co-owned fund's member rows from the new split", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
       members: [
         { id: "mJ", name: "Jose" },
         { id: "mA", name: "Ana" },
       ],
       mode: "household",
     });
-    store.assets.createInvestmentAsset({
+    await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "fondo",
       liquidityTier: "market",
@@ -303,7 +319,7 @@ describe("updateAssetAndRippleOwnership for a non-real_estate holding (ADR 0020)
         { memberId: "mA", shareBps: 4_000 },
       ],
     });
-    store.recordOperationAndRipple(
+    await store.recordOperationAndRipple(
       {
         assetId: "fondo",
         currency: "EUR",
@@ -316,7 +332,7 @@ describe("updateAssetAndRippleOwnership for a non-real_estate holding (ADR 0020)
       },
       { today: TODAY },
     );
-    store.liabilities.createLiability({
+    await store.liabilities.createLiability({
       balanceMinor: 200_000_00,
       currency: "EUR",
       id: "mortgage",
@@ -327,8 +343,8 @@ describe("updateAssetAndRippleOwnership for a non-real_estate holding (ADR 0020)
       ],
       type: "mortgage",
     });
-    store.liabilities.setDebtModel("mortgage", "amortizable");
-    store.createAmortizationPlanAndRipple(
+    await store.liabilities.setDebtModel("mortgage", "amortizable");
+    await store.createAmortizationPlanAndRipple(
       {
         annualInterestRate: "0.0317",
         id: "plan1",
@@ -341,16 +357,25 @@ describe("updateAssetAndRippleOwnership for a non-real_estate holding (ADR 0020)
       { today: TODAY },
     );
 
-    const fundRow = (dateKey: string, scopeId: string): number | undefined =>
-      store.snapshots
-        .readSnapshotHoldings({ from: dateKey, scopeId, to: dateKey })
-        .find((r) => r.holdingId === "fondo")?.valueMinor;
+    const fundRow = async (
+      dateKey: string,
+      scopeId: string,
+    ): Promise<number | undefined> =>
+      (
+        await store.snapshots.readSnapshotHoldings({
+          from: dateKey,
+          scopeId,
+          to: dateKey,
+        })
+      ).find((r) => r.holdingId === "fondo")?.valueMinor;
 
-    const dates = store.snapshots.readSnapshots("household").map((snap) => snap.dateKey);
+    const dates = (await store.snapshots.readSnapshots("household")).map(
+      (snap) => snap.dateKey,
+    );
     expect(dates.length).toBeGreaterThan(0);
     const globalCost = 10 * 100_00; // cost basis, #183
 
-    store.updateAssetAndRippleOwnership(
+    await store.updateAssetAndRippleOwnership(
       "fondo",
       {
         ownership: [
@@ -362,9 +387,9 @@ describe("updateAssetAndRippleOwnership for a non-real_estate holding (ADR 0020)
     );
 
     for (const dateKey of dates) {
-      expect(fundRow(dateKey, "household")).toBe(globalCost);
-      expect(fundRow(dateKey, "mJ")).toBe(owned(globalCost, 7_000, "mJ"));
-      expect(fundRow(dateKey, "mA")).toBe(owned(globalCost, 3_000, "mA"));
+      expect(await fundRow(dateKey, "household")).toBe(globalCost);
+      expect(await fundRow(dateKey, "mJ")).toBe(owned(globalCost, 7_000, "mJ"));
+      expect(await fundRow(dateKey, "mA")).toBe(owned(globalCost, 3_000, "mA"));
     }
     store.close();
   });

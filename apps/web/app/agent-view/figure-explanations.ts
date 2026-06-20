@@ -117,15 +117,15 @@ interface ResolvedScopeFacts {
  * figures use the CURRENT assumptions only; a historical (dated) explanation is
  * issue #344 and is rejected before this point.
  */
-export function buildFigureExplanation(
+export async function buildFigureExplanation(
   store: AgentViewReadStore,
   options: BuildFigureExplanationOptions,
-): AgentViewFigureExplanation {
+): Promise<AgentViewFigureExplanation> {
   if (options.date !== undefined) {
     return buildHistoricalFigureExplanation(store, options, options.date);
   }
 
-  const facts = resolveScopeFacts(store, options.scopeId);
+  const facts = await resolveScopeFacts(store, options.scopeId);
 
   switch (options.figure) {
     case "net_worth":
@@ -182,11 +182,11 @@ interface HistoricalSnapshotFacts {
  * `partial` (the stored headline figure plus a `history_coverage` note) when the
  * snapshot is an old capture with no rows. Reads mutate nothing.
  */
-function buildHistoricalFigureExplanation(
+async function buildHistoricalFigureExplanation(
   store: AgentViewReadStore,
   options: BuildFigureExplanationOptions,
   date: string,
-): AgentViewFigureExplanation {
+): Promise<AgentViewFigureExplanation> {
   // FIRE has no honest historical value — reject before the snapshot lookup so a
   // dated FIRE request fails fast regardless of whether a snapshot exists.
   if (FIRE_FIGURE_NAMES.has(options.figure)) {
@@ -198,7 +198,7 @@ function buildHistoricalFigureExplanation(
     });
   }
 
-  const facts = resolveHistoricalSnapshotFacts(store, options.scopeId, date);
+  const facts = await resolveHistoricalSnapshotFacts(store, options.scopeId, date);
 
   switch (options.figure) {
     case "net_worth":
@@ -227,18 +227,18 @@ function buildHistoricalFigureExplanation(
   }
 }
 
-function resolveHistoricalSnapshotFacts(
+async function resolveHistoricalSnapshotFacts(
   store: AgentViewReadStore,
   publicScopeId: string,
   date: string,
-): HistoricalSnapshotFacts {
-  const workspace = store.readWorkspace();
+): Promise<HistoricalSnapshotFacts> {
+  const workspace = await store.readWorkspace();
 
   if (!workspace) {
     throw unknownScope();
   }
 
-  const scope = listAgentViewScopes(store).find(
+  const scope = (await listAgentViewScopes(store)).find(
     (candidate) => candidate.id === publicScopeId,
   );
 
@@ -246,12 +246,12 @@ function resolveHistoricalSnapshotFacts(
     throw unknownScope();
   }
 
-  const internalScopeId = resolveInternalScopeId(store, publicScopeId);
+  const internalScopeId = await resolveInternalScopeId(store, publicScopeId);
 
   // Exactly one snapshot per scope per day — never pick the nearest.
-  const snapshot = store
-    .readSnapshots(internalScopeId)
-    .find((candidate) => candidate.dateKey === date);
+  const snapshot = (await store.readSnapshots(internalScopeId)).find(
+    (candidate) => candidate.dateKey === date,
+  );
 
   if (!snapshot) {
     throw new AgentViewHttpError({
@@ -262,7 +262,7 @@ function resolveHistoricalSnapshotFacts(
     });
   }
 
-  const rows = store.readSnapshotHoldings({
+  const rows = await store.readSnapshotHoldings({
     from: date,
     scopeId: internalScopeId,
     to: date,
@@ -271,7 +271,7 @@ function resolveHistoricalSnapshotFacts(
   return {
     currency: workspace.baseCurrency,
     date,
-    holdingPublicIds: publicIdMap(store.readPublicIds(), "holding"),
+    holdingPublicIds: publicIdMap(await store.readPublicIds(), "holding"),
     internalScopeId,
     rows,
     scope,
@@ -552,11 +552,11 @@ function historicalLiquidityBreakdown(
  * exist that day — is a `422 unsupported_figure`: there is no honest historical
  * value to report, and we never fabricate one.
  */
-function historicalHoldingValue(
+async function historicalHoldingValue(
   store: AgentViewReadStore,
   facts: HistoricalSnapshotFacts,
   publicHoldingId: string | undefined,
-): AgentViewFigureExplanation {
+): Promise<AgentViewFigureExplanation> {
   if (publicHoldingId === undefined) {
     throw new AgentViewHttpError({
       code: "bad_request",
@@ -566,7 +566,7 @@ function historicalHoldingValue(
     });
   }
 
-  const internalHoldingId = resolveInternalHoldingId(store, publicHoldingId);
+  const internalHoldingId = await resolveInternalHoldingId(store, publicHoldingId);
   const row = facts.rows.find((candidate) => candidate.holdingId === internalHoldingId);
 
   if (!row) {
@@ -704,11 +704,11 @@ function frozenHoldingRef(
 
 // ── Headline figures ──────────────────────────────────────────────────────────
 
-function explainNetWorth(
+async function explainNetWorth(
   store: AgentViewReadStore,
   facts: ResolvedScopeFacts,
   asOf: string,
-): AgentViewFigureExplanation {
+): Promise<AgentViewFigureExplanation> {
   const summary = netWorth(facts);
   const projection = projectPortfolio(portfolioInput(facts));
 
@@ -736,17 +736,17 @@ function explainNetWorth(
       ),
     ),
     links: links(facts.scope.id),
-    qualityNotes: qualityNotesFor(store, facts, scopeWideHoldingIds(projection)),
+    qualityNotes: await qualityNotesFor(store, facts, scopeWideHoldingIds(projection)),
     scope: facts.scope,
     value: money(summary.totalNetWorth),
   };
 }
 
-function explainGrossAssets(
+async function explainGrossAssets(
   store: AgentViewReadStore,
   facts: ResolvedScopeFacts,
   asOf: string,
-): AgentViewFigureExplanation {
+): Promise<AgentViewFigureExplanation> {
   const summary = netWorth(facts);
   const projection = projectPortfolio(portfolioInput(facts));
   const assetIds = projection.sections[0].rows.map((row) => row.id);
@@ -769,17 +769,17 @@ function explainGrossAssets(
       ),
     ),
     links: links(facts.scope.id),
-    qualityNotes: qualityNotesFor(store, facts, new Set(assetIds)),
+    qualityNotes: await qualityNotesFor(store, facts, new Set(assetIds)),
     scope: facts.scope,
     value: money(summary.grossAssets),
   };
 }
 
-function explainDebts(
+async function explainDebts(
   store: AgentViewReadStore,
   facts: ResolvedScopeFacts,
   asOf: string,
-): AgentViewFigureExplanation {
+): Promise<AgentViewFigureExplanation> {
   const summary = netWorth(facts);
   const projection = projectPortfolio(portfolioInput(facts));
   const liabilityIds = projection.sections[1].rows.map((row) => row.id);
@@ -802,17 +802,17 @@ function explainDebts(
       ),
     ),
     links: links(facts.scope.id),
-    qualityNotes: qualityNotesFor(store, facts, new Set(liabilityIds)),
+    qualityNotes: await qualityNotesFor(store, facts, new Set(liabilityIds)),
     scope: facts.scope,
     value: money(summary.debts),
   };
 }
 
-function explainLiquidNetWorth(
+async function explainLiquidNetWorth(
   store: AgentViewReadStore,
   facts: ResolvedScopeFacts,
   asOf: string,
-): AgentViewFigureExplanation {
+): Promise<AgentViewFigureExplanation> {
   const summary = netWorth(facts);
   const projection = projectPortfolio(portfolioInput(facts));
   const housingAssetIds = housingAssetIdsOf(facts.assets);
@@ -881,17 +881,17 @@ function explainLiquidNetWorth(
     },
     includedHoldings: included,
     links: links(facts.scope.id),
-    qualityNotes: qualityNotesFor(store, facts, relevant),
+    qualityNotes: await qualityNotesFor(store, facts, relevant),
     scope: facts.scope,
     value: money(summary.liquidNetWorth),
   };
 }
 
-function explainHousingEquity(
+async function explainHousingEquity(
   store: AgentViewReadStore,
   facts: ResolvedScopeFacts,
   asOf: string,
-): AgentViewFigureExplanation {
+): Promise<AgentViewFigureExplanation> {
   const summary = netWorth(facts);
   const projection = projectPortfolio(portfolioInput(facts));
   const housingAssetIds = housingAssetIdsOf(facts.assets);
@@ -952,17 +952,17 @@ function explainHousingEquity(
     },
     includedHoldings: included,
     links: links(facts.scope.id),
-    qualityNotes: qualityNotesFor(store, facts, relevant),
+    qualityNotes: await qualityNotesFor(store, facts, relevant),
     scope: facts.scope,
     value: money(summary.housingEquity),
   };
 }
 
-function explainLiquidityBreakdown(
+async function explainLiquidityBreakdown(
   store: AgentViewReadStore,
   facts: ResolvedScopeFacts,
   asOf: string,
-): AgentViewFigureExplanation {
+): Promise<AgentViewFigureExplanation> {
   const breakdown = buildLiquidityBreakdown(figuresInput(facts));
   const projection = projectPortfolio(portfolioInput(facts));
 
@@ -979,7 +979,7 @@ function explainLiquidityBreakdown(
     },
     includedHoldings: liquidityIncludedHoldings(facts, breakdown),
     links: links(facts.scope.id),
-    qualityNotes: qualityNotesFor(store, facts, scopeWideHoldingIds(projection)),
+    qualityNotes: await qualityNotesFor(store, facts, scopeWideHoldingIds(projection)),
     scope: facts.scope,
     value: breakdown.map(toLiquidityRung),
   };
@@ -1017,12 +1017,12 @@ function liquidityIncludedHoldings(
 
 // ── holding_value ──────────────────────────────────────────────────────────────
 
-function explainHoldingValue(
+async function explainHoldingValue(
   store: AgentViewReadStore,
   facts: ResolvedScopeFacts,
   asOf: string,
   publicHoldingId: string | undefined,
-): AgentViewFigureExplanation {
+): Promise<AgentViewFigureExplanation> {
   if (publicHoldingId === undefined) {
     throw new AgentViewHttpError({
       code: "bad_request",
@@ -1033,7 +1033,7 @@ function explainHoldingValue(
   }
 
   // A 404 when the public id names no holding at all.
-  const internalHoldingId = resolveInternalHoldingId(store, publicHoldingId);
+  const internalHoldingId = await resolveInternalHoldingId(store, publicHoldingId);
   const projection = projectPortfolio(portfolioInput(facts));
 
   const assetRow = projection.sections[0].rows.find(
@@ -1054,7 +1054,9 @@ function explainHoldingValue(
   const valuationMethod = defaultsFor(instrument).valuationMethod;
   // Liabilities are priced from plan/anchor facts, not a provider price-cache entry;
   // freshness only applies to provider-priced asset holdings.
-  const freshness = assetRow ? holdingFreshness(store, internalHoldingId) : undefined;
+  const freshness = assetRow
+    ? await holdingFreshness(store, internalHoldingId)
+    : undefined;
 
   return {
     asOf,
@@ -1075,7 +1077,7 @@ function explainHoldingValue(
       ),
     ],
     links: links(facts.scope.id),
-    qualityNotes: qualityNotesFor(store, facts, new Set([internalHoldingId])),
+    qualityNotes: await qualityNotesFor(store, facts, new Set([internalHoldingId])),
     scope: facts.scope,
     value: moneyOf(valueMinor, facts.currency),
   };
@@ -1087,11 +1089,11 @@ function explainHoldingValue(
  * holding with no cached price reports `manual`, so a client always learns how
  * the single value it asked about was sourced.
  */
-function holdingFreshness(
+async function holdingFreshness(
   store: AgentViewReadStore,
   internalHoldingId: string,
-): AgentViewFigureFreshness {
-  const freshness = store.readPriceFreshness(internalHoldingId);
+): Promise<AgentViewFigureFreshness> {
+  const freshness = await store.readPriceFreshness(internalHoldingId);
 
   if (freshness === null) {
     return { status: "manual" };
@@ -1106,12 +1108,12 @@ function holdingFreshness(
 
 // ── FIRE figures (current assumptions only) ─────────────────────────────────────
 
-function explainFireEligibleAssets(
+async function explainFireEligibleAssets(
   store: AgentViewReadStore,
   facts: ResolvedScopeFacts,
   asOf: string,
-): AgentViewFigureExplanation {
-  const { config, result } = resolveFire(store, facts, "fire_eligible_assets");
+): Promise<AgentViewFigureExplanation> {
+  const { config, result } = await resolveFire(store, facts, "fire_eligible_assets");
   const eligibleIds = eligibleAssetIds(facts, config);
 
   return {
@@ -1138,18 +1140,18 @@ function explainFireEligibleAssets(
         ),
       ),
     links: links(facts.scope.id),
-    qualityNotes: qualityNotesFor(store, facts, eligibleIds),
+    qualityNotes: await qualityNotesFor(store, facts, eligibleIds),
     scope: facts.scope,
     value: money(result.eligibleAssets),
   };
 }
 
-function explainFireProgress(
+async function explainFireProgress(
   store: AgentViewReadStore,
   facts: ResolvedScopeFacts,
   asOf: string,
-): AgentViewFigureExplanation {
-  const { config, result } = resolveFire(store, facts, "fire_progress");
+): Promise<AgentViewFigureExplanation> {
+  const { config, result } = await resolveFire(store, facts, "fire_progress");
   const eligibleIds = eligibleAssetIds(facts, config);
 
   return {
@@ -1179,7 +1181,7 @@ function explainFireProgress(
         ),
       ),
     links: links(facts.scope.id),
-    qualityNotes: qualityNotesFor(store, facts, eligibleIds),
+    qualityNotes: await qualityNotesFor(store, facts, eligibleIds),
     scope: facts.scope,
     value: { ratio: fireProgressRatio(result.eligibleAssets, result.fireNumber) },
   };
@@ -1190,12 +1192,15 @@ function explainFireProgress(
  * with no FIRE config has no figure to explain — there is no honest current FIRE
  * number — so it is a documented `422 unsupported_figure`, never a fabricated 0.
  */
-function resolveFire(
+async function resolveFire(
   store: AgentViewReadStore,
   facts: ResolvedScopeFacts,
   figure: AgentViewFigureName,
-): { config: FireScopeConfig; result: ReturnType<typeof calculateFireForScope> } {
-  const config = store.readFireConfig()[facts.internalScopeId];
+): Promise<{
+  config: FireScopeConfig;
+  result: ReturnType<typeof calculateFireForScope>;
+}> {
+  const config = (await store.readFireConfig())[facts.internalScopeId];
 
   if (config === undefined) {
     throw unsupportedFigure(figure);
@@ -1251,17 +1256,17 @@ function fireProgressRatio(eligibleAssets: MoneyMinor, fireNumber: MoneyMinor): 
 
 // ── Shared helpers ──────────────────────────────────────────────────────────────
 
-function resolveScopeFacts(
+async function resolveScopeFacts(
   store: AgentViewReadStore,
   publicScopeId: string,
-): ResolvedScopeFacts {
-  const workspace = store.readWorkspace();
+): Promise<ResolvedScopeFacts> {
+  const workspace = await store.readWorkspace();
 
   if (!workspace) {
     throw unknownScope();
   }
 
-  const scope = listAgentViewScopes(store).find(
+  const scope = (await listAgentViewScopes(store)).find(
     (candidate) => candidate.id === publicScopeId,
   );
 
@@ -1269,7 +1274,7 @@ function resolveScopeFacts(
     throw unknownScope();
   }
 
-  const internalScopeId = resolveInternalScopeId(store, publicScopeId);
+  const internalScopeId = await resolveInternalScopeId(store, publicScopeId);
   const scopeOption = listScopeOptions(workspace).find(
     (option) => option.id === internalScopeId,
   );
@@ -1283,11 +1288,11 @@ function resolveScopeFacts(
   }
 
   return {
-    assets: store.readAssets(),
+    assets: await store.readAssets(),
     currency: workspace.baseCurrency,
-    holdingPublicIds: publicIdMap(store.readPublicIds(), "holding"),
+    holdingPublicIds: publicIdMap(await store.readPublicIds(), "holding"),
     internalScopeId,
-    liabilities: store.readLiabilities(),
+    liabilities: await store.readLiabilities(),
     scope,
     scopeOption,
     workspace,
@@ -1341,11 +1346,11 @@ function scopedLiabilityMinor(
  * the scope-global signals. Reuses `buildDataQuality` so the notes never drift
  * from the data-quality endpoint. Read-only — surfacing a note writes nothing.
  */
-function qualityNotesFor(
+async function qualityNotesFor(
   store: AgentViewReadStore,
   facts: ResolvedScopeFacts,
   relevantInternalIds: Set<string>,
-): AgentViewDataQualitySignal[] {
+): Promise<AgentViewDataQualitySignal[]> {
   const relevantPublicIds = new Set(
     [...relevantInternalIds]
       .map((internalId) => facts.holdingPublicIds.get(internalId))
@@ -1357,13 +1362,13 @@ function qualityNotesFor(
   // projection_gap signal is scoped to the source, not the holding, so we must
   // widen the filter to include it when any of that source's holdings are in scope.
   const relevantSourceIds = new Set<string>();
-  for (const source of store.readConnectedSources()) {
+  for (const source of await store.readConnectedSources()) {
     if (source.assetIds.some((assetId) => relevantInternalIds.has(assetId))) {
       relevantSourceIds.add(deriveSourcePublicId(source.id));
     }
   }
 
-  const { signals } = buildDataQuality(store, {
+  const { signals } = await buildDataQuality(store, {
     limit: MAX_DATA_QUALITY_LIMIT,
     scopeId: facts.scope.id,
   });

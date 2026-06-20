@@ -8,13 +8,13 @@ import { AgentViewHttpError } from "./contract";
  * public-ID registry. A missing entry means the caller named a scope that does
  * not exist, so it is a `404`, not an internal error.
  */
-export function resolveInternalScopeId(
+export async function resolveInternalScopeId(
   store: AgentViewReadStore,
   publicScopeId: string,
-): string {
-  const entry = store
-    .readPublicIds()
-    .find((row) => row.entityType === "scope" && row.publicId === publicScopeId);
+): Promise<string> {
+  const entry = (await store.readPublicIds()).find(
+    (row) => row.entityType === "scope" && row.publicId === publicScopeId,
+  );
 
   if (!entry) {
     throw new AgentViewHttpError({
@@ -32,13 +32,13 @@ export function resolveInternalScopeId(
  * the public-ID registry (a reverse lookup over the `holding` rows). A missing
  * entry means the caller named a holding that does not exist, so it is a `404`.
  */
-export function resolveInternalHoldingId(
+export async function resolveInternalHoldingId(
   store: AgentViewReadStore,
   publicHoldingId: string,
-): string {
-  const internalId = [...publicIdMap(store.readPublicIds(), "holding").entries()].find(
-    ([, publicId]) => publicId === publicHoldingId,
-  )?.[0];
+): Promise<string> {
+  const internalId = [
+    ...publicIdMap(await store.readPublicIds(), "holding").entries(),
+  ].find(([, publicId]) => publicId === publicHoldingId)?.[0];
 
   if (internalId === undefined) {
     throw new AgentViewHttpError({

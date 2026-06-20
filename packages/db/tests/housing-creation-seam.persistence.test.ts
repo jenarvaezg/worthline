@@ -14,24 +14,27 @@ import type { WorthlineStore } from "@db/index";
 
 const TODAY = "2026-06-12";
 
-function seedWorkspace(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seedWorkspace(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jose" }],
     mode: "individual",
   });
 }
 
-function grossAt(store: WorthlineStore, dateKey: string): number | undefined {
-  return store.snapshots.readSnapshots().find((snap) => snap.dateKey === dateKey)
+async function grossAt(
+  store: WorthlineStore,
+  dateKey: string,
+): Promise<number | undefined> {
+  return (await store.snapshots.readSnapshots()).find((snap) => snap.dateKey === dateKey)
     ?.grossAssets.amountMinor;
 }
 
 describe("createHousingHoldingAndRipple (housing creation seam, ADR 0020)", () => {
-  test("one call creates the home, seeds the acquisition anchor + rate, AND ripples from the acquisition date", () => {
-    const store = createInMemoryStore();
-    seedWorkspace(store);
+  test("one call creates the home, seeds the acquisition anchor + rate, AND ripples from the acquisition date", async () => {
+    const store = await createInMemoryStore();
+    await seedWorkspace(store);
 
-    store.createHousingHoldingAndRipple(
+    await store.createHousingHoldingAndRipple(
       {
         asset: {
           currency: "EUR",
@@ -55,19 +58,19 @@ describe("createHousingHoldingAndRipple (housing creation seam, ADR 0020)", () =
     );
 
     // The persist happened: the asset exists.
-    expect(store.assets.readAssets().find((a) => a.id === "piso")).toBeDefined();
+    expect((await store.assets.readAssets()).find((a) => a.id === "piso")).toBeDefined();
     // The acquisition anchor was seeded.
-    expect(store.assets.readValuationAnchors("piso")).toHaveLength(1);
+    expect(await store.assets.readValuationAnchors("piso")).toHaveLength(1);
     // The ripple happened: a snapshot was generated at the acquisition date.
-    expect(grossAt(store, "2024-01-01")).toBe(100_000_00);
+    expect(await grossAt(store, "2024-01-01")).toBe(100_000_00);
     store.close();
   });
 
-  test("seeds an optional initial valuation anchor too", () => {
-    const store = createInMemoryStore();
-    seedWorkspace(store);
+  test("seeds an optional initial valuation anchor too", async () => {
+    const store = await createInMemoryStore();
+    await seedWorkspace(store);
 
-    store.createHousingHoldingAndRipple(
+    await store.createHousingHoldingAndRipple(
       {
         asset: {
           currency: "EUR",
@@ -97,12 +100,12 @@ describe("createHousingHoldingAndRipple (housing creation seam, ADR 0020)", () =
       { today: TODAY },
     );
 
-    expect(store.assets.readValuationAnchors("piso")).toHaveLength(2);
+    expect(await store.assets.readValuationAnchors("piso")).toHaveLength(2);
     // The single ripple from the acquisition date generates history along the
     // curve (mirroring persistManualAssetCreation, which ripples once from
     // acquisition). The acquisition-date snapshot is present and on-curve; the
     // later anchor refines the curve.
-    expect(grossAt(store, "2024-01-01")).toBeDefined();
+    expect(await grossAt(store, "2024-01-01")).toBeDefined();
     store.close();
   });
 });

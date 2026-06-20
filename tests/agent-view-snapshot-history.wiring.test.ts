@@ -69,17 +69,19 @@ async function snapshots(scopeId: string, query = "") {
  * exactly as the daily capture path does. Returns the open helpers' database path
  * via the env var the route handlers read.
  */
-function seedSnapshots(points: Array<{ date: string; valueMinor: number }>): void {
+async function seedSnapshots(
+  points: Array<{ date: string; valueMinor: number }>,
+): Promise<void> {
   const databasePath = tempDatabasePath("worthline-agent-view-snap-");
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = createWorthlineStore({ databasePath });
-  store.workspace.initializeWorkspace({
+  const store = await createWorthlineStore({ databasePath });
+  await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: points[0]?.valueMinor ?? 0,
     id: "asset_cash",
@@ -89,19 +91,19 @@ function seedSnapshots(points: Array<{ date: string; valueMinor: number }>): voi
     type: "cash",
   });
 
-  const workspace = store.workspace.readWorkspace()!;
+  const workspace = (await store.workspace.readWorkspace())!;
   for (const [index, point] of points.entries()) {
-    store.assets.updateAssetValuation("asset_cash", point.valueMinor);
+    await store.assets.updateAssetValuation("asset_cash", point.valueMinor);
     const valued = captureValuedNetWorthSnapshot({
-      assets: store.assets.readAssets(),
+      assets: await store.assets.readAssets(),
       capturedAt: `${point.date}T12:00:00.000Z`,
       id: `snapshot_${index}`,
-      liabilities: store.liabilities.readLiabilities(),
+      liabilities: await store.liabilities.readLiabilities(),
       scopeId: "household",
       scopeLabel: "Hogar",
       workspace,
     });
-    store.snapshots.saveSnapshot({
+    await store.snapshots.saveSnapshot({
       holdings: valued.holdings,
       snapshot: valued.snapshot,
     });
@@ -115,18 +117,18 @@ function seedSnapshots(points: Array<{ date: string; valueMinor: number }>): voi
  * Captures the valued snapshot the same way the daily path does, freezing the
  * holding rows.
  */
-function seedRichSnapshot(): void {
+async function seedRichSnapshot(): Promise<void> {
   const databasePath = tempDatabasePath("worthline-agent-view-snap-rich-");
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = createWorthlineStore({ databasePath });
-  store.workspace.initializeWorkspace({
+  const store = await createWorthlineStore({ databasePath });
+  await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
   });
   const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 10_000_00,
     id: "asset_cash",
@@ -135,7 +137,7 @@ function seedRichSnapshot(): void {
     ownership: owner,
     type: "cash",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 200_000_00,
     id: "asset_home",
@@ -145,7 +147,7 @@ function seedRichSnapshot(): void {
     ownership: owner,
     type: "real_estate",
   });
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     associatedAssetId: "asset_home",
     balanceMinor: 100_000_00,
     currency: "EUR",
@@ -154,14 +156,14 @@ function seedRichSnapshot(): void {
     ownership: owner,
     type: "mortgage",
   });
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "asset_fund",
     liquidityTier: "market",
     name: "Fondo indexado",
     ownership: owner,
   });
-  store.recordOperationAndRipple(
+  await store.recordOperationAndRipple(
     {
       assetId: "asset_fund",
       currency: "EUR",
@@ -175,19 +177,22 @@ function seedRichSnapshot(): void {
     { today: "2026-06-10" },
   );
 
-  const workspace = store.workspace.readWorkspace()!;
-  const { details } = store.snapshots.readScopedPositionsWithDetails("household");
+  const workspace = (await store.workspace.readWorkspace())!;
+  const { details } = await store.snapshots.readScopedPositionsWithDetails("household");
   const valued = captureValuedNetWorthSnapshot({
-    assets: store.assets.readAssets(),
+    assets: await store.assets.readAssets(),
     capturedAt: "2026-06-10T12:00:00.000Z",
     id: "snapshot_rich",
     investmentDetails: details,
-    liabilities: store.liabilities.readLiabilities(),
+    liabilities: await store.liabilities.readLiabilities(),
     scopeId: "household",
     scopeLabel: "Hogar",
     workspace,
   });
-  store.snapshots.saveSnapshot({ holdings: valued.holdings, snapshot: valued.snapshot });
+  await store.snapshots.saveSnapshot({
+    holdings: valued.holdings,
+    snapshot: valued.snapshot,
+  });
   store.close();
 }
 
@@ -219,7 +224,7 @@ const routeClient: AgentViewApiClient = {
 
 describe("GET /api/v1/agent-view/scopes/{scopeId}/snapshots", () => {
   test("defaults to monthly closes: the last snapshot of each calendar month", async () => {
-    seedSnapshots([
+    await seedSnapshots([
       { date: "2026-04-30", valueMinor: 100_000_00 },
       { date: "2026-05-15", valueMinor: 110_000_00 },
       { date: "2026-05-31", valueMinor: 120_000_00 },
@@ -267,7 +272,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/snapshots", () => {
   });
 
   test("granularity=raw returns every snapshot, flagging each month's close", async () => {
-    seedSnapshots([
+    await seedSnapshots([
       { date: "2026-04-30", valueMinor: 100_000_00 },
       { date: "2026-05-15", valueMinor: 110_000_00 },
       { date: "2026-05-31", valueMinor: 120_000_00 },
@@ -288,7 +293,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/snapshots", () => {
   });
 
   test("filters by inclusive from/to date window", async () => {
-    seedSnapshots([
+    await seedSnapshots([
       { date: "2026-04-30", valueMinor: 100_000_00 },
       { date: "2026-05-15", valueMinor: 110_000_00 },
       { date: "2026-05-31", valueMinor: 120_000_00 },
@@ -316,7 +321,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/snapshots", () => {
   });
 
   test("sort=-date returns the history newest-first", async () => {
-    seedSnapshots([
+    await seedSnapshots([
       { date: "2026-04-30", valueMinor: 100_000_00 },
       { date: "2026-05-31", valueMinor: 120_000_00 },
       { date: "2026-06-10", valueMinor: 130_000_00 },
@@ -331,7 +336,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/snapshots", () => {
   });
 
   test("paginates with opaque cursors, walking every row exactly once", async () => {
-    seedSnapshots([
+    await seedSnapshots([
       { date: "2026-02-28", valueMinor: 100_000_00 },
       { date: "2026-03-31", valueMinor: 110_000_00 },
       { date: "2026-04-30", valueMinor: 120_000_00 },
@@ -380,7 +385,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/snapshots", () => {
   });
 
   test("clamps limit over the documented maximum to 500", async () => {
-    seedSnapshots([{ date: "2026-06-10", valueMinor: 100_000_00 }]);
+    await seedSnapshots([{ date: "2026-06-10", valueMinor: 100_000_00 }]);
 
     const { body, response } = await snapshots(
       await householdScopeId(),
@@ -391,7 +396,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/snapshots", () => {
   });
 
   test("includeHoldingRows=summary returns a per-rung decomposition", async () => {
-    seedRichSnapshot();
+    await seedRichSnapshot();
 
     const { body } = await snapshots(
       await householdScopeId(),
@@ -436,7 +441,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/snapshots", () => {
   });
 
   test("includeHoldingRows=full returns each frozen row with money and decimals", async () => {
-    seedRichSnapshot();
+    await seedRichSnapshot();
 
     const { body } = await snapshots(
       await householdScopeId(),
@@ -484,7 +489,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/snapshots", () => {
   });
 
   test("maps malformed requests to documented API errors", async () => {
-    seedSnapshots([{ date: "2026-06-10", valueMinor: 100_000_00 }]);
+    await seedSnapshots([{ date: "2026-06-10", valueMinor: 100_000_00 }]);
     const scopeId = await householdScopeId();
 
     const badRequests = [
@@ -511,7 +516,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/snapshots", () => {
   });
 
   test("requires the local capability token", async () => {
-    seedSnapshots([{ date: "2026-06-10", valueMinor: 100_000_00 }]);
+    await seedSnapshots([{ date: "2026-06-10", valueMinor: 100_000_00 }]);
     const scopeId = await householdScopeId();
 
     const response = await getSnapshots(
@@ -525,7 +530,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/snapshots", () => {
   });
 
   test("MCP get_snapshot_history mirrors the HTTP shape and defaults to the household", async () => {
-    seedSnapshots([
+    await seedSnapshots([
       { date: "2026-04-30", valueMinor: 100_000_00 },
       { date: "2026-05-31", valueMinor: 120_000_00 },
       { date: "2026-06-10", valueMinor: 130_000_00 },
@@ -555,15 +560,15 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/snapshots", () => {
   });
 
   test("reads do not mutate persisted state", async () => {
-    seedRichSnapshot();
+    await seedRichSnapshot();
     const databasePath = process.env.WORTHLINE_DB_PATH as string;
     const scopeId = await householdScopeId();
 
-    const before = fingerprint(databasePath);
+    const before = await fingerprint(databasePath);
     await snapshots(scopeId);
     await snapshots(scopeId, "?granularity=raw&includeHoldingRows=full");
     await snapshots(scopeId, "?granularity=raw&includeHoldingRows=summary&limit=1");
-    const after = fingerprint(databasePath);
+    const after = await fingerprint(databasePath);
 
     expect(after).toBe(before);
   });
@@ -571,15 +576,17 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/snapshots", () => {
 
 // A fingerprint of every mutation-prone read, to prove an agent read writes
 // nothing (no snapshots, frozen rows, price cache, public IDs, holdings).
-function fingerprint(databasePath: string): string {
-  const store = createWorthlineStore({ databasePath });
+async function fingerprint(databasePath: string): Promise<string> {
+  const store = await createWorthlineStore({ databasePath });
   const snapshot = JSON.stringify({
-    assets: store.assets.readAssets(),
-    liabilities: store.liabilities.readLiabilities(),
-    priceCache: store.operations.readAllPriceCacheEntries(),
-    publicIds: store.agentView.readPublicIds(),
-    snapshotHoldings: store.snapshots.readSnapshotHoldings({ scopeId: "household" }),
-    snapshots: store.snapshots.readSnapshots("household"),
+    assets: await store.assets.readAssets(),
+    liabilities: await store.liabilities.readLiabilities(),
+    priceCache: await store.operations.readAllPriceCacheEntries(),
+    publicIds: await store.agentView.readPublicIds(),
+    snapshotHoldings: await store.snapshots.readSnapshotHoldings({
+      scopeId: "household",
+    }),
+    snapshots: await store.snapshots.readSnapshots("household"),
   });
   store.close();
   return snapshot;

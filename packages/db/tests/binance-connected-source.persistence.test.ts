@@ -15,15 +15,17 @@ import type { SourcePositionInput, WorthlineStore } from "@db/index";
 
 const MEMBER_ID = "mJ";
 
-function seed(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seed(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [{ id: MEMBER_ID, name: "Jose" }],
     mode: "individual",
   });
 }
 
-function connectBinance(store: WorthlineStore): { sourceId: string; assetId: string } {
-  return store.connectedSources.connect({
+async function connectBinance(
+  store: WorthlineStore,
+): Promise<{ sourceId: string; assetId: string }> {
+  return await store.connectedSources.connect({
     adapter: "binance",
     label: "Binance",
     credentialsJson: JSON.stringify({ apiKey: "KEY", apiSecret: "SECRET" }),
@@ -47,12 +49,12 @@ function token(overrides: Partial<Extract<SourcePositionInput, { kind: "token" }
 }
 
 describe("connect (Binance) materializes a market-rung crypto holding", () => {
-  test("the holding is a derived crypto asset on the market rung, valued 0 before sync", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { assetId } = connectBinance(store);
+  test("the holding is a derived crypto asset on the market rung, valued 0 before sync", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { assetId } = await connectBinance(store);
 
-    const asset = store.assets.readAssets().find((a) => a.id === assetId)!;
+    const asset = (await store.assets.readAssets()).find((a) => a.id === assetId)!;
     expect(asset.instrument).toBe("crypto");
     expect(asset.liquidityTier).toBe("market");
     expect(asset.currentValue.amountMinor).toBe(0);
@@ -61,12 +63,12 @@ describe("connect (Binance) materializes a market-rung crypto holding", () => {
 });
 
 describe("syncPositions (Binance) re-rolls the holding LIVE as Σ(balance × price)", () => {
-  test("spot tokens roll up to the live market value and persist their balances", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId, assetId } = connectBinance(store);
+  test("spot tokens roll up to the live market value and persist their balances", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectBinance(store);
 
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         token({
@@ -80,10 +82,10 @@ describe("syncPositions (Binance) re-rolls the holding LIVE as Σ(balance × pri
       "2026-06-16T10:00:00.000Z",
     );
 
-    const asset = store.assets.readAssets().find((a) => a.id === assetId)!;
+    const asset = (await store.assets.readAssets()).find((a) => a.id === assetId)!;
     expect(asset.currentValue.amountMinor).toBe(2_900_000); // 25 000 € + 4 000 €
 
-    const positions = store.connectedSources.readPositions(sourceId);
+    const positions = await store.connectedSources.readPositions(sourceId);
     expect(positions).toHaveLength(2);
     const btc = positions.find((p) => p.kind === "token" && p.symbol === "BTC");
     expect(btc).toMatchObject({
@@ -96,13 +98,13 @@ describe("syncPositions (Binance) re-rolls the holding LIVE as Σ(balance × pri
     store.close();
   });
 
-  test("the SAME token on spot + funding sums into one holding value (#247)", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId, assetId } = connectBinance(store);
+  test("the SAME token on spot + funding sums into one holding value (#247)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectBinance(store);
 
     // BTC parked on two market wallets — distinct externalIds, one symbol.
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         token({
@@ -121,11 +123,11 @@ describe("syncPositions (Binance) re-rolls the holding LIVE as Σ(balance × pri
       "2026-06-16T10:00:00.000Z",
     );
 
-    const asset = store.assets.readAssets().find((a) => a.id === assetId)!;
+    const asset = (await store.assets.readAssets()).find((a) => a.id === assetId)!;
     expect(asset.currentValue.amountMinor).toBe(3_000_000); // both wallets summed
 
     // Both positions persist with their wallet origin (#247 metadata).
-    const positions = store.connectedSources.readPositions(sourceId);
+    const positions = await store.connectedSources.readPositions(sourceId);
     expect(positions).toHaveLength(2);
     expect(positions.map((p) => (p.kind === "token" ? p.wallet : null)).sort()).toEqual([
       "funding",
@@ -134,12 +136,12 @@ describe("syncPositions (Binance) re-rolls the holding LIVE as Σ(balance × pri
     store.close();
   });
 
-  test("an unpriceable token (null price) contributes 0 but is still persisted", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId, assetId } = connectBinance(store);
+  test("an unpriceable token (null price) contributes 0 but is still persisted", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectBinance(store);
 
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         token({
@@ -158,47 +160,47 @@ describe("syncPositions (Binance) re-rolls the holding LIVE as Σ(balance × pri
       "2026-06-16T10:00:00.000Z",
     );
 
-    const asset = store.assets.readAssets().find((a) => a.id === assetId)!;
+    const asset = (await store.assets.readAssets()).find((a) => a.id === assetId)!;
     expect(asset.currentValue.amountMinor).toBe(2_500_000); // only the BTC counts
 
-    const positions = store.connectedSources.readPositions(sourceId);
+    const positions = await store.connectedSources.readPositions(sourceId);
     expect(positions).toHaveLength(2);
     const wagmi = positions.find((p) => p.kind === "token" && p.symbol === "WAGMI");
     expect(wagmi).toMatchObject({ symbol: "WAGMI", balance: "100", unitPrice: null });
     store.close();
   });
 
-  test("a re-sync replaces balances and re-rolls (sells/buys reflected wholesale)", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId, assetId } = connectBinance(store);
+  test("a re-sync replaces balances and re-rolls (sells/buys reflected wholesale)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectBinance(store);
 
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [token({ balance: "0.5", unitPrice: "50000" })],
       "2026-06-16T10:00:00.000Z",
     );
     // A later sync: balance grew, price moved.
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [token({ balance: "1", unitPrice: "60000" })],
       "2026-06-17T10:00:00.000Z",
     );
 
-    const asset = store.assets.readAssets().find((a) => a.id === assetId)!;
+    const asset = (await store.assets.readAssets()).find((a) => a.id === assetId)!;
     expect(asset.currentValue.amountMinor).toBe(6_000_000); // 1 × 60 000 €
-    expect(store.connectedSources.readPositions(sourceId)).toHaveLength(1);
+    expect(await store.connectedSources.readPositions(sourceId)).toHaveLength(1);
     store.close();
   });
 });
 
 describe("syncPositions (Binance) materializes ONE asset per rung (S3, #248)", () => {
-  test("spot + locked-earn → a market crypto asset AND a term-locked one, both linked", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId, assetId } = connectBinance(store);
+  test("spot + locked-earn → a market crypto asset AND a term-locked one, both linked", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectBinance(store);
 
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         token({
@@ -221,8 +223,7 @@ describe("syncPositions (Binance) materializes ONE asset per rung (S3, #248)", (
       "2026-06-16T10:00:00.000Z",
     );
 
-    const crypto = store.assets
-      .readAssets()
+    const crypto = (await store.assets.readAssets())
       .filter((a) => a.instrument === "crypto")
       .sort((a, b) => a.liquidityTier.localeCompare(b.liquidityTier));
     expect(crypto).toHaveLength(2);
@@ -235,7 +236,7 @@ describe("syncPositions (Binance) materializes ONE asset per rung (S3, #248)", (
     const termLockedAssetId = byTier.get("term-locked")!.id;
 
     // Both assets are linked to the source; listSourceAssetIds returns both.
-    const ids = store.connectedSources.listSourceAssetIds(sourceId);
+    const ids = await store.connectedSources.listSourceAssetIds(sourceId);
     expect(ids).toHaveLength(2);
     expect(ids).toContain(assetId);
     expect(ids).toContain(termLockedAssetId);
@@ -243,23 +244,27 @@ describe("syncPositions (Binance) materializes ONE asset per rung (S3, #248)", (
     // readSourceIdForAsset resolves the source from EITHER rung asset (#248): the
     // market (primary) one AND the term-locked one — the term-locked asset's id is
     // distinct from connected_sources.asset_id (the primary), yet still routes back.
-    expect(store.connectedSources.readSourceIdForAsset(assetId)).toBe(sourceId);
-    expect(store.connectedSources.readSourceIdForAsset(termLockedAssetId)).toBe(sourceId);
+    expect(await store.connectedSources.readSourceIdForAsset(assetId)).toBe(sourceId);
+    expect(await store.connectedSources.readSourceIdForAsset(termLockedAssetId)).toBe(
+      sourceId,
+    );
     expect(termLockedAssetId).not.toBe(assetId);
 
     // The term-locked asset inherits the source's ownership (the ownership-copy
     // branch in rerollSourceHoldings) — 100 % the connecting member.
-    const termLocked = store.assets.readAssets().find((a) => a.id === termLockedAssetId)!;
+    const termLocked = (await store.assets.readAssets()).find(
+      (a) => a.id === termLockedAssetId,
+    )!;
     expect(termLocked.ownership).toEqual([{ memberId: MEMBER_ID, shareBps: 10_000 }]);
     store.close();
   });
 
-  test("a later sync that empties the locked rung sets the term-locked asset to 0 (kept, not deleted)", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId } = connectBinance(store);
+  test("a later sync that empties the locked rung sets the term-locked asset to 0 (kept, not deleted)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId } = await connectBinance(store);
 
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         token({
@@ -280,13 +285,15 @@ describe("syncPositions (Binance) materializes ONE asset per rung (S3, #248)", (
       "2026-06-16T10:00:00.000Z",
     );
 
-    const lockedId = store.connectedSources.listSourceAssetIds(sourceId).find((id) => {
-      const a = store.assets.readAssets().find((x) => x.id === id)!;
+    const sourceAssetIds = await store.connectedSources.listSourceAssetIds(sourceId);
+    const assets = await store.assets.readAssets();
+    const lockedId = sourceAssetIds.find((id) => {
+      const a = assets.find((x) => x.id === id)!;
       return a.liquidityTier === "term-locked";
     })!;
 
     // A later sync redeemed the locked position — only spot remains.
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         token({
@@ -300,20 +307,20 @@ describe("syncPositions (Binance) materializes ONE asset per rung (S3, #248)", (
     );
 
     // The term-locked asset survives (snapshots/identity) but is valued 0 now.
-    const locked = store.assets.readAssets().find((a) => a.id === lockedId);
+    const locked = (await store.assets.readAssets()).find((a) => a.id === lockedId);
     expect(locked).toBeDefined();
     expect(locked!.currentValue.amountMinor).toBe(0);
     // It is still the source's asset, so the link is intact.
-    expect(store.connectedSources.listSourceAssetIds(sourceId)).toContain(lockedId);
+    expect(await store.connectedSources.listSourceAssetIds(sourceId)).toContain(lockedId);
     store.close();
   });
 
-  test("re-sync materializes a FRESH live asset for a rung whose prior asset was trashed (#248, FIX 6)", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId } = connectBinance(store);
+  test("re-sync materializes a FRESH live asset for a rung whose prior asset was trashed (#248, FIX 6)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId } = await connectBinance(store);
 
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         token({
@@ -328,15 +335,17 @@ describe("syncPositions (Binance) materializes ONE asset per rung (S3, #248)", (
       "2026-06-16T10:00:00.000Z",
     );
 
-    const trashedId = store.connectedSources.listSourceAssetIds(sourceId).find((id) => {
-      const a = store.assets.readAssets().find((x) => x.id === id)!;
+    const sourceAssetIds = await store.connectedSources.listSourceAssetIds(sourceId);
+    const assets = await store.assets.readAssets();
+    const trashedId = sourceAssetIds.find((id) => {
+      const a = assets.find((x) => x.id === id)!;
       return a.liquidityTier === "term-locked";
     })!;
 
     // Trash the term-locked rung asset, then re-sync the SAME rung.
-    store.assets.softDeleteAsset(trashedId, "2026-06-17T09:00:00.000Z");
+    await store.assets.softDeleteAsset(trashedId, "2026-06-17T09:00:00.000Z");
 
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         token({
@@ -353,9 +362,9 @@ describe("syncPositions (Binance) materializes ONE asset per rung (S3, #248)", (
 
     // Reroll ignores the trashed asset (deletedAt IS NULL filter) and materializes a
     // fresh LIVE one — it does NOT resurrect the trashed row.
-    const live = store.assets
-      .readAssets()
-      .filter((a) => a.liquidityTier === "term-locked");
+    const live = (await store.assets.readAssets()).filter(
+      (a) => a.liquidityTier === "term-locked",
+    );
     expect(live).toHaveLength(1);
     expect(live[0]!.id).not.toBe(trashedId);
     expect(live[0]!.currentValue.amountMinor).toBe(600_000);
@@ -364,11 +373,11 @@ describe("syncPositions (Binance) materializes ONE asset per rung (S3, #248)", (
 });
 
 describe("manual crypto coexists with Binance (no duplicate detection)", () => {
-  test("a hand-entered crypto investment and a Binance BTC both count", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId } = connectBinance(store);
-    store.connectedSources.syncPositions(
+  test("a hand-entered crypto investment and a Binance BTC both count", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId } = await connectBinance(store);
+    await store.connectedSources.syncPositions(
       sourceId,
       [token({ balance: "0.5", unitPrice: "50000" })],
       "2026-06-16T10:00:00.000Z",
@@ -376,9 +385,9 @@ describe("manual crypto coexists with Binance (no duplicate detection)", () => {
 
     // The Binance source projects ONE holding; a separate manual crypto holding
     // would be its own asset — worthline never dedupes the two (manual-first).
-    const cryptoAssets = store.assets
-      .readAssets()
-      .filter((a) => a.instrument === "crypto");
+    const cryptoAssets = (await store.assets.readAssets()).filter(
+      (a) => a.instrument === "crypto",
+    );
     expect(cryptoAssets).toHaveLength(1); // only the Binance-projected one exists here
     store.close();
   });

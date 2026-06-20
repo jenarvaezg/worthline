@@ -57,7 +57,7 @@ export async function deleteAssetAction(
 ): Promise<never> {
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id) {
@@ -68,7 +68,9 @@ export async function deleteAssetAction(
     );
   }
 
-  const changes = runWith((store) => store.assets.softDeleteAsset(id, _clock.now()));
+  const changes = await runWith((store) =>
+    store.assets.softDeleteAsset(id, _clock.now()),
+  );
 
   if (changes === 0) {
     redirect(
@@ -88,7 +90,7 @@ export async function deleteLiabilityAction(
 ): Promise<never> {
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id) {
@@ -99,7 +101,7 @@ export async function deleteLiabilityAction(
     );
   }
 
-  const changes = runWith((store) =>
+  const changes = await runWith((store) =>
     store.liabilities.softDeleteLiability(id, _clock.now()),
   );
 
@@ -120,7 +122,7 @@ export async function hardDeleteAssetAction(
 ): Promise<never> {
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id) {
@@ -131,7 +133,7 @@ export async function hardDeleteAssetAction(
     );
   }
 
-  const changes = runWith((store) => store.assets.hardDeleteAsset(id));
+  const changes = await runWith((store) => store.assets.hardDeleteAsset(id));
 
   if (changes === 0) {
     redirect(
@@ -150,7 +152,7 @@ export async function hardDeleteLiabilityAction(
 ): Promise<never> {
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id) {
@@ -161,7 +163,7 @@ export async function hardDeleteLiabilityAction(
     );
   }
 
-  const changes = runWith((store) => store.liabilities.hardDeleteLiability(id));
+  const changes = await runWith((store) => store.liabilities.hardDeleteLiability(id));
 
   if (changes === 0) {
     redirect(
@@ -179,10 +181,10 @@ export async function emptyTrashAction(
   _store?: WorthlineStore,
 ): Promise<never> {
   guardDemoWrite(baseUrl(formData));
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
-  runWith((store) => store.emptyTrash());
+  await runWith((store) => store.emptyTrash());
 
   redirect(successRedirectUrl("/patrimonio", "trash_emptied"));
 }
@@ -193,7 +195,7 @@ export async function restoreAssetAction(
 ): Promise<never> {
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id) {
@@ -204,7 +206,7 @@ export async function restoreAssetAction(
     );
   }
 
-  const changes = runWith((store) => store.assets.restoreAsset(id));
+  const changes = await runWith((store) => store.assets.restoreAsset(id));
 
   if (changes === 0) {
     redirect(
@@ -223,7 +225,7 @@ export async function restoreLiabilityAction(
 ): Promise<never> {
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id) {
@@ -234,7 +236,7 @@ export async function restoreLiabilityAction(
     );
   }
 
-  const changes = runWith((store) => store.liabilities.restoreLiability(id));
+  const changes = await runWith((store) => store.liabilities.restoreLiability(id));
 
   if (changes === 0) {
     redirect(
@@ -254,7 +256,7 @@ export async function acknowledgeWarningAction(
   guardDemoWrite(baseUrl(formData));
   const code = String(formData.get("code") ?? "").trim();
   const entityId = parseEntityId(formData, "entityId");
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!code || !entityId) {
@@ -265,7 +267,7 @@ export async function acknowledgeWarningAction(
     );
   }
 
-  runWith((store) => store.acknowledgeWarning(code, entityId));
+  await runWith((store) => store.acknowledgeWarning(code, entityId));
   redirect(successRedirectUrl("/patrimonio", "warning_acknowledged", entityId));
 }
 
@@ -277,7 +279,7 @@ export async function updateAssetValuationAction(
   const id = parseEntityId(formData);
   const currentValue = parseMoneyMinorField(formData, "currentValue");
 
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id) {
@@ -298,8 +300,8 @@ export async function updateAssetValuationAction(
     );
   }
 
-  const asset = runWith(
-    (store) => store.assets.readAssets().find((a) => a.id === id) ?? null,
+  const asset = await runWith(
+    async (store) => (await store.assets.readAssets()).find((a) => a.id === id) ?? null,
   );
 
   // Domain guard (ADR 0006): an investment's value is always derived and must
@@ -320,13 +322,13 @@ export async function updateAssetValuationAction(
     }
   }
 
-  runWith((store) => {
+  await runWith(async (store) => {
     if (asset?.type === "real_estate") {
       // Full atomic seam (ADR 0020): updateAssetValuation + upsert-today-anchor
       // + ripple all behind one transaction; from-date derived inside the seam.
-      store.recordHousingValuationAndRipple(id, currentValue);
+      await store.recordHousingValuationAndRipple(id, currentValue);
     } else {
-      store.assets.updateAssetValuation(id, currentValue);
+      await store.assets.updateAssetValuation(id, currentValue);
     }
   });
   redirect(successRedirectUrl("/patrimonio", "saved", id));
@@ -339,7 +341,7 @@ export async function updateLiabilityBalanceAction(
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const balance = parseMoneyMinorField(formData, "balance");
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id) {
@@ -360,7 +362,7 @@ export async function updateLiabilityBalanceAction(
     );
   }
 
-  runWith((store) => store.liabilities.updateLiabilityBalance(id, balance));
+  await runWith((store) => store.liabilities.updateLiabilityBalance(id, balance));
   redirect(successRedirectUrl("/patrimonio", "saved", id));
 }
 
@@ -369,16 +371,16 @@ export async function batchValueUpdateAction(
   _store?: WorthlineStore,
 ): Promise<never> {
   guardDemoWrite(baseUrl(formData));
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
-  const result = runWith((store) => {
-    const allAssets = store.assets.readAssets();
+  const result = await runWith(async (store) => {
+    const allAssets = await store.assets.readAssets();
     // The catalog seam decides who the pass hand-updates: every holding whose
     // valuation method is not derived (ADR 0014) — no inline instrument list.
     const manualAssets = allAssets.filter(isValueUpdateEligible);
     const assetsById = new Map(allAssets.map((a) => [a.id, a]));
-    const liabilities = store.liabilities.readLiabilities();
+    const liabilities = await store.liabilities.readLiabilities();
 
     // Reject submissions that name a derived holding (investment or connected-source
     // coin collection) — their value is computed from sub-detail, never hand-set.
@@ -427,7 +429,7 @@ export async function batchValueUpdateAction(
       liabilities.some((l) => l.id === cmd.id),
     );
 
-    store.operations.batchApplyAllValueUpdates(assetUpdates, liabilityUpdates);
+    await store.operations.batchApplyAllValueUpdates(assetUpdates, liabilityUpdates);
 
     return { ok: true, count: valid.length };
   });
@@ -456,7 +458,7 @@ export async function editAssetAction(
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const isLiability = formData.get("isLiability") === "true";
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id) {
@@ -489,8 +491,8 @@ export async function editAssetAction(
   }
 
   if (isLiability) {
-    const result = runWith((store) => {
-      const workspace = store.workspace.readWorkspace();
+    const result = await runWith(async (store) => {
+      const workspace = await store.workspace.readWorkspace();
 
       if (!workspace) {
         return { ok: false, error: "Workspace no inicializado." };
@@ -506,7 +508,8 @@ export async function editAssetAction(
       // debt on a real_estate asset accepts a partial split, exactly like the
       // asset; a standalone debt still totals 100%.
       const associatedAsset = associatedAssetId
-        ? (store.assets.readAssets().find((a) => a.id === associatedAssetId) ?? null)
+        ? ((await store.assets.readAssets()).find((a) => a.id === associatedAssetId) ??
+          null)
         : null;
       const allowKnownPartial = associatedAsset?.type === "real_estate";
 
@@ -525,7 +528,7 @@ export async function editAssetAction(
       // edit that ripples per-member snapshot history; a rename (same split) does
       // not. The ownership seam folds the persist + the conditional scope-axis
       // ripple into one atomic call, capturing the previous split behind the seam.
-      store.updateLiabilityAndRippleOwnership(id, {
+      await store.updateLiabilityAndRippleOwnership(id, {
         name,
         type: liabilityType,
         associatedAssetId,
@@ -542,8 +545,8 @@ export async function editAssetAction(
     redirect(successRedirectUrl("/patrimonio", "saved", id));
   }
 
-  const result = runWith((store) => {
-    const workspace = store.workspace.readWorkspace();
+  const result = await runWith(async (store) => {
+    const workspace = await store.workspace.readWorkspace();
 
     if (!workspace) {
       return { ok: false, error: "Workspace no inicializado." };
@@ -569,7 +572,7 @@ export async function editAssetAction(
     // ripple into one atomic call; for a real_estate asset it dispatches to the
     // housing curve ripple, which already re-weights every affected snapshot from
     // the asset's new split. The previous split is captured behind the seam.
-    store.updateAssetAndRippleOwnership(id, {
+    await store.updateAssetAndRippleOwnership(id, {
       name,
       type,
       liquidityTier,
@@ -602,8 +605,8 @@ function editUrl(id: string): string {
 }
 
 /** Read an asset by id, or null. Shared by the housing actions for the R9 guard. */
-function findAsset(store: WorthlineStore, id: string) {
-  return store.assets.readAssets().find((a) => a.id === id) ?? null;
+async function findAsset(store: WorthlineStore, id: string) {
+  return (await store.assets.readAssets()).find((a) => a.id === id) ?? null;
 }
 
 export async function setAppreciationRateAction(
@@ -612,7 +615,7 @@ export async function setAppreciationRateAction(
 ): Promise<never> {
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id) {
@@ -635,8 +638,8 @@ export async function setAppreciationRateAction(
     );
   }
 
-  const result = runWith((store) => {
-    const asset = findAsset(store, id);
+  const result = await runWith(async (store) => {
+    const asset = await findAsset(store, id);
 
     if (!asset) {
       return { ok: false, error: "No se encontró el activo." };
@@ -651,7 +654,7 @@ export async function setAppreciationRateAction(
 
     // The persist + from-date derivation + ripple all ride the seam (ADR 0020).
     // The seam derives min(first anchor, earliest snapshot) behind the seam (#184).
-    store.setAnnualAppreciationRateAndRipple(id, parsed.rate);
+    await store.setAnnualAppreciationRateAndRipple(id, parsed.rate);
 
     return { ok: true };
   });
@@ -670,7 +673,7 @@ export async function addValuationAnchorAction(
 ): Promise<never> {
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id) {
@@ -698,8 +701,8 @@ export async function addValuationAnchorAction(
     );
   }
 
-  const result = runWith((store) => {
-    const asset = findAsset(store, id);
+  const result = await runWith(async (store) => {
+    const asset = await findAsset(store, id);
 
     if (!asset) {
       return { ok: false, error: "No se encontró el activo." };
@@ -710,7 +713,7 @@ export async function addValuationAnchorAction(
     }
 
     // Persist + ripple ride the valuation seam (ADR 0020), atomically.
-    store.addValuationAnchorAndRipple(parsed.command, { today });
+    await store.addValuationAnchorAndRipple(parsed.command, { today });
 
     return { ok: true };
   });
@@ -730,7 +733,7 @@ export async function updateValuationAnchorAction(
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id || !anchorId) {
@@ -758,8 +761,8 @@ export async function updateValuationAnchorAction(
     );
   }
 
-  const result = runWith((store) => {
-    const asset = findAsset(store, id);
+  const result = await runWith(async (store) => {
+    const asset = await findAsset(store, id);
 
     if (!asset || !isHousingAsset(asset)) {
       return { ok: false, error: "Solo los inmuebles pueden tener tasaciones." };
@@ -768,7 +771,7 @@ export async function updateValuationAnchorAction(
     // Persist + ripple ride the valuation seam (ADR 0020): it reads the previous
     // anchor, ripples from the earlier of the old/new date, and guards the
     // future, all atomically.
-    const changes = store.updateValuationAnchorAndRipple(
+    const changes = await store.updateValuationAnchorAndRipple(
       anchorId,
       {
         adjustsPriorCurve: parsed.command.adjustsPriorCurve,
@@ -808,7 +811,7 @@ export async function deleteValuationAnchorAction(
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id || !anchorId) {
@@ -820,8 +823,8 @@ export async function deleteValuationAnchorAction(
   }
 
   const today = _clock.today();
-  const result = runWith((store) => {
-    const asset = findAsset(store, id);
+  const result = await runWith(async (store) => {
+    const asset = await findAsset(store, id);
 
     if (!asset || !isHousingAsset(asset)) {
       return { ok: false, error: "Solo los inmuebles pueden tener tasaciones." };
@@ -829,7 +832,7 @@ export async function deleteValuationAnchorAction(
 
     // Delete + ripple ride the valuation seam (ADR 0020): it captures the deleted
     // anchor's date behind the seam and guards the future, atomically.
-    const changes = store.deleteValuationAnchorAndRipple(anchorId, { today });
+    const changes = await store.deleteValuationAnchorAndRipple(anchorId, { today });
 
     if (changes === 0) {
       return {
@@ -873,8 +876,8 @@ function parseLiquidityTier(value: FormDataEntryValue | null) {
  */
 
 /** Read a liability by id, or null. Shared by the debt actions for the R9 guard. */
-function findLiability(store: WorthlineStore, id: string) {
-  return store.liabilities.readLiabilities().find((l) => l.id === id) ?? null;
+async function findLiability(store: WorthlineStore, id: string) {
+  return (await store.liabilities.readLiabilities()).find((l) => l.id === id) ?? null;
 }
 
 export async function setDebtModelAction(
@@ -883,7 +886,7 @@ export async function setDebtModelAction(
 ): Promise<never> {
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id) {
@@ -902,14 +905,14 @@ export async function setDebtModelAction(
     );
   }
 
-  const result = runWith((store) => {
-    const liability = findLiability(store, id);
+  const result = await runWith(async (store) => {
+    const liability = await findLiability(store, id);
 
     if (!liability) {
       return { ok: false, error: "No se encontró la deuda." };
     }
 
-    store.liabilities.setDebtModel(id, parsed.model);
+    await store.liabilities.setDebtModel(id, parsed.model);
     return { ok: true };
   });
 
@@ -923,18 +926,18 @@ export async function setDebtModelAction(
 }
 
 /** Guard a debt mutation to liabilities carrying the expected model. */
-function requireDebtModel(
+async function requireDebtModel(
   store: WorthlineStore,
   id: string,
   expected: DebtModelGuard,
-): { ok: true } | { ok: false; error: string } {
-  const liability = findLiability(store, id);
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const liability = await findLiability(store, id);
 
   if (!liability) {
     return { ok: false, error: "No se encontró la deuda." };
   }
 
-  const model = store.liabilities.readDebtModel(id);
+  const model = await store.liabilities.readDebtModel(id);
 
   if (expected === "amortizable" && model !== "amortizable") {
     return {
@@ -962,7 +965,7 @@ export async function saveAmortizationPlanAction(
 ): Promise<never> {
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id) {
@@ -992,19 +995,19 @@ export async function saveAmortizationPlanAction(
     );
   }
 
-  const result = runWith((store) => {
-    const guard = requireDebtModel(store, id, "amortizable");
+  const result = await runWith(async (store) => {
+    const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
       return guard;
     }
 
-    const existing = store.liabilities.readAmortizationPlan(id);
+    const existing = await store.liabilities.readAmortizationPlan(id);
 
     // Persist + ripple ride the debt seam (ADR 0020), atomically; the
     // amortizable-plan ripple derives its per-cuota date series behind the seam.
     if (existing) {
-      store.updateAmortizationPlanAndRipple(
+      await store.updateAmortizationPlanAndRipple(
         existing.id,
         {
           annualInterestRate: parsed.command.annualInterestRate,
@@ -1016,7 +1019,7 @@ export async function saveAmortizationPlanAction(
         { liabilityId: id, today },
       );
     } else {
-      store.createAmortizationPlanAndRipple(parsed.command, { today });
+      await store.createAmortizationPlanAndRipple(parsed.command, { today });
     }
 
     return { ok: true as const };
@@ -1037,7 +1040,7 @@ export async function deleteAmortizationPlanAction(
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id || !planId) {
@@ -1049,8 +1052,8 @@ export async function deleteAmortizationPlanAction(
   }
 
   const today = _clock.today();
-  const result = runWith((store) => {
-    const guard = requireDebtModel(store, id, "amortizable");
+  const result = await runWith(async (store) => {
+    const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
       return guard;
@@ -1062,7 +1065,7 @@ export async function deleteAmortizationPlanAction(
     // now-planless curve (the amortizable-revision kind, which falls back to
     // currentBalance), all atomically. `planId` selects the row; the liability is
     // resolved from `id`.
-    const changes = store.deleteAmortizationPlanAndRipple({
+    const changes = await store.deleteAmortizationPlanAndRipple({
       liabilityId: id,
       today,
     });
@@ -1092,7 +1095,7 @@ export async function addInterestRateRevisionAction(
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id || !planId) {
@@ -1116,8 +1119,8 @@ export async function addInterestRateRevisionAction(
     );
   }
 
-  const result = runWith((store) => {
-    const guard = requireDebtModel(store, id, "amortizable");
+  const result = await runWith(async (store) => {
+    const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
       return guard;
@@ -1125,7 +1128,10 @@ export async function addInterestRateRevisionAction(
 
     // Persist + ripple ride the debt seam (ADR 0020); the future guard moves
     // behind the seam.
-    store.addInterestRateRevisionAndRipple(parsed.command, { liabilityId: id, today });
+    await store.addInterestRateRevisionAndRipple(parsed.command, {
+      liabilityId: id,
+      today,
+    });
 
     return { ok: true as const };
   });
@@ -1148,7 +1154,7 @@ export async function updateInterestRateRevisionAction(
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
   const revisionId = parseEntityId(formData, "revisionId");
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id || !planId || !revisionId) {
@@ -1172,8 +1178,8 @@ export async function updateInterestRateRevisionAction(
     );
   }
 
-  const result = runWith((store) => {
-    const guard = requireDebtModel(store, id, "amortizable");
+  const result = await runWith(async (store) => {
+    const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
       return guard;
@@ -1182,7 +1188,7 @@ export async function updateInterestRateRevisionAction(
     // Persist + ripple ride the debt seam (ADR 0020 / 0025): it reads the OLD
     // revision date behind the seam, ripples from the earlier of the old/new date,
     // and guards the future. The action no longer pre-reads the row.
-    const changes = store.updateInterestRateRevisionAndRipple(
+    const changes = await store.updateInterestRateRevisionAndRipple(
       revisionId,
       {
         newAnnualInterestRate: parsed.command.newAnnualInterestRate,
@@ -1222,7 +1228,7 @@ export async function deleteInterestRateRevisionAction(
   const id = parseEntityId(formData);
   const revisionId = parseEntityId(formData, "revisionId");
   const planId = parseEntityId(formData, "planId");
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id || !revisionId || !planId) {
@@ -1234,8 +1240,8 @@ export async function deleteInterestRateRevisionAction(
   }
 
   const today = _clock.today();
-  const result = runWith((store) => {
-    const guard = requireDebtModel(store, id, "amortizable");
+  const result = await runWith(async (store) => {
+    const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
       return guard;
@@ -1244,7 +1250,9 @@ export async function deleteInterestRateRevisionAction(
     // Delete + ripple ride the debt seam (ADR 0020 / 0025): it reads the removed
     // revision's date behind the seam, recalculates from it, and guards the future.
     // The action no longer pre-reads the row.
-    const changes = store.deleteInterestRateRevisionAndRipple(revisionId, { today });
+    const changes = await store.deleteInterestRateRevisionAndRipple(revisionId, {
+      today,
+    });
 
     if (changes === 0) {
       return {
@@ -1271,7 +1279,7 @@ export async function addEarlyRepaymentAction(
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id || !planId) {
@@ -1295,8 +1303,8 @@ export async function addEarlyRepaymentAction(
     );
   }
 
-  const result = runWith((store) => {
-    const guard = requireDebtModel(store, id, "amortizable");
+  const result = await runWith(async (store) => {
+    const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
       return guard;
@@ -1305,7 +1313,7 @@ export async function addEarlyRepaymentAction(
     // Persist + ripple ride the debt seam (ADR 0020): a past repayment is a dated
     // fact that generates its own snapshot (the "amortizable-repayment" kind); the
     // future guard moves behind the seam.
-    store.addEarlyRepaymentAndRipple(parsed.command, { liabilityId: id, today });
+    await store.addEarlyRepaymentAndRipple(parsed.command, { liabilityId: id, today });
 
     return { ok: true as const };
   });
@@ -1328,7 +1336,7 @@ export async function updateEarlyRepaymentAction(
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
   const repaymentId = parseEntityId(formData, "repaymentId");
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id || !planId || !repaymentId) {
@@ -1352,8 +1360,8 @@ export async function updateEarlyRepaymentAction(
     );
   }
 
-  const result = runWith((store) => {
-    const guard = requireDebtModel(store, id, "amortizable");
+  const result = await runWith(async (store) => {
+    const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
       return guard;
@@ -1362,7 +1370,7 @@ export async function updateEarlyRepaymentAction(
     // Persist + ripple ride the debt seam (ADR 0020 / 0025): it reads the OLD
     // repayment date behind the seam, ripples from the earlier of the old/new date,
     // and guards the future. The action no longer pre-reads the row.
-    const changes = store.updateEarlyRepaymentAndRipple(
+    const changes = await store.updateEarlyRepaymentAndRipple(
       repaymentId,
       {
         amountMinor: parsed.command.amountMinor,
@@ -1403,7 +1411,7 @@ export async function deleteEarlyRepaymentAction(
   const id = parseEntityId(formData);
   const repaymentId = parseEntityId(formData, "repaymentId");
   const planId = parseEntityId(formData, "planId");
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id || !repaymentId || !planId) {
@@ -1415,8 +1423,8 @@ export async function deleteEarlyRepaymentAction(
   }
 
   const today = _clock.today();
-  const result = runWith((store) => {
-    const guard = requireDebtModel(store, id, "amortizable");
+  const result = await runWith(async (store) => {
+    const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
       return guard;
@@ -1427,7 +1435,7 @@ export async function deleteEarlyRepaymentAction(
     // "amortizable-revision" kind — the curve no longer carries the repayment). The
     // seam reads the removed repayment's date behind the seam and guards the future;
     // the action no longer pre-reads the row.
-    const changes = store.deleteEarlyRepaymentAndRipple(repaymentId, { today });
+    const changes = await store.deleteEarlyRepaymentAndRipple(repaymentId, { today });
 
     if (changes === 0) {
       return {
@@ -1453,7 +1461,7 @@ export async function addBalanceAnchorAction(
 ): Promise<never> {
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id) {
@@ -1477,8 +1485,8 @@ export async function addBalanceAnchorAction(
     );
   }
 
-  const result = runWith((store) => {
-    const guard = requireDebtModel(store, id, "anchorable");
+  const result = await runWith(async (store) => {
+    const guard = await requireDebtModel(store, id, "anchorable");
 
     if (!guard.ok) {
       return guard;
@@ -1486,7 +1494,7 @@ export async function addBalanceAnchorAction(
 
     // Persist + ripple ride the debt seam (ADR 0020), atomically; the from-date is
     // the anchor's own date.
-    store.addBalanceAnchorAndRipple(parsed.command, { today });
+    await store.addBalanceAnchorAndRipple(parsed.command, { today });
 
     return { ok: true as const };
   });
@@ -1508,7 +1516,7 @@ export async function updateBalanceAnchorAction(
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id || !anchorId) {
@@ -1532,8 +1540,8 @@ export async function updateBalanceAnchorAction(
     );
   }
 
-  const result = runWith((store) => {
-    const guard = requireDebtModel(store, id, "anchorable");
+  const result = await runWith(async (store) => {
+    const guard = await requireDebtModel(store, id, "anchorable");
 
     if (!guard.ok) {
       return guard;
@@ -1542,7 +1550,7 @@ export async function updateBalanceAnchorAction(
     // Persist + ripple ride the debt seam (ADR 0020 / 0025): it reads the OLD
     // anchor date behind the seam, ripples from the earlier of the old/new date,
     // and guards the future. The action no longer pre-reads the row.
-    const changes = store.updateBalanceAnchorAndRipple(
+    const changes = await store.updateBalanceAnchorAndRipple(
       anchorId,
       {
         anchorDate: parsed.command.anchorDate,
@@ -1581,7 +1589,7 @@ export async function deleteBalanceAnchorAction(
   guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   if (!id || !anchorId) {
@@ -1593,8 +1601,8 @@ export async function deleteBalanceAnchorAction(
   }
 
   const today = _clock.today();
-  const result = runWith((store) => {
-    const guard = requireDebtModel(store, id, "anchorable");
+  const result = await runWith(async (store) => {
+    const guard = await requireDebtModel(store, id, "anchorable");
 
     if (!guard.ok) {
       return guard;
@@ -1603,7 +1611,7 @@ export async function deleteBalanceAnchorAction(
     // Delete + ripple ride the debt seam (ADR 0020 / 0025): it reads the removed
     // anchor's date behind the seam, recalculates from it, and guards the future.
     // The action no longer pre-reads the row.
-    const changes = store.deleteBalanceAnchorAndRipple(anchorId, { today });
+    const changes = await store.deleteBalanceAnchorAndRipple(anchorId, { today });
 
     if (changes === 0) {
       return {

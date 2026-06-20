@@ -28,8 +28,8 @@ afterEach(() => {
   cookieSetMock.mockClear();
 });
 
-function freshStore(): WorthlineStore {
-  store = createInMemoryStore();
+async function freshStore(): Promise<WorthlineStore> {
+  store = await createInMemoryStore();
   return store;
 }
 
@@ -37,7 +37,7 @@ function freshStore(): WorthlineStore {
 
 describe("initSoloAction wiring", () => {
   test("happy path: valid name → workspace created, cookie set, redirect to /", async () => {
-    const s = freshStore();
+    const s = await freshStore();
 
     const url = await catchRedirect(() =>
       initSoloAction(fd({ name: "Ana" }, "/empezar?path=solo"), s),
@@ -45,7 +45,7 @@ describe("initSoloAction wiring", () => {
 
     expect(url).toBe("/");
 
-    const ws = s.workspace.readWorkspace()!;
+    const ws = (await s.workspace.readWorkspace())!;
     expect(ws.mode).toBe("individual");
     expect(ws.members).toHaveLength(1);
     expect(ws.members[0].name).toBe("Ana");
@@ -59,7 +59,7 @@ describe("initSoloAction wiring", () => {
   });
 
   test("blank name → error redirect with Spanish message and preserved value", async () => {
-    const s = freshStore();
+    const s = await freshStore();
 
     const url = await catchRedirect(() =>
       initSoloAction(fd({ name: "  " }, "/empezar?path=solo"), s),
@@ -69,13 +69,13 @@ describe("initSoloAction wiring", () => {
     expect(errorMessageOf(url)).toBe("El nombre es obligatorio.");
     expect(url).toContain("v_name=");
 
-    expect(s.workspace.readWorkspace()).toBeNull();
+    expect(await s.workspace.readWorkspace()).toBeNull();
     expect(cookieSetMock).not.toHaveBeenCalled();
   });
 
   test("already-initialized workspace: overwrites without error", async () => {
-    const s = freshStore();
-    s.workspace.initializeWorkspace({
+    const s = await freshStore();
+    await s.workspace.initializeWorkspace({
       members: [{ id: "old", name: "Viejo" }],
       mode: "individual",
     });
@@ -86,7 +86,7 @@ describe("initSoloAction wiring", () => {
 
     expect(url).toBe("/");
 
-    const ws = s.workspace.readWorkspace()!;
+    const ws = (await s.workspace.readWorkspace())!;
     expect(ws.members).toHaveLength(1);
     expect(ws.members[0].name).toBe("Nuevo");
   });
@@ -96,7 +96,7 @@ describe("initSoloAction wiring", () => {
 
 describe("initHogarAction wiring", () => {
   test("happy path: valid memberNames → household workspace, redirect to /", async () => {
-    const s = freshStore();
+    const s = await freshStore();
 
     const url = await catchRedirect(() =>
       initHogarAction(fd({ memberNames: "Ana\nJose\nPedro" }, "/empezar?path=hogar"), s),
@@ -104,7 +104,7 @@ describe("initHogarAction wiring", () => {
 
     expect(url).toBe("/");
 
-    const ws = s.workspace.readWorkspace()!;
+    const ws = (await s.workspace.readWorkspace())!;
     expect(ws.mode).toBe("household");
     expect(ws.members).toHaveLength(3);
     expect(ws.members.map((m) => m.name)).toEqual(["Ana", "Jose", "Pedro"]);
@@ -113,7 +113,7 @@ describe("initHogarAction wiring", () => {
   });
 
   test("empty memberNames → error redirect with Spanish message", async () => {
-    const s = freshStore();
+    const s = await freshStore();
 
     const url = await catchRedirect(() =>
       initHogarAction(fd({ memberNames: "" }, "/empezar?path=hogar"), s),
@@ -123,23 +123,23 @@ describe("initHogarAction wiring", () => {
     expect(errorMessageOf(url)).toBe("Añade al menos un nombre.");
     expect(url).toContain("v_memberNames=");
 
-    expect(s.workspace.readWorkspace()).toBeNull();
+    expect(await s.workspace.readWorkspace()).toBeNull();
   });
 
   test("blank lines only → error redirect", async () => {
-    const s = freshStore();
+    const s = await freshStore();
 
     const url = await catchRedirect(() =>
       initHogarAction(fd({ memberNames: "\n\n  \n" }, "/empezar?path=hogar"), s),
     );
 
     expect(errorMessageOf(url)).toBe("Añade al menos un nombre.");
-    expect(s.workspace.readWorkspace()).toBeNull();
+    expect(await s.workspace.readWorkspace()).toBeNull();
   });
 
   test("already-initialized workspace: overwrites without error", async () => {
-    const s = freshStore();
-    s.workspace.initializeWorkspace({
+    const s = await freshStore();
+    await s.workspace.initializeWorkspace({
       members: [{ id: "old", name: "Viejo" }],
       mode: "individual",
     });
@@ -150,7 +150,7 @@ describe("initHogarAction wiring", () => {
 
     expect(url).toBe("/");
 
-    const ws = s.workspace.readWorkspace()!;
+    const ws = (await s.workspace.readWorkspace())!;
     expect(ws.mode).toBe("household");
     expect(ws.members).toHaveLength(2);
     expect(ws.members.map((m) => m.name)).toEqual(["Ana", "Jose"]);

@@ -13,10 +13,10 @@
  * positions-drift lesson) still converges instead of throwing. A second run is a
  * no-op (idempotent, behind the version guard), and a fresh DB skips the rebuild.
  */
-import Database from "better-sqlite3";
+import type { Client } from "@libsql/client";
 import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore } from "@db/index";
+import { createInMemoryStore, openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import { schemaSql } from "@db/schema-sql";
 
@@ -46,32 +46,34 @@ const LEGACY_POSITIONS = `CREATE TABLE positions (
 );`;
 
 /** A pre-v25 DB at user_version 24 with the legacy positions table + one coin. */
-function seedV24(positionsDdl: string): Database.Database {
-  const db = new Database(":memory:");
-  db.exec(schemaSql); // current full schema (incl. the NEW positions)
-  db.exec("DROP TABLE positions;"); // …then swap in the legacy shape
-  db.exec(positionsDdl);
-  db.pragma("user_version = 24");
+async function seedV24(positionsDdl: string): Promise<Client> {
+  const client = openLibsqlClient(":memory:");
+  await client.executeMultiple(schemaSql); // current full schema (incl. the NEW positions)
+  await client.executeMultiple("DROP TABLE positions;"); // …then swap in the legacy shape
+  await client.executeMultiple(positionsDdl);
+  await client.execute("PRAGMA user_version = 24");
 
-  db.exec(`
+  await client.executeMultiple(`
     INSERT INTO assets (id, name, type, currency, current_value_minor, liquidity_tier, instrument)
       VALUES ('a_coins', 'Colección Numista', 'manual', 'EUR', 53800, 'illiquid', 'coin_collection');
     INSERT INTO connected_sources (id, adapter, label, asset_id, credentials_json)
       VALUES ('s_numista', 'numista', 'Colección Numista', 'a_coins', '{}');
   `);
-  return db;
+  return client;
 }
 
-function columnNames(db: Database.Database): string[] {
-  return (db.prepare("PRAGMA table_info(positions)").all() as { name: string }[]).map(
-    (c) => c.name,
-  );
+async function columnNames(client: Client): Promise<string[]> {
+  return (
+    (await client.execute("PRAGMA table_info(positions)")).rows as unknown as {
+      name: string;
+    }[]
+  ).map((c) => c.name);
 }
 
 describe("v25 positions migration — coin|token generalization (ADR 0021)", () => {
-  test("adds kind + token columns and preserves the coin's data", () => {
-    const db = seedV24(LEGACY_POSITIONS);
-    db.exec(`
+  test("adds kind + token columns and preserves the coin's data", async () => {
+    const client = await seedV24(LEGACY_POSITIONS);
+    await client.executeMultiple(`
       INSERT INTO positions
         (id, source_id, external_id, catalogue_id, issue_id, name, grade, quantity,
          liquidity_tier, metal, metal_value_minor, numismatic_value_minor, currency)
@@ -80,18 +82,16 @@ describe("v25 positions migration — coin|token generalization (ADR 0021)", () 
          'illiquid', 'silver', 53800, 49000, 'EUR');
     `);
 
-    migrate(db);
+    await migrate(client);
 
-    const cols = columnNames(db);
+    const cols = await columnNames(client);
     expect(cols).toContain("kind");
     expect(cols).toEqual(
       expect.arrayContaining(["symbol", "balance", "wallet", "unit_price"]),
     );
 
-    const row = db.prepare("SELECT * FROM positions WHERE id = 'p1'").get() as Record<
-      string,
-      unknown
-    >;
+    const row = (await client.execute("SELECT * FROM positions WHERE id = 'p1'"))
+      .rows[0] as unknown as Record<string, unknown>;
     expect(row.kind).toBe("coin");
     expect(row.catalogue_id).toBe("n123");
     expect(row.metal).toBe("silver");
@@ -101,15 +101,17 @@ describe("v25 positions migration — coin|token generalization (ADR 0021)", () 
     // The new token columns are null on a migrated coin row.
     expect(row.symbol).toBeNull();
     expect(row.balance).toBeNull();
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
-    db.close();
+    expect(
+      Number((await client.execute("PRAGMA user_version")).rows[0]!.user_version),
+    ).toBe(SCHEMA_VERSION);
+    client.close();
   });
 
-  test("is DEFENSIVE: a drifted legacy table missing a column still converges", () => {
+  test("is DEFENSIVE: a drifted legacy table missing a column still converges", async () => {
     // Simulate the positions-drift: a legacy table lacking metal_value_minor.
     const drifted = LEGACY_POSITIONS.replace("  metal_value_minor INTEGER,\n", "");
-    const db = seedV24(drifted);
-    db.exec(`
+    const client = await seedV24(drifted);
+    await client.executeMultiple(`
       INSERT INTO positions
         (id, source_id, external_id, catalogue_id, issue_id, name, grade, quantity,
          liquidity_tier, metal, numismatic_value_minor, currency)
@@ -118,30 +120,30 @@ describe("v25 positions migration — coin|token generalization (ADR 0021)", () 
          'illiquid', 'silver', 49000, 'EUR');
     `);
 
-    expect(() => migrate(db)).not.toThrow();
+    await expect(migrate(client)).resolves.not.toThrow();
 
-    const cols = columnNames(db);
+    const cols = await columnNames(client);
     expect(cols).toContain("metal_value_minor"); // present in the target shape
     expect(cols).toContain("kind");
-    const row = db.prepare("SELECT * FROM positions WHERE id = 'p1'").get() as Record<
-      string,
-      unknown
-    >;
+    const row = (await client.execute("SELECT * FROM positions WHERE id = 'p1'"))
+      .rows[0] as unknown as Record<string, unknown>;
     expect(row.kind).toBe("coin");
     expect(row.numismatic_value_minor).toBe(49000);
     expect(row.metal_value_minor).toBeNull(); // the dropped column → null, not a crash
-    db.close();
+    client.close();
   });
 
-  test("a second migrate is a no-op (idempotent) and a fresh store skips the rebuild", () => {
-    const db = seedV24(LEGACY_POSITIONS);
-    migrate(db);
-    expect(() => migrate(db)).not.toThrow();
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
-    db.close();
+  test("a second migrate is a no-op (idempotent) and a fresh store skips the rebuild", async () => {
+    const client = await seedV24(LEGACY_POSITIONS);
+    await migrate(client);
+    await expect(migrate(client)).resolves.not.toThrow();
+    expect(
+      Number((await client.execute("PRAGMA user_version")).rows[0]!.user_version),
+    ).toBe(SCHEMA_VERSION);
+    client.close();
 
     // A fresh DB is created at the new shape by schema-sql and migrates cleanly.
-    const fresh = createInMemoryStore();
+    const fresh = await createInMemoryStore();
     expect(() => fresh.close()).not.toThrow();
   });
 });

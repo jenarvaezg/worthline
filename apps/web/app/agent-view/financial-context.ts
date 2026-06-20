@@ -59,11 +59,11 @@ export interface BuildFinancialContextOptions {
  * domain figures the dashboard derives (`calculateNetWorth`) but never the
  * dashboard load path, so a read cannot refresh prices or capture snapshots.
  */
-export function buildFinancialContext(
+export async function buildFinancialContext(
   store: AgentViewReadStore,
   options: BuildFinancialContextOptions,
-): AgentViewFinancialContext {
-  const workspace = store.readWorkspace();
+): Promise<AgentViewFinancialContext> {
+  const workspace = await store.readWorkspace();
 
   if (!workspace) {
     throw new AgentViewHttpError({
@@ -73,7 +73,7 @@ export function buildFinancialContext(
     });
   }
 
-  const scope = listAgentViewScopes(store).find(
+  const scope = (await listAgentViewScopes(store)).find(
     (candidate) => candidate.id === options.scopeId,
   );
 
@@ -85,7 +85,7 @@ export function buildFinancialContext(
     });
   }
 
-  const internalScopeId = resolveInternalScopeId(store, options.scopeId);
+  const internalScopeId = await resolveInternalScopeId(store, options.scopeId);
   const scopeOption = listScopeOptions(workspace).find(
     (option) => option.id === internalScopeId,
   );
@@ -98,11 +98,11 @@ export function buildFinancialContext(
     });
   }
 
-  const assets = store.readAssets();
-  const liabilities = store.readLiabilities();
+  const assets = await store.readAssets();
+  const liabilities = await store.readLiabilities();
   const figuresInput = { assets, liabilities, scopeId: internalScopeId, workspace };
   const summary = toSummary(calculateNetWorth(figuresInput));
-  const holdingSummaries = buildHoldingSummaries(
+  const holdingSummaries = await buildHoldingSummaries(
     store,
     workspace,
     scopeOption,
@@ -113,10 +113,10 @@ export function buildFinancialContext(
   return {
     asOf: options.asOf,
     baseCurrency: workspace.baseCurrency,
-    connectedSources: buildConnectedSources(store, holdingSummaries),
-    dataQuality: buildDataQualitySummary(store, options.scopeId),
+    connectedSources: await buildConnectedSources(store, holdingSummaries),
+    dataQuality: await buildDataQualitySummary(store, options.scopeId),
     exposure: buildExposure(holdingSummaries, summary.grossAssets),
-    fire: buildFireSummary(store, options.scopeId),
+    fire: await buildFireSummary(store, options.scopeId),
     holdings: toHoldingsBlock(
       holdingSummaries,
       options.holdingLimit,
@@ -164,14 +164,14 @@ function toLiquidityRung(rung: LiquidityTierBreakdown): AgentViewLiquidityRung {
   };
 }
 
-function buildHoldingSummaries(
+async function buildHoldingSummaries(
   store: AgentViewReadStore,
   workspace: Workspace,
   scope: ScopeOption,
   assets: ManualAsset[],
   liabilities: Liability[],
-): AgentViewHoldingSummary[] {
-  const publicIds = store.readPublicIds();
+): Promise<AgentViewHoldingSummary[]> {
+  const publicIds = await store.readPublicIds();
   const holdingPublicIds = publicIdMap(publicIds, "holding");
   const memberPublicIds = publicIdMap(publicIds, "member");
   const memberLabels = new Map(
@@ -186,17 +186,19 @@ function buildHoldingSummaries(
   );
 
   const summaries: AgentViewHoldingSummary[] = [
-    ...projection.sections[0].rows.map((row) =>
-      toHoldingSummary({
-        ...common,
-        direction: "asset",
-        operationSummary: investmentAssetIds.has(row.id)
-          ? summarizeOperations(store.readOperations(row.id), currency)
-          : undefined,
-        row,
-        valueMinor: row.valueMinor,
-      }),
-    ),
+    ...(await Promise.all(
+      projection.sections[0].rows.map(async (row) =>
+        toHoldingSummary({
+          ...common,
+          direction: "asset",
+          operationSummary: investmentAssetIds.has(row.id)
+            ? summarizeOperations(await store.readOperations(row.id), currency)
+            : undefined,
+          row,
+          valueMinor: row.valueMinor,
+        }),
+      ),
+    )),
     ...projection.sections[1].rows.map((row) =>
       toHoldingSummary({
         ...common,
@@ -215,20 +217,22 @@ function buildHoldingSummaries(
  * materialized. Credentials never appear (the read port strips them) and the
  * full position lens lives in the #339 drilldown.
  */
-function buildConnectedSources(
+async function buildConnectedSources(
   store: AgentViewReadStore,
   holdingSummaries: AgentViewHoldingSummary[],
-): AgentViewConnectedSourceSummary[] {
+): Promise<AgentViewConnectedSourceSummary[]> {
   const labelByPublicId = new Map(
     holdingSummaries.map((holding) => [holding.id, holding.label]),
   );
-  const holdingPublicIds = publicIdMap(store.readPublicIds(), "holding");
+  const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
 
-  return store
-    .readConnectedSources()
-    .map((source) => ({
+  const sources = await Promise.all(
+    (await store.readConnectedSources()).map(async (source) => ({
       adapter: source.adapter,
-      freshness: toFreshnessSummary(source, store.readSourceFreshness(source.id)) ?? {
+      freshness: toFreshnessSummary(
+        source,
+        await store.readSourceFreshness(source.id),
+      ) ?? {
         status: "unknown" as const,
       },
       id: deriveSourcePublicId(source.id),
@@ -246,8 +250,10 @@ function buildConnectedSources(
           label: labelByPublicId.get(publicId) ?? "",
           object: "holding" as const,
         })),
-    }))
-    .filter((source) => source.projectedHoldings.length > 0);
+    })),
+  );
+
+  return sources.filter((source) => source.projectedHoldings.length > 0);
 }
 
 function toHoldingsBlock(

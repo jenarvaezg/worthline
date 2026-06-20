@@ -14,24 +14,25 @@
  * reaches SCHEMA_VERSION. A second run is a no-op (idempotent), behind the
  * `version < 17` guard.
  */
-import Database from "better-sqlite3";
+import type { Client } from "@libsql/client";
 import { describe, expect, test } from "vitest";
 
+import { openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import { schemaSql } from "@db/schema-sql";
 
-function seedV16(): Database.Database {
-  const db = new Database(":memory:");
+async function seedV16(): Promise<Client> {
+  const client = openLibsqlClient(":memory:");
   // Genuinely pre-v17: strip ONLY the counts_as_housing column (keep
   // secures_housing, which v16 already added) so migrate() exercises the real
   // legacy-DB path — ALTER TABLE ADD COLUMN then backfill — not merely a backfill
   // of an already-present column.
-  db.exec(
+  await client.executeMultiple(
     schemaSql.replace(/[ \t]*`counts_as_housing` integer DEFAULT 0 NOT NULL,\n/g, ""),
   );
-  db.pragma("user_version = 16");
+  await client.execute("PRAGMA user_version = 16");
 
-  db.exec(`
+  await client.executeMultiple(`
     INSERT INTO assets (id, name, type, currency, current_value_minor, liquidity_tier, instrument) VALUES
       ('a_home', 'Piso', 'real_estate', 'EUR', 300000, 'illiquid', 'property'),
       ('a_cash', 'Caja', 'cash', 'EUR', 10000, 'cash', 'current_account');
@@ -57,15 +58,21 @@ function seedV16(): Database.Database {
       ('sh_loan', 'snap1', 'l_loan', 'liability', 'Préstamo', NULL, 3000);
   `);
 
-  return db;
+  return client;
 }
 
-const countsAsHousing = (db: Database.Database, id: string) =>
+const countsAsHousing = async (client: Client, id: string) =>
   (
-    db
-      .prepare("SELECT counts_as_housing AS c FROM snapshot_holdings WHERE id = ?")
-      .get(id) as { c: number }
+    (
+      await client.execute({
+        sql: "SELECT counts_as_housing AS c FROM snapshot_holdings WHERE id = ?",
+        args: [id],
+      })
+    ).rows[0] as unknown as { c: number }
   ).c;
+
+const userVersion = async (client: Client) =>
+  Number((await client.execute("PRAGMA user_version")).rows[0]!.user_version);
 
 const FIGURE_COLUMNS = [
   "total_net_worth_minor",
@@ -76,56 +83,63 @@ const FIGURE_COLUMNS = [
 ] as const;
 
 describe("counts-as-housing schema migration (v17)", () => {
-  test("backfills counts_as_housing=1 only for an asset row that is a housing asset", () => {
-    const db = seedV16();
-    migrate(db);
+  test("backfills counts_as_housing=1 only for an asset row that is a housing asset", async () => {
+    const client = await seedV16();
+    await migrate(client);
 
     // The real-estate / property asset → frozen 1.
-    expect(countsAsHousing(db, "sh_home")).toBe(1);
+    expect(await countsAsHousing(client, "sh_home")).toBe(1);
     // A non-housing (cash) asset → 0.
-    expect(countsAsHousing(db, "sh_cash")).toBe(0);
+    expect(await countsAsHousing(client, "sh_cash")).toBe(0);
     // Liabilities never count as a housing asset → 0, even the mortgage on the home.
-    expect(countsAsHousing(db, "sh_mortgage")).toBe(0);
-    expect(countsAsHousing(db, "sh_pledge")).toBe(0);
-    expect(countsAsHousing(db, "sh_loan")).toBe(0);
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
+    expect(await countsAsHousing(client, "sh_mortgage")).toBe(0);
+    expect(await countsAsHousing(client, "sh_pledge")).toBe(0);
+    expect(await countsAsHousing(client, "sh_loan")).toBe(0);
+    expect(await userVersion(client)).toBe(SCHEMA_VERSION);
   });
 
-  test("adds the counts_as_housing column (the legacy ALTER path)", () => {
-    const db = seedV16();
-    const hasColumn = () =>
+  test("adds the counts_as_housing column (the legacy ALTER path)", async () => {
+    const client = await seedV16();
+    const hasColumn = async () =>
       (
-        db.prepare("PRAGMA table_info(snapshot_holdings)").all() as Array<{
+        (await client.execute("PRAGMA table_info(snapshot_holdings)"))
+          .rows as unknown as Array<{
           name: string;
         }>
       ).some((c) => c.name === "counts_as_housing");
 
-    expect(hasColumn()).toBe(false); // genuinely pre-v17: column absent
-    migrate(db);
-    expect(hasColumn()).toBe(true);
+    expect(await hasColumn()).toBe(false); // genuinely pre-v17: column absent
+    await migrate(client);
+    expect(await hasColumn()).toBe(true);
   });
 
-  test("touches no frozen snapshot figure", () => {
-    const db = seedV16();
+  test("touches no frozen snapshot figure", async () => {
+    const client = await seedV16();
     const select = `SELECT ${FIGURE_COLUMNS.join(", ")} FROM snapshots WHERE id = 'snap1'`;
-    const before = db.prepare(select).get();
+    const before = (await client.execute(select)).rows[0];
 
-    migrate(db);
+    await migrate(client);
 
-    expect(db.prepare(select).get()).toEqual(before);
+    expect((await client.execute(select)).rows[0]).toEqual(before);
   });
 
-  test("is idempotent on a second run", () => {
-    const db = seedV16();
-    migrate(db);
+  test("is idempotent on a second run", async () => {
+    const client = await seedV16();
+    await migrate(client);
 
-    const before = db
-      .prepare("SELECT id, counts_as_housing FROM snapshot_holdings ORDER BY id")
-      .all();
-    migrate(db); // a second run sits behind `version < 17` → no-op
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
+    const before = (
+      await client.execute(
+        "SELECT id, counts_as_housing FROM snapshot_holdings ORDER BY id",
+      )
+    ).rows;
+    await migrate(client); // a second run sits behind `version < 17` → no-op
+    expect(await userVersion(client)).toBe(SCHEMA_VERSION);
     expect(
-      db.prepare("SELECT id, counts_as_housing FROM snapshot_holdings ORDER BY id").all(),
+      (
+        await client.execute(
+          "SELECT id, counts_as_housing FROM snapshot_holdings ORDER BY id",
+        )
+      ).rows,
     ).toEqual(before);
   });
 });

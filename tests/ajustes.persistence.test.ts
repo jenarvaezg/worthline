@@ -9,10 +9,10 @@ import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 afterEach(cleanupTempDirs);
 
 describe("member reactivate persistence", () => {
-  test("reactivates a disabled member — clears disabledAt", () => {
-    const store = createFileBackedStore("worthline-ajustes-");
+  test("reactivates a disabled member — clears disabledAt", async () => {
+    const store = await createFileBackedStore("worthline-ajustes-");
 
-    store.workspace.initializeWorkspace({
+    await store.workspace.initializeWorkspace({
       members: [
         { id: "member_ana", name: "Ana" },
         { id: "member_jose", name: "Jose" },
@@ -20,42 +20,42 @@ describe("member reactivate persistence", () => {
       mode: "household",
     });
 
-    store.workspace.disableMember("member_ana", "2026-06-01T10:00:00.000Z");
+    await store.workspace.disableMember("member_ana", "2026-06-01T10:00:00.000Z");
 
-    const afterDisable = store.workspace.readWorkspace();
+    const afterDisable = await store.workspace.readWorkspace();
     expect(afterDisable?.members.find((m) => m.id === "member_ana")?.disabledAt).toBe(
       "2026-06-01T10:00:00.000Z",
     );
 
-    store.workspace.reactivateMember("member_ana");
+    await store.workspace.reactivateMember("member_ana");
 
-    const afterReactivate = store.workspace.readWorkspace();
+    const afterReactivate = await store.workspace.readWorkspace();
     expect(
       afterReactivate?.members.find((m) => m.id === "member_ana")?.disabledAt,
     ).toBeUndefined();
   });
 
-  test("reactivating an already-active member is a no-op", () => {
-    const store = createFileBackedStore("worthline-ajustes-");
+  test("reactivating an already-active member is a no-op", async () => {
+    const store = await createFileBackedStore("worthline-ajustes-");
 
-    store.workspace.initializeWorkspace({
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
 
     // Should not throw
-    store.workspace.reactivateMember("member_jose");
+    await store.workspace.reactivateMember("member_jose");
 
-    const workspace = store.workspace.readWorkspace();
+    const workspace = await store.workspace.readWorkspace();
     expect(
       workspace?.members.find((m) => m.id === "member_jose")?.disabledAt,
     ).toBeUndefined();
   });
 
-  test("disable → reactivate → disable cycle persists correctly", () => {
-    const store = createFileBackedStore("worthline-ajustes-");
+  test("disable → reactivate → disable cycle persists correctly", async () => {
+    const store = await createFileBackedStore("worthline-ajustes-");
 
-    store.workspace.initializeWorkspace({
+    await store.workspace.initializeWorkspace({
       members: [
         { id: "member_ana", name: "Ana" },
         { id: "member_jose", name: "Jose" },
@@ -63,11 +63,11 @@ describe("member reactivate persistence", () => {
       mode: "household",
     });
 
-    store.workspace.disableMember("member_ana", "2026-06-01T10:00:00.000Z");
-    store.workspace.reactivateMember("member_ana");
-    store.workspace.disableMember("member_ana", "2026-06-09T08:00:00.000Z");
+    await store.workspace.disableMember("member_ana", "2026-06-01T10:00:00.000Z");
+    await store.workspace.reactivateMember("member_ana");
+    await store.workspace.disableMember("member_ana", "2026-06-09T08:00:00.000Z");
 
-    const workspace = store.workspace.readWorkspace();
+    const workspace = await store.workspace.readWorkspace();
     expect(workspace?.members.find((m) => m.id === "member_ana")?.disabledAt).toBe(
       "2026-06-09T08:00:00.000Z",
     );
@@ -75,41 +75,41 @@ describe("member reactivate persistence", () => {
 });
 
 describe("warning override retract persistence", () => {
-  test("retracting a specific override removes only that one", () => {
-    const store = createFileBackedStore("worthline-ajustes-");
+  test("retracting a specific override removes only that one", async () => {
+    const store = await createFileBackedStore("worthline-ajustes-");
 
-    store.workspace.initializeWorkspace({
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
 
-    store.acknowledgeWarning("zero_value", "asset_abc");
-    store.acknowledgeWarning("zero_value", "asset_xyz");
+    await store.acknowledgeWarning("zero_value", "asset_abc");
+    await store.acknowledgeWarning("zero_value", "asset_xyz");
 
-    const afterAck = store.readWarningOverrides();
+    const afterAck = await store.readWarningOverrides();
     expect(afterAck).toHaveLength(2);
 
-    store.removeWarningOverride("zero_value", "asset_abc");
+    await store.removeWarningOverride("zero_value", "asset_abc");
 
-    const afterRetract = store.readWarningOverrides();
+    const afterRetract = await store.readWarningOverrides();
     expect(afterRetract).toHaveLength(1);
     expect(afterRetract[0]).toMatchObject({ code: "zero_value", entityId: "asset_xyz" });
   });
 
-  test("retracting a non-existent override is a no-op", () => {
-    const store = createFileBackedStore("worthline-ajustes-");
+  test("retracting a non-existent override is a no-op", async () => {
+    const store = await createFileBackedStore("worthline-ajustes-");
 
-    store.workspace.initializeWorkspace({
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
 
-    store.acknowledgeWarning("zero_value", "asset_abc");
+    await store.acknowledgeWarning("zero_value", "asset_abc");
 
     // Should not throw
-    store.removeWarningOverride("zero_value", "asset_does_not_exist");
+    await store.removeWarningOverride("zero_value", "asset_does_not_exist");
 
-    const overrides = store.readWarningOverrides();
+    const overrides = await store.readWarningOverrides();
     expect(overrides).toHaveLength(1);
   });
 });

@@ -25,12 +25,12 @@ import { describe, expect, test } from "vitest";
 import { createInMemoryStore } from "@db/index";
 import type { WorthlineStore } from "@db/index";
 
-function saveScopeSnapshot(
+async function saveScopeSnapshot(
   store: WorthlineStore,
   scopeId: string,
   scopeLabel: string,
   dateKey: string,
-): void {
+): Promise<void> {
   const holding: SnapshotHoldingRow = {
     countsAsHousing: false,
     holdingId: "cash",
@@ -55,17 +55,19 @@ function saveScopeSnapshot(
     totalNetWorth: { amountMinor: 1_000_00, currency: "EUR" },
     warnings: [],
   };
-  store.snapshots.saveSnapshot({ holdings: [holding], replace: false, snapshot });
+  await store.snapshots.saveSnapshot({ holdings: [holding], replace: false, snapshot });
 }
 
-function scopeIdsWithSnapshots(store: WorthlineStore): string[] {
-  return [...new Set(store.snapshots.readSnapshots().map((s) => s.scopeId))].sort();
+async function scopeIdsWithSnapshots(store: WorthlineStore): Promise<string[]> {
+  return [
+    ...new Set((await store.snapshots.readSnapshots()).map((s) => s.scopeId)),
+  ].sort();
 }
 
 describe("purge orphaned-scope snapshots when scopes change (#306)", () => {
-  test("disabling a member purges that member's snapshots and frozen rows; household survives", () => {
-    const store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
+  test("disabling a member purges that member's snapshots and frozen rows; household survives", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
       members: [
         { id: "mJ", name: "Jose" },
         { id: "mA", name: "Ana" },
@@ -73,28 +75,28 @@ describe("purge orphaned-scope snapshots when scopes change (#306)", () => {
       mode: "household",
     });
 
-    saveScopeSnapshot(store, "household", "Hogar", "2024-01-10");
-    saveScopeSnapshot(store, "mJ", "Jose", "2024-01-10");
-    saveScopeSnapshot(store, "mA", "Ana", "2024-01-10");
+    await saveScopeSnapshot(store, "household", "Hogar", "2024-01-10");
+    await saveScopeSnapshot(store, "mJ", "Jose", "2024-01-10");
+    await saveScopeSnapshot(store, "mA", "Ana", "2024-01-10");
 
-    expect(scopeIdsWithSnapshots(store)).toEqual(["household", "mA", "mJ"]);
+    expect(await scopeIdsWithSnapshots(store)).toEqual(["household", "mA", "mJ"]);
 
-    store.workspace.disableMember("mA", new Date().toISOString());
+    await store.workspace.disableMember("mA", new Date().toISOString());
 
     // Ana's scope is no longer offered → its snapshot is purged.
-    expect(scopeIdsWithSnapshots(store)).toEqual(["household", "mJ"]);
+    expect(await scopeIdsWithSnapshots(store)).toEqual(["household", "mJ"]);
     // ...and its frozen holding rows go too.
-    expect(store.snapshots.readSnapshotHoldings({ scopeId: "mA" })).toEqual([]);
+    expect(await store.snapshots.readSnapshotHoldings({ scopeId: "mA" })).toEqual([]);
     // The household scope's snapshot is intact (canonical history).
-    expect(store.snapshots.readSnapshots("household").length).toBeGreaterThan(0);
+    expect((await store.snapshots.readSnapshots("household")).length).toBeGreaterThan(0);
     // Jose's snapshot (still a live scope) is intact.
-    expect(store.snapshots.readSnapshots("mJ").length).toBeGreaterThan(0);
+    expect((await store.snapshots.readSnapshots("mJ")).length).toBeGreaterThan(0);
     store.close();
   });
 
-  test("hard-deleting a member purges that member's scope snapshots", () => {
-    const store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
+  test("hard-deleting a member purges that member's scope snapshots", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
       members: [
         { id: "mJ", name: "Jose" },
         { id: "mA", name: "Ana" },
@@ -102,26 +104,26 @@ describe("purge orphaned-scope snapshots when scopes change (#306)", () => {
       mode: "household",
     });
 
-    saveScopeSnapshot(store, "household", "Hogar", "2024-01-10");
-    saveScopeSnapshot(store, "mA", "Ana", "2024-01-10");
+    await saveScopeSnapshot(store, "household", "Hogar", "2024-01-10");
+    await saveScopeSnapshot(store, "mA", "Ana", "2024-01-10");
 
     // Hard delete requires the member to be disabled and own no holding.
-    store.workspace.disableMember("mA", new Date().toISOString());
+    await store.workspace.disableMember("mA", new Date().toISOString());
     // disableMember already purged mA — re-seed to prove hardDelete purges too.
-    saveScopeSnapshot(store, "mA", "Ana", "2024-02-10");
-    expect(scopeIdsWithSnapshots(store)).toContain("mA");
+    await saveScopeSnapshot(store, "mA", "Ana", "2024-02-10");
+    expect(await scopeIdsWithSnapshots(store)).toContain("mA");
 
-    const changes = store.workspace.hardDeleteMember("mA");
+    const changes = await store.workspace.hardDeleteMember("mA");
     expect(changes).toBe(1);
 
-    expect(scopeIdsWithSnapshots(store)).toEqual(["household"]);
-    expect(store.snapshots.readSnapshotHoldings({ scopeId: "mA" })).toEqual([]);
+    expect(await scopeIdsWithSnapshots(store)).toEqual(["household"]);
+    expect(await store.snapshots.readSnapshotHoldings({ scopeId: "mA" })).toEqual([]);
     store.close();
   });
 
-  test("after a scope-dropping change, no snapshot has a scope_id absent from listScopeOptions", () => {
-    const store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
+  test("after a scope-dropping change, no snapshot has a scope_id absent from listScopeOptions", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
       members: [
         { id: "mJ", name: "Jose" },
         { id: "mA", name: "Ana" },
@@ -132,24 +134,24 @@ describe("purge orphaned-scope snapshots when scopes change (#306)", () => {
       mode: "household",
     });
 
-    saveScopeSnapshot(store, "household", "Hogar", "2024-01-10");
-    saveScopeSnapshot(store, "mJ", "Jose", "2024-01-10");
-    saveScopeSnapshot(store, "mA", "Ana", "2024-01-10");
-    saveScopeSnapshot(store, "gP", "Solo Jose", "2024-01-10");
+    await saveScopeSnapshot(store, "household", "Hogar", "2024-01-10");
+    await saveScopeSnapshot(store, "mJ", "Jose", "2024-01-10");
+    await saveScopeSnapshot(store, "mA", "Ana", "2024-01-10");
+    await saveScopeSnapshot(store, "gP", "Solo Jose", "2024-01-10");
 
-    store.workspace.disableMember("mA", new Date().toISOString());
+    await store.workspace.disableMember("mA", new Date().toISOString());
 
-    const workspace = store.workspace.readWorkspace()!;
+    const workspace = (await store.workspace.readWorkspace())!;
     const liveScopeIds = new Set(listScopeOptions(workspace).map((o) => o.id));
-    for (const scopeId of scopeIdsWithSnapshots(store)) {
+    for (const scopeId of await scopeIdsWithSnapshots(store)) {
       expect(liveScopeIds.has(scopeId)).toBe(true);
     }
     store.close();
   });
 
-  test("collapsing toward the household scope purges every dropped per-member scope; household survives", () => {
-    const store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
+  test("collapsing toward the household scope purges every dropped per-member scope; household survives", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
       members: [
         { id: "mJ", name: "Jose" },
         { id: "mA", name: "Ana" },
@@ -158,21 +160,23 @@ describe("purge orphaned-scope snapshots when scopes change (#306)", () => {
       mode: "household",
     });
 
-    saveScopeSnapshot(store, "household", "Hogar", "2024-01-10");
-    saveScopeSnapshot(store, "mJ", "Jose", "2024-01-10");
-    saveScopeSnapshot(store, "mA", "Ana", "2024-01-10");
-    saveScopeSnapshot(store, "mB", "Bea", "2024-01-10");
+    await saveScopeSnapshot(store, "household", "Hogar", "2024-01-10");
+    await saveScopeSnapshot(store, "mJ", "Jose", "2024-01-10");
+    await saveScopeSnapshot(store, "mA", "Ana", "2024-01-10");
+    await saveScopeSnapshot(store, "mB", "Bea", "2024-01-10");
 
     // Disabling the other members collapses the offered scopes toward household
     // (the same shrink a household → individual switch produces): every dropped
     // member scope's snapshots are purged, only household + the survivor remain.
-    store.workspace.disableMember("mA", new Date().toISOString());
-    store.workspace.disableMember("mB", new Date().toISOString());
+    await store.workspace.disableMember("mA", new Date().toISOString());
+    await store.workspace.disableMember("mB", new Date().toISOString());
 
-    expect(scopeIdsWithSnapshots(store)).toEqual(["household", "mJ"]);
-    expect(store.snapshots.readSnapshotHoldings({ scopeId: "household" }).length).toBe(1);
-    expect(store.snapshots.readSnapshotHoldings({ scopeId: "mA" })).toEqual([]);
-    expect(store.snapshots.readSnapshotHoldings({ scopeId: "mB" })).toEqual([]);
+    expect(await scopeIdsWithSnapshots(store)).toEqual(["household", "mJ"]);
+    expect(
+      (await store.snapshots.readSnapshotHoldings({ scopeId: "household" })).length,
+    ).toBe(1);
+    expect(await store.snapshots.readSnapshotHoldings({ scopeId: "mA" })).toEqual([]);
+    expect(await store.snapshots.readSnapshotHoldings({ scopeId: "mB" })).toEqual([]);
     store.close();
   });
 });
