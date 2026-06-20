@@ -1,0 +1,282 @@
+/**
+ * Historical-price backfill actions (#380, ADR 0033).
+ *
+ * The explicit "Rellenar histórico de precios" preview/confirm pair, mirroring
+ * the statement upload (preview shows counts + source + gaps and WRITES NOTHING;
+ * confirm applies and redirects). Plus a guard test that the daily refresh still
+ * does NOT rewrite history — only this action does. Uses the `_store` injection
+ * seam with a real in-memory store, an injected historical source stub, and a
+ * fixed clock (no network, deterministic dates).
+ */
+import { createInMemoryStore } from "@worthline/db";
+import type { WorthlineStore } from "@worthline/db";
+import { fixedClock } from "@worthline/domain";
+import type { HistoricalPriceSource } from "@worthline/pricing";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+import {
+  confirmPriceBackfillAction,
+  previewPriceBackfillAction,
+  refreshPricesAction,
+} from "./actions";
+
+const NOW = "2026-03-15T10:00:00.000Z";
+
+function seed(store: WorthlineStore): void {
+  store.workspace.initializeWorkspace({
+    members: [{ id: "mJ", name: "Jose" }],
+    mode: "individual",
+  });
+  store.assets.createInvestmentAsset({
+    currency: "EUR",
+    id: "btc",
+    liquidityTier: "market",
+    name: "Bitcoin",
+    ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    priceProvider: "coingecko",
+    providerSymbol: "bitcoin",
+  });
+  // A backdated buy → cost-basis snapshots (no price cached those days).
+  store.recordOperationAndRipple(
+    {
+      assetId: "btc",
+      currency: "EUR",
+      executedAt: "2026-01-10",
+      feesMinor: 0,
+      id: "op_jan",
+      kind: "buy",
+      pricePerUnit: "30000",
+      units: "0.5",
+    },
+    { today: "2026-03-15" },
+  );
+}
+
+/** A source that prices Feb but not Mar → one point, one gap. */
+function stubSource(): HistoricalPriceSource {
+  return {
+    fetchSeriesEur: vi.fn(async () => ({
+      pricesByDate: new Map([["2026-02-01", "40000"]]),
+      source: "coingecko",
+    })),
+  };
+}
+
+function backfillForm(): FormData {
+  const fd = new FormData();
+  fd.set("currentUrl", "/patrimonio/btc/editar");
+  return fd;
+}
+
+function refreshForm(): FormData {
+  const fd = new FormData();
+  fd.set("currentUrl", "/patrimonio");
+  return fd;
+}
+
+describe("previewPriceBackfillAction (#380)", () => {
+  test("returns counts + source + gaps and writes NOTHING", async () => {
+    const store = createInMemoryStore();
+    seed(store);
+
+    const snapshotsBefore = store.snapshots.readSnapshots().length;
+    const febBefore = store.snapshots
+      .readSnapshotHoldings({ holdingId: "btc", kind: "asset" })
+      .find((r) => r.dateKey === "2026-02-01");
+
+    const state = await previewPriceBackfillAction(
+      "btc",
+      { status: "idle" },
+      backfillForm(),
+      store,
+      stubSource(),
+      fixedClock(NOW),
+    );
+
+    expect(state.status).toBe("summary");
+    if (state.status !== "summary") throw new Error("expected summary");
+    expect(state.source).toBe("coingecko");
+    // One priced month (Feb) — and Feb's snapshot already exists (so it'd update)
+    // but the seed only generated a snapshot at 2026-01-10, so Feb is a create.
+    expect(state.create + state.update).toBeGreaterThanOrEqual(1);
+    expect(state.gaps).toContain("2026-03-01");
+
+    // Nothing was written: the snapshot count and the (absent) Feb row are unchanged.
+    expect(store.snapshots.readSnapshots().length).toBe(snapshotsBefore);
+    const febAfter = store.snapshots
+      .readSnapshotHoldings({ holdingId: "btc", kind: "asset" })
+      .find((r) => r.dateKey === "2026-02-01");
+    expect(febAfter).toEqual(febBefore);
+    store.close();
+  });
+
+  test("reports a non-zero update count when a priced month already has a snapshot", async () => {
+    const store = createInMemoryStore();
+    seed(store);
+
+    // A second op ON the month-start so a 2026-02-01 snapshot already EXISTS at
+    // cost basis before the backfill (snapshots land on operation dates) — pricing
+    // it is an UPDATE, while later months are creates.
+    store.recordOperationAndRipple(
+      {
+        assetId: "btc",
+        currency: "EUR",
+        executedAt: "2026-02-01",
+        feesMinor: 0,
+        id: "op_feb",
+        kind: "buy",
+        pricePerUnit: "38000",
+        units: "0.1",
+      },
+      { today: "2026-03-15" },
+    );
+
+    const updateSource: HistoricalPriceSource = {
+      fetchSeriesEur: vi.fn(async () => ({
+        pricesByDate: new Map([
+          ["2026-02-01", "40000"], // existing snapshot → update
+          ["2026-03-01", "50000"], // no snapshot → create
+        ]),
+        source: "coingecko",
+      })),
+    };
+
+    const state = await previewPriceBackfillAction(
+      "btc",
+      { status: "idle" },
+      backfillForm(),
+      store,
+      updateSource,
+      fixedClock(NOW),
+    );
+
+    expect(state.status).toBe("summary");
+    if (state.status !== "summary") throw new Error("expected summary");
+    expect(state.update).toBeGreaterThanOrEqual(1);
+    expect(state.create).toBeGreaterThanOrEqual(1);
+    store.close();
+  });
+
+  test("reports a non-candidate (no provider symbol) without offering a backfill", async () => {
+    const store = createInMemoryStore();
+    store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "fund",
+      liquidityTier: "market",
+      name: "Fondo",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    store.recordOperationAndRipple(
+      {
+        assetId: "fund",
+        currency: "EUR",
+        executedAt: "2026-01-10",
+        feesMinor: 0,
+        id: "op",
+        kind: "buy",
+        pricePerUnit: "100",
+        units: "10",
+      },
+      { today: "2026-03-15" },
+    );
+
+    const state = await previewPriceBackfillAction(
+      "fund",
+      { status: "idle" },
+      backfillForm(),
+      store,
+      stubSource(),
+      fixedClock(NOW),
+    );
+
+    expect(state.status).toBe("not_eligible");
+    store.close();
+  });
+});
+
+describe("confirmPriceBackfillAction (#380)", () => {
+  async function runConfirm(
+    store: WorthlineStore,
+    source: HistoricalPriceSource,
+  ): Promise<string> {
+    try {
+      await confirmPriceBackfillAction(
+        "btc",
+        backfillForm(),
+        store,
+        source,
+        fixedClock(NOW),
+      );
+      throw new Error("action did not redirect");
+    } catch (err: unknown) {
+      const e = err as { message?: string; digest?: string };
+      if (e.message === "NEXT_REDIRECT" && typeof e.digest === "string") return e.digest;
+      throw err;
+    }
+  }
+
+  test("applies the backfill: the Feb row becomes units × price, gone is the cost line", async () => {
+    const store = createInMemoryStore();
+    seed(store);
+
+    const digest = await runConfirm(store, stubSource());
+    expect(digest).toContain("ok=");
+
+    const feb = store.snapshots
+      .readSnapshotHoldings({ holdingId: "btc", kind: "asset" })
+      .find((r) => r.dateKey === "2026-02-01");
+    expect(feb?.valueMinor).toBe(0.5 * 40000 * 100);
+    expect(feb?.unitPrice).toBe("40000");
+    store.close();
+  });
+});
+
+describe("daily refresh still does NOT rewrite history (#380 guard)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("refreshPricesAction leaves the cost-basis snapshots untouched", async () => {
+    const store = createInMemoryStore();
+    seed(store);
+
+    const rowsBefore = store.snapshots
+      .readSnapshotHoldings({ holdingId: "btc", kind: "asset" })
+      .map((r) => ({
+        dateKey: r.dateKey,
+        valueMinor: r.valueMinor,
+        unitPrice: r.unitPrice,
+      }));
+
+    // A live quote arrives via the daily refresh — it must NOT ripple history.
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({ bitcoin: { eur: 54979 } }),
+    } as Response);
+
+    try {
+      await refreshPricesAction(refreshForm(), store, undefined, fixedClock(NOW));
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      if (e.message !== "NEXT_REDIRECT") throw err;
+    }
+
+    const rowsAfter = store.snapshots
+      .readSnapshotHoldings({ holdingId: "btc", kind: "asset" })
+      .map((r) => ({
+        dateKey: r.dateKey,
+        valueMinor: r.valueMinor,
+        unitPrice: r.unitPrice,
+      }));
+
+    expect(rowsAfter).toEqual(rowsBefore);
+    store.close();
+  });
+});

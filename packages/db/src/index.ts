@@ -34,6 +34,7 @@ import {
   housingAssetIdsOf,
   isHousingAsset,
   listScopeOptions,
+  planPriceBackfill,
   recalculateSnapshotForAsset,
   recalculateSnapshotForCoinAcquisition,
   recalculateSnapshotForConnectedValue,
@@ -302,6 +303,30 @@ export interface WorthlineStore {
     overwrites: UpdateInvestmentOperationInput[];
     today?: string;
   }) => void;
+  /**
+   * Historical-price backfill seam (#380, ADR 0033): freeze a provider's
+   * historical unit prices onto ONE investment's monthly snapshots, atomically in
+   * a single transaction. This is the ONLY path that rewrites historical
+   * `unit_price` — explicit, auditable, never a refresh side effect. For each
+   * monthly point (1st of the month from the first operation through `today`) where
+   * the position existed and the source returned a price, it re-values ONLY that
+   * asset's row (units × price) and preserves every OTHER frozen row verbatim
+   * (ADR 0008/0012). A missing snapshot is generated; an existing one is updated in
+   * place. Months without a price stay GAPS — never invented. Returns the counts,
+   * the gaps, and the source used. `today` defaults to the current date.
+   *
+   * Pass `dryRun: true` to compute the SAME per-scope create/update counts the
+   * apply would produce WITHOUT writing anything — the preview's single source of
+   * truth, so the surfaced counts can never diverge from what confirm writes
+   * (notably in household mode, where the asset spans multiple scopes).
+   */
+  backfillInvestmentPricesAndRipple: (params: {
+    assetId: string;
+    pricesByDate: ReadonlyMap<string, DecimalString>;
+    source: string;
+    today?: string;
+    dryRun?: boolean;
+  }) => { created: number; updated: number; gaps: string[]; source: string };
   /**
    * Operation dated-fact seam (ADR 0020): delete ONE investment operation AND
    * ripple the snapshots dated ≥ its date, atomically in a single transaction.
@@ -985,6 +1010,58 @@ function buildStore(
           store.snapshots.saveSnapshot,
           { assetId, operationDateKeys, today },
         );
+      });
+    },
+    backfillInvestmentPricesAndRipple: ({
+      assetId,
+      pricesByDate,
+      source,
+      today: todayOpt,
+      dryRun = false,
+    }) => {
+      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
+      // One transaction so the whole backfill (every create/update) commits or
+      // rolls back together — the dated-fact contract (ADR 0020). The plan is
+      // pure (planPriceBackfill); only the apply touches the db. A dry run runs
+      // the identical scope loop (counting only) so the preview shares this one
+      // code path and can never diverge from what the apply writes.
+      return ctx.transaction(() => {
+        const operations = readAllOperations(ctx.db).get(assetId) ?? [];
+        // Dates this asset already has a snapshot on (any scope) → create vs update.
+        const existingSnapshotDates = new Set(
+          readSnapshotHoldings(ctx.db, { holdingId: assetId, kind: "asset" }).map(
+            (row) => row.dateKey,
+          ),
+        );
+
+        const plan = planPriceBackfill({
+          existingSnapshotDates,
+          operations,
+          pricesByDate,
+          source,
+          today,
+        });
+
+        const workspace = getWorkspace();
+        if (!workspace) {
+          return { created: 0, gaps: plan.gaps, source: plan.source, updated: 0 };
+        }
+
+        const { created, updated } = rippleHistoricalSnapshotsForPriceBackfill(
+          ctx,
+          workspace,
+          store.snapshots.saveSnapshot,
+          {
+            assetId,
+            dryRun,
+            points: plan.points.map((p) => ({
+              dateKey: p.dateKey,
+              unitPriceDecimal: p.unitPriceDecimal,
+            })),
+          },
+        );
+
+        return { created, gaps: plan.gaps, source: plan.source, updated };
       });
     },
     deleteOperationAndRipple: ({ operationId, today: todayOpt }) => {
@@ -2361,6 +2438,142 @@ function rippleHistoricalSnapshots(
       }
     }
   });
+}
+
+/**
+ * Historical-price backfill ripple (#380, ADR 0033). The explicit, auditable
+ * action that freezes a provider's historical unit prices onto ONE investment's
+ * monthly snapshots — the ONLY path that rewrites historical `unit_price`. For
+ * each priced monthly point in the plan it either generates a fresh whole-portfolio
+ * snapshot at that date (if none exists) with this asset's row priced via
+ * `capturedUnitPrices`, or recalculates the existing one — overriding ONLY this
+ * asset's row (units × historical price) and preserving every OTHER frozen row
+ * verbatim (ADR 0008/0012). It NEVER touches a date the plan did not price (a gap
+ * stays a gap), nor any holding other than the backfilled one. Returns the
+ * create/update counts for the audit summary.
+ *
+ * The inner `ctx.transaction` below is a deliberate savepoint nested inside the
+ * caller's outer transaction (better-sqlite3 promotes a re-entrant transaction to
+ * a SAVEPOINT). It is redundant for atomicity here (the caller already wraps the
+ * whole backfill), but harmless on the current driver. NOTE: re-verify under
+ * libSQL/Turso when #381 lands — not all libSQL drivers support nested
+ * transactions/savepoints, and this may need to drop to a plain block then.
+ *
+ * With `dryRun`, the same scope loop runs (read + pure build/recalc) but no row is
+ * persisted — only the counts are returned, so the preview shares this path.
+ */
+function rippleHistoricalSnapshotsForPriceBackfill(
+  ctx: StoreContext,
+  workspace: Workspace,
+  saveSnapshot: (input: SaveSnapshotInput) => void,
+  params: {
+    assetId: string;
+    points: readonly { dateKey: string; unitPriceDecimal: DecimalString }[];
+    /** Count only — never persist (the preview's per-scope dry run). */
+    dryRun?: boolean;
+  },
+): { created: number; updated: number } {
+  const { db } = ctx;
+  const { assetId, points, dryRun = false } = params;
+
+  let created = 0;
+  let updated = 0;
+
+  if (points.length === 0) return { created, updated };
+
+  // The operated asset's identity — read including trashed (it existed on the
+  // snapshot dates even if trashed afterwards, ADR 0012).
+  const asset = readInvestmentIdentity(db, assetId);
+  if (!asset) return { created, updated };
+  const operations = readAllOperations(db).get(assetId) ?? [];
+
+  // The asset's frozen classification captures across every snapshot (#242),
+  // read ONCE before any recalc mutates rows.
+  const frozenIdentity = readFrozenIdentityCaptures(db, assetId, "asset");
+
+  ctx.transaction(() => {
+    for (const scope of listScopeOptions(workspace)) {
+      const existing = readSnapshots(db, scope.id);
+      const existingByDate = new Map(existing.map((snap) => [snap.dateKey, snap]));
+
+      // Read this scope's frozen rows for the whole backfilled range in ONE query.
+      const frozenByDate = groupFrozenHoldingsByDate(
+        readSnapshotHoldings(db, { scopeId: scope.id }),
+      );
+
+      for (const point of points) {
+        const dateKey = point.dateKey;
+        const snap = existingByDate.get(dateKey);
+
+        if (snap === undefined) {
+          // No snapshot on this date yet → generate a fresh whole-portfolio one,
+          // pricing THIS asset's row from the historical quote (capturedUnitPrices
+          // wins over the cost-basis fallback). Other holdings are valued by the
+          // same fresh-capture path the operation ripple uses.
+          const deps = buildHistoricalSnapshotDeps(db, workspace);
+          const built = buildSnapshotAtDate({
+            assets: deps.assets,
+            capturedAt: historicalCapturedAt(dateKey),
+            capturedUnitPrices: new Map([[assetId, point.unitPriceDecimal]]),
+            coinPositionsByAsset: deps.coinPositionsByAsset,
+            costBasisAssetIds: deps.costBasisAssetIds,
+            debtBalanceByLiability: deps.debtBalanceByLiability,
+            housingValuationByAsset: deps.housingValuationByAsset,
+            id: `${BACKFILL_SNAPSHOT_ID_PREFIX}${scope.id}_${dateKey}`,
+            liabilities: deps.liabilities,
+            manualValueHistory: deps.manualValueHistory,
+            operationsByAsset: deps.operationsByAsset,
+            scopeId: scope.id,
+            scopeLabel: scope.label,
+            targetDate: dateKey,
+            today: dateKey,
+            workspace,
+          });
+          if (built) {
+            if (!dryRun) {
+              saveSnapshot({
+                holdings: built.holdings,
+                replace: false,
+                snapshot: built.snapshot,
+              });
+            }
+            created += 1;
+          }
+          continue;
+        }
+
+        // An existing snapshot → recalculate ONLY this asset's row, freezing the
+        // historical price (overrideUnitPrice wins over cost basis). A legacy
+        // capture predating holdings (ADR 0008) has no rows to recompute against —
+        // leave its frozen figures untouched.
+        const frozenHoldings = frozenByDate.get(dateKey) ?? [];
+        if (frozenHoldings.length === 0) continue;
+
+        const recalculated = recalculateSnapshotForAsset({
+          asset,
+          frozenHoldings,
+          frozenIdentity,
+          operations,
+          overrideUnitPrice: point.unitPriceDecimal,
+          snapshot: snap,
+          workspace,
+        });
+
+        if (recalculated) {
+          if (!dryRun) {
+            saveSnapshot({
+              holdings: recalculated.holdings,
+              replace: true,
+              snapshot: recalculated.snapshot,
+            });
+          }
+          updated += 1;
+        }
+      }
+    }
+  });
+
+  return { created, updated };
 }
 
 /**
