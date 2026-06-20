@@ -13,8 +13,9 @@ import { describe, expect, it } from "vitest";
 
 import { createInMemoryStore } from "@worthline/db";
 import type { WorthlineStore } from "@worthline/db";
+import { valueHousingAtDate } from "@worthline/domain";
 
-import { seedPersona } from "@web/demo/seed-persona";
+import { resolveRelativeDate, seedPersona } from "@web/demo/seed-persona";
 import { FAMILIA_SPEC } from "@web/demo/specs/familia";
 import { loadDashboard, type LoadDashboardInput } from "@web/load-dashboard";
 
@@ -100,6 +101,44 @@ describe("seedPersona — familia", () => {
 
     expect(store.liabilities.readDebtModel("liability_familia_car")).toBe("informal");
     expect(store.liabilities.readBalanceAnchors("liability_familia_car")).toHaveLength(3);
+
+    store.close();
+  });
+
+  it("captures today's home value from the modeled housing curve", async () => {
+    const store = createInMemoryStore();
+    seedPersona(store, FAMILIA_SPEC, AS_OF);
+
+    await readDashboard(store);
+
+    const homeSpec = FAMILIA_SPEC.housing![0]!;
+    const expectedAsOfValue = valueHousingAtDate({
+      anchors: [
+        {
+          adjustsPriorCurve: true,
+          valuationDate: resolveRelativeDate(AS_OF, homeSpec.acquisition.at),
+          valueMinor: homeSpec.acquisition.valueMinor,
+        },
+        ...(homeSpec.improvements ?? []).map((improvement) => ({
+          adjustsPriorCurve: false,
+          valuationDate: resolveRelativeDate(AS_OF, improvement.at),
+          valueMinor: improvement.valueMinor,
+        })),
+      ],
+      annualAppreciationRate: homeSpec.annualAppreciationRate ?? null,
+      currentValueMinor: homeSpec.acquisition.valueMinor,
+      targetDate: AS_OF,
+      today: AS_OF,
+    });
+    const todayHomeRow = store.snapshots.readSnapshotHoldings({
+      from: AS_OF,
+      holdingId: "asset_familia_home",
+      kind: "asset",
+      scopeId: "household",
+      to: AS_OF,
+    })[0];
+
+    expect(todayHomeRow?.valueMinor).toBe(expectedAsOfValue);
 
     store.close();
   });
