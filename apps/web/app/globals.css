@@ -4449,3 +4449,94 @@ td.rowActions > * {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Dashboard skeleton (Suspense fallback) ─────────────────────────────── */
+.skeletonTab,
+.skeletonText,
+.skeletonFigure,
+.skeletonChip,
+.skeletonStat,
+.skeletonDonut,
+.skeletonTier,
+.skeletonChart,
+.skeletonFire {
+  background: linear-gradient(
+    90deg,
+    var(--hairline) 25%,
+    var(--paper-strong) 50%,
+    var(--hairline) 75%
+  );
+  background-size: 200% 100%;
+  border-radius: var(--radius-sm);
+  animation: skeletonShimmer 1.4s infinite linear;
+}
+
+@keyframes skeletonShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.skeletonTab {
+  display: inline-block;
+  height: 32px;
+  width: 120px;
+}
+
+.skeletonText {
+  display: inline-block;
+  height: 18px;
+  width: 120px;
+}
+
+.skeletonShort {
+  width: 80px;
+}
+
+.skeletonFigure {
+  display: block;
+  height: clamp(2.2rem, 4.5vw, 3rem);
+  margin-top: 8px;
+  width: 60%;
+}
+
+.skeletonChip {
+  display: inline-block;
+  height: 26px;
+  width: 140px;
+}
+
+.skeletonStat {
+  display: block;
+  height: 46px;
+  width: 100%;
+}
+
+.skeletonDonut {
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  margin: 18px auto;
+  max-width: 220px;
+  width: 80%;
+}
+
+.skeletonTier {
+  height: 44px;
+  margin-bottom: 8px;
+  width: 100%;
+}
+
+.skeletonChart {
+  height: 260px;
+  margin-top: 12px;
+  width: 100%;
+}
+
+.skeletonFire {
+  height: 180px;
+  margin-top: 12px;
+  width: 100%;
+}
