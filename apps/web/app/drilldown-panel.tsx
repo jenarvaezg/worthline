@@ -1,4 +1,4 @@
-import { formatMoneyMinor } from "@worthline/domain";
+import { formatMoneyMinor, LIQUIDITY_TIER_LABELS } from "@worthline/domain";
 import type { DrilldownKey, DrilldownState, LiquidityTier } from "@worthline/domain";
 
 /**
@@ -14,12 +14,8 @@ import type { DrilldownKey, DrilldownState, LiquidityTier } from "@worthline/dom
  */
 
 const BAND_LABELS: Record<LiquidityTier | "debts", string> = {
-  cash: "Caja",
+  ...LIQUIDITY_TIER_LABELS,
   debts: "Deudas",
-  housing: "Vivienda",
-  illiquid: "Ilíquido",
-  market: "Mercado",
-  "term-locked": "A plazo",
 };
 
 /**

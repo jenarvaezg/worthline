@@ -1,5 +1,5 @@
 import type { AssetPrice, CoinPosition, SourcePosition } from "@worthline/domain";
-import { selectStalePrices } from "@worthline/domain";
+import { isPriceStale } from "@worthline/domain";
 import type { ValuationFreshness } from "@worthline/db";
 import type { MetalKind, RevaluedPosition, RevaluePosition } from "@worthline/pricing";
 
@@ -25,8 +25,6 @@ import type { MetalKind, RevaluedPosition, RevaluePosition } from "@worthline/pr
 /** A connected coin source to consider, with its current valuation freshness. */
 export interface CoinSourceRef {
   sourceId: string;
-  /** The materialized coin-collection asset id (carries the freshness row). */
-  assetId: string;
   /** Current `numista`-source freshness entry, or null when never valued. */
   freshness: AssetPrice | null;
 }
@@ -75,20 +73,13 @@ function toRevaluePosition(position: CoinPosition): RevaluePosition {
   };
 }
 
-/** Whether a source's valuation needs refreshing: never valued, or past the
- *  per-source TTL (ADR 0007's canonical rule applied to the `numista` row). */
-function isStale(freshness: AssetPrice | null, nowIso: string): boolean {
-  if (freshness === null) return true;
-  return selectStalePrices([freshness], nowIso).length > 0;
-}
-
 export async function refreshStaleCoinValuations(
   input: RefreshCoinValuationsInput,
 ): Promise<RefreshCoinValuationsResult> {
   const errors: string[] = [];
 
   for (const source of input.sources) {
-    if (!isStale(source.freshness, input.nowIso)) {
+    if (!isPriceStale(source.freshness, input.nowIso)) {
       continue;
     }
 

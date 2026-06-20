@@ -25,6 +25,7 @@ import type {
   EarlyRepayment,
   InterestRateRevision,
 } from "./amortization";
+import { addMonths } from "./amortization";
 import { isHousingAsset } from "./classification";
 import type { LiquidityTier } from "./classification";
 import { coinCollectionValueAtDate } from "./connected-source";
@@ -120,25 +121,6 @@ export function debtCurveValuationInput(
   }
 
   return null;
-}
-
-/** Last calendar day of the given year/month (1-based month). */
-function lastDayOfMonth(year: number, month: number): number {
-  return new Date(Date.UTC(year, month, 0)).getUTCDate();
-}
-
-/** The YYYY-MM-DD `count` whole months after `dateKey`, day clamped to month end. */
-function addMonths(dateKey: string, count: number): string {
-  const year = Number(dateKey.slice(0, 4));
-  const month = Number(dateKey.slice(5, 7));
-  const day = Number(dateKey.slice(8, 10));
-  const zeroBased = month - 1 + count;
-  const newYear = year + Math.floor(zeroBased / 12);
-  const newMonth = (zeroBased % 12) + 1;
-  const clampedDay = Math.min(day, lastDayOfMonth(newYear, newMonth));
-  const mm = String(newMonth).padStart(2, "0");
-  const dd = String(clampedDay).padStart(2, "0");
-  return `${newYear}-${mm}-${dd}`;
 }
 
 /**

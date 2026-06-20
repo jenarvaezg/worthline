@@ -3,6 +3,7 @@ import {
   donutArcSegments,
   formatMoneyMinor,
   largestRemainderPercentages,
+  LIQUIDITY_TIER_LABELS,
   moneySign,
 } from "@worthline/domain";
 import type {
@@ -10,7 +11,6 @@ import type {
   CompositionRange,
   DrilldownKey,
   FramedDelta,
-  LiquidityTier,
   NetWorthFraming,
 } from "@worthline/domain";
 import { refreshStalePrices } from "@worthline/pricing";
@@ -47,14 +47,6 @@ const framingTabs = [
   { id: "total" as NetWorthFraming, label: "Patrimonio neto" },
   { id: "liquid" as NetWorthFraming, label: "Líquido" },
 ];
-
-const TIER_LABELS: Record<LiquidityTier, string> = {
-  cash: "Caja",
-  market: "Mercado",
-  "term-locked": "A plazo",
-  illiquid: "Ilíquido",
-  housing: "Vivienda",
-};
 
 // Donut ring geometry in viewBox units (viewBox 0 0 100 100).
 const TIER_DONUT_GEOMETRY = { cx: 50, cy: 50, innerRadius: 27, outerRadius: 45 };
@@ -358,12 +350,12 @@ export default async function DashboardPage({
               // client JS (ADR 0009).
               return (
                 <a
-                  aria-label={`${TIER_LABELS[tier.tier]}: ${DRILL_DESTINATION_LABELS[drillKey]}`}
+                  aria-label={`${LIQUIDITY_TIER_LABELS[tier.tier]}: ${DRILL_DESTINATION_LABELS[drillKey]}`}
                   href={drillHrefs[drillKey]}
                   key={tier.tier}
                 >
                   <path className={`donutSegment ${tier.tier}`} d={segment.path}>
-                    <title>{`${TIER_LABELS[tier.tier]} · ${segment.share}%`}</title>
+                    <title>{`${LIQUIDITY_TIER_LABELS[tier.tier]} · ${segment.share}%`}</title>
                   </path>
                 </a>
               );
@@ -375,7 +367,7 @@ export default async function DashboardPage({
               return (
                 <details className={`tier ${tier.tier}`} key={tier.tier}>
                   <summary>
-                    <span className="tierName">{TIER_LABELS[tier.tier]}</span>
+                    <span className="tierName">{LIQUIDITY_TIER_LABELS[tier.tier]}</span>
                     {/* Green stays reserved for deltas/P&L — tier values render
                         in ink, only a negative net goes red. */}
                     <b className={moneySign(tier.netValue) === "neg" ? "neg" : undefined}>

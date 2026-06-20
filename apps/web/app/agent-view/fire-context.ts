@@ -13,6 +13,7 @@ import {
   type AgentViewMoney,
   type AgentViewScope,
 } from "./contract";
+import { ratioStringFromBps } from "./financial-context";
 import { publicIdMap, requirePublicId, resolveInternalScopeId } from "./scope-resolution";
 import { listAgentViewScopes } from "./scopes";
 
@@ -230,19 +231,6 @@ function progressRatioOf(result: FireResult): string {
 
   const bps = Math.round((result.eligibleAssets.amountMinor * 10_000) / fireNumberMinor);
   return ratioStringFromBps(bps);
-}
-
-/**
- * Format a `0..1` basis-point share as an exact decimal string. Mirrors the
- * `ratioStringFromBps` in `financial-context.ts`, kept local so the FIRE module
- * does not depend on a sibling service's helper.
- */
-function ratioStringFromBps(bps: number): string {
-  const sign = bps < 0 ? "-" : "";
-  const abs = Math.abs(bps);
-  const whole = Math.floor(abs / 10000);
-  const frac = (abs % 10000).toString().padStart(4, "0").replace(/0+$/, "");
-  return frac ? `${sign}${whole}.${frac}` : `${sign}${whole}`;
 }
 
 /**

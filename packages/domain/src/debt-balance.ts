@@ -6,6 +6,7 @@ import {
   type EarlyRepayment,
   type InterestRateRevision,
 } from "./amortization";
+import { daysBetween } from "./dates";
 import type { DebtModel } from "./workspace-types";
 
 /**
@@ -70,15 +71,6 @@ export interface DebtBalanceAtDateInput {
   currentBalanceMinor: number;
   /** The date to value the balance on, YYYY-MM-DD. */
   targetDate: string;
-}
-
-const MS_PER_DAY = 86_400_000;
-
-/** Whole days from `from` to `to` (UTC midnights), signed. */
-function daysBetween(from: string, to: string): number {
-  const fromMs = Date.parse(`${from}T00:00:00.000Z`);
-  const toMs = Date.parse(`${to}T00:00:00.000Z`);
-  return Math.round((toMs - fromMs) / MS_PER_DAY);
 }
 
 /** Round a Big minor-unit value to a whole integer minor unit, half up. */

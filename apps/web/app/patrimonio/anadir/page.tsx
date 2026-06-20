@@ -1,11 +1,6 @@
 import { bootstrapHealthcheck, withStore } from "@web/store";
-import { defaultsFor, listScopeOptions } from "@worthline/domain";
-import type {
-  Instrument,
-  LiquidityTier,
-  Member,
-  ValuationMethod,
-} from "@worthline/domain";
+import { defaultsFor, LIQUIDITY_TIER_LABELS, listScopeOptions } from "@worthline/domain";
+import type { Instrument, Member, ValuationMethod } from "@worthline/domain";
 import { cookies } from "next/headers";
 import type { CSSProperties } from "react";
 import Link from "next/link";
@@ -87,16 +82,6 @@ const FAMILIES: Family[] = [
 const ALL_INSTRUMENTS: InstrumentEntry[] = FAMILIES.flatMap((f) => f.instruments);
 
 const LIABILITY_INSTRUMENTS = new Set<Instrument>(["mortgage", "loan", "credit_card"]);
-
-const RUNG_LABEL: Record<LiquidityTier, string> = {
-  cash: "Caja",
-  market: "Mercado",
-  "term-locked": "A plazo",
-  illiquid: "Ilíquido",
-  // Type-completeness only: housing is instrument-derived (a `property` instrument
-  // resolves to the housing rung via defaultsFor), never a manual rung pick.
-  housing: "Vivienda",
-};
 
 const METHOD_LABEL: Record<ValuationMethod, string> = {
   stored: "Manual — lo actualizas tú",
@@ -356,7 +341,7 @@ function InstrumentPane({
             <dt>Capa de liquidez</dt>
             <dd>
               <span className="addHoldingCapaDot" aria-hidden="true" />
-              {RUNG_LABEL[defaults.rung]}
+              {LIQUIDITY_TIER_LABELS[defaults.rung]}
             </dd>
           </div>
           <div>

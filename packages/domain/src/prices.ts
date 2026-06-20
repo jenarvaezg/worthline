@@ -89,3 +89,14 @@ export function selectStalePrices(
     return ageMs >= ttlMs;
   });
 }
+
+/**
+ * Whether a single source's valuation needs refreshing: never valued, or past
+ * the per-source TTL (`selectStalePrices`' canonical rule applied to one row).
+ * Shared by the connected-source refreshers (Numista, Binance) so the gate is
+ * the same single staleness rule.
+ */
+export function isPriceStale(freshness: AssetPrice | null, nowIso: string): boolean {
+  if (freshness === null) return true;
+  return selectStalePrices([freshness], nowIso).length > 0;
+}

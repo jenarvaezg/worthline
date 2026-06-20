@@ -1,6 +1,7 @@
 import Big from "big.js";
 
 import type { DecimalString } from "./decimal";
+import { daysBetween } from "./dates";
 
 /**
  * Pure housing valuation curve (PRD #108, slice 4). No I/O — given the
@@ -55,15 +56,6 @@ interface BasePoint {
   dateKey: string;
   baseMinor: Big;
   totalMinor: Big;
-}
-
-const MS_PER_DAY = 86_400_000;
-
-/** Whole days from `from` to `to` (UTC midnights), signed. */
-function daysBetween(from: string, to: string): number {
-  const fromMs = Date.parse(`${from}T00:00:00.000Z`);
-  const toMs = Date.parse(`${to}T00:00:00.000Z`);
-  return Math.round((toMs - fromMs) / MS_PER_DAY);
 }
 
 /** Days in the calendar year that `dateKey` falls in (365 or 366). */

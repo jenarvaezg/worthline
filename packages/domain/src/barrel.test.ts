@@ -65,6 +65,7 @@ const KEY_EXPORTS = [
   // prices
   "defaultInvestmentPriceProvider",
   "getPriceFreshness",
+  "isPriceStale",
   // fire
   "calculateFire",
   // warnings
@@ -116,6 +117,8 @@ const KEY_EXPORTS = [
   "amortizableBalanceAtDate",
   // debt-balance
   "debtBalanceAtDate",
+  // dates
+  "daysBetween",
 ] as const;
 
 describe("@worthline/domain barrel", () => {

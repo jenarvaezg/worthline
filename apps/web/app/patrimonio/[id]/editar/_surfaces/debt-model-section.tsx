@@ -15,7 +15,12 @@ import type {
   EarlyRepaymentRecord,
   InterestRateRevisionRecord,
 } from "@worthline/db";
-import { firstCuota, formatMoneyInput, formatMoneyMinor } from "@worthline/domain";
+import {
+  daysBetween,
+  firstCuota,
+  formatMoneyInput,
+  formatMoneyMinor,
+} from "@worthline/domain";
 import type { DebtModel, EarlyRepaymentMode } from "@worthline/domain";
 
 import type { FormErrorContext } from "@web/intake";
@@ -54,18 +59,6 @@ function formatEurCents(amountMinor: number): string {
     minimumFractionDigits: 2,
     style: "currency",
   }).format(amountMinor / 100);
-}
-
-/**
- * Whole days between two YYYY-MM-DD dates (UTC midnights). Mirrors the domain
- * engine's day count so the displayed opening-period length matches the days the
- * stub interest is computed from (ADR 0019, #190).
- */
-function daysBetween(from: string, to: string): number {
-  const fromMs = Date.parse(`${from}T00:00:00.000Z`);
-  const toMs = Date.parse(`${to}T00:00:00.000Z`);
-
-  return Math.round((toMs - fromMs) / 86_400_000);
 }
 
 /**

@@ -36,7 +36,6 @@ export async function runBinanceRefresh(
     .filter((source) => source.adapter === "binance")
     .map((source) => ({
       sourceId: source.id,
-      assetId: source.assetId,
       freshness: store.operations.readPriceCache(source.assetId),
     }));
 

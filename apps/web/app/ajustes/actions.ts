@@ -1,6 +1,6 @@
 "use server";
 
-import { withStore, type WorthlineStore } from "@worthline/db";
+import { type WorthlineStore } from "@worthline/db";
 import {
   parseWorkspaceExport,
   summarizeWorkspaceExport,
@@ -21,15 +21,7 @@ import {
 } from "@web/intake";
 import { guardDemoWrite } from "@web/demo/write-guard";
 
-const BASE = "/ajustes";
-
-function currentUrlOf(formData: FormData): string {
-  return (formData.get("currentUrl") as string) || BASE;
-}
-
-function runWith<T>(fn: (store: WorthlineStore) => T, _store?: WorthlineStore): T {
-  return _store ? fn(_store) : withStore(fn);
-}
+import { currentUrlOf, runWith } from "./connected-source-lifecycle";
 
 // === Member actions ===
 

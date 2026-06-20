@@ -1,5 +1,5 @@
 import type { AssetPrice } from "@worthline/domain";
-import { selectStalePrices } from "@worthline/domain";
+import { isPriceStale } from "@worthline/domain";
 import type { TokenPositionDraft } from "@worthline/pricing";
 
 /**
@@ -25,8 +25,6 @@ import type { TokenPositionDraft } from "@worthline/pricing";
 /** A connected Binance source to consider, with its current valuation freshness. */
 export interface BinanceSourceRef {
   sourceId: string;
-  /** The materialized primary (market-rung) asset id (carries the freshness row). */
-  assetId: string;
   /** Current `binance`-source freshness entry, or null when never valued. */
   freshness: AssetPrice | null;
 }
@@ -51,20 +49,13 @@ export interface RefreshBinanceSourcesResult {
   errors: string[];
 }
 
-/** Whether a source's valuation needs refreshing: never valued, or past the
- *  per-source TTL (ADR 0007's canonical rule applied to the `binance` row). */
-function isStale(freshness: AssetPrice | null, nowIso: string): boolean {
-  if (freshness === null) return true;
-  return selectStalePrices([freshness], nowIso).length > 0;
-}
-
 export async function refreshStaleBinanceSources(
   input: RefreshBinanceSourcesInput,
 ): Promise<RefreshBinanceSourcesResult> {
   const errors: string[] = [];
 
   for (const source of input.sources) {
-    if (!isStale(source.freshness, input.nowIso)) {
+    if (!isPriceStale(source.freshness, input.nowIso)) {
       continue;
     }
 

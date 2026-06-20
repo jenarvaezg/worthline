@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import type { AgentViewReadStore, SnapshotHoldingRecord } from "@worthline/db";
 import { deriveMonthlyCloses } from "@worthline/domain";
 import type { MoneyMinor, NetWorthSnapshot } from "@worthline/domain";
@@ -25,6 +23,7 @@ import {
   encodeCursor,
   type DateIdKey,
 } from "./cursor";
+import { derivePublicId } from "./derived-id";
 import { publicIdMap, resolveInternalScopeId } from "./scope-resolution";
 import { listAgentViewScopes } from "./scopes";
 
@@ -285,11 +284,7 @@ function snapshotKey(entry: SortedSnapshot): DateIdKey {
  * (ADR 0023). No registry write — a read derives it without mutating state.
  */
 export function deriveSnapshotPublicId(internalScopeId: string, dateKey: string): string {
-  const digest = createHash("sha256")
-    .update(`${internalScopeId} ${dateKey}`)
-    .digest("hex")
-    .slice(0, 32);
-  return `wl_snp_${digest}`;
+  return derivePublicId("snp", `${internalScopeId} ${dateKey}`);
 }
 
 function holdingPublicId(

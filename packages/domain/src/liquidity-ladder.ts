@@ -20,6 +20,19 @@ export const LIQUIDITY_LADDER = [
 /** A holding's rung on the ladder. (CONTEXT.md keeps "tier" as a synonym for "rung".) */
 export type LiquidityTier = (typeof LIQUIDITY_LADDER)[number];
 
+/**
+ * The single Spanish label per rung, shared by every surface that names a tier
+ * (the dashboard donut, the composition/drill bands, the holding forms). One
+ * source of truth so a rung's copy never drifts between views.
+ */
+export const LIQUIDITY_TIER_LABELS: Record<LiquidityTier, string> = {
+  cash: "Caja",
+  market: "Mercado",
+  "term-locked": "A plazo",
+  illiquid: "Ilíquido",
+  housing: "Vivienda",
+};
+
 /** Liquid net worth is the top two rungs — cash + market (ADR 0003). */
 export function isLiquid(rung: LiquidityTier): boolean {
   return rung === "cash" || rung === "market";
