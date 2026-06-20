@@ -12,6 +12,7 @@
  */
 
 import { tierOfAsset } from "./classification";
+import type { DecimalString } from "./decimal";
 import { assembleRippleSnapshot, resolveFrozenIdentity } from "./historical-snapshot";
 import type { FrozenIdentityCapture } from "./historical-snapshot";
 import { valueAt } from "./holding-valuation";
@@ -39,6 +40,17 @@ export interface RecalculateSnapshotInput {
    * → the seam falls back to live (no recovery basis), preserving old behaviour.
    */
   frozenIdentity?: readonly FrozenIdentityCapture[];
+  /**
+   * A historical unit price to FREEZE onto the operated asset's row for this date
+   * (#380, ADR 0033 — the explicit price-backfill action). When present it wins
+   * over both the snapshot's existing captured price AND the cost-basis fallback,
+   * so a row previously valued at cost (units, no price) becomes units × this
+   * price. This is the ONLY override of the "keep the price the snapshot already
+   * captured" rule, and only the explicit backfill seam supplies it — the daily
+   * refresh and the operation ripple never do, so history stays untouched unless
+   * the user runs the backfill.
+   */
+  overrideUnitPrice?: DecimalString;
 }
 
 /**
@@ -83,17 +95,21 @@ export function recalculateSnapshotForAsset(
   // (ADR 0006 fallback — no provider/manual price that day). Flag it so the
   // ripple preserves cost basis instead of falling back to the latest operation
   // price, which would shift a figure whose portfolio state never changed (#183).
+  // The price-backfill override (#380, ADR 0033) wins over both the captured
+  // price and the cost-basis fallback: the explicit action is freezing a real
+  // historical price onto a row that had none. Absent it, behaviour is unchanged.
+  const capturedUnitPrice = input.overrideUnitPrice ?? existingRow?.unitPrice;
   const wasCapturedAtCostBasis =
-    existingRow?.units !== undefined && existingRow.unitPrice === undefined;
+    capturedUnitPrice === undefined &&
+    existingRow?.units !== undefined &&
+    existingRow.unitPrice === undefined;
   const valuation = valueAt(
     {
       assetId: input.asset.id,
       currency: input.asset.currency,
       method: "derived",
       operations: input.operations,
-      ...(existingRow?.unitPrice !== undefined
-        ? { capturedUnitPrice: existingRow.unitPrice }
-        : {}),
+      ...(capturedUnitPrice !== undefined ? { capturedUnitPrice } : {}),
       ...(wasCapturedAtCostBasis ? { atCostBasis: true } : {}),
     },
     targetDate,

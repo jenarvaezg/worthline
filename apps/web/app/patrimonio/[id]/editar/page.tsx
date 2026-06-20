@@ -1,6 +1,7 @@
 import { bootstrapHealthcheck, withStore } from "@web/store";
 import {
   collectWarnings,
+  detectSingleAssetBackfillCandidate,
   getPriceFreshness,
   listScopeOptions,
   valuationMethodOfAsset,
@@ -20,9 +21,12 @@ import {
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
 import {
+  confirmPriceBackfillAction,
   confirmStatementAction,
   deleteOperationAction,
+  previewPriceBackfillAction,
   previewStatementAction,
+  type PriceBackfillPreviewState,
   recordOperationAction,
   type StatementPreviewState,
   updateInvestmentAction,
@@ -39,6 +43,7 @@ import { CoinCollectionSection } from "./_surfaces/coin-collection-section";
 import { DebtModelSection } from "./_surfaces/debt-model-section";
 import { AssetEditForm, LiabilityEditForm } from "./_surfaces/holding-forms";
 import { HousingValuationSection } from "./_surfaces/housing-valuation-section";
+import { PriceBackfillSection } from "./_surfaces/price-backfill-section";
 import { StatementUploadSection } from "./_surfaces/statement-upload-section";
 
 export const dynamic = "force-dynamic";
@@ -156,6 +161,26 @@ export default async function EditarPage({
       ? (store.snapshots.readPositions().find((p) => p.assetId === id) ?? null)
       : null;
 
+    // Historical-price backfill candidacy (#380, ADR 0033): a derived investment
+    // with a provider symbol AND cost-basis history offers the explicit backfill
+    // surface. Detected here server-side so the surface only renders for a real
+    // candidate (the action re-checks before writing).
+    const isBackfillCandidate =
+      isDerived && investment !== null
+        ? detectSingleAssetBackfillCandidate({
+            assetId: id,
+            operations,
+            priceProvider: investment.priceProvider,
+            ...(investment.providerSymbol
+              ? { providerSymbol: investment.providerSymbol }
+              : {}),
+            snapshotRows: store.snapshots.readSnapshotHoldings({
+              holdingId: id,
+              kind: "asset",
+            }),
+          }) !== null
+        : false;
+
     // amortized / anchored: the debt-model data (PRD #109).
     const debtModel = liability ? store.liabilities.readDebtModel(id) : null;
     const amortizationPlan =
@@ -190,6 +215,7 @@ export default async function EditarPage({
       coinValuationCache,
       debtModel,
       earlyRepayments,
+      isBackfillCandidate,
       isBinanceHolding,
       isCoinCollection,
       investment,
@@ -226,6 +252,7 @@ export default async function EditarPage({
     coinValuationCache,
     debtModel,
     earlyRepayments,
+    isBackfillCandidate,
     isBinanceHolding,
     isCoinCollection,
     investment,
@@ -281,6 +308,19 @@ export default async function EditarPage({
   async function boundConfirmStatementAction(formData: FormData) {
     "use server";
     await confirmStatementAction(id, formData);
+  }
+
+  async function boundPreviewPriceBackfillAction(
+    prev: PriceBackfillPreviewState,
+    formData: FormData,
+  ) {
+    "use server";
+    return previewPriceBackfillAction(id, prev, formData);
+  }
+
+  async function boundConfirmPriceBackfillAction(formData: FormData) {
+    "use server";
+    await confirmPriceBackfillAction(id, formData);
   }
 
   async function boundUpdateInvestmentAction(formData: FormData) {
@@ -431,6 +471,19 @@ export default async function EditarPage({
             confirmAction={boundConfirmStatementAction}
             currentUrl={currentUrl}
             previewAction={boundPreviewStatementAction}
+          />
+        ) : null}
+
+        {/* derived + candidate: the explicit historical-price backfill (#380, ADR 0033) */}
+        {asset &&
+        method === "derived" &&
+        !isCoinCollection &&
+        !isBinanceHolding &&
+        isBackfillCandidate ? (
+          <PriceBackfillSection
+            confirmAction={boundConfirmPriceBackfillAction}
+            currentUrl={currentUrl}
+            previewAction={boundPreviewPriceBackfillAction}
           />
         ) : null}
 
