@@ -108,10 +108,11 @@ describe("CompositionChart", () => {
     expect(markup).not.toContain("drill=debt");
   });
 
-  test("offers a control to fold Vivienda out of the chart", () => {
+  test("the Vivienda toggle is a URL link (ADR 0009), not a client button", () => {
     const markup = renderToStaticMarkup(
       <CompositionChart
         currency="EUR"
+        housingToggleHref="/?vivienda=oculta#composicion"
         points={[
           point({ cash: 10_000_00, dateKey: "2026-05-31", housing: 500_000_00 }),
           point({ cash: 12_000_00, dateKey: "2026-06-30", housing: 500_000_00 }),
@@ -119,7 +120,43 @@ describe("CompositionChart", () => {
       />,
     );
 
+    // Net default → the link offers to HIDE, pointing at the hidden URL.
     expect(markup).toContain("Ocultar vivienda");
+    expect(markup).toContain('class="compositionToggle"');
+    expect(markup).toContain('href="/?vivienda=oculta#composicion"');
+    // It is a link, not a button.
+    expect(markup).not.toContain("<button");
+  });
+
+  test("hidden housingMode drops the Vivienda band and offers to show it again", () => {
+    const markup = renderToStaticMarkup(
+      <CompositionChart
+        currency="EUR"
+        housingMode="hidden"
+        housingToggleHref="/#composicion"
+        points={[
+          point({
+            cash: 10_000_00,
+            dateKey: "2026-05-31",
+            debts: 205_000_00,
+            debtsSecuredByHousing: 200_000_00,
+            housing: 500_000_00,
+          }),
+          point({
+            cash: 12_000_00,
+            dateKey: "2026-06-30",
+            debts: 205_000_00,
+            debtsSecuredByHousing: 200_000_00,
+            housing: 500_000_00,
+          }),
+        ]}
+      />,
+    );
+
+    // No Vivienda bar is drawn in the SVG, and the toggle now offers to show it.
+    expect(markup).not.toContain("compositionBand housing");
+    expect(markup).toContain("Mostrar vivienda");
+    expect(markup).toContain('href="/#composicion"');
   });
 
   test("links Deudas (legend + band) to the debts drilldown when given a destination (#145)", () => {

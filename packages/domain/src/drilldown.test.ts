@@ -4,12 +4,12 @@
  * buildLiquidDrilldown: snapshot holding rows + current portfolio → drill view
  * state for the liquid group (cash + market tiers):
  * - per-tier stacked series over time (net = assets − liabilities per frozen
- *   tier), with the deterministic stack→lines fallback and the <2 points rule
- * - per-holding sparkline entries for holdings with ≥2 captured points,
- *   carrying the frozen label and the current value when still held
- * - the no-longer-held rule (#78): sold/removed holdings keep their history,
- *   truncated at their last capture on the window's shared time axis, flagged
- *   and ordered after the currently-held ones
+ *   tier), drawn as per-period BARS (plus areaPoints + a total line) in stacked
+ *   mode, with the deterministic stack→lines fallback and the <2 points rule
+ * - per-holding bar-sparkline entries for currently-held holdings with ≥2
+ *   captured points, carrying the frozen label and the current value
+ * - the retired rule (this design pass): a holding no longer in the portfolio
+ *   is DROPPED from the cards entirely; its history still lives in the aggregate
  */
 import { describe, expect, test } from "vitest";
 
@@ -22,7 +22,7 @@ import {
   buildRestDrilldown,
   DRILL_GROUP_BY_TIER,
   DRILL_SPARKLINE_HEIGHT,
-  DRILL_SPARKLINE_INSET_X,
+  DRILL_SPARKLINE_MIN_BAR_HEIGHT,
   DRILL_SPARKLINE_WIDTH,
   LIQUID_DRILL_TIERS,
   REST_DRILL_TIERS,
@@ -177,9 +177,36 @@ describe("buildLiquidDrilldown — per-tier stacked series", () => {
     // Padded by 10% of the [0, 180] range.
     expect(state.stack!.yMin).toBe(-18_00);
     expect(state.stack!.yMax).toBe(198_00);
+    // Stacked mode now also emits per-period BARS and a stack-total line
+    // (this design pass), one rect per date key per band, drawn on EVEN
+    // categorical slots (a column chart, not a time axis).
+    expect(state.stack!.totalLine).not.toBeNull();
     for (const band of state.stack!.bands) {
       expect(band.areaPoints).not.toBeNull();
+      expect(band.bars).not.toBeNull();
+      expect(band.bars).toHaveLength(2);
+      for (const bar of band.bars!) {
+        expect(bar.height).toBeGreaterThanOrEqual(0);
+        expect(bar.width).toBeGreaterThan(0);
+      }
     }
+    // Every bar across every band shares one uniform slot-derived width, and the
+    // per-period centres are evenly spaced (half-slot edge margins → no clip).
+    const cashBars = state.stack!.bands[0]!.bars!;
+    // (EVOLUTION_CHART_WIDTH − 2·INSET_X) / n, with WIDTH = 600, INSET_X = 4, n = 2.
+    const innerSlot = (600 - 2 * 4) / 2;
+    const widths = state.stack!.bands.flatMap((b) => b.bars!.map((r) => r.width));
+    expect(new Set(widths).size).toBe(1);
+    expect(widths[0]!).toBeCloseTo(innerSlot * 0.85, 2);
+    // Two columns → centres at 4 + slot·0.5 and 4 + slot·1.5, one slot apart.
+    const centre0 = cashBars[0]!.x + cashBars[0]!.width / 2;
+    const centre1 = cashBars[1]!.x + cashBars[1]!.width / 2;
+    expect(centre0).toBeCloseTo(4 + innerSlot * 0.5, 2);
+    expect(centre1).toBeCloseTo(4 + innerSlot * 1.5, 2);
+    expect(centre1 - centre0).toBeCloseTo(innerSlot, 2);
+    // No bar clips the viewBox.
+    expect(cashBars[0]!.x).toBeGreaterThanOrEqual(0);
+    expect(cashBars[1]!.x + cashBars[1]!.width).toBeLessThanOrEqual(600);
   });
 
   test("falls back to lines for the whole window when a tier net crosses zero", () => {
@@ -224,8 +251,11 @@ describe("buildLiquidDrilldown — per-tier stacked series", () => {
 
     expect(state.stack).not.toBeNull();
     expect(state.stack!.mode).toBe("lines");
+    // Lines mode draws neither bars nor a total line — only the per-band lines.
+    expect(state.stack!.totalLine).toBeNull();
     for (const band of state.stack!.bands) {
       expect(band.areaPoints).toBeNull();
+      expect(band.bars).toBeNull();
       expect(band.linePoints.length).toBeGreaterThan(0);
     }
   });
@@ -296,7 +326,7 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
     });
   });
 
-  test("sparkline geometry uses time-proportional xs over a padded domain", () => {
+  test("sparkline emits one evenly-spaced bar per capture, floored from a zero baseline", () => {
     const rows = [
       row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 100 }),
       row({ dateKey: "2026-06-02", holdingId: "a_cash", tier: "cash", valueMinor: 200 }),
@@ -310,9 +340,30 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
     const sparkline = state.holdings[0]!.sparkline;
     expect(sparkline.width).toBe(DRILL_SPARKLINE_WIDTH);
     expect(sparkline.height).toBe(DRILL_SPARKLINE_HEIGHT);
-    // xs: inset → width − inset. ys: padded domain [90, 210] over height 36.
-    const inset = DRILL_SPARKLINE_INSET_X;
-    expect(sparkline.linePoints).toBe(`${inset},33 ${DRILL_SPARKLINE_WIDTH - inset},3`);
+    // Two captures → two evenly-spaced bars. slot = 120/2 = 60, barWidth =
+    // 60·0.7 = 42. Heights scale against the peak (200) from a zero floor:
+    // 100 → 18, 200 → 36 (full height). y = height − barHeight.
+    expect(sparkline.bars).toEqual([
+      { height: 18, width: 42, x: 9, y: 18 },
+      { height: 36, width: 42, x: 69, y: 0 },
+    ]);
+  });
+
+  test("a flat (or sparse) sparkline floors each bar at the minimum height", () => {
+    const rows = [
+      row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 0 }),
+      row({ dateKey: "2026-06-02", holdingId: "a_cash", tier: "cash", valueMinor: 100 }),
+    ];
+
+    const state = buildLiquidDrilldown({
+      currentHoldingIds: ["a_cash"],
+      rows,
+    });
+
+    const sparkline = state.holdings[0]!.sparkline;
+    // The zero-valued capture is floored so it still reads as a discrete tick.
+    expect(sparkline.bars[0]!.height).toBe(DRILL_SPARKLINE_MIN_BAR_HEIGHT);
+    expect(sparkline.bars[1]!.height).toBe(DRILL_SPARKLINE_HEIGHT);
   });
 
   test("current value comes from the latest capture when the holding is still held", () => {
@@ -329,8 +380,10 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
     expect(state.holdings[0]!.currentValueMinor).toBe(250);
   });
 
-  test("a holding no longer in the portfolio has no current value", () => {
+  test("a holding no longer in the portfolio is dropped from the cards entirely", () => {
     const rows = [
+      row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 50 }),
+      row({ dateKey: "2026-06-02", holdingId: "a_cash", tier: "cash", valueMinor: 70 }),
       row({
         dateKey: "2026-06-01",
         holdingId: "a_sold",
@@ -346,11 +399,19 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
     ];
 
     const state = buildLiquidDrilldown({
-      currentHoldingIds: [],
+      currentHoldingIds: ["a_cash"],
       rows,
     });
 
-    expect(state.holdings[0]!.currentValueMinor).toBeNull();
+    // The retired holding never reaches the per-holding grid…
+    expect(state.holdings.map((h) => h.holdingId)).toEqual(["a_cash"]);
+    // …yet its past value still lives in the AGGREGATE stack history: the
+    // day-1 market net (120 from a_sold) and day-2 market net (120) are both
+    // present, so the aggregate is unchanged by the card drop.
+    const market = state.stack!.bands.find((b) => b.band === "market")!;
+    expect(market.bars).not.toBeNull();
+    expect(market.bars).toHaveLength(2);
+    expect(market.bars!.every((bar) => bar.height > 0)).toBe(true);
   });
 
   test("frozen label and tier come from the latest capture of the holding", () => {
@@ -380,7 +441,7 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
     expect(state.holdings[0]!.tier).toBe("market");
   });
 
-  test("a held holding is not flagged and keeps its current value", () => {
+  test("a held holding keeps its current value", () => {
     const rows = [
       row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 100 }),
       row({ dateKey: "2026-06-02", holdingId: "a_cash", tier: "cash", valueMinor: 250 }),
@@ -391,7 +452,6 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
       rows,
     });
 
-    expect(state.holdings[0]!.noLongerHeld).toBe(false);
     expect(state.holdings[0]!.currentValueMinor).toBe(250);
   });
 
@@ -428,7 +488,7 @@ describe("buildLiquidDrilldown — per-holding small multiples", () => {
     ];
 
     const state = buildLiquidDrilldown({
-      currentHoldingIds: [],
+      currentHoldingIds: ["a_z", "a_a"],
       rows,
     });
 
@@ -629,7 +689,7 @@ describe("buildHousingDrilldown — single-tier group (#77, ADR 0022)", () => {
     expect(state.holdings.map((h) => h.holdingId)).toEqual(["a_piso"]);
   });
 
-  test("defensive: a pre-migration mortgage (frozen illiquid, securesHousing=true) lands in housing drill alongside its house", () => {
+  test("a pre-migration mortgage (frozen illiquid, securesHousing=true) is EXCLUDED from the housing drill — it lives in the debts drill", () => {
     // Legacy capture: v28 migration had not run yet, so both rows are frozen with
     // liquidityTier='illiquid'. The house carries countsAsHousing=true; the mortgage
     // carries securesHousing=true. effectiveRung must resolve both to "housing" so the
@@ -695,11 +755,16 @@ describe("buildHousingDrilldown — single-tier group (#77, ADR 0022)", () => {
       rows,
     });
 
-    // Both house and mortgage land in housing drill
-    expect(housingState.holdings.map((h) => h.holdingId).sort()).toEqual(
-      ["a_piso", "l_hipoteca"].sort(),
-    );
-    // Mortgage does NOT appear in rest
+    // The house lands in the housing drill; the mortgage does NOT — a mortgage is
+    // a debt and belongs in the debts drill, not under "Vivienda · Propiedades".
+    expect(housingState.holdings.map((h) => h.holdingId)).toEqual(["a_piso"]);
+    // The mortgage shows up in the debts drill instead (nothing is lost).
+    const debtsState = buildDebtsDrilldown({
+      currentHoldingIds: ["l_hipoteca"],
+      rows,
+    });
+    expect(debtsState.holdings.map((h) => h.holdingId)).toContain("l_hipoteca");
+    // Mortgage does NOT appear in rest either
     expect(restState.holdings.map((h) => h.holdingId)).not.toContain("l_hipoteca");
     // Only art in rest
     expect(restState.holdings.map((h) => h.holdingId)).toContain("a_art");
@@ -778,13 +843,13 @@ describe("buildHousingDrilldown — single-tier group (#77, ADR 0022)", () => {
     ]);
     for (const holding of state.holdings) {
       expect(holding.tier).toBe("housing");
-      expect(holding.sparkline.linePoints.length).toBeGreaterThan(0);
+      expect(holding.sparkline.bars.length).toBeGreaterThan(0);
     }
   });
 });
 
-describe("buildLiquidDrilldown — no-longer-held holdings (#78)", () => {
-  test("a holding sold mid-window stays in the grid, flagged, with its series truncated at its last capture", () => {
+describe("buildLiquidDrilldown — retired holdings dropped from cards (this design pass)", () => {
+  test("a holding sold mid-window is absent from the cards, but its history stays in the aggregate", () => {
     const rows = [
       // Held holding spans the whole window: 2026-06-01 → 2026-06-05.
       row({
@@ -823,25 +888,20 @@ describe("buildLiquidDrilldown — no-longer-held holdings (#78)", () => {
       rows,
     });
 
-    const sold = state.holdings.find((h) => h.holdingId === "a_sold")!;
-    expect(sold.noLongerHeld).toBe(true);
-    expect(sold.currentValueMinor).toBeNull();
-
-    // Sparkline xs live on the window's shared time axis (4-day span over
-    // innerWidth 116): the sold series ends at 06-03 → x = 2 + (2/4)·116 = 60,
-    // NOT at the right edge. ys: padded domain [90, 210] over height 36.
-    const inset = DRILL_SPARKLINE_INSET_X;
-    expect(sold.sparkline.linePoints).toBe(`${inset},33 60,3`);
-
-    // The held holding's series does reach the right edge of the axis.
+    // The sold holding is gone from the cards; only the held one remains.
+    expect(state.holdings.map((h) => h.holdingId)).toEqual(["a_cash"]);
     const held = state.holdings.find((h) => h.holdingId === "a_cash")!;
-    expect(held.noLongerHeld).toBe(false);
-    expect(held.sparkline.linePoints).toBe(
-      `${inset},33 ${DRILL_SPARKLINE_WIDTH - inset},3`,
-    );
+    expect(held.currentValueMinor).toBe(200);
+    expect(held.sparkline.bars.length).toBeGreaterThan(0);
+
+    // Its past value still rides in the AGGREGATE market band: the 06-01 and
+    // 06-03 market nets (100, 200) are preserved as bars in the stack history.
+    const market = state.stack!.bands.find((b) => b.band === "market")!;
+    expect(market.bars).not.toBeNull();
+    expect(market.bars!.some((bar) => bar.height > 0)).toBe(true);
   });
 
-  test("a no-longer-held holding with fewer than two captured points stays excluded", () => {
+  test("a retired holding with fewer than two captured points stays excluded too", () => {
     const rows = [
       row({ dateKey: "2026-06-01", holdingId: "a_cash", tier: "cash", valueMinor: 100 }),
       row({ dateKey: "2026-06-05", holdingId: "a_cash", tier: "cash", valueMinor: 200 }),
@@ -861,7 +921,7 @@ describe("buildLiquidDrilldown — no-longer-held holdings (#78)", () => {
     expect(state.holdings.map((h) => h.holdingId)).toEqual(["a_cash"]);
   });
 
-  test("currently-held holdings sort before no-longer-held ones, alphabetically within each group", () => {
+  test("only currently-held holdings appear, ordered alphabetically by label", () => {
     const rows = [
       row({
         dateKey: "2026-06-01",
@@ -926,12 +986,9 @@ describe("buildLiquidDrilldown — no-longer-held holdings (#78)", () => {
       rows,
     });
 
-    expect(state.holdings.map((h) => h.holdingId)).toEqual([
-      "a_held_m",
-      "a_held_z",
-      "a_gone_a",
-      "a_gone_b",
-    ]);
+    // The retired Alfa/Beta cards are dropped; only the two held ones remain,
+    // ordered by label.
+    expect(state.holdings.map((h) => h.holdingId)).toEqual(["a_held_m", "a_held_z"]);
   });
 });
 
@@ -1052,18 +1109,18 @@ describe("buildDebtsDrilldown — aggregate debts series + per-debt multiples (#
     ).toBe(180_000_00);
   });
 
-  test("a debt no longer live stays, flagged and ordered after the live ones (#78)", () => {
-    // l_card has left the portfolio but keeps its captured history.
+  test("a debt no longer live is dropped from the cards, but its history stays in the aggregate", () => {
+    // l_card has left the portfolio; its card is dropped (this design pass).
     const state = buildDebtsDrilldown({
       currentHoldingIds: ["l_mortgage"],
       rows,
     });
 
-    const card = state.holdings.find((h) => h.holdingId === "l_card")!;
-    expect(card.noLongerHeld).toBe(true);
-    expect(card.currentValueMinor).toBeNull();
-    // Live debts first, then no-longer-held.
-    expect(state.holdings.map((h) => h.holdingId)).toEqual(["l_mortgage", "l_card"]);
+    // Only the live mortgage card remains.
+    expect(state.holdings.map((h) => h.holdingId)).toEqual(["l_mortgage"]);
+    // Yet the aggregate still reflects the card's history: the peak total
+    // includes the card (mortgage 200k + card 1k), unchanged by the card drop.
+    expect(state.stack!.yMax).toBeCloseTo(201_000_00 * 1.1, 0);
   });
 
   test("buildDrilldown dispatches the 'debts' key", () => {
@@ -1076,11 +1133,12 @@ describe("buildDebtsDrilldown — aggregate debts series + per-debt multiples (#
   });
 });
 
-describe("build*Drilldown — Papelera vs retired holdings (#268)", () => {
+describe("build*Drilldown — non-live holdings dropped from cards (#268, this design pass)", () => {
   // Three holdings, two of which have left the current portfolio: one was
   // transferred and now sits in the Papelera (soft delete, recoverable), the
-  // other was truly retired (hard-deleted / written off). The retired one shows
-  // as "Ya no en cartera"; the trashed one is dropped from the drill entirely.
+  // other was truly retired (hard-deleted / written off). Both are now dropped
+  // from the cards (only currently-held holdings appear); their history still
+  // lives in the aggregate. Only the live holding gets a card.
   const rows = [
     row({
       dateKey: "2026-06-01",
@@ -1133,33 +1191,35 @@ describe("build*Drilldown — Papelera vs retired holdings (#268)", () => {
       rows,
     });
 
-  test("a holding transferred to the Papelera is dropped from the drill entirely", () => {
+  test("a holding transferred to the Papelera is dropped from the cards entirely", () => {
     expect(state().holdings.map((h) => h.holdingId)).not.toContain("a_trashed");
   });
 
-  test("the live and the truly-retired holdings remain, retired one flagged", () => {
+  test("a truly-retired holding is also dropped — only the live one gets a card", () => {
     const holdings = state().holdings;
 
+    expect(holdings.map((h) => h.holdingId)).toEqual(["a_live"]);
     const live = holdings.find((h) => h.holdingId === "a_live")!;
-    expect(live.noLongerHeld).toBe(false);
     expect(live.currentValueMinor).toBe(200);
-
-    const gone = holdings.find((h) => h.holdingId === "a_gone")!;
-    expect(gone.noLongerHeld).toBe(true);
-    expect(gone.currentValueMinor).toBeNull();
   });
 
-  test("ordering: only live then retired survive (Papelera excluded)", () => {
-    expect(state().holdings.map((h) => h.holdingId)).toEqual(["a_live", "a_gone"]);
+  test("the dropped holdings' history still lives in the aggregate market band", () => {
+    // a_trashed and a_gone are both market-tier; their 06-01/06-03 nets remain
+    // in the aggregate stack even though neither gets a card.
+    const market = state().stack!.bands.find((b) => b.band === "market")!;
+    expect(market.bars).not.toBeNull();
+    expect(market.bars!.some((bar) => bar.height > 0)).toBe(true);
   });
 
-  test("without trashedHoldingIds, an absent holding is still kept and flagged retired", () => {
+  test("without trashedHoldingIds, an absent holding is still dropped from the cards", () => {
     const fallback = buildLiquidDrilldown({
       currentHoldingIds: ["a_live"],
       rows,
     });
 
-    const kept = fallback.holdings.find((h) => h.holdingId === "a_trashed")!;
-    expect(kept.noLongerHeld).toBe(true);
+    // a_trashed is absent from currentHoldingIds, so it is dropped like any
+    // other not-currently-held holding.
+    expect(fallback.holdings.map((h) => h.holdingId)).not.toContain("a_trashed");
+    expect(fallback.holdings.map((h) => h.holdingId)).toEqual(["a_live"]);
   });
 });

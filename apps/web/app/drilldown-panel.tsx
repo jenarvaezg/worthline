@@ -5,9 +5,11 @@ import type { DrilldownKey, DrilldownState, LiquidityTier } from "@worthline/dom
  * The drill view (#76 liquid, #77 rest + housing) — rendered server-side IN
  * PLACE of the decomposition chart: a breadcrumb back to the full picture
  * (preserving the Vista), the group's per-tier stacked chart derived from
- * frozen snapshot holding rows, and a small-multiples grid with one sparkline
- * per holding. Housing is a single tier, so its panel skips the stack and
- * goes straight to the per-property multiples. Zero client JS — plain HTML
+ * frozen snapshot holding rows — drawn as per-period BARS with a total line
+ * over them (this design pass), mirroring the main composition chart — and a
+ * small-multiples grid of bordered cards, one per currently-held holding, each
+ * with a bar sparkline. Housing is a single tier, so its panel skips the stack
+ * and goes straight to the per-property multiples. Zero client JS — plain HTML
  * anchors, native <title> hovers.
  */
 
@@ -106,28 +108,48 @@ export default function DrilldownPanel({
               aria-label={stackCopy.chartAria}
               preserveAspectRatio="none"
             >
-              {stack.mode === "stacked"
-                ? stack.bands.map((band) => (
-                    <polygon
-                      className={`drillBand ${band.band}`}
-                      key={band.band}
-                      points={band.areaPoints!}
-                    >
+              {stack.mode === "stacked" ? (
+                <>
+                  {/* Stacked per-period BARS (this design pass), mirroring the
+                      main composition chart; a zero-value period yields a
+                      zero-height rect that simply does not paint. */}
+                  {stack.bands.map((band) => (
+                    <g className={`drillBand ${band.band}`} key={band.band}>
                       <title>{BAND_LABELS[band.band]}</title>
-                    </polygon>
-                  ))
-                : stack.bands.map((band) => (
-                    <polyline
-                      className={`drillLine ${band.band}`}
-                      fill="none"
-                      key={band.band}
-                      points={band.linePoints}
-                      strokeWidth="1.5"
-                      vectorEffect="non-scaling-stroke"
-                    >
-                      <title>{BAND_LABELS[band.band]}</title>
-                    </polyline>
+                      {band.bars!.map((bar, i) => (
+                        <rect
+                          height={bar.height}
+                          key={i}
+                          width={bar.width}
+                          x={bar.x}
+                          y={bar.y}
+                        />
+                      ))}
+                    </g>
                   ))}
+                  {/* The total line rides over the bars (the stack's top edge). */}
+                  <polyline
+                    className="drillTotalLine"
+                    fill="none"
+                    points={stack.totalLine!}
+                    strokeWidth="1.5"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </>
+              ) : (
+                stack.bands.map((band) => (
+                  <polyline
+                    className={`drillLine ${band.band}`}
+                    fill="none"
+                    key={band.band}
+                    points={band.linePoints}
+                    strokeWidth="1.5"
+                    vectorEffect="non-scaling-stroke"
+                  >
+                    <title>{BAND_LABELS[band.band]}</title>
+                  </polyline>
+                ))
+              )}
             </svg>
           </>
         ) : (
@@ -138,30 +160,17 @@ export default function DrilldownPanel({
       {holdings.length > 0 ? (
         <div className="drillMultiples" aria-label={copy.multiplesAria}>
           {holdings.map((holding) => (
-            <div
-              className={
-                holding.noLongerHeld ? "drillMultiple noLongerHeld" : "drillMultiple"
-              }
-              key={holding.holdingId}
-            >
+            <div className="drillMultiple" key={holding.holdingId}>
               <span className="drillMultipleLabel">{holding.label}</span>
-              {holding.noLongerHeld || holding.currentValueMinor === null ? (
-                // Frozen means frozen: the history stays, only the present is gone.
-                // A liability reads "no vigente"; an asset "no en cartera".
-                <span className="drillMultipleGone">
-                  {holding.kind === "liability" ? "Ya no vigente" : "Ya no en cartera"}
-                </span>
-              ) : (
-                <b>
-                  {formatMoneyMinor({
-                    amountMinor:
-                      holding.kind === "liability"
-                        ? -holding.currentValueMinor
-                        : holding.currentValueMinor,
-                    currency,
-                  })}
-                </b>
-              )}
+              <b>
+                {formatMoneyMinor({
+                  amountMinor:
+                    holding.kind === "liability"
+                      ? -holding.currentValueMinor
+                      : holding.currentValueMinor,
+                  currency,
+                })}
+              </b>
               <svg
                 className={`drillSparkline ${holding.tier ?? "debt"}`}
                 viewBox={`0 0 ${holding.sparkline.width} ${holding.sparkline.height}`}
@@ -169,12 +178,17 @@ export default function DrilldownPanel({
                 aria-label={`Evolución de ${holding.label}`}
                 preserveAspectRatio="none"
               >
-                <polyline
-                  fill="none"
-                  points={holding.sparkline.linePoints}
-                  strokeWidth="1.5"
-                  vectorEffect="non-scaling-stroke"
-                />
+                {/* Per-capture BARS with a floored height (this design pass) so a
+                    one- or two-point history reads as clean discrete ticks. */}
+                {holding.sparkline.bars.map((bar, i) => (
+                  <rect
+                    height={bar.height}
+                    key={i}
+                    width={bar.width}
+                    x={bar.x}
+                    y={bar.y}
+                  />
+                ))}
               </svg>
             </div>
           ))}

@@ -1132,7 +1132,8 @@ th:last-child {
   opacity: 0.4;
 }
 
-/* Fold a dominant band (Vivienda) out so the chart rescales to the rest. */
+/* Fold a dominant band (Vivienda) out so the chart rescales to the rest. The
+   toggle is a URL link now (ADR 0009), styled as a quiet pill. */
 .compositionToggle {
   background: none;
   border: 1px solid var(--line-soft);
@@ -1143,6 +1144,7 @@ th:last-child {
   font-size: 0.74rem;
   margin-left: auto;
   padding: 2px 8px;
+  text-decoration: none;
 }
 
 .compositionToggle:hover {
@@ -1150,17 +1152,17 @@ th:last-child {
   color: var(--ink);
 }
 
-.compositionToggle[aria-pressed="true"] {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--ink-panel-text);
-}
-
 .compositionChart {
   display: block;
   height: 200px;
   margin-top: 8px;
   width: 100%;
+}
+
+/* Asset bands draw as stacked monthly bars: translucent fills in the page-wide
+   tier hues so overlapping context (the net line, the guide) reads through. */
+.compositionBand {
+  fill-opacity: 0.78;
 }
 
 .compositionBand.cash {
@@ -1185,10 +1187,10 @@ th:last-child {
 
 .compositionDebt {
   fill: var(--red);
-  fill-opacity: 0.85;
+  fill-opacity: 0.78;
 }
 
-/* Linked asset bands brighten on hover — a subtle affordance that they navigate
+/* Linked asset bars brighten on hover — a subtle affordance that they navigate
    to their drilldown (#143). */
 .compositionBand:hover,
 svg a:hover .compositionBand {
@@ -1312,12 +1314,25 @@ svg a:hover .compositionBand {
   width: 100%;
 }
 
+/* Aggregate bands draw as stacked per-period bars (this design pass), mirroring
+   the main composition chart: translucent tier-hue fills so the total line
+   reads through. The hue lives on the per-tier rule below; `fill` on the band
+   <g> cascades to its <rect> children. */
+.drillBand {
+  fill-opacity: 0.78;
+}
+
 .drillBand.cash {
   fill: var(--tier-cash);
 }
 
 .drillBand.market {
   fill: var(--tier-market);
+}
+
+/* The stack-total line riding over the aggregate bars. */
+.drillTotalLine {
+  stroke: var(--ink);
 }
 
 .drillLine.cash {
@@ -1335,19 +1350,30 @@ svg a:hover .compositionBand {
   margin-top: 16px;
 }
 
+/* Bordered card matching the app's card language (this design pass): each
+   holding gets a real surface instead of a bare stack. */
 .drillMultiple {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
   display: grid;
-  gap: 4px;
+  gap: 6px;
+  padding: 12px;
 }
 
+/* The label wraps to at most two lines instead of being clipped with an
+   ellipsis — long holding names stay readable. */
 .drillMultipleLabel {
   color: var(--muted);
+  display: -webkit-box;
   font-size: 0.72rem;
   letter-spacing: 0.04em;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
   text-transform: uppercase;
-  white-space: nowrap;
+  white-space: normal;
+  -webkit-box-orient: vertical;
 }
 
 .drillMultiple b {
@@ -1361,12 +1387,19 @@ svg a:hover .compositionBand {
   width: 100%;
 }
 
-.drillSparkline.cash polyline {
-  stroke: var(--tier-cash);
+/* Per-capture bars (this design pass): the tier hue fills each <rect>; the
+   per-tier rule below carries the colour, slightly translucent to match the
+   aggregate bars. */
+.drillSparkline rect {
+  fill-opacity: 0.85;
 }
 
-.drillSparkline.market polyline {
-  stroke: var(--tier-market);
+.drillSparkline.cash rect {
+  fill: var(--tier-cash);
+}
+
+.drillSparkline.market rect {
+  fill: var(--tier-market);
 }
 
 /* === #77 rest and housing drilldowns === */
@@ -1409,16 +1442,16 @@ svg a:hover .compositionBand {
   stroke: var(--tier-housing);
 }
 
-.drillSparkline.term-locked polyline {
-  stroke: var(--tier-term-locked);
+.drillSparkline.term-locked rect {
+  fill: var(--tier-term-locked);
 }
 
-.drillSparkline.illiquid polyline {
-  stroke: var(--tier-illiquid);
+.drillSparkline.illiquid rect {
+  fill: var(--tier-illiquid);
 }
 
-.drillSparkline.housing polyline {
-  stroke: var(--tier-housing);
+.drillSparkline.housing rect {
+  fill: var(--tier-housing);
 }
 
 /* === #145 debts drilldown === */
@@ -1431,32 +1464,14 @@ svg a:hover .compositionBand {
 
 .drillBand.debts {
   fill: var(--red);
-  fill-opacity: 0.85;
 }
 
 .drillLine.debts {
   stroke: var(--red);
 }
 
-.drillSparkline.debt polyline {
-  stroke: var(--red);
-}
-
-/* === #78 no-longer-held holdings: dimmed, marked, history intact === */
-
-.drillMultiple.noLongerHeld {
-  opacity: 0.55;
-}
-
-.drillMultiple.noLongerHeld .drillSparkline polyline {
-  stroke: var(--muted);
-}
-
-.drillMultipleGone {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-style: italic;
-  letter-spacing: 0.02em;
+.drillSparkline.debt rect {
+  fill: var(--red);
 }
 
 /* Persistence footer — quiet status line, no card chrome: it must never
@@ -3083,16 +3098,23 @@ td.rowActions > * {
   }
 }
 
-/* Hero — the one dark ink panel of the app; the headline figure dominates. */
+/* Hero — light card with a subtle green tint (treatment H4); it belongs with
+   the rest of the cream cards rather than reading as a dark island. */
 .summaryBand.heroPanel {
-  background: var(--ink-panel);
-  border-color: var(--ink-panel);
-  color: var(--ink-panel-text);
+  background: linear-gradient(180deg, rgba(0, 111, 95, 0.1), rgba(0, 111, 95, 0.03));
+  border: 1px solid rgba(0, 111, 95, 0.18);
+  color: var(--ink);
   padding: 22px 24px;
 }
 
 .heroPanel .headline > span {
-  color: var(--ink-panel-muted);
+  color: var(--green);
+}
+
+.heroPanel .headline > strong {
+  color: var(--ink);
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-size: clamp(2.2rem, 4.5vw, 3rem);
 }
 
 .heroPanel .resumenHeader {
@@ -3100,9 +3122,9 @@ td.rowActions > * {
   margin-bottom: 12px;
 }
 
-/* Vista toggle on dark — segmented pill. */
+/* Vista toggle on light — segmented pill on a faint ink overlay. */
 .heroPanel .framingTabs {
-  background: rgba(232, 236, 231, 0.1);
+  background: rgba(23, 32, 30, 0.06);
   border-radius: 999px;
   gap: 2px;
   padding: 3px;
@@ -3110,23 +3132,23 @@ td.rowActions > * {
 
 .heroPanel .framingTabs a {
   border: 0;
-  color: var(--ink-panel-muted);
+  color: var(--muted);
   font-size: 0.78rem;
   padding: 5px 13px;
 }
 
 .heroPanel .framingTabs a.active,
 .heroPanel .framingTabs a:hover {
-  background: var(--ink-panel-text);
-  color: var(--ink);
+  background: var(--ink);
+  color: var(--paper-strong);
 }
 
-/* Delta chips — sign-colored pills with amount and percent. */
+/* Delta chips — sign-colored pills with amount and percent (light palette). */
 .deltaChips {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 12px;
 }
 
 .deltaChip {
@@ -3138,53 +3160,49 @@ td.rowActions > * {
 }
 
 .deltaChip.pos {
-  background: rgba(90, 212, 174, 0.16);
-  color: var(--pos-on-dark);
+  background: rgba(0, 111, 95, 0.08);
+  color: var(--green);
 }
 
 .deltaChip.neg {
-  background: rgba(240, 144, 123, 0.16);
-  color: var(--neg-on-dark);
+  background: rgba(185, 68, 47, 0.08);
+  color: var(--red);
 }
 
 .deltaChip.zero {
-  background: rgba(232, 236, 231, 0.12);
-  color: var(--ink-panel-muted);
+  background: rgba(23, 32, 30, 0.06);
+  color: var(--muted);
 }
 
-/* Breakdown stats — quiet 4-up strip under the hero figure. */
+/* Breakdown stats — green-tinted mini-cards under the hero figure. */
 .heroStats {
-  border-top: 1px solid rgba(232, 236, 231, 0.14);
   display: grid;
-  gap: 0;
+  gap: 12px;
   grid-template-columns: repeat(4, 1fr);
-  margin-top: 20px;
-  padding-top: 14px;
+  margin-top: 16px;
 }
 
 .heroStat {
-  border-left: 1px solid rgba(232, 236, 231, 0.14);
+  background: rgba(255, 253, 247, 0.6);
+  border: 1px solid rgba(0, 111, 95, 0.12);
+  border-radius: var(--radius-sm);
   min-width: 0;
-  padding: 0 14px;
-}
-
-.heroStat:first-child {
-  border-left: 0;
-  padding-left: 0;
+  padding: 8px 12px;
 }
 
 .heroStat span {
-  color: var(--ink-panel-muted);
+  color: var(--muted);
   display: block;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   margin-bottom: 4px;
   text-transform: uppercase;
 }
 
 .heroStat b {
   display: block;
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
   font-size: 1.05rem;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
@@ -3192,18 +3210,12 @@ td.rowActions > * {
 }
 
 .heroStat b.emptyFigure {
-  color: var(--ink-panel-muted);
+  color: var(--muted);
 }
 
 @media (max-width: 640px) {
   .heroStats {
     grid-template-columns: repeat(2, 1fr);
-    row-gap: 14px;
-  }
-
-  .heroStat:nth-child(odd) {
-    border-left: 0;
-    padding-left: 0;
   }
 }
 
@@ -3298,19 +3310,10 @@ td.rowActions > * {
   color: var(--paper-strong);
 }
 
-/* Hero stretches with the right column — pin the breakdown stats to the
-   bottom so the empty space reads as intentional breathing room. */
-.summaryBand.heroPanel {
-  display: flex;
-  flex-direction: column;
-}
-
-.heroPanel .heroStats {
-  margin-top: auto;
-}
-
+/* Hero reads dense (treatment H4): the breakdown sits right under the figure
+   and chips rather than being pushed to the bottom of a stretched column. */
 .heroPanel .headline {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 /* ── Unified «Añadir holding» (PRD #146 S5, #151) ──────────────────────────

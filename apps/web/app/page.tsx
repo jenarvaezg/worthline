@@ -6,6 +6,7 @@ import {
   moneySign,
 } from "@worthline/domain";
 import type {
+  CompositionHousingMode,
   CompositionRange,
   DrilldownKey,
   FramedDelta,
@@ -25,6 +26,7 @@ import {
   parseScopeParam,
   parseScopeCookie,
   parseViewParam,
+  parseViviendaParam,
   SCOPE_COOKIE_NAME,
 } from "./intake";
 import { loadDashboard } from "./load-dashboard";
@@ -100,22 +102,26 @@ function DeltaChip({ delta, label }: { delta: FramedDelta | null; label: string 
 }
 
 /**
- * A composition-area URL preserving the framing, an optional drill, and the
- * temporal range (#144/#145). Clean defaults are omitted (total view, no drill,
- * the `all` range). The `#composicion` fragment anchors full-document <a>
- * navigation to the chart panel (ADR 0009); the hero's framing tabs pass
- * `anchor = false` so switching Vista does not scroll away from the headline.
+ * A composition-area URL preserving the framing, an optional drill, the temporal
+ * range (#144/#145) and the Vivienda presentation. Clean defaults are omitted
+ * (total view, no drill, the `all` range, net Vivienda). The `#composicion`
+ * fragment anchors full-document <a> navigation to the chart panel (ADR 0009);
+ * the hero's framing tabs pass `anchor = false` so switching Vista does not
+ * scroll away from the headline. Threading `housingMode` through here is what
+ * keeps the "Ocultar vivienda" choice alive across every range/view/drill change.
  */
 function compositionUrl(
   view: NetWorthFraming,
   drill: DrilldownKey | null,
   range: CompositionRange,
+  housingMode: CompositionHousingMode,
   anchor = true,
 ): string {
   let url = "/";
   if (view === "liquid") url = appendParam(url, "view", "liquid");
   if (drill) url = appendParam(url, "drill", drill);
   if (range !== "all") url = appendParam(url, "range", range);
+  if (housingMode === "hidden") url = appendParam(url, "vivienda", "oculta");
 
   return anchor ? `${url}#composicion` : url;
 }
@@ -131,19 +137,36 @@ export default async function DashboardPage({
   const selectedView = parseViewParam(resolvedSearchParams?.view);
   const selectedDrill = parseDrillParam(resolvedSearchParams?.drill);
   const selectedRange = parseRangeParam(resolvedSearchParams?.range);
+  const selectedHousingMode = parseViviendaParam(resolvedSearchParams?.vivienda);
   const currentUrl = buildCurrentUrl(resolvedSearchParams);
 
-  // Drill navigation (#76, #77, #145): every URL preserves the selected Vista
-  // and the temporal range (#144). The `#composicion` fragment anchors the
+  // Drill navigation (#76, #77, #145): every URL preserves the selected Vista,
+  // the temporal range (#144) AND the Vivienda presentation, so changing one
+  // dimension never resets the others. The `#composicion` fragment anchors the
   // full-document <a> navigation (ADR 0009) to the composition panel instead of
   // the page top, so a drill leaves the reader where they were (#143 follow-up).
-  const composicionHomeUrl = compositionUrl(selectedView, null, selectedRange);
+  const composicionHomeUrl = compositionUrl(
+    selectedView,
+    null,
+    selectedRange,
+    selectedHousingMode,
+  );
   const drillHrefs = {
-    debts: compositionUrl(selectedView, "debts", selectedRange),
-    housing: compositionUrl(selectedView, "housing", selectedRange),
-    liquid: compositionUrl(selectedView, "liquid", selectedRange),
-    rest: compositionUrl(selectedView, "rest", selectedRange),
+    debts: compositionUrl(selectedView, "debts", selectedRange, selectedHousingMode),
+    housing: compositionUrl(selectedView, "housing", selectedRange, selectedHousingMode),
+    liquid: compositionUrl(selectedView, "liquid", selectedRange, selectedHousingMode),
+    rest: compositionUrl(selectedView, "rest", selectedRange, selectedHousingMode),
   };
+
+  // The "Ocultar/Mostrar vivienda" toggle: preserves Vista + range + drill while
+  // flipping only the Vivienda dimension (net ⇄ hidden) — URL state, not a client
+  // gesture (ADR 0009), so it persists across navigation.
+  const housingToggleHref = compositionUrl(
+    selectedView,
+    selectedDrill,
+    selectedRange,
+    selectedHousingMode === "hidden" ? "net" : "hidden",
+  );
 
   const jar = await cookies();
   const queryScopeId = parseScopeParam(resolvedSearchParams?.scope);
@@ -213,7 +236,7 @@ export default async function DashboardPage({
   // Range controls (#144): the ranges this scope's history actually spans, each
   // a link that sets the range while preserving the Vista and any active drill.
   const rangeOptions = state.compositionRanges.map((range) => ({
-    href: compositionUrl(selectedView, selectedDrill, range),
+    href: compositionUrl(selectedView, selectedDrill, range, selectedHousingMode),
     range,
   }));
 
@@ -249,15 +272,21 @@ export default async function DashboardPage({
   return (
     <Shell {...shellProps}>
       <div className="dashGrid">
-        {/* ── 1. Hero — the one dark ink panel: framing selector, headline,
-               delta chips with %, breakdown stats (docs/design-system.md) ── */}
+        {/* ── 1. Hero — light card with a subtle green tint: framing selector,
+               headline, delta chips with %, breakdown stats (docs/design-system.md) ── */}
         <section className="summaryBand heroPanel" aria-label="Resumen patrimonial">
           <div className="resumenHeader">
             <nav className="framingTabs" aria-label="Vista de patrimonio">
               {framingTabs.map((tab) => (
                 <Link
                   className={tab.id === selectedView ? "active" : undefined}
-                  href={compositionUrl(tab.id, selectedDrill, selectedRange, false)}
+                  href={compositionUrl(
+                    tab.id,
+                    selectedDrill,
+                    selectedRange,
+                    selectedHousingMode,
+                    false,
+                  )}
                   key={tab.id}
                   scroll={false}
                 >
@@ -404,6 +433,8 @@ export default async function DashboardPage({
             <CompositionChart
               currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
               drillHrefs={drillHrefs}
+              housingMode={selectedHousingMode}
+              housingToggleHref={housingToggleHref}
               points={state.compositionSeries}
             />
           )}
