@@ -1,0 +1,675 @@
+import {
+  DRILL_GROUP_BY_TIER,
+  donutArcSegments,
+  formatMoneyMinor,
+  isLiquid,
+  largestRemainderPercentages,
+  LIQUIDITY_TIER_LABELS,
+  moneySign,
+} from "@worthline/domain";
+import type {
+  CompositionHousingMode,
+  CompositionRange,
+  DrilldownKey,
+  FramedDelta,
+  LiquidityTier,
+  NetWorthFraming,
+  NetWorthSnapshot,
+} from "@worthline/domain";
+import { refreshStalePrices } from "@worthline/pricing";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+
+import {
+  appendParam,
+  parseDrillParam,
+  parseRangeParam,
+  parseViewParam,
+  parseViviendaParam,
+} from "./intake";
+import { loadDashboard } from "./load-dashboard";
+import type { RefreshPricesResult } from "./load-dashboard";
+import CompositionChart from "./composition-chart";
+import CompositionRangeControls from "./composition-range-controls";
+import DrilldownPanel from "./drilldown-panel";
+import HeroMovers from "./hero-movers";
+import type { HoldingMover, MoversData, MoversPeriod } from "./hero-movers";
+import { runBinanceRefresh } from "./ajustes/binance-refresh";
+import { runNumistaCoinRefresh } from "./ajustes/numista-coin-refresh";
+import { refreshAndPersistStalePrices } from "./refresh-prices";
+import { readDemoContext } from "@web/demo/read-demo-context";
+import { bootstrapHealthcheck, openStore } from "@web/store";
+
+const framingTabs = [
+  { id: "total" as NetWorthFraming, label: "Patrimonio neto" },
+  { id: "liquid" as NetWorthFraming, label: "Líquido" },
+];
+
+const TIER_DONUT_GEOMETRY = { cx: 50, cy: 50, innerRadius: 27, outerRadius: 45 };
+
+const DRILL_DESTINATION_LABELS: Record<DrilldownKey, string> = {
+  debts: "ver desglose de las deudas",
+  housing: "ver desglose de la vivienda",
+  liquid: "ver desglose del líquido",
+  rest: "ver desglose del resto",
+};
+
+const ONBOARDING_LINKS: Record<string, string> = {
+  members: "/ajustes",
+  holdings: "/patrimonio/anadir",
+  fire: "/ajustes",
+  snapshot: "/",
+};
+
+function formatPct(pct: number): string {
+  const sign = pct > 0 ? "+" : pct < 0 ? "−" : "";
+  return `${sign}${Math.abs(pct).toFixed(1).replace(".", ",")} %`;
+}
+
+function DeltaChip({ delta, label }: { delta: FramedDelta | null; label: string }) {
+  if (!delta) {
+    return <span className="deltaChip zero">{label}: sin dato</span>;
+  }
+  const sign = moneySign(delta.change);
+  const arrow = sign === "pos" ? "▲" : sign === "neg" ? "▼" : "•";
+  const prefix = delta.change.amountMinor > 0 ? "+" : "";
+  return (
+    <span className={`deltaChip ${sign}`}>
+      {arrow} {prefix}
+      {formatMoneyMinor(delta.change)}
+      {delta.pct !== null ? ` (${formatPct(delta.pct)})` : ""} {label}
+    </span>
+  );
+}
+
+function compositionUrl(
+  view: NetWorthFraming,
+  drill: DrilldownKey | null,
+  range: CompositionRange,
+  housingMode: CompositionHousingMode,
+  anchor = true,
+): string {
+  let url = "/";
+  if (view === "liquid") url = appendParam(url, "view", "liquid");
+  if (drill) url = appendParam(url, "drill", drill);
+  if (range !== "all") url = appendParam(url, "range", range);
+  if (housingMode === "hidden") url = appendParam(url, "vivienda", "oculta");
+  return anchor ? `${url}#composicion` : url;
+}
+
+const MOVERS_MAX_PER_COLUMN = 4;
+
+function moversMonthLabel(monthKey: string): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  return new Intl.DateTimeFormat("es-ES", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(y!, m! - 1, 1)));
+}
+
+interface MoversHoldingRow {
+  dateKey: string;
+  holdingId: string;
+  kind: "asset" | "liability";
+  label: string;
+  valueMinor: number;
+  liquidityTier: LiquidityTier | null;
+  securesHousing: boolean;
+}
+
+function moversIsLiquidHolding(meta: {
+  kind: "asset" | "liability";
+  tier: LiquidityTier | null;
+  securesHousing: boolean;
+}): boolean {
+  if (meta.kind === "asset") return meta.tier !== null && isLiquid(meta.tier);
+  if (meta.securesHousing) return false;
+  return meta.tier === null || isLiquid(meta.tier);
+}
+
+function moversContribMinor(row: MoversHoldingRow): number {
+  return row.kind === "liability" ? -row.valueMinor : row.valueMinor;
+}
+
+function moversPctFmt(pct: number): string {
+  const sign = pct > 0 ? "+" : pct < 0 ? "−" : "";
+  return `${sign}${Math.abs(pct).toFixed(1).replace(".", ",")} %`;
+}
+
+function moversBaseSnapshot(
+  snapshots: NetWorthSnapshot[],
+  period: MoversPeriod,
+): NetWorthSnapshot | undefined {
+  const latest = snapshots[snapshots.length - 1];
+  if (!latest) return undefined;
+  if (period === "year") {
+    const [y, m] = latest.monthKey.split("-");
+    const target = `${Number(y) - 1}-${m}`;
+    const candidates = snapshots.filter((s) => s.monthKey <= target);
+    return candidates[candidates.length - 1];
+  }
+  const candidates = snapshots.filter((s) => s.monthKey < latest.monthKey);
+  return candidates[candidates.length - 1];
+}
+
+interface MoverRaw {
+  label: string;
+  impactMinor: number;
+  pct: number | null;
+  tag: "nuevo" | "vendido" | null;
+}
+
+function buildMoversData(params: {
+  snapshots: NetWorthSnapshot[];
+  selectedView: NetWorthFraming;
+  period: MoversPeriod;
+  holdingRows: MoversHoldingRow[];
+  currency: string;
+}): MoversData | null {
+  const { snapshots, selectedView, period, holdingRows, currency } = params;
+  const latest = snapshots[snapshots.length - 1];
+  if (!latest) return null;
+
+  const base = moversBaseSnapshot(snapshots, period);
+  const vsLabel = base
+    ? period === "year"
+      ? `vs ${moversMonthLabel(base.monthKey)} (YoY)`
+      : `vs cierre ${moversMonthLabel(base.monthKey)}`
+    : period === "year"
+      ? "Año anterior"
+      : "Cierre anterior";
+  if (!base) {
+    return { vsLabel, hasBase: false, up: [], down: [] };
+  }
+
+  type Agg = {
+    label: string;
+    kind: "asset" | "liability";
+    base: number;
+    cur: number;
+    tier: LiquidityTier | null;
+    securesHousing: boolean;
+    latestSeen: boolean;
+  };
+  const byHolding = new Map<string, Agg>();
+  for (const row of holdingRows) {
+    if (row.dateKey !== latest.dateKey && row.dateKey !== base.dateKey) continue;
+    const key = `${row.kind}:${row.holdingId}`;
+    const entry =
+      byHolding.get(key) ??
+      ({
+        label: row.label,
+        kind: row.kind,
+        base: 0,
+        cur: 0,
+        tier: row.liquidityTier,
+        securesHousing: row.securesHousing,
+        latestSeen: false,
+      } satisfies Agg);
+    entry.label = row.label;
+    const isLatest = row.dateKey === latest.dateKey;
+    if (isLatest) entry.cur += moversContribMinor(row);
+    else entry.base += moversContribMinor(row);
+    if (isLatest || !entry.latestSeen) {
+      entry.tier = row.liquidityTier;
+      entry.securesHousing = row.securesHousing;
+      if (isLatest) entry.latestSeen = true;
+    }
+    byHolding.set(key, entry);
+  }
+
+  const raw: MoverRaw[] = [];
+  for (const e of byHolding.values()) {
+    if (selectedView === "liquid" && !moversIsLiquidHolding(e)) continue;
+    const impactMinor = e.cur - e.base;
+    if (impactMinor === 0) continue;
+    raw.push({
+      label: e.label,
+      impactMinor,
+      pct: e.base !== 0 ? (impactMinor / Math.abs(e.base)) * 100 : null,
+      tag: e.base === 0 ? "nuevo" : e.cur === 0 ? "vendido" : null,
+    });
+  }
+
+  if (raw.length === 0) {
+    return { vsLabel, hasBase: true, up: [], down: [] };
+  }
+
+  const toMover = (r: MoverRaw): HoldingMover => ({
+    label: r.label,
+    changeFmt: `${r.impactMinor > 0 ? "+" : ""}${formatMoneyMinor({ amountMinor: r.impactMinor, currency })}`,
+    pctFmt: r.pct === null ? null : moversPctFmt(r.pct),
+    sign: r.impactMinor > 0 ? "pos" : r.impactMinor < 0 ? "neg" : "zero",
+    tag: r.tag,
+  });
+
+  const byImpactDesc = [...raw].sort((a, b) => b.impactMinor - a.impactMinor);
+
+  return {
+    vsLabel,
+    hasBase: true,
+    up: byImpactDesc
+      .filter((r) => r.impactMinor > 0)
+      .slice(0, MOVERS_MAX_PER_COLUMN)
+      .map(toMover),
+    down: byImpactDesc
+      .filter((r) => r.impactMinor < 0)
+      .reverse()
+      .slice(0, MOVERS_MAX_PER_COLUMN)
+      .map(toMover),
+  };
+}
+
+function parseMoversPeriod(raw: string | string[] | undefined): MoversPeriod {
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return v === "year" ? "year" : "month";
+}
+
+async function readMoversHoldingRows(
+  store: Awaited<ReturnType<typeof openStore>>,
+  scopeId: string | undefined,
+  snapshots: NetWorthSnapshot[],
+  period: MoversPeriod,
+): Promise<MoversHoldingRow[]> {
+  const base = moversBaseSnapshot(snapshots, period);
+  if (!scopeId || !base) return [];
+  return store.snapshots.readSnapshotHoldings({ scopeId, from: base.dateKey });
+}
+
+export default async function DashboardContent({
+  searchParams,
+  scopeId,
+}: {
+  searchParams?: Record<string, string | string[] | undefined> | undefined;
+  scopeId: string | undefined;
+}) {
+  const persistence = await bootstrapHealthcheck();
+  const demo = await readDemoContext();
+  const selectedView = parseViewParam(searchParams?.view);
+  const selectedDrill = parseDrillParam(searchParams?.drill);
+  const selectedRange = parseRangeParam(searchParams?.range);
+  const selectedHousingMode = parseViviendaParam(searchParams?.vivienda);
+
+  const moversPeriod = parseMoversPeriod(searchParams?.mvp);
+
+  const composicionHomeUrl = compositionUrl(
+    selectedView,
+    null,
+    selectedRange,
+    selectedHousingMode,
+  );
+  const drillHrefs = {
+    debts: compositionUrl(selectedView, "debts", selectedRange, selectedHousingMode),
+    housing: compositionUrl(selectedView, "housing", selectedRange, selectedHousingMode),
+    liquid: compositionUrl(selectedView, "liquid", selectedRange, selectedHousingMode),
+    rest: compositionUrl(selectedView, "rest", selectedRange, selectedHousingMode),
+  };
+
+  const housingToggleHref = compositionUrl(
+    selectedView,
+    selectedDrill,
+    selectedRange,
+    selectedHousingMode === "hidden" ? "net" : "hidden",
+  );
+
+  const now = persistence.checkedAt;
+  const today = now.slice(0, 10);
+
+  const store = await openStore();
+  let state;
+  let moversHoldingRows: MoversHoldingRow[] = [];
+  try {
+    state = await loadDashboard({
+      store,
+      persistence,
+      scopeId,
+      selectedView,
+      drill: selectedDrill,
+      range: selectedRange,
+      today,
+      now,
+      refreshPrices: demo.enabled
+        ? async (): Promise<RefreshPricesResult> => ({ priceCache: [], errors: [] })
+        : async ({ cacheEntries, assets, nowIso }): Promise<RefreshPricesResult> => {
+            return refreshAndPersistStalePrices({
+              cacheEntries,
+              assets,
+              nowIso,
+              refreshStalePrices,
+              upsertPrice: (price) => store.operations.upsertPrice(price),
+              readCache: () => store.operations.readAllPriceCacheEntries(),
+            });
+          },
+      ...(demo.enabled
+        ? {}
+        : {
+            refreshCoinValuations: () => runNumistaCoinRefresh(store, now),
+            refreshBinanceSources: () => runBinanceRefresh(store, now),
+          }),
+    });
+    moversHoldingRows = await readMoversHoldingRows(
+      store,
+      state.selectedScope?.id,
+      state.snapshots,
+      moversPeriod,
+    );
+  } finally {
+    store.close();
+  }
+
+  if (state.needsOnboarding) {
+    redirect("/empezar");
+  }
+
+  const {
+    deltas,
+    fireResult,
+    fireScopeConfig,
+    headlineDeltas,
+    onboarding,
+    presentation,
+    pyramid,
+    snapshots,
+  } = state;
+
+  const hasHoldings = state.assets.length + state.liabilities.length > 0;
+
+  const movers = buildMoversData({
+    snapshots,
+    selectedView,
+    period: moversPeriod,
+    holdingRows: moversHoldingRows,
+    currency: presentation?.headline.currency ?? "EUR",
+  });
+
+  const rangeOptions = state.compositionRanges.map((range) => ({
+    href: compositionUrl(selectedView, selectedDrill, range, selectedHousingMode),
+    range,
+  }));
+
+  const anyStepPending = onboarding.some((step) => !step.done);
+
+  const tierBpsValues = pyramid.map((tier) => tier.shareOfGrossBps);
+  const tierPercents = largestRemainderPercentages(tierBpsValues);
+  const donutSegments = donutArcSegments(tierPercents, TIER_DONUT_GEOMETRY);
+
+  const { sincePrevious: vsPrevious, sinceMonthlyClose: vsMonthlyClose } = headlineDeltas;
+
+  return (
+    <div className="dashGrid">
+      <section className="summaryBand heroPanel" aria-label="Resumen patrimonial">
+        <div className="resumenHeader">
+          <nav className="framingTabs" aria-label="Vista de patrimonio">
+            {framingTabs.map((tab) => (
+              <Link
+                className={tab.id === selectedView ? "active" : undefined}
+                href={compositionUrl(
+                  tab.id,
+                  selectedDrill,
+                  selectedRange,
+                  selectedHousingMode,
+                  false,
+                )}
+                key={tab.id}
+                scroll={false}
+              >
+                {tab.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
+
+        {presentation ? (
+          <div className="headline">
+            <span>{presentation.headlineLabel}</span>
+            <strong className={hasHoldings ? undefined : "emptyFigure"}>
+              {formatMoneyMinor(presentation.headline)}
+              {!hasHoldings ? <small>sin datos aún</small> : null}
+            </strong>
+          </div>
+        ) : null}
+
+        {deltas ? (
+          <div className="deltaChips" aria-label="Cambios de snapshots">
+            <DeltaChip delta={vsPrevious} label="vs anterior" />
+            <DeltaChip delta={vsMonthlyClose} label="vs cierre mensual" />
+          </div>
+        ) : null}
+
+        {presentation ? (
+          <div className="heroStats">
+            {presentation.breakdown.map((item) => (
+              <div className="heroStat" key={item.id}>
+                <span>{item.label}</span>
+                <b className={hasHoldings ? undefined : "emptyFigure"}>
+                  {formatMoneyMinor(item.value)}
+                </b>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {movers ? <HeroMovers data={movers} period={moversPeriod} /> : null}
+      </section>
+
+      <section className="liquidityPanel" aria-label="Liquidez por capa">
+        <div className="panelHeader">
+          <h2>Liquidez</h2>
+          <span>Por capa · % del bruto</span>
+        </div>
+        <svg
+          className="tierDonut"
+          viewBox="0 0 100 100"
+          role="img"
+          aria-label="Distribución por capa de liquidez"
+        >
+          <circle
+            className="donutTrack"
+            cx={TIER_DONUT_GEOMETRY.cx}
+            cy={TIER_DONUT_GEOMETRY.cy}
+            r={(TIER_DONUT_GEOMETRY.outerRadius + TIER_DONUT_GEOMETRY.innerRadius) / 2}
+            strokeWidth={
+              TIER_DONUT_GEOMETRY.outerRadius - TIER_DONUT_GEOMETRY.innerRadius
+            }
+          />
+          {donutSegments.map((segment) => {
+            const tier = pyramid[segment.index]!;
+            const drillKey = DRILL_GROUP_BY_TIER[tier.tier];
+            return (
+              <a
+                aria-label={`${LIQUIDITY_TIER_LABELS[tier.tier]}: ${DRILL_DESTINATION_LABELS[drillKey]}`}
+                href={drillHrefs[drillKey]}
+                key={tier.tier}
+              >
+                <path className={`donutSegment ${tier.tier}`} d={segment.path}>
+                  <title>{`${LIQUIDITY_TIER_LABELS[tier.tier]} · ${segment.share}%`}</title>
+                </path>
+              </a>
+            );
+          })}
+        </svg>
+        <div className="pyramid">
+          {pyramid.map((tier, idx) => {
+            const pct = tierPercents[idx] ?? 0;
+            return (
+              <details className={`tier ${tier.tier}`} key={tier.tier}>
+                <summary>
+                  <span className="tierName">{LIQUIDITY_TIER_LABELS[tier.tier]}</span>
+                  <b className={moneySign(tier.netValue) === "neg" ? "neg" : undefined}>
+                    {formatMoneyMinor(tier.netValue)}
+                  </b>
+                  <span className="tierShare">{pct}%</span>
+                  <span className="tierBar" aria-hidden="true">
+                    <i style={{ width: `${pct}%` }} />
+                  </span>
+                </summary>
+                <div className="tierDetails">
+                  <span>Bruto {formatMoneyMinor(tier.grossAssets)}</span>
+                  <span>Deuda {formatMoneyMinor(tier.debts)}</span>
+                  {tier.assets.map((asset) => (
+                    <small key={asset.id}>+ {asset.name}</small>
+                  ))}
+                  {tier.liabilities.map((liability) => (
+                    <small key={liability.id}>- {liability.name}</small>
+                  ))}
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      </section>
+
+      <section
+        className="historyPanel"
+        id="composicion"
+        aria-label="Evolución del patrimonio"
+      >
+        <div className="panelHeader">
+          <h2>Evolución</h2>
+          <div className="historyControls">
+            <CompositionRangeControls options={rangeOptions} selected={selectedRange} />
+            <Link className="panelAction" href="/historico" scroll={false}>
+              Ver histórico →
+            </Link>
+          </div>
+        </div>
+        {selectedDrill && state.drilldown ? (
+          <DrilldownPanel
+            backHref={composicionHomeUrl}
+            currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
+            drilldown={state.drilldown}
+          />
+        ) : (
+          <CompositionChart
+            currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
+            drillHrefs={drillHrefs}
+            housingMode={selectedHousingMode}
+            housingToggleHref={housingToggleHref}
+            points={state.compositionSeries}
+          />
+        )}
+      </section>
+
+      <section className="firePanel" aria-label="FIRE">
+        <div className="panelHeader">
+          <h2>FIRE</h2>
+          <span>Independencia financiera</span>
+        </div>
+        {fireScopeConfig && fireResult ? (
+          <div className="fireResults">
+            <div className="fireProgress">
+              <p className="fireBig" aria-label="Porcentaje financiado">
+                {fireResult.percentFunded.toFixed(1).replace(".", ",")} %
+              </p>
+              <div className="fireBar">
+                {fireResult.coastFireRequired && fireResult.fireNumber.amountMinor > 0 ? (
+                  <span
+                    aria-hidden="true"
+                    className="fireTick"
+                    style={{
+                      left: `${Math.min(
+                        100,
+                        (fireResult.coastFireRequired.amountMinor /
+                          fireResult.fireNumber.amountMinor) *
+                          100,
+                      )}%`,
+                    }}
+                  />
+                ) : null}
+                <i
+                  style={{
+                    width: `${Math.min(100, Math.max(0, fireResult.percentFunded))}%`,
+                  }}
+                />
+              </div>
+              {fireResult.percentFunded >= 100 ? (
+                <span className="statePill ready">FIRE alcanzado</span>
+              ) : fireResult.isAlreadyAtCoastFire ? (
+                <span className="statePill ready">Coast FIRE alcanzado</span>
+              ) : null}
+            </div>
+            <div className="fireMetric">
+              <span>Número FIRE</span>
+              <strong>{formatMoneyMinor(fireResult.fireNumber)}</strong>
+            </div>
+            <div className="fireMetric">
+              <span>Activos elegibles</span>
+              <strong>{formatMoneyMinor(fireResult.eligibleAssets)}</strong>
+            </div>
+            <details className="fireEligibleNote">
+              <summary>¿Qué cuenta como elegible?</summary>
+              <p className="fireEligibleRule">
+                Suma todos tus activos del ámbito actual salvo tu vivienda principal y los
+                que excluyas a mano; cada activo cuenta según tu porcentaje de propiedad.
+              </p>
+              {fireResult.excludedAssets.length > 0 ? (
+                <ul className="fireExcludedList">
+                  {fireResult.excludedAssets.map((asset) => (
+                    <li key={asset.id}>
+                      <span>{asset.name}</span>
+                      <span className="fireExcludedReason">
+                        {asset.reason === "primary_residence"
+                          ? "Vivienda principal"
+                          : "Excluido a mano"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="fireEligibleRule">
+                  Ahora mismo no se excluye ningún activo: todos cuentan.
+                </p>
+              )}
+            </details>
+            {fireResult.coastFireRequired ? (
+              <div className="fireMetric">
+                <span>Coast FIRE requerido</span>
+                <strong>{formatMoneyMinor(fireResult.coastFireRequired)}</strong>
+              </div>
+            ) : null}
+            {fireResult.coastFireAge !== undefined ? (
+              <div className="fireMetric">
+                <span>Edad Coast FIRE</span>
+                <strong>{fireResult.coastFireAge.toFixed(1)}</strong>
+              </div>
+            ) : null}
+            <Link className="panelAction" href="/ajustes">
+              Configurar → Ajustes
+            </Link>
+          </div>
+        ) : (
+          <div className="fireEmpty">
+            <p className="fireEmptyHint">
+              Configura tu número FIRE para ver tu progreso hacia la independencia
+              financiera.
+            </p>
+            <Link className="panelAction" href="/ajustes">
+              Configurar → Ajustes
+            </Link>
+          </div>
+        )}
+      </section>
+
+      {anyStepPending ? (
+        <section className="onboardingChecklist" aria-label="Primeros pasos">
+          <div className="panelHeader">
+            <h2>Primeros pasos</h2>
+            <span>Empieza aquí</span>
+          </div>
+          <ol>
+            {onboarding.map((step) => (
+              <li className={step.done ? "done" : undefined} key={step.id}>
+                {step.done ? (
+                  <span>✓ {step.label}</span>
+                ) : (
+                  <Link href={ONBOARDING_LINKS[step.id] ?? "/"}>○ {step.label}</Link>
+                )}
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
+    </div>
+  );
+}
