@@ -1,4 +1,5 @@
 import type {
+  CompositionHousingMode,
   CompositionRange,
   DomainViolation,
   DrilldownKey,
@@ -115,6 +116,19 @@ export function parseRangeParam(value: string | string[] | undefined): Compositi
   const raw = normalizeParam(value);
 
   return raw === "1y" || raw === "3y" || raw === "5y" ? raw : "all";
+}
+
+/**
+ * Parse the `vivienda=` query param: how the composition chart presents the
+ * Vivienda band. Only `oculta` activates the hidden mode; anything else
+ * (including the default omitted value) means the net-equity default. Persisted
+ * in the URL (ADR 0009) so the choice survives range/view/drill navigation.
+ * Composable with `view=`, `drill=` and `range=`.
+ */
+export function parseViviendaParam(
+  value: string | string[] | undefined,
+): CompositionHousingMode {
+  return normalizeParam(value) === "oculta" ? "hidden" : "net";
 }
 
 /**

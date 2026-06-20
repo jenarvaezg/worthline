@@ -1,10 +1,13 @@
 /**
  * Generic stacked-chart geometry — pure presentation math for server-rendered
  * stacked SVGs (ADR 0009). Named series in stacking order over a shared date
- * series: stacked polygons when every series stays ≥ 0 across the window, an
- * honest fall back to plain lines otherwise. Shared by the drilldown per-tier
- * stack (#76/#77); the home's net-worth composition chart (#142) has its own
- * bidirectional geometry. No React, no SVG — just numbers and strings.
+ * series: stacked per-period BARS (plus the closed polygon `areaPoints` and the
+ * stack-total line) when every series stays ≥ 0 across the window, an honest
+ * fall back to plain lines otherwise. The bar geometry mirrors the main
+ * composition chart (#142) so the drilldown aggregate reads in the same visual
+ * language. Shared by the drilldown per-tier stack (#76/#77); the home's
+ * net-worth composition chart (#142) has its own bidirectional geometry. No
+ * React, no SVG — just numbers and strings.
  *
  * (The file keeps the `decomposition-chart` name for history: the standalone
  * decomposition chart was folded into the composition chart in #142, leaving
@@ -27,6 +30,14 @@ export interface StackedSeriesInput<Id extends string> {
   values: number[];
 }
 
+/** One stacked bar rectangle of a band at one period, in viewBox space. */
+export interface StackedBarRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface StackedBandGeometry<Id extends string> {
   band: Id;
   /**
@@ -35,6 +46,13 @@ export interface StackedBandGeometry<Id extends string> {
    * lines mode.
    */
   areaPoints: string | null;
+  /**
+   * Stacked mode: one rectangle per period — the band's stacked slab as a
+   * per-period BAR, mirroring the main composition chart's bar geometry
+   * (#142). `null` in lines mode. Empty-valued periods emit a zero-height
+   * rect so the array stays index-aligned with the date series.
+   */
+  bars: StackedBarRect[] | null;
   /**
    * Stacked mode: the band's upper stack edge. Lines mode: the band's own
    * series polyline.
@@ -48,6 +66,11 @@ export interface StackedChartGeometry<Id extends string> {
   height: number;
   /** Bands in stacking order from the baseline up. */
   bands: Array<StackedBandGeometry<Id>>;
+  /**
+   * Stacked mode: the polyline over the stack total (the top edge of the last
+   * band) so a net/total line can ride over the bars; `null` in lines mode.
+   */
+  totalLine: string | null;
   /** Value domain (minor units) the y scale maps from. */
   yMin: number;
   yMax: number;
@@ -55,6 +78,43 @@ export interface StackedChartGeometry<Id extends string> {
 
 function toPointsString(xs: number[], ys: number[]): string {
   return xs.map((x, i) => `${x},${ys[i]}`).join(" ");
+}
+
+/** Fraction of a period's slot a bar fills — the rest is the inter-bar gutter. */
+const BAR_WIDTH_RATIO = 0.6;
+
+/**
+ * The bar width shared by every period: `BAR_WIDTH_RATIO` of the smallest gap
+ * between adjacent x-centres (so the densest pair never overlaps), floored so a
+ * bar stays visible even when periods crowd at one edge. Mirrors the main
+ * composition chart's `barWidthFor` (#142).
+ */
+function barWidthFor(xs: number[], width: number): number {
+  let minGap = Infinity;
+  for (let i = 1; i < xs.length; i += 1) {
+    const gap = xs[i]! - xs[i - 1]!;
+    if (gap > 0 && gap < minGap) minGap = gap;
+  }
+  if (!Number.isFinite(minGap)) minGap = width;
+  return Math.max(2, minGap * BAR_WIDTH_RATIO);
+}
+
+/**
+ * One stacked rectangle from `upperY` (top, smaller y) to `lowerY` (bottom),
+ * centred on `x`. Always non-negative height; a zero-value slab yields height 0.
+ */
+function toBarRect(
+  x: number,
+  width: number,
+  upperY: number,
+  lowerY: number,
+): StackedBarRect {
+  return {
+    height: Math.max(0, lowerY - upperY),
+    width,
+    x: x - width / 2,
+    y: Math.min(upperY, lowerY),
+  };
 }
 
 /** Closed polygon: upper edge left→right, then lower edge right→left. */
@@ -88,6 +148,7 @@ export function buildStackedChartGeometry<Id extends string>(
       bands: series.map((s) => ({
         areaPoints: null,
         band: s.band,
+        bars: null,
         linePoints: toPointsString(
           xs,
           s.values.map((v) => valueToY(v, yMin, yMax, EVOLUTION_CHART_HEIGHT)),
@@ -95,6 +156,7 @@ export function buildStackedChartGeometry<Id extends string>(
       })),
       height: EVOLUTION_CHART_HEIGHT,
       mode: "lines",
+      totalLine: null,
       width: EVOLUTION_CHART_WIDTH,
       yMax,
       yMin,
@@ -112,15 +174,18 @@ export function buildStackedChartGeometry<Id extends string>(
   const edgeYs = edges.map((edge) =>
     edge.map((v) => valueToY(v, yMin, yMax, EVOLUTION_CHART_HEIGHT)),
   );
+  const barWidth = barWidthFor(xs, EVOLUTION_CHART_WIDTH);
 
   return {
     bands: series.map((s, i) => ({
       areaPoints: toAreaString(xs, edgeYs[i + 1]!, edgeYs[i]!),
       band: s.band,
+      bars: xs.map((x, p) => toBarRect(x, barWidth, edgeYs[i + 1]![p]!, edgeYs[i]![p]!)),
       linePoints: toPointsString(xs, edgeYs[i + 1]!),
     })),
     height: EVOLUTION_CHART_HEIGHT,
     mode: "stacked",
+    totalLine: toPointsString(xs, edgeYs.at(-1)!),
     width: EVOLUTION_CHART_WIDTH,
     yMax,
     yMin,

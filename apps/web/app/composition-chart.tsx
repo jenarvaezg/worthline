@@ -7,6 +7,7 @@ import {
 } from "@worthline/domain";
 import type {
   CompositionAssetBandId,
+  CompositionHousingMode,
   CompositionSeriesPoint,
   DrilldownKey,
 } from "@worthline/domain";
@@ -25,9 +26,15 @@ import {
  * the `property` instrument by holding id), one aggregated debt stack sits below
  * zero, and a net-worth line shows the total — mirroring `gross − debts = net`.
  *
+ * Bands draw as stacked monthly BARS (this design pass): one rectangle per
+ * period per band above the zero baseline, debts as rectangles below it, and the
+ * net-worth polyline over the total. Vivienda defaults to NET equity — its
+ * securing mortgage folds into the band — and the "Ocultar vivienda" control is
+ * URL state (ADR 0009) so the choice survives range/view/drill navigation.
+ *
  * Interactivity (ADR 0009's sanctioned escape hatch for rich hover): a client
  * tooltip follows the cursor and lists ALL of the hovered period's values. The
- * tooltip overlay is pointer-events:none, so the asset bands stay clickable —
+ * tooltip overlay is pointer-events:none, so the asset bars stay clickable —
  * each links to its drilldown (cash/market → liquid, term-locked/illiquid →
  * rest, housing → housing, and the debt band → debts, #145). The chart still
  * renders server-side; only the hover layer needs the client.
@@ -45,6 +52,8 @@ const BAND_DRILL_KEY: Record<CompositionAssetBandId, DrilldownKey> = {
 export default function CompositionChart({
   currency,
   drillHrefs,
+  housingMode = "net",
+  housingToggleHref,
   points,
 }: {
   currency: string;
@@ -54,15 +63,21 @@ export default function CompositionChart({
    * native anchors; debts never have a destination.
    */
   drillHrefs?: Partial<Record<DrilldownKey, string>>;
+  /**
+   * Vivienda presentation, URL-driven (ADR 0009): `"net"` equity (default) or
+   * `"hidden"`. Persisted via the `vivienda` param so it survives range/view/
+   * drill navigation. (`"gross"` exists in the domain but the dashboard toggles
+   * only between net and hidden.)
+   */
+  housingMode?: CompositionHousingMode;
+  /** The href the "Ocultar/Mostrar vivienda" link points to (toggles the mode). */
+  housingToggleHref?: string;
   points: CompositionSeriesPoint[];
 }) {
-  const [housingHidden, setHousingHidden] = useState(false);
+  const housingHidden = housingMode === "hidden";
   const geometry = useMemo(
-    () =>
-      buildCompositionChartGeometry(points, {
-        excludedBands: housingHidden ? ["housing"] : [],
-      }),
-    [points, housingHidden],
+    () => buildCompositionChartGeometry(points, { housingMode }),
+    [points, housingMode],
   );
   const wrapRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{
@@ -123,7 +138,7 @@ export default function CompositionChart({
             </span>
           );
         })}
-        {geometry.debtArea ? (
+        {geometry.debtBars ? (
           drillHrefs?.debts ? (
             <a className="debt" href={drillHrefs.debts}>
               <i aria-hidden="true" />
@@ -140,16 +155,14 @@ export default function CompositionChart({
           <i aria-hidden="true" />
           Patrimonio neto
         </span>
-        {/* Vivienda can dwarf everything else; let the reader fold it out so the
-            chart rescales to the remaining bands. */}
-        <button
-          aria-pressed={housingHidden}
-          className="compositionToggle"
-          onClick={() => setHousingHidden((hidden) => !hidden)}
-          type="button"
-        >
-          {housingHidden ? "Mostrar vivienda" : "Ocultar vivienda"}
-        </button>
+        {/* Vivienda can dwarf everything else; folding it out is URL state (ADR
+            0009) so the choice survives range/view/drill changes — a link, not a
+            client gesture. */}
+        {housingToggleHref ? (
+          <a className="compositionToggle" href={housingToggleHref}>
+            {housingHidden ? "Mostrar vivienda" : "Ocultar vivienda"}
+          </a>
+        ) : null}
       </div>
       <div
         className="compositionChartWrap"
@@ -166,12 +179,18 @@ export default function CompositionChart({
         >
           {geometry.assetBands.map((band) => {
             const href = bandHref(band.band);
-            const polygon = (
-              <polygon
+            // One stacked bar rectangle per period; a zero-value period yields a
+            // zero-height rect that simply does not paint.
+            const rects = band.bars.map((bar, i) => (
+              <rect
                 className={`compositionBand ${band.band}`}
-                points={band.areaPoints}
+                height={bar.height}
+                key={geometry.periods[i]!.dateKey}
+                width={bar.width}
+                x={bar.x}
+                y={bar.y}
               />
-            );
+            ));
 
             // Native SVG anchor — drilldown navigation with zero client JS for the
             // navigation itself (ADR 0009). The hover tooltip overlay does not
@@ -182,23 +201,36 @@ export default function CompositionChart({
                 href={href}
                 key={band.band}
               >
-                {polygon}
+                {rects}
               </a>
             ) : (
-              <g key={band.band}>{polygon}</g>
+              <g key={band.band}>{rects}</g>
             );
           })}
-          {geometry.debtArea ? (
-            drillHrefs?.debts ? (
-              // Native SVG anchor to the debts drilldown (#145), like the asset
-              // bands — the hover overlay is pointer-events:none so it stays clickable.
-              <a aria-label="Ver desglose: Deudas" href={drillHrefs.debts}>
-                <polygon className="compositionDebt" points={geometry.debtArea} />
-              </a>
-            ) : (
-              <polygon className="compositionDebt" points={geometry.debtArea} />
-            )
-          ) : null}
+          {geometry.debtBars
+            ? (() => {
+                const rects = geometry.debtBars.map((bar, i) => (
+                  <rect
+                    className="compositionDebt"
+                    height={bar.height}
+                    key={geometry.periods[i]!.dateKey}
+                    width={bar.width}
+                    x={bar.x}
+                    y={bar.y}
+                  />
+                ));
+
+                // Native SVG anchor to the debts drilldown (#145), like the asset
+                // bars — the hover overlay is pointer-events:none so it stays clickable.
+                return drillHrefs?.debts ? (
+                  <a aria-label="Ver desglose: Deudas" href={drillHrefs.debts}>
+                    {rects}
+                  </a>
+                ) : (
+                  <g>{rects}</g>
+                );
+              })()
+            : null}
           {/* Zero baseline — assets above, debts below. */}
           <line
             className="compositionBaseline"

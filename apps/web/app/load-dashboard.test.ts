@@ -975,13 +975,14 @@ describe("loadDashboard — composition range and density", () => {
     const windowedCash = windowed.drilldown!.holdings.find(
       (h) => h.holdingId === "asset_cash",
     )!;
-    const vertexCount = (geometry: { linePoints: string }) =>
-      geometry.linePoints.trim().split(/\s+/).length;
+    // The sparkline is now bars (one per capture, this design pass), so the
+    // capture count is the number of bars.
+    const captureCount = (geometry: { bars: unknown[] }) => geometry.bars.length;
     // The bounded drill plots only the in-window captures (twelve), fewer than
     // the full fourteen — the same window the composition series uses.
-    expect(vertexCount(windowedCash.sparkline)).toBe(12);
-    expect(vertexCount(windowedCash.sparkline)).toBeLessThan(
-      vertexCount(allCash.sparkline),
+    expect(captureCount(windowedCash.sparkline)).toBe(12);
+    expect(captureCount(windowedCash.sparkline)).toBeLessThan(
+      captureCount(allCash.sparkline),
     );
     // The windowed drill's latest value is still the current (open-period) value.
     expect(windowedCash.currentValueMinor).toBe(113_000_00);

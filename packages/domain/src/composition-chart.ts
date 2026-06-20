@@ -370,10 +370,22 @@ export interface CompositionPeriodGeometry {
   netWorth: CompositionHoverPoint;
 }
 
+/** One stacked bar rectangle of a band at one period, in viewBox space. */
+export interface CompositionBarRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface CompositionBandGeometry {
   band: CompositionAssetBandId;
-  /** Closed polygon between the band's lower and upper stacked edges. */
-  areaPoints: string;
+  /**
+   * One rectangle per period — the band's stacked slab as a monthly bar, from
+   * its lower stacked edge up to its upper edge. Empty-valued periods emit a
+   * zero-height rect so the array stays index-aligned with `periods`.
+   */
+  bars: CompositionBarRect[];
 }
 
 export interface CompositionChartGeometry {
@@ -384,10 +396,10 @@ export interface CompositionChartGeometry {
   /** The five gross asset bands, baseline-up stacking order. */
   assetBands: CompositionBandGeometry[];
   /**
-   * Closed polygon of the aggregated debt stack (baseline down to −debts), or
-   * `null` when no period carries debt.
+   * Per-period rectangles of the aggregated debt stack (baseline down to
+   * −debts), or `null` when no period carries debt.
    */
-  debtArea: string | null;
+  debtBars: CompositionBarRect[] | null;
   /** The net-worth polyline ("x,y x,y …"). */
   netWorthLine: string;
   /** Per-period hover anchors for every component (asset bands, debt, net worth). */
@@ -416,12 +428,61 @@ function toPointsString(xs: number[], ys: number[]): string {
   return xs.map((x, i) => `${x},${ys[i]}`).join(" ");
 }
 
-/** Closed polygon: upper edge left→right, then lower edge right→left. */
-function toAreaString(xs: number[], upperYs: number[], lowerYs: number[]): string {
-  const upper = xs.map((x, i) => `${x},${upperYs[i]}`);
-  const lower = xs.map((x, i) => `${x},${lowerYs[i]}`).reverse();
-  return [...upper, ...lower].join(" ");
+/** Fraction of a period's slot a bar fills — the rest is the inter-bar gutter. */
+const BAR_WIDTH_RATIO = 0.6;
+
+/**
+ * The bar width shared by every period: `BAR_WIDTH_RATIO` of the smallest gap
+ * between adjacent x-centres (so the densest pair never overlaps). With a single
+ * gap (two periods) the slot is just that gap; a sensible floor keeps a bar
+ * visible even when periods crowd at one edge.
+ */
+function barWidthFor(xs: number[]): number {
+  let minGap = Infinity;
+  for (let i = 1; i < xs.length; i += 1) {
+    const gap = xs[i]! - xs[i - 1]!;
+    if (gap > 0 && gap < minGap) minGap = gap;
+  }
+  if (!Number.isFinite(minGap)) minGap = COMPOSITION_CHART_WIDTH;
+  return Math.max(2, minGap * BAR_WIDTH_RATIO);
 }
+
+/**
+ * One stacked rectangle from `upperY` (top, smaller y) to `lowerY` (bottom),
+ * centred on `x`. Always non-negative height; a zero-value slab yields height 0.
+ */
+function toBarRect(
+  x: number,
+  width: number,
+  upperY: number,
+  lowerY: number,
+): CompositionBarRect {
+  return {
+    height: Math.max(0, lowerY - upperY),
+    width,
+    x: x - width / 2,
+    y: Math.min(upperY, lowerY),
+  };
+}
+
+/**
+ * How the housing rung and its securing mortgage are presented — the primary
+ * control over the Vivienda band (this design pass). The reconciliation
+ * invariant (ADR 0008) holds across all three: the net-worth LINE is identical
+ * for `"gross"` and `"net"`, because folding the securing mortgage into the
+ * equity band is purely a presentation rearrangement (algebraically
+ * `housing − secured` above the baseline and `debts − secured` below sum to the
+ * same `housing − debts`).
+ *
+ * - `"gross"`: housing band = `housingMinor`; the full `debtsMinor` stacks below.
+ * - `"net"` (default): housing band = `max(0, housingMinor − secured)` (equity),
+ *   and the securing mortgage is folded out of the negative stack
+ *   (`debtsMinor − secured`) so it is never drawn twice.
+ * - `"hidden"`: the housing band is dropped AND its securing debt shed — exactly
+ *   the old `excludedBands: ["housing"]` behaviour (#213); the net line becomes
+ *   the non-housing net.
+ */
+export type CompositionHousingMode = "gross" | "net" | "hidden";
 
 /**
  * Builds the composition chart geometry, or `null` when there is no chart to
@@ -430,20 +491,23 @@ function toAreaString(xs: number[], upperYs: number[], lowerYs: number[]): strin
  *
  * One shared y domain spans the whole picture: the zero baseline, the tallest
  * gross-asset stack above it, and the deepest aggregated debt below it. Gross
- * asset values and debt balances are non-negative, so no band ever crosses zero
- * — there is no lines-fallback (unlike the old decomposition chart). The
- * net-worth line is `Σ shown asset bands − shown debts`. With no exclusions that
- * equals the snapshot's headline net worth by the reconciliation invariant (ADR
- * 0008); `excludedBands` drops a band from the stack, the net line and the y
- * domain (so the chart rescales to the remaining bands — e.g. hiding a dominant
- * Vivienda) and omits it from the per-period hover anchors. Excluding `housing`
- * additionally sheds the debt that SECURES it (`debtsSecuredByHousingMinor`,
- * ADR 0013) from the negative stack, net line, domain and debt anchor — one
- * toggle hides both the Vivienda band and its mortgage together (#213).
+ * asset values and debt balances are non-negative, so no band ever crosses zero.
+ * Each band draws as one monthly bar RECTANGLE per period stacked from the
+ * baseline up; debts draw as per-period rectangles below it. The net-worth line
+ * is `Σ shown asset bands − shown debts`.
+ *
+ * `housingMode` is the primary Vivienda control (see {@link CompositionHousingMode}):
+ * `"net"` (default) folds the securing mortgage into a Vivienda EQUITY band,
+ * `"gross"` shows the home and full debt separately, `"hidden"` drops both.
+ * `excludedBands` is still honoured (a low-level drop of bands from the stack,
+ * net line, y domain and hover anchors); excluding `housing` is equivalent to
+ * `housingMode: "hidden"`. The two compose — whichever drops `housing` wins.
  */
 export interface CompositionGeometryOptions {
   /** Asset bands to drop from the stack, net line, domain and hover anchors. */
   excludedBands?: readonly CompositionAssetBandId[];
+  /** How the Vivienda band + its mortgage are presented (default `"net"`). */
+  housingMode?: CompositionHousingMode;
 }
 
 export function buildCompositionChartGeometry(
@@ -459,66 +523,98 @@ export function buildCompositionChartGeometry(
   );
   if (!xs) return null;
 
+  const housingMode = options.housingMode ?? "net";
   const excluded = new Set(options.excludedBands ?? []);
+  // `"hidden"` drops the Vivienda band exactly like the legacy exclusion; either
+  // route hides it (whichever sets it wins).
+  const housingHidden = housingMode === "hidden" || excluded.has("housing");
+  if (housingHidden) excluded.add("housing");
   const shownBands = COMPOSITION_ASSET_BANDS.filter((band) => !excluded.has(band));
+  const barWidth = barWidthFor(xs);
+
+  // Whether the home's securing mortgage is folded out of the negative stack —
+  // true in BOTH `"net"` (folded into the equity band) and when housing is hidden
+  // (shed entirely, #213). Only `"gross"` keeps the full debt below the baseline.
+  const foldHousingDebt = !housingHidden && housingMode === "net";
+  const dropHousingDebt = housingHidden || foldHousingDebt;
 
   // Hiding Vivienda sheds the debt that SECURES it from the negative stack too,
-  // mirroring the asset-side carve (#213): the single toggle controls both. The
-  // shed debt is the frozen `securesHousing` portion (ADR 0013), so the chart
-  // still reads `Σ shown assets − Σ shown debts`. With housing shown nothing is
-  // shed and this equals the full aggregate.
-  const dropHousingDebt = excluded.has("housing");
+  // mirroring the asset-side carve (#213); `"net"` folds that same securing slice
+  // into the equity band instead. The shed/folded debt is the frozen
+  // `securesHousing` portion (ADR 0013), so the chart still reads
+  // `Σ shown assets − Σ shown debts`. In `"gross"` nothing is dropped.
   const shownDebt = (p: CompositionSeriesPoint): number =>
     dropHousingDebt ? p.debtsMinor - p.debtsSecuredByHousingMinor : p.debtsMinor;
 
-  // Gross of the SHOWN bands, and net worth of what is shown (gross − shown debts).
-  // With nothing excluded these equal grossAssets and the headline net worth.
-  const grossSums = points.map((p) =>
+  // The drawn value of an asset band at a period: housing becomes net equity in
+  // `"net"` (clamped at zero for an underwater home so the bar never inverts),
+  // every other band is its raw value.
+  const bandDrawnMinor = (
+    p: CompositionSeriesPoint,
+    band: CompositionAssetBandId,
+  ): number =>
+    band === "housing" && foldHousingDebt
+      ? Math.max(0, p.housingMinor - p.debtsSecuredByHousingMinor)
+      : bandValueMinor(p, band);
+
+  // Net worth of what is shown (gross − shown debts). Computed from the RAW band
+  // values (not the clamped equity) so the reconciliation invariant (ADR 0008)
+  // holds exactly: `"net"` and `"gross"` yield the identical net line — folding
+  // the mortgage is a pure rearrangement. With everything shown this equals the
+  // snapshot's headline net worth.
+  const shownDebtsFull = points.map((p) =>
+    housingHidden ? p.debtsMinor - p.debtsSecuredByHousingMinor : p.debtsMinor,
+  );
+  const grossRawSums = points.map((p) =>
     shownBands.reduce((sum, band) => sum + bandValueMinor(p, band), 0),
   );
+  const nets = points.map((p, i) => grossRawSums[i]! - shownDebtsFull[i]!);
+
+  // Stacked geometry uses the DRAWN band values (equity for housing in `"net"`),
+  // and the drawn debts (the folded/shed remainder) below the baseline.
+  const grossDrawnSums = points.map((p) =>
+    shownBands.reduce((sum, band) => sum + bandDrawnMinor(p, band), 0),
+  );
   const shownDebts = points.map(shownDebt);
-  const nets = points.map((p, i) => grossSums[i]! - shownDebts[i]!);
   const negDebts = shownDebts.map((debt) => -debt);
-  const { yMin, yMax } = paddedValueDomain([0, ...grossSums, ...negDebts]);
+  const { yMin, yMax } = paddedValueDomain([0, ...grossDrawnSums, ...negDebts]);
   const toY = (value: number): number =>
     valueToY(value, yMin, yMax, COMPOSITION_CHART_HEIGHT);
   const baselineY = toY(0);
 
   // Cumulative stacked edges from the zero baseline up over the shown bands; the
-  // top edge of the last band is the shown gross assets of that period.
+  // top edge of the last band is the shown (drawn) gross assets of that period.
   const edges = shownBands.reduce<number[][]>(
     (acc, band) => [
       ...acc,
-      acc.at(-1)!.map((sum, i) => sum + bandValueMinor(points[i]!, band)),
+      acc.at(-1)!.map((sum, i) => sum + bandDrawnMinor(points[i]!, band)),
     ],
     [points.map(() => 0)],
   );
   const edgeYs = edges.map((edge) => edge.map(toY));
 
   const assetBands = shownBands.map((band, i) => ({
-    areaPoints: toAreaString(xs, edgeYs[i + 1]!, edgeYs[i]!),
     band,
+    bars: xs.map((x, p) => toBarRect(x, barWidth, edgeYs[i + 1]![p]!, edgeYs[i]![p]!)),
   }));
 
   const hasDebt = shownDebts.some((debt) => debt > 0);
-  const debtArea = hasDebt
-    ? toAreaString(
-        xs,
-        points.map(() => baselineY),
-        shownDebts.map((debt) => toY(-debt)),
-      )
+  const debtBars = hasDebt
+    ? xs.map((x, p) => toBarRect(x, barWidth, baselineY, toY(-shownDebts[p]!)))
     : null;
 
   const netWorthLine = toPointsString(xs, nets.map(toY));
 
-  // Hover anchors per period: each shown asset band at its slab midpoint, the
-  // debt slab midpoint, and the net-worth point on the line.
+  // Hover anchors per period: each shown asset band at its bar-rect midpoint, the
+  // debt bar-rect midpoint, and the net-worth point on the line. Band anchors
+  // carry the DRAWN value (housing equity in `"net"`) so the tooltip matches the
+  // bar; the net-worth anchor carries the reconciled net.
   const periods = points.map<CompositionPeriodGeometry>((p, i) => {
     const x = xs[i]!;
     return {
       assetBands: shownBands.map((band, b) => ({
         band,
-        valueMinor: bandValueMinor(p, band),
+        valueMinor: bandDrawnMinor(p, band),
         x,
         y: (edgeYs[b]![i]! + edgeYs[b + 1]![i]!) / 2,
       })),
@@ -539,7 +635,7 @@ export function buildCompositionChartGeometry(
   return {
     assetBands,
     baselineY,
-    debtArea,
+    debtBars,
     height: COMPOSITION_CHART_HEIGHT,
     netWorthLine,
     periods,

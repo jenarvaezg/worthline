@@ -363,7 +363,9 @@ describe("buildCompositionChartGeometry", () => {
       ),
     ];
 
-    const geometry = buildCompositionChartGeometry(points)!;
+    // "gross" keeps the home + full debt separate, so the stack matches the raw
+    // bands and the debt depth is the full balance.
+    const geometry = buildCompositionChartGeometry(points, { housingMode: "gross" })!;
 
     expect(geometry.assetBands.map((band) => band.band)).toEqual([
       "cash",
@@ -372,8 +374,20 @@ describe("buildCompositionChartGeometry", () => {
       "illiquid",
       "housing",
     ]);
-    // Debt present anywhere → one aggregated negative stack.
-    expect(geometry.debtArea).not.toBeNull();
+    // Each band emits one bar RECTANGLE per period, index-aligned with periods.
+    expect(geometry.assetBands[0]!.bars).toHaveLength(2);
+    expect(geometry.assetBands.every((band) => band.bars.length === points.length)).toBe(
+      true,
+    );
+    // Debt present anywhere → per-period debt rectangles below the baseline.
+    expect(geometry.debtBars).not.toBeNull();
+    expect(geometry.debtBars).toHaveLength(2);
+    // Debt rects sit at or below the baseline (debts stack downward).
+    expect(geometry.debtBars!.every((bar) => bar.y >= geometry.baselineY - 0.01)).toBe(
+      true,
+    );
+    // Asset bars are centred on the period x with a positive width.
+    expect(geometry.assetBands[0]!.bars[0]!.width).toBeGreaterThan(0);
     // Zero baseline sits between the asset stack (above) and the debt stack (below).
     expect(geometry.baselineY).toBeCloseTo(yFor(0, geometry.yMin, geometry.yMax), 2);
     // The net-worth line maps each period's net worth.
@@ -385,6 +399,113 @@ describe("buildCompositionChartGeometry", () => {
     // Every period is exposed for hover, with its open/closed flag.
     expect(geometry.periods.map((p) => p.dateKey)).toEqual(["2026-05-31", "2026-06-30"]);
     expect(geometry.periods.map((p) => p.isOpenPeriod)).toEqual([false, true]);
+  });
+
+  test("default housingMode is 'net': folds the securing mortgage into a Vivienda equity band", () => {
+    const points = [
+      seriesPoint("2026-05-31", {
+        cashMinor: 10_000_00,
+        housingMinor: 300_000_00,
+        debtsMinor: 205_000_00,
+        debtsSecuredByHousingMinor: 200_000_00,
+      }),
+      seriesPoint("2026-06-30", {
+        cashMinor: 10_000_00,
+        housingMinor: 300_000_00,
+        debtsMinor: 205_000_00,
+        debtsSecuredByHousingMinor: 200_000_00,
+      }),
+    ];
+
+    const net = buildCompositionChartGeometry(points)!; // default
+    const gross = buildCompositionChartGeometry(points, { housingMode: "gross" })!;
+
+    // (a) The net-worth LINE is identical across gross/net — folding the mortgage
+    // is a pure rearrangement (ADR 0008 reconciliation invariant). 300k+10k−205k.
+    expect(net.periods.map((p) => p.netWorth.valueMinor)).toEqual([
+      105_000_00, 105_000_00,
+    ]);
+    expect(net.periods.map((p) => p.netWorth.valueMinor)).toEqual(
+      gross.periods.map((p) => p.netWorth.valueMinor),
+    );
+
+    // (b) The Vivienda band value = gross housing − securing debt (equity), and
+    // the below-baseline debt drops that securing portion (only the 5k unsecured
+    // remainder survives below the line).
+    const netHousing = net.periods[0]!.assetBands.find((b) => b.band === "housing")!;
+    expect(netHousing.valueMinor).toBe(100_000_00); // 300k − 200k
+    expect(
+      gross.periods[0]!.assetBands.find((b) => b.band === "housing")!.valueMinor,
+    ).toBe(300_000_00);
+    expect(net.periods[0]!.debt!.valueMinor).toBe(5_000_00); // 205k − 200k
+    expect(gross.periods[0]!.debt!.valueMinor).toBe(205_000_00);
+  });
+
+  test("'net' clamps an underwater home to a zero-height equity band but keeps the reconciled net line", () => {
+    // House worth less than the mortgage securing it: equity is negative.
+    const points = [
+      seriesPoint("2026-05-31", {
+        cashMinor: 50_000_00,
+        housingMinor: 100_000_00,
+        debtsMinor: 150_000_00,
+        debtsSecuredByHousingMinor: 150_000_00,
+      }),
+      seriesPoint("2026-06-30", {
+        cashMinor: 50_000_00,
+        housingMinor: 100_000_00,
+        debtsMinor: 150_000_00,
+        debtsSecuredByHousingMinor: 150_000_00,
+      }),
+    ];
+
+    const net = buildCompositionChartGeometry(points)!;
+
+    // The drawn equity band clamps to 0 (no inverted bar), but the net-worth line
+    // still reconciles to the true 50k+100k−150k = 0 (invariant preserved).
+    expect(net.periods[0]!.assetBands.find((b) => b.band === "housing")!.valueMinor).toBe(
+      0,
+    );
+    expect(net.periods[0]!.netWorth.valueMinor).toBe(0);
+    // Below-baseline debt is the unsecured remainder only (here zero) → no stack.
+    expect(net.periods[0]!.debt).toBeNull();
+  });
+
+  test("'hidden' housingMode matches the legacy excludedBands:['housing'] behaviour exactly", () => {
+    const points = [
+      seriesPoint("2026-05-31", {
+        cashMinor: 10_000_00,
+        housingMinor: 500_000_00,
+        debtsMinor: 205_000_00,
+        debtsSecuredByHousingMinor: 200_000_00,
+      }),
+      seriesPoint("2026-06-30", {
+        cashMinor: 10_000_00,
+        housingMinor: 500_000_00,
+        debtsMinor: 205_000_00,
+        debtsSecuredByHousingMinor: 200_000_00,
+      }),
+    ];
+
+    const hidden = buildCompositionChartGeometry(points, { housingMode: "hidden" })!;
+    const excluded = buildCompositionChartGeometry(points, {
+      excludedBands: ["housing"],
+    })!;
+
+    // Same shown bands, same debt depth, same net line, same y-domain.
+    expect(hidden.assetBands.map((b) => b.band)).toEqual(
+      excluded.assetBands.map((b) => b.band),
+    );
+    expect(hidden.assetBands.some((b) => b.band === "housing")).toBe(false);
+    expect(hidden.periods.map((p) => p.debt?.valueMinor ?? null)).toEqual(
+      excluded.periods.map((p) => p.debt?.valueMinor ?? null),
+    );
+    expect(hidden.periods.map((p) => p.netWorth.valueMinor)).toEqual(
+      excluded.periods.map((p) => p.netWorth.valueMinor),
+    );
+    expect(hidden.yMin).toBeCloseTo(excluded.yMin, 5);
+    expect(hidden.yMax).toBeCloseTo(excluded.yMax, 5);
+    // The shed net is the non-housing net: 10k − 5k unsecured = 5k.
+    expect(hidden.periods[0]!.netWorth.valueMinor).toBe(5_000_00);
   });
 
   test("excluding a band drops it from the stack/anchors and rescales to the rest", () => {
@@ -434,14 +555,16 @@ describe("buildCompositionChartGeometry", () => {
       ),
     ];
 
-    const full = buildCompositionChartGeometry(points)!;
+    // "gross" shows the home and full debt separately — the baseline to compare
+    // the hidden carve against.
+    const full = buildCompositionChartGeometry(points, { housingMode: "gross" })!;
     const exHousing = buildCompositionChartGeometry(points, {
       excludedBands: ["housing"],
     })!;
 
     // With everything shown the debt stack spans the full 205k below the baseline.
     expect(full.periods[0]!.debt!.valueMinor).toBe(205_000_00);
-    expect(full.debtArea).not.toBeNull();
+    expect(full.debtBars).not.toBeNull();
 
     // Hiding housing carves the 200k housing-secured slice out of the debt stack —
     // only the 5k unsecured remainder survives, mirroring the asset-side carve.
@@ -523,7 +646,7 @@ describe("buildCompositionChartGeometry", () => {
       seriesPoint("2026-06-30", { cashMinor: 120_00 }),
     ])!;
 
-    expect(geometry.debtArea).toBeNull();
+    expect(geometry.debtBars).toBeNull();
     expect(geometry.periods.every((p) => p.debt === null)).toBe(true);
   });
 

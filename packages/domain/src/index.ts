@@ -389,6 +389,7 @@ export {
 
 export type {
   StackedBandGeometry,
+  StackedBarRect,
   StackedChartGeometry,
   StackedSeriesInput,
 } from "./decomposition-chart";
@@ -400,8 +401,10 @@ export type {
   CompositionBandGeometry,
   CompositionBandHoverPoint,
   CompositionBands,
+  CompositionBarRect,
   CompositionChartGeometry,
   CompositionGranularity,
+  CompositionHousingMode,
   CompositionHoverPoint,
   CompositionPeriodGeometry,
   CompositionRange,
@@ -429,6 +432,7 @@ export type {
   DatedSnapshotHoldingRow,
   DebtDrillBand,
   DebtsDrilldownState,
+  DrillBarRect,
   DrillHoldingMultiple,
   DrillSparklineGeometry,
   DrilldownInput,
@@ -450,7 +454,7 @@ export {
   buildRestDrilldown,
   DRILL_GROUP_BY_TIER,
   DRILL_SPARKLINE_HEIGHT,
-  DRILL_SPARKLINE_INSET_X,
+  DRILL_SPARKLINE_MIN_BAR_HEIGHT,
   DRILL_SPARKLINE_WIDTH,
   LIQUID_DRILL_TIERS,
   REST_DRILL_TIERS,

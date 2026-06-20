@@ -14,11 +14,12 @@
  * a single tier, so its drill skips the stack and goes straight to the
  * per-property multiples. No React, no SVG — just numbers and strings.
  *
- * Frozen means frozen (#78): a holding that has left the portfolio — sold,
- * written off, deleted, with or without losses — keeps its captured history.
- * Its small multiple stays in the grid, truncated at its last capture on the
- * group window's shared time axis, flagged as no longer held, and ordered
- * after the currently-held holdings.
+ * Frozen means frozen (#78, ADR 0008): a holding that has left the portfolio —
+ * sold, written off, deleted, with or without losses — keeps its captured
+ * history in the AGGREGATE stack/composition series. Its per-holding small
+ * multiple, however, is dropped from the grid (this design pass): the cards
+ * show only currently-held holdings, so the grid stays a snapshot of the live
+ * portfolio while the aggregate still tells the full historical story.
  */
 
 import type { LiquidityTier } from "./classification";
@@ -26,7 +27,6 @@ import {
   buildStackedChartGeometry,
   type StackedChartGeometry,
 } from "./decomposition-chart";
-import { paddedValueDomain, valueToY } from "./evolution-chart";
 import type { SnapshotHoldingKind, SnapshotHoldingRow } from "./snapshot-holdings";
 
 /** The drill keys the home understands (#76 liquid, #77 rest + housing, #145 debts). */
@@ -73,11 +73,11 @@ export interface LiquidDrilldownInput {
   currentHoldingIds: readonly string[];
   /**
    * Ids of holdings sitting in the Papelera — soft-deleted, recoverable (#268).
-   * They are absent from `currentHoldingIds` (the live portfolio); rather than
-   * reading "Ya no en cartera", they are dropped from the per-holding multiples
-   * entirely (their past value still lives in the aggregate history). Optional —
-   * omit (or pass `[]`) when nothing is trashed, and an absent holding reads as
-   * truly retired, the prior behaviour.
+   * They are already absent from `currentHoldingIds`, so they are dropped from
+   * the per-holding multiples like any other not-currently-held holding (this
+   * design pass). Retained as a parameter for parity and call-site clarity;
+   * optional — omit (or pass `[]`) when nothing is trashed. Either way a
+   * dropped holding's past value still lives in the aggregate history.
    */
   trashedHoldingIds?: readonly string[];
 }
@@ -87,14 +87,32 @@ export type DrilldownInput = LiquidDrilldownInput;
 
 export const DRILL_SPARKLINE_WIDTH = 120;
 export const DRILL_SPARKLINE_HEIGHT = 36;
-/** Horizontal inset so the sparkline endpoints are not clipped by the viewBox. */
-export const DRILL_SPARKLINE_INSET_X = 2;
+/**
+ * Floor for a sparkline bar's height, in viewBox units. A holding with only one
+ * or two captures (or a near-flat history) still renders as a clean discrete
+ * tick instead of a degenerate sliver — the same floor the prototype settled on
+ * for the all-bars drilldown (this design pass).
+ */
+export const DRILL_SPARKLINE_MIN_BAR_HEIGHT = 1.5;
+
+/** One sparkline bar rectangle of one capture, in viewBox space. */
+export interface DrillBarRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 export interface DrillSparklineGeometry {
   width: number;
   height: number;
-  /** Polyline vertices as an SVG points string: "x,y x,y …". */
-  linePoints: string;
+  /**
+   * One bar per capture, growing from the viewBox floor up to its value (bars,
+   * not a polyline — this design pass), mirroring the main composition chart's
+   * bar language. Heights are floored at {@link DRILL_SPARKLINE_MIN_BAR_HEIGHT}
+   * so sparse histories still read as discrete ticks.
+   */
+  bars: DrillBarRect[];
 }
 
 /** One small-multiple entry: a holding with at least two captured points. */
@@ -110,17 +128,11 @@ export interface DrillHoldingMultiple {
   tier: LiquidityTier | null;
   sparkline: DrillSparklineGeometry;
   /**
-   * The holding's latest captured scoped value when it is still in the
-   * portfolio; `null` when no longer held.
+   * The holding's latest captured scoped value. Always present: only
+   * currently-held holdings reach the multiples now (this design pass), so a
+   * card never carries a missing present.
    */
-  currentValueMinor: number | null;
-  /**
-   * True when the holding has left the portfolio for good — sold, written off,
-   * hard-deleted. Holdings in the Papelera (soft-deleted, recoverable) never
-   * reach the multiples at all (#268), so a flagged card is always a genuine
-   * retirement.
-   */
-  noLongerHeld: boolean;
+  currentValueMinor: number;
 }
 
 /** The drill view state of one tier group (#77 generalizes #76's liquid shape). */
@@ -136,8 +148,9 @@ export interface GroupDrilldownState<
    */
   stack: StackedChartGeometry<Tier> | null;
   /**
-   * Small-multiple entries: currently-held holdings first, no-longer-held
-   * ones at the end, each group ordered by label for a stable presentation.
+   * Small-multiple entries — only currently-held holdings (this design pass),
+   * ordered by label for a stable presentation. A retired holding's past value
+   * still lives in the aggregate stack history; only its card is dropped.
    */
   holdings: DrillHoldingMultiple[];
 }
@@ -163,7 +176,7 @@ export interface DebtsDrilldownState {
   key: "debts";
   /** The aggregate debt area (single "debts" band), or `null` below the threshold. */
   stack: StackedChartGeometry<DebtDrillBand> | null;
-  /** Per-debt small multiples; no-longer-live debts kept, flagged, ordered last. */
+  /** Per-debt small multiples — only currently-live debts (this design pass). */
   holdings: DrillHoldingMultiple[];
 }
 
@@ -195,16 +208,23 @@ function parseDateKey(dateKey: string): number {
   return Date.parse(`${dateKey}T00:00:00Z`);
 }
 
+/** Fraction of a capture's slot a sparkline bar fills — the rest is gutter. */
+const SPARKLINE_BAR_WIDTH_RATIO = 0.7;
+
 /**
- * Sparkline geometry for one holding. The xs live on the GROUP WINDOW's
- * shared time axis (not the holding's own span): a series whose last capture
- * predates the window's end simply stops there instead of stretching to the
- * right edge — that truncation is how a no-longer-held holding reads (#78).
+ * Sparkline geometry for one holding, as per-capture BARS (this design pass).
+ * Captures are spaced evenly across the viewBox — one discrete tick per capture,
+ * the approved prototype geometry — rather than on a shared time axis, which the
+ * old polyline only needed for the now-removed no-longer-held truncation. Each
+ * bar grows from the viewBox floor up to its value, scaled against the holding's
+ * own peak and floored at {@link DRILL_SPARKLINE_MIN_BAR_HEIGHT} so even a one-
+ * or two-capture history reads as clean ticks rather than a degenerate sliver.
+ * `windowSpanMs` is still the group-window guard: a degenerate (zero-day) window
+ * draws no sparklines at all.
  */
 function buildSparkline(
   dateKeys: string[],
   valuesMinor: number[],
-  windowStartMs: number,
   windowSpanMs: number,
 ): DrillSparklineGeometry | null {
   const times = dateKeys.map(parseDateKey);
@@ -218,20 +238,31 @@ function buildSparkline(
     return null;
   }
 
-  const innerWidth = DRILL_SPARKLINE_WIDTH - 2 * DRILL_SPARKLINE_INSET_X;
-  const { yMin, yMax } = paddedValueDomain(valuesMinor);
-  const linePoints = times
-    .map((t, i) => {
-      const x = round2(
-        DRILL_SPARKLINE_INSET_X + ((t - windowStartMs) / windowSpanMs) * innerWidth,
-      );
-      return `${x},${valueToY(valuesMinor[i]!, yMin, yMax, DRILL_SPARKLINE_HEIGHT)}`;
-    })
-    .join(" ");
+  const n = valuesMinor.length;
+  const slot = DRILL_SPARKLINE_WIDTH / n;
+  const barWidth = round2(slot * SPARKLINE_BAR_WIDTH_RATIO);
+  // Scale heights against the holding's own peak from a zero floor (≥ 1 guards a
+  // flat-zero history), so the tallest bar fills the sparkline and shape reads.
+  const peak = Math.max(...valuesMinor.map((v) => Math.abs(v)), 1);
+
+  const bars = valuesMinor.map((value, i) => {
+    const height = round2(
+      Math.max(
+        DRILL_SPARKLINE_MIN_BAR_HEIGHT,
+        (Math.abs(value) / peak) * DRILL_SPARKLINE_HEIGHT,
+      ),
+    );
+    return {
+      height,
+      width: barWidth,
+      x: round2(slot * (i + 0.5) - barWidth / 2),
+      y: round2(DRILL_SPARKLINE_HEIGHT - height),
+    };
+  });
 
   return {
+    bars,
     height: DRILL_SPARKLINE_HEIGHT,
-    linePoints,
     width: DRILL_SPARKLINE_WIDTH,
   };
 }
@@ -239,10 +270,13 @@ function buildSparkline(
 /**
  * Builds the per-holding small-multiple entries of a drill group from its
  * frozen rows. Shared by every drill key so all groups inherit the rules:
- * a holding needs ≥2 captured points in the window to appear, but it appears
- * even when it has left the portfolio — its series truncated at its last
- * capture, flagged as no longer held, and ordered after the currently-held
- * holdings (stable by label within each group).
+ * a holding needs ≥2 captured points in the window to appear, AND it must
+ * still be in the portfolio — a holding that has left (sold, written off,
+ * hard-deleted) is dropped from the cards entirely (this design pass), as are
+ * Papelera (soft-deleted) holdings. Either way the retired holding's past value
+ * still lives in the aggregate stack history (frozen rows, ADR 0008); only its
+ * per-holding card is dropped. Entries are ordered by label (then id) for a
+ * stable presentation.
  */
 export function buildDrillHoldingMultiples(
   groupRows: readonly DatedSnapshotHoldingRow[],
@@ -253,8 +287,8 @@ export function buildDrillHoldingMultiples(
 
   if (sortedRows.length === 0) return [];
 
-  const windowStartMs = parseDateKey(sortedRows[0]!.dateKey);
-  const windowSpanMs = parseDateKey(sortedRows.at(-1)!.dateKey) - windowStartMs;
+  const windowSpanMs =
+    parseDateKey(sortedRows.at(-1)!.dateKey) - parseDateKey(sortedRows[0]!.dateKey);
 
   const rowsByHolding = new Map<string, DatedSnapshotHoldingRow[]>();
 
@@ -267,41 +301,36 @@ export function buildDrillHoldingMultiples(
 
   return [...rowsByHolding.entries()]
     .flatMap(([holdingId, rows]) => {
-      // Holdings in the Papelera (soft-deleted, recoverable) are not retired —
-      // they should not surface in the drill at all (#268). Their past value
-      // still lives in the aggregate stack/composition history (frozen rows,
-      // ADR 0008); only the per-holding card is dropped.
-      if (trashedIds.has(holdingId)) return [];
+      // Drop everything not currently in the portfolio: Papelera holdings
+      // (soft-deleted, recoverable, #268) AND retired ones (sold/written-off/
+      // hard-deleted). The cards show only live holdings now (this design pass);
+      // a retired holding's past value still lives in the aggregate stack
+      // history (frozen rows, ADR 0008), so only the per-holding card is lost.
+      if (trashedIds.has(holdingId) || !heldIds.has(holdingId)) return [];
 
       const sparkline = buildSparkline(
         rows.map((row) => row.dateKey),
         rows.map((row) => row.valueMinor),
-        windowStartMs,
         windowSpanMs,
       );
 
       if (rows.length < 2 || !sparkline) return [];
 
       const latest = rows.at(-1)!;
-      const noLongerHeld = !heldIds.has(holdingId);
 
       return [
         {
-          currentValueMinor: noLongerHeld ? null : latest.valueMinor,
+          currentValueMinor: latest.valueMinor,
           holdingId,
           kind: latest.kind,
           label: latest.label,
-          noLongerHeld,
           sparkline,
           tier: effectiveRung(latest),
         } satisfies DrillHoldingMultiple,
       ];
     })
     .sort(
-      (a, b) =>
-        Number(a.noLongerHeld) - Number(b.noLongerHeld) ||
-        a.label.localeCompare(b.label) ||
-        a.holdingId.localeCompare(b.holdingId),
+      (a, b) => a.label.localeCompare(b.label) || a.holdingId.localeCompare(b.holdingId),
     );
 }
 
