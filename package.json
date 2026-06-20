@@ -9,13 +9,16 @@
   },
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "tests"
   ],
   "scripts": {
     "dev": "npm run dev --workspace @worthline/web",
-    "build": "npm run build --workspaces --if-present",
-    "lint": "eslint apps packages tests e2e scripts --max-warnings=0",
-    "test": "vitest run",
+    "build": "turbo run build",
+    "verify": "turbo run typecheck lint && npm run test && npm run format",
+    "lint": "turbo run lint && eslint e2e scripts --max-warnings=0 --cache --cache-location node_modules/.cache/eslint-root",
+    "test": "turbo run test --concurrency=1",
+    "test:related": "vitest related --run",
     "test:e2e": "playwright test",
     "test:e2e:first-run": "npm run test:e2e:first-run:solo && npm run test:e2e:first-run:hogar",
     "test:e2e:first-run:solo": "FIRST_RUN_SCENARIO=solo playwright test --config playwright.first-run.config.ts",
@@ -24,8 +27,8 @@
     "test:watch": "vitest",
     "backfill:snapshots": "tsx scripts/backfill-historical-snapshots.ts",
     "subset:fonts": "scripts/subset-web-fonts.sh",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "format": "prettier --check .",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --check . --cache --cache-location=node_modules/.cache/prettier/.prettier-cache",
     "prepare": "husky || true"
   },
   "lint-staged": {
@@ -47,6 +50,7 @@
     "lint-staged": "^17.0.7",
     "prettier": "latest",
     "tsx": "latest",
+    "turbo": "^2.9.18",
     "typescript": "latest",
     "vitest": "latest"
   }

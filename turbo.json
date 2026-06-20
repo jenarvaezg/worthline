@@ -1,0 +1,23 @@
+{
+  "$schema": "https://turbo.build/schema.v2.json",
+  "globalDependencies": [".env"],
+  "globalPassThroughEnv": ["NODE_ENV", "CI", "FIRST_RUN_SCENARIO"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"],
+      "inputs": ["$TURBO_DEFAULT$", ".env.production", ".env"]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["^typecheck"],
+      "outputs": []
+    },
+    "lint": {
+      "outputs": []
+    }
+  }
+}

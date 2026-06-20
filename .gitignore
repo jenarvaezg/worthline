@@ -4,6 +4,8 @@
 !.env.example
 
 node_modules/
+node_modules/.cache/
+.turbo/
 .next/
 out/
 dist/
