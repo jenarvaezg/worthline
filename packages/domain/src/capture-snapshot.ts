@@ -16,7 +16,7 @@ import type { NetWorthSnapshot } from "./snapshot-types";
 import { captureValuedNetWorthSnapshot } from "./snapshot-types";
 import type { ScopeOption } from "./scope";
 import type { InvestmentCaptureDetail, SnapshotHoldingRow } from "./snapshot-holdings";
-import { planSnapshotCapture } from "./snapshot-policy";
+import { findTodaySnapshotId } from "./snapshot-policy";
 
 /**
  * Everything the orchestration needs for one scope. `assets`, `liabilities`,
@@ -52,15 +52,12 @@ export interface CaptureSnapshotOutput {
 /**
  * Orchestrate a single scope's snapshot capture (ADR 0005, ADR 0008).
  *
- * 1. `planSnapshotCapture` decides whether to capture and whether to replace a
- *    same-day snapshot.
- * 2. When capturing, `captureValuedNetWorthSnapshot` builds the snapshot and its
- *    reconciled holding rows.
- * 3. A stable id is minted via the injected `generateId` (defaults to the
+ * 1. `captureValuedNetWorthSnapshot` builds the snapshot and its reconciled
+ *    holding rows.
+ * 2. A stable id is minted via the injected `generateId` (defaults to the
  *    built-in `buildSnapshotId`).
- *
- * Returns `null` when the policy says not to capture, so the caller can skip
- * persistence entirely.
+ * 3. `findTodaySnapshotId` resolves whether this capture replaces an existing
+ *    same-day snapshot (latest wins). Capture is unconditional (ADR 0005).
  */
 export function captureSnapshotForScope(
   input: CaptureSnapshotInput,
@@ -70,19 +67,15 @@ export function captureSnapshotForScope(
     /** Inject id generation; defaults to the built-in `buildSnapshotId`. */
     generateId?: (scopeId: string, capturedAt: string, seed: number) => string;
   } = {},
-): CaptureSnapshotOutput | null {
+): CaptureSnapshotOutput {
   const generateId = options.generateId ?? buildSnapshotId;
   const seed = options.seed ?? (() => Date.now());
 
-  const plan = planSnapshotCapture(
+  const replacesId = findTodaySnapshotId(
     input.existingSnapshots,
     input.scope.id,
     input.capturedAt.slice(0, 10),
   );
-
-  if (!plan.shouldCapture) {
-    return null;
-  }
 
   const { snapshot, holdings } = captureValuedNetWorthSnapshot({
     assets: input.assets,
@@ -95,7 +88,7 @@ export function captureSnapshotForScope(
     ...(input.investmentDetails ? { investmentDetails: input.investmentDetails } : {}),
   });
 
-  return { holdings, replace: plan.replacesId !== undefined, snapshot };
+  return { holdings, replace: replacesId !== undefined, snapshot };
 }
 
 /**

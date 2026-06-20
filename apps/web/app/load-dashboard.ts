@@ -236,13 +236,11 @@ export async function loadDashboard(
       workspace,
     });
 
-    if (capture) {
-      store.snapshots.saveSnapshot({
-        holdings: capture.holdings,
-        replace: capture.replace,
-        snapshot: capture.snapshot,
-      });
-    }
+    store.snapshots.saveSnapshot({
+      holdings: capture.holdings,
+      replace: capture.replace,
+      snapshot: capture.snapshot,
+    });
   }
 
   // ── 4. Collect remaining data for state assembly ─────────────────────────
