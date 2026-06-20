@@ -2,31 +2,28 @@ import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 
 import authConfig from "@web/auth.config";
-import { resolveStoreTarget } from "@web/store-resolver";
+import { shouldRedirectToLogin } from "@web/auth-gate";
 
 const { auth } = NextAuth(authConfig);
-
-const PUBLIC_PATHS = new Set(["/login"]);
 
 export default auth((req) => {
   const authConfigured = Boolean(
     process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET,
   );
-  if (!authConfigured) {
-    return;
+
+  // Only the page-access gate runs here (edge). Which workspace an authenticated
+  // request opens is resolved later in the store seam (Node), off the JWT.
+  if (
+    shouldRedirectToLogin({
+      authConfigured,
+      hasSession: Boolean(req.auth),
+      pathname: req.nextUrl.pathname,
+    })
+  ) {
+    return NextResponse.redirect(new URL("/login", req.nextUrl.origin));
   }
 
-  const target = resolveStoreTarget({ env: process.env, session: req.auth });
-  if (target.kind !== "unauthenticated") {
-    return;
-  }
-
-  const { pathname } = req.nextUrl;
-  if (pathname.startsWith("/api/auth") || PUBLIC_PATHS.has(pathname)) {
-    return;
-  }
-
-  return NextResponse.redirect(new URL("/login", req.nextUrl.origin));
+  return undefined;
 });
 
 export const config = {

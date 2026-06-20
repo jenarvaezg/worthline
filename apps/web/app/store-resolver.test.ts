@@ -22,21 +22,34 @@ describe("resolveStoreTarget", () => {
     expect(result).toEqual({ kind: "unauthenticated" });
   });
 
-  test("returns authenticated with the env-configured workspace when there is a session", () => {
+  test("returns authenticated with the signed-in user's own workspace from the session", () => {
     const result = resolveStoreTarget({
       env: {
         AUTH_GOOGLE_ID: "google-id",
         AUTH_GOOGLE_SECRET: "google-secret",
         WORTHLINE_DB_AUTH_TOKEN: "group-token",
-        WORTHLINE_DB_URL: "libsql://workspace.turso.io",
       },
-      session: { user: { email: "user@example.com" } },
+      session: {
+        user: { email: "ana@example.com" },
+        workspace: { id: "ws-ana", dbUrl: "libsql://wl-ana.turso.io" },
+      },
     });
     expect(result).toEqual({
       kind: "authenticated",
-      workspaceId: "default",
-      dbUrl: "libsql://workspace.turso.io",
+      workspaceId: "ws-ana",
+      dbUrl: "libsql://wl-ana.turso.io",
       token: "group-token",
     });
+  });
+
+  test("returns unauthenticated when signed in but no workspace is resolved yet", () => {
+    const result = resolveStoreTarget({
+      env: {
+        AUTH_GOOGLE_ID: "google-id",
+        AUTH_GOOGLE_SECRET: "google-secret",
+      },
+      session: { user: { email: "ana@example.com" } },
+    });
+    expect(result).toEqual({ kind: "unauthenticated" });
   });
 });
