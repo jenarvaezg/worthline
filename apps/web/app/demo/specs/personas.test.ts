@@ -57,6 +57,12 @@ describe("seedPersona — joven (starter saver)", () => {
     expect(byTier.get("cash")?.grossAssets.amountMinor ?? 0).toBeGreaterThan(0);
     // One small derived investment puts a little on the market rung.
     expect(byTier.get("market")?.grossAssets.amountMinor ?? 0).toBeGreaterThan(0);
+    expect(byTier.get("term-locked")?.grossAssets.amountMinor ?? 0).toBeGreaterThan(0);
+    expect(byTier.get("illiquid")?.grossAssets.amountMinor ?? 0).toBeGreaterThan(0);
+    expect(store.liabilities.readDebtModel("liability_joven_master")).toBe("informal");
+    expect(store.liabilities.readBalanceAnchors("liability_joven_master")).toHaveLength(
+      3,
+    );
 
     store.close();
   });
@@ -98,10 +104,23 @@ describe("seedPersona — inversor (markets-heavy)", () => {
     seedPersona(store, INVERSOR_SPEC, AS_OF);
 
     const sources = store.connectedSources.listSources();
-    expect(sources.length).toBeGreaterThanOrEqual(1);
-    expect(store.connectedSources.readPositions(sources[0]!.id).length).toBeGreaterThan(
-      0,
-    );
+    expect(sources.map((source) => source.adapter).sort()).toEqual([
+      "binance",
+      "numista",
+    ]);
+
+    const binance = sources.find((source) => source.adapter === "binance")!;
+    const numista = sources.find((source) => source.adapter === "numista")!;
+    expect(
+      store.connectedSources
+        .readPositions(binance.id)
+        .some((position) => position.kind === "token"),
+    ).toBe(true);
+    expect(
+      store.connectedSources
+        .readPositions(numista.id)
+        .some((position) => position.kind === "coin"),
+    ).toBe(true);
 
     store.close();
   });

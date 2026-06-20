@@ -1,11 +1,12 @@
 /**
  * Playwright config for the demo-mode journey (PRD #297, S3 #301).
  *
- * Runs the app as the read-only public demo: `DEMO=1` with a pinned
- * `WORTHLINE_DEMO_NOW`, on its own port, isolated from the main serial journey.
+ * Runs the app as the read-only public demo: `DEMO=1` with a demo clock, on its
+ * own port, isolated from the main serial journey.
  * No globalSetup and no `WORTHLINE_DB_PATH` — demo mode never opens the live
  * store; the store provider lazily seeds each persona's fixture into a temp copy.
- * The frozen clock makes every figure deterministic.
+ * By default the demo clock uses today's local date. Set `WORTHLINE_DEMO_NOW`
+ * when a run needs an explicit calendar day.
  *
  * To run (against a production build):
  *   npm run build --workspace @worthline/web
@@ -19,6 +20,13 @@ import { join } from "node:path";
 
 const demoPort = Number(process.env.DEMO_PORT ?? 3004);
 const demoBaseUrl = `http://127.0.0.1:${demoPort}`;
+
+function todayDateKey(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
 
 // Isolated, throwaway data dir — never the developer's real data. Demo mode does
 // not read it (it seeds into the OS temp dir), but it keeps any stray live path
@@ -54,7 +62,7 @@ export default defineConfig({
     reuseExistingServer: false,
     env: {
       DEMO: "1",
-      WORTHLINE_DEMO_NOW: "2026-06-19",
+      WORTHLINE_DEMO_NOW: process.env.WORTHLINE_DEMO_NOW ?? todayDateKey(),
       WORTHLINE_DATA_DIR: demoDataDir,
     },
     timeout: 60_000,

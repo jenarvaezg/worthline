@@ -177,12 +177,15 @@ function seedLiability(
   }
 
   for (const anchor of liability.balanceAnchors ?? []) {
-    store.liabilities.addBalanceAnchor({
-      anchorDate: resolveRelativeDate(asOf, anchor.at),
-      balanceMinor: anchor.balanceMinor,
-      id: anchor.id,
-      liabilityId: liability.id,
-    });
+    store.addBalanceAnchorAndRipple(
+      {
+        anchorDate: resolveRelativeDate(asOf, anchor.at),
+        balanceMinor: anchor.balanceMinor,
+        id: anchor.id,
+        liabilityId: liability.id,
+      },
+      { today: asOf },
+    );
   }
 }
 

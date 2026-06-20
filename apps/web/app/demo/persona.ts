@@ -44,18 +44,18 @@ export const PERSONA_META: Record<PersonaId, PersonaMeta> = {
     id: "joven",
     label: "Joven",
     pitch:
-      "Alguien que empieza a ahorrar: casi todo en caja, una primera inversión pequeña, sin vivienda ni deuda.",
+      "Primeros años de carrera: caja, fondo de emergencia, primera cartera, ahorro bloqueado y un préstamo educativo.",
   },
   inversor: {
     id: "inversor",
     label: "Inversor",
     pitch:
-      "Cartera de mercado con fondos, acciones y cripto, un plan de pensiones a plazo, una fuente conectada y progreso FIRE.",
+      "Cartera con aportaciones, ventas, reserva fiscal, pensión, Numista, Binance y progreso FIRE visible.",
   },
   familia: {
     id: "familia",
     label: "Familia",
     pitch:
-      "Un hogar de dos miembros con vivienda habitual, hipoteca, reparto de propiedad y la escalera de liquidez completa.",
+      "Hogar con vivienda, hipoteca, amortizaciones, préstamo de coche, reparto de propiedad y escalera completa.",
   },
 };
