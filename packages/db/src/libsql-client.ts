@@ -19,6 +19,11 @@ const nativeRequire = createRequire(import.meta.url);
 
 type CreateClient = typeof import("@libsql/client").createClient;
 
+export interface LibsqlUrlTarget {
+  url: string;
+  authToken?: string;
+}
+
 let cachedCreateClient: CreateClient | null = null;
 
 function loadCreateClient(): CreateClient {
@@ -29,12 +34,23 @@ function loadCreateClient(): CreateClient {
 }
 
 /**
- * Open a libSQL client for a database path. `:memory:` opens an isolated
- * in-memory database (tests); any other path opens a local file (`file:` URL,
- * local dev). Remote `libsql://` targets arrive in a later slice (#383).
+ * Open a libSQL client for a database path or URL target. `:memory:` opens an
+ * isolated in-memory database (tests); a string path opens a local file
+ * (`file:` URL, local dev); a URL target opens any libSQL-compatible URL
+ * (`file:`, `libsql://`, etc.).
  */
-export function openLibsqlClient(databasePath: string): Client {
-  const url = databasePath === ":memory:" ? ":memory:" : `file:${databasePath}`;
+export function openLibsqlClient(databasePathOrTarget: string | LibsqlUrlTarget): Client {
+  if (typeof databasePathOrTarget !== "string") {
+    return loadCreateClient()({
+      url: databasePathOrTarget.url,
+      ...(databasePathOrTarget.authToken
+        ? { authToken: databasePathOrTarget.authToken }
+        : {}),
+    });
+  }
+
+  const url =
+    databasePathOrTarget === ":memory:" ? ":memory:" : `file:${databasePathOrTarget}`;
   return loadCreateClient()({ url });
 }
 
