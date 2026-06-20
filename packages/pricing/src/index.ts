@@ -181,6 +181,11 @@ export { fetchCoinGeckoPriceEur, syncBinanceAccount } from "./binance-sync";
 export type { BinanceSyncDeps, TokenPositionDraft } from "./binance-sync";
 export { fetchCoinGeckoHistoryEur, reconstructBinanceHistory } from "./binance-history";
 export type { ReconstructBinanceHistoryDeps } from "./binance-history";
+export { coingeckoHistoricalSource, parsePriceCsv } from "./historical-price-source";
+export type {
+  HistoricalPriceSeries,
+  HistoricalPriceSource,
+} from "./historical-price-source";
 export type {
   InvestmentAssetRef,
   RefreshOptions,

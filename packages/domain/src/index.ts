@@ -140,6 +140,24 @@ export {
   selectInvestmentPrice,
 } from "./investment-valuation";
 export type {
+  DetectPriceBackfillInput,
+  PriceBackfillCandidate,
+  PriceBackfillCandidateAsset,
+  PriceBackfillSnapshotRow,
+  SingleAssetBackfillInput,
+} from "./price-backfill-detection";
+export {
+  detectPriceBackfillCandidates,
+  detectSingleAssetBackfillCandidate,
+} from "./price-backfill-detection";
+export type {
+  PlanPriceBackfillInput,
+  PriceBackfillAction,
+  PriceBackfillPlan,
+  PriceBackfillPoint,
+} from "./price-backfill-plan";
+export { planPriceBackfill } from "./price-backfill-plan";
+export type {
   AssetProjectionContext,
   PositionProjection,
   RawAssetRow,

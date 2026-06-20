@@ -4,6 +4,7 @@ import { withStore, type WorthlineStore } from "@worthline/db";
 import {
   createInvestmentOperationSafe,
   defaultInvestmentPriceProvider,
+  detectSingleAssetBackfillCandidate,
   parseStatement,
   planStatementMerge,
   resolveStatementIsinGuard,
@@ -14,12 +15,15 @@ import type {
   InvestmentPriceProvider,
   LiquidityTier,
   ParsedStatement,
+  PriceBackfillCandidate,
   StatementMergePlan,
 } from "@worthline/domain";
 import {
+  coingeckoHistoricalSource,
   fetchAndCachePrice,
   fetchPriceNow,
   refreshStalePrices,
+  type HistoricalPriceSource,
   type PriceProvider,
 } from "@worthline/pricing";
 import { redirect } from "next/navigation";
@@ -32,6 +36,7 @@ import {
   parseEntityId,
   parseRouteOperationCommand,
   parseUpdateInvestmentCommand,
+  priceBackfillDoneRedirectUrl,
   pricesRefreshedRedirectUrl,
   preserveFields,
   statementLoadedRedirectUrl,
@@ -542,6 +547,159 @@ export async function deleteOperationAction(
   }
 
   redirect(successRedirectUrl(returnUrl, "operation_deleted"));
+}
+
+// ── Historical-price backfill (#380, ADR 0033) ───────────────────────────────
+
+/** The preview state for the "Rellenar histórico de precios" action. */
+export type PriceBackfillPreviewState =
+  | { status: "idle" }
+  | { status: "error"; message: string }
+  /** The investment is not a backfill candidate (no provider symbol or no cost-basis history). */
+  | { status: "not_eligible" }
+  | {
+      status: "summary";
+      /** New monthly snapshots the backfill would create. */
+      create: number;
+      /** Existing monthly snapshots it would update in place. */
+      update: number;
+      /** Month-start dates the source could not price — never invented. */
+      gaps: string[];
+      /** The source label that produced the prices (audit metadata). */
+      source: string;
+    };
+
+/**
+ * The single candidate-detection read, shared by preview and confirm. Reads the
+ * investment metadata, its operation ledger, and its frozen snapshot rows, then
+ * runs the pure `detectSingleAssetBackfillCandidate`. Returns the one candidate
+ * for this asset, or null when it is not eligible (no provider symbol, no
+ * operations, or no cost-basis history) — neither path then writes anything.
+ */
+function readBackfillCandidate(
+  store: WorthlineStore,
+  assetId: string,
+): PriceBackfillCandidate | null {
+  const investment = store.assets.readInvestmentAssetById(assetId);
+  if (!investment) return null;
+
+  return detectSingleAssetBackfillCandidate({
+    assetId,
+    operations: store.operations.readOperations(assetId),
+    priceProvider: investment.priceProvider,
+    ...(investment.providerSymbol ? { providerSymbol: investment.providerSymbol } : {}),
+    snapshotRows: store.snapshots.readSnapshotHoldings({
+      holdingId: assetId,
+      kind: "asset",
+    }),
+  });
+}
+
+/** Midnight-UTC ms for a YYYY-MM-DD date key — the source range bounds. */
+function dateKeyToMs(dateKey: string): number {
+  return Date.parse(`${dateKey}T00:00:00.000Z`);
+}
+
+/**
+ * Historical-price backfill preview (#380, ADR 0033). Detect candidacy, fetch the
+ * source's EUR series over [first operation, today], and run the apply seam in
+ * DRY-RUN mode — returning the create/update counts, the source, and the gaps
+ * WITHOUT writing anything (the human check before confirm). Sharing the seam's
+ * scope loop is deliberate: the surfaced counts can never diverge from what
+ * confirm writes (in household mode the asset spans multiple scopes, so a
+ * scope-agnostic plan count would undercount by the scope multiplier). Reads the
+ * store read-only; never redirects (feeds useActionState). The source is injected
+ * for tests.
+ */
+export async function previewPriceBackfillAction(
+  routeAssetId: string,
+  _prev: PriceBackfillPreviewState,
+  formData: FormData,
+  _store?: WorthlineStore,
+  _source: HistoricalPriceSource = coingeckoHistoricalSource,
+  _clock: Clock = systemClock(),
+): Promise<PriceBackfillPreviewState> {
+  guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+  const today = _clock.today();
+
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  const candidate = runWith((store) => readBackfillCandidate(store, routeAssetId));
+  if (!candidate) return { status: "not_eligible" };
+
+  const series = await _source.fetchSeriesEur(
+    candidate.providerSymbol,
+    dateKeyToMs(candidate.firstOperationDate),
+    dateKeyToMs(today),
+  );
+
+  const result = runWith((store) =>
+    store.backfillInvestmentPricesAndRipple({
+      assetId: routeAssetId,
+      dryRun: true,
+      pricesByDate: series.pricesByDate,
+      source: series.source,
+      today,
+    }),
+  );
+
+  return {
+    create: result.created,
+    gaps: result.gaps,
+    source: result.source,
+    status: "summary",
+    update: result.updated,
+  };
+}
+
+/**
+ * Historical-price backfill confirm (#380, ADR 0033). Re-detect candidacy (never
+ * trusting the preview), re-fetch the source's EUR series, and apply the backfill
+ * through the atomic store seam — the ONLY path that rewrites historical
+ * `unit_price`. It re-values only this asset's monthly rows (units × historical
+ * price) and preserves every other frozen row (ADR 0008/0012); months without a
+ * price stay gaps. Redirects with the create/update counts.
+ */
+export async function confirmPriceBackfillAction(
+  routeAssetId: string,
+  formData: FormData,
+  _store?: WorthlineStore,
+  _source: HistoricalPriceSource = coingeckoHistoricalSource,
+  _clock: Clock = systemClock(),
+) {
+  guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+  const today = _clock.today();
+
+  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+    _store ? fn(_store) : withStore(fn);
+
+  const candidate = runWith((store) => readBackfillCandidate(store, routeAssetId));
+  if (!candidate) {
+    redirect(
+      errorRedirectUrl(returnUrl, {
+        message: "Esta inversión no admite relleno de histórico de precios.",
+      }),
+    );
+  }
+
+  const series = await _source.fetchSeriesEur(
+    candidate.providerSymbol,
+    dateKeyToMs(candidate.firstOperationDate),
+    dateKeyToMs(today),
+  );
+
+  const result = runWith((store) =>
+    store.backfillInvestmentPricesAndRipple({
+      assetId: routeAssetId,
+      pricesByDate: series.pricesByDate,
+      source: series.source,
+      today,
+    }),
+  );
+
+  redirect(priceBackfillDoneRedirectUrl(returnUrl, result.source));
 }
 
 export async function refreshPricesAction(

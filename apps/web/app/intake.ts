@@ -361,6 +361,20 @@ export function statementLoadedRedirectUrl(
   return url;
 }
 
+/**
+ * Build the success redirect for a historical-price backfill (#380, ADR 0033),
+ * carrying the SOURCE so the post-confirm banner records which provider/CSV
+ * produced the frozen prices (criterion 8 — durable-ish audit trail in the URL,
+ * not just the pre-confirm preview).
+ */
+export function priceBackfillDoneRedirectUrl(currentUrl: string, source: string): string {
+  return appendParam(
+    appendParam(currentUrl, "ok", "price_backfill_done"),
+    "source",
+    source,
+  );
+}
+
 /** Decode the `failed` param back into symbol/reason pairs. */
 function parseFailures(raw: string | undefined): PriceRefreshFailure[] {
   if (!raw) return [];
@@ -412,6 +426,13 @@ export function resolveOkMessage(
       anomalies > 0 ? ` · ${anomalies} con fecha duplicada sin tocar` : "";
 
     return `${createdPart}${overwrittenPart}${sellsPart}${skippedPart}${anomalyPart}.`;
+  }
+
+  if (key === "price_backfill_done") {
+    // Surface the source that produced the frozen prices so the post-confirm
+    // banner — not just the preview — carries the audit trail (#380, criterion 8).
+    const source = normalizeParam(searchParams?.["source"]);
+    return source ? `Histórico de precios rellenado desde ${source}.` : okMessage(key);
   }
 
   if (key !== "prices_refreshed") {
@@ -473,6 +494,7 @@ export function okMessage(key: string | undefined): string | null {
     operation_deleted: "Operación eliminada.",
     plan_deleted: "Plan de amortización eliminado.",
     plan_saved: "Plan de amortización guardado.",
+    price_backfill_done: "Histórico de precios rellenado.",
     prices_refreshed: "Precios actualizados.",
     repayment_added: "Amortización anticipada registrada.",
     repayment_deleted: "Amortización anticipada eliminada.",
