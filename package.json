@@ -23,6 +23,7 @@
     "test:e2e:demo": "npm run build --workspace @worthline/web && playwright test --config playwright.demo.config.ts",
     "test:watch": "vitest",
     "backfill:snapshots": "tsx scripts/backfill-historical-snapshots.ts",
+    "subset:fonts": "scripts/subset-web-fonts.sh",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "format": "prettier --check .",
     "prepare": "husky || true"
