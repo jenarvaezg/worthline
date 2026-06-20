@@ -16,14 +16,34 @@ Run the local web app:
 npm run dev
 ```
 
-Run verification:
+Run the fast verification gate (inner-loop and default CI check):
 
 ```bash
-npm test
-npm run lint
-npm run typecheck
+npm run verify
+```
+
+`verify` runs `typecheck` + `test` + `lint` + `format` without invoking a full
+`next build`. Tasks are orchestrated by Turborepo, so unchanged packages are
+skipped across runs ("FULL TURBO" cache hit). Lint and format also use tool-level
+caches under `node_modules/.cache/`.
+
+Run the full production/deploy gate (pre-push / before deploy):
+
+```bash
 npm run build
 ```
+
+This still triggers `apps/web`'s `next build`, which catches Next-generated
+route/page types that plain `tsc` does not see.
+
+Run only tests related to changed files (useful while iterating):
+
+```bash
+npm run test:related
+```
+
+Turborepo caches tasks under `.turbo/` (gitignored). Remote caching is not
+configured; everything works locally with no external account.
 
 ## Project Layout
 
