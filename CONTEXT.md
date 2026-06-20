@@ -54,6 +54,22 @@ separate records. Granting a user access (_inviting_) is independent of switchin
 decides whose holdings are aggregated.
 _Avoid_: account, member, login, owner.
 
+**Grant**:
+A single row tying one **user** to one **workspace** with a role (`owner` today),
+recording that the user may open that workspace. Access is the set of grants:
+inviting a second user to a household is just another grant — no data moves,
+because each workspace database is keyed by workspace, never by user. Lives in the
+**control plane**, never inside a workspace database.
+_Avoid_: permission, membership (a grant is access, not a tracked **member**).
+
+**Control plane**:
+The one small libSQL database that maps **users** → **workspaces** → **grants** and
+records each workspace's database name/URL. It is the only place that knows which
+workspace a signed-in user owns; each per-workspace database holds exactly one
+`id = 'default'` row and knows nothing of users. On first login a user with no grant
+is _provisioned_ a fresh workspace database here (ADR 0030).
+_Avoid_: admin database, master DB.
+
 **Scope**:
 The set of members whose holdings a figure covers: the whole household, one member,
 or a named group of members. A scope is always read _within_ one **workspace** — it
