@@ -93,7 +93,7 @@ export async function syncBinanceAction(
       // outage) must NOT fail the sync — positions are already committed — so it is
       // swallowed.
       afterWrite: async ({ sourceId, nowIso, nowMs, creds, runWith }) => {
-        runWith((store) =>
+        await runWith((store) =>
           store.connectedSources.revaluePositions(sourceId, [], {
             fetchedAt: nowIso,
             freshnessState: "fresh",
@@ -115,7 +115,9 @@ export async function syncBinanceAction(
                 nowIso,
               ),
           });
-          runWith((store) => store.applyBinanceHistoryAndRipple({ sourceId, curve }));
+          await runWith((store) =>
+            store.applyBinanceHistoryAndRipple({ sourceId, curve }),
+          );
         } catch {
           // History is best-effort; the positions sync already committed.
         }

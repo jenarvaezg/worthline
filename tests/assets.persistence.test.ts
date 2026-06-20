@@ -6,17 +6,17 @@ import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 afterEach(cleanupTempDirs);
 
 describe("manual asset persistence", () => {
-  test("creates manual liquid assets with ownership and updates current valuation", () => {
-    const store = createFileBackedStore("worthline-assets-");
+  test("creates manual liquid assets with ownership and updates current valuation", async () => {
+    const store = await createFileBackedStore("worthline-assets-");
 
-    store.workspace.initializeWorkspace({
+    await store.workspace.initializeWorkspace({
       members: [
         { id: "member_ana", name: "Ana" },
         { id: "member_jose", name: "Jose" },
       ],
       mode: "household",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 100_000,
       id: "asset_cash",
@@ -31,34 +31,34 @@ describe("manual asset persistence", () => {
 
     expect(
       calculateNetWorth({
-        assets: store.assets.readAssets(),
+        assets: await store.assets.readAssets(),
         scopeId: "member_ana",
-        workspace: store.workspace.readWorkspace()!,
+        workspace: (await store.workspace.readWorkspace())!,
       }).liquidNetWorth.amountMinor,
     ).toBe(25_000);
 
-    store.assets.updateAssetValuation("asset_cash", 120_000);
+    await store.assets.updateAssetValuation("asset_cash", 120_000);
 
     expect(
       calculateNetWorth({
-        assets: store.assets.readAssets(),
+        assets: await store.assets.readAssets(),
         scopeId: "household",
-        workspace: store.workspace.readWorkspace()!,
+        workspace: (await store.workspace.readWorkspace())!,
       }).liquidNetWorth.amountMinor,
     ).toBe(120_000);
   });
 
-  test("keeps ownership attached to the right asset when several coexist", () => {
-    const store = createFileBackedStore("worthline-assets-");
+  test("keeps ownership attached to the right asset when several coexist", async () => {
+    const store = await createFileBackedStore("worthline-assets-");
 
-    store.workspace.initializeWorkspace({
+    await store.workspace.initializeWorkspace({
       members: [
         { id: "member_ana", name: "Ana" },
         { id: "member_jose", name: "Jose" },
       ],
       mode: "household",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 100_000,
       id: "asset_ana",
@@ -67,7 +67,7 @@ describe("manual asset persistence", () => {
       ownership: [{ memberId: "member_ana", shareBps: 10_000 }],
       type: "cash",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 200_000,
       id: "asset_jose",
@@ -77,8 +77,8 @@ describe("manual asset persistence", () => {
       type: "cash",
     });
 
-    const assets = store.assets.readAssets();
-    const workspace = store.workspace.readWorkspace()!;
+    const assets = await store.assets.readAssets();
+    const workspace = (await store.workspace.readWorkspace())!;
 
     // Each member's scope sees only the asset they own — proof the batched
     // ownership read maps shares to the correct asset.

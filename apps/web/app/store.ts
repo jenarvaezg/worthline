@@ -29,7 +29,7 @@ export async function bootstrapHealthcheck(): Promise<LocalPersistenceStatus> {
 
   const asOf = demoAsOfDateKey(demo.now);
   return runBootstrapHealthcheck({
-    databasePath: getDemoStorePath(demo.persona, asOf),
+    databasePath: await getDemoStorePath(demo.persona, asOf),
     now: () => demoNowDate(demo.now),
   });
 }

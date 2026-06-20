@@ -66,8 +66,10 @@ interface SeedResult {
  * Seed a representative workspace into `store`. Returns the ids/dates the harness
  * needs to drive each ripple path. All work is deterministic and network-free.
  */
-export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
-  store.workspace.initializeWorkspace({
+export async function seedPerformanceWorkspace(
+  store: WorthlineStore,
+): Promise<SeedResult> {
+  await store.workspace.initializeWorkspace({
     members: [
       { id: "member_ana", name: "Ana" },
       { id: "member_jose", name: "Jose" },
@@ -76,7 +78,7 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
   });
 
   // ── Cash & liquid manual assets (liquidity ladder: cash + market tiers) ──────
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 42_000_00,
     id: "asset_checking",
@@ -88,7 +90,7 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
     ],
     type: "cash",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 18_500_00,
     id: "asset_savings",
@@ -97,7 +99,7 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
     ownership: [{ memberId: "member_ana", shareBps: 10_000 }],
     type: "cash",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 9_750_00,
     id: "asset_brokerage_cash",
@@ -108,7 +110,7 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
   });
 
   // ── Term-locked & illiquid manual assets ────────────────────────────────────
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 30_000_00,
     id: "asset_term_deposit",
@@ -120,7 +122,7 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
     ],
     type: "cash",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 12_000_00,
     id: "asset_collectibles",
@@ -129,7 +131,7 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
     ownership: [{ memberId: "member_ana", shareBps: 10_000 }],
     type: "other",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 8_400_00,
     id: "asset_vehicle",
@@ -140,7 +142,7 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
   });
 
   // ── Housing assets (appreciating, with appraisal + improvement anchors) ──────
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 320_000_00,
     id: "asset_home",
@@ -153,15 +155,15 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
     ],
     type: "real_estate",
   });
-  store.assets.setAnnualAppreciationRate("asset_home", "0.03");
-  store.assets.addValuationAnchor({
+  await store.assets.setAnnualAppreciationRate("asset_home", "0.03");
+  await store.assets.addValuationAnchor({
     adjustsPriorCurve: true,
     assetId: "asset_home",
     id: "anchor_home_appraisal",
     valuationDate: dateMonthsAgo(20),
     valueMinor: 300_000_00,
   });
-  store.assets.addValuationAnchor({
+  await store.assets.addValuationAnchor({
     adjustsPriorCurve: false,
     assetId: "asset_home",
     id: "anchor_home_improvement",
@@ -169,7 +171,7 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
     valueMinor: 12_000_00,
   });
 
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 145_000_00,
     id: "asset_rental",
@@ -178,8 +180,8 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
     ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
     type: "real_estate",
   });
-  store.assets.setAnnualAppreciationRate("asset_rental", "0.025");
-  store.assets.addValuationAnchor({
+  await store.assets.setAnnualAppreciationRate("asset_rental", "0.025");
+  await store.assets.addValuationAnchor({
     adjustsPriorCurve: true,
     assetId: "asset_rental",
     id: "anchor_rental_appraisal",
@@ -210,7 +212,7 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
   ];
 
   for (const investment of investments) {
-    store.assets.createInvestmentAsset({
+    await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: investment.id,
       manualPricePerUnit: investment.price,
@@ -224,7 +226,7 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
     // identical every run.
     for (let i = 0; i < OPERATIONS_PER_INVESTMENT; i++) {
       const monthsAgo = OPERATIONS_PER_INVESTMENT - i; // oldest first
-      store.operations.recordOperation({
+      await store.operations.recordOperation({
         assetId: investment.id,
         currency: "EUR",
         executedAt: dateMonthsAgo(monthsAgo),
@@ -238,7 +240,7 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
 
   // ── Liabilities (amortizable mortgage + revolving credit + plain debt) ───────
   // Plain cash debt — no model, last-known-value basis.
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     balanceMinor: 6_000_00,
     currency: "EUR",
     id: "liability_personal_loan",
@@ -248,7 +250,7 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
   });
 
   // Revolving credit — a balance anchor in the past drives its historical curve.
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     balanceMinor: 3_200_00,
     currency: "EUR",
     id: "liability_credit_card",
@@ -256,8 +258,8 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
     ownership: [{ memberId: "member_ana", shareBps: 10_000 }],
     type: "debt",
   });
-  store.liabilities.setDebtModel("liability_credit_card", "revolving");
-  store.liabilities.addBalanceAnchor({
+  await store.liabilities.setDebtModel("liability_credit_card", "revolving");
+  await store.liabilities.addBalanceAnchor({
     anchorDate: dateMonthsAgo(2),
     balanceMinor: 4_100_00,
     id: "anchor_card",
@@ -265,7 +267,7 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
   });
 
   // Amortizable mortgage securing the home (ADR 0013 offset, ADR 0019 dates).
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     associatedAssetId: "asset_home",
     balanceMinor: 180_000_00,
     currency: "EUR",
@@ -277,10 +279,10 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
     ],
     type: "mortgage",
   });
-  store.liabilities.setDebtModel("liability_mortgage", "amortizable");
+  await store.liabilities.setDebtModel("liability_mortgage", "amortizable");
   // The mortgage plan ripple lays down one snapshot per past cuota (ADR 0012
   // exception, PRD #109) — it rides the debt seam together with the plan persist.
-  store.createAmortizationPlanAndRipple(
+  await store.createAmortizationPlanAndRipple(
     {
       annualInterestRate: "0.021",
       disbursementDate: dateMonthsAgo(20),
@@ -294,7 +296,7 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
   );
   // A past early repayment re-derives the curve from its date forward — persist +
   // ripple ride the debt seam.
-  store.addEarlyRepaymentAndRipple(
+  await store.addEarlyRepaymentAndRipple(
     {
       amountMinor: 5_000_00,
       id: "repayment_mortgage",
@@ -309,7 +311,7 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
   // The full backfill fills every other past operation/anchor date. Together with
   // the debt-seam ripples above they seed the dense history the dashboard and
   // ripple paths read.
-  store.backfillHistoricalSnapshots(SEED_TODAY);
+  await store.backfillHistoricalSnapshots(SEED_TODAY);
 
   // Add a dense run of recent daily snapshots (≈ 2 months) on top of the
   // milestone history, so the dashboard read paths face a realistic row count.
@@ -317,11 +319,11 @@ export function seedPerformanceWorkspace(store: WorthlineStore): SeedResult {
     const dateKey = dateDaysAgo(daysAgo);
     // Re-value the checking account fractionally so each day is a distinct,
     // deterministic capture rather than a same-day upsert.
-    store.assets.updateAssetValuation("asset_checking", 42_000_00 + daysAgo * 1_00);
+    await store.assets.updateAssetValuation("asset_checking", 42_000_00 + daysAgo * 1_00);
     // Generate a snapshot at this day via the valuation seam: a zero-value home
     // improvement is a dated fact that lands a fresh snapshot at `dateKey` (folding
     // the re-valued checking row) while leaving the home's curve value unchanged.
-    store.addValuationAnchorAndRipple(
+    await store.addValuationAnchorAndRipple(
       {
         adjustsPriorCurve: false,
         assetId: "asset_home",
@@ -395,19 +397,23 @@ export const SEED_DIMENSIONS: SeedDimensions = {
  * the store the same way the dashboard/read paths do. Used by the harness to
  * assert the live seed matches the documented {@link SEED_DIMENSIONS} baseline.
  */
-export function measureSeedDimensions(store: WorthlineStore): SeedDimensions {
-  const workspace = store.workspace.readWorkspace()!;
+export async function measureSeedDimensions(
+  store: WorthlineStore,
+): Promise<SeedDimensions> {
+  const workspace = (await store.workspace.readWorkspace())!;
   return {
-    assets: store.assets.readAssets().length,
-    householdHoldingRows: store.snapshots.readSnapshotHoldings({
-      scopeId: "household",
-    }).length,
-    householdSnapshots: store.snapshots.readSnapshots("household").length,
-    liabilities: store.liabilities.readLiabilities().length,
+    assets: (await store.assets.readAssets()).length,
+    householdHoldingRows: (
+      await store.snapshots.readSnapshotHoldings({
+        scopeId: "household",
+      })
+    ).length,
+    householdSnapshots: (await store.snapshots.readSnapshots("household")).length,
+    liabilities: (await store.liabilities.readLiabilities()).length,
     members: workspace.members.length,
-    positions: store.snapshots.readPositions("household").length,
+    positions: (await store.snapshots.readPositions("household")).length,
     scopes: listScopeOptions(workspace).length,
-    totalHoldingRows: store.snapshots.readSnapshotHoldings().length,
-    totalSnapshots: store.snapshots.readSnapshots().length,
+    totalHoldingRows: (await store.snapshots.readSnapshotHoldings()).length,
+    totalSnapshots: (await store.snapshots.readSnapshots()).length,
   };
 }

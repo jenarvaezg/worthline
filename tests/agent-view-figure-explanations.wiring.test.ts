@@ -74,15 +74,15 @@ function eur(amountMinor: number) {
 
 // A fingerprint of every mutation-prone read, to prove an explanation read
 // writes nothing (no snapshots, price cache, public IDs, holdings, FIRE config).
-function fingerprint(databasePath: string): string {
-  const store = createWorthlineStore({ databasePath });
+async function fingerprint(databasePath: string): Promise<string> {
+  const store = await createWorthlineStore({ databasePath });
   const snapshot = JSON.stringify({
-    assets: store.assets.readAssets(),
-    fireConfig: store.readFireConfig(),
-    liabilities: store.liabilities.readLiabilities(),
-    priceCache: store.operations.readAllPriceCacheEntries(),
-    publicIds: store.agentView.readPublicIds(),
-    snapshots: store.snapshots.readSnapshots("household"),
+    assets: await store.assets.readAssets(),
+    fireConfig: await store.readFireConfig(),
+    liabilities: await store.liabilities.readLiabilities(),
+    priceCache: await store.operations.readAllPriceCacheEntries(),
+    publicIds: await store.agentView.readPublicIds(),
+    snapshots: await store.snapshots.readSnapshots("household"),
   });
   store.close();
   return snapshot;
@@ -118,29 +118,32 @@ const routeClient: AgentViewApiClient = {
   },
 };
 
-function holdingPublicId(databasePath: string, internalId: string): string {
-  const store = createWorthlineStore({ databasePath });
-  const publicId = store.agentView
-    .readPublicIds()
-    .find((row) => row.entityType === "holding" && row.entityId === internalId)!.publicId;
+async function holdingPublicId(
+  databasePath: string,
+  internalId: string,
+): Promise<string> {
+  const store = await createWorthlineStore({ databasePath });
+  const publicId = (await store.agentView.readPublicIds()).find(
+    (row) => row.entityType === "holding" && row.entityId === internalId,
+  )!.publicId;
   store.close();
   return publicId;
 }
 
 // Seed a household with a cash account, a market fund, a primary residence with a
 // housing-securing mortgage, and an unsecured loan. Net worth = 232k - 105k.
-function seedHousehold(prefix = "worthline-agent-view-figexp-"): string {
+async function seedHousehold(prefix = "worthline-agent-view-figexp-"): Promise<string> {
   const databasePath = tempDatabasePath(prefix);
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = createWorthlineStore({ databasePath });
-  store.workspace.initializeWorkspace({
+  const store = await createWorthlineStore({ databasePath });
+  await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
   });
   const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 10_000_00,
     id: "asset_cash",
@@ -149,7 +152,7 @@ function seedHousehold(prefix = "worthline-agent-view-figexp-"): string {
     ownership: owner,
     type: "cash",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 20_000_00,
     id: "asset_fund",
@@ -158,7 +161,7 @@ function seedHousehold(prefix = "worthline-agent-view-figexp-"): string {
     ownership: owner,
     type: "manual",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 200_000_00,
     id: "asset_home",
@@ -168,7 +171,7 @@ function seedHousehold(prefix = "worthline-agent-view-figexp-"): string {
     ownership: owner,
     type: "real_estate",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 2_000_00,
     id: "asset_watch",
@@ -177,7 +180,7 @@ function seedHousehold(prefix = "worthline-agent-view-figexp-"): string {
     ownership: owner,
     type: "manual",
   });
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     associatedAssetId: "asset_home",
     balanceMinor: 100_000_00,
     currency: "EUR",
@@ -186,7 +189,7 @@ function seedHousehold(prefix = "worthline-agent-view-figexp-"): string {
     ownership: owner,
     type: "mortgage",
   });
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     balanceMinor: 5_000_00,
     currency: "EUR",
     id: "liab_loan",
@@ -207,17 +210,22 @@ const CONFIGURED = {
 const FIRE_NUMBER = 600_000_00;
 
 // Seed a household with a FIRE config (home excluded as primary residence).
-function seedFireHousehold(prefix = "worthline-agent-view-figexp-fire-"): string {
-  const databasePath = seedHousehold(prefix);
-  const store = createWorthlineStore({ databasePath });
-  store.saveFireConfig("household", { ...CONFIGURED, excludedAssetIds: ["asset_watch"] });
+async function seedFireHousehold(
+  prefix = "worthline-agent-view-figexp-fire-",
+): Promise<string> {
+  const databasePath = await seedHousehold(prefix);
+  const store = await createWorthlineStore({ databasePath });
+  await store.saveFireConfig("household", {
+    ...CONFIGURED,
+    excludedAssetIds: ["asset_watch"],
+  });
   store.close();
   return databasePath;
 }
 
 describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}", () => {
   test("explains net_worth as grossAssets − debts with included assets and the debts operand", async () => {
-    seedHousehold("worthline-agent-view-figexp-nw-");
+    await seedHousehold("worthline-agent-view-figexp-nw-");
     const scopeId = await householdScopeId();
 
     const { body, response } = await explain(scopeId, "net_worth");
@@ -263,7 +271,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("explains gross_assets as the sum of the scope's asset holdings", async () => {
-    seedHousehold("worthline-agent-view-figexp-ga-");
+    await seedHousehold("worthline-agent-view-figexp-ga-");
     const scopeId = await householdScopeId();
 
     const { body } = await explain(scopeId, "gross_assets");
@@ -280,7 +288,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("explains debts as the sum of the scope's liability holdings", async () => {
-    seedHousehold("worthline-agent-view-figexp-debt-");
+    await seedHousehold("worthline-agent-view-figexp-debt-");
     const scopeId = await householdScopeId();
 
     const { body } = await explain(scopeId, "debts");
@@ -294,7 +302,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("explains liquid_net_worth as liquid assets − liquid non-housing debts", async () => {
-    seedHousehold("worthline-agent-view-figexp-lnw-");
+    await seedHousehold("worthline-agent-view-figexp-lnw-");
     const scopeId = await householdScopeId();
 
     const { body } = await explain(scopeId, "liquid_net_worth");
@@ -320,7 +328,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("explains housing_equity as housing assets − housing-securing debts", async () => {
-    seedHousehold("worthline-agent-view-figexp-he-");
+    await seedHousehold("worthline-agent-view-figexp-he-");
     const scopeId = await householdScopeId();
 
     const { body } = await explain(scopeId, "housing_equity");
@@ -344,7 +352,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("explains liquidity_breakdown as the per-rung breakdown reusing buildLiquidityBreakdown", async () => {
-    seedHousehold("worthline-agent-view-figexp-liq-");
+    await seedHousehold("worthline-agent-view-figexp-liq-");
     const scopeId = await householdScopeId();
 
     const { body } = await explain(scopeId, "liquidity_breakdown");
@@ -381,9 +389,9 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("explains holding_value for a selected holding with its valuation method", async () => {
-    const databasePath = seedHousehold("worthline-agent-view-figexp-hv-");
+    const databasePath = await seedHousehold("worthline-agent-view-figexp-hv-");
     const scopeId = await householdScopeId();
-    const fundPublic = holdingPublicId(databasePath, "asset_fund");
+    const fundPublic = await holdingPublicId(databasePath, "asset_fund");
 
     const { body, response } = await explain(
       scopeId,
@@ -402,7 +410,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("holding_value without a holdingId is a 400 bad_request (missing_holding_id)", async () => {
-    seedHousehold("worthline-agent-view-figexp-hv-missing-");
+    await seedHousehold("worthline-agent-view-figexp-hv-missing-");
     const scopeId = await householdScopeId();
 
     const { body, response } = await explain(scopeId, "holding_value");
@@ -413,7 +421,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("holding_value with an unknown holdingId is a 404", async () => {
-    seedHousehold("worthline-agent-view-figexp-hv-unknown-");
+    await seedHousehold("worthline-agent-view-figexp-hv-unknown-");
     const scopeId = await householdScopeId();
 
     const { response } = await explain(
@@ -430,8 +438,8 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       groups: [{ id: "group_x", memberIds: ["member_ana"], name: "Solo Ana" }],
       members: [
         { id: "member_ana", name: "Ana" },
@@ -440,7 +448,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
       mode: "household",
     });
     // An asset owned 100% by Jose; the member scope "Ana" owns none of it.
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000_00,
       id: "asset_jose",
@@ -451,7 +459,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
     });
     store.close();
 
-    const josePublic = holdingPublicId(databasePath, "asset_jose");
+    const josePublic = await holdingPublicId(databasePath, "asset_jose");
     const scopes = await listScopes();
     const anaScope = scopes.find(
       (scope) => scope.type === "member" && scope.label === "Ana",
@@ -472,7 +480,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("explains fire_eligible_assets with included eligible and excluded assets", async () => {
-    const databasePath = seedFireHousehold("worthline-agent-view-figexp-fea-");
+    const databasePath = await seedFireHousehold("worthline-agent-view-figexp-fea-");
     const scopeId = await householdScopeId();
 
     const { body } = await explain(scopeId, "fire_eligible_assets");
@@ -486,7 +494,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
       .sort();
     expect(includedLabels).toEqual(["Cuenta", "Fondo"]);
 
-    const homePublic = holdingPublicId(databasePath, "asset_home");
+    const homePublic = await holdingPublicId(databasePath, "asset_home");
     const excludedById = Object.fromEntries(
       body.data.excludedHoldings.map((h: { holding: { id: string }; reason: string }) => [
         h.holding.id,
@@ -497,7 +505,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("explains fire_progress as eligibleAssets/fireNumber with current FIRE assumptions", async () => {
-    seedFireHousehold("worthline-agent-view-figexp-fp-");
+    await seedFireHousehold("worthline-agent-view-figexp-fp-");
     const scopeId = await householdScopeId();
 
     const { body } = await explain(scopeId, "fire_progress");
@@ -517,7 +525,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("fire_eligible_assets is 422 unsupported_figure when FIRE is unconfigured", async () => {
-    seedHousehold("worthline-agent-view-figexp-fea-unconf-");
+    await seedHousehold("worthline-agent-view-figexp-fea-unconf-");
     const scopeId = await householdScopeId();
 
     const { body, response } = await explain(scopeId, "fire_eligible_assets");
@@ -531,7 +539,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("fire_progress is 422 unsupported_figure when FIRE is unconfigured", async () => {
-    seedHousehold("worthline-agent-view-figexp-fp-unconf-");
+    await seedHousehold("worthline-agent-view-figexp-fp-unconf-");
     const scopeId = await householdScopeId();
 
     const { response } = await explain(scopeId, "fire_progress");
@@ -540,7 +548,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("an invalid figure name is a 400 invalid_figure", async () => {
-    seedHousehold("worthline-agent-view-figexp-invalid-");
+    await seedHousehold("worthline-agent-view-figexp-invalid-");
     const scopeId = await householdScopeId();
 
     const { body, response } = await explain(scopeId, "not_a_figure");
@@ -558,13 +566,13 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
     const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000_00,
       id: "asset_cash",
@@ -574,7 +582,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
       type: "cash",
     });
     // A zero-value asset raises a domain warning that surfaces as a quality note.
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 0,
       id: "asset_zero",
@@ -601,20 +609,20 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
     const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
     // Connect a Binance source so it materialises a market rung backing asset.
-    const binance = store.connectedSources.connect({
+    const binance = await store.connectedSources.connect({
       adapter: "binance",
       credentialsJson: JSON.stringify({ apiKey: "k", apiSecret: "s" }),
       label: "Binance",
       ownership: owner,
     });
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       binance.sourceId,
       [
         {
@@ -632,8 +640,8 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
       "2026-06-16T10:00:00.000Z",
     );
     // Revalue with a stale freshness to emit a source_freshness signal.
-    const positions = store.connectedSources.readPositions(binance.sourceId);
-    store.connectedSources.revaluePositions(
+    const positions = await store.connectedSources.readPositions(binance.sourceId);
+    await store.connectedSources.revaluePositions(
       binance.sourceId,
       positions.map((p) => ({
         id: p.id,
@@ -659,9 +667,9 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("holding_value for a liability has no freshness field", async () => {
-    const databasePath = seedHousehold("worthline-agent-view-figexp-hv-liab-");
+    const databasePath = await seedHousehold("worthline-agent-view-figexp-hv-liab-");
     const scopeId = await householdScopeId();
-    const mortgagePublic = holdingPublicId(databasePath, "liab_mortgage");
+    const mortgagePublic = await holdingPublicId(databasePath, "liab_mortgage");
 
     const { body, response } = await explain(
       scopeId,
@@ -681,8 +689,8 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       groups: [
         { id: "group_adults", memberIds: ["member_ana", "member_jose"], name: "Adultos" },
       ],
@@ -692,7 +700,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
       ],
       mode: "household",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000_00,
       id: "asset_joint",
@@ -726,7 +734,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("a date with no exact snapshot is a 404 snapshot_not_found (#344)", async () => {
-    seedHousehold("worthline-agent-view-figexp-date-");
+    await seedHousehold("worthline-agent-view-figexp-date-");
     const scopeId = await householdScopeId();
 
     const { body, response } = await explain(scopeId, "net_worth", "?date=2025-01-01");
@@ -735,7 +743,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("a malformed date query is a 400 bad_request", async () => {
-    seedHousehold("worthline-agent-view-figexp-baddate-");
+    await seedHousehold("worthline-agent-view-figexp-baddate-");
     const scopeId = await householdScopeId();
 
     const { response } = await explain(scopeId, "net_worth", "?date=not-a-date");
@@ -743,7 +751,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("returns 404 for an unknown scope id", async () => {
-    seedHousehold("worthline-agent-view-figexp-404-");
+    await seedHousehold("worthline-agent-view-figexp-404-");
 
     const { body, response } = await explain("wl_scp_doesnotexist", "net_worth");
 
@@ -752,7 +760,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("requires the local capability token", async () => {
-    seedHousehold("worthline-agent-view-figexp-auth-");
+    await seedHousehold("worthline-agent-view-figexp-auth-");
     const scopeId = await householdScopeId();
 
     const response = await getFigureExplanation(
@@ -767,7 +775,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("MCP explain_figure mirrors the HTTP shape and defaults to the household scope", async () => {
-    seedFireHousehold("worthline-agent-view-figexp-mcp-");
+    await seedFireHousehold("worthline-agent-view-figexp-mcp-");
 
     const household = await householdScopeId();
     const httpBody = await explain(household, "net_worth");
@@ -784,9 +792,9 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("MCP explain_figure threads the holdingId selector through", async () => {
-    const databasePath = seedHousehold("worthline-agent-view-figexp-mcp-hv-");
+    const databasePath = await seedHousehold("worthline-agent-view-figexp-mcp-hv-");
     const household = await householdScopeId();
-    const fundPublic = holdingPublicId(databasePath, "asset_fund");
+    const fundPublic = await holdingPublicId(databasePath, "asset_fund");
 
     const httpBody = await explain(
       household,
@@ -805,14 +813,14 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
   });
 
   test("reads do not mutate persisted state", async () => {
-    const databasePath = seedFireHousehold("worthline-agent-view-figexp-nomut-");
+    const databasePath = await seedFireHousehold("worthline-agent-view-figexp-nomut-");
     const scopeId = await householdScopeId();
 
-    const before = fingerprint(databasePath);
+    const before = await fingerprint(databasePath);
     await explain(scopeId, "net_worth");
     await explain(scopeId, "fire_progress");
     await explain(scopeId, "liquidity_breakdown");
-    const after = fingerprint(databasePath);
+    const after = await fingerprint(databasePath);
 
     expect(after).toBe(before);
   });

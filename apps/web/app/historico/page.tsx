@@ -21,8 +21,8 @@ export default async function HistoricoPage({
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
-  const storeData = await withStore((store) => {
-    const workspace = store.workspace.readWorkspace();
+  const storeData = await withStore(async (store) => {
+    const workspace = await store.workspace.readWorkspace();
 
     if (!workspace) {
       return null;
@@ -31,11 +31,11 @@ export default async function HistoricoPage({
     const scopes = listScopeOptions(workspace);
     const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
     const snapshots = selectedScope
-      ? store.snapshots.readSnapshots(selectedScope.id)
+      ? await store.snapshots.readSnapshots(selectedScope.id)
       : [];
     // Frozen per-holding rows (ADR 0008) drive the per-day breakdown of movers.
     const holdingRecords = selectedScope
-      ? store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id })
+      ? await store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id })
       : [];
 
     return { scopes, selectedScope, snapshots, holdingRecords };

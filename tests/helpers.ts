@@ -39,7 +39,9 @@ export function cleanupTempDirs(): void {
   }
 }
 
-export function createFileBackedStore(prefix = "worthline-test-"): WorthlineStore {
+export function createFileBackedStore(
+  prefix = "worthline-test-",
+): Promise<WorthlineStore> {
   const dataDir = mkdtempSync(join(tmpdir(), prefix));
   tempDirs.push(dataDir);
 

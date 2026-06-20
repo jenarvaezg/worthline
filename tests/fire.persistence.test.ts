@@ -5,8 +5,8 @@ import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 afterEach(cleanupTempDirs);
 
 describe("FIRE config persistence", () => {
-  test("saveFireConfig then readFireConfig round-trips the config", () => {
-    const store = createFileBackedStore("worthline-fire-");
+  test("saveFireConfig then readFireConfig round-trips the config", async () => {
+    const store = await createFileBackedStore("worthline-fire-");
 
     const config = {
       monthlySpendingMinor: 200_000,
@@ -17,14 +17,14 @@ describe("FIRE config persistence", () => {
       excludedAssetIds: [],
     };
 
-    store.saveFireConfig("household", config);
-    const result = store.readFireConfig();
+    await store.saveFireConfig("household", config);
+    const result = await store.readFireConfig();
 
     expect(result["household"]).toEqual(config);
   });
 
-  test("saving scope2 config does not overwrite scope1 config", () => {
-    const store = createFileBackedStore("worthline-fire-");
+  test("saving scope2 config does not overwrite scope1 config", async () => {
+    const store = await createFileBackedStore("worthline-fire-");
 
     const config1 = {
       monthlySpendingMinor: 150_000,
@@ -39,17 +39,17 @@ describe("FIRE config persistence", () => {
       excludedAssetIds: [],
     };
 
-    store.saveFireConfig("scope1", config1);
-    store.saveFireConfig("scope2", config2);
-    const result = store.readFireConfig();
+    await store.saveFireConfig("scope1", config1);
+    await store.saveFireConfig("scope2", config2);
+    const result = await store.readFireConfig();
 
     expect(result["scope1"]).toEqual(config1);
     expect(result["scope2"]).toEqual(config2);
   });
 
-  test("readFireConfig returns {} when nothing stored", () => {
-    const store = createFileBackedStore("worthline-fire-");
+  test("readFireConfig returns {} when nothing stored", async () => {
+    const store = await createFileBackedStore("worthline-fire-");
 
-    expect(store.readFireConfig()).toEqual({});
+    expect(await store.readFireConfig()).toEqual({});
   });
 });

@@ -38,7 +38,10 @@ function bundledFixturePath(persona: PersonaId): string | null {
  * bundled fixture when one exists; otherwise seeds a fresh database relative to
  * `asOf` (YYYY-MM-DD, the pinned demo clock).
  */
-export function getDemoStorePath(persona: PersonaId, asOf: string): string {
+export async function getDemoStorePath(
+  persona: PersonaId,
+  asOf: string,
+): Promise<string> {
   const cached = storePaths.get(persona);
   if (cached) return cached;
 
@@ -49,9 +52,9 @@ export function getDemoStorePath(persona: PersonaId, asOf: string): string {
   if (fixture && existsSync(fixture)) {
     copyFileSync(fixture, target);
   } else {
-    const store = createWorthlineStore({ databasePath: target });
+    const store = await createWorthlineStore({ databasePath: target });
     try {
-      seedPersona(store, specForPersona(persona), asOf);
+      await seedPersona(store, specForPersona(persona), asOf);
     } finally {
       store.close();
     }
@@ -62,8 +65,11 @@ export function getDemoStorePath(persona: PersonaId, asOf: string): string {
 }
 
 /** Open the persona's writable demo store. Caller owns the lifecycle (close). */
-export function openDemoStore(persona: PersonaId, asOf: string): WorthlineStore {
-  return createWorthlineStore({ databasePath: getDemoStorePath(persona, asOf) });
+export async function openDemoStore(
+  persona: PersonaId,
+  asOf: string,
+): Promise<WorthlineStore> {
+  return createWorthlineStore({ databasePath: await getDemoStorePath(persona, asOf) });
 }
 
 /** Test-only: drop the memoized temp copies so a fresh fixture is resolved. */

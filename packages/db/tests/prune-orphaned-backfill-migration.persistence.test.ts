@@ -12,18 +12,19 @@
  * of pruned snapshots go too. `user_version` reaches SCHEMA_VERSION; a second run
  * is a no-op behind the `version < 29` guard.
  */
-import Database from "better-sqlite3";
+import type { Client } from "@libsql/client";
 import { describe, expect, test } from "vitest";
 
+import { openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import { schemaSql } from "@db/schema-sql";
 
-function seedV28(): Database.Database {
-  const db = new Database(":memory:");
-  db.exec(schemaSql);
-  db.pragma("user_version = 28");
+async function seedV28(): Promise<Client> {
+  const client = openLibsqlClient(":memory:");
+  await client.executeMultiple(schemaSql);
+  await client.execute("PRAGMA user_version = 28");
 
-  db.exec(`
+  await client.executeMultiple(`
     INSERT INTO assets (id, name, type, currency, current_value_minor, liquidity_tier) VALUES
       ('fund', 'Fondo', 'investment', 'EUR', 0, 'market');
 
@@ -52,57 +53,63 @@ function seedV28(): Database.Database {
       ('sh_daily',  'snapshot_household_2024_02_15_7', 'cash', 'asset', 'Caja', 'cash', 100000);
   `);
 
-  return db;
+  return client;
 }
 
-const snapshotIds = (db: Database.Database): string[] =>
-  (db.prepare("SELECT id FROM snapshots ORDER BY id").all() as { id: string }[]).map(
-    (r) => r.id,
-  );
-
-const holdingIds = (db: Database.Database): string[] =>
+const snapshotIds = async (client: Client): Promise<string[]> =>
   (
-    db.prepare("SELECT id FROM snapshot_holdings ORDER BY id").all() as {
+    (await client.execute("SELECT id FROM snapshots ORDER BY id")).rows as unknown as {
       id: string;
     }[]
   ).map((r) => r.id);
 
+const holdingIds = async (client: Client): Promise<string[]> =>
+  (
+    (await client.execute("SELECT id FROM snapshot_holdings ORDER BY id"))
+      .rows as unknown as {
+      id: string;
+    }[]
+  ).map((r) => r.id);
+
+const userVersion = async (client: Client): Promise<number> =>
+  Number((await client.execute("PRAGMA user_version")).rows[0]!.user_version);
+
 describe("prune-orphaned-backfill schema migration (v29, #305)", () => {
-  test("prunes the orphaned backfill snapshot and its frozen rows", () => {
-    const db = seedV28();
-    migrate(db);
+  test("prunes the orphaned backfill snapshot and its frozen rows", async () => {
+    const client = await seedV28();
+    await migrate(client);
 
     // The op-less backfill fossil is gone...
-    expect(snapshotIds(db)).not.toContain("histsnap_household_2024-01-10");
+    expect(await snapshotIds(client)).not.toContain("histsnap_household_2024-01-10");
     // ...along with its frozen holding row (cascade / explicit delete).
-    expect(holdingIds(db)).not.toContain("sh_orphan");
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
+    expect(await holdingIds(client)).not.toContain("sh_orphan");
+    expect(await userVersion(client)).toBe(SCHEMA_VERSION);
   });
 
-  test("keeps a backfill snapshot whose date an operation still justifies", () => {
-    const db = seedV28();
-    migrate(db);
+  test("keeps a backfill snapshot whose date an operation still justifies", async () => {
+    const client = await seedV28();
+    await migrate(client);
 
-    expect(snapshotIds(db)).toContain("histsnap_household_2024-03-01");
-    expect(holdingIds(db)).toContain("sh_just");
+    expect(await snapshotIds(client)).toContain("histsnap_household_2024-03-01");
+    expect(await holdingIds(client)).toContain("sh_just");
   });
 
-  test("never prunes a real daily-capture snapshot, even on an op-less date", () => {
-    const db = seedV28();
-    migrate(db);
+  test("never prunes a real daily-capture snapshot, even on an op-less date", async () => {
+    const client = await seedV28();
+    await migrate(client);
 
-    expect(snapshotIds(db)).toContain("snapshot_household_2024_02_15_7");
-    expect(holdingIds(db)).toContain("sh_daily");
+    expect(await snapshotIds(client)).toContain("snapshot_household_2024_02_15_7");
+    expect(await holdingIds(client)).toContain("sh_daily");
   });
 
-  test("is idempotent on a second run", () => {
-    const db = seedV28();
-    migrate(db);
+  test("is idempotent on a second run", async () => {
+    const client = await seedV28();
+    await migrate(client);
 
-    const before = snapshotIds(db);
-    migrate(db); // a second run sits behind `version < 29` → no-op
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
-    expect(snapshotIds(db)).toEqual(before);
+    const before = await snapshotIds(client);
+    await migrate(client); // a second run sits behind `version < 29` → no-op
+    expect(await userVersion(client)).toBe(SCHEMA_VERSION);
+    expect(await snapshotIds(client)).toEqual(before);
   });
 });
 
@@ -116,12 +123,12 @@ describe("prune-orphaned-backfill schema migration (v29, #305)", () => {
  * with a binance source present, every `histsnap_%` row is KEPT (the curve's
  * month-ends are live-reconstructed, never stored — when in doubt, keep).
  */
-function seedV28WithFacts(): Database.Database {
-  const db = new Database(":memory:");
-  db.exec(schemaSql);
-  db.pragma("user_version = 28");
+async function seedV28WithFacts(): Promise<Client> {
+  const client = openLibsqlClient(":memory:");
+  await client.executeMultiple(schemaSql);
+  await client.execute("PRAGMA user_version = 28");
 
-  db.exec(`
+  await client.executeMultiple(`
     INSERT INTO assets (id, name, type, currency, current_value_minor, liquidity_tier) VALUES
       ('fund', 'Fondo', 'investment', 'EUR', 0, 'market'),
       ('piso', 'Piso', 'real_estate', 'EUR', 18000000, 'illiquid'),
@@ -185,15 +192,15 @@ function seedV28WithFacts(): Database.Database {
        '2025-06-01', '2025-06', 'EUR', 100000, 100000, 0, 100000, 0);   -- coin acquisition
   `);
 
-  return db;
+  return client;
 }
 
 describe("v29 migration spares dates justified by a non-operation fact (PR #326)", () => {
-  test("prunes the genuine orphan but keeps every non-operation-justified date", () => {
-    const db = seedV28WithFacts();
-    migrate(db);
+  test("prunes the genuine orphan but keeps every non-operation-justified date", async () => {
+    const client = await seedV28WithFacts();
+    await migrate(client);
 
-    const ids = snapshotIds(db);
+    const ids = await snapshotIds(client);
     // The op-less, fact-less date is pruned.
     expect(ids).not.toContain("histsnap_household_2024-01-10");
     // Every date justified by a non-operation dated fact survives.
@@ -203,20 +210,20 @@ describe("v29 migration spares dates justified by a non-operation fact (PR #326)
     expect(ids).toContain("histsnap_household_2025-04-01"); // rate revision
     expect(ids).toContain("histsnap_household_2025-05-01"); // early repayment
     expect(ids).toContain("histsnap_household_2025-06-01"); // coin acquisition
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
+    expect(await userVersion(client)).toBe(SCHEMA_VERSION);
   });
 
-  test("with a Binance source present, conservatively keeps every histsnap_ row", () => {
-    const db = seedV28WithFacts();
+  test("with a Binance source present, conservatively keeps every histsnap_ row", async () => {
+    const client = await seedV28WithFacts();
     // Add a binance source: its month-end history dates are not stored, so the
     // migration cannot prove any histsnap_ is unjustified → keep them all.
-    db.exec(`
+    await client.executeMultiple(`
       INSERT INTO connected_sources (id, adapter, label, asset_id, credentials_json)
       VALUES ('src_binance', 'binance', 'Binance', 'fund', '{}');
     `);
-    migrate(db);
+    await migrate(client);
 
     // Even the otherwise-orphan 2024-01-10 is kept under the conservative rule.
-    expect(snapshotIds(db)).toContain("histsnap_household_2024-01-10");
+    expect(await snapshotIds(client)).toContain("histsnap_household_2024-01-10");
   });
 });

@@ -19,15 +19,15 @@ import { loadDashboard } from "./load-dashboard";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeWorkspace(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function makeWorkspace(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
   });
 }
 
-function makeAsset(store: WorthlineStore): void {
-  store.assets.createManualAsset({
+async function makeAsset(store: WorthlineStore): Promise<void> {
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 100_000_00,
     id: "asset_cash",
@@ -61,9 +61,9 @@ const noOpRefresh: LoadDashboardInput["refreshPrices"] = async () => ({
 
 describe("loadDashboard — snapshot capture policy", () => {
   test("captures a snapshot on first load of the day", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    makeAsset(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
 
     const result = await loadDashboard({
       store,
@@ -78,7 +78,7 @@ describe("loadDashboard — snapshot capture policy", () => {
     // A snapshot should have been captured for the household scope (which is
     // the default scope for an individual workspace)
     const scopeId = result.selectedScope?.id ?? "household";
-    const snapshots = store.snapshots.readSnapshots(scopeId);
+    const snapshots = await store.snapshots.readSnapshots(scopeId);
     expect(snapshots.length).toBeGreaterThanOrEqual(1);
     expect(snapshots.some((s) => s.dateKey === "2026-06-10")).toBe(true);
 
@@ -86,9 +86,9 @@ describe("loadDashboard — snapshot capture policy", () => {
   });
 
   test("replaces existing snapshot on same-day reload (latest wins)", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    makeAsset(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
 
     // First load at 08:00
     const firstResult = await loadDashboard({
@@ -102,12 +102,12 @@ describe("loadDashboard — snapshot capture policy", () => {
     });
 
     const scopeId = firstResult.selectedScope!.id;
-    const snapshotsAfterFirst = store.snapshots.readSnapshots(scopeId);
+    const snapshotsAfterFirst = await store.snapshots.readSnapshots(scopeId);
     expect(snapshotsAfterFirst.filter((s) => s.dateKey === "2026-06-10")).toHaveLength(1);
     const firstId = snapshotsAfterFirst[0]!.id;
 
     // Update value then reload at 18:00
-    store.assets.updateAssetValuation("asset_cash", 120_000_00);
+    await store.assets.updateAssetValuation("asset_cash", 120_000_00);
     await loadDashboard({
       store,
       persistence: makePersistence(),
@@ -118,7 +118,7 @@ describe("loadDashboard — snapshot capture policy", () => {
       refreshPrices: noOpRefresh,
     });
 
-    const snapshotsAfterSecond = store.snapshots.readSnapshots(scopeId);
+    const snapshotsAfterSecond = await store.snapshots.readSnapshots(scopeId);
     // Still exactly one snapshot for today per scope
     const todaySnapshots = snapshotsAfterSecond.filter((s) => s.dateKey === "2026-06-10");
     expect(todaySnapshots).toHaveLength(1);
@@ -131,9 +131,9 @@ describe("loadDashboard — snapshot capture policy", () => {
   });
 
   test("does not accumulate snapshots across multiple same-day loads", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    makeAsset(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
 
     let scopeId: string | undefined;
     for (let i = 0; i < 5; i++) {
@@ -152,7 +152,7 @@ describe("loadDashboard — snapshot capture policy", () => {
     }
 
     // Per scope: exactly one snapshot for today (latest wins)
-    const snapshots = store.snapshots.readSnapshots(scopeId);
+    const snapshots = await store.snapshots.readSnapshots(scopeId);
     const todaySnapshots = snapshots.filter((s) => s.dateKey === "2026-06-10");
     expect(todaySnapshots).toHaveLength(1);
 
@@ -166,19 +166,19 @@ describe("loadDashboard — snapshot capture policy", () => {
 
 describe("loadDashboard — snapshot holding rows", () => {
   test("captures holding rows alongside the snapshot for every scope", async () => {
-    const store = createInMemoryStore();
+    const store = await createInMemoryStore();
     // A household (not individual) so there is genuinely more than one scope:
     // individual mode collapses to the lone household scope (#269), which would
     // make "every scope" vacuous. member_jose owns the asset outright, so both
     // the (viewed) household scope and the (non-viewed) member scope capture it.
-    store.workspace.initializeWorkspace({
+    await store.workspace.initializeWorkspace({
       members: [
         { id: "member_jose", name: "Jose" },
         { id: "member_ana", name: "Ana" },
       ],
       mode: "household",
     });
-    makeAsset(store);
+    await makeAsset(store);
 
     await loadDashboard({
       store,
@@ -192,10 +192,10 @@ describe("loadDashboard — snapshot holding rows", () => {
 
     // Every scope captured its rows, not just the viewed one.
     for (const scopeId of ["household", "member_jose"]) {
-      const snapshots = store.snapshots.readSnapshots(scopeId);
+      const snapshots = await store.snapshots.readSnapshots(scopeId);
       expect(snapshots).toHaveLength(1);
 
-      const rows = store.snapshots.readSnapshotHoldings({ scopeId });
+      const rows = await store.snapshots.readSnapshotHoldings({ scopeId });
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({
         holdingId: "asset_cash",
@@ -211,9 +211,9 @@ describe("loadDashboard — snapshot holding rows", () => {
   });
 
   test("same-day reload replaces the holding rows (latest wins)", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    makeAsset(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
 
     await loadDashboard({
       store,
@@ -225,7 +225,7 @@ describe("loadDashboard — snapshot holding rows", () => {
       refreshPrices: noOpRefresh,
     });
 
-    store.assets.updateAssetValuation("asset_cash", 120_000_00);
+    await store.assets.updateAssetValuation("asset_cash", 120_000_00);
     await loadDashboard({
       store,
       persistence: makePersistence(),
@@ -236,7 +236,7 @@ describe("loadDashboard — snapshot holding rows", () => {
       refreshPrices: noOpRefresh,
     });
 
-    const rows = store.snapshots.readSnapshotHoldings({ scopeId: "household" });
+    const rows = await store.snapshots.readSnapshotHoldings({ scopeId: "household" });
     // At most one set of rows per scope per day.
     expect(rows).toHaveLength(1);
     expect(rows[0]!.valueMinor).toBe(120_000_00);
@@ -245,15 +245,15 @@ describe("loadDashboard — snapshot holding rows", () => {
   });
 
   test("captures investment units and unit price on dashboard load", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    store.assets.createInvestmentAsset({
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "asset_fund",
       name: "Fondo",
       ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
     });
-    store.operations.recordOperation({
+    await store.operations.recordOperation({
       assetId: "asset_fund",
       currency: "EUR",
       executedAt: "2026-06-01T10:00:00.000Z",
@@ -262,7 +262,7 @@ describe("loadDashboard — snapshot holding rows", () => {
       pricePerUnit: "100",
       units: "10.5",
     });
-    store.operations.upsertPrice({
+    await store.operations.upsertPrice({
       assetId: "asset_fund",
       currency: "EUR",
       fetchedAt: "2026-06-10T09:00:00.000Z",
@@ -281,7 +281,7 @@ describe("loadDashboard — snapshot holding rows", () => {
       refreshPrices: noOpRefresh,
     });
 
-    const rows = store.snapshots.readSnapshotHoldings({ scopeId: "household" });
+    const rows = await store.snapshots.readSnapshotHoldings({ scopeId: "household" });
     const fundRow = rows.find((row) => row.holdingId === "asset_fund");
     expect(fundRow?.units).toBe("10.5");
     expect(fundRow?.unitPrice).toBe("110.40");
@@ -297,9 +297,9 @@ describe("loadDashboard — snapshot holding rows", () => {
 
 describe("loadDashboard — liquid drilldown", () => {
   test("no drill param → drilldown is null", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    makeAsset(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
 
     const result = await loadDashboard({
       store,
@@ -317,9 +317,9 @@ describe("loadDashboard — liquid drilldown", () => {
   });
 
   test("drill=liquid with single-day rows → placeholder state (null stack, no holdings)", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    makeAsset(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
 
     const result = await loadDashboard({
       store,
@@ -338,9 +338,9 @@ describe("loadDashboard — liquid drilldown", () => {
   });
 
   test("drill=liquid over two days → stack and per-holding entries from the scope's rows", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    makeAsset(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
 
     // Day 1 capture
     await loadDashboard({
@@ -354,7 +354,7 @@ describe("loadDashboard — liquid drilldown", () => {
     });
 
     // Day 2: value changed, drill requested
-    store.assets.updateAssetValuation("asset_cash", 120_000_00);
+    await store.assets.updateAssetValuation("asset_cash", 120_000_00);
     const result = await loadDashboard({
       store,
       persistence: makePersistence(),
@@ -388,9 +388,9 @@ describe("loadDashboard — liquid drilldown", () => {
 
 describe("loadDashboard — rest and housing drilldowns", () => {
   test("drill=housing over two days → housing key, no stack, per-property entries", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    store.assets.createManualAsset({
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 300_000_00,
       id: "asset_piso",
@@ -412,7 +412,7 @@ describe("loadDashboard — rest and housing drilldowns", () => {
     });
 
     // Day 2: revaluation, drill requested
-    store.assets.updateAssetValuation("asset_piso", 320_000_00);
+    await store.assets.updateAssetValuation("asset_piso", 320_000_00);
     const result = await loadDashboard({
       store,
       persistence: makePersistence(),
@@ -446,9 +446,9 @@ describe("loadDashboard — rest and housing drilldowns", () => {
 
 describe("loadDashboard — deltas", () => {
   test("returns deltas vs previous snapshot after two days", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    makeAsset(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
 
     // Day 1: 100 000 €
     await loadDashboard({
@@ -462,7 +462,7 @@ describe("loadDashboard — deltas", () => {
     });
 
     // Day 2: 110 000 €
-    store.assets.updateAssetValuation("asset_cash", 110_000_00);
+    await store.assets.updateAssetValuation("asset_cash", 110_000_00);
     const result = await loadDashboard({
       store,
       persistence: makePersistence(),
@@ -481,9 +481,9 @@ describe("loadDashboard — deltas", () => {
   });
 
   test("returns deltas vs monthly close when prior month has snapshots", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    makeAsset(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
 
     // End of May: 100 000 €
     await loadDashboard({
@@ -497,7 +497,7 @@ describe("loadDashboard — deltas", () => {
     });
 
     // June: 115 000 €
-    store.assets.updateAssetValuation("asset_cash", 115_000_00);
+    await store.assets.updateAssetValuation("asset_cash", 115_000_00);
     const result = await loadDashboard({
       store,
       persistence: makePersistence(),
@@ -522,9 +522,9 @@ describe("loadDashboard — deltas", () => {
 
 describe("loadDashboard — framed headline deltas", () => {
   test("computes vs-previous and vs-monthly-close in the total framing", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    makeAsset(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
 
     // End of May: total 100 000 €
     await loadDashboard({
@@ -538,7 +538,7 @@ describe("loadDashboard — framed headline deltas", () => {
     });
 
     // June: total 120 000 €
-    store.assets.updateAssetValuation("asset_cash", 120_000_00);
+    await store.assets.updateAssetValuation("asset_cash", 120_000_00);
     const result = await loadDashboard({
       store,
       persistence: makePersistence(),
@@ -564,12 +564,12 @@ describe("loadDashboard — framed headline deltas", () => {
   });
 
   test("framed to the liquid figure when the liquid view is selected", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
     // A cash asset (liquid) plus a property (illiquid, not liquid) so total and
     // liquid diverge and the framing changes the delta.
-    makeAsset(store);
-    store.assets.createManualAsset({
+    await makeAsset(store);
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 200_000_00,
       id: "asset_piso",
@@ -592,7 +592,7 @@ describe("loadDashboard — framed headline deltas", () => {
 
     // Day 2: cash grows to 150 000 €, property unchanged → liquid +50 000 €,
     // total +50 000 € too, but the liquid base (100 000 €) makes pct +50%.
-    store.assets.updateAssetValuation("asset_cash", 150_000_00);
+    await store.assets.updateAssetValuation("asset_cash", 150_000_00);
     const result = await loadDashboard({
       store,
       persistence: makePersistence(),
@@ -612,9 +612,9 @@ describe("loadDashboard — framed headline deltas", () => {
   });
 
   test("null chips when there is no prior snapshot to compare against", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    makeAsset(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
 
     const result = await loadDashboard({
       store,
@@ -639,9 +639,9 @@ describe("loadDashboard — framed headline deltas", () => {
 
 describe("loadDashboard — pricing failure degradation", () => {
   test("returns pricingErrors array when refresh fails — result carries explicit signal", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    makeAsset(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
 
     const failingRefresh: LoadDashboardInput["refreshPrices"] = async () => ({
       priceCache: [],
@@ -664,9 +664,9 @@ describe("loadDashboard — pricing failure degradation", () => {
   });
 
   test("returns empty pricingErrors when pricing succeeds", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    makeAsset(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
 
     const result = await loadDashboard({
       store,
@@ -684,9 +684,9 @@ describe("loadDashboard — pricing failure degradation", () => {
   });
 
   test("still returns dashboard state (with last-known prices) when pricing fails", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    makeAsset(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
 
     const failingRefresh: LoadDashboardInput["refreshPrices"] = async () => ({
       priceCache: [],
@@ -713,9 +713,9 @@ describe("loadDashboard — pricing failure degradation", () => {
   });
 
   test("pricingErrors is an empty array (not undefined) when there are no errors", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    makeAsset(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
 
     const result = await loadDashboard({
       store,
@@ -734,9 +734,9 @@ describe("loadDashboard — pricing failure degradation", () => {
   });
 
   test("awaits refreshBinanceSources when provided and merges its errors (PRD #245 S4)", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    makeAsset(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
 
     const refreshBinanceSources = vi.fn(async () => ({
       errors: ["Binance: revisa la conexión."],
@@ -766,7 +766,7 @@ describe("loadDashboard — pricing failure degradation", () => {
 
 describe("loadDashboard — no workspace", () => {
   test("returns needsOnboarding=true when no workspace exists", async () => {
-    const store = createInMemoryStore();
+    const store = await createInMemoryStore();
     // No workspace initialized
 
     const result = await loadDashboard({
@@ -785,8 +785,8 @@ describe("loadDashboard — no workspace", () => {
   });
 
   test("returns needsOnboarding=false when workspace exists", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
 
     const result = await loadDashboard({
       store,
@@ -810,10 +810,10 @@ describe("loadDashboard — no workspace", () => {
 
 describe("loadDashboard — debts drilldown", () => {
   test("drill=debts over two days → debts key, aggregate stack, per-debt entry", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    makeAsset(store);
-    store.liabilities.createLiability({
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
+    await store.liabilities.createLiability({
       balanceMinor: 200_000_00,
       currency: "EUR",
       id: "debt_mortgage",
@@ -834,7 +834,7 @@ describe("loadDashboard — debts drilldown", () => {
     });
 
     // Day 2: balance reduced, debts drill requested
-    store.liabilities.updateLiabilityBalance("debt_mortgage", 190_000_00);
+    await store.liabilities.updateLiabilityBalance("debt_mortgage", 190_000_00);
     const result = await loadDashboard({
       store,
       persistence: makePersistence(),
@@ -867,9 +867,9 @@ describe("loadDashboard — debts drilldown", () => {
 
 describe("loadDashboard — composition range and density", () => {
   test("offers the ranges the history spans and windows the series to the selection", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    makeAsset(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
 
     // Build 14 monthly snapshots: 2025-05 .. 2026-06 (a ~13-month span).
     for (let i = 0; i < 14; i++) {
@@ -877,7 +877,7 @@ describe("loadDashboard — composition range and density", () => {
       const y = Math.floor(total / 12);
       const m = (total % 12) + 1;
       const today = `${y}-${String(m).padStart(2, "0")}-15`;
-      store.assets.updateAssetValuation("asset_cash", 100_000_00 + i * 1_000_00);
+      await store.assets.updateAssetValuation("asset_cash", 100_000_00 + i * 1_000_00);
       await loadDashboard({
         store,
         persistence: makePersistence(),
@@ -920,9 +920,9 @@ describe("loadDashboard — composition range and density", () => {
   });
 
   test("the active range windows the drilldown and the composition through one window", async () => {
-    const store = createInMemoryStore();
-    makeWorkspace(store);
-    makeAsset(store);
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
 
     // Build 14 monthly snapshots: 2025-05 .. 2026-06 (a ~13-month span), each a
     // distinct cash valuation so a windowed sparkline differs from the full one.
@@ -931,7 +931,7 @@ describe("loadDashboard — composition range and density", () => {
       const y = Math.floor(total / 12);
       const m = (total % 12) + 1;
       const today = `${y}-${String(m).padStart(2, "0")}-15`;
-      store.assets.updateAssetValuation("asset_cash", 100_000_00 + i * 1_000_00);
+      await store.assets.updateAssetValuation("asset_cash", 100_000_00 + i * 1_000_00);
       await loadDashboard({
         store,
         persistence: makePersistence(),

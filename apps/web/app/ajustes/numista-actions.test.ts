@@ -38,8 +38,10 @@ async function runAction(
   }
 }
 
-function seedWithSource(store: WorthlineStore): { sourceId: string; assetId: string } {
-  store.workspace.initializeWorkspace({
+async function seedWithSource(
+  store: WorthlineStore,
+): Promise<{ sourceId: string; assetId: string }> {
+  await store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jose" }],
     mode: "individual",
   });
@@ -53,11 +55,11 @@ function seedWithSource(store: WorthlineStore): { sourceId: string; assetId: str
 
 describe("disconnectNumistaAction", () => {
   test("removes the source, its positions, and the projected holding (cascade)", async () => {
-    const store = createInMemoryStore();
-    const { sourceId, assetId } = seedWithSource(store);
+    const store = await createInMemoryStore();
+    const { sourceId, assetId } = await seedWithSource(store);
 
     // Give it a position so we can prove the cascade also clears positions.
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         {
@@ -85,8 +87,8 @@ describe("disconnectNumistaAction", () => {
       "2026-06-14T10:00:00.000Z",
     );
 
-    expect(store.connectedSources.listSources()).toHaveLength(1);
-    expect(store.assets.readAssets().some((a) => a.id === assetId)).toBe(true);
+    expect(await store.connectedSources.listSources()).toHaveLength(1);
+    expect((await store.assets.readAssets()).some((a) => a.id === assetId)).toBe(true);
 
     const digest = await runAction(
       disconnectNumistaAction,
@@ -95,14 +97,14 @@ describe("disconnectNumistaAction", () => {
     );
 
     expect(digest).toContain("ok=numista_disconnected");
-    expect(store.connectedSources.listSources()).toHaveLength(0);
-    expect(store.connectedSources.readSource(sourceId)).toBeNull();
-    expect(store.assets.readAssets().some((a) => a.id === assetId)).toBe(false);
+    expect(await store.connectedSources.listSources()).toHaveLength(0);
+    expect(await store.connectedSources.readSource(sourceId)).toBeNull();
+    expect((await store.assets.readAssets()).some((a) => a.id === assetId)).toBe(false);
   });
 
   test("errors when no source id is supplied", async () => {
-    const store = createInMemoryStore();
-    seedWithSource(store);
+    const store = await createInMemoryStore();
+    await seedWithSource(store);
 
     const digest = await runAction(
       disconnectNumistaAction,
@@ -111,12 +113,12 @@ describe("disconnectNumistaAction", () => {
     );
 
     expect(digest).toContain("error=");
-    expect(store.connectedSources.listSources()).toHaveLength(1);
+    expect(await store.connectedSources.listSources()).toHaveLength(1);
   });
 
   test("mode=remove still removes the live holding (the default path)", async () => {
-    const store = createInMemoryStore();
-    const { sourceId, assetId } = seedWithSource(store);
+    const store = await createInMemoryStore();
+    const { sourceId, assetId } = await seedWithSource(store);
 
     const digest = await runAction(
       disconnectNumistaAction,
@@ -125,14 +127,14 @@ describe("disconnectNumistaAction", () => {
     );
 
     expect(digest).toContain("ok=numista_disconnected");
-    expect(store.connectedSources.listSources()).toHaveLength(0);
-    expect(store.assets.readAssets().some((a) => a.id === assetId)).toBe(false);
+    expect(await store.connectedSources.listSources()).toHaveLength(0);
+    expect((await store.assets.readAssets()).some((a) => a.id === assetId)).toBe(false);
   });
 
   test("mode=freeze keeps the asset as a hand-valued holding and drops the source", async () => {
-    const store = createInMemoryStore();
-    const { sourceId, assetId } = seedWithSource(store);
-    store.connectedSources.syncPositions(
+    const store = await createInMemoryStore();
+    const { sourceId, assetId } = await seedWithSource(store);
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         {
@@ -169,8 +171,8 @@ describe("disconnectNumistaAction", () => {
     expect(digest).toContain("ok=numista_frozen");
     // The source is gone, but the asset survives as a hand-valued precious-metal
     // holding keeping its frozen value.
-    expect(store.connectedSources.listSources()).toHaveLength(0);
-    const frozen = store.assets.readAssets().find((a) => a.id === assetId);
+    expect(await store.connectedSources.listSources()).toHaveLength(0);
+    const frozen = (await store.assets.readAssets()).find((a) => a.id === assetId);
     expect(frozen?.instrument).toBe("precious_metal");
     expect(frozen?.currentValue.amountMinor).toBe(35_000);
   });
@@ -178,9 +180,9 @@ describe("disconnectNumistaAction", () => {
 
 describe("syncNumistaAction", () => {
   test("errors (without wiping positions) when the source id is unknown", async () => {
-    const store = createInMemoryStore();
-    const { sourceId } = seedWithSource(store);
-    store.connectedSources.syncPositions(
+    const store = await createInMemoryStore();
+    const { sourceId } = await seedWithSource(store);
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         {
@@ -216,6 +218,6 @@ describe("syncNumistaAction", () => {
 
     expect(digest).toContain("error=");
     // The real source's positions are untouched.
-    expect(store.connectedSources.readPositions(sourceId)).toHaveLength(1);
+    expect(await store.connectedSources.readPositions(sourceId)).toHaveLength(1);
   });
 });

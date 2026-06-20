@@ -119,57 +119,67 @@ export interface UpdateAssetInput {
  * see readAssets.
  */
 export interface AssetStore {
-  createManualAsset: (input: CreateManualAssetInput) => void;
-  createInvestmentAsset: (input: CreateInvestmentAssetInput) => void;
-  readAssets: () => ManualAsset[];
-  readInvestmentAssetById: (assetId: string) => InvestmentAssetFull | null;
-  readInvestmentAssetsWithMeta: () => InvestmentAssetMeta[];
-  updateAsset: (assetId: string, input: UpdateAssetInput) => void;
-  updateAssetValuation: (assetId: string, currentValueMinor: number) => void;
-  updateInvestmentAsset: (input: UpdateInvestmentAssetInput) => void;
+  createManualAsset: (input: CreateManualAssetInput) => Promise<void>;
+  createInvestmentAsset: (input: CreateInvestmentAssetInput) => Promise<void>;
+  readAssets: () => Promise<ManualAsset[]>;
+  readInvestmentAssetById: (assetId: string) => Promise<InvestmentAssetFull | null>;
+  readInvestmentAssetsWithMeta: () => Promise<InvestmentAssetMeta[]>;
+  updateAsset: (assetId: string, input: UpdateAssetInput) => Promise<void>;
+  updateAssetValuation: (assetId: string, currentValueMinor: number) => Promise<void>;
+  updateInvestmentAsset: (input: UpdateInvestmentAssetInput) => Promise<void>;
   /**
    * Backfill an investment's ISIN when it has none (statement ISIN guard,
    * ADR 0018 S4). Sets ONLY the isin column, leaving other metadata intact, so a
    * later upload to the same asset is guarded. Returns 1 if updated, 0 if not found.
    */
-  backfillInvestmentIsin: (assetId: string, isin: string) => number;
+  backfillInvestmentIsin: (assetId: string, isin: string) => Promise<number>;
   /** Soft-delete an asset (moves it to the trash). Returns 1 if moved, 0 if not found. */
-  softDeleteAsset: (assetId: string, deletedAt: string) => number;
+  softDeleteAsset: (assetId: string, deletedAt: string) => Promise<number>;
   /** Restore a trashed asset. Returns 1 if restored, 0 if not found or not in trash. */
-  restoreAsset: (assetId: string) => number;
+  restoreAsset: (assetId: string) => Promise<number>;
   /** Hard-delete a trashed asset (live data + overrides; snapshots untouched). Returns 1 if removed, 0 if not found or not in trash. */
-  hardDeleteAsset: (assetId: string) => number;
+  hardDeleteAsset: (assetId: string) => Promise<number>;
   /** Add a housing valuation anchor (market appraisal or improvement). */
-  addValuationAnchor: (input: AddValuationAnchorInput) => void;
+  addValuationAnchor: (input: AddValuationAnchorInput) => Promise<void>;
   /** Read an asset's valuation anchors, ordered ascending by date. */
-  readValuationAnchors: (assetId: string) => ValuationAnchorRecord[];
+  readValuationAnchors: (assetId: string) => Promise<ValuationAnchorRecord[]>;
   /** Read ONE valuation anchor by its id, or null. Used by the dated-fact seam. */
-  readValuationAnchorById: (anchorId: string) => ValuationAnchorRecord | null;
+  readValuationAnchorById: (anchorId: string) => Promise<ValuationAnchorRecord | null>;
   /** Delete a valuation anchor by id. Returns 1 if removed, 0 if not found. */
-  deleteValuationAnchor: (anchorId: string) => number;
+  deleteValuationAnchor: (anchorId: string) => Promise<number>;
   /**
    * Update an existing housing valuation anchor in place. Validates data types
    * and respects the (asset_id, valuation_date) unique index — changing the date
    * to one already occupied throws. Returns 1 if updated, 0 if not found.
    */
-  updateValuationAnchor: (anchorId: string, input: UpdateValuationAnchorInput) => number;
+  updateValuationAnchor: (
+    anchorId: string,
+    input: UpdateValuationAnchorInput,
+  ) => Promise<number>;
   /** Set (or clear, with null) an asset's annual appreciation rate (decimal string). */
-  setAnnualAppreciationRate: (assetId: string, rate: DecimalString | null) => void;
+  setAnnualAppreciationRate: (
+    assetId: string,
+    rate: DecimalString | null,
+  ) => Promise<void>;
   /** Read an asset's annual appreciation rate, or null if unset. */
-  readAnnualAppreciationRate: (assetId: string) => DecimalString | null;
+  readAnnualAppreciationRate: (assetId: string) => Promise<DecimalString | null>;
   /**
    * Value a real-estate asset on `targetDate` (YYYY-MM-DD): reads its anchors +
    * rate + current value and delegates to the pure domain curve. `today` is a
    * parameter so the calculation stays deterministic.
    */
-  valueHousingAtDate: (assetId: string, targetDate: string, today: string) => number;
+  valueHousingAtDate: (
+    assetId: string,
+    targetDate: string,
+    today: string,
+  ) => Promise<number>;
 }
 
 export function createAssetStore(ctx: StoreContext): AssetStore {
   return {
     createManualAsset: (input) => createManualAssetRecord(ctx, input),
     createInvestmentAsset: (input) => createInvestmentAsset(ctx, input),
-    readAssets: () => readAssets(ctx.db, ctx.getWorkspace()),
+    readAssets: async () => readAssets(ctx.db, await ctx.getWorkspace()),
     readInvestmentAssetById: (assetId) => readInvestmentAssetById(ctx, assetId),
     readInvestmentAssetsWithMeta: () => readInvestmentAssetsWithMeta(ctx),
     updateAsset: (assetId, input) => updateAsset(ctx, assetId, input),
@@ -179,8 +189,7 @@ export function createAssetStore(ctx: StoreContext): AssetStore {
     backfillInvestmentIsin: (assetId, isin) => backfillInvestmentIsin(ctx, assetId, isin),
     softDeleteAsset: (assetId, deletedAt) => softDeleteAsset(ctx, assetId, deletedAt),
     restoreAsset: (assetId) => restoreAsset(ctx, assetId),
-    hardDeleteAsset: (assetId) =>
-      ctx.sqlite.transaction(() => hardDeleteAssetTx(ctx, assetId))(),
+    hardDeleteAsset: (assetId) => ctx.transaction(() => hardDeleteAssetTx(ctx, assetId)),
     addValuationAnchor: (input) => addValuationAnchor(ctx, input),
     readValuationAnchors: (assetId) => readValuationAnchors(ctx, assetId),
     readValuationAnchorById: (anchorId) => readValuationAnchorById(ctx, anchorId),
@@ -205,13 +214,16 @@ function assertValuationDate(valuationDate: string): void {
   }
 }
 
-function addValuationAnchor(ctx: StoreContext, input: AddValuationAnchorInput): void {
+async function addValuationAnchor(
+  ctx: StoreContext,
+  input: AddValuationAnchorInput,
+): Promise<void> {
   if (!Number.isInteger(input.valueMinor)) {
     throw new Error("Money must be stored as integer minor units.");
   }
   assertValuationDate(input.valuationDate);
 
-  ctx.db
+  await ctx.db
     .insert(assetValuations)
     .values({
       adjustsPriorCurve: input.adjustsPriorCurve ? 1 : 0,
@@ -222,7 +234,7 @@ function addValuationAnchor(ctx: StoreContext, input: AddValuationAnchorInput): 
     })
     .run();
 
-  ctx.writeAuditEntry("add_valuation_anchor", "asset", input.assetId, {
+  await ctx.writeAuditEntry("add_valuation_anchor", "asset", input.assetId, {
     adjustsPriorCurve: input.adjustsPriorCurve,
     anchorId: input.id,
     valuationDate: input.valuationDate,
@@ -230,11 +242,11 @@ function addValuationAnchor(ctx: StoreContext, input: AddValuationAnchorInput): 
   });
 }
 
-function readValuationAnchors(
+async function readValuationAnchors(
   ctx: StoreContext,
   assetId: string,
-): ValuationAnchorRecord[] {
-  const rows = ctx.db
+): Promise<ValuationAnchorRecord[]> {
+  const rows = await ctx.db
     .select()
     .from(assetValuations)
     .where(eq(assetValuations.assetId, assetId))
@@ -250,11 +262,11 @@ function readValuationAnchors(
   }));
 }
 
-function readValuationAnchorById(
+async function readValuationAnchorById(
   ctx: StoreContext,
   anchorId: string,
-): ValuationAnchorRecord | null {
-  const row = ctx.db
+): Promise<ValuationAnchorRecord | null> {
+  const row = await ctx.db
     .select()
     .from(assetValuations)
     .where(eq(assetValuations.id, anchorId))
@@ -271,8 +283,11 @@ function readValuationAnchorById(
   };
 }
 
-function deleteValuationAnchor(ctx: StoreContext, anchorId: string): number {
-  const row = ctx.db
+async function deleteValuationAnchor(
+  ctx: StoreContext,
+  anchorId: string,
+): Promise<number> {
+  const row = await ctx.db
     .select({ assetId: assetValuations.assetId })
     .from(assetValuations)
     .where(eq(assetValuations.id, anchorId))
@@ -280,22 +295,24 @@ function deleteValuationAnchor(ctx: StoreContext, anchorId: string): number {
 
   if (!row) return 0;
 
-  const result = ctx.db
+  const result = await ctx.db
     .delete(assetValuations)
     .where(eq(assetValuations.id, anchorId))
     .run();
 
-  if (result.changes > 0) {
-    ctx.writeAuditEntry("delete_valuation_anchor", "asset", row.assetId, { anchorId });
+  if (result.rowsAffected > 0) {
+    await ctx.writeAuditEntry("delete_valuation_anchor", "asset", row.assetId, {
+      anchorId,
+    });
   }
-  return result.changes;
+  return result.rowsAffected;
 }
 
-function updateValuationAnchor(
+async function updateValuationAnchor(
   ctx: StoreContext,
   anchorId: string,
   input: UpdateValuationAnchorInput,
-): number {
+): Promise<number> {
   if (input.valueMinor !== undefined && !Number.isInteger(input.valueMinor)) {
     throw new Error("Money must be stored as integer minor units.");
   }
@@ -303,7 +320,7 @@ function updateValuationAnchor(
     assertValuationDate(input.valuationDate);
   }
 
-  const existing = ctx.db
+  const existing = await ctx.db
     .select({ assetId: assetValuations.assetId })
     .from(assetValuations)
     .where(eq(assetValuations.id, anchorId))
@@ -318,48 +335,48 @@ function updateValuationAnchor(
     fields.adjustsPriorCurve = input.adjustsPriorCurve ? 1 : 0;
   }
 
-  const result = ctx.db
+  const result = await ctx.db
     .update(assetValuations)
     .set(fields)
     .where(eq(assetValuations.id, anchorId))
     .run();
 
-  if (result.changes > 0) {
-    ctx.writeAuditEntry("update_valuation_anchor", "asset", existing.assetId, {
+  if (result.rowsAffected > 0) {
+    await ctx.writeAuditEntry("update_valuation_anchor", "asset", existing.assetId, {
       anchorId,
       ...input,
     });
   }
-  return result.changes;
+  return result.rowsAffected;
 }
 
 const DECIMAL_STRING = /^-?\d+(\.\d+)?$/;
 
-function setAnnualAppreciationRate(
+async function setAnnualAppreciationRate(
   ctx: StoreContext,
   assetId: string,
   rate: DecimalString | null,
-): void {
+): Promise<void> {
   if (rate !== null && !DECIMAL_STRING.test(rate)) {
     throw new Error(
       `Annual appreciation rate must be a decimal string (e.g. "0.03"), got "${rate}".`,
     );
   }
 
-  ctx.db
+  await ctx.db
     .update(assets)
     .set({ annualAppreciationRate: rate, updatedAt: sql`CURRENT_TIMESTAMP` })
     .where(eq(assets.id, assetId))
     .run();
 
-  ctx.writeAuditEntry("set_appreciation_rate", "asset", assetId, { rate });
+  await ctx.writeAuditEntry("set_appreciation_rate", "asset", assetId, { rate });
 }
 
-function readAnnualAppreciationRate(
+async function readAnnualAppreciationRate(
   ctx: StoreContext,
   assetId: string,
-): DecimalString | null {
-  const row = ctx.db
+): Promise<DecimalString | null> {
+  const row = await ctx.db
     .select({ annualAppreciationRate: assets.annualAppreciationRate })
     .from(assets)
     .where(eq(assets.id, assetId))
@@ -368,13 +385,13 @@ function readAnnualAppreciationRate(
   return row?.annualAppreciationRate ?? null;
 }
 
-function valueHousingAtDateFor(
+async function valueHousingAtDateFor(
   ctx: StoreContext,
   assetId: string,
   targetDate: string,
   today: string,
-): number {
-  const row = ctx.db
+): Promise<number> {
+  const row = await ctx.db
     .select({
       annualAppreciationRate: assets.annualAppreciationRate,
       currentValueMinor: assets.currentValueMinor,
@@ -387,13 +404,13 @@ function valueHousingAtDateFor(
     throw new Error(`Asset "${assetId}" not found.`);
   }
 
-  const anchors: HousingValuationAnchor[] = readValuationAnchors(ctx, assetId).map(
-    (anchor) => ({
-      adjustsPriorCurve: anchor.adjustsPriorCurve,
-      valuationDate: anchor.valuationDate,
-      valueMinor: anchor.valueMinor,
-    }),
-  );
+  const anchors: HousingValuationAnchor[] = (
+    await readValuationAnchors(ctx, assetId)
+  ).map((anchor) => ({
+    adjustsPriorCurve: anchor.adjustsPriorCurve,
+    valuationDate: anchor.valuationDate,
+    valueMinor: anchor.valueMinor,
+  }));
 
   return valueHousingAtDate({
     anchors,
@@ -404,17 +421,21 @@ function valueHousingAtDateFor(
   });
 }
 
-function createManualAssetRecord(ctx: StoreContext, input: CreateManualAssetInput): void {
+async function createManualAssetRecord(
+  ctx: StoreContext,
+  input: CreateManualAssetInput,
+): Promise<void> {
   const { db } = ctx;
-  const workspace = ctx.getWorkspace();
+  const workspace = await ctx.getWorkspace();
 
   if (!workspace) {
     throw new Error("Workspace must be initialized before creating assets.");
   }
 
   const asset = createManualAsset(workspace, input);
-  ctx.transaction(() => {
-    db.insert(assets)
+  await ctx.transaction(async () => {
+    await db
+      .insert(assets)
       .values({
         currency: asset.currency,
         currentValueMinor: asset.currentValue.amountMinor,
@@ -428,7 +449,8 @@ function createManualAssetRecord(ctx: StoreContext, input: CreateManualAssetInpu
       .run();
 
     if (asset.ownership.length > 0) {
-      db.insert(assetOwnerships)
+      await db
+        .insert(assetOwnerships)
         .values(
           asset.ownership.map((share) => ({
             assetId: asset.id,
@@ -441,18 +463,18 @@ function createManualAssetRecord(ctx: StoreContext, input: CreateManualAssetInpu
 
     // Register the holding's agent-view public id on creation (#335) so the
     // non-lazy read path never 500s on a missing id — mirrors createMember.
-    ensureAgentViewPublicIds(ctx, publicIdTargetsForHolding(asset.id));
+    await ensureAgentViewPublicIds(ctx, publicIdTargetsForHolding(asset.id));
   });
 
-  ctx.writeAuditEntry("create_asset", "asset", asset.id);
+  await ctx.writeAuditEntry("create_asset", "asset", asset.id);
 }
 
-function createInvestmentAsset(
+async function createInvestmentAsset(
   ctx: StoreContext,
   input: CreateInvestmentAssetInput,
-): void {
+): Promise<void> {
   const { db } = ctx;
-  const workspace = ctx.getWorkspace();
+  const workspace = await ctx.getWorkspace();
 
   if (!workspace) {
     throw new Error("Workspace must be initialized before creating assets.");
@@ -478,8 +500,9 @@ function createInvestmentAsset(
   });
   const pricedAt = input.manualPricePerUnit ? new Date().toISOString() : null;
 
-  ctx.transaction(() => {
-    db.insert(assets)
+  await ctx.transaction(async () => {
+    await db
+      .insert(assets)
       .values({
         currency: asset.currency,
         currentValueMinor: 0,
@@ -493,7 +516,8 @@ function createInvestmentAsset(
       .run();
 
     if (asset.ownership.length > 0) {
-      db.insert(assetOwnerships)
+      await db
+        .insert(assetOwnerships)
         .values(
           asset.ownership.map((share) => ({
             assetId: asset.id,
@@ -504,7 +528,8 @@ function createInvestmentAsset(
         .run();
     }
 
-    db.insert(investmentAssets)
+    await db
+      .insert(investmentAssets)
       .values({
         assetId: asset.id,
         isin: input.isin ?? null,
@@ -518,16 +543,16 @@ function createInvestmentAsset(
 
     // An investment is a holding too — register its agent-view public id on
     // creation (#335) so the non-lazy read path never 500s on a missing id.
-    ensureAgentViewPublicIds(ctx, publicIdTargetsForHolding(asset.id));
+    await ensureAgentViewPublicIds(ctx, publicIdTargetsForHolding(asset.id));
   });
 }
 
-function readInvestmentAssetById(
+async function readInvestmentAssetById(
   ctx: StoreContext,
   assetId: string,
-): InvestmentAssetFull | null {
+): Promise<InvestmentAssetFull | null> {
   const { db } = ctx;
-  const row = db
+  const row = await db
     .select({
       id: assets.id,
       name: assets.name,
@@ -540,7 +565,7 @@ function readInvestmentAssetById(
 
   if (!row) return null;
 
-  const investRow = db
+  const investRow = await db
     .select({
       unitSymbol: investmentAssets.unitSymbol,
       isin: investmentAssets.isin,
@@ -554,7 +579,7 @@ function readInvestmentAssetById(
 
   if (!investRow) return null;
 
-  const ownershipRows = db
+  const ownershipRows = await db
     .select({
       memberId: assetOwnerships.memberId,
       shareBps: assetOwnerships.shareBps,
@@ -581,9 +606,11 @@ function readInvestmentAssetById(
   };
 }
 
-function readInvestmentAssetsWithMeta(ctx: StoreContext): InvestmentAssetMeta[] {
+async function readInvestmentAssetsWithMeta(
+  ctx: StoreContext,
+): Promise<InvestmentAssetMeta[]> {
   const { db } = ctx;
-  const rows = db
+  const rows = await db
     .select({
       id: assets.id,
       name: assets.name,
@@ -608,7 +635,11 @@ function readInvestmentAssetsWithMeta(ctx: StoreContext): InvestmentAssetMeta[] 
   }));
 }
 
-function updateAsset(ctx: StoreContext, assetId: string, input: UpdateAssetInput): void {
+async function updateAsset(
+  ctx: StoreContext,
+  assetId: string,
+  input: UpdateAssetInput,
+): Promise<void> {
   const { db } = ctx;
   const fields: Partial<typeof assets.$inferInsert> = {};
 
@@ -633,7 +664,7 @@ function updateAsset(ctx: StoreContext, assetId: string, input: UpdateAssetInput
   // it from the EFFECTIVE values (current row merged with the input). Otherwise
   // the instrument goes stale and isHousingAsset silently diverges from the edit.
   if (input.type !== undefined || input.isPrimaryResidence !== undefined) {
-    const current = db
+    const current = await db
       .select({ type: assets.type, isPrimaryResidence: assets.isPrimaryResidence })
       .from(assets)
       .where(eq(assets.id, assetId))
@@ -649,19 +680,21 @@ function updateAsset(ctx: StoreContext, assetId: string, input: UpdateAssetInput
     }
   }
 
-  ctx.transaction(() => {
+  await ctx.transaction(async () => {
     if (Object.keys(fields).length > 0) {
-      db.update(assets)
+      await db
+        .update(assets)
         .set({ ...fields, updatedAt: sql`CURRENT_TIMESTAMP` })
         .where(eq(assets.id, assetId))
         .run();
     }
 
     if (input.ownership !== undefined) {
-      db.delete(assetOwnerships).where(eq(assetOwnerships.assetId, assetId)).run();
+      await db.delete(assetOwnerships).where(eq(assetOwnerships.assetId, assetId)).run();
 
       if (input.ownership.length > 0) {
-        db.insert(assetOwnerships)
+        await db
+          .insert(assetOwnerships)
           .values(
             input.ownership.map((share) => ({
               assetId,
@@ -674,17 +707,17 @@ function updateAsset(ctx: StoreContext, assetId: string, input: UpdateAssetInput
     }
   });
 
-  ctx.writeAuditEntry("update_asset", "asset", assetId, {
+  await ctx.writeAuditEntry("update_asset", "asset", assetId, {
     ...input,
     ownership: undefined,
   });
 }
 
-function updateAssetValuation(
+async function updateAssetValuation(
   ctx: StoreContext,
   assetId: string,
   currentValueMinor: number,
-): void {
+): Promise<void> {
   const { db } = ctx;
 
   if (!Number.isInteger(currentValueMinor)) {
@@ -694,17 +727,18 @@ function updateAssetValuation(
   // The "investments are never valued by hand" invariant (ADR 0006) is enforced
   // by the caller via assertNotInvestmentAsset before it reaches the store
   // (PRD #120 candidate 3 — domain invariants live outside the store layer).
-  db.update(assets)
+  await db
+    .update(assets)
     .set({ currentValueMinor, updatedAt: sql`CURRENT_TIMESTAMP` })
     .where(eq(assets.id, assetId))
     .run();
-  ctx.writeAuditEntry("update_valuation", "asset", assetId, { currentValueMinor });
+  await ctx.writeAuditEntry("update_valuation", "asset", assetId, { currentValueMinor });
 }
 
-function updateInvestmentAsset(
+async function updateInvestmentAsset(
   ctx: StoreContext,
   input: UpdateInvestmentAssetInput,
-): void {
+): Promise<void> {
   const { db } = ctx;
   const assetFields: Partial<typeof assets.$inferInsert> = { name: input.name };
 
@@ -712,13 +746,15 @@ function updateInvestmentAsset(
     assetFields.liquidityTier = input.liquidityTier;
   }
 
-  ctx.transaction(() => {
-    db.update(assets)
+  await ctx.transaction(async () => {
+    await db
+      .update(assets)
       .set({ ...assetFields, updatedAt: sql`CURRENT_TIMESTAMP` })
       .where(eq(assets.id, input.id))
       .run();
 
-    db.update(investmentAssets)
+    await db
+      .update(investmentAssets)
       .set({
         unitSymbol: input.unitSymbol ?? null,
         isin: input.isin ?? null,
@@ -730,49 +766,53 @@ function updateInvestmentAsset(
       .run();
   });
 
-  ctx.writeAuditEntry("update_investment_asset", "asset", input.id, {
+  await ctx.writeAuditEntry("update_investment_asset", "asset", input.id, {
     name: input.name,
   });
 }
 
-function backfillInvestmentIsin(
+async function backfillInvestmentIsin(
   ctx: StoreContext,
   assetId: string,
   isin: string,
-): number {
-  const result = ctx.db
+): Promise<number> {
+  const result = await ctx.db
     .update(investmentAssets)
     .set({ isin })
     .where(eq(investmentAssets.assetId, assetId))
     .run();
 
-  if (result.changes > 0) {
-    ctx.writeAuditEntry("backfill_investment_isin", "asset", assetId, { isin });
+  if (result.rowsAffected > 0) {
+    await ctx.writeAuditEntry("backfill_investment_isin", "asset", assetId, { isin });
   }
 
-  return result.changes;
+  return result.rowsAffected;
 }
 
-function softDeleteAsset(ctx: StoreContext, assetId: string, deletedAt: string): number {
-  const result = ctx.db
+async function softDeleteAsset(
+  ctx: StoreContext,
+  assetId: string,
+  deletedAt: string,
+): Promise<number> {
+  const result = await ctx.db
     .update(assets)
     .set({ deletedAt })
     .where(eq(assets.id, assetId))
     .run();
-  if (result.changes > 0) {
-    ctx.writeAuditEntry("delete_asset", "asset", assetId, { deletedAt });
+  if (result.rowsAffected > 0) {
+    await ctx.writeAuditEntry("delete_asset", "asset", assetId, { deletedAt });
   }
-  return result.changes;
+  return result.rowsAffected;
 }
 
-function restoreAsset(ctx: StoreContext, assetId: string): number {
-  const result = ctx.db
+async function restoreAsset(ctx: StoreContext, assetId: string): Promise<number> {
+  const result = await ctx.db
     .update(assets)
     .set({ deletedAt: null })
     .where(and(eq(assets.id, assetId), isNotNull(assets.deletedAt)))
     .run();
-  if (result.changes > 0) {
-    ctx.writeAuditEntry("restore_asset", "asset", assetId);
+  if (result.rowsAffected > 0) {
+    await ctx.writeAuditEntry("restore_asset", "asset", assetId);
   }
-  return result.changes;
+  return result.rowsAffected;
 }

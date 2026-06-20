@@ -9,21 +9,24 @@
  * five frozen figures stay byte-identical (this migration touches no figure), and
  * user_version reaches SCHEMA_VERSION.
  */
-import Database from "better-sqlite3";
+import type { Client } from "@libsql/client";
 import { describe, expect, test } from "vitest";
 
+import { openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import { schemaSql } from "@db/schema-sql";
 
-function seedV12(): Database.Database {
-  const db = new Database(":memory:");
+async function seedV12(): Promise<Client> {
+  const client = openLibsqlClient(":memory:");
   // Genuinely pre-v13: strip the valuation_method column so migrate() exercises
   // the real legacy-DB path — ALTER TABLE ADD COLUMN then backfill — not merely a
   // backfill of an already-present column.
-  db.exec(schemaSql.replace(/[ \t]*`valuation_method` text,\n/g, ""));
-  db.pragma("user_version = 12");
+  await client.executeMultiple(
+    schemaSql.replace(/[ \t]*`valuation_method` text,\n/g, ""),
+  );
+  await client.execute("PRAGMA user_version = 12");
 
-  db.exec(`
+  await client.executeMultiple(`
     INSERT INTO assets (id, name, type, currency, current_value_minor, liquidity_tier) VALUES
       ('a_cash', 'Caja', 'cash', 'EUR', 10000, 'cash'),
       ('a_car', 'Coche', 'manual', 'EUR', 20000, 'illiquid'),
@@ -48,96 +51,112 @@ function seedV12(): Database.Database {
        'EUR', 180000, 9000, 120000, 390000, 210000);
   `);
 
-  return db;
+  return client;
 }
 
-const assetMethod = (db: Database.Database, id: string) =>
+const assetMethod = async (client: Client, id: string) =>
   (
-    db.prepare("SELECT valuation_method AS m FROM assets WHERE id = ?").get(id) as {
+    (
+      await client.execute({
+        sql: "SELECT valuation_method AS m FROM assets WHERE id = ?",
+        args: [id],
+      })
+    ).rows[0] as unknown as {
       m: string | null;
     }
   ).m;
 
-const liabilityMethod = (db: Database.Database, id: string) =>
+const liabilityMethod = async (client: Client, id: string) =>
   (
-    db.prepare("SELECT valuation_method AS m FROM liabilities WHERE id = ?").get(id) as {
+    (
+      await client.execute({
+        sql: "SELECT valuation_method AS m FROM liabilities WHERE id = ?",
+        args: [id],
+      })
+    ).rows[0] as unknown as {
       m: string | null;
     }
   ).m;
 
 describe("valuation-method schema migration (v13)", () => {
-  test("backfills asset valuation_method from type", () => {
-    const db = seedV12();
-    migrate(db);
+  test("backfills asset valuation_method from type", async () => {
+    const client = await seedV12();
+    await migrate(client);
 
-    expect(assetMethod(db, "a_cash")).toBe("stored");
-    expect(assetMethod(db, "a_car")).toBe("stored");
-    expect(assetMethod(db, "a_fund")).toBe("derived");
-    expect(assetMethod(db, "a_home")).toBe("appreciating");
+    expect(await assetMethod(client, "a_cash")).toBe("stored");
+    expect(await assetMethod(client, "a_car")).toBe("stored");
+    expect(await assetMethod(client, "a_fund")).toBe("derived");
+    expect(await assetMethod(client, "a_home")).toBe("appreciating");
     // A primary residence is appreciating even when its type isn't real_estate —
     // the backfill mirrors the runtime isHousingAsset boundary.
-    expect(assetMethod(db, "a_residence")).toBe("appreciating");
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
+    expect(await assetMethod(client, "a_residence")).toBe("appreciating");
+    expect(
+      Number((await client.execute("PRAGMA user_version")).rows[0]!.user_version),
+    ).toBe(SCHEMA_VERSION);
   });
 
-  test("backfills liability valuation_method from debt_model (no model → stored)", () => {
-    const db = seedV12();
-    migrate(db);
+  test("backfills liability valuation_method from debt_model (no model → stored)", async () => {
+    const client = await seedV12();
+    await migrate(client);
 
-    expect(liabilityMethod(db, "l_mortgage")).toBe("amortized");
-    expect(liabilityMethod(db, "l_card")).toBe("anchored");
-    expect(liabilityMethod(db, "l_friend")).toBe("anchored");
-    expect(liabilityMethod(db, "l_plain")).toBe("stored");
+    expect(await liabilityMethod(client, "l_mortgage")).toBe("amortized");
+    expect(await liabilityMethod(client, "l_card")).toBe("anchored");
+    expect(await liabilityMethod(client, "l_friend")).toBe("anchored");
+    expect(await liabilityMethod(client, "l_plain")).toBe("stored");
   });
 
-  test("touches no frozen snapshot figure", () => {
-    const db = seedV12();
+  test("touches no frozen snapshot figure", async () => {
+    const client = await seedV12();
     const select =
       "SELECT total_net_worth_minor, liquid_net_worth_minor, housing_equity_minor, " +
       "gross_assets_minor, debts_minor FROM snapshots WHERE id = 'snap1'";
-    const before = db.prepare(select).get();
+    const before = (await client.execute(select)).rows[0];
 
-    migrate(db);
+    await migrate(client);
 
-    expect(db.prepare(select).get()).toEqual(before);
+    expect((await client.execute(select)).rows[0]).toEqual(before);
   });
 
-  test("adds the valuation_method column to both tables (the legacy ALTER path)", () => {
-    const db = seedV12();
-    const hasColumn = (table: string) =>
-      (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some(
-        (c) => c.name === "valuation_method",
-      );
-
-    expect(hasColumn("assets")).toBe(false); // genuinely pre-v13: column absent
-    migrate(db);
-    expect(hasColumn("assets")).toBe(true);
-    expect(hasColumn("liabilities")).toBe(true);
-  });
-
-  test("leaves no holding null and is idempotent on a second run", () => {
-    const db = seedV12();
-    migrate(db);
-
-    const nullCount = () =>
+  test("adds the valuation_method column to both tables (the legacy ALTER path)", async () => {
+    const client = await seedV12();
+    const hasColumn = async (table: string) =>
       (
-        db
-          .prepare(
+        (await client.execute(`PRAGMA table_info(${table})`)).rows as unknown as Array<{
+          name: string;
+        }>
+      ).some((c) => c.name === "valuation_method");
+
+    expect(await hasColumn("assets")).toBe(false); // genuinely pre-v13: column absent
+    await migrate(client);
+    expect(await hasColumn("assets")).toBe(true);
+    expect(await hasColumn("liabilities")).toBe(true);
+  });
+
+  test("leaves no holding null and is idempotent on a second run", async () => {
+    const client = await seedV12();
+    await migrate(client);
+
+    const nullCount = async () =>
+      Number(
+        (
+          await client.execute(
             "SELECT (SELECT COUNT(*) FROM assets WHERE valuation_method IS NULL) + " +
               "(SELECT COUNT(*) FROM liabilities WHERE valuation_method IS NULL) AS n",
           )
-          .get() as { n: number }
-      ).n;
+        ).rows[0]!.n,
+      );
 
-    expect(nullCount()).toBe(0);
+    expect(await nullCount()).toBe(0);
 
-    const before = db
-      .prepare("SELECT id, valuation_method FROM assets ORDER BY id")
-      .all();
-    migrate(db); // a second run sits behind `version < 13` → no-op
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
+    const before = (
+      await client.execute("SELECT id, valuation_method FROM assets ORDER BY id")
+    ).rows;
+    await migrate(client); // a second run sits behind `version < 13` → no-op
     expect(
-      db.prepare("SELECT id, valuation_method FROM assets ORDER BY id").all(),
+      Number((await client.execute("PRAGMA user_version")).rows[0]!.user_version),
+    ).toBe(SCHEMA_VERSION);
+    expect(
+      (await client.execute("SELECT id, valuation_method FROM assets ORDER BY id")).rows,
     ).toEqual(before);
   });
 });

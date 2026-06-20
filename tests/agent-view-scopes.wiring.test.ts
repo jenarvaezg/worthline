@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { NextRequest } from "next/server";
-import Database from "better-sqlite3";
 
-import { createWorthlineStore } from "@worthline/db";
+import { createWorthlineStore, openLibsqlClient } from "@worthline/db";
 import { GET } from "@web/api/v1/agent-view/scopes/route";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
 
@@ -38,8 +37,8 @@ describe("GET /api/v1/agent-view/scopes", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       groups: [
         {
           id: "scope_adults",
@@ -54,7 +53,7 @@ describe("GET /api/v1/agent-view/scopes", () => {
       ],
       mode: "household",
     });
-    store.workspace.disableMember("member_noa", "2026-06-01T00:00:00.000Z");
+    await store.workspace.disableMember("member_noa", "2026-06-01T00:00:00.000Z");
     store.close();
 
     const response = await GET(request());
@@ -134,20 +133,20 @@ describe("GET /api/v1/agent-view/scopes", () => {
     const targetPath = tempDatabasePath("worthline-agent-view-target-");
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const source = createWorthlineStore({ databasePath: sourcePath });
-    source.workspace.initializeWorkspace({
+    const source = await createWorthlineStore({ databasePath: sourcePath });
+    await source.workspace.initializeWorkspace({
       groups: [{ id: "scope_family", memberIds: ["member_ana"], name: "Familia" }],
       members: [{ id: "member_ana", name: "Ana" }],
       mode: "household",
     });
-    const exported = source.workspace.exportWorkspace();
+    const exported = await source.workspace.exportWorkspace();
     source.close();
 
     process.env.WORTHLINE_DB_PATH = sourcePath;
     const before = await (await GET(request())).json();
 
-    const target = createWorthlineStore({ databasePath: targetPath });
-    target.workspace.importWorkspace(exported);
+    const target = await createWorthlineStore({ databasePath: targetPath });
+    await target.workspace.importWorkspace(exported);
     target.close();
 
     process.env.WORTHLINE_DB_PATH = targetPath;
@@ -161,21 +160,21 @@ describe("GET /api/v1/agent-view/scopes", () => {
     const targetPath = tempDatabasePath("worthline-agent-view-legacy-target-");
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const source = createWorthlineStore({ databasePath: sourcePath });
-    source.workspace.initializeWorkspace({
+    const source = await createWorthlineStore({ databasePath: sourcePath });
+    await source.workspace.initializeWorkspace({
       groups: [{ id: "scope_family", memberIds: ["member_ana"], name: "Familia" }],
       members: [{ id: "member_ana", name: "Ana" }],
       mode: "household",
     });
-    const exported = source.workspace.exportWorkspace();
+    const exported = await source.workspace.exportWorkspace();
     source.close();
 
     // Pre-#334 exports carry no public IDs; import must backfill them so the
     // read path never 500s on a freshly restored legacy workspace.
     const legacy = { ...exported, publicIds: [] };
 
-    const target = createWorthlineStore({ databasePath: targetPath });
-    target.workspace.importWorkspace(legacy);
+    const target = await createWorthlineStore({ databasePath: targetPath });
+    await target.workspace.importWorkspace(legacy);
     target.close();
 
     process.env.WORTHLINE_DB_PATH = targetPath;
@@ -282,45 +281,44 @@ describe("GET /api/v1/agent-view/scopes", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_ana", name: "Ana" }],
       mode: "household",
     });
     store.close();
 
-    const sqlite = new Database(databasePath);
-    sqlite
-      .prepare(
-        "DELETE FROM agent_view_public_ids WHERE entity_type = 'scope' AND entity_id = 'household'",
-      )
-      .run();
-    sqlite.close();
+    const client = openLibsqlClient(databasePath);
+    await client.execute({
+      sql: "DELETE FROM agent_view_public_ids WHERE entity_type = 'scope' AND entity_id = 'household'",
+      args: [],
+    });
+    client.close();
 
     const response = await GET(request());
 
     expect(response.status).toBe(500);
-    const reopened = createWorthlineStore({ databasePath });
+    const reopened = await createWorthlineStore({ databasePath });
     expect(
-      reopened.agentView
-        .readPublicIds()
-        .some((row) => row.entityType === "scope" && row.entityId === "household"),
+      (await reopened.agentView.readPublicIds()).some(
+        (row) => row.entityType === "scope" && row.entityId === "household",
+      ),
     ).toBe(false);
     reopened.close();
   });
 
-  test("does not export public IDs for hard-deleted members", () => {
+  test("does not export public IDs for hard-deleted members", async () => {
     const databasePath = tempDatabasePath("worthline-agent-view-stale-public-id-");
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_ana", name: "Ana" }],
       mode: "household",
     });
-    store.workspace.createMember({ id: "member_old", name: "Old" });
-    store.workspace.disableMember("member_old", "2026-06-01T00:00:00.000Z");
-    expect(store.workspace.hardDeleteMember("member_old")).toBe(1);
+    await store.workspace.createMember({ id: "member_old", name: "Old" });
+    await store.workspace.disableMember("member_old", "2026-06-01T00:00:00.000Z");
+    expect(await store.workspace.hardDeleteMember("member_old")).toBe(1);
 
-    const doc = store.workspace.exportWorkspace();
+    const doc = await store.workspace.exportWorkspace();
 
     expect(doc.publicIds.some((row) => row.entityId === "member_old")).toBe(false);
     store.close();

@@ -11,9 +11,9 @@ import { createInMemoryStore } from "@db/index";
 
 const own = [{ memberId: "m1", shareBps: 10000 }];
 
-function freshStore() {
-  const store = createInMemoryStore();
-  store.workspace.initializeWorkspace({
+async function freshStore() {
+  const store = await createInMemoryStore();
+  await store.workspace.initializeWorkspace({
     members: [{ id: "m1", name: "Alice" }],
     mode: "individual",
   });
@@ -21,9 +21,9 @@ function freshStore() {
 }
 
 describe("editing an asset keeps instrument + housing-ness in sync (#149)", () => {
-  test("toggling primary residence on a manual asset reclassifies it as housing", () => {
-    const store = freshStore();
-    store.assets.createManualAsset({
+  test("toggling primary residence on a manual asset reclassifies it as housing", async () => {
+    const store = await freshStore();
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 250000,
       id: "a1",
@@ -33,23 +33,23 @@ describe("editing an asset keeps instrument + housing-ness in sync (#149)", () =
       type: "manual",
     });
 
-    const before = store.assets.readAssets().find((a) => a.id === "a1")!;
+    const before = (await store.assets.readAssets()).find((a) => a.id === "a1")!;
     expect(before.instrument).toBe("other");
     expect(isHousingAsset(before)).toBe(false);
 
     // Only isPrimaryResidence changes — the instrument must re-derive from the
     // EFFECTIVE (current type "manual" + new primary-residence true) → property.
-    store.assets.updateAsset("a1", { isPrimaryResidence: true });
+    await store.assets.updateAsset("a1", { isPrimaryResidence: true });
 
-    const after = store.assets.readAssets().find((a) => a.id === "a1")!;
+    const after = (await store.assets.readAssets()).find((a) => a.id === "a1")!;
     expect(after.instrument).toBe("property");
     expect(isHousingAsset(after)).toBe(true);
     store.close();
   });
 
-  test("demoting a real_estate asset to a plain manual asset drops it from housing", () => {
-    const store = freshStore();
-    store.assets.createManualAsset({
+  test("demoting a real_estate asset to a plain manual asset drops it from housing", async () => {
+    const store = await freshStore();
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 300000,
       id: "a2",
@@ -59,13 +59,13 @@ describe("editing an asset keeps instrument + housing-ness in sync (#149)", () =
       type: "real_estate",
     });
 
-    const before = store.assets.readAssets().find((a) => a.id === "a2")!;
+    const before = (await store.assets.readAssets()).find((a) => a.id === "a2")!;
     expect(before.instrument).toBe("property");
     expect(isHousingAsset(before)).toBe(true);
 
-    store.assets.updateAsset("a2", { isPrimaryResidence: false, type: "manual" });
+    await store.assets.updateAsset("a2", { isPrimaryResidence: false, type: "manual" });
 
-    const after = store.assets.readAssets().find((a) => a.id === "a2")!;
+    const after = (await store.assets.readAssets()).find((a) => a.id === "a2")!;
     expect(after.instrument).toBe("other");
     expect(isHousingAsset(after)).toBe(false);
     store.close();

@@ -29,14 +29,14 @@ let store: WorthlineStore;
 const INVESTMENT_ID = "asset_fund_123";
 const MANUAL_ASSET_ID = "asset_cash_456";
 
-function setupStore(): WorthlineStore {
-  store = createInMemoryStore();
-  store.workspace.initializeWorkspace({
+async function setupStore(): Promise<WorthlineStore> {
+  store = await createInMemoryStore();
+  await store.workspace.initializeWorkspace({
     members: [{ id: "member_yo", name: "Yo" }],
     mode: "individual",
   });
   // Create an investment asset (derived value — must never be hand-edited)
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     id: INVESTMENT_ID,
     name: "Index Fund",
     currency: "EUR",
@@ -44,7 +44,7 @@ function setupStore(): WorthlineStore {
     ownership: [{ memberId: "member_yo", shareBps: 10_000 }],
   });
   // Create a manual asset (fine to update value by hand)
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     id: MANUAL_ASSET_ID,
     name: "Cash Account",
     type: "cash",
@@ -64,7 +64,7 @@ afterEach(() => {
 
 describe("updateAssetValuationAction — investment manual valuation guard", () => {
   test("updating a manual asset's value succeeds", async () => {
-    setupStore();
+    await setupStore();
 
     const fd = new FormData();
     fd.set("id", MANUAL_ASSET_ID);
@@ -74,16 +74,16 @@ describe("updateAssetValuationAction — investment manual valuation guard", () 
     const redirectUrl = await catchRedirect(() => updateAssetValuationAction(fd, store));
 
     expect(redirectUrl).toContain("ok=saved");
-    const assets = store.assets.readAssets();
+    const assets = await store.assets.readAssets();
     const manual = assets.find((a) => a.id === MANUAL_ASSET_ID);
     expect(manual!.currentValue.amountMinor).toBe(20_000);
   });
 
   test("updating an investment asset's value is rejected with a user-facing message and persists nothing", async () => {
-    setupStore();
+    await setupStore();
 
     // Record an operation so the investment has a known value
-    store.operations.recordOperation({
+    await store.operations.recordOperation({
       id: "op_1",
       assetId: INVESTMENT_ID,
       kind: "buy",
@@ -112,7 +112,7 @@ describe("updateAssetValuationAction — investment manual valuation guard", () 
 
 describe("batchValueUpdateAction — investment holding rejection", () => {
   test("value update pass with only manual assets succeeds", async () => {
-    setupStore();
+    await setupStore();
 
     const fd = new FormData();
     fd.set(`val_${MANUAL_ASSET_ID}`, "300");
@@ -121,13 +121,13 @@ describe("batchValueUpdateAction — investment holding rejection", () => {
     const redirectUrl = await catchRedirect(() => batchValueUpdateAction(fd, store));
 
     expect(redirectUrl).toContain("ok=");
-    const assets = store.assets.readAssets();
+    const assets = await store.assets.readAssets();
     const manual = assets.find((a) => a.id === MANUAL_ASSET_ID);
     expect(manual!.currentValue.amountMinor).toBe(30_000);
   });
 
   test("value update pass naming an investment holding is rejected with a user-facing message and persists nothing", async () => {
-    setupStore();
+    await setupStore();
 
     const fd = new FormData();
     fd.set(`val_${MANUAL_ASSET_ID}`, "300");
@@ -142,7 +142,7 @@ describe("batchValueUpdateAction — investment holding rejection", () => {
     expect(decoded).toMatch(/invers/i);
 
     // Manual asset must not have been updated either (nothing persisted)
-    const assets = store.assets.readAssets();
+    const assets = await store.assets.readAssets();
     const manual = assets.find((a) => a.id === MANUAL_ASSET_ID);
     expect(manual!.currentValue.amountMinor).toBe(100_000); // unchanged
   });

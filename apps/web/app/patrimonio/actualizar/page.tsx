@@ -33,8 +33,8 @@ export default async function PuestaAlDiaPage({
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
-  const storeData = await withStore((store) => {
-    const workspace = store.workspace.readWorkspace();
+  const storeData = await withStore(async (store) => {
+    const workspace = await store.workspace.readWorkspace();
 
     if (!workspace) {
       return null;
@@ -46,14 +46,13 @@ export default async function PuestaAlDiaPage({
     return {
       // Only hand-valued assets — derived holdings (investments, connected-source
       // coin collections) are valued from their sub-detail, never in this pass.
-      assets: store.assets
-        .readAssets()
+      assets: (await store.assets.readAssets())
         .filter(isValueUpdateEligible)
         .sort((a, b) => {
           // Stable fallback: sort by id alphabetically for determinism
           return a.id.localeCompare(b.id);
         }),
-      liabilities: store.liabilities.readLiabilities(),
+      liabilities: await store.liabilities.readLiabilities(),
       scopes,
       selectedScope,
       workspace,

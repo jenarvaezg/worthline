@@ -198,32 +198,35 @@ export interface BalanceAnchorWriteResult {
  * see readLiabilities.
  */
 export interface LiabilityStore {
-  createLiability: (input: CreateLiabilityInput) => void;
-  readLiabilities: () => Liability[];
-  updateLiability: (liabilityId: string, input: UpdateLiabilityInput) => void;
-  updateLiabilityBalance: (liabilityId: string, balanceMinor: number) => void;
+  createLiability: (input: CreateLiabilityInput) => Promise<void>;
+  readLiabilities: () => Promise<Liability[]>;
+  updateLiability: (liabilityId: string, input: UpdateLiabilityInput) => Promise<void>;
+  updateLiabilityBalance: (liabilityId: string, balanceMinor: number) => Promise<void>;
   /** Soft-delete a liability (moves it to the trash). Returns 1 if moved, 0 if not found. */
-  softDeleteLiability: (liabilityId: string, deletedAt: string) => number;
+  softDeleteLiability: (liabilityId: string, deletedAt: string) => Promise<number>;
   /** Restore a trashed liability. Returns 1 if restored, 0 if not found or not in trash. */
-  restoreLiability: (liabilityId: string) => number;
+  restoreLiability: (liabilityId: string) => Promise<number>;
   /** Hard-delete a trashed liability (live data + overrides; snapshots untouched). Returns 1 if removed, 0 if not found or not in trash. */
-  hardDeleteLiability: (liabilityId: string) => number;
+  hardDeleteLiability: (liabilityId: string) => Promise<number>;
   /** Set (or clear, with null) a liability's debt model. */
-  setDebtModel: (liabilityId: string, debtModel: DebtModel | null) => void;
+  setDebtModel: (liabilityId: string, debtModel: DebtModel | null) => Promise<void>;
   /** Read a liability's debt model, or null if unset. */
-  readDebtModel: (liabilityId: string) => DebtModel | null;
+  readDebtModel: (liabilityId: string) => Promise<DebtModel | null>;
   /** Create the amortization plan for a liability (1:1; throws if one exists). */
-  createAmortizationPlan: (input: CreateAmortizationPlanInput) => void;
+  createAmortizationPlan: (input: CreateAmortizationPlanInput) => Promise<void>;
   /** Read a liability's amortization plan, or null if it has none. */
-  readAmortizationPlan: (liabilityId: string) => AmortizationPlanRecord | null;
+  readAmortizationPlan: (liabilityId: string) => Promise<AmortizationPlanRecord | null>;
   /** Update an amortization plan in place. Returns 1 if updated, 0 if not found. */
-  updateAmortizationPlan: (planId: string, input: UpdateAmortizationPlanInput) => number;
+  updateAmortizationPlan: (
+    planId: string,
+    input: UpdateAmortizationPlanInput,
+  ) => Promise<number>;
   /** Delete an amortization plan by id (cascades its revisions). Returns 1 if removed, 0 if not found. */
-  deleteAmortizationPlan: (planId: string) => number;
+  deleteAmortizationPlan: (planId: string) => Promise<number>;
   /** Add an interest-rate revision to a plan. */
-  addInterestRateRevision: (input: AddInterestRateRevisionInput) => void;
+  addInterestRateRevision: (input: AddInterestRateRevisionInput) => Promise<void>;
   /** Read a plan's rate revisions, ordered ascending by date. */
-  readInterestRateRevisions: (planId: string) => InterestRateRevisionRecord[];
+  readInterestRateRevisions: (planId: string) => Promise<InterestRateRevisionRecord[]>;
   /**
    * Update a rate revision in place. `changes` is 1 if updated, 0 if not found; on
    * a hit it also returns the OLD date + owning liability read by id (ADR 0025).
@@ -231,16 +234,18 @@ export interface LiabilityStore {
   updateInterestRateRevision: (
     revisionId: string,
     input: UpdateInterestRateRevisionInput,
-  ) => InterestRateRevisionWriteResult;
+  ) => Promise<InterestRateRevisionWriteResult>;
   /**
    * Delete a rate revision by id. `changes` is 1 if removed, 0 if not found; on a
    * hit it also returns the removed date + owning liability read by id (ADR 0025).
    */
-  deleteInterestRateRevision: (revisionId: string) => InterestRateRevisionWriteResult;
+  deleteInterestRateRevision: (
+    revisionId: string,
+  ) => Promise<InterestRateRevisionWriteResult>;
   /** Add an early repayment to a plan. */
-  addEarlyRepayment: (input: AddEarlyRepaymentInput) => void;
+  addEarlyRepayment: (input: AddEarlyRepaymentInput) => Promise<void>;
   /** Read a plan's early repayments, ordered ascending by date. */
-  readEarlyRepayments: (planId: string) => EarlyRepaymentRecord[];
+  readEarlyRepayments: (planId: string) => Promise<EarlyRepaymentRecord[]>;
   /**
    * Update an early repayment in place. `changes` is 1 if updated, 0 if not found;
    * on a hit it also returns the OLD date + owning liability read by id (ADR 0025).
@@ -248,22 +253,22 @@ export interface LiabilityStore {
   updateEarlyRepayment: (
     repaymentId: string,
     input: UpdateEarlyRepaymentInput,
-  ) => EarlyRepaymentWriteResult;
+  ) => Promise<EarlyRepaymentWriteResult>;
   /**
    * Delete an early repayment by id. `changes` is 1 if removed, 0 if not found; on
    * a hit it also returns the removed date + owning liability read by id (ADR 0025).
    */
-  deleteEarlyRepayment: (repaymentId: string) => EarlyRepaymentWriteResult;
+  deleteEarlyRepayment: (repaymentId: string) => Promise<EarlyRepaymentWriteResult>;
   /**
    * Outstanding principal of an amortizable liability on `targetDate`
    * (YYYY-MM-DD): reads the plan + revisions + early repayments and delegates to
    * the pure domain curve. Throws if the liability has no amortization plan.
    */
-  amortizableBalanceAtDate: (liabilityId: string, targetDate: string) => number;
+  amortizableBalanceAtDate: (liabilityId: string, targetDate: string) => Promise<number>;
   /** Add a balance anchor to a revolving/informal liability. */
-  addBalanceAnchor: (input: AddBalanceAnchorInput) => void;
+  addBalanceAnchor: (input: AddBalanceAnchorInput) => Promise<void>;
   /** Read a liability's balance anchors, ordered ascending by date. */
-  readBalanceAnchors: (liabilityId: string) => BalanceAnchorRecord[];
+  readBalanceAnchors: (liabilityId: string) => Promise<BalanceAnchorRecord[]>;
   /**
    * Update a balance anchor in place. `changes` is 1 if updated, 0 if not found;
    * on a hit it also returns the OLD date + owning liability read by id (ADR 0025).
@@ -271,25 +276,25 @@ export interface LiabilityStore {
   updateBalanceAnchor: (
     anchorId: string,
     input: UpdateBalanceAnchorInput,
-  ) => BalanceAnchorWriteResult;
+  ) => Promise<BalanceAnchorWriteResult>;
   /**
    * Delete a balance anchor by id. `changes` is 1 if removed, 0 if not found; on a
    * hit it also returns the removed date + owning liability read by id (ADR 0025).
    */
-  deleteBalanceAnchor: (anchorId: string) => BalanceAnchorWriteResult;
+  deleteBalanceAnchor: (anchorId: string) => Promise<BalanceAnchorWriteResult>;
   /**
    * Outstanding balance of a liability on `targetDate` (YYYY-MM-DD) for any debt
    * model: reads the model + anchors (+ plan/revisions when amortizable) + the
    * current balance and delegates to the pure domain dispatcher. A null model or
    * missing data falls back to the current balance.
    */
-  debtBalanceAtDate: (liabilityId: string, targetDate: string) => number;
+  debtBalanceAtDate: (liabilityId: string, targetDate: string) => Promise<number>;
 }
 
 export function createLiabilityStore(ctx: StoreContext): LiabilityStore {
   return {
     createLiability: (input) => createLiabilityRecord(ctx, input),
-    readLiabilities: () => readLiabilities(ctx.db, ctx.getWorkspace()),
+    readLiabilities: async () => readLiabilities(ctx.db, await ctx.getWorkspace()),
     updateLiability: (liabilityId, input) => updateLiability(ctx, liabilityId, input),
     updateLiabilityBalance: (liabilityId, balanceMinor) =>
       updateLiabilityBalance(ctx, liabilityId, balanceMinor),
@@ -297,7 +302,7 @@ export function createLiabilityStore(ctx: StoreContext): LiabilityStore {
       softDeleteLiability(ctx, liabilityId, deletedAt),
     restoreLiability: (liabilityId) => restoreLiability(ctx, liabilityId),
     hardDeleteLiability: (liabilityId) =>
-      ctx.sqlite.transaction(() => hardDeleteLiabilityTx(ctx, liabilityId))(),
+      ctx.transaction(async () => hardDeleteLiabilityTx(ctx, liabilityId)),
     setDebtModel: (liabilityId, debtModel) => setDebtModel(ctx, liabilityId, debtModel),
     readDebtModel: (liabilityId) => readDebtModel(ctx, liabilityId),
     createAmortizationPlan: (input) => createAmortizationPlan(ctx, input),
@@ -341,21 +346,24 @@ function assertDecimalString(value: string, label: string): void {
   }
 }
 
-function setDebtModel(
+async function setDebtModel(
   ctx: StoreContext,
   liabilityId: string,
   debtModel: DebtModel | null,
-): void {
-  ctx.db
+): Promise<void> {
+  await ctx.db
     .update(liabilities)
     .set({ debtModel, updatedAt: sql`CURRENT_TIMESTAMP` })
     .where(eq(liabilities.id, liabilityId))
     .run();
-  ctx.writeAuditEntry("set_debt_model", "liability", liabilityId, { debtModel });
+  await ctx.writeAuditEntry("set_debt_model", "liability", liabilityId, { debtModel });
 }
 
-function readDebtModel(ctx: StoreContext, liabilityId: string): DebtModel | null {
-  const row = ctx.db
+async function readDebtModel(
+  ctx: StoreContext,
+  liabilityId: string,
+): Promise<DebtModel | null> {
+  const row = await ctx.db
     .select({ debtModel: liabilities.debtModel })
     .from(liabilities)
     .where(eq(liabilities.id, liabilityId))
@@ -363,10 +371,10 @@ function readDebtModel(ctx: StoreContext, liabilityId: string): DebtModel | null
   return row?.debtModel ?? null;
 }
 
-function createAmortizationPlan(
+async function createAmortizationPlan(
   ctx: StoreContext,
   input: CreateAmortizationPlanInput,
-): void {
+): Promise<void> {
   if (!Number.isInteger(input.initialCapitalMinor)) {
     throw new Error("Money must be stored as integer minor units.");
   }
@@ -386,7 +394,7 @@ function createAmortizationPlan(
 
   // The "liability must be amortizable" invariant is a domain/caller guard (R9),
   // not enforced here. The unique index on liability_id keeps the plan 1:1.
-  ctx.db
+  await ctx.db
     .insert(amortizationPlans)
     .values({
       annualInterestRate: input.annualInterestRate,
@@ -399,16 +407,16 @@ function createAmortizationPlan(
     })
     .run();
 
-  ctx.writeAuditEntry("create_amortization_plan", "liability", input.liabilityId, {
+  await ctx.writeAuditEntry("create_amortization_plan", "liability", input.liabilityId, {
     planId: input.id,
   });
 }
 
-function readAmortizationPlan(
+async function readAmortizationPlan(
   ctx: StoreContext,
   liabilityId: string,
-): AmortizationPlanRecord | null {
-  const row = ctx.db
+): Promise<AmortizationPlanRecord | null> {
+  const row = await ctx.db
     .select()
     .from(amortizationPlans)
     .where(eq(amortizationPlans.liabilityId, liabilityId))
@@ -432,11 +440,11 @@ function readAmortizationPlan(
  * or null if the plan is gone. Used to pin a dated event's boundary so the intake
  * can reject events that fall past the loan's final payment (#210).
  */
-function readPlanInputById(
+async function readPlanInputById(
   ctx: StoreContext,
   planId: string,
-): AmortizationPlanInput | null {
-  const row = ctx.db
+): Promise<AmortizationPlanInput | null> {
+  const row = await ctx.db
     .select()
     .from(amortizationPlans)
     .where(eq(amortizationPlans.id, planId))
@@ -453,11 +461,11 @@ function readPlanInputById(
   };
 }
 
-function updateAmortizationPlan(
+async function updateAmortizationPlan(
   ctx: StoreContext,
   planId: string,
   input: UpdateAmortizationPlanInput,
-): number {
+): Promise<number> {
   if (
     input.initialCapitalMinor !== undefined &&
     !Number.isInteger(input.initialCapitalMinor)
@@ -492,7 +500,7 @@ function updateAmortizationPlan(
     );
   }
 
-  const existing = ctx.db
+  const existing = await ctx.db
     .select({ liabilityId: amortizationPlans.liabilityId })
     .from(amortizationPlans)
     .where(eq(amortizationPlans.id, planId))
@@ -515,23 +523,31 @@ function updateAmortizationPlan(
     fields.firstPaymentDate = input.firstPaymentDate;
   }
 
-  const result = ctx.db
+  const result = await ctx.db
     .update(amortizationPlans)
     .set(fields)
     .where(eq(amortizationPlans.id, planId))
     .run();
 
-  if (result.changes > 0) {
-    ctx.writeAuditEntry("update_amortization_plan", "liability", existing.liabilityId, {
-      planId,
-      ...input,
-    });
+  if (result.rowsAffected > 0) {
+    await ctx.writeAuditEntry(
+      "update_amortization_plan",
+      "liability",
+      existing.liabilityId,
+      {
+        planId,
+        ...input,
+      },
+    );
   }
-  return result.changes;
+  return result.rowsAffected;
 }
 
-function deleteAmortizationPlan(ctx: StoreContext, planId: string): number {
-  const row = ctx.db
+async function deleteAmortizationPlan(
+  ctx: StoreContext,
+  planId: string,
+): Promise<number> {
+  const row = await ctx.db
     .select({ liabilityId: amortizationPlans.liabilityId })
     .from(amortizationPlans)
     .where(eq(amortizationPlans.id, planId))
@@ -539,34 +555,34 @@ function deleteAmortizationPlan(ctx: StoreContext, planId: string): number {
 
   if (!row) return 0;
 
-  const result = ctx.db
+  const result = await ctx.db
     .delete(amortizationPlans)
     .where(eq(amortizationPlans.id, planId))
     .run();
 
-  if (result.changes > 0) {
-    ctx.writeAuditEntry("delete_amortization_plan", "liability", row.liabilityId, {
+  if (result.rowsAffected > 0) {
+    await ctx.writeAuditEntry("delete_amortization_plan", "liability", row.liabilityId, {
       planId,
     });
   }
-  return result.changes;
+  return result.rowsAffected;
 }
 
-function addInterestRateRevision(
+async function addInterestRateRevision(
   ctx: StoreContext,
   input: AddInterestRateRevisionInput,
-): void {
+): Promise<void> {
   assertIsoDate(input.revisionDate, "Revision date");
   assertDecimalString(input.newAnnualInterestRate, "Annual interest rate");
 
   // #210: an event past the loan's final payment boundary resolves outside the
   // term and would be silently dropped by the schedule build loop — reject it.
-  const plan = readPlanInputById(ctx, input.planId);
+  const plan = await readPlanInputById(ctx, input.planId);
   if (plan) {
     assertEventWithinTerm(plan, input.revisionDate, "Revision date");
   }
 
-  ctx.db
+  await ctx.db
     .insert(interestRateRevisions)
     .values({
       id: input.id,
@@ -576,18 +592,18 @@ function addInterestRateRevision(
     })
     .run();
 
-  ctx.writeAuditEntry("add_rate_revision", "amortization_plan", input.planId, {
+  await ctx.writeAuditEntry("add_rate_revision", "amortization_plan", input.planId, {
     newAnnualInterestRate: input.newAnnualInterestRate,
     revisionDate: input.revisionDate,
     revisionId: input.id,
   });
 }
 
-function readInterestRateRevisions(
+async function readInterestRateRevisions(
   ctx: StoreContext,
   planId: string,
-): InterestRateRevisionRecord[] {
-  const rows = ctx.db
+): Promise<InterestRateRevisionRecord[]> {
+  const rows = await ctx.db
     .select()
     .from(interestRateRevisions)
     .where(eq(interestRateRevisions.planId, planId))
@@ -603,8 +619,11 @@ function readInterestRateRevisions(
 }
 
 /** Resolve the owning liability of an amortization plan, or undefined if gone. */
-function readLiabilityIdForPlan(ctx: StoreContext, planId: string): string | undefined {
-  const row = ctx.db
+async function readLiabilityIdForPlan(
+  ctx: StoreContext,
+  planId: string,
+): Promise<string | undefined> {
+  const row = await ctx.db
     .select({ liabilityId: amortizationPlans.liabilityId })
     .from(amortizationPlans)
     .where(eq(amortizationPlans.id, planId))
@@ -612,11 +631,11 @@ function readLiabilityIdForPlan(ctx: StoreContext, planId: string): string | und
   return row?.liabilityId;
 }
 
-function updateInterestRateRevision(
+async function updateInterestRateRevision(
   ctx: StoreContext,
   revisionId: string,
   input: UpdateInterestRateRevisionInput,
-): InterestRateRevisionWriteResult {
+): Promise<InterestRateRevisionWriteResult> {
   if (input.revisionDate !== undefined) {
     assertIsoDate(input.revisionDate, "Revision date");
   }
@@ -627,7 +646,7 @@ function updateInterestRateRevision(
   // Widened by-id select (ADR 0025): the OLD date and owning plan are read here,
   // inside the transaction, so the seam derives the ripple from-date itself without
   // the caller re-reading the row first.
-  const existing = ctx.db
+  const existing = await ctx.db
     .select({
       planId: interestRateRevisions.planId,
       revisionDate: interestRateRevisions.revisionDate,
@@ -641,7 +660,7 @@ function updateInterestRateRevision(
   // #210: an edited date that lands past the loan's final boundary would be
   // silently dropped just like an out-of-range add — reject it the same way.
   if (input.revisionDate !== undefined) {
-    const plan = readPlanInputById(ctx, existing.planId);
+    const plan = await readPlanInputById(ctx, existing.planId);
     if (plan) assertEventWithinTerm(plan, input.revisionDate, "Revision date");
   }
 
@@ -651,32 +670,37 @@ function updateInterestRateRevision(
     fields.newAnnualInterestRate = input.newAnnualInterestRate;
   }
 
-  const result = ctx.db
+  const result = await ctx.db
     .update(interestRateRevisions)
     .set(fields)
     .where(eq(interestRateRevisions.id, revisionId))
     .run();
 
-  if (result.changes > 0) {
-    ctx.writeAuditEntry("update_rate_revision", "amortization_plan", existing.planId, {
-      revisionId,
-      ...input,
-    });
+  if (result.rowsAffected > 0) {
+    await ctx.writeAuditEntry(
+      "update_rate_revision",
+      "amortization_plan",
+      existing.planId,
+      {
+        revisionId,
+        ...input,
+      },
+    );
   }
   return {
-    changes: result.changes,
-    liabilityId: readLiabilityIdForPlan(ctx, existing.planId),
+    changes: result.rowsAffected,
+    liabilityId: await readLiabilityIdForPlan(ctx, existing.planId),
     revisionDate: existing.revisionDate,
   };
 }
 
-function deleteInterestRateRevision(
+async function deleteInterestRateRevision(
   ctx: StoreContext,
   revisionId: string,
-): InterestRateRevisionWriteResult {
+): Promise<InterestRateRevisionWriteResult> {
   // Widened by-id select (ADR 0025): the row's date and owning plan are read inside
   // the transaction so the seam ripples from the removed revision's own date.
-  const row = ctx.db
+  const row = await ctx.db
     .select({
       planId: interestRateRevisions.planId,
       revisionDate: interestRateRevisions.revisionDate,
@@ -687,26 +711,29 @@ function deleteInterestRateRevision(
 
   if (!row) return { changes: 0 };
 
-  const liabilityId = readLiabilityIdForPlan(ctx, row.planId);
+  const liabilityId = await readLiabilityIdForPlan(ctx, row.planId);
 
-  const result = ctx.db
+  const result = await ctx.db
     .delete(interestRateRevisions)
     .where(eq(interestRateRevisions.id, revisionId))
     .run();
 
-  if (result.changes > 0) {
-    ctx.writeAuditEntry("delete_rate_revision", "amortization_plan", row.planId, {
+  if (result.rowsAffected > 0) {
+    await ctx.writeAuditEntry("delete_rate_revision", "amortization_plan", row.planId, {
       revisionId,
     });
   }
   return {
-    changes: result.changes,
+    changes: result.rowsAffected,
     liabilityId,
     revisionDate: row.revisionDate,
   };
 }
 
-function addEarlyRepayment(ctx: StoreContext, input: AddEarlyRepaymentInput): void {
+async function addEarlyRepayment(
+  ctx: StoreContext,
+  input: AddEarlyRepaymentInput,
+): Promise<void> {
   assertIsoDate(input.repaymentDate, "Repayment date");
   if (!Number.isInteger(input.amountMinor)) {
     throw new Error("Money must be stored as integer minor units.");
@@ -714,12 +741,12 @@ function addEarlyRepayment(ctx: StoreContext, input: AddEarlyRepaymentInput): vo
 
   // #210: an event past the loan's final payment boundary resolves outside the
   // term and would be silently dropped by the schedule build loop — reject it.
-  const plan = readPlanInputById(ctx, input.planId);
+  const plan = await readPlanInputById(ctx, input.planId);
   if (plan) {
     assertEventWithinTerm(plan, input.repaymentDate, "Repayment date");
   }
 
-  ctx.db
+  await ctx.db
     .insert(earlyRepayments)
     .values({
       amountMinor: input.amountMinor,
@@ -730,7 +757,7 @@ function addEarlyRepayment(ctx: StoreContext, input: AddEarlyRepaymentInput): vo
     })
     .run();
 
-  ctx.writeAuditEntry("add_early_repayment", "amortization_plan", input.planId, {
+  await ctx.writeAuditEntry("add_early_repayment", "amortization_plan", input.planId, {
     amountMinor: input.amountMinor,
     mode: input.mode,
     repaymentDate: input.repaymentDate,
@@ -738,8 +765,11 @@ function addEarlyRepayment(ctx: StoreContext, input: AddEarlyRepaymentInput): vo
   });
 }
 
-function readEarlyRepayments(ctx: StoreContext, planId: string): EarlyRepaymentRecord[] {
-  const rows = ctx.db
+async function readEarlyRepayments(
+  ctx: StoreContext,
+  planId: string,
+): Promise<EarlyRepaymentRecord[]> {
+  const rows = await ctx.db
     .select()
     .from(earlyRepayments)
     .where(eq(earlyRepayments.planId, planId))
@@ -755,11 +785,11 @@ function readEarlyRepayments(ctx: StoreContext, planId: string): EarlyRepaymentR
   }));
 }
 
-function updateEarlyRepayment(
+async function updateEarlyRepayment(
   ctx: StoreContext,
   repaymentId: string,
   input: UpdateEarlyRepaymentInput,
-): EarlyRepaymentWriteResult {
+): Promise<EarlyRepaymentWriteResult> {
   if (input.repaymentDate !== undefined) {
     assertIsoDate(input.repaymentDate, "Repayment date");
   }
@@ -770,7 +800,7 @@ function updateEarlyRepayment(
   // Widened by-id select (ADR 0025): the OLD date and owning plan are read here,
   // inside the transaction, so the seam derives the ripple from-date itself without
   // the caller re-reading the row first.
-  const existing = ctx.db
+  const existing = await ctx.db
     .select({
       planId: earlyRepayments.planId,
       repaymentDate: earlyRepayments.repaymentDate,
@@ -784,7 +814,7 @@ function updateEarlyRepayment(
   // #210: an edited date that lands past the loan's final boundary would be
   // silently dropped just like an out-of-range add — reject it the same way.
   if (input.repaymentDate !== undefined) {
-    const plan = readPlanInputById(ctx, existing.planId);
+    const plan = await readPlanInputById(ctx, existing.planId);
     if (plan) assertEventWithinTerm(plan, input.repaymentDate, "Repayment date");
   }
 
@@ -793,32 +823,37 @@ function updateEarlyRepayment(
   if (input.amountMinor !== undefined) fields.amountMinor = input.amountMinor;
   if (input.mode !== undefined) fields.mode = input.mode;
 
-  const result = ctx.db
+  const result = await ctx.db
     .update(earlyRepayments)
     .set(fields)
     .where(eq(earlyRepayments.id, repaymentId))
     .run();
 
-  if (result.changes > 0) {
-    ctx.writeAuditEntry("update_early_repayment", "amortization_plan", existing.planId, {
-      repaymentId,
-      ...input,
-    });
+  if (result.rowsAffected > 0) {
+    await ctx.writeAuditEntry(
+      "update_early_repayment",
+      "amortization_plan",
+      existing.planId,
+      {
+        repaymentId,
+        ...input,
+      },
+    );
   }
   return {
-    changes: result.changes,
-    liabilityId: readLiabilityIdForPlan(ctx, existing.planId),
+    changes: result.rowsAffected,
+    liabilityId: await readLiabilityIdForPlan(ctx, existing.planId),
     repaymentDate: existing.repaymentDate,
   };
 }
 
-function deleteEarlyRepayment(
+async function deleteEarlyRepayment(
   ctx: StoreContext,
   repaymentId: string,
-): EarlyRepaymentWriteResult {
+): Promise<EarlyRepaymentWriteResult> {
   // Widened by-id select (ADR 0025): the row's date and owning plan are read inside
   // the transaction so the seam ripples from the removed repayment's own date.
-  const row = ctx.db
+  const row = await ctx.db
     .select({
       planId: earlyRepayments.planId,
       repaymentDate: earlyRepayments.repaymentDate,
@@ -829,41 +864,41 @@ function deleteEarlyRepayment(
 
   if (!row) return { changes: 0 };
 
-  const liabilityId = readLiabilityIdForPlan(ctx, row.planId);
+  const liabilityId = await readLiabilityIdForPlan(ctx, row.planId);
 
-  const result = ctx.db
+  const result = await ctx.db
     .delete(earlyRepayments)
     .where(eq(earlyRepayments.id, repaymentId))
     .run();
 
-  if (result.changes > 0) {
-    ctx.writeAuditEntry("delete_early_repayment", "amortization_plan", row.planId, {
+  if (result.rowsAffected > 0) {
+    await ctx.writeAuditEntry("delete_early_repayment", "amortization_plan", row.planId, {
       repaymentId,
     });
   }
   return {
-    changes: result.changes,
+    changes: result.rowsAffected,
     liabilityId,
     repaymentDate: row.repaymentDate,
   };
 }
 
-function amortizableBalanceAtDateFor(
+async function amortizableBalanceAtDateFor(
   ctx: StoreContext,
   liabilityId: string,
   targetDate: string,
-): number {
-  const plan = readAmortizationPlan(ctx, liabilityId);
+): Promise<number> {
+  const plan = await readAmortizationPlan(ctx, liabilityId);
   if (!plan) {
     throw new Error(`Liability "${liabilityId}" has no amortization plan.`);
   }
 
-  const revisions = readInterestRateRevisions(ctx, plan.id).map((revision) => ({
+  const revisions = (await readInterestRateRevisions(ctx, plan.id)).map((revision) => ({
     newAnnualInterestRate: revision.newAnnualInterestRate,
     revisionDate: revision.revisionDate,
   }));
 
-  const repayments = readEarlyRepayments(ctx, plan.id).map((repayment) => ({
+  const repayments = (await readEarlyRepayments(ctx, plan.id)).map((repayment) => ({
     amountMinor: repayment.amountMinor,
     mode: repayment.mode,
     repaymentDate: repayment.repaymentDate,
@@ -883,7 +918,10 @@ function amortizableBalanceAtDateFor(
   });
 }
 
-function addBalanceAnchor(ctx: StoreContext, input: AddBalanceAnchorInput): void {
+async function addBalanceAnchor(
+  ctx: StoreContext,
+  input: AddBalanceAnchorInput,
+): Promise<void> {
   if (!Number.isInteger(input.balanceMinor)) {
     throw new Error("Money must be stored as integer minor units.");
   }
@@ -892,7 +930,7 @@ function addBalanceAnchor(ctx: StoreContext, input: AddBalanceAnchorInput): void
   // The "liability must be revolving/informal" invariant is a domain/caller
   // guard (R9), not enforced here. The unique index on (liability_id,
   // anchor_date) keeps one anchor per liability per date — a collision throws.
-  ctx.db
+  await ctx.db
     .insert(liabilityBalanceAnchors)
     .values({
       anchorDate: input.anchorDate,
@@ -902,18 +940,18 @@ function addBalanceAnchor(ctx: StoreContext, input: AddBalanceAnchorInput): void
     })
     .run();
 
-  ctx.writeAuditEntry("add_balance_anchor", "liability", input.liabilityId, {
+  await ctx.writeAuditEntry("add_balance_anchor", "liability", input.liabilityId, {
     anchorDate: input.anchorDate,
     anchorId: input.id,
     balanceMinor: input.balanceMinor,
   });
 }
 
-function readBalanceAnchors(
+async function readBalanceAnchors(
   ctx: StoreContext,
   liabilityId: string,
-): BalanceAnchorRecord[] {
-  const rows = ctx.db
+): Promise<BalanceAnchorRecord[]> {
+  const rows = await ctx.db
     .select()
     .from(liabilityBalanceAnchors)
     .where(eq(liabilityBalanceAnchors.liabilityId, liabilityId))
@@ -928,11 +966,11 @@ function readBalanceAnchors(
   }));
 }
 
-function updateBalanceAnchor(
+async function updateBalanceAnchor(
   ctx: StoreContext,
   anchorId: string,
   input: UpdateBalanceAnchorInput,
-): BalanceAnchorWriteResult {
+): Promise<BalanceAnchorWriteResult> {
   if (input.balanceMinor !== undefined && !Number.isInteger(input.balanceMinor)) {
     throw new Error("Money must be stored as integer minor units.");
   }
@@ -943,7 +981,7 @@ function updateBalanceAnchor(
   // Widened by-id select (ADR 0025): the OLD date and owning liability are read
   // here, inside the transaction, so the seam derives the ripple from-date itself
   // without the caller re-reading the row first.
-  const existing = ctx.db
+  const existing = await ctx.db
     .select({
       anchorDate: liabilityBalanceAnchors.anchorDate,
       liabilityId: liabilityBalanceAnchors.liabilityId,
@@ -958,32 +996,37 @@ function updateBalanceAnchor(
   if (input.balanceMinor !== undefined) fields.balanceMinor = input.balanceMinor;
   if (input.anchorDate !== undefined) fields.anchorDate = input.anchorDate;
 
-  const result = ctx.db
+  const result = await ctx.db
     .update(liabilityBalanceAnchors)
     .set(fields)
     .where(eq(liabilityBalanceAnchors.id, anchorId))
     .run();
 
-  if (result.changes > 0) {
-    ctx.writeAuditEntry("update_balance_anchor", "liability", existing.liabilityId, {
-      anchorId,
-      ...input,
-    });
+  if (result.rowsAffected > 0) {
+    await ctx.writeAuditEntry(
+      "update_balance_anchor",
+      "liability",
+      existing.liabilityId,
+      {
+        anchorId,
+        ...input,
+      },
+    );
   }
   return {
     anchorDate: existing.anchorDate,
-    changes: result.changes,
+    changes: result.rowsAffected,
     liabilityId: existing.liabilityId,
   };
 }
 
-function deleteBalanceAnchor(
+async function deleteBalanceAnchor(
   ctx: StoreContext,
   anchorId: string,
-): BalanceAnchorWriteResult {
+): Promise<BalanceAnchorWriteResult> {
   // Widened by-id select (ADR 0025): the row's date and owning liability are read
   // inside the transaction so the seam ripples from the removed anchor's own date.
-  const row = ctx.db
+  const row = await ctx.db
     .select({
       anchorDate: liabilityBalanceAnchors.anchorDate,
       liabilityId: liabilityBalanceAnchors.liabilityId,
@@ -994,29 +1037,29 @@ function deleteBalanceAnchor(
 
   if (!row) return { changes: 0 };
 
-  const result = ctx.db
+  const result = await ctx.db
     .delete(liabilityBalanceAnchors)
     .where(eq(liabilityBalanceAnchors.id, anchorId))
     .run();
 
-  if (result.changes > 0) {
-    ctx.writeAuditEntry("delete_balance_anchor", "liability", row.liabilityId, {
+  if (result.rowsAffected > 0) {
+    await ctx.writeAuditEntry("delete_balance_anchor", "liability", row.liabilityId, {
       anchorId,
     });
   }
   return {
     anchorDate: row.anchorDate,
-    changes: result.changes,
+    changes: result.rowsAffected,
     liabilityId: row.liabilityId,
   };
 }
 
-function debtBalanceAtDateFor(
+async function debtBalanceAtDateFor(
   ctx: StoreContext,
   liabilityId: string,
   targetDate: string,
-): number {
-  const row = ctx.db
+): Promise<number> {
+  const row = await ctx.db
     .select({
       currentBalanceMinor: liabilities.currentBalanceMinor,
       debtModel: liabilities.debtModel,
@@ -1033,15 +1076,15 @@ function debtBalanceAtDateFor(
   const debtModel = row.debtModel ?? null;
 
   if (debtModel === "amortizable") {
-    const plan = readAmortizationPlan(ctx, liabilityId);
+    const plan = await readAmortizationPlan(ctx, liabilityId);
     if (!plan) {
       return debtBalanceAtDate({ currentBalanceMinor, debtModel, targetDate });
     }
-    const revisions = readInterestRateRevisions(ctx, plan.id).map((revision) => ({
+    const revisions = (await readInterestRateRevisions(ctx, plan.id)).map((revision) => ({
       newAnnualInterestRate: revision.newAnnualInterestRate,
       revisionDate: revision.revisionDate,
     }));
-    const repayments = readEarlyRepayments(ctx, plan.id).map((repayment) => ({
+    const repayments = (await readEarlyRepayments(ctx, plan.id)).map((repayment) => ({
       amountMinor: repayment.amountMinor,
       mode: repayment.mode,
       repaymentDate: repayment.repaymentDate,
@@ -1062,7 +1105,7 @@ function debtBalanceAtDateFor(
     });
   }
 
-  const anchors = readBalanceAnchors(ctx, liabilityId).map((anchor) => ({
+  const anchors = (await readBalanceAnchors(ctx, liabilityId)).map((anchor) => ({
     anchorDate: anchor.anchorDate,
     balanceMinor: anchor.balanceMinor,
   }));
@@ -1070,9 +1113,12 @@ function debtBalanceAtDateFor(
   return debtBalanceAtDate({ anchors, currentBalanceMinor, debtModel, targetDate });
 }
 
-function createLiabilityRecord(ctx: StoreContext, input: CreateLiabilityInput): void {
+async function createLiabilityRecord(
+  ctx: StoreContext,
+  input: CreateLiabilityInput,
+): Promise<void> {
   const { db } = ctx;
-  const workspace = ctx.getWorkspace();
+  const workspace = await ctx.getWorkspace();
 
   if (!workspace) {
     throw new Error("Workspace must be initialized before creating liabilities.");
@@ -1083,8 +1129,9 @@ function createLiabilityRecord(ctx: StoreContext, input: CreateLiabilityInput): 
   // persist only constructs the row, so it accepts ≤100% rather than re-asserting
   // strict 100% and rejecting an already-approved partial split.
   const liability = createLiability(workspace, input, { allowKnownPartial: true });
-  ctx.transaction(() => {
-    db.insert(liabilities)
+  await ctx.transaction(async () => {
+    await db
+      .insert(liabilities)
       .values({
         associatedAssetId: liability.associatedAssetId ?? null,
         currency: liability.currency,
@@ -1099,7 +1146,8 @@ function createLiabilityRecord(ctx: StoreContext, input: CreateLiabilityInput): 
       .run();
 
     if (liability.ownership.length > 0) {
-      db.insert(liabilityOwnerships)
+      await db
+        .insert(liabilityOwnerships)
         .values(
           liability.ownership.map((share) => ({
             liabilityId: liability.id,
@@ -1112,17 +1160,17 @@ function createLiabilityRecord(ctx: StoreContext, input: CreateLiabilityInput): 
 
     // Register the holding's agent-view public id on creation (#335) so the
     // non-lazy read path never 500s on a missing id — mirrors createMember.
-    ensureAgentViewPublicIds(ctx, publicIdTargetsForHolding(liability.id));
+    await ensureAgentViewPublicIds(ctx, publicIdTargetsForHolding(liability.id));
   });
 
-  ctx.writeAuditEntry("create_liability", "liability", liability.id);
+  await ctx.writeAuditEntry("create_liability", "liability", liability.id);
 }
 
-function updateLiability(
+async function updateLiability(
   ctx: StoreContext,
   liabilityId: string,
   input: UpdateLiabilityInput,
-): void {
+): Promise<void> {
   const { db } = ctx;
   const fields: Partial<typeof liabilities.$inferInsert> = {};
 
@@ -1138,21 +1186,24 @@ function updateLiability(
     fields.associatedAssetId = input.associatedAssetId;
   }
 
-  ctx.transaction(() => {
+  await ctx.transaction(async () => {
     if (Object.keys(fields).length > 0) {
-      db.update(liabilities)
+      await db
+        .update(liabilities)
         .set({ ...fields, updatedAt: sql`CURRENT_TIMESTAMP` })
         .where(eq(liabilities.id, liabilityId))
         .run();
     }
 
     if (input.ownership !== undefined) {
-      db.delete(liabilityOwnerships)
+      await db
+        .delete(liabilityOwnerships)
         .where(eq(liabilityOwnerships.liabilityId, liabilityId))
         .run();
 
       if (input.ownership.length > 0) {
-        db.insert(liabilityOwnerships)
+        await db
+          .insert(liabilityOwnerships)
           .values(
             input.ownership.map((share) => ({
               liabilityId,
@@ -1165,54 +1216,57 @@ function updateLiability(
     }
   });
 
-  ctx.writeAuditEntry("update_liability", "liability", liabilityId, {
+  await ctx.writeAuditEntry("update_liability", "liability", liabilityId, {
     ...input,
     ownership: undefined,
   });
 }
 
-function updateLiabilityBalance(
+async function updateLiabilityBalance(
   ctx: StoreContext,
   liabilityId: string,
   balanceMinor: number,
-): void {
+): Promise<void> {
   const { db } = ctx;
 
   if (!Number.isInteger(balanceMinor)) {
     throw new Error("Money must be stored as integer minor units.");
   }
 
-  db.update(liabilities)
+  await db
+    .update(liabilities)
     .set({ currentBalanceMinor: balanceMinor, updatedAt: sql`CURRENT_TIMESTAMP` })
     .where(eq(liabilities.id, liabilityId))
     .run();
-  ctx.writeAuditEntry("update_balance", "liability", liabilityId, { balanceMinor });
+  await ctx.writeAuditEntry("update_balance", "liability", liabilityId, { balanceMinor });
 }
 
-function softDeleteLiability(
+async function softDeleteLiability(
   ctx: StoreContext,
   liabilityId: string,
   deletedAt: string,
-): number {
-  const result = ctx.db
+): Promise<number> {
+  const result = await ctx.db
     .update(liabilities)
     .set({ deletedAt })
     .where(eq(liabilities.id, liabilityId))
     .run();
-  if (result.changes > 0) {
-    ctx.writeAuditEntry("delete_liability", "liability", liabilityId, { deletedAt });
+  if (result.rowsAffected > 0) {
+    await ctx.writeAuditEntry("delete_liability", "liability", liabilityId, {
+      deletedAt,
+    });
   }
-  return result.changes;
+  return result.rowsAffected;
 }
 
-function restoreLiability(ctx: StoreContext, liabilityId: string): number {
-  const result = ctx.db
+async function restoreLiability(ctx: StoreContext, liabilityId: string): Promise<number> {
+  const result = await ctx.db
     .update(liabilities)
     .set({ deletedAt: null })
     .where(and(eq(liabilities.id, liabilityId), isNotNull(liabilities.deletedAt)))
     .run();
-  if (result.changes > 0) {
-    ctx.writeAuditEntry("restore_liability", "liability", liabilityId);
+  if (result.rowsAffected > 0) {
+    await ctx.writeAuditEntry("restore_liability", "liability", liabilityId);
   }
-  return result.changes;
+  return result.rowsAffected;
 }

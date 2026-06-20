@@ -38,15 +38,15 @@ async function runAction(fd: FormData, store: WorthlineStore): Promise<string> {
   }
 }
 
-function seed(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seed(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [
       { id: "mJ", name: "Jose" },
       { id: "mA", name: "Ana" },
     ],
     mode: "household",
   });
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     balanceMinor: 100_000_00,
     currency: "EUR",
     id: "mortgage",
@@ -57,8 +57,8 @@ function seed(store: WorthlineStore): void {
     ],
     type: "mortgage",
   });
-  store.liabilities.setDebtModel("mortgage", "amortizable");
-  store.createAmortizationPlanAndRipple(
+  await store.liabilities.setDebtModel("mortgage", "amortizable");
+  await store.createAmortizationPlanAndRipple(
     {
       annualInterestRate: "0.03",
       id: "plan1",
@@ -72,19 +72,23 @@ function seed(store: WorthlineStore): void {
   );
 }
 
-function debtsAt(store: WorthlineStore, scopeId: string): number | undefined {
-  return store.snapshots.readSnapshots(scopeId).find((snap) => snap.dateKey === A_DATE)
-    ?.debts.amountMinor;
+async function debtsAt(
+  store: WorthlineStore,
+  scopeId: string,
+): Promise<number | undefined> {
+  return (await store.snapshots.readSnapshots(scopeId)).find(
+    (snap) => snap.dateKey === A_DATE,
+  )?.debts.amountMinor;
 }
 
 describe("editAssetAction — ownership-split ripple (#172)", () => {
-  test("editing a liability's ownership split ripples its member-scope history", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("editing a liability's ownership split ripples its member-scope history", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
-    const before = debtsAt(store, "mJ")!;
+    const before = (await debtsAt(store, "mJ"))!;
 
-    return runAction(
+    await runAction(
       form({
         id: "mortgage",
         isLiability: "true",
@@ -95,29 +99,28 @@ describe("editAssetAction — ownership-split ripple (#172)", () => {
         owner_mA: "30",
       }),
       store,
-    ).then(() => {
-      const global = store.liabilities.debtBalanceAtDate("mortgage", A_DATE)!;
-      const expectedJose = allocateScopedHolding(global, {
-        ownership: [{ memberId: "mJ", shareBps: 7_000 }],
-        scopeMemberIds: new Set(["mJ"]),
-      }).ownedMinor;
-      // Jose's frozen share moved from 50% to 70% of the global balance.
-      expect(debtsAt(store, "mJ")).toBeGreaterThan(before);
-      expect(debtsAt(store, "mJ")).toBe(expectedJose);
-      // Household keeps the full balance (a 100% scope is invariant).
-      expect(debtsAt(store, "household")).toBe(global);
-    });
+    );
+    const global = (await store.liabilities.debtBalanceAtDate("mortgage", A_DATE))!;
+    const expectedJose = allocateScopedHolding(global, {
+      ownership: [{ memberId: "mJ", shareBps: 7_000 }],
+      scopeMemberIds: new Set(["mJ"]),
+    }).ownedMinor;
+    // Jose's frozen share moved from 50% to 70% of the global balance.
+    expect(await debtsAt(store, "mJ")).toBeGreaterThan(before);
+    expect(await debtsAt(store, "mJ")).toBe(expectedJose);
+    // Household keeps the full balance (a 100% scope is invariant).
+    expect(await debtsAt(store, "household")).toBe(global);
   });
 
-  test("editing a debt on a co-owned home to a partial split is accepted and re-weights history", () => {
-    const store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
+  test("editing a debt on a co-owned home to a partial split is accepted and re-weights history", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
       members: [{ id: "mJ", name: "Jose" }],
       mode: "individual",
     });
     // A home co-owned with a non-member (75% Jose), and its mortgage — initially
     // recorded at 100% — being corrected to mirror the home's 75% (#171/#172).
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 200_000_00,
       id: "piso",
@@ -126,7 +129,7 @@ describe("editAssetAction — ownership-split ripple (#172)", () => {
       ownership: [{ memberId: "mJ", shareBps: 7_500 }],
       type: "real_estate",
     });
-    store.liabilities.createLiability({
+    await store.liabilities.createLiability({
       associatedAssetId: "piso",
       balanceMinor: 100_000_00,
       currency: "EUR",
@@ -135,8 +138,8 @@ describe("editAssetAction — ownership-split ripple (#172)", () => {
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
       type: "mortgage",
     });
-    store.liabilities.setDebtModel("mortgage", "amortizable");
-    store.createAmortizationPlanAndRipple(
+    await store.liabilities.setDebtModel("mortgage", "amortizable");
+    await store.createAmortizationPlanAndRipple(
       {
         annualInterestRate: "0.03",
         id: "plan1",
@@ -149,7 +152,7 @@ describe("editAssetAction — ownership-split ripple (#172)", () => {
       { today: TODAY },
     );
 
-    return runAction(
+    await runAction(
       form({
         id: "mortgage",
         isLiability: "true",
@@ -160,33 +163,32 @@ describe("editAssetAction — ownership-split ripple (#172)", () => {
         owner_mJ: "75",
       }),
       store,
-    ).then(() => {
-      // Accepted as a known partial (not rejected as "must sum to 100%").
-      expect(store.liabilities.readLiabilities()[0]!.ownership).toEqual([
-        { memberId: "mJ", shareBps: 7_500 },
-      ]);
-      const curve = store.liabilities.debtBalanceAtDate("mortgage", A_DATE)!;
-      const expected = allocateScopedHolding(curve, {
-        ownership: [{ memberId: "mJ", shareBps: 7_500 }],
-        scopeMemberIds: new Set(["mJ"]),
-      }).ownedMinor;
-      // History re-weighted to 75% of the curve balance. Individual mode has a
-      // single scope — the household, which is the lone person (#269).
-      expect(debtsAt(store, "household")).toBe(expected);
-    });
+    );
+    // Accepted as a known partial (not rejected as "must sum to 100%").
+    expect((await store.liabilities.readLiabilities())[0]!.ownership).toEqual([
+      { memberId: "mJ", shareBps: 7_500 },
+    ]);
+    const curve = (await store.liabilities.debtBalanceAtDate("mortgage", A_DATE))!;
+    const expected = allocateScopedHolding(curve, {
+      ownership: [{ memberId: "mJ", shareBps: 7_500 }],
+      scopeMemberIds: new Set(["mJ"]),
+    }).ownedMinor;
+    // History re-weighted to 75% of the curve balance. Individual mode has a
+    // single scope — the household, which is the lone person (#269).
+    expect(await debtsAt(store, "household")).toBe(expected);
   });
 
-  test("a rename (same ownership split) does NOT ripple history", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("a rename (same ownership split) does NOT ripple history", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
     const before = {
-      household: debtsAt(store, "household"),
-      mA: debtsAt(store, "mA"),
-      mJ: debtsAt(store, "mJ"),
+      household: await debtsAt(store, "household"),
+      mA: await debtsAt(store, "mA"),
+      mJ: await debtsAt(store, "mJ"),
     };
 
-    return runAction(
+    await runAction(
       form({
         id: "mortgage",
         isLiability: "true",
@@ -196,12 +198,13 @@ describe("editAssetAction — ownership-split ripple (#172)", () => {
         ownershipPreset: "even",
       }),
       store,
-    ).then(() => {
-      expect(store.liabilities.readLiabilities()[0]!.name).toBe("Hipoteca renombrada");
-      // History is untouched by the cosmetic edit.
-      expect(debtsAt(store, "mJ")).toBe(before.mJ);
-      expect(debtsAt(store, "mA")).toBe(before.mA);
-      expect(debtsAt(store, "household")).toBe(before.household);
-    });
+    );
+    expect((await store.liabilities.readLiabilities())[0]!.name).toBe(
+      "Hipoteca renombrada",
+    );
+    // History is untouched by the cosmetic edit.
+    expect(await debtsAt(store, "mJ")).toBe(before.mJ);
+    expect(await debtsAt(store, "mA")).toBe(before.mA);
+    expect(await debtsAt(store, "household")).toBe(before.household);
   });
 });

@@ -66,8 +66,8 @@ export default async function EditarPage({
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
-  const storeData = await withStore((store) => {
-    const workspace = store.workspace.readWorkspace();
+  const storeData = await withStore(async (store) => {
+    const workspace = await store.workspace.readWorkspace();
 
     if (!workspace) {
       return null;
@@ -76,9 +76,9 @@ export default async function EditarPage({
     const scopes = listScopeOptions(workspace);
     const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
 
-    const assets = store.assets.readAssets();
-    const liabilities = store.liabilities.readLiabilities();
-    const overrides = store.readWarningOverrides();
+    const assets = await store.assets.readAssets();
+    const liabilities = await store.liabilities.readLiabilities();
+    const overrides = await store.readWarningOverrides();
 
     const asset = assets.find((a) => a.id === id) ?? null;
     const liability = liabilities.find((l) => l.id === id) ?? null;
@@ -88,9 +88,9 @@ export default async function EditarPage({
 
     // appreciating (property): appreciation rate + market appraisals (PRD #108).
     const isAppreciating = assetMethod === "appreciating";
-    const anchors = isAppreciating ? store.assets.readValuationAnchors(id) : [];
+    const anchors = isAppreciating ? await store.assets.readValuationAnchors(id) : [];
     const appreciationRate = isAppreciating
-      ? store.assets.readAnnualAppreciationRate(id)
+      ? await store.assets.readAnnualAppreciationRate(id)
       : null;
 
     // A connected-source coin collection (Numista) is `derived` too, but its
@@ -98,12 +98,13 @@ export default async function EditarPage({
     // Resolve the source from the asset id, then read its positions.
     const isCoinCollection = asset?.instrument === "coin_collection";
     const coinSource = isCoinCollection
-      ? (store.connectedSources.listSources().find((s) => s.assetId === id) ?? null)
+      ? ((await store.connectedSources.listSources()).find((s) => s.assetId === id) ??
+        null)
       : null;
     const coinPositions = coinSource
-      ? store.connectedSources
-          .readPositions(coinSource.id)
-          .filter((p): p is CoinPosition => p.kind === "coin")
+      ? (await store.connectedSources.readPositions(coinSource.id)).filter(
+          (p): p is CoinPosition => p.kind === "coin",
+        )
       : [];
 
     // A connected Binance crypto holding is `derived` too (instrument `crypto`),
@@ -117,18 +118,18 @@ export default async function EditarPage({
     // from a MANUAL crypto investment (which has no source link).
     const assetSourceId =
       asset?.instrument === "crypto"
-        ? store.connectedSources.readSourceIdForAsset(id)
+        ? await store.connectedSources.readSourceIdForAsset(id)
         : null;
     const binanceSourceRow = assetSourceId
-      ? (store.connectedSources
-          .listSources()
-          .find((s) => s.id === assetSourceId && s.adapter === "binance") ?? null)
+      ? ((await store.connectedSources.listSources()).find(
+          (s) => s.id === assetSourceId && s.adapter === "binance",
+        ) ?? null)
       : null;
     const isBinanceHolding = binanceSourceRow !== null;
     const binancePositions =
       binanceSourceRow && asset
         ? tokenPositionsOnRung(
-            store.connectedSources.readPositions(binanceSourceRow.id),
+            await store.connectedSources.readPositions(binanceSourceRow.id),
             asset.liquidityTier,
           )
         : [];
@@ -137,28 +138,28 @@ export default async function EditarPage({
     // reaches. Null until a backfill has run. Surfaced as "Datos desde DD/MM".
     const binanceSinceDateKey =
       binanceSourceRow && asset
-        ? (store.snapshots
-            .readSnapshotHoldings({ holdingId: id, kind: "asset" })
-            .reduce<
-              string | null
-            >((min, row) => (min === null || row.dateKey < min ? row.dateKey : min), null) ??
-          null)
+        ? ((
+            await store.snapshots.readSnapshotHoldings({ holdingId: id, kind: "asset" })
+          ).reduce<string | null>(
+            (min, row) => (min === null || row.dateKey < min ? row.dateKey : min),
+            null,
+          ) ?? null)
         : null;
 
     // derived (investment): the operations editor + its derived position (ADR 0006).
     // A coin collection / Binance holding is derived but routed to its own surface,
     // so skip these.
     const isDerived = assetMethod === "derived" && !isCoinCollection && !isBinanceHolding;
-    const investment = isDerived ? store.assets.readInvestmentAssetById(id) : null;
-    const operations = isDerived ? store.operations.readOperations(id) : [];
-    const priceCache = isDerived ? store.operations.readPriceCache(id) : null;
+    const investment = isDerived ? await store.assets.readInvestmentAssetById(id) : null;
+    const operations = isDerived ? await store.operations.readOperations(id) : [];
+    const priceCache = isDerived ? await store.operations.readPriceCache(id) : null;
     // The coin collection's decoupled valuation freshness (PRD #166): its own
     // `numista`-source cache row, separate from the investment derived path above.
     const coinValuationCache = isCoinCollection
-      ? store.operations.readPriceCache(id)
+      ? await store.operations.readPriceCache(id)
       : null;
     const position = isDerived
-      ? (store.snapshots.readPositions().find((p) => p.assetId === id) ?? null)
+      ? ((await store.snapshots.readPositions()).find((p) => p.assetId === id) ?? null)
       : null;
 
     // Historical-price backfill candidacy (#380, ADR 0033): a derived investment
@@ -174,7 +175,7 @@ export default async function EditarPage({
             ...(investment.providerSymbol
               ? { providerSymbol: investment.providerSymbol }
               : {}),
-            snapshotRows: store.snapshots.readSnapshotHoldings({
+            snapshotRows: await store.snapshots.readSnapshotHoldings({
               holdingId: id,
               kind: "asset",
             }),
@@ -182,20 +183,20 @@ export default async function EditarPage({
         : false;
 
     // amortized / anchored: the debt-model data (PRD #109).
-    const debtModel = liability ? store.liabilities.readDebtModel(id) : null;
+    const debtModel = liability ? await store.liabilities.readDebtModel(id) : null;
     const amortizationPlan =
       liability && debtModel === "amortizable"
-        ? store.liabilities.readAmortizationPlan(id)
+        ? await store.liabilities.readAmortizationPlan(id)
         : null;
     const rateRevisions = amortizationPlan
-      ? store.liabilities.readInterestRateRevisions(amortizationPlan.id)
+      ? await store.liabilities.readInterestRateRevisions(amortizationPlan.id)
       : [];
     const earlyRepayments = amortizationPlan
-      ? store.liabilities.readEarlyRepayments(amortizationPlan.id)
+      ? await store.liabilities.readEarlyRepayments(amortizationPlan.id)
       : [];
     const balanceAnchors =
       liability && (debtModel === "revolving" || debtModel === "informal")
-        ? store.liabilities.readBalanceAnchors(id)
+        ? await store.liabilities.readBalanceAnchors(id)
         : [];
 
     return {

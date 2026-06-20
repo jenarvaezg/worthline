@@ -1,4 +1,4 @@
-import type { Database as DatabaseConnection } from "better-sqlite3";
+import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
@@ -69,12 +69,12 @@ export interface MigrateResult {
  * rethrows everything else so a real migration error surfaces instead of failing
  * silent.
  */
-export function execToleratingMissingTable(
-  sqlite: DatabaseConnection,
+export async function execToleratingMissingTable(
+  client: Client,
   sql: string,
-): void {
+): Promise<void> {
   try {
-    sqlite.exec(sql);
+    await client.executeMultiple(sql);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (/no such table/i.test(message)) return;
@@ -82,11 +82,13 @@ export function execToleratingMissingTable(
   }
 }
 
-export function migrate(sqlite: DatabaseConnection): MigrateResult {
-  sqlite.pragma("journal_mode = WAL");
-  sqlite.pragma("foreign_keys = ON");
+export async function migrate(client: Client): Promise<MigrateResult> {
+  await client.execute("PRAGMA journal_mode = WAL");
+  await client.execute("PRAGMA foreign_keys = ON");
 
-  const version = sqlite.pragma("user_version", { simple: true }) as number;
+  const version = Number(
+    (await client.execute("PRAGMA user_version")).rows[0]!.user_version,
+  );
   if (version >= SCHEMA_VERSION) return { ranV18Backfill: false };
 
   // Set by the v18 block and returned at the end — must survive later migration
@@ -97,12 +99,12 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     const safeSql = schemaSql
       .replaceAll("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
       .replaceAll("CREATE UNIQUE INDEX ", "CREATE UNIQUE INDEX IF NOT EXISTS ");
-    sqlite.exec(safeSql);
-    sqlite.pragma("user_version = 2");
+    await client.executeMultiple(safeSql);
+    await client.execute("PRAGMA user_version = 2");
   }
 
   if (version < 3) {
-    sqlite.exec(`CREATE TABLE IF NOT EXISTS asset_price_cache (
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS asset_price_cache (
       asset_id TEXT PRIMARY KEY NOT NULL, currency TEXT NOT NULL, price TEXT NOT NULL,
       source TEXT DEFAULT 'manual' NOT NULL, price_date TEXT, fetched_at TEXT NOT NULL,
       freshness_state TEXT DEFAULT 'manual' NOT NULL, stale_reason TEXT,
@@ -110,32 +112,32 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
       FOREIGN KEY (asset_id) REFERENCES assets(id) ON UPDATE no action ON DELETE cascade
     );`);
-    sqlite.pragma("user_version = 3");
+    await client.execute("PRAGMA user_version = 3");
   }
 
   if (version < 4) {
-    sqlite.exec(`CREATE TABLE IF NOT EXISTS audit_log (
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS audit_log (
       id TEXT PRIMARY KEY NOT NULL, action TEXT NOT NULL,
       entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
       details_json TEXT NOT NULL DEFAULT '{}',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
     );`);
     try {
-      sqlite.exec("ALTER TABLE assets ADD COLUMN deleted_at TEXT");
+      await client.executeMultiple("ALTER TABLE assets ADD COLUMN deleted_at TEXT");
     } catch {}
     try {
-      sqlite.exec("ALTER TABLE liabilities ADD COLUMN deleted_at TEXT");
+      await client.executeMultiple("ALTER TABLE liabilities ADD COLUMN deleted_at TEXT");
     } catch {}
-    sqlite.pragma("user_version = 4");
+    await client.execute("PRAGMA user_version = 4");
   }
 
   if (version < 5) {
-    sqlite.exec(`CREATE TABLE IF NOT EXISTS warning_overrides (
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS warning_overrides (
       code TEXT NOT NULL, entity_id TEXT NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
       PRIMARY KEY (code, entity_id)
     );`);
-    sqlite.pragma("user_version = 5");
+    await client.execute("PRAGMA user_version = 5");
   }
 
   if (version < 6) {
@@ -143,14 +145,14 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // month), not declared via the is_monthly_close flag. The column is kept for
     // backward compatibility but derivation wins over any persisted flag.
     // No structural change needed — bump version to mark the semantic transition.
-    sqlite.pragma("user_version = 6");
+    await client.execute("PRAGMA user_version = 6");
   }
 
   if (version < 7) {
     // ADR 0008: snapshots capture the valued portfolio holding by holding.
     // Label and tier are denormalized on purpose (frozen history) — the only
     // foreign key points at the owning snapshot row, never into holdings.
-    sqlite.exec(`CREATE TABLE IF NOT EXISTS snapshot_holdings (
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS snapshot_holdings (
       id TEXT PRIMARY KEY NOT NULL,
       snapshot_id TEXT NOT NULL,
       holding_id TEXT NOT NULL,
@@ -163,18 +165,20 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
       FOREIGN KEY (snapshot_id) REFERENCES snapshots(id) ON UPDATE no action ON DELETE cascade
     );`);
-    sqlite.exec(
+    await client.executeMultiple(
       `CREATE UNIQUE INDEX IF NOT EXISTS snapshot_holdings_snapshot_kind_holding_unique
        ON snapshot_holdings (snapshot_id, kind, holding_id);`,
     );
-    sqlite.pragma("user_version = 7");
+    await client.execute("PRAGMA user_version = 7");
   }
 
   if (version < 8) {
     try {
-      sqlite.exec("ALTER TABLE investment_assets ADD COLUMN price_provider TEXT");
+      await client.executeMultiple(
+        "ALTER TABLE investment_assets ADD COLUMN price_provider TEXT",
+      );
     } catch {}
-    sqlite.pragma("user_version = 8");
+    await client.execute("PRAGMA user_version = 8");
   }
 
   if (version < 9) {
@@ -182,9 +186,11 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // owning asset. The anchor→real_estate invariant is a domain/caller guard,
     // not a SQL constraint (R9).
     try {
-      sqlite.exec("ALTER TABLE assets ADD COLUMN annual_appreciation_rate TEXT");
+      await client.executeMultiple(
+        "ALTER TABLE assets ADD COLUMN annual_appreciation_rate TEXT",
+      );
     } catch {}
-    sqlite.exec(`CREATE TABLE IF NOT EXISTS asset_valuations (
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS asset_valuations (
       id TEXT PRIMARY KEY NOT NULL,
       asset_id TEXT NOT NULL,
       value_minor INTEGER NOT NULL,
@@ -193,11 +199,11 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
       FOREIGN KEY (asset_id) REFERENCES assets(id) ON UPDATE no action ON DELETE cascade
     );`);
-    sqlite.exec(
+    await client.executeMultiple(
       `CREATE UNIQUE INDEX IF NOT EXISTS asset_valuations_asset_date_unique
        ON asset_valuations (asset_id, valuation_date);`,
     );
-    sqlite.pragma("user_version = 9");
+    await client.execute("PRAGMA user_version = 9");
   }
 
   if (version < 10) {
@@ -205,9 +211,9 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // a debt_model on the owning liability. The plan→amortizable invariant is a
     // domain/caller guard, not a SQL constraint (R9).
     try {
-      sqlite.exec("ALTER TABLE liabilities ADD COLUMN debt_model TEXT");
+      await client.executeMultiple("ALTER TABLE liabilities ADD COLUMN debt_model TEXT");
     } catch {}
-    sqlite.exec(`CREATE TABLE IF NOT EXISTS amortization_plans (
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS amortization_plans (
       id TEXT PRIMARY KEY NOT NULL,
       liability_id TEXT NOT NULL,
       initial_capital_minor INTEGER NOT NULL,
@@ -217,11 +223,11 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
       FOREIGN KEY (liability_id) REFERENCES liabilities(id) ON UPDATE no action ON DELETE cascade
     );`);
-    sqlite.exec(
+    await client.executeMultiple(
       `CREATE UNIQUE INDEX IF NOT EXISTS amortization_plans_liability_unique
        ON amortization_plans (liability_id);`,
     );
-    sqlite.exec(`CREATE TABLE IF NOT EXISTS interest_rate_revisions (
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS interest_rate_revisions (
       id TEXT PRIMARY KEY NOT NULL,
       plan_id TEXT NOT NULL,
       revision_date TEXT NOT NULL,
@@ -229,18 +235,18 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
       FOREIGN KEY (plan_id) REFERENCES amortization_plans(id) ON UPDATE no action ON DELETE cascade
     );`);
-    sqlite.exec(
+    await client.executeMultiple(
       `CREATE UNIQUE INDEX IF NOT EXISTS interest_rate_revisions_plan_date_unique
        ON interest_rate_revisions (plan_id, revision_date);`,
     );
-    sqlite.pragma("user_version = 10");
+    await client.execute("PRAGMA user_version = 10");
   }
 
   if (version < 11) {
     // PRD #109 slice 8: balance anchors for revolving/informal liabilities. The
     // anchor→{revolving,informal} invariant is a domain/caller guard, not a SQL
     // constraint (R9). balance_minor is the TOTAL owed (interest included if any).
-    sqlite.exec(`CREATE TABLE IF NOT EXISTS liability_balance_anchors (
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS liability_balance_anchors (
       id TEXT PRIMARY KEY NOT NULL,
       liability_id TEXT NOT NULL,
       balance_minor INTEGER NOT NULL,
@@ -248,11 +254,11 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
       FOREIGN KEY (liability_id) REFERENCES liabilities(id) ON UPDATE no action ON DELETE cascade
     );`);
-    sqlite.exec(
+    await client.executeMultiple(
       `CREATE UNIQUE INDEX IF NOT EXISTS liability_balance_anchors_liability_date_unique
        ON liability_balance_anchors (liability_id, anchor_date);`,
     );
-    sqlite.pragma("user_version = 11");
+    await client.execute("PRAGMA user_version = 11");
   }
 
   if (version < 12) {
@@ -261,19 +267,19 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // holdings and to the denormalized frozen tier on snapshot-holding rows
     // (ADR 0008). The snapshots' frozen FIGURES are never touched, so historical
     // net worth, liquid net worth and housing equity stay byte-identical.
-    sqlite.exec(
+    await client.executeMultiple(
       "UPDATE assets SET liquidity_tier = 'term-locked' WHERE liquidity_tier = 'retirement';",
     );
-    sqlite.exec(
+    await client.executeMultiple(
       "UPDATE assets SET liquidity_tier = 'illiquid' WHERE liquidity_tier = 'housing';",
     );
-    sqlite.exec(
+    await client.executeMultiple(
       "UPDATE snapshot_holdings SET liquidity_tier = 'term-locked' WHERE liquidity_tier = 'retirement';",
     );
-    sqlite.exec(
+    await client.executeMultiple(
       "UPDATE snapshot_holdings SET liquidity_tier = 'illiquid' WHERE liquidity_tier = 'housing';",
     );
-    sqlite.pragma("user_version = 12");
+    await client.execute("PRAGMA user_version = 12");
   }
 
   if (version < 13) {
@@ -288,25 +294,27 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // valuation boundary in S2, so this column changes no figure; it is the schema
     // seam later slices build on.
     try {
-      sqlite.exec("ALTER TABLE assets ADD COLUMN valuation_method TEXT");
+      await client.executeMultiple("ALTER TABLE assets ADD COLUMN valuation_method TEXT");
     } catch {}
     try {
-      sqlite.exec("ALTER TABLE liabilities ADD COLUMN valuation_method TEXT");
+      await client.executeMultiple(
+        "ALTER TABLE liabilities ADD COLUMN valuation_method TEXT",
+      );
     } catch {}
-    sqlite.exec(
+    await client.executeMultiple(
       `UPDATE assets SET valuation_method = CASE
          WHEN type = 'investment' THEN 'derived'
          WHEN type = 'real_estate' OR is_primary_residence = 1 THEN 'appreciating'
          ELSE 'stored' END;`,
     );
-    sqlite.exec(
+    await client.executeMultiple(
       `UPDATE liabilities SET valuation_method = CASE debt_model
          WHEN 'amortizable' THEN 'amortized'
          WHEN 'revolving' THEN 'anchored'
          WHEN 'informal' THEN 'anchored'
          ELSE 'stored' END;`,
     );
-    sqlite.pragma("user_version = 13");
+    await client.execute("PRAGMA user_version = 13");
   }
 
   if (version < 14) {
@@ -323,12 +331,12 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // for valuation in this slice — only housing reads it — so it changes no
     // figure; it is the schema seam later slices build the add flow on.
     try {
-      sqlite.exec("ALTER TABLE assets ADD COLUMN instrument TEXT");
+      await client.executeMultiple("ALTER TABLE assets ADD COLUMN instrument TEXT");
     } catch {}
     try {
-      sqlite.exec("ALTER TABLE liabilities ADD COLUMN instrument TEXT");
+      await client.executeMultiple("ALTER TABLE liabilities ADD COLUMN instrument TEXT");
     } catch {}
-    sqlite.exec(
+    await client.executeMultiple(
       `UPDATE assets SET instrument = CASE
          WHEN type = 'real_estate' OR is_primary_residence = 1 THEN 'property'
          WHEN type = 'cash' THEN 'current_account'
@@ -338,13 +346,13 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
            'fund')
          ELSE 'other' END;`,
     );
-    sqlite.exec(
+    await client.executeMultiple(
       `UPDATE liabilities SET instrument = CASE
          WHEN type = 'mortgage' THEN 'mortgage'
          WHEN debt_model = 'revolving' THEN 'credit_card'
          ELSE 'loan' END;`,
     );
-    sqlite.pragma("user_version = 14");
+    await client.execute("PRAGMA user_version = 14");
   }
 
   if (version < 15) {
@@ -353,7 +361,7 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // domain/caller guard, not a SQL constraint (R9). The unique index keeps one
     // repayment per plan per date; `mode` ∈ {reduce-payment, reduce-term} is
     // enforced in TS, like the other text enums (no CHECK).
-    sqlite.exec(`CREATE TABLE IF NOT EXISTS early_repayments (
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS early_repayments (
       id TEXT PRIMARY KEY NOT NULL,
       plan_id TEXT NOT NULL,
       repayment_date TEXT NOT NULL,
@@ -362,11 +370,11 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
       FOREIGN KEY (plan_id) REFERENCES amortization_plans(id) ON UPDATE no action ON DELETE cascade
     );`);
-    sqlite.exec(
+    await client.executeMultiple(
       `CREATE UNIQUE INDEX IF NOT EXISTS early_repayments_plan_date_unique
        ON early_repayments (plan_id, repayment_date);`,
     );
-    sqlite.pragma("user_version = 15");
+    await client.execute("PRAGMA user_version = 15");
   }
 
   if (version < 16) {
@@ -381,11 +389,11 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // is_primary_residence = 1. Assets and unassociated debts stay 0. This touches
     // no snapshot FIGURE — it is an additive, self-classifying signal.
     try {
-      sqlite.exec(
+      await client.executeMultiple(
         "ALTER TABLE snapshot_holdings ADD COLUMN secures_housing INTEGER NOT NULL DEFAULT 0",
       );
     } catch {}
-    sqlite.exec(
+    await client.executeMultiple(
       `UPDATE snapshot_holdings SET secures_housing = 1
        WHERE kind = 'liability'
          AND holding_id IN (
@@ -396,7 +404,7 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
               OR a.is_primary_residence = 1
          );`,
     );
-    sqlite.pragma("user_version = 16");
+    await client.execute("PRAGMA user_version = 16");
   }
 
   if (version < 17) {
@@ -408,11 +416,11 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // is_primary_residence = 1. Liabilities and non-housing assets stay 0.
     // This is the asset-side complement of the v16 `secures_housing` migration.
     try {
-      sqlite.exec(
+      await client.executeMultiple(
         "ALTER TABLE snapshot_holdings ADD COLUMN counts_as_housing INTEGER NOT NULL DEFAULT 0",
       );
     } catch {}
-    sqlite.exec(
+    await client.executeMultiple(
       `UPDATE snapshot_holdings SET counts_as_housing = 1
        WHERE kind = 'asset'
          AND holding_id IN (
@@ -422,7 +430,7 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
               OR a.is_primary_residence = 1
          );`,
     );
-    sqlite.pragma("user_version = 17");
+    await client.execute("PRAGMA user_version = 17");
   }
 
   if (version < 18) {
@@ -446,27 +454,30 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // clamping rule, then table-rebuild to the final shape (two NOT NULL dates, no
     // start_date). Guarded by start_date's presence so a fresh DB — already created
     // at the two-date shape from schema-sql — skips the rebuild (idempotent).
-    const columns = sqlite.prepare("PRAGMA table_info(amortization_plans)").all() as {
-      name: string;
-    }[];
+    const columns = (await client.execute("PRAGMA table_info(amortization_plans)"))
+      .rows as unknown as { name: string }[];
     const hasStartDate = columns.some((c) => c.name === "start_date");
 
     if (hasStartDate) {
       ranV18Backfill = true;
-      sqlite.exec("ALTER TABLE amortization_plans ADD COLUMN disbursement_date TEXT");
-      sqlite.exec("ALTER TABLE amortization_plans ADD COLUMN first_payment_date TEXT");
-
-      const plans = sqlite
-        .prepare("SELECT id, start_date FROM amortization_plans")
-        .all() as { id: string; start_date: string }[];
-      const backfill = sqlite.prepare(
-        "UPDATE amortization_plans SET disbursement_date = ?, first_payment_date = ? WHERE id = ?",
+      await client.executeMultiple(
+        "ALTER TABLE amortization_plans ADD COLUMN disbursement_date TEXT",
       );
+      await client.executeMultiple(
+        "ALTER TABLE amortization_plans ADD COLUMN first_payment_date TEXT",
+      );
+
+      const plans = (
+        await client.execute("SELECT id, start_date FROM amortization_plans")
+      ).rows as unknown as { id: string; start_date: string }[];
       for (const plan of plans) {
         // first_payment_date = start_date + 1 month, day-clamped — the engine's
         // "first payment one month after start" rule to the day (ADR 0019), so
         // existing snapshots stay byte-identical.
-        backfill.run(plan.start_date, addMonthsClamped(plan.start_date, 1), plan.id);
+        await client.execute({
+          sql: "UPDATE amortization_plans SET disbursement_date = ?, first_payment_date = ? WHERE id = ?",
+          args: [plan.start_date, addMonthsClamped(plan.start_date, 1), plan.id],
+        });
       }
 
       // Table-rebuild to drop start_date and enforce NOT NULL on the two dates,
@@ -479,8 +490,8 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       // RENAME) are wrapped in an explicit transaction so a crash between DROP
       // and RENAME cannot leave the DB without an amortization_plans table.
       // PRAGMA foreign_keys must be toggled outside any transaction (SQLite docs).
-      sqlite.pragma("foreign_keys = OFF");
-      sqlite.exec(`BEGIN;
+      await client.execute("PRAGMA foreign_keys = OFF");
+      await client.executeMultiple(`BEGIN;
         CREATE TABLE amortization_plans_new (
           id TEXT PRIMARY KEY NOT NULL,
           liability_id TEXT NOT NULL,
@@ -503,16 +514,16 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
         CREATE UNIQUE INDEX IF NOT EXISTS amortization_plans_liability_unique
           ON amortization_plans (liability_id);
         COMMIT;`);
-      sqlite.pragma("foreign_keys = ON");
+      await client.execute("PRAGMA foreign_keys = ON");
     }
-    sqlite.pragma("user_version = 18");
+    await client.execute("PRAGMA user_version = 18");
   }
 
   if (version < 19) {
     // PRD #160 / #163 (ADR 0016/0017): connected sources mirror an external
     // account read-only and project their positions into one rolled-up holding.
     // credentials_json + token_json are LOCAL ONLY — never exported (ADR 0016).
-    sqlite.exec(`CREATE TABLE IF NOT EXISTS connected_sources (
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS connected_sources (
       id TEXT PRIMARY KEY NOT NULL,
       adapter TEXT NOT NULL,
       label TEXT NOT NULL,
@@ -524,7 +535,7 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
       FOREIGN KEY (asset_id) REFERENCES assets(id) ON UPDATE no action ON DELETE cascade
     );`);
-    sqlite.exec(`CREATE TABLE IF NOT EXISTS positions (
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS positions (
       id TEXT PRIMARY KEY NOT NULL,
       source_id TEXT NOT NULL,
       catalogue_id TEXT NOT NULL,
@@ -541,7 +552,7 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
       FOREIGN KEY (source_id) REFERENCES connected_sources(id) ON UPDATE no action ON DELETE cascade
     );`);
-    sqlite.pragma("user_version = 19");
+    await client.execute("PRAGMA user_version = 19");
   }
 
   if (version < 20) {
@@ -554,18 +565,22 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // Wrapped in try/catch like the other column adds: on a fresh DB the columns
     // already exist (created by schema-sql at v<2), so the duplicate is ignored.
     try {
-      sqlite.exec("ALTER TABLE positions ADD COLUMN issue_id INTEGER");
+      await client.executeMultiple("ALTER TABLE positions ADD COLUMN issue_id INTEGER");
     } catch {}
     try {
-      sqlite.exec("ALTER TABLE positions ADD COLUMN fineness_millis INTEGER");
+      await client.executeMultiple(
+        "ALTER TABLE positions ADD COLUMN fineness_millis INTEGER",
+      );
     } catch {}
     try {
-      sqlite.exec("ALTER TABLE positions ADD COLUMN weight_grams REAL");
+      await client.executeMultiple("ALTER TABLE positions ADD COLUMN weight_grams REAL");
     } catch {}
     try {
-      sqlite.exec("ALTER TABLE positions ADD COLUMN numismatic_fetched_at TEXT");
+      await client.executeMultiple(
+        "ALTER TABLE positions ADD COLUMN numismatic_fetched_at TEXT",
+      );
     } catch {}
-    sqlite.pragma("user_version = 20");
+    await client.execute("PRAGMA user_version = 20");
   }
 
   if (version < 21) {
@@ -574,9 +589,9 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // into history) from a coin already frozen in past snapshots. Nullable for
     // the rows that predate it; every sync from now on sets it.
     try {
-      sqlite.exec("ALTER TABLE positions ADD COLUMN external_id TEXT");
+      await client.executeMultiple("ALTER TABLE positions ADD COLUMN external_id TEXT");
     } catch {}
-    sqlite.pragma("user_version = 21");
+    await client.execute("PRAGMA user_version = 21");
   }
 
   if (version < 22) {
@@ -584,9 +599,9 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // shows the coin's year (not its acquisition date). Forward-only, nullable —
     // existing rows get NULL and are repopulated on the next sync.
     try {
-      sqlite.exec("ALTER TABLE positions ADD COLUMN year INTEGER");
+      await client.executeMultiple("ALTER TABLE positions ADD COLUMN year INTEGER");
     } catch {}
-    sqlite.pragma("user_version = 22");
+    await client.execute("PRAGMA user_version = 22");
   }
 
   if (version < 23) {
@@ -606,23 +621,23 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // Each statement tolerates only a missing target table (synthetic upgrade
     // fixtures may stand up a subset); a real DDL error still surfaces — see
     // execToleratingMissingTable.
-    execToleratingMissingTable(
-      sqlite,
+    await execToleratingMissingTable(
+      client,
       "CREATE INDEX IF NOT EXISTS asset_operations_asset_executed_idx ON asset_operations (asset_id, executed_at, id);",
     );
-    execToleratingMissingTable(
-      sqlite,
+    await execToleratingMissingTable(
+      client,
       "CREATE INDEX IF NOT EXISTS audit_log_entity_created_idx ON audit_log (entity_id, created_at);",
     );
-    execToleratingMissingTable(
-      sqlite,
+    await execToleratingMissingTable(
+      client,
       "CREATE INDEX IF NOT EXISTS assets_deleted_at_idx ON assets (name) WHERE deleted_at IS NOT NULL;",
     );
-    execToleratingMissingTable(
-      sqlite,
+    await execToleratingMissingTable(
+      client,
       "CREATE INDEX IF NOT EXISTS liabilities_deleted_at_idx ON liabilities (name) WHERE deleted_at IS NOT NULL;",
     );
-    sqlite.pragma("user_version = 23");
+    await client.execute("PRAGMA user_version = 23");
   }
 
   if (version < 24) {
@@ -636,11 +651,11 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // IF NOT EXISTS / missing-table-tolerant like the v23 indexes: a fresh DB
     // already created it via schema-sql, and a minimal synthetic upgrade fixture
     // may lack the table — but a real DDL error still surfaces.
-    execToleratingMissingTable(
-      sqlite,
+    await execToleratingMissingTable(
+      client,
       "CREATE INDEX IF NOT EXISTS snapshot_holdings_holding_kind_idx ON snapshot_holdings (holding_id, kind);",
     );
-    sqlite.pragma("user_version = 24");
+    await client.execute("PRAGMA user_version = 24");
   }
 
   if (version < 25) {
@@ -665,7 +680,9 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // table references `positions`, and its own FK to connected_sources resolves
     // by name after the rename.
     const positionCols = (
-      sqlite.prepare("PRAGMA table_info(positions)").all() as { name: string }[]
+      (await client.execute("PRAGMA table_info(positions)")).rows as unknown as {
+        name: string;
+      }[]
     ).map((c) => c.name);
 
     if (positionCols.length > 0 && !positionCols.includes("kind")) {
@@ -695,8 +712,8 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       ].filter((c) => positionCols.includes(c));
       const carryList = carry.join(", ");
 
-      sqlite.pragma("foreign_keys = OFF");
-      sqlite.exec(`BEGIN;
+      await client.execute("PRAGMA foreign_keys = OFF");
+      await client.executeMultiple(`BEGIN;
         CREATE TABLE positions_new (
           id TEXT PRIMARY KEY NOT NULL,
           source_id TEXT NOT NULL,
@@ -730,9 +747,9 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
         DROP TABLE positions;
         ALTER TABLE positions_new RENAME TO positions;
         COMMIT;`);
-      sqlite.pragma("foreign_keys = ON");
+      await client.execute("PRAGMA foreign_keys = ON");
     }
-    sqlite.pragma("user_version = 25");
+    await client.execute("PRAGMA user_version = 25");
   }
 
   if (version < 26) {
@@ -748,18 +765,20 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // S1/S2 market assets: each connected source's `asset_id` is its first
     // materialized asset, so link that asset back to its source.
     try {
-      sqlite.exec("ALTER TABLE assets ADD COLUMN connected_source_id TEXT");
+      await client.executeMultiple(
+        "ALTER TABLE assets ADD COLUMN connected_source_id TEXT",
+      );
     } catch {}
     // Backfill tolerates a missing `assets`/`connected_sources` table: a minimal
     // synthetic upgrade fixture may stand up only a subset (like the v23/v24
     // indexes). A real DB carries both; a genuine SQL error still surfaces.
-    execToleratingMissingTable(
-      sqlite,
+    await execToleratingMissingTable(
+      client,
       `UPDATE assets SET connected_source_id = (
          SELECT cs.id FROM connected_sources cs WHERE cs.asset_id = assets.id
        ) WHERE id IN (SELECT asset_id FROM connected_sources);`,
     );
-    sqlite.pragma("user_version = 26");
+    await client.execute("PRAGMA user_version = 26");
   }
 
   if (version < 27) {
@@ -770,9 +789,11 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // already has the column from schema-sql, so the duplicate is ignored.
     // Existing rows get NULL (a metal-glyph fallback) and a thumbnail on next sync.
     try {
-      sqlite.exec("ALTER TABLE positions ADD COLUMN obverse_thumb_url TEXT");
+      await client.executeMultiple(
+        "ALTER TABLE positions ADD COLUMN obverse_thumb_url TEXT",
+      );
     } catch {}
-    sqlite.pragma("user_version = 27");
+    await client.execute("PRAGMA user_version = 27");
   }
 
   if (version < 28) {
@@ -787,11 +808,11 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // property instrument to `housing` at read time, regardless of the stored tier.
     // Tolerates a missing `snapshot_holdings` table (a minimal synthetic fixture),
     // like the other relabel migrations.
-    execToleratingMissingTable(
-      sqlite,
+    await execToleratingMissingTable(
+      client,
       "UPDATE snapshot_holdings SET liquidity_tier = 'housing' WHERE counts_as_housing = 1;",
     );
-    sqlite.pragma("user_version = 28");
+    await client.execute("PRAGMA user_version = 28");
   }
 
   if (version < 29) {
@@ -830,32 +851,37 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // deleted first, then the parent snapshots — explicit rather than relying on
     // the FK cascade, so the prune is correct even where a minimal upgrade fixture
     // has foreign keys off. Every table read tolerates a missing table.
-    const tableExists = (name: string): boolean =>
-      sqlite
-        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
-        .get(name) !== undefined;
+    const tableExists = async (name: string): Promise<boolean> =>
+      (
+        await client.execute({
+          sql: "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+          args: [name],
+        })
+      ).rows.length > 0;
 
     // Conservative Binance short-circuit: any binance source → keep everything.
     const hasBinanceSource =
-      tableExists("connected_sources") &&
-      sqlite
-        .prepare("SELECT 1 FROM connected_sources WHERE adapter = 'binance' LIMIT 1")
-        .get() !== undefined;
+      (await tableExists("connected_sources")) &&
+      (
+        await client.execute(
+          "SELECT 1 FROM connected_sources WHERE adapter = 'binance' LIMIT 1",
+        )
+      ).rows.length > 0;
 
-    if (!tableExists("snapshots")) {
-      sqlite.pragma("user_version = 29");
+    if (!(await tableExists("snapshots"))) {
+      await client.execute("PRAGMA user_version = 29");
     } else if (hasBinanceSource) {
       // Keep every histsnap_ row — the Binance history might justify any date.
-      sqlite.pragma("user_version = 29");
+      await client.execute("PRAGMA user_version = 29");
     } else {
       // Recompute amortization payment-boundary dates (the computed cuota source).
       const amortizationDates = new Set<string>();
-      if (tableExists("amortization_plans")) {
-        const plans = sqlite
-          .prepare(
+      if (await tableExists("amortization_plans")) {
+        const plans = (
+          await client.execute(
             "SELECT disbursement_date, first_payment_date, term_months FROM amortization_plans",
           )
-          .all() as {
+        ).rows as unknown as {
           disbursement_date: string;
           first_payment_date: string;
           term_months: number;
@@ -874,37 +900,37 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       // aborting. The amortization boundaries are bound as parameters in a
       // `date_key NOT IN (...)` list (empty list → the clause is dropped).
       const justifiedClauses: string[] = [];
-      if (tableExists("asset_operations")) {
+      if (await tableExists("asset_operations")) {
         justifiedClauses.push(
           `EXISTS (SELECT 1 FROM asset_operations
                    WHERE substr(asset_operations.executed_at, 1, 10) = s.date_key)`,
         );
       }
-      if (tableExists("asset_valuations")) {
+      if (await tableExists("asset_valuations")) {
         justifiedClauses.push(
           `EXISTS (SELECT 1 FROM asset_valuations
                    WHERE asset_valuations.valuation_date = s.date_key)`,
         );
       }
-      if (tableExists("liability_balance_anchors")) {
+      if (await tableExists("liability_balance_anchors")) {
         justifiedClauses.push(
           `EXISTS (SELECT 1 FROM liability_balance_anchors
                    WHERE liability_balance_anchors.anchor_date = s.date_key)`,
         );
       }
-      if (tableExists("interest_rate_revisions")) {
+      if (await tableExists("interest_rate_revisions")) {
         justifiedClauses.push(
           `EXISTS (SELECT 1 FROM interest_rate_revisions
                    WHERE interest_rate_revisions.revision_date = s.date_key)`,
         );
       }
-      if (tableExists("early_repayments")) {
+      if (await tableExists("early_repayments")) {
         justifiedClauses.push(
           `EXISTS (SELECT 1 FROM early_repayments
                    WHERE early_repayments.repayment_date = s.date_key)`,
         );
       }
-      if (tableExists("positions")) {
+      if (await tableExists("positions")) {
         justifiedClauses.push(
           `EXISTS (SELECT 1 FROM positions
                    WHERE positions.kind = 'coin' AND positions.purchase_date = s.date_key)`,
@@ -924,20 +950,20 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
       const justified = justifiedClauses.length > 0 ? justifiedClauses.join(" OR ") : "0";
       const orphanWhere = `s.id LIKE 'histsnap_%' AND NOT (${justified})`;
 
-      if (tableExists("snapshot_holdings")) {
-        sqlite
-          .prepare(
-            `DELETE FROM snapshot_holdings
+      if (await tableExists("snapshot_holdings")) {
+        await client.execute({
+          sql: `DELETE FROM snapshot_holdings
              WHERE snapshot_id IN (
                SELECT s.id FROM snapshots s WHERE ${orphanWhere}
              );`,
-          )
-          .run(...amortizationList);
+          args: amortizationList,
+        });
       }
-      sqlite
-        .prepare(`DELETE FROM snapshots AS s WHERE ${orphanWhere};`)
-        .run(...amortizationList);
-      sqlite.pragma("user_version = 29");
+      await client.execute({
+        sql: `DELETE FROM snapshots AS s WHERE ${orphanWhere};`,
+        args: amortizationList,
+      });
+      await client.execute("PRAGMA user_version = 29");
     }
   }
 
@@ -972,68 +998,68 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
           OR snapshots.scope_id IN (SELECT id FROM member_groups)
         )
       )`;
-    execToleratingMissingTable(
-      sqlite,
+    await execToleratingMissingTable(
+      client,
       `DELETE FROM snapshot_holdings
        WHERE snapshot_id IN (
          SELECT id FROM snapshots WHERE ${orphanScopePredicate}
        );`,
     );
-    execToleratingMissingTable(
-      sqlite,
+    await execToleratingMissingTable(
+      client,
       `DELETE FROM snapshots WHERE ${orphanScopePredicate};`,
     );
-    sqlite.pragma("user_version = 30");
+    await client.execute("PRAGMA user_version = 30");
   }
 
   if (version < 31) {
     // PRD #328 / #334: public opaque IDs for the read-only agent view. IDs are
     // persisted ahead of reads; agent-view queries must never create them lazily.
-    sqlite.exec(`CREATE TABLE IF NOT EXISTS agent_view_public_ids (
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS agent_view_public_ids (
       entity_type TEXT NOT NULL,
       entity_id TEXT NOT NULL,
       public_id TEXT NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
       PRIMARY KEY (entity_type, entity_id)
     );`);
-    sqlite.exec(
+    await client.executeMultiple(
       `CREATE UNIQUE INDEX IF NOT EXISTS agent_view_public_ids_public_id_unique
        ON agent_view_public_ids (public_id);`,
     );
-    execToleratingMissingTable(
-      sqlite,
+    await execToleratingMissingTable(
+      client,
       `INSERT OR IGNORE INTO agent_view_public_ids
       (entity_type, entity_id, public_id)
       SELECT 'scope', 'household', 'wl_scp_' || lower(hex(randomblob(16)))
       WHERE EXISTS (SELECT 1 FROM workspace WHERE id = 'default');`,
     );
-    execToleratingMissingTable(
-      sqlite,
+    await execToleratingMissingTable(
+      client,
       `INSERT OR IGNORE INTO agent_view_public_ids
       (entity_type, entity_id, public_id)
       SELECT 'member', id, 'wl_mbr_' || lower(hex(randomblob(16))) FROM members;`,
     );
-    execToleratingMissingTable(
-      sqlite,
+    await execToleratingMissingTable(
+      client,
       `INSERT OR IGNORE INTO agent_view_public_ids
       (entity_type, entity_id, public_id)
       SELECT 'scope', id, 'wl_scp_' || lower(hex(randomblob(16))) FROM members;`,
     );
-    execToleratingMissingTable(
-      sqlite,
+    await execToleratingMissingTable(
+      client,
       `INSERT OR IGNORE INTO agent_view_public_ids
       (entity_type, entity_id, public_id)
       SELECT 'member_group', id, 'wl_grp_' || lower(hex(randomblob(16)))
       FROM member_groups;`,
     );
-    execToleratingMissingTable(
-      sqlite,
+    await execToleratingMissingTable(
+      client,
       `INSERT OR IGNORE INTO agent_view_public_ids
       (entity_type, entity_id, public_id)
       SELECT 'scope', id, 'wl_scp_' || lower(hex(randomblob(16)))
       FROM member_groups;`,
     );
-    sqlite.pragma("user_version = 31");
+    await client.execute("PRAGMA user_version = 31");
   }
 
   if (version < 32) {
@@ -1044,19 +1070,19 @@ export function migrate(sqlite: DatabaseConnection): MigrateResult {
     // so a trashed holding keeps its public id and a restore stays stable. No
     // schema change is needed (entity_type is TEXT). Missing-table-tolerant like
     // the v31 backfill (a minimal synthetic upgrade fixture may lack a table).
-    execToleratingMissingTable(
-      sqlite,
+    await execToleratingMissingTable(
+      client,
       `INSERT OR IGNORE INTO agent_view_public_ids
       (entity_type, entity_id, public_id)
       SELECT 'holding', id, 'wl_hld_' || lower(hex(randomblob(16))) FROM assets;`,
     );
-    execToleratingMissingTable(
-      sqlite,
+    await execToleratingMissingTable(
+      client,
       `INSERT OR IGNORE INTO agent_view_public_ids
       (entity_type, entity_id, public_id)
       SELECT 'holding', id, 'wl_hld_' || lower(hex(randomblob(16))) FROM liabilities;`,
     );
-    sqlite.pragma("user_version = 32");
+    await client.execute("PRAGMA user_version = 32");
   }
 
   return { ranV18Backfill };

@@ -31,10 +31,10 @@ export async function initSoloAction(
   }
 
   const { command } = result;
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
-    _store ? fn(_store) : withStore(fn);
+  const runWith = <T>(fn: (store: WorthlineStore) => T | Promise<T>): Promise<T> =>
+    _store ? Promise.resolve(fn(_store)) : withStore(fn);
 
-  runWith((store) => store.workspace.initializeWorkspace(command));
+  await runWith((store) => store.workspace.initializeWorkspace(command));
 
   const firstMemberId = command.members[0]?.id;
 
@@ -69,10 +69,10 @@ export async function initHogarAction(
   }
 
   const { command } = result;
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
-    _store ? fn(_store) : withStore(fn);
+  const runWith = <T>(fn: (store: WorthlineStore) => T | Promise<T>): Promise<T> =>
+    _store ? Promise.resolve(fn(_store)) : withStore(fn);
 
-  runWith((store) => store.workspace.initializeWorkspace(command));
+  await runWith((store) => store.workspace.initializeWorkspace(command));
 
   // Leave the scope cookie unset — / will fall back to the first scope.
   redirect("/");

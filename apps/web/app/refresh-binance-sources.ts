@@ -38,10 +38,14 @@ export interface RefreshBinanceSourcesInput {
    *  throws on a hard failure (bad credentials / total outage). */
   reSync: (sourceId: string) => Promise<TokenPositionDraft[]>;
   /** Persist a successful re-sync (replace positions + stamp the freshness row fresh). */
-  persistFresh: (sourceId: string, drafts: TokenPositionDraft[]) => void;
+  persistFresh: (sourceId: string, drafts: TokenPositionDraft[]) => void | Promise<void>;
   /** Persist an outage: keep the last-known value (no position changes) and mark
    *  the source stale, carrying the PRIOR fetched-at so the next pass retries it. */
-  persistStale: (sourceId: string, lastFetchedAt: string | null, reason: string) => void;
+  persistStale: (
+    sourceId: string,
+    lastFetchedAt: string | null,
+    reason: string,
+  ) => void | Promise<void>;
 }
 
 export interface RefreshBinanceSourcesResult {
@@ -67,7 +71,7 @@ export async function refreshStaleBinanceSources(
       drafts = await input.reSync(source.sourceId);
     } catch (err) {
       errors.push(err instanceof Error ? err.message : "Unknown Binance-refresh error");
-      input.persistStale(
+      await input.persistStale(
         source.sourceId,
         source.freshness?.fetchedAt ?? null,
         "No se pudo actualizar la valoración de Binance (revisa la conexión).",
@@ -80,7 +84,7 @@ export async function refreshStaleBinanceSources(
     // one nor mark the source stale — record it distinctly and never throw (the
     // freshness row is left for the next pass to re-stamp).
     try {
-      input.persistFresh(source.sourceId, drafts);
+      await input.persistFresh(source.sourceId, drafts);
     } catch (err) {
       errors.push(
         err instanceof Error

@@ -43,15 +43,15 @@ afterEach(cleanupTempDirs);
  *   member_ana → 60_000.00 assets, 0 debts
  *   member_jose → 40_000.00 assets, 40_000.00 debts
  */
-function seedHousehold(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seedHousehold(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [
       { id: "member_ana", name: "Ana" },
       { id: "member_jose", name: "Jose" },
     ],
     mode: "household",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 100_000_00,
     id: "asset_cash",
@@ -63,7 +63,7 @@ function seedHousehold(store: WorthlineStore): void {
     ],
     type: "cash",
   });
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     balanceMinor: 40_000_00,
     currency: "EUR",
     id: "liability_loan",
@@ -79,17 +79,17 @@ function seedHousehold(store: WorthlineStore): void {
  * Returns the captures keyed by scope id so assertions can inspect what was
  * written without re-deriving it.
  */
-function runCaptureLoop(
+async function runCaptureLoop(
   store: WorthlineStore,
   now: string,
-): Map<string, CaptureSnapshotOutput> {
-  const workspace = store.workspace.readWorkspace()!;
-  const assets = store.assets.readAssets();
-  const liabilities = store.liabilities.readLiabilities();
+): Promise<Map<string, CaptureSnapshotOutput>> {
+  const workspace = (await store.workspace.readWorkspace())!;
+  const assets = await store.assets.readAssets();
+  const liabilities = await store.liabilities.readLiabilities();
   const scopes = listScopeOptions(workspace);
 
   const investmentDetails = new Map<string, InvestmentCaptureDetail>(
-    store.snapshots.readPositions().map((position) => [
+    (await store.snapshots.readPositions()).map((position) => [
       position.assetId,
       {
         units: position.currentUnits,
@@ -106,7 +106,7 @@ function runCaptureLoop(
     const capture = captureSnapshotForScope({
       assets,
       capturedAt: now,
-      existingSnapshots: store.snapshots.readSnapshots(scope.id),
+      existingSnapshots: await store.snapshots.readSnapshots(scope.id),
       investmentDetails,
       liabilities,
       scope,
@@ -114,7 +114,7 @@ function runCaptureLoop(
     });
 
     if (capture) {
-      store.snapshots.saveSnapshot({
+      await store.snapshots.saveSnapshot({
         holdings: capture.holdings,
         replace: capture.replace,
         snapshot: capture.snapshot,
@@ -127,11 +127,11 @@ function runCaptureLoop(
 }
 
 describe("multi-scope snapshot capture loop (integration)", () => {
-  test("captures one ownership-weighted snapshot per scope: household + 2 members", () => {
-    const store = createFileBackedStore("worthline-capture-loop-");
-    seedHousehold(store);
+  test("captures one ownership-weighted snapshot per scope: household + 2 members", async () => {
+    const store = await createFileBackedStore("worthline-capture-loop-");
+    await seedHousehold(store);
 
-    const scopes = listScopeOptions(store.workspace.readWorkspace()!);
+    const scopes = listScopeOptions((await store.workspace.readWorkspace())!);
     // listScopeOptions yields household first, then the active members.
     expect(scopes.map((scope: ScopeOption) => scope.id)).toEqual([
       "household",
@@ -139,12 +139,12 @@ describe("multi-scope snapshot capture loop (integration)", () => {
       "member_jose",
     ]);
 
-    runCaptureLoop(store, "2026-06-10T10:00:00.000Z");
+    await runCaptureLoop(store, "2026-06-10T10:00:00.000Z");
 
     // Every scope accumulated exactly one snapshot for the day.
-    const household = store.snapshots.readSnapshots("household");
-    const ana = store.snapshots.readSnapshots("member_ana");
-    const jose = store.snapshots.readSnapshots("member_jose");
+    const household = await store.snapshots.readSnapshots("household");
+    const ana = await store.snapshots.readSnapshots("member_ana");
+    const jose = await store.snapshots.readSnapshots("member_jose");
     expect(household).toHaveLength(1);
     expect(ana).toHaveLength(1);
     expect(jose).toHaveLength(1);
@@ -167,15 +167,15 @@ describe("multi-scope snapshot capture loop (integration)", () => {
     store.close();
   });
 
-  test("the ADR 0008 reconciliation invariant holds for every scope's frozen rows read from the DB", () => {
-    const store = createFileBackedStore("worthline-capture-loop-");
-    seedHousehold(store);
+  test("the ADR 0008 reconciliation invariant holds for every scope's frozen rows read from the DB", async () => {
+    const store = await createFileBackedStore("worthline-capture-loop-");
+    await seedHousehold(store);
 
-    runCaptureLoop(store, "2026-06-10T10:00:00.000Z");
+    await runCaptureLoop(store, "2026-06-10T10:00:00.000Z");
 
     for (const scopeId of ["household", "member_ana", "member_jose"]) {
-      const snapshot = store.snapshots.readSnapshots(scopeId)[0]!;
-      const rows = store.snapshots.readSnapshotHoldings({ scopeId });
+      const snapshot = (await store.snapshots.readSnapshots(scopeId))[0]!;
+      const rows = await store.snapshots.readSnapshotHoldings({ scopeId });
 
       // Reconcile what was actually persisted against the persisted headline
       // figures — not the in-memory capture. A throw fails the test.
@@ -189,12 +189,14 @@ describe("multi-scope snapshot capture loop (integration)", () => {
 
     // Holdings with no stake in a scope are omitted (not behind its figures):
     // Ana has no share of Jose's solely-owned debt, so only her cash row exists.
-    const anaRows = store.snapshots.readSnapshotHoldings({ scopeId: "member_ana" });
+    const anaRows = await store.snapshots.readSnapshotHoldings({ scopeId: "member_ana" });
     expect(anaRows.map((row) => row.holdingId)).toEqual(["asset_cash"]);
     expect(anaRows[0]!.valueMinor).toBe(60_000_00);
 
     // Jose carries both his cash share and the full debt row.
-    const joseRows = store.snapshots.readSnapshotHoldings({ scopeId: "member_jose" });
+    const joseRows = await store.snapshots.readSnapshotHoldings({
+      scopeId: "member_jose",
+    });
     expect(new Set(joseRows.map((row) => row.holdingId))).toEqual(
       new Set(["asset_cash", "liability_loan"]),
     );
@@ -208,9 +210,9 @@ describe("multi-scope snapshot capture loop (integration)", () => {
     store.close();
   });
 
-  test("monthly closes are derived per scope as the last snapshot of each calendar month", () => {
-    const store = createFileBackedStore("worthline-capture-loop-");
-    seedHousehold(store);
+  test("monthly closes are derived per scope as the last snapshot of each calendar month", async () => {
+    const store = await createFileBackedStore("worthline-capture-loop-");
+    await seedHousehold(store);
 
     // The production loop runs once per dashboard load. Replay it across
     // successive days, re-valuing the shared cash account each day so the
@@ -223,13 +225,13 @@ describe("multi-scope snapshot capture loop (integration)", () => {
     ];
 
     for (const day of days) {
-      store.assets.updateAssetValuation("asset_cash", day.cashMinor);
-      runCaptureLoop(store, day.now);
+      await store.assets.updateAssetValuation("asset_cash", day.cashMinor);
+      await runCaptureLoop(store, day.now);
     }
 
     // Each scope independently accrues one snapshot per day across both months.
     for (const scopeId of ["household", "member_ana", "member_jose"]) {
-      const snapshots = store.snapshots.readSnapshots(scopeId);
+      const snapshots = await store.snapshots.readSnapshots(scopeId);
       expect(snapshots).toHaveLength(4);
 
       const closes = deriveMonthlyCloses(snapshots);
@@ -246,31 +248,31 @@ describe("multi-scope snapshot capture loop (integration)", () => {
     store.close();
   });
 
-  test("same-day re-runs upsert latest-wins: at most one snapshot and one set of rows per scope per day", () => {
-    const store = createFileBackedStore("worthline-capture-loop-");
-    seedHousehold(store);
+  test("same-day re-runs upsert latest-wins: at most one snapshot and one set of rows per scope per day", async () => {
+    const store = await createFileBackedStore("worthline-capture-loop-");
+    await seedHousehold(store);
 
     // First dashboard load of the day.
-    const morning = runCaptureLoop(store, "2026-06-10T08:00:00.000Z");
+    const morning = await runCaptureLoop(store, "2026-06-10T08:00:00.000Z");
     // None of the morning captures replaced anything — first of the day.
     for (const capture of morning.values()) {
       expect(capture.replace).toBe(false);
     }
 
     // Re-value mid-day and load again — the policy says recapture, replacing.
-    store.assets.updateAssetValuation("asset_cash", 120_000_00);
-    const evening = runCaptureLoop(store, "2026-06-10T18:00:00.000Z");
+    await store.assets.updateAssetValuation("asset_cash", 120_000_00);
+    const evening = await runCaptureLoop(store, "2026-06-10T18:00:00.000Z");
     // Every evening capture replaced the morning same-day snapshot.
     for (const capture of evening.values()) {
       expect(capture.replace).toBe(true);
     }
 
     for (const scopeId of ["household", "member_ana", "member_jose"]) {
-      const snapshots = store.snapshots.readSnapshots(scopeId);
+      const snapshots = await store.snapshots.readSnapshots(scopeId);
       // Latest-wins: exactly one snapshot for the day per scope.
       expect(snapshots).toHaveLength(1);
 
-      const rows = store.snapshots.readSnapshotHoldings({ scopeId });
+      const rows = await store.snapshots.readSnapshotHoldings({ scopeId });
       // And exactly one set of frozen rows, all from the evening capture.
       const eveningId = evening.get(scopeId)!.snapshot.id;
       expect(rows.every((row) => row.snapshotId === eveningId)).toBe(true);
@@ -278,13 +280,13 @@ describe("multi-scope snapshot capture loop (integration)", () => {
 
     // The re-valued figures replaced the morning ones (household sees the full
     // 120_000.00 of assets now).
-    expect(store.snapshots.readSnapshots("household")[0]!.grossAssets.amountMinor).toBe(
-      120_000_00,
-    );
+    expect(
+      (await store.snapshots.readSnapshots("household"))[0]!.grossAssets.amountMinor,
+    ).toBe(120_000_00);
     // Ana's 60% share moved to 72_000.00.
-    expect(store.snapshots.readSnapshots("member_ana")[0]!.grossAssets.amountMinor).toBe(
-      72_000_00,
-    );
+    expect(
+      (await store.snapshots.readSnapshots("member_ana"))[0]!.grossAssets.amountMinor,
+    ).toBe(72_000_00);
 
     store.close();
   });

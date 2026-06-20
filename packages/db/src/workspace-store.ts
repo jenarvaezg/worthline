@@ -105,7 +105,7 @@ export interface ImportWorkspaceResult {
  */
 export interface WorkspaceStoreDeps {
   /** Run the post-import historical-snapshot gap-fill against the live workspace. */
-  gapFillHistoricalSnapshots: (workspace: Workspace, today: string) => void;
+  gapFillHistoricalSnapshots: (workspace: Workspace, today: string) => Promise<void>;
 }
 
 /**
@@ -156,32 +156,32 @@ const WORKSPACE_TABLES = [
  * slice owns any deduplication.
  */
 export interface WorkspaceStore {
-  initializeWorkspace: (input: InitializeWorkspaceInput) => void;
+  initializeWorkspace: (input: InitializeWorkspaceInput) => Promise<void>;
   /** Empty every table in one transaction, returning the workspace to onboarding. */
-  resetWorkspace: () => void;
-  readWorkspace: () => Workspace | null;
+  resetWorkspace: () => Promise<void>;
+  readWorkspace: () => Promise<Workspace | null>;
   /**
    * Serialize the entire workspace into the versioned export document
    * (ADR 0010): live state, snapshot history, the papelera, and the price
    * cache. Read-only — exporting never writes. The audit log is not a section.
    * Throws when no workspace has been initialized.
    */
-  exportWorkspace: () => WorkspaceExport;
+  exportWorkspace: () => Promise<WorkspaceExport>;
   /**
    * Atomically replace the entire workspace with an already-validated export
    * document (ADR 0010, #103): every table is emptied and the file's sections
    * are bulk-inserted with their ids preserved. Callers must validate the
    * document with parseWorkspaceExport first — this method does not re-parse.
    */
-  importWorkspace: (doc: WorkspaceExport) => ImportWorkspaceResult;
-  createMember: (member: Member) => void;
-  updateMember: (member: Pick<Member, "id" | "name">) => void;
-  disableMember: (memberId: string, disabledAt: string) => void;
-  reactivateMember: (memberId: string) => void;
+  importWorkspace: (doc: WorkspaceExport) => Promise<ImportWorkspaceResult>;
+  createMember: (member: Member) => Promise<void>;
+  updateMember: (member: Pick<Member, "id" | "name">) => Promise<void>;
+  disableMember: (memberId: string, disabledAt: string) => Promise<void>;
+  reactivateMember: (memberId: string) => Promise<void>;
   /** Hard-delete a member. Returns 0 (no-op) unless the member is disabled and owns no share of any holding. */
-  hardDeleteMember: (memberId: string) => number;
+  hardDeleteMember: (memberId: string) => Promise<number>;
   /** Holdings (live or trashed) the member owns a share of. Empty ⇒ the member may be hard-deleted. */
-  readMemberOwnerships: (memberId: string) => MemberOwnerships;
+  readMemberOwnerships: (memberId: string) => Promise<MemberOwnerships>;
 }
 
 export function createWorkspaceStore(
@@ -192,7 +192,7 @@ export function createWorkspaceStore(
     initializeWorkspace: (input) => initializeWorkspace(ctx, input),
     resetWorkspace: () => resetWorkspace(ctx),
     readWorkspace: () => ctx.getWorkspace(),
-    exportWorkspace: () => buildWorkspaceExport(ctx.db, ctx.getWorkspace()),
+    exportWorkspace: async () => buildWorkspaceExport(ctx.db, await ctx.getWorkspace()),
     importWorkspace: (doc) => importWorkspace(ctx, deps, doc),
     createMember: (member) => createMember(ctx, member),
     updateMember: (member) => updateMember(ctx, member),
@@ -209,8 +209,8 @@ export function createWorkspaceStore(
  * cache can be seeded with it without a cycle: index.ts injects this into
  * createStoreContext, and every reader goes through the memoized getWorkspace.
  */
-export function readWorkspace(db: StoreDb): Workspace | null {
-  const workspaceRow = db
+export async function readWorkspace(db: StoreDb): Promise<Workspace | null> {
+  const workspaceRow = await db
     .select({ baseCurrency: workspaceTable.baseCurrency, mode: workspaceTable.mode })
     .from(workspaceTable)
     .where(eq(workspaceTable.id, "default"))
@@ -220,32 +220,34 @@ export function readWorkspace(db: StoreDb): Workspace | null {
     return null;
   }
 
-  const memberRows = db
+  const memberRows = await db
     .select({ disabledAt: members.disabledAt, id: members.id, name: members.name })
     .from(members)
     .orderBy(asc(members.createdAt), asc(members.id))
     .all();
 
-  const groupRows = db
+  const groupRows = await db
     .select({ id: memberGroups.id, name: memberGroups.name })
     .from(memberGroups)
     .orderBy(asc(memberGroups.createdAt), asc(memberGroups.id))
     .all();
 
-  const groups = groupRows.map((group) => {
-    const groupMembers = db
-      .select({ memberId: memberGroupMembers.memberId })
-      .from(memberGroupMembers)
-      .where(eq(memberGroupMembers.groupId, group.id))
-      .orderBy(asc(memberGroupMembers.sortOrder))
-      .all();
+  const groups = await Promise.all(
+    groupRows.map(async (group) => {
+      const groupMembers = await db
+        .select({ memberId: memberGroupMembers.memberId })
+        .from(memberGroupMembers)
+        .where(eq(memberGroupMembers.groupId, group.id))
+        .orderBy(asc(memberGroupMembers.sortOrder))
+        .all();
 
-    return {
-      id: group.id,
-      memberIds: groupMembers.map((row) => row.memberId),
-      name: group.name,
-    };
-  });
+      return {
+        id: group.id,
+        memberIds: groupMembers.map((row) => row.memberId),
+        name: group.name,
+      };
+    }),
+  );
 
   return createWorkspace({
     baseCurrency: workspaceRow.baseCurrency,
@@ -266,7 +268,10 @@ export function readWorkspace(db: StoreDb): Workspace | null {
   });
 }
 
-function initializeWorkspace(ctx: StoreContext, input: InitializeWorkspaceInput): void {
+async function initializeWorkspace(
+  ctx: StoreContext,
+  input: InitializeWorkspaceInput,
+): Promise<void> {
   const { db } = ctx;
   const workspace = createWorkspace({
     baseCurrency: "EUR",
@@ -275,14 +280,15 @@ function initializeWorkspace(ctx: StoreContext, input: InitializeWorkspaceInput)
     ...(input.groups ? { groups: input.groups } : {}),
   });
 
-  ctx.transaction(() => {
-    db.delete(memberGroupMembers).run();
-    db.delete(agentViewPublicIds).run();
-    db.delete(memberGroups).run();
-    db.delete(members).run();
-    db.delete(workspaceTable).run();
+  await ctx.transaction(async () => {
+    await db.delete(memberGroupMembers).run();
+    await db.delete(agentViewPublicIds).run();
+    await db.delete(memberGroups).run();
+    await db.delete(members).run();
+    await db.delete(workspaceTable).run();
 
-    db.insert(workspaceTable)
+    await db
+      .insert(workspaceTable)
       .values({
         baseCurrency: workspace.baseCurrency,
         id: "default",
@@ -291,7 +297,8 @@ function initializeWorkspace(ctx: StoreContext, input: InitializeWorkspaceInput)
       .run();
 
     if (workspace.members.length > 0) {
-      db.insert(members)
+      await db
+        .insert(members)
         .values(
           workspace.members.map((member) => ({
             disabledAt: member.disabledAt ?? null,
@@ -303,10 +310,11 @@ function initializeWorkspace(ctx: StoreContext, input: InitializeWorkspaceInput)
     }
 
     for (const group of workspace.groups) {
-      db.insert(memberGroups).values({ id: group.id, name: group.name }).run();
+      await db.insert(memberGroups).values({ id: group.id, name: group.name }).run();
 
       if (group.memberIds.length > 0) {
-        db.insert(memberGroupMembers)
+        await db
+          .insert(memberGroupMembers)
           .values(
             group.memberIds.map((memberId, sortOrder) => ({
               groupId: group.id,
@@ -318,15 +326,13 @@ function initializeWorkspace(ctx: StoreContext, input: InitializeWorkspaceInput)
       }
     }
 
-    ensureAgentViewPublicIds(ctx, publicIdTargetsForWorkspace(workspace));
+    await ensureAgentViewPublicIds(ctx, publicIdTargetsForWorkspace(workspace));
   });
 
   ctx.invalidateWorkspace();
 }
 
-function resetWorkspace(ctx: StoreContext): void {
-  const { sqlite } = ctx;
-
+async function resetWorkspace(ctx: StoreContext): Promise<void> {
   // WORKSPACE_TABLES is ordered children before parents so FK constraints
   // hold mid-transaction. The file and schema survive; the next read finds
   // no workspace and the app falls back to onboarding. Unlike a hard
@@ -335,18 +341,18 @@ function resetWorkspace(ctx: StoreContext): void {
   // STORE-RULE EXCEPTION (R12): this is a DELETE over a runtime list of table
   // *names*, which Drizzle's typed builder cannot express — so it stays on raw
   // SQL on purpose. importWorkspace shares the same wipe for the same reason.
-  ctx.transaction(() => {
+  await ctx.transaction(async () => {
     for (const table of WORKSPACE_TABLES) {
-      sqlite.prepare(`DELETE FROM ${table}`).run();
+      await ctx.client.execute(`DELETE FROM ${table}`);
     }
   });
 
   ctx.invalidateWorkspace();
 }
 
-function createMember(ctx: StoreContext, member: Member): void {
-  ctx.transaction(() => {
-    ctx.db
+async function createMember(ctx: StoreContext, member: Member): Promise<void> {
+  await ctx.transaction(async () => {
+    await ctx.db
       .insert(members)
       .values({
         disabledAt: member.disabledAt ?? null,
@@ -354,13 +360,16 @@ function createMember(ctx: StoreContext, member: Member): void {
         name: member.name,
       })
       .run();
-    ensureAgentViewPublicIds(ctx, publicIdTargetsForMember(member));
+    await ensureAgentViewPublicIds(ctx, publicIdTargetsForMember(member));
   });
   ctx.invalidateWorkspace();
 }
 
-function updateMember(ctx: StoreContext, member: Pick<Member, "id" | "name">): void {
-  ctx.db
+async function updateMember(
+  ctx: StoreContext,
+  member: Pick<Member, "id" | "name">,
+): Promise<void> {
+  await ctx.db
     .update(members)
     .set({ name: member.name, updatedAt: sql`CURRENT_TIMESTAMP` })
     .where(eq(members.id, member.id))
@@ -382,9 +391,9 @@ function updateMember(ctx: StoreContext, member: Pick<Member, "id" | "name">): v
  * deleted first, then the parent snapshots — explicit (not FK-cascade-reliant)
  * so the purge is correct regardless of the connection's foreign-key pragma.
  */
-function purgeOrphanedScopeSnapshots(ctx: StoreContext): void {
+async function purgeOrphanedScopeSnapshots(ctx: StoreContext): Promise<void> {
   const { db } = ctx;
-  const workspace = ctx.getWorkspace();
+  const workspace = await ctx.getWorkspace();
 
   // No workspace ⇒ nothing offers any scope; leave snapshots untouched (a reset
   // owns that wipe). With a workspace, the offered scope ids are the survivors.
@@ -395,26 +404,31 @@ function purgeOrphanedScopeSnapshots(ctx: StoreContext): void {
   const liveScopeIds = listScopeOptions(workspace).map((option) => option.id);
 
   // Frozen rows of every snapshot whose scope is no longer offered.
-  const orphanSnapshotIds = db
+  const orphanSnapshotRows = await db
     .select({ id: snapshots.id })
     .from(snapshots)
     .where(notInArray(snapshots.scopeId, liveScopeIds))
-    .all()
-    .map((row) => row.id);
+    .all();
+  const orphanSnapshotIds = orphanSnapshotRows.map((row) => row.id);
 
   if (orphanSnapshotIds.length === 0) {
     return;
   }
 
-  db.delete(snapshotHoldings)
+  await db
+    .delete(snapshotHoldings)
     .where(inArray(snapshotHoldings.snapshotId, orphanSnapshotIds))
     .run();
-  db.delete(snapshots).where(inArray(snapshots.id, orphanSnapshotIds)).run();
+  await db.delete(snapshots).where(inArray(snapshots.id, orphanSnapshotIds)).run();
 }
 
-function disableMember(ctx: StoreContext, memberId: string, disabledAt: string): void {
-  ctx.transaction(() => {
-    ctx.db
+async function disableMember(
+  ctx: StoreContext,
+  memberId: string,
+  disabledAt: string,
+): Promise<void> {
+  await ctx.transaction(async () => {
+    await ctx.db
       .update(members)
       .set({ disabledAt, updatedAt: sql`CURRENT_TIMESTAMP` })
       .where(eq(members.id, memberId))
@@ -422,13 +436,13 @@ function disableMember(ctx: StoreContext, memberId: string, disabledAt: string):
     // The disabled member's scope is no longer offered — purge its snapshots in
     // the same transaction as the drop (#306).
     ctx.invalidateWorkspace();
-    purgeOrphanedScopeSnapshots(ctx);
+    await purgeOrphanedScopeSnapshots(ctx);
   });
   ctx.invalidateWorkspace();
 }
 
-function reactivateMember(ctx: StoreContext, memberId: string): void {
-  ctx.db
+async function reactivateMember(ctx: StoreContext, memberId: string): Promise<void> {
+  await ctx.db
     .update(members)
     .set({ disabledAt: null, updatedAt: sql`CURRENT_TIMESTAMP` })
     .where(eq(members.id, memberId))
@@ -436,9 +450,9 @@ function reactivateMember(ctx: StoreContext, memberId: string): void {
   ctx.invalidateWorkspace();
 }
 
-function hardDeleteMember(ctx: StoreContext, memberId: string): number {
+async function hardDeleteMember(ctx: StoreContext, memberId: string): Promise<number> {
   const { db } = ctx;
-  const member = db
+  const member = await db
     .select({ name: members.name, disabledAt: members.disabledAt })
     .from(members)
     .where(eq(members.id, memberId))
@@ -452,27 +466,32 @@ function hardDeleteMember(ctx: StoreContext, memberId: string): number {
   }
 
   const assetCount =
-    db
-      .select({ n: count() })
-      .from(assetOwnerships)
-      .where(eq(assetOwnerships.memberId, memberId))
-      .get()?.n ?? 0;
+    (
+      await db
+        .select({ n: count() })
+        .from(assetOwnerships)
+        .where(eq(assetOwnerships.memberId, memberId))
+        .get()
+    )?.n ?? 0;
   const liabilityCount =
-    db
-      .select({ n: count() })
-      .from(liabilityOwnerships)
-      .where(eq(liabilityOwnerships.memberId, memberId))
-      .get()?.n ?? 0;
+    (
+      await db
+        .select({ n: count() })
+        .from(liabilityOwnerships)
+        .where(eq(liabilityOwnerships.memberId, memberId))
+        .get()
+    )?.n ?? 0;
 
   if (assetCount + liabilityCount > 0) {
     return 0;
   }
 
-  const result = ctx.transaction(() => {
-    const deleted = db.delete(members).where(eq(members.id, memberId)).run();
+  const result = await ctx.transaction(async () => {
+    const deleted = await db.delete(members).where(eq(members.id, memberId)).run();
 
-    if (deleted.changes > 0) {
-      db.delete(agentViewPublicIds)
+    if (deleted.rowsAffected > 0) {
+      await db
+        .delete(agentViewPublicIds)
         .where(
           and(
             eq(agentViewPublicIds.entityId, memberId),
@@ -480,37 +499,40 @@ function hardDeleteMember(ctx: StoreContext, memberId: string): number {
           ),
         )
         .run();
-      ctx.writeAuditEntry("hard_delete_member", "member", memberId, {
+      await ctx.writeAuditEntry("hard_delete_member", "member", memberId, {
         name: member.name,
       });
       // The deleted member's scope is no longer offered — purge its snapshots in
       // the same transaction as the drop (#306).
       ctx.invalidateWorkspace();
-      purgeOrphanedScopeSnapshots(ctx);
+      await purgeOrphanedScopeSnapshots(ctx);
     }
 
     return deleted;
   });
 
-  if (result.changes > 0) {
+  if (result.rowsAffected > 0) {
     ctx.invalidateWorkspace();
   }
 
-  return result.changes;
+  return result.rowsAffected;
 }
 
-function readMemberOwnerships(ctx: StoreContext, memberId: string): MemberOwnerships {
+async function readMemberOwnerships(
+  ctx: StoreContext,
+  memberId: string,
+): Promise<MemberOwnerships> {
   const { db } = ctx;
 
   return {
-    assets: db
+    assets: await db
       .select({ id: assets.id, name: assets.name })
       .from(assetOwnerships)
       .innerJoin(assets, eq(assets.id, assetOwnerships.assetId))
       .where(eq(assetOwnerships.memberId, memberId))
       .orderBy(asc(assets.name))
       .all(),
-    liabilities: db
+    liabilities: await db
       .select({ id: liabilities.id, name: liabilities.name })
       .from(liabilityOwnerships)
       .innerJoin(liabilities, eq(liabilities.id, liabilityOwnerships.liabilityId))
@@ -520,24 +542,25 @@ function readMemberOwnerships(ctx: StoreContext, memberId: string): MemberOwners
   };
 }
 
-function importWorkspace(
+async function importWorkspace(
   ctx: StoreContext,
   deps: WorkspaceStoreDeps,
   doc: WorkspaceExport,
-): ImportWorkspaceResult {
-  const { db, sqlite } = ctx;
+): Promise<ImportWorkspaceResult> {
+  const { db } = ctx;
 
-  ctx.transaction(() => {
+  await ctx.transaction(async () => {
     // Full replace (ADR 0010): same wipe as resetWorkspace — a DELETE over a
     // runtime list of table *names*, which Drizzle's typed builder cannot
     // express, so it stays on raw SQL (the one store-rule exception, R12).
     // Then the file's sections are bulk-inserted with their ids preserved via
     // Drizzle — raw values on purpose, never the domain constructors that mint ids.
     for (const table of WORKSPACE_TABLES) {
-      sqlite.prepare(`DELETE FROM ${table}`).run();
+      await ctx.client.execute(`DELETE FROM ${table}`);
     }
 
-    db.insert(workspaceTable)
+    await db
+      .insert(workspaceTable)
       .values({
         baseCurrency: doc.workspace.baseCurrency,
         id: "default",
@@ -546,7 +569,8 @@ function importWorkspace(
       .run();
 
     if (doc.members.length > 0) {
-      db.insert(members)
+      await db
+        .insert(members)
         .values(
           doc.members.map((member) => ({
             disabledAt: member.disabledAt ?? null,
@@ -558,10 +582,11 @@ function importWorkspace(
     }
 
     for (const group of doc.groups) {
-      db.insert(memberGroups).values({ id: group.id, name: group.name }).run();
+      await db.insert(memberGroups).values({ id: group.id, name: group.name }).run();
 
       if (group.memberIds.length > 0) {
-        db.insert(memberGroupMembers)
+        await db
+          .insert(memberGroupMembers)
           .values(
             group.memberIds.map((memberId, sortOrder) => ({
               groupId: group.id,
@@ -574,13 +599,13 @@ function importWorkspace(
     }
 
     if (doc.publicIds.length > 0) {
-      db.insert(agentViewPublicIds).values(toPublicIdRows(doc.publicIds)).run();
+      await db.insert(agentViewPublicIds).values(toPublicIdRows(doc.publicIds)).run();
     }
-    ensureAgentViewPublicIds(ctx, publicIdTargetsForWorkspace(doc));
+    await ensureAgentViewPublicIds(ctx, publicIdTargetsForWorkspace(doc));
     // Holding public ids for every imported holding — live AND trashed assets
     // and liabilities (#335). The file's own rows are inserted above; this mints
     // any missing one (a pre-#335 file) so the non-lazy read path never 500s.
-    ensureAgentViewPublicIds(
+    await ensureAgentViewPublicIds(
       ctx,
       [
         ...doc.assets,
@@ -590,8 +615,9 @@ function importWorkspace(
       ].flatMap((holding) => publicIdTargetsForHolding(holding.id)),
     );
 
-    const writeAsset = (asset: ExportedAsset): void => {
-      db.insert(assets)
+    const writeAsset = async (asset: ExportedAsset): Promise<void> => {
+      await db
+        .insert(assets)
         .values({
           annualAppreciationRate: asset.annualAppreciationRate ?? null,
           // The connected-source back-link (ADR 0016/0021, #248), restored verbatim
@@ -620,7 +646,8 @@ function importWorkspace(
         .run();
 
       if (asset.ownership.length > 0) {
-        db.insert(assetOwnerships)
+        await db
+          .insert(assetOwnerships)
           .values(
             asset.ownership.map((share) => ({
               assetId: asset.id,
@@ -634,7 +661,8 @@ function importWorkspace(
       // Housing valuation anchors (ADR 0015, #155) — ids preserved like every
       // other restored row. FK to assets is satisfied: the asset is inserted above.
       if (asset.valuationAnchors && asset.valuationAnchors.length > 0) {
-        db.insert(assetValuations)
+        await db
+          .insert(assetValuations)
           .values(
             asset.valuationAnchors.map((anchor) => ({
               adjustsPriorCurve: anchor.adjustsPriorCurve ? 1 : 0,
@@ -650,7 +678,8 @@ function importWorkspace(
       // Every investment gets its metadata row (all-null when the file
       // carries none) — read paths expect the row to exist.
       if (asset.type === "investment") {
-        db.insert(investmentAssets)
+        await db
+          .insert(investmentAssets)
           .values({
             assetId: asset.id,
             isin: asset.investment?.isin ?? null,
@@ -667,13 +696,14 @@ function importWorkspace(
     // Trash entries land in the same tables with deleted_at set. All
     // assets go in before liabilities so associated_asset_id can point at
     // a trashed asset without tripping the FK.
-    for (const asset of doc.assets) writeAsset(asset);
-    for (const asset of doc.trash.assets) writeAsset(asset);
+    for (const asset of doc.assets) await writeAsset(asset);
+    for (const asset of doc.trash.assets) await writeAsset(asset);
 
-    const writeLiability = (liability: ExportedLiability): void => {
+    const writeLiability = async (liability: ExportedLiability): Promise<void> => {
       const debtModel = liability.debtModel ?? null;
 
-      db.insert(liabilities)
+      await db
+        .insert(liabilities)
         .values({
           associatedAssetId: liability.associatedAssetId ?? null,
           currency: liability.currency,
@@ -694,7 +724,8 @@ function importWorkspace(
         .run();
 
       if (liability.ownership.length > 0) {
-        db.insert(liabilityOwnerships)
+        await db
+          .insert(liabilityOwnerships)
           .values(
             liability.ownership.map((share) => ({
               liabilityId: liability.id,
@@ -710,7 +741,8 @@ function importWorkspace(
       // repayments (FK to the plan is satisfied here), all ids preserved.
       const plan = liability.amortizationPlan;
       if (plan) {
-        db.insert(amortizationPlans)
+        await db
+          .insert(amortizationPlans)
           .values({
             annualInterestRate: plan.annualInterestRate,
             disbursementDate: plan.disbursementDate,
@@ -723,7 +755,8 @@ function importWorkspace(
           .run();
 
         if (plan.interestRateRevisions.length > 0) {
-          db.insert(interestRateRevisions)
+          await db
+            .insert(interestRateRevisions)
             .values(
               plan.interestRateRevisions.map((revision) => ({
                 id: revision.id,
@@ -736,7 +769,8 @@ function importWorkspace(
         }
 
         if (plan.earlyRepayments.length > 0) {
-          db.insert(earlyRepayments)
+          await db
+            .insert(earlyRepayments)
             .values(
               plan.earlyRepayments.map((repayment) => ({
                 amountMinor: repayment.amountMinor,
@@ -752,7 +786,8 @@ function importWorkspace(
 
       // Balance anchors for a revolving/informal debt (ADR 0015, #155).
       if (liability.balanceAnchors && liability.balanceAnchors.length > 0) {
-        db.insert(liabilityBalanceAnchors)
+        await db
+          .insert(liabilityBalanceAnchors)
           .values(
             liability.balanceAnchors.map((anchor) => ({
               anchorDate: anchor.anchorDate,
@@ -765,11 +800,12 @@ function importWorkspace(
       }
     };
 
-    for (const liability of doc.liabilities) writeLiability(liability);
-    for (const liability of doc.trash.liabilities) writeLiability(liability);
+    for (const liability of doc.liabilities) await writeLiability(liability);
+    for (const liability of doc.trash.liabilities) await writeLiability(liability);
 
     if (doc.operations.length > 0) {
-      db.insert(assetOperations)
+      await db
+        .insert(assetOperations)
         .values(
           doc.operations.map((operation) => ({
             assetId: operation.assetId,
@@ -786,7 +822,8 @@ function importWorkspace(
     }
 
     if (doc.warningOverrides.length > 0) {
-      db.insert(warningOverrides)
+      await db
+        .insert(warningOverrides)
         .values(
           doc.warningOverrides.map((override) => ({
             code: override.code,
@@ -799,7 +836,8 @@ function importWorkspace(
     // The whole fire config record lands in the single app_settings row
     // exactly as saveFireConfig leaves it.
     if (Object.keys(doc.fireConfig).length > 0) {
-      db.insert(appSettings)
+      await db
+        .insert(appSettings)
         .values({
           key: "fire.config",
           updatedAt: new Date().toISOString(),
@@ -818,7 +856,8 @@ function importWorkspace(
         });
       }
 
-      db.insert(snapshots)
+      await db
+        .insert(snapshots)
         .values({
           capturedAt: snapshot.capturedAt,
           currency: snapshot.totalNetWorth.currency,
@@ -839,7 +878,8 @@ function importWorkspace(
 
       // The file's holding rows carry no row ids — mint fresh ones.
       if (snapshot.holdings.length > 0) {
-        db.insert(snapshotHoldings)
+        await db
+          .insert(snapshotHoldings)
           .values(
             snapshot.holdings.map((row) => ({
               holdingId: row.holdingId,
@@ -860,7 +900,8 @@ function importWorkspace(
     }
 
     if (doc.priceCache.length > 0) {
-      db.insert(assetPriceCache)
+      await db
+        .insert(assetPriceCache)
         .values(
           doc.priceCache.map((price) => ({
             assetId: price.assetId,
@@ -883,7 +924,8 @@ function importWorkspace(
     // section is normalized to [] by the parser; `?? []` also tolerates a
     // hand-rolled v2 file written before the section existed.
     for (const source of doc.connectedSources ?? []) {
-      db.insert(connectedSources)
+      await db
+        .insert(connectedSources)
         .values({
           adapter: source.adapter,
           assetId: source.assetId,
@@ -899,7 +941,8 @@ function importWorkspace(
         // Re-attach each exported position to its source and write the full column
         // set per kind (coin | token) through the shared insert shape (ADR 0021),
         // so a Binance token round-trips its symbol/balance/wallet/price too.
-        db.insert(positions)
+        await db
+          .insert(positions)
           .values(
             source.positions.map((position) =>
               // Narrow per kind so the spread reconstructs the discriminated
@@ -915,7 +958,7 @@ function importWorkspace(
 
     // One audit entry inside the transaction: a failed import leaves no
     // trace, a successful one starts the fresh log with its section counts.
-    ctx.writeAuditEntry("import_workspace", "workspace", "default", {
+    await ctx.writeAuditEntry("import_workspace", "workspace", "default", {
       assets: doc.assets.length,
       connectedSources: (doc.connectedSources ?? []).length,
       fireScopes: Object.keys(doc.fireConfig).length,
@@ -938,11 +981,11 @@ function importWorkspace(
   // file. Imported snapshots are restored intact and never recalculated —
   // they were captured with real contemporaneous data. Runs outside the
   // import transaction so each save owns its own transaction.
-  const importedWorkspace = ctx.getWorkspace();
+  const importedWorkspace = await ctx.getWorkspace();
   if (importedWorkspace) {
     const today = new Date().toISOString().slice(0, 10);
     try {
-      deps.gapFillHistoricalSnapshots(importedWorkspace, today);
+      await deps.gapFillHistoricalSnapshots(importedWorkspace, today);
     } catch (error) {
       // The import itself already committed (ADR 0010), so we never roll it
       // back. But the gap-fill is no longer swallowed by a bare console.error
@@ -963,28 +1006,28 @@ function importWorkspace(
  * the final assembly is delegated to the domain's serializeWorkspaceExport.
  * The audit log is deliberately not a section.
  */
-function buildWorkspaceExport(db: StoreDb, workspace: Workspace | null): WorkspaceExport {
+async function buildWorkspaceExport(
+  db: StoreDb,
+  workspace: Workspace | null,
+): Promise<WorkspaceExport> {
   if (!workspace) {
     throw new Error("Workspace must be initialized before exporting.");
   }
 
   // Assets — live and trashed — with ownership and investment metadata.
-  const assetRows = db
+  const assetRows = await db
     .select()
     .from(assets)
     .orderBy(asc(assets.createdAt), asc(assets.id))
     .all();
-  const ownershipByAsset = readAssetOwnerships(db);
+  const ownershipByAsset = await readAssetOwnerships(db);
+  const investmentMetaRows = await db.select().from(investmentAssets).all();
   const investmentMetaByAsset = new Map(
-    db
-      .select()
-      .from(investmentAssets)
-      .all()
-      .map((row) => [row.assetId, row] as const),
+    investmentMetaRows.map((row) => [row.assetId, row] as const),
   );
   // Housing valuation anchors grouped by asset (ADR 0015, #155), ordered by
   // date then id so the restored curve matches what the live store reads back.
-  const anchorsByAsset = readValuationAnchorsByAsset(db);
+  const anchorsByAsset = await readValuationAnchorsByAsset(db);
 
   const toExportedAsset = (row: typeof assets.$inferSelect): ExportedAsset => {
     const meta = investmentMetaByAsset.get(row.id);
@@ -1038,16 +1081,16 @@ function buildWorkspaceExport(db: StoreDb, workspace: Workspace | null): Workspa
   };
 
   // Liabilities — live and trashed — with ownership.
-  const liabilityRows = db
+  const liabilityRows = await db
     .select()
     .from(liabilities)
     .orderBy(asc(liabilities.createdAt), asc(liabilities.id))
     .all();
-  const ownershipByLiability = readLiabilityOwnerships(db);
+  const ownershipByLiability = await readLiabilityOwnerships(db);
   // The full debt model (ADR 0015, #155): amortization plans (each with its
   // rate revisions + early repayments) and balance anchors, grouped by liability.
-  const planByLiability = readAmortizationPlansByLiability(db);
-  const balanceAnchorsByLiability = readBalanceAnchorsByLiability(db);
+  const planByLiability = await readAmortizationPlansByLiability(db);
+  const balanceAnchorsByLiability = await readBalanceAnchorsByLiability(db);
 
   const toExportedLiability = (
     row: typeof liabilities.$inferSelect,
@@ -1076,20 +1119,20 @@ function buildWorkspaceExport(db: StoreDb, workspace: Workspace | null): Workspa
 
   // Operations for every investment asset — including trashed ones, so a
   // restore after import keeps their history.
-  const operations = db
+  const operationRows = await db
     .select()
     .from(assetOperations)
     .orderBy(asc(assetOperations.executedAt), asc(assetOperations.id))
-    .all()
-    .map(toOperation);
+    .all();
+  const operations = operationRows.map(toOperation);
 
-  const warningOverrideRows = db
+  const warningOverrideRows = await db
     .select({ code: warningOverrides.code, entityId: warningOverrides.entityId })
     .from(warningOverrides)
     .orderBy(asc(warningOverrides.code), asc(warningOverrides.entityId))
     .all();
 
-  const fireRow = db
+  const fireRow = await db
     .select({ value: appSettings.value })
     .from(appSettings)
     .where(eq(appSettings.key, "fire.config"))
@@ -1099,33 +1142,34 @@ function buildWorkspaceExport(db: StoreDb, workspace: Workspace | null): Workspa
     : {};
 
   // Snapshots across all scopes, each carrying its frozen holding rows.
-  const holdingsBySnapshot = readHoldingRowsBySnapshot(db);
-  const exportedSnapshots: ExportedSnapshot[] = readSnapshots(db).map((snapshot) => ({
+  const holdingsBySnapshot = await readHoldingRowsBySnapshot(db);
+  const snapshotRows = await readSnapshots(db);
+  const exportedSnapshots: ExportedSnapshot[] = snapshotRows.map((snapshot) => ({
     ...snapshot,
     holdings: holdingsBySnapshot.get(snapshot.id) ?? [],
   }));
 
-  const priceCache: AssetPrice[] = db
+  const priceCacheRows = await db
     .select()
     .from(assetPriceCache)
     .orderBy(asc(assetPriceCache.assetId))
-    .all()
-    .map((row) => ({
-      assetId: row.assetId,
-      currency: row.currency,
-      fetchedAt: row.fetchedAt,
-      freshnessState: row.freshnessState,
-      price: row.price,
-      source: row.source,
-      ...(row.priceDate ? { priceDate: row.priceDate } : {}),
-      ...(row.staleReason ? { staleReason: row.staleReason } : {}),
-    }));
+    .all();
+  const priceCache: AssetPrice[] = priceCacheRows.map((row) => ({
+    assetId: row.assetId,
+    currency: row.currency,
+    fetchedAt: row.fetchedAt,
+    freshnessState: row.freshnessState,
+    price: row.price,
+    source: row.source,
+    ...(row.priceDate ? { priceDate: row.priceDate } : {}),
+    ...(row.staleReason ? { staleReason: row.staleReason } : {}),
+  }));
 
   // Connected sources + their positions (ADR 0016). credentials_json and
   // token_json are LOCAL-ONLY and deliberately never read here — a restored
   // source has its API key re-entered before it can sync again.
   const positionsBySource = new Map<string, ExportedPosition[]>();
-  for (const row of db
+  for (const row of await db
     .select()
     .from(positions)
     .orderBy(asc(positions.createdAt), asc(positions.id))
@@ -1135,7 +1179,7 @@ function buildWorkspaceExport(db: StoreDb, workspace: Workspace | null): Workspa
     list.push(position);
     positionsBySource.set(sourceId, list);
   }
-  const exportedConnectedSources: ExportedConnectedSource[] = db
+  const connectedSourceRows = await db
     .select({
       id: connectedSources.id,
       adapter: connectedSources.adapter,
@@ -1145,15 +1189,17 @@ function buildWorkspaceExport(db: StoreDb, workspace: Workspace | null): Workspa
     })
     .from(connectedSources)
     .orderBy(asc(connectedSources.createdAt), asc(connectedSources.id))
-    .all()
-    .map((row) => ({
+    .all();
+  const exportedConnectedSources: ExportedConnectedSource[] = connectedSourceRows.map(
+    (row) => ({
       id: row.id,
       adapter: row.adapter,
       label: row.label,
       assetId: row.assetId,
       ...(row.lastSyncAt ? { lastSyncAt: row.lastSyncAt } : {}),
       positions: positionsBySource.get(row.id) ?? [],
-    }));
+    }),
+  );
 
   return serializeWorkspaceExport({
     workspace: { baseCurrency: workspace.baseCurrency, mode: workspace.mode },
@@ -1181,7 +1227,7 @@ function buildWorkspaceExport(db: StoreDb, workspace: Workspace | null): Workspa
     // Every holding id present in the DB (live + trashed) — assets and
     // liabilities — so the export carries their holding public ids and filters
     // out any stale registry row (#335).
-    publicIds: currentAgentViewPublicIds(
+    publicIds: await currentAgentViewPublicIds(
       db,
       workspace,
       assetRows.map((row) => row.id),
@@ -1190,12 +1236,12 @@ function buildWorkspaceExport(db: StoreDb, workspace: Workspace | null): Workspa
   });
 }
 
-function currentAgentViewPublicIds(
+async function currentAgentViewPublicIds(
   db: StoreDb,
   workspace: Workspace,
   holdingIds: string[],
   liabilityIds: string[],
-): ExportedPublicId[] {
+): Promise<ExportedPublicId[]> {
   const liveTargets = new Set(
     [
       ...publicIdTargetsForWorkspace(workspace),
@@ -1203,9 +1249,8 @@ function currentAgentViewPublicIds(
     ].map((target) => `${target.entityType}:${target.entityId}`),
   );
 
-  return readAgentViewPublicIds(db).filter((row) =>
-    liveTargets.has(`${row.entityType}:${row.entityId}`),
-  );
+  const rows = await readAgentViewPublicIds(db);
+  return rows.filter((row) => liveTargets.has(`${row.entityType}:${row.entityId}`));
 }
 
 function toPublicIdRows(
@@ -1223,10 +1268,10 @@ function toPublicIdRows(
  * then id — the same order asset-store's readValuationAnchors returns, so the
  * exported curve reconstructs identically on restore.
  */
-function readValuationAnchorsByAsset(
+async function readValuationAnchorsByAsset(
   db: StoreDb,
-): Map<string, ExportedValuationAnchor[]> {
-  const rows = db
+): Promise<Map<string, ExportedValuationAnchor[]>> {
+  const rows = await db
     .select()
     .from(assetValuations)
     .orderBy(asc(assetValuations.valuationDate), asc(assetValuations.id))
@@ -1258,17 +1303,17 @@ function readValuationAnchorsByAsset(
  * carrying its rate revisions and early repayments, all ordered by date then id
  * to match the live store readers. The plan is 1:1 with its liability.
  */
-function readAmortizationPlansByLiability(
+async function readAmortizationPlansByLiability(
   db: StoreDb,
-): Map<string, ExportedAmortizationPlan> {
-  const planRows = db.select().from(amortizationPlans).all();
+): Promise<Map<string, ExportedAmortizationPlan>> {
+  const planRows = await db.select().from(amortizationPlans).all();
 
-  const revisionRows = db
+  const revisionRows = await db
     .select()
     .from(interestRateRevisions)
     .orderBy(asc(interestRateRevisions.revisionDate), asc(interestRateRevisions.id))
     .all();
-  const repaymentRows = db
+  const repaymentRows = await db
     .select()
     .from(earlyRepayments)
     .orderBy(asc(earlyRepayments.repaymentDate), asc(earlyRepayments.id))
@@ -1323,10 +1368,10 @@ function readAmortizationPlansByLiability(
  * Balance anchors grouped by liability (ADR 0015, #155), ordered by date then id
  * — the same order liability-store's readBalanceAnchors returns.
  */
-function readBalanceAnchorsByLiability(
+async function readBalanceAnchorsByLiability(
   db: StoreDb,
-): Map<string, ExportedBalanceAnchor[]> {
-  const rows = db
+): Promise<Map<string, ExportedBalanceAnchor[]>> {
+  const rows = await db
     .select()
     .from(liabilityBalanceAnchors)
     .orderBy(asc(liabilityBalanceAnchors.anchorDate), asc(liabilityBalanceAnchors.id))
@@ -1358,8 +1403,10 @@ function readBalanceAnchorsByLiability(
  * implicit rowid has no schema column, so the ORDER BY drops to a raw `sql`
  * fragment inside the otherwise-Drizzle query.
  */
-function readHoldingRowsBySnapshot(db: StoreDb): Map<string, SnapshotHoldingRow[]> {
-  const rows = db
+async function readHoldingRowsBySnapshot(
+  db: StoreDb,
+): Promise<Map<string, SnapshotHoldingRow[]>> {
+  const rows = await db
     .select({
       snapshotId: snapshotHoldings.snapshotId,
       holdingId: snapshotHoldings.holdingId,

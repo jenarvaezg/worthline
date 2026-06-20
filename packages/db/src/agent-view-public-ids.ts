@@ -69,27 +69,25 @@ export function publicIdTargetsForHolding(holdingId: string): AgentViewPublicIdT
   return [{ entityType: "holding", entityId: holdingId }];
 }
 
-export function ensureAgentViewPublicIds(
+export async function ensureAgentViewPublicIds(
   ctx: StoreContext,
   targets: AgentViewPublicIdTarget[],
-): void {
-  const existing = new Set(
-    ctx.db
-      .select({
-        entityId: agentViewPublicIds.entityId,
-        entityType: agentViewPublicIds.entityType,
-      })
-      .from(agentViewPublicIds)
-      .all()
-      .map((row) => publicIdKey(row)),
-  );
+): Promise<void> {
+  const rows = await ctx.db
+    .select({
+      entityId: agentViewPublicIds.entityId,
+      entityType: agentViewPublicIds.entityType,
+    })
+    .from(agentViewPublicIds)
+    .all();
+  const existing = new Set(rows.map((row) => publicIdKey(row)));
 
   for (const target of targets) {
     if (existing.has(publicIdKey(target))) {
       continue;
     }
 
-    ctx.db
+    await ctx.db
       .insert(agentViewPublicIds)
       .values({
         entityId: target.entityId,
@@ -101,7 +99,7 @@ export function ensureAgentViewPublicIds(
   }
 }
 
-export function readAgentViewPublicIds(db: StoreDb): ExportedPublicId[] {
+export async function readAgentViewPublicIds(db: StoreDb): Promise<ExportedPublicId[]> {
   return db
     .select({
       entityId: agentViewPublicIds.entityId,

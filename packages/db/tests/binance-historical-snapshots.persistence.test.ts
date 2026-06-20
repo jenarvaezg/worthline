@@ -21,12 +21,12 @@ import type { WorthlineStore } from "@db/index";
 const TODAY = "2026-06-15";
 const MEMBER_ID = "mJ";
 
-function seed(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seed(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [{ id: MEMBER_ID, name: "Jose" }],
     mode: "individual",
   });
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "fund",
     liquidityTier: "market",
@@ -35,8 +35,10 @@ function seed(store: WorthlineStore): void {
   });
 }
 
-function connectBinance(store: WorthlineStore): { sourceId: string; assetId: string } {
-  return store.connectedSources.connect({
+async function connectBinance(
+  store: WorthlineStore,
+): Promise<{ sourceId: string; assetId: string }> {
+  return await store.connectedSources.connect({
     adapter: "binance",
     label: "Binance",
     credentialsJson: JSON.stringify({ apiKey: "KEY", apiSecret: "SECRET" }),
@@ -46,13 +48,13 @@ function connectBinance(store: WorthlineStore): { sourceId: string; assetId: str
 
 /** A backdated buy that GENERATES the snapshot at its date (the no-price fund
  *  freezes at cost basis), so the backfill has an existing snapshot to set into. */
-function recordBuy(
+async function recordBuy(
   store: WorthlineStore,
   executedAt: string,
   units: string,
   price: string,
-): void {
-  store.recordOperationAndRipple(
+): Promise<void> {
+  await store.recordOperationAndRipple(
     {
       assetId: "fund",
       currency: "EUR",
@@ -84,26 +86,26 @@ function curveOf(input: {
   };
 }
 
-function grossAt(store: WorthlineStore, dateKey: string): number | undefined {
-  return store.snapshots.readSnapshots().find((snap) => snap.dateKey === dateKey)
+async function grossAt(
+  store: WorthlineStore,
+  dateKey: string,
+): Promise<number | undefined> {
+  return (await store.snapshots.readSnapshots()).find((snap) => snap.dateKey === dateKey)
     ?.grossAssets.amountMinor;
 }
 
-function dateKeys(store: WorthlineStore): string[] {
-  return store.snapshots
-    .readSnapshots()
-    .map((snap) => snap.dateKey)
-    .sort();
+async function dateKeys(store: WorthlineStore): Promise<string[]> {
+  return (await store.snapshots.readSnapshots()).map((snap) => snap.dateKey).sort();
 }
 
 describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots", () => {
-  test("generates a monthly-close snapshot at each completed month-end with the binance value", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId } = connectBinance(store);
+  test("generates a monthly-close snapshot at each completed month-end with the binance value", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId } = await connectBinance(store);
 
     // 1 BTC at month-end through 2026-03 and 2026-04, priced 100 (× 100 minor).
-    store.applyBinanceHistoryAndRipple({
+    await store.applyBinanceHistoryAndRipple({
       sourceId,
       curve: curveOf({
         monthEndBalances: { "2026-03": "1", "2026-04": "1" },
@@ -114,20 +116,20 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
 
     // The two completed months are generated at their last calendar day, valued
     // balance × that-day price = 1 × 100 = 100.00.
-    expect(grossAt(store, "2026-03-31")).toBe(100_00);
-    expect(grossAt(store, "2026-04-30")).toBe(100_00);
+    expect(await grossAt(store, "2026-03-31")).toBe(100_00);
+    expect(await grossAt(store, "2026-04-30")).toBe(100_00);
     store.close();
   });
 
-  test("an EXISTING snapshot in the window gets the binance value added (additive to that date)", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("an EXISTING snapshot in the window gets the binance value added (additive to that date)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
     // A pre-existing snapshot from a fund buy on a month-end date.
-    recordBuy(store, "2026-03-31", "10", "100"); // fund cost basis 1000.00
-    expect(grossAt(store, "2026-03-31")).toBe(1_000_00);
+    await recordBuy(store, "2026-03-31", "10", "100"); // fund cost basis 1000.00
+    expect(await grossAt(store, "2026-03-31")).toBe(1_000_00);
 
-    const { sourceId } = connectBinance(store);
-    store.applyBinanceHistoryAndRipple({
+    const { sourceId } = await connectBinance(store);
+    await store.applyBinanceHistoryAndRipple({
       sourceId,
       curve: curveOf({
         monthEndBalances: { "2026-03": "1" },
@@ -137,17 +139,17 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
     });
 
     // The fund row is preserved; the binance row (100) is set on top.
-    expect(grossAt(store, "2026-03-31")).toBe(1_000_00 + 100_00);
+    expect(await grossAt(store, "2026-03-31")).toBe(1_000_00 + 100_00);
     store.close();
   });
 
-  test("the current (partial) month is never materialized", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId } = connectBinance(store);
+  test("the current (partial) month is never materialized", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId } = await connectBinance(store);
 
     // 2026-06 is TODAY's month → not a completed month → never an anchor.
-    store.applyBinanceHistoryAndRipple({
+    await store.applyBinanceHistoryAndRipple({
       sourceId,
       curve: curveOf({
         monthEndBalances: { "2026-05": "1", "2026-06": "1" },
@@ -156,18 +158,18 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
       today: TODAY,
     });
 
-    expect(grossAt(store, "2026-05-31")).toBe(100_00);
-    expect(grossAt(store, "2026-06-30")).toBeUndefined();
+    expect(await grossAt(store, "2026-05-31")).toBe(100_00);
+    expect(await grossAt(store, "2026-06-30")).toBeUndefined();
     store.close();
   });
 
-  test("a second call is a no-op for covered dates and only adds a newly-completed month (frozen/append-only)", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId } = connectBinance(store);
+  test("a second call is a no-op for covered dates and only adds a newly-completed month (frozen/append-only)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId } = await connectBinance(store);
 
     // First sync covers 2026-03 only.
-    store.applyBinanceHistoryAndRipple({
+    await store.applyBinanceHistoryAndRipple({
       sourceId,
       curve: curveOf({
         monthEndBalances: { "2026-03": "1" },
@@ -175,10 +177,10 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
       }),
       today: TODAY,
     });
-    expect(grossAt(store, "2026-03-31")).toBe(100_00);
+    expect(await grossAt(store, "2026-03-31")).toBe(100_00);
 
     // Second sync: 2026-03 at a HIGHER value (a later price move) + a new 2026-04.
-    store.applyBinanceHistoryAndRipple({
+    await store.applyBinanceHistoryAndRipple({
       sourceId,
       curve: curveOf({
         monthEndBalances: { "2026-03": "1", "2026-04": "1" },
@@ -189,25 +191,25 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
 
     // 2026-03 stays frozen at its first value (its row already existed → skipped),
     // never rewritten to 999. 2026-04 is the newly-completed month, set fresh.
-    expect(grossAt(store, "2026-03-31")).toBe(100_00);
-    expect(grossAt(store, "2026-04-30")).toBe(100_00);
+    expect(await grossAt(store, "2026-03-31")).toBe(100_00);
+    expect(await grossAt(store, "2026-04-30")).toBe(100_00);
     store.close();
   });
 
-  test("a completed month-end BELOW the curve start never materializes a spurious zero row (#250)", () => {
+  test("a completed month-end BELOW the curve start never materializes a spurious zero row (#250)", async () => {
     // The bug: a completed month-end (2026-02-28) that sits BELOW the curve's first
     // valuable day (binanceCurveStartDate = 2026-04-30, because 2026-02 has a balance
     // but NO priced day) used to anchor a zero-valued binance row whenever another
     // holding already had a snapshot on that earlier month-end — dragging the UI
     // "Datos desde" before the true start. The fix lower-bounds month-ends by `start`.
-    const store = createInMemoryStore();
-    seed(store);
+    const store = await createInMemoryStore();
+    await seed(store);
 
     // A NON-binance holding with an existing snapshot on the earlier month-end.
-    recordBuy(store, "2026-02-28", "10", "100"); // fund cost basis 1000.00
-    expect(grossAt(store, "2026-02-28")).toBe(1_000_00);
+    await recordBuy(store, "2026-02-28", "10", "100"); // fund cost basis 1000.00
+    expect(await grossAt(store, "2026-02-28")).toBe(1_000_00);
 
-    const { sourceId, assetId } = connectBinance(store);
+    const { sourceId, assetId } = await connectBinance(store);
 
     // 2026-02 has a balance but NO price → unvaluable; 2026-04 has both → the curve's
     // first valuable day (and "Datos desde" basis) is 2026-04-30.
@@ -216,16 +218,18 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
       dailyPrices: { "2026-04-30": "100" },
     });
 
-    store.applyBinanceHistoryAndRipple({ sourceId, curve, today: TODAY });
+    await store.applyBinanceHistoryAndRipple({ sourceId, curve, today: TODAY });
 
     // The earlier month-end keeps ONLY the fund value — no binance row was frozen
     // there (it sits below `start`), so its gross is unchanged.
-    expect(grossAt(store, "2026-02-28")).toBe(1_000_00);
+    expect(await grossAt(store, "2026-02-28")).toBe(1_000_00);
 
     // The binance asset's frozen rows — by date and value.
-    const binanceRows = store.snapshots
-      // Individual mode freezes rows under the single household scope (#269).
-      .readSnapshotHoldings({ holdingId: assetId, scopeId: "household" })
+    const binanceRows = (
+      await store.snapshots
+        // Individual mode freezes rows under the single household scope (#269).
+        .readSnapshotHoldings({ holdingId: assetId, scopeId: "household" })
+    )
       .filter((row) => row.kind === "asset")
       .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
 
@@ -235,21 +239,21 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
     expect(binanceRows[0]!.valueMinor).toBe(100_00);
 
     // The whole-portfolio gross at the start carries the still-held fund + binance.
-    expect(grossAt(store, "2026-04-30")).toBe(1_000_00 + 100_00);
+    expect(await grossAt(store, "2026-04-30")).toBe(1_000_00 + 100_00);
     store.close();
   });
 
-  test("ADDS the binance value to a mid-window, NON-month-end existing snapshot (#250)", () => {
+  test("ADDS the binance value to a mid-window, NON-month-end existing snapshot (#250)", async () => {
     // Isolates the union branch: an existing snapshot in [start, today) that is NOT a
     // month-end. A mid-month buy generates the 2026-03-15 snapshot; the curve prices
     // 2026-03 on 2026-03-15 (so start = 2026-03-15, a non-month-end day in the window).
-    const store = createInMemoryStore();
-    seed(store);
-    recordBuy(store, "2026-03-15", "10", "100"); // fund cost basis 1000.00 on a mid-month day
-    expect(grossAt(store, "2026-03-15")).toBe(1_000_00);
+    const store = await createInMemoryStore();
+    await seed(store);
+    await recordBuy(store, "2026-03-15", "10", "100"); // fund cost basis 1000.00 on a mid-month day
+    expect(await grossAt(store, "2026-03-15")).toBe(1_000_00);
 
-    const { sourceId } = connectBinance(store);
-    store.applyBinanceHistoryAndRipple({
+    const { sourceId } = await connectBinance(store);
+    await store.applyBinanceHistoryAndRipple({
       sourceId,
       curve: curveOf({
         monthEndBalances: { "2026-03": "1" },
@@ -260,17 +264,17 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
 
     // The fund row is preserved and the binance value (1 × 100 = 100.00) is ADDED on
     // top of the existing mid-window snapshot.
-    expect(grossAt(store, "2026-03-15")).toBe(1_000_00 + 100_00);
+    expect(await grossAt(store, "2026-03-15")).toBe(1_000_00 + 100_00);
     store.close();
   });
 
-  test("a null curve start is a no-op", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    const { sourceId } = connectBinance(store);
+  test("a null curve start is a no-op", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId } = await connectBinance(store);
 
     // A curve with balances but no prices values nothing → start null.
-    store.applyBinanceHistoryAndRipple({
+    await store.applyBinanceHistoryAndRipple({
       sourceId,
       curve: curveOf({
         monthEndBalances: { "2026-03": "1" },
@@ -279,13 +283,13 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
       today: TODAY,
     });
 
-    expect(dateKeys(store)).toEqual([]);
+    expect(await dateKeys(store)).toEqual([]);
     store.close();
   });
 
-  test("per-scope in household mode", () => {
-    const store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
+  test("per-scope in household mode", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
       members: [
         { id: "mJ", name: "Jose" },
         { id: "mA", name: "Ana" },
@@ -293,7 +297,7 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
       mode: "household",
     });
     // Binance owned 70/30 between Jose and Ana.
-    const { sourceId } = store.connectedSources.connect({
+    const { sourceId } = await store.connectedSources.connect({
       adapter: "binance",
       label: "Binance",
       credentialsJson: JSON.stringify({ apiKey: "KEY", apiSecret: "SECRET" }),
@@ -303,7 +307,7 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
       ],
     });
 
-    store.applyBinanceHistoryAndRipple({
+    await store.applyBinanceHistoryAndRipple({
       sourceId,
       curve: curveOf({
         monthEndBalances: { "2026-03": "1" },
@@ -312,7 +316,7 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
       today: TODAY,
     });
 
-    const snaps = store.snapshots.readSnapshots();
+    const snaps = await store.snapshots.readSnapshots();
     const household = snaps.find(
       (s) => s.scopeId === "household" && s.dateKey === "2026-03-31",
     )!;

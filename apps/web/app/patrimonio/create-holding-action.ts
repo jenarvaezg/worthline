@@ -186,7 +186,7 @@ export async function createHoldingAction(
   _clock: Clock = systemClock(),
 ): Promise<never> {
   guardDemoWrite(ADD_URL);
-  const runWith = <T>(fn: (store: WorthlineStore) => T): T =>
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
   const today = _clock.today();
@@ -224,8 +224,8 @@ export async function createHoldingAction(
 
   if (assetType) {
     const scoped = scopedAssetForm(formData, instrument, assetType, defaults.rung);
-    const result = runWith((store) => {
-      const workspace = store.workspace.readWorkspace();
+    const result = await runWith(async (store) => {
+      const workspace = await store.workspace.readWorkspace();
 
       if (!workspace) {
         return { ok: false as const, error: "Workspace no inicializado." };
@@ -267,8 +267,8 @@ export async function createHoldingAction(
       defaults.priceProvider,
       defaults.rung,
     );
-    const result = runWith((store) => {
-      const workspace = store.workspace.readWorkspace();
+    const result = await runWith(async (store) => {
+      const workspace = await store.workspace.readWorkspace();
 
       if (!workspace) {
         return { ok: false as const, error: "Workspace no inicializado." };
@@ -290,7 +290,7 @@ export async function createHoldingAction(
         return { ok: false as const, error: mapDomainViolation(splitViolation) };
       }
 
-      store.assets.createInvestmentAsset({ ...parsed.command, instrument });
+      await store.assets.createInvestmentAsset({ ...parsed.command, instrument });
 
       return { ok: true as const, id: parsed.command.id };
     });
@@ -322,8 +322,8 @@ export async function createHoldingAction(
       redirect(errorUrl("El saldo de la deuda no es válido."));
     }
 
-    const result = runWith((store) => {
-      const workspace = store.workspace.readWorkspace();
+    const result = await runWith(async (store) => {
+      const workspace = await store.workspace.readWorkspace();
 
       if (!workspace) {
         return { ok: false as const, error: "Workspace no inicializado." };
@@ -339,8 +339,9 @@ export async function createHoldingAction(
       // falls back to the footer ownership inputs exactly as before.
       const inheritOwnership = scoped.get("inheritOwnership") === "on";
       const associatedAsset = command.associatedAssetId
-        ? (store.assets.readAssets().find((a) => a.id === command.associatedAssetId) ??
-          null)
+        ? ((await store.assets.readAssets()).find(
+            (a) => a.id === command.associatedAssetId,
+          ) ?? null)
         : null;
       // A debt on a co-owned home mirrors the asset's split, which may be a known
       // partial (e.g. 75% mine, 25% a non-member's), so it accepts a partial split
@@ -362,8 +363,8 @@ export async function createHoldingAction(
         };
       }
 
-      store.liabilities.createLiability(resolved);
-      store.liabilities.setDebtModel(resolved.id, debtModel);
+      await store.liabilities.createLiability(resolved);
+      await store.liabilities.setDebtModel(resolved.id, debtModel);
 
       return { ok: true as const, id: resolved.id };
     });

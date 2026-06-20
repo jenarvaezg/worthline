@@ -42,10 +42,10 @@ async function readDashboard(store: WorthlineStore, scopeId?: string) {
 
 describe("seedPersona — joven (starter saver)", () => {
   it("renders a modest, coherent starter portfolio with no blocking warnings", async () => {
-    const store = createInMemoryStore();
-    seedPersona(store, JOVEN_SPEC, AS_OF);
+    const store = await createInMemoryStore();
+    await seedPersona(store, JOVEN_SPEC, AS_OF);
 
-    const workspace = store.workspace.readWorkspace();
+    const workspace = await store.workspace.readWorkspace();
     expect(workspace?.members.length).toBe(1);
 
     const result = await readDashboard(store);
@@ -59,17 +59,19 @@ describe("seedPersona — joven (starter saver)", () => {
     expect(byTier.get("market")?.grossAssets.amountMinor ?? 0).toBeGreaterThan(0);
     expect(byTier.get("term-locked")?.grossAssets.amountMinor ?? 0).toBeGreaterThan(0);
     expect(byTier.get("illiquid")?.grossAssets.amountMinor ?? 0).toBeGreaterThan(0);
-    expect(store.liabilities.readDebtModel("liability_joven_master")).toBe("informal");
-    expect(store.liabilities.readBalanceAnchors("liability_joven_master")).toHaveLength(
-      3,
+    expect(await store.liabilities.readDebtModel("liability_joven_master")).toBe(
+      "informal",
     );
+    expect(
+      await store.liabilities.readBalanceAnchors("liability_joven_master"),
+    ).toHaveLength(3);
 
     store.close();
   });
 
   it("still shows the onboarding checklist (FIRE step pending)", async () => {
-    const store = createInMemoryStore();
-    seedPersona(store, JOVEN_SPEC, AS_OF);
+    const store = await createInMemoryStore();
+    await seedPersona(store, JOVEN_SPEC, AS_OF);
 
     const result = await readDashboard(store);
     const fireStep = result.onboarding.find((s) => s.id === "fire");
@@ -82,8 +84,8 @@ describe("seedPersona — joven (starter saver)", () => {
 
 describe("seedPersona — inversor (markets-heavy)", () => {
   it("populates the market and term-locked rungs with a rich history", async () => {
-    const store = createInMemoryStore();
-    seedPersona(store, INVERSOR_SPEC, AS_OF);
+    const store = await createInMemoryStore();
+    await seedPersona(store, INVERSOR_SPEC, AS_OF);
 
     const result = await readDashboard(store);
     expect(result.needsOnboarding).toBe(false);
@@ -94,16 +96,18 @@ describe("seedPersona — inversor (markets-heavy)", () => {
     expect(byTier.get("term-locked")?.grossAssets.amountMinor ?? 0).toBeGreaterThan(0);
 
     // ~1–2 years of operations build a believable monthly curve.
-    expect(store.snapshots.readSnapshots("household").length).toBeGreaterThanOrEqual(12);
+    expect(
+      (await store.snapshots.readSnapshots("household")).length,
+    ).toBeGreaterThanOrEqual(12);
 
     store.close();
   });
 
-  it("mirrors a frozen connected source with positions", () => {
-    const store = createInMemoryStore();
-    seedPersona(store, INVERSOR_SPEC, AS_OF);
+  it("mirrors a frozen connected source with positions", async () => {
+    const store = await createInMemoryStore();
+    await seedPersona(store, INVERSOR_SPEC, AS_OF);
 
-    const sources = store.connectedSources.listSources();
+    const sources = await store.connectedSources.listSources();
     expect(sources.map((source) => source.adapter).sort()).toEqual([
       "binance",
       "numista",
@@ -112,29 +116,29 @@ describe("seedPersona — inversor (markets-heavy)", () => {
     const binance = sources.find((source) => source.adapter === "binance")!;
     const numista = sources.find((source) => source.adapter === "numista")!;
     expect(
-      store.connectedSources
-        .readPositions(binance.id)
-        .some((position) => position.kind === "token"),
+      (await store.connectedSources.readPositions(binance.id)).some(
+        (position) => position.kind === "token",
+      ),
     ).toBe(true);
     expect(
-      store.connectedSources
-        .readPositions(numista.id)
-        .some((position) => position.kind === "coin"),
+      (await store.connectedSources.readPositions(numista.id)).some(
+        (position) => position.kind === "coin",
+      ),
     ).toBe(true);
 
     store.close();
   });
 
   it("backfills Binance value before today's open period", async () => {
-    const store = createInMemoryStore();
-    seedPersona(store, INVERSOR_SPEC, AS_OF);
+    const store = await createInMemoryStore();
+    await seedPersona(store, INVERSOR_SPEC, AS_OF);
 
     await readDashboard(store);
 
-    const binance = store.connectedSources
-      .listSources()
-      .find((source) => source.adapter === "binance")!;
-    const rows = store.snapshots.readSnapshotHoldings({
+    const binance = (await store.connectedSources.listSources()).find(
+      (source) => source.adapter === "binance",
+    )!;
+    const rows = await store.snapshots.readSnapshotHoldings({
       holdingId: binance.assetId,
       kind: "asset",
       scopeId: "household",
@@ -152,8 +156,8 @@ describe("seedPersona — inversor (markets-heavy)", () => {
   });
 
   it("computes strong FIRE progress for the configured scope", async () => {
-    const store = createInMemoryStore();
-    seedPersona(store, INVERSOR_SPEC, AS_OF);
+    const store = await createInMemoryStore();
+    await seedPersona(store, INVERSOR_SPEC, AS_OF);
 
     const result = await readDashboard(store, "household");
     expect(result.fireScopeConfig).not.toBeNull();

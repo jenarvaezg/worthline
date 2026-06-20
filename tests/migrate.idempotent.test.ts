@@ -1,10 +1,10 @@
-import Database from "better-sqlite3";
+import type { Client } from "@libsql/client";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { SCHEMA_VERSION, withStore } from "@worthline/db";
+import { openLibsqlClient, SCHEMA_VERSION, withStore } from "@worthline/db";
 
 const tempDirs: string[] = [];
 
@@ -21,25 +21,27 @@ function tempDatabasePath(): string {
   return join(dataDir, "worthline.sqlite");
 }
 
-function tableNames(sqlite: Database): string[] {
-  return sqlite
-    .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-    .all()
-    .map((row) => (row as { name: string }).name);
+async function tableNames(client: Client): Promise<string[]> {
+  return (
+    await client.execute(
+      "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
+    )
+  ).rows.map((row) => (row as unknown as { name: string }).name);
 }
 
-function columnNames(sqlite: Database, table: string): string[] {
-  return sqlite
-    .prepare(`PRAGMA table_info(${table})`)
-    .all()
-    .map((row) => (row as { name: string }).name);
+async function columnNames(client: Client, table: string): Promise<string[]> {
+  return (await client.execute(`PRAGMA table_info(${table})`)).rows.map(
+    (row) => (row as unknown as { name: string }).name,
+  );
 }
 
-function indexNames(sqlite: Database, table: string): string[] {
-  return sqlite
-    .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ?")
-    .all(table)
-    .map((row) => (row as { name: string }).name);
+async function indexNames(client: Client, table: string): Promise<string[]> {
+  return (
+    await client.execute({
+      sql: "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ?",
+      args: [table],
+    })
+  ).rows.map((row) => (row as unknown as { name: string }).name);
 }
 
 /** The four hot-read indexes added in #201 (schema-version 23). */
@@ -50,17 +52,17 @@ const HOT_READ_INDEXES: ReadonlyArray<readonly [table: string, index: string]> =
   ["liabilities", "liabilities_deleted_at_idx"],
 ];
 
-function userVersion(sqlite: Database): number {
-  return sqlite.pragma("user_version", { simple: true }) as number;
+async function userVersion(client: Client): Promise<number> {
+  return Number((await client.execute("PRAGMA user_version")).rows[0]!.user_version);
 }
 
 describe("migrate idempotency", () => {
-  test("opening an already-migrated database twice does not throw", () => {
+  test("opening an already-migrated database twice does not throw", async () => {
     const databasePath = tempDatabasePath();
 
-    withStore(
-      (store) => {
-        store.workspace.initializeWorkspace({
+    await withStore(
+      async (store) => {
+        await store.workspace.initializeWorkspace({
           members: [{ id: "member_jose", name: "Jose" }],
           mode: "individual",
         });
@@ -68,33 +70,35 @@ describe("migrate idempotency", () => {
       { databasePath },
     );
 
-    expect(() =>
-      withStore((store) => store.workspace.readWorkspace()?.mode, { databasePath }),
-    ).not.toThrow();
+    await expect(
+      withStore(async (store) => (await store.workspace.readWorkspace())?.mode, {
+        databasePath,
+      }),
+    ).resolves.not.toThrow();
   });
 
-  test("migrates a legacy database that has tables but no user_version", () => {
+  test("migrates a legacy database that has tables but no user_version", async () => {
     const databasePath = tempDatabasePath();
 
-    const legacy = new Database(databasePath);
-    legacy.exec(
+    const legacy = openLibsqlClient(databasePath);
+    await legacy.executeMultiple(
       "CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     );
     legacy.close();
 
-    expect(() =>
-      withStore((store) => store.workspace.readWorkspace(), { databasePath }),
-    ).not.toThrow();
+    await expect(
+      withStore(async (store) => await store.workspace.readWorkspace(), { databasePath }),
+    ).resolves.not.toThrow();
   });
 });
 
 describe("fresh database", () => {
-  test("creates all tables with correct columns", () => {
+  test("creates all tables with correct columns", async () => {
     const databasePath = tempDatabasePath();
 
-    withStore(
-      (store) => {
-        store.workspace.initializeWorkspace({
+    await withStore(
+      async (store) => {
+        await store.workspace.initializeWorkspace({
           members: [{ id: "member_jose", name: "Jose" }],
           mode: "individual",
         });
@@ -102,12 +106,12 @@ describe("fresh database", () => {
       { databasePath },
     );
 
-    const sqlite = new Database(databasePath);
+    const client = openLibsqlClient(databasePath);
     try {
-      expect(userVersion(sqlite)).toBe(SCHEMA_VERSION);
-      expect(tableNames(sqlite)).toContain("warning_overrides");
+      expect(await userVersion(client)).toBe(SCHEMA_VERSION);
+      expect(await tableNames(client)).toContain("warning_overrides");
 
-      const tables = tableNames(sqlite);
+      const tables = await tableNames(client);
       for (const expected of [
         "app_settings",
         "workspace",
@@ -133,34 +137,34 @@ describe("fresh database", () => {
         expect(tables).toContain(expected);
       }
 
-      const assetColumns = columnNames(sqlite, "assets");
+      const assetColumns = await columnNames(client, "assets");
       expect(assetColumns).toContain("deleted_at");
       expect(assetColumns).toContain("annual_appreciation_rate");
 
-      const liabilityColumns = columnNames(sqlite, "liabilities");
+      const liabilityColumns = await columnNames(client, "liabilities");
       expect(liabilityColumns).toContain("deleted_at");
       expect(liabilityColumns).toContain("debt_model");
 
-      const investmentColumns = columnNames(sqlite, "investment_assets");
+      const investmentColumns = await columnNames(client, "investment_assets");
       expect(investmentColumns).toContain("price_provider");
 
       // #201: the hot-read indexes are present on a fresh database (created from
       // schema-sql at v<2), so the runtime SQL and the migration ladder agree.
       for (const [table, indexName] of HOT_READ_INDEXES) {
-        expect(indexNames(sqlite, table)).toContain(indexName);
+        expect(await indexNames(client, table)).toContain(indexName);
       }
     } finally {
-      sqlite.close();
+      client.close();
     }
   });
 });
 
 describe("forward migration from v2", () => {
-  test("a v2 database gets asset_price_cache, audit_log, and deleted_at columns", () => {
+  test("a v2 database gets asset_price_cache, audit_log, and deleted_at columns", async () => {
     const databasePath = tempDatabasePath();
 
-    const v2 = new Database(databasePath);
-    v2.exec(
+    const v2 = openLibsqlClient(databasePath);
+    await v2.executeMultiple(
       `CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
        CREATE TABLE workspace (id TEXT PRIMARY KEY, mode TEXT NOT NULL, base_currency TEXT NOT NULL, created_at TEXT, updated_at TEXT);
        CREATE TABLE members (id TEXT PRIMARY KEY, name TEXT NOT NULL, disabled_at TEXT, created_at TEXT, updated_at TEXT);
@@ -175,52 +179,52 @@ describe("forward migration from v2", () => {
        CREATE TABLE asset_operations (id TEXT PRIMARY KEY, asset_id TEXT NOT NULL, kind TEXT NOT NULL, executed_at TEXT NOT NULL, units TEXT NOT NULL, price_per_unit TEXT NOT NULL, currency TEXT NOT NULL, fees_minor INTEGER DEFAULT 0 NOT NULL, created_at TEXT);
        CREATE TABLE investment_assets (asset_id TEXT PRIMARY KEY, unit_symbol TEXT, isin TEXT, provider_symbol TEXT, manual_price_per_unit TEXT, manual_priced_at TEXT);`,
     );
-    v2.pragma("user_version = 2");
+    await v2.execute("PRAGMA user_version = 2");
     v2.close();
 
-    withStore(
-      (store) => {
-        expect(store.workspace.readWorkspace()).toBeNull();
+    await withStore(
+      async (store) => {
+        expect(await store.workspace.readWorkspace()).toBeNull();
       },
       { databasePath },
     );
 
-    const sqlite = new Database(databasePath);
+    const client = openLibsqlClient(databasePath);
     try {
-      expect(userVersion(sqlite)).toBe(SCHEMA_VERSION);
-      expect(tableNames(sqlite)).toContain("warning_overrides");
-      expect(tableNames(sqlite)).toContain("asset_price_cache");
-      expect(tableNames(sqlite)).toContain("audit_log");
-      expect(tableNames(sqlite)).toContain("snapshot_holdings");
-      expect(tableNames(sqlite)).toContain("asset_valuations");
-      expect(tableNames(sqlite)).toContain("amortization_plans");
-      expect(tableNames(sqlite)).toContain("interest_rate_revisions");
-      expect(tableNames(sqlite)).toContain("liability_balance_anchors");
-      expect(tableNames(sqlite)).toContain("early_repayments");
-      expect(columnNames(sqlite, "assets")).toContain("deleted_at");
-      expect(columnNames(sqlite, "assets")).toContain("annual_appreciation_rate");
-      expect(columnNames(sqlite, "liabilities")).toContain("deleted_at");
-      expect(columnNames(sqlite, "liabilities")).toContain("debt_model");
-      expect(columnNames(sqlite, "investment_assets")).toContain("price_provider");
+      expect(await userVersion(client)).toBe(SCHEMA_VERSION);
+      expect(await tableNames(client)).toContain("warning_overrides");
+      expect(await tableNames(client)).toContain("asset_price_cache");
+      expect(await tableNames(client)).toContain("audit_log");
+      expect(await tableNames(client)).toContain("snapshot_holdings");
+      expect(await tableNames(client)).toContain("asset_valuations");
+      expect(await tableNames(client)).toContain("amortization_plans");
+      expect(await tableNames(client)).toContain("interest_rate_revisions");
+      expect(await tableNames(client)).toContain("liability_balance_anchors");
+      expect(await tableNames(client)).toContain("early_repayments");
+      expect(await columnNames(client, "assets")).toContain("deleted_at");
+      expect(await columnNames(client, "assets")).toContain("annual_appreciation_rate");
+      expect(await columnNames(client, "liabilities")).toContain("deleted_at");
+      expect(await columnNames(client, "liabilities")).toContain("debt_model");
+      expect(await columnNames(client, "investment_assets")).toContain("price_provider");
 
       // #201: a legacy v2 database gains the hot-read indexes through the v23
       // migration block (asset_operations/audit_log/assets/liabilities did not yet
       // carry them), proving the ladder backfills them — not just a fresh schema-sql.
       for (const [table, indexName] of HOT_READ_INDEXES) {
-        expect(indexNames(sqlite, table)).toContain(indexName);
+        expect(await indexNames(client, table)).toContain(indexName);
       }
     } finally {
-      sqlite.close();
+      client.close();
     }
   });
 });
 
 describe("forward migration from v3", () => {
-  test("a v3 database gets audit_log and deleted_at columns", () => {
+  test("a v3 database gets audit_log and deleted_at columns", async () => {
     const databasePath = tempDatabasePath();
 
-    const v3 = new Database(databasePath);
-    v3.exec(
+    const v3 = openLibsqlClient(databasePath);
+    await v3.executeMultiple(
       `CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
        CREATE TABLE workspace (id TEXT PRIMARY KEY, mode TEXT NOT NULL, base_currency TEXT NOT NULL, created_at TEXT, updated_at TEXT);
        CREATE TABLE members (id TEXT PRIMARY KEY, name TEXT NOT NULL, disabled_at TEXT, created_at TEXT, updated_at TEXT);
@@ -236,34 +240,34 @@ describe("forward migration from v3", () => {
        CREATE TABLE investment_assets (asset_id TEXT PRIMARY KEY, unit_symbol TEXT, isin TEXT, provider_symbol TEXT, manual_price_per_unit TEXT, manual_priced_at TEXT);
        CREATE TABLE asset_price_cache (asset_id TEXT PRIMARY KEY, currency TEXT NOT NULL, price TEXT NOT NULL, source TEXT DEFAULT 'manual' NOT NULL, price_date TEXT, fetched_at TEXT NOT NULL, freshness_state TEXT DEFAULT 'manual' NOT NULL, stale_reason TEXT, created_at TEXT, updated_at TEXT);`,
     );
-    v3.pragma("user_version = 3");
+    await v3.execute("PRAGMA user_version = 3");
     v3.close();
 
-    withStore(
-      (store) => {
-        expect(store.workspace.readWorkspace()).toBeNull();
+    await withStore(
+      async (store) => {
+        expect(await store.workspace.readWorkspace()).toBeNull();
       },
       { databasePath },
     );
 
-    const sqlite = new Database(databasePath);
+    const client = openLibsqlClient(databasePath);
     try {
-      expect(userVersion(sqlite)).toBe(SCHEMA_VERSION);
-      expect(tableNames(sqlite)).toContain("warning_overrides");
-      expect(tableNames(sqlite)).toContain("audit_log");
-      expect(tableNames(sqlite)).toContain("snapshot_holdings");
-      expect(tableNames(sqlite)).toContain("asset_valuations");
-      expect(tableNames(sqlite)).toContain("amortization_plans");
-      expect(tableNames(sqlite)).toContain("interest_rate_revisions");
-      expect(tableNames(sqlite)).toContain("liability_balance_anchors");
-      expect(tableNames(sqlite)).toContain("early_repayments");
-      expect(columnNames(sqlite, "assets")).toContain("deleted_at");
-      expect(columnNames(sqlite, "assets")).toContain("annual_appreciation_rate");
-      expect(columnNames(sqlite, "liabilities")).toContain("deleted_at");
-      expect(columnNames(sqlite, "liabilities")).toContain("debt_model");
-      expect(columnNames(sqlite, "investment_assets")).toContain("price_provider");
+      expect(await userVersion(client)).toBe(SCHEMA_VERSION);
+      expect(await tableNames(client)).toContain("warning_overrides");
+      expect(await tableNames(client)).toContain("audit_log");
+      expect(await tableNames(client)).toContain("snapshot_holdings");
+      expect(await tableNames(client)).toContain("asset_valuations");
+      expect(await tableNames(client)).toContain("amortization_plans");
+      expect(await tableNames(client)).toContain("interest_rate_revisions");
+      expect(await tableNames(client)).toContain("liability_balance_anchors");
+      expect(await tableNames(client)).toContain("early_repayments");
+      expect(await columnNames(client, "assets")).toContain("deleted_at");
+      expect(await columnNames(client, "assets")).toContain("annual_appreciation_rate");
+      expect(await columnNames(client, "liabilities")).toContain("deleted_at");
+      expect(await columnNames(client, "liabilities")).toContain("debt_model");
+      expect(await columnNames(client, "investment_assets")).toContain("price_provider");
     } finally {
-      sqlite.close();
+      client.close();
     }
   });
 });

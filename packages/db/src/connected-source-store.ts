@@ -74,17 +74,17 @@ export interface ValuationFreshness {
  * rolled-up holding whose value is derived from the positions, never hand-set.
  */
 export interface ConnectedSourceStore {
-  connect(input: ConnectSourceInput): { sourceId: string; assetId: string };
-  saveToken(sourceId: string, tokenJson: string): void;
-  readSource(sourceId: string): ConnectedSourceRow | null;
-  listSources(): ConnectedSourceRow[];
+  connect(input: ConnectSourceInput): Promise<{ sourceId: string; assetId: string }>;
+  saveToken(sourceId: string, tokenJson: string): Promise<void>;
+  readSource(sourceId: string): Promise<ConnectedSourceRow | null>;
+  listSources(): Promise<ConnectedSourceRow[]>;
   /**
    * Every asset id this source materialized — one per occupied rung (ADR 0016,
    * #248). The market (primary) asset is `connected_sources.asset_id`; the others
    * (e.g. term-locked) carry the source id only via `assets.connected_source_id`
    * (no back-FK), so disconnect must delete them explicitly. Ordered by rung.
    */
-  listSourceAssetIds(sourceId: string): string[];
+  listSourceAssetIds(sourceId: string): Promise<string[]>;
   /**
    * Remove ALL of a source's materialized holdings in ONE transaction (ADR 0016,
    * #248): for each rung asset (market + term-locked) soft-delete then hard-delete,
@@ -93,7 +93,7 @@ export interface ConnectedSourceStore {
    * committing or rolling back together (no partially-deleted source on a mid-loop
    * failure). Returns the number of asset rows removed (0 when nothing matched).
    */
-  removeSourceHoldings(sourceId: string): { removed: number };
+  removeSourceHoldings(sourceId: string): Promise<{ removed: number }>;
   /**
    * The connected source id an asset materializes a rung of (ADR 0016, #248), or
    * null for a hand-maintained holding. Resolves the source from ANY of the
@@ -101,14 +101,14 @@ export interface ConnectedSourceStore {
    * detail page can route both to the read-only surface (the term-locked asset's id
    * never matches `connected_sources.asset_id`).
    */
-  readSourceIdForAsset(assetId: string): string | null;
-  readPositions(sourceId: string): SourcePosition[];
+  readSourceIdForAsset(assetId: string): Promise<string | null>;
+  readPositions(sourceId: string): Promise<SourcePosition[]>;
   /** Replace the source's positions, re-roll the holding's value, stamp last sync. */
   syncPositions(
     sourceId: string,
     positions: SourcePositionInput[],
     syncedAt: string,
-  ): void;
+  ): Promise<void>;
   /**
    * Apply refreshed candidate values to existing positions (by id), re-roll the
    * holding's value, and stamp the coin-collection's valuation-freshness row —
@@ -119,7 +119,7 @@ export interface ConnectedSourceStore {
     sourceId: string,
     updates: PositionValuationUpdate[],
     freshness: ValuationFreshness,
-  ): void;
+  ): Promise<void>;
   /**
    * Freeze the source's projected holding(s) into plain hand-maintained holdings
    * (PRD #160 story 21 / #245 S6, ADR 0016): drop the source — cascading its
@@ -134,7 +134,7 @@ export interface ConnectedSourceStore {
    * connected-source price-cache row is cleared. Returns the primary (market)
    * asset id, or null when the source is unknown (nothing changes then).
    */
-  freezeIntoStoredHolding(sourceId: string): { assetId: string } | null;
+  freezeIntoStoredHolding(sourceId: string): Promise<{ assetId: string } | null>;
 }
 
 /** The columns that make up a {@link ConnectedSourceRow}. */
@@ -270,49 +270,55 @@ export function positionInsertValues(
 export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceStore {
   const { db } = ctx;
 
-  const readSource = (sourceId: string): ConnectedSourceRow | null =>
-    db
+  const readSource = async (sourceId: string): Promise<ConnectedSourceRow | null> =>
+    (await db
       .select(sourceColumns)
       .from(connectedSources)
       .where(eq(connectedSources.id, sourceId))
-      .get() ?? null;
+      .get()) ?? null;
 
-  const readPositionsForSource = (sourceId: string): SourcePosition[] =>
-    db
+  const readPositionsForSource = async (sourceId: string): Promise<SourcePosition[]> => {
+    const rows = await db
       .select()
       .from(positions)
       .where(eq(positions.sourceId, sourceId))
       .orderBy(asc(positions.createdAt), asc(positions.id))
-      .all()
-      .map(mapPositionRow);
+      .all();
+    return rows.map(mapPositionRow);
+  };
 
   // Returns ALL of a source's materialized assets — INCLUDING soft-deleted
   // (trashed) ones — so disconnect (`removeSourceHoldings`) cleans up every rung
   // asset, even one a prior reroll left trashed. This differs deliberately from
   // `rerollSourceHoldings`' `existing` lookup, which filters `deletedAt IS NULL`
   // so reroll only reconciles LIVE rung assets (#248, FIX 6).
-  const listSourceAssetIds = (sourceId: string): string[] =>
-    db
+  const listSourceAssetIds = async (sourceId: string): Promise<string[]> => {
+    const rows = await db
       .select({ id: assets.id })
       .from(assets)
       .where(eq(assets.connectedSourceId, sourceId))
       .orderBy(asc(assets.liquidityTier), asc(assets.createdAt), asc(assets.id))
-      .all()
-      .map((row) => row.id);
+      .all();
+    return rows.map((row) => row.id);
+  };
 
-  const assetTierOf = (assetId: string) =>
-    db
-      .select({ tier: assets.liquidityTier })
-      .from(assets)
-      .where(eq(assets.id, assetId))
-      .get()?.tier;
+  const assetTierOf = async (assetId: string) =>
+    (
+      await db
+        .select({ tier: assets.liquidityTier })
+        .from(assets)
+        .where(eq(assets.id, assetId))
+        .get()
+    )?.tier;
 
-  const readSourceIdForAsset = (assetId: string): string | null =>
-    db
-      .select({ sourceId: assets.connectedSourceId })
-      .from(assets)
-      .where(eq(assets.id, assetId))
-      .get()?.sourceId ?? null;
+  const readSourceIdForAsset = async (assetId: string): Promise<string | null> =>
+    (
+      await db
+        .select({ sourceId: assets.connectedSourceId })
+        .from(assets)
+        .where(eq(assets.id, assetId))
+        .get()
+    )?.sourceId ?? null;
 
   /**
    * Project ALL the source's positions and reconcile its materialized assets with
@@ -328,8 +334,8 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
    * and is the one `revaluePositions` stamps its freshness row on. Returns the value
    * of that primary asset (parity with the prior single-asset reroll's return).
    */
-  const rerollSourceHoldings = (source: ConnectedSourceRow): number => {
-    const ownership = readAssetOwnerships(db).get(source.assetId) ?? [];
+  const rerollSourceHoldings = async (source: ConnectedSourceRow): Promise<number> => {
+    const ownership = (await readAssetOwnerships(db)).get(source.assetId) ?? [];
     const domainSource: ConnectedSource = {
       adapter: source.adapter,
       id: source.id,
@@ -338,7 +344,7 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
     };
     const holdings = projectConnectedSource(
       domainSource,
-      readPositionsForSource(source.id),
+      await readPositionsForSource(source.id),
     );
     // Resolve the provider's instrument + term-locked label off the adapter (ADR
     // 0027, #319) instead of re-branching on the tag here — the store stays
@@ -356,7 +362,7 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
       // materialize a fresh live one instead. (listSourceAssetIds, by contrast,
       // returns ALL source assets including trashed ones, so disconnect still cleans
       // them up.)
-      const existing = db
+      const existing = await db
         .select({ id: assets.id })
         .from(assets)
         .where(
@@ -369,7 +375,8 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
         .get();
 
       if (existing) {
-        db.update(assets)
+        await db
+          .update(assets)
           .set({ currentValueMinor: holding.valueMinor, updatedAt: now })
           .where(eq(assets.id, existing.id))
           .run();
@@ -386,7 +393,8 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
             ? `${source.label} ${adapter.termLockedSuffix}`
             : source.label;
 
-        db.insert(assets)
+        await db
+          .insert(assets)
           .values({
             connectedSourceId: source.id,
             currency: "EUR",
@@ -401,7 +409,8 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
           .run();
 
         if (ownership.length > 0) {
-          db.insert(assetOwnerships)
+          await db
+            .insert(assetOwnerships)
             .values(
               ownership.map((share) => ({
                 assetId,
@@ -414,20 +423,21 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
 
         // A connected source materializes this rung asset — register its
         // holding agent-view public id so the non-lazy read path never 500s (#335).
-        ensureAgentViewPublicIds(ctx, publicIdTargetsForHolding(assetId));
+        await ensureAgentViewPublicIds(ctx, publicIdTargetsForHolding(assetId));
       }
 
-      if (holding.liquidityTier === assetTierOf(source.assetId)) {
+      if (holding.liquidityTier === (await assetTierOf(source.assetId))) {
         primaryValueMinor = holding.valueMinor;
       }
     }
 
     // Zero out any source asset on a rung the projection no longer occupies — keep
     // the row (snapshots/identity), just drop its live value to 0.
-    for (const assetId of listSourceAssetIds(source.id)) {
-      const tier = assetTierOf(assetId);
+    for (const assetId of await listSourceAssetIds(source.id)) {
+      const tier = await assetTierOf(assetId);
       if (tier && !projectedTiers.has(tier)) {
-        db.update(assets)
+        await db
+          .update(assets)
           .set({ currentValueMinor: 0, updatedAt: now })
           .where(eq(assets.id, assetId))
           .run();
@@ -438,8 +448,8 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
   };
 
   return {
-    connect: (input) => {
-      const workspace = ctx.getWorkspace();
+    connect: async (input) => {
+      const workspace = await ctx.getWorkspace();
       if (!workspace) {
         throw new Error("Workspace must be initialized before connecting a source.");
       }
@@ -455,11 +465,12 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
       const instrument = adapterForTag(input.adapter).liveInstrument;
       const { rung } = defaultsFor(instrument);
 
-      ctx.transaction(() => {
+      await ctx.transaction(async () => {
         // A derived holding valued from its positions (ADR 0016), never hand-set.
         // No valuation_method is set — it is nullable and derived at runtime from
         // the instrument, exactly like other asset rows.
-        db.insert(assets)
+        await db
+          .insert(assets)
           .values({
             // Link the materialized asset back to its source (ADR 0016, #248): the
             // market (primary) asset is the source's default-rung holding; later
@@ -477,7 +488,8 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
           .run();
 
         if (input.ownership.length > 0) {
-          db.insert(assetOwnerships)
+          await db
+            .insert(assetOwnerships)
             .values(
               input.ownership.map((share) => ({
                 assetId,
@@ -488,7 +500,8 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
             .run();
         }
 
-        db.insert(connectedSources)
+        await db
+          .insert(connectedSources)
           .values({
             adapter: input.adapter,
             assetId,
@@ -502,15 +515,16 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
 
         // The market (primary) asset the source materializes is a holding —
         // register its agent-view public id so the read path never 500s (#335).
-        ensureAgentViewPublicIds(ctx, publicIdTargetsForHolding(assetId));
+        await ensureAgentViewPublicIds(ctx, publicIdTargetsForHolding(assetId));
       });
 
-      ctx.writeAuditEntry("connect_source", "connected_source", sourceId);
+      await ctx.writeAuditEntry("connect_source", "connected_source", sourceId);
 
       return { assetId, sourceId };
     },
-    saveToken: (sourceId, tokenJson) => {
-      db.update(connectedSources)
+    saveToken: async (sourceId, tokenJson) => {
+      await db
+        .update(connectedSources)
         .set({ tokenJson, updatedAt: sql`CURRENT_TIMESTAMP` })
         .where(eq(connectedSources.id, sourceId))
         .run();
@@ -523,8 +537,8 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
         .orderBy(asc(connectedSources.createdAt), asc(connectedSources.id))
         .all(),
     listSourceAssetIds,
-    removeSourceHoldings: (sourceId) => {
-      const removed = ctx.transaction(() => {
+    removeSourceHoldings: async (sourceId) => {
+      const removed = await ctx.transaction(async () => {
         // ONE transaction: soft-delete then hard-delete every rung asset (market +
         // term-locked, including any trashed one). Deleting the market (primary)
         // asset cascades the source row + its positions away; the other-rung assets
@@ -532,14 +546,18 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
         // deletes a TRASHED asset, so soft-delete each one (stamp deleted_at) first.
         const now = new Date().toISOString();
         let count = 0;
-        for (const assetId of listSourceAssetIds(sourceId)) {
-          db.update(assets).set({ deletedAt: now }).where(eq(assets.id, assetId)).run();
-          count += hardDeleteAssetTx(ctx, assetId);
+        for (const assetId of await listSourceAssetIds(sourceId)) {
+          await db
+            .update(assets)
+            .set({ deletedAt: now })
+            .where(eq(assets.id, assetId))
+            .run();
+          count += await hardDeleteAssetTx(ctx, assetId);
         }
         return count;
       });
 
-      ctx.writeAuditEntry("disconnect_source", "connected_source", sourceId, {
+      await ctx.writeAuditEntry("disconnect_source", "connected_source", sourceId, {
         removed,
       });
 
@@ -547,16 +565,16 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
     },
     readSourceIdForAsset,
     readPositions: readPositionsForSource,
-    syncPositions: (sourceId, incoming, syncedAt) => {
-      ctx.transaction(() => {
-        const source = readSource(sourceId);
+    syncPositions: async (sourceId, incoming, syncedAt) => {
+      await ctx.transaction(async () => {
+        const source = await readSource(sourceId);
         if (!source) {
           throw new Error(`Connected source "${sourceId}" not found.`);
         }
 
         // Replace the source's positions wholesale (a removed line drops out, a
         // new one appears), assigning each a fresh id + the source id.
-        db.delete(positions).where(eq(positions.sourceId, sourceId)).run();
+        await db.delete(positions).where(eq(positions.sourceId, sourceId)).run();
 
         // Narrow per kind so the spread reconstructs the discriminated variant
         // (a bare `{ ...union }` collapses to the common core and loses the
@@ -568,28 +586,29 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
         );
 
         if (inserted.length > 0) {
-          db.insert(positions).values(inserted.map(positionInsertValues)).run();
+          await db.insert(positions).values(inserted.map(positionInsertValues)).run();
         }
 
         // Re-roll EVERY rung's holding from the freshly-written positions (ADR
         // 0016, #248), dispatched per kind (frozen coin vs live token): one asset
         // per occupied rung is updated/created, and a rung the source no longer
         // occupies is zeroed (kept for snapshots), never deleted.
-        rerollSourceHoldings(source);
+        await rerollSourceHoldings(source);
 
-        db.update(connectedSources)
+        await db
+          .update(connectedSources)
           .set({ lastSyncAt: syncedAt, updatedAt: sql`CURRENT_TIMESTAMP` })
           .where(eq(connectedSources.id, sourceId))
           .run();
       });
 
-      ctx.writeAuditEntry("sync_source", "connected_source", sourceId, {
+      await ctx.writeAuditEntry("sync_source", "connected_source", sourceId, {
         positionCount: incoming.length,
       });
     },
-    revaluePositions: (sourceId, updates, freshness) => {
-      ctx.transaction(() => {
-        const source = readSource(sourceId);
+    revaluePositions: async (sourceId, updates, freshness) => {
+      await ctx.transaction(async () => {
+        const source = await readSource(sourceId);
         if (!source) {
           throw new Error(`Connected source "${sourceId}" not found.`);
         }
@@ -598,7 +617,8 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
         // lines (that is `syncPositions`' job). A position not in `updates` keeps
         // its stored values, so an outage that resolves nothing leaves them intact.
         for (const update of updates) {
-          db.update(positions)
+          await db
+            .update(positions)
             .set({
               metalValueMinor: update.metalValueMinor,
               numismaticValueMinor: update.numismaticValueMinor,
@@ -608,7 +628,7 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
             .run();
         }
 
-        const valueMinor = rerollSourceHoldings(source);
+        const valueMinor = await rerollSourceHoldings(source);
 
         // Upsert the holding's single valuation-freshness row, sourced by the
         // adapter ("numista" | "binance"): the staleness indicator the detail
@@ -625,7 +645,8 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
           source: source.adapter,
           staleReason: freshness.staleReason ?? null,
         };
-        db.insert(assetPriceCache)
+        await db
+          .insert(assetPriceCache)
           .values({ ...row, updatedAt: now })
           .onConflictDoUpdate({
             target: assetPriceCache.assetId,
@@ -634,12 +655,12 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
           .run();
       });
 
-      ctx.writeAuditEntry("revalue_source", "connected_source", sourceId, {
+      await ctx.writeAuditEntry("revalue_source", "connected_source", sourceId, {
         positionCount: updates.length,
       });
     },
-    freezeIntoStoredHolding: (sourceId) => {
-      const source = readSource(sourceId);
+    freezeIntoStoredHolding: async (sourceId) => {
+      const source = await readSource(sourceId);
       if (!source) {
         return null;
       }
@@ -648,16 +669,16 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
       // Binance, the single coin collection for Numista (#248). Captured BEFORE the
       // delete; deleting the source row leaves `assets.connected_source_id` intact
       // (no back-FK), so the lookup is unaffected, but read it up front for clarity.
-      const assetIds = listSourceAssetIds(sourceId);
+      const assetIds = await listSourceAssetIds(sourceId);
       // The hand-valued instrument the holding flips to is read off the adapter
       // (ADR 0027, #319): coin_collection → precious_metal, crypto → other.
       const frozenInstrument = adapterForTag(source.adapter).frozenInstrument;
 
-      ctx.transaction(() => {
+      await ctx.transaction(async () => {
         // Drop the source first — the FK cascade removes its positions. The assets
         // are NOT cascaded (sources reference the primary asset, not the other way
         // round), so every rolled-up holding survives with its last value intact.
-        db.delete(connectedSources).where(eq(connectedSources.id, sourceId)).run();
+        await db.delete(connectedSources).where(eq(connectedSources.id, sourceId)).run();
 
         for (const assetId of assetIds) {
           // Flip each rung asset from the derived/live source instrument to its
@@ -666,7 +687,8 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
           // back to the gone source or re-values it. `connect` left
           // valuation_method null and lets the runtime derive it from the
           // instrument, so flipping the instrument is what makes it hand-valued.
-          db.update(assets)
+          await db
+            .update(assets)
             .set({
               instrument: frozenInstrument,
               connectedSourceId: null,
@@ -677,11 +699,14 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
 
           // Clear the now-orphaned connected-source valuation-freshness row — a
           // stored holding is valued from its current value, not a cached price.
-          db.delete(assetPriceCache).where(eq(assetPriceCache.assetId, assetId)).run();
+          await db
+            .delete(assetPriceCache)
+            .where(eq(assetPriceCache.assetId, assetId))
+            .run();
         }
       });
 
-      ctx.writeAuditEntry("freeze_source", "connected_source", sourceId, {
+      await ctx.writeAuditEntry("freeze_source", "connected_source", sourceId, {
         assetId: source.assetId,
         frozenAssets: assetIds.length,
       });

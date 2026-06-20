@@ -105,94 +105,94 @@ export interface AgentViewPriceFreshness {
  * cannot reach the rest of the store surface.
  */
 export interface AgentViewReadStore {
-  readWorkspace: () => Workspace | null;
-  readPublicIds: () => ExportedPublicId[];
-  readAssets: () => ManualAsset[];
-  readLiabilities: () => Liability[];
-  readOperations: (assetId: string) => InvestmentOperation[];
-  readConnectedSources: () => AgentViewConnectedSource[];
+  readWorkspace: () => Promise<Workspace | null>;
+  readPublicIds: () => Promise<ExportedPublicId[]>;
+  readAssets: () => Promise<ManualAsset[]>;
+  readLiabilities: () => Promise<Liability[]>;
+  readOperations: (assetId: string) => Promise<InvestmentOperation[]>;
+  readConnectedSources: () => Promise<AgentViewConnectedSource[]>;
   /**
    * A connected source's mirrored positions (PRD #328, #339). Pure read — never
    * syncs or revalues. Credentials/tokens are not part of a position, so the
    * shape is secret-free.
    */
-  readSourcePositions: (sourceId: string) => SourcePosition[];
+  readSourcePositions: (sourceId: string) => Promise<SourcePosition[]>;
   /**
    * A connected source's valuation freshness, or null if it was never valued
    * (PRD #328, #339). Sanitized: only the staleness signal, the fetch time, and
    * the failed-fetch reason — never the provider's raw payload or any secret.
    */
-  readSourceFreshness: (sourceId: string) => AgentViewSourceFreshness | null;
+  readSourceFreshness: (sourceId: string) => Promise<AgentViewSourceFreshness | null>;
   /** Frozen snapshots for a scope, chronological (snapshot-store ordering). */
-  readSnapshots: (scopeId: string) => NetWorthSnapshot[];
+  readSnapshots: (scopeId: string) => Promise<NetWorthSnapshot[]>;
   /** Frozen holding rows, optionally filtered by scope and date-key window. */
-  readSnapshotHoldings: (query: SnapshotHoldingQuery) => SnapshotHoldingRecord[];
+  readSnapshotHoldings: (query: SnapshotHoldingQuery) => Promise<SnapshotHoldingRecord[]>;
   /** An asset's housing valuation anchors, ascending by date (#338). */
-  readValuationAnchors: (assetId: string) => ValuationAnchorRecord[];
+  readValuationAnchors: (assetId: string) => Promise<ValuationAnchorRecord[]>;
   /** A liability's configured debt model, or null (#338). */
-  readDebtModel: (liabilityId: string) => DebtModel | null;
+  readDebtModel: (liabilityId: string) => Promise<DebtModel | null>;
   /** A liability's amortization plan, or null if it has none (#338). */
-  readAmortizationPlan: (liabilityId: string) => AmortizationPlanRecord | null;
+  readAmortizationPlan: (liabilityId: string) => Promise<AmortizationPlanRecord | null>;
   /** A plan's interest-rate revisions, ascending by date (#338). */
-  readInterestRateRevisions: (planId: string) => InterestRateRevisionRecord[];
+  readInterestRateRevisions: (planId: string) => Promise<InterestRateRevisionRecord[]>;
   /** A plan's early repayments, ascending by date (#338). */
-  readEarlyRepayments: (planId: string) => EarlyRepaymentRecord[];
+  readEarlyRepayments: (planId: string) => Promise<EarlyRepaymentRecord[]>;
   /** A liability's balance anchors, ascending by date (#338). */
-  readBalanceAnchors: (liabilityId: string) => BalanceAnchorRecord[];
+  readBalanceAnchors: (liabilityId: string) => Promise<BalanceAnchorRecord[]>;
   /** FIRE configs keyed by internal scope id (`household` | member | group), #340. */
-  readFireConfig: () => Record<string, FireScopeConfig>;
+  readFireConfig: () => Promise<Record<string, FireScopeConfig>>;
   /**
    * A priced asset's valuation freshness, or null if it has no cached price
    * (#341). Sanitized: only the staleness signal, the fetch time, the providing
    * source, and the failed-fetch reason — never the price figure or any secret.
    */
-  readPriceFreshness: (assetId: string) => AgentViewPriceFreshness | null;
+  readPriceFreshness: (assetId: string) => Promise<AgentViewPriceFreshness | null>;
   /**
    * Persisted overrideable-warning acknowledgements (#341). A pure read — the
    * agent view exposes which overrideable warnings the user marked intentional
    * so it can label them, and NEVER writes a new override.
    */
-  readWarningOverrides: () => WarningOverride[];
+  readWarningOverrides: () => Promise<WarningOverride[]>;
   /**
    * Trashed (soft-deleted) holdings with the stored facts a trash listing needs
    * (#342). A pure read over `assets`/`liabilities` WHERE `deleted_at IS NOT NULL`
    * — it never restores, hard-deletes, or revalues, and it never touches the live
    * context (the live reads exclude trash by filtering `deleted_at IS NULL`).
    */
-  readTrashedHoldings: () => AgentViewTrashedHolding[];
+  readTrashedHoldings: () => Promise<AgentViewTrashedHolding[]>;
 }
 
 export interface AgentViewReadStoreDeps {
-  readAssets: () => ManualAsset[];
-  readLiabilities: () => Liability[];
-  readOperations: (assetId: string) => InvestmentOperation[];
-  listConnectedSources: () => ConnectedSourceRow[];
-  listSourceAssetIds: (sourceId: string) => string[];
-  readSourcePositions: (sourceId: string) => SourcePosition[];
+  readAssets: () => Promise<ManualAsset[]>;
+  readLiabilities: () => Promise<Liability[]>;
+  readOperations: (assetId: string) => Promise<InvestmentOperation[]>;
+  listConnectedSources: () => Promise<ConnectedSourceRow[]>;
+  listSourceAssetIds: (sourceId: string) => Promise<string[]>;
+  readSourcePositions: (sourceId: string) => Promise<SourcePosition[]>;
   /** The price-cache row of a source's primary asset (its valuation freshness). */
-  readSourcePriceCache: (assetId: string) => {
+  readSourcePriceCache: (assetId: string) => Promise<{
     freshnessState: PriceFreshnessState;
     fetchedAt: string;
     staleReason?: string;
-  } | null;
-  readSnapshots: (scopeId: string) => NetWorthSnapshot[];
-  readSnapshotHoldings: (query: SnapshotHoldingQuery) => SnapshotHoldingRecord[];
-  readValuationAnchors: (assetId: string) => ValuationAnchorRecord[];
-  readDebtModel: (liabilityId: string) => DebtModel | null;
-  readAmortizationPlan: (liabilityId: string) => AmortizationPlanRecord | null;
-  readInterestRateRevisions: (planId: string) => InterestRateRevisionRecord[];
-  readEarlyRepayments: (planId: string) => EarlyRepaymentRecord[];
-  readBalanceAnchors: (liabilityId: string) => BalanceAnchorRecord[];
-  readFireConfig: () => Record<string, FireScopeConfig>;
+  } | null>;
+  readSnapshots: (scopeId: string) => Promise<NetWorthSnapshot[]>;
+  readSnapshotHoldings: (query: SnapshotHoldingQuery) => Promise<SnapshotHoldingRecord[]>;
+  readValuationAnchors: (assetId: string) => Promise<ValuationAnchorRecord[]>;
+  readDebtModel: (liabilityId: string) => Promise<DebtModel | null>;
+  readAmortizationPlan: (liabilityId: string) => Promise<AmortizationPlanRecord | null>;
+  readInterestRateRevisions: (planId: string) => Promise<InterestRateRevisionRecord[]>;
+  readEarlyRepayments: (planId: string) => Promise<EarlyRepaymentRecord[]>;
+  readBalanceAnchors: (liabilityId: string) => Promise<BalanceAnchorRecord[]>;
+  readFireConfig: () => Promise<Record<string, FireScopeConfig>>;
   /** The price-cache row of any asset (its valuation freshness), or null. */
-  readPriceCache: (assetId: string) => {
+  readPriceCache: (assetId: string) => Promise<{
     freshnessState: PriceFreshnessState;
     fetchedAt: string;
     source: string;
     staleReason?: string;
-  } | null;
-  readWarningOverrides: () => WarningOverride[];
-  readTrashedHoldings: () => AgentViewTrashedHolding[];
+  } | null>;
+  readWarningOverrides: () => Promise<WarningOverride[]>;
+  readTrashedHoldings: () => Promise<AgentViewTrashedHolding[]>;
 }
 
 export function createAgentViewReadStore(
@@ -205,22 +205,27 @@ export function createAgentViewReadStore(
     readAssets: () => deps.readAssets(),
     readLiabilities: () => deps.readLiabilities(),
     readOperations: (assetId) => deps.readOperations(assetId),
-    readConnectedSources: () =>
-      deps.listConnectedSources().map((row) => ({
-        adapter: row.adapter,
-        assetId: row.assetId,
-        assetIds: deps.listSourceAssetIds(row.id),
-        id: row.id,
-        label: row.label,
-        lastSyncAt: row.lastSyncAt,
-      })),
+    readConnectedSources: async () => {
+      const rows = await deps.listConnectedSources();
+      return Promise.all(
+        rows.map(async (row) => ({
+          adapter: row.adapter,
+          assetId: row.assetId,
+          assetIds: await deps.listSourceAssetIds(row.id),
+          id: row.id,
+          label: row.label,
+          lastSyncAt: row.lastSyncAt,
+        })),
+      );
+    },
     readSourcePositions: (sourceId) => deps.readSourcePositions(sourceId),
-    readSourceFreshness: (sourceId) => {
-      const source = deps.listConnectedSources().find((row) => row.id === sourceId);
+    readSourceFreshness: async (sourceId) => {
+      const sources = await deps.listConnectedSources();
+      const source = sources.find((row) => row.id === sourceId);
       if (!source) {
         return null;
       }
-      const cache = deps.readSourcePriceCache(source.assetId);
+      const cache = await deps.readSourcePriceCache(source.assetId);
       if (!cache) {
         return null;
       }
@@ -239,8 +244,8 @@ export function createAgentViewReadStore(
     readEarlyRepayments: (planId) => deps.readEarlyRepayments(planId),
     readBalanceAnchors: (liabilityId) => deps.readBalanceAnchors(liabilityId),
     readFireConfig: () => deps.readFireConfig(),
-    readPriceFreshness: (assetId) => {
-      const cache = deps.readPriceCache(assetId);
+    readPriceFreshness: async (assetId) => {
+      const cache = await deps.readPriceCache(assetId);
       if (!cache) {
         return null;
       }

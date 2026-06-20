@@ -42,8 +42,8 @@ export default async function PatrimonioPage({
   const queryScopeId = parseScopeParam(resolvedSearchParams?.scope);
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
-  const storeData = await withStore((store) => {
-    const workspace = store.workspace.readWorkspace();
+  const storeData = await withStore(async (store) => {
+    const workspace = await store.workspace.readWorkspace();
 
     if (!workspace) {
       return null;
@@ -59,22 +59,20 @@ export default async function PatrimonioPage({
     // projection attaches it to investment rows only; non-investment entries are
     // ignored downstream.
     const priceMetaByAsset = new Map<string, PriceRefreshMeta>(
-      store.operations
-        .readAllPriceCacheEntries()
-        .map((entry) => [
-          entry.assetId,
-          { fetchedAt: entry.fetchedAt, source: entry.source },
-        ]),
+      (await store.operations.readAllPriceCacheEntries()).map((entry) => [
+        entry.assetId,
+        { fetchedAt: entry.fetchedAt, source: entry.source },
+      ]),
     );
 
     return {
-      assets: store.assets.readAssets(),
-      liabilities: store.liabilities.readLiabilities(),
-      overrides: store.readWarningOverrides(),
+      assets: await store.assets.readAssets(),
+      liabilities: await store.liabilities.readLiabilities(),
+      overrides: await store.readWarningOverrides(),
       priceMetaByAsset,
       scopes,
       selectedScope,
-      trash: store.readTrash(),
+      trash: await store.readTrash(),
       workspace,
     };
   });

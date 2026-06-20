@@ -35,7 +35,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import Database from "better-sqlite3";
+import Database from "libsql";
 import { captureSnapshotForScope, listScopeOptions } from "@worthline/domain";
 
 import { cleanupTempDirs, createFileBackedStore } from "./helpers";
@@ -88,13 +88,13 @@ type Measurement = {
 };
 
 /** Run `fn`, recording its wall-clock duration and how many rows/snapshots it touched. */
-function measure(
+async function measure(
   name: keyof typeof THRESHOLDS_MS,
   touchedOf: (result: unknown) => number,
   fn: () => unknown,
-): Measurement {
+): Promise<Measurement> {
   const start = performance.now();
-  const result = fn();
+  const result = await fn();
   const durationMs = performance.now() - start;
   return { durationMs, name, touched: touchedOf(result) };
 }
@@ -104,10 +104,12 @@ function measure(
  * apps/web/app/load-dashboard.ts (no price refresh — that is the network seam,
  * stubbed out of the harness by construction).
  */
-function runCaptureLoop(store: ReturnType<typeof createFileBackedStore>): number {
-  const workspace = store.workspace.readWorkspace()!;
-  const assets = store.assets.readAssets();
-  const liabilities = store.liabilities.readLiabilities();
+async function runCaptureLoop(
+  store: Awaited<ReturnType<typeof createFileBackedStore>>,
+): Promise<number> {
+  const workspace = (await store.workspace.readWorkspace())!;
+  const assets = await store.assets.readAssets();
+  const liabilities = await store.liabilities.readLiabilities();
   const scopes = listScopeOptions(workspace);
   const selectedScope = scopes[0];
 
@@ -115,23 +117,22 @@ function runCaptureLoop(store: ReturnType<typeof createFileBackedStore>): number
   // unscoped capture details that freeze every scope's rows AND the selected
   // scope's positions, reading every investment operation once per load instead
   // of twice.
-  const { details: investmentDetails } = store.snapshots.readScopedPositionsWithDetails(
-    selectedScope?.id,
-  );
+  const { details: investmentDetails } =
+    await store.snapshots.readScopedPositionsWithDetails(selectedScope?.id);
 
   let saved = 0;
   for (const scope of scopes) {
     const capture = captureSnapshotForScope({
       assets,
       capturedAt: `${SEED_TODAY}T10:00:00.000Z`,
-      existingSnapshots: store.snapshots.readSnapshots(scope.id),
+      existingSnapshots: await store.snapshots.readSnapshots(scope.id),
       investmentDetails,
       liabilities,
       scope,
       workspace,
     });
     if (capture) {
-      store.snapshots.saveSnapshot({
+      await store.snapshots.saveSnapshot({
         holdings: capture.holdings,
         replace: capture.replace,
         snapshot: capture.snapshot,
@@ -146,15 +147,15 @@ function runCaptureLoop(store: ReturnType<typeof createFileBackedStore>): number
  * Drive every measured hot path against a freshly seeded workspace and return
  * the measurements. Shared by all three tests so they measure identical work.
  */
-function runHarness(): Measurement[] {
-  const store = createFileBackedStore("worthline-perf-harness-");
-  const seed = seedPerformanceWorkspace(store);
+async function runHarness(): Promise<Measurement[]> {
+  const store = await createFileBackedStore("worthline-perf-harness-");
+  const seed = await seedPerformanceWorkspace(store);
 
   const measurements: Measurement[] = [];
 
   // 1. Dashboard load — the multi-scope capture loop the web app runs per request.
   measurements.push(
-    measure(
+    await measure(
       "dashboardLoad",
       (r) => r as number,
       () => runCaptureLoop(store),
@@ -163,14 +164,14 @@ function runHarness(): Measurement[] {
 
   // 2. Frozen holding reads — full history, then the recent-window slice.
   measurements.push(
-    measure(
+    await measure(
       "fullHistoryRead",
       (r) => (r as unknown[]).length,
       () => store.snapshots.readSnapshotHoldings({ scopeId: "household" }),
     ),
   );
   measurements.push(
-    measure(
+    await measure(
       "windowedHistoryRead",
       (r) => (r as unknown[]).length,
       () =>
@@ -184,7 +185,7 @@ function runHarness(): Measurement[] {
 
   // 3. Position projection — units/cost/PnL derived from the seeded operations.
   measurements.push(
-    measure(
+    await measure(
       "positionProjection",
       (r) => (r as unknown[]).length,
       () => store.snapshots.readPositions("household"),
@@ -192,13 +193,13 @@ function runHarness(): Measurement[] {
   );
 
   // 4a. Operation ripple — a backdated buy recalculates the snapshots ≥ its date.
-  const beforeOperationRipple = store.snapshots.readSnapshots("household").length;
+  const beforeOperationRipple = (await store.snapshots.readSnapshots("household")).length;
   measurements.push(
-    measure(
+    await measure(
       "operationRipple",
       () => beforeOperationRipple,
-      () => {
-        store.recordOperationAndRipple(
+      async () => {
+        await store.recordOperationAndRipple(
           {
             assetId: seed.rippleInvestmentId,
             currency: "EUR",
@@ -216,11 +217,11 @@ function runHarness(): Measurement[] {
 
   // 4b. Housing valuation ripple — a backdated appraisal recalculates snapshots ≥ its date.
   measurements.push(
-    measure(
+    await measure(
       "valuationRipple",
       () => beforeOperationRipple,
-      () => {
-        store.addValuationAnchorAndRipple(
+      async () => {
+        await store.addValuationAnchorAndRipple(
           {
             adjustsPriorCurve: true,
             assetId: seed.rippleHousingId,
@@ -236,11 +237,11 @@ function runHarness(): Measurement[] {
 
   // 4c. Debt ripple — an early repayment recalculates the mortgage's snapshots ≥ its date.
   measurements.push(
-    measure(
+    await measure(
       "debtRipple",
       () => beforeOperationRipple,
-      () => {
-        store.addEarlyRepaymentAndRipple(
+      async () => {
+        await store.addEarlyRepaymentAndRipple(
           {
             amountMinor: 3_000_00,
             id: "perf_extra_repayment",
@@ -259,8 +260,8 @@ function runHarness(): Measurement[] {
 }
 
 describe("performance harness (integration, #200)", () => {
-  test("seeds a representative workspace and exercises every hot path within conservative ceilings", () => {
-    const measurements = runHarness();
+  test("seeds a representative workspace and exercises every hot path within conservative ceilings", async () => {
+    const measurements = await runHarness();
 
     // The seed must actually produce a non-trivial history, else the harness
     // measures nothing meaningful and a regression would hide.
@@ -280,8 +281,8 @@ describe("performance harness (integration, #200)", () => {
     }
   });
 
-  test("reports a timing breakdown for manual inspection", () => {
-    const measurements = runHarness();
+  test("reports a timing breakdown for manual inspection", async () => {
+    const measurements = await runHarness();
 
     const lines = [
       "",
@@ -302,8 +303,8 @@ describe("performance harness (integration, #200)", () => {
     }
   });
 
-  test("guards the set of measured hot paths via a structural baseline snapshot", () => {
-    const measurements = runHarness();
+  test("guards the set of measured hot paths via a structural baseline snapshot", async () => {
+    const measurements = await runHarness();
 
     // A STRUCTURAL baseline — names + ceilings + touched counts, never the raw
     // timings (those vary with the host). This freezes WHAT is measured and the
@@ -319,14 +320,14 @@ describe("performance harness (integration, #200)", () => {
 });
 
 describe("performance budgets (large-workspace baseline, #203)", () => {
-  test("the seeded workspace matches the documented large-workspace baseline", () => {
+  test("the seeded workspace matches the documented large-workspace baseline", async () => {
     // AC: the benchmark documents the seeded workspace dimensions used as the
     // large-workspace baseline. We assert the LIVE seed equals the recorded
     // SEED_DIMENSIONS so the budgets are always anchored to a known scale — a
     // seed change is a deliberate re-baseline, not a silent drift.
-    const store = createFileBackedStore("worthline-perf-budget-");
-    seedPerformanceWorkspace(store);
-    const dimensions = measureSeedDimensions(store);
+    const store = await createFileBackedStore("worthline-perf-budget-");
+    await seedPerformanceWorkspace(store);
+    const dimensions = await measureSeedDimensions(store);
     store.close();
 
     expect(dimensions).toEqual(SEED_DIMENSIONS);
@@ -373,7 +374,7 @@ describe("performance budgets (large-workspace baseline, #203)", () => {
  * loose to catch a doubled read on this small-by-ms but operation-heavy seed),
  * this guards the actual WIN: a dashboard-style load over the large seeded
  * workspace (3 investments × 24 backdated operations) reads the operations table
- * exactly ONCE, not once per readPositions() call. Instruments better-sqlite3 to
+ * exactly ONCE, not once per readPositions() call. Instruments libsql to
  * count full scans of asset_operations — Drizzle emits the full operation read as
  * `select ... from "asset_operations" order by ...` with no WHERE; the targeted
  * single-asset reads carry a `where`, so they are not counted.
@@ -401,13 +402,13 @@ describe("dashboard load read shape — investment projection reuse (#208)", () 
     Database.prototype.prepare = originalPrepare;
   });
 
-  test("the dashboard capture loop reads the operations table once for the whole load", () => {
-    const store = createFileBackedStore("worthline-perf-readshape-");
-    seedPerformanceWorkspace(store);
+  test("the dashboard capture loop reads the operations table once for the whole load", async () => {
+    const store = await createFileBackedStore("worthline-perf-readshape-");
+    await seedPerformanceWorkspace(store);
 
-    const workspace = store.workspace.readWorkspace()!;
-    const assets = store.assets.readAssets();
-    const liabilities = store.liabilities.readLiabilities();
+    const workspace = (await store.workspace.readWorkspace())!;
+    const assets = await store.assets.readAssets();
+    const liabilities = await store.liabilities.readLiabilities();
     const scopes = listScopeOptions(workspace);
     const selectedScope = scopes[0]!;
 
@@ -416,20 +417,20 @@ describe("dashboard load read shape — investment projection reuse (#208)", () 
     fullOperationScans = 0;
 
     const { details: investmentDetails, positions } =
-      store.snapshots.readScopedPositionsWithDetails(selectedScope.id);
+      await store.snapshots.readScopedPositionsWithDetails(selectedScope.id);
 
     for (const scope of scopes) {
       const capture = captureSnapshotForScope({
         assets,
         capturedAt: `${SEED_TODAY}T10:00:00.000Z`,
-        existingSnapshots: store.snapshots.readSnapshots(scope.id),
+        existingSnapshots: await store.snapshots.readSnapshots(scope.id),
         investmentDetails,
         liabilities,
         scope,
         workspace,
       });
       if (capture) {
-        store.snapshots.saveSnapshot({
+        await store.snapshots.saveSnapshot({
           holdings: capture.holdings,
           replace: capture.replace,
           snapshot: capture.snapshot,

@@ -10,14 +10,14 @@ import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 afterEach(cleanupTempDirs);
 
 describe("snapshot-policy persistence", () => {
-  test("capture on fresh day: upsert with no replacesId inserts a new snapshot", () => {
-    const store = createFileBackedStore("worthline-policy-");
+  test("capture on fresh day: upsert with no replacesId inserts a new snapshot", async () => {
+    const store = await createFileBackedStore("worthline-policy-");
 
-    store.workspace.initializeWorkspace({
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 100_000,
       id: "asset_cash",
@@ -27,10 +27,10 @@ describe("snapshot-policy persistence", () => {
       type: "cash",
     });
 
-    const workspace = store.workspace.readWorkspace()!;
-    const assets = store.assets.readAssets();
-    const liabilities = store.liabilities.readLiabilities();
-    const existingSnapshots = store.snapshots.readSnapshots("household");
+    const workspace = (await store.workspace.readWorkspace())!;
+    const assets = await store.assets.readAssets();
+    const liabilities = await store.liabilities.readLiabilities();
+    const existingSnapshots = await store.snapshots.readSnapshots("household");
 
     const replacesId = findTodaySnapshotId(existingSnapshots, "household", "2026-06-09");
     expect(replacesId).toBeUndefined();
@@ -45,22 +45,22 @@ describe("snapshot-policy persistence", () => {
       workspace,
     });
 
-    store.snapshots.saveSnapshot({ snapshot });
+    await store.snapshots.saveSnapshot({ snapshot });
 
-    const snapshots = store.snapshots.readSnapshots("household");
+    const snapshots = await store.snapshots.readSnapshots("household");
     expect(snapshots).toHaveLength(1);
     expect(snapshots[0]!.id).toBe("snapshot_day1");
     expect(snapshots[0]!.totalNetWorth.amountMinor).toBe(100_000);
   });
 
-  test("same-day recapture: upsert with replacesId replaces the earlier snapshot", () => {
-    const store = createFileBackedStore("worthline-policy-");
+  test("same-day recapture: upsert with replacesId replaces the earlier snapshot", async () => {
+    const store = await createFileBackedStore("worthline-policy-");
 
-    store.workspace.initializeWorkspace({
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 100_000,
       id: "asset_cash",
@@ -70,50 +70,50 @@ describe("snapshot-policy persistence", () => {
       type: "cash",
     });
 
-    const workspace = store.workspace.readWorkspace()!;
+    const workspace = (await store.workspace.readWorkspace())!;
     const snapshot1 = captureNetWorthSnapshot({
-      assets: store.assets.readAssets(),
+      assets: await store.assets.readAssets(),
       capturedAt: "2026-06-09T10:00:00.000Z",
       id: "snapshot_morning",
-      liabilities: store.liabilities.readLiabilities(),
+      liabilities: await store.liabilities.readLiabilities(),
       scopeId: "household",
       scopeLabel: "Hogar",
       workspace,
     });
-    store.snapshots.saveSnapshot({ snapshot: snapshot1 });
+    await store.snapshots.saveSnapshot({ snapshot: snapshot1 });
 
     // Update asset value and recapture same day.
-    store.assets.updateAssetValuation("asset_cash", 110_000);
-    const existingSnapshots = store.snapshots.readSnapshots("household");
+    await store.assets.updateAssetValuation("asset_cash", 110_000);
+    const existingSnapshots = await store.snapshots.readSnapshots("household");
     const replacesId = findTodaySnapshotId(existingSnapshots, "household", "2026-06-09");
 
     expect(replacesId).toBe("snapshot_morning");
 
     const snapshot2 = captureNetWorthSnapshot({
-      assets: store.assets.readAssets(),
+      assets: await store.assets.readAssets(),
       capturedAt: "2026-06-09T18:00:00.000Z",
       id: "snapshot_evening",
-      liabilities: store.liabilities.readLiabilities(),
+      liabilities: await store.liabilities.readLiabilities(),
       scopeId: "household",
       scopeLabel: "Hogar",
       workspace,
     });
-    store.snapshots.saveSnapshot({ snapshot: snapshot2, replace: true });
+    await store.snapshots.saveSnapshot({ snapshot: snapshot2, replace: true });
 
-    const snapshots = store.snapshots.readSnapshots("household");
+    const snapshots = await store.snapshots.readSnapshots("household");
     expect(snapshots).toHaveLength(1);
     expect(snapshots[0]!.id).toBe("snapshot_evening");
     expect(snapshots[0]!.totalNetWorth.amountMinor).toBe(110_000);
   });
 
-  test("deriveMonthlyCloses identifies the last snapshot of each calendar month", () => {
-    const store = createFileBackedStore("worthline-policy-");
+  test("deriveMonthlyCloses identifies the last snapshot of each calendar month", async () => {
+    const store = await createFileBackedStore("worthline-policy-");
 
-    store.workspace.initializeWorkspace({
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 100_000,
       id: "asset_cash",
@@ -123,35 +123,35 @@ describe("snapshot-policy persistence", () => {
       type: "cash",
     });
 
-    const workspace = store.workspace.readWorkspace()!;
+    const workspace = (await store.workspace.readWorkspace())!;
 
-    const makeSnapshot = (id: string, date: string, valueMinor: number) => {
-      store.assets.updateAssetValuation("asset_cash", valueMinor);
+    const makeSnapshot = async (id: string, date: string, valueMinor: number) => {
+      await store.assets.updateAssetValuation("asset_cash", valueMinor);
       return captureNetWorthSnapshot({
-        assets: store.assets.readAssets(),
+        assets: await store.assets.readAssets(),
         capturedAt: `${date}T12:00:00.000Z`,
         id,
-        liabilities: store.liabilities.readLiabilities(),
+        liabilities: await store.liabilities.readLiabilities(),
         scopeId: "household",
         scopeLabel: "Hogar",
         workspace,
       });
     };
 
-    store.snapshots.saveSnapshot({
-      snapshot: makeSnapshot("snap_may_a", "2026-05-15", 90_000),
+    await store.snapshots.saveSnapshot({
+      snapshot: await makeSnapshot("snap_may_a", "2026-05-15", 90_000),
     });
-    store.snapshots.saveSnapshot({
-      snapshot: makeSnapshot("snap_may_b", "2026-05-31", 95_000),
+    await store.snapshots.saveSnapshot({
+      snapshot: await makeSnapshot("snap_may_b", "2026-05-31", 95_000),
     });
-    store.snapshots.saveSnapshot({
-      snapshot: makeSnapshot("snap_jun_a", "2026-06-01", 100_000),
+    await store.snapshots.saveSnapshot({
+      snapshot: await makeSnapshot("snap_jun_a", "2026-06-01", 100_000),
     });
-    store.snapshots.saveSnapshot({
-      snapshot: makeSnapshot("snap_jun_b", "2026-06-09", 105_000),
+    await store.snapshots.saveSnapshot({
+      snapshot: await makeSnapshot("snap_jun_b", "2026-06-09", 105_000),
     });
 
-    const snapshots = store.snapshots.readSnapshots("household");
+    const snapshots = await store.snapshots.readSnapshots("household");
     const closes = deriveMonthlyCloses(snapshots);
 
     expect(closes.get("2026-05")).toBe("snap_may_b");

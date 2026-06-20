@@ -86,22 +86,24 @@ async function signals(scopeId: string, query = ""): Promise<Signal[]> {
 
 // A fingerprint of every mutation-prone read, including the warning overrides, to
 // prove a data-quality read writes nothing — and crucially, NO override.
-function fingerprint(databasePath: string): string {
-  const store = createWorthlineStore({ databasePath });
-  const sources = store.connectedSources.listSources();
+async function fingerprint(databasePath: string): Promise<string> {
+  const store = await createWorthlineStore({ databasePath });
+  const sources = await store.connectedSources.listSources();
   const snapshot = JSON.stringify({
-    assets: store.assets.readAssets(),
-    fireConfig: store.readFireConfig(),
-    liabilities: store.liabilities.readLiabilities(),
-    positions: sources.map((source) => ({
-      positions: store.connectedSources.readPositions(source.id),
-      sourceId: source.id,
-    })),
-    priceCache: store.operations.readAllPriceCacheEntries(),
-    publicIds: store.agentView.readPublicIds(),
-    snapshots: store.snapshots.readSnapshots("household"),
+    assets: await store.assets.readAssets(),
+    fireConfig: await store.readFireConfig(),
+    liabilities: await store.liabilities.readLiabilities(),
+    positions: await Promise.all(
+      sources.map(async (source) => ({
+        positions: await store.connectedSources.readPositions(source.id),
+        sourceId: source.id,
+      })),
+    ),
+    priceCache: await store.operations.readAllPriceCacheEntries(),
+    publicIds: await store.agentView.readPublicIds(),
+    snapshots: await store.snapshots.readSnapshots("household"),
     sources,
-    warningOverrides: store.readWarningOverrides(),
+    warningOverrides: await store.readWarningOverrides(),
   });
   store.close();
   return snapshot;
@@ -142,20 +144,20 @@ const routeClient: AgentViewApiClient = {
  *  - history_coverage: no snapshots for the scope.
  *  - projection_gap: an unpriced Binance token (null unitPrice).
  */
-function seedAllCategories(prefix = "worthline-agent-view-dq-"): string {
+async function seedAllCategories(prefix = "worthline-agent-view-dq-"): Promise<string> {
   const databasePath = tempDatabasePath(prefix);
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = createWorthlineStore({ databasePath });
-  store.workspace.initializeWorkspace({
+  const store = await createWorthlineStore({ databasePath });
+  await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
   });
   const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
 
   // warning: a stored asset left at value 0 → ZERO_VALUE_ASSET (overrideable).
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 0,
     id: "asset_zero",
@@ -166,7 +168,7 @@ function seedAllCategories(prefix = "worthline-agent-view-dq-"): string {
   });
 
   // price_freshness: two priced assets, one stale, one failed.
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 5_000_00,
     id: "asset_stale",
@@ -175,7 +177,7 @@ function seedAllCategories(prefix = "worthline-agent-view-dq-"): string {
     ownership: owner,
     type: "manual",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 3_000_00,
     id: "asset_failed",
@@ -184,7 +186,7 @@ function seedAllCategories(prefix = "worthline-agent-view-dq-"): string {
     ownership: owner,
     type: "manual",
   });
-  store.operations.upsertPrice({
+  await store.operations.upsertPrice({
     assetId: "asset_stale",
     currency: "EUR",
     fetchedAt: "2026-01-01T00:00:00.000Z",
@@ -193,7 +195,7 @@ function seedAllCategories(prefix = "worthline-agent-view-dq-"): string {
     source: "yahoo",
     staleReason: "Precio caducado",
   });
-  store.operations.upsertPrice({
+  await store.operations.upsertPrice({
     assetId: "asset_failed",
     currency: "EUR",
     fetchedAt: "2026-02-01T00:00:00.000Z",
@@ -204,7 +206,7 @@ function seedAllCategories(prefix = "worthline-agent-view-dq-"): string {
   });
 
   // missing_configuration: a mortgage on a home, with no debt model declared.
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 200_000_00,
     id: "asset_home",
@@ -214,7 +216,7 @@ function seedAllCategories(prefix = "worthline-agent-view-dq-"): string {
     ownership: owner,
     type: "real_estate",
   });
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     associatedAssetId: "asset_home",
     balanceMinor: 100_000_00,
     currency: "EUR",
@@ -226,13 +228,13 @@ function seedAllCategories(prefix = "worthline-agent-view-dq-"): string {
 
   // source_freshness + projection_gap: a Binance source with a stale freshness
   // and an unpriced token.
-  const binance = store.connectedSources.connect({
+  const binance = await store.connectedSources.connect({
     adapter: "binance",
     credentialsJson: JSON.stringify({ apiKey: "k", apiSecret: "s" }),
     label: "Binance",
     ownership: owner,
   });
-  store.connectedSources.syncPositions(
+  await store.connectedSources.syncPositions(
     binance.sourceId,
     [
       {
@@ -249,8 +251,8 @@ function seedAllCategories(prefix = "worthline-agent-view-dq-"): string {
     ],
     "2026-06-16T10:00:00.000Z",
   );
-  const positions = store.connectedSources.readPositions(binance.sourceId);
-  store.connectedSources.revaluePositions(
+  const positions = await store.connectedSources.readPositions(binance.sourceId);
+  await store.connectedSources.revaluePositions(
     binance.sourceId,
     positions.map((position) => ({
       id: position.id,
@@ -273,7 +275,7 @@ function seedAllCategories(prefix = "worthline-agent-view-dq-"): string {
 
 describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
   test("surfaces at least one signal in every category", async () => {
-    seedAllCategories();
+    await seedAllCategories();
     const scopeId = await householdScopeId();
 
     const categories = new Set(
@@ -293,7 +295,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
   });
 
   test("each signal carries the normalized contract shape", async () => {
-    seedAllCategories();
+    await seedAllCategories();
     const scopeId = await householdScopeId();
 
     for (const signal of await signals(scopeId, "?limit=500")) {
@@ -312,13 +314,13 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
     const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 0,
       id: "asset_zero",
@@ -330,11 +332,11 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
     store.close();
 
     const scopeId = await householdScopeId();
-    const before = fingerprint(databasePath);
+    const before = await fingerprint(databasePath);
     const warningSignals = (await signals(scopeId, "?category=warning")).filter(
       (s) => s.category === "warning",
     );
-    const after = fingerprint(databasePath);
+    const after = await fingerprint(databasePath);
 
     expect(warningSignals).toHaveLength(1);
     const zero = warningSignals[0]!;
@@ -348,7 +350,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
   });
 
   test("represents stale and failed prices distinctly", async () => {
-    seedAllCategories();
+    await seedAllCategories();
     const scopeId = await householdScopeId();
 
     const priceSignals = (await signals(scopeId, "?category=price_freshness")).filter(
@@ -368,7 +370,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
   });
 
   test("represents a stale connected-source sync", async () => {
-    seedAllCategories();
+    await seedAllCategories();
     const scopeId = await householdScopeId();
 
     const sourceSignals = (await signals(scopeId, "?category=source_freshness")).filter(
@@ -383,7 +385,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
   });
 
   test("represents a missing FIRE config as a scope-global signal", async () => {
-    seedAllCategories();
+    await seedAllCategories();
     const scopeId = await householdScopeId();
 
     const configSignals = (
@@ -400,7 +402,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
   });
 
   test("represents missing snapshot history", async () => {
-    seedAllCategories();
+    await seedAllCategories();
     const scopeId = await householdScopeId();
 
     const historySignals = (await signals(scopeId, "?category=history_coverage")).filter(
@@ -413,7 +415,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
   });
 
   test("represents an unvalued connected-source position as a projection gap", async () => {
-    seedAllCategories();
+    await seedAllCategories();
     const scopeId = await householdScopeId();
 
     const gapSignals = (await signals(scopeId, "?category=projection_gap")).filter(
@@ -428,7 +430,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
   });
 
   test("filters by severity", async () => {
-    seedAllCategories();
+    await seedAllCategories();
     const scopeId = await householdScopeId();
 
     const high = await signals(scopeId, "?severity=high&limit=500");
@@ -437,7 +439,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
   });
 
   test("orders by severity desc, then category, then affected id, then signal id", async () => {
-    seedAllCategories();
+    await seedAllCategories();
     const scopeId = await householdScopeId();
 
     const all = await signals(scopeId, "?limit=500");
@@ -466,7 +468,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
   });
 
   test("paginates with stable cursors, walking every signal exactly once", async () => {
-    seedAllCategories();
+    await seedAllCategories();
     const scopeId = await householdScopeId();
 
     const all = await signals(scopeId, "?limit=500");
@@ -493,7 +495,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
   });
 
   test("rejects an invalid category and severity with 400", async () => {
-    seedAllCategories();
+    await seedAllCategories();
     const scopeId = await householdScopeId();
 
     expect((await dataQuality(scopeId, "?category=nope")).response.status).toBe(400);
@@ -507,14 +509,14 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
   });
 
   test("returns 404 for an unknown scope id", async () => {
-    seedAllCategories();
+    await seedAllCategories();
     const { body, response } = await dataQuality("wl_scp_doesnotexist");
     expect(response.status).toBe(404);
     expect(body.error.code).toBe("not_found");
   });
 
   test("requires the local capability token", async () => {
-    seedAllCategories();
+    await seedAllCategories();
     const scopeId = await householdScopeId();
 
     const response = await getDataQuality(
@@ -529,21 +531,21 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
   });
 
   test("reads do not mutate persisted state (no override writes)", async () => {
-    const databasePath = seedAllCategories("worthline-agent-view-dq-nomut-");
+    const databasePath = await seedAllCategories("worthline-agent-view-dq-nomut-");
     const scopeId = await householdScopeId();
 
-    const before = fingerprint(databasePath);
+    const before = await fingerprint(databasePath);
     await dataQuality(scopeId, "?limit=500");
     await dataQuality(scopeId, "?category=warning");
     await dataQuality(scopeId, "?severity=high");
     await financialContext(scopeId);
-    const after = fingerprint(databasePath);
+    const after = await fingerprint(databasePath);
 
     expect(after).toBe(before);
   });
 
   test("MCP get_data_quality mirrors the HTTP shape and defaults to the household scope", async () => {
-    seedAllCategories();
+    await seedAllCategories();
     const household = await householdScopeId();
     const httpBody = (await dataQuality(household, "?limit=500")).body;
 
@@ -569,7 +571,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
 
 describe("main financial context data-quality summary (#341)", () => {
   test("folds counts by severity and by category plus the top signals", async () => {
-    seedAllCategories();
+    await seedAllCategories();
     const scopeId = await householdScopeId();
 
     const { body } = await financialContext(scopeId);
@@ -601,7 +603,7 @@ describe("main financial context data-quality summary (#341)", () => {
   });
 
   test("caps the top signals at 10 in the stable order", async () => {
-    seedAllCategories();
+    await seedAllCategories();
     const scopeId = await householdScopeId();
 
     const { body } = await financialContext(scopeId);

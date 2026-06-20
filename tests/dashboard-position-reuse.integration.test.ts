@@ -24,9 +24,13 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import Database from "better-sqlite3";
+import type { Client } from "@libsql/client";
 import type { WorthlineStore } from "@worthline/db";
-import { createInMemoryStore } from "@worthline/db";
+import {
+  createInMemoryStore,
+  createStoreFromSqlite,
+  openLibsqlClient,
+} from "@worthline/db";
 import type { InvestmentCaptureDetail } from "@worthline/domain";
 import { captureSnapshotForScope, listScopeOptions } from "@worthline/domain";
 
@@ -39,8 +43,8 @@ afterEach(cleanupTempDirs);
  * so the scope filter actually drops a position in a member scope (proving the
  * reused details still cover EVERY asset while the scoped positions narrow).
  */
-function seedHousehold(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seedHousehold(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [
       { id: "member_ana", name: "Ana" },
       { id: "member_jose", name: "Jose" },
@@ -48,13 +52,13 @@ function seedHousehold(store: WorthlineStore): void {
     mode: "household",
   });
 
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "asset_fund_ana",
     name: "Fondo de Ana",
     ownership: [{ memberId: "member_ana", shareBps: 10_000 }],
   });
-  store.operations.recordOperation({
+  await store.operations.recordOperation({
     assetId: "asset_fund_ana",
     currency: "EUR",
     executedAt: "2026-01-01",
@@ -63,7 +67,7 @@ function seedHousehold(store: WorthlineStore): void {
     pricePerUnit: "100",
     units: "12.5",
   });
-  store.operations.upsertPrice({
+  await store.operations.upsertPrice({
     assetId: "asset_fund_ana",
     currency: "EUR",
     fetchedAt: "2026-06-10T09:00:00.000Z",
@@ -72,13 +76,13 @@ function seedHousehold(store: WorthlineStore): void {
     source: "stooq",
   });
 
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "asset_fund_jose",
     name: "Fondo de Jose",
     ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
   });
-  store.operations.recordOperation({
+  await store.operations.recordOperation({
     assetId: "asset_fund_jose",
     currency: "EUR",
     executedAt: "2026-02-01",
@@ -90,14 +94,14 @@ function seedHousehold(store: WorthlineStore): void {
 }
 
 describe("dashboard position-projection reuse (integration, #208)", () => {
-  test("a single seam serves byte-identical capture details and scoped positions", () => {
-    const store = createInMemoryStore();
-    seedHousehold(store);
+  test("a single seam serves byte-identical capture details and scoped positions", async () => {
+    const store = await createInMemoryStore();
+    await seedHousehold(store);
 
     // What loadDashboard does today: derive the unscoped capture details from
     // readPositions() and read the selected scope's positions separately.
     const expectedDetails = new Map<string, InvestmentCaptureDetail>(
-      store.snapshots.readPositions().map((position) => [
+      (await store.snapshots.readPositions()).map((position) => [
         position.assetId,
         {
           units: position.currentUnits,
@@ -107,10 +111,10 @@ describe("dashboard position-projection reuse (integration, #208)", () => {
         },
       ]),
     );
-    const expectedScoped = store.snapshots.readPositions("member_ana");
+    const expectedScoped = await store.snapshots.readPositions("member_ana");
 
     // The reuse seam: build the projection context once, return both.
-    const reused = store.snapshots.readScopedPositionsWithDetails("member_ana");
+    const reused = await store.snapshots.readScopedPositionsWithDetails("member_ana");
 
     // Capture details cover EVERY investment (unscoped) and are byte-identical.
     expect(reused.details).toEqual(expectedDetails);
@@ -127,53 +131,62 @@ describe("dashboard position-projection reuse (integration, #208)", () => {
     store.close();
   });
 
-  test("the undefined scope reuse matches the unscoped readPositions()", () => {
-    const store = createInMemoryStore();
-    seedHousehold(store);
+  test("the undefined scope reuse matches the unscoped readPositions()", async () => {
+    const store = await createInMemoryStore();
+    await seedHousehold(store);
 
-    const reused = store.snapshots.readScopedPositionsWithDetails();
-    expect(reused.positions).toEqual(store.snapshots.readPositions());
+    const reused = await store.snapshots.readScopedPositionsWithDetails();
+    expect(reused.positions).toEqual(await store.snapshots.readPositions());
 
     store.close();
   });
 });
 
 /**
- * Read-shape guard: instrument better-sqlite3 to count full scans of the
+ * Read-shape guard: instrument the libSQL client to count full scans of the
  * asset_operations table (the heavy read the projection context builds). Drizzle
  * emits `select ... from "asset_operations" order by ...` with no WHERE for the
  * full operation read; the targeted single-asset reads carry a `where`.
  */
 describe("dashboard position-projection reuse — read shape (#208)", () => {
-  const originalPrepare = Database.prototype.prepare;
   let fullOperationScans = 0;
+
+  // Build a store on an instrumented in-memory client that counts every full
+  // scan of `asset_operations` (a SELECT with no WHERE), so a test can assert the
+  // projection context's read shape. The counter starts at 0 and the caller
+  // resets it before the measured action.
+  async function createCountingStore(): Promise<WorthlineStore> {
+    const client = openLibsqlClient(":memory:");
+    const originalExecute = client.execute.bind(client);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    client.execute = ((stmt: any, ...rest: any[]) => {
+      const sql = typeof stmt === "string" ? stmt : stmt?.sql;
+      if (typeof sql === "string") {
+        const normalized = sql.toLowerCase();
+        if (
+          normalized.includes('from "asset_operations"') &&
+          !normalized.includes("where")
+        ) {
+          fullOperationScans += 1;
+        }
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (originalExecute as any)(stmt, ...rest);
+    }) as Client["execute"];
+    return createStoreFromSqlite(client);
+  }
 
   beforeEach(() => {
     fullOperationScans = 0;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    Database.prototype.prepare = function (this: any, sql: string, ...rest: any[]) {
-      const normalized = sql.toLowerCase();
-      if (
-        normalized.includes('from "asset_operations"') &&
-        !normalized.includes("where")
-      ) {
-        fullOperationScans += 1;
-      }
-      return originalPrepare.call(this, sql, ...rest);
-    } as typeof Database.prototype.prepare;
   });
 
-  afterEach(() => {
-    Database.prototype.prepare = originalPrepare;
-  });
+  test("a dashboard-style load reads the operations table once, not per scope read", async () => {
+    const store = await createCountingStore();
+    await seedHousehold(store);
 
-  test("a dashboard-style load reads the operations table once, not per scope read", () => {
-    const store = createInMemoryStore();
-    seedHousehold(store);
-
-    const workspace = store.workspace.readWorkspace()!;
-    const assets = store.assets.readAssets();
-    const liabilities = store.liabilities.readLiabilities();
+    const workspace = (await store.workspace.readWorkspace())!;
+    const assets = await store.assets.readAssets();
+    const liabilities = await store.liabilities.readLiabilities();
     const scopes = listScopeOptions(workspace);
     const selectedScope = scopes[0]!;
 
@@ -183,7 +196,7 @@ describe("dashboard position-projection reuse — read shape (#208)", () => {
 
     // The reuse seam: one context build serves the capture details (unscoped)
     // and the selected scope's positions.
-    const { details, positions } = store.snapshots.readScopedPositionsWithDetails(
+    const { details, positions } = await store.snapshots.readScopedPositionsWithDetails(
       selectedScope.id,
     );
 
@@ -192,14 +205,14 @@ describe("dashboard position-projection reuse — read shape (#208)", () => {
       const capture = captureSnapshotForScope({
         assets,
         capturedAt: "2026-06-10T10:00:00.000Z",
-        existingSnapshots: store.snapshots.readSnapshots(scope.id),
+        existingSnapshots: await store.snapshots.readSnapshots(scope.id),
         investmentDetails,
         liabilities,
         scope,
         workspace,
       });
       if (capture) {
-        store.snapshots.saveSnapshot({
+        await store.snapshots.saveSnapshot({
           holdings: capture.holdings,
           replace: capture.replace,
           snapshot: capture.snapshot,

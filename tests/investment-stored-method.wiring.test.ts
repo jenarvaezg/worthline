@@ -32,15 +32,15 @@ afterEach(() => {
   store?.close();
 });
 
-function setupStore() {
-  store = createInMemoryStore();
-  store.workspace.initializeWorkspace({
+async function setupStore() {
+  store = await createInMemoryStore();
+  await store.workspace.initializeWorkspace({
     members: [{ id: MEMBER_ID, name: "Yo" }],
     mode: "individual",
   });
   // An investment holding with a stored instrument — reachable via workspace
   // import (ADR 0014, the import boundary; the add flow is out of scope).
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     id: ASSET_ID,
     name: "Oro físico",
     type: "investment",
@@ -54,9 +54,9 @@ function setupStore() {
 }
 
 describe("investment with stored instrument — method dispatch (#152 fix 2)", () => {
-  test("investment+precious_metal read off readAssets dispatches to stored", () => {
-    setupStore();
-    const asset = store.assets.readAssets().find((a) => a.id === ASSET_ID)!;
+  test("investment+precious_metal read off readAssets dispatches to stored", async () => {
+    await setupStore();
+    const asset = (await store.assets.readAssets()).find((a) => a.id === ASSET_ID)!;
 
     expect(asset).toBeDefined();
     expect(asset.type).toBe("investment");

@@ -84,13 +84,13 @@ export interface BuildDataQualityOptions {
  * gaps — all normalized to one shape and one severity scale. Reads persisted
  * state only; surfacing a `warning` signal NEVER writes an override (ADR 0023).
  */
-export function buildDataQuality(
+export async function buildDataQuality(
   store: AgentViewReadStore,
   options: BuildDataQualityOptions,
-): AgentViewDataQualityPage {
+): Promise<AgentViewDataQualityPage> {
   // `collectScopeSignals` resolves the scope (a 404 for an unknown id) and is the
   // single source of the signal set the summary endpoint also reads.
-  const { signals } = collectScopeSignals(store, options.scopeId);
+  const { signals } = await collectScopeSignals(store, options.scopeId);
 
   const filtered = signals.filter(
     (signal) =>
@@ -128,11 +128,11 @@ export function buildDataQuality(
  * the top highest-severity signals in the canonical stable order. Reuses the same
  * signal collection as the full endpoint, so both read identical figures.
  */
-export function buildDataQualitySummary(
+export async function buildDataQualitySummary(
   store: AgentViewReadStore,
   publicScopeId: string,
-): AgentViewDataQualitySummary {
-  const { signals } = collectScopeSignals(store, publicScopeId);
+): Promise<AgentViewDataQualitySummary> {
+  const { signals } = await collectScopeSignals(store, publicScopeId);
 
   const countsBySeverity = emptySeverityCounts();
   const countsByCategory = emptyCategoryCounts();
@@ -157,17 +157,17 @@ export function buildDataQualitySummary(
  * level signals (FIRE config, history coverage) are computed for the resolved
  * internal scope. No write of any kind.
  */
-function collectScopeSignals(
+async function collectScopeSignals(
   store: AgentViewReadStore,
   publicScopeId: string,
-): { scope: AgentViewScope; signals: AgentViewDataQualitySignal[] } {
-  const workspace = store.readWorkspace();
+): Promise<{ scope: AgentViewScope; signals: AgentViewDataQualitySignal[] }> {
+  const workspace = await store.readWorkspace();
 
   if (!workspace) {
     throw unknownScope();
   }
 
-  const scope = listAgentViewScopes(store).find(
+  const scope = (await listAgentViewScopes(store)).find(
     (candidate) => candidate.id === publicScopeId,
   );
 
@@ -175,7 +175,7 @@ function collectScopeSignals(
     throw unknownScope();
   }
 
-  const internalScopeId = resolveInternalScopeId(store, publicScopeId);
+  const internalScopeId = await resolveInternalScopeId(store, publicScopeId);
   const scopeOption = listScopeOptions(workspace).find(
     (option) => option.id === internalScopeId,
   );
@@ -188,25 +188,25 @@ function collectScopeSignals(
     });
   }
 
-  const assets = store.readAssets();
-  const liabilities = store.readLiabilities();
+  const assets = await store.readAssets();
+  const liabilities = await store.readLiabilities();
   const ownedAssetIds = ownedHoldingIds(workspace, scopeOption, assets, liabilities);
-  const holdingPublicIds = publicIdMap(store.readPublicIds(), "holding");
+  const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
 
   const signals: AgentViewDataQualitySignal[] = [
-    ...warningSignals(store, ownedAssetIds, holdingPublicIds),
-    ...priceFreshnessSignals(store, assets, ownedAssetIds, holdingPublicIds),
-    ...sourceFreshnessSignals(store, ownedAssetIds),
-    ...missingConfigurationSignals(
+    ...(await warningSignals(store, ownedAssetIds, holdingPublicIds)),
+    ...(await priceFreshnessSignals(store, assets, ownedAssetIds, holdingPublicIds)),
+    ...(await sourceFreshnessSignals(store, ownedAssetIds)),
+    ...(await missingConfigurationSignals(
       store,
       scope,
       internalScopeId,
       liabilities,
       ownedAssetIds,
       holdingPublicIds,
-    ),
-    ...historyCoverageSignals(store, scope, internalScopeId),
-    ...projectionGapSignals(store, ownedAssetIds),
+    )),
+    ...(await historyCoverageSignals(store, scope, internalScopeId)),
+    ...(await projectionGapSignals(store, ownedAssetIds)),
   ];
 
   return { scope, signals };
@@ -233,20 +233,19 @@ function ownedHoldingIds(
  * read only to label which were acknowledged — never written. The original
  * domain `code` is preserved as `originalWarningType`.
  */
-function warningSignals(
+async function warningSignals(
   store: AgentViewReadStore,
   ownedAssetIds: Set<string>,
   holdingPublicIds: Map<string, string>,
-): AgentViewDataQualitySignal[] {
+): Promise<AgentViewDataQualitySignal[]> {
   const overridden = new Set(
-    store.readWarningOverrides().map((o) => `${o.code}:${o.entityId}`),
+    (await store.readWarningOverrides()).map((o) => `${o.code}:${o.entityId}`),
   );
 
-  return collectWarnings(store.readAssets())
+  const assets = await store.readAssets();
+  return collectWarnings(assets)
     .filter((warning) => ownedAssetIds.has(warning.entityId))
-    .map((warning) =>
-      warningToSignal(warning, overridden, holdingPublicIds, store.readAssets()),
-    );
+    .map((warning) => warningToSignal(warning, overridden, holdingPublicIds, assets));
 }
 
 function warningToSignal(
@@ -288,12 +287,12 @@ function warningSeverity(severity: WarningSeverity): AgentViewDataQualitySeverit
  * A `failed` quote is `high`, a `stale` quote is `medium`; `fresh`/`manual`
  * quotes raise no signal. The price figure never leaves the read port.
  */
-function priceFreshnessSignals(
+async function priceFreshnessSignals(
   store: AgentViewReadStore,
   assets: ManualAsset[],
   ownedAssetIds: Set<string>,
   holdingPublicIds: Map<string, string>,
-): AgentViewDataQualitySignal[] {
+): Promise<AgentViewDataQualitySignal[]> {
   const signals: AgentViewDataQualitySignal[] = [];
 
   for (const asset of assets) {
@@ -301,7 +300,7 @@ function priceFreshnessSignals(
       continue;
     }
 
-    const freshness = store.readPriceFreshness(asset.id);
+    const freshness = await store.readPriceFreshness(asset.id);
     const signal = priceFreshnessToSignal(asset, freshness, holdingPublicIds);
     if (signal) {
       signals.push(signal);
@@ -356,18 +355,21 @@ function priceFreshnessToSignal(
  * `high`, a `stale` one is `medium`. Only sources backing a holding the scope owns
  * are surfaced. The affected object is the source (`wl_src_…`).
  */
-function sourceFreshnessSignals(
+async function sourceFreshnessSignals(
   store: AgentViewReadStore,
   ownedAssetIds: Set<string>,
-): AgentViewDataQualitySignal[] {
+): Promise<AgentViewDataQualitySignal[]> {
   const signals: AgentViewDataQualitySignal[] = [];
 
-  for (const source of store.readConnectedSources()) {
+  for (const source of await store.readConnectedSources()) {
     if (!source.assetIds.some((assetId) => ownedAssetIds.has(assetId))) {
       continue;
     }
 
-    const freshness = toFreshnessSummary(source, store.readSourceFreshness(source.id));
+    const freshness = toFreshnessSummary(
+      source,
+      await store.readSourceFreshness(source.id),
+    );
     if (freshness?.status !== "failed" && freshness?.status !== "stale") {
       continue;
     }
@@ -409,17 +411,17 @@ function sourceFreshnessSignals(
  * no declared debt model (an asset-level `medium` signal). Kept deliberately
  * reasonable — the FIRE case plus one holding-level case (ADR 0023).
  */
-function missingConfigurationSignals(
+async function missingConfigurationSignals(
   store: AgentViewReadStore,
   scope: AgentViewScope,
   internalScopeId: string,
   liabilities: Liability[],
   ownedAssetIds: Set<string>,
   holdingPublicIds: Map<string, string>,
-): AgentViewDataQualitySignal[] {
+): Promise<AgentViewDataQualitySignal[]> {
   const signals: AgentViewDataQualitySignal[] = [];
 
-  if (store.readFireConfig()[internalScopeId] === undefined) {
+  if ((await store.readFireConfig())[internalScopeId] === undefined) {
     signals.push({
       affected: { id: scope.id, label: scope.label, object: "scope" },
       category: "missing_configuration",
@@ -437,7 +439,7 @@ function missingConfigurationSignals(
       continue;
     }
 
-    if (store.readDebtModel(liability.id) === null) {
+    if ((await store.readDebtModel(liability.id)) === null) {
       signals.push({
         category: "missing_configuration",
         code: "MISSING_DEBT_MODEL",
@@ -459,13 +461,13 @@ function missingConfigurationSignals(
  * `low`/`medium` scope-global signal) and any snapshot with no frozen holding
  * rows (a `low` signal). Computed for the resolved internal scope.
  */
-function historyCoverageSignals(
+async function historyCoverageSignals(
   store: AgentViewReadStore,
   scope: AgentViewScope,
   internalScopeId: string,
-): AgentViewDataQualitySignal[] {
+): Promise<AgentViewDataQualitySignal[]> {
   const signals: AgentViewDataQualitySignal[] = [];
-  const snapshots = store.readSnapshots(internalScopeId);
+  const snapshots = await store.readSnapshots(internalScopeId);
 
   if (snapshots.length < SPARSE_SNAPSHOT_THRESHOLD) {
     signals.push({
@@ -487,7 +489,7 @@ function historyCoverageSignals(
     });
   }
 
-  const holdingsByDate = store.readSnapshotHoldings({ scopeId: internalScopeId });
+  const holdingsByDate = await store.readSnapshotHoldings({ scopeId: internalScopeId });
   const datesWithRows = new Set(holdingsByDate.map((row) => row.snapshotId));
 
   for (const snapshot of snapshots) {
@@ -517,13 +519,13 @@ function historyCoverageSignals(
  * value 0 with a quality signal — surfaced here as a `medium` projection gap.
  * Only sources backing a holding the scope owns are walked.
  */
-function projectionGapSignals(
+async function projectionGapSignals(
   store: AgentViewReadStore,
   ownedAssetIds: Set<string>,
-): AgentViewDataQualitySignal[] {
+): Promise<AgentViewDataQualitySignal[]> {
   const signals: AgentViewDataQualitySignal[] = [];
 
-  for (const source of store.readConnectedSources()) {
+  for (const source of await store.readConnectedSources()) {
     if (!source.assetIds.some((assetId) => ownedAssetIds.has(assetId))) {
       continue;
     }
@@ -534,7 +536,7 @@ function projectionGapSignals(
       object: "connected_source",
     };
 
-    for (const position of store.readSourcePositions(source.id)) {
+    for (const position of await store.readSourcePositions(source.id)) {
       const isUnvalued =
         position.kind === "token"
           ? position.unitPrice === null

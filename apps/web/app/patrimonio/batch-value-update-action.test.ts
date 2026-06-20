@@ -44,9 +44,9 @@ async function runAction(
   }
 }
 
-function seedStore(): WorthlineStore {
-  const store = createInMemoryStore();
-  store.workspace.initializeWorkspace({
+async function seedStore(): Promise<WorthlineStore> {
+  const store = await createInMemoryStore();
+  await store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jose" }],
     mode: "individual",
   });
@@ -100,7 +100,7 @@ async function seedHoldings(store: WorthlineStore): Promise<{
     store,
   );
 
-  const assets = store.assets.readAssets();
+  const assets = await store.assets.readAssets();
   const storedId = assets.find((a) => a.instrument === "current_account")!.id;
   const appreciatingId = assets.find((a) => a.instrument === "property")!.id;
   const derivedId = assets.find((a) => a.instrument === "stock")!.id;
@@ -109,7 +109,7 @@ async function seedHoldings(store: WorthlineStore): Promise<{
 
 describe("batchValueUpdateAction — who the value-update pass accepts (#308)", () => {
   test("hand-valued holdings (stored + appreciating) are updated", async () => {
-    const store = seedStore();
+    const store = await seedStore();
     const { storedId, appreciatingId } = await seedHoldings(store);
 
     const url = await runAction(
@@ -125,7 +125,7 @@ describe("batchValueUpdateAction — who the value-update pass accepts (#308)", 
     expect(url).not.toContain("error=");
     expect(url).toContain("/patrimonio");
 
-    const assets = store.assets.readAssets();
+    const assets = await store.assets.readAssets();
     expect(assets.find((a) => a.id === storedId)!.currentValue.amountMinor).toBe(300_000);
     expect(assets.find((a) => a.id === appreciatingId)!.currentValue.amountMinor).toBe(
       20_000_000,
@@ -133,7 +133,7 @@ describe("batchValueUpdateAction — who the value-update pass accepts (#308)", 
   });
 
   test("a derived holding (investment) is rejected — value comes from its sub-detail", async () => {
-    const store = seedStore();
+    const store = await seedStore();
     const { derivedId } = await seedHoldings(store);
 
     const url = await runAction(

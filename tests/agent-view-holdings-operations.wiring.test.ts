@@ -98,18 +98,18 @@ async function holdingIdByLabel(scopeId: string, label: string): Promise<string>
  * investment fund with three operations (two buys, one sell) so the tests can
  * exercise stored holdings, derived (investment) holdings, and operation rows.
  */
-function seedPortfolio(): void {
+async function seedPortfolio(): Promise<void> {
   const databasePath = tempDatabasePath("worthline-agent-view-hold-");
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = createWorthlineStore({ databasePath });
-  store.workspace.initializeWorkspace({
+  const store = await createWorthlineStore({ databasePath });
+  await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
   });
   const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 10_000_00,
     id: "asset_cash",
@@ -118,7 +118,7 @@ function seedPortfolio(): void {
     ownership: owner,
     type: "cash",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 200_000_00,
     id: "asset_home",
@@ -128,7 +128,7 @@ function seedPortfolio(): void {
     ownership: owner,
     type: "real_estate",
   });
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     associatedAssetId: "asset_home",
     balanceMinor: 100_000_00,
     currency: "EUR",
@@ -137,14 +137,14 @@ function seedPortfolio(): void {
     ownership: owner,
     type: "mortgage",
   });
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "asset_fund",
     liquidityTier: "market",
     name: "Fondo indexado",
     ownership: owner,
   });
-  store.recordOperationAndRipple(
+  await store.recordOperationAndRipple(
     {
       assetId: "asset_fund",
       currency: "EUR",
@@ -157,7 +157,7 @@ function seedPortfolio(): void {
     },
     { today: "2026-06-10" },
   );
-  store.recordOperationAndRipple(
+  await store.recordOperationAndRipple(
     {
       assetId: "asset_fund",
       currency: "EUR",
@@ -170,7 +170,7 @@ function seedPortfolio(): void {
     },
     { today: "2026-06-10" },
   );
-  store.recordOperationAndRipple(
+  await store.recordOperationAndRipple(
     {
       assetId: "asset_fund",
       currency: "EUR",
@@ -223,7 +223,7 @@ const routeClient: AgentViewApiClient = {
 
 describe("GET /api/v1/agent-view/holdings/{holdingId}", () => {
   test("returns a stored holding's full detail with ownership and quality summary", async () => {
-    seedPortfolio();
+    await seedPortfolio();
     const scopeId = await householdScopeId();
     const cashId = await holdingIdByLabel(scopeId, "Cuenta");
 
@@ -270,7 +270,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}", () => {
   });
 
   test("returns a derived (investment) holding with calculation facts and operation summary", async () => {
-    seedPortfolio();
+    await seedPortfolio();
     const scopeId = await householdScopeId();
     const fundId = await holdingIdByLabel(scopeId, "Fondo indexado");
 
@@ -302,7 +302,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}", () => {
   });
 
   test("returns a liability holding as direction=liability", async () => {
-    seedPortfolio();
+    await seedPortfolio();
     const scopeId = await householdScopeId();
     const mortgageId = await holdingIdByLabel(scopeId, "Hipoteca");
 
@@ -317,7 +317,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}", () => {
   });
 
   test("unknown holding id → 404 not_found", async () => {
-    seedPortfolio();
+    await seedPortfolio();
     const { body, response } = await holding("wl_hld_doesnotexist");
 
     expect(response.status).toBe(404);
@@ -325,7 +325,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}", () => {
   });
 
   test("rejects unknown query parameters", async () => {
-    seedPortfolio();
+    await seedPortfolio();
     const scopeId = await householdScopeId();
     const cashId = await holdingIdByLabel(scopeId, "Cuenta");
 
@@ -338,7 +338,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}", () => {
   });
 
   test("requires the local capability token", async () => {
-    seedPortfolio();
+    await seedPortfolio();
     const scopeId = await householdScopeId();
     const cashId = await holdingIdByLabel(scopeId, "Cuenta");
 
@@ -353,7 +353,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}", () => {
   });
 
   test("MCP get_holding_detail mirrors the HTTP shape", async () => {
-    seedPortfolio();
+    await seedPortfolio();
     const scopeId = await householdScopeId();
     const fundId = await holdingIdByLabel(scopeId, "Fondo indexado");
     const httpBody = (await holding(fundId)).body;
@@ -367,7 +367,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}", () => {
 
 describe("GET /api/v1/agent-view/holdings/{holdingId}/operations", () => {
   test("returns the investment's operations newest-first with money, units, and fees", async () => {
-    seedPortfolio();
+    await seedPortfolio();
     const scopeId = await householdScopeId();
     const fundId = await holdingIdByLabel(scopeId, "Fondo indexado");
 
@@ -408,7 +408,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/operations", () => {
   });
 
   test("sort=date returns operations oldest-first", async () => {
-    seedPortfolio();
+    await seedPortfolio();
     const scopeId = await householdScopeId();
     const fundId = await holdingIdByLabel(scopeId, "Fondo indexado");
 
@@ -421,7 +421,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/operations", () => {
   });
 
   test("filters by inclusive from/to window", async () => {
-    seedPortfolio();
+    await seedPortfolio();
     const scopeId = await householdScopeId();
     const fundId = await holdingIdByLabel(scopeId, "Fondo indexado");
 
@@ -433,7 +433,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/operations", () => {
   });
 
   test("paginates with stable cursors, walking every operation exactly once", async () => {
-    seedPortfolio();
+    await seedPortfolio();
     const scopeId = await householdScopeId();
     const fundId = await holdingIdByLabel(scopeId, "Fondo indexado");
 
@@ -462,7 +462,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/operations", () => {
   });
 
   test("clamps limit over the documented maximum to 500", async () => {
-    seedPortfolio();
+    await seedPortfolio();
     const scopeId = await householdScopeId();
     const fundId = await holdingIdByLabel(scopeId, "Fondo indexado");
 
@@ -471,7 +471,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/operations", () => {
   });
 
   test("non-investment holding → 422 unprocessable_entity", async () => {
-    seedPortfolio();
+    await seedPortfolio();
     const scopeId = await householdScopeId();
     const cashId = await holdingIdByLabel(scopeId, "Cuenta");
     const mortgageId = await holdingIdByLabel(scopeId, "Hipoteca");
@@ -486,7 +486,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/operations", () => {
   });
 
   test("unknown holding id → 404 not_found", async () => {
-    seedPortfolio();
+    await seedPortfolio();
     const { body, response } = await operations("wl_hld_doesnotexist");
 
     expect(response.status).toBe(404);
@@ -494,7 +494,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/operations", () => {
   });
 
   test("maps malformed requests to documented API errors", async () => {
-    seedPortfolio();
+    await seedPortfolio();
     const scopeId = await householdScopeId();
     const fundId = await holdingIdByLabel(scopeId, "Fondo indexado");
 
@@ -515,7 +515,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/operations", () => {
   });
 
   test("MCP get_operations mirrors the HTTP shape", async () => {
-    seedPortfolio();
+    await seedPortfolio();
     const scopeId = await householdScopeId();
     const fundId = await holdingIdByLabel(scopeId, "Fondo indexado");
     const query = "?sort=date&limit=2";
@@ -532,18 +532,18 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/operations", () => {
   });
 
   test("reads do not mutate persisted state", async () => {
-    seedPortfolio();
+    await seedPortfolio();
     const databasePath = process.env.WORTHLINE_DB_PATH as string;
     const scopeId = await householdScopeId();
     const fundId = await holdingIdByLabel(scopeId, "Fondo indexado");
     const cashId = await holdingIdByLabel(scopeId, "Cuenta");
 
-    const before = fingerprint(databasePath);
+    const before = await fingerprint(databasePath);
     await holding(fundId);
     await holding(cashId);
     await operations(fundId);
     await operations(fundId, "?sort=date&limit=1");
-    const after = fingerprint(databasePath);
+    const after = await fingerprint(databasePath);
 
     expect(after).toBe(before);
   });
@@ -551,14 +551,14 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/operations", () => {
 
 // A fingerprint of every mutation-prone read, to prove an agent read writes
 // nothing (no operations rewritten, no price cache, no public IDs, no holdings).
-function fingerprint(databasePath: string): string {
-  const store = createWorthlineStore({ databasePath });
+async function fingerprint(databasePath: string): Promise<string> {
+  const store = await createWorthlineStore({ databasePath });
   const snapshot = JSON.stringify({
-    assets: store.assets.readAssets(),
-    liabilities: store.liabilities.readLiabilities(),
-    operations: store.operations.readOperations("asset_fund"),
-    priceCache: store.operations.readAllPriceCacheEntries(),
-    publicIds: store.agentView.readPublicIds(),
+    assets: await store.assets.readAssets(),
+    liabilities: await store.liabilities.readLiabilities(),
+    operations: await store.operations.readOperations("asset_fund"),
+    priceCache: await store.operations.readAllPriceCacheEntries(),
+    publicIds: await store.agentView.readPublicIds(),
   });
   store.close();
   return snapshot;

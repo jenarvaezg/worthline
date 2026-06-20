@@ -20,8 +20,10 @@ function localDateStamp(now: Date): string {
 }
 
 export async function GET(): Promise<Response> {
-  const doc = await withStore((store) =>
-    store.workspace.readWorkspace() === null ? null : store.workspace.exportWorkspace(),
+  const doc = await withStore(async (store) =>
+    (await store.workspace.readWorkspace()) === null
+      ? null
+      : store.workspace.exportWorkspace(),
   );
 
   if (!doc) {

@@ -20,10 +20,10 @@
  * The product figures the actions compute are unchanged — only HOW the earliest
  * date is read changes (the action-seam suites cover the figures end to end).
  */
-import Database from "better-sqlite3";
+import type { Client, InValue } from "@libsql/client";
 import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore, createStoreFromSqlite } from "@db/index";
+import { createInMemoryStore, createStoreFromSqlite, openLibsqlClient } from "@db/index";
 import type { WorthlineStore } from "@db/index";
 import { migrate } from "@db/migrate";
 
@@ -34,6 +34,48 @@ function addDays(from: string, count: number): string {
   const d = new Date(`${from}T00:00:00.000Z`);
   d.setUTCDate(d.getUTCDate() + count);
   return d.toISOString().slice(0, 10);
+}
+
+/** Pull the SQL text out of any libSQL statement shape (string, `{ sql }`, or
+ *  the `[sql, args?]` batch tuple). */
+function sqlText(stmt: unknown): string {
+  if (typeof stmt === "string") return stmt;
+  if (Array.isArray(stmt) && typeof stmt[0] === "string") return stmt[0];
+  if (
+    stmt &&
+    typeof stmt === "object" &&
+    typeof (stmt as { sql?: unknown }).sql === "string"
+  ) {
+    return (stmt as { sql: string }).sql;
+  }
+  return "";
+}
+
+/**
+ * Wrap a libSQL client so every SQL statement it runs is reported to `tally`.
+ * The libSQL client has no `verbose` hook, so we wrap `execute`/`batch` (drizzle
+ * routes every read through `execute`).
+ */
+function instrumentClient(real: Client, tally: (sql: string) => void): Client {
+  return new Proxy(real, {
+    get(target, prop, receiver) {
+      if (prop === "execute") {
+        return (...args: unknown[]) => {
+          tally(sqlText(args[0]));
+          return (target.execute as (...a: unknown[]) => unknown)(...args);
+        };
+      }
+      if (prop === "batch") {
+        return (...args: unknown[]) => {
+          const [stmts] = args;
+          if (Array.isArray(stmts)) for (const s of stmts) tally(sqlText(s));
+          return (target.batch as (...a: unknown[]) => unknown)(...args);
+        };
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as Client;
 }
 
 /**
@@ -47,13 +89,13 @@ const EARLIEST_A = "2024-01-01";
 const EARLIEST_B = "2023-06-01";
 const BAND = 30;
 
-function seedManyUnrelatedRows(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seedManyUnrelatedRows(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jose" }],
     mode: "individual",
   });
 
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 130_000_00,
     id: "pisoA",
@@ -62,7 +104,7 @@ function seedManyUnrelatedRows(store: WorthlineStore): void {
     ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     type: "real_estate",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 200_000_00,
     id: "pisoB",
@@ -71,7 +113,7 @@ function seedManyUnrelatedRows(store: WorthlineStore): void {
     ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     type: "real_estate",
   });
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "fund",
     liquidityTier: "market",
@@ -82,7 +124,7 @@ function seedManyUnrelatedRows(store: WorthlineStore): void {
 
   // pisoB's earliest snapshot is BEFORE pisoA's, so if the read leaked pisoB rows
   // the earliest date would be wrong (EARLIEST_B, not EARLIEST_A).
-  store.addValuationAnchorAndRipple(
+  await store.addValuationAnchorAndRipple(
     {
       adjustsPriorCurve: true,
       assetId: "pisoB",
@@ -97,7 +139,7 @@ function seedManyUnrelatedRows(store: WorthlineStore): void {
   // earliest is also before pisoA — more unrelated noise the read must ignore.
   for (let i = 0; i < BAND; i += 1) {
     const dateKey = addDays(EARLIEST_B, i);
-    store.recordOperationAndRipple(
+    await store.recordOperationAndRipple(
       {
         assetId: "fund",
         currency: "EUR",
@@ -112,7 +154,7 @@ function seedManyUnrelatedRows(store: WorthlineStore): void {
   }
 
   // The TARGET asset's earliest appraisal — later than all the noise above.
-  store.addValuationAnchorAndRipple(
+  await store.addValuationAnchorAndRipple(
     {
       adjustsPriorCurve: true,
       assetId: "pisoA",
@@ -125,39 +167,46 @@ function seedManyUnrelatedRows(store: WorthlineStore): void {
 }
 
 /** The single-line query-plan text for a statement, joined for easy matching. */
-function queryPlan(sqlite: Database.Database, sql: string, ...params: unknown[]): string {
-  const rows = sqlite.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params) as {
+async function queryPlan(
+  client: Client,
+  sql: string,
+  ...params: InValue[]
+): Promise<string> {
+  const rows = (await client.execute({ sql: `EXPLAIN QUERY PLAN ${sql}`, args: params }))
+    .rows as unknown as {
     detail: string;
   }[];
   return rows.map((r) => r.detail).join("\n");
 }
 
-function indexNames(sqlite: Database.Database, table: string): string[] {
-  return sqlite
-    .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ?")
-    .all(table)
-    .map((row) => (row as { name: string }).name);
+async function indexNames(client: Client, table: string): Promise<string[]> {
+  return (
+    await client.execute({
+      sql: "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ?",
+      args: [table],
+    })
+  ).rows.map((row) => (row as unknown as { name: string }).name);
 }
 
 describe("targeted housing snapshot reads (#207)", () => {
-  test("a fresh database declares the holding/kind index on snapshot_holdings", () => {
-    const sqlite = new Database(":memory:");
+  test("a fresh database declares the holding/kind index on snapshot_holdings", async () => {
+    const client = openLibsqlClient(":memory:");
     try {
-      migrate(sqlite);
-      expect(indexNames(sqlite, "snapshot_holdings")).toContain(
+      await migrate(client);
+      expect(await indexNames(client, "snapshot_holdings")).toContain(
         "snapshot_holdings_holding_kind_idx",
       );
     } finally {
-      sqlite.close();
+      client.close();
     }
   });
 
-  test("reads frozen rows by holding id / kind through an index, not a full scan", () => {
-    const sqlite = new Database(":memory:");
+  test("reads frozen rows by holding id / kind through an index, not a full scan", async () => {
+    const client = openLibsqlClient(":memory:");
     try {
-      migrate(sqlite);
-      const plan = queryPlan(
-        sqlite,
+      await migrate(client);
+      const plan = await queryPlan(
+        client,
         // Matches the targeted read the store runs: join the owning snapshot for
         // its date/scope, filter by the frozen holding's id + kind.
         "SELECT s.date_key FROM snapshot_holdings h " +
@@ -170,22 +219,22 @@ describe("targeted housing snapshot reads (#207)", () => {
       // A bare full-table scan would read "SCAN snapshot_holdings" with no index.
       expect(plan).not.toMatch(/SCAN snapshot_holdings(?! USING INDEX)/);
     } finally {
-      sqlite.close();
+      client.close();
     }
   });
 
-  test("the targeted store read returns only the asked asset's rows amid many unrelated ones", () => {
-    const store = createInMemoryStore();
-    seedManyUnrelatedRows(store);
+  test("the targeted store read returns only the asked asset's rows amid many unrelated ones", async () => {
+    const store = await createInMemoryStore();
+    await seedManyUnrelatedRows(store);
 
     // Sanity: the full set is large and full of unrelated rows — otherwise the
     // targeting assertion would be vacuous.
-    const all = store.snapshots.readSnapshotHoldings();
+    const all = await store.snapshots.readSnapshotHoldings();
     expect(all.length).toBeGreaterThan(BAND);
     expect(all.some((r) => r.holdingId === "pisoB")).toBe(true);
     expect(all.some((r) => r.holdingId === "fund")).toBe(true);
 
-    const targeted = store.snapshots.readSnapshotHoldings({
+    const targeted = await store.snapshots.readSnapshotHoldings({
       holdingId: "pisoA",
       kind: "asset",
     });
@@ -211,26 +260,19 @@ describe("targeted housing snapshot reads (#207)", () => {
     store.close();
   });
 
-  test("the targeted read avoids loading the whole frozen-holding set into memory", () => {
+  test("the targeted read avoids loading the whole frozen-holding set into memory", async () => {
     let scanned = 0;
-    const sqlite = new Database(":memory:", {
-      verbose: (message?: unknown) => {
-        if (
-          typeof message === "string" &&
-          /^\s*select/i.test(message) &&
-          /\bsnapshot_holdings\b/i.test(message)
-        ) {
-          scanned += 1;
-        }
-      },
-    });
-    const store = createStoreFromSqlite(sqlite);
-    seedManyUnrelatedRows(store);
+    const tally = (text: string): void => {
+      if (/^\s*select/i.test(text) && /\bsnapshot_holdings\b/i.test(text)) scanned += 1;
+    };
+    const real = openLibsqlClient(":memory:");
+    const store = await createStoreFromSqlite(instrumentClient(real, tally));
+    await seedManyUnrelatedRows(store);
 
     // After seeding, a single targeted read must be ONE SELECT against
     // snapshot_holdings (filtered), not a full unfiltered scan of the table.
     const before = scanned;
-    const targeted = store.snapshots.readSnapshotHoldings({
+    const targeted = await store.snapshots.readSnapshotHoldings({
       holdingId: "pisoA",
       kind: "asset",
     });

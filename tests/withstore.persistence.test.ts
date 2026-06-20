@@ -6,17 +6,17 @@ import { tempDatabasePath, cleanupTempDirs } from "./helpers";
 afterEach(cleanupTempDirs);
 
 describe("withStore unit-of-work", () => {
-  test("runs the callback against an open store and returns its result", () => {
+  test("runs the callback against an open store and returns its result", async () => {
     const databasePath = tempDatabasePath("worthline-withstore-");
 
-    const mode = withStore(
-      (store) => {
-        store.workspace.initializeWorkspace({
+    const mode = await withStore(
+      async (store) => {
+        await store.workspace.initializeWorkspace({
           members: [{ id: "member_jose", name: "Jose" }],
           mode: "individual",
         });
 
-        return store.workspace.readWorkspace()?.mode;
+        return (await store.workspace.readWorkspace())?.mode;
       },
       { databasePath },
     );
@@ -24,11 +24,11 @@ describe("withStore unit-of-work", () => {
     expect(mode).toBe("individual");
   });
 
-  test("closes the connection even when the callback throws", () => {
+  test("closes the connection even when the callback throws", async () => {
     const databasePath = tempDatabasePath("worthline-withstore-");
     let captured: WorthlineStore | undefined;
 
-    expect(() =>
+    await expect(
       withStore(
         (store) => {
           captured = store;
@@ -36,23 +36,23 @@ describe("withStore unit-of-work", () => {
         },
         { databasePath },
       ),
-    ).toThrow("boom");
+    ).rejects.toThrow("boom");
 
     // The connection must be closed despite the throw: using it now fails.
-    expect(() => captured?.workspace.readWorkspace()).toThrow();
+    await expect(captured?.workspace.readWorkspace()).rejects.toThrow();
   });
 
-  test("closes the connection on the happy path", () => {
+  test("closes the connection on the happy path", async () => {
     const databasePath = tempDatabasePath("worthline-withstore-");
     let captured: WorthlineStore | undefined;
 
-    withStore(
+    await withStore(
       (store) => {
         captured = store;
       },
       { databasePath },
     );
 
-    expect(() => captured?.workspace.readWorkspace()).toThrow();
+    await expect(captured?.workspace.readWorkspace()).rejects.toThrow();
   });
 });

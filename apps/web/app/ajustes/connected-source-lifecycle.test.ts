@@ -55,8 +55,10 @@ async function runRedirect(run: () => Promise<unknown>): Promise<string> {
   }
 }
 
-function seedWithSource(store: WorthlineStore): { sourceId: string; assetId: string } {
-  store.workspace.initializeWorkspace({
+async function seedWithSource(
+  store: WorthlineStore,
+): Promise<{ sourceId: string; assetId: string }> {
+  await store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jose" }],
     mode: "individual",
   });
@@ -121,8 +123,8 @@ function fakeWiring(): SyncWiring<NumistaCreds, NumistaToken> {
 
 describe("connectSource (generic) — Numista", () => {
   test("refuses a second Numista source", async () => {
-    const store = createInMemoryStore();
-    seedWithSource(store);
+    const store = await createInMemoryStore();
+    await seedWithSource(store);
 
     const digest = await runRedirect(() =>
       connectSource(
@@ -141,12 +143,12 @@ describe("connectSource (generic) — Numista", () => {
     );
 
     expect(digest).toContain("error=");
-    expect(store.connectedSources.listSources()).toHaveLength(1);
+    expect(await store.connectedSources.listSources()).toHaveLength(1);
   });
 
   test("connects the first Numista source", async () => {
-    const store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
       members: [{ id: "mJ", name: "Jose" }],
       mode: "individual",
     });
@@ -168,7 +170,7 @@ describe("connectSource (generic) — Numista", () => {
     );
 
     expect(digest).toContain("ok=numista_connected");
-    const sources = store.connectedSources.listSources();
+    const sources = await store.connectedSources.listSources();
     expect(sources).toHaveLength(1);
     expect(sources[0]!.adapter).toBe("numista");
     // The pasted key is serialized via the adapter into credentialsJson.
@@ -178,8 +180,8 @@ describe("connectSource (generic) — Numista", () => {
 
 describe("connectSource (generic) — Binance", () => {
   test("connects the first Binance source through the seam with the real adapter", async () => {
-    const store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
       members: [{ id: "mJ", name: "Jose" }],
       mode: "individual",
     });
@@ -201,7 +203,7 @@ describe("connectSource (generic) — Binance", () => {
     );
 
     expect(digest).toContain("ok=binance_connected");
-    const sources = store.connectedSources.listSources();
+    const sources = await store.connectedSources.listSources();
     expect(sources).toHaveLength(1);
     expect(sources[0]!.adapter).toBe("binance");
     // The pasted key + secret are serialized via the adapter into credentialsJson.
@@ -212,12 +214,12 @@ describe("connectSource (generic) — Binance", () => {
   });
 
   test("refuses a second Binance source", async () => {
-    const store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
       members: [{ id: "mJ", name: "Jose" }],
       mode: "individual",
     });
-    store.connectedSources.connect({
+    await store.connectedSources.connect({
       adapter: "binance",
       label: "Binance",
       credentialsJson: JSON.stringify({ apiKey: "k", apiSecret: "s" }),
@@ -241,29 +243,29 @@ describe("connectSource (generic) — Binance", () => {
     );
 
     expect(digest).toContain("error=");
-    expect(store.connectedSources.listSources()).toHaveLength(1);
+    expect(await store.connectedSources.listSources()).toHaveLength(1);
   });
 });
 
 describe("syncSource (generic) — Numista", () => {
   test("calls adapter.listPositions and persists them (re-rolling value)", async () => {
-    const store = createInMemoryStore();
-    const { sourceId, assetId } = seedWithSource(store);
+    const store = await createInMemoryStore();
+    const { sourceId, assetId } = await seedWithSource(store);
 
     const digest = await runRedirect(() =>
       syncSource(fakeNumistaAdapter, sourceId, fakeWiring(), "/ajustes", store),
     );
 
     expect(digest).toContain("ok=numista_synced");
-    expect(store.connectedSources.readPositions(sourceId)).toHaveLength(1);
-    const holding = store.assets.readAssets().find((a) => a.id === assetId);
+    expect(await store.connectedSources.readPositions(sourceId)).toHaveLength(1);
+    const holding = (await store.assets.readAssets()).find((a) => a.id === assetId);
     expect(holding?.currentValue.amountMinor).toBe(35_000);
   });
 
   test("errors (without wiping positions) when the source id is unknown", async () => {
-    const store = createInMemoryStore();
-    const { sourceId } = seedWithSource(store);
-    store.connectedSources.syncPositions(
+    const store = await createInMemoryStore();
+    const { sourceId } = await seedWithSource(store);
+    await store.connectedSources.syncPositions(
       sourceId,
       [COIN_DRAFT],
       "2026-06-14T10:00:00.000Z",
@@ -274,7 +276,7 @@ describe("syncSource (generic) — Numista", () => {
     );
 
     expect(digest).toContain("error=");
-    expect(store.connectedSources.readPositions(sourceId)).toHaveLength(1);
+    expect(await store.connectedSources.readPositions(sourceId)).toHaveLength(1);
   });
 });
 
@@ -288,22 +290,22 @@ describe("disconnectSource (generic) — Numista", () => {
   };
 
   test("remove drops the source + holding (the default path)", async () => {
-    const store = createInMemoryStore();
-    const { sourceId, assetId } = seedWithSource(store);
+    const store = await createInMemoryStore();
+    const { sourceId, assetId } = await seedWithSource(store);
 
     const digest = await runRedirect(() =>
       disconnectSource(sourceId, false, messages, "/ajustes", store),
     );
 
     expect(digest).toContain("ok=numista_disconnected");
-    expect(store.connectedSources.listSources()).toHaveLength(0);
-    expect(store.assets.readAssets().some((a) => a.id === assetId)).toBe(false);
+    expect(await store.connectedSources.listSources()).toHaveLength(0);
+    expect((await store.assets.readAssets()).some((a) => a.id === assetId)).toBe(false);
   });
 
   test("freeze flips the asset to a hand-valued precious-metal holding", async () => {
-    const store = createInMemoryStore();
-    const { sourceId, assetId } = seedWithSource(store);
-    store.connectedSources.syncPositions(
+    const store = await createInMemoryStore();
+    const { sourceId, assetId } = await seedWithSource(store);
+    await store.connectedSources.syncPositions(
       sourceId,
       [COIN_DRAFT],
       "2026-06-14T10:00:00.000Z",
@@ -314,8 +316,8 @@ describe("disconnectSource (generic) — Numista", () => {
     );
 
     expect(digest).toContain("ok=numista_frozen");
-    expect(store.connectedSources.listSources()).toHaveLength(0);
-    const frozen = store.assets.readAssets().find((a) => a.id === assetId);
+    expect(await store.connectedSources.listSources()).toHaveLength(0);
+    const frozen = (await store.assets.readAssets()).find((a) => a.id === assetId);
     expect(frozen?.instrument).toBe("precious_metal");
     expect(frozen?.currentValue.amountMinor).toBe(35_000);
   });

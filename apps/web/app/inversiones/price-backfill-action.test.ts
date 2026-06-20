@@ -22,12 +22,12 @@ import {
 
 const NOW = "2026-03-15T10:00:00.000Z";
 
-function seed(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seed(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jose" }],
     mode: "individual",
   });
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "btc",
     liquidityTier: "market",
@@ -37,7 +37,7 @@ function seed(store: WorthlineStore): void {
     providerSymbol: "bitcoin",
   });
   // A backdated buy → cost-basis snapshots (no price cached those days).
-  store.recordOperationAndRipple(
+  await store.recordOperationAndRipple(
     {
       assetId: "btc",
       currency: "EUR",
@@ -76,13 +76,13 @@ function refreshForm(): FormData {
 
 describe("previewPriceBackfillAction (#380)", () => {
   test("returns counts + source + gaps and writes NOTHING", async () => {
-    const store = createInMemoryStore();
-    seed(store);
+    const store = await createInMemoryStore();
+    await seed(store);
 
-    const snapshotsBefore = store.snapshots.readSnapshots().length;
-    const febBefore = store.snapshots
-      .readSnapshotHoldings({ holdingId: "btc", kind: "asset" })
-      .find((r) => r.dateKey === "2026-02-01");
+    const snapshotsBefore = (await store.snapshots.readSnapshots()).length;
+    const febBefore = (
+      await store.snapshots.readSnapshotHoldings({ holdingId: "btc", kind: "asset" })
+    ).find((r) => r.dateKey === "2026-02-01");
 
     const state = await previewPriceBackfillAction(
       "btc",
@@ -102,22 +102,22 @@ describe("previewPriceBackfillAction (#380)", () => {
     expect(state.gaps).toContain("2026-03-01");
 
     // Nothing was written: the snapshot count and the (absent) Feb row are unchanged.
-    expect(store.snapshots.readSnapshots().length).toBe(snapshotsBefore);
-    const febAfter = store.snapshots
-      .readSnapshotHoldings({ holdingId: "btc", kind: "asset" })
-      .find((r) => r.dateKey === "2026-02-01");
+    expect((await store.snapshots.readSnapshots()).length).toBe(snapshotsBefore);
+    const febAfter = (
+      await store.snapshots.readSnapshotHoldings({ holdingId: "btc", kind: "asset" })
+    ).find((r) => r.dateKey === "2026-02-01");
     expect(febAfter).toEqual(febBefore);
     store.close();
   });
 
   test("reports a non-zero update count when a priced month already has a snapshot", async () => {
-    const store = createInMemoryStore();
-    seed(store);
+    const store = await createInMemoryStore();
+    await seed(store);
 
     // A second op ON the month-start so a 2026-02-01 snapshot already EXISTS at
     // cost basis before the backfill (snapshots land on operation dates) — pricing
     // it is an UPDATE, while later months are creates.
-    store.recordOperationAndRipple(
+    await store.recordOperationAndRipple(
       {
         assetId: "btc",
         currency: "EUR",
@@ -158,19 +158,19 @@ describe("previewPriceBackfillAction (#380)", () => {
   });
 
   test("reports a non-candidate (no provider symbol) without offering a backfill", async () => {
-    const store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
       members: [{ id: "mJ", name: "Jose" }],
       mode: "individual",
     });
-    store.assets.createInvestmentAsset({
+    await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "fund",
       liquidityTier: "market",
       name: "Fondo",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     });
-    store.recordOperationAndRipple(
+    await store.recordOperationAndRipple(
       {
         assetId: "fund",
         currency: "EUR",
@@ -220,15 +220,15 @@ describe("confirmPriceBackfillAction (#380)", () => {
   }
 
   test("applies the backfill: the Feb row becomes units × price, gone is the cost line", async () => {
-    const store = createInMemoryStore();
-    seed(store);
+    const store = await createInMemoryStore();
+    await seed(store);
 
     const digest = await runConfirm(store, stubSource());
     expect(digest).toContain("ok=");
 
-    const feb = store.snapshots
-      .readSnapshotHoldings({ holdingId: "btc", kind: "asset" })
-      .find((r) => r.dateKey === "2026-02-01");
+    const feb = (
+      await store.snapshots.readSnapshotHoldings({ holdingId: "btc", kind: "asset" })
+    ).find((r) => r.dateKey === "2026-02-01");
     expect(feb?.valueMinor).toBe(0.5 * 40000 * 100);
     expect(feb?.unitPrice).toBe("40000");
     store.close();
@@ -244,16 +244,16 @@ describe("daily refresh still does NOT rewrite history (#380 guard)", () => {
   });
 
   test("refreshPricesAction leaves the cost-basis snapshots untouched", async () => {
-    const store = createInMemoryStore();
-    seed(store);
+    const store = await createInMemoryStore();
+    await seed(store);
 
-    const rowsBefore = store.snapshots
-      .readSnapshotHoldings({ holdingId: "btc", kind: "asset" })
-      .map((r) => ({
-        dateKey: r.dateKey,
-        valueMinor: r.valueMinor,
-        unitPrice: r.unitPrice,
-      }));
+    const rowsBefore = (
+      await store.snapshots.readSnapshotHoldings({ holdingId: "btc", kind: "asset" })
+    ).map((r) => ({
+      dateKey: r.dateKey,
+      valueMinor: r.valueMinor,
+      unitPrice: r.unitPrice,
+    }));
 
     // A live quote arrives via the daily refresh — it must NOT ripple history.
     vi.mocked(fetch).mockResolvedValue({
@@ -268,13 +268,13 @@ describe("daily refresh still does NOT rewrite history (#380 guard)", () => {
       if (e.message !== "NEXT_REDIRECT") throw err;
     }
 
-    const rowsAfter = store.snapshots
-      .readSnapshotHoldings({ holdingId: "btc", kind: "asset" })
-      .map((r) => ({
-        dateKey: r.dateKey,
-        valueMinor: r.valueMinor,
-        unitPrice: r.unitPrice,
-      }));
+    const rowsAfter = (
+      await store.snapshots.readSnapshotHoldings({ holdingId: "btc", kind: "asset" })
+    ).map((r) => ({
+      dateKey: r.dateKey,
+      valueMinor: r.valueMinor,
+      unitPrice: r.unitPrice,
+    }));
 
     expect(rowsAfter).toEqual(rowsBefore);
     store.close();

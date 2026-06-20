@@ -30,12 +30,12 @@ import type { SourcePositionInput, WorthlineStore } from "@db/index";
 
 const TODAY = "2026-06-12";
 
-function seedIndividual(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seedIndividual(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jose" }],
     mode: "individual",
   });
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "fund",
     liquidityTier: "market",
@@ -44,15 +44,15 @@ function seedIndividual(store: WorthlineStore): void {
   });
 }
 
-function seedHousehold(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seedHousehold(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [
       { id: "mJ", name: "Jose" },
       { id: "mA", name: "Ana" },
     ],
     mode: "household",
   });
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "fund",
     liquidityTier: "market",
@@ -64,13 +64,13 @@ function seedHousehold(store: WorthlineStore): void {
   });
 }
 
-function recordBuy(
+async function recordBuy(
   store: WorthlineStore,
   executedAt: string,
   units: string,
   pricePerUnit: string,
-): void {
-  store.recordOperationAndRipple(
+): Promise<void> {
+  await store.recordOperationAndRipple(
     {
       assetId: "fund",
       currency: "EUR",
@@ -85,22 +85,21 @@ function recordBuy(
   );
 }
 
-function snapshotIdsAt(store: WorthlineStore, dateKey: string): string[] {
-  return store.snapshots
-    .readSnapshots()
+async function snapshotIdsAt(store: WorthlineStore, dateKey: string): Promise<string[]> {
+  return (await store.snapshots.readSnapshots())
     .filter((snap) => snap.dateKey === dateKey)
     .map((snap) => snap.id)
     .sort();
 }
 
 describe("prune orphaned backfill snapshots (#305)", () => {
-  test("deleting the last operation on a histsnap_ date removes the snapshot and its frozen rows for every scope", () => {
-    const store = createInMemoryStore();
-    seedHousehold(store);
+  test("deleting the last operation on a histsnap_ date removes the snapshot and its frozen rows for every scope", async () => {
+    const store = await createInMemoryStore();
+    await seedHousehold(store);
     // A live cash asset keeps the date's snapshot reconciling with holdings that
     // remain after the fund leaves — so the snapshot is NOT empty, yet its date is
     // orphaned once the only operation justifying it is gone.
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 1_000_00,
       id: "cash",
@@ -113,50 +112,57 @@ describe("prune orphaned backfill snapshots (#305)", () => {
       type: "cash",
     });
 
-    recordBuy(store, "2024-01-10", "10", "100");
-    recordBuy(store, "2024-03-01", "5", "200");
+    await recordBuy(store, "2024-01-10", "10", "100");
+    await recordBuy(store, "2024-03-01", "5", "200");
 
     // The backfill generated a histsnap_ snapshot per scope at 2024-01-10.
-    const before = snapshotIdsAt(store, "2024-01-10");
+    const before = await snapshotIdsAt(store, "2024-01-10");
     expect(before.length).toBeGreaterThan(0);
     expect(before.every((id) => id.startsWith("histsnap_"))).toBe(true);
     // And frozen rows exist for those snapshots, in every scope.
     expect(
-      store.snapshots.readSnapshotHoldings({ from: "2024-01-10", to: "2024-01-10" })
-        .length,
+      (
+        await store.snapshots.readSnapshotHoldings({
+          from: "2024-01-10",
+          to: "2024-01-10",
+        })
+      ).length,
     ).toBeGreaterThan(0);
 
-    const op = store.operations
-      .readOperations("fund")
-      .find((o) => o.executedAt === "2024-01-10")!;
-    store.deleteOperationAndRipple({ operationId: op.id, today: TODAY });
+    const op = (await store.operations.readOperations("fund")).find(
+      (o) => o.executedAt === "2024-01-10",
+    )!;
+    await store.deleteOperationAndRipple({ operationId: op.id, today: TODAY });
 
     // The orphaned backfill snapshot is gone for EVERY scope...
-    expect(snapshotIdsAt(store, "2024-01-10")).toEqual([]);
+    expect(await snapshotIdsAt(store, "2024-01-10")).toEqual([]);
     // ...and so are its frozen holding rows (every scope).
     expect(
-      store.snapshots.readSnapshotHoldings({ from: "2024-01-10", to: "2024-01-10" }),
+      await store.snapshots.readSnapshotHoldings({
+        from: "2024-01-10",
+        to: "2024-01-10",
+      }),
     ).toEqual([]);
 
     // The still-justified date 2024-03-01 (op_mar) survives, fund + cash.
-    expect(snapshotIdsAt(store, "2024-03-01").length).toBeGreaterThan(0);
+    expect((await snapshotIdsAt(store, "2024-03-01")).length).toBeGreaterThan(0);
     store.close();
   });
 
-  test("a date still justified by another operation keeps its snapshot", () => {
-    const store = createInMemoryStore();
-    seedIndividual(store);
+  test("a date still justified by another operation keeps its snapshot", async () => {
+    const store = await createInMemoryStore();
+    await seedIndividual(store);
 
     // Two operations on the SAME date; deleting one leaves the date justified.
-    store.assets.createInvestmentAsset({
+    await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "fund2",
       liquidityTier: "market",
       name: "Otro fondo",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     });
-    recordBuy(store, "2024-01-10", "10", "100");
-    store.recordOperationAndRipple(
+    await recordBuy(store, "2024-01-10", "10", "100");
+    await store.recordOperationAndRipple(
       {
         assetId: "fund2",
         currency: "EUR",
@@ -170,22 +176,22 @@ describe("prune orphaned backfill snapshots (#305)", () => {
       { today: TODAY },
     );
 
-    const op = store.operations
-      .readOperations("fund")
-      .find((o) => o.executedAt === "2024-01-10")!;
-    store.deleteOperationAndRipple({ operationId: op.id, today: TODAY });
+    const op = (await store.operations.readOperations("fund")).find(
+      (o) => o.executedAt === "2024-01-10",
+    )!;
+    await store.deleteOperationAndRipple({ operationId: op.id, today: TODAY });
 
     // fund2 still has an operation on 2024-01-10 → the snapshot survives.
-    expect(snapshotIdsAt(store, "2024-01-10").length).toBeGreaterThan(0);
+    expect((await snapshotIdsAt(store, "2024-01-10")).length).toBeGreaterThan(0);
     store.close();
   });
 
-  test("a real daily-capture snapshot (snapshot_ prefix) is never pruned, even with no operation on its date", () => {
-    const store = createInMemoryStore();
-    seedIndividual(store);
+  test("a real daily-capture snapshot (snapshot_ prefix) is never pruned, even with no operation on its date", async () => {
+    const store = await createInMemoryStore();
+    await seedIndividual(store);
 
     // A backdated operation generates a histsnap_ snapshot at 2024-01-10.
-    recordBuy(store, "2024-01-10", "10", "100");
+    await recordBuy(store, "2024-01-10", "10", "100");
 
     // Mint a REAL daily-capture snapshot at a date that carries NO operation,
     // using the production id generator (`buildSnapshotId` → `snapshot_…`). It
@@ -220,32 +226,33 @@ describe("prune orphaned backfill snapshots (#305)", () => {
       totalNetWorth: { amountMinor: 1_000_00, currency: "EUR" },
       warnings: [],
     };
-    store.snapshots.saveSnapshot({
+    await store.snapshots.saveSnapshot({
       holdings: [cashHolding],
       replace: false,
       snapshot: dailySnapshot,
     });
-    expect(snapshotIdsAt(store, dailyDate)).toEqual([dailyId]);
+    expect(await snapshotIdsAt(store, dailyDate)).toEqual([dailyId]);
 
     // Delete the only operation on 2024-01-10 → that histsnap_ snapshot is pruned.
-    const op = store.operations
-      .readOperations("fund")
-      .find((o) => o.executedAt === "2024-01-10")!;
-    store.deleteOperationAndRipple({ operationId: op.id, today: TODAY });
+    const op = (await store.operations.readOperations("fund")).find(
+      (o) => o.executedAt === "2024-01-10",
+    )!;
+    await store.deleteOperationAndRipple({ operationId: op.id, today: TODAY });
 
-    expect(snapshotIdsAt(store, "2024-01-10")).toEqual([]);
+    expect(await snapshotIdsAt(store, "2024-01-10")).toEqual([]);
     // The daily-capture snapshot survives untouched, though its date has no op.
-    expect(snapshotIdsAt(store, dailyDate)).toEqual([dailyId]);
+    expect(await snapshotIdsAt(store, dailyDate)).toEqual([dailyId]);
     expect(
-      store.snapshots.readSnapshotHoldings({ from: dailyDate, to: dailyDate }).length,
+      (await store.snapshots.readSnapshotHoldings({ from: dailyDate, to: dailyDate }))
+        .length,
     ).toBeGreaterThan(0);
     store.close();
   });
 
-  test("the /historico bridge shows no phantom dip after the orphan is pruned", () => {
-    const store = createInMemoryStore();
-    seedIndividual(store);
-    store.assets.createManualAsset({
+  test("the /historico bridge shows no phantom dip after the orphan is pruned", async () => {
+    const store = await createInMemoryStore();
+    await seedIndividual(store);
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 1_000_00,
       id: "cash",
@@ -256,21 +263,20 @@ describe("prune orphaned backfill snapshots (#305)", () => {
     });
 
     // 2024-01-10 (orphan candidate) and 2024-02-10, 2024-03-01 (kept, op_mar etc).
-    recordBuy(store, "2024-01-10", "10", "100");
-    recordBuy(store, "2024-03-01", "5", "200");
+    await recordBuy(store, "2024-01-10", "10", "100");
+    await recordBuy(store, "2024-03-01", "5", "200");
 
     // Delete the sole basis of 2024-01-10 → it must be pruned, not left as a
     // fossil that the per-day bridge would read as a fund "dip" to/from zero.
-    const op = store.operations
-      .readOperations("fund")
-      .find((o) => o.executedAt === "2024-01-10")!;
-    store.deleteOperationAndRipple({ operationId: op.id, today: TODAY });
+    const op = (await store.operations.readOperations("fund")).find(
+      (o) => o.executedAt === "2024-01-10",
+    )!;
+    await store.deleteOperationAndRipple({ operationId: op.id, today: TODAY });
 
     // Build the per-day bridge across the surviving snapshots' frozen rows.
     // Individual mode captures under the household scope.
     const scopeId = "household";
-    const surviving = store.snapshots
-      .readSnapshots(scopeId)
+    const surviving = (await store.snapshots.readSnapshots(scopeId))
       .map((snap) => snap.dateKey)
       .sort();
     // The orphan date is absent — no frozen fund row to misread as a dip.
@@ -283,19 +289,23 @@ describe("prune orphaned backfill snapshots (#305)", () => {
     for (const dateKey of surviving) {
       rowsByDate.set(
         dateKey,
-        store.snapshots
-          .readSnapshotHoldings({ scopeId, from: dateKey, to: dateKey })
-          .map((r) => ({
-            countsAsHousing: r.countsAsHousing,
-            holdingId: r.holdingId,
-            kind: r.kind,
-            label: r.label,
-            liquidityTier: r.liquidityTier,
-            securesHousing: r.securesHousing,
-            valueMinor: r.valueMinor,
-            ...(r.units !== undefined ? { units: r.units } : {}),
-            ...(r.unitPrice !== undefined ? { unitPrice: r.unitPrice } : {}),
-          })),
+        (
+          await store.snapshots.readSnapshotHoldings({
+            scopeId,
+            from: dateKey,
+            to: dateKey,
+          })
+        ).map((r) => ({
+          countsAsHousing: r.countsAsHousing,
+          holdingId: r.holdingId,
+          kind: r.kind,
+          label: r.label,
+          liquidityTier: r.liquidityTier,
+          securesHousing: r.securesHousing,
+          valueMinor: r.valueMinor,
+          ...(r.units !== undefined ? { units: r.units } : {}),
+          ...(r.unitPrice !== undefined ? { unitPrice: r.unitPrice } : {}),
+        })),
       );
     }
     for (let i = 1; i < surviving.length; i += 1) {
@@ -330,12 +340,12 @@ describe("prune spares snapshots justified by a non-operation dated fact (#305 /
 
   /** A household with a priced-at-cost fund, so deleting the fund op is a real
    *  unrelated deletion whose ripple loop reaches D. */
-  function seedFundIndividual(store: WorthlineStore): void {
-    store.workspace.initializeWorkspace({
+  async function seedFundIndividual(store: WorthlineStore): Promise<void> {
+    await store.workspace.initializeWorkspace({
       members: [{ id: "mJ", name: "Jose" }],
       mode: "individual",
     });
-    store.assets.createInvestmentAsset({
+    await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "fund",
       liquidityTier: "market",
@@ -344,8 +354,8 @@ describe("prune spares snapshots justified by a non-operation dated fact (#305 /
     });
   }
 
-  function recordFundBuy(store: WorthlineStore, executedAt: string): void {
-    store.recordOperationAndRipple(
+  async function recordFundBuy(store: WorthlineStore, executedAt: string): Promise<void> {
+    await store.recordOperationAndRipple(
       {
         assetId: "fund",
         currency: "EUR",
@@ -360,21 +370,21 @@ describe("prune spares snapshots justified by a non-operation dated fact (#305 /
     );
   }
 
-  function deleteFundOp(store: WorthlineStore, executedAt: string): void {
-    const op = store.operations
-      .readOperations("fund")
-      .find((o) => o.executedAt === executedAt)!;
-    store.deleteOperationAndRipple({ operationId: op.id, today: TODAY });
+  async function deleteFundOp(store: WorthlineStore, executedAt: string): Promise<void> {
+    const op = (await store.operations.readOperations("fund")).find(
+      (o) => o.executedAt === executedAt,
+    )!;
+    await store.deleteOperationAndRipple({ operationId: op.id, today: TODAY });
   }
 
-  function survivesAt(store: WorthlineStore, dateKey: string): boolean {
-    return snapshotIdsAt(store, dateKey).length > 0;
+  async function survivesAt(store: WorthlineStore, dateKey: string): Promise<boolean> {
+    return (await snapshotIdsAt(store, dateKey)).length > 0;
   }
 
-  test("a balance-anchor date survives deleting an unrelated investment operation", () => {
-    const store = createInMemoryStore();
-    seedFundIndividual(store);
-    store.liabilities.createLiability({
+  test("a balance-anchor date survives deleting an unrelated investment operation", async () => {
+    const store = await createInMemoryStore();
+    await seedFundIndividual(store);
+    await store.liabilities.createLiability({
       balanceMinor: 1_000_00,
       currency: "EUR",
       id: "card",
@@ -382,32 +392,32 @@ describe("prune spares snapshots justified by a non-operation dated fact (#305 /
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
       type: "debt",
     });
-    store.liabilities.setDebtModel("card", "revolving");
+    await store.liabilities.setDebtModel("card", "revolving");
 
     // D is justified ONLY by a balance anchor (no operation on D).
-    store.addBalanceAnchorAndRipple(
+    await store.addBalanceAnchorAndRipple(
       { anchorDate: DATE_D, balanceMinor: 3_000_00, id: "an1", liabilityId: "card" },
       { today: TODAY },
     );
     // An unrelated investment op on a different date.
-    recordFundBuy(store, OP_DATE);
-    const before = snapshotIdsAt(store, DATE_D);
+    await recordFundBuy(store, OP_DATE);
+    const before = await snapshotIdsAt(store, DATE_D);
     expect(before.length).toBeGreaterThan(0);
     expect(before.every((id) => id.startsWith("histsnap_"))).toBe(true);
 
-    deleteFundOp(store, OP_DATE);
+    await deleteFundOp(store, OP_DATE);
 
-    expect(survivesAt(store, DATE_D)).toBe(true);
+    expect(await survivesAt(store, DATE_D)).toBe(true);
     expect(
-      store.snapshots.readSnapshotHoldings({ from: DATE_D, to: DATE_D }).length,
+      (await store.snapshots.readSnapshotHoldings({ from: DATE_D, to: DATE_D })).length,
     ).toBeGreaterThan(0);
     store.close();
   });
 
-  test("a housing valuation-anchor date survives deleting an unrelated investment operation", () => {
-    const store = createInMemoryStore();
-    seedFundIndividual(store);
-    store.assets.createManualAsset({
+  test("a housing valuation-anchor date survives deleting an unrelated investment operation", async () => {
+    const store = await createInMemoryStore();
+    await seedFundIndividual(store);
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 180_000_00,
       id: "piso",
@@ -419,7 +429,7 @@ describe("prune spares snapshots justified by a non-operation dated fact (#305 /
     });
 
     // D is justified ONLY by a housing valuation anchor.
-    store.addValuationAnchorAndRipple(
+    await store.addValuationAnchorAndRipple(
       {
         adjustsPriorCurve: true,
         assetId: "piso",
@@ -429,19 +439,19 @@ describe("prune spares snapshots justified by a non-operation dated fact (#305 /
       },
       { today: TODAY },
     );
-    recordFundBuy(store, OP_DATE);
-    expect(snapshotIdsAt(store, DATE_D).length).toBeGreaterThan(0);
+    await recordFundBuy(store, OP_DATE);
+    expect((await snapshotIdsAt(store, DATE_D)).length).toBeGreaterThan(0);
 
-    deleteFundOp(store, OP_DATE);
+    await deleteFundOp(store, OP_DATE);
 
-    expect(survivesAt(store, DATE_D)).toBe(true);
+    expect(await survivesAt(store, DATE_D)).toBe(true);
     store.close();
   });
 
-  test("an amortization cuota date survives deleting an unrelated investment operation", () => {
-    const store = createInMemoryStore();
-    seedFundIndividual(store);
-    store.liabilities.createLiability({
+  test("an amortization cuota date survives deleting an unrelated investment operation", async () => {
+    const store = await createInMemoryStore();
+    await seedFundIndividual(store);
+    await store.liabilities.createLiability({
       balanceMinor: 150_000_00,
       currency: "EUR",
       id: "mortgage",
@@ -449,11 +459,11 @@ describe("prune spares snapshots justified by a non-operation dated fact (#305 /
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
       type: "mortgage",
     });
-    store.liabilities.setDebtModel("mortgage", "amortizable");
+    await store.liabilities.setDebtModel("mortgage", "amortizable");
     // Disbursement 2024-01-01, first payment 2024-02-01. A computed cuota boundary
     // lands on 2025-01-01 (= firstPayment + 11 months) — that is DATE_D, a date
     // with NO operation, NO anchor; justified ONLY by the amortization curve.
-    store.createAmortizationPlanAndRipple(
+    await store.createAmortizationPlanAndRipple(
       {
         annualInterestRate: "0.03",
         disbursementDate: "2024-01-01",
@@ -465,21 +475,21 @@ describe("prune spares snapshots justified by a non-operation dated fact (#305 /
       },
       { today: TODAY },
     );
-    recordFundBuy(store, OP_DATE);
+    await recordFundBuy(store, OP_DATE);
     // The plan ripple generated a snapshot at every past cuota, including DATE_D.
-    const before = snapshotIdsAt(store, DATE_D);
+    const before = await snapshotIdsAt(store, DATE_D);
     expect(before.length).toBeGreaterThan(0);
     expect(before.every((id) => id.startsWith("histsnap_"))).toBe(true);
 
-    deleteFundOp(store, OP_DATE);
+    await deleteFundOp(store, OP_DATE);
 
-    expect(survivesAt(store, DATE_D)).toBe(true);
+    expect(await survivesAt(store, DATE_D)).toBe(true);
     store.close();
   });
 
-  test("a connected-source coin acquisition date survives deleting an unrelated investment operation", () => {
-    const store = createInMemoryStore();
-    seedFundIndividual(store);
+  test("a connected-source coin acquisition date survives deleting an unrelated investment operation", async () => {
+    const store = await createInMemoryStore();
+    await seedFundIndividual(store);
 
     // Seed a snapshot at D first (the coin ripple only touches EXISTING snapshots),
     // via a backdated buy on D that we then leave in place by deleting a DIFFERENT op.
@@ -487,10 +497,10 @@ describe("prune spares snapshots justified by a non-operation dated fact (#305 /
     // it, but that would orphan D. Instead: record an op on OP_DATE only, and rely on
     // the coin acquisition on D having generated nothing... — so create the D snapshot
     // through the fund op on D, sync the coin onto it, then delete a SEPARATE op.
-    recordFundBuy(store, DATE_D); // generates the snapshot at D (and its frozen rows)
-    recordFundBuy(store, OP_DATE); // an unrelated, later op we will delete
+    await recordFundBuy(store, DATE_D); // generates the snapshot at D (and its frozen rows)
+    await recordFundBuy(store, OP_DATE); // an unrelated, later op we will delete
 
-    const source = store.connectedSources.connect({
+    const source = await store.connectedSources.connect({
       adapter: "numista",
       credentialsJson: JSON.stringify({ apiKey: "secret" }),
       label: "Colección Numista",
@@ -517,7 +527,7 @@ describe("prune spares snapshots justified by a non-operation dated fact (#305 /
       weightGrams: null,
       year: null,
     } satisfies Omit<CoinPosition, "id" | "sourceId">;
-    store.syncConnectedSource({
+    await store.syncConnectedSource({
       positions: [coinPosition],
       sourceId: source.sourceId,
       syncedAt: "2026-06-01T10:00:00.000Z",
@@ -525,9 +535,9 @@ describe("prune spares snapshots justified by a non-operation dated fact (#305 /
 
     // Now DELETE the fund op that ORIGINALLY justified D. D must SURVIVE because the
     // coin acquisition on D still justifies it.
-    deleteFundOp(store, DATE_D);
+    await deleteFundOp(store, DATE_D);
 
-    expect(survivesAt(store, DATE_D)).toBe(true);
+    expect(await survivesAt(store, DATE_D)).toBe(true);
     store.close();
   });
 });

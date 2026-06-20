@@ -44,20 +44,20 @@ interface SortedOperation {
  * Reads persisted operations only — never replaces or ripples (ADR 0023). A
  * non-investment holding is a documented semantic error (`422`).
  */
-export function buildHoldingOperations(
+export async function buildHoldingOperations(
   store: AgentViewReadStore,
   options: BuildHoldingOperationsOptions,
-): AgentViewOperationPage {
-  const workspace = store.readWorkspace();
+): Promise<AgentViewOperationPage> {
+  const workspace = await store.readWorkspace();
 
   if (!workspace) {
     throw unknownHolding();
   }
 
-  const internalHoldingId = resolveInternalHoldingId(store, options.holdingId);
-  const asset = store
-    .readAssets()
-    .find((candidate) => candidate.id === internalHoldingId);
+  const internalHoldingId = await resolveInternalHoldingId(store, options.holdingId);
+  const asset = (await store.readAssets()).find(
+    (candidate) => candidate.id === internalHoldingId,
+  );
 
   if (!asset || asset.type !== "investment") {
     throw new AgentViewHttpError({
@@ -68,13 +68,11 @@ export function buildHoldingOperations(
   }
 
   const currency = workspace.baseCurrency;
-  const filtered = store
-    .readOperations(internalHoldingId)
-    .filter(
-      (operation) =>
-        (options.from === undefined || dateKey(operation) >= options.from) &&
-        (options.to === undefined || dateKey(operation) <= options.to),
-    );
+  const filtered = (await store.readOperations(internalHoldingId)).filter(
+    (operation) =>
+      (options.from === undefined || dateKey(operation) >= options.from) &&
+      (options.to === undefined || dateKey(operation) <= options.to),
+  );
 
   const sorted: SortedOperation[] = filtered
     .map((operation) => ({

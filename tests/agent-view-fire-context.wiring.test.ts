@@ -92,15 +92,15 @@ function eur(amountMinor: number) {
 
 // A fingerprint of every mutation-prone read, including the FIRE config, to
 // prove a FIRE read writes nothing.
-function fingerprint(databasePath: string): string {
-  const store = createWorthlineStore({ databasePath });
+async function fingerprint(databasePath: string): Promise<string> {
+  const store = await createWorthlineStore({ databasePath });
   const snapshot = JSON.stringify({
-    assets: store.assets.readAssets(),
-    fireConfig: store.readFireConfig(),
-    liabilities: store.liabilities.readLiabilities(),
-    priceCache: store.operations.readAllPriceCacheEntries(),
-    publicIds: store.agentView.readPublicIds(),
-    snapshots: store.snapshots.readSnapshots("household"),
+    assets: await store.assets.readAssets(),
+    fireConfig: await store.readFireConfig(),
+    liabilities: await store.liabilities.readLiabilities(),
+    priceCache: await store.operations.readAllPriceCacheEntries(),
+    publicIds: await store.agentView.readPublicIds(),
+    snapshots: await store.snapshots.readSnapshots("household"),
   });
   store.close();
   return snapshot;
@@ -147,18 +147,20 @@ const FIRE_NUMBER = 600_000_00;
 // Seed a household with: a primary residence (excluded), a manually-excluded
 // asset, and two eligible assets. The household FIRE config is saved under the
 // internal `household` scope key.
-function seedConfiguredHousehold(prefix = "worthline-agent-view-fire-") {
+async function seedConfiguredHousehold(
+  prefix = "worthline-agent-view-fire-",
+): Promise<string> {
   const databasePath = tempDatabasePath(prefix);
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = createWorthlineStore({ databasePath });
-  store.workspace.initializeWorkspace({
+  const store = await createWorthlineStore({ databasePath });
+  await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
   });
   const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 100_000_00,
     id: "asset_fund",
@@ -167,7 +169,7 @@ function seedConfiguredHousehold(prefix = "worthline-agent-view-fire-") {
     ownership: owner,
     type: "manual",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 50_000_00,
     id: "asset_cash",
@@ -176,7 +178,7 @@ function seedConfiguredHousehold(prefix = "worthline-agent-view-fire-") {
     ownership: owner,
     type: "cash",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 300_000_00,
     id: "asset_home",
@@ -186,7 +188,7 @@ function seedConfiguredHousehold(prefix = "worthline-agent-view-fire-") {
     ownership: owner,
     type: "real_estate",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 20_000_00,
     id: "asset_car",
@@ -195,7 +197,7 @@ function seedConfiguredHousehold(prefix = "worthline-agent-view-fire-") {
     ownership: owner,
     type: "manual",
   });
-  store.saveFireConfig("household", {
+  await store.saveFireConfig("household", {
     ...CONFIGURED,
     excludedAssetIds: ["asset_car"],
   });
@@ -203,18 +205,21 @@ function seedConfiguredHousehold(prefix = "worthline-agent-view-fire-") {
   return databasePath;
 }
 
-function holdingPublicId(databasePath: string, internalId: string): string {
-  const store = createWorthlineStore({ databasePath });
-  const publicId = store.agentView
-    .readPublicIds()
-    .find((row) => row.entityType === "holding" && row.entityId === internalId)!.publicId;
+async function holdingPublicId(
+  databasePath: string,
+  internalId: string,
+): Promise<string> {
+  const store = await createWorthlineStore({ databasePath });
+  const publicId = (await store.agentView.readPublicIds()).find(
+    (row) => row.entityType === "holding" && row.entityId === internalId,
+  )!.publicId;
   store.close();
   return publicId;
 }
 
 describe("GET /api/v1/agent-view/scopes/{scopeId}/fire-context", () => {
   test("returns the FIRE config, result, eligible total, and assumptions when configured", async () => {
-    seedConfiguredHousehold();
+    await seedConfiguredHousehold();
     const scopeId = await householdScopeId();
 
     const { body, response } = await fireContext(scopeId);
@@ -251,7 +256,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/fire-context", () => {
   });
 
   test("lists excluded assets with both primary-residence and manual reasons", async () => {
-    const databasePath = seedConfiguredHousehold("worthline-agent-view-fire-excl-");
+    const databasePath = await seedConfiguredHousehold("worthline-agent-view-fire-excl-");
     const scopeId = await householdScopeId();
 
     const { body } = await fireContext(scopeId);
@@ -260,8 +265,8 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/fire-context", () => {
       reason: string;
     }>;
 
-    const homePublic = holdingPublicId(databasePath, "asset_home");
-    const carPublic = holdingPublicId(databasePath, "asset_car");
+    const homePublic = await holdingPublicId(databasePath, "asset_home");
+    const carPublic = await holdingPublicId(databasePath, "asset_car");
 
     const byId = Object.fromEntries(excluded.map((e) => [e.holding.id, e]));
     expect(byId[homePublic].reason).toBe("primary_residence");
@@ -277,12 +282,12 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/fire-context", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000_00,
       id: "asset_cash",
@@ -312,8 +317,8 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/fire-context", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       groups: [
         { id: "group_adults", memberIds: ["member_ana", "member_jose"], name: "Adultos" },
       ],
@@ -324,7 +329,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/fire-context", () => {
       mode: "household",
     });
     // Shared account split 50/50 between Ana and Jose.
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 200_000_00,
       id: "asset_joint",
@@ -337,9 +342,9 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/fire-context", () => {
       type: "cash",
     });
     // The household and group share the same config; Ana keeps her own.
-    store.saveFireConfig("household", CONFIGURED);
-    store.saveFireConfig("group_adults", CONFIGURED);
-    store.saveFireConfig("member_ana", CONFIGURED);
+    await store.saveFireConfig("household", CONFIGURED);
+    await store.saveFireConfig("group_adults", CONFIGURED);
+    await store.saveFireConfig("member_ana", CONFIGURED);
     store.close();
 
     const scopes = await listScopes();
@@ -365,7 +370,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/fire-context", () => {
   });
 
   test("422 unsupported_historical_fire when a date is requested", async () => {
-    seedConfiguredHousehold("worthline-agent-view-fire-hist-");
+    await seedConfiguredHousehold("worthline-agent-view-fire-hist-");
     const scopeId = await householdScopeId();
 
     const { body, response } = await fireContext(scopeId, "?date=2025-01-01");
@@ -376,7 +381,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/fire-context", () => {
   });
 
   test("rejects unknown query parameters with 400", async () => {
-    seedConfiguredHousehold("worthline-agent-view-fire-badparam-");
+    await seedConfiguredHousehold("worthline-agent-view-fire-badparam-");
     const scopeId = await householdScopeId();
 
     const { response } = await fireContext(scopeId, "?asOf=2025-01-01");
@@ -384,7 +389,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/fire-context", () => {
   });
 
   test("returns 404 for an unknown scope id", async () => {
-    seedConfiguredHousehold("worthline-agent-view-fire-404-");
+    await seedConfiguredHousehold("worthline-agent-view-fire-404-");
 
     const { body, response } = await fireContext("wl_scp_doesnotexist");
 
@@ -393,7 +398,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/fire-context", () => {
   });
 
   test("requires the local capability token", async () => {
-    seedConfiguredHousehold("worthline-agent-view-fire-auth-");
+    await seedConfiguredHousehold("worthline-agent-view-fire-auth-");
     const scopeId = await householdScopeId();
 
     const response = await getFireContext(
@@ -408,7 +413,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/fire-context", () => {
   });
 
   test("MCP get_fire_context mirrors the HTTP shape and defaults to the household scope", async () => {
-    seedConfiguredHousehold("worthline-agent-view-fire-mcp-");
+    await seedConfiguredHousehold("worthline-agent-view-fire-mcp-");
 
     const household = await householdScopeId();
     const httpBody = await fireContext(household);
@@ -422,13 +427,15 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/fire-context", () => {
   });
 
   test("reads do not mutate persisted state", async () => {
-    const databasePath = seedConfiguredHousehold("worthline-agent-view-fire-nomut-");
+    const databasePath = await seedConfiguredHousehold(
+      "worthline-agent-view-fire-nomut-",
+    );
     const scopeId = await householdScopeId();
 
-    const before = fingerprint(databasePath);
+    const before = await fingerprint(databasePath);
     await fireContext(scopeId);
     await fireContext(scopeId);
-    const after = fingerprint(databasePath);
+    const after = await fingerprint(databasePath);
 
     expect(after).toBe(before);
   });
@@ -436,7 +443,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/fire-context", () => {
 
 describe("main financial context FIRE summary (#340)", () => {
   test("folds a compact configured FIRE summary into the main context", async () => {
-    seedConfiguredHousehold("worthline-agent-view-fire-main-conf-");
+    await seedConfiguredHousehold("worthline-agent-view-fire-main-conf-");
     const scopeId = await householdScopeId();
 
     const { body } = await financialContext(scopeId);
@@ -459,12 +466,12 @@ describe("main financial context FIRE summary (#340)", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = createWorthlineStore({ databasePath });
-    store.workspace.initializeWorkspace({
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000_00,
       id: "asset_cash",

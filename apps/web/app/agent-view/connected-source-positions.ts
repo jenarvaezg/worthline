@@ -64,18 +64,18 @@ interface ProjectedPosition {
  * (`422`); an unknown holding is a `404`. Reads persisted positions only — never
  * syncs or revalues (ADR 0023).
  */
-export function buildHoldingConnectedSourcePositions(
+export async function buildHoldingConnectedSourcePositions(
   store: AgentViewReadStore,
   options: BuildHoldingConnectedSourcePositionsOptions,
-): AgentViewConnectedSourcePositionPage {
-  if (!store.readWorkspace()) {
+): Promise<AgentViewConnectedSourcePositionPage> {
+  if (!(await store.readWorkspace())) {
     throw unknownHolding();
   }
 
-  const internalHoldingId = resolveInternalHoldingId(store, options.holdingId);
-  const source = store
-    .readConnectedSources()
-    .find((candidate) => candidate.assetIds.includes(internalHoldingId));
+  const internalHoldingId = await resolveInternalHoldingId(store, options.holdingId);
+  const source = (await store.readConnectedSources()).find((candidate) =>
+    candidate.assetIds.includes(internalHoldingId),
+  );
 
   if (!source) {
     throw new AgentViewHttpError({
@@ -85,10 +85,14 @@ export function buildHoldingConnectedSourcePositions(
     });
   }
 
-  const holdingPublicIds = publicIdMap(store.readPublicIds(), "holding");
-  const freshness = toFreshnessSummary(source, store.readSourceFreshness(source.id));
-  const projected = projectPositions(store, source, holdingPublicIds).filter(
-    (entry) => entry.position.liquidityTier === tierOfAsset(store, internalHoldingId),
+  const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
+  const freshness = toFreshnessSummary(
+    source,
+    await store.readSourceFreshness(source.id),
+  );
+  const holdingTier = await tierOfAsset(store, internalHoldingId);
+  const projected = (await projectPositions(store, source, holdingPublicIds)).filter(
+    (entry) => entry.position.liquidityTier === holdingTier,
   );
 
   // Within one holding/rung the positions already share the group; order by the
@@ -115,21 +119,24 @@ export function buildHoldingConnectedSourcePositions(
  * position list, then re-folds the page into its groups (a group can span page
  * boundaries). Reads persisted positions only — never syncs or revalues.
  */
-export function buildSourceConnectedSourcePositions(
+export async function buildSourceConnectedSourcePositions(
   store: AgentViewReadStore,
   options: BuildSourceConnectedSourcePositionsOptions,
-): AgentViewConnectedSourcePositionGroupPage {
-  if (!store.readWorkspace()) {
+): Promise<AgentViewConnectedSourcePositionGroupPage> {
+  if (!(await store.readWorkspace())) {
     throw unknownSource();
   }
 
-  const source = resolveSource(store, options.sourceId);
-  const holdingPublicIds = publicIdMap(store.readPublicIds(), "holding");
-  const freshness = toFreshnessSummary(source, store.readSourceFreshness(source.id));
+  const source = await resolveSource(store, options.sourceId);
+  const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
+  const freshness = toFreshnessSummary(
+    source,
+    await store.readSourceFreshness(source.id),
+  );
 
   // Stable order: group key (holding public id + rung) first, then position
   // public id — a strict total order, so cursor pagination over it is stable.
-  const sorted = projectPositions(store, source, holdingPublicIds).sort((a, b) =>
+  const sorted = (await projectPositions(store, source, holdingPublicIds)).sort((a, b) =>
     compareDateId(positionKey(a), positionKey(b), "date"),
   );
   const { page, hasNext, nextCursor } = paginate(sorted, options.limit, options.cursor);
@@ -150,42 +157,49 @@ export function buildSourceConnectedSourcePositions(
 }
 
 /** Project a source's positions onto their holding/rung, deriving stable ids. */
-function projectPositions(
+async function projectPositions(
   store: AgentViewReadStore,
   source: AgentViewConnectedSource,
   holdingPublicIds: Map<string, string>,
-): ProjectedPosition[] {
-  return store.readSourcePositions(source.id).map((position) => {
-    const internalHoldingId = assetIdForTier(store, source, position.liquidityTier);
+): Promise<ProjectedPosition[]> {
+  const positions = await store.readSourcePositions(source.id);
+  return Promise.all(
+    positions.map(async (position) => {
+      const internalHoldingId = await assetIdForTier(
+        store,
+        source,
+        position.liquidityTier,
+      );
 
-    if (internalHoldingId === undefined) {
-      // A mirrored position whose rung has no projected holding is a sync /
-      // projection defect — fail closed (ADR 0023) rather than emit an empty ref.
-      throw new AgentViewHttpError({
-        code: "internal_error",
-        message: "Connected-source position has no projected holding.",
-        status: 500,
-      });
-    }
+      if (internalHoldingId === undefined) {
+        // A mirrored position whose rung has no projected holding is a sync /
+        // projection defect — fail closed (ADR 0023) rather than emit an empty ref.
+        throw new AgentViewHttpError({
+          code: "internal_error",
+          message: "Connected-source position has no projected holding.",
+          status: 500,
+        });
+      }
 
-    // Connected rung-assets are registered on connect/sync, so a missing public
-    // id is a registry/backfill defect — surface the same controlled 500 the rest
-    // of the agent view uses (requirePublicId), never a dishonest empty id.
-    const holdingPublicId = requirePublicId(holdingPublicIds, internalHoldingId);
-    const projectedHolding: AgentViewObjectReference = {
-      id: holdingPublicId,
-      label: source.label,
-      object: "holding",
-    };
-    const publicId = derivePositionPublicId(source.id, position.externalId);
-    return {
-      groupKey: `${holdingPublicId}|${position.liquidityTier}`,
-      liquidityTier: position.liquidityTier as AgentViewLiquidityTier,
-      position,
-      projectedHolding,
-      publicId,
-    };
-  });
+      // Connected rung-assets are registered on connect/sync, so a missing public
+      // id is a registry/backfill defect — surface the same controlled 500 the rest
+      // of the agent view uses (requirePublicId), never a dishonest empty id.
+      const holdingPublicId = requirePublicId(holdingPublicIds, internalHoldingId);
+      const projectedHolding: AgentViewObjectReference = {
+        id: holdingPublicId,
+        label: source.label,
+        object: "holding",
+      };
+      const publicId = derivePositionPublicId(source.id, position.externalId);
+      return {
+        groupKey: `${holdingPublicId}|${position.liquidityTier}`,
+        liquidityTier: position.liquidityTier as AgentViewLiquidityTier,
+        position,
+        projectedHolding,
+        publicId,
+      };
+    }),
+  );
 }
 
 /** Drop everything up to the cursor, slice the page, and derive the next cursor. */
@@ -315,13 +329,13 @@ function groupKeyOf(position: SourcePosition): string | null {
 }
 
 /** Resolve a `wl_src_` public id to the source it names, or `404` if unknown. */
-function resolveSource(
+async function resolveSource(
   store: AgentViewReadStore,
   publicSourceId: string,
-): AgentViewConnectedSource {
-  const source = store
-    .readConnectedSources()
-    .find((candidate) => deriveSourcePublicId(candidate.id) === publicSourceId);
+): Promise<AgentViewConnectedSource> {
+  const source = (await store.readConnectedSources()).find(
+    (candidate) => deriveSourcePublicId(candidate.id) === publicSourceId,
+  );
 
   if (!source) {
     throw unknownSource();
@@ -331,17 +345,25 @@ function resolveSource(
 }
 
 /** This source's asset id on a given rung (its projected holding for that rung). */
-function assetIdForTier(
+async function assetIdForTier(
   store: AgentViewReadStore,
   source: AgentViewConnectedSource,
   tier: string,
-): string | undefined {
-  return source.assetIds.find((assetId) => tierOfAsset(store, assetId) === tier);
+): Promise<string | undefined> {
+  for (const assetId of source.assetIds) {
+    if ((await tierOfAsset(store, assetId)) === tier) {
+      return assetId;
+    }
+  }
+  return undefined;
 }
 
 /** The liquidity rung of an asset, read from the live asset rows. */
-function tierOfAsset(store: AgentViewReadStore, assetId: string): string | undefined {
-  return store.readAssets().find((asset) => asset.id === assetId)?.liquidityTier;
+async function tierOfAsset(
+  store: AgentViewReadStore,
+  assetId: string,
+): Promise<string | undefined> {
+  return (await store.readAssets()).find((asset) => asset.id === assetId)?.liquidityTier;
 }
 
 /** Fold the read-port freshness into the contract summary, with the last sync. */

@@ -148,8 +148,8 @@ export default async function AnadirHoldingPage({
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
-  const storeData = await withStore((store) => {
-    const workspace = store.workspace.readWorkspace();
+  const storeData = await withStore(async (store) => {
+    const workspace = await store.workspace.readWorkspace();
 
     if (!workspace) {
       return null;
@@ -160,7 +160,7 @@ export default async function AnadirHoldingPage({
 
     return {
       activeMembers: workspace.members.filter((m) => !m.disabledAt),
-      assets: store.assets.readAssets().filter((a) => a.type !== "investment"),
+      assets: (await store.assets.readAssets()).filter((a) => a.type !== "investment"),
       scopes,
       selectedScope,
     };

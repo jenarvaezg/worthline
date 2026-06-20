@@ -12,8 +12,8 @@ import type { WorthlineStore } from "@db/index";
  * warning override, FIRE config, a snapshot with holdings, trashed holdings
  * (incl. a trashed investment), and price-cache entries.
  */
-function seedFullWorkspace(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seedFullWorkspace(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     groups: [{ id: "g1", memberIds: ["m1", "m2"], name: "Familia" }],
     members: [
       { id: "m1", name: "Alice" },
@@ -21,10 +21,10 @@ function seedFullWorkspace(store: WorthlineStore): void {
     ],
     mode: "household",
   });
-  store.workspace.createMember({ id: "m3", name: "Carol" });
-  store.workspace.disableMember("m3", "2026-01-15T00:00:00.000Z");
+  await store.workspace.createMember({ id: "m3", name: "Carol" });
+  await store.workspace.disableMember("m3", "2026-01-15T00:00:00.000Z");
 
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 500000,
     id: "a_cash",
@@ -33,7 +33,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
     ownership: [{ memberId: "m1", shareBps: 10000 }],
     type: "cash",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 30000000,
     id: "a_home",
@@ -46,7 +46,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
     ],
     type: "real_estate",
   });
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "a_inv",
     isin: "IE00BK5BQT80",
@@ -60,7 +60,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
     providerSymbol: "VWCE.DE",
     unitSymbol: "VWCE",
   });
-  store.operations.recordOperation({
+  await store.operations.recordOperation({
     assetId: "a_inv",
     currency: "EUR",
     executedAt: "2026-01-10T00:00:00.000Z",
@@ -71,7 +71,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
     units: "10",
   });
 
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     associatedAssetId: "a_home",
     balanceMinor: 12000000,
     currency: "EUR",
@@ -84,8 +84,8 @@ function seedFullWorkspace(store: WorthlineStore): void {
     type: "mortgage",
   });
 
-  store.acknowledgeWarning("primary_residence_owned", "a_home");
-  store.saveFireConfig("m1", {
+  await store.acknowledgeWarning("primary_residence_owned", "a_home");
+  await store.saveFireConfig("m1", {
     expectedRealReturn: 0.07,
     monthlySpendingMinor: 200000,
     safeWithdrawalRate: 0.04,
@@ -113,7 +113,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
     totalNetWorth: { amountMinor: 485500, currency: "EUR" },
     warnings: [],
   };
-  store.snapshots.saveSnapshot({
+  await store.snapshots.saveSnapshot({
     holdings: [
       {
         countsAsHousing: false,
@@ -151,7 +151,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
 
   // A trashed hand-valued asset, a trashed investment (metadata + operations
   // must survive in the export), and a trashed liability.
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 75000,
     id: "a_old",
@@ -160,16 +160,16 @@ function seedFullWorkspace(store: WorthlineStore): void {
     ownership: [{ memberId: "m2", shareBps: 10000 }],
     type: "manual",
   });
-  store.assets.softDeleteAsset("a_old", "2026-03-01T00:00:00.000Z");
+  await store.assets.softDeleteAsset("a_old", "2026-03-01T00:00:00.000Z");
 
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "a_inv2",
     name: "Cripto vieja",
     ownership: [{ memberId: "m1", shareBps: 10000 }],
     unitSymbol: "BTC",
   });
-  store.operations.recordOperation({
+  await store.operations.recordOperation({
     assetId: "a_inv2",
     currency: "EUR",
     executedAt: "2026-02-20T00:00:00.000Z",
@@ -178,9 +178,9 @@ function seedFullWorkspace(store: WorthlineStore): void {
     pricePerUnit: "50000",
     units: "0.1",
   });
-  store.assets.softDeleteAsset("a_inv2", "2026-04-01T00:00:00.000Z");
+  await store.assets.softDeleteAsset("a_inv2", "2026-04-01T00:00:00.000Z");
 
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     balanceMinor: 30000,
     currency: "EUR",
     id: "l_old",
@@ -188,9 +188,9 @@ function seedFullWorkspace(store: WorthlineStore): void {
     ownership: [{ memberId: "m1", shareBps: 10000 }],
     type: "debt",
   });
-  store.liabilities.softDeleteLiability("l_old", "2026-04-02T00:00:00.000Z");
+  await store.liabilities.softDeleteLiability("l_old", "2026-04-02T00:00:00.000Z");
 
-  store.operations.upsertPrice({
+  await store.operations.upsertPrice({
     assetId: "a_inv",
     currency: "EUR",
     fetchedAt: "2026-06-10T18:00:00.000Z",
@@ -199,7 +199,7 @@ function seedFullWorkspace(store: WorthlineStore): void {
     priceDate: "2026-06-10",
     source: "stooq",
   });
-  store.operations.upsertPrice({
+  await store.operations.upsertPrice({
     assetId: "a_inv2",
     currency: "EUR",
     fetchedAt: "2026-05-01T00:00:00.000Z",
@@ -211,11 +211,11 @@ function seedFullWorkspace(store: WorthlineStore): void {
 }
 
 describe("exportWorkspace", () => {
-  test("captures every section of the workspace", () => {
-    const store = createInMemoryStore();
-    seedFullWorkspace(store);
+  test("captures every section of the workspace", async () => {
+    const store = await createInMemoryStore();
+    await seedFullWorkspace(store);
 
-    const doc = store.workspace.exportWorkspace();
+    const doc = await store.workspace.exportWorkspace();
 
     expect(doc.version).toBe(EXPORT_VERSION);
     expect(doc.workspace).toEqual({ baseCurrency: "EUR", mode: "household" });
@@ -393,25 +393,25 @@ describe("exportWorkspace", () => {
     store.close();
   });
 
-  test("is read-only: no writes, stable across repeated exports", () => {
-    const store = createInMemoryStore();
-    seedFullWorkspace(store);
+  test("is read-only: no writes, stable across repeated exports", async () => {
+    const store = await createInMemoryStore();
+    await seedFullWorkspace(store);
 
-    const auditBefore = store.readAuditLog();
-    const assetsBefore = store.assets.readAssets();
-    const liabilitiesBefore = store.liabilities.readLiabilities();
-    const snapshotsBefore = store.snapshots.readSnapshots();
-    const pricesBefore = store.operations.readAllPriceCacheEntries();
+    const auditBefore = await store.readAuditLog();
+    const assetsBefore = await store.assets.readAssets();
+    const liabilitiesBefore = await store.liabilities.readLiabilities();
+    const snapshotsBefore = await store.snapshots.readSnapshots();
+    const pricesBefore = await store.operations.readAllPriceCacheEntries();
 
-    const first = store.workspace.exportWorkspace();
-    const second = store.workspace.exportWorkspace();
+    const first = await store.workspace.exportWorkspace();
+    const second = await store.workspace.exportWorkspace();
 
     expect(second).toEqual(first);
-    expect(store.readAuditLog()).toEqual(auditBefore);
-    expect(store.assets.readAssets()).toEqual(assetsBefore);
-    expect(store.liabilities.readLiabilities()).toEqual(liabilitiesBefore);
-    expect(store.snapshots.readSnapshots()).toEqual(snapshotsBefore);
-    expect(store.operations.readAllPriceCacheEntries()).toEqual(pricesBefore);
+    expect(await store.readAuditLog()).toEqual(auditBefore);
+    expect(await store.assets.readAssets()).toEqual(assetsBefore);
+    expect(await store.liabilities.readLiabilities()).toEqual(liabilitiesBefore);
+    expect(await store.snapshots.readSnapshots()).toEqual(snapshotsBefore);
+    expect(await store.operations.readAllPriceCacheEntries()).toEqual(pricesBefore);
 
     store.close();
   });
@@ -423,15 +423,15 @@ describe("exportWorkspace", () => {
  * amortized mortgage (amortization plan + an interest-rate revision + an early
  * repayment). This is the exact shape that the lossy v1 format silently flattened.
  */
-function seedStructuredWorkspace(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seedStructuredWorkspace(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [{ id: "m1", name: "Alice" }],
     mode: "individual",
   });
   const own = [{ memberId: "m1", shareBps: 10000 }];
 
   // Appreciating property.
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 30000000,
     id: "a_home",
@@ -441,15 +441,15 @@ function seedStructuredWorkspace(store: WorthlineStore): void {
     ownership: own,
     type: "real_estate",
   });
-  store.assets.setAnnualAppreciationRate("a_home", "0.03");
-  store.assets.addValuationAnchor({
+  await store.assets.setAnnualAppreciationRate("a_home", "0.03");
+  await store.assets.addValuationAnchor({
     adjustsPriorCurve: true,
     assetId: "a_home",
     id: "anchor1",
     valuationDate: "2024-01-01",
     valueMinor: 28000000,
   });
-  store.assets.addValuationAnchor({
+  await store.assets.addValuationAnchor({
     adjustsPriorCurve: false,
     assetId: "a_home",
     id: "anchor2",
@@ -458,7 +458,7 @@ function seedStructuredWorkspace(store: WorthlineStore): void {
   });
 
   // Amortized mortgage with a rate revision and an early repayment.
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     associatedAssetId: "a_home",
     balanceMinor: 12000000,
     currency: "EUR",
@@ -467,8 +467,8 @@ function seedStructuredWorkspace(store: WorthlineStore): void {
     ownership: own,
     type: "mortgage",
   });
-  store.liabilities.setDebtModel("l_mort", "amortizable");
-  store.liabilities.createAmortizationPlan({
+  await store.liabilities.setDebtModel("l_mort", "amortizable");
+  await store.liabilities.createAmortizationPlan({
     annualInterestRate: "0.025",
     id: "plan1",
     initialCapitalMinor: 15000000,
@@ -478,13 +478,13 @@ function seedStructuredWorkspace(store: WorthlineStore): void {
     firstPaymentDate: "2020-02-01",
     termMonths: 360,
   });
-  store.liabilities.addInterestRateRevision({
+  await store.liabilities.addInterestRateRevision({
     id: "rev1",
     newAnnualInterestRate: "0.031",
     planId: "plan1",
     revisionDate: "2023-01-01",
   });
-  store.liabilities.addEarlyRepayment({
+  await store.liabilities.addEarlyRepayment({
     amountMinor: 2000000,
     id: "rep1",
     mode: "reduce-term",
@@ -494,7 +494,7 @@ function seedStructuredWorkspace(store: WorthlineStore): void {
 
   // Revolving line of credit with two balance anchors on distinct dates.
   // This is the AC#1 element that was previously un-exercised in the round-trip.
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     balanceMinor: 500000,
     currency: "EUR",
     id: "l_revol",
@@ -502,14 +502,14 @@ function seedStructuredWorkspace(store: WorthlineStore): void {
     ownership: own,
     type: "debt",
   });
-  store.liabilities.setDebtModel("l_revol", "revolving");
-  store.liabilities.addBalanceAnchor({
+  await store.liabilities.setDebtModel("l_revol", "revolving");
+  await store.liabilities.addBalanceAnchor({
     anchorDate: "2023-06-01",
     balanceMinor: 800000,
     id: "banc1",
     liabilityId: "l_revol",
   });
-  store.liabilities.addBalanceAnchor({
+  await store.liabilities.addBalanceAnchor({
     anchorDate: "2024-06-01",
     balanceMinor: 600000,
     id: "banc2",
@@ -518,77 +518,81 @@ function seedStructuredWorkspace(store: WorthlineStore): void {
 }
 
 describe("full holding model round-trips through export/import (#155)", () => {
-  test("an appreciating property and an amortized debt survive export→import with curve and schedule intact (NOT flattened)", () => {
-    const source = createInMemoryStore();
-    seedStructuredWorkspace(source);
+  test("an appreciating property and an amortized debt survive export→import with curve and schedule intact (NOT flattened)", async () => {
+    const source = await createInMemoryStore();
+    await seedStructuredWorkspace(source);
 
     // Pre-export structure and derived history (the curve/schedule).
-    const homeRateBefore = source.assets.readAnnualAppreciationRate("a_home");
-    const anchorsBefore = source.assets.readValuationAnchors("a_home");
-    const debtModelBefore = source.liabilities.readDebtModel("l_mort");
-    const planBefore = source.liabilities.readAmortizationPlan("l_mort");
-    const revisionsBefore = source.liabilities.readInterestRateRevisions("plan1");
-    const repaymentsBefore = source.liabilities.readEarlyRepayments("plan1");
+    const homeRateBefore = await source.assets.readAnnualAppreciationRate("a_home");
+    const anchorsBefore = await source.assets.readValuationAnchors("a_home");
+    const debtModelBefore = await source.liabilities.readDebtModel("l_mort");
+    const planBefore = await source.liabilities.readAmortizationPlan("l_mort");
+    const revisionsBefore = await source.liabilities.readInterestRateRevisions("plan1");
+    const repaymentsBefore = await source.liabilities.readEarlyRepayments("plan1");
 
     // Two sampling dates exercise both the housing curve and the loan schedule.
-    const homeValueBefore = source.assets.valueHousingAtDate(
+    const homeValueBefore = await source.assets.valueHousingAtDate(
       "a_home",
       "2025-01-01",
       "2026-06-14",
     );
-    const debtBalanceBefore = source.liabilities.debtBalanceAtDate(
+    const debtBalanceBefore = await source.liabilities.debtBalanceAtDate(
       "l_mort",
       "2025-01-01",
     );
     // Gap 4 fix: sample just BEFORE and just AFTER the 2024-07-01 early repayment.
     // The repayment reduces principal by ~2 000 000 — a dropped repayment would
     // make both samples equal (no step), so asserting the drop proves survival.
-    const debtJustBeforeRepayment = source.liabilities.debtBalanceAtDate(
+    const debtJustBeforeRepayment = await source.liabilities.debtBalanceAtDate(
       "l_mort",
       "2024-06-30",
     );
-    const debtJustAfterRepayment = source.liabilities.debtBalanceAtDate(
+    const debtJustAfterRepayment = await source.liabilities.debtBalanceAtDate(
       "l_mort",
       "2024-07-02",
     );
     // Sanity: the repayment must produce a visible drop before we rely on it.
     expect(debtJustBeforeRepayment).toBeGreaterThan(debtJustAfterRepayment);
 
-    const doc = source.workspace.exportWorkspace();
+    const doc = await source.workspace.exportWorkspace();
 
     // Import into a fresh store — the real full-replace path.
-    const restored = createInMemoryStore();
-    restored.workspace.importWorkspace(doc);
+    const restored = await createInMemoryStore();
+    await restored.workspace.importWorkspace(doc);
 
     // Structure restored faithfully.
-    expect(restored.assets.readAnnualAppreciationRate("a_home")).toEqual(homeRateBefore);
-    expect(restored.assets.readValuationAnchors("a_home")).toEqual(anchorsBefore);
-    expect(restored.liabilities.readDebtModel("l_mort")).toEqual(debtModelBefore);
-    expect(restored.liabilities.readAmortizationPlan("l_mort")).toEqual(planBefore);
-    expect(restored.liabilities.readInterestRateRevisions("plan1")).toEqual(
+    expect(await restored.assets.readAnnualAppreciationRate("a_home")).toEqual(
+      homeRateBefore,
+    );
+    expect(await restored.assets.readValuationAnchors("a_home")).toEqual(anchorsBefore);
+    expect(await restored.liabilities.readDebtModel("l_mort")).toEqual(debtModelBefore);
+    expect(await restored.liabilities.readAmortizationPlan("l_mort")).toEqual(planBefore);
+    expect(await restored.liabilities.readInterestRateRevisions("plan1")).toEqual(
       revisionsBefore,
     );
-    expect(restored.liabilities.readEarlyRepayments("plan1")).toEqual(repaymentsBefore);
+    expect(await restored.liabilities.readEarlyRepayments("plan1")).toEqual(
+      repaymentsBefore,
+    );
 
     // History matches pre-export — the curve/schedule is intact, NOT flattened.
-    expect(restored.assets.valueHousingAtDate("a_home", "2025-01-01", "2026-06-14")).toBe(
-      homeValueBefore,
-    );
-    expect(restored.liabilities.debtBalanceAtDate("l_mort", "2025-01-01")).toBe(
+    expect(
+      await restored.assets.valueHousingAtDate("a_home", "2025-01-01", "2026-06-14"),
+    ).toBe(homeValueBefore);
+    expect(await restored.liabilities.debtBalanceAtDate("l_mort", "2025-01-01")).toBe(
       debtBalanceBefore,
     );
     // The repayment step is preserved: the before/after drop must match source.
     // A dropped early repayment would collapse this to zero difference.
-    expect(restored.liabilities.debtBalanceAtDate("l_mort", "2024-06-30")).toBe(
+    expect(await restored.liabilities.debtBalanceAtDate("l_mort", "2024-06-30")).toBe(
       debtJustBeforeRepayment,
     );
-    expect(restored.liabilities.debtBalanceAtDate("l_mort", "2024-07-02")).toBe(
+    expect(await restored.liabilities.debtBalanceAtDate("l_mort", "2024-07-02")).toBe(
       debtJustAfterRepayment,
     );
 
     // The flat-line regression guard: a structured debt's balance on a past date
     // must NOT equal its stored current balance (that is exactly the v1 bug).
-    expect(restored.liabilities.debtBalanceAtDate("l_mort", "2025-01-01")).not.toBe(
+    expect(await restored.liabilities.debtBalanceAtDate("l_mort", "2025-01-01")).not.toBe(
       12000000,
     );
 
@@ -596,36 +600,38 @@ describe("full holding model round-trips through export/import (#155)", () => {
     restored.close();
   });
 
-  test("a revolving debt with balance anchors survives export→import with anchored curve intact (AC#1 balance-anchor round-trip)", () => {
-    const source = createInMemoryStore();
-    seedStructuredWorkspace(source);
+  test("a revolving debt with balance anchors survives export→import with anchored curve intact (AC#1 balance-anchor round-trip)", async () => {
+    const source = await createInMemoryStore();
+    await seedStructuredWorkspace(source);
 
     // Pre-export balance anchors and derived curve.
-    const anchorsBefore = source.liabilities.readBalanceAnchors("l_revol");
-    const debtModelBefore = source.liabilities.readDebtModel("l_revol");
+    const anchorsBefore = await source.liabilities.readBalanceAnchors("l_revol");
+    const debtModelBefore = await source.liabilities.readDebtModel("l_revol");
 
     // Sample a date between the two anchors — the interpolated/stepped value
     // must survive round-trip. Using the anchor store means a dropped insert
     // causes the balance to fall back to the stored currentBalance (500000).
-    const balanceBetweenAnchorsBefore = source.liabilities.debtBalanceAtDate(
+    const balanceBetweenAnchorsBefore = await source.liabilities.debtBalanceAtDate(
       "l_revol",
       "2024-01-01",
     );
     // Must differ from stored currentBalance to prove the anchor curve is live.
     expect(balanceBetweenAnchorsBefore).not.toBe(500000);
 
-    const doc = source.workspace.exportWorkspace();
+    const doc = await source.workspace.exportWorkspace();
 
     // Import into a fresh store.
-    const restored = createInMemoryStore();
-    restored.workspace.importWorkspace(doc);
+    const restored = await createInMemoryStore();
+    await restored.workspace.importWorkspace(doc);
 
     // Anchors restored faithfully (rows identical, incl. ids).
-    expect(restored.liabilities.readBalanceAnchors("l_revol")).toEqual(anchorsBefore);
-    expect(restored.liabilities.readDebtModel("l_revol")).toEqual(debtModelBefore);
+    expect(await restored.liabilities.readBalanceAnchors("l_revol")).toEqual(
+      anchorsBefore,
+    );
+    expect(await restored.liabilities.readDebtModel("l_revol")).toEqual(debtModelBefore);
 
     // The interpolated curve matches pre-export — not flattened to currentBalance.
-    expect(restored.liabilities.debtBalanceAtDate("l_revol", "2024-01-01")).toBe(
+    expect(await restored.liabilities.debtBalanceAtDate("l_revol", "2024-01-01")).toBe(
       balanceBetweenAnchorsBefore,
     );
 
@@ -633,15 +639,15 @@ describe("full holding model round-trips through export/import (#155)", () => {
     restored.close();
   });
 
-  test("re-exporting after import reproduces the same structured document (idempotent)", () => {
-    const source = createInMemoryStore();
-    seedStructuredWorkspace(source);
+  test("re-exporting after import reproduces the same structured document (idempotent)", async () => {
+    const source = await createInMemoryStore();
+    await seedStructuredWorkspace(source);
 
-    const doc = source.workspace.exportWorkspace();
-    const restored = createInMemoryStore();
-    restored.workspace.importWorkspace(doc);
+    const doc = await source.workspace.exportWorkspace();
+    const restored = await createInMemoryStore();
+    await restored.workspace.importWorkspace(doc);
 
-    expect(restored.workspace.exportWorkspace()).toEqual(doc);
+    expect(await restored.workspace.exportWorkspace()).toEqual(doc);
 
     source.close();
     restored.close();
@@ -649,14 +655,14 @@ describe("full holding model round-trips through export/import (#155)", () => {
 });
 
 describe("instrument round-trips through export/import (#149)", () => {
-  test("export carries each holding's instrument and import restores it", () => {
-    const store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
+  test("export carries each holding's instrument and import restores it", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
       members: [{ id: "m1", name: "Alice" }],
       mode: "individual",
     });
     const own = [{ memberId: "m1", shareBps: 10000 }];
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 30000000,
       id: "a_home",
@@ -666,7 +672,7 @@ describe("instrument round-trips through export/import (#149)", () => {
       ownership: own,
       type: "real_estate",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 200000,
       id: "a_cash",
@@ -675,7 +681,7 @@ describe("instrument round-trips through export/import (#149)", () => {
       ownership: own,
       type: "cash",
     });
-    store.liabilities.createLiability({
+    await store.liabilities.createLiability({
       associatedAssetId: "a_home",
       balanceMinor: 10000000,
       currency: "EUR",
@@ -684,7 +690,7 @@ describe("instrument round-trips through export/import (#149)", () => {
       ownership: own,
       type: "mortgage",
     });
-    store.liabilities.createLiability({
+    await store.liabilities.createLiability({
       balanceMinor: 5000,
       currency: "EUR",
       id: "l_card",
@@ -693,7 +699,7 @@ describe("instrument round-trips through export/import (#149)", () => {
       type: "debt",
     });
 
-    const doc = store.workspace.exportWorkspace();
+    const doc = await store.workspace.exportWorkspace();
     const assetInstrument = (id: string) =>
       doc.assets.find((a) => a.id === id)?.instrument;
     const liabilityInstrument = (id: string) =>
@@ -705,9 +711,9 @@ describe("instrument round-trips through export/import (#149)", () => {
     expect(liabilityInstrument("l_card")).toBe("loan");
 
     // Import into a fresh store and re-export: the instruments survive intact.
-    const restored = createInMemoryStore();
-    restored.workspace.importWorkspace(doc);
-    const doc2 = restored.workspace.exportWorkspace();
+    const restored = await createInMemoryStore();
+    await restored.workspace.importWorkspace(doc);
+    const doc2 = await restored.workspace.exportWorkspace();
 
     expect(doc2.assets.find((a) => a.id === "a_home")?.instrument).toBe("property");
     expect(doc2.assets.find((a) => a.id === "a_cash")?.instrument).toBe(
@@ -721,9 +727,9 @@ describe("instrument round-trips through export/import (#149)", () => {
 });
 
 describe("countsAsHousing round-trips through export/import (#181)", () => {
-  test("a housing asset's frozen countsAsHousing survives export→import (not reset to false)", () => {
-    const store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
+  test("a housing asset's frozen countsAsHousing survives export→import (not reset to false)", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
       members: [{ id: "m1", name: "Alice" }],
       mode: "individual",
     });
@@ -746,7 +752,7 @@ describe("countsAsHousing round-trips through export/import (#181)", () => {
       totalNetWorth: { amountMinor: 30000000, currency: "EUR" },
       warnings: [],
     };
-    store.snapshots.saveSnapshot({
+    await store.snapshots.saveSnapshot({
       holdings: [
         {
           countsAsHousing: true,
@@ -762,14 +768,14 @@ describe("countsAsHousing round-trips through export/import (#181)", () => {
     });
 
     // Export must carry the frozen flag (it was dropped before the export-read fix).
-    const doc = store.workspace.exportWorkspace();
+    const doc = await store.workspace.exportWorkspace();
     expect(doc.snapshots[0]!.holdings[0]!.countsAsHousing).toBe(true);
 
     // A fresh import must persist it (it was reset to the column default before the
     // import-insert fix), so a re-export of the restored store still shows it true.
-    const restored = createInMemoryStore();
-    restored.workspace.importWorkspace(doc);
-    const reDoc = restored.workspace.exportWorkspace();
+    const restored = await createInMemoryStore();
+    await restored.workspace.importWorkspace(doc);
+    const reDoc = await restored.workspace.exportWorkspace();
     expect(reDoc.snapshots[0]!.holdings[0]!.countsAsHousing).toBe(true);
 
     store.close();
