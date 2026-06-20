@@ -1,9 +1,10 @@
 /**
  * familia persona (PRD #297) — a two-member household: a primary residence with
- * an amortizable mortgage, shared ownership splits, a car on the illiquid rung,
- * cash + a term deposit + a modest market investment, and a configured FIRE
- * target. It exercises every rung of the liquidity ladder and the scope axis, so
- * it is the cold-visit default. All figures are fictional and deterministic.
+ * an amortizable mortgage, early repayments, shared ownership splits, a car loan,
+ * a car on the illiquid rung, cash buffers, term-locked savings, a market
+ * portfolio with contributions and one sale, and a configured FIRE target. It
+ * exercises every rung of the liquidity ladder, debt modelling, and the scope
+ * axis, so it is the cold-visit default. All figures are fictional.
  */
 import type { OperationSpec, PersonaSpec } from "@web/demo/spec-types";
 
@@ -16,13 +17,20 @@ const HALF = [
 ];
 
 /** A monthly ladder of buys over `count` months, oldest first — a moving curve. */
-function monthlyBuys(assetId: string, count: number, basePrice: number): OperationSpec[] {
+function monthlyBuys(
+  assetId: string,
+  count: number,
+  units: string,
+  basePrice: number,
+  step = 1,
+): OperationSpec[] {
   return Array.from({ length: count }, (_, i) => ({
     at: { monthsAgo: count - i },
     id: `${assetId}_op_${i}`,
     kind: "buy" as const,
-    pricePerUnit: (basePrice + i).toString(),
-    units: "2",
+    pricePerUnit: (basePrice + i * step).toFixed(2),
+    units,
+    feesMinor: 100,
   }));
 }
 
@@ -40,23 +48,31 @@ export const FAMILIA_SPEC: PersonaSpec = {
       name: "Cuenta corriente conjunta",
       ownership: HALF,
       type: "cash",
-      valueMinor: 38_000_00,
+      valueMinor: 9_800_00,
     },
     {
       id: "asset_familia_savings",
       liquidityTier: "cash",
-      name: "Ahorro de Marta",
-      ownership: [{ memberId: MARTA, shareBps: 10_000 }],
+      name: "Fondo de emergencia",
+      ownership: HALF,
       type: "cash",
-      valueMinor: 14_500_00,
+      valueMinor: 24_000_00,
     },
     {
       id: "asset_familia_deposit",
       liquidityTier: "term-locked",
-      name: "Depósito a plazo",
+      name: "Depósito a 12 meses",
       ownership: HALF,
       type: "cash",
-      valueMinor: 20_000_00,
+      valueMinor: 18_000_00,
+    },
+    {
+      id: "asset_familia_children",
+      liquidityTier: "term-locked",
+      name: "Ahorro estudios peques",
+      ownership: HALF,
+      type: "cash",
+      valueMinor: 7_200_00,
     },
     {
       id: "asset_familia_car",
@@ -64,41 +80,58 @@ export const FAMILIA_SPEC: PersonaSpec = {
       name: "Coche familiar",
       ownership: [{ memberId: DIEGO, shareBps: 10_000 }],
       type: "manual",
-      valueMinor: 16_500_00,
+      valueMinor: 13_800_00,
     },
   ],
   investments: [
     {
       id: "asset_familia_etf",
-      manualPricePerUnit: "118.40",
-      name: "Fondo indexado global",
-      operations: monthlyBuys("asset_familia_etf", 24, 90),
+      manualPricePerUnit: "137.20",
+      name: "Cartera indexada familiar",
+      operations: [
+        ...monthlyBuys("asset_familia_etf", 42, "3", 92, 0.85),
+        {
+          at: { monthsAgo: 10 },
+          id: "asset_familia_etf_rebalance_0",
+          kind: "sell",
+          pricePerUnit: "124.80",
+          units: "12",
+          feesMinor: 180,
+        },
+      ],
       ownership: HALF,
-      unitSymbol: "IDX",
+      unitSymbol: "WLDFAM",
     },
   ],
   housing: [
     {
-      acquisition: { at: { yearsAgo: 3 }, valueMinor: 285_000_00 },
-      annualAppreciationRate: "0.03",
+      acquisition: { at: { yearsAgo: 5 }, valueMinor: 310_000_00 },
+      annualAppreciationRate: "0.032",
       id: "asset_familia_home",
       improvements: [
-        { at: { monthsAgo: 14 }, id: "asset_familia_home_reno", valueMinor: 9_000_00 },
+        { at: { monthsAgo: 26 }, id: "asset_familia_home_reno", valueMinor: 11_500_00 },
+        { at: { monthsAgo: 7 }, id: "asset_familia_home_solar", valueMinor: 8_400_00 },
       ],
       isPrimaryResidence: true,
       mortgage: {
-        annualInterestRate: "0.024",
-        disbursement: { monthsAgo: 36 },
+        annualInterestRate: "0.027",
+        disbursement: { monthsAgo: 60 },
         earlyRepayments: [
           {
-            amountMinor: 8_000_00,
-            at: { monthsAgo: 12 },
-            id: "repayment_familia_mortgage",
+            amountMinor: 6_000_00,
+            at: { monthsAgo: 18 },
+            id: "repayment_familia_mortgage_bonus",
+            mode: "reduce-payment",
+          },
+          {
+            amountMinor: 4_500_00,
+            at: { monthsAgo: 4 },
+            id: "repayment_familia_mortgage_term",
             mode: "reduce-term",
           },
         ],
-        firstPayment: { monthsAgo: 35 },
-        initialCapitalMinor: 220_000_00,
+        firstPayment: { monthsAgo: 59 },
+        initialCapitalMinor: 248_000_00,
         liabilityId: "liability_familia_mortgage",
         name: "Hipoteca vivienda",
         ownership: HALF,
@@ -109,13 +142,39 @@ export const FAMILIA_SPEC: PersonaSpec = {
       ownership: HALF,
     },
   ],
+  liabilities: [
+    {
+      balanceAnchors: [
+        {
+          at: { monthsAgo: 18 },
+          balanceMinor: 11_400_00,
+          id: "liability_familia_car_anchor_0",
+        },
+        {
+          at: { monthsAgo: 6 },
+          balanceMinor: 8_200_00,
+          id: "liability_familia_car_anchor_1",
+        },
+        {
+          at: { monthsAgo: 1 },
+          balanceMinor: 7_200_00,
+          id: "liability_familia_car_anchor_2",
+        },
+      ],
+      balanceMinor: 7_200_00,
+      id: "liability_familia_car",
+      model: "informal",
+      name: "Préstamo coche",
+      ownership: [{ memberId: DIEGO, shareBps: 10_000 }],
+    },
+  ],
   fire: [
     {
       config: {
-        currentAge: 38,
-        excludedAssetIds: ["asset_familia_home"],
-        expectedRealReturn: 0.05,
-        monthlySpendingMinor: 2_800_00,
+        currentAge: 39,
+        excludedAssetIds: ["asset_familia_home", "asset_familia_car"],
+        expectedRealReturn: 0.045,
+        monthlySpendingMinor: 3_150_00,
         safeWithdrawalRate: 0.04,
         targetRetirementAge: 60,
       },

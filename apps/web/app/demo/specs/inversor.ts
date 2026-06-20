@@ -1,9 +1,9 @@
 /**
- * inversor persona (PRD #297) — a markets-heavy investor: funds, shares and
- * crypto on the market rung built from ~2 years of operations, a term-locked
- * pension, a frozen connected source (a Numista precious-metals collection), and
- * a configured FIRE target with strong progress. All figures fictional and
- * deterministic.
+ * inversor persona (PRD #297) — a markets-heavy investor: funds and shares built
+ * from multi-year operations, partial sells, cash reserved for taxes, a
+ * term-locked pension, a frozen Numista collection, a Binance mirror with spot
+ * and earn balances, and a configured FIRE target with strong progress. All
+ * figures are fictional.
  */
 import type { OperationSpec, PersonaSpec } from "@web/demo/spec-types";
 
@@ -16,13 +16,15 @@ function monthlyBuys(
   count: number,
   units: string,
   basePrice: number,
+  step = 1,
 ): OperationSpec[] {
   return Array.from({ length: count }, (_, i) => ({
     at: { monthsAgo: count - i },
     id: `${assetId}_op_${i}`,
     kind: "buy" as const,
-    pricePerUnit: (basePrice + i).toString(),
+    pricePerUnit: (basePrice + i * step).toFixed(2),
     units,
+    feesMinor: 120,
   }));
 }
 
@@ -37,7 +39,15 @@ export const INVERSOR_SPEC: PersonaSpec = {
       name: "Liquidez del broker",
       ownership: FULL,
       type: "cash",
-      valueMinor: 12_000_00,
+      valueMinor: 18_500_00,
+    },
+    {
+      id: "asset_inversor_tax_reserve",
+      liquidityTier: "cash",
+      name: "Reserva fiscal plusvalías",
+      ownership: FULL,
+      type: "cash",
+      valueMinor: 13_800_00,
     },
     {
       id: "asset_inversor_pension",
@@ -45,36 +55,116 @@ export const INVERSOR_SPEC: PersonaSpec = {
       name: "Plan de pensiones",
       ownership: FULL,
       type: "cash",
-      valueMinor: 60_000_00,
+      valueMinor: 85_000_00,
+    },
+    {
+      id: "asset_inversor_crowdlending",
+      liquidityTier: "term-locked",
+      name: "Crowdlending inmobiliario",
+      ownership: FULL,
+      type: "manual",
+      valueMinor: 22_500_00,
     },
   ],
   investments: [
     {
       id: "asset_inversor_world",
-      manualPricePerUnit: "108.50",
+      manualPricePerUnit: "118.75",
       name: "ETF MSCI World",
-      operations: monthlyBuys("asset_inversor_world", 24, "4", 70),
+      operations: [
+        ...monthlyBuys("asset_inversor_world", 48, "5", 62, 0.95),
+        {
+          at: { monthsAgo: 9 },
+          id: "asset_inversor_world_tax_harvest",
+          kind: "sell",
+          pricePerUnit: "103.20",
+          units: "20",
+          feesMinor: 250,
+        },
+      ],
       ownership: FULL,
       unitSymbol: "WRLD",
     },
     {
+      id: "asset_inversor_emerging",
+      manualPricePerUnit: "52.60",
+      name: "ETF emergentes",
+      operations: monthlyBuys("asset_inversor_emerging", 36, "6", 38, 0.35),
+      ownership: FULL,
+      unitSymbol: "EMRG",
+    },
+    {
       id: "asset_inversor_tech",
-      manualPricePerUnit: "240.00",
-      name: "Acción tecnológica",
-      operations: monthlyBuys("asset_inversor_tech", 24, "2", 150),
+      manualPricePerUnit: "244.00",
+      name: "Acción tecnológica concentrada",
+      operations: [
+        ...monthlyBuys("asset_inversor_tech", 30, "1.5", 148, 2.7),
+        {
+          at: { monthsAgo: 5 },
+          id: "asset_inversor_tech_trim",
+          kind: "sell",
+          pricePerUnit: "231.50",
+          units: "8",
+          feesMinor: 200,
+        },
+      ],
       ownership: FULL,
       unitSymbol: "TECH",
     },
-    {
-      id: "asset_inversor_crypto",
-      manualPricePerUnit: "52000.00",
-      name: "Bitcoin",
-      operations: monthlyBuys("asset_inversor_crypto", 24, "0.01", 30000),
-      ownership: FULL,
-      unitSymbol: "BTC",
-    },
   ],
   connectedSources: [
+    {
+      adapter: "binance",
+      label: "Binance · spot y earn",
+      ownership: FULL,
+      syncedAt: { daysAgo: 1 },
+      positions: [
+        {
+          kind: "token",
+          externalId: "BTC:spot",
+          name: "Bitcoin",
+          symbol: "BTC",
+          balance: "0.32",
+          wallet: "spot",
+          liquidityTier: "market",
+          unitPrice: "62000",
+          currency: "EUR",
+        },
+        {
+          kind: "token",
+          externalId: "ETH:spot",
+          name: "Ethereum",
+          symbol: "ETH",
+          balance: "3.5",
+          wallet: "spot",
+          liquidityTier: "market",
+          unitPrice: "3400",
+          currency: "EUR",
+        },
+        {
+          kind: "token",
+          externalId: "SOL:spot",
+          name: "Solana",
+          symbol: "SOL",
+          balance: "80",
+          wallet: "spot",
+          liquidityTier: "market",
+          unitPrice: "145",
+          currency: "EUR",
+        },
+        {
+          kind: "token",
+          externalId: "ETH:earn",
+          name: "Ethereum bloqueado",
+          symbol: "ETH",
+          balance: "1.2",
+          wallet: "earn",
+          liquidityTier: "term-locked",
+          unitPrice: "3400",
+          currency: "EUR",
+        },
+      ],
+    },
     {
       adapter: "numista",
       label: "Colección de monedas",
@@ -96,8 +186,8 @@ export const INVERSOR_SPEC: PersonaSpec = {
           finenessMillis: 917,
           weightGrams: 7.99,
           purchaseDate: "2023-04-12",
-          metalValueMinor: null,
-          numismaticValueMinor: 45_000,
+          metalValueMinor: 52_000,
+          numismaticValueMinor: 61_000,
           numismaticFetchedAt: null,
           purchasePriceMinor: 38_000,
           obverseThumbUrl: null,
@@ -117,7 +207,7 @@ export const INVERSOR_SPEC: PersonaSpec = {
           finenessMillis: 916,
           weightGrams: 3.39,
           purchaseDate: "2024-01-20",
-          metalValueMinor: null,
+          metalValueMinor: 22_500,
           numismaticValueMinor: 24_000,
           numismaticFetchedAt: null,
           purchasePriceMinor: 21_000,
@@ -138,7 +228,7 @@ export const INVERSOR_SPEC: PersonaSpec = {
           finenessMillis: 999,
           weightGrams: 31.1,
           purchaseDate: "2024-06-02",
-          metalValueMinor: null,
+          metalValueMinor: 9_600,
           numismaticValueMinor: 3_200,
           numismaticFetchedAt: null,
           purchasePriceMinor: 2_900,
@@ -150,9 +240,9 @@ export const INVERSOR_SPEC: PersonaSpec = {
   fire: [
     {
       config: {
-        currentAge: 41,
+        currentAge: 42,
         expectedRealReturn: 0.05,
-        monthlySpendingMinor: 1_500_00,
+        monthlySpendingMinor: 2_200_00,
         safeWithdrawalRate: 0.04,
         targetRetirementAge: 55,
       },

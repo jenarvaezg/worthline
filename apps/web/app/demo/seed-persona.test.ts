@@ -94,6 +94,16 @@ describe("seedPersona — familia", () => {
     store.close();
   });
 
+  it("includes a non-mortgage anchored debt story", () => {
+    const store = createInMemoryStore();
+    seedPersona(store, FAMILIA_SPEC, AS_OF);
+
+    expect(store.liabilities.readDebtModel("liability_familia_car")).toBe("informal");
+    expect(store.liabilities.readBalanceAnchors("liability_familia_car")).toHaveLength(3);
+
+    store.close();
+  });
+
   it("generates a multi-month history via the ripple engine", async () => {
     const store = createInMemoryStore();
     seedPersona(store, FAMILIA_SPEC, AS_OF);
