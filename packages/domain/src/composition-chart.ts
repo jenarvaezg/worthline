@@ -429,22 +429,25 @@ function toPointsString(xs: number[], ys: number[]): string {
 }
 
 /** Fraction of a period's slot a bar fills — the rest is the inter-bar gutter. */
-const BAR_WIDTH_RATIO = 0.6;
+const BAR_WIDTH_RATIO = 0.78;
 
 /**
- * The bar width shared by every period: `BAR_WIDTH_RATIO` of the smallest gap
- * between adjacent x-centres (so the densest pair never overlaps). With a single
- * gap (two periods) the slot is just that gap; a sensible floor keeps a bar
- * visible even when periods crowd at one edge.
+ * The bar width shared by every period: `BAR_WIDTH_RATIO` of the TYPICAL
+ * (median) gap between adjacent x-centres. Using the median — not the smallest —
+ * gap keeps bars full and even: one crowded pair (e.g. the open period sitting
+ * right next to the last monthly close) no longer starves every bar down to the
+ * floor, which was the "anaemic comb" look. A sensible floor keeps a bar visible.
  */
 function barWidthFor(xs: number[]): number {
-  let minGap = Infinity;
+  const gaps: number[] = [];
   for (let i = 1; i < xs.length; i += 1) {
     const gap = xs[i]! - xs[i - 1]!;
-    if (gap > 0 && gap < minGap) minGap = gap;
+    if (gap > 0) gaps.push(gap);
   }
-  if (!Number.isFinite(minGap)) minGap = COMPOSITION_CHART_WIDTH;
-  return Math.max(2, minGap * BAR_WIDTH_RATIO);
+  if (gaps.length === 0) return COMPOSITION_CHART_WIDTH * BAR_WIDTH_RATIO;
+  gaps.sort((a, b) => a - b);
+  const median = gaps[Math.floor((gaps.length - 1) / 2)]!;
+  return Math.max(2, median * BAR_WIDTH_RATIO);
 }
 
 /**

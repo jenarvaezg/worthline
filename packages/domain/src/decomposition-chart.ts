@@ -81,22 +81,24 @@ function toPointsString(xs: number[], ys: number[]): string {
 }
 
 /** Fraction of a period's slot a bar fills — the rest is the inter-bar gutter. */
-const BAR_WIDTH_RATIO = 0.6;
+const BAR_WIDTH_RATIO = 0.78;
 
 /**
- * The bar width shared by every period: `BAR_WIDTH_RATIO` of the smallest gap
- * between adjacent x-centres (so the densest pair never overlaps), floored so a
- * bar stays visible even when periods crowd at one edge. Mirrors the main
- * composition chart's `barWidthFor` (#142).
+ * The bar width shared by every period: `BAR_WIDTH_RATIO` of the TYPICAL
+ * (median) gap between adjacent x-centres — not the smallest, so one crowded
+ * pair never starves every bar down to the floor (the "anaemic comb"). Mirrors
+ * the main composition chart's `barWidthFor` (#142).
  */
 function barWidthFor(xs: number[], width: number): number {
-  let minGap = Infinity;
+  const gaps: number[] = [];
   for (let i = 1; i < xs.length; i += 1) {
     const gap = xs[i]! - xs[i - 1]!;
-    if (gap > 0 && gap < minGap) minGap = gap;
+    if (gap > 0) gaps.push(gap);
   }
-  if (!Number.isFinite(minGap)) minGap = width;
-  return Math.max(2, minGap * BAR_WIDTH_RATIO);
+  if (gaps.length === 0) return width * BAR_WIDTH_RATIO;
+  gaps.sort((a, b) => a - b);
+  const median = gaps[Math.floor((gaps.length - 1) / 2)]!;
+  return Math.max(2, median * BAR_WIDTH_RATIO);
 }
 
 /**

@@ -390,12 +390,16 @@ function tierGroupSelect(
 }
 
 /**
- * Selects the frozen rows of the housing group: rows whose effective rung is
- * `housing` (ADR 0022) — every property instrument, plus a legacy house frozen
- * `illiquid` with `countsAsHousing` true.
+ * Selects the frozen rows of the housing group: ASSET rows whose effective rung
+ * is `housing` (ADR 0022) — every property instrument, plus a legacy house
+ * frozen `illiquid` with `countsAsHousing` true. Housing-securing mortgages are
+ * deliberately EXCLUDED: a mortgage is a debt and belongs in the debts drill,
+ * not under "Vivienda · Propiedades". (The Vivienda band is shown net of its
+ * mortgage in the main chart, but the drill lists the properties themselves; the
+ * securing debt is reachable from the debts drill.)
  */
 function housingSelect(): (row: DrillGroupRow) => boolean {
-  return (row) => effectiveRung(row) === "housing";
+  return (row) => row.kind !== "liability" && effectiveRung(row) === "housing";
 }
 
 /**

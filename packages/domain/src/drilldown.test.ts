@@ -671,7 +671,7 @@ describe("buildHousingDrilldown — single-tier group (#77, ADR 0022)", () => {
     expect(state.holdings.map((h) => h.holdingId)).toEqual(["a_piso"]);
   });
 
-  test("defensive: a pre-migration mortgage (frozen illiquid, securesHousing=true) lands in housing drill alongside its house", () => {
+  test("a pre-migration mortgage (frozen illiquid, securesHousing=true) is EXCLUDED from the housing drill — it lives in the debts drill", () => {
     // Legacy capture: v28 migration had not run yet, so both rows are frozen with
     // liquidityTier='illiquid'. The house carries countsAsHousing=true; the mortgage
     // carries securesHousing=true. effectiveRung must resolve both to "housing" so the
@@ -737,11 +737,16 @@ describe("buildHousingDrilldown — single-tier group (#77, ADR 0022)", () => {
       rows,
     });
 
-    // Both house and mortgage land in housing drill
-    expect(housingState.holdings.map((h) => h.holdingId).sort()).toEqual(
-      ["a_piso", "l_hipoteca"].sort(),
-    );
-    // Mortgage does NOT appear in rest
+    // The house lands in the housing drill; the mortgage does NOT — a mortgage is
+    // a debt and belongs in the debts drill, not under "Vivienda · Propiedades".
+    expect(housingState.holdings.map((h) => h.holdingId)).toEqual(["a_piso"]);
+    // The mortgage shows up in the debts drill instead (nothing is lost).
+    const debtsState = buildDebtsDrilldown({
+      currentHoldingIds: ["l_hipoteca"],
+      rows,
+    });
+    expect(debtsState.holdings.map((h) => h.holdingId)).toContain("l_hipoteca");
+    // Mortgage does NOT appear in rest either
     expect(restState.holdings.map((h) => h.holdingId)).not.toContain("l_hipoteca");
     // Only art in rest
     expect(restState.holdings.map((h) => h.holdingId)).toContain("a_art");
