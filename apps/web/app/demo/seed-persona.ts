@@ -13,6 +13,7 @@
  */
 import type { WorthlineStore } from "@worthline/db";
 import type { CurrencyCode } from "@worthline/domain";
+import { valueHousingAtDate } from "@worthline/domain";
 
 import type {
   ConnectedSourceSpec,
@@ -115,6 +116,28 @@ function seedMortgage(
 function seedHousing(store: WorthlineStore, housing: HousingSpec, asOf: string): void {
   const currency = housing.currency ?? DEFAULT_CURRENCY;
   const acquisitionDate = resolveRelativeDate(asOf, housing.acquisition.at);
+  const improvementAnchors = (housing.improvements ?? []).map((improvement) => ({
+    ...improvement,
+    valuationDate: resolveRelativeDate(asOf, improvement.at),
+  }));
+  const currentValueMinor = valueHousingAtDate({
+    anchors: [
+      {
+        adjustsPriorCurve: true,
+        valuationDate: acquisitionDate,
+        valueMinor: housing.acquisition.valueMinor,
+      },
+      ...improvementAnchors.map((improvement) => ({
+        adjustsPriorCurve: false,
+        valuationDate: improvement.valuationDate,
+        valueMinor: improvement.valueMinor,
+      })),
+    ],
+    annualAppreciationRate: housing.annualAppreciationRate ?? null,
+    currentValueMinor: housing.acquisition.valueMinor,
+    targetDate: asOf,
+    today: asOf,
+  });
 
   store.createHousingHoldingAndRipple(
     {
@@ -128,7 +151,7 @@ function seedHousing(store: WorthlineStore, housing: HousingSpec, asOf: string):
       annualAppreciationRate: housing.annualAppreciationRate ?? null,
       asset: {
         currency,
-        currentValueMinor: housing.acquisition.valueMinor,
+        currentValueMinor,
         id: housing.id,
         isPrimaryResidence: housing.isPrimaryResidence ?? false,
         liquidityTier: housing.liquidityTier ?? "housing",
@@ -140,13 +163,13 @@ function seedHousing(store: WorthlineStore, housing: HousingSpec, asOf: string):
     { today: asOf },
   );
 
-  for (const improvement of housing.improvements ?? []) {
+  for (const improvement of improvementAnchors) {
     store.addValuationAnchorAndRipple(
       {
         adjustsPriorCurve: false,
         assetId: housing.id,
         id: improvement.id,
-        valuationDate: resolveRelativeDate(asOf, improvement.at),
+        valuationDate: improvement.valuationDate,
         valueMinor: improvement.valueMinor,
       },
       { today: asOf },
