@@ -17,6 +17,7 @@
 import type { Instrument, LiquidityTier } from "./classification";
 import { instrumentOfAsset, rungForLiability, tierOfAsset } from "./classification";
 import { defaultInstrumentForLiability } from "./instrument-catalog";
+import { LIQUIDITY_TIER_LABELS } from "./liquidity-ladder";
 import type { MoneyMinor } from "./money";
 import type { PriceSource } from "./prices";
 import { money } from "./money";
@@ -32,16 +33,8 @@ import type {
 
 // ── Tier label translation ───────────────────────────────────────────────────
 
-const TIER_LABELS: Record<LiquidityTier, string> = {
-  cash: "Caja",
-  housing: "Vivienda",
-  illiquid: "Ilíquido",
-  market: "Mercado",
-  "term-locked": "A plazo",
-};
-
 function tierLabel(tier: LiquidityTier): string {
-  return TIER_LABELS[tier];
+  return LIQUIDITY_TIER_LABELS[tier];
 }
 
 // ── Ownership summary attached to every row ──────────────────────────────────

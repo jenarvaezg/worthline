@@ -1,6 +1,7 @@
 import Big from "big.js";
 
 import type { DecimalString } from "./decimal";
+import { daysBetween } from "./dates";
 
 /**
  * Pure French-amortization (cuota fija) balance curve (PRD #109, slice 7). No
@@ -100,15 +101,6 @@ export interface AmortizableBalanceAtDateInput {
   earlyRepayments?: readonly EarlyRepayment[];
   /** The date to value the outstanding balance on, YYYY-MM-DD. */
   targetDate: string;
-}
-
-const MS_PER_DAY = 86_400_000;
-
-/** Whole days from `from` to `to` (UTC midnights), signed. */
-function daysBetween(from: string, to: string): number {
-  const fromMs = Date.parse(`${from}T00:00:00.000Z`);
-  const toMs = Date.parse(`${to}T00:00:00.000Z`);
-  return Math.round((toMs - fromMs) / MS_PER_DAY);
 }
 
 /** Last calendar day of the given year/month (1-based month). */

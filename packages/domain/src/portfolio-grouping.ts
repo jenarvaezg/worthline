@@ -10,8 +10,7 @@
  */
 
 import type { Instrument } from "./instrument-catalog";
-import type { LiquidityTier } from "./liquidity-ladder";
-import { LIQUIDITY_LADDER } from "./liquidity-ladder";
+import { LIQUIDITY_LADDER, LIQUIDITY_TIER_LABELS } from "./liquidity-ladder";
 import type { MoneyMinor } from "./money";
 import type {
   PortfolioProjection,
@@ -54,14 +53,6 @@ export interface PortfolioGroup {
 }
 
 // ── Labels ───────────────────────────────────────────────────────────────────
-
-const RUNG_LABELS: Record<LiquidityTier, string> = {
-  cash: "Caja",
-  housing: "Vivienda",
-  illiquid: "Ilíquido",
-  market: "Mercado",
-  "term-locked": "A plazo",
-};
 
 /** Spanish instrument labels for the instrument grouping headers (#154). */
 const INSTRUMENT_LABELS: Record<Instrument, string> = {
@@ -139,7 +130,7 @@ export function groupPortfolio(
     return LIQUIDITY_LADDER.map((rung) => {
       const inRung = holdings.filter((h) => h.tier === rung);
       return inRung.length > 0
-        ? makeGroup(rung, RUNG_LABELS[rung], inRung, currency)
+        ? makeGroup(rung, LIQUIDITY_TIER_LABELS[rung], inRung, currency)
         : null;
     }).filter((g): g is PortfolioGroup => g !== null);
   }

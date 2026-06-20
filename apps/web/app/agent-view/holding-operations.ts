@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import type { AgentViewReadStore } from "@worthline/db";
 import { multiplyToMinor } from "@worthline/domain";
 import type { InvestmentOperation } from "@worthline/domain";
@@ -12,6 +10,7 @@ import {
   type AgentViewOperationSort,
 } from "./contract";
 import { compareDateId, decodeCursor, dropAfterCursor, encodeCursor } from "./cursor";
+import { derivePublicId } from "./derived-id";
 import { resolveInternalHoldingId } from "./scope-resolution";
 
 export const DEFAULT_OPERATION_LIMIT = 100;
@@ -139,11 +138,7 @@ function dateKey(operation: InvestmentOperation): string {
  * read derives it without mutating state. Mirrors `deriveSnapshotPublicId`.
  */
 export function deriveOperationPublicId(internalOperationId: string): string {
-  const digest = createHash("sha256")
-    .update(internalOperationId)
-    .digest("hex")
-    .slice(0, 32);
-  return `wl_op_${digest}`;
+  return derivePublicId("op", internalOperationId);
 }
 
 function moneyOf(amountMinor: number, currency: string): AgentViewMoney {

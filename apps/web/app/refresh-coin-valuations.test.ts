@@ -56,7 +56,7 @@ function position(): CoinPosition {
 function deps(overrides: Record<string, unknown> = {}) {
   return {
     nowIso: NOW,
-    sources: [{ sourceId: "src-1", assetId: "coin-asset", freshness: freshness() }],
+    sources: [{ sourceId: "src-1", freshness: freshness() }],
     readPositions: vi.fn(() => [position()]),
     revalue: vi.fn(async () => [
       {
@@ -78,7 +78,6 @@ describe("refreshStaleCoinValuations", () => {
       sources: [
         {
           sourceId: "src-1",
-          assetId: "coin-asset",
           freshness: freshness({ fetchedAt: twoDaysAgo }),
         },
       ] satisfies CoinSourceRef[],
@@ -104,9 +103,7 @@ describe("refreshStaleCoinValuations", () => {
 
   it("treats a never-valued source (no freshness row) as stale", async () => {
     const d = deps({
-      sources: [
-        { sourceId: "src-1", assetId: "coin-asset", freshness: null },
-      ] satisfies CoinSourceRef[],
+      sources: [{ sourceId: "src-1", freshness: null }] satisfies CoinSourceRef[],
     });
 
     await refreshStaleCoinValuations(d);
@@ -129,7 +126,6 @@ describe("refreshStaleCoinValuations", () => {
       sources: [
         {
           sourceId: "src-1",
-          assetId: "coin-asset",
           freshness: freshness({ fetchedAt: twoDaysAgo }),
         },
       ] satisfies CoinSourceRef[],

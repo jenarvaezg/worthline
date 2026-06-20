@@ -24,7 +24,7 @@ export {
   securesHousingAsset,
   tierOfAsset,
 } from "./classification";
-export { LIQUIDITY_LADDER } from "./liquidity-ladder";
+export { LIQUIDITY_LADDER, LIQUIDITY_TIER_LABELS } from "./liquidity-ladder";
 export type {
   HoldingValuation,
   HoldingValuationInput,
@@ -187,6 +187,7 @@ export type {
 export {
   defaultInvestmentPriceProvider,
   getPriceFreshness,
+  isPriceStale,
   PRICE_TTL_DAYS,
   selectStalePrices,
 } from "./prices";
@@ -317,6 +318,8 @@ export {
 
 export type { DebtBalanceAnchor, DebtBalanceAtDateInput } from "./debt-balance";
 export { debtBalanceAtDate } from "./debt-balance";
+
+export { daysBetween, MS_PER_DAY } from "./dates";
 
 export type { DashboardState, LocalPersistenceStatus, OnboardingStep } from "./dashboard";
 export {

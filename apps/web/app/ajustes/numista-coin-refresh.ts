@@ -36,7 +36,6 @@ export async function runNumistaCoinRefresh(
     .filter((source) => source.adapter === "numista")
     .map((source) => ({
       sourceId: source.id,
-      assetId: source.assetId,
       freshness: store.operations.readPriceCache(source.assetId),
     }));
 

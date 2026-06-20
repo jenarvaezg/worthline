@@ -8,7 +8,7 @@
  */
 import { describe, expect, test } from "vitest";
 
-import { binanceAdapter, rungForWallet } from "./binance";
+import { binanceAdapter } from "./binance";
 import type { SyncContext, HistoryContext } from "./types";
 import type { BinanceCreds } from "./binance";
 
@@ -122,23 +122,6 @@ describe("binanceAdapter.classifyRung — wallet → rung (the relocated rungFor
         currency: "EUR",
       }),
     ).toBe("market");
-  });
-});
-
-describe("rungForWallet — the relocated wallet→rung map (ADR 0016, S3)", () => {
-  test("spot, funding and flexible-earn are market-liquid", () => {
-    expect(rungForWallet("spot")).toBe("market");
-    expect(rungForWallet("funding")).toBe("market");
-    expect(rungForWallet("flexible-earn")).toBe("market");
-  });
-
-  test("locked-earn and staking are term-locked", () => {
-    expect(rungForWallet("locked-earn")).toBe("term-locked");
-    expect(rungForWallet("staking")).toBe("term-locked");
-  });
-
-  test("an unforeseen wallet defaults to market (most conservative claim)", () => {
-    expect(rungForWallet("mystery")).toBe("market");
   });
 });
 

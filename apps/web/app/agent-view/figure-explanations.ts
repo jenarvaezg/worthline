@@ -215,9 +215,9 @@ function buildHistoricalFigureExplanation(
       return historicalLiquidityBreakdown(facts);
     case "holding_value":
       return historicalHoldingValue(store, facts, options.holdingId);
-    case "fire_eligible_assets":
-    case "fire_progress":
-      // Already handled above; unreachable, but keeps the switch exhaustive.
+    default:
+      // Only the FIRE figures fall through here, and they already threw 422
+      // above; this default keeps the switch exhaustive without a dead arm.
       throw new AgentViewHttpError({
         code: "unprocessable_entity",
         details: { figure: options.figure, reason: "unsupported_historical_fire" },

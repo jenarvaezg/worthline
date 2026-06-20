@@ -47,9 +47,7 @@ function draft(): TokenPositionDraft {
 function deps(overrides: Record<string, unknown> = {}) {
   return {
     nowIso: NOW,
-    sources: [
-      { sourceId: "src-1", assetId: "binance-asset", freshness: freshness() },
-    ] satisfies BinanceSourceRef[],
+    sources: [{ sourceId: "src-1", freshness: freshness() }] satisfies BinanceSourceRef[],
     reSync: vi.fn(async () => [draft()]),
     persistFresh: vi.fn(),
     persistStale: vi.fn(),
@@ -63,7 +61,6 @@ describe("refreshStaleBinanceSources", () => {
       sources: [
         {
           sourceId: "src-1",
-          assetId: "binance-asset",
           freshness: freshness({ fetchedAt: TWO_DAYS_AGO }),
         },
       ] satisfies BinanceSourceRef[],
@@ -80,9 +77,7 @@ describe("refreshStaleBinanceSources", () => {
 
   it("treats a never-valued source (no freshness row) as stale", async () => {
     const d = deps({
-      sources: [
-        { sourceId: "src-1", assetId: "binance-asset", freshness: null },
-      ] satisfies BinanceSourceRef[],
+      sources: [{ sourceId: "src-1", freshness: null }] satisfies BinanceSourceRef[],
     });
 
     await refreshStaleBinanceSources(d);
@@ -106,7 +101,6 @@ describe("refreshStaleBinanceSources", () => {
       sources: [
         {
           sourceId: "src-1",
-          assetId: "binance-asset",
           freshness: freshness({ fetchedAt: TWO_DAYS_AGO }),
         },
       ] satisfies BinanceSourceRef[],
@@ -130,9 +124,7 @@ describe("refreshStaleBinanceSources", () => {
 
   it("passes a null prior fetched-at to persistStale when a never-valued source errors", async () => {
     const d = deps({
-      sources: [
-        { sourceId: "src-1", assetId: "binance-asset", freshness: null },
-      ] satisfies BinanceSourceRef[],
+      sources: [{ sourceId: "src-1", freshness: null }] satisfies BinanceSourceRef[],
       reSync: vi.fn(async () => {
         throw new Error("Binance unreachable");
       }),
@@ -150,7 +142,6 @@ describe("refreshStaleBinanceSources", () => {
       sources: [
         {
           sourceId: "src-1",
-          assetId: "binance-asset",
           freshness: freshness({ fetchedAt: TWO_DAYS_AGO }),
         },
       ] satisfies BinanceSourceRef[],
