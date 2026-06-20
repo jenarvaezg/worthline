@@ -40,17 +40,17 @@ interface ResolvedFire {
  * `unconfigured` state — never fabricated figures. Current-only: the caller is
  * responsible for rejecting historical requests before this point.
  */
-function resolveFire(
+async function resolveFire(
   store: AgentViewReadStore,
   publicScopeId: string,
-): { scope: AgentViewScope; fire: ResolvedFire } {
-  const workspace = store.readWorkspace();
+): Promise<{ scope: AgentViewScope; fire: ResolvedFire }> {
+  const workspace = await store.readWorkspace();
 
   if (!workspace) {
     throw unknownScope();
   }
 
-  const scope = listAgentViewScopes(store).find(
+  const scope = (await listAgentViewScopes(store)).find(
     (candidate) => candidate.id === publicScopeId,
   );
 
@@ -58,7 +58,7 @@ function resolveFire(
     throw unknownScope();
   }
 
-  const internalScopeId = resolveInternalScopeId(store, publicScopeId);
+  const internalScopeId = await resolveInternalScopeId(store, publicScopeId);
   const scopeOption = listScopeOptions(workspace).find(
     (option) => option.id === internalScopeId,
   );
@@ -71,11 +71,16 @@ function resolveFire(
     });
   }
 
-  const config = store.readFireConfig()[internalScopeId];
+  const config = (await store.readFireConfig())[internalScopeId];
   const result =
     config === undefined
       ? undefined
-      : calculateFireForScope(config, store.readAssets(), workspace, internalScopeId);
+      : calculateFireForScope(
+          config,
+          await store.readAssets(),
+          workspace,
+          internalScopeId,
+        );
 
   return {
     fire: { config, currency: workspace.baseCurrency, result },
@@ -89,11 +94,11 @@ function resolveFire(
  * reason, the assumptions, and — when unconfigured — a `missing_configuration`
  * quality signal. Reads only; never writes FIRE settings (ADR 0023).
  */
-export function buildFireContext(
+export async function buildFireContext(
   store: AgentViewReadStore,
   options: BuildFireContextOptions,
-): AgentViewFireContext {
-  const { scope, fire } = resolveFire(store, options.scopeId);
+): Promise<AgentViewFireContext> {
+  const { scope, fire } = await resolveFire(store, options.scopeId);
 
   if (fire.config === undefined || fire.result === undefined) {
     return {
@@ -118,7 +123,7 @@ export function buildFireContext(
     assumptions,
     config: toConfig(config, fire.currency),
     eligibleAssetsTotal: money(result.eligibleAssets),
-    excludedAssets: toExcludedAssets(store, result),
+    excludedAssets: await toExcludedAssets(store, result),
     qualitySignals: [],
     result: toResult(result),
     scope,
@@ -131,11 +136,11 @@ export function buildFireContext(
  * #340): status-only when unconfigured, otherwise the headline figures plus a
  * compact assumptions block. Reuses the same resolution as the full endpoint.
  */
-export function buildFireSummary(
+export async function buildFireSummary(
   store: AgentViewReadStore,
   publicScopeId: string,
-): AgentViewFireSummary {
-  const { fire } = resolveFire(store, publicScopeId);
+): Promise<AgentViewFireSummary> {
+  const { fire } = await resolveFire(store, publicScopeId);
 
   if (fire.config === undefined || fire.result === undefined) {
     return { status: "unconfigured" };
@@ -192,11 +197,11 @@ function toResult(result: FireResult): AgentViewFireResult {
   };
 }
 
-function toExcludedAssets(
+async function toExcludedAssets(
   store: AgentViewReadStore,
   result: FireResult,
-): AgentViewFireExcludedAsset[] {
-  const holdingPublicIds = publicIdMap(store.readPublicIds(), "holding");
+): Promise<AgentViewFireExcludedAsset[]> {
+  const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
 
   return result.excludedAssets.map((excluded) => ({
     holding: {

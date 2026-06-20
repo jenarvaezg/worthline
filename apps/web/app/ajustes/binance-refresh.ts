@@ -31,13 +31,15 @@ export async function runBinanceRefresh(
   store: WorthlineStore,
   nowIso: string,
 ): Promise<RefreshBinanceSourcesResult> {
-  const sources: BinanceSourceRef[] = store.connectedSources
-    .listSources()
-    .filter((source) => source.adapter === "binance")
-    .map((source) => ({
+  const binanceSources = (await store.connectedSources.listSources()).filter(
+    (source) => source.adapter === "binance",
+  );
+  const sources: BinanceSourceRef[] = await Promise.all(
+    binanceSources.map(async (source) => ({
       sourceId: source.id,
-      freshness: store.operations.readPriceCache(source.assetId),
-    }));
+      freshness: await store.operations.readPriceCache(source.assetId),
+    })),
+  );
 
   if (sources.length === 0) {
     return { errors: [] };
@@ -47,7 +49,7 @@ export async function runBinanceRefresh(
     nowIso,
     sources,
     reSync: async (sourceId) => {
-      const source = store.connectedSources.readSource(sourceId);
+      const source = await store.connectedSources.readSource(sourceId);
       const creds = source
         ? binanceAdapter.readCredentials(source.credentialsJson)
         : null;
@@ -61,9 +63,9 @@ export async function runBinanceRefresh(
         priceEur: (id) => fetchCoinGeckoPriceEur(id, nowIso),
       });
     },
-    persistFresh: (sourceId, drafts) => {
-      store.syncConnectedSource({ sourceId, positions: drafts, syncedAt: nowIso });
-      store.connectedSources.revaluePositions(sourceId, [], {
+    persistFresh: async (sourceId, drafts) => {
+      await store.syncConnectedSource({ sourceId, positions: drafts, syncedAt: nowIso });
+      await store.connectedSources.revaluePositions(sourceId, [], {
         fetchedAt: nowIso,
         freshnessState: "fresh",
       });

@@ -16,12 +16,12 @@ import type { WorthlineStore } from "@db/index";
 
 const TODAY = "2026-06-12";
 
-function seed(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seed(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jose" }],
     mode: "individual",
   });
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "fund",
     liquidityTier: "market",
@@ -30,17 +30,20 @@ function seed(store: WorthlineStore): void {
   });
 }
 
-function grossAt(store: WorthlineStore, dateKey: string): number | undefined {
-  return store.snapshots.readSnapshots().find((snap) => snap.dateKey === dateKey)
+async function grossAt(
+  store: WorthlineStore,
+  dateKey: string,
+): Promise<number | undefined> {
+  return (await store.snapshots.readSnapshots()).find((snap) => snap.dateKey === dateKey)
     ?.grossAssets.amountMinor;
 }
 
 describe("recordOperationAndRipple (operation seam, ADR 0020)", () => {
-  test("one call persists the operation AND generates the snapshot at its date", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("one call persists the operation AND generates the snapshot at its date", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
-    store.recordOperationAndRipple(
+    await store.recordOperationAndRipple(
       {
         assetId: "fund",
         currency: "EUR",
@@ -55,18 +58,18 @@ describe("recordOperationAndRipple (operation seam, ADR 0020)", () => {
     );
 
     // The persist happened: the operation row exists.
-    expect(store.operations.readOperations("fund")).toHaveLength(1);
+    expect(await store.operations.readOperations("fund")).toHaveLength(1);
     // The ripple happened: a snapshot was generated at the backdated date.
     // 10 units × 100 EUR = 1000.00, 100% owned by the only scope.
-    expect(grossAt(store, "2024-01-10")).toBe(1_000_00);
+    expect(await grossAt(store, "2024-01-10")).toBe(1_000_00);
     store.close();
   });
 
-  test("a backdated operation ripples a later existing snapshot", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("a backdated operation ripples a later existing snapshot", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
-    store.recordOperationAndRipple(
+    await store.recordOperationAndRipple(
       {
         assetId: "fund",
         currency: "EUR",
@@ -79,11 +82,11 @@ describe("recordOperationAndRipple (operation seam, ADR 0020)", () => {
       },
       { today: TODAY },
     );
-    expect(grossAt(store, "2024-03-01")).toBe(5 * 200_00);
+    expect(await grossAt(store, "2024-03-01")).toBe(5 * 200_00);
 
     // A backdated buy generates its own snapshot AND ripples 2024-03-01 (now 15
     // units, cost basis 10×100 + 5×200 = 2000.00, #183).
-    store.recordOperationAndRipple(
+    await store.recordOperationAndRipple(
       {
         assetId: "fund",
         currency: "EUR",
@@ -97,19 +100,19 @@ describe("recordOperationAndRipple (operation seam, ADR 0020)", () => {
       { today: TODAY },
     );
 
-    expect(store.operations.readOperations("fund")).toHaveLength(2);
-    expect(grossAt(store, "2024-01-10")).toBe(10 * 100_00);
-    expect(grossAt(store, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00);
+    expect(await store.operations.readOperations("fund")).toHaveLength(2);
+    expect(await grossAt(store, "2024-01-10")).toBe(10 * 100_00);
+    expect(await grossAt(store, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00);
     store.close();
   });
 });
 
 describe("recordOperationsAndRipple (batched statement seam, ADR 0020)", () => {
-  test("one call records many backdated operations AND ripples once", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("one call records many backdated operations AND ripples once", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
     // A cash asset keeps every snapshot non-empty and confirms the ripple ran.
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 1_000_00,
       id: "cash",
@@ -119,7 +122,7 @@ describe("recordOperationsAndRipple (batched statement seam, ADR 0020)", () => {
       type: "cash",
     });
 
-    store.recordOperationsAndRipple({
+    await store.recordOperationsAndRipple({
       assetId: "fund",
       creates: [
         {
@@ -148,19 +151,19 @@ describe("recordOperationsAndRipple (batched statement seam, ADR 0020)", () => {
     });
 
     // Both operations persisted in the single call.
-    expect(store.operations.readOperations("fund")).toHaveLength(2);
+    expect(await store.operations.readOperations("fund")).toHaveLength(2);
     // Both backdated dates rippled: each snapshot folds the fund + cash.
-    expect(grossAt(store, "2024-01-10")).toBe(10 * 100_00 + 1_000_00);
-    expect(grossAt(store, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00 + 1_000_00);
+    expect(await grossAt(store, "2024-01-10")).toBe(10 * 100_00 + 1_000_00);
+    expect(await grossAt(store, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00 + 1_000_00);
     store.close();
   });
 
-  test("overwriting an operation in the batch re-ripples its date", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("overwriting an operation in the batch re-ripples its date", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
     // Seed an operation through the seam, then overwrite it via the batch.
-    store.recordOperationAndRipple(
+    await store.recordOperationAndRipple(
       {
         assetId: "fund",
         currency: "EUR",
@@ -173,10 +176,10 @@ describe("recordOperationsAndRipple (batched statement seam, ADR 0020)", () => {
       },
       { today: TODAY },
     );
-    expect(grossAt(store, "2024-01-10")).toBe(10 * 100_00);
+    expect(await grossAt(store, "2024-01-10")).toBe(10 * 100_00);
 
     // The file wins: same operation, now 20 units at 100.
-    store.recordOperationsAndRipple({
+    await store.recordOperationsAndRipple({
       assetId: "fund",
       creates: [],
       overwrites: [
@@ -193,17 +196,17 @@ describe("recordOperationsAndRipple (batched statement seam, ADR 0020)", () => {
     });
 
     // Still one operation; its snapshot re-rippled to the overwritten value.
-    expect(store.operations.readOperations("fund")).toHaveLength(1);
-    expect(grossAt(store, "2024-01-10")).toBe(20 * 100_00);
+    expect(await store.operations.readOperations("fund")).toHaveLength(1);
+    expect(await grossAt(store, "2024-01-10")).toBe(20 * 100_00);
     store.close();
   });
 });
 
 describe("deleteOperationAndRipple (operation seam, ADR 0020)", () => {
-  test("one call removes the operation AND ripples snapshots from its date", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    store.assets.createManualAsset({
+  test("one call removes the operation AND ripples snapshots from its date", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 1_000_00,
       id: "cash",
@@ -213,7 +216,7 @@ describe("deleteOperationAndRipple (operation seam, ADR 0020)", () => {
       type: "cash",
     });
 
-    store.recordOperationAndRipple(
+    await store.recordOperationAndRipple(
       {
         assetId: "fund",
         currency: "EUR",
@@ -226,7 +229,7 @@ describe("deleteOperationAndRipple (operation seam, ADR 0020)", () => {
       },
       { today: TODAY },
     );
-    store.recordOperationAndRipple(
+    await store.recordOperationAndRipple(
       {
         assetId: "fund",
         currency: "EUR",
@@ -239,29 +242,29 @@ describe("deleteOperationAndRipple (operation seam, ADR 0020)", () => {
       },
       { today: TODAY },
     );
-    expect(grossAt(store, "2024-01-10")).toBe(10 * 100_00 + 1_000_00);
+    expect(await grossAt(store, "2024-01-10")).toBe(10 * 100_00 + 1_000_00);
 
-    const deleted = store.deleteOperationAndRipple({
+    const deleted = await store.deleteOperationAndRipple({
       operationId: "op_jan",
       today: TODAY,
     });
 
     // The persist (delete) happened.
     expect(deleted).not.toBeNull();
-    expect(store.operations.readOperations("fund")).toHaveLength(1);
+    expect(await store.operations.readOperations("fund")).toHaveLength(1);
     // The ripple happened: 2024-01-10 was a backfilled snapshot justified ONLY by
     // op_jan, so deleting it prunes the now-orphaned snapshot (#305) rather than
     // leaving a cash-only fossil. 2024-03-01 (still justified by op_mar) survives.
-    expect(grossAt(store, "2024-01-10")).toBeUndefined();
-    expect(grossAt(store, "2024-03-01")).toBe(5 * 200_00 + 1_000_00);
+    expect(await grossAt(store, "2024-01-10")).toBeUndefined();
+    expect(await grossAt(store, "2024-03-01")).toBe(5 * 200_00 + 1_000_00);
     store.close();
   });
 
-  test("returns null when the operation is unknown", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("returns null when the operation is unknown", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
-    const deleted = store.deleteOperationAndRipple({
+    const deleted = await store.deleteOperationAndRipple({
       operationId: "missing",
       today: TODAY,
     });

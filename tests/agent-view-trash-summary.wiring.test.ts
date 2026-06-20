@@ -84,24 +84,26 @@ async function holdings(scopeId: string, query = ""): Promise<TrashHolding[]> {
 
 // A fingerprint of every mutation-prone read to prove a trash-summary read writes
 // nothing — no restore, no hard-delete, no audit row, no public-id creation.
-function fingerprint(databasePath: string): string {
-  const store = createWorthlineStore({ databasePath });
-  const sources = store.connectedSources.listSources();
+async function fingerprint(databasePath: string): Promise<string> {
+  const store = await createWorthlineStore({ databasePath });
+  const sources = await store.connectedSources.listSources();
   const snapshot = JSON.stringify({
-    assets: store.assets.readAssets(),
-    auditLog: store.readAuditLog(),
-    fireConfig: store.readFireConfig(),
-    liabilities: store.liabilities.readLiabilities(),
-    positions: sources.map((source) => ({
-      positions: store.connectedSources.readPositions(source.id),
-      sourceId: source.id,
-    })),
-    priceCache: store.operations.readAllPriceCacheEntries(),
-    publicIds: store.agentView.readPublicIds(),
-    snapshots: store.snapshots.readSnapshots("household"),
+    assets: await store.assets.readAssets(),
+    auditLog: await store.readAuditLog(),
+    fireConfig: await store.readFireConfig(),
+    liabilities: await store.liabilities.readLiabilities(),
+    positions: await Promise.all(
+      sources.map(async (source) => ({
+        positions: await store.connectedSources.readPositions(source.id),
+        sourceId: source.id,
+      })),
+    ),
+    priceCache: await store.operations.readAllPriceCacheEntries(),
+    publicIds: await store.agentView.readPublicIds(),
+    snapshots: await store.snapshots.readSnapshots("household"),
     sources,
-    trash: store.readTrash(),
-    warningOverrides: store.readWarningOverrides(),
+    trash: await store.readTrash(),
+    warningOverrides: await store.readWarningOverrides(),
   });
   store.close();
   return snapshot;
@@ -139,20 +141,20 @@ const routeClient: AgentViewApiClient = {
  * assert trash is ABSENT from the main context but PRESENT in the trash summary,
  * with a stable deletedDate-desc / id-desc order and cursor pagination.
  */
-function seedTrash(prefix = "worthline-agent-view-trash-"): string {
+async function seedTrash(prefix = "worthline-agent-view-trash-"): Promise<string> {
   const databasePath = tempDatabasePath(prefix);
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = createWorthlineStore({ databasePath });
-  store.workspace.initializeWorkspace({
+  const store = await createWorthlineStore({ databasePath });
+  await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
   });
   const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
 
   // Live holdings that must stay in the main context.
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 10_000_00,
     id: "asset_live",
@@ -162,7 +164,7 @@ function seedTrash(prefix = "worthline-agent-view-trash-"): string {
     ownership: owner,
     type: "manual",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 5_000_00,
     id: "asset_live_cash",
@@ -174,7 +176,7 @@ function seedTrash(prefix = "worthline-agent-view-trash-"): string {
   });
 
   // Trashed assets, soft-deleted at different dates.
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 2_000_00,
     id: "asset_trash_old",
@@ -184,7 +186,7 @@ function seedTrash(prefix = "worthline-agent-view-trash-"): string {
     ownership: owner,
     type: "investment",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 3_500_00,
     id: "asset_trash_new",
@@ -196,7 +198,7 @@ function seedTrash(prefix = "worthline-agent-view-trash-"): string {
   });
 
   // A trashed liability.
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     currency: "EUR",
     currentValueMinor: 150_000_00,
     id: "asset_home",
@@ -207,7 +209,7 @@ function seedTrash(prefix = "worthline-agent-view-trash-"): string {
     ownership: owner,
     type: "real_estate",
   });
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     associatedAssetId: "asset_home",
     balanceMinor: 40_000_00,
     currency: "EUR",
@@ -219,9 +221,9 @@ function seedTrash(prefix = "worthline-agent-view-trash-"): string {
 
   // Soft-delete the three trashed holdings at distinct dates so the
   // deletedDate-desc ordering is deterministic.
-  store.assets.softDeleteAsset("asset_trash_old", "2026-01-10T08:00:00.000Z");
-  store.liabilities.softDeleteLiability("liab_trash", "2026-03-15T08:00:00.000Z");
-  store.assets.softDeleteAsset("asset_trash_new", "2026-05-20T08:00:00.000Z");
+  await store.assets.softDeleteAsset("asset_trash_old", "2026-01-10T08:00:00.000Z");
+  await store.liabilities.softDeleteLiability("liab_trash", "2026-03-15T08:00:00.000Z");
+  await store.assets.softDeleteAsset("asset_trash_new", "2026-05-20T08:00:00.000Z");
 
   store.close();
   return databasePath;
@@ -229,7 +231,7 @@ function seedTrash(prefix = "worthline-agent-view-trash-"): string {
 
 describe("GET /api/v1/agent-view/scopes/{scopeId}/trash-summary", () => {
   test("excludes trashed holdings from the main financial context", async () => {
-    seedTrash();
+    await seedTrash();
     const scopeId = await householdScopeId();
 
     const { body } = await financialContext(scopeId, "?holdingLimit=100");
@@ -264,7 +266,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/trash-summary", () => {
   });
 
   test("returns the trashed holdings with the full contract shape", async () => {
-    seedTrash();
+    await seedTrash();
     const scopeId = await householdScopeId();
 
     const all = await holdings(scopeId, "?limit=500");
@@ -289,7 +291,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/trash-summary", () => {
   });
 
   test("orders by deleted date desc, then public holding id desc", async () => {
-    seedTrash();
+    await seedTrash();
     const scopeId = await householdScopeId();
 
     const all = await holdings(scopeId, "?limit=500");
@@ -314,7 +316,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/trash-summary", () => {
   });
 
   test("paginates with stable cursors, walking every trashed holding exactly once", async () => {
-    seedTrash();
+    await seedTrash();
     const scopeId = await householdScopeId();
 
     const all = await holdings(scopeId, "?limit=500");
@@ -341,7 +343,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/trash-summary", () => {
   });
 
   test("rejects an unknown param / bad limit with 400 and clamps over-max", async () => {
-    seedTrash();
+    await seedTrash();
     const scopeId = await householdScopeId();
 
     expect((await trashSummary(scopeId, "?nope=1")).response.status).toBe(400);
@@ -357,14 +359,14 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/trash-summary", () => {
   });
 
   test("returns 404 for an unknown scope id", async () => {
-    seedTrash();
+    await seedTrash();
     const { body, response } = await trashSummary("wl_scp_doesnotexist");
     expect(response.status).toBe(404);
     expect(body.error.code).toBe("not_found");
   });
 
   test("requires the local capability token", async () => {
-    seedTrash();
+    await seedTrash();
     const scopeId = await householdScopeId();
 
     const response = await getTrashSummary(
@@ -379,20 +381,20 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/trash-summary", () => {
   });
 
   test("reads do not mutate persisted state (no restore / hard-delete / audit)", async () => {
-    const databasePath = seedTrash("worthline-agent-view-trash-nomut-");
+    const databasePath = await seedTrash("worthline-agent-view-trash-nomut-");
     const scopeId = await householdScopeId();
 
-    const before = fingerprint(databasePath);
+    const before = await fingerprint(databasePath);
     await trashSummary(scopeId, "?limit=500");
     await trashSummary(scopeId, "?limit=1");
     await financialContext(scopeId);
-    const after = fingerprint(databasePath);
+    const after = await fingerprint(databasePath);
 
     expect(after).toBe(before);
   });
 
   test("MCP get_trash_summary mirrors the HTTP shape and defaults to the household scope", async () => {
-    seedTrash();
+    await seedTrash();
     const household = await householdScopeId();
     const httpBody = (await trashSummary(household, "?limit=500")).body;
 

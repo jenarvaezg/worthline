@@ -9,11 +9,11 @@ import type {
   Workspace,
 } from "@worthline/domain";
 import { createLiability, projectAssets } from "@worthline/domain";
-import type { Database as DatabaseConnection } from "better-sqlite3";
+import type { Client } from "@libsql/client";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
-import { openDrizzle } from "./native-sqlite";
+import { openDrizzle } from "./libsql-client";
 
 import {
   agentViewPublicIds,
@@ -28,13 +28,13 @@ import {
   warningOverrides,
 } from "./schema";
 
-/** The shared drizzle query builder type, bound to the better-sqlite3 driver. */
+/** The shared drizzle query builder type, bound to the libSQL driver. */
 export type StoreDb = ReturnType<typeof openDrizzle>;
 
 /**
  * Shared substrate for every extracted *-Store (R1–R5 of the architectural
  * refactor, PRD #120). One StoreContext is built per WorthlineStore lifetime in
- * buildStore and threaded into each focused store factory, so the SQLite
+ * buildStore and threaded into each focused store factory, so the libSQL
  * connection, the drizzle instance, id generation, transaction wrapping, audit
  * logging, and the per-unit-of-work workspace cache are owned in exactly one
  * place and never duplicated across the slices.
@@ -42,31 +42,39 @@ export type StoreDb = ReturnType<typeof openDrizzle>;
  * STORE RULE (PRD #120 candidate 4, completed in R12): the store layer uses
  * Drizzle for everything — reads and writes alike, through the one shared
  * `db` instance. If a query genuinely cannot be expressed in Drizzle, drop to
- * raw SQL on `sqlite` and document why inline. The only standing exceptions are
+ * raw SQL on `client` and document why inline. The only standing exceptions are
  * `resetWorkspace` / `importWorkspace`'s table wipe (a DELETE over a runtime
  * list of table names, which Drizzle's typed builder cannot express) and the
  * schema setup in `migrate` (out of scope — not store reads/writes).
  */
 export interface StoreContext {
-  /** The raw better-sqlite3 connection — for prepared statements and as the
+  /** The raw libSQL client — for raw SQL (table wipes, pragmas) and as the
    *  transaction owner. Shared so every store writes through the same handle. */
-  readonly sqlite: DatabaseConnection;
-  /** A drizzle query builder bound to the shared connection. Built once per
-   *  store lifetime and shared, so every slice writes through one instance. */
+  readonly client: Client;
+  /** A drizzle query builder bound to the shared client. Built once per store
+   *  lifetime and shared, so every slice writes through one instance. */
   readonly db: StoreDb;
   /** Id generator (randomUUID), injectable so slices never import crypto twice. */
   newId: () => string;
-  /** Wrap a unit of work in a SQLite transaction and run it immediately. */
-  transaction: <T>(work: () => T) => T;
+  /**
+   * Bracket a unit of work in a SQLite transaction and run it. libSQL's
+   * interactive transactions open a SEPARATE connection that can't see a
+   * `:memory:` database, so the transaction is driven by hand — `BEGIN` /
+   * `COMMIT` / `ROLLBACK` over the single shared connection, where both the
+   * drizzle `db` and raw `client` writes participate. Nested calls flatten into
+   * the outer transaction (every caller rethrows on failure, so the whole unit
+   * rolls back together under one flattened transaction).
+   */
+  transaction: <T>(work: () => T | Promise<T>) => Promise<T>;
   /** Append one row to the audit log. Shared concern (ADR audit trail). */
   writeAuditEntry: (
     action: string,
     entityType: string,
     entityId: string,
     details?: Record<string, unknown>,
-  ) => void;
+  ) => Promise<void>;
   /** The memoized workspace for this unit of work (null before initialization). */
-  getWorkspace: () => Workspace | null;
+  getWorkspace: () => Promise<Workspace | null>;
   /** Drop the memoized workspace after a membership write. */
   invalidateWorkspace: () => void;
 }
@@ -77,24 +85,49 @@ export interface StoreContext {
  * the workspace reader alongside the monolith.
  */
 export function createStoreContext(
-  sqlite: DatabaseConnection,
-  readWorkspace: (db: StoreDb) => Workspace | null,
+  client: Client,
+  readWorkspace: (db: StoreDb) => Promise<Workspace | null>,
 ): StoreContext {
   // Per-unit-of-work workspace cache: the workspace only changes on membership
   // writes, so memoize it for the store's (short) lifetime and invalidate on
   // those writes. A single page render then reads it once instead of many times.
   let cachedWorkspace: Workspace | null | undefined;
 
-  // One drizzle instance per store lifetime, bound to the shared connection.
-  const db = openDrizzle(sqlite);
+  // One drizzle instance per store lifetime, bound to the shared client.
+  const db = openDrizzle(client);
+
+  // Flatten-nesting depth: only the outermost transaction issues BEGIN/COMMIT.
+  let txDepth = 0;
 
   return {
-    sqlite,
+    client,
     db,
     newId: () => randomUUID(),
-    transaction: (work) => sqlite.transaction(work)(),
-    writeAuditEntry: (action, entityType, entityId, details = {}) => {
-      db.insert(auditLog)
+    transaction: async (work) => {
+      if (txDepth > 0) {
+        // Already inside a transaction → run inline; the outer owns commit/rollback.
+        return work();
+      }
+      txDepth += 1;
+      await client.execute("BEGIN");
+      try {
+        const result = await work();
+        await client.execute("COMMIT");
+        return result;
+      } catch (err) {
+        try {
+          await client.execute("ROLLBACK");
+        } catch {
+          // A failed rollback must not mask the original error.
+        }
+        throw err;
+      } finally {
+        txDepth -= 1;
+      }
+    },
+    writeAuditEntry: async (action, entityType, entityId, details = {}) => {
+      await db
+        .insert(auditLog)
         .values({
           action,
           detailsJson: JSON.stringify(details),
@@ -104,9 +137,9 @@ export function createStoreContext(
         })
         .run();
     },
-    getWorkspace: () => {
+    getWorkspace: async () => {
       if (cachedWorkspace === undefined) {
-        cachedWorkspace = readWorkspace(db);
+        cachedWorkspace = await readWorkspace(db);
       }
 
       return cachedWorkspace;
@@ -118,7 +151,7 @@ export function createStoreContext(
 }
 
 // ── Shared low-level readers ────────────────────────────────────────────────
-// Pure (sqlite) readers shared across slices and the monolith (export,
+// Pure (db) readers shared across slices and the monolith (export,
 // historical reconstruction, positions). Kept here — the one shared-concerns
 // home — so no slice duplicates them.
 
@@ -141,8 +174,10 @@ export function toOperation(
   };
 }
 
-export function readAllOperations(db: StoreDb): Map<string, InvestmentOperation[]> {
-  const rows = db
+export async function readAllOperations(
+  db: StoreDb,
+): Promise<Map<string, InvestmentOperation[]>> {
+  const rows = await db
     .select()
     .from(assetOperations)
     .orderBy(asc(assetOperations.executedAt), asc(assetOperations.id))
@@ -162,8 +197,10 @@ export function readAllOperations(db: StoreDb): Map<string, InvestmentOperation[
   }, new Map<string, InvestmentOperation[]>());
 }
 
-export function readInvestmentMeta(db: StoreDb): Map<string, InvestmentMeta> {
-  const rows = db
+export async function readInvestmentMeta(
+  db: StoreDb,
+): Promise<Map<string, InvestmentMeta>> {
+  const rows = await db
     .select({
       assetId: investmentAssets.assetId,
       manualPricePerUnit: investmentAssets.manualPricePerUnit,
@@ -181,8 +218,10 @@ export function readInvestmentMeta(db: StoreDb): Map<string, InvestmentMeta> {
   }, new Map<string, InvestmentMeta>());
 }
 
-export function readAllPriceCache(db: StoreDb): Map<string, { price: string }> {
-  const rows = db.select().from(assetPriceCache).all();
+export async function readAllPriceCache(
+  db: StoreDb,
+): Promise<Map<string, { price: string }>> {
+  const rows = await db.select().from(assetPriceCache).all();
 
   return rows.reduce((map, row) => {
     map.set(row.assetId, { price: row.price });
@@ -213,8 +252,10 @@ export function groupOwnershipByOwner<Row extends { memberId: string; shareBps: 
 }
 
 /** All asset ownership rows in one query, grouped by asset id (member order preserved). */
-export function readAssetOwnerships(db: StoreDb): Map<string, OwnershipShare[]> {
-  const rows = db
+export async function readAssetOwnerships(
+  db: StoreDb,
+): Promise<Map<string, OwnershipShare[]>> {
+  const rows = await db
     .select({
       assetId: assetOwnerships.assetId,
       memberId: assetOwnerships.memberId,
@@ -237,18 +278,18 @@ export function readAssetOwnerships(db: StoreDb): Map<string, OwnershipShare[]> 
  * Shared by readAssets (R2) and readPositions (R1), so the raw-read shape never
  * drifts between them.
  */
-export function buildAssetProjectionContext(
+export async function buildAssetProjectionContext(
   db: StoreDb,
   hasInvestments: boolean,
-): AssetProjectionContext {
+): Promise<AssetProjectionContext> {
   const operationsByAsset = hasInvestments
-    ? readAllOperations(db)
+    ? await readAllOperations(db)
     : new Map<string, InvestmentOperation[]>();
   const metaByAsset = hasInvestments
-    ? readInvestmentMeta(db)
+    ? await readInvestmentMeta(db)
     : new Map<string, InvestmentMeta>();
   const priceCacheByAsset = hasInvestments
-    ? readAllPriceCache(db)
+    ? await readAllPriceCache(db)
     : new Map<string, { price: string }>();
 
   const manualPriceByAsset = new Map<string, DecimalString | undefined>();
@@ -265,7 +306,7 @@ export function buildAssetProjectionContext(
     cachedPriceByAsset,
     manualPriceByAsset,
     operationsByAsset,
-    ownershipByAsset: readAssetOwnerships(db),
+    ownershipByAsset: await readAssetOwnerships(db),
   };
 }
 
@@ -277,12 +318,15 @@ export function buildAssetProjectionContext(
  * historical-snapshot reconstruction, so it lives here — the one shared-concerns
  * home — rather than being duplicated across the slices.
  */
-export function readAssets(db: StoreDb, workspace: Workspace | null): ManualAsset[] {
+export async function readAssets(
+  db: StoreDb,
+  workspace: Workspace | null,
+): Promise<ManualAsset[]> {
   if (!workspace) {
     return [];
   }
 
-  const rows = db
+  const rows = await db
     .select({
       currency: assets.currency,
       currentValueMinor: assets.currentValueMinor,
@@ -310,7 +354,7 @@ export function readAssets(db: StoreDb, workspace: Workspace | null): ManualAsse
   }));
 
   const hasInvestments = rawRows.some((row) => row.type === "investment");
-  const projectionContext = buildAssetProjectionContext(db, hasInvestments);
+  const projectionContext = await buildAssetProjectionContext(db, hasInvestments);
 
   return projectAssets(workspace, rawRows, projectionContext);
 }
@@ -327,9 +371,12 @@ export function readAssets(db: StoreDb, workspace: Workspace | null): ManualAsse
  * Shared here because both the AssetStore (R2, via hardDeleteAsset) and the
  * monolith's emptyTrash run it — so the trash-delete semantics can never drift.
  */
-export function hardDeleteAssetTx(ctx: StoreContext, assetId: string): number {
+export async function hardDeleteAssetTx(
+  ctx: StoreContext,
+  assetId: string,
+): Promise<number> {
   const { db } = ctx;
-  const row = db
+  const row = await db
     .select({ name: assets.name, type: assets.type, deletedAt: assets.deletedAt })
     .from(assets)
     .where(eq(assets.id, assetId))
@@ -340,14 +387,14 @@ export function hardDeleteAssetTx(ctx: StoreContext, assetId: string): number {
     return 0;
   }
 
-  const ownership = db
+  const ownership = await db
     .select({ memberId: assetOwnerships.memberId, shareBps: assetOwnerships.shareBps })
     .from(assetOwnerships)
     .where(eq(assetOwnerships.assetId, assetId))
     .all();
   const operations =
     row.type === "investment"
-      ? db
+      ? await db
           .select({
             id: assetOperations.id,
             kind: assetOperations.kind,
@@ -366,10 +413,11 @@ export function hardDeleteAssetTx(ctx: StoreContext, assetId: string): number {
   // row's FK cascades take ownerships, investment metadata, operations, and
   // the price cache. Frozen snapshot_holdings are intentionally never touched
   // (ADR 0008).
-  db.delete(warningOverrides).where(eq(warningOverrides.entityId, assetId)).run();
+  await db.delete(warningOverrides).where(eq(warningOverrides.entityId, assetId)).run();
   // Drop the holding's agent-view public id on HARD delete only (#335); a
   // soft-delete/trash keeps it so a restore stays stable.
-  db.delete(agentViewPublicIds)
+  await db
+    .delete(agentViewPublicIds)
     .where(
       and(
         eq(agentViewPublicIds.entityType, "holding"),
@@ -377,22 +425,24 @@ export function hardDeleteAssetTx(ctx: StoreContext, assetId: string): number {
       ),
     )
     .run();
-  const result = db.delete(assets).where(eq(assets.id, assetId)).run();
+  const result = await db.delete(assets).where(eq(assets.id, assetId)).run();
 
-  ctx.writeAuditEntry("hard_delete_asset", "asset", assetId, {
+  await ctx.writeAuditEntry("hard_delete_asset", "asset", assetId, {
     name: row.name,
     operations,
     ownership,
     type: row.type,
   });
 
-  return result.changes;
+  return result.rowsAffected;
 }
 
 /** All liability ownership rows in one query, grouped by liability id. Shared by
  *  the LiabilityStore (R3) and the monolith's export/historical reconstruction. */
-export function readLiabilityOwnerships(db: StoreDb): Map<string, OwnershipShare[]> {
-  const rows = db
+export async function readLiabilityOwnerships(
+  db: StoreDb,
+): Promise<Map<string, OwnershipShare[]>> {
+  const rows = await db
     .select({
       liabilityId: liabilityOwnerships.liabilityId,
       memberId: liabilityOwnerships.memberId,
@@ -411,12 +461,15 @@ export function readLiabilityOwnerships(db: StoreDb): Map<string, OwnershipShare
  * export, so it lives here — the one shared-concerns home — rather than being
  * duplicated across the slices.
  */
-export function readLiabilities(db: StoreDb, workspace: Workspace | null): Liability[] {
+export async function readLiabilities(
+  db: StoreDb,
+  workspace: Workspace | null,
+): Promise<Liability[]> {
   if (!workspace) {
     return [];
   }
 
-  const rows = db
+  const rows = await db
     .select({
       associatedAssetId: liabilities.associatedAssetId,
       balanceMinor: liabilities.currentBalanceMinor,
@@ -429,7 +482,7 @@ export function readLiabilities(db: StoreDb, workspace: Workspace | null): Liabi
     .where(isNull(liabilities.deletedAt))
     .orderBy(asc(liabilities.createdAt), asc(liabilities.id))
     .all();
-  const ownershipByLiability = readLiabilityOwnerships(db);
+  const ownershipByLiability = await readLiabilityOwnerships(db);
 
   return rows.map((row) =>
     // Reconstruction of already-persisted data never re-asserts the strict
@@ -461,9 +514,12 @@ export function readLiabilities(db: StoreDb, workspace: Workspace | null): Liabi
  * the monolith's emptyTrash run it — so the trash-delete semantics can never
  * drift.
  */
-export function hardDeleteLiabilityTx(ctx: StoreContext, liabilityId: string): number {
+export async function hardDeleteLiabilityTx(
+  ctx: StoreContext,
+  liabilityId: string,
+): Promise<number> {
   const { db } = ctx;
-  const row = db
+  const row = await db
     .select({
       name: liabilities.name,
       type: liabilities.type,
@@ -477,7 +533,7 @@ export function hardDeleteLiabilityTx(ctx: StoreContext, liabilityId: string): n
     return 0;
   }
 
-  const ownership = db
+  const ownership = await db
     .select({
       memberId: liabilityOwnerships.memberId,
       shareBps: liabilityOwnerships.shareBps,
@@ -488,10 +544,14 @@ export function hardDeleteLiabilityTx(ctx: StoreContext, liabilityId: string): n
 
   // FK cascade takes the ownerships; clear the warning overrides by hand (no FK
   // points at them); snapshots stay frozen (ADR 0008).
-  db.delete(warningOverrides).where(eq(warningOverrides.entityId, liabilityId)).run();
+  await db
+    .delete(warningOverrides)
+    .where(eq(warningOverrides.entityId, liabilityId))
+    .run();
   // Drop the holding's agent-view public id on HARD delete only (#335); a
   // soft-delete/trash keeps it so a restore stays stable.
-  db.delete(agentViewPublicIds)
+  await db
+    .delete(agentViewPublicIds)
     .where(
       and(
         eq(agentViewPublicIds.entityType, "holding"),
@@ -499,13 +559,16 @@ export function hardDeleteLiabilityTx(ctx: StoreContext, liabilityId: string): n
       ),
     )
     .run();
-  const result = db.delete(liabilities).where(eq(liabilities.id, liabilityId)).run();
+  const result = await db
+    .delete(liabilities)
+    .where(eq(liabilities.id, liabilityId))
+    .run();
 
-  ctx.writeAuditEntry("hard_delete_liability", "liability", liabilityId, {
+  await ctx.writeAuditEntry("hard_delete_liability", "liability", liabilityId, {
     name: row.name,
     ownership,
     type: row.type,
   });
 
-  return result.changes;
+  return result.rowsAffected;
 }

@@ -14,12 +14,12 @@ import type { WorthlineStore } from "@db/index";
 
 const TODAY = "2026-06-12";
 
-function seed(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seed(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jose" }],
     mode: "individual",
   });
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "fund",
     liquidityTier: "market",
@@ -28,14 +28,14 @@ function seed(store: WorthlineStore): void {
   });
 }
 
-function recordBuy(
+async function recordBuy(
   store: WorthlineStore,
   executedAt: string,
   units: string,
   pricePerUnit: string,
-): void {
+): Promise<void> {
   // ADR 0020: the persist-and-ripple loop rides ONE store seam method.
-  store.recordOperationAndRipple(
+  await store.recordOperationAndRipple(
     {
       assetId: "fund",
       currency: "EUR",
@@ -50,50 +50,53 @@ function recordBuy(
   );
 }
 
-function grossAt(store: WorthlineStore, dateKey: string): number | undefined {
-  return store.snapshots.readSnapshots().find((snap) => snap.dateKey === dateKey)
+async function grossAt(
+  store: WorthlineStore,
+  dateKey: string,
+): Promise<number | undefined> {
+  return (await store.snapshots.readSnapshots()).find((snap) => snap.dateKey === dateKey)
     ?.grossAssets.amountMinor;
 }
 
 describe("historical snapshots from operations", () => {
-  test("recording a backdated operation generates a snapshot for that date", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("recording a backdated operation generates a snapshot for that date", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
-    recordBuy(store, "2024-01-10", "10", "100");
+    await recordBuy(store, "2024-01-10", "10", "100");
 
     // 10 units × 100 EUR = 1000.00, 100% owned by the only scope.
-    expect(grossAt(store, "2024-01-10")).toBe(1_000_00);
+    expect(await grossAt(store, "2024-01-10")).toBe(1_000_00);
     store.close();
   });
 
-  test("a no-price investment keeps cost basis through a ripple, not last-op price (#183)", () => {
-    const store = createInMemoryStore();
-    seed(store); // fund has no provider/manual price → valued at cost basis (ADR 0006)
+  test("a no-price investment keeps cost basis through a ripple, not last-op price (#183)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store); // fund has no provider/manual price → valued at cost basis (ADR 0006)
 
     // An operation at 2024-03-01 generates that snapshot at cost basis (5 × 200).
-    recordBuy(store, "2024-03-01", "5", "200");
-    expect(grossAt(store, "2024-03-01")).toBe(5 * 200_00);
+    await recordBuy(store, "2024-03-01", "5", "200");
+    expect(await grossAt(store, "2024-03-01")).toBe(5 * 200_00);
 
     // A backdated buy at 2024-01-10 generates its own snapshot AND ripples the
     // 2024-03-01 one (now 15 units). With no price known, the frozen value stays
     // at COST BASIS — 10×100 + 5×200 = 2000.00 — never units × last-op price 200
     // (3000.00), the #183 jump for a multi-buy weighted-avg ≠ last-op price.
-    recordBuy(store, "2024-01-10", "10", "100");
+    await recordBuy(store, "2024-01-10", "10", "100");
 
-    expect(grossAt(store, "2024-01-10")).toBe(10 * 100_00);
-    expect(grossAt(store, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00);
+    expect(await grossAt(store, "2024-01-10")).toBe(10 * 100_00);
+    expect(await grossAt(store, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00);
     store.close();
   });
 
-  test("a priced investment keeps its captured price through a ripple (ADR 0012)", () => {
-    const store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
+  test("a priced investment keeps its captured price through a ripple (ADR 0012)", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
       members: [{ id: "mJ", name: "Jose" }],
       mode: "individual",
     });
     // A manual quote (200) makes the fund priced — valued at market, not cost basis.
-    store.assets.createInvestmentAsset({
+    await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "fund",
       liquidityTier: "market",
@@ -103,36 +106,36 @@ describe("historical snapshots from operations", () => {
     });
 
     // 2024-03-01 generates at the known price 200 (5 × 200 = 1000.00).
-    recordBuy(store, "2024-03-01", "5", "200");
-    expect(grossAt(store, "2024-03-01")).toBe(5 * 200_00);
+    await recordBuy(store, "2024-03-01", "5", "200");
+    expect(await grossAt(store, "2024-03-01")).toBe(5 * 200_00);
 
     // A backdated buy at 2024-01-10 generates its own snapshot (at that date's
     // last-op price 100) AND ripples 2024-03-01 (now 15 units) — which keeps the
     // price 2024-03-01 already captured (200), not the older op price 100: the
     // ADR-0012 carry-over for a row frozen WITH a unit price, unchanged by #183.
-    recordBuy(store, "2024-01-10", "10", "100");
+    await recordBuy(store, "2024-01-10", "10", "100");
 
-    expect(grossAt(store, "2024-01-10")).toBe(10 * 100_00);
-    expect(grossAt(store, "2024-03-01")).toBe(15 * 200_00);
+    expect(await grossAt(store, "2024-01-10")).toBe(10 * 100_00);
+    expect(await grossAt(store, "2024-03-01")).toBe(15 * 200_00);
     store.close();
   });
 
-  test("an operation dated today or in the future generates no historical snapshot", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("an operation dated today or in the future generates no historical snapshot", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
-    recordBuy(store, TODAY, "3", "100");
-    recordBuy(store, "2099-01-01", "3", "100");
+    await recordBuy(store, TODAY, "3", "100");
+    await recordBuy(store, "2099-01-01", "3", "100");
 
-    expect(store.snapshots.readSnapshots()).toHaveLength(0);
+    expect(await store.snapshots.readSnapshots()).toHaveLength(0);
     store.close();
   });
 
-  test("deleting a backdated operation prunes its now-orphaned snapshot and ripples later ones (#305)", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("deleting a backdated operation prunes its now-orphaned snapshot and ripples later ones (#305)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
     // A cash asset keeps every snapshot non-empty after the fund is removed.
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 1_000_00,
       id: "cash",
@@ -142,17 +145,17 @@ describe("historical snapshots from operations", () => {
       type: "cash",
     });
 
-    recordBuy(store, "2024-01-10", "10", "100");
-    recordBuy(store, "2024-03-01", "5", "200");
+    await recordBuy(store, "2024-01-10", "10", "100");
+    await recordBuy(store, "2024-03-01", "5", "200");
 
-    expect(grossAt(store, "2024-01-10")).toBe(10 * 100_00 + 1_000_00);
+    expect(await grossAt(store, "2024-01-10")).toBe(10 * 100_00 + 1_000_00);
     // No-price fund frozen at cost basis (10×100 + 5×200), not last-op price (#183).
-    expect(grossAt(store, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00 + 1_000_00);
+    expect(await grossAt(store, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00 + 1_000_00);
 
     // Delete the 2024-01-10 buy through the seam (persist + ripple, ADR 0020).
-    const ops = store.operations.readOperations("fund");
+    const ops = await store.operations.readOperations("fund");
     const target = ops.find((op) => op.executedAt === "2024-01-10")!;
-    const deleted = store.deleteOperationAndRipple({
+    const deleted = await store.deleteOperationAndRipple({
       operationId: target.id,
       today: TODAY,
     });
@@ -162,46 +165,48 @@ describe("historical snapshots from operations", () => {
     // operation. With it gone, no operation justifies the date, so the snapshot is
     // pruned outright (#305) — not left as a cash-only fossil the per-day bridge
     // would misread as a fund dip.
-    expect(grossAt(store, "2024-01-10")).toBeUndefined();
+    expect(await grossAt(store, "2024-01-10")).toBeUndefined();
     // 2024-03-01: still justified by op_mar — only the 5-unit buy remains
     // (priced at captured 200) + cash.
-    expect(grossAt(store, "2024-03-01")).toBe(5 * 200_00 + 1_000_00);
+    expect(await grossAt(store, "2024-03-01")).toBe(5 * 200_00 + 1_000_00);
     store.close();
   });
 });
 
 describe("historical snapshots from imported operations (gap-fill)", () => {
-  test("import gap-fills missing operation dates and leaves file snapshots intact", () => {
-    const source = createInMemoryStore();
-    seed(source);
-    recordBuy(source, "2024-01-10", "10", "100");
-    recordBuy(source, "2024-03-01", "5", "200");
+  test("import gap-fills missing operation dates and leaves file snapshots intact", async () => {
+    const source = await createInMemoryStore();
+    await seed(source);
+    await recordBuy(source, "2024-01-10", "10", "100");
+    await recordBuy(source, "2024-03-01", "5", "200");
 
-    const doc = source.workspace.exportWorkspace();
+    const doc = await source.workspace.exportWorkspace();
     const marchSnapshot = doc.snapshots.find((s) => s.dateKey === "2024-03-01")!;
     // Simulate a file missing the 2024-01-10 snapshot (a gap) but carrying the
     // 2024-03-01 one — which import must restore intact, never recalculate.
     doc.snapshots = doc.snapshots.filter((s) => s.dateKey !== "2024-01-10");
     source.close();
 
-    const target = createInMemoryStore();
-    target.workspace.importWorkspace(doc);
+    const target = await createInMemoryStore();
+    await target.workspace.importWorkspace(doc);
 
     // Gap at 2024-01-10 is regenerated.
-    expect(grossAt(target, "2024-01-10")).toBe(10 * 100_00);
+    expect(await grossAt(target, "2024-01-10")).toBe(10 * 100_00);
     // 2024-03-01 survives exactly as imported — a no-price fund frozen at COST
     // BASIS (10×100 + 5×200 = 2000.00, ADR 0006/#183), never recalculated on import.
-    expect(grossAt(target, "2024-03-01")).toBe(marchSnapshot.grossAssets.amountMinor);
-    expect(grossAt(target, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00);
+    expect(await grossAt(target, "2024-03-01")).toBe(
+      marchSnapshot.grossAssets.amountMinor,
+    );
+    expect(await grossAt(target, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00);
     target.close();
   });
 });
 
 describe("ripple preserves frozen history (ADR 0012)", () => {
-  test("a ripple never drops a holding that was later trashed", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    store.assets.createManualAsset({
+  test("a ripple never drops a holding that was later trashed", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 1_000_00,
       id: "cash",
@@ -212,51 +217,51 @@ describe("ripple preserves frozen history (ADR 0012)", () => {
     });
 
     // A snapshot at 2024-03-01 captures the fund AND cash.
-    recordBuy(store, "2024-03-01", "5", "200");
-    expect(grossAt(store, "2024-03-01")).toBe(5 * 200_00 + 1_000_00);
+    await recordBuy(store, "2024-03-01", "5", "200");
+    expect(await grossAt(store, "2024-03-01")).toBe(5 * 200_00 + 1_000_00);
 
     // Trash the cash account — a present-state edit; frozen snapshots must not move.
-    store.assets.softDeleteAsset("cash", "2026-06-10T00:00:00.000Z");
+    await store.assets.softDeleteAsset("cash", "2026-06-10T00:00:00.000Z");
 
     // A backdated fund operation ripples 2024-03-01. The fund row updates (the
     // no-price fund stays at cost basis 10×100 + 5×200 = 2000.00, not last-op
     // price, #183); the (now trashed) cash row must survive in that frozen snapshot.
-    recordBuy(store, "2024-01-10", "10", "100");
+    await recordBuy(store, "2024-01-10", "10", "100");
 
-    expect(grossAt(store, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00 + 1_000_00);
+    expect(await grossAt(store, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00 + 1_000_00);
     store.close();
   });
 
-  test("deleting the only basis of a snapshot removes it instead of leaving it stale", () => {
-    const store = createInMemoryStore();
-    seed(store); // fund only, no manual holdings
+  test("deleting the only basis of a snapshot removes it instead of leaving it stale", async () => {
+    const store = await createInMemoryStore();
+    await seed(store); // fund only, no manual holdings
 
-    recordBuy(store, "2024-01-10", "10", "100");
-    expect(grossAt(store, "2024-01-10")).toBe(10 * 100_00);
+    await recordBuy(store, "2024-01-10", "10", "100");
+    expect(await grossAt(store, "2024-01-10")).toBe(10 * 100_00);
 
-    const op = store.operations
-      .readOperations("fund")
-      .find((o) => o.executedAt === "2024-01-10")!;
-    store.deleteOperationAndRipple({
+    const op = (await store.operations.readOperations("fund")).find(
+      (o) => o.executedAt === "2024-01-10",
+    )!;
+    await store.deleteOperationAndRipple({
       operationId: op.id,
       today: TODAY,
     });
 
     // Nothing remains on that date → the snapshot is gone, not stale at 100000.
-    expect(grossAt(store, "2024-01-10")).toBeUndefined();
+    expect(await grossAt(store, "2024-01-10")).toBeUndefined();
     store.close();
   });
 
-  test("generates scope-weighted snapshots for every affected scope (household)", () => {
-    const store = createInMemoryStore();
-    store.workspace.initializeWorkspace({
+  test("generates scope-weighted snapshots for every affected scope (household)", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
       members: [
         { id: "mJ", name: "Jose" },
         { id: "mA", name: "Ana" },
       ],
       mode: "household",
     });
-    store.assets.createInvestmentAsset({
+    await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "fund",
       liquidityTier: "market",
@@ -267,9 +272,11 @@ describe("ripple preserves frozen history (ADR 0012)", () => {
       ],
     });
 
-    recordBuy(store, "2024-01-10", "10", "100"); // full value 1000.00, split 50/50
+    await recordBuy(store, "2024-01-10", "10", "100"); // full value 1000.00, split 50/50
 
-    const at = store.snapshots.readSnapshots().filter((s) => s.dateKey === "2024-01-10");
+    const at = (await store.snapshots.readSnapshots()).filter(
+      (s) => s.dateKey === "2024-01-10",
+    );
     const grosses = at.map((s) => s.grossAssets.amountMinor).sort((a, b) => b - a);
 
     // More than one scope captured (household + members).

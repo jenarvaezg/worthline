@@ -11,50 +11,56 @@
  * `execToleratingMissingTable` narrows the tolerance to exactly the intended case:
  * swallow "no such table", surface everything else.
  */
-import Database from "better-sqlite3";
 import { describe, expect, test } from "vitest";
 
+import { openLibsqlClient } from "@db/index";
 import { execToleratingMissingTable } from "@db/migrate";
 
 describe("execToleratingMissingTable (migration DDL/DML guard)", () => {
-  test("creates the index when the table and columns exist", () => {
-    const db = new Database(":memory:");
-    db.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT);");
+  test("creates the index when the table and columns exist", async () => {
+    const client = openLibsqlClient(":memory:");
+    await client.executeMultiple("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT);");
 
-    execToleratingMissingTable(db, "CREATE INDEX IF NOT EXISTS t_name_idx ON t (name);");
+    await execToleratingMissingTable(
+      client,
+      "CREATE INDEX IF NOT EXISTS t_name_idx ON t (name);",
+    );
 
-    const idx = db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?")
-      .get("t_name_idx");
+    const idx = (
+      await client.execute({
+        sql: "SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?",
+        args: ["t_name_idx"],
+      })
+    ).rows[0];
     expect(idx).toBeDefined();
-    db.close();
+    client.close();
   });
 
-  test("tolerates a missing table (synthetic upgrade fixtures may omit it)", () => {
-    const db = new Database(":memory:");
+  test("tolerates a missing table (synthetic upgrade fixtures may omit it)", async () => {
+    const client = openLibsqlClient(":memory:");
 
-    expect(() =>
+    await expect(
       execToleratingMissingTable(
-        db,
+        client,
         "CREATE INDEX IF NOT EXISTS absent_idx ON absent_table (name);",
       ),
-    ).not.toThrow();
-    db.close();
+    ).resolves.not.toThrow();
+    client.close();
   });
 
-  test("surfaces a real DDL error instead of swallowing it (column typo)", () => {
-    const db = new Database(":memory:");
-    db.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT);");
+  test("surfaces a real DDL error instead of swallowing it (column typo)", async () => {
+    const client = openLibsqlClient(":memory:");
+    await client.executeMultiple("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT);");
 
     // The table exists but the column does not — a genuine migration bug the old
     // bare `catch {}` would have silently swallowed while still bumping
     // user_version. The guard must let it throw.
-    expect(() =>
+    await expect(
       execToleratingMissingTable(
-        db,
+        client,
         "CREATE INDEX IF NOT EXISTS t_bad_idx ON t (nonexistent_column);",
       ),
-    ).toThrow(/no such column/i);
-    db.close();
+    ).rejects.toThrow(/no such column/i);
+    client.close();
   });
 });

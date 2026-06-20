@@ -10,21 +10,22 @@
  * snapshot's five frozen figures stay byte-identical (this migration touches no
  * figure), and user_version reaches SCHEMA_VERSION.
  */
-import Database from "better-sqlite3";
+import type { Client } from "@libsql/client";
 import { describe, expect, test } from "vitest";
 
+import { openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import { schemaSql } from "@db/schema-sql";
 
-function seedV13(): Database.Database {
-  const db = new Database(":memory:");
+async function seedV13(): Promise<Client> {
+  const client = openLibsqlClient(":memory:");
   // Genuinely pre-v14: strip the instrument column so migrate() exercises the
   // real legacy-DB path — ALTER TABLE ADD COLUMN then backfill — not merely a
   // backfill of an already-present column.
-  db.exec(schemaSql.replace(/[ \t]*`instrument` text,\n/g, ""));
-  db.pragma("user_version = 13");
+  await client.executeMultiple(schemaSql.replace(/[ \t]*`instrument` text,\n/g, ""));
+  await client.execute("PRAGMA user_version = 13");
 
-  db.exec(`
+  await client.executeMultiple(`
     INSERT INTO assets (id, name, type, currency, current_value_minor, liquidity_tier) VALUES
       ('a_cash', 'Caja', 'cash', 'EUR', 10000, 'cash'),
       ('a_car', 'Coche', 'manual', 'EUR', 20000, 'illiquid'),
@@ -56,97 +57,109 @@ function seedV13(): Database.Database {
        'EUR', 180000, 9000, 120000, 390000, 210000);
   `);
 
-  return db;
+  return client;
 }
 
-const assetInstrument = (db: Database.Database, id: string) =>
+const assetInstrument = async (client: Client, id: string) =>
   (
-    db.prepare("SELECT instrument AS i FROM assets WHERE id = ?").get(id) as {
-      i: string | null;
-    }
+    (
+      await client.execute({
+        sql: "SELECT instrument AS i FROM assets WHERE id = ?",
+        args: [id],
+      })
+    ).rows[0] as unknown as { i: string | null }
   ).i;
 
-const liabilityInstrument = (db: Database.Database, id: string) =>
+const liabilityInstrument = async (client: Client, id: string) =>
   (
-    db.prepare("SELECT instrument AS i FROM liabilities WHERE id = ?").get(id) as {
-      i: string | null;
-    }
+    (
+      await client.execute({
+        sql: "SELECT instrument AS i FROM liabilities WHERE id = ?",
+        args: [id],
+      })
+    ).rows[0] as unknown as { i: string | null }
   ).i;
+
+const userVersion = async (client: Client) =>
+  Number((await client.execute("PRAGMA user_version")).rows[0]!.user_version);
 
 describe("instrument schema migration (v14)", () => {
-  test("backfills asset instrument from type (+ provider for investments)", () => {
-    const db = seedV13();
-    migrate(db);
+  test("backfills asset instrument from type (+ provider for investments)", async () => {
+    const client = await seedV13();
+    await migrate(client);
 
-    expect(assetInstrument(db, "a_cash")).toBe("current_account");
-    expect(assetInstrument(db, "a_car")).toBe("other");
-    expect(assetInstrument(db, "a_fund")).toBe("fund");
+    expect(await assetInstrument(client, "a_cash")).toBe("current_account");
+    expect(await assetInstrument(client, "a_car")).toBe("other");
+    expect(await assetInstrument(client, "a_fund")).toBe("fund");
     // An investment priced by Finect is a pension plan.
-    expect(assetInstrument(db, "a_pension")).toBe("pension_plan");
-    expect(assetInstrument(db, "a_home")).toBe("property");
+    expect(await assetInstrument(client, "a_pension")).toBe("pension_plan");
+    expect(await assetInstrument(client, "a_home")).toBe("property");
     // A primary residence is a property even when its type isn't real_estate —
     // the backfill mirrors the runtime isHousingAsset boundary.
-    expect(assetInstrument(db, "a_residence")).toBe("property");
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
+    expect(await assetInstrument(client, "a_residence")).toBe("property");
+    expect(await userVersion(client)).toBe(SCHEMA_VERSION);
   });
 
-  test("backfills liability instrument from type + debt model", () => {
-    const db = seedV13();
-    migrate(db);
+  test("backfills liability instrument from type + debt model", async () => {
+    const client = await seedV13();
+    await migrate(client);
 
-    expect(liabilityInstrument(db, "l_mortgage")).toBe("mortgage");
-    expect(liabilityInstrument(db, "l_loan")).toBe("loan");
-    expect(liabilityInstrument(db, "l_card")).toBe("credit_card");
-    expect(liabilityInstrument(db, "l_friend")).toBe("loan");
-    expect(liabilityInstrument(db, "l_plain")).toBe("loan");
+    expect(await liabilityInstrument(client, "l_mortgage")).toBe("mortgage");
+    expect(await liabilityInstrument(client, "l_loan")).toBe("loan");
+    expect(await liabilityInstrument(client, "l_card")).toBe("credit_card");
+    expect(await liabilityInstrument(client, "l_friend")).toBe("loan");
+    expect(await liabilityInstrument(client, "l_plain")).toBe("loan");
   });
 
-  test("touches no frozen snapshot figure", () => {
-    const db = seedV13();
+  test("touches no frozen snapshot figure", async () => {
+    const client = await seedV13();
     const select =
       "SELECT total_net_worth_minor, liquid_net_worth_minor, housing_equity_minor, " +
       "gross_assets_minor, debts_minor FROM snapshots WHERE id = 'snap1'";
-    const before = db.prepare(select).get();
+    const before = (await client.execute(select)).rows[0];
 
-    migrate(db);
+    await migrate(client);
 
-    expect(db.prepare(select).get()).toEqual(before);
+    expect((await client.execute(select)).rows[0]).toEqual(before);
   });
 
-  test("adds the instrument column to both tables (the legacy ALTER path)", () => {
-    const db = seedV13();
-    const hasColumn = (table: string) =>
-      (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some(
-        (c) => c.name === "instrument",
-      );
-
-    expect(hasColumn("assets")).toBe(false); // genuinely pre-v14: column absent
-    migrate(db);
-    expect(hasColumn("assets")).toBe(true);
-    expect(hasColumn("liabilities")).toBe(true);
-  });
-
-  test("leaves no holding null and is idempotent on a second run", () => {
-    const db = seedV13();
-    migrate(db);
-
-    const nullCount = () =>
+  test("adds the instrument column to both tables (the legacy ALTER path)", async () => {
+    const client = await seedV13();
+    const hasColumn = async (table: string) =>
       (
-        db
-          .prepare(
+        (await client.execute(`PRAGMA table_info(${table})`)).rows as unknown as Array<{
+          name: string;
+        }>
+      ).some((c) => c.name === "instrument");
+
+    expect(await hasColumn("assets")).toBe(false); // genuinely pre-v14: column absent
+    await migrate(client);
+    expect(await hasColumn("assets")).toBe(true);
+    expect(await hasColumn("liabilities")).toBe(true);
+  });
+
+  test("leaves no holding null and is idempotent on a second run", async () => {
+    const client = await seedV13();
+    await migrate(client);
+
+    const nullCount = async () =>
+      Number(
+        (
+          await client.execute(
             "SELECT (SELECT COUNT(*) FROM assets WHERE instrument IS NULL) + " +
               "(SELECT COUNT(*) FROM liabilities WHERE instrument IS NULL) AS n",
           )
-          .get() as { n: number }
-      ).n;
+        ).rows[0]!.n,
+      );
 
-    expect(nullCount()).toBe(0);
+    expect(await nullCount()).toBe(0);
 
-    const before = db.prepare("SELECT id, instrument FROM assets ORDER BY id").all();
-    migrate(db); // a second run sits behind `version < 14` → no-op
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
-    expect(db.prepare("SELECT id, instrument FROM assets ORDER BY id").all()).toEqual(
-      before,
-    );
+    const before = (await client.execute("SELECT id, instrument FROM assets ORDER BY id"))
+      .rows;
+    await migrate(client); // a second run sits behind `version < 14` → no-op
+    expect(await userVersion(client)).toBe(SCHEMA_VERSION);
+    expect(
+      (await client.execute("SELECT id, instrument FROM assets ORDER BY id")).rows,
+    ).toEqual(before);
   });
 });

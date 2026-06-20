@@ -16,13 +16,13 @@
  *   2. READ SHAPE — the number of SELECT statements that touch
  *      `snapshot_holdings` during the ripple is BOUNDED per scope/range (a small
  *      constant), not proportional to the number of rippled snapshots. We
- *      instrument the raw better-sqlite3 connection with `verbose` and count the
+ *      instrument the libSQL client by wrapping `execute`/`batch` and count the
  *      reads.
  */
-import Database from "better-sqlite3";
+import type { Client } from "@libsql/client";
 import { describe, expect, test } from "vitest";
 
-import { createStoreFromSqlite } from "@db/index";
+import { createStoreFromSqlite, openLibsqlClient } from "@db/index";
 import type { WorthlineStore } from "@db/index";
 
 const TODAY = "2026-06-12";
@@ -34,27 +34,68 @@ function addDays(from: string, count: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Pull the SQL text out of any libSQL statement shape (string, `{ sql }`, or
+ *  the `[sql, args?]` batch tuple). */
+function sqlText(stmt: unknown): string {
+  if (typeof stmt === "string") return stmt;
+  if (Array.isArray(stmt) && typeof stmt[0] === "string") return stmt[0];
+  if (
+    stmt &&
+    typeof stmt === "object" &&
+    typeof (stmt as { sql?: unknown }).sql === "string"
+  ) {
+    return (stmt as { sql: string }).sql;
+  }
+  return "";
+}
+
 /**
- * Build a store on an instrumented in-memory connection that counts every SQL
+ * Wrap a libSQL client so every SQL statement it runs is reported to `tally`.
+ *
+ * The libSQL client has no `verbose` hook, so we wrap `execute`/`batch` (drizzle
+ * routes every read through `execute`) and inspect each SQL string.
+ */
+function instrumentClient(real: Client, tally: (sql: string) => void): Client {
+  return new Proxy(real, {
+    get(target, prop, receiver) {
+      if (prop === "execute") {
+        return (...args: unknown[]) => {
+          tally(sqlText(args[0]));
+          return (target.execute as (...a: unknown[]) => unknown)(...args);
+        };
+      }
+      if (prop === "batch") {
+        return (...args: unknown[]) => {
+          const [stmts] = args;
+          if (Array.isArray(stmts)) for (const s of stmts) tally(sqlText(s));
+          return (target.batch as (...a: unknown[]) => unknown)(...args);
+        };
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as Client;
+}
+
+/**
+ * Build a store on an instrumented in-memory client that counts every SQL
  * statement reading `snapshot_holdings`, so a test can assert the ripple's read
  * shape. The counter starts at 0 and the caller resets it before the action.
+ *
+ * We count only SELECTs of the frozen rows, never the deletes/inserts the save
+ * path runs — the issue is about the READ fan-out per snapshot.
  */
-function createCountingStore(): {
+async function createCountingStore(): Promise<{
   store: WorthlineStore;
   holdingReads: () => number;
   reset: () => void;
-} {
+}> {
   let count = 0;
-  const sqlite = new Database(":memory:", {
-    verbose: (message?: unknown) => {
-      if (typeof message === "string" && /\bsnapshot_holdings\b/i.test(message)) {
-        // Count only reads of the frozen rows, never the deletes/inserts the
-        // save path runs — the issue is about the READ fan-out per snapshot.
-        if (/^\s*select/i.test(message)) count += 1;
-      }
-    },
-  });
-  const store = createStoreFromSqlite(sqlite);
+  const tally = (text: string): void => {
+    if (/\bsnapshot_holdings\b/i.test(text) && /^\s*select/i.test(text)) count += 1;
+  };
+  const real = openLibsqlClient(":memory:");
+  const store = await createStoreFromSqlite(instrumentClient(real, tally));
   return {
     holdingReads: () => count,
     reset: () => {
@@ -73,15 +114,15 @@ const BAND_SNAPSHOTS = 40;
  * (ADR 0012). Then seed a `mortgage` with an amortizable plan whose disbursement
  * is at the band start, so a debt ripple recalculates the WHOLE band per scope.
  */
-function seedBandWithMortgage(store: WorthlineStore): {
+async function seedBandWithMortgage(store: WorthlineStore): Promise<{
   startDate: string;
   snapshotCount: number;
-} {
-  store.workspace.initializeWorkspace({
+}> {
+  await store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jose" }],
     mode: "individual",
   });
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "seedfund",
     liquidityTier: "market",
@@ -94,7 +135,7 @@ function seedBandWithMortgage(store: WorthlineStore): {
   // day, each generating that day's snapshot.
   for (let i = 0; i < BAND_SNAPSHOTS; i += 1) {
     const dateKey = addDays(BAND_START, i);
-    store.recordOperationAndRipple(
+    await store.recordOperationAndRipple(
       {
         assetId: "seedfund",
         currency: "EUR",
@@ -112,7 +153,7 @@ function seedBandWithMortgage(store: WorthlineStore): {
   // so every snapshot in the band is recalculated from the disbursement forward.
   // The plan persist + ripple ride the seam in the test body (after `reset()`),
   // so seed only the liability and its debt model here.
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     balanceMinor: 100_000_00,
     currency: "EUR",
     id: "mortgage",
@@ -120,7 +161,7 @@ function seedBandWithMortgage(store: WorthlineStore): {
     ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     type: "mortgage",
   });
-  store.liabilities.setDebtModel("mortgage", "amortizable");
+  await store.liabilities.setDebtModel("mortgage", "amortizable");
 
   return { snapshotCount: BAND_SNAPSHOTS, startDate: BAND_START };
 }
@@ -136,37 +177,44 @@ const PLAN_INPUT = {
   termMonths: 240,
 } as const;
 
-function debtsAt(store: WorthlineStore, dateKey: string): number | undefined {
-  return store.snapshots
-    .readSnapshots("household")
-    .find((snap) => snap.dateKey === dateKey)?.debts.amountMinor;
+async function debtsAt(
+  store: WorthlineStore,
+  dateKey: string,
+): Promise<number | undefined> {
+  return (await store.snapshots.readSnapshots("household")).find(
+    (snap) => snap.dateKey === dateKey,
+  )?.debts.amountMinor;
 }
 
-function grossAt(store: WorthlineStore, dateKey: string): number | undefined {
-  return store.snapshots
-    .readSnapshots("household")
-    .find((snap) => snap.dateKey === dateKey)?.grossAssets.amountMinor;
+async function grossAt(
+  store: WorthlineStore,
+  dateKey: string,
+): Promise<number | undefined> {
+  return (await store.snapshots.readSnapshots("household")).find(
+    (snap) => snap.dateKey === dateKey,
+  )?.grossAssets.amountMinor;
 }
 
 describe("debt ripple batches frozen reads (#206)", () => {
-  test("reads frozen holdings in a bounded shape, not one query per recalculated snapshot", () => {
-    const { store, holdingReads, reset } = createCountingStore();
-    const { snapshotCount } = seedBandWithMortgage(store);
+  test("reads frozen holdings in a bounded shape, not one query per recalculated snapshot", async () => {
+    const { store, holdingReads, reset } = await createCountingStore();
+    const { snapshotCount } = await seedBandWithMortgage(store);
 
     // Confirm the band really is large — otherwise the read-shape assertion is
     // vacuous and a regression would hide.
-    const household = store.snapshots.readSnapshots("household");
+    const household = await store.snapshots.readSnapshots("household");
     expect(household.length).toBe(snapshotCount);
-    const scopeCount = store.snapshots
-      .readSnapshots()
-      .reduce((acc, snap) => acc.add(snap.scopeId), new Set<string>()).size;
+    const scopeCount = (await store.snapshots.readSnapshots()).reduce(
+      (acc, snap) => acc.add(snap.scopeId),
+      new Set<string>(),
+    ).size;
 
     // An amortizable plan disbursed at the band start ripples the WHOLE band per
     // scope (recalc from the disbursement date forward, ADR 0019). The plan
     // persist runs no `snapshot_holdings` SELECT, so resetting just before the
     // seam call still counts only the ripple's reads.
     reset();
-    store.createAmortizationPlanAndRipple(PLAN_INPUT, { today: TODAY });
+    await store.createAmortizationPlanAndRipple(PLAN_INPUT, { today: TODAY });
 
     // BATCHED: the frozen-row reads are a small constant per scope/range, never
     // ~one per recalculated snapshot. With ~40 snapshots per scope, the old
@@ -178,9 +226,9 @@ describe("debt ripple batches frozen reads (#206)", () => {
     store.close();
   });
 
-  test("preserves ADR 0012 / ADR 0019 behavior byte-identically across a long band", () => {
-    const { store } = createCountingStore();
-    const { startDate, snapshotCount } = seedBandWithMortgage(store);
+  test("preserves ADR 0012 / ADR 0019 behavior byte-identically across a long band", async () => {
+    const { store } = await createCountingStore();
+    const { startDate, snapshotCount } = await seedBandWithMortgage(store);
     const lastDate = addDays(startDate, snapshotCount - 1);
 
     // Pre-ripple: the seed asset gross at each date (i+1 daily 1-unit buys at
@@ -188,42 +236,42 @@ describe("debt ripple batches frozen reads (#206)", () => {
     const seedGrossAt = (i: number): number => (i + 1) * 100_00;
     for (let i = 0; i < snapshotCount; i += 1) {
       const dateKey = addDays(startDate, i);
-      expect(grossAt(store, dateKey)).toBe(seedGrossAt(i));
+      expect(await grossAt(store, dateKey)).toBe(seedGrossAt(i));
     }
 
-    store.createAmortizationPlanAndRipple(PLAN_INPUT, { today: TODAY });
+    await store.createAmortizationPlanAndRipple(PLAN_INPUT, { today: TODAY });
 
     // Behavior check across the WHOLE band: every snapshot ≥ disbursement now
     // values the mortgage at its curve balance, and every seed asset row is
     // preserved untouched (only the liability row is recomputed, ADR 0012).
     for (let i = 0; i < snapshotCount; i += 1) {
       const dateKey = addDays(startDate, i);
-      const expectedDebt = store.liabilities.debtBalanceAtDate("mortgage", dateKey);
-      expect(debtsAt(store, dateKey)).toBe(expectedDebt);
-      expect(grossAt(store, dateKey)).toBe(seedGrossAt(i));
+      const expectedDebt = await store.liabilities.debtBalanceAtDate("mortgage", dateKey);
+      expect(await debtsAt(store, dateKey)).toBe(expectedDebt);
+      expect(await grossAt(store, dateKey)).toBe(seedGrossAt(i));
     }
     // The loan-start snapshot equals the initial capital.
-    expect(debtsAt(store, startDate)).toBe(150_000_00);
-    expect(debtsAt(store, lastDate)).toBe(
-      store.liabilities.debtBalanceAtDate("mortgage", lastDate),
+    expect(await debtsAt(store, startDate)).toBe(150_000_00);
+    expect(await debtsAt(store, lastDate)).toBe(
+      await store.liabilities.debtBalanceAtDate("mortgage", lastDate),
     );
 
     store.close();
   });
 
-  test("a mid-band rate revision recalculates only the dates on or after it", () => {
-    const { store } = createCountingStore();
-    const { startDate, snapshotCount } = seedBandWithMortgage(store);
-    store.createAmortizationPlanAndRipple(PLAN_INPUT, { today: TODAY });
+  test("a mid-band rate revision recalculates only the dates on or after it", async () => {
+    const { store } = await createCountingStore();
+    const { startDate, snapshotCount } = await seedBandWithMortgage(store);
+    await store.createAmortizationPlanAndRipple(PLAN_INPUT, { today: TODAY });
 
     const revisionDate = addDays(startDate, 20);
     const beforeRevision: number[] = [];
     for (let i = 0; i < 20; i += 1) {
-      beforeRevision.push(debtsAt(store, addDays(startDate, i))!);
+      beforeRevision.push((await debtsAt(store, addDays(startDate, i)))!);
     }
 
-    const planId = store.liabilities.readAmortizationPlan("mortgage")!.id;
-    store.addInterestRateRevisionAndRipple(
+    const planId = (await store.liabilities.readAmortizationPlan("mortgage"))!.id;
+    await store.addInterestRateRevisionAndRipple(
       {
         id: "rev1",
         newAnnualInterestRate: "0.09",
@@ -236,12 +284,12 @@ describe("debt ripple batches frozen reads (#206)", () => {
     // Dates before the revision are untouched; dates on/after it match the new
     // curve.
     for (let i = 0; i < 20; i += 1) {
-      expect(debtsAt(store, addDays(startDate, i))).toBe(beforeRevision[i]);
+      expect(await debtsAt(store, addDays(startDate, i))).toBe(beforeRevision[i]);
     }
     for (let i = 20; i < snapshotCount; i += 1) {
       const dateKey = addDays(startDate, i);
-      expect(debtsAt(store, dateKey)).toBe(
-        store.liabilities.debtBalanceAtDate("mortgage", dateKey),
+      expect(await debtsAt(store, dateKey)).toBe(
+        await store.liabilities.debtBalanceAtDate("mortgage", dateKey),
       );
     }
 

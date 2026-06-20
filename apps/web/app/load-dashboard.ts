@@ -152,8 +152,8 @@ export async function loadDashboard(
     input;
 
   // ── 1. Refresh stale prices ───────────────────────────────────────────────
-  const investmentAssets = store.assets.readInvestmentAssetsWithMeta();
-  const initialCache = store.operations.readAllPriceCacheEntries();
+  const investmentAssets = await store.assets.readInvestmentAssetsWithMeta();
+  const initialCache = await store.operations.readAllPriceCacheEntries();
 
   const { priceCache, errors: priceErrors } = await refreshPrices({
     cacheEntries: initialCache,
@@ -169,7 +169,7 @@ export async function loadDashboard(
         (c) => c.assetId !== price.assetId || c.fetchedAt !== price.fetchedAt,
       )
     ) {
-      store.operations.upsertPrice(price);
+      await store.operations.upsertPrice(price);
     }
   }
 
@@ -194,15 +194,15 @@ export async function loadDashboard(
   }
 
   // ── 2. Read workspace — redirect signal if absent ─────────────────────────
-  const workspace = store.workspace.readWorkspace();
+  const workspace = await store.workspace.readWorkspace();
 
   if (!workspace) {
     // Return a minimal result that signals the page to redirect.
     return buildEmptyResult(persistence, pricingErrors);
   }
 
-  const assets = store.assets.readAssets();
-  const liabilities = store.liabilities.readLiabilities();
+  const assets = await store.assets.readAssets();
+  const liabilities = await store.liabilities.readLiabilities();
   const scopes = listScopeOptions(workspace);
   const selectedScope = scopes.find((s) => s.id === scopeId) ?? scopes[0];
 
@@ -219,7 +219,7 @@ export async function loadDashboard(
   // the projection once and reuse it (#208) instead of reading every operation
   // twice. The selected-scope positions narrow the same per-asset figures; the
   // capture details stay byte-identical to the old unscoped readPositions() map.
-  const scopedProjection = store.snapshots.readScopedPositionsWithDetails(
+  const scopedProjection = await store.snapshots.readScopedPositionsWithDetails(
     selectedScope?.id,
   );
   const investmentDetails: ReadonlyMap<string, InvestmentCaptureDetail> =
@@ -229,14 +229,14 @@ export async function loadDashboard(
     const capture = captureSnapshotForScope({
       assets,
       capturedAt: now,
-      existingSnapshots: store.snapshots.readSnapshots(scope.id),
+      existingSnapshots: await store.snapshots.readSnapshots(scope.id),
       investmentDetails,
       liabilities,
       scope,
       workspace,
     });
 
-    store.snapshots.saveSnapshot({
+    await store.snapshots.saveSnapshot({
       holdings: capture.holdings,
       replace: capture.replace,
       snapshot: capture.snapshot,
@@ -248,16 +248,18 @@ export async function loadDashboard(
   // details above (#208) — no second operation read. Empty when there is no scope
   // (matching the prior `selectedScope ? … : []`).
   const positions = selectedScope ? scopedProjection.positions : [];
-  const overrides = store.readWarningOverrides();
-  const fireConfig = store.readFireConfig();
-  const snapshots = selectedScope ? store.snapshots.readSnapshots(selectedScope.id) : [];
+  const overrides = await store.readWarningOverrides();
+  const fireConfig = await store.readFireConfig();
+  const snapshots = selectedScope
+    ? await store.snapshots.readSnapshots(selectedScope.id)
+    : [];
 
   // Frozen holding rows of the scope, read once and shared by the composition
   // chart (always) and the drilldown (when active). Housing is its own rung now
   // (ADR 0022): the chart buckets it by rung and the drill selects it by rung, so
   // no by-id housing carve is threaded through any more.
   const holdingRows = selectedScope
-    ? store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id })
+    ? await store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id })
     : [];
   const activeRange = range ?? "all";
 
@@ -302,7 +304,7 @@ export async function loadDashboard(
   // grid, their history living on in the aggregate. Read trash only when a
   // drill is open.
   const trash =
-    drill && selectedScope ? store.readTrash() : { assets: [], liabilities: [] };
+    drill && selectedScope ? await store.readTrash() : { assets: [], liabilities: [] };
   const drilldown =
     drill && selectedScope
       ? buildDrilldown(drill, {

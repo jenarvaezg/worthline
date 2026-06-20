@@ -38,13 +38,13 @@ afterEach(() => {
   store?.close();
 });
 
-function setupStore() {
-  store = createInMemoryStore();
-  store.workspace.initializeWorkspace({
+async function setupStore() {
+  store = await createInMemoryStore();
+  await store.workspace.initializeWorkspace({
     members: [{ id: MEMBER_ID, name: "Yo" }],
     mode: "individual",
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     id: CASH_RESIDENCE_ID,
     name: "Vivienda habitual (cash)",
     type: "cash",
@@ -54,7 +54,7 @@ function setupStore() {
     isPrimaryResidence: true,
     ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     id: PLAIN_CASH_ID,
     name: "Efectivo",
     type: "cash",
@@ -64,7 +64,7 @@ function setupStore() {
     isPrimaryResidence: false,
     ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
   });
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     id: REAL_ESTATE_ID,
     name: "Piso",
     type: "real_estate",
@@ -77,14 +77,16 @@ function setupStore() {
 }
 
 describe("housing action seam — isHousingAsset guard (#152 fix 1)", () => {
-  test("cash + isPrimaryResidence dispatches to appreciating method", () => {
-    setupStore();
-    const asset = store.assets.readAssets().find((a) => a.id === CASH_RESIDENCE_ID)!;
+  test("cash + isPrimaryResidence dispatches to appreciating method", async () => {
+    await setupStore();
+    const asset = (await store.assets.readAssets()).find(
+      (a) => a.id === CASH_RESIDENCE_ID,
+    )!;
     expect(valuationMethodOfAsset(asset)).toBe("appreciating");
   });
 
   test("setAppreciationRateAction accepts a cash+isPrimaryResidence asset", async () => {
-    setupStore();
+    await setupStore();
     const url = await catchRedirect(() =>
       setAppreciationRateAction(
         fd(
@@ -98,7 +100,7 @@ describe("housing action seam — isHousingAsset guard (#152 fix 1)", () => {
   });
 
   test("addValuationAnchorAction accepts a cash+isPrimaryResidence asset", async () => {
-    setupStore();
+    await setupStore();
     const url = await catchRedirect(() =>
       addValuationAnchorAction(
         fd(
@@ -117,7 +119,7 @@ describe("housing action seam — isHousingAsset guard (#152 fix 1)", () => {
   });
 
   test("setAppreciationRateAction still rejects a plain cash asset", async () => {
-    setupStore();
+    await setupStore();
     const url = await catchRedirect(() =>
       setAppreciationRateAction(
         fd({ id: PLAIN_CASH_ID, rate: "3.5" }, `/patrimonio/${PLAIN_CASH_ID}/editar`),
@@ -128,7 +130,7 @@ describe("housing action seam — isHousingAsset guard (#152 fix 1)", () => {
   });
 
   test("addValuationAnchorAction still rejects a plain cash asset", async () => {
-    setupStore();
+    await setupStore();
     const url = await catchRedirect(() =>
       addValuationAnchorAction(
         fd(
@@ -147,7 +149,7 @@ describe("housing action seam — isHousingAsset guard (#152 fix 1)", () => {
   });
 
   test("setAppreciationRateAction still works for a real_estate asset (regression)", async () => {
-    setupStore();
+    await setupStore();
     const url = await catchRedirect(() =>
       setAppreciationRateAction(
         fd({ id: REAL_ESTATE_ID, rate: "2.0" }, `/patrimonio/${REAL_ESTATE_ID}/editar`),

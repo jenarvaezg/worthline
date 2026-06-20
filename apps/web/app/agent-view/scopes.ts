@@ -8,17 +8,20 @@ import {
   type AgentViewScope,
 } from "./contract";
 
-export function listAgentViewScopes(store: AgentViewReadStore): AgentViewScope[] {
-  const workspace = store.readWorkspace();
+export async function listAgentViewScopes(
+  store: AgentViewReadStore,
+): Promise<AgentViewScope[]> {
+  const workspace = await store.readWorkspace();
 
   if (!workspace) {
     return [];
   }
 
   const publicIds = new Map(
-    store
-      .readPublicIds()
-      .map((entry) => [publicIdKey(entry.entityType, entry.entityId), entry.publicId]),
+    (await store.readPublicIds()).map((entry) => [
+      publicIdKey(entry.entityType, entry.entityId),
+      entry.publicId,
+    ]),
   );
   const activeMembers = new Map(
     workspace.members

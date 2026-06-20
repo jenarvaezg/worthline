@@ -52,11 +52,11 @@ async function readDashboard(store: WorthlineStore, scopeId?: string) {
 }
 
 describe("seedPersona — familia", () => {
-  it("builds a two-member household with the full scope axis", () => {
-    const store = createInMemoryStore();
-    seedPersona(store, FAMILIA_SPEC, AS_OF);
+  it("builds a two-member household with the full scope axis", async () => {
+    const store = await createInMemoryStore();
+    await seedPersona(store, FAMILIA_SPEC, AS_OF);
 
-    const workspace = store.workspace.readWorkspace();
+    const workspace = await store.workspace.readWorkspace();
     expect(workspace).not.toBeNull();
     expect(workspace!.mode).toBe("household");
     expect(workspace!.members.length).toBe(2);
@@ -65,8 +65,8 @@ describe("seedPersona — familia", () => {
   });
 
   it("renders a populated net worth with no blocking warnings", async () => {
-    const store = createInMemoryStore();
-    seedPersona(store, FAMILIA_SPEC, AS_OF);
+    const store = await createInMemoryStore();
+    await seedPersona(store, FAMILIA_SPEC, AS_OF);
 
     const result = await readDashboard(store);
 
@@ -78,8 +78,8 @@ describe("seedPersona — familia", () => {
   });
 
   it("populates the housing rung and the illiquid rung (home + car)", async () => {
-    const store = createInMemoryStore();
-    seedPersona(store, FAMILIA_SPEC, AS_OF);
+    const store = await createInMemoryStore();
+    await seedPersona(store, FAMILIA_SPEC, AS_OF);
 
     const result = await readDashboard(store);
     const byTier = new Map(result.pyramid.map((t) => [t.tier, t]));
@@ -95,19 +95,23 @@ describe("seedPersona — familia", () => {
     store.close();
   });
 
-  it("includes a non-mortgage anchored debt story", () => {
-    const store = createInMemoryStore();
-    seedPersona(store, FAMILIA_SPEC, AS_OF);
+  it("includes a non-mortgage anchored debt story", async () => {
+    const store = await createInMemoryStore();
+    await seedPersona(store, FAMILIA_SPEC, AS_OF);
 
-    expect(store.liabilities.readDebtModel("liability_familia_car")).toBe("informal");
-    expect(store.liabilities.readBalanceAnchors("liability_familia_car")).toHaveLength(3);
+    expect(await store.liabilities.readDebtModel("liability_familia_car")).toBe(
+      "informal",
+    );
+    expect(
+      await store.liabilities.readBalanceAnchors("liability_familia_car"),
+    ).toHaveLength(3);
 
     store.close();
   });
 
   it("captures today's home value from the modeled housing curve", async () => {
-    const store = createInMemoryStore();
-    seedPersona(store, FAMILIA_SPEC, AS_OF);
+    const store = await createInMemoryStore();
+    await seedPersona(store, FAMILIA_SPEC, AS_OF);
 
     await readDashboard(store);
 
@@ -130,13 +134,15 @@ describe("seedPersona — familia", () => {
       targetDate: AS_OF,
       today: AS_OF,
     });
-    const todayHomeRow = store.snapshots.readSnapshotHoldings({
-      from: AS_OF,
-      holdingId: "asset_familia_home",
-      kind: "asset",
-      scopeId: "household",
-      to: AS_OF,
-    })[0];
+    const todayHomeRow = (
+      await store.snapshots.readSnapshotHoldings({
+        from: AS_OF,
+        holdingId: "asset_familia_home",
+        kind: "asset",
+        scopeId: "household",
+        to: AS_OF,
+      })
+    )[0];
 
     expect(todayHomeRow?.valueMinor).toBe(expectedAsOfValue);
 
@@ -144,8 +150,8 @@ describe("seedPersona — familia", () => {
   });
 
   it("captures today's mortgage balance from the amortization curve", async () => {
-    const store = createInMemoryStore();
-    seedPersona(store, FAMILIA_SPEC, AS_OF);
+    const store = await createInMemoryStore();
+    await seedPersona(store, FAMILIA_SPEC, AS_OF);
 
     await readDashboard(store);
 
@@ -165,13 +171,15 @@ describe("seedPersona — familia", () => {
       },
       targetDate: AS_OF,
     });
-    const todayMortgageRow = store.snapshots.readSnapshotHoldings({
-      from: AS_OF,
-      holdingId: mortgageSpec.liabilityId,
-      kind: "liability",
-      scopeId: "household",
-      to: AS_OF,
-    })[0];
+    const todayMortgageRow = (
+      await store.snapshots.readSnapshotHoldings({
+        from: AS_OF,
+        holdingId: mortgageSpec.liabilityId,
+        kind: "liability",
+        scopeId: "household",
+        to: AS_OF,
+      })
+    )[0];
 
     expect(todayMortgageRow?.valueMinor).toBe(expectedAsOfBalance);
 
@@ -179,20 +187,20 @@ describe("seedPersona — familia", () => {
   });
 
   it("generates a multi-month history via the ripple engine", async () => {
-    const store = createInMemoryStore();
-    seedPersona(store, FAMILIA_SPEC, AS_OF);
+    const store = await createInMemoryStore();
+    await seedPersona(store, FAMILIA_SPEC, AS_OF);
 
     // The mortgage plan + valuation anchors + backfill lay down a believable
     // monthly curve — not a single point. At least a year of monthly closes.
-    const snapshots = store.snapshots.readSnapshots("household");
+    const snapshots = await store.snapshots.readSnapshots("household");
     expect(snapshots.length).toBeGreaterThanOrEqual(12);
 
     store.close();
   });
 
   it("computes FIRE progress for the configured household scope", async () => {
-    const store = createInMemoryStore();
-    seedPersona(store, FAMILIA_SPEC, AS_OF);
+    const store = await createInMemoryStore();
+    await seedPersona(store, FAMILIA_SPEC, AS_OF);
 
     const result = await readDashboard(store, "household");
     expect(result.fireScopeConfig).not.toBeNull();

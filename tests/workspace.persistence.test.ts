@@ -6,15 +6,15 @@ import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 afterEach(cleanupTempDirs);
 
 describe("local workspace persistence", () => {
-  test("initializes an individual EUR workspace with one member", () => {
-    const store = createFileBackedStore("worthline-workspace-");
+  test("initializes an individual EUR workspace with one member", async () => {
+    const store = await createFileBackedStore("worthline-workspace-");
 
-    store.workspace.initializeWorkspace({
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
 
-    const workspace = store.workspace.readWorkspace();
+    const workspace = await store.workspace.readWorkspace();
 
     expect(workspace?.baseCurrency).toBe("EUR");
     expect(workspace?.mode).toBe("individual");
@@ -23,10 +23,10 @@ describe("local workspace persistence", () => {
     expect(listScopeOptions(workspace!).map((scope) => scope.id)).toEqual(["household"]);
   });
 
-  test("persists household members, groups, edits, and soft-disabled members", () => {
-    const store = createFileBackedStore("worthline-workspace-");
+  test("persists household members, groups, edits, and soft-disabled members", async () => {
+    const store = await createFileBackedStore("worthline-workspace-");
 
-    store.workspace.initializeWorkspace({
+    await store.workspace.initializeWorkspace({
       groups: [
         {
           id: "scope_adults",
@@ -42,11 +42,11 @@ describe("local workspace persistence", () => {
       mode: "household",
     });
 
-    store.workspace.createMember({ id: "member_noa", name: "Noa" });
-    store.workspace.updateMember({ id: "member_luz", name: "Lucia" });
-    store.workspace.disableMember("member_noa", "2026-06-08T20:00:00.000Z");
+    await store.workspace.createMember({ id: "member_noa", name: "Noa" });
+    await store.workspace.updateMember({ id: "member_luz", name: "Lucia" });
+    await store.workspace.disableMember("member_noa", "2026-06-08T20:00:00.000Z");
 
-    const workspace = store.workspace.readWorkspace();
+    const workspace = await store.workspace.readWorkspace();
 
     expect(workspace?.members).toMatchObject([
       { id: "member_ana", name: "Ana" },

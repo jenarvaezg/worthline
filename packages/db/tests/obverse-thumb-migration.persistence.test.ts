@@ -12,24 +12,24 @@
  * A second run is a no-op (idempotent), and a fresh DB skips the ALTER (the column
  * already exists from schema-sql).
  */
-import Database from "better-sqlite3";
+import type { Client } from "@libsql/client";
 import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore } from "@db/index";
+import { createInMemoryStore, openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import { schemaSql } from "@db/schema-sql";
 
 /** A pre-v27 DB at user_version 26: current schema minus the new position column,
  *  with one source + one coin position that predates the photo. */
-function seedV26(): Database.Database {
-  const db = new Database(":memory:");
+async function seedV26(): Promise<Client> {
+  const client = openLibsqlClient(":memory:");
   // Build the current full schema, then DROP obverse_thumb_url from positions to
   // simulate a pre-v27 shape (SQLite supports DROP COLUMN ≥ 3.35).
-  db.exec(schemaSql);
-  db.exec("ALTER TABLE positions DROP COLUMN obverse_thumb_url;");
-  db.pragma("user_version = 26");
+  await client.executeMultiple(schemaSql);
+  await client.executeMultiple("ALTER TABLE positions DROP COLUMN obverse_thumb_url;");
+  await client.execute("PRAGMA user_version = 26");
 
-  db.exec(`
+  await client.executeMultiple(`
     INSERT INTO assets (id, name, type, currency, current_value_minor, liquidity_tier, instrument)
       VALUES ('a_coins', 'Colección', 'manual', 'EUR', 0, 'illiquid', 'coin_collection');
     INSERT INTO connected_sources (id, adapter, label, asset_id, credentials_json)
@@ -37,51 +37,62 @@ function seedV26(): Database.Database {
     INSERT INTO positions (id, source_id, kind, name, liquidity_tier, currency, catalogue_id, grade, quantity)
       VALUES ('p_old', 's_numista', 'coin', '8 reales', 'illiquid', 'EUR', '1493', 'unc', 1);
   `);
-  return db;
+  return client;
 }
 
-function positionColumns(db: Database.Database): string[] {
-  return (db.prepare("PRAGMA table_info(positions)").all() as { name: string }[]).map(
-    (c) => c.name,
-  );
+async function positionColumns(client: Client): Promise<string[]> {
+  return (
+    (await client.execute("PRAGMA table_info(positions)")).rows as unknown as {
+      name: string;
+    }[]
+  ).map((c) => c.name);
 }
 
 describe("v27 positions.obverse_thumb_url migration (#272)", () => {
-  test("adds the column; an old row reads null and a new row stores a URL", () => {
-    const db = seedV26();
-    expect(positionColumns(db)).not.toContain("obverse_thumb_url");
+  test("adds the column; an old row reads null and a new row stores a URL", async () => {
+    const client = await seedV26();
+    expect(await positionColumns(client)).not.toContain("obverse_thumb_url");
 
-    migrate(db);
+    await migrate(client);
 
-    expect(positionColumns(db)).toContain("obverse_thumb_url");
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
+    expect(await positionColumns(client)).toContain("obverse_thumb_url");
+    expect(
+      Number((await client.execute("PRAGMA user_version")).rows[0]!.user_version),
+    ).toBe(SCHEMA_VERSION);
 
     // The pre-existing coin gets NULL — the UI shows a metal-glyph fallback.
-    const old = db
-      .prepare("SELECT obverse_thumb_url AS url FROM positions WHERE id = 'p_old'")
-      .get() as { url: string | null };
+    const old = (
+      await client.execute(
+        "SELECT obverse_thumb_url AS url FROM positions WHERE id = 'p_old'",
+      )
+    ).rows[0] as unknown as { url: string | null };
     expect(old.url).toBeNull();
 
     // A coin written after the migration can carry its catalogue photo.
-    db.prepare(
-      `INSERT INTO positions (id, source_id, kind, name, liquidity_tier, currency, catalogue_id, grade, quantity, obverse_thumb_url)
+    await client.execute({
+      sql: `INSERT INTO positions (id, source_id, kind, name, liquidity_tier, currency, catalogue_id, grade, quantity, obverse_thumb_url)
        VALUES ('p_new', 's_numista', 'coin', 'Eagle', 'illiquid', 'EUR', '1', 'unc', 1, ?)`,
-    ).run("https://en.numista.com/catalogue/photos/x/1493-180.jpg");
-    const fresh = db
-      .prepare("SELECT obverse_thumb_url AS url FROM positions WHERE id = 'p_new'")
-      .get() as { url: string | null };
+      args: ["https://en.numista.com/catalogue/photos/x/1493-180.jpg"],
+    });
+    const fresh = (
+      await client.execute(
+        "SELECT obverse_thumb_url AS url FROM positions WHERE id = 'p_new'",
+      )
+    ).rows[0] as unknown as { url: string | null };
     expect(fresh.url).toBe("https://en.numista.com/catalogue/photos/x/1493-180.jpg");
-    db.close();
+    client.close();
   });
 
-  test("a second migrate is a no-op (idempotent) and a fresh store has the column", () => {
-    const db = seedV26();
-    migrate(db);
-    expect(() => migrate(db)).not.toThrow();
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
-    db.close();
+  test("a second migrate is a no-op (idempotent) and a fresh store has the column", async () => {
+    const client = await seedV26();
+    await migrate(client);
+    await expect(migrate(client)).resolves.not.toThrow();
+    expect(
+      Number((await client.execute("PRAGMA user_version")).rows[0]!.user_version),
+    ).toBe(SCHEMA_VERSION);
+    client.close();
 
-    const fresh = createInMemoryStore();
+    const fresh = await createInMemoryStore();
     expect(fresh).toBeDefined();
   });
 });

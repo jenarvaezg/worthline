@@ -7,19 +7,20 @@
  * housing → illiquid) on both, while the snapshot's five frozen figures stay
  * byte-identical — re-tiering history must never alter a captured figure (ADR 0008).
  */
-import Database from "better-sqlite3";
+import type { Client } from "@libsql/client";
 import { describe, expect, test } from "vitest";
 
+import { openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import { schemaSql } from "@db/schema-sql";
 
-function seedV11(): Database.Database {
-  const db = new Database(":memory:");
-  db.exec(schemaSql);
+async function seedV11(): Promise<Client> {
+  const client = openLibsqlClient(":memory:");
+  await client.executeMultiple(schemaSql);
   // Pretend this database predates the recut so migrate() runs only the v12 step.
-  db.pragma("user_version = 11");
+  await client.execute("PRAGMA user_version = 11");
 
-  db.exec(`
+  await client.executeMultiple(`
     INSERT INTO assets (id, name, type, currency, current_value_minor, liquidity_tier) VALUES
       ('a_pension', 'Plan', 'manual', 'EUR', 80000, 'retirement'),
       ('a_home', 'Piso', 'real_estate', 'EUR', 300000, 'housing'),
@@ -40,7 +41,7 @@ function seedV11(): Database.Database {
       ('sh_loan', 'snap1', 'l_loan', 'liability', 'Préstamo', NULL, 30000);
   `);
 
-  return db;
+  return client;
 }
 
 const FIGURE_COLUMNS = [
@@ -52,53 +53,59 @@ const FIGURE_COLUMNS = [
 ] as const;
 
 describe("liquidity-ladder schema migration (v12)", () => {
-  test("remaps live asset tiers retirement → term-locked and housing → illiquid", () => {
-    const db = seedV11();
-    migrate(db);
+  test("remaps live asset tiers retirement → term-locked and housing → illiquid", async () => {
+    const client = await seedV11();
+    await migrate(client);
 
-    const tierOf = (id: string) =>
+    const tierOf = async (id: string) =>
       (
-        db.prepare("SELECT liquidity_tier AS t FROM assets WHERE id = ?").get(id) as {
-          t: string;
-        }
+        (
+          await client.execute({
+            sql: "SELECT liquidity_tier AS t FROM assets WHERE id = ?",
+            args: [id],
+          })
+        ).rows[0] as unknown as { t: string }
       ).t;
 
-    expect(tierOf("a_pension")).toBe("term-locked");
-    expect(tierOf("a_home")).toBe("illiquid");
-    expect(tierOf("a_cash")).toBe("cash");
-    expect(db.pragma("user_version", { simple: true })).toBe(SCHEMA_VERSION);
+    expect(await tierOf("a_pension")).toBe("term-locked");
+    expect(await tierOf("a_home")).toBe("illiquid");
+    expect(await tierOf("a_cash")).toBe("cash");
+    expect(
+      Number((await client.execute("PRAGMA user_version")).rows[0]!.user_version),
+    ).toBe(SCHEMA_VERSION);
   });
 
-  test("remaps frozen snapshot-holding tiers, leaving null tiers untouched", () => {
-    const db = seedV11();
-    migrate(db);
+  test("remaps frozen snapshot-holding tiers, leaving null tiers untouched", async () => {
+    const client = await seedV11();
+    await migrate(client);
 
-    const tierOf = (id: string) =>
+    const tierOf = async (id: string) =>
       (
-        db
-          .prepare("SELECT liquidity_tier AS t FROM snapshot_holdings WHERE id = ?")
-          .get(id) as {
-          t: string | null;
-        }
+        (
+          await client.execute({
+            sql: "SELECT liquidity_tier AS t FROM snapshot_holdings WHERE id = ?",
+            args: [id],
+          })
+        ).rows[0] as unknown as { t: string | null }
       ).t;
 
-    expect(tierOf("sh_pension")).toBe("term-locked");
+    expect(await tierOf("sh_pension")).toBe("term-locked");
     // Migrate runs the FULL ladder: v12 recuts housing → illiquid, then v17
     // backfills counts_as_housing=1 for this property row, and v28 (ADR 0022)
     // relabels every counts_as_housing row to the new `housing` rung.
-    expect(tierOf("sh_home")).toBe("housing");
-    expect(tierOf("sh_cash")).toBe("cash");
-    expect(tierOf("sh_loan")).toBeNull();
+    expect(await tierOf("sh_home")).toBe("housing");
+    expect(await tierOf("sh_cash")).toBe("cash");
+    expect(await tierOf("sh_loan")).toBeNull();
   });
 
-  test("the five frozen figures of an existing snapshot are byte-identical after the recut", () => {
-    const db = seedV11();
+  test("the five frozen figures of an existing snapshot are byte-identical after the recut", async () => {
+    const client = await seedV11();
     const select = `SELECT ${FIGURE_COLUMNS.join(", ")} FROM snapshots WHERE id = 'snap1'`;
-    const before = db.prepare(select).get();
+    const before = (await client.execute(select)).rows[0];
 
-    migrate(db);
+    await migrate(client);
 
-    const after = db.prepare(select).get();
+    const after = (await client.execute(select)).rows[0];
     expect(after).toEqual(before);
     // And concretely, the seeded values are intact.
     expect(after).toEqual({

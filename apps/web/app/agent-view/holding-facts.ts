@@ -41,17 +41,17 @@ export interface HoldingFacts {
  * facts at all, so it surfaces neither a block nor a marker — the absence is the
  * signal, not a defect to flag.
  */
-export function assetHoldingFacts(
+export async function assetHoldingFacts(
   store: AgentViewReadStore,
   assetId: string,
   valuationMethod: string,
   currency: string,
-): HoldingFacts {
+): Promise<HoldingFacts> {
   if (valuationMethod !== "appreciating") {
     return {};
   }
 
-  const anchors = store.readValuationAnchors(assetId);
+  const anchors = await store.readValuationAnchors(assetId);
   if (anchors.length === 0) {
     return { state: "missing_configuration" };
   }
@@ -71,13 +71,13 @@ export function assetHoldingFacts(
  * facts it cannot produce → `unsupported`; a genuinely stored liability (no
  * facts expected) carries no marker.
  */
-export function liabilityHoldingFacts(
+export async function liabilityHoldingFacts(
   store: AgentViewReadStore,
   liabilityId: string,
   expectedValuationMethod: string,
   currency: string,
-): HoldingFacts {
-  const debtModel = store.readDebtModel(liabilityId);
+): Promise<HoldingFacts> {
+  const debtModel = await store.readDebtModel(liabilityId);
 
   if (debtModel === "amortizable") {
     return amortizationFacts(store, liabilityId, currency);
@@ -97,18 +97,18 @@ export function liabilityHoldingFacts(
   return {};
 }
 
-function amortizationFacts(
+async function amortizationFacts(
   store: AgentViewReadStore,
   liabilityId: string,
   currency: string,
-): HoldingFacts {
-  const plan = store.readAmortizationPlan(liabilityId);
+): Promise<HoldingFacts> {
+  const plan = await store.readAmortizationPlan(liabilityId);
   if (!plan) {
     return { state: "missing_configuration" };
   }
 
-  const revisions = store.readInterestRateRevisions(plan.id);
-  const repayments = store.readEarlyRepayments(plan.id);
+  const revisions = await store.readInterestRateRevisions(plan.id);
+  const repayments = await store.readEarlyRepayments(plan.id);
 
   return {
     amortization: {
@@ -121,13 +121,13 @@ function amortizationFacts(
   };
 }
 
-function balanceAnchorFacts(
+async function balanceAnchorFacts(
   store: AgentViewReadStore,
   liabilityId: string,
   debtModel: Exclude<DebtModel, "amortizable">,
   currency: string,
-): HoldingFacts {
-  const anchors = store.readBalanceAnchors(liabilityId);
+): Promise<HoldingFacts> {
+  const anchors = await store.readBalanceAnchors(liabilityId);
   if (anchors.length === 0) {
     return { state: "missing_configuration" };
   }

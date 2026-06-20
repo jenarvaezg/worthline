@@ -78,13 +78,13 @@ async function holdingIdByLabel(scopeId: string, label: string): Promise<string>
 const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
 
 /** Open a fresh store against a temp DB and initialize a single-member household. */
-function freshStore(): ReturnType<typeof createWorthlineStore> {
+async function freshStore(): Promise<Awaited<ReturnType<typeof createWorthlineStore>>> {
   const databasePath = tempDatabasePath("worthline-agent-view-facts-");
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = createWorthlineStore({ databasePath });
-  store.workspace.initializeWorkspace({
+  const store = await createWorthlineStore({ databasePath });
+  await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
   });
@@ -164,8 +164,8 @@ interface HoldingDetailFacts {
 
 describe("get_holding_detail — appreciating valuation anchors (#338)", () => {
   test("includes valuation anchors distinguishing appraisals from improvements", async () => {
-    const store = freshStore();
-    store.assets.createManualAsset({
+    const store = await freshStore();
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 300_000_00,
       id: "asset_home",
@@ -175,14 +175,14 @@ describe("get_holding_detail — appreciating valuation anchors (#338)", () => {
       ownership: owner,
       type: "real_estate",
     });
-    store.assets.addValuationAnchor({
+    await store.assets.addValuationAnchor({
       adjustsPriorCurve: true,
       assetId: "asset_home",
       id: "van_appraisal",
       valuationDate: "2020-01-01",
       valueMinor: 250_000_00,
     });
-    store.assets.addValuationAnchor({
+    await store.assets.addValuationAnchor({
       adjustsPriorCurve: false,
       assetId: "asset_home",
       id: "van_reform",
@@ -220,8 +220,8 @@ describe("get_holding_detail — appreciating valuation anchors (#338)", () => {
   });
 
   test("appreciating asset with no anchors → missing_configuration quality note, no fabricated facts", async () => {
-    const store = freshStore();
-    store.assets.createManualAsset({
+    const store = await freshStore();
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 300_000_00,
       id: "asset_home",
@@ -244,8 +244,8 @@ describe("get_holding_detail — appreciating valuation anchors (#338)", () => {
   });
 
   test("stored asset surfaces no valuation-fact block or fact note", async () => {
-    const store = freshStore();
-    store.assets.createManualAsset({
+    const store = await freshStore();
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 10_000_00,
       id: "asset_cash",
@@ -270,9 +270,9 @@ describe("get_holding_detail — appreciating valuation anchors (#338)", () => {
 });
 
 /** Seed a mortgage liability with an amortization plan + a revision + a repayment. */
-function seedAmortizedMortgage(): void {
-  const store = freshStore();
-  store.liabilities.createLiability({
+async function seedAmortizedMortgage(): Promise<void> {
+  const store = await freshStore();
+  await store.liabilities.createLiability({
     balanceMinor: 180_000_00,
     currency: "EUR",
     id: "liab_mortgage",
@@ -280,8 +280,8 @@ function seedAmortizedMortgage(): void {
     ownership: owner,
     type: "mortgage",
   });
-  store.liabilities.setDebtModel("liab_mortgage", "amortizable");
-  store.liabilities.createAmortizationPlan({
+  await store.liabilities.setDebtModel("liab_mortgage", "amortizable");
+  await store.liabilities.createAmortizationPlan({
     annualInterestRate: "0.025",
     disbursementDate: "2020-01-01",
     firstPaymentDate: "2020-02-01",
@@ -290,13 +290,13 @@ function seedAmortizedMortgage(): void {
     liabilityId: "liab_mortgage",
     termMonths: 360,
   });
-  store.liabilities.addInterestRateRevision({
+  await store.liabilities.addInterestRateRevision({
     id: "irr_rev",
     newAnnualInterestRate: "0.03",
     planId: "amp_plan",
     revisionDate: "2023-01-01",
   });
-  store.liabilities.addEarlyRepayment({
+  await store.liabilities.addEarlyRepayment({
     amountMinor: 10_000_00,
     id: "erp_lump",
     mode: "reduce-term",
@@ -308,7 +308,7 @@ function seedAmortizedMortgage(): void {
 
 describe("get_holding_detail — amortized liability facts (#338)", () => {
   test("includes the amortization plan, interest-rate revisions, and early repayments", async () => {
-    seedAmortizedMortgage();
+    await seedAmortizedMortgage();
     const scopeId = await householdScopeId();
     const mortgageId = await holdingIdByLabel(scopeId, "Hipoteca");
 
@@ -356,8 +356,8 @@ describe("get_holding_detail — amortized liability facts (#338)", () => {
   });
 
   test("amortizable liability with no plan → missing_configuration, no fabricated facts", async () => {
-    const store = freshStore();
-    store.liabilities.createLiability({
+    const store = await freshStore();
+    await store.liabilities.createLiability({
       balanceMinor: 50_000_00,
       currency: "EUR",
       id: "liab_loan",
@@ -365,7 +365,7 @@ describe("get_holding_detail — amortized liability facts (#338)", () => {
       ownership: owner,
       type: "debt",
     });
-    store.liabilities.setDebtModel("liab_loan", "amortizable");
+    await store.liabilities.setDebtModel("liab_loan", "amortizable");
     store.close();
 
     const scopeId = await householdScopeId();
@@ -379,8 +379,8 @@ describe("get_holding_detail — amortized liability facts (#338)", () => {
   });
 
   test("liability with no debt model but a debt-fact instrument → unsupported", async () => {
-    const store = freshStore();
-    store.liabilities.createLiability({
+    const store = await freshStore();
+    await store.liabilities.createLiability({
       balanceMinor: 50_000_00,
       currency: "EUR",
       id: "liab_loan",
@@ -402,9 +402,9 @@ describe("get_holding_detail — amortized liability facts (#338)", () => {
 });
 
 /** Seed a revolving credit-card liability with two balance anchors. */
-function seedAnchoredCard(model: "revolving" | "informal"): void {
-  const store = freshStore();
-  store.liabilities.createLiability({
+async function seedAnchoredCard(model: "revolving" | "informal"): Promise<void> {
+  const store = await freshStore();
+  await store.liabilities.createLiability({
     balanceMinor: 6_000_00,
     currency: "EUR",
     id: "liab_card",
@@ -412,14 +412,14 @@ function seedAnchoredCard(model: "revolving" | "informal"): void {
     ownership: owner,
     type: "debt",
   });
-  store.liabilities.setDebtModel("liab_card", model);
-  store.liabilities.addBalanceAnchor({
+  await store.liabilities.setDebtModel("liab_card", model);
+  await store.liabilities.addBalanceAnchor({
     anchorDate: "2024-01-01",
     balanceMinor: 10_000_00,
     id: "ban_jan",
     liabilityId: "liab_card",
   });
-  store.liabilities.addBalanceAnchor({
+  await store.liabilities.addBalanceAnchor({
     anchorDate: "2024-06-01",
     balanceMinor: 6_000_00,
     id: "ban_jun",
@@ -430,7 +430,7 @@ function seedAnchoredCard(model: "revolving" | "informal"): void {
 
 describe("get_holding_detail — anchored liability facts (#338)", () => {
   test("includes balance anchors and linear interpolation for a revolving debt", async () => {
-    seedAnchoredCard("revolving");
+    await seedAnchoredCard("revolving");
     const scopeId = await householdScopeId();
     const cardId = await holdingIdByLabel(scopeId, "Tarjeta");
 
@@ -463,7 +463,7 @@ describe("get_holding_detail — anchored liability facts (#338)", () => {
   });
 
   test("informal debt uses step interpolation", async () => {
-    seedAnchoredCard("informal");
+    await seedAnchoredCard("informal");
     const scopeId = await householdScopeId();
     const cardId = await holdingIdByLabel(scopeId, "Tarjeta");
 
@@ -475,8 +475,8 @@ describe("get_holding_detail — anchored liability facts (#338)", () => {
   });
 
   test("revolving debt with no balance anchors → missing_configuration", async () => {
-    const store = freshStore();
-    store.liabilities.createLiability({
+    const store = await freshStore();
+    await store.liabilities.createLiability({
       balanceMinor: 6_000_00,
       currency: "EUR",
       id: "liab_card",
@@ -484,7 +484,7 @@ describe("get_holding_detail — anchored liability facts (#338)", () => {
       ownership: owner,
       type: "debt",
     });
-    store.liabilities.setDebtModel("liab_card", "revolving");
+    await store.liabilities.setDebtModel("liab_card", "revolving");
     store.close();
 
     const scopeId = await householdScopeId();
@@ -499,7 +499,7 @@ describe("get_holding_detail — anchored liability facts (#338)", () => {
 
 describe("get_holding_detail — facts parity & no mutation (#338)", () => {
   test("MCP get_holding_detail mirrors the HTTP shape for an amortized liability", async () => {
-    seedAmortizedMortgage();
+    await seedAmortizedMortgage();
     const scopeId = await householdScopeId();
     const mortgageId = await holdingIdByLabel(scopeId, "Hipoteca");
     const httpBody = (await holding(mortgageId)).body;
@@ -511,8 +511,8 @@ describe("get_holding_detail — facts parity & no mutation (#338)", () => {
   });
 
   test("MCP get_holding_detail mirrors the HTTP shape for an appreciating asset", async () => {
-    const store = freshStore();
-    store.assets.createManualAsset({
+    const store = await freshStore();
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 300_000_00,
       id: "asset_home",
@@ -522,7 +522,7 @@ describe("get_holding_detail — facts parity & no mutation (#338)", () => {
       ownership: owner,
       type: "real_estate",
     });
-    store.assets.addValuationAnchor({
+    await store.assets.addValuationAnchor({
       adjustsPriorCurve: true,
       assetId: "asset_home",
       id: "van_appraisal",
@@ -542,8 +542,8 @@ describe("get_holding_detail — facts parity & no mutation (#338)", () => {
   });
 
   test("reading calculation facts does not mutate persisted state", async () => {
-    const store = freshStore();
-    store.assets.createManualAsset({
+    const store = await freshStore();
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 300_000_00,
       id: "asset_home",
@@ -553,14 +553,14 @@ describe("get_holding_detail — facts parity & no mutation (#338)", () => {
       ownership: owner,
       type: "real_estate",
     });
-    store.assets.addValuationAnchor({
+    await store.assets.addValuationAnchor({
       adjustsPriorCurve: true,
       assetId: "asset_home",
       id: "van_appraisal",
       valuationDate: "2020-01-01",
       valueMinor: 250_000_00,
     });
-    store.liabilities.createLiability({
+    await store.liabilities.createLiability({
       balanceMinor: 180_000_00,
       currency: "EUR",
       id: "liab_mortgage",
@@ -568,8 +568,8 @@ describe("get_holding_detail — facts parity & no mutation (#338)", () => {
       ownership: owner,
       type: "mortgage",
     });
-    store.liabilities.setDebtModel("liab_mortgage", "amortizable");
-    store.liabilities.createAmortizationPlan({
+    await store.liabilities.setDebtModel("liab_mortgage", "amortizable");
+    await store.liabilities.createAmortizationPlan({
       annualInterestRate: "0.025",
       disbursementDate: "2020-01-01",
       firstPaymentDate: "2020-02-01",
@@ -578,20 +578,20 @@ describe("get_holding_detail — facts parity & no mutation (#338)", () => {
       liabilityId: "liab_mortgage",
       termMonths: 360,
     });
-    store.liabilities.addInterestRateRevision({
+    await store.liabilities.addInterestRateRevision({
       id: "irr_rev",
       newAnnualInterestRate: "0.03",
       planId: "amp_plan",
       revisionDate: "2023-01-01",
     });
-    store.liabilities.addEarlyRepayment({
+    await store.liabilities.addEarlyRepayment({
       amountMinor: 10_000_00,
       id: "erp_lump",
       mode: "reduce-term",
       planId: "amp_plan",
       repaymentDate: "2024-06-01",
     });
-    store.liabilities.createLiability({
+    await store.liabilities.createLiability({
       balanceMinor: 6_000_00,
       currency: "EUR",
       id: "liab_card",
@@ -599,8 +599,8 @@ describe("get_holding_detail — facts parity & no mutation (#338)", () => {
       ownership: owner,
       type: "debt",
     });
-    store.liabilities.setDebtModel("liab_card", "revolving");
-    store.liabilities.addBalanceAnchor({
+    await store.liabilities.setDebtModel("liab_card", "revolving");
+    await store.liabilities.addBalanceAnchor({
       anchorDate: "2024-01-01",
       balanceMinor: 10_000_00,
       id: "ban_jan",
@@ -614,11 +614,11 @@ describe("get_holding_detail — facts parity & no mutation (#338)", () => {
     const mortgageId = await holdingIdByLabel(scopeId, "Hipoteca");
     const cardId = await holdingIdByLabel(scopeId, "Tarjeta");
 
-    const before = factsFingerprint(databasePath);
+    const before = await factsFingerprint(databasePath);
     await holding(homeId);
     await holding(mortgageId);
     await holding(cardId);
-    const after = factsFingerprint(databasePath);
+    const after = await factsFingerprint(databasePath);
 
     expect(after).toBe(before);
   });
@@ -626,15 +626,15 @@ describe("get_holding_detail — facts parity & no mutation (#338)", () => {
 
 // A fingerprint of every dated calculation fact, to prove an agent read writes
 // nothing (no anchors, plans, revisions, repayments, or balance anchors changed).
-function factsFingerprint(databasePath: string): string {
-  const store = createWorthlineStore({ databasePath });
+async function factsFingerprint(databasePath: string): Promise<string> {
+  const store = await createWorthlineStore({ databasePath });
   const snapshot = JSON.stringify({
-    amortizationPlan: store.liabilities.readAmortizationPlan("liab_mortgage"),
-    balanceAnchors: store.liabilities.readBalanceAnchors("liab_card"),
-    earlyRepayments: store.liabilities.readEarlyRepayments("amp_plan"),
-    interestRateRevisions: store.liabilities.readInterestRateRevisions("amp_plan"),
-    publicIds: store.agentView.readPublicIds(),
-    valuationAnchors: store.assets.readValuationAnchors("asset_home"),
+    amortizationPlan: await store.liabilities.readAmortizationPlan("liab_mortgage"),
+    balanceAnchors: await store.liabilities.readBalanceAnchors("liab_card"),
+    earlyRepayments: await store.liabilities.readEarlyRepayments("amp_plan"),
+    interestRateRevisions: await store.liabilities.readInterestRateRevisions("amp_plan"),
+    publicIds: await store.agentView.readPublicIds(),
+    valuationAnchors: await store.assets.readValuationAnchors("asset_home"),
   });
   store.close();
   return snapshot;

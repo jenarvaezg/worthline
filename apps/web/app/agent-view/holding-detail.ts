@@ -34,19 +34,19 @@ import {
  * (`projectPortfolio`) — never the dashboard load path, so a read cannot refresh
  * prices. Deep valuation/debt facts (amortization, anchors) are issue #338.
  */
-export function buildHoldingDetail(
+export async function buildHoldingDetail(
   store: AgentViewReadStore,
   publicHoldingId: string,
-): AgentViewHoldingDetail {
-  const workspace = store.readWorkspace();
+): Promise<AgentViewHoldingDetail> {
+  const workspace = await store.readWorkspace();
 
   if (!workspace) {
     throw unknownHolding();
   }
 
-  const internalHoldingId = resolveInternalHoldingId(store, publicHoldingId);
-  const assets = store.readAssets();
-  const liabilities = store.readLiabilities();
+  const internalHoldingId = await resolveInternalHoldingId(store, publicHoldingId);
+  const assets = await store.readAssets();
+  const liabilities = await store.readLiabilities();
   const scope = householdScope(workspace);
   const projection = projectPortfolio({ assets, liabilities, scope, workspace });
 
@@ -63,18 +63,23 @@ export function buildHoldingDetail(
   }
 
   const currency = workspace.baseCurrency;
-  const common = ownershipContext(store, workspace);
+  const common = await ownershipContext(store, workspace);
 
   if (assetRow) {
     const isInvestment = assets.some(
       (asset) => asset.id === internalHoldingId && asset.type === "investment",
     );
     const operationSummary = isInvestment
-      ? summarizeOperations(store.readOperations(internalHoldingId), currency)
+      ? summarizeOperations(await store.readOperations(internalHoldingId), currency)
       : undefined;
-    const sourceSummary = buildSourceSummary(store, internalHoldingId);
+    const sourceSummary = await buildSourceSummary(store, internalHoldingId);
     const valuationMethod = defaultsFor(assetRow.instrument).valuationMethod;
-    const facts = assetHoldingFacts(store, internalHoldingId, valuationMethod, currency);
+    const facts = await assetHoldingFacts(
+      store,
+      internalHoldingId,
+      valuationMethod,
+      currency,
+    );
 
     return {
       currentValue: moneyOf(assetRow.valueMinor, currency),
@@ -98,7 +103,7 @@ export function buildHoldingDetail(
 
   const row = liabilityRow!;
   const valuationMethod = defaultsFor(row.instrument).valuationMethod;
-  const facts = liabilityHoldingFacts(
+  const facts = await liabilityHoldingFacts(
     store,
     internalHoldingId,
     valuationMethod,
@@ -160,13 +165,13 @@ interface OwnershipContext {
   memberLabels: Map<string, string>;
 }
 
-function ownershipContext(
+async function ownershipContext(
   store: AgentViewReadStore,
   workspace: Workspace,
-): OwnershipContext {
+): Promise<OwnershipContext> {
   return {
     memberLabels: new Map(workspace.members.map((member) => [member.id, member.name])),
-    memberPublicIds: publicIdMap(store.readPublicIds(), "member"),
+    memberPublicIds: publicIdMap(await store.readPublicIds(), "member"),
   };
 }
 
@@ -188,7 +193,7 @@ function toOwnership(
 
 /** True when the holding carries any surfaced domain warning (issue #341 deepens this). */
 function holdingHasWarnings(
-  assets: ReturnType<AgentViewReadStore["readAssets"]>,
+  assets: Awaited<ReturnType<AgentViewReadStore["readAssets"]>>,
   internalHoldingId: string,
 ): boolean {
   return collectWarnings(assets).some(
@@ -197,13 +202,13 @@ function holdingHasWarnings(
 }
 
 /** The connected source that materialized this holding, when one did. */
-function buildSourceSummary(
+async function buildSourceSummary(
   store: AgentViewReadStore,
   internalHoldingId: string,
-): AgentViewHoldingSourceSummary | undefined {
-  const source = store
-    .readConnectedSources()
-    .find((candidate) => candidate.assetIds.includes(internalHoldingId));
+): Promise<AgentViewHoldingSourceSummary | undefined> {
+  const source = (await store.readConnectedSources()).find((candidate) =>
+    candidate.assetIds.includes(internalHoldingId),
+  );
 
   if (!source) {
     return undefined;

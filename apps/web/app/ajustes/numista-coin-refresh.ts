@@ -31,13 +31,15 @@ export async function runNumistaCoinRefresh(
   store: WorthlineStore,
   nowIso: string,
 ): Promise<RefreshCoinValuationsResult> {
-  const sources: CoinSourceRef[] = store.connectedSources
-    .listSources()
-    .filter((source) => source.adapter === "numista")
-    .map((source) => ({
+  const numistaSources = (await store.connectedSources.listSources()).filter(
+    (source) => source.adapter === "numista",
+  );
+  const sources: CoinSourceRef[] = await Promise.all(
+    numistaSources.map(async (source) => ({
       sourceId: source.id,
-      freshness: store.operations.readPriceCache(source.assetId),
-    }));
+      freshness: await store.operations.readPriceCache(source.assetId),
+    })),
+  );
 
   if (sources.length === 0) {
     return { errors: [] };
@@ -50,7 +52,7 @@ export async function runNumistaCoinRefresh(
     persist: (sourceId, updates, freshness) =>
       store.connectedSources.revaluePositions(sourceId, updates, freshness),
     revalue: async (sourceId, positions, now) => {
-      const source = store.connectedSources.readSource(sourceId);
+      const source = await store.connectedSources.readSource(sourceId);
       const apiKey = source ? readApiKey(source.credentialsJson) : null;
       if (!source || !apiKey) {
         throw new Error("Numista credentials unavailable.");
@@ -61,7 +63,7 @@ export async function runNumistaCoinRefresh(
       let token = parseNumistaToken(source.tokenJson);
       if (!token || !isTokenValid(token, nowMs)) {
         token = await mintNumistaToken(credentials, nowMs);
-        store.connectedSources.saveToken(sourceId, JSON.stringify(token));
+        await store.connectedSources.saveToken(sourceId, JSON.stringify(token));
       }
 
       return refreshCoinValuations(

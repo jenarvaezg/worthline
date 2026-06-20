@@ -7,9 +7,9 @@ export default async function globalSetup(): Promise<void> {
     throw new Error("WORTHLINE_DB_PATH must be set for e2e globalSetup");
   }
 
-  const store = createWorthlineStore({ databasePath });
+  const store = await createWorthlineStore({ databasePath });
 
-  store.workspace.initializeWorkspace({
+  await store.workspace.initializeWorkspace({
     mode: "household",
     members: [
       { id: "member_seed", name: "Seed" },
@@ -17,7 +17,7 @@ export default async function globalSetup(): Promise<void> {
     ],
   });
 
-  store.assets.createManualAsset({
+  await store.assets.createManualAsset({
     id: "asset_seed",
     name: "Caja seed",
     type: "cash",
@@ -46,12 +46,12 @@ export default async function globalSetup(): Promise<void> {
   lastMonth.setMonth(lastMonth.getMonth() - 1);
   const seedCapturedAt = lastMonth.toISOString();
 
-  const workspace = store.workspace.readWorkspace();
+  const workspace = await store.workspace.readWorkspace();
   if (!workspace) {
     throw new Error("Workspace not initialized");
   }
 
-  const assets = store.assets.readAssets();
+  const assets = await store.assets.readAssets();
 
   // captureValuedNetWorthSnapshot also builds the frozen holding rows (ADR 0008)
   // — required so this point survives the composition series' row-backed filter.
@@ -64,7 +64,7 @@ export default async function globalSetup(): Promise<void> {
     id: "snapshot_seed_prev_month",
   });
 
-  store.snapshots.saveSnapshot({ snapshot, holdings });
+  await store.snapshots.saveSnapshot({ snapshot, holdings });
 
   store.close();
 }

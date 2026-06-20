@@ -39,8 +39,10 @@ async function runAction(
   }
 }
 
-function seedWithSource(store: WorthlineStore): { sourceId: string; assetId: string } {
-  store.workspace.initializeWorkspace({
+async function seedWithSource(
+  store: WorthlineStore,
+): Promise<{ sourceId: string; assetId: string }> {
+  await store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jose" }],
     mode: "individual",
   });
@@ -58,11 +60,11 @@ afterEach(() => {
 
 describe("disconnectBinanceAction", () => {
   test("removes the source, its positions, and the projected holding (cascade)", async () => {
-    const store = createInMemoryStore();
-    const { sourceId, assetId } = seedWithSource(store);
+    const store = await createInMemoryStore();
+    const { sourceId, assetId } = await seedWithSource(store);
 
     // Give it a position so we can prove the cascade also clears positions.
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         {
@@ -80,8 +82,8 @@ describe("disconnectBinanceAction", () => {
       "2026-06-16T10:00:00.000Z",
     );
 
-    expect(store.connectedSources.listSources()).toHaveLength(1);
-    expect(store.assets.readAssets().some((a) => a.id === assetId)).toBe(true);
+    expect(await store.connectedSources.listSources()).toHaveLength(1);
+    expect((await store.assets.readAssets()).some((a) => a.id === assetId)).toBe(true);
 
     const digest = await runAction(
       disconnectBinanceAction,
@@ -90,17 +92,17 @@ describe("disconnectBinanceAction", () => {
     );
 
     expect(digest).toContain("ok=binance_disconnected");
-    expect(store.connectedSources.listSources()).toHaveLength(0);
-    expect(store.connectedSources.readSource(sourceId)).toBeNull();
-    expect(store.assets.readAssets().some((a) => a.id === assetId)).toBe(false);
+    expect(await store.connectedSources.listSources()).toHaveLength(0);
+    expect(await store.connectedSources.readSource(sourceId)).toBeNull();
+    expect((await store.assets.readAssets()).some((a) => a.id === assetId)).toBe(false);
   });
 
   test("removes BOTH the market and term-locked assets of a multi-rung source (#248)", async () => {
-    const store = createInMemoryStore();
-    const { sourceId } = seedWithSource(store);
+    const store = await createInMemoryStore();
+    const { sourceId } = await seedWithSource(store);
 
     // Spot (market) + locked-earn (term-locked) → two materialized assets.
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         {
@@ -129,7 +131,7 @@ describe("disconnectBinanceAction", () => {
       "2026-06-16T10:00:00.000Z",
     );
 
-    expect(store.connectedSources.listSourceAssetIds(sourceId)).toHaveLength(2);
+    expect(await store.connectedSources.listSourceAssetIds(sourceId)).toHaveLength(2);
 
     const digest = await runAction(
       disconnectBinanceAction,
@@ -138,14 +140,16 @@ describe("disconnectBinanceAction", () => {
     );
 
     expect(digest).toContain("ok=binance_disconnected");
-    expect(store.connectedSources.listSources()).toHaveLength(0);
+    expect(await store.connectedSources.listSources()).toHaveLength(0);
     // No crypto asset survives — both rungs were removed, positions cascaded.
-    expect(store.assets.readAssets().some((a) => a.instrument === "crypto")).toBe(false);
+    expect((await store.assets.readAssets()).some((a) => a.instrument === "crypto")).toBe(
+      false,
+    );
   });
 
   test("errors when no source id is supplied", async () => {
-    const store = createInMemoryStore();
-    seedWithSource(store);
+    const store = await createInMemoryStore();
+    await seedWithSource(store);
 
     const digest = await runAction(
       disconnectBinanceAction,
@@ -154,15 +158,15 @@ describe("disconnectBinanceAction", () => {
     );
 
     expect(digest).toContain("error=");
-    expect(store.connectedSources.listSources()).toHaveLength(1);
+    expect(await store.connectedSources.listSources()).toHaveLength(1);
   });
 
   test("mode=freeze keeps EVERY rung as a hand-valued holding instead of removing it", async () => {
-    const store = createInMemoryStore();
-    const { sourceId, assetId } = seedWithSource(store);
+    const store = await createInMemoryStore();
+    const { sourceId, assetId } = await seedWithSource(store);
 
     // Market spot + term-locked locked-earn → two materialized crypto assets.
-    store.connectedSources.syncPositions(
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         {
@@ -190,9 +194,9 @@ describe("disconnectBinanceAction", () => {
       ],
       "2026-06-16T10:00:00.000Z",
     );
-    const termLockedId = store.connectedSources
-      .listSourceAssetIds(sourceId)
-      .find((id) => id !== assetId)!;
+    const termLockedId = (await store.connectedSources.listSourceAssetIds(sourceId)).find(
+      (id) => id !== assetId,
+    )!;
 
     const digest = await runAction(
       disconnectBinanceAction,
@@ -203,26 +207,28 @@ describe("disconnectBinanceAction", () => {
     expect(digest).toContain("ok=binance_frozen");
     // The source is gone but BOTH rung holdings survive as plain hand-valued
     // `other` assets (no longer crypto, no longer connected).
-    expect(store.connectedSources.listSources()).toHaveLength(0);
-    const surviving = store.assets
-      .readAssets()
-      .filter((a) => a.id === assetId || a.id === termLockedId);
+    expect(await store.connectedSources.listSources()).toHaveLength(0);
+    const surviving = (await store.assets.readAssets()).filter(
+      (a) => a.id === assetId || a.id === termLockedId,
+    );
     expect(surviving).toHaveLength(2);
     expect(surviving.every((a) => a.instrument === "other")).toBe(true);
-    expect(store.assets.readAssets().some((a) => a.instrument === "crypto")).toBe(false);
+    expect((await store.assets.readAssets()).some((a) => a.instrument === "crypto")).toBe(
+      false,
+    );
 
     // The freeze DETACHES both rung assets end-to-end — neither routes back to the
     // (now deleted) source any more.
-    expect(store.connectedSources.readSourceIdForAsset(assetId)).toBeNull();
-    expect(store.connectedSources.readSourceIdForAsset(termLockedId)).toBeNull();
+    expect(await store.connectedSources.readSourceIdForAsset(assetId)).toBeNull();
+    expect(await store.connectedSources.readSourceIdForAsset(termLockedId)).toBeNull();
   });
 });
 
 describe("syncBinanceAction", () => {
   test("errors (without wiping positions) when the source id is unknown", async () => {
-    const store = createInMemoryStore();
-    const { sourceId } = seedWithSource(store);
-    store.connectedSources.syncPositions(
+    const store = await createInMemoryStore();
+    const { sourceId } = await seedWithSource(store);
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         {
@@ -248,12 +254,12 @@ describe("syncBinanceAction", () => {
 
     expect(digest).toContain("error=");
     // The real source's positions are untouched.
-    expect(store.connectedSources.readPositions(sourceId)).toHaveLength(1);
+    expect(await store.connectedSources.readPositions(sourceId)).toHaveLength(1);
   });
 
   test("pulls spot+funding+flexible-Earn balances + live prices and merges positions (stubbed fetch)", async () => {
-    const store = createInMemoryStore();
-    const { sourceId, assetId } = seedWithSource(store);
+    const store = await createInMemoryStore();
+    const { sourceId, assetId } = await seedWithSource(store);
 
     // Stub global fetch: the three signed Binance wallet endpoints, then CoinGecko.
     // BTC sits on spot AND funding; ETH on flexible Earn (#247 fold-in).
@@ -302,7 +308,7 @@ describe("syncBinanceAction", () => {
     expect(digest).toContain("ok=binance_synced");
 
     // One position per (asset, wallet) — BTC split spot/funding, ETH on Earn.
-    const positions = store.connectedSources.readPositions(sourceId);
+    const positions = await store.connectedSources.readPositions(sourceId);
     expect(positions).toHaveLength(3);
     expect(
       positions.map((p) => (p.kind === "token" ? `${p.symbol}:${p.wallet}` : "")).sort(),
@@ -310,13 +316,13 @@ describe("syncBinanceAction", () => {
 
     // A manual sync stamps the `binance` freshness row fresh (PRD #245 S4) so the
     // daily stale-price pass won't immediately re-sync the source it just synced.
-    const freshness = store.operations.readPriceCache(assetId);
+    const freshness = await store.operations.readPriceCache(assetId);
     expect(freshness?.freshnessState).toBe("fresh");
   });
 
   test("step 4 backfills the reconstructed monthly history into snapshots (accountSnapshot + range stubbed)", async () => {
-    const store = createInMemoryStore();
-    const { sourceId, assetId } = seedWithSource(store);
+    const store = await createInMemoryStore();
+    const { sourceId, assetId } = await seedWithSource(store);
 
     // The action reads the wall clock (`new Date()`) — it takes NO injected clock —
     // so the backfill anchor must be a month deterministically COMPLETED relative to
@@ -392,9 +398,9 @@ describe("syncBinanceAction", () => {
 
     // The backfill froze a binance row into the 2020-01-31 month-end snapshot at the
     // reconstructed gross: balance × that-day price = 0.5 × 30000 = 15000.00.
-    const binanceRows = store.snapshots
-      .readSnapshotHoldings({ holdingId: assetId })
-      .filter((row) => row.kind === "asset" && row.dateKey === "2020-01-31");
+    const binanceRows = (
+      await store.snapshots.readSnapshotHoldings({ holdingId: assetId })
+    ).filter((row) => row.kind === "asset" && row.dateKey === "2020-01-31");
     expect(binanceRows.length).toBeGreaterThan(0);
     // Individual mode captures the single household scope — the lone person (#269).
     const household = binanceRows.find((row) => row.scopeId === "household");
@@ -402,9 +408,9 @@ describe("syncBinanceAction", () => {
   });
 
   test("a Binance outage leaves existing positions untouched and surfaces an error", async () => {
-    const store = createInMemoryStore();
-    const { sourceId } = seedWithSource(store);
-    store.connectedSources.syncPositions(
+    const store = await createInMemoryStore();
+    const { sourceId } = await seedWithSource(store);
+    await store.connectedSources.syncPositions(
       sourceId,
       [
         {
@@ -434,6 +440,6 @@ describe("syncBinanceAction", () => {
     );
 
     expect(digest).toContain("error=");
-    expect(store.connectedSources.readPositions(sourceId)).toHaveLength(1);
+    expect(await store.connectedSources.readPositions(sourceId)).toHaveLength(1);
   });
 });

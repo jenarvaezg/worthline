@@ -83,10 +83,12 @@ export interface ScopedPositionsWithDetails {
  * 0008), and the derived live positions read off the investment assets.
  */
 export interface SnapshotStore {
-  saveSnapshot: (input: SaveSnapshotInput) => void;
-  readSnapshots: (scopeId?: string) => NetWorthSnapshot[];
-  readSnapshotHoldings: (query?: SnapshotHoldingQuery) => SnapshotHoldingRecord[];
-  readPositions: (scopeId?: string) => PositionView[];
+  saveSnapshot: (input: SaveSnapshotInput) => Promise<void>;
+  readSnapshots: (scopeId?: string) => Promise<NetWorthSnapshot[]>;
+  readSnapshotHoldings: (
+    query?: SnapshotHoldingQuery,
+  ) => Promise<SnapshotHoldingRecord[]>;
+  readPositions: (scopeId?: string) => Promise<PositionView[]>;
   /**
    * Read the selected scope's positions AND the unscoped capture details in one
    * pass over the raw operations (#208): the dashboard load needs both per
@@ -94,7 +96,9 @@ export interface SnapshotStore {
    * operation once instead of twice. Byte-identical to deriving the details from
    * `readPositions()` and reading `readPositions(scopeId)` separately.
    */
-  readScopedPositionsWithDetails: (scopeId?: string) => ScopedPositionsWithDetails;
+  readScopedPositionsWithDetails: (
+    scopeId?: string,
+  ) => Promise<ScopedPositionsWithDetails>;
 }
 
 export function createSnapshotStore(ctx: StoreContext): SnapshotStore {
@@ -102,13 +106,14 @@ export function createSnapshotStore(ctx: StoreContext): SnapshotStore {
     saveSnapshot: (input) => saveSnapshot(ctx, input),
     readSnapshots: (scopeId) => readSnapshots(ctx.db, scopeId),
     readSnapshotHoldings: (query) => readSnapshotHoldings(ctx.db, query),
-    readPositions: (scopeId) => readPositions(ctx.db, ctx.getWorkspace(), scopeId),
-    readScopedPositionsWithDetails: (scopeId) =>
-      readScopedPositionsWithDetails(ctx.db, ctx.getWorkspace(), scopeId),
+    readPositions: async (scopeId) =>
+      readPositions(ctx.db, await ctx.getWorkspace(), scopeId),
+    readScopedPositionsWithDetails: async (scopeId) =>
+      readScopedPositionsWithDetails(ctx.db, await ctx.getWorkspace(), scopeId),
   };
 }
 
-function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): void {
+async function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): Promise<void> {
   const { db } = ctx;
   const snapshot = input.snapshot;
 
@@ -121,7 +126,7 @@ function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): void {
   // mismatch throws and rolls back, persisting nothing. The assert sees the
   // same rows and figures being persisted. Empty holdings (legacy / no-portfolio
   // captures) carry no rows to reconcile, so the check is skipped.
-  ctx.transaction(() => {
+  await ctx.transaction(async () => {
     if (input.holdings && input.holdings.length > 0) {
       assertSnapshotHoldingsReconcile(input.holdings, {
         debtsMinor: snapshot.debts.amountMinor,
@@ -141,7 +146,7 @@ function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): void {
     // go with it — at most one set of rows per scope per day. The delete
     // must run before the upsert because the upsert rewrites the parent
     // snapshot id that the rows' foreign key points at.
-    const existing = db
+    const existing = await db
       .select({ id: snapshots.id })
       .from(snapshots)
       .where(
@@ -153,16 +158,18 @@ function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): void {
       .get();
 
     if (existing) {
-      db.delete(snapshotHoldings)
+      await db
+        .delete(snapshotHoldings)
         .where(eq(snapshotHoldings.snapshotId, existing.id))
         .run();
 
       if (input.replace) {
-        db.delete(snapshots).where(eq(snapshots.id, existing.id)).run();
+        await db.delete(snapshots).where(eq(snapshots.id, existing.id)).run();
       }
     }
 
-    db.insert(snapshots)
+    await db
+      .insert(snapshots)
       .values({
         capturedAt: snapshot.capturedAt,
         currency: snapshot.totalNetWorth.currency,
@@ -205,7 +212,8 @@ function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): void {
       .run();
 
     if (input.holdings && input.holdings.length > 0) {
-      db.insert(snapshotHoldings)
+      await db
+        .insert(snapshotHoldings)
         .values(
           input.holdings.map((row) => ({
             countsAsHousing: row.countsAsHousing ? 1 : 0,
@@ -226,8 +234,11 @@ function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): void {
   });
 }
 
-export function readSnapshots(db: StoreDb, scopeId?: string): NetWorthSnapshot[] {
-  const rows = scopeId
+export async function readSnapshots(
+  db: StoreDb,
+  scopeId?: string,
+): Promise<NetWorthSnapshot[]> {
+  const rows = await (scopeId
     ? db
         .select()
         .from(snapshots)
@@ -238,7 +249,7 @@ export function readSnapshots(db: StoreDb, scopeId?: string): NetWorthSnapshot[]
         .select()
         .from(snapshots)
         .orderBy(asc(snapshots.capturedAt), asc(snapshots.id))
-        .all();
+        .all());
 
   return rows.map((row) => ({
     capturedAt: row.capturedAt,
@@ -268,10 +279,10 @@ export function readSnapshots(db: StoreDb, scopeId?: string): NetWorthSnapshot[]
  * `snapshot_holdings (holding_id, kind)` index, so a caller reads one asset's
  * frozen rows without scanning the whole table.
  */
-export function readSnapshotHoldings(
+export async function readSnapshotHoldings(
   db: StoreDb,
   query: SnapshotHoldingQuery = {},
-): SnapshotHoldingRecord[] {
+): Promise<SnapshotHoldingRecord[]> {
   const conditions: SQL[] = [];
 
   if (query.scopeId !== undefined) {
@@ -319,7 +330,7 @@ export function readSnapshotHoldings(
   const filtered =
     conditions.length > 0 ? baseQuery.where(and(...conditions)) : baseQuery;
 
-  const rows = filtered
+  const rows = await filtered
     .orderBy(
       asc(snapshots.dateKey),
       asc(snapshots.scopeId),
@@ -351,7 +362,7 @@ export function readSnapshotHoldings(
  * `readPositions` and `readScopedPositionsWithDetails` so the raw-read shape never
  * drifts between them.
  */
-function readInvestmentRows(db: StoreDb): RawInvestmentRow[] {
+function readInvestmentRows(db: StoreDb): Promise<RawInvestmentRow[]> {
   return db
     .select({ currency: assets.currency, id: assets.id, name: assets.name })
     .from(assets)
@@ -367,22 +378,22 @@ function readInvestmentRows(db: StoreDb): RawInvestmentRow[] {
  * and the position math (derivePosition). The store no longer computes positions
  * itself (PRD #120 candidate 3, R10).
  */
-export function readPositions(
+export async function readPositions(
   db: StoreDb,
   workspace: Workspace | null,
   scopeId?: string,
-): PositionView[] {
+): Promise<PositionView[]> {
   if (!workspace) {
     return [];
   }
 
-  const rows = readInvestmentRows(db);
+  const rows = await readInvestmentRows(db);
 
   if (rows.length === 0) {
     return [];
   }
 
-  const projectionContext = buildAssetProjectionContext(db, true);
+  const projectionContext = await buildAssetProjectionContext(db, true);
 
   return projectPositions(workspace, rows, projectionContext, scopeId);
 }
@@ -395,22 +406,22 @@ export function readPositions(
  * — so a dashboard load reads every operation once, not once per `readPositions`
  * call. The figures are byte-identical to the two separate reads it replaces.
  */
-export function readScopedPositionsWithDetails(
+export async function readScopedPositionsWithDetails(
   db: StoreDb,
   workspace: Workspace | null,
   scopeId?: string,
-): ScopedPositionsWithDetails {
+): Promise<ScopedPositionsWithDetails> {
   if (!workspace) {
     return { details: new Map(), positions: [] };
   }
 
-  const rows = readInvestmentRows(db);
+  const rows = await readInvestmentRows(db);
 
   if (rows.length === 0) {
     return { details: new Map(), positions: [] };
   }
 
-  const projectionContext = buildAssetProjectionContext(db, true);
+  const projectionContext = await buildAssetProjectionContext(db, true);
 
   return projectScopedPositionsWithDetails(workspace, rows, projectionContext, scopeId);
 }

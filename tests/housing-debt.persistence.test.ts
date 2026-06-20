@@ -6,14 +6,14 @@ import { createFileBackedStore, cleanupTempDirs } from "./helpers";
 afterEach(cleanupTempDirs);
 
 describe("housing and debt persistence", () => {
-  test("persists real estate and mortgage as separate net worth components", () => {
-    const store = createFileBackedStore("worthline-housing-");
+  test("persists real estate and mortgage as separate net worth components", async () => {
+    const store = await createFileBackedStore("worthline-housing-");
 
-    store.workspace.initializeWorkspace({
+    await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     });
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 30_000_000,
       id: "asset_home",
@@ -23,7 +23,7 @@ describe("housing and debt persistence", () => {
       ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
       type: "real_estate",
     });
-    store.liabilities.createLiability({
+    await store.liabilities.createLiability({
       associatedAssetId: "asset_home",
       balanceMinor: 18_000_000,
       currency: "EUR",
@@ -34,10 +34,10 @@ describe("housing and debt persistence", () => {
     });
 
     const summary = calculateNetWorth({
-      assets: store.assets.readAssets(),
-      liabilities: store.liabilities.readLiabilities(),
+      assets: await store.assets.readAssets(),
+      liabilities: await store.liabilities.readLiabilities(),
       scopeId: "household",
-      workspace: store.workspace.readWorkspace()!,
+      workspace: (await store.workspace.readWorkspace())!,
     });
 
     expect(summary.grossAssets.amountMinor).toBe(30_000_000);

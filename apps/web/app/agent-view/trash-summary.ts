@@ -56,17 +56,17 @@ interface SortedTrashedHolding {
  * live holdings are scoped. The household scope resolves to every member, so it
  * sees all trash — the common case; member/group scopes see only their own.
  */
-export function buildTrashSummary(
+export async function buildTrashSummary(
   store: AgentViewReadStore,
   options: BuildTrashSummaryOptions,
-): AgentViewTrashSummary {
-  const workspace = store.readWorkspace();
+): Promise<AgentViewTrashSummary> {
+  const workspace = await store.readWorkspace();
 
   if (!workspace) {
     throw unknownScope();
   }
 
-  const scope = listAgentViewScopes(store).find(
+  const scope = (await listAgentViewScopes(store)).find(
     (candidate) => candidate.id === options.scopeId,
   );
 
@@ -74,13 +74,12 @@ export function buildTrashSummary(
     throw unknownScope();
   }
 
-  const internalScopeId = resolveInternalScopeId(store, options.scopeId);
+  const internalScopeId = await resolveInternalScopeId(store, options.scopeId);
   const scopeMemberIds = new Set(resolveScopeMemberIds(workspace, internalScopeId));
-  const holdingPublicIds = publicIdMap(store.readPublicIds(), "holding");
+  const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
   const currency = workspace.baseCurrency;
 
-  const sorted: SortedTrashedHolding[] = store
-    .readTrashedHoldings()
+  const sorted: SortedTrashedHolding[] = (await store.readTrashedHoldings())
     .filter((holding) =>
       holding.ownerMemberIds.some((memberId) => scopeMemberIds.has(memberId)),
     )

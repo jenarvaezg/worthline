@@ -27,12 +27,12 @@ function refreshForm(): FormData {
   return fd;
 }
 
-function seedEtf(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seedEtf(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jose" }],
     mode: "individual",
   });
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "etf",
     liquidityTier: "market",
@@ -76,11 +76,11 @@ describe("refreshPricesAction honest force-refresh (#317)", () => {
   });
 
   test("fetches the configured asset and records the delivering source — even when the cached row is already fresh", async () => {
-    const store = createInMemoryStore();
-    seedEtf(store);
+    const store = await createInMemoryStore();
+    await seedEtf(store);
     // A genuinely FRESH cached row: under staleness rules it would NOT be
     // refreshed. Manual refresh must override that and refetch anyway.
-    store.operations.upsertPrice({
+    await store.operations.upsertPrice({
       assetId: "etf",
       currency: "EUR",
       fetchedAt: NOW,
@@ -96,7 +96,7 @@ describe("refreshPricesAction honest force-refresh (#317)", () => {
     expect(digest).toContain("ok=prices_refreshed");
     expect(digest).toContain("updated=1");
 
-    const persisted = store.operations.readPriceCache("etf");
+    const persisted = await store.operations.readPriceCache("etf");
     expect(persisted).toMatchObject({
       assetId: "etf",
       price: "12.34",
@@ -106,8 +106,8 @@ describe("refreshPricesAction honest force-refresh (#317)", () => {
   });
 
   test("records the rescuing source when the primary misses and a fallback delivers", async () => {
-    const store = createInMemoryStore();
-    seedEtf(store);
+    const store = await createInMemoryStore();
+    await seedEtf(store);
     const csv =
       "Symbol,Date,Time,Open,High,Low,Close,Volume\nVUSA,2026-06-18,16:00:00,80,81,79,80.50,1234";
     // Yahoo not-ok, then the registry's Yahoo→Stooq chain rescues via Stooq.
@@ -117,7 +117,7 @@ describe("refreshPricesAction honest force-refresh (#317)", () => {
 
     await run(store);
 
-    const persisted = store.operations.readPriceCache("etf");
+    const persisted = await store.operations.readPriceCache("etf");
     expect(persisted).toMatchObject({ price: "80.50", source: "stooq" });
   });
 });

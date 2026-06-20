@@ -33,37 +33,37 @@ function hashFile(path: string): string {
 }
 
 describe("demo store provider", () => {
-  it("lazily seeds and opens a usable familia store when no fixture is bundled", () => {
-    const store = openDemoStore("familia", AS_OF);
-    const workspace = store.workspace.readWorkspace();
+  it("lazily seeds and opens a usable familia store when no fixture is bundled", async () => {
+    const store = await openDemoStore("familia", AS_OF);
+    const workspace = await store.workspace.readWorkspace();
     expect(workspace?.members.length).toBe(2);
     store.close();
   });
 
-  it("memoizes the temp copy per persona within a process", () => {
-    const first = getDemoStorePath("familia", AS_OF);
-    const second = getDemoStorePath("familia", AS_OF);
+  it("memoizes the temp copy per persona within a process", async () => {
+    const first = await getDemoStorePath("familia", AS_OF);
+    const second = await getDemoStorePath("familia", AS_OF);
     expect(second).toBe(first);
   });
 
-  it("opens a copy in a temp dir, never the bundled fixture, and leaves it intact", () => {
+  it("opens a copy in a temp dir, never the bundled fixture, and leaves it intact", async () => {
     // Build a "bundled" fixture on disk.
     const fixtureDir = mkdtempSync(join(tmpdir(), "worthline-demo-fixtures-"));
     const fixturePath = join(fixtureDir, "familia.sqlite");
-    const seed = createWorthlineStore({ databasePath: fixturePath });
-    seedPersona(seed, FAMILIA_SPEC, AS_OF);
+    const seed = await createWorthlineStore({ databasePath: fixturePath });
+    await seedPersona(seed, FAMILIA_SPEC, AS_OF);
     seed.close();
     const fixtureHashBefore = hashFile(fixturePath);
 
     process.env.WORTHLINE_DEMO_FIXTURE_DIR = fixtureDir;
     resetDemoStoreCache();
 
-    const openedPath = getDemoStorePath("familia", AS_OF);
+    const openedPath = await getDemoStorePath("familia", AS_OF);
     expect(openedPath).not.toBe(fixturePath);
 
     // An involuntary write (as a page load would make) lands on the copy.
-    const store = openDemoStore("familia", AS_OF);
-    store.assets.updateAssetValuation("asset_familia_checking", 99_999_00);
+    const store = await openDemoStore("familia", AS_OF);
+    await store.assets.updateAssetValuation("asset_familia_checking", 99_999_00);
     store.close();
 
     // The bundled fixture is byte-for-byte unchanged.

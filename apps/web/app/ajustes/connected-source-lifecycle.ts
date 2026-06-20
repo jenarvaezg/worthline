@@ -50,8 +50,11 @@ export function currentUrlOf(formData: FormData): string {
 
 /** Run `fn` against the injected test store when present, else a real `withStore`
  *  transaction — the `_store?` seam that keeps the actions integration-testable. */
-export function runWith<T>(fn: (store: WorthlineStore) => T, _store?: WorthlineStore): T {
-  return _store ? fn(_store) : withStore(fn);
+export function runWith<T>(
+  fn: (store: WorthlineStore) => T | Promise<T>,
+  _store?: WorthlineStore,
+): Promise<T> {
+  return _store ? Promise.resolve(fn(_store)) : withStore(fn);
 }
 
 /** Resolve the active scope member id from the cookie (the connecting member). */
@@ -103,8 +106,8 @@ export async function connectSource<Creds, Token>(
 
   const scoped = await scopeMemberId();
 
-  const result = runWith((store) => {
-    const workspace = store.workspace.readWorkspace();
+  const result = await runWith(async (store) => {
+    const workspace = await store.workspace.readWorkspace();
 
     if (!workspace) {
       return { ok: false as const, error: "Workspace no inicializado." };
@@ -112,9 +115,9 @@ export async function connectSource<Creds, Token>(
 
     // For now only one source per provider is allowed — a second connect is
     // refused so the settings page shows the existing one as connected instead.
-    const existing = store.connectedSources
-      .listSources()
-      .find((source) => source.adapter === adapter.tag);
+    const existing = (await store.connectedSources.listSources()).find(
+      (source) => source.adapter === adapter.tag,
+    );
 
     if (existing) {
       return { ok: false as const, error: messages.alreadyConnected };
@@ -126,7 +129,7 @@ export async function connectSource<Creds, Token>(
       return { ok: false as const, error: messages.noOwner };
     }
 
-    store.connectedSources.connect({
+    await store.connectedSources.connect({
       adapter: adapter.tag,
       label: messages.label,
       credentialsJson: adapter.serializeCredentials(creds),
@@ -179,7 +182,7 @@ export interface SyncWiring<Creds, Token> {
     nowMs: number;
     creds: Creds;
     drafts: AdapterPositionDraft[];
-    runWith: <T>(fn: (store: WorthlineStore) => T) => T;
+    runWith: <T>(fn: (store: WorthlineStore) => T | Promise<T>) => Promise<T>;
   }) => Promise<void>;
 }
 
@@ -201,7 +204,10 @@ export async function syncSource<Creds, Token>(
   }
 
   // 1) Read the credentials + token (sync, inside the store).
-  const source = runWith((store) => store.connectedSources.readSource(sourceId), _store);
+  const source = await runWith(
+    (store) => store.connectedSources.readSource(sourceId),
+    _store,
+  );
 
   if (!source) {
     redirect(errorRedirectUrl(returnUrl, { message: wiring.notFound }));
@@ -236,7 +242,7 @@ export async function syncSource<Creds, Token>(
     const drafts = await adapter.listPositions(ctx);
 
     // 3) Write: replace positions, re-roll the holding value, stamp last sync.
-    runWith(
+    await runWith(
       (store) =>
         store.syncConnectedSource({ positions: drafts, sourceId, syncedAt: nowIso }),
       _store,
@@ -286,15 +292,15 @@ export async function disconnectSource(
     redirect(errorRedirectUrl(returnUrl, { message: messages.notFound }));
   }
 
-  const result = runWith((store) => {
-    const source = store.connectedSources.readSource(sourceId);
+  const result = await runWith(async (store) => {
+    const source = await store.connectedSources.readSource(sourceId);
 
     if (!source) {
       return { ok: false as const, error: messages.notFound };
     }
 
     if (freeze) {
-      const frozen = store.connectedSources.freezeIntoStoredHolding(sourceId);
+      const frozen = await store.connectedSources.freezeIntoStoredHolding(sourceId);
 
       if (!frozen) {
         return { ok: false as const, error: messages.freezeFailed };
@@ -306,7 +312,7 @@ export async function disconnectSource(
     // Remove ALL the source's materialized holdings in ONE transaction: deleting
     // the market (primary) asset cascades the source row + its positions away; the
     // other-rung assets (no back-FK) are removed explicitly.
-    const { removed } = store.connectedSources.removeSourceHoldings(sourceId);
+    const { removed } = await store.connectedSources.removeSourceHoldings(sourceId);
 
     if (removed === 0) {
       return { ok: false as const, error: messages.removeFailed };

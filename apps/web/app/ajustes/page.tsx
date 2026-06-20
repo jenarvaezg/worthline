@@ -51,8 +51,8 @@ export default async function AjustesPage({
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
 
-  const storeData = await withStore((store) => {
-    const workspace = store.workspace.readWorkspace();
+  const storeData = await withStore(async (store) => {
+    const workspace = await store.workspace.readWorkspace();
 
     if (!workspace) {
       return null;
@@ -63,14 +63,15 @@ export default async function AjustesPage({
 
     // The connected Numista source (PRD #160), if any. The derived holding's value
     // and coin count come from the asset row + its positions.
-    const numistaRow = store.connectedSources
-      .listSources()
-      .find((source) => source.adapter === "numista");
+    const numistaRow = (await store.connectedSources.listSources()).find(
+      (source) => source.adapter === "numista",
+    );
     const numistaPositions = numistaRow
-      ? store.connectedSources.readPositions(numistaRow.id)
+      ? await store.connectedSources.readPositions(numistaRow.id)
       : [];
     const numistaAsset = numistaRow
-      ? (store.assets.readAssets().find((a) => a.id === numistaRow.assetId) ?? null)
+      ? ((await store.assets.readAssets()).find((a) => a.id === numistaRow.assetId) ??
+        null)
       : null;
     const numistaSource = numistaRow
       ? {
@@ -90,17 +91,17 @@ export default async function AjustesPage({
     // rungs — one asset per occupied rung (market + term-locked) — so the tile
     // AGGREGATES across the source's assets: value = Σ asset values, token count =
     // all the source's token positions. "Ver →" links to the market (primary) asset.
-    const binanceRow = store.connectedSources
-      .listSources()
-      .find((source) => source.adapter === "binance");
+    const binanceRow = (await store.connectedSources.listSources()).find(
+      (source) => source.adapter === "binance",
+    );
     const binancePositions = binanceRow
-      ? store.connectedSources.readPositions(binanceRow.id)
+      ? await store.connectedSources.readPositions(binanceRow.id)
       : [];
     const binanceAssetIds = binanceRow
-      ? new Set(store.connectedSources.listSourceAssetIds(binanceRow.id))
+      ? new Set(await store.connectedSources.listSourceAssetIds(binanceRow.id))
       : new Set<string>();
     const binanceValueMinor = binanceRow
-      ? aggregateSourceValueMinor(store.assets.readAssets(), binanceAssetIds)
+      ? aggregateSourceValueMinor(await store.assets.readAssets(), binanceAssetIds)
       : 0;
     const binanceSource = binanceRow
       ? {
@@ -115,9 +116,9 @@ export default async function AjustesPage({
 
     return {
       binanceSource,
-      fireConfig: store.readFireConfig(),
+      fireConfig: await store.readFireConfig(),
       numistaSource,
-      overrides: store.readWarningOverrides(),
+      overrides: await store.readWarningOverrides(),
       scopes,
       selectedScope,
       workspace,
@@ -143,9 +144,9 @@ export default async function AjustesPage({
   const fireScopeConfig = selectedScope ? fireConfig[selectedScope.id] : undefined;
 
   // Build warnings for the shell rail (read from full store to be accurate).
-  const warnings = await withStore((store) => {
-    const assets = store.assets.readAssets();
-    const warningOverrides = store.readWarningOverrides();
+  const warnings = await withStore(async (store) => {
+    const assets = await store.assets.readAssets();
+    const warningOverrides = await store.readWarningOverrides();
     return collectWarnings(assets, warningOverrides);
   });
 

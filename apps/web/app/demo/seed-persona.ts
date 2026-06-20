@@ -42,12 +42,12 @@ export function resolveRelativeDate(asOf: string, when: RelativeDate): string {
   return base.toISOString().slice(0, 10);
 }
 
-function seedInvestment(
+async function seedInvestment(
   store: WorthlineStore,
   investment: InvestmentSpec,
   asOf: string,
-): void {
-  store.assets.createInvestmentAsset({
+): Promise<void> {
+  await store.assets.createInvestmentAsset({
     currency: investment.currency ?? DEFAULT_CURRENCY,
     id: investment.id,
     manualPricePerUnit: investment.manualPricePerUnit,
@@ -58,7 +58,7 @@ function seedInvestment(
   });
 
   for (const op of investment.operations) {
-    store.recordOperationAndRipple(
+    await store.recordOperationAndRipple(
       {
         assetId: investment.id,
         currency: investment.currency ?? DEFAULT_CURRENCY,
@@ -74,13 +74,13 @@ function seedInvestment(
   }
 }
 
-function seedMortgage(
+async function seedMortgage(
   store: WorthlineStore,
   housingId: string,
   mortgage: MortgageSpec,
   asOf: string,
-): void {
-  store.liabilities.createLiability({
+): Promise<void> {
+  await store.liabilities.createLiability({
     associatedAssetId: housingId,
     balanceMinor: mortgage.initialCapitalMinor,
     currency: DEFAULT_CURRENCY,
@@ -89,7 +89,7 @@ function seedMortgage(
     ownership: mortgage.ownership,
     type: "mortgage",
   });
-  store.liabilities.setDebtModel(mortgage.liabilityId, "amortizable");
+  await store.liabilities.setDebtModel(mortgage.liabilityId, "amortizable");
 
   const plan = {
     annualInterestRate: mortgage.annualInterestRate,
@@ -106,7 +106,7 @@ function seedMortgage(
   }));
 
   // Persist plan + ripple per-cuota snapshots ride the debt seam together.
-  store.createAmortizationPlanAndRipple(
+  await store.createAmortizationPlanAndRipple(
     {
       ...plan,
       id: mortgage.planId,
@@ -116,7 +116,7 @@ function seedMortgage(
   );
 
   for (const repayment of earlyRepayments) {
-    store.addEarlyRepaymentAndRipple(
+    await store.addEarlyRepaymentAndRipple(
       {
         amountMinor: repayment.amountMinor,
         id: repayment.id,
@@ -128,7 +128,7 @@ function seedMortgage(
     );
   }
 
-  store.liabilities.updateLiabilityBalance(
+  await store.liabilities.updateLiabilityBalance(
     mortgage.liabilityId,
     amortizableBalanceAtDate({
       earlyRepayments,
@@ -138,7 +138,11 @@ function seedMortgage(
   );
 }
 
-function seedHousing(store: WorthlineStore, housing: HousingSpec, asOf: string): void {
+async function seedHousing(
+  store: WorthlineStore,
+  housing: HousingSpec,
+  asOf: string,
+): Promise<void> {
   const currency = housing.currency ?? DEFAULT_CURRENCY;
   const acquisitionDate = resolveRelativeDate(asOf, housing.acquisition.at);
   const improvementAnchors = (housing.improvements ?? []).map((improvement) => ({
@@ -164,7 +168,7 @@ function seedHousing(store: WorthlineStore, housing: HousingSpec, asOf: string):
     today: asOf,
   });
 
-  store.createHousingHoldingAndRipple(
+  await store.createHousingHoldingAndRipple(
     {
       acquisitionAnchor: {
         adjustsPriorCurve: true,
@@ -189,7 +193,7 @@ function seedHousing(store: WorthlineStore, housing: HousingSpec, asOf: string):
   );
 
   for (const improvement of improvementAnchors) {
-    store.addValuationAnchorAndRipple(
+    await store.addValuationAnchorAndRipple(
       {
         adjustsPriorCurve: false,
         assetId: housing.id,
@@ -202,16 +206,16 @@ function seedHousing(store: WorthlineStore, housing: HousingSpec, asOf: string):
   }
 
   if (housing.mortgage) {
-    seedMortgage(store, housing.id, housing.mortgage, asOf);
+    await seedMortgage(store, housing.id, housing.mortgage, asOf);
   }
 }
 
-function seedLiability(
+async function seedLiability(
   store: WorthlineStore,
   liability: LiabilitySpec,
   asOf: string,
-): void {
-  store.liabilities.createLiability({
+): Promise<void> {
+  await store.liabilities.createLiability({
     balanceMinor: liability.balanceMinor,
     currency: liability.currency ?? DEFAULT_CURRENCY,
     id: liability.id,
@@ -221,11 +225,11 @@ function seedLiability(
   });
 
   if (liability.model) {
-    store.liabilities.setDebtModel(liability.id, liability.model);
+    await store.liabilities.setDebtModel(liability.id, liability.model);
   }
 
   for (const anchor of liability.balanceAnchors ?? []) {
-    store.addBalanceAnchorAndRipple(
+    await store.addBalanceAnchorAndRipple(
       {
         anchorDate: resolveRelativeDate(asOf, anchor.at),
         balanceMinor: anchor.balanceMinor,
@@ -237,12 +241,12 @@ function seedLiability(
   }
 }
 
-function seedConnectedSource(
+async function seedConnectedSource(
   store: WorthlineStore,
   source: ConnectedSourceSpec,
   asOf: string,
-): SeededConnectedSource {
-  const { sourceId } = store.connectedSources.connect({
+): Promise<SeededConnectedSource> {
+  const { sourceId } = await store.connectedSources.connect({
     adapter: source.adapter,
     credentialsJson: source.credentialsJson ?? "{}",
     label: source.label,
@@ -251,7 +255,7 @@ function seedConnectedSource(
   // Synced once with fixed positions; never refreshed (demo refreshers are no-ops),
   // so the mirror's valuation is frozen in the fixture.
   const syncedAt = `${resolveRelativeDate(asOf, source.syncedAt)}T12:00:00.000Z`;
-  store.connectedSources.syncPositions(sourceId, source.positions, syncedAt);
+  await store.connectedSources.syncPositions(sourceId, source.positions, syncedAt);
   return { sourceId, spec: source };
 }
 
@@ -305,14 +309,14 @@ function buildBinanceHistoryCurve(
   return { dailyPriceBySymbol, monthEndBalances };
 }
 
-function applyConnectedSourceHistory(
+async function applyConnectedSourceHistory(
   store: WorthlineStore,
   seeded: SeededConnectedSource,
   asOf: string,
-): void {
+): Promise<void> {
   if (seeded.spec.adapter !== "binance" || !seeded.spec.binanceHistory) return;
 
-  store.applyBinanceHistoryAndRipple({
+  await store.applyBinanceHistoryAndRipple({
     curve: buildBinanceHistoryCurve(asOf, seeded.spec.binanceHistory),
     sourceId: seeded.sourceId,
     today: asOf,
@@ -323,15 +327,15 @@ function applyConnectedSourceHistory(
  * Seed `spec` into `store`, generating its history relative to `asOf`
  * (YYYY-MM-DD). Deterministic and network-free — no provider is ever touched.
  */
-export function seedPersona(
+export async function seedPersona(
   store: WorthlineStore,
   spec: PersonaSpec,
   asOf: string,
-): void {
-  store.workspace.initializeWorkspace({ members: spec.members, mode: spec.mode });
+): Promise<void> {
+  await store.workspace.initializeWorkspace({ members: spec.members, mode: spec.mode });
 
   for (const manual of spec.manualAssets ?? []) {
-    store.assets.createManualAsset({
+    await store.assets.createManualAsset({
       currency: manual.currency ?? DEFAULT_CURRENCY,
       currentValueMinor: manual.valueMinor,
       id: manual.id,
@@ -343,30 +347,31 @@ export function seedPersona(
   }
 
   for (const investment of spec.investments ?? []) {
-    seedInvestment(store, investment, asOf);
+    await seedInvestment(store, investment, asOf);
   }
 
   for (const housing of spec.housing ?? []) {
-    seedHousing(store, housing, asOf);
+    await seedHousing(store, housing, asOf);
   }
 
   for (const liability of spec.liabilities ?? []) {
-    seedLiability(store, liability, asOf);
+    await seedLiability(store, liability, asOf);
   }
 
-  const seededSources = (spec.connectedSources ?? []).map((source) =>
-    seedConnectedSource(store, source, asOf),
-  );
+  const seededSources: SeededConnectedSource[] = [];
+  for (const source of spec.connectedSources ?? []) {
+    seededSources.push(await seedConnectedSource(store, source, asOf));
+  }
 
   for (const fire of spec.fire ?? []) {
-    store.saveFireConfig(fire.scopeId, fire.config);
+    await store.saveFireConfig(fire.scopeId, fire.config);
   }
 
   // Fill every gap between the milestone facts above and `asOf` so the Evolución
   // curve is a believable monthly history, not a sparse scatter (ADR 0012 backfill).
-  store.backfillHistoricalSnapshots(asOf);
+  await store.backfillHistoricalSnapshots(asOf);
 
   for (const seeded of seededSources) {
-    applyConnectedSourceHistory(store, seeded, asOf);
+    await applyConnectedSourceHistory(store, seeded, asOf);
   }
 }

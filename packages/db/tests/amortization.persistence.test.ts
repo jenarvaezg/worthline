@@ -10,12 +10,12 @@ import { describe, expect, test } from "vitest";
 import { createInMemoryStore } from "@db/index";
 import type { WorthlineStore } from "@db/index";
 
-function seed(store: WorthlineStore): void {
-  store.workspace.initializeWorkspace({
+async function seed(store: WorthlineStore): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jose" }],
     mode: "individual",
   });
-  store.liabilities.createLiability({
+  await store.liabilities.createLiability({
     balanceMinor: 195_465_37,
     currency: "EUR",
     id: "loan",
@@ -26,24 +26,24 @@ function seed(store: WorthlineStore): void {
 }
 
 describe("debt model setter", () => {
-  test("sets and reads back a debt model", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("sets and reads back a debt model", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
-    expect(store.liabilities.readDebtModel("loan")).toBeNull();
-    store.liabilities.setDebtModel("loan", "amortizable");
-    expect(store.liabilities.readDebtModel("loan")).toBe("amortizable");
-    store.liabilities.setDebtModel("loan", null);
-    expect(store.liabilities.readDebtModel("loan")).toBeNull();
+    expect(await store.liabilities.readDebtModel("loan")).toBeNull();
+    await store.liabilities.setDebtModel("loan", "amortizable");
+    expect(await store.liabilities.readDebtModel("loan")).toBe("amortizable");
+    await store.liabilities.setDebtModel("loan", null);
+    expect(await store.liabilities.readDebtModel("loan")).toBeNull();
   });
 });
 
 describe("amortization plan — CRUD", () => {
-  test("create + read a plan back", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("create + read a plan back", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
-    store.liabilities.createAmortizationPlan({
+    await store.liabilities.createAmortizationPlan({
       annualInterestRate: "0.025",
       id: "plan1",
       initialCapitalMinor: 200_000_00,
@@ -53,7 +53,7 @@ describe("amortization plan — CRUD", () => {
       termMonths: 360,
     });
 
-    const plan = store.liabilities.readAmortizationPlan("loan");
+    const plan = await store.liabilities.readAmortizationPlan("loan");
     expect(plan).toMatchObject({
       annualInterestRate: "0.025",
       id: "plan1",
@@ -65,11 +65,11 @@ describe("amortization plan — CRUD", () => {
     });
   });
 
-  test("the plan is 1:1 with its liability (unique index)", () => {
-    const store = createInMemoryStore();
-    seed(store);
+  test("the plan is 1:1 with its liability (unique index)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
 
-    store.liabilities.createAmortizationPlan({
+    await store.liabilities.createAmortizationPlan({
       annualInterestRate: "0.025",
       id: "plan1",
       initialCapitalMinor: 200_000_00,
@@ -78,7 +78,7 @@ describe("amortization plan — CRUD", () => {
       firstPaymentDate: "2020-02-01",
       termMonths: 360,
     });
-    expect(() =>
+    await expect(
       store.liabilities.createAmortizationPlan({
         annualInterestRate: "0.03",
         id: "plan2",
@@ -88,13 +88,13 @@ describe("amortization plan — CRUD", () => {
         firstPaymentDate: "2020-02-01",
         termMonths: 240,
       }),
-    ).toThrow();
+    ).rejects.toThrow();
   });
 
-  test("update a plan in place", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    store.liabilities.createAmortizationPlan({
+  test("update a plan in place", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await store.liabilities.createAmortizationPlan({
       annualInterestRate: "0.025",
       id: "plan1",
       initialCapitalMinor: 200_000_00,
@@ -104,21 +104,21 @@ describe("amortization plan — CRUD", () => {
       termMonths: 360,
     });
 
-    const updated = store.liabilities.updateAmortizationPlan("plan1", {
+    const updated = await store.liabilities.updateAmortizationPlan("plan1", {
       annualInterestRate: "0.03",
       termMonths: 240,
     });
     expect(updated).toBe(1);
-    expect(store.liabilities.readAmortizationPlan("loan")).toMatchObject({
+    expect(await store.liabilities.readAmortizationPlan("loan")).toMatchObject({
       annualInterestRate: "0.03",
       termMonths: 240,
     });
   });
 
-  test("delete a plan by id", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    store.liabilities.createAmortizationPlan({
+  test("delete a plan by id", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await store.liabilities.createAmortizationPlan({
       annualInterestRate: "0.025",
       id: "plan1",
       initialCapitalMinor: 200_000_00,
@@ -128,15 +128,15 @@ describe("amortization plan — CRUD", () => {
       termMonths: 360,
     });
 
-    expect(store.liabilities.deleteAmortizationPlan("plan1")).toBe(1);
-    expect(store.liabilities.readAmortizationPlan("loan")).toBeNull();
-    expect(store.liabilities.deleteAmortizationPlan("plan1")).toBe(0);
+    expect(await store.liabilities.deleteAmortizationPlan("plan1")).toBe(1);
+    expect(await store.liabilities.readAmortizationPlan("loan")).toBeNull();
+    expect(await store.liabilities.deleteAmortizationPlan("plan1")).toBe(0);
   });
 
-  test("rejects a non-integer initial capital", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    expect(() =>
+  test("rejects a non-integer initial capital", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await expect(
       store.liabilities.createAmortizationPlan({
         annualInterestRate: "0.025",
         id: "bad",
@@ -146,13 +146,13 @@ describe("amortization plan — CRUD", () => {
         firstPaymentDate: "2020-02-01",
         termMonths: 360,
       }),
-    ).toThrow();
+    ).rejects.toThrow();
   });
 
-  test("rejects a malformed disbursement date", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    expect(() =>
+  test("rejects a malformed disbursement date", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await expect(
       store.liabilities.createAmortizationPlan({
         annualInterestRate: "0.025",
         disbursementDate: "01/01/2020",
@@ -162,13 +162,13 @@ describe("amortization plan — CRUD", () => {
         liabilityId: "loan",
         termMonths: 360,
       }),
-    ).toThrow();
+    ).rejects.toThrow();
   });
 
-  test("rejects a malformed first-payment date", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    expect(() =>
+  test("rejects a malformed first-payment date", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await expect(
       store.liabilities.createAmortizationPlan({
         annualInterestRate: "0.025",
         disbursementDate: "2020-01-01",
@@ -178,13 +178,13 @@ describe("amortization plan — CRUD", () => {
         liabilityId: "loan",
         termMonths: 360,
       }),
-    ).toThrow();
+    ).rejects.toThrow();
   });
 
-  test("rejects an unparseable interest rate", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    expect(() =>
+  test("rejects an unparseable interest rate", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await expect(
       store.liabilities.createAmortizationPlan({
         annualInterestRate: "abc",
         id: "bad",
@@ -194,14 +194,14 @@ describe("amortization plan — CRUD", () => {
         firstPaymentDate: "2020-02-01",
         termMonths: 360,
       }),
-    ).toThrow();
+    ).rejects.toThrow();
   });
 });
 
 describe("interest-rate revisions — CRUD", () => {
-  function seedPlan(store: WorthlineStore): void {
-    seed(store);
-    store.liabilities.createAmortizationPlan({
+  async function seedPlan(store: WorthlineStore): Promise<void> {
+    await seed(store);
+    await store.liabilities.createAmortizationPlan({
       annualInterestRate: "0.05",
       id: "plan1",
       initialCapitalMinor: 100_000_00,
@@ -212,24 +212,24 @@ describe("interest-rate revisions — CRUD", () => {
     });
   }
 
-  test("create + read revisions back, ordered by date", () => {
-    const store = createInMemoryStore();
-    seedPlan(store);
+  test("create + read revisions back, ordered by date", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store);
 
-    store.liabilities.addInterestRateRevision({
+    await store.liabilities.addInterestRateRevision({
       id: "r2",
       newAnnualInterestRate: "0.07",
       planId: "plan1",
       revisionDate: "2024-01-01",
     });
-    store.liabilities.addInterestRateRevision({
+    await store.liabilities.addInterestRateRevision({
       id: "r1",
       newAnnualInterestRate: "0.03",
       planId: "plan1",
       revisionDate: "2022-01-01",
     });
 
-    const revisions = store.liabilities.readInterestRateRevisions("plan1");
+    const revisions = await store.liabilities.readInterestRateRevisions("plan1");
     expect(revisions.map((r) => r.revisionDate)).toEqual(["2022-01-01", "2024-01-01"]);
     expect(revisions[0]).toMatchObject({
       id: "r1",
@@ -238,10 +238,10 @@ describe("interest-rate revisions — CRUD", () => {
     });
   });
 
-  test("update a revision's date and rate in place", () => {
-    const store = createInMemoryStore();
-    seedPlan(store);
-    store.liabilities.addInterestRateRevision({
+  test("update a revision's date and rate in place", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store);
+    await store.liabilities.addInterestRateRevision({
       id: "r1",
       newAnnualInterestRate: "0.03",
       planId: "plan1",
@@ -249,13 +249,15 @@ describe("interest-rate revisions — CRUD", () => {
     });
 
     expect(
-      store.liabilities.updateInterestRateRevision("r1", {
-        newAnnualInterestRate: "0.04",
-        revisionDate: "2022-06-01",
-      }).changes,
+      (
+        await store.liabilities.updateInterestRateRevision("r1", {
+          newAnnualInterestRate: "0.04",
+          revisionDate: "2022-06-01",
+        })
+      ).changes,
     ).toBe(1);
 
-    const [revision] = store.liabilities.readInterestRateRevisions("plan1");
+    const [revision] = await store.liabilities.readInterestRateRevisions("plan1");
     expect(revision).toMatchObject({
       id: "r1",
       newAnnualInterestRate: "0.04",
@@ -263,82 +265,84 @@ describe("interest-rate revisions — CRUD", () => {
     });
   });
 
-  test("update returns 0 for an unknown revision", () => {
-    const store = createInMemoryStore();
-    seedPlan(store);
+  test("update returns 0 for an unknown revision", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store);
     expect(
-      store.liabilities.updateInterestRateRevision("nope", {
-        newAnnualInterestRate: "0.04",
-      }).changes,
+      (
+        await store.liabilities.updateInterestRateRevision("nope", {
+          newAnnualInterestRate: "0.04",
+        })
+      ).changes,
     ).toBe(0);
   });
 
-  test("delete a revision by id", () => {
-    const store = createInMemoryStore();
-    seedPlan(store);
-    store.liabilities.addInterestRateRevision({
+  test("delete a revision by id", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store);
+    await store.liabilities.addInterestRateRevision({
       id: "r1",
       newAnnualInterestRate: "0.03",
       planId: "plan1",
       revisionDate: "2022-01-01",
     });
 
-    expect(store.liabilities.deleteInterestRateRevision("r1").changes).toBe(1);
-    expect(store.liabilities.readInterestRateRevisions("plan1")).toHaveLength(0);
-    expect(store.liabilities.deleteInterestRateRevision("r1").changes).toBe(0);
+    expect((await store.liabilities.deleteInterestRateRevision("r1")).changes).toBe(1);
+    expect(await store.liabilities.readInterestRateRevisions("plan1")).toHaveLength(0);
+    expect((await store.liabilities.deleteInterestRateRevision("r1")).changes).toBe(0);
   });
 
-  test("rejects a malformed revision date", () => {
-    const store = createInMemoryStore();
-    seedPlan(store);
-    expect(() =>
+  test("rejects a malformed revision date", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store);
+    await expect(
       store.liabilities.addInterestRateRevision({
         id: "bad",
         newAnnualInterestRate: "0.03",
         planId: "plan1",
         revisionDate: "2022/01/01",
       }),
-    ).toThrow();
+    ).rejects.toThrow();
   });
 
   // #210: the 120-month plan first-paid 2020-02-01 ends on its final payment
   // boundary 2030-01-01. A revision dated after that resolves past termMonths and
   // would be silently dropped by the build loop — reject it at intake instead.
-  test("rejects a rate revision dated after the loan's final boundary (not silently dropped)", () => {
-    const store = createInMemoryStore();
-    seedPlan(store);
-    expect(() =>
+  test("rejects a rate revision dated after the loan's final boundary (not silently dropped)", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store);
+    await expect(
       store.liabilities.addInterestRateRevision({
         id: "far",
         newAnnualInterestRate: "0.03",
         planId: "plan1",
         revisionDate: "2035-06-15",
       }),
-    ).toThrow();
+    ).rejects.toThrow();
     // The bad revision was never persisted.
-    expect(store.liabilities.readInterestRateRevisions("plan1")).toHaveLength(0);
+    expect(await store.liabilities.readInterestRateRevisions("plan1")).toHaveLength(0);
   });
 
-  test("accepts a rate revision well inside the term", () => {
-    const store = createInMemoryStore();
-    seedPlan(store);
-    expect(() =>
+  test("accepts a rate revision well inside the term", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store);
+    await expect(
       store.liabilities.addInterestRateRevision({
         id: "ok",
         newAnnualInterestRate: "0.03",
         planId: "plan1",
         revisionDate: "2024-01-01",
       }),
-    ).not.toThrow();
-    expect(store.liabilities.readInterestRateRevisions("plan1")).toHaveLength(1);
+    ).resolves.not.toThrow();
+    expect(await store.liabilities.readInterestRateRevisions("plan1")).toHaveLength(1);
   });
 });
 
 describe("amortizableBalanceAtDate — store reads plan + revisions and delegates", () => {
-  test("PRD example: exact balance after 12 and 60 cuotas", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    store.liabilities.createAmortizationPlan({
+  test("PRD example: exact balance after 12 and 60 cuotas", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await store.liabilities.createAmortizationPlan({
       annualInterestRate: "0.025",
       id: "plan1",
       initialCapitalMinor: 200_000_00,
@@ -348,18 +352,18 @@ describe("amortizableBalanceAtDate — store reads plan + revisions and delegate
       termMonths: 360,
     });
 
-    expect(store.liabilities.amortizableBalanceAtDate("loan", "2021-01-01")).toBe(
+    expect(await store.liabilities.amortizableBalanceAtDate("loan", "2021-01-01")).toBe(
       195_465_37,
     );
-    expect(store.liabilities.amortizableBalanceAtDate("loan", "2025-01-01")).toBe(
+    expect(await store.liabilities.amortizableBalanceAtDate("loan", "2025-01-01")).toBe(
       176_150_76,
     );
   });
 
-  test("applies a stored rate revision", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    store.liabilities.createAmortizationPlan({
+  test("applies a stored rate revision", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await store.liabilities.createAmortizationPlan({
       annualInterestRate: "0.05",
       id: "plan1",
       initialCapitalMinor: 100_000_00,
@@ -368,7 +372,7 @@ describe("amortizableBalanceAtDate — store reads plan + revisions and delegate
       firstPaymentDate: "2020-02-01",
       termMonths: 120,
     });
-    store.liabilities.addInterestRateRevision({
+    await store.liabilities.addInterestRateRevision({
       id: "r1",
       newAnnualInterestRate: "0.03",
       planId: "plan1",
@@ -376,24 +380,24 @@ describe("amortizableBalanceAtDate — store reads plan + revisions and delegate
     });
 
     // At the revision boundary the balance matches the no-revision schedule.
-    expect(store.liabilities.amortizableBalanceAtDate("loan", "2022-01-01")).toBe(
+    expect(await store.liabilities.amortizableBalanceAtDate("loan", "2022-01-01")).toBe(
       83_780_56,
     );
   });
 
-  test("throws when the liability has no amortization plan", () => {
-    const store = createInMemoryStore();
-    seed(store);
-    expect(() =>
+  test("throws when the liability has no amortization plan", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await expect(
       store.liabilities.amortizableBalanceAtDate("loan", "2021-01-01"),
-    ).toThrow();
+    ).rejects.toThrow();
   });
 });
 
 describe("early repayments — CRUD", () => {
-  function seedPlan(store: WorthlineStore): void {
-    seed(store);
-    store.liabilities.createAmortizationPlan({
+  async function seedPlan(store: WorthlineStore): Promise<void> {
+    await seed(store);
+    await store.liabilities.createAmortizationPlan({
       annualInterestRate: "0.03",
       id: "plan1",
       initialCapitalMinor: 100_000_00,
@@ -404,18 +408,18 @@ describe("early repayments — CRUD", () => {
     });
   }
 
-  test("create + read repayments back, ordered by date", () => {
-    const store = createInMemoryStore();
-    seedPlan(store);
+  test("create + read repayments back, ordered by date", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store);
 
-    store.liabilities.addEarlyRepayment({
+    await store.liabilities.addEarlyRepayment({
       amountMinor: 10_000_00,
       id: "e2",
       mode: "reduce-term",
       planId: "plan1",
       repaymentDate: "2024-01-01",
     });
-    store.liabilities.addEarlyRepayment({
+    await store.liabilities.addEarlyRepayment({
       amountMinor: 20_000_00,
       id: "e1",
       mode: "reduce-payment",
@@ -423,7 +427,7 @@ describe("early repayments — CRUD", () => {
       repaymentDate: "2022-01-01",
     });
 
-    const repayments = store.liabilities.readEarlyRepayments("plan1");
+    const repayments = await store.liabilities.readEarlyRepayments("plan1");
     expect(repayments.map((r) => r.repaymentDate)).toEqual(["2022-01-01", "2024-01-01"]);
     expect(repayments[0]).toMatchObject({
       amountMinor: 20_000_00,
@@ -433,10 +437,10 @@ describe("early repayments — CRUD", () => {
     });
   });
 
-  test("update a repayment's date, amount and mode in place", () => {
-    const store = createInMemoryStore();
-    seedPlan(store);
-    store.liabilities.addEarlyRepayment({
+  test("update a repayment's date, amount and mode in place", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store);
+    await store.liabilities.addEarlyRepayment({
       amountMinor: 20_000_00,
       id: "e1",
       mode: "reduce-payment",
@@ -445,14 +449,16 @@ describe("early repayments — CRUD", () => {
     });
 
     expect(
-      store.liabilities.updateEarlyRepayment("e1", {
-        amountMinor: 25_000_00,
-        mode: "reduce-term",
-        repaymentDate: "2022-06-01",
-      }).changes,
+      (
+        await store.liabilities.updateEarlyRepayment("e1", {
+          amountMinor: 25_000_00,
+          mode: "reduce-term",
+          repaymentDate: "2022-06-01",
+        })
+      ).changes,
     ).toBe(1);
 
-    const [repayment] = store.liabilities.readEarlyRepayments("plan1");
+    const [repayment] = await store.liabilities.readEarlyRepayments("plan1");
     expect(repayment).toMatchObject({
       amountMinor: 25_000_00,
       id: "e1",
@@ -461,18 +467,19 @@ describe("early repayments — CRUD", () => {
     });
   });
 
-  test("update returns 0 for an unknown repayment", () => {
-    const store = createInMemoryStore();
-    seedPlan(store);
+  test("update returns 0 for an unknown repayment", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store);
     expect(
-      store.liabilities.updateEarlyRepayment("nope", { amountMinor: 1_00 }).changes,
+      (await store.liabilities.updateEarlyRepayment("nope", { amountMinor: 1_00 }))
+        .changes,
     ).toBe(0);
   });
 
-  test("delete a repayment by id", () => {
-    const store = createInMemoryStore();
-    seedPlan(store);
-    store.liabilities.addEarlyRepayment({
+  test("delete a repayment by id", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store);
+    await store.liabilities.addEarlyRepayment({
       amountMinor: 20_000_00,
       id: "e1",
       mode: "reduce-payment",
@@ -480,15 +487,15 @@ describe("early repayments — CRUD", () => {
       repaymentDate: "2022-01-01",
     });
 
-    expect(store.liabilities.deleteEarlyRepayment("e1").changes).toBe(1);
-    expect(store.liabilities.readEarlyRepayments("plan1")).toHaveLength(0);
-    expect(store.liabilities.deleteEarlyRepayment("e1").changes).toBe(0);
+    expect((await store.liabilities.deleteEarlyRepayment("e1")).changes).toBe(1);
+    expect(await store.liabilities.readEarlyRepayments("plan1")).toHaveLength(0);
+    expect((await store.liabilities.deleteEarlyRepayment("e1")).changes).toBe(0);
   });
 
-  test("rejects a malformed repayment date", () => {
-    const store = createInMemoryStore();
-    seedPlan(store);
-    expect(() =>
+  test("rejects a malformed repayment date", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store);
+    await expect(
       store.liabilities.addEarlyRepayment({
         amountMinor: 20_000_00,
         id: "bad",
@@ -496,17 +503,17 @@ describe("early repayments — CRUD", () => {
         planId: "plan1",
         repaymentDate: "2022/01/01",
       }),
-    ).toThrow();
+    ).rejects.toThrow();
   });
 
   // #210: the 120-month plan first-paid 2020-02-01 ends on its final payment
   // boundary 2030-01-01. A repayment dated after that (e.g. a mistyped 2040 date)
   // resolves to month 240, past termMonths, and would be silently dropped by the
   // build loop — reject it at intake instead.
-  test("rejects an early repayment dated after the loan's final boundary (not silently dropped)", () => {
-    const store = createInMemoryStore();
-    seedPlan(store);
-    expect(() =>
+  test("rejects an early repayment dated after the loan's final boundary (not silently dropped)", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store);
+    await expect(
       store.liabilities.addEarlyRepayment({
         amountMinor: 20_000_00,
         id: "far",
@@ -514,15 +521,15 @@ describe("early repayments — CRUD", () => {
         planId: "plan1",
         repaymentDate: "2040-01-01",
       }),
-    ).toThrow();
+    ).rejects.toThrow();
     // The bad repayment was never persisted.
-    expect(store.liabilities.readEarlyRepayments("plan1")).toHaveLength(0);
+    expect(await store.liabilities.readEarlyRepayments("plan1")).toHaveLength(0);
   });
 
-  test("accepts an early repayment well inside the term", () => {
-    const store = createInMemoryStore();
-    seedPlan(store);
-    expect(() =>
+  test("accepts an early repayment well inside the term", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store);
+    await expect(
       store.liabilities.addEarlyRepayment({
         amountMinor: 20_000_00,
         id: "ok",
@@ -530,18 +537,18 @@ describe("early repayments — CRUD", () => {
         planId: "plan1",
         repaymentDate: "2024-01-01",
       }),
-    ).not.toThrow();
-    expect(store.liabilities.readEarlyRepayments("plan1")).toHaveLength(1);
+    ).resolves.not.toThrow();
+    expect(await store.liabilities.readEarlyRepayments("plan1")).toHaveLength(1);
   });
 
-  test("amortizableBalanceAtDate applies a stored early repayment", () => {
-    const store = createInMemoryStore();
-    seedPlan(store);
-    const withoutRepayment = store.liabilities.amortizableBalanceAtDate(
+  test("amortizableBalanceAtDate applies a stored early repayment", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store);
+    const withoutRepayment = await store.liabilities.amortizableBalanceAtDate(
       "loan",
       "2022-01-01",
     );
-    store.liabilities.addEarlyRepayment({
+    await store.liabilities.addEarlyRepayment({
       amountMinor: 20_000_00,
       id: "e1",
       mode: "reduce-payment",
@@ -549,7 +556,7 @@ describe("early repayments — CRUD", () => {
       repaymentDate: "2022-01-01",
     });
     // The lump lands on the target date → the balance drops by exactly it.
-    expect(store.liabilities.amortizableBalanceAtDate("loan", "2022-01-01")).toBe(
+    expect(await store.liabilities.amortizableBalanceAtDate("loan", "2022-01-01")).toBe(
       withoutRepayment - 20_000_00,
     );
   });

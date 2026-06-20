@@ -15,19 +15,22 @@ afterEach(() => {
   }
 });
 
-function createTestStore(): WorthlineStore {
+async function createTestStore(): Promise<WorthlineStore> {
   const dataDir = mkdtempSync(join(tmpdir(), "worthline-prices-"));
   tempDirs.push(dataDir);
 
   return createWorthlineStore({ databasePath: join(dataDir, "worthline.sqlite") });
 }
 
-function seedWorkspaceAndAsset(store: WorthlineStore, assetId: string): void {
-  store.workspace.initializeWorkspace({
+async function seedWorkspaceAndAsset(
+  store: WorthlineStore,
+  assetId: string,
+): Promise<void> {
+  await store.workspace.initializeWorkspace({
     members: [{ id: "m1", name: "Alice" }],
     mode: "individual",
   });
-  store.assets.createInvestmentAsset({
+  await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: assetId,
     name: "Test Asset",
@@ -36,9 +39,9 @@ function seedWorkspaceAndAsset(store: WorthlineStore, assetId: string): void {
 }
 
 describe("price cache persistence", () => {
-  test("upsertPrice then readPriceCache round-trips AssetPrice", () => {
-    const store = createTestStore();
-    seedWorkspaceAndAsset(store, "asset_1");
+  test("upsertPrice then readPriceCache round-trips AssetPrice", async () => {
+    const store = await createTestStore();
+    await seedWorkspaceAndAsset(store, "asset_1");
 
     const price: AssetPrice = {
       assetId: "asset_1",
@@ -49,8 +52,8 @@ describe("price cache persistence", () => {
       source: "stooq",
     };
 
-    store.operations.upsertPrice(price);
-    const result = store.operations.readPriceCache("asset_1");
+    await store.operations.upsertPrice(price);
+    const result = await store.operations.readPriceCache("asset_1");
 
     expect(result).not.toBeNull();
     expect(result!.assetId).toBe("asset_1");
@@ -63,18 +66,18 @@ describe("price cache persistence", () => {
     store.close();
   });
 
-  test("readPriceCache returns null for unknown assetId", () => {
-    const store = createTestStore();
-    seedWorkspaceAndAsset(store, "asset_1");
+  test("readPriceCache returns null for unknown assetId", async () => {
+    const store = await createTestStore();
+    await seedWorkspaceAndAsset(store, "asset_1");
 
-    expect(store.operations.readPriceCache("nonexistent")).toBeNull();
+    expect(await store.operations.readPriceCache("nonexistent")).toBeNull();
 
     store.close();
   });
 
-  test("upsertPrice overwrites existing entry", () => {
-    const store = createTestStore();
-    seedWorkspaceAndAsset(store, "asset_1");
+  test("upsertPrice overwrites existing entry", async () => {
+    const store = await createTestStore();
+    await seedWorkspaceAndAsset(store, "asset_1");
 
     const first: AssetPrice = {
       assetId: "asset_1",
@@ -93,10 +96,10 @@ describe("price cache persistence", () => {
       source: "stooq",
     };
 
-    store.operations.upsertPrice(first);
-    store.operations.upsertPrice(second);
+    await store.operations.upsertPrice(first);
+    await store.operations.upsertPrice(second);
 
-    const result = store.operations.readPriceCache("asset_1");
+    const result = await store.operations.readPriceCache("asset_1");
     expect(result!.price).toBe("200.00");
     expect(result!.freshnessState).toBe("stale");
     expect(result!.fetchedAt).toBe("2026-06-08T10:00:00Z");
@@ -104,11 +107,11 @@ describe("price cache persistence", () => {
     store.close();
   });
 
-  test("clearPriceCache removes an asset's cached price", () => {
-    const store = createTestStore();
-    seedWorkspaceAndAsset(store, "asset_1");
+  test("clearPriceCache removes an asset's cached price", async () => {
+    const store = await createTestStore();
+    await seedWorkspaceAndAsset(store, "asset_1");
 
-    store.operations.upsertPrice({
+    await store.operations.upsertPrice({
       assetId: "asset_1",
       currency: "EUR",
       fetchedAt: "2026-06-08T10:00:00Z",
@@ -117,22 +120,22 @@ describe("price cache persistence", () => {
       source: "yahoo",
     });
 
-    expect(store.operations.clearPriceCache("asset_1")).toBe(1);
-    expect(store.operations.readPriceCache("asset_1")).toBeNull();
+    expect(await store.operations.clearPriceCache("asset_1")).toBe(1);
+    expect(await store.operations.readPriceCache("asset_1")).toBeNull();
 
     store.close();
   });
 });
 
 describe("investment price provider metadata", () => {
-  test("readInvestmentAssetsWithMeta applies provider defaults and preserves overrides", () => {
-    const store = createTestStore();
-    store.workspace.initializeWorkspace({
+  test("readInvestmentAssetsWithMeta applies provider defaults and preserves overrides", async () => {
+    const store = await createTestStore();
+    await store.workspace.initializeWorkspace({
       members: [{ id: "m1", name: "Alice" }],
       mode: "individual",
     });
 
-    store.assets.createInvestmentAsset({
+    await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "asset_market",
       liquidityTier: "market",
@@ -140,7 +143,7 @@ describe("investment price provider metadata", () => {
       ownership: [{ memberId: "m1", shareBps: 10000 }],
       providerSymbol: "VUSA.L",
     });
-    store.assets.createInvestmentAsset({
+    await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "asset_pension",
       liquidityTier: "term-locked",
@@ -148,7 +151,7 @@ describe("investment price provider metadata", () => {
       ownership: [{ memberId: "m1", shareBps: 10000 }],
       providerSymbol: "N5394",
     });
-    store.assets.createInvestmentAsset({
+    await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "asset_stooq",
       liquidityTier: "market",
@@ -159,7 +162,10 @@ describe("investment price provider metadata", () => {
     });
 
     const byId = new Map(
-      store.assets.readInvestmentAssetsWithMeta().map((asset) => [asset.id, asset]),
+      (await store.assets.readInvestmentAssetsWithMeta()).map((asset) => [
+        asset.id,
+        asset,
+      ]),
     );
 
     expect(byId.get("asset_market")).toMatchObject({
