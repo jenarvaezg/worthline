@@ -28,6 +28,7 @@ import {
   previewStatementAction,
   type PriceBackfillPreviewState,
   recordOperationAction,
+  refreshPricesAction,
   type StatementPreviewState,
   updateInvestmentAction,
 } from "@web/inversiones/actions";
@@ -45,6 +46,7 @@ import { AssetEditForm, LiabilityEditForm } from "./_surfaces/holding-forms";
 import { HousingValuationSection } from "./_surfaces/housing-valuation-section";
 import { PriceBackfillSection } from "./_surfaces/price-backfill-section";
 import { StatementUploadSection } from "./_surfaces/statement-upload-section";
+import { PriceRefreshControl } from "@web/patrimonio/price-refresh-control";
 
 export const dynamic = "force-dynamic";
 
@@ -442,6 +444,23 @@ export default async function EditarPage({
             positions={binancePositions}
             sinceDateKey={binanceSinceDateKey}
             sourceId={binanceSource?.id ?? null}
+          />
+        ) : null}
+
+        {/* derived + priced: on-demand provider refresh for just this holding
+            (#406) — the narrow counterpart to the global /patrimonio trigger.
+            Hidden when the holding has no price provider (manual/stored). */}
+        {asset &&
+        method === "derived" &&
+        !isCoinCollection &&
+        !isBinanceHolding &&
+        investment?.providerSymbol ? (
+          <PriceRefreshControl
+            action={refreshPricesAction}
+            assetId={asset.id}
+            currentUrl={currentUrl}
+            label="Actualizar precio"
+            pendingLabel="Actualizando…"
           />
         ) : null}
 

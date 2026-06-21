@@ -631,9 +631,19 @@ export async function refreshPricesAction(
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
-  const investmentAssets = await runWith((store) =>
+  const allInvestmentAssets = await runWith((store) =>
     store.assets.readInvestmentAssetsWithMeta(),
   );
+
+  // #406: an `assetId` form field narrows the force-refresh to a single holding's
+  // ficha; absent → the whole portfolio (the global /patrimonio trigger, #405).
+  // Scoping `investmentAssets` here flows to both the injected-provider path and
+  // the real `refreshStalePrices` path below.
+  const scopeAssetId = String(formData.get("assetId") ?? "").trim();
+  const investmentAssets = scopeAssetId
+    ? allInvestmentAssets.filter((asset) => asset.id === scopeAssetId)
+    : allInvestmentAssets;
+
   const refreshable = investmentAssets.filter((asset) => Boolean(asset.providerSymbol));
 
   const outcome = await (async () => {
