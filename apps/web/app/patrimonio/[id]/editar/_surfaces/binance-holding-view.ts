@@ -45,6 +45,8 @@ export interface TokenRow {
   unitPrice: string | null;
   valueMinor: number;
   basis: TokenValuationBasis;
+  /** The token's logo URL (resolved at sync, #482); null → glyph fallback. */
+  imageUrl: string | null;
   /** The wallets this token's balance spans (origin metadata), in input order. */
   wallets: string[];
 }
@@ -124,6 +126,8 @@ export function buildBinanceHoldingView(
         unitPrice: priced ? priced.unitPrice : null,
         valueMinor: group.subtotalMinor,
         basis: priced ? ("market" as const) : ("zero" as const),
+        // All wallets of a symbol share its logo; take the first non-null (#482).
+        imageUrl: group.positions.find((p) => p.imageUrl)?.imageUrl ?? null,
         wallets: group.positions.map((position) => position.wallet),
       };
     });

@@ -84,6 +84,7 @@ describe("binanceAdapter.classifyRung — wallet → rung (the relocated rungFor
           wallet,
           liquidityTier: "market",
           unitPrice: "1",
+          imageUrl: null,
           currency: "EUR",
         }),
       ).toBe("market");
@@ -102,6 +103,7 @@ describe("binanceAdapter.classifyRung — wallet → rung (the relocated rungFor
           wallet,
           liquidityTier: "market",
           unitPrice: "1",
+          imageUrl: null,
           currency: "EUR",
         }),
       ).toBe("term-locked");
@@ -119,6 +121,7 @@ describe("binanceAdapter.classifyRung — wallet → rung (the relocated rungFor
         wallet: "mystery",
         liquidityTier: "market",
         unitPrice: "1",
+        imageUrl: null,
         currency: "EUR",
       }),
     ).toBe("market");
@@ -147,6 +150,7 @@ describe("binanceAdapter.listPositions — delegates to syncBinanceAccount", () 
         wallet: "spot",
         liquidityTier: "market",
         unitPrice: "50000",
+        imageUrl: null,
         currency: "EUR",
       },
       {
@@ -158,6 +162,7 @@ describe("binanceAdapter.listPositions — delegates to syncBinanceAccount", () 
         wallet: "locked-earn",
         liquidityTier: "term-locked",
         unitPrice: "2000",
+        imageUrl: null,
         currency: "EUR",
       },
     ]);

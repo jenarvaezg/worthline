@@ -78,6 +78,7 @@ function token(overrides: Partial<TokenPosition> = {}): TokenPosition {
     wallet: "spot",
     liquidityTier: "market",
     unitPrice: "50000",
+    imageUrl: null,
     currency: "EUR",
     ...overrides,
   };
@@ -461,6 +462,14 @@ describe("tokenPositionSnapshotInput (ADR 0035, PRD #459 S2)", () => {
       metal: null,
       imageUrl: null,
     });
+  });
+
+  test("freezes the token's logo so the histórico drilldown can render it (#482)", () => {
+    const input = tokenPositionSnapshotInput(
+      token({ symbol: "BTC", imageUrl: "https://coin-images.test/btc.png" }),
+    );
+
+    expect(input.imageUrl).toBe("https://coin-images.test/btc.png");
   });
 });
 

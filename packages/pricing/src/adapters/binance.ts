@@ -80,6 +80,9 @@ export const binanceAdapter: ConnectedSourceAdapter<BinanceCreds, null> = {
     return syncBinanceAccount({
       listBalances: ctx.listBalances,
       priceEur: ctx.priceEur,
+      // Only thread the logo reader when wired (exactOptionalPropertyTypes: never
+      // pass an explicit `undefined` to the optional dep).
+      ...(ctx.logoUrls ? { logoUrls: ctx.logoUrls } : {}),
     });
   },
 

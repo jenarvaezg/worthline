@@ -163,7 +163,11 @@ export type {
   BinanceWalletBalance,
 } from "./binance";
 export { resolveCoinGeckoId } from "./binance-symbols";
-export { fetchCoinGeckoPriceEur, syncBinanceAccount } from "./binance-sync";
+export {
+  fetchCoinGeckoLogos,
+  fetchCoinGeckoPriceEur,
+  syncBinanceAccount,
+} from "./binance-sync";
 export type { BinanceSyncDeps, TokenPositionDraft } from "./binance-sync";
 export { fetchCoinGeckoHistoryEur, reconstructBinanceHistory } from "./binance-history";
 export type { ReconstructBinanceHistoryDeps } from "./binance-history";

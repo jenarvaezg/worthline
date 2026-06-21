@@ -4,6 +4,7 @@ import { type WorthlineStore } from "@worthline/db";
 import {
   binanceAdapter,
   fetchCoinGeckoHistoryEur,
+  fetchCoinGeckoLogos,
   fetchCoinGeckoPriceEur,
   getAccountSnapshots,
   getAllBalances,
@@ -84,6 +85,7 @@ export async function syncBinanceAction(
         nowMs,
         listBalances: () => getAllBalances(creds, { nowMs }),
         priceEur: (id) => fetchCoinGeckoPriceEur(id, nowIso),
+        logoUrls: fetchCoinGeckoLogos,
       }),
       // Post-write (best-effort): a manual sync stamps the `binance` freshness row
       // fresh (PRD #245 S4) so the daily stale-price pass won't immediately re-sync

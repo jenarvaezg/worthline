@@ -182,6 +182,7 @@ export function mapPositionRow(row: typeof positions.$inferSelect): SourcePositi
       balance: row.balance ?? "0",
       wallet: row.wallet ?? "",
       unitPrice: row.unitPrice,
+      imageUrl: row.imageUrl ?? null,
     };
   }
 
@@ -248,6 +249,7 @@ export function positionInsertValues(
       balance: position.balance,
       wallet: position.wallet,
       unitPrice: position.unitPrice,
+      imageUrl: position.imageUrl,
     };
   }
 
@@ -271,6 +273,7 @@ export function positionInsertValues(
     balance: null,
     wallet: null,
     unitPrice: null,
+    imageUrl: null,
   };
 }
 

@@ -495,6 +495,9 @@ export const positions = sqliteTable("positions", {
   // cannot be mapped/priced → value 0 + "value at 0" warning. Refreshed by sync/
   // the stale-price pass (#249).
   unitPrice: text("unit_price"),
+  // The token's logo URL, resolved from CoinGecko at sync (#482, the live mirror of
+  // a coin's obverse_thumb_url); null when the symbol has no image → glyph fallback.
+  imageUrl: text("image_url"),
   createdAt: timestamp("created_at"),
 });
 
