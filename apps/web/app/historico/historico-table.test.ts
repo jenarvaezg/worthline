@@ -127,6 +127,54 @@ describe("buildHistoricoRows — per-coin second drilldown level (ADR 0035)", ()
     ]);
   });
 
+  test("omits a per-position mover whose contribution rounds to 0 € (#477)", () => {
+    // Sovereign creeps +0,30 € (30 minor → displays as "0 €"); Maple really moves
+    // +100 €. The histórico shows whole euros, so a sub-€ slice is noise and must
+    // not clutter the breakdown — a position that "did not change" should not show.
+    const day1 = coinHolding("2026-06-10", 4_000_00, [
+      {
+        positionKey: "sovereign",
+        label: "Sovereign",
+        valueMinor: 3_000_00,
+        metal: "gold",
+        imageUrl: null,
+      },
+      {
+        positionKey: "maple",
+        label: "Maple",
+        valueMinor: 1_000_00,
+        metal: "silver",
+        imageUrl: null,
+      },
+    ]);
+    const day2 = coinHolding("2026-06-11", 4_100_30, [
+      {
+        positionKey: "sovereign",
+        label: "Sovereign",
+        valueMinor: 3_000_30,
+        metal: "gold",
+        imageUrl: null,
+      },
+      {
+        positionKey: "maple",
+        label: "Maple",
+        valueMinor: 1_100_00,
+        metal: "silver",
+        imageUrl: null,
+      },
+    ]);
+
+    const rows = buildHistoricoRows(
+      [snapshot("2026-06-10", 4_000_00), snapshot("2026-06-11", 4_100_30)],
+      [day1, day2],
+      "2026-06-11",
+    );
+
+    const coinMover = rows[0]!.movers.find((m) => m.holdingId === "asset_coins");
+    // Only Maple survives; Sovereign's +0,30 € rounds to "0 €" and is hidden.
+    expect(coinMover?.positions?.map((p) => p.positionKey)).toEqual(["maple"]);
+  });
+
   test("masks money values when privacy mode is on", () => {
     const plain = (dateKey: string, valueMinor: number): SnapshotHoldingRecord => ({
       capturedAt: `${dateKey}T10:00:00.000Z`,
