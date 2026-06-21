@@ -23,23 +23,45 @@ export interface ResolveStoreTargetInput {
    * flag retires; the demo is per-request.
    */
   personaCookie?: string | null | undefined;
+  /**
+   * Workspace claims carried by a verified MCP OAuth token (ADR 0034). An MCP
+   * request authenticates with a bearer token, not an Auth.js session, so the
+   * workspace it may open arrives here — resolved by `verifyMcpToken` from the
+   * control plane — rather than on `session.workspace`.
+   */
+  mcpWorkspace?: { workspaceId: string; dbUrl: string } | null | undefined;
 }
 
 export function resolveStoreTarget(input: ResolveStoreTargetInput): StoreTarget {
-  const { env, session, personaCookie } = input;
+  const { env, session, personaCookie, mcpWorkspace } = input;
   const authConfigured = Boolean(env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET);
+
+  // One shared Turso group token in env opens whichever per-workspace URL the
+  // request resolves to (from the session at web sign-in, or from a verified
+  // MCP token, ADR 0034). The OAuth token that identified the MCP caller is NOT
+  // this token — it never reaches the store seam.
+  const groupToken = env.WORTHLINE_DB_AUTH_TOKEN ?? "";
 
   // An authenticated workspace always wins — a stale persona cookie left over
   // from a demo session never shadows a signed-in user's real data.
   const workspace = session?.workspace;
   if (workspace) {
-    // One shared Turso group token in env; the per-workspace URL comes from the
-    // control plane via the session.
     return {
       kind: "authenticated",
       workspaceId: workspace.id,
       dbUrl: workspace.dbUrl,
-      token: env.WORTHLINE_DB_AUTH_TOKEN ?? "",
+      token: groupToken,
+    };
+  }
+
+  // A verified MCP token resolves to exactly one workspace (ADR 0034); like a
+  // session it outranks any persona cookie on the request.
+  if (mcpWorkspace) {
+    return {
+      kind: "authenticated",
+      workspaceId: mcpWorkspace.workspaceId,
+      dbUrl: mcpWorkspace.dbUrl,
+      token: groupToken,
     };
   }
 
