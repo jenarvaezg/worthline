@@ -31,16 +31,6 @@ jobs:
       - name: Install deps
         run: npm ci
 
-      # Persist Next.js' incremental build cache across runs so `next build`
-      # doesn't emit "No build cache found" and rebuilds are faster.
-      - name: Cache Next.js build
-        uses: actions/cache@v4
-        with:
-          path: apps/web/.next/cache
-          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('apps/web/**/*.{ts,tsx}', 'packages/**/*.ts') }}
-          restore-keys: |
-            nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
-
       - name: Typecheck
         run: npm run typecheck
 
@@ -69,14 +59,6 @@ jobs:
 
       - name: Install deps
         run: npm ci
-
-      - name: Cache Next.js build
-        uses: actions/cache@v4
-        with:
-          path: apps/web/.next/cache
-          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('apps/web/**/*.{ts,tsx}', 'packages/**/*.ts') }}
-          restore-keys: |
-            nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
