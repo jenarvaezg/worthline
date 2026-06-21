@@ -4149,6 +4149,60 @@ td.rowActions > * {
   text-transform: uppercase;
 }
 
+/* ── Per-position second drilldown level (ADR 0035) ───────────────────
+   A connected holding's mover opens (native <details>, ADR 0009) into its
+   per-coin movers: image · name · signed €, indented under the parent row. */
+.historicoMoverDetails > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.historicoMoverDetails > summary::-webkit-details-marker {
+  display: none;
+}
+.historicoMoverCue {
+  color: var(--muted);
+  font-size: 0.7rem;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+.historicoPositionBridge {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0 6px 28px;
+}
+.historicoPositionRow {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr 120px;
+  padding: 3px 0;
+}
+.historicoPositionLabel {
+  align-items: center;
+  display: flex;
+  font-size: 0.8rem;
+  gap: 8px;
+  min-width: 0;
+}
+.historicoPositionName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.historicoPositionThumb {
+  align-items: center;
+  background: var(--paper-strong);
+  border: 1px solid var(--line-soft);
+  border-radius: 50%;
+  display: grid;
+  flex: none;
+  height: 1.5rem;
+  overflow: hidden;
+  place-items: center;
+  width: 1.5rem;
+}
+
 @media (max-width: 640px) {
   .historicoDrillHead,
   .historicoDrillRow > summary {
@@ -4165,6 +4219,9 @@ td.rowActions > * {
   }
   .historicoBridgeTrack {
     display: none;
+  }
+  .historicoPositionRow {
+    grid-template-columns: 1fr 90px;
   }
 }
 

@@ -15,7 +15,11 @@ import type { Liability, ManualAsset, Workspace } from "./workspace-types";
 import type { NetWorthSnapshot } from "./snapshot-types";
 import { captureValuedNetWorthSnapshot } from "./snapshot-types";
 import type { ScopeOption } from "./scope";
-import type { InvestmentCaptureDetail, SnapshotHoldingRow } from "./snapshot-holdings";
+import type {
+  InvestmentCaptureDetail,
+  SnapshotHoldingRow,
+  SnapshotPositionInput,
+} from "./snapshot-holdings";
 import { findTodaySnapshotId } from "./snapshot-policy";
 
 /**
@@ -33,6 +37,9 @@ export interface CaptureSnapshotInput {
   liabilities: Liability[];
   /** Per-investment units and unit price at capture time, keyed by asset id. */
   investmentDetails?: ReadonlyMap<string, InvestmentCaptureDetail>;
+  /** Per-connected-source position breakdown at capture time, keyed by asset id
+   *  (ADR 0035). Shared across scopes like `investmentDetails`. */
+  positionDetails?: ReadonlyMap<string, SnapshotPositionInput[]>;
   /** "Now" as an ISO timestamp — the snapshot's capturedAt and id seed source. */
   capturedAt: string;
 }
@@ -86,6 +93,7 @@ export function captureSnapshotForScope(
     scopeLabel: input.scope.label,
     workspace: input.workspace,
     ...(input.investmentDetails ? { investmentDetails: input.investmentDetails } : {}),
+    ...(input.positionDetails ? { positionDetails: input.positionDetails } : {}),
   });
 
   return { holdings, replace: replacesId !== undefined, snapshot };

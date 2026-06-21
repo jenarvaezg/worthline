@@ -4,7 +4,11 @@ import type { NetWorthFraming } from "./net-worth";
 import type { DomainWarning } from "./warnings";
 import { collectWarnings } from "./warnings";
 import { deriveMonthlyCloses } from "./snapshot-policy";
-import type { InvestmentCaptureDetail, SnapshotHoldingRow } from "./snapshot-holdings";
+import type {
+  InvestmentCaptureDetail,
+  SnapshotHoldingRow,
+  SnapshotPositionInput,
+} from "./snapshot-holdings";
 import {
   assertSnapshotHoldingsReconcile,
   buildSnapshotHoldingRows,
@@ -131,6 +135,8 @@ export function captureValuedNetWorthSnapshot(input: {
   isMonthlyClose?: boolean;
   /** Per-investment units and unit price, keyed by asset id. */
   investmentDetails?: ReadonlyMap<string, InvestmentCaptureDetail>;
+  /** Per-connected-source position breakdown, keyed by asset id (ADR 0035). */
+  positionDetails?: ReadonlyMap<string, SnapshotPositionInput[]>;
 }): ValuedNetWorthSnapshot {
   const snapshot = captureNetWorthSnapshot(input);
   const holdings = buildSnapshotHoldingRows({
@@ -139,6 +145,7 @@ export function captureValuedNetWorthSnapshot(input: {
     workspace: input.workspace,
     ...(input.liabilities ? { liabilities: input.liabilities } : {}),
     ...(input.investmentDetails ? { investmentDetails: input.investmentDetails } : {}),
+    ...(input.positionDetails ? { positionDetails: input.positionDetails } : {}),
   });
 
   assertSnapshotHoldingsReconcile(holdings, {

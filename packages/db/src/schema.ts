@@ -636,3 +636,44 @@ export const snapshotHoldings = sqliteTable(
     index("snapshot_holdings_holding_kind_idx").on(table.holdingId, table.kind),
   ],
 );
+
+/**
+ * Per-position breakdown of a connected-source holding, frozen into a snapshot as
+ * child rows of its holding row (ADR 0035, PRD #459). One row per coin/token per
+ * snapshot. The parent is identified by (snapshot_id, parent_holding_id) — the
+ * connected holding is always an asset, so no kind is needed. `position_key` is the
+ * source's STABLE id (a coin's Numista `externalId`, ADR 0017), NOT worthline's
+ * internal position id (reassigned each sync) — so there is deliberately NO foreign
+ * key to `positions`; a re-sync must never cascade-delete frozen history. Values and
+ * labels only — never credentials, tokens or raw provider payloads. The rows sum
+ * EXACTLY to the parent holding's value (the ADR 0008 reconciliation sub-sum).
+ */
+export const snapshotPositionHoldings = sqliteTable(
+  "snapshot_position_holdings",
+  {
+    id: text("id").primaryKey(),
+    snapshotId: text("snapshot_id")
+      .notNull()
+      .references(() => snapshots.id, { onDelete: "cascade" }),
+    /** The parent snapshot-holding's holding id (the materialized asset). */
+    parentHoldingId: text("parent_holding_id").notNull(),
+    /** The source's stable per-line id — a coin's Numista externalId (ADR 0017). */
+    positionKey: text("position_key").notNull(),
+    /** The position's display name, frozen at capture. */
+    label: text("label").notNull(),
+    /** The scope-weighted value in minor units; Σ per holding == the holding value. */
+    valueMinor: integer("value_minor").notNull(),
+    /** Grouping-lens metadata (a coin's metal); null when the source records none. */
+    metal: text("metal"),
+    /** Obverse thumbnail URL for the gallery image; null → metal-glyph fallback. */
+    imageUrl: text("image_url"),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    uniqueIndex("snapshot_position_holdings_snapshot_holding_key_unique").on(
+      table.snapshotId,
+      table.parentHoldingId,
+      table.positionKey,
+    ),
+  ],
+);
