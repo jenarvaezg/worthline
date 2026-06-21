@@ -462,7 +462,8 @@ export default async function AjustesPage({
               </label>
               <p className="muted">
                 Conecta tu colección de Numista para reflejar tus monedas como un activo
-                ilíquido con valor calculado. La clave se guarda solo en este dispositivo.
+                ilíquido con valor calculado. Usa una clave de solo lectura; se guarda{" "}
+                cifrada y nunca se exporta.
               </p>
               <button type="submit">Conectar Numista</button>
             </form>
@@ -545,9 +546,10 @@ export default async function AjustesPage({
               </label>
               <p className="muted">
                 Conecta tu cuenta de Binance para reflejar tus tokens como un activo
-                valorado en vivo. Usa una clave de <strong>solo lectura</strong> («Enable
-                Reading»), sin permisos de trading ni de retiro. La clave y el secreto se
-                guardan solo en este dispositivo y nunca se exportan.
+                valorado en vivo. Usa <strong>obligatoriamente</strong> una clave de{" "}
+                <strong>solo lectura</strong> («Enable Reading»), sin permisos de trading
+                ni de retiro: worthline solo lee saldos. La clave y el secreto se guardan{" "}
+                <strong>cifrados</strong> y nunca se exportan.
               </p>
               <button type="submit">Conectar Binance</button>
             </form>
