@@ -703,13 +703,35 @@ export interface WorthlineStore {
   }) => Promise<void>;
 }
 
+/**
+ * Run the migration ladder, but skip the schema-version probe for a remote
+ * (`libsql://`) database this process has already confirmed at-version (perf
+ * #445). The ladder is idempotent and the schema only ever changes on a deploy
+ * (a fresh lambda process), so re-reading `schema_meta` on every request to a
+ * warm lambda is pure network round-trip overhead.
+ *
+ * Never memoized for `path` targets (`:memory:` / `file:`): those reuse a single
+ * URL string across distinct databases (every `createInMemoryStore()` is a fresh
+ * DB), so skipping their migration would be a correctness bug. Remote URLs are
+ * unique per workspace and stable, so keying the skip on the URL is safe.
+ */
+const migratedRemoteUrls = new Set<string>();
+async function migrateTarget(target: DatabaseTarget, client: Client) {
+  if (target.kind === "url" && migratedRemoteUrls.has(target.url)) {
+    return { ranV18Backfill: false, ranV33Backfill: false };
+  }
+  const result = await migrate(client);
+  if (target.kind === "url") migratedRemoteUrls.add(target.url);
+  return result;
+}
+
 export async function runBootstrapHealthcheck(
   options: BootstrapHealthcheckOptions = {},
 ): Promise<LocalPersistenceStatus> {
   const target = resolveDatabaseTarget(options);
   const client = openDatabaseTarget(target);
   try {
-    await migrate(client);
+    await migrateTarget(target, client);
 
     const db = openDrizzle(client);
     const checkedAt = (options.now ?? (() => new Date()))().toISOString();
@@ -786,7 +808,7 @@ export async function createWorthlineStore(
 ): Promise<WorthlineStore> {
   const target = resolveDatabaseTarget(options);
   const client = openDatabaseTarget(target);
-  const migrateResult = await migrate(client);
+  const migrateResult = await migrateTarget(target, client);
   return buildStore(client, migrateResult);
 }
 
