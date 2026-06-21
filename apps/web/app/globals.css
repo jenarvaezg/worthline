@@ -217,6 +217,36 @@ textarea {
   color: var(--paper-strong);
 }
 
+/* Nav + sign-out grouped on the topbar's trailing edge. */
+.topbarEnd {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+/* «Cerrar sesión» — secondary outline pill, de-emphasised vs the nav links. */
+.signOutForm {
+  display: contents;
+}
+
+.signOutBtn {
+  background: transparent;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  padding: 6px 13px;
+}
+
+.signOutBtn:hover {
+  border-color: var(--line-soft);
+  color: var(--ink);
+}
+
 /* Demote the brand name h1 inside the topbar — smaller than the hero h1. */
 .topbar .brandName {
   font-size: 1.1rem;
