@@ -32,7 +32,7 @@ import {
   updateMemberAction,
 } from "./actions";
 import { connectBinanceAction, syncBinanceAction } from "./binance-actions";
-import { aggregateSourceValueMinor } from "./binance-helpers";
+import { aggregateSourceValueMinor, countNonDustTokens } from "./binance-helpers";
 import DisconnectBinanceFold from "./disconnect-binance-fold";
 import DisconnectNumistaFold from "./disconnect-numista-fold";
 import { connectNumistaAction, syncNumistaAction } from "./numista-actions";
@@ -97,7 +97,7 @@ export default async function AjustesPage({
     // The connected Binance source (PRD #245/#248), if any. A source now spans
     // rungs — one asset per occupied rung (market + term-locked) — so the tile
     // AGGREGATES across the source's assets: value = Σ asset values, token count =
-    // all the source's token positions. "Ver →" links to the market (primary) asset.
+    // the distinct non-dust tokens (#479). "Ver →" links to the market (primary) asset.
     const binanceRow = (await store.connectedSources.listSources()).find(
       (source) => source.adapter === "binance",
     );
@@ -116,7 +116,7 @@ export default async function AjustesPage({
           assetId: binanceRow.assetId,
           label: binanceRow.label,
           lastSyncAt: binanceRow.lastSyncAt,
-          tokenCount: binancePositions.filter((p) => p.kind === "token").length,
+          tokenCount: countNonDustTokens(binancePositions),
           valueMinor: binanceValueMinor,
         }
       : null;

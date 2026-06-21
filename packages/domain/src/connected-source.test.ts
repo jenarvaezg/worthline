@@ -17,6 +17,7 @@ import {
   groupPositionsByMetal,
   groupPositionsByToken,
   instrumentForAdapter,
+  isTokenDustValue,
   positionValue,
   projectConnectedSource,
   tokenPositionSnapshotInput,
@@ -409,6 +410,17 @@ describe("groupPositionsByToken — the Binance detail lens (grouped by symbol, 
     expect(groups).toHaveLength(1);
     expect(groups[0]).toMatchObject({ symbol: "WAGMI", subtotalMinor: 0 });
     expect(groups[0]!.positions).toHaveLength(1);
+  });
+});
+
+describe("isTokenDustValue — junk worth under a cent (#479)", () => {
+  test("a value that rounds to 0,00 € is dust (incl. unpriceable 'Valor 0')", () => {
+    expect(isTokenDustValue(0)).toBe(true);
+  });
+
+  test("a value of one cent or more is not dust", () => {
+    expect(isTokenDustValue(1)).toBe(false);
+    expect(isTokenDustValue(2_500_000)).toBe(false);
   });
 });
 
