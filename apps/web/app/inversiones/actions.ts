@@ -121,7 +121,7 @@ export async function recordOperationAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ) {
-  guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const operationErrorUrl = (message: string) =>
     errorRedirectUrl(returnUrl, {
@@ -232,7 +232,7 @@ export async function previewStatementAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<StatementPreviewState> {
-  guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const read = await readStatementFromForm(formData);
   if (!read.ok) {
     return { message: read.message, status: "error" };
@@ -282,7 +282,7 @@ export async function confirmStatementAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ) {
-  guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const statementErrorUrl = (message: string) =>
     errorRedirectUrl(returnUrl, { formId: "statement", message });
@@ -374,7 +374,7 @@ export async function updateInvestmentAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ) {
-  guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const editErrorUrl = (message: string) =>
     errorRedirectUrl(returnUrl, {
@@ -432,7 +432,7 @@ export async function deleteOperationAction(
   formData: FormData,
   _store?: WorthlineStore,
 ) {
-  guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const operationId = parseEntityId(formData, "operationId");
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
@@ -535,7 +535,7 @@ export async function previewPriceBackfillAction(
   _source: HistoricalPriceSource = coingeckoHistoricalSource,
   _clock: Clock = systemClock(),
 ): Promise<PriceBackfillPreviewState> {
-  guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const today = _clock.today();
 
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
@@ -584,7 +584,7 @@ export async function confirmPriceBackfillAction(
   _source: HistoricalPriceSource = coingeckoHistoricalSource,
   _clock: Clock = systemClock(),
 ) {
-  guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const today = _clock.today();
 
@@ -624,7 +624,7 @@ export async function refreshPricesAction(
   _provider?: PriceProvider,
   _clock: Clock = systemClock(),
 ) {
-  guardDemoWrite(currentUrlOf(formData, "/patrimonio"));
+  await guardDemoWrite(currentUrlOf(formData, "/patrimonio"));
   const returnUrl = currentUrlOf(formData, "/patrimonio");
   const nowIso = _clock.now();
 

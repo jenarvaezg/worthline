@@ -55,7 +55,7 @@ export async function deleteAssetAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
@@ -88,7 +88,7 @@ export async function deleteLiabilityAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
@@ -120,7 +120,7 @@ export async function hardDeleteAssetAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
@@ -150,7 +150,7 @@ export async function hardDeleteLiabilityAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
@@ -180,7 +180,7 @@ export async function emptyTrashAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
@@ -193,7 +193,7 @@ export async function restoreAssetAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
@@ -223,7 +223,7 @@ export async function restoreLiabilityAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
@@ -253,7 +253,7 @@ export async function acknowledgeWarningAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const code = String(formData.get("code") ?? "").trim();
   const entityId = parseEntityId(formData, "entityId");
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
@@ -275,7 +275,7 @@ export async function updateAssetValuationAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const currentValue = parseMoneyMinorField(formData, "currentValue");
 
@@ -338,7 +338,7 @@ export async function updateLiabilityBalanceAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const balance = parseMoneyMinorField(formData, "balance");
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
@@ -370,7 +370,7 @@ export async function batchValueUpdateAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
@@ -455,7 +455,7 @@ export async function editAssetAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const isLiability = formData.get("isLiability") === "true";
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
@@ -613,7 +613,7 @@ export async function setAppreciationRateAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
@@ -671,7 +671,7 @@ export async function addValuationAnchorAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
@@ -730,7 +730,7 @@ export async function updateValuationAnchorAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
@@ -808,7 +808,7 @@ export async function deleteValuationAnchorAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
@@ -884,7 +884,7 @@ export async function setDebtModelAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
@@ -963,7 +963,7 @@ export async function saveAmortizationPlanAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
@@ -1037,7 +1037,7 @@ export async function deleteAmortizationPlanAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
@@ -1092,7 +1092,7 @@ export async function addInterestRateRevisionAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
@@ -1150,7 +1150,7 @@ export async function updateInterestRateRevisionAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
   const revisionId = parseEntityId(formData, "revisionId");
@@ -1224,7 +1224,7 @@ export async function deleteInterestRateRevisionAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const revisionId = parseEntityId(formData, "revisionId");
   const planId = parseEntityId(formData, "planId");
@@ -1276,7 +1276,7 @@ export async function addEarlyRepaymentAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
@@ -1332,7 +1332,7 @@ export async function updateEarlyRepaymentAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
   const repaymentId = parseEntityId(formData, "repaymentId");
@@ -1407,7 +1407,7 @@ export async function deleteEarlyRepaymentAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const repaymentId = parseEntityId(formData, "repaymentId");
   const planId = parseEntityId(formData, "planId");
@@ -1459,7 +1459,7 @@ export async function addBalanceAnchorAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
@@ -1513,7 +1513,7 @@ export async function updateBalanceAnchorAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
@@ -1586,7 +1586,7 @@ export async function deleteBalanceAnchorAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ): Promise<never> {
-  guardDemoWrite(baseUrl(formData));
+  await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>

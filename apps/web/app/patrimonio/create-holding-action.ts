@@ -185,7 +185,7 @@ export async function createHoldingAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ): Promise<never> {
-  guardDemoWrite(ADD_URL);
+  await guardDemoWrite(ADD_URL);
   const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
     _store ? fn(_store) : withStore(fn);
 
