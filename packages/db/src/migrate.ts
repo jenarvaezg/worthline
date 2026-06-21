@@ -82,13 +82,70 @@ export async function execToleratingMissingTable(
   }
 }
 
+/**
+ * Schema version persistence (ADR 0030). A remote libSQL (Turso) rejects
+ * `PRAGMA user_version = N` over HTTP (SQL_PARSE_ERROR), so the version lives in a
+ * one-row `schema_meta` table — plain DML that both local SQLite and Turso accept.
+ * `PRAGMA user_version` is still written best-effort on local (cheap external
+ * signal) but is never the source of truth.
+ */
+const SCHEMA_META_TABLE =
+  "CREATE TABLE IF NOT EXISTS schema_meta (version INTEGER NOT NULL)";
+
+/** True when a libSQL error is Turso's "this statement isn't allowed over HTTP". */
+function isTursoRejectedStatement(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /SQL_PARSE_ERROR|not allowed statement/i.test(message);
+}
+
+/**
+ * Read the schema version. Prefers `schema_meta`; falls back to the legacy
+ * `PRAGMA user_version` for databases created before this table existed (so an
+ * existing local DB is recognized at its current version and never re-migrated).
+ */
+export async function readSchemaVersion(client: Client): Promise<number> {
+  try {
+    const result = await client.execute("SELECT version FROM schema_meta LIMIT 1");
+    if (result.rows.length > 0) return Number(result.rows[0]!.version);
+  } catch (err) {
+    if (!/no such table/i.test(err instanceof Error ? err.message : String(err))) {
+      throw err;
+    }
+  }
+  return Number((await client.execute("PRAGMA user_version")).rows[0]!.user_version);
+}
+
+/**
+ * Persist the schema version to `schema_meta` (Turso-safe) and, best-effort, to
+ * `PRAGMA user_version` on engines that accept the write (local SQLite). Turso
+ * rejects the PRAGMA write — tolerated, since `schema_meta` is authoritative.
+ */
+export async function writeSchemaVersion(client: Client, version: number): Promise<void> {
+  await client.execute(SCHEMA_META_TABLE);
+  await client.execute("DELETE FROM schema_meta");
+  await client.execute({
+    sql: "INSERT INTO schema_meta (version) VALUES (?)",
+    args: [version],
+  });
+  try {
+    await client.execute(`PRAGMA user_version = ${version}`);
+  } catch (err) {
+    if (!isTursoRejectedStatement(err)) throw err;
+  }
+}
+
 export async function migrate(client: Client): Promise<MigrateResult> {
-  const version = Number(
-    (await client.execute("PRAGMA user_version")).rows[0]!.user_version,
-  );
+  const version = await readSchemaVersion(client);
   if (version >= SCHEMA_VERSION) return { ranV18Backfill: false };
 
-  await client.execute("PRAGMA journal_mode = WAL");
+  // `journal_mode = WAL` is a local-file durability optimization; Turso manages
+  // journaling server-side and rejects the PRAGMA over HTTP, harmless to skip
+  // there. (`foreign_keys` IS accepted by Turso.)
+  try {
+    await client.execute("PRAGMA journal_mode = WAL");
+  } catch (err) {
+    if (!isTursoRejectedStatement(err)) throw err;
+  }
   await client.execute("PRAGMA foreign_keys = ON");
 
   // Set by the v18 block and returned at the end — must survive later migration
@@ -100,7 +157,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       .replaceAll("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
       .replaceAll("CREATE UNIQUE INDEX ", "CREATE UNIQUE INDEX IF NOT EXISTS ");
     await client.executeMultiple(safeSql);
-    await client.execute("PRAGMA user_version = 2");
+    await writeSchemaVersion(client, 2);
   }
 
   if (version < 3) {
@@ -112,7 +169,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
       FOREIGN KEY (asset_id) REFERENCES assets(id) ON UPDATE no action ON DELETE cascade
     );`);
-    await client.execute("PRAGMA user_version = 3");
+    await writeSchemaVersion(client, 3);
   }
 
   if (version < 4) {
@@ -128,7 +185,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
     try {
       await client.executeMultiple("ALTER TABLE liabilities ADD COLUMN deleted_at TEXT");
     } catch {}
-    await client.execute("PRAGMA user_version = 4");
+    await writeSchemaVersion(client, 4);
   }
 
   if (version < 5) {
@@ -137,7 +194,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
       PRIMARY KEY (code, entity_id)
     );`);
-    await client.execute("PRAGMA user_version = 5");
+    await writeSchemaVersion(client, 5);
   }
 
   if (version < 6) {
@@ -145,7 +202,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
     // month), not declared via the is_monthly_close flag. The column is kept for
     // backward compatibility but derivation wins over any persisted flag.
     // No structural change needed — bump version to mark the semantic transition.
-    await client.execute("PRAGMA user_version = 6");
+    await writeSchemaVersion(client, 6);
   }
 
   if (version < 7) {
@@ -169,7 +226,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       `CREATE UNIQUE INDEX IF NOT EXISTS snapshot_holdings_snapshot_kind_holding_unique
        ON snapshot_holdings (snapshot_id, kind, holding_id);`,
     );
-    await client.execute("PRAGMA user_version = 7");
+    await writeSchemaVersion(client, 7);
   }
 
   if (version < 8) {
@@ -178,7 +235,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
         "ALTER TABLE investment_assets ADD COLUMN price_provider TEXT",
       );
     } catch {}
-    await client.execute("PRAGMA user_version = 8");
+    await writeSchemaVersion(client, 8);
   }
 
   if (version < 9) {
@@ -203,7 +260,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       `CREATE UNIQUE INDEX IF NOT EXISTS asset_valuations_asset_date_unique
        ON asset_valuations (asset_id, valuation_date);`,
     );
-    await client.execute("PRAGMA user_version = 9");
+    await writeSchemaVersion(client, 9);
   }
 
   if (version < 10) {
@@ -239,7 +296,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       `CREATE UNIQUE INDEX IF NOT EXISTS interest_rate_revisions_plan_date_unique
        ON interest_rate_revisions (plan_id, revision_date);`,
     );
-    await client.execute("PRAGMA user_version = 10");
+    await writeSchemaVersion(client, 10);
   }
 
   if (version < 11) {
@@ -258,7 +315,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       `CREATE UNIQUE INDEX IF NOT EXISTS liability_balance_anchors_liability_date_unique
        ON liability_balance_anchors (liability_id, anchor_date);`,
     );
-    await client.execute("PRAGMA user_version = 11");
+    await writeSchemaVersion(client, 11);
   }
 
   if (version < 12) {
@@ -279,7 +336,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
     await client.executeMultiple(
       "UPDATE snapshot_holdings SET liquidity_tier = 'illiquid' WHERE liquidity_tier = 'housing';",
     );
-    await client.execute("PRAGMA user_version = 12");
+    await writeSchemaVersion(client, 12);
   }
 
   if (version < 13) {
@@ -314,7 +371,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
          WHEN 'informal' THEN 'anchored'
          ELSE 'stored' END;`,
     );
-    await client.execute("PRAGMA user_version = 13");
+    await writeSchemaVersion(client, 13);
   }
 
   if (version < 14) {
@@ -352,7 +409,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
          WHEN debt_model = 'revolving' THEN 'credit_card'
          ELSE 'loan' END;`,
     );
-    await client.execute("PRAGMA user_version = 14");
+    await writeSchemaVersion(client, 14);
   }
 
   if (version < 15) {
@@ -374,7 +431,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       `CREATE UNIQUE INDEX IF NOT EXISTS early_repayments_plan_date_unique
        ON early_repayments (plan_id, repayment_date);`,
     );
-    await client.execute("PRAGMA user_version = 15");
+    await writeSchemaVersion(client, 15);
   }
 
   if (version < 16) {
@@ -404,7 +461,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
               OR a.is_primary_residence = 1
          );`,
     );
-    await client.execute("PRAGMA user_version = 16");
+    await writeSchemaVersion(client, 16);
   }
 
   if (version < 17) {
@@ -430,7 +487,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
               OR a.is_primary_residence = 1
          );`,
     );
-    await client.execute("PRAGMA user_version = 17");
+    await writeSchemaVersion(client, 17);
   }
 
   if (version < 18) {
@@ -516,7 +573,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
         COMMIT;`);
       await client.execute("PRAGMA foreign_keys = ON");
     }
-    await client.execute("PRAGMA user_version = 18");
+    await writeSchemaVersion(client, 18);
   }
 
   if (version < 19) {
@@ -552,7 +609,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
       FOREIGN KEY (source_id) REFERENCES connected_sources(id) ON UPDATE no action ON DELETE cascade
     );`);
-    await client.execute("PRAGMA user_version = 19");
+    await writeSchemaVersion(client, 19);
   }
 
   if (version < 20) {
@@ -580,7 +637,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
         "ALTER TABLE positions ADD COLUMN numismatic_fetched_at TEXT",
       );
     } catch {}
-    await client.execute("PRAGMA user_version = 20");
+    await writeSchemaVersion(client, 20);
   }
 
   if (version < 21) {
@@ -591,7 +648,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
     try {
       await client.executeMultiple("ALTER TABLE positions ADD COLUMN external_id TEXT");
     } catch {}
-    await client.execute("PRAGMA user_version = 21");
+    await writeSchemaVersion(client, 21);
   }
 
   if (version < 22) {
@@ -601,7 +658,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
     try {
       await client.executeMultiple("ALTER TABLE positions ADD COLUMN year INTEGER");
     } catch {}
-    await client.execute("PRAGMA user_version = 22");
+    await writeSchemaVersion(client, 22);
   }
 
   if (version < 23) {
@@ -637,7 +694,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       client,
       "CREATE INDEX IF NOT EXISTS liabilities_deleted_at_idx ON liabilities (name) WHERE deleted_at IS NOT NULL;",
     );
-    await client.execute("PRAGMA user_version = 23");
+    await writeSchemaVersion(client, 23);
   }
 
   if (version < 24) {
@@ -655,7 +712,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       client,
       "CREATE INDEX IF NOT EXISTS snapshot_holdings_holding_kind_idx ON snapshot_holdings (holding_id, kind);",
     );
-    await client.execute("PRAGMA user_version = 24");
+    await writeSchemaVersion(client, 24);
   }
 
   if (version < 25) {
@@ -749,7 +806,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
         COMMIT;`);
       await client.execute("PRAGMA foreign_keys = ON");
     }
-    await client.execute("PRAGMA user_version = 25");
+    await writeSchemaVersion(client, 25);
   }
 
   if (version < 26) {
@@ -778,7 +835,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
          SELECT cs.id FROM connected_sources cs WHERE cs.asset_id = assets.id
        ) WHERE id IN (SELECT asset_id FROM connected_sources);`,
     );
-    await client.execute("PRAGMA user_version = 26");
+    await writeSchemaVersion(client, 26);
   }
 
   if (version < 27) {
@@ -793,7 +850,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
         "ALTER TABLE positions ADD COLUMN obverse_thumb_url TEXT",
       );
     } catch {}
-    await client.execute("PRAGMA user_version = 27");
+    await writeSchemaVersion(client, 27);
   }
 
   if (version < 28) {
@@ -812,7 +869,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       client,
       "UPDATE snapshot_holdings SET liquidity_tier = 'housing' WHERE counts_as_housing = 1;",
     );
-    await client.execute("PRAGMA user_version = 28");
+    await writeSchemaVersion(client, 28);
   }
 
   if (version < 29) {
@@ -869,10 +926,10 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       ).rows.length > 0;
 
     if (!(await tableExists("snapshots"))) {
-      await client.execute("PRAGMA user_version = 29");
+      await writeSchemaVersion(client, 29);
     } else if (hasBinanceSource) {
       // Keep every histsnap_ row — the Binance history might justify any date.
-      await client.execute("PRAGMA user_version = 29");
+      await writeSchemaVersion(client, 29);
     } else {
       // Recompute amortization payment-boundary dates (the computed cuota source).
       const amortizationDates = new Set<string>();
@@ -963,7 +1020,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
         sql: `DELETE FROM snapshots AS s WHERE ${orphanWhere};`,
         args: amortizationList,
       });
-      await client.execute("PRAGMA user_version = 29");
+      await writeSchemaVersion(client, 29);
     }
   }
 
@@ -1009,7 +1066,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       client,
       `DELETE FROM snapshots WHERE ${orphanScopePredicate};`,
     );
-    await client.execute("PRAGMA user_version = 30");
+    await writeSchemaVersion(client, 30);
   }
 
   if (version < 31) {
@@ -1059,7 +1116,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       SELECT 'scope', id, 'wl_scp_' || lower(hex(randomblob(16)))
       FROM member_groups;`,
     );
-    await client.execute("PRAGMA user_version = 31");
+    await writeSchemaVersion(client, 31);
   }
 
   if (version < 32) {
@@ -1082,7 +1139,7 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       (entity_type, entity_id, public_id)
       SELECT 'holding', id, 'wl_hld_' || lower(hex(randomblob(16))) FROM liabilities;`,
     );
-    await client.execute("PRAGMA user_version = 32");
+    await writeSchemaVersion(client, 32);
   }
 
   return { ranV18Backfill };
