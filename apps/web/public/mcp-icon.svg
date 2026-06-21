@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <rect width="32" height="32" fill="#17201e" />
+  <text
+    x="16"
+    y="21"
+    fill="#fbfbf4"
+    font-family="'SFMono-Regular', monospace"
+    font-size="14"
+    font-weight="800"
+    text-anchor="middle"
+  >wl</text>
+</svg>

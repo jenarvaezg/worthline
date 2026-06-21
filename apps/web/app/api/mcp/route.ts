@@ -1,3 +1,4 @@
+import type { Implementation } from "@modelcontextprotocol/sdk/types.js";
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
 
 import { createAgentViewInternalMcpToolCatalog } from "@web/agent-view/internal-catalog";
@@ -11,11 +12,30 @@ export const runtime = "nodejs";
 const MCP_METADATA_PATH = "/.well-known/oauth-protected-resource";
 const MCP_READ_SCOPE = "worthline:read";
 
+// Public origin for client-facing metadata (the connector icon claude.ai shows).
+// Tracks the resource identifier in prod; falls back to the default alias locally.
+const PUBLIC_ORIGIN =
+  process.env.WORTHLINE_MCP_RESOURCE_URL?.trim() || "https://worthline-web.vercel.app";
+
+// `icons`/`websiteUrl` are part of the MCP `Implementation` (server info) the client
+// can surface (e.g. the connector icon). mcp-handler forwards this object verbatim to
+// `new McpServer(...)`; its param type is narrower than Implementation, so we type the
+// object as Implementation and let assignability carry the extra fields through.
+const SERVER_INFO: Implementation = {
+  name: "worthline",
+  title: "worthline",
+  version: "0.1.0",
+  websiteUrl: PUBLIC_ORIGIN,
+  icons: [
+    { src: `${PUBLIC_ORIGIN}/mcp-icon.svg`, mimeType: "image/svg+xml", sizes: ["32x32"] },
+  ],
+};
+
 const baseHandler = createMcpHandler(
   createAgentViewMcpServer(createAgentViewInternalMcpToolCatalog()),
   {
     capabilities: { tools: {} },
-    serverInfo: { name: "worthline", version: "0.1.0" },
+    serverInfo: SERVER_INFO,
   },
   {
     basePath: "/api",
