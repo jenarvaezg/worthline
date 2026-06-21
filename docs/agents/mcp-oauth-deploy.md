@@ -1,91 +1,88 @@
-# Deploy checklist — OAuth-protected MCP (WorkOS Authorization Server)
+# Deploy runbook — OAuth-protected MCP (WorkOS Authorization Server)
 
-> S4 of PRD [#438](https://github.com/jenarvaezg/worthline/issues/442). The pure code
-> (S1–S3) is merged; this is the **config + deploy** step. It is config-heavy and
-> partly manual: WorkOS console + Vercel env + an end-to-end check against a real
-> Claude connector. See **ADR 0034** for the decision and seams.
+> PRD [#438](https://github.com/jenarvaezg/worthline/issues/438), ADR 0034. The code
+> (S1–S3) is merged; this is the **config + deploy** step, per WorkOS environment. It
+> went live end-to-end on 2026-06-21 (WorkOS Staging, then Production). This runbook is
+> the real, tested recipe — follow it verbatim when wiring a new WorkOS environment.
 
-## What S1–S3 already shipped
+## What the code does (so the config makes sense)
 
-- `/.well-known/oauth-protected-resource` serves RFC 9728 metadata; `/api/mcp` returns
-  `401 + WWW-Authenticate` pointing at it (kills "Failed to parse JSON"). Gating engages
-  only when auth is configured (`AUTH_GOOGLE_ID`/`AUTH_GOOGLE_SECRET`).
-- `verifyMcpToken` validates the JWT (signature vs JWKS, issuer, audience, expiry, pinned
-  algorithms) and maps the subject's **email → control-plane user → first granted
-  workspace**. It **fails closed** when the Authorization-Server env is absent.
-- The agent-view catalog is per-request and **token-bound**: a valid token reads only its
-  own workspace (regression-guarded by `route.tenant-isolation.test.ts`).
+- `/.well-known/oauth-protected-resource` serves RFC 9728 metadata: `resource` = worthline's
+  public HTTPS origin (from proxy headers), `authorization_servers` = `WORTHLINE_MCP_AUTH_SERVER_URL`.
+- `/api/mcp` is gated by `withMcpAuth` **only when `AUTH_GOOGLE_ID`/`AUTH_GOOGLE_SECRET` are set**
+  (hosted). No/invalid token → `401` + `WWW-Authenticate … resource_metadata="…"`. Local no-auth
+  and the demo (persona cookie) paths stay open.
+- `verifyMcpToken` validates the JWT (signature vs JWKS, issuer, **audience = the resource id**,
+  expiry, pinned **RS256**), then resolves the caller's **email** and maps it to a workspace.
+- **Email resolution — the non-obvious part.** WorkOS access tokens carry only the `sub`
+  (the WorkOS user id), **not** an `email` claim, and OIDC `userinfo` 401s because the MCP
+  client's token lacks the `openid` scope (the DCR/CIMD flow can't be forced to request it).
+  So worthline fetches the email from the **WorkOS User Management directory** —
+  `GET https://api.workos.com/user_management/users/{sub}` with the secret `WORKOS_API_KEY`
+  (scope-independent). That email keys the control plane → the user's workspace.
+- Tenant isolation: a token for workspace A can only ever read A (ADR 0034, regression-tested).
 
-So before this step, a hosted `/api/mcp` advertises discovery but **accepts no token** —
-`verifyMcpToken`'s production path returns `undefined` until the env below is set.
+## WorkOS console — per environment (Staging AND Production are configured separately; nothing carries over)
 
-## 1. WorkOS console
+1. **Connect → Configuration → MCP Auth → Manage**: enable **Dynamic Client Registration** and
+   **Client ID Metadata Document** (claude.ai registers via CIMD; keep DCR on for compatibility).
+2. **Connect → Configuration → MCP resource indicators → Edit MCP resources**: add the public
+   origin, e.g. `https://worthline-web.vercel.app`. **This must equal the `resource` the
+   `.well-known` route serves.** If it is missing, the `authorize` request is rejected with
+   `error=invalid_target` (which surfaces in claude.ai as the misleading `state: Field required`).
+3. **Authentication → Providers → Google → Enable**:
+   - **Staging** may use WorkOS "Demo credentials" (real Google login, fine for testing).
+   - **Production** requires your **own** Google OAuth client (demo creds are staging-only). Reuse
+     worthline's existing client (`AUTH_GOOGLE_ID`/`AUTH_GOOGLE_SECRET` in `apps/web/.env.local`):
+     paste the Client ID + Secret, keep scopes `userinfo.email` + `userinfo.profile`.
+   - **Critical:** copy the **Redirect URI** the Google dialog shows
+     (`https://auth.workos.com/sso/oauth/google/<connection-id>/callback`) and add it to that
+     Google Cloud OAuth client's **Authorized redirect URIs**, or Google rejects with
+     `redirect_uri_mismatch` and the flow dies before the login screen.
+4. **API Keys**: note the environment's **secret key** (`sk_test_…` for Staging, `sk_live_…` for
+   Production) → this is `WORKOS_API_KEY`.
+5. **AuthKit domain** (Domains card, or `curl https://<authkit-domain>/.well-known/oauth-authorization-server`)
+   → gives the `issuer` and `jwks_uri`. Differs per environment (Staging had a `…-staging.authkit.app`).
 
-1. Create (or reuse) a WorkOS environment. It is the **Authorization Server**: it provides
-   authorize/token endpoints, **Dynamic Client Registration (RFC 7591 — mandatory for
-   claude.ai)**, PKCE, and a JWKS.
-2. **Federate Google** as the upstream connection so users still "log in with Google" — the
-   same identity Auth.js uses (ADR 0030/0034). Do **not** add a second identity provider at
-   launch.
-3. Confirm the AS issues access tokens that carry:
-   - `sub` — the stable WorkOS user id (becomes `AuthInfo.clientId`).
-   - `email` — the **verified** Google email (keys the control-plane user). Verify the
-     environment only issues tokens for verified addresses (the code trusts this invariant).
-   - `aud` — set to worthline's **resource identifier** (the public origin; see step 2).
-4. Note three values for the env:
-   - **Issuer** URL (matches the `iss` claim and RFC 8414 metadata).
-   - **JWKS** URL.
-   - The **signing algorithm** (WorkOS signs with **RS256**; the code pins
-     `ACCEPTED_TOKEN_ALGORITHMS = ["RS256"]` in `verify-token.ts` — if WorkOS reports a
-     different alg, update that constant).
+## Vercel env vars (`worthline-web`, Production scope) — all four from the SAME WorkOS environment
 
-## 2. Vercel env vars (names only — values are secrets)
+| Var                             | Value                                                                                 | Source                |
+| ------------------------------- | ------------------------------------------------------------------------------------- | --------------------- |
+| `WORTHLINE_MCP_AUTH_SERVER_URL` | the AuthKit `issuer` (e.g. `https://<id>.authkit.app`)                                | AS metadata           |
+| `WORTHLINE_MCP_JWKS_URL`        | `<issuer>/oauth2/jwks`                                                                | AS metadata           |
+| `WORTHLINE_MCP_RESOURCE_URL`    | the public origin, e.g. `https://worthline-web.vercel.app` (= the resource indicator) | unchanged across envs |
+| `WORKOS_API_KEY`                | the environment's secret key (`sk_test_`/`sk_live_`)                                  | API Keys              |
 
-Set on the `worthline-web` project. **Names**, what they wire, and where the code reads them:
+`AUTH_GOOGLE_ID/SECRET`, `WORTHLINE_CONTROL_PLANE_DB_URL`, `WORTHLINE_DB_AUTH_TOKEN` are already set.
+The three `WORTHLINE_MCP_*` engage the verifier together — if any is missing it **fails closed**
+(accepts nobody). After changing any var, **redeploy** (env is baked per deployment): push to main
+(auto-deploy via `.github/workflows/deploy-demo.yml`) or `gh workflow run deploy-demo.yml`.
 
-| Env var                                 | Wires                                                                                            | Read in                                       |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------- |
-| `WORTHLINE_MCP_AUTH_SERVER_URL`         | AS **issuer** — advertised in `.well-known` `authorization_servers` and checked as the JWT `iss` | `.well-known/.../route.ts`, `verify-token.ts` |
-| `WORTHLINE_MCP_JWKS_URL`                | AS **JWKS** endpoint — the signature verifier                                                    | `verify-token.ts` (`createRemoteJWKSet`)      |
-| `WORTHLINE_MCP_RESOURCE_URL`            | worthline's **resource id** — the JWT `aud` (RFC 8707 replay guard)                              | `verify-token.ts`                             |
-| `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | Already set — their presence **engages MCP gating** (hosted)                                     | `route.ts`, `auth-gate.ts`                    |
-| `WORTHLINE_CONTROL_PLANE_DB_URL`        | Already set — email→workspace lookup (control plane)                                             | `verify-token.ts` (`envResolveWorkspace`)     |
-| `WORTHLINE_DB_AUTH_TOKEN`               | Already set — the **Turso group token** that opens a workspace DB (NOT the OAuth token)          | `store-resolver.ts`                           |
+⚠️ Mixing environments is the easiest mistake: the `issuer`/`jwks`/`WORKOS_API_KEY` must all be from
+the same WorkOS environment, or the directory lookup hits the wrong env and every token is rejected.
 
-Notes (per ADR 0030 grain):
+## Validate
 
-- The control-plane var is distinct from any workspace DB var; do not conflate them.
-- These are read at request time, so a redeploy is not required to pick up a value change,
-  but Vercel applies env changes on the next deploy/invocation — redeploy to be safe.
-- All three `WORTHLINE_MCP_*` must be present together, or `verifyMcpToken` fails closed
-  (accepts nobody) — that's the safe default, not a bug.
-- `WORTHLINE_MCP_RESOURCE_URL` must equal the `resource` the `.well-known` route advertises
-  (worthline's public HTTPS origin, e.g. the clean Vercel alias), or the audience check
-  rejects every token.
-
-## 3. End-to-end validation (manual)
-
-Provisioning is unchanged (first **web** sign-in creates the workspace, ADR 0030) — sign in
-on the web once first so a workspace + grant exist for your Google account.
-
-- **claude.ai custom connector**: add worthline's `/api/mcp` as a connector. Expect: OAuth
-  discovery → a browser **Google login** (federated via WorkOS) → consent → read-only token.
-  Then ask Claude about your finances and confirm it reads **your** workspace.
-- **Claude Code**: `claude mcp add` against the hosted `/api/mcp`, complete the same login,
-  confirm the agent-view tools return your data.
-- **Isolation spot-check**: with a second Google account (second workspace), confirm each
-  connection sees only its own data.
-
-## 4. Cleanup
-
-- Delete the throwaway spike branch `spike/mcp-oauth` (its learnings are captured in S1–S3
-  and ADR 0034). There is no spike test on `main` to remove — `route.test.ts` is the real one.
+1. `curl https://worthline-web.vercel.app/.well-known/oauth-protected-resource` → `authorization_servers`
+   points at the right AuthKit domain (not the `.invalid` placeholder, not the wrong env).
+2. Sign into worthline **on the web** once with Google → provisions your workspace (MCP never provisions).
+3. claude.ai → add custom connector `https://worthline-web.vercel.app/api/mcp` (OAuth fields empty) →
+   Google login → ask about your finances → reads **your** workspace only.
 
 ## Failure-mode quick reference
 
-| Symptom                                        | Likely cause                                                                                                                       |
-| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `SDK auth failed: Failed to parse JSON`        | `.well-known` unreachable or `/login` redirect still swallowing it — check `auth-gate.ts` allowlist and that the route is deployed |
-| Every token → `401`                            | `WORTHLINE_MCP_*` env missing/partial (fail-closed), wrong `aud`/`iss`, or alg mismatch (RS256)                                    |
-| Token accepted but tools return no/"stub" data | Workspace not provisioned for that email (sign in on web first), or `email` claim absent/unverified                                |
-| `401` only after a while                       | Token expired and the client did not refresh — expected; reconnect                                                                 |
+| Symptom                                                                                         | Cause                                                                                               |
+| ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `SDK auth failed: Failed to parse JSON`                                                         | `.well-known` unreachable / `/login` redirect swallowing it                                         |
+| claude.ai shows `state: Field required`; callback URL is `…/auth_callback?error=invalid_target` | the `resource` is **not** registered as an MCP resource indicator **in that WorkOS environment**    |
+| Login screen never appears, flow dies at `authorize`                                            | Google provider not configured in that env, or `redirect_uri_mismatch` in Google Cloud              |
+| `[mcp-auth] reject: JWT validation failed` (`claim: aud`/`iss`)                                 | env vars from the wrong WorkOS environment, or `WORTHLINE_MCP_RESOURCE_URL` ≠ advertised `resource` |
+| `[mcp-auth] WorkOS user lookup failed status=401`                                               | `WORKOS_API_KEY` missing or from the wrong environment                                              |
+| `[mcp-auth] reject: no granted workspace`                                                       | the caller never signed into worthline web (no control-plane user/workspace for that email)         |
+
+## Custom domains (future polish)
+
+- **App domain** (e.g. `worthline.app`) — it **is** the `resource`/audience, so changing it means:
+  update `WORTHLINE_MCP_RESOURCE_URL` + the WorkOS resource indicator + re-add the connector.
+- **AuthKit custom domain** (e.g. `auth.worthline.app`, WorkOS Production → Domains) — nicer login
+  branding; changes `issuer`/`jwks` → update those two env vars + re-add the connector.

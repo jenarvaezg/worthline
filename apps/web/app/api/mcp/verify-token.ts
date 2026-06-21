@@ -139,16 +139,16 @@ export function createVerifyMcpToken(deps: VerifyMcpTokenDeps) {
     // the WorkOS directory by subject when the token claim is absent (ADR 0034).
     const email = verified.email ?? (await deps.resolveEmail(verified.subject));
     if (!email) {
+      // No PII: the subject/email values are deliberately not logged.
       console.warn(
-        "[mcp-auth] reject: no email (token claim absent and userinfo returned none)",
-        { sub: verified.subject },
+        "[mcp-auth] reject: no email (token claim absent and directory returned none)",
       );
       return undefined;
     }
 
     const workspace = await deps.resolveWorkspace({ subject: verified.subject, email });
     if (!workspace) {
-      console.warn("[mcp-auth] reject: no granted workspace for token", { email });
+      console.warn("[mcp-auth] reject: no granted workspace for the caller");
       return undefined;
     }
 
@@ -218,10 +218,8 @@ async function envResolveEmail(subject: string, env: Env): Promise<string | null
       { headers: { Authorization: `Bearer ${apiKey}` } },
     );
     if (!response.ok) {
-      console.warn("[mcp-auth] WorkOS user lookup failed", {
-        status: response.status,
-        subject,
-      });
+      // No PII: the subject is deliberately not logged, only the HTTP status.
+      console.warn("[mcp-auth] WorkOS user lookup failed", { status: response.status });
       return null;
     }
     const user = (await response.json()) as { email?: unknown };
