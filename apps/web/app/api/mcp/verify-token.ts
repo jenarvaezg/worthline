@@ -55,9 +55,10 @@ export interface VerifyMcpTokenDeps {
    * treats a throw as "reject".
    */
   verifyJwt: (token: string) => Promise<VerifiedToken | null>;
-  /** Fetch the caller's email from the AS userinfo endpoint using the access
-   * token, when the token itself does not carry an email claim. */
-  resolveEmail: (accessToken: string) => Promise<string | null>;
+  /** Resolve the caller's verified email from the subject (WorkOS user id) when
+   * the access token does not carry an email claim — WorkOS access tokens carry
+   * only the subject, and the control plane is keyed by the Google email. */
+  resolveEmail: (subject: string) => Promise<string | null>;
   /** Map verified claims to the caller's workspace, or null when no grant exists. */
   resolveWorkspace: (claims: McpTokenClaims) => Promise<McpWorkspaceRef | null>;
 }
@@ -134,9 +135,9 @@ export function createVerifyMcpToken(deps: VerifyMcpTokenDeps) {
     }
     if (!verified) return undefined; // already logged by the verifier
 
-    // WorkOS access tokens carry the subject but not the email; fetch it from the
-    // userinfo endpoint when the token claim is absent (ADR 0034).
-    const email = verified.email ?? (await deps.resolveEmail(bearerToken));
+    // WorkOS access tokens carry the subject but not the email; resolve it from
+    // the WorkOS directory by subject when the token claim is absent (ADR 0034).
+    const email = verified.email ?? (await deps.resolveEmail(verified.subject));
     if (!email) {
       console.warn(
         "[mcp-auth] reject: no email (token claim absent and userinfo returned none)",
@@ -199,25 +200,34 @@ function envJwtVerifier(env: Env): VerifyMcpTokenDeps["verifyJwt"] | null {
 }
 
 /**
- * Fetch the caller's email from the AS OIDC userinfo endpoint with the access
- * token. WorkOS access tokens carry `sub` but not `email`, so this is the
- * production source of the address the control plane is keyed by.
+ * Resolve the caller's verified email from the WorkOS User Management directory,
+ * keyed by the token subject (the WorkOS user id) and authenticated with the
+ * WorkOS secret API key. This is scope-independent — unlike OIDC userinfo it does
+ * not depend on the access token carrying `openid` — so it works for the minimal
+ * scopes an MCP client requests. The control plane is keyed by this email.
  */
-async function envResolveEmail(accessToken: string, env: Env): Promise<string | null> {
-  const issuer = env["WORTHLINE_MCP_AUTH_SERVER_URL"]?.trim();
-  if (!issuer) return null;
+async function envResolveEmail(subject: string, env: Env): Promise<string | null> {
+  const apiKey = env["WORKOS_API_KEY"]?.trim();
+  if (!apiKey) {
+    console.warn("[mcp-auth] no WORKOS_API_KEY: cannot resolve email from subject");
+    return null;
+  }
   try {
-    const response = await fetch(new URL("/oauth2/userinfo", issuer), {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const response = await fetch(
+      `https://api.workos.com/user_management/users/${encodeURIComponent(subject)}`,
+      { headers: { Authorization: `Bearer ${apiKey}` } },
+    );
     if (!response.ok) {
-      console.warn("[mcp-auth] userinfo request failed", { status: response.status });
+      console.warn("[mcp-auth] WorkOS user lookup failed", {
+        status: response.status,
+        subject,
+      });
       return null;
     }
-    const info = (await response.json()) as { email?: unknown };
-    return typeof info.email === "string" ? info.email : null;
+    const user = (await response.json()) as { email?: unknown };
+    return typeof user.email === "string" ? user.email : null;
   } catch (error) {
-    console.warn("[mcp-auth] userinfo request errored", {
+    console.warn("[mcp-auth] WorkOS user lookup errored", {
       message: (error as { message?: string })?.message,
     });
     return null;
@@ -261,7 +271,7 @@ export async function verifyMcpToken(
   if (!verifyJwt) return undefined;
   return createVerifyMcpToken({
     verifyJwt,
-    resolveEmail: (accessToken) => envResolveEmail(accessToken, process.env),
+    resolveEmail: (subject) => envResolveEmail(subject, process.env),
     resolveWorkspace: (claims) => envResolveWorkspace(claims, process.env),
   })(req, bearerToken);
 }
