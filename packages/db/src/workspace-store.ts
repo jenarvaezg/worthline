@@ -640,6 +640,10 @@ async function importWorkspace(
           type: asset.type,
           // The full holding model (ADR 0015, #155): derive the method from type
           // when the file omits it (a v1-shaped file the user hand-rolled).
+          // Normalize to the canonical pair: only `interpolated` is stored, every
+          // other value (incl. an explicit "step" or an absent field) is `null` = step.
+          valuationCadence:
+            asset.valuationCadence === "interpolated" ? "interpolated" : null,
           valuationMethod:
             asset.valuationMethod ?? defaultValuationMethodForAssetType(asset.type),
         })
@@ -718,6 +722,10 @@ async function importWorkspace(
             defaultInstrumentForLiability(liability.type, debtModel),
           name: liability.name,
           type: liability.type,
+          // Normalize to the canonical pair: only `interpolated` is stored, every
+          // other value (incl. an explicit "step" or an absent field) is `null` = step.
+          valuationCadence:
+            liability.valuationCadence === "interpolated" ? "interpolated" : null,
           valuationMethod:
             liability.valuationMethod ?? defaultValuationMethodForDebtModel(debtModel),
         })
@@ -1052,6 +1060,11 @@ async function buildWorkspaceExport(
         defaultInstrumentForAssetType(row.type, row.isPrimaryResidence === 1),
       valuationMethod:
         row.valuationMethod ?? defaultValuationMethodForAssetType(row.type),
+      // The cadence is only serialized when set away from the default `step`
+      // (ADR 0031); an omitted field round-trips as step on import.
+      ...(row.valuationCadence === "interpolated"
+        ? { valuationCadence: row.valuationCadence }
+        : {}),
       // The full holding model (ADR 0015, #155): appreciation rate + anchors.
       ...(row.annualAppreciationRate
         ? { annualAppreciationRate: row.annualAppreciationRate }
@@ -1108,6 +1121,11 @@ async function buildWorkspaceExport(
         row.instrument ?? defaultInstrumentForLiability(row.type, row.debtModel),
       valuationMethod:
         row.valuationMethod ?? defaultValuationMethodForDebtModel(row.debtModel ?? null),
+      // The cadence is only serialized when set away from the default `step`
+      // (ADR 0031); an omitted field round-trips as step on import.
+      ...(row.valuationCadence === "interpolated"
+        ? { valuationCadence: row.valuationCadence }
+        : {}),
       ...(row.debtModel ? { debtModel: row.debtModel } : {}),
       ...(plan ? { amortizationPlan: plan } : {}),
       ...(balanceAnchors.length > 0 ? { balanceAnchors } : {}),

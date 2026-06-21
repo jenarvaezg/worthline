@@ -94,6 +94,8 @@ const valuationMethodSchema = z.enum([
 
 const debtModelSchema = z.enum(["amortizable", "revolving", "informal"]);
 
+const valuationCadenceSchema = z.enum(["step", "interpolated"]);
+
 // ── Structural facts (ADR 0015, #155): the full holding model ───────────────
 
 const valuationAnchorSchema = z.object({
@@ -143,6 +145,7 @@ const assetSchema = z.object({
   isPrimaryResidence: z.boolean().optional(),
   instrument: instrumentSchema.optional(),
   valuationMethod: valuationMethodSchema.optional(),
+  valuationCadence: valuationCadenceSchema.optional(),
   annualAppreciationRate: nonEmptyString.optional(),
   valuationAnchors: z.array(valuationAnchorSchema).optional(),
   connectedSourceId: nonEmptyString.optional(),
@@ -159,6 +162,7 @@ const liabilitySchema = z.object({
   currentBalance: moneyMinorSchema,
   instrument: instrumentSchema.optional(),
   valuationMethod: valuationMethodSchema.optional(),
+  valuationCadence: valuationCadenceSchema.optional(),
   debtModel: debtModelSchema.optional(),
   amortizationPlan: amortizationPlanSchema.optional(),
   balanceAnchors: z.array(balanceAnchorSchema).optional(),
