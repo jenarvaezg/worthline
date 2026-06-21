@@ -337,6 +337,9 @@ export {
 export type { DebtBalanceAnchor, DebtBalanceAtDateInput } from "./debt-balance";
 export { debtBalanceAtDate } from "./debt-balance";
 
+export type { InterpolateOrStepInput, ValuationCadence } from "./valuation-cadence";
+export { cadenceOrDefault, interpolateOrStep } from "./valuation-cadence";
+
 export { daysBetween, MS_PER_DAY } from "./dates";
 
 export type { DashboardState, LocalPersistenceStatus, OnboardingStep } from "./dashboard";

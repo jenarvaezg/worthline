@@ -271,9 +271,11 @@ describe("amortization two-date schema migration (v18)", () => {
   test("re-ripples day-31 plan snapshot to the new two-date curve (ADR 0019)", async () => {
     // The day-31 plan (start=2020-01-31) gets firstPayment=2020-02-29 after backfill.
     // addMonths(addMonths("2020-01-31",1), m-1) ≠ addMonths("2020-01-31", m) for m≥2,
-    // so the new curve diverges from the old single-date curve at most boundary dates.
-    // The pre-migration snapshot at "2021-01-31" (= old boundary 12) had l_eom = 91_293_65.
-    // After re-ripple the holding row for l_eom must reflect the new curve: 91_244_49.
+    // so the new curve's boundary DATES diverge from the old single-date curve
+    // (boundary 12 → 2021-01-29, not 2021-01-31). Under the default `step` cadence
+    // (ADR 0031) the probe date 2021-01-31 resolves to the most recent boundary
+    // (2021-01-29) and holds the balance after 12 payments = 91_293_65, flat to the
+    // next cuota — date-independent, so it matches the new two-date curve exactly.
     const client = await seedV17WithRipple();
     const store = await createStoreFromSqlite(client); // migrate + re-ripple fires here
     try {
@@ -288,7 +290,7 @@ describe("amortization two-date schema migration (v18)", () => {
         (h) => h.holdingId === "l_eom" && h.kind === "liability",
       );
       expect(eomRow).toBeDefined();
-      expect(eomRow!.valueMinor).toBe(91_244_49);
+      expect(eomRow!.valueMinor).toBe(91_293_65);
     } finally {
       store.close();
     }
