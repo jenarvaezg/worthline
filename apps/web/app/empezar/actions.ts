@@ -1,6 +1,6 @@
 "use server";
 
-import { withStore, type WorthlineStore } from "@worthline/db";
+import { withStore, type WorthlineStore } from "@web/store";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 

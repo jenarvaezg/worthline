@@ -1,4 +1,4 @@
-import { withStore } from "@worthline/db";
+import { withStore } from "@web/store";
 import { redirect } from "next/navigation";
 
 import ImportWorkspaceForm from "@web/import-workspace-form";
