@@ -33,13 +33,14 @@ describe("shouldRedirectToLogin", () => {
     ).toBe(true);
   });
 
-  test("never redirects the public paths (/login, /demo, /api/auth/*)", () => {
+  test("never redirects the public paths (/login, /demo, /api/auth/*, /mcp-icon.svg)", () => {
     for (const pathname of [
       "/login",
       "/demo",
       "/demo/persona",
       "/api/auth/signin",
       "/api/auth/callback/google",
+      "/mcp-icon.svg",
     ]) {
       expect(
         shouldRedirectToLogin({
