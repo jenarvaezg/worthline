@@ -87,6 +87,43 @@ describe("resolveStoreTarget", () => {
     });
   });
 
+  test("returns authenticated from an MCP token's workspace claims (token-derived source)", () => {
+    const result = resolveStoreTarget({
+      env: {
+        AUTH_GOOGLE_ID: "google-id",
+        AUTH_GOOGLE_SECRET: "google-secret",
+        WORTHLINE_DB_AUTH_TOKEN: "group-token",
+      },
+      session: null,
+      mcpWorkspace: { workspaceId: "ws-ana", dbUrl: "libsql://wl-ana.turso.io" },
+    });
+    expect(result).toEqual({
+      kind: "authenticated",
+      workspaceId: "ws-ana",
+      dbUrl: "libsql://wl-ana.turso.io",
+      token: "group-token",
+    });
+  });
+
+  test("an MCP token's workspace wins over a stale persona cookie", () => {
+    const result = resolveStoreTarget({
+      env: {
+        AUTH_GOOGLE_ID: "google-id",
+        AUTH_GOOGLE_SECRET: "google-secret",
+        WORTHLINE_DB_AUTH_TOKEN: "group-token",
+      },
+      session: null,
+      personaCookie: "familia",
+      mcpWorkspace: { workspaceId: "ws-ana", dbUrl: "libsql://wl-ana.turso.io" },
+    });
+    expect(result).toEqual({
+      kind: "authenticated",
+      workspaceId: "ws-ana",
+      dbUrl: "libsql://wl-ana.turso.io",
+      token: "group-token",
+    });
+  });
+
   test("a persona cookie opens the demo even in local no-auth mode (dev preview)", () => {
     const result = resolveStoreTarget({
       env: {},

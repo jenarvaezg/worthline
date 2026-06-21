@@ -1,3 +1,4 @@
+import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   CallToolRequestSchema,
@@ -5,6 +6,16 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 
 import type { AgentViewMcpInputSchema } from "./mcp";
+
+/**
+ * Per-invocation context handed to each tool. Carries the verified token's
+ * {@link AuthInfo} (when the request is OAuth-authenticated, ADR 0034) so a tool
+ * can bind its store to that token's workspace; absent for the demo (persona
+ * cookie) and local no-auth paths.
+ */
+export interface AgentViewToolContext {
+  authInfo?: AuthInfo | undefined;
+}
 
 /**
  * Generic MCP tool contract used by the agent-view adapter.
@@ -16,7 +27,7 @@ export interface AgentViewMcpServerTool {
   name: string;
   description: string;
   inputSchema: AgentViewMcpInputSchema;
-  invoke: (input: unknown) => Promise<unknown>;
+  invoke: (input: unknown, context: AgentViewToolContext) => Promise<unknown>;
 }
 
 const STUB_ERROR_CODE = "not_found";
@@ -39,7 +50,7 @@ export function createAgentViewMcpServer(tools: AgentViewMcpServerTool[]) {
       };
     });
 
-    server.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    server.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       const tool = tools.find((t) => t.name === request.params.name);
       if (!tool) {
         return {
@@ -58,7 +69,12 @@ export function createAgentViewMcpServer(tools: AgentViewMcpServerTool[]) {
         };
       }
 
-      const result = await tool.invoke(request.params.arguments ?? {});
+      // `extra.authInfo` is the verified token's AuthInfo on the OAuth path
+      // (set by withMcpAuth → mcp-handler), and undefined on the demo/local
+      // paths — the tool binds its store accordingly (ADR 0034).
+      const result = await tool.invoke(request.params.arguments ?? {}, {
+        authInfo: extra.authInfo,
+      });
       return {
         content: [
           {
