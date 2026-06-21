@@ -25,6 +25,22 @@ describe("control-plane store", () => {
     }
   });
 
+  test("find-user-by-email reads an existing user without creating one", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      // Read-only: a never-seen email resolves to null (the MCP path must not
+      // provision — that stays on first web sign-in, ADR 0030).
+      expect(await cp.findUserByEmail("ana@example.com")).toBeNull();
+
+      const created = await cp.findOrCreateUser("ana@example.com");
+      const found = await cp.findUserByEmail("ana@example.com");
+      expect(found?.id).toBe(created.id);
+      expect(found?.email).toBe("ana@example.com");
+    } finally {
+      cp.close();
+    }
+  });
+
   test("a granted workspace appears in the user's workspace list", async () => {
     const cp = await createInMemoryControlPlaneStore();
     try {
