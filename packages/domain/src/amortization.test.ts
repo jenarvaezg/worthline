@@ -258,9 +258,11 @@ describe("amortizableBalanceAtDate — French amortization (cuota fija)", () => 
     ).toBe(176_150_76);
   });
 
-  test("intra-month interpolation: a date between two cuota dates", () => {
+  test("step (default): balance between two cuotas is flat at the last cuota", () => {
     // Mid-January 2021 is between the month-12 (2021-01-01) and month-13
-    // (2021-02-01) boundaries; the balance is interpolated linearly by days.
+    // (2021-02-01) boundaries. Under the default `step` cadence (ADR 0031, #390)
+    // the balance holds the 2021-01-01 cuota's value flat until 2021-02-01, then
+    // drops only on the cuota day.
     const onBoundary = amortizableBalanceAtDate({
       plan: PRD_EXAMPLE,
       targetDate: "2021-01-01",
@@ -269,9 +271,36 @@ describe("amortizableBalanceAtDate — French amortization (cuota fija)", () => 
       plan: PRD_EXAMPLE,
       targetDate: "2021-01-16",
     });
+    const dayBeforeNext = amortizableBalanceAtDate({
+      plan: PRD_EXAMPLE,
+      targetDate: "2021-01-31",
+    });
     const nextBoundary = amortizableBalanceAtDate({
       plan: PRD_EXAMPLE,
       targetDate: "2021-02-01",
+    });
+    expect(midMonth).toBe(onBoundary);
+    expect(dayBeforeNext).toBe(onBoundary);
+    expect(nextBoundary).toBeLessThan(onBoundary);
+  });
+
+  test("interpolated cadence reproduces the prior prorated curve (regression guard)", () => {
+    // The pre-#390 behaviour, now a per-holding opt-in: interpolated linearly by
+    // calendar days between the same two cuota boundaries.
+    const onBoundary = amortizableBalanceAtDate({
+      plan: PRD_EXAMPLE,
+      targetDate: "2021-01-01",
+      cadence: "interpolated",
+    });
+    const midMonth = amortizableBalanceAtDate({
+      plan: PRD_EXAMPLE,
+      targetDate: "2021-01-16",
+      cadence: "interpolated",
+    });
+    const nextBoundary = amortizableBalanceAtDate({
+      plan: PRD_EXAMPLE,
+      targetDate: "2021-02-01",
+      cadence: "interpolated",
     });
     // Strictly decreasing and strictly between the two boundaries.
     expect(midMonth).toBeLessThan(onBoundary);
@@ -674,8 +703,16 @@ describe("addMonths day-clamping — end-of-month first-payment dates", () => {
     expect(amortizableBalanceAtDate({ plan, targetDate: "2020-01-31" })).toBe(265_833);
     // On 2020-02-29 the locator places us on boundary 2 (offset 0) → 241_667.
     expect(amortizableBalanceAtDate({ plan, targetDate: "2020-02-29" })).toBe(241_667);
-    // Intra-month interpolation must use the correct 29-day February span.
-    expect(amortizableBalanceAtDate({ plan, targetDate: "2020-02-15" })).toBe(253_333);
+    // Default `step`: between boundary 1 and 2 the balance holds boundary 1's value.
+    expect(amortizableBalanceAtDate({ plan, targetDate: "2020-02-15" })).toBe(265_833);
+    // Interpolated cadence must use the correct 29-day February span (regression).
+    expect(
+      amortizableBalanceAtDate({
+        plan,
+        targetDate: "2020-02-15",
+        cadence: "interpolated",
+      }),
+    ).toBe(253_333);
   });
 });
 
