@@ -10,7 +10,7 @@
 import { describe, expect, test, vi } from "vitest";
 
 import { createInMemoryStore } from "@worthline/db";
-import type { WorthlineStore } from "@worthline/db";
+import type { SourcePositionInput, WorthlineStore } from "@worthline/db";
 
 import type { LoadDashboardInput } from "./load-dashboard";
 import { loadDashboard } from "./load-dashboard";
@@ -986,6 +986,173 @@ describe("loadDashboard — composition range and density", () => {
     );
     // The windowed drill's latest value is still the current (open-period) value.
     expect(windowedCash.currentValueMinor).toBe(113_000_00);
+
+    store.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Connected-source per-position breakdown capture (ADR 0035, PRD #459 S2)
+// ---------------------------------------------------------------------------
+
+describe("loadDashboard — Binance per-token breakdown capture (ADR 0035, #462)", () => {
+  async function connectBinance(store: WorthlineStore): Promise<string> {
+    const { sourceId } = await store.connectedSources.connect({
+      adapter: "binance",
+      label: "Binance",
+      credentialsJson: JSON.stringify({ apiKey: "KEY", apiSecret: "SECRET" }),
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    });
+    return sourceId;
+  }
+
+  function token(overrides: Partial<Extract<SourcePositionInput, { kind: "token" }>>) {
+    return {
+      kind: "token" as const,
+      externalId: "BTC:spot",
+      name: "BTC",
+      symbol: "BTC",
+      balance: "0.5",
+      wallet: "spot",
+      liquidityTier: "market" as const,
+      unitPrice: "50000",
+      currency: "EUR" as const,
+      ...overrides,
+    };
+  }
+
+  async function loadOnce(store: WorthlineStore) {
+    return loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-11",
+      now: "2026-06-11T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+  }
+
+  test("freezes one row per token beneath the Binance market holding, summing to it", async () => {
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    const sourceId = await connectBinance(store);
+    await store.connectedSources.syncPositions(
+      sourceId,
+      [
+        token({
+          externalId: "BTC:spot",
+          symbol: "BTC",
+          balance: "0.5",
+          unitPrice: "50000",
+        }), // 25 000 €
+        token({ externalId: "ETH:spot", symbol: "ETH", balance: "2", unitPrice: "2000" }), // 4 000 €
+      ],
+      "2026-06-11T09:00:00.000Z",
+    );
+
+    await loadOnce(store);
+
+    const rows = await store.snapshots.readSnapshotHoldings({ scopeId: "household" });
+    const binance = rows.find((row) => row.label === "Binance");
+    expect(binance?.valueMinor).toBe(2_900_000);
+    // Keyed by the stable symbol:wallet externalId, symbol label, no metal/image.
+    expect(binance?.positions).toEqual([
+      {
+        positionKey: "BTC:spot",
+        label: "BTC",
+        valueMinor: 2_500_000,
+        metal: null,
+        imageUrl: null,
+      },
+      {
+        positionKey: "ETH:spot",
+        label: "ETH",
+        valueMinor: 400_000,
+        metal: null,
+        imageUrl: null,
+      },
+    ]);
+    // ADR 0035 invariant: the token rows sum EXACTLY to the holding's value.
+    const sum = binance!.positions!.reduce((acc, p) => acc + p.valueMinor, 0);
+    expect(sum).toBe(binance!.valueMinor);
+
+    store.close();
+  });
+
+  test("an unpriceable token stays a row valued 0 beneath the holding (value-at-0)", async () => {
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    const sourceId = await connectBinance(store);
+    await store.connectedSources.syncPositions(
+      sourceId,
+      [
+        token({
+          externalId: "BTC:spot",
+          symbol: "BTC",
+          balance: "0.5",
+          unitPrice: "50000",
+        }),
+        token({
+          externalId: "WAGMI:spot",
+          symbol: "WAGMI",
+          balance: "100",
+          unitPrice: null,
+        }),
+      ],
+      "2026-06-11T09:00:00.000Z",
+    );
+
+    await loadOnce(store);
+
+    const rows = await store.snapshots.readSnapshotHoldings({ scopeId: "household" });
+    const binance = rows.find((row) => row.label === "Binance");
+    const wagmi = binance?.positions?.find((p) => p.positionKey === "WAGMI:spot");
+    expect(wagmi).toMatchObject({ label: "WAGMI", valueMinor: 0 });
+    // It is present, not dropped, and the rows still reconcile to the holding.
+    const sum = binance!.positions!.reduce((acc, p) => acc + p.valueMinor, 0);
+    expect(sum).toBe(binance!.valueMinor);
+
+    store.close();
+  });
+
+  test("market + term-locked rungs each freeze their own token breakdown (#248)", async () => {
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    const sourceId = await connectBinance(store);
+    await store.connectedSources.syncPositions(
+      sourceId,
+      [
+        token({
+          externalId: "BTC:spot",
+          symbol: "BTC",
+          balance: "0.5",
+          unitPrice: "50000",
+        }), // 25 000 € market
+        token({
+          externalId: "ETH:locked-earn",
+          symbol: "ETH",
+          balance: "3",
+          unitPrice: "2000",
+          wallet: "locked-earn",
+          liquidityTier: "term-locked",
+        }), // 6 000 € term-locked
+      ],
+      "2026-06-11T09:00:00.000Z",
+    );
+
+    await loadOnce(store);
+
+    const rows = await store.snapshots.readSnapshotHoldings({ scopeId: "household" });
+    const binanceRows = rows.filter((row) => row.positions !== undefined);
+    // Two rung assets, each with exactly its own rung's token frozen — the
+    // breakdown is attributed to the right materialized holding.
+    const market = binanceRows.find((row) => row.liquidityTier === "market");
+    const locked = binanceRows.find((row) => row.liquidityTier === "term-locked");
+    expect(market?.positions?.map((p) => p.positionKey)).toEqual(["BTC:spot"]);
+    expect(market?.valueMinor).toBe(2_500_000);
+    expect(locked?.positions?.map((p) => p.positionKey)).toEqual(["ETH:locked-earn"]);
+    expect(locked?.valueMinor).toBe(600_000);
 
     store.close();
   });

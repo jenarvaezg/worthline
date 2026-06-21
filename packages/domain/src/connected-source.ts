@@ -294,6 +294,28 @@ export function coinPositionSnapshotInput(coin: CoinPosition): SnapshotPositionI
   };
 }
 
+/**
+ * Freeze a token into the per-position snapshot input it contributes to its
+ * Binance holding's breakdown (ADR 0035, PRD #459 S2) — the live-valued mirror of
+ * {@link coinPositionSnapshotInput}. Carries the token's STABLE key (its
+ * `symbol:wallet` `externalId`, ADR 0021 — never the reassigned internal id), the
+ * symbol as the display label (the Binance detail lens, `groupPositionsByToken`),
+ * and its live `positionValue` (`balance × unit price`; 0 when unpriceable, still
+ * frozen so the row is never silently dropped). A token has no metal or thumbnail,
+ * so both are null — the second drilldown level renders its metal-glyph fallback.
+ * Value and labels only — no secrets. The capture scope-allocates these values
+ * down to the holding's owned share.
+ */
+export function tokenPositionSnapshotInput(token: TokenPosition): SnapshotPositionInput {
+  return {
+    positionKey: token.externalId,
+    label: token.symbol,
+    valueMinor: positionValue(token.balance, token.unitPrice).minor,
+    metal: null,
+    imageUrl: null,
+  };
+}
+
 /** A connected source's rolled-up holding on one liquidity rung (ADR 0016). */
 export interface ProjectedHolding {
   /** Stable holding id, derived from the source and rung. */

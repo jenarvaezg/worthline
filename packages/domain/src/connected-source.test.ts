@@ -19,6 +19,7 @@ import {
   instrumentForAdapter,
   positionValue,
   projectConnectedSource,
+  tokenPositionSnapshotInput,
 } from "./connected-source";
 import type { CoinPosition, ConnectedSource, TokenPosition } from "./connected-source";
 import { defaultsFor } from "./instrument-catalog";
@@ -408,6 +409,46 @@ describe("groupPositionsByToken — the Binance detail lens (grouped by symbol, 
     expect(groups).toHaveLength(1);
     expect(groups[0]).toMatchObject({ symbol: "WAGMI", subtotalMinor: 0 });
     expect(groups[0]!.positions).toHaveLength(1);
+  });
+});
+
+describe("tokenPositionSnapshotInput (ADR 0035, PRD #459 S2)", () => {
+  test("freezes a token's stable symbol:wallet key, symbol label and live value", () => {
+    const input = tokenPositionSnapshotInput(
+      token({
+        externalId: "BTC:spot",
+        symbol: "BTC",
+        balance: "0.5",
+        unitPrice: "50000",
+      }),
+    );
+
+    expect(input).toEqual({
+      positionKey: "BTC:spot", // the stable externalId (symbol:wallet), ADR 0021
+      label: "BTC", // the symbol, the Binance detail lens
+      valueMinor: 2_500_000, // live: balance × unit price
+      metal: null, // a token has no metal
+      imageUrl: null, // a token has no thumbnail → metal-glyph fallback
+    });
+  });
+
+  test("an unpriceable token still freezes a row valued 0 (value-at-0 case)", () => {
+    const input = tokenPositionSnapshotInput(
+      token({
+        externalId: "WAGMI:spot",
+        symbol: "WAGMI",
+        balance: "100",
+        unitPrice: null,
+      }),
+    );
+
+    expect(input).toEqual({
+      positionKey: "WAGMI:spot",
+      label: "WAGMI",
+      valueMinor: 0,
+      metal: null,
+      imageUrl: null,
+    });
   });
 });
 

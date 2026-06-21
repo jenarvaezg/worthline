@@ -195,6 +195,7 @@ export {
   positionValue,
   projectConnectedSource,
   projectedPositionValue,
+  tokenPositionSnapshotInput,
 } from "./connected-source";
 
 export type {

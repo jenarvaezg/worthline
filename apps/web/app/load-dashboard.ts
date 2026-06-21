@@ -22,8 +22,10 @@ import type {
   DrilldownKey,
   DrilldownState,
   InvestmentCaptureDetail,
+  LiquidityTier,
   NetWorthFraming,
   SnapshotPositionInput,
+  TokenPosition,
 } from "@worthline/domain";
 import {
   availableCompositionRanges,
@@ -36,6 +38,7 @@ import {
   monthsBetween,
   prepareDashboardState,
   rangeStartMonthKey,
+  tokenPositionSnapshotInput,
 } from "@worthline/domain";
 import type {
   CompositionSeriesPoint,
@@ -228,19 +231,52 @@ export async function loadDashboard(
   const investmentDetails: ReadonlyMap<string, InvestmentCaptureDetail> =
     scopedProjection.details;
 
-  // Per-connected-source position breakdown (ADR 0035): freeze each Numista
-  // coin-collection holding's per-coin values into the snapshot, keyed by the
-  // materialized asset id so `buildSnapshotHoldingRows` attaches them as child
-  // rows. Numista only for now (Binance tokens land in PRD #459 S2). Shared across
-  // scopes like `investmentDetails`; the capture scope-allocates the values down.
+  // Per-connected-source position breakdown (ADR 0035): freeze each connected
+  // holding's per-position values into the snapshot, keyed by the materialized
+  // asset id so `buildSnapshotHoldingRows` attaches them as child rows. Shared
+  // across scopes like `investmentDetails`; the capture scope-allocates down.
+  // Numista freezes one row per coin (frozen `max(metal, numismatic)`, PRD #459
+  // S1); Binance freezes one row per token (live `balance × price`, PRD #459 S2).
   const positionDetails = new Map<string, SnapshotPositionInput[]>();
   for (const source of await store.connectedSources.listSources()) {
-    if (source.adapter !== "numista") continue;
-    const coins = (await store.connectedSources.readPositions(source.id)).filter(
-      (position): position is CoinPosition => position.kind === "coin",
-    );
-    if (coins.length > 0) {
-      positionDetails.set(source.assetId, coins.map(coinPositionSnapshotInput));
+    if (source.adapter === "numista") {
+      const coins = (await store.connectedSources.readPositions(source.id)).filter(
+        (position): position is CoinPosition => position.kind === "coin",
+      );
+      if (coins.length > 0) {
+        positionDetails.set(source.assetId, coins.map(coinPositionSnapshotInput));
+      }
+    } else if (source.adapter === "binance") {
+      // Binance varies live and spans rungs (ADR 0021, #248): freeze the per-token
+      // breakdown beneath EACH materialized rung holding (market + term-locked), so
+      // each token's contribution lands under the holding it actually rolls up into.
+      const tokens = (await store.connectedSources.readPositions(source.id)).filter(
+        (position): position is TokenPosition => position.kind === "token",
+      );
+      if (tokens.length === 0) continue;
+      // Map each occupied rung to the source's asset materialized on it — the
+      // source's assets carry their rung as their liquidity tier, one per rung.
+      const sourceAssetIds = new Set(
+        await store.connectedSources.listSourceAssetIds(source.id),
+      );
+      const assetIdByTier = new Map<LiquidityTier, string>();
+      for (const asset of assets) {
+        if (sourceAssetIds.has(asset.id)) {
+          assetIdByTier.set(asset.liquidityTier, asset.id);
+        }
+      }
+      const tokensByTier = new Map<LiquidityTier, TokenPosition[]>();
+      for (const token of tokens) {
+        const rung = tokensByTier.get(token.liquidityTier);
+        if (rung) rung.push(token);
+        else tokensByTier.set(token.liquidityTier, [token]);
+      }
+      for (const [tier, group] of tokensByTier) {
+        const assetId = assetIdByTier.get(tier);
+        if (assetId) {
+          positionDetails.set(assetId, group.map(tokenPositionSnapshotInput));
+        }
+      }
     }
   }
 
