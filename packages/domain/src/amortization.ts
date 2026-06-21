@@ -489,12 +489,19 @@ export function amortizableBalanceAtDate(input: AmortizableBalanceAtDateInput): 
 
   // Locate the boundary the target falls in: the largest m with boundaryDate ≤
   // target. The target is on/after the first payment here, so m ≥ 1.
+  // boundaryDate(plan, m) increases monotonically with m, so binary-search that
+  // largest m in [1, termMonths) instead of scanning month-by-month (#447) —
+  // identical result, O(log termMonths) boundary lookups instead of O(termMonths).
   let monthIndex = 1;
-  for (let m = 1; m < termMonths; m += 1) {
-    if (boundaryDate(plan, m) <= targetDate) {
-      monthIndex = m;
+  let lo = 1;
+  let hi = termMonths - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (boundaryDate(plan, mid) <= targetDate) {
+      monthIndex = mid;
+      lo = mid + 1;
     } else {
-      break;
+      hi = mid - 1;
     }
   }
 
