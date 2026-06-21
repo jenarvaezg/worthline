@@ -18,6 +18,7 @@ import type { DistributiveOmit, TokenPosition } from "@worthline/domain";
 
 import { rungForWallet } from "./adapters/binance-rung";
 import { resolveCoinGeckoId } from "./binance-symbols";
+import { coingeckoBaseUrl, coingeckoHeaders } from "./coingecko";
 import { fetchPriceNow } from "./registry";
 
 /** A token position ready to persist — the store assigns its id + sourceId. */
@@ -30,12 +31,32 @@ export interface BinanceSyncDeps {
   listBalances: () => Promise<{ asset: string; wallet: string; balance: string }[]>;
   /** The live EUR price for a CoinGecko id, or null on a miss/outage. */
   priceEur: (coingeckoId: string) => Promise<number | null>;
+  /** Resolve each CoinGecko id's logo URL in ONE batched call (#482); a missing id
+   *  or an outage yields a null/absent entry → the listing falls back to a glyph.
+   *  Optional: a sync wired without it leaves every token's logo null. */
+  logoUrls?: (coingeckoIds: readonly string[]) => Promise<Record<string, string | null>>;
 }
 
 export async function syncBinanceAccount(
   deps: BinanceSyncDeps,
 ): Promise<TokenPositionDraft[]> {
   const balances = await deps.listBalances();
+
+  // Resolve each balance's CoinGecko id once (null when the symbol is unmapped).
+  const idByLine = balances.map((line) => resolveCoinGeckoId(line.asset));
+  const distinctIds = [...new Set(idByLine.filter((id): id is string => id !== null))];
+
+  // One batched logo lookup over the deduped, mapped id set (#482) — no per-token
+  // call. A failure NEVER aborts the sync: it degrades to an empty map, so every
+  // token simply falls back to a glyph (logos are decoration, prices are not).
+  let logosById: Record<string, string | null> = {};
+  if (distinctIds.length > 0 && deps.logoUrls) {
+    try {
+      logosById = await deps.logoUrls(distinctIds);
+    } catch {
+      logosById = {};
+    }
+  }
 
   // Resolve each CoinGecko id's price once, memoizing the in-flight promise so a
   // token held across several wallets shares the single lookup (rate-cap hygiene).
@@ -50,9 +71,10 @@ export async function syncBinanceAccount(
   };
 
   const drafts: TokenPositionDraft[] = [];
-  for (const line of balances) {
-    const coingeckoId = resolveCoinGeckoId(line.asset);
-    const price = coingeckoId === null ? null : await resolvePrice(coingeckoId);
+  for (let i = 0; i < balances.length; i++) {
+    const line = balances[i]!;
+    const coingeckoId = idByLine[i];
+    const price = coingeckoId == null ? null : await resolvePrice(coingeckoId);
 
     drafts.push({
       kind: "token",
@@ -65,6 +87,7 @@ export async function syncBinanceAccount(
       // staking → term-locked (ADR 0016/0021, S3 #248). One source spans rungs.
       liquidityTier: rungForWallet(line.wallet),
       unitPrice: price === null ? null : String(price),
+      imageUrl: coingeckoId == null ? null : (logosById[coingeckoId] ?? null),
       currency: "EUR",
     });
   }
@@ -97,4 +120,43 @@ export async function fetchCoinGeckoPriceEur(
   if (!fetched) return null;
   const value = Number(fetched.price);
   return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/**
+ * The real batched logo seam the web action wires into the sync (#482): resolve the
+ * logo URL for a set of CoinGecko ids in ONE `/coins/markets` call (which returns
+ * price + image together, so logos ride alongside the existing per-id price burst
+ * without a call per token). Keyed by id; an id absent from the response, or with no
+ * image, maps to null → glyph fallback. Never throws: any miss/outage degrades to an
+ * empty map so a logo failure never aborts the sync (parallel to fetchCoinGeckoPriceEur).
+ */
+export async function fetchCoinGeckoLogos(
+  coingeckoIds: readonly string[],
+): Promise<Record<string, string | null>> {
+  if (coingeckoIds.length === 0) return {};
+  try {
+    // Raw commas in `ids` (the documented form; CoinGecko ids are lowercase
+    // alphanumerics + hyphens, so none need escaping). `per_page` is capped at the
+    // endpoint's max of 250 — a real account never holds that many distinct tokens.
+    const perPage = Math.min(coingeckoIds.length, 250);
+    const url =
+      `${coingeckoBaseUrl()}/coins/markets?vs_currency=eur&ids=` +
+      `${coingeckoIds.join(",")}&per_page=${perPage}&page=1`;
+    const res = await fetch(url, {
+      headers: coingeckoHeaders(),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return {};
+    const data = (await res.json()) as { id?: unknown; image?: unknown }[];
+    const logos: Record<string, string | null> = {};
+    for (const coin of data) {
+      if (typeof coin?.id === "string") {
+        logos[coin.id] =
+          typeof coin.image === "string" && coin.image.length > 0 ? coin.image : null;
+      }
+    }
+    return logos;
+  } catch {
+    return {};
+  }
 }

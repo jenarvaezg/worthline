@@ -311,6 +311,9 @@ const tokenPositionSchema = z.object({
   balance: nonEmptyString,
   wallet: z.string(),
   unitPrice: nonEmptyString.nullable(),
+  // The token's CoinGecko logo URL (#482). Defaults to null so a file written
+  // before logos existed still imports; re-fetched on the next sync.
+  imageUrl: nonEmptyString.nullable().default(null),
 });
 
 // First match wins: a token position fails the coin schema (no catalogue/quantity)

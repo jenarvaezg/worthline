@@ -106,6 +106,25 @@ export function BinanceHoldingSection({
             const wallets = formatWallets(row.wallets);
             return (
               <div className="coinLine" key={row.id}>
+                <span className="coinThumb">
+                  {row.imageUrl ? (
+                    // A remote CoinGecko logo, server-rendered (ADR 0009); no
+                    // next/image optimizer for an external, list-scale thumb — the
+                    // same treatment as the Numista coin gallery (#482).
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      alt=""
+                      className="coinThumbImg"
+                      height={44}
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      src={row.imageUrl}
+                      width={44}
+                    />
+                  ) : (
+                    <span className="coinThumbFallback" aria-hidden="true" />
+                  )}
+                </span>
                 <span className="coinName">
                   {row.symbol}
                   <small>

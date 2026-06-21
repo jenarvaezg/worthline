@@ -40,6 +40,7 @@ function draft(): TokenPositionDraft {
     wallet: "spot",
     liquidityTier: "market",
     unitPrice: "50000",
+    imageUrl: null,
     currency: "EUR",
   };
 }

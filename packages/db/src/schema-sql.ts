@@ -304,6 +304,7 @@ CREATE TABLE \`positions\` (
 	\`balance\` text,
 	\`wallet\` text,
 	\`unit_price\` text,
+	\`image_url\` text,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	FOREIGN KEY (\`source_id\`) REFERENCES \`connected_sources\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );

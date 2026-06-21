@@ -104,6 +104,7 @@ const tk = (o: Partial<SourcePosition> & { kind?: "token" }) => ({
   wallet: "spot",
   liquidityTier: "market" as const,
   unitPrice: "50000",
+  imageUrl: null as string | null,
   currency: "EUR" as const,
   ...o,
 });
@@ -741,6 +742,7 @@ describe("connected-source store — export/import round-trip", () => {
           wallet: "spot",
           liquidityTier: "market",
           unitPrice: "50000",
+          imageUrl: null,
           currency: "EUR",
         },
         {
@@ -752,6 +754,7 @@ describe("connected-source store — export/import round-trip", () => {
           wallet: "locked-earn",
           liquidityTier: "term-locked",
           unitPrice: "2000",
+          imageUrl: null,
           currency: "EUR",
         },
       ],

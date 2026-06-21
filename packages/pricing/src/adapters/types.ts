@@ -80,6 +80,9 @@ export interface SyncContext<Creds, Token = null> {
   // ── Binance readers (signed; the wallet balances) ──
   listBalances?: () => Promise<{ asset: string; wallet: string; balance: string }[]>;
   priceEur?: (coingeckoId: string) => Promise<number | null>;
+  /** Resolve a batch of CoinGecko ids → logo URLs in one call (#482); optional, a
+   *  miss/outage leaves the token's logo null → glyph fallback. */
+  logoUrls?: (coingeckoIds: readonly string[]) => Promise<Record<string, string | null>>;
 }
 
 /**

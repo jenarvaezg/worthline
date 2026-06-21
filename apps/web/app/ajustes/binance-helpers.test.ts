@@ -36,6 +36,7 @@ function token(
     wallet,
     liquidityTier: "market",
     unitPrice,
+    imageUrl: null,
     currency: "EUR",
   };
 }

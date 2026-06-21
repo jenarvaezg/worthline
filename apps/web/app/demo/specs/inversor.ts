@@ -152,6 +152,7 @@ export const INVERSOR_SPEC: PersonaSpec = {
           wallet: "spot",
           liquidityTier: "market",
           unitPrice: "62000",
+          imageUrl: null,
           currency: "EUR",
         },
         {
@@ -163,6 +164,7 @@ export const INVERSOR_SPEC: PersonaSpec = {
           wallet: "spot",
           liquidityTier: "market",
           unitPrice: "3400",
+          imageUrl: null,
           currency: "EUR",
         },
         {
@@ -174,6 +176,7 @@ export const INVERSOR_SPEC: PersonaSpec = {
           wallet: "spot",
           liquidityTier: "market",
           unitPrice: "145",
+          imageUrl: null,
           currency: "EUR",
         },
         {
@@ -185,6 +188,7 @@ export const INVERSOR_SPEC: PersonaSpec = {
           wallet: "earn",
           liquidityTier: "term-locked",
           unitPrice: "3400",
+          imageUrl: null,
           currency: "EUR",
         },
       ],
