@@ -99,6 +99,15 @@ export {
   type SecretCrypto,
 } from "./crypto";
 export {
+  fingerprintExport,
+  syncPull,
+  syncPush,
+  SyncStaleError,
+  type PullResult,
+  type PushResult,
+  type SyncDeps,
+} from "./sync-engine";
+export {
   createControlPlaneStore,
   createInMemoryControlPlaneStore,
   type ControlPlaneStore,

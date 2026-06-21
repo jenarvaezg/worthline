@@ -26,6 +26,8 @@
     "test:e2e:demo": "npm run build --workspace @worthline/web && playwright test --config playwright.demo.config.ts",
     "test:watch": "vitest",
     "backfill:snapshots": "tsx scripts/backfill-historical-snapshots.ts",
+    "sync:pull": "tsx scripts/sync-pull.ts",
+    "sync:push": "tsx scripts/sync-push.ts",
     "subset:fonts": "scripts/subset-web-fonts.sh",
     "typecheck": "turbo run typecheck",
     "format": "prettier --check . --cache --cache-location=node_modules/.cache/prettier/.prettier-cache",
