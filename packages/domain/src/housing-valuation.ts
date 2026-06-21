@@ -2,6 +2,11 @@ import Big from "big.js";
 
 import type { DecimalString } from "./decimal";
 import { daysBetween } from "./dates";
+import {
+  cadenceOrDefault,
+  sampleDateForCadence,
+  type ValuationCadence,
+} from "./valuation-cadence";
 
 /**
  * Pure housing valuation curve (PRD #108, slice 4). No I/O — given the
@@ -43,6 +48,14 @@ export interface ValueHousingAtDateInput {
   today: string;
   /** The date to value the asset on, YYYY-MM-DD. */
   targetDate: string;
+  /**
+   * How the appreciation drift moves between events (ADR 0031). `step` (the
+   * default, and `null`/absent) recomputes the value on the 1st of each month and
+   * holds it flat through the month; `interpolated` compounds continuously by
+   * calendar day — the pre-#391 behaviour. Declared appraisals and improvements
+   * still take effect on their exact date under either cadence.
+   */
+  cadence?: ValuationCadence | null;
 }
 
 /**
@@ -139,11 +152,44 @@ function toMinorInt(value: Big): number {
 }
 
 /**
+ * The date the appreciation drift is sampled on for the given cadence (ADR 0031):
+ * the 1st of the target's month under `step`, the exact target under
+ * `interpolated` — but never earlier than the most recent anchor on/before the
+ * target. That clamp keeps a market appraisal or improvement taking effect on its
+ * exact declared date (the value jumps on its day and holds flat until the next
+ * month start, which then resyncs the drift). On an anchor date or a month start
+ * the result equals the target, so those snapshots are unchanged by the cadence.
+ */
+function effectiveSampleDate(
+  anchors: readonly HousingValuationAnchor[],
+  targetDate: string,
+  cadence: ValuationCadence,
+): string {
+  let sampled = sampleDateForCadence(targetDate, cadence);
+  for (const anchor of anchors) {
+    if (anchor.valuationDate <= targetDate && anchor.valuationDate > sampled) {
+      sampled = anchor.valuationDate;
+    }
+  }
+  return sampled;
+}
+
+/**
  * Value the housing asset on `targetDate`. See the module doc for the curve
- * model. The result is integer minor units, rounded half up to the cent.
+ * model. Under the default `step` cadence (ADR 0031) the drift is sampled at the
+ * month start (held flat through the month); `interpolated` compounds by day.
+ * Declared appraisals/improvements still land on their exact date. The result is
+ * integer minor units, rounded half up to the cent.
  */
 export function valueHousingAtDate(input: ValueHousingAtDateInput): number {
-  const { anchors, currentValueMinor, targetDate, today } = input;
+  const { anchors, currentValueMinor, today } = input;
+  // The drift is read at the cadence's sample date; appraisals/improvements still
+  // apply on their exact day (effectiveSampleDate clamps forward to them).
+  const targetDate = effectiveSampleDate(
+    anchors,
+    input.targetDate,
+    cadenceOrDefault(input.cadence),
+  );
   const rate =
     input.annualAppreciationRate != null && input.annualAppreciationRate !== ""
       ? new Big(input.annualAppreciationRate)

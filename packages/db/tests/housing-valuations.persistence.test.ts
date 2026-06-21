@@ -7,8 +7,12 @@
  */
 import { describe, expect, test } from "vitest";
 
+import { valueHousingAtDate } from "@worthline/domain";
+
 import { createInMemoryStore } from "@db/index";
 import type { WorthlineStore } from "@db/index";
+
+const TODAY = "2026-06-13";
 
 async function seed(store: WorthlineStore): Promise<void> {
   await store.workspace.initializeWorkspace({
@@ -328,5 +332,82 @@ describe("valueHousingAtDate — store method (PRD pinned example)", () => {
     expect(await store.assets.valueHousingAtDate("home", date, "2026-06-12")).toBe(
       expected,
     );
+  });
+});
+
+describe("housing step cadence re-ripple (#391, ADR 0031)", () => {
+  test("an intra-month snapshot holds the month-start value, not the daily drift", async () => {
+    const store = await createInMemoryStore();
+    await seed(store); // home, currentValueMinor 130_000_00, primary residence
+
+    await store.assets.setAnnualAppreciationRate("home", "0.12");
+    await store.addValuationAnchorAndRipple(
+      {
+        adjustsPriorCurve: true,
+        assetId: "home",
+        id: "a1",
+        valuationDate: "2025-01-01",
+        valueMinor: 100_000_00,
+      },
+      { today: TODAY },
+    );
+
+    // An unrelated backdated fact at a MID-MONTH date generates a full-portfolio
+    // snapshot there, valuing the house off its appreciation curve on that date.
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "fund",
+      liquidityTier: "market",
+      manualPricePerUnit: "100",
+      name: "Fondo",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    await store.recordOperationAndRipple(
+      {
+        assetId: "fund",
+        currency: "EUR",
+        executedAt: "2025-03-20",
+        id: "op1",
+        kind: "buy",
+        pricePerUnit: "100",
+        units: "10",
+      },
+      { today: TODAY },
+    );
+
+    const anchors = [
+      { adjustsPriorCurve: true, valuationDate: "2025-01-01", valueMinor: 100_000_00 },
+    ];
+    const drift = (targetDate: string, cadence?: "step" | "interpolated"): number =>
+      valueHousingAtDate({
+        anchors,
+        annualAppreciationRate: "0.12",
+        ...(cadence ? { cadence } : {}),
+        currentValueMinor: 130_000_00,
+        today: TODAY,
+        targetDate,
+      });
+    const stepValue = drift("2025-03-20");
+    const monthStartValue = drift("2025-03-01");
+    const interpolatedValue = drift("2025-03-20", "interpolated");
+    // Step holds the month-start value, which genuinely differs from daily drift.
+    expect(stepValue).toBe(monthStartValue);
+    expect(interpolatedValue).not.toBe(stepValue);
+
+    const homeRowAt = async (dateKey: string): Promise<number | undefined> =>
+      (
+        await store.snapshots.readSnapshotHoldings({
+          from: dateKey,
+          holdingId: "home",
+          kind: "asset",
+          to: dateKey,
+        })
+      ).find((r) => r.dateKey === dateKey)?.valueMinor;
+
+    // The house's frozen value in the intra-month snapshot is the stepped value.
+    expect(await homeRowAt("2025-03-20")).toBe(stepValue);
+    // The anchor-date snapshot is unchanged (the appraisal's total truth).
+    expect(await homeRowAt("2025-01-01")).toBe(100_000_00);
+    store.close();
   });
 });

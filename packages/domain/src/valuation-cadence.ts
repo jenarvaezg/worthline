@@ -58,3 +58,19 @@ export function interpolateOrStep(input: InterpolateOrStepInput): Big {
   const fraction = span === 0 ? new Big(0) : new Big(offset).div(span);
   return lower.plus(upper.minus(lower).times(fraction));
 }
+
+/**
+ * The date a stepped modeled holding samples its drift on (ADR 0031). Under
+ * `step` the value is recomputed on the **first of the target's month** and held
+ * flat through the month; under `interpolated` the drift is continuous, so the
+ * exact target is used. Pure string slice — the month start is always YYYY-MM-01,
+ * so month/year boundaries and leap February need no special handling. (A caller
+ * may still clamp the result forward to a mid-month event date, e.g. a housing
+ * appraisal, so that anchor takes effect on its exact day — see housing-valuation.)
+ */
+export function sampleDateForCadence(
+  targetDate: string,
+  cadence: ValuationCadence,
+): string {
+  return cadence === "step" ? `${targetDate.slice(0, 7)}-01` : targetDate;
+}
