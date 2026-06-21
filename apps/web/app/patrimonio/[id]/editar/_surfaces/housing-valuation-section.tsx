@@ -9,12 +9,14 @@
 
 import type { ValuationAnchorRecord } from "@worthline/db";
 import { formatMoneyInput, formatMoneyMinor } from "@worthline/domain";
+import type { ValuationCadence } from "@worthline/domain";
 
 import type { FormErrorContext } from "@web/intake";
 import {
   addValuationAnchorAction,
   deleteValuationAnchorAction,
   setAppreciationRateAction,
+  setHousingValuationCadenceAction,
   updateValuationAnchorAction,
 } from "@web/patrimonio/actions";
 
@@ -36,12 +38,15 @@ export function HousingValuationSection({
   assetId,
   formError,
   today,
+  valuationCadence,
 }: {
   anchors: ValuationAnchorRecord[];
   appreciationRate: string | null;
   assetId: string;
   formError: FormErrorContext | null;
   today: string;
+  /** Stored valuation cadence (ADR 0031); null reads as the default `step`. */
+  valuationCadence: ValuationCadence | null;
 }) {
   const currentUrl = `/patrimonio/${assetId}/editar`;
   const rateValues = formError?.formId === "rate" ? formError.values : {};
@@ -72,6 +77,31 @@ export function HousingValuationSection({
         </p>
         <button type="submit">Guardar tasa</button>
       </form>
+
+      <details className="anchorEdit">
+        <summary>Avanzado</summary>
+        <form action={setHousingValuationCadenceAction} className="stackForm">
+          <input name="currentUrl" type="hidden" value={currentUrl} />
+          <input name="id" type="hidden" value={assetId} />
+          <label>
+            Cadencia de valoración
+            <select
+              aria-label="Cadencia de valoración"
+              defaultValue={valuationCadence ?? "step"}
+              name="cadence"
+            >
+              <option value="step">Escalonado (por defecto)</option>
+              <option value="interpolated">Interpolado (suave a diario)</option>
+            </select>
+          </label>
+          <p className="infoNote">
+            Escalonado mantiene el último valor conocido hasta la siguiente tasación;
+            interpolado dibuja una línea suave de revalorización entre eventos en el
+            histórico.
+          </p>
+          <button type="submit">Guardar cadencia</button>
+        </form>
+      </details>
 
       <form
         action={addValuationAnchorAction}

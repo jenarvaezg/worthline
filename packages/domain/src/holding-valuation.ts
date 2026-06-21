@@ -129,6 +129,8 @@ export type HoldingValuationInput =
       currentValueMinor: number;
       /** "Today" as YYYY-MM-DD, for the curve's forward extrapolation. */
       today: string;
+      /** How the drift moves between events (ADR 0031); null/absent → `step`. */
+      cadence?: ValuationCadence | null;
       /** Declared-value audit history — the fallback when there is no curve. */
       valueHistory?: readonly ManualValuePoint[];
     }
@@ -215,6 +217,7 @@ export function valueAt(
             currentValueMinor: input.currentValueMinor,
             targetDate,
             today: input.today,
+            ...(input.cadence != null ? { cadence: input.cadence } : {}),
           }),
         };
       }

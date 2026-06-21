@@ -56,6 +56,12 @@ export interface HousingCurveInputs {
   anchors: readonly HousingValuationAnchor[];
   annualAppreciationRate?: DecimalString | null;
   currentValueMinor: number;
+  /**
+   * How the appreciation drift moves between events (ADR 0031, #394). Null/absent
+   * reads as the default `step`; threaded into the appreciating valuation input so
+   * a per-holding opt-in to `interpolated` reaches the housing engine.
+   */
+  cadence?: ValuationCadence | null;
 }
 
 /**
@@ -284,6 +290,7 @@ function assetValuationInput(
       // Mirror the curve-active guard (rate "" is not a curve), so the fallback
       // path can never source currentValueMinor differently than the old code.
       ...(rate != null && rate !== "" ? { annualAppreciationRate: rate } : {}),
+      ...(curve?.cadence != null ? { cadence: curve.cadence } : {}),
       ...(valueHistory !== undefined ? { valueHistory } : {}),
     };
   }

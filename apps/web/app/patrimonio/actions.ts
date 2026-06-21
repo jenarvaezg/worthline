@@ -974,6 +974,61 @@ export async function setValuationCadenceAction(
   redirect(successRedirectUrl(editUrl(id), "valuation_cadence_saved", id));
 }
 
+export async function setHousingValuationCadenceAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
+): Promise<never> {
+  await guardDemoWrite(baseUrl(formData));
+  const id = parseEntityId(formData);
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id) {
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador de activo no encontrado.",
+      }),
+    );
+  }
+
+  const parsed = parseValuationCadenceStrict(formData);
+
+  if (!parsed.ok) {
+    redirect(errorRedirectUrl(editUrl(id), { formId: "cadence", message: parsed.error }));
+  }
+
+  const today = _clock.today();
+
+  const result = await runWith(async (store) => {
+    const asset = await findAsset(store, id);
+
+    if (!asset) {
+      return { ok: false, error: "No se encontró el activo." };
+    }
+
+    if (!isHousingAsset(asset)) {
+      return {
+        ok: false,
+        error: "Solo los inmuebles pueden tener una cadencia de valoración.",
+      };
+    }
+
+    // Persist + re-ripple ride the seam (ADR 0020 / 0031): the cadence change is a
+    // parameter edit, so the seam recuts the whole appreciation curve behind it.
+    await store.setHousingValuationCadenceAndRipple(id, parsed.cadence, { today });
+    return { ok: true };
+  });
+
+  if (!result.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), { formId: "cadence", message: result.error! }),
+    );
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "valuation_cadence_saved", id));
+}
+
 /** Guard a debt mutation to liabilities carrying the expected model. */
 async function requireDebtModel(
   store: WorthlineStore,
