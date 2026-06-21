@@ -92,6 +92,10 @@ export default async function EditarPage({
     const appreciationRate = isAppreciating
       ? await store.assets.readAnnualAppreciationRate(id)
       : null;
+    // Valuation cadence of the housing asset (ADR 0031, #394); null → `step`.
+    const housingValuationCadence = isAppreciating
+      ? await store.assets.readValuationCadence(id)
+      : null;
 
     // A connected-source coin collection (Numista) is `derived` too, but its
     // sub-detail is its mirrored positions, not investment operations (ADR 0016).
@@ -220,6 +224,7 @@ export default async function EditarPage({
       coinValuationCache,
       debtModel,
       earlyRepayments,
+      housingValuationCadence,
       isBackfillCandidate,
       isBinanceHolding,
       isCoinCollection,
@@ -258,6 +263,7 @@ export default async function EditarPage({
     coinValuationCache,
     debtModel,
     earlyRepayments,
+    housingValuationCadence,
     isBackfillCandidate,
     isBinanceHolding,
     isCoinCollection,
@@ -502,6 +508,7 @@ export default async function EditarPage({
             assetId={asset.id}
             formError={formError}
             today={today}
+            valuationCadence={housingValuationCadence}
           />
         ) : null}
 

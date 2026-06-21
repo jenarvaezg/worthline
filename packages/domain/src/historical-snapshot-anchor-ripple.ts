@@ -115,6 +115,7 @@ export function recalculateSnapshotForHousing(
         method: "appreciating",
         today: input.today,
         ...(rate != null && rate !== "" ? { annualAppreciationRate: rate } : {}),
+        ...(input.curve.cadence != null ? { cadence: input.curve.cadence } : {}),
         ...(points !== undefined ? { valueHistory: points } : {}),
       },
       targetDate,

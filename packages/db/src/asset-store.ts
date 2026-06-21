@@ -432,6 +432,7 @@ async function valueHousingAtDateFor(
     .select({
       annualAppreciationRate: assets.annualAppreciationRate,
       currentValueMinor: assets.currentValueMinor,
+      valuationCadence: assets.valuationCadence,
     })
     .from(assets)
     .where(eq(assets.id, assetId))
@@ -449,12 +450,16 @@ async function valueHousingAtDateFor(
     valueMinor: anchor.valueMinor,
   }));
 
+  // The stored cadence (ADR 0031, #394); null reads as the default `step`.
+  const cadence = row.valuationCadence ?? null;
+
   return valueHousingAtDate({
     anchors,
     annualAppreciationRate: row.annualAppreciationRate,
     currentValueMinor: row.currentValueMinor,
     targetDate,
     today,
+    ...(cadence != null ? { cadence } : {}),
   });
 }
 

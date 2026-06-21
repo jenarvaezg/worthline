@@ -432,6 +432,20 @@ export interface WorthlineStore {
     opts?: { today?: string },
   ) => Promise<void>;
   /**
+   * Valuation-cadence parameter-edit seam (ADR 0020 / 0031, #394): persist a
+   * housing asset's valuation cadence AND re-ripple that ONE asset's history,
+   * atomically. A cadence change is a parameter edit (ADR 0012), so the whole
+   * appreciation curve is recut from min(first past anchor, earliest existing
+   * snapshot carrying this asset) — the `firstHousingEventDate` rule, skipped when
+   * there is nothing to ripple or the from-date is in the future. `today` defaults
+   * to the current date. Wraps `assets.setValuationCadence` + the housing ripple.
+   */
+  setHousingValuationCadenceAndRipple: (
+    assetId: string,
+    cadence: ValuationCadence | null,
+    opts?: { today?: string },
+  ) => Promise<void>;
+  /**
    * Valuation dated-fact seam (ADR 0020): persist the current housing value
    * (updateAssetValuation + upsert-today-market-anchor) AND ripple historical
    * snapshots, all atomically. The from-date is derived behind the seam as
@@ -1277,6 +1291,18 @@ async function buildStore(
             today,
           },
         );
+      });
+    },
+    setHousingValuationCadenceAndRipple: async (assetId, cadence, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      // Atomic persist + ripple (ADR 0020 / 0031): a cadence change is a parameter
+      // edit (ADR 0012), so the whole appreciation curve is recut. The from-date is
+      // derived behind the seam (first past anchor / earliest snapshot) by the
+      // shared housing-edit ripple — guarded against an empty range or a future
+      // from-date inside it. Mirrors setAnnualAppreciationRateAndRipple.
+      await ctx.transaction(async () => {
+        await assetStore.setValuationCadence(assetId, cadence);
+        await rippleHousingAfterEdit(assetId, today);
       });
     },
     recordHousingValuationAndRipple: async (assetId, currentValue, opts) => {
@@ -2142,17 +2168,29 @@ async function readHousingCurveInputs(
   }
 
   const rateRows = await db
-    .select({ id: assets.id, rate: assets.annualAppreciationRate })
+    .select({
+      id: assets.id,
+      rate: assets.annualAppreciationRate,
+      valuationCadence: assets.valuationCadence,
+    })
     .from(assets)
     .all();
   const rateByAsset = new Map<string, DecimalString | null>();
-  for (const row of rateRows) rateByAsset.set(row.id, row.rate);
+  const cadenceByAsset = new Map<string, ValuationCadence | null>();
+  for (const row of rateRows) {
+    rateByAsset.set(row.id, row.rate);
+    cadenceByAsset.set(row.id, row.valuationCadence ?? null);
+  }
 
   for (const asset of housingAssets) {
+    // The stored cadence (ADR 0031, #394); null reads as the default `step` in
+    // the engine. Threaded into the appreciating curve input.
+    const cadence = cadenceByAsset.get(asset.id) ?? undefined;
     inputs.set(asset.id, {
       anchors: anchorsByAsset.get(asset.id) ?? [],
       annualAppreciationRate: rateByAsset.get(asset.id) ?? null,
       currentValueMinor: asset.currentValue.amountMinor,
+      ...(cadence != null ? { cadence } : {}),
     });
   }
 
