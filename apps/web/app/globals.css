@@ -2291,6 +2291,30 @@ code {
   font-size: 0.85rem;
 }
 
+/* Manual "Actualizar precios" trigger (#405) and its single-holding ficha
+   variant (#406). The form box dissolves so the button aligns as a sibling of
+   the .actionLink pills; the button mirrors .actionLink (outline pill) rather
+   than the global solid button, whose dark fill would clash with the row. */
+.priceRefreshForm {
+  display: contents;
+}
+
+.priceRefreshForm button {
+  background: transparent;
+  border: 1px solid var(--blue);
+  border-radius: 999px;
+  color: var(--blue);
+  font-size: 0.85rem;
+  font-weight: 650;
+  min-height: 0;
+  padding: 5px 12px;
+}
+
+.priceRefreshForm button:hover:not(:disabled) {
+  background: var(--blue);
+  color: var(--paper-strong);
+}
+
 .actionLink {
   color: var(--blue);
   font-size: 0.85rem;
