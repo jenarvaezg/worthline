@@ -24,6 +24,7 @@ import type { HousingValuationAnchor } from "./housing-valuation";
 import type { InvestmentOperation } from "./investment-types";
 import type { CurrencyCode } from "./money";
 import { derivePosition, latestOperationPrice, operationsUpTo } from "./positions";
+import type { ValuationCadence } from "./valuation-cadence";
 import { lastKnownValueAtDate } from "./value-history";
 import type { ManualValuePoint } from "./value-history";
 import type { AssetType, DebtModel } from "./workspace-types";
@@ -141,10 +142,15 @@ export type HoldingValuationInput =
       earlyRepayments?: readonly EarlyRepayment[];
       /** The current stored balance — the fallback when the plan is absent. */
       currentBalanceMinor: number;
+      /** How the balance moves between cuotas (ADR 0031); null/absent → `step`. */
+      cadence?: ValuationCadence | null;
     }
   | {
       method: "anchored";
-      /** Which anchored model: revolving (linear) or informal (step). */
+      /**
+       * Which anchored model. `revolving` steps between anchors by default (the
+       * cadence opt-in draws an interpolated line); `informal` is always a step.
+       */
       debtModel: "revolving" | "informal";
       /** Balance anchors (any order). */
       anchors?: readonly DebtBalanceAnchor[];
@@ -152,6 +158,8 @@ export type HoldingValuationInput =
       initialCapitalMinor?: number;
       /** The current stored balance — the fallback outside the anchor range. */
       currentBalanceMinor: number;
+      /** How the balance moves between anchors (ADR 0031); null/absent → `step`. */
+      cadence?: ValuationCadence | null;
     };
 
 /**
@@ -225,6 +233,7 @@ export function valueAt(
           ...(input.earlyRepayments !== undefined
             ? { earlyRepayments: input.earlyRepayments }
             : {}),
+          ...(input.cadence != null ? { cadence: input.cadence } : {}),
         }),
       };
     }
@@ -238,6 +247,7 @@ export function valueAt(
           ...(input.initialCapitalMinor !== undefined
             ? { initialCapitalMinor: input.initialCapitalMinor }
             : {}),
+          ...(input.cadence != null ? { cadence: input.cadence } : {}),
         }),
       };
     }

@@ -12,6 +12,7 @@ import type {
   PriceSource,
   SnapshotHoldingKind,
   SourceAdapter,
+  ValuationCadence,
   ValuationMethod,
   WorkspaceMode,
 } from "@worthline/domain";
@@ -114,6 +115,14 @@ export const assets = sqliteTable(
      * `liquidity_tier`.
      */
     valuationMethod: text("valuation_method").$type<ValuationMethod>(),
+    /**
+     * How a MODELED holding's value moves between its own event dates (ADR 0031,
+     * #393): step | interpolated. Nullable — `null` reads as the default `step`
+     * (the v33 migration adds the column without a value backfill). Only meaningful
+     * for the modeled methods (`appreciating` here); market-priced holdings ignore
+     * it. No CHECK — the enum is enforced in TS, like `valuation_method`.
+     */
+    valuationCadence: text("valuation_cadence").$type<ValuationCadence>(),
     /**
      * What the holding is (ADR 0014, #149): one of the instrument vocabulary
      * (current_account, fund, property, …). Nullable — backfilled from `type`
@@ -258,6 +267,14 @@ export const liabilities = sqliteTable(
     debtModel: text("debt_model").$type<DebtModel>(),
     /** Valuation method (ADR 0014, #148); backfilled from `debt_model` by the v13 migration. */
     valuationMethod: text("valuation_method").$type<ValuationMethod>(),
+    /**
+     * How a MODELED balance moves between events (ADR 0031, #393): step |
+     * interpolated. Nullable — `null` reads as the default `step` (the v33
+     * migration adds the column without a value backfill). Only meaningful for the
+     * `amortizable`/`revolving` models; `informal` is always a step. No CHECK —
+     * the enum is enforced in TS, like `valuation_method`.
+     */
+    valuationCadence: text("valuation_cadence").$type<ValuationCadence>(),
     /** What the liability is (ADR 0014, #149): mortgage | loan | credit_card. Backfilled by v14. */
     instrument: text("instrument").$type<Instrument>(),
     deletedAt: text("deleted_at"),

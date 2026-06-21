@@ -46,6 +46,8 @@ export {
   parseEarlyRepaymentStrict,
   parseInterestRateRevisionStrict,
   parseLiabilityCommand,
+  parseValuationCadenceStrict,
+  type ValuationCadenceResult,
 } from "./intake/debt";
 export { parseFireConfigFormStrict } from "./intake/fire";
 export {
@@ -506,6 +508,7 @@ export function okMessage(key: string | undefined): string | null {
     saved: "Guardado.",
     trash_emptied: "Papelera vaciada.",
     valores_actualizados: "Valores actualizados.",
+    valuation_cadence_saved: "Cadencia de valoración guardada.",
     warning_acknowledged: "Aviso marcado como intencional.",
   };
 

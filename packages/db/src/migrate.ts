@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 32;
+export const SCHEMA_VERSION = 33;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -55,6 +55,12 @@ export interface MigrateResult {
    *  existing rows, so the caller must re-ripple every amortizable debt to
    *  rewrite historical snapshots from the new curve (ADR 0019). */
   ranV18Backfill: boolean;
+  /** True when v33 FIRST added the `valuation_cadence` column to an existing DB,
+   *  so the caller must re-ripple every modeled holding: their default flipped
+   *  from interpolated to step in #390–392, so stale interpolated daily-captures
+   *  must be rewritten as steps (ADR 0031). False on a fresh DB (schema-sql
+   *  already carried the column — nothing stale to correct). */
+  ranV33Backfill: boolean;
 }
 
 /**
@@ -136,7 +142,7 @@ export async function writeSchemaVersion(client: Client, version: number): Promi
 
 export async function migrate(client: Client): Promise<MigrateResult> {
   const version = await readSchemaVersion(client);
-  if (version >= SCHEMA_VERSION) return { ranV18Backfill: false };
+  if (version >= SCHEMA_VERSION) return { ranV18Backfill: false, ranV33Backfill: false };
 
   // `journal_mode = WAL` is a local-file durability optimization; Turso manages
   // journaling server-side and rejects the PRAGMA over HTTP, harmless to skip
@@ -151,6 +157,10 @@ export async function migrate(client: Client): Promise<MigrateResult> {
   // Set by the v18 block and returned at the end — must survive later migration
   // steps (v19+) rather than short-circuiting the ladder with an early return.
   let ranV18Backfill = false;
+  // Set by the v33 block and returned at the end — true only when v33 genuinely
+  // added the cadence column to an existing DB (so the caller re-ripples modeled
+  // holdings); false on a fresh DB whose schema-sql already had the column.
+  let ranV33Backfill = false;
 
   if (version < 2) {
     const safeSql = schemaSql
@@ -1142,5 +1152,38 @@ export async function migrate(client: Client): Promise<MigrateResult> {
     await writeSchemaVersion(client, 32);
   }
 
-  return { ranV18Backfill };
+  if (version < 33) {
+    // ADR 0031 (#393): a per-holding valuation cadence (step | interpolated)
+    // becomes a first-class column on assets AND liabilities. `null` reads as the
+    // default `step` — no value backfill is needed (#390–392 made `step` the
+    // null/absent default in the engines). Forward-only nullable ALTERs (ADR 0002),
+    // guarded by whether the column already exists on `assets`: on a genuine
+    // upgrade the column is missing, so we add it (and re-ripple), while a fresh DB
+    // — already created at the cadence shape by schema-sql — only bumps the version.
+    //
+    // The guard mirrors the v18 `hasStartDate` PRAGMA probe. When v33 truly adds the
+    // column to an existing DB, every modeled holding's frozen history may carry
+    // stale INTERPOLATED daily-captures (the pre-#390 default); their default just
+    // flipped to `step`, so `ranV33Backfill` tells the caller to re-ripple them all.
+    const assetColumns = (await client.execute("PRAGMA table_info(assets)"))
+      .rows as unknown as { name: string }[];
+    const hasCadence = assetColumns.some((c) => c.name === "valuation_cadence");
+
+    if (!hasCadence) {
+      ranV33Backfill = true;
+      try {
+        await client.executeMultiple(
+          "ALTER TABLE assets ADD COLUMN valuation_cadence TEXT",
+        );
+      } catch {}
+      try {
+        await client.executeMultiple(
+          "ALTER TABLE liabilities ADD COLUMN valuation_cadence TEXT",
+        );
+      } catch {}
+    }
+    await writeSchemaVersion(client, 33);
+  }
+
+  return { ranV18Backfill, ranV33Backfill };
 }

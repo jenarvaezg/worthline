@@ -21,7 +21,7 @@ import {
   formatMoneyInput,
   formatMoneyMinor,
 } from "@worthline/domain";
-import type { DebtModel, EarlyRepaymentMode } from "@worthline/domain";
+import type { DebtModel, EarlyRepaymentMode, ValuationCadence } from "@worthline/domain";
 
 import type { FormErrorContext } from "@web/intake";
 import { PlanDateFields } from "./plan-date-fields";
@@ -35,6 +35,7 @@ import {
   deleteInterestRateRevisionAction,
   saveAmortizationPlanAction,
   setDebtModelAction,
+  setValuationCadenceAction,
   updateBalanceAnchorAction,
   updateEarlyRepaymentAction,
   updateInterestRateRevisionAction,
@@ -118,6 +119,7 @@ export function DebtModelSection({
   liabilityId,
   rateRevisions,
   today,
+  valuationCadence,
 }: {
   amortizationPlan: AmortizationPlanRecord | null;
   balanceAnchors: BalanceAnchorRecord[];
@@ -127,6 +129,8 @@ export function DebtModelSection({
   liabilityId: string;
   rateRevisions: InterestRateRevisionRecord[];
   today: string;
+  /** Stored valuation cadence (ADR 0031); null reads as the default `step`. */
+  valuationCadence: ValuationCadence | null;
 }) {
   const currentUrl = `/patrimonio/${liabilityId}/editar`;
 
@@ -156,6 +160,32 @@ export function DebtModelSection({
         </p>
         <button type="submit">Guardar modelo</button>
       </form>
+
+      {debtModel === "amortizable" || debtModel === "revolving" ? (
+        <details className="anchorEdit">
+          <summary>Avanzado</summary>
+          <form action={setValuationCadenceAction} className="stackForm">
+            <input name="currentUrl" type="hidden" value={currentUrl} />
+            <input name="id" type="hidden" value={liabilityId} />
+            <label>
+              Cadencia de valoración
+              <select
+                aria-label="Cadencia de valoración"
+                defaultValue={valuationCadence ?? "step"}
+                name="cadence"
+              >
+                <option value="step">Escalonado (por defecto)</option>
+                <option value="interpolated">Interpolado (suave a diario)</option>
+              </select>
+            </label>
+            <p className="infoNote">
+              Escalonado mantiene el último saldo conocido hasta el siguiente evento;
+              interpolado dibuja una línea suave entre eventos en el histórico.
+            </p>
+            <button type="submit">Guardar cadencia</button>
+          </form>
+        </details>
+      ) : null}
 
       {debtModel === "amortizable" ? (
         <AmortizablePlanEditor
