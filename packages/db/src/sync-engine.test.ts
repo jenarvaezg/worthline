@@ -219,7 +219,7 @@ describe("sync engine", () => {
     local.close();
   });
 
-  it("reports a source local added (no prod secret) as needing its key", async () => {
+  it("carries local's secret up for a source prod never had (first-load)", async () => {
     process.env.WORTHLINE_ENCRYPTION_KEY = KEY;
     const prod = await createInMemoryStore();
     const local = await createInMemoryStore();
@@ -227,7 +227,8 @@ describe("sync engine", () => {
     const deps = makeDeps();
 
     await syncPull(prod, local, deps);
-    // Local connects a brand-new source prod never had a secret for.
+    // Local connects a brand-new source prod never had a secret for — exactly
+    // the first-push-into-fresh-prod shape, where prod has no key to preserve.
     await local.connectedSources.connect({
       adapter: "binance",
       label: "Binance",
@@ -237,9 +238,36 @@ describe("sync engine", () => {
 
     const result = await syncPush(local, prod, deps);
 
-    // Export dropped the secret; prod has no snapshot to restore ⇒ flagged.
+    // The export drops the secret, but the engine carries local's own key up, so
+    // the connection lands live in prod and nothing needs re-entering.
+    const prodSource = (await prod.connectedSources.listSources())[0];
+    expect(prodSource?.credentialsJson).toBe(SECRET);
+    expect(result.sourcesMissingSecret).toEqual([]);
+    prod.close();
+    local.close();
+  });
+
+  it("flags a source neither side holds a live key for", async () => {
+    process.env.WORTHLINE_ENCRYPTION_KEY = KEY;
+    const prod = await createInMemoryStore();
+    const local = await createInMemoryStore();
+    // Prod has the live source; an intermediary `local` only ever pulled it, so
+    // local carries the placeholder, not a real key.
+    await seedWorkspace(prod, { cashMinor: 500000, withSource: true });
+    const intermediary = await createInMemoryStore();
+    const deps = makeDeps();
+
+    await syncPull(prod, intermediary, deps);
+    await syncPull(intermediary, local, deps);
+    // Wipe prod's own key so neither prod nor local holds a live one.
+    await prod.workspace.resetWorkspace();
+
+    const result = await syncPush(local, prod, makeDeps());
+
+    // No live key anywhere ⇒ the imported placeholder stays, flagged for re-entry.
     expect(result.sourcesMissingSecret).toEqual(["Binance"]);
     prod.close();
+    intermediary.close();
     local.close();
   });
 
