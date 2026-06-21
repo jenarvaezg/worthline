@@ -7,11 +7,13 @@ import { createControlPlaneStore } from "@worthline/db";
  * Resolve a bearer token presented to the agent-view MCP endpoint into the MCP
  * {@link AuthInfo} that identifies the caller's workspace (PRD #438, ADR 0034).
  *
- * The token is an OAuth access token the Authorization Server (WorkOS, S4)
- * issues after a Google login. Validation has two injectable seams so the unit
- * tests exercise the real logic with a locally-signed token and never contact
- * WorkOS: a `verifyJwt` (signature against the AS JWKS, issuer, audience, expiry
- * → claims) and a `resolveWorkspace` (claims → workspace via the control plane).
+ * The token is an OAuth access token the Authorization Server (WorkOS) issues
+ * after a Google login. Three injectable seams keep the unit tests exercising
+ * the real logic with a locally-signed token and never contacting WorkOS:
+ *   - `verifyJwt` — signature against the AS JWKS, issuer, audience, expiry;
+ *   - `resolveEmail` — the OIDC userinfo lookup (WorkOS access tokens carry the
+ *     subject but NOT the email; email is fetched from `/oauth2/userinfo`);
+ *   - `resolveWorkspace` — claims → workspace via the control plane.
  *
  * The Turso group token that actually opens a workspace database is unrelated to
  * this OAuth token; it stays in env and is wired by the store seam (S3).
@@ -19,16 +21,23 @@ import { createControlPlaneStore } from "@worthline/db";
 
 export const MCP_READ_SCOPE = "worthline:read";
 
-export interface McpTokenClaims {
+/** What a successfully-validated JWT yields: a subject, and maybe an email claim. */
+export interface VerifiedToken {
   /** Stable subject from the Authorization Server (the WorkOS user id). */
   subject: string;
+  /** The `email` claim if the access token carries one; WorkOS does not, so this
+   * is usually null and the email is fetched from userinfo instead. */
+  email: string | null;
+}
+
+export interface McpTokenClaims {
+  subject: string;
   /**
-   * Email (Google federated), used to resolve the control-plane user.
-   * INVARIANT: the Authorization Server MUST only mint tokens for *verified*
-   * email addresses (Google is the verified upstream IdP, federated through
-   * WorkOS — ADR 0034). If `email` is absent the token is rejected. The web
-   * sign-in keys the control plane by the same Google email (ADR 0030), so MCP
-   * and web resolve the same user.
+   * Verified email (Google federated), used to resolve the control-plane user.
+   * INVARIANT: the Authorization Server MUST only expose verified email
+   * addresses (Google is the verified upstream IdP via WorkOS — ADR 0034). The
+   * web sign-in keys the control plane by the same Google email (ADR 0030), so
+   * MCP and web resolve the same user.
    */
   email: string;
 }
@@ -40,12 +49,15 @@ export interface McpWorkspaceRef {
 
 export interface VerifyMcpTokenDeps {
   /**
-   * Validate the JWT and return its claims, or null when the token is well-formed
-   * but unusable (e.g. missing subject/email). Throws on a cryptographic or claim
-   * failure (bad signature, wrong issuer/audience, expiry) — the caller treats a
-   * throw as "reject".
+   * Validate the JWT and return its subject (+ email if present), or null when
+   * the token is well-formed but unusable (no subject). Throws on a cryptographic
+   * or claim failure (bad signature, wrong issuer/audience, expiry) — the caller
+   * treats a throw as "reject".
    */
-  verifyJwt: (token: string) => Promise<McpTokenClaims | null>;
+  verifyJwt: (token: string) => Promise<VerifiedToken | null>;
+  /** Fetch the caller's email from the AS userinfo endpoint using the access
+   * token, when the token itself does not carry an email claim. */
+  resolveEmail: (accessToken: string) => Promise<string | null>;
   /** Map verified claims to the caller's workspace, or null when no grant exists. */
   resolveWorkspace: (claims: McpTokenClaims) => Promise<McpWorkspaceRef | null>;
 }
@@ -68,7 +80,7 @@ export function createJwtVerifier(config: {
   issuer: string;
   audience: string;
   algorithms: string[];
-}): (token: string) => Promise<McpTokenClaims | null> {
+}): (token: string) => Promise<VerifiedToken | null> {
   const getKey: JWTVerifyGetKey =
     typeof config.key === "function" ? config.key : async () => config.key as CryptoKey;
 
@@ -80,24 +92,20 @@ export function createJwtVerifier(config: {
       clockTolerance: CLOCK_TOLERANCE_SECONDS,
     });
     const subject = typeof payload.sub === "string" ? payload.sub : null;
-    const email = typeof payload["email"] === "string" ? payload["email"] : null;
-    if (!subject || !email) {
-      // Observability for the auth boundary: which claims the token actually
-      // carried (key names + aud/iss only — never the token or claim values).
-      console.warn("[mcp-auth] token verified but missing usable claims", {
-        hasSub: Boolean(subject),
-        hasEmail: Boolean(email),
+    if (!subject) {
+      console.warn("[mcp-auth] token verified but has no subject", {
         aud: payload.aud,
         iss: payload.iss,
         claimKeys: Object.keys(payload),
       });
       return null;
     }
+    const email = typeof payload["email"] === "string" ? payload["email"] : null;
     return { subject, email };
   };
 }
 
-/** Compose the two seams into the `(req, bearerToken) => AuthInfo | undefined` MCP verifier. */
+/** Compose the seams into the `(req, bearerToken) => AuthInfo | undefined` MCP verifier. */
 export function createVerifyMcpToken(deps: VerifyMcpTokenDeps) {
   return async function verifyMcpToken(
     _req: Request,
@@ -105,9 +113,9 @@ export function createVerifyMcpToken(deps: VerifyMcpTokenDeps) {
   ): Promise<AuthInfo | undefined> {
     if (!bearerToken) return undefined;
 
-    let claims: McpTokenClaims | null;
+    let verified: VerifiedToken | null;
     try {
-      claims = await deps.verifyJwt(bearerToken);
+      verified = await deps.verifyJwt(bearerToken);
     } catch (error) {
       // Bad signature, wrong issuer/audience, or expired token → no auth → 401.
       const e = error as {
@@ -124,19 +132,28 @@ export function createVerifyMcpToken(deps: VerifyMcpTokenDeps) {
       });
       return undefined;
     }
-    if (!claims) return undefined; // already logged by the verifier
+    if (!verified) return undefined; // already logged by the verifier
 
-    const workspace = await deps.resolveWorkspace(claims);
+    // WorkOS access tokens carry the subject but not the email; fetch it from the
+    // userinfo endpoint when the token claim is absent (ADR 0034).
+    const email = verified.email ?? (await deps.resolveEmail(bearerToken));
+    if (!email) {
+      console.warn(
+        "[mcp-auth] reject: no email (token claim absent and userinfo returned none)",
+        { sub: verified.subject },
+      );
+      return undefined;
+    }
+
+    const workspace = await deps.resolveWorkspace({ subject: verified.subject, email });
     if (!workspace) {
-      console.warn("[mcp-auth] reject: no granted workspace for token", {
-        email: claims.email,
-      });
+      console.warn("[mcp-auth] reject: no granted workspace for token", { email });
       return undefined;
     }
 
     return {
       token: bearerToken,
-      clientId: claims.subject,
+      clientId: verified.subject,
       scopes: [MCP_READ_SCOPE],
       extra: { workspaceId: workspace.workspaceId, dbUrl: workspace.dbUrl },
     };
@@ -147,7 +164,7 @@ type Env = Record<string, string | undefined>;
 
 /**
  * Algorithms worthline accepts on a WorkOS-issued access token. WorkOS signs
- * with RS256; S4's end-to-end validation against the real connector confirms it.
+ * with RS256; confirmed against the live JWKS.
  */
 const ACCEPTED_TOKEN_ALGORITHMS = ["RS256"];
 
@@ -179,6 +196,32 @@ function envJwtVerifier(env: Env): VerifyMcpTokenDeps["verifyJwt"] | null {
   });
   cachedJwtVerifier = { key: cacheKey, verify };
   return verify;
+}
+
+/**
+ * Fetch the caller's email from the AS OIDC userinfo endpoint with the access
+ * token. WorkOS access tokens carry `sub` but not `email`, so this is the
+ * production source of the address the control plane is keyed by.
+ */
+async function envResolveEmail(accessToken: string, env: Env): Promise<string | null> {
+  const issuer = env["WORTHLINE_MCP_AUTH_SERVER_URL"]?.trim();
+  if (!issuer) return null;
+  try {
+    const response = await fetch(new URL("/oauth2/userinfo", issuer), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) {
+      console.warn("[mcp-auth] userinfo request failed", { status: response.status });
+      return null;
+    }
+    const info = (await response.json()) as { email?: unknown };
+    return typeof info.email === "string" ? info.email : null;
+  } catch (error) {
+    console.warn("[mcp-auth] userinfo request errored", {
+      message: (error as { message?: string })?.message,
+    });
+    return null;
+  }
 }
 
 /** The production control-plane lookup: email → user → first granted workspace. */
@@ -218,6 +261,7 @@ export async function verifyMcpToken(
   if (!verifyJwt) return undefined;
   return createVerifyMcpToken({
     verifyJwt,
+    resolveEmail: (accessToken) => envResolveEmail(accessToken, process.env),
     resolveWorkspace: (claims) => envResolveWorkspace(claims, process.env),
   })(req, bearerToken);
 }
