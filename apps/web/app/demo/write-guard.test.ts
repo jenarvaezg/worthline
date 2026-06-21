@@ -1,17 +1,30 @@
 /**
- * Demo write guard tests (S2 #300). Asserts the guard's observable contract: a
- * no-op when live, a "deshabilitado" redirect in demo mode, and — through a
- * representative mutating action — that the store is left untouched.
+ * Demo write guard tests (S2 #300, S5 #386). Asserts the guard's observable
+ * contract: a no-op for a live request, a "deshabilitado" redirect for a demo
+ * request (a logged-out persona cookie), and — through a representative mutating
+ * action — that the store is left untouched. Demo-ness is now a per-request fact
+ * (the persona cookie resolved by the store seam), not a deploy-wide env flag.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createInMemoryStore } from "@worthline/db";
 
 import { DEMO_DISABLED_MESSAGE, guardDemoWrite, isDemoMode } from "@web/demo/write-guard";
 import { deleteAssetAction } from "@web/patrimonio/actions";
 
+// Drive the request state through the persona cookie the store seam reads.
+let mockPersonaCookie: string | undefined;
+vi.mock("next/headers", () => ({
+  cookies: async () => ({
+    get: (name: string) =>
+      name === "wl_demo_persona" && mockPersonaCookie
+        ? { value: mockPersonaCookie }
+        : undefined,
+  }),
+}));
+
 afterEach(() => {
-  delete process.env.DEMO;
+  mockPersonaCookie = undefined;
 });
 
 /** Run an action expecting it to throw redirect(); return the redirect digest. */
@@ -29,14 +42,14 @@ async function redirectOf(run: () => Promise<unknown>): Promise<string> {
 }
 
 describe("demo write guard", () => {
-  it("is a no-op when DEMO is unset", () => {
-    expect(isDemoMode()).toBe(false);
-    expect(() => guardDemoWrite("/patrimonio")).not.toThrow();
+  it("is a no-op for a live request (no persona cookie)", async () => {
+    expect(await isDemoMode()).toBe(false);
+    await expect(guardDemoWrite("/patrimonio")).resolves.toBeUndefined();
   });
 
-  it("redirects with the deshabilitado message in demo mode", async () => {
-    process.env.DEMO = "1";
-    expect(isDemoMode()).toBe(true);
+  it("redirects with the deshabilitado message for a demo request", async () => {
+    mockPersonaCookie = "familia";
+    expect(await isDemoMode()).toBe(true);
 
     const digest = await redirectOf(async () => guardDemoWrite("/patrimonio"));
     const decoded = decodeURIComponent(digest.replace(/\+/g, " "));
@@ -59,7 +72,7 @@ describe("demo write guard", () => {
       type: "cash",
     });
 
-    process.env.DEMO = "1";
+    mockPersonaCookie = "familia";
     const fd = new FormData();
     fd.set("id", "asset_keep");
     fd.set("currentUrl", "/patrimonio");

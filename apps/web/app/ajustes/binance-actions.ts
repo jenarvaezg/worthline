@@ -38,7 +38,7 @@ export async function connectBinanceAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  guardDemoWrite("/ajustes");
+  await guardDemoWrite("/ajustes");
   return connectSource(
     binanceAdapter,
     formData,
@@ -58,7 +58,7 @@ export async function syncBinanceAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  guardDemoWrite(currentUrlOf(formData));
+  await guardDemoWrite(currentUrlOf(formData));
   const sourceId = parseEntityId(formData, "sourceId");
 
   return syncSource(
@@ -132,7 +132,7 @@ export async function disconnectBinanceAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  guardDemoWrite(currentUrlOf(formData));
+  await guardDemoWrite(currentUrlOf(formData));
   const sourceId = parseEntityId(formData, "sourceId");
   // The disconnect CHOICE (PRD #245 S6, ADR 0016/0021), mirroring Numista: "freeze"
   // keeps every rung holding as a plain hand-maintained one; anything else (the

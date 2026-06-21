@@ -1,20 +1,23 @@
-import { DEFAULT_PERSONA, parsePersonaId, type PersonaId } from "@web/demo/persona";
+import { DEFAULT_PERSONA, type PersonaId } from "@web/demo/persona";
+
+import type { StoreTarget } from "@web/store-resolver";
 
 /**
- * The demo context resolver (PRD #297, ADR 0029). A pure function that derives
- * `{ enabled, now, persona }` from the environment and the persona cookie. It is
- * the single source of truth queried by the store provider, the write guard, and
- * the presentation layer for "are we in demo mode, as of when, as whom".
+ * The demo context (PRD #297, ADR 0030). A pure projection of the resolved
+ * request {@link StoreTarget} into `{ enabled, now, persona }` — the shape the
+ * write guard, the banner, and the presentation layer query for "are we in the
+ * demo, as of when, as whom". Demo-ness is no longer a deploy-wide env flag; it
+ * is a per-request state (the persona cookie), decided once in the store seam.
  *
  * Kept free of `next/headers` so it stays a pure unit — the server adapter that
- * actually reads `cookies()` lives in `./read-demo-context`.
+ * actually resolves the target lives in `./read-demo-context`.
  */
 
 /** Cookie carrying the selected persona, mirroring the `wl_scope` cookie. */
 export const DEMO_PERSONA_COOKIE_NAME = "wl_demo_persona";
 
 export interface DemoContext {
-  /** Whether the build is running as the read-only demo. */
+  /** Whether this request is the read-only demo (a logged-out persona). */
   enabled: boolean;
   /**
    * The pinned "now" as the raw `WORTHLINE_DEMO_NOW` value (an ISO-8601 string or
@@ -25,35 +28,10 @@ export interface DemoContext {
   persona: PersonaId;
 }
 
-export interface ResolveDemoContextInput {
-  /** Raw `process.env.DEMO`. */
-  demoFlag?: string | undefined;
-  /** Raw `process.env.WORTHLINE_DEMO_NOW`. */
-  demoNow?: string | undefined;
-  /** Raw value of the `wl_demo_persona` cookie. */
-  personaCookie?: string | null | undefined;
-}
-
-/** A flag is "on" unless it is absent or an explicit off value. */
-function isDemoFlagOn(flag: string | undefined): boolean {
-  if (flag === undefined) return false;
-  const normalized = flag.trim().toLowerCase();
-  return (
-    normalized !== "" &&
-    normalized !== "0" &&
-    normalized !== "false" &&
-    normalized !== "off"
-  );
-}
-
-export function resolveDemoContext(input: ResolveDemoContextInput = {}): DemoContext {
-  if (!isDemoFlagOn(input.demoFlag)) {
-    return { enabled: false, now: "", persona: DEFAULT_PERSONA };
+/** Project a resolved store target into the demo context. */
+export function demoContextFromTarget(target: StoreTarget): DemoContext {
+  if (target.kind === "demo") {
+    return { enabled: true, now: target.now, persona: target.persona };
   }
-
-  return {
-    enabled: true,
-    now: (input.demoNow ?? "").trim(),
-    persona: parsePersonaId(input.personaCookie),
-  };
+  return { enabled: false, now: "", persona: DEFAULT_PERSONA };
 }

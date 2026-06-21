@@ -1,30 +1,12 @@
 /**
- * Server adapter for the demo context (PRD #297). Reads the environment and the
- * persona cookie and delegates to the pure {@link resolveDemoContext}. Kept apart
- * from the pure resolver so the resolver stays a `next/headers`-free unit.
- *
- * When `DEMO` is unset it short-circuits BEFORE touching `cookies()`, so the live
- * build never reads a cookie here and its pages keep their existing static/dynamic
- * behavior.
+ * Server adapter for the demo context (PRD #297, ADR 0030). Resolves the
+ * request's {@link StoreTarget} (session + env + persona cookie) and projects it
+ * into the {@link DemoContext} via the pure {@link demoContextFromTarget}. Kept
+ * apart from the pure projection so the latter stays a `next/headers`-free unit.
  */
-import { cookies } from "next/headers";
-
-import {
-  DEMO_PERSONA_COOKIE_NAME,
-  resolveDemoContext,
-  type DemoContext,
-} from "@web/demo/demo-context";
+import { demoContextFromTarget, type DemoContext } from "@web/demo/demo-context";
+import { readStoreTarget } from "@web/read-store-target";
 
 export async function readDemoContext(): Promise<DemoContext> {
-  const demoFlag = process.env.DEMO;
-  if (!demoFlag) {
-    return resolveDemoContext({});
-  }
-
-  const jar = await cookies();
-  return resolveDemoContext({
-    demoFlag,
-    demoNow: process.env.WORTHLINE_DEMO_NOW,
-    personaCookie: jar.get(DEMO_PERSONA_COOKIE_NAME)?.value,
-  });
+  return demoContextFromTarget(await readStoreTarget());
 }

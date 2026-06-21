@@ -21,6 +21,10 @@ function selectPersona(raw: string | null): NextResponse {
   const response = new NextResponse(null, { status: 303, headers: { Location: "/" } });
   response.cookies.set(DEMO_PERSONA_COOKIE_NAME, persona, {
     httpOnly: true,
+    // Bounded lifetime (ADR 0030): the cookie is what flips a logged-out request
+    // into the demo, so a forgotten one must decay rather than silently shadow a
+    // real local/dev workspace on the next visit.
+    maxAge: 60 * 60 * 12,
     path: "/",
     sameSite: "lax",
   });

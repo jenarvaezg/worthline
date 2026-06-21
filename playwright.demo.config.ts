@@ -1,12 +1,14 @@
 /**
- * Playwright config for the demo-mode journey (PRD #297, S3 #301).
+ * Playwright config for the demo-mode journey (PRD #297, S3 #301, S5 #386).
  *
- * Runs the app as the read-only public demo: `DEMO=1` with a demo clock, on its
- * own port, isolated from the main serial journey.
- * No globalSetup and no `WORTHLINE_DB_PATH` — demo mode never opens the live
- * store; the store provider lazily seeds each persona's fixture into a temp copy.
- * By default the demo clock uses today's local date. Set `WORTHLINE_DEMO_NOW`
- * when a run needs an explicit calendar day.
+ * Runs the app with the demo clock pinned, on its own port, isolated from the
+ * main serial journey. The demo is now a per-request state (ADR 0030): the
+ * journey enters it by picking a persona at `/demo`, which sets the persona
+ * cookie — there is no deploy-wide `DEMO` flag.
+ * No globalSetup and no `WORTHLINE_DB_PATH` — a demo request never opens the
+ * live store; the store seam seeds each persona into an ephemeral in-memory
+ * libSQL database per request. By default the demo clock uses today's local
+ * date. Set `WORTHLINE_DEMO_NOW` when a run needs an explicit calendar day.
  *
  * To run (against a production build):
  *   npm run build --workspace @worthline/web
@@ -61,7 +63,6 @@ export default defineConfig({
     url: demoBaseUrl,
     reuseExistingServer: false,
     env: {
-      DEMO: "1",
       WORTHLINE_DEMO_NOW: process.env.WORTHLINE_DEMO_NOW ?? todayDateKey(),
       WORTHLINE_DATA_DIR: demoDataDir,
     },

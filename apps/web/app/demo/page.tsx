@@ -1,24 +1,26 @@
 import { redirect } from "next/navigation";
 
 import { isPersonaId, PERSONA_IDS, PERSONA_META } from "@web/demo/persona";
-import { isDemoMode } from "@web/demo/write-guard";
+import { readStoreTarget } from "@web/read-store-target";
 
 export const dynamic = "force-dynamic";
 
 /**
- * The /demo landing (PRD #297): pitches the three personas and lets a visitor
- * choose one. Selecting a persona (or following a `/demo?persona=…` deep-link)
- * routes through `/demo/persona`, which sets the cookie, clears `wl_scope`, and
- * lands in the app. Zero client JS (ADR 0009): plain links.
+ * The /demo landing (PRD #297, ADR 0030): the public entry into the read-only
+ * demo. It pitches the three personas and lets a logged-out visitor choose one.
+ * Selecting a persona (or following a `/demo?persona=…` deep-link) routes
+ * through `/demo/persona`, which sets the cookie, clears `wl_scope`, and lands
+ * in the app. Zero client JS (ADR 0009): plain links.
  *
- * Outside a demo build the route is meaningless, so it redirects home.
+ * A signed-in user has their own workspace, so the persona picker is meaningless
+ * for them — they are redirected home.
  */
 export default async function DemoLanding({
   searchParams,
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  if (!isDemoMode()) {
+  if ((await readStoreTarget()).kind === "authenticated") {
     redirect("/");
   }
 

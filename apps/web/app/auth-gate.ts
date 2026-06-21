@@ -10,9 +10,11 @@ const PUBLIC_PATHS = new Set(["/login"]);
 export function shouldRedirectToLogin(input: {
   authConfigured: boolean;
   hasSession: boolean;
+  /** Whether the request carries the demo persona cookie (ADR 0030). */
+  hasPersonaCookie?: boolean;
   pathname: string;
 }): boolean {
-  const { authConfigured, hasSession, pathname } = input;
+  const { authConfigured, hasSession, hasPersonaCookie, pathname } = input;
 
   // Local no-auth mode: the control plane and sign-in never engage.
   if (!authConfigured) {
@@ -21,8 +23,19 @@ export function shouldRedirectToLogin(input: {
   if (hasSession) {
     return false;
   }
-  // The sign-in route and Auth.js's own endpoints must stay reachable.
-  if (pathname.startsWith("/api/auth") || PUBLIC_PATHS.has(pathname)) {
+  // A logged-out demo request (persona cookie) gets the read-only demo, not the
+  // sign-in wall (ADR 0030).
+  if (hasPersonaCookie) {
+    return false;
+  }
+  // The sign-in route, the public demo entry, and Auth.js's own endpoints must
+  // stay reachable for a logged-out visitor.
+  if (
+    pathname.startsWith("/api/auth") ||
+    pathname === "/demo" ||
+    pathname.startsWith("/demo/") ||
+    PUBLIC_PATHS.has(pathname)
+  ) {
     return false;
   }
   return true;

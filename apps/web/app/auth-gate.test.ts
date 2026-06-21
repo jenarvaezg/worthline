@@ -33,15 +33,33 @@ describe("shouldRedirectToLogin", () => {
     ).toBe(true);
   });
 
-  test("never redirects the public paths (/login, /api/auth/*)", () => {
-    for (const pathname of ["/login", "/api/auth/signin", "/api/auth/callback/google"]) {
+  test("never redirects the public paths (/login, /demo, /api/auth/*)", () => {
+    for (const pathname of [
+      "/login",
+      "/demo",
+      "/demo/persona",
+      "/api/auth/signin",
+      "/api/auth/callback/google",
+    ]) {
       expect(
         shouldRedirectToLogin({
           authConfigured: true,
           hasSession: false,
+          hasPersonaCookie: false,
           pathname,
         }),
       ).toBe(false);
     }
+  });
+
+  test("does not redirect a logged-out demo request (persona cookie present)", () => {
+    expect(
+      shouldRedirectToLogin({
+        authConfigured: true,
+        hasSession: false,
+        hasPersonaCookie: true,
+        pathname: "/patrimonio",
+      }),
+    ).toBe(false);
   });
 });
