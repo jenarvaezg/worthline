@@ -17,6 +17,7 @@ import type { LiquidityTier } from "./classification";
 import type { DistributiveOmit, SourceAdapter, SourcePosition } from "./connected-source";
 import type { DecimalString } from "./decimal";
 import type { ValuationMethod } from "./holding-valuation";
+import type { ValuationCadence } from "./valuation-cadence";
 import type { Instrument } from "./instrument-catalog";
 import type { CurrencyCode, MoneyMinor } from "./money";
 import type { AssetPrice, InvestmentPriceProvider } from "./prices";
@@ -148,6 +149,8 @@ export interface ExportedAsset {
   instrument?: Instrument;
   /** How the asset's value evolves (ADR 0014/0015); derived from type on import when absent. */
   valuationMethod?: ValuationMethod;
+  /** Valuation cadence (ADR 0031); `step` default, so absent round-trips as step. */
+  valuationCadence?: ValuationCadence;
   /** Decimal-string annual appreciation rate (e.g. "0.03"); only meaningful for real estate. */
   annualAppreciationRate?: DecimalString;
   /** Housing valuation anchors (market appraisals + improvements); ordered by date. */
@@ -179,6 +182,8 @@ export interface ExportedLiability {
   instrument?: Instrument;
   /** How the liability's balance evolves (ADR 0014/0015); derived from debt model on import when absent. */
   valuationMethod?: ValuationMethod;
+  /** Valuation cadence (ADR 0031); `step` default, so absent round-trips as step. */
+  valuationCadence?: ValuationCadence;
   /** How the liability is modelled for historical reconstruction; null/absent means manual balance. */
   debtModel?: DebtModel;
   /** The amortization plan (with its revisions + early repayments) when debtModel is amortizable. */
