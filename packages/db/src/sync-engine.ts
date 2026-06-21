@@ -11,9 +11,11 @@
  *   - it ABORTS if prod changed since the last pull (a fingerprint mismatch),
  *     so a concurrent prod write is never silently clobbered;
  *   - because the export omits connected-source secrets by design (ADR 0016),
- *     it snapshots prod's secrets and re-applies them after the full-replace, so
- *     the live connection is never severed. The first push into a fresh prod
- *     (no prior pull) doubles as the one-time real-data load.
+ *     it snapshots secrets from both prod and local and re-applies them after
+ *     the full-replace, so the live connection is never severed — prod's own key
+ *     wins (a key (re)entered in the hosted app), and local's fills in where
+ *     prod never had one. The first push into a fresh prod (no prior pull)
+ *     doubles as the one-time real-data load, carrying local's keys up with it.
  *
  * The engine is storage-agnostic — it drives two {@link WorthlineStore}s and an
  * injected {@link SyncDeps} (the last-pull fingerprint, backup sink, clock) — so
@@ -69,7 +71,11 @@ export function fingerprintExport(doc: WorkspaceExport): string {
   return createHash("sha256").update(stableStringify(doc)).digest("hex");
 }
 
-type SecretSnapshot = Map<string, { credentialsJson: string; tokenJson: string | null }>;
+interface SourceSecret {
+  credentialsJson: string;
+  tokenJson: string | null;
+}
+type SecretSnapshot = Map<string, SourceSecret>;
 
 /** Capture every source's live secret, keyed by source id, before a replace. */
 async function snapshotSecrets(store: WorthlineStore): Promise<SecretSnapshot> {
@@ -86,16 +92,29 @@ async function snapshotSecrets(store: WorthlineStore): Promise<SecretSnapshot> {
 /** A source whose credentials are just the empty placeholder (no live secret). */
 const PLACEHOLDER_CREDENTIALS = "{}";
 
-/** Re-apply captured secrets to the matching sources after a full-replace. */
+/**
+ * Re-apply captured secrets to the matching sources after a full-replace. The
+ * export omits secrets (ADR 0016), so an imported source lands on the "{}"
+ * placeholder; we restore a real key from one of two snapshots, keyed by the
+ * source id (preserved across import):
+ *   - `prodSecrets` first — prod's pre-push live key, so a re-push never severs
+ *     a connection whose key was (re)entered in the hosted app;
+ *   - `localSecrets` as a fallback — local's own key, so the FIRST push into a
+ *     fresh prod (which had no key to preserve) still carries the live
+ *     connection up instead of stranding it on the placeholder.
+ * A source neither side has a real key for keeps the "{}" placeholder, so
+ * "needs a key" stays visible.
+ */
 async function reapplySecrets(
   store: WorthlineStore,
-  secrets: SecretSnapshot,
+  prodSecrets: SecretSnapshot,
+  localSecrets: SecretSnapshot,
 ): Promise<void> {
+  const hasKey = (snap: SourceSecret) => snap.credentialsJson !== PLACEHOLDER_CREDENTIALS;
   for (const source of await store.connectedSources.listSources()) {
-    const snap = secrets.get(source.id);
-    // No snapshot (a source local added) or only a placeholder (prod never had a
-    // live key) ⇒ leave the imported "{}" intact, so "needs a key" stays visible.
-    if (!snap || snap.credentialsJson === PLACEHOLDER_CREDENTIALS) continue;
+    const prodSnap = prodSecrets.get(source.id);
+    const snap = prodSnap && hasKey(prodSnap) ? prodSnap : localSecrets.get(source.id);
+    if (!snap || !hasKey(snap)) continue;
     await store.connectedSources.updateCredentials(source.id, snap.credentialsJson);
     if (snap.tokenJson !== null) {
       await store.connectedSources.saveToken(source.id, snap.tokenJson);
@@ -158,14 +177,19 @@ export async function syncPush(
     await deps.backup(prodDoc, label);
   }
 
-  // The export omits secrets (ADR 0016), so capture prod's before overwriting.
-  const secrets = await snapshotSecrets(prod);
+  // The export omits secrets (ADR 0016), so capture them from BOTH sides before
+  // overwriting: prod's (to preserve a key (re)entered in the hosted app) and
+  // local's (to carry the live connection up on the first push into a fresh
+  // prod, which has none to preserve).
+  const prodSecrets = await snapshotSecrets(prod);
+  const localSecrets = await snapshotSecrets(local);
 
   const localDoc = await local.workspace.exportWorkspace();
   await prod.workspace.importWorkspace(localDoc);
 
-  // Re-apply prod's secrets so the live connection survives the full-replace.
-  await reapplySecrets(prod, secrets);
+  // Re-seal secrets so the live connection survives the full-replace: prod's
+  // own key wins, local's fills in where prod never had one.
+  await reapplySecrets(prod, prodSecrets, localSecrets);
 
   // Any prod source left with the placeholder needs its key re-entered.
   const sourcesMissingSecret = (await prod.connectedSources.listSources())
