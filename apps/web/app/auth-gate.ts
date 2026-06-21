@@ -28,6 +28,18 @@ export function shouldRedirectToLogin(input: {
   if (hasPersonaCookie) {
     return false;
   }
+  // The agent-view MCP endpoint and its OAuth protected-resource metadata must
+  // be reachable while logged out: an MCP client (claude.ai / Claude Code)
+  // completes the OAuth handshake *before* any session exists, and the metadata
+  // route advertises where to authorize. Bouncing them to /login would return
+  // an HTML 302 that the client can't parse — the exact "Failed to parse JSON"
+  // symptom this PRD fixes (ADR 0034).
+  if (
+    pathname.startsWith("/api/mcp") ||
+    pathname === "/.well-known/oauth-protected-resource"
+  ) {
+    return false;
+  }
   // The sign-in route, the public demo entry, and Auth.js's own endpoints must
   // stay reachable for a logged-out visitor.
   if (
