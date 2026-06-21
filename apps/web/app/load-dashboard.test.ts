@@ -1016,6 +1016,7 @@ describe("loadDashboard — Binance per-token breakdown capture (ADR 0035, #462)
       wallet: "spot",
       liquidityTier: "market" as const,
       unitPrice: "50000",
+      imageUrl: null as string | null,
       currency: "EUR" as const,
       ...overrides,
     };

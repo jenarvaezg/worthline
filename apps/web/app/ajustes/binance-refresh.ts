@@ -1,6 +1,7 @@
 import type { WorthlineStore } from "@worthline/db";
 import {
   binanceAdapter,
+  fetchCoinGeckoLogos,
   fetchCoinGeckoPriceEur,
   getAllBalances,
   syncBinanceAccount,
@@ -61,6 +62,7 @@ export async function runBinanceRefresh(
       return syncBinanceAccount({
         listBalances: () => getAllBalances(creds, { nowMs }),
         priceEur: (id) => fetchCoinGeckoPriceEur(id, nowIso),
+        logoUrls: fetchCoinGeckoLogos,
       });
     },
     persistFresh: async (sourceId, drafts) => {

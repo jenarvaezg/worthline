@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 34;
+export const SCHEMA_VERSION = 35;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1214,6 +1214,18 @@ export async function migrate(client: Client): Promise<MigrateResult> {
        ON snapshot_position_holdings (snapshot_id, parent_holding_id, position_key);`,
     );
     await writeSchemaVersion(client, 34);
+  }
+
+  if (version < 35) {
+    // #482: persist each Binance token's logo URL on its position so the holding
+    // list renders crypto logos (the live mirror of a coin's obverse_thumb_url,
+    // resolved from CoinGecko at sync). Additive ALTER (try/catch like v20/v22/v27):
+    // a fresh DB already has the column from schema-sql, so the duplicate is ignored.
+    // Existing token rows get NULL (a glyph fallback) and a logo on the next sync.
+    try {
+      await client.executeMultiple("ALTER TABLE positions ADD COLUMN image_url TEXT");
+    } catch {}
+    await writeSchemaVersion(client, 35);
   }
 
   return { ranV18Backfill, ranV33Backfill };

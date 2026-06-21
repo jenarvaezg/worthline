@@ -8,7 +8,11 @@
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { fetchCoinGeckoPriceEur, syncBinanceAccount } from "./binance-sync";
+import {
+  fetchCoinGeckoLogos,
+  fetchCoinGeckoPriceEur,
+  syncBinanceAccount,
+} from "./binance-sync";
 import { fallbackChains } from "./registry";
 
 describe("syncBinanceAccount — balances → live-valued token drafts", () => {
@@ -31,6 +35,7 @@ describe("syncBinanceAccount — balances → live-valued token drafts", () => {
         wallet: "spot",
         liquidityTier: "market",
         unitPrice: "50000",
+        imageUrl: null,
         currency: "EUR",
       },
       {
@@ -42,6 +47,7 @@ describe("syncBinanceAccount — balances → live-valued token drafts", () => {
         wallet: "spot",
         liquidityTier: "market",
         unitPrice: "2000",
+        imageUrl: null,
         currency: "EUR",
       },
     ]);
@@ -108,6 +114,94 @@ describe("syncBinanceAccount — balances → live-valued token drafts", () => {
     });
 
     expect(seen).toEqual(["bitcoin"]); // one lookup, reused for both BTC lines
+  });
+
+  test("stamps each token's logo from the batched logoUrls dep, miss → null (#482)", async () => {
+    const drafts = await syncBinanceAccount({
+      listBalances: async () => [
+        { asset: "BTC", wallet: "spot", balance: "0.5" },
+        { asset: "ETH", wallet: "spot", balance: "2" },
+      ],
+      priceEur: async (id) => ({ bitcoin: 50_000, ethereum: 2_000 })[id] ?? null,
+      logoUrls: async () => ({ bitcoin: "https://coin-images.test/btc.png" }), // eth missing
+    });
+
+    const bySymbol = new Map(drafts.map((d) => [d.symbol, d]));
+    expect(bySymbol.get("BTC")?.imageUrl).toBe("https://coin-images.test/btc.png");
+    expect(bySymbol.get("ETH")?.imageUrl).toBeNull(); // absent from the batch → glyph
+  });
+
+  test("requests logos once for the deduped, mapped CoinGecko id set (#482)", async () => {
+    const calls: string[][] = [];
+    await syncBinanceAccount({
+      listBalances: async () => [
+        { asset: "BTC", wallet: "spot", balance: "0.5" },
+        { asset: "BTC", wallet: "funding", balance: "0.1" }, // same id, deduped
+        { asset: "WAGMI", wallet: "spot", balance: "100" }, // unmapped → excluded
+      ],
+      priceEur: async () => 50_000,
+      logoUrls: async (ids) => {
+        calls.push([...ids]);
+        return {};
+      },
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual(["bitcoin"]);
+  });
+
+  test("a logoUrls failure never aborts the sync — tokens fall back to null (#482)", async () => {
+    const drafts = await syncBinanceAccount({
+      listBalances: async () => [{ asset: "BTC", wallet: "spot", balance: "0.5" }],
+      priceEur: async () => 50_000,
+      logoUrls: async () => {
+        throw new Error("coingecko down");
+      },
+    });
+
+    expect(drafts[0]).toMatchObject({
+      symbol: "BTC",
+      unitPrice: "50000",
+      imageUrl: null,
+    });
+  });
+});
+
+describe("fetchCoinGeckoLogos — the real batched logo seam (#482)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("maps each CoinGecko id to its markets-endpoint image in one call", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => [
+        { id: "bitcoin", image: "https://coin-images.test/btc.png" },
+        { id: "ethereum", image: "https://coin-images.test/eth.png" },
+      ],
+    } as Response);
+
+    expect(await fetchCoinGeckoLogos(["bitcoin", "ethereum"])).toEqual({
+      bitcoin: "https://coin-images.test/btc.png",
+      ethereum: "https://coin-images.test/eth.png",
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("an empty id set makes no request and returns an empty map", async () => {
+    expect(await fetchCoinGeckoLogos([])).toEqual({});
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  test("a non-OK response or a throw degrades to an empty map (never aborts sync)", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 429 } as Response);
+    expect(await fetchCoinGeckoLogos(["bitcoin"])).toEqual({});
+
+    vi.mocked(fetch).mockRejectedValueOnce(new Error("network down"));
+    expect(await fetchCoinGeckoLogos(["bitcoin"])).toEqual({});
   });
 });
 

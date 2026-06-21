@@ -43,6 +43,7 @@ function token(overrides: Partial<Extract<SourcePositionInput, { kind: "token" }
     wallet: "spot",
     liquidityTier: "market" as const,
     unitPrice: "50000",
+    imageUrl: null as string | null,
     currency: "EUR" as const,
     ...overrides,
   };
@@ -95,6 +96,32 @@ describe("syncPositions (Binance) re-rolls the holding LIVE as Σ(balance × pri
       wallet: "spot",
       unitPrice: "50000",
     });
+    store.close();
+  });
+
+  test("a token's logo URL round-trips through persistence (#482)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId } = await connectBinance(store);
+
+    await store.connectedSources.syncPositions(
+      sourceId,
+      [
+        token({
+          externalId: "BTC:spot",
+          symbol: "BTC",
+          imageUrl: "https://coin-images.test/btc.png",
+        }),
+        token({ externalId: "ETH:spot", symbol: "ETH", imageUrl: null }),
+      ],
+      "2026-06-16T10:00:00.000Z",
+    );
+
+    const positions = await store.connectedSources.readPositions(sourceId);
+    const btc = positions.find((p) => p.kind === "token" && p.symbol === "BTC");
+    const eth = positions.find((p) => p.kind === "token" && p.symbol === "ETH");
+    expect(btc).toMatchObject({ imageUrl: "https://coin-images.test/btc.png" });
+    expect(eth).toMatchObject({ imageUrl: null });
     store.close();
   });
 

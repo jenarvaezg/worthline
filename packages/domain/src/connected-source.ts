@@ -159,6 +159,10 @@ export interface TokenPosition extends PositionCore {
    *  when the symbol cannot be mapped/priced — then the position is valued 0 with
    *  the "value at 0" warning, still shown in detail (never silently dropped). */
   unitPrice: DecimalString | null;
+  /** The token's logo URL, resolved from CoinGecko at sync and stamped on the
+   *  position (#482, the live mirror of a coin's `obverseThumbUrl`); null when the
+   *  symbol cannot be mapped/has no image → the listing falls back to a glyph. */
+  imageUrl: string | null;
 }
 
 /**
@@ -319,10 +323,11 @@ export function coinPositionSnapshotInput(coin: CoinPosition): SnapshotPositionI
  * `symbol:wallet` `externalId`, ADR 0021 — never the reassigned internal id), the
  * symbol as the display label (the Binance detail lens, `groupPositionsByToken`),
  * and its live `positionValue` (`balance × unit price`; 0 when unpriceable, still
- * frozen so the row is never silently dropped). A token has no metal or thumbnail,
- * so both are null — the second drilldown level renders its metal-glyph fallback.
- * Value and labels only — no secrets. The capture scope-allocates these values
- * down to the holding's owned share.
+ * frozen so the row is never silently dropped). A token has no metal, so that is
+ * null; its logo (`imageUrl`, resolved at sync) is frozen so the histórico
+ * drilldown can render it for past days too (#482), falling back to a glyph when
+ * null. Value and labels only — no secrets. The capture scope-allocates these
+ * values down to the holding's owned share.
  */
 export function tokenPositionSnapshotInput(token: TokenPosition): SnapshotPositionInput {
   return {
@@ -330,7 +335,7 @@ export function tokenPositionSnapshotInput(token: TokenPosition): SnapshotPositi
     label: token.symbol,
     valueMinor: positionValue(token.balance, token.unitPrice).minor,
     metal: null,
-    imageUrl: null,
+    imageUrl: token.imageUrl,
   };
 }
 

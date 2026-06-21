@@ -25,6 +25,7 @@ function token(over: Partial<TokenPosition> & { id: string }): TokenPosition {
     wallet: "spot",
     liquidityTier: "market",
     unitPrice: null,
+    imageUrl: null,
     currency: "EUR",
     ...over,
   };
@@ -126,6 +127,23 @@ describe("buildBinanceHoldingView", () => {
     expect(view.rows.map((r) => r.symbol)).toEqual(["BTC"]);
     expect(view.tokenCount).toBe(1);
     expect(view.totalMinor).toBe(2_500_000);
+  });
+
+  test("carries each token's logo to its row, null when absent → glyph (#482)", () => {
+    const view = buildBinanceHoldingView([
+      token({
+        id: "1",
+        symbol: "BTC",
+        balance: "1",
+        unitPrice: "50000",
+        imageUrl: "https://coin-images.test/btc.png",
+      }),
+      token({ id: "2", symbol: "ETH", balance: "2", unitPrice: "2000", imageUrl: null }),
+    ]);
+
+    const bySymbol = new Map(view.rows.map((r) => [r.symbol, r]));
+    expect(bySymbol.get("BTC")?.imageUrl).toBe("https://coin-images.test/btc.png");
+    expect(bySymbol.get("ETH")?.imageUrl).toBeNull();
   });
 
   test("an empty holding is a zero total with no rows", () => {
