@@ -140,16 +140,23 @@ export async function syncPush(
   prod: WorthlineStore,
   deps: SyncDeps,
 ): Promise<PushResult> {
-  // Staleness guard FIRST — never back up or overwrite a prod that drifted.
-  const prodDoc = await prod.workspace.exportWorkspace();
+  // Staleness guard FIRST — never back up or overwrite a prod that drifted. A
+  // never-initialized prod (the first push into a freshly provisioned workspace,
+  // the documented one-time real-data load) has nothing to export, back up, or
+  // drift from — treat it as an empty target.
+  const prodInitialized = (await prod.workspace.readWorkspace()) !== null;
+  const prodDoc = prodInitialized ? await prod.workspace.exportWorkspace() : null;
   const lastPull = await deps.readLastPull();
-  if (lastPull !== null && lastPull !== fingerprintExport(prodDoc)) {
+  const prodFingerprint = prodDoc === null ? null : fingerprintExport(prodDoc);
+  if (lastPull !== null && lastPull !== prodFingerprint) {
     throw new SyncStaleError();
   }
 
-  // Backup prod before the destructive replace.
+  // Backup prod before the destructive replace (nothing to back up when fresh).
   const label = deps.now();
-  await deps.backup(prodDoc, label);
+  if (prodDoc !== null) {
+    await deps.backup(prodDoc, label);
+  }
 
   // The export omits secrets (ADR 0016), so capture prod's before overwriting.
   const secrets = await snapshotSecrets(prod);
