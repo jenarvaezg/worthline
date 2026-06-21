@@ -96,3 +96,19 @@ project. This is chosen deliberately for low traffic and minimal moving parts: t
   and a single group token are right for a handful of users; hundreds would want per-
   database tokens, a deploy-time migration runner, and possibly a heavier datastore. The
   seam and control-plane indirection are shaped so that swap stays contained.
+- **Scaling trigger and the shared-table option (refined 2026-06-21).** The binding limit
+  is Turso's free tier: **100 databases**, so the control plane + N per-workspace databases
+  cap onboarding at ~99 users (the **demo** is ephemeral in-memory and consumes no quota).
+  The first response to approaching that ceiling is **not** a re-architecture — it is the
+  **Turso Developer plan** (~$5/mo at time of writing: unlimited databases, 500
+  monthly-active), billed cleanly through the **native Turso↔Vercel Marketplace
+  integration** (whose "Per User Starter" template is exactly this database-per-workspace
+  shape). That is a billing toggle, not a migration, and at the project's expected scale it
+  may never be needed. The **shared-database + `workspace_id`** alternative rejected above
+  stays a _reserved option_, to be exercised only if (a) Turso's pricing becomes
+  unacceptable, or (b) active-workspace scale outgrows the Scaler plan's economics.
+  Deferring costs nothing because this ADR's store seam keeps that swap contained; doing it
+  preemptively would trade away the `id = 'default'` singleton's simplicity — and force
+  **export/import** to become tenant-surgical (per-`workspace_id` row replacement instead of
+  whole-database replace, the riskiest part) — to save a trivial monthly fee. YAGNI holds:
+  the option is preserved, so it is exercised when forced, not before.
