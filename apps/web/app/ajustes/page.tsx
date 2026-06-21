@@ -1,5 +1,9 @@
 import { bootstrapHealthcheck, withStore } from "@web/store";
-import { collectWarnings, formatMoneyMinor, listScopeOptions } from "@worthline/domain";
+import {
+  collectWarnings,
+  formatMoneyMinorPrivacy,
+  listScopeOptions,
+} from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -7,8 +11,10 @@ import { redirect } from "next/navigation";
 import {
   buildCurrentUrlFor,
   parseFormError,
+  parsePrivacyCookie,
   parseScopeCookie,
   resolveOkMessage,
+  PRIVACY_COOKIE_NAME,
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
 import { isDemoMode } from "@web/demo/write-guard";
@@ -50,6 +56,7 @@ export default async function AjustesPage({
 
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
+  const privacyMode = parsePrivacyCookie(jar.get(PRIVACY_COOKIE_NAME)?.value);
 
   const storeData = await withStore(async (store) => {
     const workspace = await store.workspace.readWorkspace();
@@ -419,10 +426,13 @@ export default async function AjustesPage({
                   <div>
                     <dt>Valor</dt>
                     <dd className="coinNum">
-                      {formatMoneyMinor({
-                        amountMinor: numistaSource.valueMinor,
-                        currency: "EUR",
-                      })}
+                      {formatMoneyMinorPrivacy(
+                        {
+                          amountMinor: numistaSource.valueMinor,
+                          currency: "EUR",
+                        },
+                        privacyMode,
+                      )}
                     </dd>
                   </div>
                 </dl>
@@ -492,10 +502,13 @@ export default async function AjustesPage({
                   <div>
                     <dt>Valor</dt>
                     <dd className="coinNum">
-                      {formatMoneyMinor({
-                        amountMinor: binanceSource.valueMinor,
-                        currency: "EUR",
-                      })}
+                      {formatMoneyMinorPrivacy(
+                        {
+                          amountMinor: binanceSource.valueMinor,
+                          currency: "EUR",
+                        },
+                        privacyMode,
+                      )}
                     </dd>
                   </div>
                 </dl>

@@ -3,7 +3,7 @@
 import {
   buildCompositionChartGeometry,
   COMPOSITION_ASSET_BANDS,
-  formatMoneyMinor,
+  formatMoneyMinorPrivacy,
 } from "@worthline/domain";
 import type {
   CompositionAssetBandId,
@@ -55,6 +55,7 @@ export default function CompositionChart({
   housingMode = "net",
   housingToggleHref,
   points,
+  privacyMode = false,
 }: {
   currency: string;
   /**
@@ -73,6 +74,7 @@ export default function CompositionChart({
   /** The href the "Ocultar/Mostrar vivienda" link points to (toggles the mode). */
   housingToggleHref?: string;
   points: CompositionSeriesPoint[];
+  privacyMode?: boolean;
 }) {
   const housingHidden = housingMode === "hidden";
   const geometry = useMemo(
@@ -96,7 +98,7 @@ export default function CompositionChart({
   }
 
   const money = (amountMinor: number): string =>
-    formatMoneyMinor({ amountMinor, currency });
+    formatMoneyMinorPrivacy({ amountMinor, currency }, privacyMode);
   const bandHref = (band: CompositionAssetBandId): string | undefined =>
     drillHrefs?.[BAND_DRILL_KEY[band]];
   const periodXs = geometry.periods.map((period) => period.netWorth.x);

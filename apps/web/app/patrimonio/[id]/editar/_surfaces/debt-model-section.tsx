@@ -19,7 +19,8 @@ import {
   daysBetween,
   firstCuota,
   formatMoneyInput,
-  formatMoneyMinor,
+  formatMoneyMinorPrivacy,
+  maskMoneyString,
 } from "@worthline/domain";
 import type { DebtModel, EarlyRepaymentMode, ValuationCadence } from "@worthline/domain";
 
@@ -70,7 +71,13 @@ function formatEurCents(amountMinor: number): string {
  * than a month, so the first cuota carries that period's stub interest on top of
  * the ordinary French principal; subsequent cuotas are the regular cuota.
  */
-function PlanCuotaSummary({ plan }: { plan: AmortizationPlanRecord }) {
+function PlanCuotaSummary({
+  plan,
+  privacyMode,
+}: {
+  plan: AmortizationPlanRecord;
+  privacyMode: boolean;
+}) {
   const cuota = firstCuota({
     annualInterestRate: plan.annualInterestRate,
     disbursementDate: plan.disbursementDate,
@@ -79,6 +86,10 @@ function PlanCuotaSummary({ plan }: { plan: AmortizationPlanRecord }) {
     termMonths: plan.termMonths,
   });
   const stubDays = daysBetween(plan.disbursementDate, plan.firstPaymentDate);
+  const fmt = (amountMinor: number): string =>
+    privacyMode
+      ? maskMoneyString(formatEurCents(amountMinor))
+      : formatEurCents(amountMinor);
 
   return (
     <section className="planCuota" aria-label="Cuotas del préstamo">
@@ -86,19 +97,18 @@ function PlanCuotaSummary({ plan }: { plan: AmortizationPlanRecord }) {
       <dl className="planCuotaGrid">
         <div className="planCuotaItem">
           <dt>Primera cuota</dt>
-          <dd className="planCuotaFigure">{formatEurCents(cuota.amountMinor)}</dd>
+          <dd className="planCuotaFigure">{fmt(cuota.amountMinor)}</dd>
         </div>
         <div className="planCuotaItem">
           <dt>Cuota habitual</dt>
-          <dd className="planCuotaFigure">{formatEurCents(cuota.regularCuotaMinor)}</dd>
+          <dd className="planCuotaFigure">{fmt(cuota.regularCuotaMinor)}</dd>
         </div>
       </dl>
       <p className="infoNote">
         La primera cuota incluye el interés del periodo de apertura ({stubDays} días, del{" "}
         {plan.disbursementDate} al {plan.firstPaymentDate}):{" "}
-        {formatEurCents(cuota.stubInterestMinor)} de intereses más{" "}
-        {formatEurCents(cuota.firstPrincipalMinor)} de capital. No altera el saldo del
-        histórico.
+        {fmt(cuota.stubInterestMinor)} de intereses más {fmt(cuota.firstPrincipalMinor)}{" "}
+        de capital. No altera el saldo del histórico.
       </p>
     </section>
   );
@@ -117,6 +127,7 @@ export function DebtModelSection({
   earlyRepayments,
   formError,
   liabilityId,
+  privacyMode = false,
   rateRevisions,
   today,
   valuationCadence,
@@ -127,6 +138,7 @@ export function DebtModelSection({
   earlyRepayments: EarlyRepaymentRecord[];
   formError: FormErrorContext | null;
   liabilityId: string;
+  privacyMode?: boolean;
   rateRevisions: InterestRateRevisionRecord[];
   today: string;
   /** Stored valuation cadence (ADR 0031); null reads as the default `step`. */
@@ -194,6 +206,7 @@ export function DebtModelSection({
           formError={formError}
           liabilityId={liabilityId}
           plan={amortizationPlan}
+          privacyMode={privacyMode}
           rateRevisions={rateRevisions}
           today={today}
         />
@@ -205,6 +218,7 @@ export function DebtModelSection({
           currentUrl={currentUrl}
           formError={formError}
           liabilityId={liabilityId}
+          privacyMode={privacyMode}
           today={today}
         />
       ) : null}
@@ -272,6 +286,7 @@ function AmortizablePlanEditor({
   formError,
   liabilityId,
   plan,
+  privacyMode,
   rateRevisions,
   today,
 }: {
@@ -280,6 +295,7 @@ function AmortizablePlanEditor({
   formError: FormErrorContext | null;
   liabilityId: string;
   plan: AmortizationPlanRecord | null;
+  privacyMode: boolean;
   rateRevisions: InterestRateRevisionRecord[];
   today: string;
 }) {
@@ -331,7 +347,7 @@ function AmortizablePlanEditor({
         </form>
       ) : null}
 
-      {plan ? <PlanCuotaSummary plan={plan} /> : null}
+      {plan ? <PlanCuotaSummary plan={plan} privacyMode={privacyMode} /> : null}
 
       {plan ? (
         <>
@@ -414,6 +430,7 @@ function AmortizablePlanEditor({
                       liabilityId={liabilityId}
                       max={today}
                       planId={plan.id}
+                      privacyMode={privacyMode}
                       repayment={repayment}
                     />
                   ))}
@@ -592,6 +609,7 @@ function EarlyRepaymentRow({
   liabilityId,
   max,
   planId,
+  privacyMode,
   repayment,
 }: {
   currentUrl: string;
@@ -599,6 +617,7 @@ function EarlyRepaymentRow({
   liabilityId: string;
   max: string;
   planId: string;
+  privacyMode: boolean;
   repayment: EarlyRepaymentRecord;
 }) {
   const editFormId = `repayment-${repayment.id}`;
@@ -615,7 +634,10 @@ function EarlyRepaymentRow({
     <tr>
       <td>{repayment.repaymentDate}</td>
       <td className="numCol">
-        {formatMoneyMinor({ amountMinor: repayment.amountMinor, currency: "EUR" })}
+        {formatMoneyMinorPrivacy(
+          { amountMinor: repayment.amountMinor, currency: "EUR" },
+          privacyMode,
+        )}
       </td>
       <td>{EARLY_REPAYMENT_MODE_LABELS[repayment.mode]}</td>
       <td className="rowActions">
@@ -694,12 +716,14 @@ function BalanceAnchorEditor({
   currentUrl,
   formError,
   liabilityId,
+  privacyMode,
   today,
 }: {
   balanceAnchors: BalanceAnchorRecord[];
   currentUrl: string;
   formError: FormErrorContext | null;
   liabilityId: string;
+  privacyMode: boolean;
   today: string;
 }) {
   const anchorValues = formError?.formId === "balanceAnchor" ? formError.values : {};
@@ -743,6 +767,7 @@ function BalanceAnchorEditor({
                   key={anchor.id}
                   liabilityId={liabilityId}
                   max={today}
+                  privacyMode={privacyMode}
                 />
               ))}
             </tbody>
@@ -762,12 +787,14 @@ function BalanceAnchorRow({
   formError,
   liabilityId,
   max,
+  privacyMode,
 }: {
   anchor: BalanceAnchorRecord;
   currentUrl: string;
   formError: FormErrorContext | null;
   liabilityId: string;
   max: string;
+  privacyMode: boolean;
 }) {
   const editFormId = `balanceAnchor-${anchor.id}`;
   const editing = formError?.formId === editFormId;
@@ -782,7 +809,10 @@ function BalanceAnchorRow({
     <tr>
       <td>{anchor.anchorDate}</td>
       <td className="numCol">
-        {formatMoneyMinor({ amountMinor: anchor.balanceMinor, currency: "EUR" })}
+        {formatMoneyMinorPrivacy(
+          { amountMinor: anchor.balanceMinor, currency: "EUR" },
+          privacyMode,
+        )}
       </td>
       <td className="rowActions">
         <details className="anchorEdit" open={editing}>

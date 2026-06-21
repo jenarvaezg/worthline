@@ -5,8 +5,10 @@ import { collectWarnings, listScopeOptions } from "@worthline/domain";
 
 import {
   buildCurrentUrl,
+  parsePrivacyCookie,
   parseScopeParam,
   parseScopeCookie,
+  PRIVACY_COOKIE_NAME,
   SCOPE_COOKIE_NAME,
 } from "./intake";
 import Shell from "./shell";
@@ -32,6 +34,7 @@ export default async function DashboardPage({
   const queryScopeId = parseScopeParam(resolvedSearchParams?.scope);
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
   const scopeId = queryScopeId ?? cookieScopeId;
+  const privacyMode = parsePrivacyCookie(jar.get(PRIVACY_COOKIE_NAME)?.value);
 
   // Load only the lightweight data needed to render the shell immediately.
   // The heavy dashboard body streams in via Suspense below.
@@ -78,7 +81,12 @@ export default async function DashboardPage({
       warnings={shellData.warnings}
     >
       <Suspense fallback={<DashboardSkeleton />}>
-        <DashboardContent searchParams={resolvedSearchParams} scopeId={scopeId} />
+        <DashboardContent
+          privacyMode={privacyMode}
+          returnTo={currentUrl}
+          searchParams={resolvedSearchParams}
+          scopeId={scopeId}
+        />
       </Suspense>
     </Shell>
   );

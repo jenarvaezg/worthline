@@ -1,7 +1,7 @@
 import { bootstrapHealthcheck, withStore } from "@web/store";
 import {
   formatMoneyInput,
-  formatMoneyMinor,
+  formatMoneyMinorPrivacy,
   isValueUpdateEligible,
   listScopeOptions,
 } from "@worthline/domain";
@@ -11,8 +11,10 @@ import { redirect } from "next/navigation";
 
 import {
   parseFormError,
+  parsePrivacyCookie,
   parseScopeCookie,
   resolveOkMessage,
+  PRIVACY_COOKIE_NAME,
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
 import Shell from "@web/shell";
@@ -32,6 +34,7 @@ export default async function PuestaAlDiaPage({
 
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
+  const privacyMode = parsePrivacyCookie(jar.get(PRIVACY_COOKIE_NAME)?.value);
 
   const storeData = await withStore(async (store) => {
     const workspace = await store.workspace.readWorkspace();
@@ -128,7 +131,8 @@ export default async function PuestaAlDiaPage({
                           placeholder="Valor EUR"
                         />
                         <small className="puestaCurrent">
-                          Actual: {formatMoneyMinor(asset.currentValue)}
+                          Actual:{" "}
+                          {formatMoneyMinorPrivacy(asset.currentValue, privacyMode)}
                         </small>
                         {fieldError ? (
                           <p className="formError" role="alert">
@@ -171,7 +175,8 @@ export default async function PuestaAlDiaPage({
                           placeholder="Saldo EUR"
                         />
                         <small className="puestaCurrent">
-                          Actual: {formatMoneyMinor(liability.currentBalance)}
+                          Actual:{" "}
+                          {formatMoneyMinorPrivacy(liability.currentBalance, privacyMode)}
                         </small>
                         {fieldError ? (
                           <p className="formError" role="alert">

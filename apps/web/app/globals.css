@@ -520,6 +520,10 @@ h3 {
 }
 
 .headline {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   margin-top: 16px;
 }
 
@@ -530,6 +534,7 @@ h3 {
   font-weight: 750;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+  width: 100%;
 }
 
 .headline > strong {
@@ -541,6 +546,31 @@ h3 {
   line-height: 1.05;
   margin-top: 6px;
   overflow-wrap: anywhere;
+}
+
+.privacyToggle {
+  display: inline-flex;
+  margin-top: 6px;
+}
+
+.privacyToggle button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 6px;
+}
+
+.privacyToggle button:hover,
+.privacyToggle button.active {
+  background: rgba(23, 32, 30, 0.06);
+  color: var(--ink);
 }
 
 .breakdown {

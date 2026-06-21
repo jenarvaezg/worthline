@@ -3,7 +3,13 @@ import { listScopeOptions } from "@worthline/domain";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { buildCurrentUrl, parseScopeCookie, SCOPE_COOKIE_NAME } from "@web/intake";
+import {
+  buildCurrentUrl,
+  parsePrivacyCookie,
+  parseScopeCookie,
+  PRIVACY_COOKIE_NAME,
+  SCOPE_COOKIE_NAME,
+} from "@web/intake";
 import Shell from "@web/shell";
 import { buildHistoricoRows, HistoricoTable } from "./historico-table";
 
@@ -20,6 +26,7 @@ export default async function HistoricoPage({
 
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
+  const privacyMode = parsePrivacyCookie(jar.get(PRIVACY_COOKIE_NAME)?.value);
 
   const storeData = await withStore(async (store) => {
     const workspace = await store.workspace.readWorkspace();
@@ -74,7 +81,7 @@ export default async function HistoricoPage({
             captura. Vuelve mañana para ver tu primera comparativa.
           </p>
         ) : (
-          <HistoricoTable rows={rows} />
+          <HistoricoTable privacyMode={privacyMode} rows={rows} />
         )}
       </section>
     </Shell>

@@ -96,6 +96,7 @@ function render(props: Partial<Parameters<typeof BalanceBoard>[0]> = {}) {
       groups={fixtureGroups()}
       isHousehold={false}
       nowIso="2026-06-10T12:00:00.000Z"
+      privacyMode={false}
       trash={emptyTrash}
       warnings={[]}
       {...props}
@@ -150,6 +151,7 @@ describe("BalanceBoard (#271)", () => {
         ]}
         isHousehold={false}
         nowIso="2026-06-10T12:00:00.000Z"
+        privacyMode={false}
         trash={emptyTrash}
         warnings={[]}
       />,
@@ -172,6 +174,7 @@ describe("BalanceBoard (#271)", () => {
         ]}
         isHousehold={false}
         nowIso="2026-06-10T12:00:00.000Z"
+        privacyMode={false}
         trash={emptyTrash}
         warnings={[]}
       />,
@@ -183,6 +186,13 @@ describe("BalanceBoard (#271)", () => {
   test("shows ownership share only in household scope", () => {
     expect(render({ isHousehold: true })).toMatch(/60\s?%/u);
     expect(render({ isHousehold: false })).not.toMatch(/60\s?%/u);
+  });
+
+  test("masks money values when privacy mode is on", () => {
+    const html = render({ privacyMode: true });
+    expect(html).toContain("**.***");
+    expect(html).not.toContain("330.000");
+    expect(html).not.toContain("210.000");
   });
 
   test("surfaces an overrideable warning with the acknowledge action", () => {
