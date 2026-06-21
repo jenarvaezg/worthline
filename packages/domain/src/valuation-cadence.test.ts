@@ -1,7 +1,11 @@
 import Big from "big.js";
 import { describe, expect, test } from "vitest";
 
-import { cadenceOrDefault, interpolateOrStep } from "./valuation-cadence";
+import {
+  cadenceOrDefault,
+  interpolateOrStep,
+  sampleDateForCadence,
+} from "./valuation-cadence";
 
 /**
  * The shared step-vs-interpolate primitive for modeled holdings (ADR 0031). It
@@ -101,5 +105,23 @@ describe("cadenceOrDefault", () => {
 
   test("interpolated is preserved", () => {
     expect(cadenceOrDefault("interpolated")).toBe("interpolated");
+  });
+});
+
+describe("sampleDateForCadence", () => {
+  test("step snaps to the first of the target's month", () => {
+    expect(sampleDateForCadence("2024-03-17", "step")).toBe("2024-03-01");
+    expect(sampleDateForCadence("2024-03-01", "step")).toBe("2024-03-01");
+  });
+
+  test("step handles month, year, and leap-February boundaries", () => {
+    expect(sampleDateForCadence("2024-02-29", "step")).toBe("2024-02-01"); // leap Feb
+    expect(sampleDateForCadence("2024-12-31", "step")).toBe("2024-12-01"); // year end
+    expect(sampleDateForCadence("2025-01-01", "step")).toBe("2025-01-01"); // year start
+  });
+
+  test("interpolated returns the exact target date", () => {
+    expect(sampleDateForCadence("2024-03-17", "interpolated")).toBe("2024-03-17");
+    expect(sampleDateForCadence("2024-02-29", "interpolated")).toBe("2024-02-29");
   });
 });

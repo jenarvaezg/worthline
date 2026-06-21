@@ -194,16 +194,97 @@ describe("valueHousingAtDate — no appraisals", () => {
   });
 });
 
-describe("valueHousingAtDate — interpolation between two appraisals", () => {
-  test("linear interpolation by days on the base curve", () => {
-    const value = valueHousingAtDate({
-      anchors: [market("2024-01-01", 100_000_00), market("2025-01-01", 200_000_00)],
+describe("valueHousingAtDate — between two appraisals", () => {
+  const anchors = [market("2024-01-01", 100_000_00), market("2025-01-01", 200_000_00)];
+  const at = (targetDate: string, cadence?: "step" | "interpolated"): number =>
+    valueHousingAtDate({
+      anchors,
+      ...(cadence ? { cadence } : {}),
       currentValueMinor: 200_000_00,
       today: "2026-06-12",
-      // 183 days into a 366-day span → halfway-ish.
-      targetDate: "2024-07-02",
+      targetDate,
     });
+
+  test("step (default): holds the month-start value flat through the month", () => {
+    // 2024-07-02 samples to 2024-07-01 (182 days into the 366-day span):
+    // 100000 + 100000 × 182/366 = 149726.78 → 14_972_678. Held flat all July.
+    expect(at("2024-07-02")).toBe(149_726_78);
+    expect(at("2024-07-15")).toBe(149_726_78);
+    expect(at("2024-07-31")).toBe(149_726_78);
+    // The 1st of the next month re-samples the drift upward.
+    expect(at("2024-08-01")).toBeGreaterThan(149_726_78);
+  });
+
+  test("interpolated: linear interpolation by days on the base curve (pre-#391)", () => {
     // 100000 + 100000 × 183/366 = 150000.
-    expect(value).toBe(150_000_00);
+    expect(at("2024-07-02", "interpolated")).toBe(150_000_00);
+  });
+});
+
+describe("valueHousingAtDate — step cadence semantics (ADR 0031)", () => {
+  test("a mid-month appraisal jumps on its exact date and holds flat to month-end", () => {
+    const anchors = [market("2024-01-01", 100_000_00), market("2024-06-15", 130_000_00)];
+    const at = (targetDate: string): number =>
+      valueHousingAtDate({
+        anchors,
+        currentValueMinor: 130_000_00,
+        today: "2026-06-12",
+        targetDate,
+      });
+    // Before the appraisal, mid-June holds the June-1 month-start drift value.
+    const monthStart = at("2024-06-01");
+    expect(at("2024-06-10")).toBe(monthStart);
+    // On the appraisal date it jumps to the appraisal total and holds flat after.
+    expect(at("2024-06-15")).toBe(130_000_00);
+    expect(at("2024-06-20")).toBe(130_000_00);
+    expect(at("2024-06-30")).toBe(130_000_00);
+  });
+
+  test("a mid-month improvement steps on its exact date", () => {
+    const anchors = [
+      market("2024-01-01", 100_000_00),
+      improvement("2024-06-15", 5_000_00),
+    ];
+    const at = (targetDate: string): number =>
+      valueHousingAtDate({
+        anchors,
+        currentValueMinor: 105_000_00,
+        today: "2026-06-12",
+        targetDate,
+      });
+    const beforeImprovement = at("2024-06-10");
+    expect(at("2024-06-14")).toBe(beforeImprovement);
+    expect(at("2024-06-15")).toBe(beforeImprovement + 5_000_00);
+    expect(at("2024-06-25")).toBe(beforeImprovement + 5_000_00);
+  });
+
+  test("with a rate, the post-appraisal drift steps monthly", () => {
+    const anchors = [market("2024-01-01", 100_000_00)];
+    const at = (targetDate: string): number =>
+      valueHousingAtDate({
+        anchors,
+        annualAppreciationRate: "0.12",
+        currentValueMinor: 100_000_00,
+        today: "2026-06-12",
+        targetDate,
+      });
+    const sept = at("2024-09-01");
+    expect(at("2024-09-15")).toBe(sept);
+    expect(at("2024-09-30")).toBe(sept);
+    expect(at("2024-10-01")).toBeGreaterThan(sept);
+  });
+
+  test("appraisal dates and month starts are unchanged vs interpolated", () => {
+    const anchors = [market("2024-01-01", 100_000_00), market("2025-01-01", 200_000_00)];
+    const base = { anchors, currentValueMinor: 200_000_00, today: "2026-06-12" };
+    for (const targetDate of ["2024-01-01", "2024-07-01", "2025-01-01"]) {
+      const step = valueHousingAtDate({ ...base, targetDate });
+      const interpolated = valueHousingAtDate({
+        ...base,
+        cadence: "interpolated",
+        targetDate,
+      });
+      expect(step).toBe(interpolated);
+    }
   });
 });
