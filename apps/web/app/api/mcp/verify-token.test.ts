@@ -29,8 +29,15 @@ async function localKeys() {
   return generateKeyPair(ALG);
 }
 
-/** A verifier wired exactly like production but with a local public key. */
-function buildVerify(publicKey: CryptoKey) {
+/**
+ * A verifier wired like production but with a local public key. `resolveEmail`
+ * defaults to "userinfo has nothing" so a token must carry its own email unless
+ * a test supplies one.
+ */
+function buildVerify(
+  publicKey: CryptoKey,
+  resolveEmail: (accessToken: string) => Promise<string | null> = async () => null,
+) {
   return createVerifyMcpToken({
     verifyJwt: createJwtVerifier({
       key: publicKey,
@@ -38,6 +45,7 @@ function buildVerify(publicKey: CryptoKey) {
       audience: AUDIENCE,
       algorithms: [ALG],
     }),
+    resolveEmail,
     resolveWorkspace,
   });
 }
@@ -45,14 +53,17 @@ function buildVerify(publicKey: CryptoKey) {
 async function signToken(
   privateKey: CryptoKey,
   overrides: {
-    email?: string;
+    /** `null` omits the email claim entirely (mirrors a WorkOS access token). */
+    email?: string | null;
     subject?: string;
     issuer?: string;
     audience?: string;
     expirationTime?: string | number;
   } = {},
 ): Promise<string> {
-  return new SignJWT({ email: overrides.email ?? "ana@example.com" })
+  const payload =
+    overrides.email === null ? {} : { email: overrides.email ?? "ana@example.com" };
+  return new SignJWT(payload)
     .setProtectedHeader({ alg: ALG })
     .setIssuer(overrides.issuer ?? ISSUER)
     .setAudience(overrides.audience ?? AUDIENCE)
@@ -61,10 +72,16 @@ async function signToken(
     .sign(privateKey);
 }
 
-describe("verifyMcpToken (injected JWKS verifier + control-plane lookup)", () => {
-  test("a valid token resolves to the caller's workspace with the read-only scope", async () => {
+describe("verifyMcpToken (injected JWKS verifier + userinfo + control-plane lookup)", () => {
+  test("a token carrying an email claim resolves to the workspace without calling userinfo", async () => {
     const { publicKey, privateKey } = await localKeys();
-    const auth = await buildVerify(publicKey)(REQUEST, await signToken(privateKey));
+    const resolveEmail = async () => {
+      throw new Error("userinfo must not be called when the token carries email");
+    };
+    const auth = await buildVerify(publicKey, resolveEmail)(
+      REQUEST,
+      await signToken(privateKey),
+    );
 
     expect(auth).toBeDefined();
     expect(auth?.scopes).toEqual([MCP_READ_SCOPE]);
@@ -73,6 +90,21 @@ describe("verifyMcpToken (injected JWKS verifier + control-plane lookup)", () =>
       workspaceId: "wl_ws_ana",
       dbUrl: "libsql://wl-ana.turso.io",
     });
+  });
+
+  test("a token without an email claim resolves the email from userinfo (WorkOS access token)", async () => {
+    const { publicKey, privateKey } = await localKeys();
+    const resolveEmail = async () => "ana@example.com";
+    const token = await signToken(privateKey, { email: null });
+    const auth = await buildVerify(publicKey, resolveEmail)(REQUEST, token);
+
+    expect(auth?.extra).toMatchObject({ workspaceId: "wl_ws_ana" });
+  });
+
+  test("a token without an email claim is rejected when userinfo provides none", async () => {
+    const { publicKey, privateKey } = await localKeys();
+    const token = await signToken(privateKey, { email: null });
+    expect(await buildVerify(publicKey)(REQUEST, token)).toBeUndefined();
   });
 
   test("a missing bearer token is rejected (no auth → 401)", async () => {
