@@ -25,6 +25,7 @@ import {
   parseDebtModelStrict,
   parseEarlyRepaymentStrict,
   parseInterestRateRevisionStrict,
+  parseValuationCadenceStrict,
   parseValueUpdatePass,
   preserveFields,
   successRedirectUrl,
@@ -923,6 +924,54 @@ export async function setDebtModelAction(
   }
 
   redirect(successRedirectUrl(editUrl(id), "debt_model_saved", id));
+}
+
+export async function setValuationCadenceAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
+): Promise<never> {
+  await guardDemoWrite(baseUrl(formData));
+  const id = parseEntityId(formData);
+  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
+    _store ? fn(_store) : withStore(fn);
+
+  if (!id) {
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador de deuda no encontrado.",
+      }),
+    );
+  }
+
+  const parsed = parseValuationCadenceStrict(formData);
+
+  if (!parsed.ok) {
+    redirect(errorRedirectUrl(editUrl(id), { formId: "cadence", message: parsed.error }));
+  }
+
+  const today = _clock.today();
+
+  const result = await runWith(async (store) => {
+    const liability = await findLiability(store, id);
+
+    if (!liability) {
+      return { ok: false, error: "No se encontró la deuda." };
+    }
+
+    // Persist + re-ripple ride the seam (ADR 0020 / 0031): the cadence change is a
+    // parameter edit, so the seam recuts the whole modeled curve behind it.
+    await store.setValuationCadenceAndRipple(id, parsed.cadence, { today });
+    return { ok: true };
+  });
+
+  if (!result.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), { formId: "cadence", message: result.error! }),
+    );
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "valuation_cadence_saved", id));
 }
 
 /** Guard a debt mutation to liabilities carrying the expected model. */

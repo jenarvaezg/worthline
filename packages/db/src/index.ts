@@ -18,6 +18,7 @@ import type {
   NetWorthSnapshot,
   OwnershipShare,
   SnapshotHoldingKind,
+  ValuationCadence,
   WarningOverride,
   Workspace,
 } from "@worthline/domain";
@@ -536,6 +537,21 @@ export interface WorthlineStore {
   addInterestRateRevisionAndRipple: (
     input: AddInterestRateRevisionInput,
     opts: { liabilityId: string; today?: string },
+  ) => Promise<void>;
+  /**
+   * Valuation-cadence parameter-edit seam (ADR 0020 / 0031, #393): persist a
+   * liability's valuation cadence AND re-ripple that ONE debt's history,
+   * atomically. A cadence change is a parameter edit (ADR 0012), so the whole
+   * curve is recut: an amortizable debt re-ripples from its plan (every cuota
+   * boundary, the `amortizable-plan` kind), a revolving debt with anchors from its
+   * earliest anchor (the `anchor` kind). Informal debts (always a step) and a
+   * model with no anchors need no ripple. `today` defaults to the current date.
+   * Wraps `liabilities.setValuationCadence`.
+   */
+  setValuationCadenceAndRipple: (
+    liabilityId: string,
+    cadence: ValuationCadence | null,
+    opts?: { today?: string },
   ) => Promise<void>;
   /**
    * Debt dated-fact seam (ADR 0020 / 0025): patch ONE interest-rate revision AND
@@ -1514,6 +1530,39 @@ async function buildStore(
         );
       });
     },
+    setValuationCadenceAndRipple: async (liabilityId, cadence, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      await ctx.transaction(async () => {
+        await liabilityStore.setValuationCadence(liabilityId, cadence);
+        const workspace = await getWorkspace();
+        if (!workspace) return;
+        // A cadence change recuts the whole modeled curve (a parameter edit, ADR
+        // 0012). Re-ripple the affected debt by its model: amortizable from its
+        // plan (every past cuota boundary), revolving from its earliest anchor.
+        // Informal (always a step) and a model with no anchors have no between-event
+        // movement the cadence could change, so they need no ripple.
+        const debtModel = await liabilityStore.readDebtModel(liabilityId);
+        if (debtModel === "amortizable") {
+          await rippleHistoricalSnapshotsForDebt(
+            ctx,
+            workspace,
+            store.snapshots.saveSnapshot,
+            { kind: "amortizable-plan", liabilityId, today },
+          );
+        } else if (debtModel === "revolving") {
+          const anchors = await liabilityStore.readBalanceAnchors(liabilityId);
+          const earliestAnchorDate = anchors.map((a) => a.anchorDate).sort()[0];
+          if (earliestAnchorDate !== undefined && earliestAnchorDate <= today) {
+            await rippleHistoricalSnapshotsForDebt(
+              ctx,
+              workspace,
+              store.snapshots.saveSnapshot,
+              { fromDateKey: earliestAnchorDate, kind: "anchor", liabilityId, today },
+            );
+          }
+        }
+      });
+    },
     updateInterestRateRevisionAndRipple: (revisionId, input, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       // Ripple from the earlier of the old/new date so every affected snapshot
@@ -1892,6 +1941,60 @@ async function buildStore(
     }
   }
 
+  // v33 (ADR 0031, #393): the cadence column was just added to an existing DB, so
+  // the modeled default flipped from interpolated to step (#390–392). Re-ripple
+  // every modeled holding so stale interpolated daily-captures are rewritten as
+  // steps. This fires ONLY on a genuine upgrade (ranV33Backfill), so fresh-DB
+  // tests are unaffected. Mirrors the ranV18Backfill block's structure.
+  if (migrateResult.ranV33Backfill) {
+    const workspace = await getWorkspace();
+    if (workspace) {
+      const today = new Date().toISOString().slice(0, 10);
+      const deps = await buildHistoricalSnapshotDeps(ctx.db, workspace);
+      // Debts: amortizable plans re-ripple from their plan (every cuota boundary);
+      // revolving with at least one anchor re-ripple from its earliest anchor.
+      // Informal is already a step, and revolving with no anchors is flat — nothing
+      // stale to correct in either, so both are skipped.
+      for (const [liabilityId, curve] of deps.debtBalanceByLiability) {
+        if (curve.debtModel === "amortizable" && curve.plan) {
+          await rippleHistoricalSnapshotsForDebt(
+            ctx,
+            workspace,
+            store.snapshots.saveSnapshot,
+            {
+              kind: "amortizable-plan",
+              liabilityId,
+              today,
+            },
+          );
+        } else if (
+          curve.debtModel === "revolving" &&
+          curve.anchors &&
+          curve.anchors.length > 0
+        ) {
+          const earliestAnchorDate = [...curve.anchors]
+            .map((a) => a.anchorDate)
+            .sort()[0]!;
+          await rippleHistoricalSnapshotsForDebt(
+            ctx,
+            workspace,
+            store.snapshots.saveSnapshot,
+            {
+              fromDateKey: earliestAnchorDate,
+              kind: "anchor",
+              liabilityId,
+              today,
+            },
+          );
+        }
+      }
+      // Housing: every appreciating asset re-ripples via the existing closure.
+      for (const assetId of deps.housingValuationByAsset.keys()) {
+        await rippleHousingAfterEdit(assetId, today);
+      }
+    }
+  }
+
   return store;
 }
 
@@ -2073,11 +2176,19 @@ async function readDebtBalanceInputs(
   if (liveLiabilities.length === 0) return inputs;
 
   const modelRows = await db
-    .select({ id: liabilities.id, debtModel: liabilities.debtModel })
+    .select({
+      id: liabilities.id,
+      debtModel: liabilities.debtModel,
+      valuationCadence: liabilities.valuationCadence,
+    })
     .from(liabilities)
     .all();
   const modelById = new Map<string, DebtModel | null>();
-  for (const row of modelRows) modelById.set(row.id, row.debtModel ?? null);
+  const cadenceById = new Map<string, ValuationCadence | null>();
+  for (const row of modelRows) {
+    modelById.set(row.id, row.debtModel ?? null);
+    cadenceById.set(row.id, row.valuationCadence ?? null);
+  }
 
   // Anchors (revolving/informal), grouped by liability.
   const anchorRows = await db.select().from(liabilityBalanceAnchors).all();
@@ -2130,12 +2241,16 @@ async function readDebtBalanceInputs(
     if (debtModel === null) continue; // no model → last-known-value basis
 
     const currentBalanceMinor = liability.currentBalance.amountMinor;
+    // The stored cadence (ADR 0031, #393); null reads as the default `step` in
+    // the engine. Threaded into both the amortizable and anchored curve inputs.
+    const cadence = cadenceById.get(liability.id) ?? undefined;
 
     if (debtModel === "amortizable") {
       const plan = planByLiability.get(liability.id);
       inputs.set(liability.id, {
         currentBalanceMinor,
         debtModel,
+        ...(cadence != null ? { cadence } : {}),
         ...(plan
           ? {
               earlyRepayments: repaymentsByPlan.get(plan.id) ?? [],
@@ -2156,6 +2271,7 @@ async function readDebtBalanceInputs(
     inputs.set(liability.id, {
       anchors: anchorsByLiability.get(liability.id) ?? [],
       currentBalanceMinor,
+      ...(cadence != null ? { cadence } : {}),
       debtModel,
     });
   }

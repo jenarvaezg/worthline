@@ -7,6 +7,7 @@ import type {
   InterestRateRevision,
   Liability,
   OwnershipShare,
+  ValuationCadence,
 } from "@worthline/domain";
 import {
   amortizableBalanceAtDate,
@@ -212,6 +213,13 @@ export interface LiabilityStore {
   setDebtModel: (liabilityId: string, debtModel: DebtModel | null) => Promise<void>;
   /** Read a liability's debt model, or null if unset. */
   readDebtModel: (liabilityId: string) => Promise<DebtModel | null>;
+  /** Set (or clear, with null) a liability's valuation cadence (ADR 0031). */
+  setValuationCadence: (
+    liabilityId: string,
+    cadence: ValuationCadence | null,
+  ) => Promise<void>;
+  /** Read a liability's valuation cadence, or null (reads as `step`) if unset. */
+  readValuationCadence: (liabilityId: string) => Promise<ValuationCadence | null>;
   /** Create the amortization plan for a liability (1:1; throws if one exists). */
   createAmortizationPlan: (input: CreateAmortizationPlanInput) => Promise<void>;
   /** Read a liability's amortization plan, or null if it has none. */
@@ -305,6 +313,9 @@ export function createLiabilityStore(ctx: StoreContext): LiabilityStore {
       ctx.transaction(async () => hardDeleteLiabilityTx(ctx, liabilityId)),
     setDebtModel: (liabilityId, debtModel) => setDebtModel(ctx, liabilityId, debtModel),
     readDebtModel: (liabilityId) => readDebtModel(ctx, liabilityId),
+    setValuationCadence: (liabilityId, cadence) =>
+      setValuationCadence(ctx, liabilityId, cadence),
+    readValuationCadence: (liabilityId) => readValuationCadence(ctx, liabilityId),
     createAmortizationPlan: (input) => createAmortizationPlan(ctx, input),
     readAmortizationPlan: (liabilityId) => readAmortizationPlan(ctx, liabilityId),
     updateAmortizationPlan: (planId, input) => updateAmortizationPlan(ctx, planId, input),
@@ -369,6 +380,33 @@ async function readDebtModel(
     .where(eq(liabilities.id, liabilityId))
     .get();
   return row?.debtModel ?? null;
+}
+
+async function setValuationCadence(
+  ctx: StoreContext,
+  liabilityId: string,
+  cadence: ValuationCadence | null,
+): Promise<void> {
+  await ctx.db
+    .update(liabilities)
+    .set({ valuationCadence: cadence, updatedAt: sql`CURRENT_TIMESTAMP` })
+    .where(eq(liabilities.id, liabilityId))
+    .run();
+  await ctx.writeAuditEntry("set_valuation_cadence", "liability", liabilityId, {
+    cadence,
+  });
+}
+
+async function readValuationCadence(
+  ctx: StoreContext,
+  liabilityId: string,
+): Promise<ValuationCadence | null> {
+  const row = await ctx.db
+    .select({ valuationCadence: liabilities.valuationCadence })
+    .from(liabilities)
+    .where(eq(liabilities.id, liabilityId))
+    .get();
+  return row?.valuationCadence ?? null;
 }
 
 async function createAmortizationPlan(
@@ -1063,6 +1101,7 @@ async function debtBalanceAtDateFor(
     .select({
       currentBalanceMinor: liabilities.currentBalanceMinor,
       debtModel: liabilities.debtModel,
+      valuationCadence: liabilities.valuationCadence,
     })
     .from(liabilities)
     .where(eq(liabilities.id, liabilityId))
@@ -1074,11 +1113,18 @@ async function debtBalanceAtDateFor(
 
   const currentBalanceMinor = row.currentBalanceMinor;
   const debtModel = row.debtModel ?? null;
+  // The stored cadence (ADR 0031, #393); null reads as `step` in the engine.
+  const cadence = row.valuationCadence ?? null;
 
   if (debtModel === "amortizable") {
     const plan = await readAmortizationPlan(ctx, liabilityId);
     if (!plan) {
-      return debtBalanceAtDate({ currentBalanceMinor, debtModel, targetDate });
+      return debtBalanceAtDate({
+        currentBalanceMinor,
+        debtModel,
+        targetDate,
+        ...(cadence != null ? { cadence } : {}),
+      });
     }
     const revisions = (await readInterestRateRevisions(ctx, plan.id)).map((revision) => ({
       newAnnualInterestRate: revision.newAnnualInterestRate,
@@ -1102,6 +1148,7 @@ async function debtBalanceAtDateFor(
       },
       revisions,
       targetDate,
+      ...(cadence != null ? { cadence } : {}),
     });
   }
 
@@ -1110,7 +1157,13 @@ async function debtBalanceAtDateFor(
     balanceMinor: anchor.balanceMinor,
   }));
 
-  return debtBalanceAtDate({ anchors, currentBalanceMinor, debtModel, targetDate });
+  return debtBalanceAtDate({
+    anchors,
+    currentBalanceMinor,
+    debtModel,
+    targetDate,
+    ...(cadence != null ? { cadence } : {}),
+  });
 }
 
 async function createLiabilityRecord(

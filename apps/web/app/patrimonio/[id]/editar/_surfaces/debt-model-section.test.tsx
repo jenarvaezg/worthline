@@ -1,4 +1,5 @@
 import type { AmortizationPlanRecord } from "@worthline/db";
+import type { DebtModel, ValuationCadence } from "@worthline/domain";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
@@ -35,6 +36,27 @@ function render(plan: AmortizationPlanRecord | null) {
       liabilityId="l_mortgage"
       rateRevisions={[]}
       today="2026-06-14"
+      valuationCadence={null}
+    />,
+  );
+}
+
+/** Render the surface for a given debt model + stored cadence. */
+function renderFor(
+  debtModel: DebtModel | null,
+  valuationCadence: ValuationCadence | null,
+) {
+  return renderToStaticMarkup(
+    <DebtModelSection
+      amortizationPlan={null}
+      balanceAnchors={[]}
+      debtModel={debtModel}
+      earlyRepayments={[]}
+      formError={null}
+      liabilityId="l_mortgage"
+      rateRevisions={[]}
+      today="2026-06-14"
+      valuationCadence={valuationCadence}
     />,
   );
 }
@@ -63,5 +85,40 @@ describe("DebtModelSection — first cuota with stub interest (ADR 0019, #190)",
   test("renders no cuota summary when there is no plan yet", () => {
     const markup = render(null);
     expect(markup).not.toContain("Primera cuota");
+  });
+});
+
+describe("DebtModelSection — valuation cadence advanced control (ADR 0031, #393)", () => {
+  test("shows the cadence control for an amortizable debt", () => {
+    const markup = renderFor("amortizable", null);
+    expect(markup).toContain("Cadencia de valoración");
+    expect(markup).toContain("Escalonado (por defecto)");
+    expect(markup).toContain("Interpolado (suave a diario)");
+  });
+
+  test("shows the cadence control for a revolving debt", () => {
+    const markup = renderFor("revolving", null);
+    expect(markup).toContain("Cadencia de valoración");
+  });
+
+  test("does NOT show the cadence control for an informal debt", () => {
+    const markup = renderFor("informal", null);
+    expect(markup).not.toContain("Cadencia de valoración");
+  });
+
+  test("does NOT show the cadence control when no model is set", () => {
+    const markup = renderFor(null, null);
+    expect(markup).not.toContain("Cadencia de valoración");
+  });
+
+  test("reflects the stored cadence as the selected option (interpolated)", () => {
+    const markup = renderFor("amortizable", "interpolated");
+    // The interpolated option carries the selected attribute when stored.
+    expect(markup).toMatch(/value="interpolated"[^>]*selected/);
+  });
+
+  test("defaults to step when the stored cadence is null", () => {
+    const markup = renderFor("amortizable", null);
+    expect(markup).toMatch(/value="step"[^>]*selected/);
   });
 });

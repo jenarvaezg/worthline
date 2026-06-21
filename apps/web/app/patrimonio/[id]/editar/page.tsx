@@ -198,6 +198,10 @@ export default async function EditarPage({
       liability && (debtModel === "revolving" || debtModel === "informal")
         ? await store.liabilities.readBalanceAnchors(id)
         : [];
+    // Valuation cadence (ADR 0031, #393); null reads as the default `step`.
+    const valuationCadence = liability
+      ? await store.liabilities.readValuationCadence(id)
+      : null;
 
     return {
       activeMembers: workspace.members.filter((m) => !m.disabledAt),
@@ -228,6 +232,7 @@ export default async function EditarPage({
       rateRevisions,
       scopes,
       selectedScope,
+      valuationCadence,
       workspace,
     };
   });
@@ -265,6 +270,7 @@ export default async function EditarPage({
     rateRevisions,
     scopes,
     selectedScope,
+    valuationCadence,
   } = storeData;
 
   if (!asset && !liability) {
@@ -510,6 +516,7 @@ export default async function EditarPage({
             liabilityId={liability.id}
             rateRevisions={rateRevisions}
             today={today}
+            valuationCadence={valuationCadence}
           />
         ) : null}
 
