@@ -5,7 +5,7 @@ import { readStoreTarget } from "./read-store-target";
  * the request store target and renders NOTHING unless the request is an
  * authenticated session — so the read-only demo and the local no-auth mode
  * never show it. Zero client JS (ADR 0009): a server-action POST that ends the
- * session and returns home (`/`, which the middleware sends to the sign-in
+ * session and returns home (`/`, which the proxy sends to the sign-in
  * landing once signed out).
  *
  * `next-auth` is imported lazily inside the action — which only runs for an

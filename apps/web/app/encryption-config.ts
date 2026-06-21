@@ -7,7 +7,7 @@ import { ENCRYPTION_KEY_ENV } from "@worthline/db";
  * deploy fast instead — run once from `instrumentation.ts` at server startup.
  *
  * "Hosted" is signalled by Google auth being configured (the same signal the
- * store seam and middleware use). Local no-auth mode keeps secrets on a local
+ * store seam and proxy use). Local no-auth mode keeps secrets on a local
  * file and needs no key, so it is a no-op there.
  */
 export function assertSecretEncryptionConfigured(

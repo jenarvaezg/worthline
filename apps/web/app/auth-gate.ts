@@ -1,8 +1,8 @@
 /**
- * The middleware's page-access gate (ADR 0030), as a pure decision so it can be
+ * The proxy's page-access gate (ADR 0030), as a pure decision so it can be
  * unit-tested without the Auth.js/edge wrapper. It answers only "should this
  * request be bounced to /login?" — which workspace an authenticated request then
- * opens is the store seam's concern, not the middleware's.
+ * opens is the store seam's concern, not the proxy's.
  */
 
 // `/mcp-icon.svg` is the public connector icon claude.ai fetches (unauthenticated)

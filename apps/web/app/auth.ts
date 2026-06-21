@@ -5,7 +5,7 @@ import { provisionWorkspaceForEmail } from "@web/provisioning";
 
 /**
  * Full (Node-runtime) Auth.js config (ADR 0030). The edge-safe half lives in
- * `auth.config.ts` (consumed by the middleware); the provisioning callbacks
+ * `auth.config.ts` (consumed by the proxy); the provisioning callbacks
  * below run only here — in the sign-in route and `auth()` — because they touch
  * the control-plane database and the Turso Platform API, neither edge-safe.
  *

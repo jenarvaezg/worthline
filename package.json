@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "npm@11.14.1",
   "engines": {
-    "node": "24.x"
+    "node": ">=24"
   },
   "workspaces": [
     "apps/*",
@@ -55,5 +55,11 @@
     "turbo": "^2.9.18",
     "typescript": "latest",
     "vitest": "latest"
+  },
+  "allowScripts": {
+    "esbuild": true,
+    "fsevents": true,
+    "sharp": true,
+    "unrs-resolver": true
   }
 }
