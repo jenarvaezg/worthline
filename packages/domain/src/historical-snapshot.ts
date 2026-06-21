@@ -631,13 +631,24 @@ export function resolveFrozenIdentity(input: {
   }
 
   // The contemporaneous frozen capture: the latest on-or-before the target date,
-  // else (none on-or-before) the earliest after it. Both directions are picked
-  // off the same captures, sorted ascending by date once.
-  const sorted = [...input.frozenIdentity].sort((a, b) =>
-    a.dateKey < b.dateKey ? -1 : a.dateKey > b.dateKey ? 1 : 0,
-  );
-  const onOrBefore = sorted.filter((c) => c.dateKey <= input.targetDate).at(-1);
-  const contemporaneous = onOrBefore ?? sorted.at(0);
+  // else (none on-or-before) the earliest overall. Resolved in a single O(n) pass
+  // instead of a sort + filter (#447), preserving the old stable-sort tie-break:
+  // among equal dateKeys, onOrBefore keeps the LAST in input order (matches
+  // .at(-1)), earliest keeps the FIRST (matches .at(0)).
+  let onOrBefore: FrozenIdentityCapture | undefined;
+  let earliest: FrozenIdentityCapture | undefined;
+  for (const capture of input.frozenIdentity) {
+    if (earliest === undefined || capture.dateKey < earliest.dateKey) {
+      earliest = capture;
+    }
+    if (
+      capture.dateKey <= input.targetDate &&
+      (onOrBefore === undefined || capture.dateKey >= onOrBefore.dateKey)
+    ) {
+      onOrBefore = capture;
+    }
+  }
+  const contemporaneous = onOrBefore ?? earliest;
   if (contemporaneous !== undefined) {
     return {
       countsAsHousing: contemporaneous.countsAsHousing,
