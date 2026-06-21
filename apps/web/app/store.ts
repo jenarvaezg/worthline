@@ -75,6 +75,28 @@ function demoHealthcheck(now: string): LocalPersistenceStatus {
   };
 }
 
+/**
+ * Synthesize the persistence status for an authenticated workspace WITHOUT a DB
+ * round-trip (#445). The footer only renders `displayPath` + a render-time
+ * "guardado" stamp and nothing branches on a real write, so probing the remote
+ * workspace DB on every page render — a separate connection plus a write that no
+ * reader consumes — was pure overhead. A genuinely unreachable or read-only
+ * workspace still surfaces: read pages fail fast at `withStore()`, and writes
+ * fail at the action that writes (with a proper error) instead of the old
+ * behavior where a failed probe-write threw and bricked even read-only pages.
+ */
+function workspaceHealthcheck(dbUrl: string): LocalPersistenceStatus {
+  const checkedAt = new Date().toISOString();
+  return {
+    status: "ok",
+    checkKey: "bootstrap.last_healthcheck_at",
+    checkedAt,
+    checkValue: checkedAt,
+    databasePath: dbUrl,
+    displayPath: dbUrl,
+  };
+}
+
 /** Bootstrap healthcheck — pinned to the authenticated workspace or demo clock. */
 export async function bootstrapHealthcheck(
   target?: StoreTarget,
@@ -83,10 +105,9 @@ export async function bootstrapHealthcheck(
   assertReachable(resolved);
 
   if (resolved.kind === "authenticated") {
-    return runBootstrapHealthcheck({
-      authToken: resolved.token,
-      url: resolved.dbUrl,
-    });
+    // Synthesize instead of probing the remote workspace DB on every render
+    // (#445) — no per-pageview write, no second connection. See workspaceHealthcheck.
+    return workspaceHealthcheck(resolved.dbUrl);
   }
 
   if (resolved.kind === "demo") {
