@@ -20,9 +20,11 @@ import {
   resolveOkMessage,
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
+import { refreshPricesAction } from "@web/inversiones/actions";
 import Shell from "@web/shell";
 import BalanceBoard from "./balance-board";
 import PatrimonioGroupControls from "./group-controls";
+import { PriceRefreshControl } from "./price-refresh-control";
 
 export const dynamic = "force-dynamic";
 
@@ -65,8 +67,16 @@ export default async function PatrimonioPage({
       ]),
     );
 
+    // Whether the manual "Actualizar precios" trigger (#405) has anything to do:
+    // read from the SAME meta source the action filters on, so the control only
+    // appears when a force-refresh would actually refetch a provider-priced holding.
+    const hasPricedHoldings = (await store.assets.readInvestmentAssetsWithMeta()).some(
+      (asset) => Boolean(asset.providerSymbol),
+    );
+
     return {
       assets: await store.assets.readAssets(),
+      hasPricedHoldings,
       liabilities: await store.liabilities.readLiabilities(),
       overrides: await store.readWarningOverrides(),
       priceMetaByAsset,
@@ -83,6 +93,7 @@ export default async function PatrimonioPage({
 
   const {
     assets,
+    hasPricedHoldings,
     liabilities,
     overrides,
     priceMetaByAsset,
@@ -148,6 +159,14 @@ export default async function PatrimonioPage({
           <Link className="actionLink" href="/patrimonio/anadir">
             + Añadir holding
           </Link>
+          {hasPricedHoldings ? (
+            <PriceRefreshControl
+              action={refreshPricesAction}
+              currentUrl={currentUrl}
+              label="Actualizar precios"
+              pendingLabel="Actualizando…"
+            />
+          ) : null}
         </div>
         {assets.length > 0 || liabilities.length > 0 ? (
           <Link className="actionLink" href="/patrimonio/actualizar">
