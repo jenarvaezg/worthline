@@ -17,7 +17,11 @@
  * lists are native `<details>`, sync/disconnect are form POSTs.
  */
 
-import { coinValue, formatMoneyMinor, groupPositionsByMetal } from "@worthline/domain";
+import {
+  coinValue,
+  formatMoneyMinorPrivacy,
+  groupPositionsByMetal,
+} from "@worthline/domain";
 import type { CoinPosition, PriceFreshnessState } from "@worthline/domain";
 
 import DisconnectNumistaFold from "@web/ajustes/disconnect-numista-fold";
@@ -33,9 +37,6 @@ import {
   metalCoinCount,
 } from "./coin-collection-view";
 
-const eur = (amountMinor: number): string =>
-  formatMoneyMinor({ amountMinor, currency: "EUR" });
-
 export function CoinCollectionSection({
   positions,
   sourceId,
@@ -43,6 +44,7 @@ export function CoinCollectionSection({
   currentUrl,
   valuationFreshness = null,
   valuationStaleReason = null,
+  privacyMode = false,
 }: {
   positions: CoinPosition[];
   sourceId: string | null;
@@ -52,7 +54,10 @@ export function CoinCollectionSection({
    *  when the last decoupled refresh hit a Numista outage and kept last-known. */
   valuationFreshness?: PriceFreshnessState | null;
   valuationStaleReason?: string | null;
+  privacyMode?: boolean;
 }) {
+  const eur = (amountMinor: number): string =>
+    formatMoneyMinorPrivacy({ amountMinor, currency: "EUR" }, privacyMode);
   const groups = groupPositionsByMetal(positions);
   const totalMinor = groups.reduce((sum, group) => sum + group.subtotalMinor, 0);
   const view = buildCoinCollectionView(groups, totalMinor);

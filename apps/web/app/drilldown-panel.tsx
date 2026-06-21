@@ -1,4 +1,4 @@
-import { formatMoneyMinor, LIQUIDITY_TIER_LABELS } from "@worthline/domain";
+import { formatMoneyMinorPrivacy, LIQUIDITY_TIER_LABELS } from "@worthline/domain";
 import type { DrilldownKey, DrilldownState, LiquidityTier } from "@worthline/domain";
 
 /**
@@ -68,10 +68,12 @@ export default function DrilldownPanel({
   backHref,
   currency,
   drilldown,
+  privacyMode = false,
 }: {
   backHref: string;
   currency: string;
   drilldown: DrilldownState;
+  privacyMode?: boolean;
 }) {
   const { key, stack, holdings } = drilldown;
   const copy = GROUP_COPY[key];
@@ -159,13 +161,16 @@ export default function DrilldownPanel({
             <div className="drillMultiple" key={holding.holdingId}>
               <span className="drillMultipleLabel">{holding.label}</span>
               <b>
-                {formatMoneyMinor({
-                  amountMinor:
-                    holding.kind === "liability"
-                      ? -holding.currentValueMinor
-                      : holding.currentValueMinor,
-                  currency,
-                })}
+                {formatMoneyMinorPrivacy(
+                  {
+                    amountMinor:
+                      holding.kind === "liability"
+                        ? -holding.currentValueMinor
+                        : holding.currentValueMinor,
+                    currency,
+                  },
+                  privacyMode,
+                )}
               </b>
               <svg
                 className={`drillSparkline ${holding.tier ?? "debt"}`}

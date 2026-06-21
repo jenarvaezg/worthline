@@ -6,6 +6,8 @@ import {
   assertMinorInteger,
   formatMoneyInput,
   formatMoneyMinor,
+  formatMoneyMinorPrivacy,
+  maskMoneyString,
   money,
   moneySign,
   parseDecimal,
@@ -183,5 +185,45 @@ describe("dot-only ambiguity in es-ES parsing", () => {
     // The strict parser normalises only when comma is present.
     // "1.234" without comma passes the regex as a plain decimal.
     expect(parseDecimalStrict("1.234")).toBeCloseTo(1.234, 5);
+  });
+});
+
+describe("maskMoneyString", () => {
+  test("replaces every digit with an asterisk preserving separators and currency", () => {
+    expect(maskMoneyString("100.000 €")).toBe("***.*** €");
+  });
+
+  test("preserves the negative sign", () => {
+    expect(maskMoneyString("-100.000 €")).toBe("-***.*** €");
+  });
+
+  test("preserves an explicit positive sign", () => {
+    expect(maskMoneyString("+100.000 €")).toBe("+***.*** €");
+  });
+
+  test("masks single-digit and zero amounts", () => {
+    expect(maskMoneyString("5 €")).toBe("* €");
+    expect(maskMoneyString("0 €")).toBe("* €");
+  });
+});
+
+describe("formatMoneyMinorPrivacy", () => {
+  test("returns the normal formatted string when privacy mode is off", () => {
+    const value = money(100_000_00, "EUR");
+    expect(formatMoneyMinorPrivacy(value, false)).toBe(formatMoneyMinor(value));
+  });
+
+  test("returns a masked string when privacy mode is on", () => {
+    const value = money(100_000_00, "EUR");
+    expect(formatMoneyMinorPrivacy(value, true)).toBe(
+      maskMoneyString(formatMoneyMinor(value)),
+    );
+  });
+
+  test("masks negative amounts while keeping the sign", () => {
+    const value = money(-100_000_00, "EUR");
+    expect(formatMoneyMinorPrivacy(value, true)).toBe(
+      maskMoneyString(formatMoneyMinor(value)),
+    );
   });
 });

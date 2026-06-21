@@ -88,6 +88,24 @@ export function moneySign(value: MoneyMinor): "pos" | "neg" | "zero" {
   return "zero";
 }
 
+/**
+ * Mask every digit in a formatted money string so absolute values are hidden
+ * while separators, currency symbol and sign remain visible. Used by privacy
+ * mode when demoing the app.
+ */
+export function maskMoneyString(formatted: string): string {
+  return formatted.replace(/\d/g, "*");
+}
+
+/**
+ * Render a money value for display, optionally masked for privacy mode.
+ * Percentages and other non-monetary figures are not handled here.
+ */
+export function formatMoneyMinorPrivacy(value: MoneyMinor, privacyMode: boolean): string {
+  const formatted = formatMoneyMinor(value);
+  return privacyMode ? maskMoneyString(formatted) : formatted;
+}
+
 /** Render a money value for an editable input field: two decimals, comma separator. */
 export function formatMoneyInput(amountMinor: number): string {
   return (amountMinor / 100).toFixed(2).replace(".", ",");

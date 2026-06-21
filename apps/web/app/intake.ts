@@ -549,6 +549,12 @@ export function mapDomainViolation(violation: DomainViolation): string {
 export const SCOPE_COOKIE_NAME = "wl_scope";
 
 /**
+ * The name of the HTTP cookie that persists privacy mode across pages and
+ * sessions. Value is "1" when enabled, anything else (or absent) means off.
+ */
+export const PRIVACY_COOKIE_NAME = "wl_privacy";
+
+/**
  * Parse the scope cookie value to a scope ID string.
  * Returns undefined when the cookie is absent or blank so callers can fall
  * back to the household/first-scope default.
@@ -561,6 +567,18 @@ export function parseScopeCookie(cookieValue: string | undefined): string | unde
   const trimmed = cookieValue.trim();
 
   return trimmed || undefined;
+}
+
+/**
+ * Parse the privacy cookie value to a boolean.
+ * Returns true only for the exact value "1".
+ */
+export function parsePrivacyCookie(cookieValue: string | undefined): boolean {
+  if (!cookieValue) {
+    return false;
+  }
+
+  return cookieValue.trim() === "1";
 }
 
 function normalizeParam(value: string | string[] | undefined): string | undefined {

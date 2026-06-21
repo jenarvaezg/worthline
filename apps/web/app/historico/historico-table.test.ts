@@ -9,7 +9,9 @@ import type { NetWorthSnapshot, SnapshotPositionRow } from "@worthline/domain";
 import type { SnapshotHoldingRecord } from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
-import { buildHistoricoRows } from "./historico-table";
+import { buildHistoricoRows, HistoricoTable } from "./historico-table";
+import { renderToStaticMarkup } from "react-dom/server";
+import React from "react";
 
 function snapshot(dateKey: string, totalMinor: number): NetWorthSnapshot {
   const money = (amountMinor: number) => ({ amountMinor, currency: "EUR" });
@@ -123,6 +125,36 @@ describe("buildHistoricoRows — per-coin second drilldown level (ADR 0035)", ()
         status: "new",
       },
     ]);
+  });
+
+  test("masks money values when privacy mode is on", () => {
+    const plain = (dateKey: string, valueMinor: number): SnapshotHoldingRecord => ({
+      capturedAt: `${dateKey}T10:00:00.000Z`,
+      countsAsHousing: false,
+      dateKey,
+      holdingId: "asset_cash",
+      kind: "asset",
+      label: "Cuenta",
+      liquidityTier: "cash",
+      scopeId: "household",
+      securesHousing: false,
+      snapshotId: `snap_${dateKey}`,
+      valueMinor,
+    });
+
+    const rows = buildHistoricoRows(
+      [snapshot("2026-06-10", 1_000_00), snapshot("2026-06-11", 1_500_00)],
+      [plain("2026-06-10", 1_000_00), plain("2026-06-11", 1_500_00)],
+      "2026-06-11",
+    );
+
+    const markup = renderToStaticMarkup(
+      React.createElement(HistoricoTable, { rows, privacyMode: true }),
+    );
+    expect(markup).toMatch(/\*{4}\s?€/);
+    expect(markup).toMatch(/\+\*{3}\s?€/);
+    expect(markup).not.toContain("1.500");
+    expect(markup).not.toContain("500");
   });
 
   test("a holding with no frozen positions carries no second level", () => {

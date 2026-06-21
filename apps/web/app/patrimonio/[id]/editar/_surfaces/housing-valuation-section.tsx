@@ -8,7 +8,7 @@
  */
 
 import type { ValuationAnchorRecord } from "@worthline/db";
-import { formatMoneyInput, formatMoneyMinor } from "@worthline/domain";
+import { formatMoneyInput, formatMoneyMinorPrivacy } from "@worthline/domain";
 import type { ValuationCadence } from "@worthline/domain";
 
 import type { FormErrorContext } from "@web/intake";
@@ -37,6 +37,7 @@ export function HousingValuationSection({
   appreciationRate,
   assetId,
   formError,
+  privacyMode = false,
   today,
   valuationCadence,
 }: {
@@ -44,6 +45,7 @@ export function HousingValuationSection({
   appreciationRate: string | null;
   assetId: string;
   formError: FormErrorContext | null;
+  privacyMode?: boolean;
   today: string;
   /** Stored valuation cadence (ADR 0031); null reads as the default `step`. */
   valuationCadence: ValuationCadence | null;
@@ -134,6 +136,7 @@ export function HousingValuationSection({
                   formError={formError}
                   key={anchor.id}
                   max={today}
+                  privacyMode={privacyMode}
                 />
               ))}
             </tbody>
@@ -198,12 +201,14 @@ function AnchorRow({
   currentUrl,
   formError,
   max,
+  privacyMode = false,
 }: {
   anchor: ValuationAnchorRecord;
   assetId: string;
   currentUrl: string;
   formError: FormErrorContext | null;
   max: string;
+  privacyMode?: boolean;
 }) {
   const editFormId = `anchor-${anchor.id}`;
   const editing = formError?.formId === editFormId;
@@ -219,7 +224,10 @@ function AnchorRow({
     <tr>
       <td>{anchor.valuationDate}</td>
       <td className="numCol">
-        {formatMoneyMinor({ amountMinor: anchor.valueMinor, currency: "EUR" })}
+        {formatMoneyMinorPrivacy(
+          { amountMinor: anchor.valueMinor, currency: "EUR" },
+          privacyMode,
+        )}
       </td>
       <td>{anchor.adjustsPriorCurve ? "Tasación" : "Mejora"}</td>
       <td className="rowActions">

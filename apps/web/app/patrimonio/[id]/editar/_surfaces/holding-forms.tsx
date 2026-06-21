@@ -12,7 +12,7 @@
  */
 
 import type { InvestmentAssetFull } from "@worthline/db";
-import { formatMoneyInput, formatMoneyMinor } from "@worthline/domain";
+import { formatMoneyInput, formatMoneyMinorPrivacy } from "@worthline/domain";
 import type { Liability, ManualAsset, Member, ValuationMethod } from "@worthline/domain";
 import Link from "next/link";
 
@@ -31,6 +31,7 @@ export function AssetEditForm({
   isCoinCollection = false,
   members,
   method,
+  privacyMode,
   scopeMemberId,
   updateInvestmentAction,
   values,
@@ -41,6 +42,7 @@ export function AssetEditForm({
   isCoinCollection?: boolean;
   members: Member[];
   method: ValuationMethod;
+  privacyMode: boolean;
   scopeMemberId: string | undefined;
   updateInvestmentAction?: FormAction;
   values: Record<string, string>;
@@ -172,8 +174,8 @@ export function AssetEditForm({
           </label>
 
           <p className="infoNote">
-            Valor actual: {formatMoneyMinor(asset.currentValue)} — derivado de las
-            operaciones y del precio disponible.
+            Valor actual: {formatMoneyMinorPrivacy(asset.currentValue, privacyMode)} —
+            derivado de las operaciones y del precio disponible.
           </p>
 
           <div className="formActions">
@@ -265,8 +267,8 @@ export function AssetEditForm({
 
       {method === "derived" ? (
         <p className="infoNote">
-          Valor actual: {formatMoneyMinor(asset.currentValue)} — derivado de las
-          operaciones (ADR 0006).
+          Valor actual: {formatMoneyMinorPrivacy(asset.currentValue, privacyMode)} —
+          derivado de las operaciones (ADR 0006).
         </p>
       ) : (
         // stored AND appreciating keep the manual current-value form: a property's

@@ -15,9 +15,11 @@ import {
   buildCurrentUrlFor,
   parseFormError,
   parseGroupParam,
+  parsePrivacyCookie,
   parseScopeParam,
   parseScopeCookie,
   resolveOkMessage,
+  PRIVACY_COOKIE_NAME,
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
 import { refreshPricesAction } from "@web/inversiones/actions";
@@ -43,6 +45,7 @@ export default async function PatrimonioPage({
   const jar = await cookies();
   const queryScopeId = parseScopeParam(resolvedSearchParams?.scope);
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
+  const privacyMode = parsePrivacyCookie(jar.get(PRIVACY_COOKIE_NAME)?.value);
 
   const storeData = await withStore(async (store) => {
     const workspace = await store.workspace.readWorkspace();
@@ -193,6 +196,7 @@ export default async function PatrimonioPage({
         groups={groups}
         isHousehold={isHousehold}
         nowIso={persistence.checkedAt}
+        privacyMode={privacyMode}
         trash={trash}
         warnings={warnings}
       />
