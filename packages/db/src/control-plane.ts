@@ -36,6 +36,12 @@ export interface ControlPlaneGrant {
 export interface ControlPlaneStore {
   /** Idempotent by email: the same address always maps to the same user row. */
   findOrCreateUser(email: string): Promise<ControlPlaneUser>;
+  /**
+   * Read an existing user by email without creating one — null when unknown.
+   * The MCP auth path resolves a caller this way so it never provisions; that
+   * stays on first web sign-in (ADR 0030 / ADR 0034).
+   */
+  findUserByEmail(email: string): Promise<ControlPlaneUser | null>;
   /** Register a freshly provisioned workspace database. */
   createWorkspace(input: {
     dbName: string;
@@ -135,6 +141,13 @@ async function buildControlPlaneStore(
         args: [id],
       });
       return toUser(created.rows[0]!);
+    },
+    async findUserByEmail(email) {
+      const result = await client.execute({
+        sql: "SELECT id, email, created_at FROM users WHERE email = ?",
+        args: [email],
+      });
+      return result.rows.length > 0 ? toUser(result.rows[0]!) : null;
     },
     async createWorkspace({ dbName, dbUrl }) {
       const id = newId();

@@ -14,6 +14,23 @@ vi.mock("next/headers", () => ({
   }),
 }));
 
+// The verifier's own correctness (real JWT validation + control-plane lookup) is
+// covered by verify-token.test.ts. Here we mock it to assert the route WIRING:
+// a token the verifier accepts passes through to the handler; anything it rejects
+// gets a 401. Only "valid-mcp-token" is accepted.
+const VALID_MCP_TOKEN = "valid-mcp-token";
+vi.mock("./verify-token", () => ({
+  verifyMcpToken: async (_req: Request, bearerToken?: string) =>
+    bearerToken === VALID_MCP_TOKEN
+      ? {
+          token: bearerToken,
+          clientId: "workos_user_test",
+          scopes: ["worthline:read"],
+          extra: { workspaceId: "wl_ws_test", dbUrl: "libsql://wl-test.turso.io" },
+        }
+      : undefined,
+}));
+
 const MCP_URL = "http://localhost:3000/api/mcp";
 const PROTOCOL_VERSION = "2024-11-05";
 const METADATA_PATH = "/.well-known/oauth-protected-resource";
@@ -269,12 +286,26 @@ describe("POST /api/mcp (hosted — auth configured)", () => {
     expect(wwwAuth).toContain(METADATA_PATH);
   });
 
-  test("invalid token → 401 (no token is accepted until S2)", async () => {
+  test("invalid token → 401", async () => {
     const response = await mcpRequest(initialize, {
       Authorization: "Bearer not-a-real-token",
     });
 
     expect(response.status).toBe(401);
+  });
+
+  test("a token the verifier accepts passes through to the handler (200)", async () => {
+    const response = await mcpRequest(initialize, {
+      Authorization: `Bearer ${VALID_MCP_TOKEN}`,
+    });
+
+    expect(response.status).toBe(200);
+    const body = await parseSingleMcpMessage(response);
+    expect(body).toMatchObject({
+      jsonrpc: "2.0",
+      id: 1,
+      result: { serverInfo: { name: "worthline" } },
+    });
   });
 });
 
