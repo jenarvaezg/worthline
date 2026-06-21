@@ -19,7 +19,8 @@ import { buildFinancialContext } from "./financial-context";
 import { buildFireContext } from "./fire-context";
 import { buildHoldingDetail } from "./holding-detail";
 import { buildHoldingOperations } from "./holding-operations";
-import type { AgentViewMcpServerTool } from "./mcp-server";
+import { storeTargetFromMcpAuth } from "./mcp-store-target";
+import type { AgentViewMcpServerTool, AgentViewToolContext } from "./mcp-server";
 import { createStubAgentViewMcpToolCatalog, STUB_NOTICE } from "./stub-catalog";
 import { listAgentViewScopes } from "./scopes";
 import { buildSnapshotHistory } from "./snapshot-history";
@@ -36,6 +37,28 @@ async function defaultScopeId(agentView: AgentViewReadStore): Promise<string> {
   return household.id;
 }
 
+/**
+ * Run an agent-view read against the store the request is bound to. An
+ * OAuth-authenticated MCP request (ADR 0034) carries a token whose AuthInfo
+ * resolves to exactly one workspace — every read runs against *that* workspace's
+ * database. With no token the catalog keeps its prior behavior: the logged-out
+ * demo (persona cookie) returns real demo data, and any other context (local
+ * no-auth dev) returns the not-yet-wired stub.
+ */
+async function runAgentView(
+  context: AgentViewToolContext,
+  run: (agentView: AgentViewReadStore) => Promise<unknown>,
+): Promise<unknown> {
+  const target = storeTargetFromMcpAuth(context.authInfo);
+  if (target) {
+    return withStore((store) => run(store.agentView), target);
+  }
+
+  const demo = await readDemoContext();
+  if (!demo.enabled) return STUB_RESPONSE;
+  return withStore((store) => run(store.agentView));
+}
+
 export function createAgentViewInternalMcpToolCatalog(): AgentViewMcpServerTool[] {
   const stubs = createStubAgentViewMcpToolCatalog();
   const stubsByName = Object.fromEntries(
@@ -44,7 +67,7 @@ export function createAgentViewInternalMcpToolCatalog(): AgentViewMcpServerTool[
 
   function tool(
     name: string,
-    invoke: (input: unknown) => Promise<unknown>,
+    invoke: (input: unknown, context: AgentViewToolContext) => Promise<unknown>,
   ): AgentViewMcpServerTool {
     const stub = stubsByName[name];
     if (!stub) {
@@ -59,53 +82,47 @@ export function createAgentViewInternalMcpToolCatalog(): AgentViewMcpServerTool[
   }
 
   return [
-    tool("list_scopes", async () => {
-      const demo = await readDemoContext();
-      if (!demo.enabled) return STUB_RESPONSE;
-      return withStore(async (store) =>
-        successEnvelope(await listAgentViewScopes(store.agentView)),
-      );
-    }),
-    tool("get_financial_context", async (raw) => {
-      const demo = await readDemoContext();
-      if (!demo.enabled) return STUB_RESPONSE;
+    tool("list_scopes", (_input, context) =>
+      runAgentView(context, async (agentView) =>
+        successEnvelope(await listAgentViewScopes(agentView)),
+      ),
+    ),
+    tool("get_financial_context", (raw, context) => {
       const input = raw as { scopeId?: string; holdingLimit?: number };
-      return withStore(async (store) => {
-        const scopeId = input.scopeId ?? (await defaultScopeId(store.agentView));
-        const context = await buildFinancialContext(store.agentView, {
+      return runAgentView(context, async (agentView) => {
+        const scopeId = input.scopeId ?? (await defaultScopeId(agentView));
+        const result = await buildFinancialContext(agentView, {
           asOf: systemClock().today(),
           holdingLimit: input.holdingLimit,
           scopeId,
         });
-        return successEnvelope(context);
+        return successEnvelope(result);
       });
     }),
-    tool("get_fire_context", async (raw) => {
-      const demo = await readDemoContext();
-      if (!demo.enabled) return STUB_RESPONSE;
+    tool("get_fire_context", (raw, context) => {
       const input = raw as { scopeId?: string };
-      return withStore(async (store) => {
-        const scopeId = input.scopeId ?? (await defaultScopeId(store.agentView));
-        const context = await buildFireContext(store.agentView, { scopeId });
-        return successEnvelope(context);
+      return runAgentView(context, async (agentView) => {
+        const scopeId = input.scopeId ?? (await defaultScopeId(agentView));
+        const result = await buildFireContext(agentView, { scopeId });
+        return successEnvelope(result);
       });
     }),
-    tool("explain_figure", async (raw) => {
-      const demo = await readDemoContext();
-      if (!demo.enabled) return STUB_RESPONSE;
+    tool("explain_figure", async (raw, context) => {
       const input = raw as {
         figure: string;
         scopeId?: string;
         holdingId?: string;
         date?: string;
       };
-      const figure = input.figure;
-      if (!isFigureName(figure)) {
-        return { error: { code: "bad_request", message: `Unknown figure: ${figure}` } };
+      if (!isFigureName(input.figure)) {
+        return {
+          error: { code: "bad_request", message: `Unknown figure: ${input.figure}` },
+        };
       }
-      return withStore(async (store) => {
-        const scopeId = input.scopeId ?? (await defaultScopeId(store.agentView));
-        const explanation = await buildFigureExplanation(store.agentView, {
+      const figure = input.figure;
+      return runAgentView(context, async (agentView) => {
+        const scopeId = input.scopeId ?? (await defaultScopeId(agentView));
+        const explanation = await buildFigureExplanation(agentView, {
           asOf: systemClock().today(),
           figure,
           holdingId: input.holdingId,
@@ -115,9 +132,7 @@ export function createAgentViewInternalMcpToolCatalog(): AgentViewMcpServerTool[
         return successEnvelope(explanation);
       });
     }),
-    tool("get_snapshot_history", async (raw) => {
-      const demo = await readDemoContext();
-      if (!demo.enabled) return STUB_RESPONSE;
+    tool("get_snapshot_history", (raw, context) => {
       const input = raw as {
         scopeId?: string;
         granularity?: "monthly-close" | "raw";
@@ -128,9 +143,9 @@ export function createAgentViewInternalMcpToolCatalog(): AgentViewMcpServerTool[
         cursor?: string;
         includeHoldingRows?: "none" | "summary" | "full";
       };
-      return withStore(async (store) => {
-        const scopeId = input.scopeId ?? (await defaultScopeId(store.agentView));
-        const history = await buildSnapshotHistory(store.agentView, {
+      return runAgentView(context, async (agentView) => {
+        const scopeId = input.scopeId ?? (await defaultScopeId(agentView));
+        const history = await buildSnapshotHistory(agentView, {
           scopeId,
           cursor: input.cursor,
           from: input.from,
@@ -143,9 +158,7 @@ export function createAgentViewInternalMcpToolCatalog(): AgentViewMcpServerTool[
         return { data: history.entries, meta: history.meta };
       });
     }),
-    tool("get_data_quality", async (raw) => {
-      const demo = await readDemoContext();
-      if (!demo.enabled) return STUB_RESPONSE;
+    tool("get_data_quality", (raw, context) => {
       const input = raw as {
         scopeId?: string;
         category?: string;
@@ -153,9 +166,9 @@ export function createAgentViewInternalMcpToolCatalog(): AgentViewMcpServerTool[
         limit?: number;
         cursor?: string;
       };
-      return withStore(async (store) => {
-        const scopeId = input.scopeId ?? (await defaultScopeId(store.agentView));
-        const page = await buildDataQuality(store.agentView, {
+      return runAgentView(context, async (agentView) => {
+        const scopeId = input.scopeId ?? (await defaultScopeId(agentView));
+        const page = await buildDataQuality(agentView, {
           scopeId,
           cursor: input.cursor,
           limit: clampLimit(input.limit, 500),
@@ -169,13 +182,11 @@ export function createAgentViewInternalMcpToolCatalog(): AgentViewMcpServerTool[
         return { data: page.signals, meta: page.meta };
       });
     }),
-    tool("get_trash_summary", async (raw) => {
-      const demo = await readDemoContext();
-      if (!demo.enabled) return STUB_RESPONSE;
+    tool("get_trash_summary", (raw, context) => {
       const input = raw as { scopeId?: string; limit?: number; cursor?: string };
-      return withStore(async (store) => {
-        const scopeId = input.scopeId ?? (await defaultScopeId(store.agentView));
-        const summary = await buildTrashSummary(store.agentView, {
+      return runAgentView(context, async (agentView) => {
+        const scopeId = input.scopeId ?? (await defaultScopeId(agentView));
+        const summary = await buildTrashSummary(agentView, {
           scopeId,
           cursor: input.cursor,
           limit: clampLimit(input.limit, 500),
@@ -183,17 +194,13 @@ export function createAgentViewInternalMcpToolCatalog(): AgentViewMcpServerTool[
         return { data: summary.holdings, meta: summary.meta };
       });
     }),
-    tool("get_holding_detail", async (raw) => {
-      const demo = await readDemoContext();
-      if (!demo.enabled) return STUB_RESPONSE;
+    tool("get_holding_detail", (raw, context) => {
       const input = raw as { holdingId: string };
-      return withStore(async (store) =>
-        successEnvelope(await buildHoldingDetail(store.agentView, input.holdingId)),
+      return runAgentView(context, async (agentView) =>
+        successEnvelope(await buildHoldingDetail(agentView, input.holdingId)),
       );
     }),
-    tool("get_operations", async (raw) => {
-      const demo = await readDemoContext();
-      if (!demo.enabled) return STUB_RESPONSE;
+    tool("get_operations", (raw, context) => {
       const input = raw as {
         holdingId: string;
         from?: string;
@@ -202,8 +209,8 @@ export function createAgentViewInternalMcpToolCatalog(): AgentViewMcpServerTool[
         limit?: number;
         cursor?: string;
       };
-      return withStore(async (store) => {
-        const page = await buildHoldingOperations(store.agentView, {
+      return runAgentView(context, async (agentView) => {
+        const page = await buildHoldingOperations(agentView, {
           holdingId: input.holdingId,
           cursor: input.cursor,
           from: input.from,
@@ -214,9 +221,7 @@ export function createAgentViewInternalMcpToolCatalog(): AgentViewMcpServerTool[
         return { data: page.operations, meta: page.meta };
       });
     }),
-    tool("get_connected_source_positions", async (raw) => {
-      const demo = await readDemoContext();
-      if (!demo.enabled) return STUB_RESPONSE;
+    tool("get_connected_source_positions", async (raw, context) => {
       const input = raw as {
         holdingId?: string;
         sourceId?: string;
@@ -234,17 +239,17 @@ export function createAgentViewInternalMcpToolCatalog(): AgentViewMcpServerTool[
           },
         };
       }
-      return withStore(async (store) => {
+      return runAgentView(context, async (agentView) => {
         const limit = clampLimit(input.limit, 500);
         if (input.holdingId !== undefined) {
-          const page = await buildHoldingConnectedSourcePositions(store.agentView, {
+          const page = await buildHoldingConnectedSourcePositions(agentView, {
             holdingId: input.holdingId,
             cursor: input.cursor,
             limit,
           });
           return { data: page.positions, meta: page.meta };
         }
-        const page = await buildSourceConnectedSourcePositions(store.agentView, {
+        const page = await buildSourceConnectedSourcePositions(agentView, {
           sourceId: input.sourceId!,
           cursor: input.cursor,
           limit,
