@@ -31,12 +31,12 @@ async function localKeys() {
 
 /**
  * A verifier wired like production but with a local public key. `resolveEmail`
- * defaults to "userinfo has nothing" so a token must carry its own email unless
- * a test supplies one.
+ * defaults to "the directory has nothing" so a token must carry its own email
+ * unless a test supplies one.
  */
 function buildVerify(
   publicKey: CryptoKey,
-  resolveEmail: (accessToken: string) => Promise<string | null> = async () => null,
+  resolveEmail: (subject: string) => Promise<string | null> = async () => null,
 ) {
   return createVerifyMcpToken({
     verifyJwt: createJwtVerifier({
@@ -72,11 +72,11 @@ async function signToken(
     .sign(privateKey);
 }
 
-describe("verifyMcpToken (injected JWKS verifier + userinfo + control-plane lookup)", () => {
-  test("a token carrying an email claim resolves to the workspace without calling userinfo", async () => {
+describe("verifyMcpToken (injected JWKS verifier + directory + control-plane lookup)", () => {
+  test("a token carrying an email claim resolves to the workspace without a directory lookup", async () => {
     const { publicKey, privateKey } = await localKeys();
     const resolveEmail = async () => {
-      throw new Error("userinfo must not be called when the token carries email");
+      throw new Error("the directory must not be queried when the token carries email");
     };
     const auth = await buildVerify(publicKey, resolveEmail)(
       REQUEST,
@@ -92,16 +92,18 @@ describe("verifyMcpToken (injected JWKS verifier + userinfo + control-plane look
     });
   });
 
-  test("a token without an email claim resolves the email from userinfo (WorkOS access token)", async () => {
+  test("a token without an email claim resolves the email from the directory by subject (WorkOS access token)", async () => {
     const { publicKey, privateKey } = await localKeys();
-    const resolveEmail = async () => "ana@example.com";
+    // The directory is keyed by the token subject (the WorkOS user id).
+    const resolveEmail = async (subject: string) =>
+      subject === "workos_user_ana" ? "ana@example.com" : null;
     const token = await signToken(privateKey, { email: null });
     const auth = await buildVerify(publicKey, resolveEmail)(REQUEST, token);
 
     expect(auth?.extra).toMatchObject({ workspaceId: "wl_ws_ana" });
   });
 
-  test("a token without an email claim is rejected when userinfo provides none", async () => {
+  test("a token without an email claim is rejected when the directory provides none", async () => {
     const { publicKey, privateKey } = await localKeys();
     const token = await signToken(privateKey, { email: null });
     expect(await buildVerify(publicKey)(REQUEST, token)).toBeUndefined();
