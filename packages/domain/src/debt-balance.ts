@@ -7,6 +7,11 @@ import {
   type InterestRateRevision,
 } from "./amortization";
 import { daysBetween } from "./dates";
+import {
+  cadenceOrDefault,
+  interpolateOrStep,
+  type ValuationCadence,
+} from "./valuation-cadence";
 import type { DebtModel } from "./workspace-types";
 
 /**
@@ -17,10 +22,12 @@ import type { DebtModel } from "./workspace-types";
  * snapshot reconstruction in slice 9 / #118).
  *
  * Models:
- *  - "revolving": linear interpolation between balance anchors, by calendar days
- *    (the same day-based interpolation as housing-valuation.ts and
- *    amortization.ts). Outside the anchor range the curve is FLAT — the first
- *    anchor before it, the last anchor after it — never extrapolated.
+ *  - "revolving": stepped between balance anchors by the valuation cadence (ADR
+ *    0031). `step` (the default) holds the most recent anchor with date ≤ target,
+ *    flat until the next anchor — the SAME curve shape as "informal"; `interpolated`
+ *    (per-holding opt-in) draws a linear line between anchors by calendar days, the
+ *    pre-#392 behaviour. Outside the anchor range the curve is FLAT under either
+ *    cadence — the first anchor before it, the last anchor after it — never extrapolated.
  *  - "informal": a step function on the anchors. The balance on X is the last
  *    anchor with date ≤ X. Before the first such anchor it is the initial
  *    capital if declared, else the current balance. The declared figure is used
@@ -71,6 +78,14 @@ export interface DebtBalanceAtDateInput {
   currentBalanceMinor: number;
   /** The date to value the balance on, YYYY-MM-DD. */
   targetDate: string;
+  /**
+   * How a MODELED balance moves between events (ADR 0031). `step` (the default,
+   * and `null`/absent) holds the most recent event flat; `interpolated` draws a
+   * linear line between events. Threaded into the `revolving` and `amortizable`
+   * branches; `informal` is always a step (the toggle is a no-op there) and
+   * market-priced fallbacks ignore it.
+   */
+  cadence?: ValuationCadence | null;
 }
 
 /** Round a Big minor-unit value to a whole integer minor unit, half up. */
@@ -85,11 +100,16 @@ function sortAnchors(anchors: readonly DebtBalanceAnchor[]): DebtBalanceAnchor[]
   );
 }
 
-/** Revolving: linear interpolation between anchors by days, flat outside. */
+/**
+ * Revolving: between anchors by the valuation cadence (ADR 0031) — `step` holds
+ * the most recent anchor flat (identical to "informal"), `interpolated` draws a
+ * linear line by days. Flat outside the anchor range under either cadence.
+ */
 function revolvingBalance(
   anchors: readonly DebtBalanceAnchor[],
   currentBalanceMinor: number,
   targetDate: string,
+  cadence: ValuationCadence,
 ): number {
   if (anchors.length === 0) {
     return currentBalanceMinor;
@@ -120,11 +140,13 @@ function revolvingBalance(
 
   const span = daysBetween(lower.anchorDate, upper.anchorDate);
   const offset = daysBetween(lower.anchorDate, targetDate);
-  const fraction = span === 0 ? new Big(0) : new Big(offset).div(span);
-  const lowerBalance = new Big(lower.balanceMinor);
-  const value = lowerBalance.plus(
-    new Big(upper.balanceMinor).minus(lowerBalance).times(fraction),
-  );
+  const value = interpolateOrStep({
+    lower: new Big(lower.balanceMinor),
+    upper: new Big(upper.balanceMinor),
+    span,
+    offset,
+    cadence,
+  });
   return toMinorInt(value);
 }
 
@@ -160,9 +182,15 @@ function informalBalance(
  */
 export function debtBalanceAtDate(input: DebtBalanceAtDateInput): number {
   const { currentBalanceMinor, debtModel, targetDate } = input;
+  const cadence = cadenceOrDefault(input.cadence);
 
   if (debtModel === "revolving") {
-    return revolvingBalance(input.anchors ?? [], currentBalanceMinor, targetDate);
+    return revolvingBalance(
+      input.anchors ?? [],
+      currentBalanceMinor,
+      targetDate,
+      cadence,
+    );
   }
 
   if (debtModel === "informal") {
@@ -181,6 +209,7 @@ export function debtBalanceAtDate(input: DebtBalanceAtDateInput): number {
     return amortizableBalanceAtDate({
       plan: input.plan,
       targetDate,
+      cadence,
       ...(input.revisions !== undefined ? { revisions: input.revisions } : {}),
       ...(input.earlyRepayments !== undefined
         ? { earlyRepayments: input.earlyRepayments }

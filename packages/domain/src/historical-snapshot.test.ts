@@ -1244,10 +1244,11 @@ describe("buildSnapshotAtDate with debtBalanceByLiability", () => {
       workspace,
     })!;
 
-    // 2024-02-01 is midway (31 of 60 days) between 2k and 4k → 3032,79 €.
+    // Under the default `step` cadence (ADR 0031) 2024-02-01 holds the most recent
+    // anchor (2024-01-01 = 2_000_00) flat until the next, not the interpolated 3_033_33.
     const debtRow = built.holdings.find((h) => h.holdingId === "liab_card")!;
-    expect(debtRow.valueMinor).toBe(3_033_33);
-    expect(built.snapshot.debts.amountMinor).toBe(3_033_33);
+    expect(debtRow.valueMinor).toBe(2_000_00);
+    expect(built.snapshot.debts.amountMinor).toBe(2_000_00);
   });
 
   test("omits anchored liabilities before the first balance anchor when no initial capital exists", () => {
@@ -1573,12 +1574,14 @@ describe("recalculateSnapshotForLiability", () => {
       workspace,
     })!;
 
+    // Under the default `step` cadence (ADR 0031) 2024-02-01 holds the most recent
+    // anchor (2024-01-01 = 2_000_00), not the interpolated 3_033_33.
     const debtRow = result.holdings.find((h) => h.holdingId === "liab_card")!;
-    expect(debtRow.valueMinor).toBe(3_033_33);
-    expect(result.snapshot.debts.amountMinor).toBe(3_033_33);
+    expect(debtRow.valueMinor).toBe(2_000_00);
+    expect(result.snapshot.debts.amountMinor).toBe(2_000_00);
     // cash-tier debt → liquidNetWorth moves, housingEquity stays 0.
     expect(result.snapshot.housingEquity.amountMinor).toBe(0);
-    expect(result.snapshot.liquidNetWorth.amountMinor).toBe(5_000_00 - 3_033_33);
+    expect(result.snapshot.liquidNetWorth.amountMinor).toBe(5_000_00 - 2_000_00);
   });
 
   test("keeps a zero-balance debt row when the holding still has a scope stake (#181 parity)", () => {
