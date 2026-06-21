@@ -384,7 +384,7 @@ describe("valueAt — anchored (declared balances)", () => {
     expect(result.valueMinor).toBe(12_000_00);
   });
 
-  test("revolving interpolates linearly while informal steps — same anchors, divergent mid-range", () => {
+  test("revolving and informal step identically mid-range — same anchors (ADR 0031)", () => {
     const revolving = valueAt(
       { anchors, currentBalanceMinor: 0, debtModel: "revolving", method: "anchored" },
       "2024-07-01",
@@ -394,11 +394,9 @@ describe("valueAt — anchored (declared balances)", () => {
       "2024-07-01",
     ).valueMinor;
 
-    // Revolving interpolates strictly between the anchors; informal holds the most
-    // recent anchor (a step). They diverge, proving the debtModel field is honoured.
-    expect(revolving).not.toBeNull();
-    expect(revolving!).toBeGreaterThan(0);
-    expect(revolving!).toBeLessThan(10_000_00);
+    // Under the default `step` cadence both hold the most recent anchor (2024-01-01),
+    // so within the anchor range revolving and informal now share the curve.
+    expect(revolving).toBe(10_000_00);
     expect(informal).toBe(10_000_00);
   });
 });

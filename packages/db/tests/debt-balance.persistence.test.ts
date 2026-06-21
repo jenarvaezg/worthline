@@ -159,7 +159,7 @@ describe("balance anchors — CRUD", () => {
 });
 
 describe("debtBalanceAtDate — unified read", () => {
-  test("revolving: interpolates between stored anchors", async () => {
+  test("revolving: steps between stored anchors (ADR 0031)", async () => {
     const store = await createInMemoryStore();
     await seed(store);
     await store.liabilities.setDebtModel("card", "revolving");
@@ -176,7 +176,11 @@ describe("debtBalanceAtDate — unified read", () => {
       liabilityId: "card",
     });
 
-    expect(await store.liabilities.debtBalanceAtDate("card", "2024-07-01")).toBe(501_370);
+    // Default `step` cadence: a between-anchor date holds the most recent anchor
+    // (2024-01-01 = 10_000_00), not the interpolated 501_370.
+    expect(await store.liabilities.debtBalanceAtDate("card", "2024-07-01")).toBe(
+      10_000_00,
+    );
   });
 
   test("informal: step function on stored anchors", async () => {

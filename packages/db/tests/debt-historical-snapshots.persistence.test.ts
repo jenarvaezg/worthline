@@ -11,7 +11,7 @@
  */
 import { describe, expect, test } from "vitest";
 
-import { amortizableBalanceAtDate } from "@worthline/domain";
+import { amortizableBalanceAtDate, debtBalanceAtDate } from "@worthline/domain";
 
 import { createInMemoryStore } from "@db/index";
 import type { WorthlineStore } from "@db/index";
@@ -337,6 +337,82 @@ describe("historical snapshots from balance anchors", () => {
 
     expect(await debtsAt(store, "2025-01-01")).toBe(3_000_00);
     expect(await holdingsReconcile(store, "2025-01-01")).toBe(true);
+    store.close();
+  });
+
+  test("a between-anchor snapshot holds the most recent anchor (step), not interpolated (#392, ADR 0031)", async () => {
+    const store = await createInMemoryStore();
+    await seedRevolving(store);
+
+    await store.addBalanceAnchorAndRipple(
+      {
+        anchorDate: "2025-01-01",
+        balanceMinor: 10_000_00,
+        id: "an1",
+        liabilityId: "card",
+      },
+      { today: TODAY },
+    );
+    await store.addBalanceAnchorAndRipple(
+      {
+        anchorDate: "2025-07-01",
+        balanceMinor: 4_000_00,
+        id: "an2",
+        liabilityId: "card",
+      },
+      { today: TODAY },
+    );
+
+    // An unrelated backdated fact between the anchors generates a full-portfolio
+    // snapshot there, valuing the revolving card off its anchor curve on that date.
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "fund",
+      liquidityTier: "market",
+      manualPricePerUnit: "100",
+      name: "Fondo",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    await store.recordOperationAndRipple(
+      {
+        assetId: "fund",
+        currency: "EUR",
+        executedAt: "2025-04-01",
+        id: "op1",
+        kind: "buy",
+        pricePerUnit: "100",
+        units: "10",
+      },
+      { today: TODAY },
+    );
+
+    const anchors = [
+      { anchorDate: "2025-01-01", balanceMinor: 10_000_00 },
+      { anchorDate: "2025-07-01", balanceMinor: 4_000_00 },
+    ];
+    const stepValue = debtBalanceAtDate({
+      debtModel: "revolving",
+      anchors,
+      currentBalanceMinor: 1_000_00,
+      targetDate: "2025-04-01",
+    });
+    const interpolatedValue = debtBalanceAtDate({
+      debtModel: "revolving",
+      cadence: "interpolated",
+      anchors,
+      currentBalanceMinor: 1_000_00,
+      targetDate: "2025-04-01",
+    });
+    // The step holds the 2025-01-01 anchor; interpolation would give something else.
+    expect(stepValue).toBe(10_000_00);
+    expect(interpolatedValue).not.toBe(stepValue);
+
+    // The between-anchor snapshot holds the stepped balance, not the interpolated one.
+    expect(await debtsAt(store, "2025-04-01")).toBe(stepValue);
+    // Anchor-date snapshots are unchanged.
+    expect(await debtsAt(store, "2025-01-01")).toBe(10_000_00);
+    expect(await debtsAt(store, "2025-07-01")).toBe(4_000_00);
+    expect(await holdingsReconcile(store, "2025-04-01")).toBe(true);
     store.close();
   });
 
