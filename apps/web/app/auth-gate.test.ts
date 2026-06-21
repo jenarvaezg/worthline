@@ -52,6 +52,19 @@ describe("shouldRedirectToLogin", () => {
     }
   });
 
+  test("never redirects the MCP OAuth discovery paths (the Auth.js redirect would swallow the handshake)", () => {
+    for (const pathname of ["/api/mcp", "/.well-known/oauth-protected-resource"]) {
+      expect(
+        shouldRedirectToLogin({
+          authConfigured: true,
+          hasSession: false,
+          hasPersonaCookie: false,
+          pathname,
+        }),
+      ).toBe(false);
+    }
+  });
+
   test("does not redirect a logged-out demo request (persona cookie present)", () => {
     expect(
       shouldRedirectToLogin({
