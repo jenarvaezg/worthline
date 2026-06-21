@@ -504,6 +504,61 @@ describe("parseWorkspaceExport — acceptance", () => {
     }
   });
 
+  test("a holding's per-position breakdown round-trips through parse (ADR 0035)", () => {
+    const document = makeDocument((doc) => {
+      // a1 is worth 150000 — give it a two-row token breakdown that sums to it.
+      doc.snapshots[0]!.holdings[0]!.positions = [
+        {
+          positionKey: "BTC:spot",
+          label: "BTC",
+          valueMinor: 100000,
+          metal: null,
+          imageUrl: null,
+        },
+        {
+          positionKey: "ETH:spot",
+          label: "ETH",
+          valueMinor: 50000,
+          metal: null,
+          imageUrl: null,
+        },
+      ];
+    });
+
+    const result = parseWorkspaceExport(document);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.snapshots[0]!.holdings[0]!.positions).toEqual([
+        {
+          positionKey: "BTC:spot",
+          label: "BTC",
+          valueMinor: 100000,
+          metal: null,
+          imageUrl: null,
+        },
+        {
+          positionKey: "ETH:spot",
+          label: "ETH",
+          valueMinor: 50000,
+          metal: null,
+          imageUrl: null,
+        },
+      ]);
+    }
+  });
+
+  test("a holding without a positions field parses with positions left absent (back-compat)", () => {
+    const result = parseWorkspaceExport(makeDocument());
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // Absent stays undefined — never coerced to [] (an empty array would fail
+      // the per-position sub-sum against the holding's nonzero value).
+      expect(result.value.snapshots[0]!.holdings[0]!.positions).toBeUndefined();
+    }
+  });
+
   test("unknown extra keys are tolerated and stripped", () => {
     const document = makeDocument((doc) => {
       (doc as unknown as Record<string, unknown>)["auditLog"] = [{ id: "x" }];
@@ -706,6 +761,24 @@ describe("parseWorkspaceExport — domain invariants", () => {
     });
 
     expectRejection(document, "nope");
+  });
+
+  test("a holding whose per-position rows do not sum to it is rejected naming the snapshot (ADR 0035)", () => {
+    const document = makeDocument((doc) => {
+      // a1 is worth 150000 but its breakdown sums to 100000 — the per-position
+      // sub-sum (ADR 0035) must reject the snapshot, just like the headline one.
+      doc.snapshots[0]!.holdings[0]!.positions = [
+        {
+          positionKey: "BTC:spot",
+          label: "BTC",
+          valueMinor: 100000,
+          metal: null,
+          imageUrl: null,
+        },
+      ];
+    });
+
+    expectRejection(document, "s1");
   });
 
   test("an operation pointing at an asset not present in the file is rejected", () => {

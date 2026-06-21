@@ -13,6 +13,7 @@ import type {
   Member,
   MemberGroup,
   SnapshotHoldingRow,
+  SnapshotPositionRow,
   Workspace,
   WorkspaceExport,
   WorkspaceMode,
@@ -52,6 +53,7 @@ import {
   members,
   positions,
   snapshotHoldings,
+  snapshotPositionHoldings,
   snapshots,
   warningOverrides,
   workspace as workspaceTable,
@@ -905,6 +907,28 @@ async function importWorkspace(
           )
           .run();
       }
+
+      // Per-position child rows (ADR 0035, PRD #459 S3) beneath any
+      // connected-source holding — the second-level drilldown. Keyed by the
+      // parent holding's STABLE id + snapshot id (no live FK into holdings, like
+      // saveSnapshot), so a restore preserves the breakdown. The parser already
+      // checked Σ positions == holding above; absent on a legacy export → nothing
+      // inserted. Fresh row ids — the file carries none.
+      const positionRows = snapshot.holdings.flatMap((row) =>
+        (row.positions ?? []).map((position) => ({
+          id: randomUUID(),
+          imageUrl: position.imageUrl,
+          label: position.label,
+          metal: position.metal,
+          parentHoldingId: row.holdingId,
+          positionKey: position.positionKey,
+          snapshotId: snapshot.id,
+          valueMinor: position.valueMinor,
+        })),
+      );
+      if (positionRows.length > 0) {
+        await db.insert(snapshotPositionHoldings).values(positionRows).run();
+      }
     }
 
     if (doc.priceCache.length > 0) {
@@ -1441,9 +1465,42 @@ async function readHoldingRowsBySnapshot(
     .orderBy(sql`rowid ASC`)
     .all();
 
+  // Per-position child rows (ADR 0035, PRD #459 S3), grouped by their parent
+  // holding within a snapshot. Read in capture (rowid) order so the exported
+  // breakdown is stable; attached below only to the holdings that froze one.
+  const positionRows = await db
+    .select({
+      snapshotId: snapshotPositionHoldings.snapshotId,
+      parentHoldingId: snapshotPositionHoldings.parentHoldingId,
+      positionKey: snapshotPositionHoldings.positionKey,
+      label: snapshotPositionHoldings.label,
+      valueMinor: snapshotPositionHoldings.valueMinor,
+      metal: snapshotPositionHoldings.metal,
+      imageUrl: snapshotPositionHoldings.imageUrl,
+    })
+    .from(snapshotPositionHoldings)
+    .orderBy(sql`rowid ASC`)
+    .all();
+
+  const positionsByHolding = new Map<string, SnapshotPositionRow[]>();
+  for (const row of positionRows) {
+    const key = `${row.snapshotId}::${row.parentHoldingId}`;
+    const position: SnapshotPositionRow = {
+      positionKey: row.positionKey,
+      label: row.label,
+      valueMinor: row.valueMinor,
+      metal: row.metal,
+      imageUrl: row.imageUrl,
+    };
+    const existing = positionsByHolding.get(key);
+    if (existing) existing.push(position);
+    else positionsByHolding.set(key, [position]);
+  }
+
   const bySnapshot = new Map<string, SnapshotHoldingRow[]>();
 
   for (const row of rows) {
+    const positions = positionsByHolding.get(`${row.snapshotId}::${row.holdingId}`);
     const holding: SnapshotHoldingRow = {
       holdingId: row.holdingId,
       kind: row.kind,
@@ -1454,6 +1511,7 @@ async function readHoldingRowsBySnapshot(
       valueMinor: row.valueMinor,
       ...(row.units !== null ? { units: row.units } : {}),
       ...(row.unitPrice !== null ? { unitPrice: row.unitPrice } : {}),
+      ...(positions ? { positions } : {}),
     };
     const existing = bySnapshot.get(row.snapshotId);
 
