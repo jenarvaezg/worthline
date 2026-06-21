@@ -6,7 +6,7 @@
  *
  * Gated to the Node.js runtime: the check imports `@worthline/db` (for the env
  * key name), which pulls in `node:fs`/libsql and cannot load in the Edge runtime
- * that the middleware also boots — so it is dynamically imported only when
+ * that the proxy also boots — so it is dynamically imported only when
  * `NEXT_RUNTIME === "nodejs"`, keeping it out of the Edge bundle entirely.
  */
 export async function register(): Promise<void> {

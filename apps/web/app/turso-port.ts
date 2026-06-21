@@ -3,7 +3,7 @@ import type { TursoPort } from "@worthline/db";
 /**
  * Real Turso Platform API adapter for the provisioner's injected port (ADR 0030).
  * Lazy-imports `@tursodatabase/api` so the SDK only loads in the Node runtime
- * when a workspace is actually being provisioned — never in the edge middleware,
+ * when a workspace is actually being provisioned — never in the edge proxy,
  * the local no-auth build, or tests (which inject a fake port instead).
  */
 
