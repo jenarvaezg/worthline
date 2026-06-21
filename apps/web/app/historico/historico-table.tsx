@@ -20,7 +20,7 @@ import {
   deriveConfirmedMonthlyCloseIds,
   deriveHoldingDeltas,
   derivePositionDeltas,
-  formatMoneyMinor,
+  formatMoneyMinorPrivacy,
   moneySign,
 } from "@worthline/domain";
 import type { SnapshotHoldingRecord } from "@worthline/db";
@@ -98,9 +98,9 @@ function money(amountMinor: number, currency: string): MoneyMinor {
   return { amountMinor, currency };
 }
 
-/** formatMoneyMinor with an explicit "+" on gains, as the design system asks of deltas. */
-function formatSigned(value: MoneyMinor): string {
-  const text = formatMoneyMinor(value);
+/** formatMoneyMinorPrivacy with an explicit "+" on gains, as the design system asks of deltas. */
+function formatSigned(value: MoneyMinor, privacyMode: boolean): string {
+  const text = formatMoneyMinorPrivacy(value, privacyMode);
   return value.amountMinor > 0 ? `+${text}` : text;
 }
 
@@ -116,9 +116,11 @@ function TierDot({ tier }: { tier: LiquidityTier | null }) {
 function PositionMovers({
   positions,
   currency,
+  privacyMode,
 }: {
   positions: PositionDelta[];
   currency: string;
+  privacyMode: boolean;
 }) {
   return (
     <div className="historicoPositionBridge">
@@ -153,7 +155,7 @@ function PositionMovers({
               ) : null}
             </span>
             <span className={`numCol ${sign}`}>
-              {formatSigned({ amountMinor: p.contributionMinor, currency })}
+              {formatSigned({ amountMinor: p.contributionMinor, currency }, privacyMode)}
             </span>
           </div>
         );
@@ -162,7 +164,13 @@ function PositionMovers({
   );
 }
 
-export function HistoricoTable({ rows }: { rows: HistoricoRow[] }) {
+export function HistoricoTable({
+  rows,
+  privacyMode = false,
+}: {
+  rows: HistoricoRow[];
+  privacyMode?: boolean;
+}) {
   return (
     <div className="historicoDrill">
       <div className="historicoDrillHead">
@@ -192,10 +200,10 @@ export function HistoricoTable({ rows }: { rows: HistoricoRow[] }) {
                 ) : null}
               </span>
               <span className={`numCol ${moneySign(snapshot.totalNetWorth)}`}>
-                {formatMoneyMinor(snapshot.totalNetWorth)}
+                {formatMoneyMinorPrivacy(snapshot.totalNetWorth, privacyMode)}
               </span>
               <span className={`numCol ${deltaSign ?? ""}`}>
-                {delta ? formatSigned(delta) : "—"}
+                {delta ? formatSigned(delta, privacyMode) : "—"}
               </span>
               <span className="historicoDrillCue" aria-hidden="true">
                 {movers.length > 0 ? `${movers.length} ▾` : ""}
@@ -244,7 +252,7 @@ export function HistoricoTable({ rows }: { rows: HistoricoRow[] }) {
                   );
                   const amount = (
                     <span className={`numCol ${sign}`}>
-                      {formatSigned(money(m.contributionMinor, currency))}
+                      {formatSigned(money(m.contributionMinor, currency), privacyMode)}
                     </span>
                   );
 
@@ -268,7 +276,11 @@ export function HistoricoTable({ rows }: { rows: HistoricoRow[] }) {
                         {track}
                         {amount}
                       </summary>
-                      <PositionMovers positions={m.positions} currency={currency} />
+                      <PositionMovers
+                        positions={m.positions}
+                        currency={currency}
+                        privacyMode={privacyMode}
+                      />
                     </details>
                   );
                 })
@@ -277,7 +289,7 @@ export function HistoricoTable({ rows }: { rows: HistoricoRow[] }) {
                 <div className="historicoBridgeFoot">
                   <span>Σ contribuciones</span>
                   <span className={`numCol ${deltaSign ?? ""}`}>
-                    {formatSigned(delta)}
+                    {formatSigned(delta, privacyMode)}
                   </span>
                 </div>
               ) : null}

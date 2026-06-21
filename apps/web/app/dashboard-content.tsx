@@ -1,7 +1,7 @@
 import {
   DRILL_GROUP_BY_TIER,
   donutArcSegments,
-  formatMoneyMinor,
+  formatMoneyMinorPrivacy,
   isLiquid,
   largestRemainderPercentages,
   LIQUIDITY_TIER_LABELS,
@@ -34,6 +34,7 @@ import CompositionRangeControls from "./composition-range-controls";
 import DrilldownPanel from "./drilldown-panel";
 import HeroMovers from "./hero-movers";
 import type { HoldingMover, MoversData, MoversPeriod } from "./hero-movers";
+import PrivacyToggle from "./privacy-toggle";
 import { runBinanceRefresh } from "./ajustes/binance-refresh";
 import { runNumistaCoinRefresh } from "./ajustes/numista-coin-refresh";
 import { refreshAndPersistStalePrices } from "./refresh-prices";
@@ -67,17 +68,26 @@ function formatPct(pct: number): string {
   return `${sign}${Math.abs(pct).toFixed(1).replace(".", ",")} %`;
 }
 
-function DeltaChip({ delta, label }: { delta: FramedDelta | null; label: string }) {
+function DeltaChip({
+  delta,
+  label,
+  privacyMode,
+}: {
+  delta: FramedDelta | null;
+  label: string;
+  privacyMode: boolean;
+}) {
   if (!delta) {
     return <span className="deltaChip zero">{label}: sin dato</span>;
   }
   const sign = moneySign(delta.change);
   const arrow = sign === "pos" ? "▲" : sign === "neg" ? "▼" : "•";
   const prefix = delta.change.amountMinor > 0 ? "+" : "";
+  const amount = formatMoneyMinorPrivacy(delta.change, privacyMode);
   return (
     <span className={`deltaChip ${sign}`}>
       {arrow} {prefix}
-      {formatMoneyMinor(delta.change)}
+      {amount}
       {delta.pct !== null ? ` (${formatPct(delta.pct)})` : ""} {label}
     </span>
   );
@@ -167,8 +177,9 @@ function buildMoversData(params: {
   period: MoversPeriod;
   holdingRows: MoversHoldingRow[];
   currency: string;
+  privacyMode: boolean;
 }): MoversData | null {
-  const { snapshots, selectedView, period, holdingRows, currency } = params;
+  const { snapshots, selectedView, period, holdingRows, currency, privacyMode } = params;
   const latest = snapshots[snapshots.length - 1];
   if (!latest) return null;
 
@@ -237,13 +248,19 @@ function buildMoversData(params: {
     return { vsLabel, hasBase: true, up: [], down: [] };
   }
 
-  const toMover = (r: MoverRaw): HoldingMover => ({
-    label: r.label,
-    changeFmt: `${r.impactMinor > 0 ? "+" : ""}${formatMoneyMinor({ amountMinor: r.impactMinor, currency })}`,
-    pctFmt: r.pct === null ? null : moversPctFmt(r.pct),
-    sign: r.impactMinor > 0 ? "pos" : r.impactMinor < 0 ? "neg" : "zero",
-    tag: r.tag,
-  });
+  const toMover = (r: MoverRaw): HoldingMover => {
+    const amount = formatMoneyMinorPrivacy(
+      { amountMinor: r.impactMinor, currency },
+      privacyMode,
+    );
+    return {
+      label: r.label,
+      changeFmt: `${r.impactMinor > 0 ? "+" : ""}${amount}`,
+      pctFmt: r.pct === null ? null : moversPctFmt(r.pct),
+      sign: r.impactMinor > 0 ? "pos" : r.impactMinor < 0 ? "neg" : "zero",
+      tag: r.tag,
+    };
+  };
 
   const byImpactDesc = [...raw].sort((a, b) => b.impactMinor - a.impactMinor);
 
@@ -279,9 +296,13 @@ async function readMoversHoldingRows(
 }
 
 export default async function DashboardContent({
+  privacyMode,
+  returnTo,
   searchParams,
   scopeId,
 }: {
+  privacyMode: boolean;
+  returnTo: string;
   searchParams?: Record<string, string | string[] | undefined> | undefined;
   scopeId: string | undefined;
 }) {
@@ -384,6 +405,7 @@ export default async function DashboardContent({
     period: moversPeriod,
     holdingRows: moversHoldingRows,
     currency: presentation?.headline.currency ?? "EUR",
+    privacyMode,
   });
 
   const rangeOptions = state.compositionRanges.map((range) => ({
@@ -427,16 +449,21 @@ export default async function DashboardContent({
           <div className="headline">
             <span>{presentation.headlineLabel}</span>
             <strong className={hasHoldings ? undefined : "emptyFigure"}>
-              {formatMoneyMinor(presentation.headline)}
+              {formatMoneyMinorPrivacy(presentation.headline, privacyMode)}
               {!hasHoldings ? <small>sin datos aún</small> : null}
             </strong>
+            <PrivacyToggle privacyMode={privacyMode} returnTo={returnTo} />
           </div>
         ) : null}
 
         {deltas ? (
           <div className="deltaChips" aria-label="Cambios de snapshots">
-            <DeltaChip delta={vsPrevious} label="vs anterior" />
-            <DeltaChip delta={vsMonthlyClose} label="vs cierre mensual" />
+            <DeltaChip delta={vsPrevious} label="vs anterior" privacyMode={privacyMode} />
+            <DeltaChip
+              delta={vsMonthlyClose}
+              label="vs cierre mensual"
+              privacyMode={privacyMode}
+            />
           </div>
         ) : null}
 
@@ -446,7 +473,7 @@ export default async function DashboardContent({
               <div className="heroStat" key={item.id}>
                 <span>{item.label}</span>
                 <b className={hasHoldings ? undefined : "emptyFigure"}>
-                  {formatMoneyMinor(item.value)}
+                  {formatMoneyMinorPrivacy(item.value, privacyMode)}
                 </b>
               </div>
             ))}
@@ -500,7 +527,7 @@ export default async function DashboardContent({
                 <summary>
                   <span className="tierName">{LIQUIDITY_TIER_LABELS[tier.tier]}</span>
                   <b className={moneySign(tier.netValue) === "neg" ? "neg" : undefined}>
-                    {formatMoneyMinor(tier.netValue)}
+                    {formatMoneyMinorPrivacy(tier.netValue, privacyMode)}
                   </b>
                   <span className="tierShare">{pct}%</span>
                   <span className="tierBar" aria-hidden="true">
@@ -508,8 +535,10 @@ export default async function DashboardContent({
                   </span>
                 </summary>
                 <div className="tierDetails">
-                  <span>Bruto {formatMoneyMinor(tier.grossAssets)}</span>
-                  <span>Deuda {formatMoneyMinor(tier.debts)}</span>
+                  <span>
+                    Bruto {formatMoneyMinorPrivacy(tier.grossAssets, privacyMode)}
+                  </span>
+                  <span>Deuda {formatMoneyMinorPrivacy(tier.debts, privacyMode)}</span>
                   {tier.assets.map((asset) => (
                     <small key={asset.id}>+ {asset.name}</small>
                   ))}
@@ -542,6 +571,7 @@ export default async function DashboardContent({
             backHref={composicionHomeUrl}
             currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
             drilldown={state.drilldown}
+            privacyMode={privacyMode}
           />
         ) : (
           <CompositionChart
@@ -550,6 +580,7 @@ export default async function DashboardContent({
             housingMode={selectedHousingMode}
             housingToggleHref={housingToggleHref}
             points={state.compositionSeries}
+            privacyMode={privacyMode}
           />
         )}
       </section>
@@ -594,11 +625,15 @@ export default async function DashboardContent({
             </div>
             <div className="fireMetric">
               <span>Número FIRE</span>
-              <strong>{formatMoneyMinor(fireResult.fireNumber)}</strong>
+              <strong>
+                {formatMoneyMinorPrivacy(fireResult.fireNumber, privacyMode)}
+              </strong>
             </div>
             <div className="fireMetric">
               <span>Activos elegibles</span>
-              <strong>{formatMoneyMinor(fireResult.eligibleAssets)}</strong>
+              <strong>
+                {formatMoneyMinorPrivacy(fireResult.eligibleAssets, privacyMode)}
+              </strong>
             </div>
             <details className="fireEligibleNote">
               <summary>¿Qué cuenta como elegible?</summary>
@@ -628,7 +663,9 @@ export default async function DashboardContent({
             {fireResult.coastFireRequired ? (
               <div className="fireMetric">
                 <span>Coast FIRE requerido</span>
-                <strong>{formatMoneyMinor(fireResult.coastFireRequired)}</strong>
+                <strong>
+                  {formatMoneyMinorPrivacy(fireResult.coastFireRequired, privacyMode)}
+                </strong>
               </div>
             ) : null}
             {fireResult.coastFireAge !== undefined ? (

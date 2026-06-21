@@ -31,6 +31,7 @@ describe("AssetEditForm — investment settings", () => {
         }}
         members={[{ id: "m1", name: "Jose" }]}
         method="derived"
+        privacyMode={false}
         scopeMemberId="m1"
         updateInvestmentAction={() => undefined}
         values={{}}

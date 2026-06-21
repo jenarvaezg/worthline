@@ -8,6 +8,7 @@ import {
   errorRedirectUrl,
   okMessage,
   parseFormError,
+  parsePrivacyCookie,
   parseScopeCookie,
   preserveFields,
   pricesRefreshedRedirectUrl,
@@ -63,6 +64,20 @@ describe("parseScopeCookie", () => {
     expect(parseScopeCookie(undefined)).toBeUndefined();
     expect(parseScopeCookie("")).toBeUndefined();
     expect(parseScopeCookie("   ")).toBeUndefined();
+  });
+});
+
+describe("parsePrivacyCookie", () => {
+  test("returns true only for the exact value '1'", () => {
+    expect(parsePrivacyCookie("1")).toBe(true);
+    expect(parsePrivacyCookie("true")).toBe(false);
+    expect(parsePrivacyCookie("yes")).toBe(false);
+  });
+
+  test("returns false for blank or missing values", () => {
+    expect(parsePrivacyCookie(undefined)).toBe(false);
+    expect(parsePrivacyCookie("")).toBe(false);
+    expect(parsePrivacyCookie("   ")).toBe(false);
   });
 });
 

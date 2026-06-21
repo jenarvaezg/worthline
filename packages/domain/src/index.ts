@@ -5,6 +5,8 @@ export {
   assertMinorInteger,
   formatMoneyInput,
   formatMoneyMinor,
+  formatMoneyMinorPrivacy,
+  maskMoneyString,
   money,
   moneySign,
   parseDecimal,

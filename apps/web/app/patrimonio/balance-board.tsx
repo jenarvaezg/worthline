@@ -1,6 +1,6 @@
 import type { TrashView } from "@worthline/db";
 import type { DomainWarning, PortfolioGroup, UnifiedHolding } from "@worthline/domain";
-import { formatMoneyMinor } from "@worthline/domain";
+import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import Link from "next/link";
 
 import { boardRefreshHover } from "@web/price-refresh";
@@ -37,8 +37,8 @@ function magnitude(h: UnifiedHolding): number {
   return h.direction === "asset" ? h.valueMinor : h.balanceMinor;
 }
 
-function money(amountMinor: number, currency: Currency): string {
-  return formatMoneyMinor({ amountMinor, currency });
+function money(amountMinor: number, currency: Currency, privacyMode: boolean): string {
+  return formatMoneyMinorPrivacy({ amountMinor, currency }, privacyMode);
 }
 
 /** The css custom property carrying a rung's identity colour (design-system §5). */
@@ -117,6 +117,7 @@ function HoldingRow({
   sectionDenom,
   showTierLabel,
   nowIso,
+  privacyMode,
 }: {
   holding: UnifiedHolding;
   currency: Currency;
@@ -127,6 +128,7 @@ function HoldingRow({
   sectionDenom: number;
   showTierLabel: boolean;
   nowIso: string;
+  privacyMode: boolean;
 }) {
   const h = holding;
   const rowWarnings = isAsset
@@ -176,7 +178,9 @@ function HoldingRow({
             ≈
           </abbr>
         ) : null}
-        {isAsset ? money(magnitude(h), currency) : `− ${money(magnitude(h), currency)}`}
+        {isAsset
+          ? money(magnitude(h), currency, privacyMode)
+          : `− ${money(magnitude(h), currency, privacyMode)}`}
       </div>
 
       <details className="balanceActions">
@@ -226,6 +230,7 @@ function Pane({
   warnings,
   currentUrl,
   nowIso,
+  privacyMode,
 }: {
   title: string;
   total: number;
@@ -236,6 +241,7 @@ function Pane({
   warnings: DomainWarning[];
   currentUrl: string;
   nowIso: string;
+  privacyMode: boolean;
 }) {
   const { denom, segments } = paneSegments(sections, isAsset);
   const showSubs = sections.length > 1;
@@ -246,7 +252,9 @@ function Pane({
         <div className="balancePaneTop">
           <h3>{title}</h3>
           <span className="balancePaneTotal">
-            {isAsset ? money(total, currency) : `− ${money(total, currency)}`}
+            {isAsset
+              ? money(total, currency, privacyMode)
+              : `− ${money(total, currency, privacyMode)}`}
           </span>
         </div>
         {segments.length > 0 ? (
@@ -259,7 +267,7 @@ function Pane({
               <span
                 className="balanceCompSeg"
                 key={s.key}
-                title={`${s.label} · ${money(s.value, currency)}`}
+                title={`${s.label} · ${money(s.value, currency, privacyMode)}`}
                 style={{ width: `${(s.value / denom) * 100}%`, background: s.color }}
               />
             ))}
@@ -283,7 +291,9 @@ function Pane({
                     />
                     {s.label}
                   </span>
-                  <span className="balanceSubTotal">{money(secDenom, currency)}</span>
+                  <span className="balanceSubTotal">
+                    {money(secDenom, currency, privacyMode)}
+                  </span>
                 </div>
               ) : null}
               {s.rows.map((h) => (
@@ -295,6 +305,7 @@ function Pane({
                   isHousehold={isHousehold}
                   key={h.id}
                   nowIso={nowIso}
+                  privacyMode={privacyMode}
                   sectionDenom={secDenom}
                   showTierLabel={!showSubs}
                   warnings={warnings}
@@ -353,6 +364,7 @@ export interface BalanceBoardProps {
   currentUrl: string;
   /** Server render instant — anchors the derived-value badge's relative date (#303). */
   nowIso: string;
+  privacyMode: boolean;
 }
 
 export default function BalanceBoard({
@@ -362,6 +374,7 @@ export default function BalanceBoard({
   trash,
   currentUrl,
   nowIso,
+  privacyMode,
 }: BalanceBoardProps) {
   const currency: Currency = groups[0]?.totalMinor.currency ?? "EUR";
   const assetSections = sectionsFor(groups, "asset");
@@ -389,6 +402,7 @@ export default function BalanceBoard({
         isAsset
         isHousehold={isHousehold}
         nowIso={nowIso}
+        privacyMode={privacyMode}
         sections={assetSections}
         title="Activos"
         total={grossAssets}
@@ -400,6 +414,7 @@ export default function BalanceBoard({
         isAsset={false}
         isHousehold={isHousehold}
         nowIso={nowIso}
+        privacyMode={privacyMode}
         sections={debtSections}
         title="Pasivos"
         total={totalDebts}
@@ -411,18 +426,22 @@ export default function BalanceBoard({
         <div className="balanceReconFigures">
           <span className="balanceReconItem">
             <span className="balanceReconLabel">Activos</span>
-            <span className="balanceReconValue">{money(grossAssets, currency)}</span>
+            <span className="balanceReconValue">
+              {money(grossAssets, currency, privacyMode)}
+            </span>
           </span>
           <span className="balanceReconItem">
             <span className="balanceReconOp">−</span>
             <span className="balanceReconLabel">Pasivos</span>
-            <span className="balanceReconValue">{money(totalDebts, currency)}</span>
+            <span className="balanceReconValue">
+              {money(totalDebts, currency, privacyMode)}
+            </span>
           </span>
           <span className="balanceReconItem balanceReconNet">
             <span className="balanceReconOp">=</span>
             <span className="balanceReconLabel">Patrimonio neto</span>
             <span className={`balanceReconValue${net < 0 ? " balanceReconNeg" : ""}`}>
-              {money(net, currency)}
+              {money(net, currency, privacyMode)}
             </span>
           </span>
         </div>

@@ -16,8 +16,10 @@ import OperationsEditor from "@web/_components/operations-editor";
 import { detailRefreshCaption } from "@web/price-refresh";
 import {
   parseFormError,
+  parsePrivacyCookie,
   parseScopeCookie,
   resolveOkMessage,
+  PRIVACY_COOKIE_NAME,
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
 import {
@@ -67,6 +69,7 @@ export default async function EditarPage({
 
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
+  const privacyMode = parsePrivacyCookie(jar.get(PRIVACY_COOKIE_NAME)?.value);
 
   const storeData = await withStore(async (store) => {
     const workspace = await store.workspace.readWorkspace();
@@ -418,6 +421,7 @@ export default async function EditarPage({
             isCoinCollection={isCoinCollection}
             members={activeMembers}
             method={method}
+            privacyMode={privacyMode}
             scopeMemberId={ownershipScopeMemberId}
             updateInvestmentAction={boundUpdateInvestmentAction}
             values={formError?.formId === "edit" ? formError.values : {}}
@@ -441,6 +445,7 @@ export default async function EditarPage({
             currentUrl={currentUrl}
             lastSyncAt={coinSource?.lastSyncAt ?? null}
             positions={coinPositions}
+            privacyMode={privacyMode}
             sourceId={coinSource?.id ?? null}
             valuationFreshness={coinValuationCache?.freshnessState ?? null}
             valuationStaleReason={coinValuationCache?.staleReason ?? null}
@@ -454,6 +459,7 @@ export default async function EditarPage({
             currentUrl={currentUrl}
             lastSyncAt={binanceSource?.lastSyncAt ?? null}
             positions={binancePositions}
+            privacyMode={privacyMode}
             sinceDateKey={binanceSinceDateKey}
             sourceId={binanceSource?.id ?? null}
           />
@@ -504,6 +510,7 @@ export default async function EditarPage({
             deleteAction={boundDeleteOperationAction}
             formError={formError}
             operations={operations}
+            privacyMode={privacyMode}
             recordAction={boundRecordOperationAction}
             today={today}
           />
@@ -538,6 +545,7 @@ export default async function EditarPage({
             appreciationRate={appreciationRate}
             assetId={asset.id}
             formError={formError}
+            privacyMode={privacyMode}
             today={today}
             valuationCadence={housingValuationCadence}
           />
@@ -551,7 +559,8 @@ export default async function EditarPage({
             debtModel={debtModel}
             earlyRepayments={earlyRepayments}
             formError={formError}
-            liabilityId={liability.id}
+            liabilityId={id}
+            privacyMode={privacyMode}
             rateRevisions={rateRevisions}
             today={today}
             valuationCadence={valuationCadence}

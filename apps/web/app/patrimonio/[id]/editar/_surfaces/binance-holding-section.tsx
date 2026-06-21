@@ -19,7 +19,7 @@
  * tile/list/tag treatment) so the two connected sources read identically.
  */
 
-import { formatMoneyMinor } from "@worthline/domain";
+import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import type { TokenPosition } from "@worthline/domain";
 
 import { syncBinanceAction } from "@web/ajustes/binance-actions";
@@ -33,15 +33,13 @@ import {
   tokenBasisTag,
 } from "./binance-holding-view";
 
-const eur = (amountMinor: number): string =>
-  formatMoneyMinor({ amountMinor, currency: "EUR" });
-
 export function BinanceHoldingSection({
   positions,
   sourceId,
   lastSyncAt,
   sinceDateKey,
   currentUrl,
+  privacyMode = false,
 }: {
   positions: TokenPosition[];
   sourceId: string | null;
@@ -51,7 +49,10 @@ export function BinanceHoldingSection({
    *  backfill has run. Rendered as "Datos desde DD/MM/YYYY" when present. */
   sinceDateKey: string | null;
   currentUrl: string;
+  privacyMode?: boolean;
 }) {
+  const eur = (amountMinor: number): string =>
+    formatMoneyMinorPrivacy({ amountMinor, currency: "EUR" }, privacyMode);
   const view = buildBinanceHoldingView(positions);
   const since = formatBinanceSince(sinceDateKey);
 

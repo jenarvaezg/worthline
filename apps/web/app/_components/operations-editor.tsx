@@ -12,7 +12,7 @@
  * <details>, the page re-renders from the store after each action's redirect.
  */
 
-import { formatMoneyMinor } from "@worthline/domain";
+import { formatMoneyMinorPrivacy, maskMoneyString } from "@worthline/domain";
 import type { InvestmentOperation, PriceFreshnessState } from "@worthline/domain";
 
 import { priceFreshnessLabel } from "@web/intake";
@@ -47,6 +47,7 @@ export default function OperationsEditor({
   currentUrl,
   formError,
   operations,
+  privacyMode = false,
   recordAction,
   deleteAction,
   today,
@@ -56,6 +57,7 @@ export default function OperationsEditor({
   currentUrl: string;
   formError: FormErrorContext | null;
   operations: readonly InvestmentOperation[];
+  privacyMode?: boolean;
   recordAction: (formData: FormData) => void | Promise<void>;
   deleteAction: (formData: FormData) => void | Promise<void>;
   today: string;
@@ -78,7 +80,9 @@ export default function OperationsEditor({
               <>
                 <span className="contextLabel">Último precio</span>
                 <span>
-                  {context.unitPrice}{" "}
+                  {context.unitPrice && privacyMode
+                    ? maskMoneyString(context.unitPrice)
+                    : context.unitPrice}{" "}
                   <small className={`priceStatus ${context.priceFreshness ?? "unknown"}`}>
                     {priceFreshnessLabel(context.priceFreshness ?? null)}
                   </small>
@@ -93,7 +97,7 @@ export default function OperationsEditor({
             {context.marketValue ? (
               <>
                 <span className="contextLabel">Valor actual</span>
-                <span>{formatMoneyMinor(context.marketValue)}</span>
+                <span>{formatMoneyMinorPrivacy(context.marketValue, privacyMode)}</span>
               </>
             ) : null}
             {context.unrealizedPnl ? (
@@ -107,7 +111,7 @@ export default function OperationsEditor({
                   }
                 >
                   {context.unrealizedPnl.amountMinor > 0 ? "+" : ""}
-                  {formatMoneyMinor(context.unrealizedPnl)}
+                  {formatMoneyMinorPrivacy(context.unrealizedPnl, privacyMode)}
                 </span>
               </>
             ) : null}
@@ -209,13 +213,20 @@ export default function OperationsEditor({
                       <td>{op.executedAt}</td>
                       <td>{op.kind === "buy" ? "Compra" : "Venta"}</td>
                       <td>{op.units}</td>
-                      <td>{op.pricePerUnit}</td>
+                      <td>
+                        {op.pricePerUnit && privacyMode
+                          ? maskMoneyString(op.pricePerUnit)
+                          : op.pricePerUnit}
+                      </td>
                       <td>
                         {op.feesMinor > 0
-                          ? formatMoneyMinor({
-                              amountMinor: op.feesMinor,
-                              currency: op.currency,
-                            })
+                          ? formatMoneyMinorPrivacy(
+                              {
+                                amountMinor: op.feesMinor,
+                                currency: op.currency,
+                              },
+                              privacyMode,
+                            )
                           : "—"}
                       </td>
                       <td className="rowActions">
