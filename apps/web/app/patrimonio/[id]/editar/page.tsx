@@ -160,16 +160,22 @@ export default async function EditarPage({
     // A coin collection / Binance holding is derived but routed to its own surface,
     // so skip these.
     const isDerived = assetMethod === "derived" && !isCoinCollection && !isBinanceHolding;
-    const investment = isDerived ? await store.assets.readInvestmentAssetById(id) : null;
-    const operations = isDerived ? await store.operations.readOperations(id) : [];
-    const priceCache = isDerived ? await store.operations.readPriceCache(id) : null;
+    // The four derived-investment reads are independent of one another — fetch
+    // them in one wave instead of stacking serial round-trips to the store (#446).
+    const [investment, operations, priceCache, position] = isDerived
+      ? await Promise.all([
+          store.assets.readInvestmentAssetById(id),
+          store.operations.readOperations(id),
+          store.operations.readPriceCache(id),
+          store.snapshots
+            .readPositions()
+            .then((ps) => ps.find((p) => p.assetId === id) ?? null),
+        ])
+      : [null, [], null, null];
     // The coin collection's decoupled valuation freshness (PRD #166): its own
     // `numista`-source cache row, separate from the investment derived path above.
     const coinValuationCache = isCoinCollection
       ? await store.operations.readPriceCache(id)
-      : null;
-    const position = isDerived
-      ? ((await store.snapshots.readPositions()).find((p) => p.assetId === id) ?? null)
       : null;
 
     // Historical-price backfill candidacy (#380, ADR 0033): a derived investment
