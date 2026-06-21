@@ -36,6 +36,7 @@ import { valueAt } from "./holding-valuation";
 import type { HoldingValuationInput } from "./holding-valuation";
 import type { HousingValuationAnchor } from "./housing-valuation";
 import type { InvestmentOperation } from "./investment-types";
+import type { ValuationCadence } from "./valuation-cadence";
 import type { DebtModel, Liability, ManualAsset, Workspace } from "./workspace-types";
 import type { NetWorthSnapshot, ValuedNetWorthSnapshot } from "./snapshot-types";
 import { captureValuedNetWorthSnapshot, createNetWorthSnapshot } from "./snapshot-types";
@@ -82,6 +83,12 @@ export interface DebtBalanceCurveInputs {
   initialCapitalMinor?: number;
   /** The liability's current stored balance, integer minor units (the fallback). */
   currentBalanceMinor: number;
+  /**
+   * How the modeled balance moves between events (ADR 0031, #393). Null/absent
+   * reads as the default `step`; threaded into the amortized and anchored
+   * valuation inputs so a per-holding opt-in to `interpolated` reaches the engine.
+   */
+  cadence?: ValuationCadence | null;
 }
 
 /**
@@ -105,6 +112,7 @@ export function debtCurveValuationInput(
       ...(curve.earlyRepayments !== undefined
         ? { earlyRepayments: curve.earlyRepayments }
         : {}),
+      ...(curve.cadence != null ? { cadence: curve.cadence } : {}),
     };
   }
 
@@ -117,6 +125,7 @@ export function debtCurveValuationInput(
       ...(curve.initialCapitalMinor !== undefined
         ? { initialCapitalMinor: curve.initialCapitalMinor }
         : {}),
+      ...(curve.cadence != null ? { cadence: curve.cadence } : {}),
     };
   }
 

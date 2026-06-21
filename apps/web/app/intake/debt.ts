@@ -4,7 +4,12 @@ import type {
   AddInterestRateRevisionInput,
   CreateAmortizationPlanInput,
 } from "@worthline/db";
-import type { CreateLiabilityInput, DebtModel, Member } from "@worthline/domain";
+import type {
+  CreateLiabilityInput,
+  DebtModel,
+  Member,
+  ValuationCadence,
+} from "@worthline/domain";
 import { parseDecimalStrict } from "@worthline/domain";
 
 import { parseIsoDateField, parsePercentToDecimal } from "@web/intake-primitives";
@@ -62,6 +67,27 @@ export function parseDebtModelStrict(formData: FormData): DebtModelResult {
   }
 
   return { ok: false, error: "El modelo de deuda no es válido." };
+}
+
+/** Result of parsing the valuation-cadence selector (ADR 0031). */
+export type ValuationCadenceResult =
+  | { ok: true; cadence: ValuationCadence }
+  | { ok: false; error: string };
+
+/**
+ * Strict valuation-cadence parser (ADR 0031, #393). The «cadencia de valoración»
+ * advanced selector posts one of the two known cadences. Anything else (including
+ * an empty value) is rejected — the control always submits an explicit choice and
+ * the stored default is `step`. The caller redirects on error.
+ */
+export function parseValuationCadenceStrict(formData: FormData): ValuationCadenceResult {
+  const raw = String(formData.get("cadence") ?? "").trim();
+
+  if (raw === "step" || raw === "interpolated") {
+    return { ok: true, cadence: raw };
+  }
+
+  return { ok: false, error: "La cadencia de valoración no es válida." };
 }
 
 /**

@@ -7,6 +7,7 @@ import type {
   LiquidityTier,
   ManualAsset,
   OwnershipShare,
+  ValuationCadence,
 } from "@worthline/domain";
 import {
   createManualAsset,
@@ -163,6 +164,13 @@ export interface AssetStore {
   ) => Promise<void>;
   /** Read an asset's annual appreciation rate, or null if unset. */
   readAnnualAppreciationRate: (assetId: string) => Promise<DecimalString | null>;
+  /** Set (or clear, with null) an asset's valuation cadence (ADR 0031). */
+  setValuationCadence: (
+    assetId: string,
+    cadence: ValuationCadence | null,
+  ) => Promise<void>;
+  /** Read an asset's valuation cadence, or null (reads as `step`) if unset. */
+  readValuationCadence: (assetId: string) => Promise<ValuationCadence | null>;
   /**
    * Value a real-estate asset on `targetDate` (YYYY-MM-DD): reads its anchors +
    * rate + current value and delegates to the pure domain curve. `today` is a
@@ -199,6 +207,8 @@ export function createAssetStore(ctx: StoreContext): AssetStore {
     setAnnualAppreciationRate: (assetId, rate) =>
       setAnnualAppreciationRate(ctx, assetId, rate),
     readAnnualAppreciationRate: (assetId) => readAnnualAppreciationRate(ctx, assetId),
+    setValuationCadence: (assetId, cadence) => setValuationCadence(ctx, assetId, cadence),
+    readValuationCadence: (assetId) => readValuationCadence(ctx, assetId),
     valueHousingAtDate: (assetId, targetDate, today) =>
       valueHousingAtDateFor(ctx, assetId, targetDate, today),
   };
@@ -383,6 +393,33 @@ async function readAnnualAppreciationRate(
     .get();
 
   return row?.annualAppreciationRate ?? null;
+}
+
+async function setValuationCadence(
+  ctx: StoreContext,
+  assetId: string,
+  cadence: ValuationCadence | null,
+): Promise<void> {
+  await ctx.db
+    .update(assets)
+    .set({ valuationCadence: cadence, updatedAt: sql`CURRENT_TIMESTAMP` })
+    .where(eq(assets.id, assetId))
+    .run();
+
+  await ctx.writeAuditEntry("set_valuation_cadence", "asset", assetId, { cadence });
+}
+
+async function readValuationCadence(
+  ctx: StoreContext,
+  assetId: string,
+): Promise<ValuationCadence | null> {
+  const row = await ctx.db
+    .select({ valuationCadence: assets.valuationCadence })
+    .from(assets)
+    .where(eq(assets.id, assetId))
+    .get();
+
+  return row?.valuationCadence ?? null;
 }
 
 async function valueHousingAtDateFor(
