@@ -1,6 +1,8 @@
 import type { ScopeOption } from "@worthline/domain";
 import Link from "next/link";
 
+import SignOutButton from "./sign-out-button";
+
 /**
  * App shell — the topnav, scope bar, warnings rail, and persistence footer
  * that every page renders through. Each page instantiates this directly
@@ -74,17 +76,20 @@ export default function Shell({
             <p>Patrimonio neto local</p>
           </div>
         </div>
-        <nav className="topNav" aria-label="Secciones principales">
-          {NAV_SECTIONS.map((section) => (
-            <Link
-              className={section.id === activeSection ? "active" : undefined}
-              href={section.href}
-              key={section.id}
-            >
-              {section.label}
-            </Link>
-          ))}
-        </nav>
+        <div className="topbarEnd">
+          <nav className="topNav" aria-label="Secciones principales">
+            {NAV_SECTIONS.map((section) => (
+              <Link
+                className={section.id === activeSection ? "active" : undefined}
+                href={section.href}
+                key={section.id}
+              >
+                {section.label}
+              </Link>
+            ))}
+          </nav>
+          <SignOutButton />
+        </div>
       </header>
 
       {/* ── Scope bar (hidden for single-member workspaces) ─────────── */}
