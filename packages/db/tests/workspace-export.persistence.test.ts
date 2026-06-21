@@ -654,6 +654,83 @@ describe("full holding model round-trips through export/import (#155)", () => {
   });
 });
 
+describe("valuation cadence round-trips through export/import (#395, ADR 0031)", () => {
+  test("export carries an interpolated cadence and import restores it; the step default round-trips omitted", async () => {
+    const source = await createInMemoryStore();
+    await seedStructuredWorkspace(source);
+
+    // Opt two holdings out to interpolated; leave the revolving line at the step default.
+    await source.assets.setValuationCadence("a_home", "interpolated");
+    await source.liabilities.setValuationCadence("l_mort", "interpolated");
+    // l_revol stays at the default (null = step).
+
+    const doc = await source.workspace.exportWorkspace();
+    const home = doc.assets.find((a) => a.id === "a_home")!;
+    const mort = doc.liabilities.find((l) => l.id === "l_mort")!;
+    const revol = doc.liabilities.find((l) => l.id === "l_revol")!;
+    // Interpolated holdings carry the field as part of their model; the step
+    // default is omitted (it round-trips as step without being written).
+    expect(home.valuationCadence).toBe("interpolated");
+    expect(mort.valuationCadence).toBe("interpolated");
+    expect(revol.valuationCadence).toBeUndefined();
+
+    const restored = await createInMemoryStore();
+    await restored.workspace.importWorkspace(doc);
+    expect(await restored.assets.readValuationCadence("a_home")).toBe("interpolated");
+    expect(await restored.liabilities.readValuationCadence("l_mort")).toBe(
+      "interpolated",
+    );
+    // The omitted cadence imports as the step default (null).
+    expect(await restored.liabilities.readValuationCadence("l_revol")).toBeNull();
+
+    source.close();
+    restored.close();
+  });
+
+  test("an older export without the field imports as step (backward compatible)", async () => {
+    const source = await createInMemoryStore();
+    await seedStructuredWorkspace(source);
+    await source.assets.setValuationCadence("a_home", "interpolated");
+
+    // Simulate a pre-#395 file: a deep clone with the cadence field stripped from
+    // every holding, mirroring a document exported before the field existed.
+    const doc = await source.workspace.exportWorkspace();
+    const legacy = JSON.parse(JSON.stringify(doc)) as typeof doc;
+    for (const a of legacy.assets)
+      delete (a as { valuationCadence?: unknown }).valuationCadence;
+    for (const l of legacy.liabilities)
+      delete (l as { valuationCadence?: unknown }).valuationCadence;
+
+    const restored = await createInMemoryStore();
+    await restored.workspace.importWorkspace(legacy);
+    // Every holding reads back as step (null), with no error.
+    expect(await restored.assets.readValuationCadence("a_home")).toBeNull();
+    expect(await restored.liabilities.readValuationCadence("l_mort")).toBeNull();
+
+    source.close();
+    restored.close();
+  });
+
+  test("an explicit step is omitted on export and round-trips as the default (canonical)", async () => {
+    const source = await createInMemoryStore();
+    await seedStructuredWorkspace(source);
+    // A user explicitly choosing "Escalonado" stores "step" in the column; the
+    // export must still omit it (only `interpolated` is the non-default worth carrying).
+    await source.assets.setValuationCadence("a_home", "step");
+
+    const doc = await source.workspace.exportWorkspace();
+    const home = doc.assets.find((a) => a.id === "a_home")!;
+    expect(home.valuationCadence).toBeUndefined();
+
+    const restored = await createInMemoryStore();
+    await restored.workspace.importWorkspace(doc);
+    expect(await restored.assets.readValuationCadence("a_home")).toBeNull();
+
+    source.close();
+    restored.close();
+  });
+});
+
 describe("instrument round-trips through export/import (#149)", () => {
   test("export carries each holding's instrument and import restores it", async () => {
     const store = await createInMemoryStore();
