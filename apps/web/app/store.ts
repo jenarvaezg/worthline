@@ -25,6 +25,12 @@ import { seedDemoStore } from "@web/demo/store-provider";
 import { readStoreTarget } from "./read-store-target";
 import type { StoreTarget } from "./store-resolver";
 
+// Re-exported so request-scoped callers (pages, server actions) import both the
+// store opener and its type from this seam — never from `@worthline/db` directly,
+// whose `withStore` defaults to the local file path (ENOENT on Vercel's read-only
+// FS) instead of resolving the authenticated workspace / demo target (ADR 0030).
+export type { WorthlineStore } from "@worthline/db";
+
 function assertReachable(target: StoreTarget): void {
   if (target.kind === "unauthenticated") {
     throw new Error("Store opened without authentication");
