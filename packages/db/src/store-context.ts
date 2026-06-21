@@ -9,7 +9,7 @@ import type {
   Workspace,
 } from "@worthline/domain";
 import { createLiability, projectAssets } from "@worthline/domain";
-import type { Client } from "@libsql/client";
+import type { Client, Transaction } from "@libsql/client";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
@@ -57,13 +57,18 @@ export interface StoreContext {
   /** Id generator (randomUUID), injectable so slices never import crypto twice. */
   newId: () => string;
   /**
-   * Bracket a unit of work in a SQLite transaction and run it. libSQL's
-   * interactive transactions open a SEPARATE connection that can't see a
-   * `:memory:` database, so the transaction is driven by hand — `BEGIN` /
-   * `COMMIT` / `ROLLBACK` over the single shared connection, where both the
-   * drizzle `db` and raw `client` writes participate. Nested calls flatten into
-   * the outer transaction (every caller rethrows on failure, so the whole unit
-   * rolls back together under one flattened transaction).
+   * Bracket a unit of work in a SQLite transaction and run it, with both the
+   * drizzle `db` and raw `client` writes participating. Two drivers, chosen by
+   * connection kind (see `createStoreContext`):
+   *   - LOCAL (`file:`/`:memory:`) hand-rolls `BEGIN`/`COMMIT`/`ROLLBACK` over
+   *     the single shared connection — libSQL's interactive transaction would
+   *     open a SEPARATE connection that can't see a `:memory:` database.
+   *   - REMOTE (Turso, `libsql://` → http/ws) opens an interactive
+   *     `client.transaction()` (one stream) and redirects the store's `db`/
+   *     `client` onto it — hand-rolled `BEGIN`/`COMMIT` would land on different
+   *     pooled streams and fail with "no transaction is active".
+   * Nested calls flatten into the outer transaction (every caller rethrows on
+   * failure, so the whole unit rolls back together under one flattened tx).
    */
   transaction: <T>(work: () => T | Promise<T>) => Promise<T>;
   /** Append one row to the audit log. Shared concern (ADR audit trail). */
@@ -94,13 +99,84 @@ export function createStoreContext(
   let cachedWorkspace: Workspace | null | undefined;
 
   // One drizzle instance per store lifetime, bound to the shared client.
-  const db = openDrizzle(client);
+  const baseDb = openDrizzle(client);
+
+  // A remote libSQL connection (Turso, `libsql://` → http/ws) cannot be driven
+  // by hand-rolled BEGIN/COMMIT: each `execute` may land on a different pooled
+  // stream, so COMMIT throws "no transaction is active". For remote we open one
+  // interactive `client.transaction()` and redirect both the drizzle `db` and
+  // the raw `client` writes onto it for the unit of work. Local `file:`/
+  // `:memory:` keeps the hand-rolled path over its single shared connection
+  // (an interactive tx would open a SEPARATE connection blind to `:memory:`).
+  const isRemote = client.protocol !== "file";
+
+  // The live transaction-scoped targets: the base instances outside a tx (and
+  // always on local), the interactive-tx connection during a remote tx. The
+  // exposed `db`/`client` are STABLE proxies over these, so the many
+  // `const { db } = ctx` call sites — which capture before a tx opens — still
+  // route their writes onto the tx connection once one is active.
+  let currentDb: StoreDb = baseDb;
+  let currentClient: Client | Transaction = client;
+
+  // Forward each accessed method bound to the LIVE target: the native libSQL
+  // client rejects a Proxy as its `this`, so methods must run on the real
+  // object, not the proxy.
+  const bindToTarget = (target: object, prop: string | symbol): unknown => {
+    const value = Reflect.get(target, prop, target);
+    return typeof value === "function" ? value.bind(target) : value;
+  };
+  const db = new Proxy(baseDb, {
+    get: (_t, prop) => bindToTarget(currentDb as object, prop),
+  });
+  const client_ = new Proxy(client, {
+    get: (_t, prop) => bindToTarget(currentClient as object, prop),
+  });
 
   // Flatten-nesting depth: only the outermost transaction issues BEGIN/COMMIT.
   let txDepth = 0;
 
+  // REMOTE: one interactive tx (a single stream); redirect db/client onto it.
+  const runRemoteTransaction = async <T>(work: () => T | Promise<T>): Promise<T> => {
+    const tx = await client.transaction("write");
+    currentClient = tx;
+    currentDb = openDrizzle(tx as unknown as Client);
+    try {
+      const result = await work();
+      await tx.commit();
+      return result;
+    } catch (err) {
+      try {
+        await tx.rollback();
+      } catch {
+        // A failed rollback must not mask the original error.
+      }
+      throw err;
+    } finally {
+      tx.close();
+      currentClient = client;
+      currentDb = baseDb;
+    }
+  };
+
+  // LOCAL: hand-rolled BEGIN/COMMIT over the single shared connection.
+  const runLocalTransaction = async <T>(work: () => T | Promise<T>): Promise<T> => {
+    await client.execute("BEGIN");
+    try {
+      const result = await work();
+      await client.execute("COMMIT");
+      return result;
+    } catch (err) {
+      try {
+        await client.execute("ROLLBACK");
+      } catch {
+        // A failed rollback must not mask the original error.
+      }
+      throw err;
+    }
+  };
+
   return {
-    client,
+    client: client_,
     db,
     newId: () => randomUUID(),
     transaction: async (work) => {
@@ -109,24 +185,16 @@ export function createStoreContext(
         return work();
       }
       txDepth += 1;
-      await client.execute("BEGIN");
       try {
-        const result = await work();
-        await client.execute("COMMIT");
-        return result;
-      } catch (err) {
-        try {
-          await client.execute("ROLLBACK");
-        } catch {
-          // A failed rollback must not mask the original error.
-        }
-        throw err;
+        return isRemote
+          ? await runRemoteTransaction(work)
+          : await runLocalTransaction(work);
       } finally {
         txDepth -= 1;
       }
     },
     writeAuditEntry: async (action, entityType, entityId, details = {}) => {
-      await db
+      await currentDb
         .insert(auditLog)
         .values({
           action,
@@ -139,7 +207,7 @@ export function createStoreContext(
     },
     getWorkspace: async () => {
       if (cachedWorkspace === undefined) {
-        cachedWorkspace = await readWorkspace(db);
+        cachedWorkspace = await readWorkspace(currentDb);
       }
 
       return cachedWorkspace;
