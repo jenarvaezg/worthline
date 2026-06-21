@@ -78,9 +78,12 @@ export default async function EditarPage({
     const scopes = listScopeOptions(workspace);
     const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
 
-    const assets = await store.assets.readAssets();
-    const liabilities = await store.liabilities.readLiabilities();
-    const overrides = await store.readWarningOverrides();
+    // Independent base reads — one wave instead of serial round-trips (#446).
+    const [assets, liabilities, overrides] = await Promise.all([
+      store.assets.readAssets(),
+      store.liabilities.readLiabilities(),
+      store.readWarningOverrides(),
+    ]);
 
     const asset = assets.find((a) => a.id === id) ?? null;
     const liability = liabilities.find((l) => l.id === id) ?? null;
@@ -90,14 +93,15 @@ export default async function EditarPage({
 
     // appreciating (property): appreciation rate + market appraisals (PRD #108).
     const isAppreciating = assetMethod === "appreciating";
-    const anchors = isAppreciating ? await store.assets.readValuationAnchors(id) : [];
-    const appreciationRate = isAppreciating
-      ? await store.assets.readAnnualAppreciationRate(id)
-      : null;
-    // Valuation cadence of the housing asset (ADR 0031, #394); null → `step`.
-    const housingValuationCadence = isAppreciating
-      ? await store.assets.readValuationCadence(id)
-      : null;
+    // The three housing reads are independent — fetch them in one wave (#446).
+    // (cadence: ADR 0031, #394; null → `step`.)
+    const [anchors, appreciationRate, housingValuationCadence] = isAppreciating
+      ? await Promise.all([
+          store.assets.readValuationAnchors(id),
+          store.assets.readAnnualAppreciationRate(id),
+          store.assets.readValuationCadence(id),
+        ])
+      : [[], null, null];
 
     // A connected-source coin collection (Numista) is `derived` too, but its
     // sub-detail is its mirrored positions, not investment operations (ADR 0016).
@@ -194,12 +198,14 @@ export default async function EditarPage({
       liability && debtModel === "amortizable"
         ? await store.liabilities.readAmortizationPlan(id)
         : null;
-    const rateRevisions = amortizationPlan
-      ? await store.liabilities.readInterestRateRevisions(amortizationPlan.id)
-      : [];
-    const earlyRepayments = amortizationPlan
-      ? await store.liabilities.readEarlyRepayments(amortizationPlan.id)
-      : [];
+    // Revisions + early repayments both hang off the plan id and are independent
+    // of each other — one wave once the plan is known (#446).
+    const [rateRevisions, earlyRepayments] = amortizationPlan
+      ? await Promise.all([
+          store.liabilities.readInterestRateRevisions(amortizationPlan.id),
+          store.liabilities.readEarlyRepayments(amortizationPlan.id),
+        ])
+      : [[], []];
     const balanceAnchors =
       liability && (debtModel === "revolving" || debtModel === "informal")
         ? await store.liabilities.readBalanceAnchors(id)

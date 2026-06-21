@@ -56,12 +56,24 @@ export default async function PatrimonioPage({
     const selectedScope =
       scopes.find((scope) => scope.id === selectedScopeId) ?? scopes[0];
 
+    // These reads are independent of one another, so fire them in one wave
+    // instead of stacking serial round-trips to the (remote) store (#446).
+    const [priceCacheEntries, investmentMeta, assets, liabilities, overrides, trash] =
+      await Promise.all([
+        store.operations.readAllPriceCacheEntries(),
+        store.assets.readInvestmentAssetsWithMeta(),
+        store.assets.readAssets(),
+        store.liabilities.readLiabilities(),
+        store.readWarningOverrides(),
+        store.readTrash(),
+      ]);
+
     // Price-refresh metadata for the derived-value badge hover (#303): when + by
     // which source each cached unit price was last fetched, keyed by asset id. The
     // projection attaches it to investment rows only; non-investment entries are
     // ignored downstream.
     const priceMetaByAsset = new Map<string, PriceRefreshMeta>(
-      (await store.operations.readAllPriceCacheEntries()).map((entry) => [
+      priceCacheEntries.map((entry) => [
         entry.assetId,
         { fetchedAt: entry.fetchedAt, source: entry.source },
       ]),
@@ -70,19 +82,19 @@ export default async function PatrimonioPage({
     // Whether the manual "Actualizar precios" trigger (#405) has anything to do:
     // read from the SAME meta source the action filters on, so the control only
     // appears when a force-refresh would actually refetch a provider-priced holding.
-    const hasPricedHoldings = (await store.assets.readInvestmentAssetsWithMeta()).some(
-      (asset) => Boolean(asset.providerSymbol),
+    const hasPricedHoldings = investmentMeta.some((asset) =>
+      Boolean(asset.providerSymbol),
     );
 
     return {
-      assets: await store.assets.readAssets(),
+      assets,
       hasPricedHoldings,
-      liabilities: await store.liabilities.readLiabilities(),
-      overrides: await store.readWarningOverrides(),
+      liabilities,
+      overrides,
       priceMetaByAsset,
       scopes,
       selectedScope,
-      trash: await store.readTrash(),
+      trash,
       workspace,
     };
   });
