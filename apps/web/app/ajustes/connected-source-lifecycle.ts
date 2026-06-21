@@ -1,4 +1,4 @@
-import { withStore, type WorthlineStore } from "@worthline/db";
+import { withStore, type WorthlineStore } from "@web/store";
 import type {
   AdapterPositionDraft,
   ConnectedSourceAdapter,
