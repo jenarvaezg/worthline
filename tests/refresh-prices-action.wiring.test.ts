@@ -147,6 +147,46 @@ describe("refreshPricesAction wiring", () => {
     expect(url).not.toContain("failed=");
   });
 
+  test("assetId scopes the refresh to a single holding (#406)", async () => {
+    await setupStore();
+    await store.assets.createInvestmentAsset({
+      id: "asset_target",
+      name: "Target ETF",
+      currency: "EUR",
+      liquidityTier: "market",
+      ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
+      providerSymbol: "TARGET.WA",
+    });
+    await store.assets.createInvestmentAsset({
+      id: "asset_other",
+      name: "Other ETF",
+      currency: "EUR",
+      liquidityTier: "market",
+      ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
+      providerSymbol: "OTHER.WA",
+    });
+
+    const provider = mockProvider({
+      "TARGET.WA": { price: "11.00" },
+      "OTHER.WA": { price: "22.00" },
+    });
+
+    const url = await catchRedirect(() =>
+      refreshPricesAction(
+        fd({ assetId: "asset_target" }, "/patrimonio/asset_target/editar"),
+        store,
+        provider,
+      ),
+    );
+
+    expect(url).toContain("ok=prices_refreshed");
+    expect(url).toContain("updated=1");
+    // Only the targeted holding is refetched + cached; the sibling is untouched.
+    expect(provider.fetchPrice).toHaveBeenCalledTimes(1);
+    expect(await store.operations.readPriceCache("asset_target")).not.toBeNull();
+    expect(await store.operations.readPriceCache("asset_other")).toBeNull();
+  });
+
   test("real routing path refreshes retirement investments through Finect", async () => {
     await setupStore();
     await store.assets.createInvestmentAsset({
