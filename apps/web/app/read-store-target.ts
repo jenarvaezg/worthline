@@ -10,6 +10,21 @@ function isAuthConfigured(env: Record<string, string | undefined>): boolean {
 }
 
 /**
+ * The persona cookie, or undefined when there is no request scope to read it
+ * from. A server action invoked directly in a unit test runs outside Next's
+ * request context, where `cookies()` throws — that simply means "no persona
+ * cookie", so the request resolves as non-demo. In production every caller is
+ * inside a request, so the cookie is always read normally.
+ */
+async function readPersonaCookie(): Promise<string | undefined> {
+  try {
+    return (await cookies()).get(DEMO_PERSONA_COOKIE_NAME)?.value;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Read the request-scoped store target from the current session, env, and the
  * persona cookie. This is the server-side entry point: server components,
  * actions, and route handlers call this to decide which workspace (if any) to
@@ -21,7 +36,7 @@ function isAuthConfigured(env: Record<string, string | undefined>): boolean {
  */
 export async function readStoreTarget(): Promise<StoreTarget> {
   const env = process.env;
-  const personaCookie = (await cookies()).get(DEMO_PERSONA_COOKIE_NAME)?.value;
+  const personaCookie = await readPersonaCookie();
 
   if (!isAuthConfigured(env)) {
     return resolveStoreTarget({ env, session: null, personaCookie });
