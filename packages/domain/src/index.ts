@@ -186,6 +186,7 @@ export type {
 } from "./connected-source";
 export {
   coinCollectionValueAtDate,
+  coinPositionSnapshotInput,
   coinValue,
   frozenInstrumentForAdapter,
   groupPositionsByMetal,
@@ -270,14 +271,18 @@ export type {
   BuildSnapshotHoldingRowsInput,
   HoldingDelta,
   InvestmentCaptureDetail,
+  PositionDelta,
   SnapshotHoldingKind,
   SnapshotHoldingRow,
+  SnapshotPositionInput,
+  SnapshotPositionRow,
   SnapshotReconciliationTotals,
 } from "./snapshot-holdings";
 export {
   assertSnapshotHoldingsReconcile,
   buildSnapshotHoldingRows,
   deriveHoldingDeltas,
+  derivePositionDeltas,
 } from "./snapshot-holdings";
 
 export type {

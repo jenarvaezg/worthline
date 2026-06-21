@@ -14,19 +14,30 @@ import type {
   LiquidityTier,
   MoneyMinor,
   NetWorthSnapshot,
+  PositionDelta,
 } from "@worthline/domain";
 import {
   deriveConfirmedMonthlyCloseIds,
   deriveHoldingDeltas,
+  derivePositionDeltas,
   formatMoneyMinor,
   moneySign,
 } from "@worthline/domain";
 import type { SnapshotHoldingRecord } from "@worthline/db";
 
+/**
+ * A per-holding mover, optionally carrying its per-position movers (ADR 0035) —
+ * the second drilldown level for a connected-source holding that froze a
+ * breakdown. Plain holdings carry none.
+ */
+export interface HistoricoMover extends HoldingDelta {
+  positions?: PositionDelta[];
+}
+
 export interface HistoricoRow {
   snapshot: NetWorthSnapshot;
   delta?: MoneyMinor;
-  movers: HoldingDelta[];
+  movers: HistoricoMover[];
   isMonthlyClose: boolean;
 }
 
@@ -59,12 +70,20 @@ export function buildHistoricoRows(
             currency: snapshot.totalNetWorth.currency,
           }
         : undefined;
-      const movers = prev
-        ? deriveHoldingDeltas(
-            bySnapshot.get(prev.id) ?? [],
-            bySnapshot.get(snapshot.id) ?? [],
-          )
-        : [];
+      const prevRecs = prev ? (bySnapshot.get(prev.id) ?? []) : [];
+      const curRecs = bySnapshot.get(snapshot.id) ?? [];
+      // Enrich each holding mover with its per-position movers (ADR 0035), derived
+      // from the two days' frozen position rows. A connected holding that froze a
+      // breakdown gets a second level; a plain holding gets none.
+      const movers: HistoricoMover[] = (
+        prev ? deriveHoldingDeltas(prevRecs, curRecs) : []
+      ).map((mover) => {
+        const positions = derivePositionDeltas(
+          prevRecs.find((r) => r.holdingId === mover.holdingId)?.positions ?? [],
+          curRecs.find((r) => r.holdingId === mover.holdingId)?.positions ?? [],
+        );
+        return positions.length > 0 ? { ...mover, positions } : mover;
+      });
       return {
         snapshot,
         movers,
@@ -87,6 +106,60 @@ function formatSigned(value: MoneyMinor): string {
 
 function TierDot({ tier }: { tier: LiquidityTier | null }) {
   return <span className={`tierDot tierDot--${tier ?? "none"}`} aria-hidden="true" />;
+}
+
+/**
+ * The second drilldown level (ADR 0035): a connected holding's per-coin movers,
+ * each with its image (a metal-glyph fallback when the catalogue has none, like
+ * the live coin gallery), label, and signed € contribution. Zero-JS (ADR 0009).
+ */
+function PositionMovers({
+  positions,
+  currency,
+}: {
+  positions: PositionDelta[];
+  currency: string;
+}) {
+  return (
+    <div className="historicoPositionBridge">
+      {positions.map((p) => {
+        const sign = moneySign({ amountMinor: p.contributionMinor, currency });
+        return (
+          <div key={p.positionKey} className="historicoPositionRow">
+            <span className="historicoPositionLabel">
+              <span className="historicoPositionThumb">
+                {p.imageUrl ? (
+                  // A remote Numista CDN thumb, server-rendered (ADR 0009); no
+                  // next/image optimizer for an external, list-scale image.
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    alt=""
+                    className="coinThumbImg"
+                    height={24}
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                    src={p.imageUrl}
+                    width={24}
+                  />
+                ) : (
+                  <span className="coinThumbFallback" aria-hidden="true" />
+                )}
+              </span>
+              <span className="historicoPositionName">{p.label}</span>
+              {p.status !== "changed" ? (
+                <em className="historicoMoverTag">
+                  {p.status === "new" ? "nuevo" : "salió"}
+                </em>
+              ) : null}
+            </span>
+            <span className={`numCol ${sign}`}>
+              {formatSigned({ amountMinor: p.contributionMinor, currency })}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export function HistoricoTable({ rows }: { rows: HistoricoRow[] }) {
@@ -145,27 +218,58 @@ export function HistoricoTable({ rows }: { rows: HistoricoRow[] }) {
                           Math.round((Math.abs(m.contributionMinor) / maxAbs) * 100),
                         )
                       : 0;
+                  const label = (
+                    <span className="historicoBridgeLabel">
+                      <TierDot tier={m.liquidityTier} />
+                      {m.label}
+                      {m.status !== "changed" ? (
+                        <em className="historicoMoverTag">
+                          {m.status === "new" ? "nuevo" : "salió"}
+                        </em>
+                      ) : null}
+                      {m.positions ? (
+                        <span className="historicoMoverCue" aria-hidden="true">
+                          {m.positions.length} ▾
+                        </span>
+                      ) : null}
+                    </span>
+                  );
+                  const track = (
+                    <span className="historicoBridgeTrack">
+                      <i
+                        className={`historicoBridgeFill ${sign}`}
+                        style={{ width: `${width}%` }}
+                      />
+                    </span>
+                  );
+                  const amount = (
+                    <span className={`numCol ${sign}`}>
+                      {formatSigned(money(m.contributionMinor, currency))}
+                    </span>
+                  );
+
+                  // A plain holding: a single bridge row. A connected holding that
+                  // froze a per-position breakdown (ADR 0035): the same row becomes
+                  // a native <details> (zero-JS, ADR 0009) that opens its per-coin
+                  // movers — the second drilldown level.
+                  if (!m.positions) {
+                    return (
+                      <div key={m.holdingId} className="historicoBridgeRow">
+                        {label}
+                        {track}
+                        {amount}
+                      </div>
+                    );
+                  }
                   return (
-                    <div key={m.holdingId} className="historicoBridgeRow">
-                      <span className="historicoBridgeLabel">
-                        <TierDot tier={m.liquidityTier} />
-                        {m.label}
-                        {m.status !== "changed" ? (
-                          <em className="historicoMoverTag">
-                            {m.status === "new" ? "nuevo" : "salió"}
-                          </em>
-                        ) : null}
-                      </span>
-                      <span className="historicoBridgeTrack">
-                        <i
-                          className={`historicoBridgeFill ${sign}`}
-                          style={{ width: `${width}%` }}
-                        />
-                      </span>
-                      <span className={`numCol ${sign}`}>
-                        {formatSigned(money(m.contributionMinor, currency))}
-                      </span>
-                    </div>
+                    <details key={m.holdingId} className="historicoMoverDetails">
+                      <summary className="historicoBridgeRow historicoMoverSummary">
+                        {label}
+                        {track}
+                        {amount}
+                      </summary>
+                      <PositionMovers positions={m.positions} currency={currency} />
+                    </details>
                   );
                 })
               )}

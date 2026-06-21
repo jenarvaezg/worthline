@@ -20,6 +20,7 @@ import type { Instrument } from "./instrument-catalog";
 import { LIQUIDITY_LADDER } from "./liquidity-ladder";
 import type { LiquidityTier } from "./liquidity-ladder";
 import type { CurrencyCode } from "./money";
+import type { SnapshotPositionInput } from "./snapshot-holdings";
 import type { OwnershipShare } from "./workspace-types";
 
 /** Which external account an adapter speaks to. Numista was the first; Binance is
@@ -272,6 +273,25 @@ export function projectedPositionValue(position: SourcePosition): number {
   return position.kind === "coin"
     ? coinValue(position).minor
     : positionValue(position.balance, position.unitPrice).minor;
+}
+
+/**
+ * Freeze a coin into the per-position snapshot input it contributes to its
+ * holding's breakdown (ADR 0035). Carries the coin's STABLE key (its Numista
+ * `externalId`, ADR 0017 — never the reassigned internal id), its name, its frozen
+ * `coinValue` (`max(metal, numismatic)`, purchase-price fallback), and the display
+ * metadata the second drilldown level renders (metal + obverse thumbnail). Value
+ * and labels only — no secrets. The capture scope-allocates these values down to
+ * the holding's owned share.
+ */
+export function coinPositionSnapshotInput(coin: CoinPosition): SnapshotPositionInput {
+  return {
+    positionKey: coin.externalId,
+    label: coin.name,
+    valueMinor: coinValue(coin).minor,
+    metal: coin.metal,
+    imageUrl: coin.obverseThumbUrl,
+  };
 }
 
 /** A connected source's rolled-up holding on one liquidity rung (ADR 0016). */

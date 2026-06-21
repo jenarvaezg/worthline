@@ -13,7 +13,10 @@ import type {
   InvestmentCaptureDetail,
   Liability,
   ManualAsset,
+  PositionDelta,
   SnapshotHoldingRow,
+  SnapshotPositionInput,
+  SnapshotPositionRow,
   Workspace,
 } from "./index";
 import {
@@ -24,6 +27,7 @@ import {
   createManualAsset,
   createWorkspace,
   deriveHoldingDeltas,
+  derivePositionDeltas,
 } from "./index";
 
 function makeWorkspace(): Workspace {
@@ -645,5 +649,388 @@ describe("deriveHoldingDeltas", () => {
 
     expect(totalContribution).toBe(aggregateDelta);
     expect(totalContribution).toBe(3_100);
+  });
+});
+
+describe("buildSnapshotHoldingRows — per-position breakdown (ADR 0035)", () => {
+  function coinCollection(
+    workspace: Workspace,
+    ownership = [{ memberId: "member_jose", shareBps: 10_000 }],
+  ): ManualAsset {
+    return createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 5_000_00,
+      id: "asset_coins",
+      liquidityTier: "illiquid",
+      name: "Colección Numista",
+      ownership,
+      type: "manual",
+    });
+  }
+
+  const twoCoins: SnapshotPositionInput[] = [
+    {
+      positionKey: "numista_item_1",
+      label: "5 Pounds Charles III",
+      valueMinor: 3_000_00,
+      metal: "gold",
+      imageUrl: "https://numista.test/charles.jpg",
+    },
+    {
+      positionKey: "numista_item_2",
+      label: "Krugerrand",
+      valueMinor: 2_000_00,
+      metal: "gold",
+      imageUrl: null,
+    },
+  ];
+
+  test("freezes one position row per coin under a connected holding, summing to the holding", () => {
+    const workspace = makeWorkspace();
+    const rows = buildSnapshotHoldingRows({
+      assets: [coinCollection(workspace)],
+      positionDetails: new Map([["asset_coins", twoCoins]]),
+      scopeId: "household",
+      workspace,
+    });
+
+    const holding = rows.find((row) => row.holdingId === "asset_coins");
+    expect(holding?.valueMinor).toBe(5_000_00);
+    // Each coin frozen as a child row: stable key, label, value, metal + image.
+    expect(holding?.positions).toEqual([
+      {
+        positionKey: "numista_item_1",
+        label: "5 Pounds Charles III",
+        valueMinor: 3_000_00,
+        metal: "gold",
+        imageUrl: "https://numista.test/charles.jpg",
+      },
+      {
+        positionKey: "numista_item_2",
+        label: "Krugerrand",
+        valueMinor: 2_000_00,
+        metal: "gold",
+        imageUrl: null,
+      },
+    ]);
+    // ADR 0035 invariant: the coin rows sum EXACTLY to the holding's value.
+    const sum = holding!.positions!.reduce((acc, p) => acc + p.valueMinor, 0);
+    expect(sum).toBe(holding!.valueMinor);
+  });
+
+  test("a manual holding with no position breakdown carries no position rows", () => {
+    const workspace = makeWorkspace();
+    const rows = buildSnapshotHoldingRows({
+      assets: makeAssets(workspace),
+      liabilities: makeLiabilities(workspace),
+      scopeId: "household",
+      workspace,
+    });
+
+    for (const row of rows) {
+      expect(row.positions).toBeUndefined();
+    }
+  });
+
+  test("scope-allocates the position rows so they sum EXACTLY to the holding's owned value", () => {
+    const workspace = makeWorkspace();
+    // A 50/50 household collection, captured for Jose's scope → he owns half.
+    const rows = buildSnapshotHoldingRows({
+      assets: [
+        coinCollection(workspace, [
+          { memberId: "member_jose", shareBps: 5_000 },
+          { memberId: "member_ana", shareBps: 5_000 },
+        ]),
+      ],
+      positionDetails: new Map([["asset_coins", twoCoins]]),
+      scopeId: "member_jose",
+      workspace,
+    });
+
+    const holding = rows.find((row) => row.holdingId === "asset_coins");
+    // Half of the 5_000_00 collection.
+    expect(holding?.valueMinor).toBe(2_500_00);
+    // The coin rows are scope-allocated too: 3:2 of 2_500_00.
+    expect(holding?.positions?.map((p) => p.valueMinor)).toEqual([1_500_00, 1_000_00]);
+    // ADR 0035 invariant holds under partial ownership.
+    const sum = holding!.positions!.reduce((acc, p) => acc + p.valueMinor, 0);
+    expect(sum).toBe(holding!.valueMinor);
+  });
+
+  test("distributes the rounding residual by largest remainder, keeping the sub-sum exact", () => {
+    const workspace = makeWorkspace();
+    // Three equal coins of 1,00 € each (full collection 3,00 €). Jose owns a third,
+    // so his owned share is 1,00 € — which cannot split three ways evenly.
+    const threeEqualCoins: SnapshotPositionInput[] = [
+      {
+        positionKey: "c1",
+        label: "Coin 1",
+        valueMinor: 1_00,
+        metal: null,
+        imageUrl: null,
+      },
+      {
+        positionKey: "c2",
+        label: "Coin 2",
+        valueMinor: 1_00,
+        metal: null,
+        imageUrl: null,
+      },
+      {
+        positionKey: "c3",
+        label: "Coin 3",
+        valueMinor: 1_00,
+        metal: null,
+        imageUrl: null,
+      },
+    ];
+    const thirds = createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 3_00,
+      id: "asset_coins",
+      liquidityTier: "illiquid",
+      name: "Colección Numista",
+      ownership: [
+        { memberId: "member_jose", shareBps: 3_333 },
+        { memberId: "member_ana", shareBps: 6_667 },
+      ],
+      type: "manual",
+    });
+
+    const rows = buildSnapshotHoldingRows({
+      assets: [thirds],
+      positionDetails: new Map([["asset_coins", threeEqualCoins]]),
+      scopeId: "member_jose",
+      workspace,
+    });
+
+    const holding = rows.find((row) => row.holdingId === "asset_coins");
+    // allocateByBps(300, 3333) = round(99.99) = 100 minor units owned.
+    expect(holding?.valueMinor).toBe(1_00);
+    // 100 ÷ 3 leaves a 1-unit residual; largest-remainder gives it to the first.
+    expect(holding?.positions?.map((p) => p.valueMinor)).toEqual([34, 33, 33]);
+    const sum = holding!.positions!.reduce((acc, p) => acc + p.valueMinor, 0);
+    expect(sum).toBe(holding!.valueMinor);
+  });
+
+  test("stays exact for a large collection whose value × weight overflows MAX_SAFE_INTEGER", () => {
+    const workspace = makeWorkspace();
+    // A 2.000.000 € bullion collection at 50% ownership: the owned value (1e8 minor)
+    // times a coin's weight (1.2e8 minor) is 1.2e16 — past Number.MAX_SAFE_INTEGER
+    // (~9e15), so a naive product would corrupt the floor. The BigInt path keeps it
+    // exact and the sub-sum reconciles.
+    const bigCoins: SnapshotPositionInput[] = [
+      {
+        positionKey: "bar1",
+        label: "Lingote 1",
+        valueMinor: 1_200_000_00,
+        metal: "gold",
+        imageUrl: null,
+      },
+      {
+        positionKey: "bar2",
+        label: "Lingote 2",
+        valueMinor: 800_000_00,
+        metal: "gold",
+        imageUrl: null,
+      },
+    ];
+    const bullion = createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 2_000_000_00,
+      id: "asset_coins",
+      liquidityTier: "illiquid",
+      name: "Lingotes",
+      ownership: [
+        { memberId: "member_jose", shareBps: 5_000 },
+        { memberId: "member_ana", shareBps: 5_000 },
+      ],
+      type: "manual",
+    });
+
+    const rows = buildSnapshotHoldingRows({
+      assets: [bullion],
+      positionDetails: new Map([["asset_coins", bigCoins]]),
+      scopeId: "member_jose",
+      workspace,
+    });
+
+    const holding = rows.find((row) => row.holdingId === "asset_coins");
+    expect(holding?.valueMinor).toBe(1_000_000_00); // half of 2.000.000 €
+    expect(holding?.positions?.map((p) => p.valueMinor)).toEqual([
+      600_000_00, 400_000_00,
+    ]);
+    const sum = holding!.positions!.reduce((acc, p) => acc + p.valueMinor, 0);
+    expect(sum).toBe(holding!.valueMinor);
+  });
+});
+
+describe("assertSnapshotHoldingsReconcile — per-position sub-sum (ADR 0035)", () => {
+  function connectedRow(positions: SnapshotPositionRow[]): SnapshotHoldingRow {
+    return {
+      countsAsHousing: false,
+      holdingId: "asset_coins",
+      kind: "asset",
+      label: "Colección Numista",
+      liquidityTier: "illiquid",
+      positions,
+      securesHousing: false,
+      valueMinor: 5_000_00,
+    };
+  }
+
+  test("rejects a connected holding whose position rows do not sum to its value", () => {
+    const rows = [
+      connectedRow([
+        {
+          positionKey: "c1",
+          label: "A",
+          valueMinor: 3_000_00,
+          metal: null,
+          imageUrl: null,
+        },
+        {
+          positionKey: "c2",
+          label: "B",
+          valueMinor: 1_000_00,
+          metal: null,
+          imageUrl: null,
+        },
+      ]),
+    ];
+
+    expect(() =>
+      assertSnapshotHoldingsReconcile(rows, {
+        debtsMinor: 0,
+        grossAssetsMinor: 5_000_00,
+      }),
+    ).toThrow(/Colección Numista|asset_coins/);
+  });
+
+  test("accepts a connected holding whose position rows sum exactly to its value", () => {
+    const rows = [
+      connectedRow([
+        {
+          positionKey: "c1",
+          label: "A",
+          valueMinor: 3_000_00,
+          metal: null,
+          imageUrl: null,
+        },
+        {
+          positionKey: "c2",
+          label: "B",
+          valueMinor: 2_000_00,
+          metal: null,
+          imageUrl: null,
+        },
+      ]),
+    ];
+
+    expect(() =>
+      assertSnapshotHoldingsReconcile(rows, {
+        debtsMinor: 0,
+        grossAssetsMinor: 5_000_00,
+      }),
+    ).not.toThrow();
+  });
+
+  test("a legacy holding with no position rows reconciles exactly as before", () => {
+    const workspace = makeWorkspace();
+    const rows = buildSnapshotHoldingRows({
+      assets: makeAssets(workspace),
+      liabilities: makeLiabilities(workspace),
+      scopeId: "household",
+      workspace,
+    });
+
+    // No position rows anywhere → the original ADR 0008 invariant alone applies.
+    expect(() =>
+      assertSnapshotHoldingsReconcile(rows, {
+        debtsMinor: 123_000_00,
+        grossAssetsMinor: 370_000_00,
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe("derivePositionDeltas — second drilldown level (ADR 0035)", () => {
+  function coin(
+    positionKey: string,
+    valueMinor: number,
+    overrides: Partial<SnapshotPositionRow> = {},
+  ): SnapshotPositionRow {
+    return {
+      positionKey,
+      label: positionKey,
+      valueMinor,
+      metal: "gold",
+      imageUrl: null,
+      ...overrides,
+    };
+  }
+
+  test("attributes a connected holding's change to its per-coin movers, signed and sorted", () => {
+    const previous = [coin("c1", 3_000_00, { label: "Sovereign" }), coin("c2", 1_000_00)];
+    const current = [
+      coin("c1", 3_141_00, { label: "Sovereign" }), // +141,00 €
+      coin("c2", 1_000_00), // unchanged → omitted
+      coin("c3", 50_00, { label: "Krugerrand" }), // newly acquired → +50,00 €
+    ];
+
+    expect(derivePositionDeltas(previous, current)).toEqual([
+      {
+        positionKey: "c1",
+        label: "Sovereign",
+        metal: "gold",
+        imageUrl: null,
+        contributionMinor: 141_00,
+        status: "changed",
+      },
+      {
+        positionKey: "c3",
+        label: "Krugerrand",
+        metal: "gold",
+        imageUrl: null,
+        contributionMinor: 50_00,
+        status: "new",
+      },
+    ]);
+  });
+
+  test("a coin entering on its acquisition date reads as a step-up (full value, status new)", () => {
+    const deltas: PositionDelta[] = derivePositionDeltas(
+      [],
+      [coin("c1", 3_000_00, { label: "Sovereign" })],
+    );
+    expect(deltas).toEqual([
+      {
+        positionKey: "c1",
+        label: "Sovereign",
+        metal: "gold",
+        imageUrl: null,
+        contributionMinor: 3_000_00,
+        status: "new",
+      },
+    ]);
+  });
+
+  test("a coin that left the collection reads as gone with a negative contribution", () => {
+    expect(
+      derivePositionDeltas([coin("c1", 3_000_00, { label: "Sovereign" })], []),
+    ).toEqual([
+      {
+        positionKey: "c1",
+        label: "Sovereign",
+        metal: "gold",
+        imageUrl: null,
+        contributionMinor: -3_000_00,
+        status: "gone",
+      },
+    ]);
+  });
+
+  test("no position rows yields no movers (so no second drilldown level appears)", () => {
+    expect(derivePositionDeltas([], [])).toEqual([]);
   });
 });

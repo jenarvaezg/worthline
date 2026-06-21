@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 33;
+export const SCHEMA_VERSION = 34;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1183,6 +1183,37 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       } catch {}
     }
     await writeSchemaVersion(client, 33);
+  }
+
+  if (version < 34) {
+    // ADR 0035 (#459): connected-source holdings freeze a per-position breakdown
+    // into each snapshot, as child rows of the snapshot holding. The new
+    // `snapshot_position_holdings` table stores one row per coin/token per snapshot:
+    // the parent snapshot-holding identity (snapshot_id + parent_holding_id — a
+    // connected holding is always an asset, so no kind is needed), a stable
+    // `position_key` (a coin's Numista externalId, ADR 0017 — NOT worthline's
+    // reassigned internal id, so there is deliberately NO FK to `positions`), a
+    // frozen `label`, a `value_minor`, and value-only display metadata (`metal`,
+    // `image_url`). Values and labels only — never credentials, tokens or payloads.
+    // Additive CREATE TABLE IF NOT EXISTS (like v3/v4/v5): a fresh DB already has
+    // the table from schema-sql, so this is a no-op there; an existing DB gains it.
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS snapshot_position_holdings (
+      id TEXT PRIMARY KEY NOT NULL,
+      snapshot_id TEXT NOT NULL,
+      parent_holding_id TEXT NOT NULL,
+      position_key TEXT NOT NULL,
+      label TEXT NOT NULL,
+      value_minor INTEGER NOT NULL,
+      metal TEXT,
+      image_url TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      FOREIGN KEY (snapshot_id) REFERENCES snapshots(id) ON UPDATE no action ON DELETE cascade
+    );`);
+    await client.executeMultiple(
+      `CREATE UNIQUE INDEX IF NOT EXISTS snapshot_position_holdings_snapshot_holding_key_unique
+       ON snapshot_position_holdings (snapshot_id, parent_holding_id, position_key);`,
+    );
+    await writeSchemaVersion(client, 34);
   }
 
   return { ranV18Backfill, ranV33Backfill };

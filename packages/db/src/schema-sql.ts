@@ -196,6 +196,20 @@ CREATE TABLE \`snapshot_holdings\` (
 --> statement-breakpoint
 CREATE UNIQUE INDEX \`snapshot_holdings_snapshot_kind_holding_unique\` ON \`snapshot_holdings\` (\`snapshot_id\`,\`kind\`,\`holding_id\`);--> statement-breakpoint
 CREATE INDEX \`snapshot_holdings_holding_kind_idx\` ON \`snapshot_holdings\` (\`holding_id\`,\`kind\`);--> statement-breakpoint
+CREATE TABLE \`snapshot_position_holdings\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`snapshot_id\` text NOT NULL,
+	\`parent_holding_id\` text NOT NULL,
+	\`position_key\` text NOT NULL,
+	\`label\` text NOT NULL,
+	\`value_minor\` integer NOT NULL,
+	\`metal\` text,
+	\`image_url\` text,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`snapshot_id\`) REFERENCES \`snapshots\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX \`snapshot_position_holdings_snapshot_holding_key_unique\` ON \`snapshot_position_holdings\` (\`snapshot_id\`,\`parent_holding_id\`,\`position_key\`);--> statement-breakpoint
 CREATE TABLE \`asset_valuations\` (
 	\`id\` text PRIMARY KEY NOT NULL,
 	\`asset_id\` text NOT NULL,
