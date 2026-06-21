@@ -22,6 +22,7 @@ import { demoAsOfDateKey, demoNowDate } from "@web/demo/demo-clock";
 import type { PersonaId } from "@web/demo/persona";
 import { seedDemoStore } from "@web/demo/store-provider";
 
+import { perfEnd, perfStart } from "./perf-log";
 import { readStoreTarget } from "./read-store-target";
 import type { StoreTarget } from "./store-resolver";
 
@@ -141,11 +142,14 @@ export async function openStore(target?: StoreTarget): Promise<WorthlineStore> {
 export async function withStore<T>(
   run: (store: WorthlineStore) => T | Promise<T>,
   target?: StoreTarget,
+  label = "store",
 ): Promise<T> {
+  const startedAt = perfStart();
   const store = await openStore(target);
   try {
     return await run(store);
   } finally {
     store.close();
+    perfEnd(label, startedAt);
   }
 }

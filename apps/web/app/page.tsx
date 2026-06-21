@@ -10,6 +10,7 @@ import {
   SCOPE_COOKIE_NAME,
 } from "./intake";
 import Shell from "./shell";
+import { perfEnd, perfStart } from "@web/perf-log";
 import { bootstrapHealthcheck, openStore } from "@web/store";
 import { requireStoreTarget } from "@web/read-store-target";
 import DashboardContent from "./dashboard-content";
@@ -34,6 +35,7 @@ export default async function DashboardPage({
 
   // Load only the lightweight data needed to render the shell immediately.
   // The heavy dashboard body streams in via Suspense below.
+  const perfStartedAt = perfStart();
   const store = await openStore(target);
   let shellData;
   try {
@@ -63,6 +65,7 @@ export default async function DashboardPage({
     };
   } finally {
     store.close();
+    perfEnd("home-shell", perfStartedAt);
   }
 
   return (
