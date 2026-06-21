@@ -194,9 +194,11 @@ export {
   groupPositionsByMetal,
   groupPositionsByToken,
   instrumentForAdapter,
+  isTokenDustValue,
   positionValue,
   projectConnectedSource,
   projectedPositionValue,
+  TOKEN_DUST_THRESHOLD_MINOR,
   tokenPositionSnapshotInput,
 } from "./connected-source";
 

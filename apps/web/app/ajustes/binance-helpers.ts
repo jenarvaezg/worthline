@@ -9,7 +9,27 @@
  * generic across adapters, so they are re-exported from numista-helpers.
  */
 
+import { groupPositionsByToken, isTokenDustValue } from "@worthline/domain";
+import type { SourcePosition, TokenPosition } from "@worthline/domain";
+
 export { formatLastSync, resolveConnectingOwnership } from "./numista-helpers";
+
+/**
+ * Count the DISTINCT non-dust tokens a Binance source holds (#479): group the
+ * source's token positions by symbol (a token across wallets folds into one) and
+ * drop the ones whose summed value is dust — junk worth under a cent, incl.
+ * unpriceable tokens. The ajustes tile shows this so the "Tokens" stat matches the
+ * tokens actually worth listing. DISPLAY-ONLY: positions are never dropped from
+ * storage, only excluded from the count.
+ */
+export function countNonDustTokens(positions: readonly SourcePosition[]): number {
+  const tokens = positions.filter(
+    (position): position is TokenPosition => position.kind === "token",
+  );
+  return groupPositionsByToken([...tokens]).filter(
+    (group) => !isTokenDustValue(group.subtotalMinor),
+  ).length;
+}
 
 /** The minimal asset shape `aggregateSourceValueMinor` reads — its id and its
  *  current value in minor units (the `ManualAsset` rows the ajustes tile has). */
