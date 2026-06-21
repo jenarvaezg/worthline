@@ -11,6 +11,8 @@
  */
 import { describe, expect, test } from "vitest";
 
+import { amortizableBalanceAtDate } from "@worthline/domain";
+
 import { createInMemoryStore } from "@db/index";
 import type { WorthlineStore } from "@db/index";
 
@@ -118,6 +120,70 @@ describe("historical snapshots from amortizable plans", () => {
     expect(await debtsAt(store, "2026-01-15")).toBe(150_000_00);
     // No future snapshot.
     expect(await snapAt(store, "2026-06-15")).toBeUndefined();
+    store.close();
+  });
+
+  test("a between-cuota snapshot holds the last cuota's balance (step), not interpolated (#390, ADR 0031)", async () => {
+    const store = await createInMemoryStore();
+    await seedAmortizable(store);
+
+    const PLAN = {
+      annualInterestRate: "0.03",
+      disbursementDate: "2026-01-15",
+      firstPaymentDate: "2026-02-15",
+      initialCapitalMinor: 150_000_00,
+      termMonths: 240,
+    } as const;
+    await store.createAmortizationPlanAndRipple(
+      { ...PLAN, id: "plan1", liabilityId: "mortgage" },
+      { today: TODAY },
+    );
+
+    // An unrelated backdated fact dated BETWEEN two cuotas (2026-03-15 and
+    // 2026-04-15) generates a full-portfolio snapshot there, valuing the mortgage
+    // off its debt curve on that date — the "daily capture between events" case
+    // (ADR 0005) the re-ripple is meant to flip from interpolated to step.
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "fund",
+      liquidityTier: "market",
+      manualPricePerUnit: "100",
+      name: "Fondo",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    await store.recordOperationAndRipple(
+      {
+        assetId: "fund",
+        currency: "EUR",
+        executedAt: "2026-03-20",
+        id: "op1",
+        kind: "buy",
+        pricePerUnit: "100",
+        units: "10",
+      },
+      { today: TODAY },
+    );
+
+    const stepValue = amortizableBalanceAtDate({ plan: PLAN, targetDate: "2026-03-20" });
+    const lastCuotaValue = amortizableBalanceAtDate({
+      plan: PLAN,
+      targetDate: "2026-03-15",
+    });
+    const interpolatedValue = amortizableBalanceAtDate({
+      plan: PLAN,
+      targetDate: "2026-03-20",
+      cadence: "interpolated",
+    });
+    // The step holds the LAST cuota's balance, and that genuinely differs from
+    // what interpolation would have produced — so the assertion below has teeth.
+    expect(stepValue).toBe(lastCuotaValue);
+    expect(interpolatedValue).not.toBe(stepValue);
+
+    // The between-cuota snapshot holds the stepped balance, not the interpolated one.
+    expect(await debtsAt(store, "2026-03-20")).toBe(stepValue);
+    // The cuota-date snapshot is unchanged (step == interpolation on the boundary).
+    expect(await debtsAt(store, "2026-03-15")).toBe(lastCuotaValue);
+    expect(await holdingsReconcile(store, "2026-03-20")).toBe(true);
     store.close();
   });
 

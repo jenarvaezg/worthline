@@ -2,6 +2,11 @@ import Big from "big.js";
 
 import type { DecimalString } from "./decimal";
 import { daysBetween } from "./dates";
+import {
+  cadenceOrDefault,
+  interpolateOrStep,
+  type ValuationCadence,
+} from "./valuation-cadence";
 
 /**
  * Pure French-amortization (cuota fija) balance curve (PRD #109, slice 7). No
@@ -31,10 +36,11 @@ import { daysBetween } from "./dates";
  *     onward, over the REMAINING term (n − monthsElapsed) on the live balance at
  *     `r`, using the new rate. Multiple revisions each recompute from their date.
  *  4. The balance on a target date before the first payment is the initial
- *     capital (flat). On/after it, the balance at the boundary the date falls in,
- *     minus the principal amortized to the next boundary prorated by the days
- *     elapsed (linear intra-month interpolation, by calendar days). The stub
- *     (boundary 0→1) is never interpolated — it is flat.
+ *     capital (flat). On/after it, the balance between the boundary the date
+ *     falls in and the next is read by the valuation cadence (ADR 0031): `step`
+ *     (the default) holds the boundary's balance flat until the next cuota, while
+ *     `interpolated` prorates that month's amortization linearly by calendar
+ *     days. The stub (boundary 0→1) is never interpolated — it is flat.
  *
  * Rounding: all arithmetic is carried at full big.js precision; only the final
  * balance is rounded to a whole minor unit (cent), half up. This mirrors the
@@ -101,6 +107,15 @@ export interface AmortizableBalanceAtDateInput {
   earlyRepayments?: readonly EarlyRepayment[];
   /** The date to value the outstanding balance on, YYYY-MM-DD. */
   targetDate: string;
+  /**
+   * How the balance moves between cuotas (ADR 0031). `step` (the default, and
+   * `null`/absent) holds the last cuota's balance flat until the next cuota;
+   * `interpolated` prorates the month's amortization linearly by calendar day —
+   * the pre-#390 behaviour. Only ever affects a query date strictly between two
+   * payment boundaries; cuota-date and pre-first-payment/post-final values are
+   * identical under both.
+   */
+  cadence?: ValuationCadence | null;
 }
 
 /** Last calendar day of the given year/month (1-based month). */
@@ -451,10 +466,12 @@ export function firstCuota(plan: AmortizationPlanInput): FirstCuota {
  * Outstanding principal on `targetDate`, in integer minor units (cents, half up).
  * Before the first payment → the full initial capital (flat — covers both the
  * pre-disbursement window and the disbursement→first-payment stub, ADR 0019). On
- * or after the final payment → 0. Otherwise the balance at the boundary the
- * target falls in, less the principal amortized to the next boundary prorated by
- * the days elapsed (linear intra-month interpolation). The stub (boundary 0→1) is
- * never interpolated — `targetDate < firstPaymentDate` short-circuits to flat.
+ * or after the final payment → 0. Otherwise the balance read between the boundary
+ * the target falls in and the next, by the holding's valuation cadence (ADR 0031,
+ * #390): `step` (default) holds the last cuota's balance flat until the next
+ * cuota; `interpolated` prorates that month's amortization linearly by calendar
+ * day. The stub (boundary 0→1) is never interpolated — `targetDate <
+ * firstPaymentDate` short-circuits to flat.
  */
 export function amortizableBalanceAtDate(input: AmortizableBalanceAtDateInput): number {
   const { plan, targetDate } = input;
@@ -488,7 +505,12 @@ export function amortizableBalanceAtDate(input: AmortizableBalanceAtDateInput): 
 
   const span = daysBetween(monthStart, monthEnd);
   const offset = daysBetween(monthStart, targetDate);
-  const fraction = span === 0 ? new Big(0) : new Big(offset).div(span);
-  const amortizedThisMonth = startBalance.minus(endBalance).times(fraction);
-  return toMinorInt(startBalance.minus(amortizedThisMonth));
+  const value = interpolateOrStep({
+    lower: startBalance,
+    upper: endBalance,
+    span,
+    offset,
+    cadence: cadenceOrDefault(input.cadence),
+  });
+  return toMinorInt(value);
 }
