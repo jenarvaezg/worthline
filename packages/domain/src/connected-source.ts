@@ -265,6 +265,24 @@ export function positionValue(
 }
 
 /**
+ * The minor-unit threshold below which a token's euro value is "dust" — junk worth
+ * less than a cent, including unpriceable tokens that resolve to 0 with the `zero`
+ * basis. A value `< TOKEN_DUST_THRESHOLD_MINOR` rounds to 0,00 € at display
+ * precision. Bump it to hide more (e.g. 10 ⇒ under 0,10 €).
+ */
+export const TOKEN_DUST_THRESHOLD_MINOR = 1;
+
+/**
+ * Whether a token's euro value (minor units) is dust and hidden from the human
+ * token listings by default (#479). DISPLAY-ONLY: dust is never dropped from
+ * snapshots, export/import, or reconciliation (ADR 0035) — only its rows and the
+ * "Tokens" count are suppressed. See {@link TOKEN_DUST_THRESHOLD_MINOR}.
+ */
+export function isTokenDustValue(valueMinor: number): boolean {
+  return valueMinor < TOKEN_DUST_THRESHOLD_MINOR;
+}
+
+/**
  * The value of one position, dispatched by kind (ADR 0021): a coin's frozen
  * `max(metal, numismatic)` vs a token's live `balance × unit price`. The single
  * per-position rule the projection sums and the detail page reads.

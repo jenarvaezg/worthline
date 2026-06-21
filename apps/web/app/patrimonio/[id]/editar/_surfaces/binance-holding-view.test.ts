@@ -104,17 +104,28 @@ describe("buildBinanceHoldingView", () => {
     expect(view.rows[0]!.wallets).toEqual(["spot", "funding", "flexible-earn"]);
   });
 
-  test("an unpriceable token is kept with value 0 and the zero basis", () => {
+  test("an unpriceable (zero-value) token is hidden as dust by default (#479)", () => {
     const view = buildBinanceHoldingView([
       token({ id: "1", symbol: "BTC", balance: "0.5", unitPrice: "50000" }),
       token({ id: "2", symbol: "WAGMI", balance: "100", unitPrice: null }),
     ]);
 
-    expect(view.tokenCount).toBe(2);
-    const wagmi = view.rows.find((r) => r.symbol === "WAGMI");
-    expect(wagmi).toMatchObject({ valueMinor: 0, basis: "zero", unitPrice: null });
-    // The valued token sorts ahead of the zero-value one.
-    expect(view.rows[0]?.symbol).toBe("BTC");
+    // The 0,00 € token is dropped from the rows and the count (display-only).
+    expect(view.rows.map((r) => r.symbol)).toEqual(["BTC"]);
+    expect(view.tokenCount).toBe(1);
+    // The total is unchanged — dust is worth nothing anyway.
+    expect(view.totalMinor).toBe(2_500_000);
+  });
+
+  test("a priced token worth under a cent is hidden, total intact (#479)", () => {
+    const view = buildBinanceHoldingView([
+      token({ id: "1", symbol: "BTC", balance: "0.5", unitPrice: "50000" }), // 25 000 €
+      token({ id: "2", symbol: "SHIB", balance: "0.004", unitPrice: "1" }), // 0,004 € → 0 minor
+    ]);
+
+    expect(view.rows.map((r) => r.symbol)).toEqual(["BTC"]);
+    expect(view.tokenCount).toBe(1);
+    expect(view.totalMinor).toBe(2_500_000);
   });
 
   test("an empty holding is a zero total with no rows", () => {

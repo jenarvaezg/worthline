@@ -6,12 +6,13 @@
  * whose value sums every wallet; the wallet origin survives as row metadata. The
  * maths lives here so it is unit-testable without React or a DB.
  *
- * No network, no persistence, no Next.js: maps token positions → view rows. A
- * token whose value resolves with the `zero` basis (every wallet unpriceable) is
- * kept — never silently dropped — and flagged so the row can show the "valor 0" tag.
+ * No network, no persistence, no Next.js: maps token positions → view rows. Dust —
+ * a token whose value rounds to 0,00 € (junk under a cent, incl. one unpriceable on
+ * every wallet) — is hidden by default (#479). DISPLAY-ONLY: the position stays in
+ * storage/snapshots/reconciliation, only its row and the count are suppressed.
  */
 
-import { addUnits, groupPositionsByToken } from "@worthline/domain";
+import { addUnits, groupPositionsByToken, isTokenDustValue } from "@worthline/domain";
 import type {
   LiquidityTier,
   SourcePosition,
@@ -97,32 +98,35 @@ export function formatWallets(wallets: readonly string[]): string {
  * (`groupPositionsByToken`), whose balance is the summed quantity, and whose
  * `wallets` lists the origin wallets. Rows are value-sorted (the grouping already
  * orders by subtotal desc, symbol asc); `tokenCount` is the number of DISTINCT
- * tokens. A token priced on at least one wallet reads `market`; one unpriceable
- * everywhere reads `zero` (still shown). The total sums every row.
+ * non-dust tokens. Dust rows — value rounds to 0,00 €, incl. tokens unpriceable on
+ * every wallet — are filtered out by default (#479, display-only); `tokenCount` and
+ * `totalMinor` reflect the kept rows (the total is unchanged, dust being worth 0).
  */
 export function buildBinanceHoldingView(
   positions: readonly TokenPosition[],
 ): BinanceHoldingView {
   const groups = groupPositionsByToken([...positions]);
 
-  const rows: TokenRow[] = groups.map((group) => {
-    const balance = group.positions.reduce(
-      (sum, position) => addUnits(sum, position.balance),
-      "0",
-    );
-    // The shared unit price for the token (one symbol → one CoinGecko price); the
-    // first priced wallet supplies it, null only when every wallet is unpriceable.
-    const priced = group.positions.find((position) => position.unitPrice !== null);
-    return {
-      id: group.symbol,
-      symbol: group.symbol,
-      balance,
-      unitPrice: priced ? priced.unitPrice : null,
-      valueMinor: group.subtotalMinor,
-      basis: priced ? ("market" as const) : ("zero" as const),
-      wallets: group.positions.map((position) => position.wallet),
-    };
-  });
+  const rows: TokenRow[] = groups
+    .filter((group) => !isTokenDustValue(group.subtotalMinor))
+    .map((group) => {
+      const balance = group.positions.reduce(
+        (sum, position) => addUnits(sum, position.balance),
+        "0",
+      );
+      // The shared unit price for the token (one symbol → one CoinGecko price); the
+      // first priced wallet supplies it, null only when every wallet is unpriceable.
+      const priced = group.positions.find((position) => position.unitPrice !== null);
+      return {
+        id: group.symbol,
+        symbol: group.symbol,
+        balance,
+        unitPrice: priced ? priced.unitPrice : null,
+        valueMinor: group.subtotalMinor,
+        basis: priced ? ("market" as const) : ("zero" as const),
+        wallets: group.positions.map((position) => position.wallet),
+      };
+    });
 
   const totalMinor = rows.reduce((sum, row) => sum + row.valueMinor, 0);
 

@@ -5,16 +5,39 @@
  * live in packages/pricing/src/adapters/binance.test.ts now. No store, no network.
  */
 
+import type { SourcePosition, TokenPosition } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import {
   aggregateSourceValueMinor,
+  countNonDustTokens,
   formatLastSync,
   resolveConnectingOwnership,
 } from "./binance-helpers";
 
 function asset(id: string, amountMinor: number) {
   return { id, currentValue: { amountMinor } };
+}
+
+function token(
+  symbol: string,
+  balance: string,
+  unitPrice: string | null,
+  wallet = "spot",
+): TokenPosition {
+  return {
+    kind: "token",
+    id: `${symbol}-${wallet}`,
+    sourceId: "src",
+    externalId: `${symbol}:${wallet}`,
+    name: symbol,
+    symbol,
+    balance,
+    wallet,
+    liquidityTier: "market",
+    unitPrice,
+    currency: "EUR",
+  };
 }
 
 describe("re-exported generic helpers", () => {
@@ -58,5 +81,32 @@ describe("aggregateSourceValueMinor", () => {
 
   test("an empty set sums to zero", () => {
     expect(aggregateSourceValueMinor([asset("market", 2_500_000)], new Set())).toBe(0);
+  });
+});
+
+describe("countNonDustTokens (#479)", () => {
+  test("counts DISTINCT tokens, folding one held across wallets into one", () => {
+    expect(
+      countNonDustTokens([
+        token("BTC", "0.5", "50000", "spot"),
+        token("BTC", "0.1", "50000", "funding"),
+        token("ETH", "2", "2000"),
+      ]),
+    ).toBe(2);
+  });
+
+  test("excludes dust — value rounds to 0,00 €, incl. unpriceable tokens", () => {
+    expect(
+      countNonDustTokens([
+        token("BTC", "0.5", "50000"), // 25 000 € — kept
+        token("WAGMI", "100", null), // unpriceable → 0 € — dust
+        token("SHIB", "0.004", "1"), // 0,004 € → 0 minor — dust
+      ]),
+    ).toBe(1);
+  });
+
+  test("ignores non-token positions", () => {
+    const coin = { kind: "coin" } as unknown as SourcePosition;
+    expect(countNonDustTokens([coin, token("BTC", "0.5", "50000")])).toBe(1);
   });
 });
