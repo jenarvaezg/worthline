@@ -81,7 +81,18 @@ export function createJwtVerifier(config: {
     });
     const subject = typeof payload.sub === "string" ? payload.sub : null;
     const email = typeof payload["email"] === "string" ? payload["email"] : null;
-    if (!subject || !email) return null;
+    if (!subject || !email) {
+      // Observability for the auth boundary: which claims the token actually
+      // carried (key names + aud/iss only — never the token or claim values).
+      console.warn("[mcp-auth] token verified but missing usable claims", {
+        hasSub: Boolean(subject),
+        hasEmail: Boolean(email),
+        aud: payload.aud,
+        iss: payload.iss,
+        claimKeys: Object.keys(payload),
+      });
+      return null;
+    }
     return { subject, email };
   };
 }
@@ -97,14 +108,31 @@ export function createVerifyMcpToken(deps: VerifyMcpTokenDeps) {
     let claims: McpTokenClaims | null;
     try {
       claims = await deps.verifyJwt(bearerToken);
-    } catch {
+    } catch (error) {
       // Bad signature, wrong issuer/audience, or expired token → no auth → 401.
+      const e = error as {
+        code?: string;
+        claim?: string;
+        reason?: string;
+        message?: string;
+      };
+      console.warn("[mcp-auth] reject: JWT validation failed", {
+        code: e?.code,
+        claim: e?.claim,
+        reason: e?.reason,
+        message: e?.message,
+      });
       return undefined;
     }
-    if (!claims) return undefined;
+    if (!claims) return undefined; // already logged by the verifier
 
     const workspace = await deps.resolveWorkspace(claims);
-    if (!workspace) return undefined;
+    if (!workspace) {
+      console.warn("[mcp-auth] reject: no granted workspace for token", {
+        email: claims.email,
+      });
+      return undefined;
+    }
 
     return {
       token: bearerToken,
