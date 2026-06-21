@@ -93,4 +93,29 @@ describe("connected source secret encryption", () => {
     expect(source?.credentialsJson).toBe(creds);
     reopened.close();
   });
+
+  it("updateCredentials replaces the stored credentials, sealed at rest", async () => {
+    process.env.WORTHLINE_ENCRYPTION_KEY = KEY;
+    const { store, dbPath } = await freshStore();
+    const { sourceId } = await store.connectedSources.connect({
+      adapter: "binance",
+      label: "Binance",
+      credentialsJson: JSON.stringify({ apiKey: "old" }),
+      ownership: [{ memberId: "m1", shareBps: 10_000 }],
+    });
+
+    const replacement = JSON.stringify({ apiKey: "new", apiSecret: "fresh" });
+    await store.connectedSources.updateCredentials(sourceId, replacement);
+
+    const source = await store.connectedSources.readSource(sourceId);
+    expect(source?.credentialsJson).toBe(replacement);
+    store.close();
+
+    const raw = openLibsqlClient(dbPath);
+    const result = await raw.execute("SELECT credentials_json FROM connected_sources");
+    raw.close();
+    const rawCreds = result.rows[0]?.credentials_json as string;
+    expect(rawCreds.startsWith("wlsec1:")).toBe(true);
+    expect(rawCreds).not.toContain("new");
+  });
 });
