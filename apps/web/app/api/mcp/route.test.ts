@@ -16,6 +16,26 @@ vi.mock("next/headers", () => ({
 
 const MCP_URL = "http://localhost:3000/api/mcp";
 const PROTOCOL_VERSION = "2024-11-05";
+const METADATA_PATH = "/.well-known/oauth-protected-resource";
+
+const initialize = {
+  jsonrpc: "2.0",
+  id: 1,
+  method: "initialize",
+  params: {
+    protocolVersion: PROTOCOL_VERSION,
+    capabilities: {},
+    clientInfo: { name: "test", version: "1.0.0" },
+  },
+};
+
+function restoreEnv(key: string, original: string | undefined): void {
+  if (original === undefined) {
+    delete process.env[key];
+  } else {
+    process.env[key] = original;
+  }
+}
 
 async function parseMcpMessages(response: Response): Promise<unknown[]> {
   const text = await response.text();
@@ -215,6 +235,46 @@ describe("POST /api/mcp (non-demo mode)", () => {
     );
 
     expect(response.status).toBe(406);
+  });
+});
+
+describe("POST /api/mcp (hosted — auth configured)", () => {
+  const originalId = process.env.AUTH_GOOGLE_ID;
+  const originalSecret = process.env.AUTH_GOOGLE_SECRET;
+  const originalPersonaCookie = mockPersonaCookie;
+
+  beforeAll(() => {
+    // The hosted multi-tenant deploy: auth configured, no persona cookie, no
+    // session ⇒ MCP requests must complete the OAuth handshake (ADR 0034).
+    mockPersonaCookie = undefined;
+    process.env.AUTH_GOOGLE_ID = "test-google-id";
+    process.env.AUTH_GOOGLE_SECRET = "test-google-secret";
+  });
+
+  afterAll(() => {
+    // Restore precisely: assigning `undefined` would set the string "undefined"
+    // (truthy), leaving auth "configured" and gating the later demo block.
+    mockPersonaCookie = originalPersonaCookie;
+    restoreEnv("AUTH_GOOGLE_ID", originalId);
+    restoreEnv("AUTH_GOOGLE_SECRET", originalSecret);
+  });
+
+  test("no token → 401 with WWW-Authenticate pointing at the metadata (kills 'Failed to parse JSON')", async () => {
+    const response = await mcpRequest(initialize);
+
+    expect(response.status).toBe(401);
+    const wwwAuth = response.headers.get("www-authenticate") ?? "";
+    expect(wwwAuth.toLowerCase()).toContain("bearer");
+    expect(wwwAuth).toContain("resource_metadata=");
+    expect(wwwAuth).toContain(METADATA_PATH);
+  });
+
+  test("invalid token → 401 (no token is accepted until S2)", async () => {
+    const response = await mcpRequest(initialize, {
+      Authorization: "Bearer not-a-real-token",
+    });
+
+    expect(response.status).toBe(401);
   });
 });
 
