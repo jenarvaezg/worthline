@@ -6,6 +6,7 @@ Use the `gh` CLI for issue tracker operations.
 ## Conventions
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`.
+- **Create a sub-issue**: `gh issue create --parent <number-or-url> --title "..." --body "..."`.
 - **Read an issue**: `gh issue view <number> --comments`, including labels.
 - **List issues**: `gh issue list --state open --json number,title,body,labels,comments`.
 - **Comment on an issue**: `gh issue comment <number> --body "..."`.
