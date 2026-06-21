@@ -38,6 +38,7 @@ import { runBinanceRefresh } from "./ajustes/binance-refresh";
 import { runNumistaCoinRefresh } from "./ajustes/numista-coin-refresh";
 import { refreshAndPersistStalePrices } from "./refresh-prices";
 import { readDemoContext } from "@web/demo/read-demo-context";
+import { perfEnd, perfStart } from "@web/perf-log";
 import { bootstrapHealthcheck, openStore } from "@web/store";
 
 const framingTabs = [
@@ -316,6 +317,7 @@ export default async function DashboardContent({
   const now = persistence.checkedAt;
   const today = now.slice(0, 10);
 
+  const perfStartedAt = perfStart();
   const store = await openStore();
   let state;
   let moversHoldingRows: MoversHoldingRow[] = [];
@@ -356,6 +358,7 @@ export default async function DashboardContent({
     );
   } finally {
     store.close();
+    perfEnd("dashboard", perfStartedAt);
   }
 
   if (state.needsOnboarding) {
