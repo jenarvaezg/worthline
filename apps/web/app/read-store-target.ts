@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -34,7 +36,7 @@ async function readPersonaCookie(): Promise<string | undefined> {
  * `next-auth` is loaded lazily and only when auth is configured, so local and
  * demo runs — and their tests — never pull the auth stack into Node/Vitest.
  */
-export async function readStoreTarget(): Promise<StoreTarget> {
+export const readStoreTarget = cache(async (): Promise<StoreTarget> => {
   const env = process.env;
   const personaCookie = await readPersonaCookie();
 
@@ -45,7 +47,7 @@ export async function readStoreTarget(): Promise<StoreTarget> {
   const { auth } = await import("@web/auth");
   const session = await auth();
   return resolveStoreTarget({ env, session, personaCookie });
-}
+});
 
 /**
  * Read the store target and redirect to the sign-in page when the request is
