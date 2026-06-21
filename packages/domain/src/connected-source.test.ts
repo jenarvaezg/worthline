@@ -11,6 +11,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   coinCollectionValueAtDate,
+  coinPositionSnapshotInput,
   coinValue,
   frozenInstrumentForAdapter,
   groupPositionsByMetal,
@@ -428,5 +429,51 @@ describe("coinCollectionValueAtDate — purchase-date accretion (ADR 0017)", () 
       coin({ id: "undated", purchaseDate: null, purchasePriceMinor: 999_00 }),
     ];
     expect(coinCollectionValueAtDate(positions, "2024-12-31")).toBe(100_00);
+  });
+});
+
+describe("coinPositionSnapshotInput (ADR 0035)", () => {
+  test("freezes a coin's stable key, name, value, metal and image for a snapshot", () => {
+    const input = coinPositionSnapshotInput(
+      coin({
+        externalId: "numista-987",
+        name: "Krugerrand 1 oz",
+        metal: "oro",
+        obverseThumbUrl: "https://numista.test/k.jpg",
+        metalValueMinor: 180_000,
+        numismaticValueMinor: 150_000,
+        purchasePriceMinor: 120_000,
+      }),
+    );
+
+    expect(input).toEqual({
+      positionKey: "numista-987", // the stable externalId, NOT the internal id
+      label: "Krugerrand 1 oz",
+      valueMinor: 180_000, // coinValue: max(metal, numismatic) → metal
+      metal: "oro",
+      imageUrl: "https://numista.test/k.jpg",
+    });
+  });
+
+  test("a coin with no metal/image freezes nulls, valued from its purchase price", () => {
+    const input = coinPositionSnapshotInput(
+      coin({
+        externalId: "numista-1",
+        name: "5 Pesetas",
+        metal: null,
+        obverseThumbUrl: null,
+        metalValueMinor: null,
+        numismaticValueMinor: null,
+        purchasePriceMinor: 12_00,
+      }),
+    );
+
+    expect(input).toEqual({
+      positionKey: "numista-1",
+      label: "5 Pesetas",
+      valueMinor: 12_00, // falls back to purchase price (ADR 0017)
+      metal: null,
+      imageUrl: null,
+    });
   });
 });

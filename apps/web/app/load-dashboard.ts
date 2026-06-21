@@ -17,17 +17,20 @@
 import type { WorthlineStore } from "@worthline/db";
 import type {
   AssetPrice,
+  CoinPosition,
   CompositionRange,
   DrilldownKey,
   DrilldownState,
   InvestmentCaptureDetail,
   NetWorthFraming,
+  SnapshotPositionInput,
 } from "@worthline/domain";
 import {
   availableCompositionRanges,
   buildCompositionSeries,
   buildDrilldown,
   captureSnapshotForScope,
+  coinPositionSnapshotInput,
   deriveFramedSnapshotDeltas,
   listScopeOptions,
   monthsBetween,
@@ -225,6 +228,22 @@ export async function loadDashboard(
   const investmentDetails: ReadonlyMap<string, InvestmentCaptureDetail> =
     scopedProjection.details;
 
+  // Per-connected-source position breakdown (ADR 0035): freeze each Numista
+  // coin-collection holding's per-coin values into the snapshot, keyed by the
+  // materialized asset id so `buildSnapshotHoldingRows` attaches them as child
+  // rows. Numista only for now (Binance tokens land in PRD #459 S2). Shared across
+  // scopes like `investmentDetails`; the capture scope-allocates the values down.
+  const positionDetails = new Map<string, SnapshotPositionInput[]>();
+  for (const source of await store.connectedSources.listSources()) {
+    if (source.adapter !== "numista") continue;
+    const coins = (await store.connectedSources.readPositions(source.id)).filter(
+      (position): position is CoinPosition => position.kind === "coin",
+    );
+    if (coins.length > 0) {
+      positionDetails.set(source.assetId, coins.map(coinPositionSnapshotInput));
+    }
+  }
+
   for (const scope of scopes) {
     const capture = captureSnapshotForScope({
       assets,
@@ -232,6 +251,7 @@ export async function loadDashboard(
       existingSnapshots: await store.snapshots.readSnapshots(scope.id),
       investmentDetails,
       liabilities,
+      positionDetails,
       scope,
       workspace,
     });

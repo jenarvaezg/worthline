@@ -71,6 +71,50 @@ export interface SnapshotHoldingRow {
   units?: DecimalString;
   /** Price per unit used that day — investments only, when a price was known. */
   unitPrice?: DecimalString;
+  /**
+   * The per-position breakdown frozen beneath a connected-source holding (ADR
+   * 0035): one child row per coin/token. Present only for connected holdings that
+   * carry positions; a manual holding (or a legacy capture) omits it entirely.
+   * The rows sum EXACTLY to this holding's `valueMinor`, under the same scope
+   * allocation and rounding — the reconciliation sub-sum (ADR 0008 extension).
+   */
+  positions?: SnapshotPositionRow[];
+}
+
+/**
+ * One position's value and labelling, supplied to the capture for a
+ * connected-source holding (ADR 0035). The `valueMinor` is the position's FULL
+ * (pre-scope) value — the row-builder scope-allocates it down to the holding's
+ * share. Values and labels only — never credentials, tokens or raw payloads.
+ */
+export interface SnapshotPositionInput {
+  /** The source's STABLE per-line id (a coin's Numista `externalId`, ADR 0017) —
+   *  NOT worthline's internal `id`, which is reassigned each sync. */
+  positionKey: string;
+  /** The position's display name, frozen at capture (a coin's title). */
+  label: string;
+  /** The position's FULL value in minor units, before scope allocation. */
+  valueMinor: number;
+  /** Grouping-lens metadata (a coin's metal); null when the source records none. */
+  metal: string | null;
+  /** The obverse thumbnail URL for the gallery image; null → metal-glyph fallback. */
+  imageUrl: string | null;
+}
+
+/**
+ * One frozen per-position child row beneath a connected-source holding row (ADR
+ * 0035). Carries the stable position key, a frozen label, the SCOPE-WEIGHTED value
+ * (its share of the holding's owned value), and the minimal display metadata the
+ * second drilldown level renders. Values and labels only — no secrets.
+ */
+export interface SnapshotPositionRow {
+  positionKey: string;
+  label: string;
+  /** The scope-weighted value in integer minor units; Σ over a holding's position
+   *  rows equals the holding's `valueMinor` exactly (ADR 0035). */
+  valueMinor: number;
+  metal: string | null;
+  imageUrl: string | null;
 }
 
 /** Units and unit price of one investment at capture time, keyed by asset id. */
@@ -86,6 +130,86 @@ export interface BuildSnapshotHoldingRowsInput {
   liabilities?: Liability[];
   /** Per-investment units and unit price, keyed by asset id. */
   investmentDetails?: ReadonlyMap<string, InvestmentCaptureDetail>;
+  /**
+   * Per-connected-source position breakdown at capture time, keyed by the
+   * materialized asset's id (ADR 0035) — the mirror of `investmentDetails`. An
+   * asset present here freezes one position child row per entry beneath its
+   * holding row, scope-allocated to sum exactly to the holding's value. Assets
+   * absent here (manual holdings, investments) carry no position rows.
+   */
+  positionDetails?: ReadonlyMap<string, SnapshotPositionInput[]>;
+}
+
+/**
+ * Distribute `totalMinor` across positions in proportion to their `weights` (each
+ * position's full value) by the largest-remainder (Hamilton) method, so the parts
+ * sum EXACTLY to `totalMinor` (ADR 0035 / ADR 0008). Flooring each proportional
+ * share leaves a residual that is handed out one minor unit at a time to the
+ * positions with the largest remainder, ties broken by original order. When the
+ * weights sum to zero (every position valued 0) the total is zero too and every
+ * share is 0. Inputs are non-negative (a coin collection's value and its coins').
+ *
+ * The `value × weight` product is computed in BigInt: for a large collection (a
+ * six-figure-€ bullion holding) both factors are minor-unit magnitudes whose
+ * product overflows `Number.MAX_SAFE_INTEGER`, which would silently corrupt the
+ * floor and make the capture fail reconciliation. BigInt keeps it exact.
+ */
+function distributeByWeight(totalMinor: number, weights: readonly number[]): number[] {
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  if (totalWeight === 0) return weights.map(() => 0);
+
+  const total = BigInt(totalMinor);
+  const denominator = BigInt(totalWeight);
+  // Exact integer floor + remainder of each proportional share.
+  const parts = weights.map((weight, index) => {
+    const scaled = total * BigInt(weight);
+    return {
+      floor: Number(scaled / denominator),
+      index,
+      remainder: scaled % denominator,
+    };
+  });
+
+  let residual = totalMinor - parts.reduce((sum, part) => sum + part.floor, 0);
+
+  // Order by descending remainder (ties by original index) and give each leftover
+  // minor unit to the next in line.
+  const byRemainder = [...parts].sort((left, right) => {
+    if (left.remainder !== right.remainder)
+      return left.remainder > right.remainder ? -1 : 1;
+    return left.index - right.index;
+  });
+
+  const shares = parts.map((part) => part.floor);
+  for (let i = 0; i < byRemainder.length && residual > 0; i += 1) {
+    const index = byRemainder[i]!.index;
+    shares[index] = shares[index]! + 1;
+    residual -= 1;
+  }
+  return shares;
+}
+
+/**
+ * Freeze a connected holding's position child rows (ADR 0035). Each input keeps
+ * its key, label and display metadata; its value is the position's largest-
+ * remainder share of the holding's already-scope-allocated `ownedMinor`, so the
+ * rows sum EXACTLY to the holding's value under any ownership split.
+ */
+function buildPositionRows(
+  details: readonly SnapshotPositionInput[],
+  ownedMinor: number,
+): SnapshotPositionRow[] {
+  const shares = distributeByWeight(
+    ownedMinor,
+    details.map((detail) => detail.valueMinor),
+  );
+  return details.map((detail, index) => ({
+    positionKey: detail.positionKey,
+    label: detail.label,
+    valueMinor: shares[index]!,
+    metal: detail.metal,
+    imageUrl: detail.imageUrl,
+  }));
 }
 
 /**
@@ -121,6 +245,10 @@ export function buildSnapshotHoldingRows(
 
     const detail =
       asset.type === "investment" ? input.investmentDetails?.get(asset.id) : undefined;
+    const positionDetail = input.positionDetails?.get(asset.id);
+    const positions = positionDetail
+      ? buildPositionRows(positionDetail, ownedMinor)
+      : undefined;
 
     rows.push({
       countsAsHousing: housingAssetIds.has(asset.id),
@@ -136,6 +264,7 @@ export function buildSnapshotHoldingRows(
             ...(detail.unitPrice !== undefined ? { unitPrice: detail.unitPrice } : {}),
           }
         : {}),
+      ...(positions ? { positions } : {}),
     });
   }
 
@@ -268,6 +397,25 @@ export function assertSnapshotHoldingsReconcile(
   rows: readonly SnapshotHoldingRow[],
   totals: SnapshotReconciliationTotals,
 ): void {
+  // The per-position sub-sum (ADR 0035): a holding that carries position rows must
+  // have them sum EXACTLY to its own value, under the same scope allocation. A
+  // holding with no position rows is unaffected — the original ADR 0008 invariant
+  // alone applies to it.
+  for (const row of rows) {
+    if (row.positions === undefined) continue;
+    const positionsSum = row.positions.reduce(
+      (sum, position) => sum + position.valueMinor,
+      0,
+    );
+    if (positionsSum !== row.valueMinor) {
+      throw new Error(
+        `Snapshot capture failed reconciliation: position rows of holding ` +
+          `"${row.label}" (${row.holdingId}) sum to ${positionsSum} but the holding ` +
+          `value is ${row.valueMinor} (minor units). Nothing was persisted.`,
+      );
+    }
+  }
+
   const axes = deriveRowAxes(rows);
 
   if (axes.grossAssetsMinor !== totals.grossAssetsMinor) {
@@ -374,6 +522,70 @@ export function deriveHoldingDeltas(
       label: ref.label,
       liquidityTier: ref.liquidityTier,
       contributionMinor: ref.kind === "asset" ? diff : -diff,
+      status: !prev ? "new" : !cur ? "gone" : "changed",
+    });
+  }
+
+  deltas.sort((a, b) => Math.abs(b.contributionMinor) - Math.abs(a.contributionMinor));
+  return deltas;
+}
+
+/**
+ * One coin/token's contribution to a connected holding's change between two
+ * consecutive snapshots (ADR 0035) — the second drilldown level beneath a
+ * `HoldingDelta`. Label and display metadata are taken from the day the position
+ * is present (current preferred), mirroring how the frozen rows denormalize them.
+ */
+export interface PositionDelta {
+  positionKey: string;
+  label: string;
+  metal: string | null;
+  imageUrl: string | null;
+  /**
+   * Contribution to the holding's value change in minor units. Connected holdings
+   * are assets, so a position's value rise is positive; a coin entering on its
+   * acquisition date contributes its full value (a step-up), one leaving its full
+   * negative value. The contributions sum to the holding's own change by
+   * construction (the rows reconcile to the holding each day, ADR 0035).
+   */
+  contributionMinor: number;
+  /** `new` if absent the previous day, `gone` if absent the current day. */
+  status: "new" | "gone" | "changed";
+}
+
+/**
+ * Derive the per-position contributions to a connected holding's change from
+ * `previous` to `current` — the two days' frozen position rows (ADR 0035). The
+ * mirror of `deriveHoldingDeltas` one level down: positions whose value did not
+ * move are omitted; the rest are sorted by contribution magnitude, largest first.
+ * Keyed by the stable `positionKey` (ADR 0017), so a coin keeps its identity across
+ * a re-sync. Empty input yields no movers, so a holding with no frozen positions
+ * shows no second drilldown level.
+ */
+export function derivePositionDeltas(
+  previous: readonly SnapshotPositionRow[],
+  current: readonly SnapshotPositionRow[],
+): PositionDelta[] {
+  const previousByKey = new Map(previous.map((row) => [row.positionKey, row]));
+  const currentByKey = new Map(current.map((row) => [row.positionKey, row]));
+  const keys = new Set([...previousByKey.keys(), ...currentByKey.keys()]);
+
+  const deltas: PositionDelta[] = [];
+  for (const key of keys) {
+    const cur = currentByKey.get(key);
+    const prev = previousByKey.get(key);
+    const ref = cur ?? prev;
+    if (!ref) continue;
+
+    const diff = (cur?.valueMinor ?? 0) - (prev?.valueMinor ?? 0);
+    if (diff === 0) continue;
+
+    deltas.push({
+      positionKey: key,
+      label: ref.label,
+      metal: ref.metal,
+      imageUrl: ref.imageUrl,
+      contributionMinor: diff,
       status: !prev ? "new" : !cur ? "gone" : "changed",
     });
   }

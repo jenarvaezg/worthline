@@ -298,4 +298,80 @@ describe("snapshot holding rows persistence", () => {
 
     store.close();
   });
+
+  test("freezes a connected holding's per-coin rows and reads them back attached (ADR 0035)", async () => {
+    const store = await createFileBackedStore("worthline-snapshot-positions-");
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "member_jose", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 5_000_00,
+      id: "asset_coins",
+      liquidityTier: "illiquid",
+      name: "Colección Numista",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "manual",
+    });
+
+    const positionDetails = new Map([
+      [
+        "asset_coins",
+        [
+          {
+            positionKey: "numista_1",
+            label: "Sovereign",
+            valueMinor: 3_000_00,
+            metal: "gold",
+            imageUrl: "https://numista.test/s.jpg",
+          },
+          {
+            positionKey: "numista_2",
+            label: "Maple",
+            valueMinor: 2_000_00,
+            metal: "silver",
+            imageUrl: null,
+          },
+        ],
+      ],
+    ]);
+
+    const { holdings, snapshot } = captureValuedNetWorthSnapshot({
+      assets: await store.assets.readAssets(),
+      capturedAt: "2026-06-11T10:00:00.000Z",
+      id: "snap_coins",
+      positionDetails,
+      scopeId: "household",
+      scopeLabel: "Hogar",
+      workspace: (await store.workspace.readWorkspace())!,
+    });
+    await store.snapshots.saveSnapshot({ holdings, snapshot });
+
+    const rows = await store.snapshots.readSnapshotHoldings({ scopeId: "household" });
+    const coins = rows.find((row) => row.holdingId === "asset_coins");
+    // The frozen position rows round-trip — value + label + metal + image, no secrets.
+    expect(coins?.positions).toEqual([
+      {
+        positionKey: "numista_1",
+        label: "Sovereign",
+        valueMinor: 3_000_00,
+        metal: "gold",
+        imageUrl: "https://numista.test/s.jpg",
+      },
+      {
+        positionKey: "numista_2",
+        label: "Maple",
+        valueMinor: 2_000_00,
+        metal: "silver",
+        imageUrl: null,
+      },
+    ]);
+    // ADR 0035 invariant survives the round-trip.
+    const sum = coins!.positions!.reduce((acc, p) => acc + p.valueMinor, 0);
+    expect(sum).toBe(coins!.valueMinor);
+
+    // A manual holding (the cash account would be one) carries no position rows.
+    store.close();
+  });
 });

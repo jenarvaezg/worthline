@@ -6,6 +6,7 @@ import type {
   RawInvestmentRow,
   SnapshotHoldingKind,
   SnapshotHoldingRow,
+  SnapshotPositionRow,
   Workspace,
 } from "@worthline/domain";
 import {
@@ -13,9 +14,20 @@ import {
   projectPositions,
   projectScopedPositionsWithDetails,
 } from "@worthline/domain";
-import { and, asc, eq, gte, isNull, lte, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lte,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 
-import { assets, snapshotHoldings, snapshots } from "./schema";
+import { assets, snapshotHoldings, snapshotPositionHoldings, snapshots } from "./schema";
 import {
   buildAssetProjectionContext,
   type StoreContext,
@@ -158,6 +170,15 @@ async function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): Promis
       .get();
 
     if (existing) {
+      // Drop the prior frozen rows AND their per-position children (ADR 0035)
+      // before the re-insert; the unique (snapshot, holding, position_key) index
+      // would otherwise reject a same-day recapture. On the replace path the FK
+      // cascade would also clear the children, but the no-replace upsert keeps the
+      // snapshot row, so the explicit delete is what frees the children there.
+      await db
+        .delete(snapshotPositionHoldings)
+        .where(eq(snapshotPositionHoldings.snapshotId, existing.id))
+        .run();
       await db
         .delete(snapshotHoldings)
         .where(eq(snapshotHoldings.snapshotId, existing.id))
@@ -230,6 +251,25 @@ async function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): Promis
           })),
         )
         .run();
+
+      // Per-position child rows of any connected-source holding (ADR 0035). They
+      // reconcile to their parent holding by construction (the capture builds them
+      // that way and assertSnapshotHoldingsReconcile re-checks the sub-sum above).
+      const positionRows = input.holdings.flatMap((row) =>
+        (row.positions ?? []).map((position) => ({
+          id: ctx.newId(),
+          imageUrl: position.imageUrl,
+          label: position.label,
+          metal: position.metal,
+          parentHoldingId: row.holdingId,
+          positionKey: position.positionKey,
+          snapshotId: snapshot.id,
+          valueMinor: position.valueMinor,
+        })),
+      );
+      if (positionRows.length > 0) {
+        await db.insert(snapshotPositionHoldings).values(positionRows).run();
+      }
     }
   });
 }
@@ -340,21 +380,87 @@ export async function readSnapshotHoldings(
     )
     .all();
 
-  return rows.map((row) => ({
-    capturedAt: row.capturedAt,
-    countsAsHousing: row.countsAsHousing === 1,
-    dateKey: row.dateKey,
-    holdingId: row.holdingId,
-    kind: row.kind,
-    label: row.label,
-    liquidityTier: row.liquidityTier,
-    scopeId: row.scopeId,
-    securesHousing: row.securesHousing === 1,
-    snapshotId: row.snapshotId,
-    valueMinor: row.valueMinor,
-    ...(row.units !== null ? { units: row.units } : {}),
-    ...(row.unitPrice !== null ? { unitPrice: row.unitPrice } : {}),
-  }));
+  // Attach each connected holding's frozen per-position child rows (ADR 0035),
+  // read in one indexed pass over the snapshots in the result and grouped by their
+  // parent (snapshot + holding). Ordered most-valuable first for a stable second
+  // drilldown level; holdings with no children stay plain (no `positions` field).
+  //
+  // Skipped on a targeted single-holding read (`holdingId`): those serve the
+  // ripple/recalc hot paths over investments and housing — never connected coin
+  // collections — and never render the drilldown, so the extra read (a wide
+  // `IN (…snapshotIds)` over one holding's whole history) would be pure overhead.
+  const positionsByHolding =
+    query.holdingId !== undefined
+      ? new Map<string, SnapshotPositionRow[]>()
+      : await readPositionsByHolding(db, [...new Set(rows.map((row) => row.snapshotId))]);
+
+  return rows.map((row) => {
+    const positions = positionsByHolding.get(`${row.snapshotId}::${row.holdingId}`);
+    return {
+      capturedAt: row.capturedAt,
+      countsAsHousing: row.countsAsHousing === 1,
+      dateKey: row.dateKey,
+      holdingId: row.holdingId,
+      kind: row.kind,
+      label: row.label,
+      liquidityTier: row.liquidityTier,
+      scopeId: row.scopeId,
+      securesHousing: row.securesHousing === 1,
+      snapshotId: row.snapshotId,
+      valueMinor: row.valueMinor,
+      ...(row.units !== null ? { units: row.units } : {}),
+      ...(row.unitPrice !== null ? { unitPrice: row.unitPrice } : {}),
+      ...(positions ? { positions } : {}),
+    };
+  });
+}
+
+/**
+ * Read the per-position child rows (ADR 0035) for a set of snapshots, grouped by
+ * their parent `${snapshotId}::${parentHoldingId}` so the holding read can attach
+ * each holding its own coins/tokens. Ordered by value descending (then key) for a
+ * stable, most-valuable-first second drilldown level. Empty input → empty map.
+ */
+async function readPositionsByHolding(
+  db: StoreDb,
+  snapshotIds: readonly string[],
+): Promise<Map<string, SnapshotPositionRow[]>> {
+  const byHolding = new Map<string, SnapshotPositionRow[]>();
+  if (snapshotIds.length === 0) return byHolding;
+
+  const rows = await db
+    .select({
+      snapshotId: snapshotPositionHoldings.snapshotId,
+      parentHoldingId: snapshotPositionHoldings.parentHoldingId,
+      positionKey: snapshotPositionHoldings.positionKey,
+      label: snapshotPositionHoldings.label,
+      valueMinor: snapshotPositionHoldings.valueMinor,
+      metal: snapshotPositionHoldings.metal,
+      imageUrl: snapshotPositionHoldings.imageUrl,
+    })
+    .from(snapshotPositionHoldings)
+    .where(inArray(snapshotPositionHoldings.snapshotId, [...snapshotIds]))
+    .orderBy(
+      desc(snapshotPositionHoldings.valueMinor),
+      asc(snapshotPositionHoldings.positionKey),
+    )
+    .all();
+
+  for (const row of rows) {
+    const key = `${row.snapshotId}::${row.parentHoldingId}`;
+    const position: SnapshotPositionRow = {
+      positionKey: row.positionKey,
+      label: row.label,
+      valueMinor: row.valueMinor,
+      metal: row.metal,
+      imageUrl: row.imageUrl,
+    };
+    const list = byHolding.get(key);
+    if (list) list.push(position);
+    else byHolding.set(key, [position]);
+  }
+
+  return byHolding;
 }
 
 /**
