@@ -204,6 +204,17 @@ const domainWarningSchema = z.object({
   message: z.string(),
 });
 
+// One frozen per-position child row beneath a connected-source holding (ADR
+// 0035, PRD #459 S3): values + labels only, never secrets. A coin's metal and a
+// position's thumbnail are nullable; a token freezes both null.
+const snapshotPositionSchema = z.object({
+  positionKey: nonEmptyString,
+  label: nonEmptyString,
+  valueMinor: z.number().int(),
+  metal: nonEmptyString.nullable(),
+  imageUrl: nonEmptyString.nullable(),
+});
+
 const snapshotHoldingSchema = z.object({
   // Frozen housing-membership signal for ASSET rows (#181). Defaults false for
   // exports written before the field existed — the same additive basis the v17
@@ -221,6 +232,12 @@ const snapshotHoldingSchema = z.object({
   valueMinor: z.number().int(),
   units: nonEmptyString.optional(),
   unitPrice: nonEmptyString.optional(),
+  // Per-position breakdown of a connected-source holding (ADR 0035, PRD #459 S3).
+  // OPTIONAL with NO default: absent must stay `undefined`, never `[]` — the
+  // reconciliation skips a holding with no positions, but an empty array would
+  // fail the sub-sum (Σ == holding) against the holding's nonzero value. A legacy
+  // export omits it entirely and imports unchanged.
+  positions: z.array(snapshotPositionSchema).optional(),
 });
 
 const snapshotSchema = z.object({
@@ -1132,7 +1149,7 @@ function collectSnapshotReconciliationErrors(
       });
     } catch {
       errors.push(
-        `Las posiciones de la instantánea "${snapshot.id}" (${snapshot.dateKey}) no cuadran con sus cifras de cabecera (ADR 0008).`,
+        `Las posiciones de la instantánea "${snapshot.id}" (${snapshot.dateKey}) no cuadran con sus cifras de cabecera ni con el desglose por posición (ADR 0008/0035).`,
       );
     }
   }
