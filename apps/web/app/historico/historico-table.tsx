@@ -42,6 +42,17 @@ export interface HistoricoRow {
 }
 
 /**
+ * The histórico renders whole euros (formatMoneyMinor, maximumFractionDigits 0), so
+ * a contribution under ±0,50 € shows as "0 €". A per-position mover that small is
+ * noise — a coin/token that "did not change" at display precision (e.g. a backfilled
+ * snapshot's proportional sub-€ slice, PRD #459) — so it is dropped from the second
+ * drilldown level. The holding's own Δ still reflects every sub-€ slice.
+ */
+function showsAsZeroEur(contributionMinor: number): boolean {
+  return Math.round(contributionMinor / 100) === 0;
+}
+
+/**
  * Assemble the newest-first rows the table renders: aggregate Δ vs the previous
  * day, the confirmed monthly-close flag, and the per-holding movers behind each
  * day's change. `today` ("YYYY-MM-DD") drives the monthly-close correction.
@@ -81,7 +92,7 @@ export function buildHistoricoRows(
         const positions = derivePositionDeltas(
           prevRecs.find((r) => r.holdingId === mover.holdingId)?.positions ?? [],
           curRecs.find((r) => r.holdingId === mover.holdingId)?.positions ?? [],
-        );
+        ).filter((p) => !showsAsZeroEur(p.contributionMinor));
         return positions.length > 0 ? { ...mover, positions } : mover;
       });
       return {
