@@ -54,6 +54,17 @@ import {
 // modules import from here rather than from `index.ts`, keeping the dependency
 // graph acyclic (no sub-module ever imports runtime code from the monolith).
 
+/**
+ * A snapshot id minted by the historical backfill (ADR 0012) carries this
+ * prefix (`histsnap_${scope}_${dateKey}`); a real daily capture is
+ * `snapshot_${slug}_${seed}` (domain `buildSnapshotId`). A backfilled snapshot
+ * exists on a date ONLY because a dated fact made it an event date, so it may be
+ * pruned when nothing justifies its date any more (#305). A daily capture
+ * records a day the app was opened — it must NEVER be pruned, even on an op-less
+ * date — so the prune is gated strictly on this prefix.
+ */
+export const BACKFILL_SNAPSHOT_ID_PREFIX = "histsnap_";
+
 /** Inputs shared by every historical-snapshot reconstruction for a workspace. */
 export interface HistoricalSnapshotDeps {
   scopes: ReturnType<typeof listScopeOptions>;
