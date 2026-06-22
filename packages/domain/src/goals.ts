@@ -5,6 +5,9 @@
  * not affect FIRE eligibility until the #426 slice wires them in.
  */
 
+import { allocateScopedHolding } from "./scope-allocation";
+import type { ManualAsset } from "./workspace-types";
+
 /** How urgently a goal should be funded when capital is scarce. */
 export type GoalPriority = "high" | "medium" | "low";
 
@@ -32,6 +35,32 @@ export function goalReservedMinor(
   assignedValueMinor: number,
 ): number {
   return Math.max(0, Math.min(targetAmountMinor, assignedValueMinor));
+}
+
+/**
+ * Scope-weighted value of the holdings a goal has assigned, in minor units: the
+ * sum of each assigned asset's value allocated to the scope's members. A missing
+ * asset id (trashed/removed holding) contributes nothing. Shared by the goals
+ * MCP read and the settings UI — and by the #426 FIRE-reservation slice — so the
+ * "what a goal reserves against" rule lives in exactly one place.
+ */
+export function assignedHoldingsValueMinor(
+  assetIds: string[],
+  assetById: Map<string, ManualAsset>,
+  scopeMemberIds: Set<string>,
+): number {
+  let total = 0;
+  for (const assetId of assetIds) {
+    const asset = assetById.get(assetId);
+    if (!asset) {
+      continue;
+    }
+    total += allocateScopedHolding(asset.currentValue.amountMinor, {
+      ownership: asset.ownership,
+      scopeMemberIds,
+    }).ownedMinor;
+  }
+  return total;
 }
 
 /**

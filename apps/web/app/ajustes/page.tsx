@@ -1,6 +1,6 @@
 import { bootstrapHealthcheck, withStore } from "@web/store";
 import {
-  allocateScopedHolding,
+  assignedHoldingsValueMinor,
   collectWarnings,
   formatMoneyMinorPrivacy,
   goalFundedRatioBps,
@@ -187,15 +187,11 @@ export default async function AjustesPage({
     : new Set<string>();
   const assetById = new Map(assets.map((asset) => [asset.id, asset]));
   const goalsView = goals.map((goal) => {
-    let assignedMinor = 0;
-    for (const assetId of goal.assetIds) {
-      const asset = assetById.get(assetId);
-      if (!asset) continue;
-      assignedMinor += allocateScopedHolding(asset.currentValue.amountMinor, {
-        ownership: asset.ownership,
-        scopeMemberIds: goalScopeMemberIds,
-      }).ownedMinor;
-    }
+    const assignedMinor = assignedHoldingsValueMinor(
+      goal.assetIds,
+      assetById,
+      goalScopeMemberIds,
+    );
     return {
       goal,
       reservedMinor: goalReservedMinor(goal.targetAmountMinor, assignedMinor),

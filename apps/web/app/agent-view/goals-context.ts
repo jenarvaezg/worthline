@@ -1,6 +1,6 @@
 import type { AgentViewReadStore } from "@worthline/db";
 import {
-  allocateScopedHolding,
+  assignedHoldingsValueMinor,
   goalFundedRatioBps,
   goalReservedMinor,
   resolveScopeMemberIds,
@@ -38,22 +38,16 @@ export async function buildGoals(
   const currency = workspace.baseCurrency;
 
   return goals.map((goal) => {
-    let assignedMinor = 0;
-    const assignedHoldings: string[] = [];
-
-    for (const assetId of goal.assetIds) {
-      const asset = assetById.get(assetId);
-      // A trashed/removed holding is excluded from readAssets; skip it so the
-      // reserved amount only counts capital the scope actually holds.
-      if (!asset) {
-        continue;
-      }
-      assignedMinor += allocateScopedHolding(asset.currentValue.amountMinor, {
-        ownership: asset.ownership,
-        scopeMemberIds,
-      }).ownedMinor;
-      assignedHoldings.push(requirePublicId(holdingPublicIds, assetId));
-    }
+    const assignedMinor = assignedHoldingsValueMinor(
+      goal.assetIds,
+      assetById,
+      scopeMemberIds,
+    );
+    // Public ids of the holdings the scope actually holds (a trashed/removed
+    // holding is excluded from readAssets, so it never appears here).
+    const assignedHoldings = goal.assetIds
+      .filter((assetId) => assetById.has(assetId))
+      .map((assetId) => requirePublicId(holdingPublicIds, assetId));
 
     const reservedMinor = goalReservedMinor(goal.targetAmountMinor, assignedMinor);
 
