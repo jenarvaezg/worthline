@@ -72,6 +72,19 @@ export function parsePercentToDecimal(raw: string): DecimalString | null {
   ) as DecimalString;
 }
 
+/**
+ * Render a stored rate fraction (0.07) as the percent string a form field shows
+ * ("7") — the inverse of {@link parsePercentToDecimal}. Multiplying back by 100
+ * reintroduces binary-float dust (`0.07 * 100` is `7.000000000000001`), which
+ * must never reach an input's `defaultValue`. Rounding to 1e-9 of a percentage
+ * point erases that dust while leaving any rate a user could realistically enter
+ * (e.g. `3.5`, `4.25`) untouched.
+ */
+export function formatDecimalAsPercentField(fraction: number): string {
+  const percent = Math.round(fraction * 100 * 1e9) / 1e9;
+  return percent.toString();
+}
+
 // ─── Money / decimal (minor units) ─────────────────────────────────────────────
 
 /**
