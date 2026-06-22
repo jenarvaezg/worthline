@@ -3,8 +3,9 @@
  *
  * Open /demo → choose familia → the dashboard renders fictional figures with the
  * demo banner → attempting an edit is blocked with the "deshabilitado" message →
- * switching persona swaps the whole workspace. Runs against a DEMO=1 build with a
- * pinned clock, so every figure is deterministic (see playwright.demo.config.ts).
+ * switching persona swaps the whole workspace → exiting the demo (#464) returns to
+ * /login with the banner gone. Runs against a DEMO=1 build with a pinned clock, so
+ * every figure is deterministic (see playwright.demo.config.ts).
  */
 import { expect, test } from "@playwright/test";
 
@@ -44,4 +45,14 @@ test("demo: landing → familia → blocked edit → switch persona", async ({ p
   // A different persona ⇒ a different headline net worth.
   const inversorNetWorth = await page.locator(".headline strong").first().innerText();
   expect(inversorNetWorth).not.toBe(familiaNetWorth);
+
+  // 5. Exiting the demo clears the persona cookie and lands on /login — the banner
+  //    is gone and the sign-in affordance is shown. (The hosted-mode "/ now hits the
+  //    login wall" gate is not exercisable in the auth-less demo build.)
+  await page.getByRole("button", { name: /Salir de la demo/ }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole("note", { name: "Modo demostración" })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: /Iniciar sesión con Google/ }),
+  ).toBeVisible();
 });

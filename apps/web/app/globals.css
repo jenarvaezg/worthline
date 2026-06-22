@@ -4287,6 +4287,25 @@ td.rowActions > * {
   text-decoration: underline;
 }
 
+/* Exit control (#464): a POST form whose button reads as the sibling link. */
+.demoBanner form {
+  display: contents;
+}
+
+.demoBanner button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--blue);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.demoBanner button:hover {
+  text-decoration: underline;
+}
+
 .demoLanding {
   max-width: 920px;
   margin: 0 auto;
