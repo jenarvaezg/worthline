@@ -1604,6 +1604,11 @@ code {
   font-variant-numeric: tabular-nums;
 }
 
+/* Capital reserved for goals (PRD #421, #426) — subtracted from FIRE eligible. */
+.fireMetric strong.fireReserved {
+  color: var(--gold);
+}
+
 /* "¿Qué cuenta como elegible?" disclosure (#266): explains the FIRE eligibility
    rule and lists the assets held out of the total, with the reason. */
 .fireEligibleNote {

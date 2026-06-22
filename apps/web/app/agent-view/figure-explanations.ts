@@ -43,6 +43,7 @@ import {
 import { buildDataQuality, MAX_DATA_QUALITY_LIMIT } from "./data-quality";
 import { deriveSourcePublicId } from "./connected-source-positions";
 import { ratioStringFromBps } from "./financial-context";
+import { goalReservationMinor } from "./fire-context";
 import {
   publicIdMap,
   requirePublicId,
@@ -1124,10 +1125,19 @@ async function explainFireEligibleAssets(
       reason: excluded.reason,
     })),
     figure: "fire_eligible_assets",
-    formula: {
-      expression: "sum(fireEligibleAssets)",
-      operands: [{ label: "eligibleAssets", value: money(result.eligibleAssets) }],
-    },
+    formula:
+      result.reservedForGoals && result.reservedForGoals.amountMinor > 0
+        ? {
+            expression: "sum(eligibleHoldings) − reservedForGoals",
+            operands: [
+              { label: "eligibleAssets", value: money(result.eligibleAssets) },
+              { label: "reservedForGoals", value: money(result.reservedForGoals) },
+            ],
+          }
+        : {
+            expression: "sum(fireEligibleAssets)",
+            operands: [{ label: "eligibleAssets", value: money(result.eligibleAssets) }],
+          },
     includedHoldings: projectPortfolio(portfolioInput(facts))
       .sections[0].rows.filter((row) => eligibleIds.has(row.id))
       .map((row) =>
@@ -1206,11 +1216,22 @@ async function resolveFire(
     throw unsupportedFigure(figure);
   }
 
+  // Subtract the same goal reservation get_fire_context applies (#426), so the
+  // explained eligible total matches the tool's figure.
+  const reservedForGoalsMinor = await goalReservationMinor(
+    store,
+    facts.workspace,
+    facts.internalScopeId,
+    config,
+    facts.assets,
+  );
+
   const result = calculateFireForScope(
     config,
     facts.assets,
     facts.workspace,
     facts.internalScopeId,
+    reservedForGoalsMinor,
   );
 
   return { config, result };

@@ -218,16 +218,17 @@ export {
 } from "./prices";
 
 export type { FireScopeConfig, FireResult } from "./fire";
-export { calculateFire, calculateFireForScope } from "./fire";
+export { calculateFire, calculateFireForScope, fireReservationHorizon } from "./fire";
 
 export type { MonthlySavingsSuggestion } from "./monthly-savings";
 export { suggestMonthlySavingsCapacity } from "./monthly-savings";
 
-export type { Goal, GoalPriority } from "./goals";
+export type { Goal, GoalPriority, GoalReservationInput } from "./goals";
 export {
   assignedHoldingsValueMinor,
   goalFundedRatioBps,
   goalReservedMinor,
+  totalGoalReservationMinor,
 } from "./goals";
 
 export type { WarningSeverity, DomainWarning, WarningOverride } from "./warnings";

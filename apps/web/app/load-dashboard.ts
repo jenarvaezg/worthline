@@ -306,6 +306,8 @@ export async function loadDashboard(
   const positions = selectedScope ? scopedProjection.positions : [];
   const overrides = await store.readWarningOverrides();
   const fireConfig = await store.readFireConfig();
+  // Goals for the selected scope (#426): reserve capital against FIRE eligibility.
+  const goals = selectedScope ? await store.goals.readGoals(selectedScope.id) : [];
   const snapshots = selectedScope
     ? await store.snapshots.readSnapshots(selectedScope.id)
     : [];
@@ -380,6 +382,7 @@ export async function loadDashboard(
   const state = prepareDashboardState({
     assets,
     fireConfig,
+    goals,
     liabilities,
     overrides,
     persistence,
@@ -389,6 +392,7 @@ export async function loadDashboard(
     selectedScope,
     selectedView,
     snapshots,
+    today: input.today,
     workspace,
   });
 

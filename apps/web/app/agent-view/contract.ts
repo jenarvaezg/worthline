@@ -360,6 +360,12 @@ export interface AgentViewFireResult {
   eligibleAssets: AgentViewMoney;
   gap: AgentViewMoney;
   progressRatio: string;
+  /**
+   * Capital reserved for goals due before FIRE (PRD #421, #426), already
+   * subtracted from `eligibleAssets`. Present only when it is non-zero — it
+   * affects FIRE only, never gross assets / net worth / liquid net worth.
+   */
+  reservedForGoals?: AgentViewMoney;
   /** Present only when the config carries an age. */
   coastFireRequired?: AgentViewMoney;
   /** Present only when a coast-FIRE age could be derived. */
