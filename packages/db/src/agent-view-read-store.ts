@@ -2,6 +2,7 @@ import type {
   DebtModel,
   ExportedPublicId,
   FireScopeConfig,
+  Goal,
   InvestmentOperation,
   Liability,
   ManualAsset,
@@ -160,6 +161,8 @@ export interface AgentViewReadStore {
    * context (the live reads exclude trash by filtering `deleted_at IS NULL`).
    */
   readTrashedHoldings: () => Promise<AgentViewTrashedHolding[]>;
+  /** Goals (optionally for one scope) with their assigned holdings (#424). A pure read. */
+  readGoals: (scopeId?: string) => Promise<Goal[]>;
 }
 
 export interface AgentViewReadStoreDeps {
@@ -193,6 +196,7 @@ export interface AgentViewReadStoreDeps {
   } | null>;
   readWarningOverrides: () => Promise<WarningOverride[]>;
   readTrashedHoldings: () => Promise<AgentViewTrashedHolding[]>;
+  readGoals: (scopeId?: string) => Promise<Goal[]>;
 }
 
 export function createAgentViewReadStore(
@@ -205,6 +209,7 @@ export function createAgentViewReadStore(
     readAssets: () => deps.readAssets(),
     readLiabilities: () => deps.readLiabilities(),
     readOperations: (assetId) => deps.readOperations(assetId),
+    readGoals: (scopeId) => deps.readGoals(scopeId),
     readConnectedSources: async () => {
       const rows = await deps.listConnectedSources();
       return Promise.all(

@@ -6,6 +6,7 @@ import type {
   AgentViewEnvelope,
   AgentViewPriceFreshnessResult,
   AgentViewScope,
+  AgentViewGoal,
   AgentViewMemberProfile,
   AgentViewSourceFreshnessResult,
   AgentViewWarningOverride,
@@ -216,5 +217,35 @@ describe("agent-view MCP tools", () => {
       properties: {},
       type: "object",
     });
+  });
+
+  test("list_goals hits the scoped goals path", async () => {
+    const response: AgentViewEnvelope<AgentViewGoal[]> = {
+      data: [
+        {
+          object: "goal",
+          id: "g1",
+          name: "Coche",
+          targetAmount: { amountMinor: 3_000_000, currency: "EUR" },
+          deadline: "2027-06-01",
+          priority: "high",
+          assignedHoldings: ["wl_hld_abc123"],
+          reservedAmount: { amountMinor: 2_280_000, currency: "EUR" },
+          fundedRatio: "0.76",
+        },
+      ],
+    };
+    const calls: string[] = [];
+    const catalog = createAgentViewMcpToolCatalog({
+      get: async <T>(path: string): Promise<T> => {
+        calls.push(path);
+        return response as T;
+      },
+    });
+
+    await expect(
+      catalog.list_goals.invoke({ scopeId: "wl_scp_abc123" }),
+    ).resolves.toEqual(response);
+    expect(calls).toEqual(["/api/v1/agent-view/scopes/wl_scp_abc123/goals"]);
   });
 });

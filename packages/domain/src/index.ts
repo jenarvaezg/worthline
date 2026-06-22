@@ -223,6 +223,9 @@ export { calculateFire, calculateFireForScope } from "./fire";
 export type { MonthlySavingsSuggestion } from "./monthly-savings";
 export { suggestMonthlySavingsCapacity } from "./monthly-savings";
 
+export type { Goal, GoalPriority } from "./goals";
+export { goalFundedRatioBps, goalReservedMinor } from "./goals";
+
 export type { WarningSeverity, DomainWarning, WarningOverride } from "./warnings";
 export { collectWarnings } from "./warnings";
 
