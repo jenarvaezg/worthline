@@ -219,6 +219,9 @@ export {
 export type { FireScopeConfig, FireResult } from "./fire";
 export { calculateFire, calculateFireForScope } from "./fire";
 
+export type { MonthlySavingsSuggestion } from "./monthly-savings";
+export { suggestMonthlySavingsCapacity } from "./monthly-savings";
+
 export type { WarningSeverity, DomainWarning, WarningOverride } from "./warnings";
 export { collectWarnings } from "./warnings";
 

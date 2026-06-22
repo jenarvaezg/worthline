@@ -336,6 +336,12 @@ export interface AgentViewFireConfig {
   expectedRealReturn: string;
   currentAge?: number;
   targetRetirementAge?: number;
+  /**
+   * Editable monthly savings capacity (PRD #421, #425): the contribution the
+   * FIRE projection assumes. Present only when the user has set it; absent means
+   * the projection treats it as zero (the UI offers a history-based suggestion).
+   */
+  monthlySavingsCapacity?: AgentViewMoney;
 }
 
 /**
