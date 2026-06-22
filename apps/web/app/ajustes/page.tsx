@@ -22,6 +22,7 @@ import {
   PRIVACY_COOKIE_NAME,
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
+import { formatDecimalAsPercentField } from "@web/intake-primitives";
 import { isDemoMode } from "@web/demo/write-guard";
 import ImportWorkspaceForm from "@web/import-workspace-form";
 import { PendingSubmit } from "@web/pending-submit";
@@ -426,7 +427,7 @@ export default async function AjustesPage({
                 <input
                   defaultValue={
                     fireScopeConfig
-                      ? (fireScopeConfig.safeWithdrawalRate * 100).toString()
+                      ? formatDecimalAsPercentField(fireScopeConfig.safeWithdrawalRate)
                       : "4"
                   }
                   inputMode="decimal"
@@ -438,7 +439,7 @@ export default async function AjustesPage({
                 <input
                   defaultValue={
                     fireScopeConfig
-                      ? (fireScopeConfig.expectedRealReturn * 100).toString()
+                      ? formatDecimalAsPercentField(fireScopeConfig.expectedRealReturn)
                       : "7"
                   }
                   inputMode="decimal"

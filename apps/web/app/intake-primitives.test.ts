@@ -2,6 +2,7 @@ import type { Member } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import {
+  formatDecimalAsPercentField,
   ISO_DATE,
   normalizeDecimalString,
   normalizeNonNegativeDecimalString,
@@ -110,6 +111,30 @@ describe("parsePercentToDecimal", () => {
 
   test("normalizes zero to a clean string", () => {
     expect(parsePercentToDecimal("0")).toBe("0");
+  });
+});
+
+describe("formatDecimalAsPercentField", () => {
+  test("renders a stored fraction as a clean percent, free of float dust", () => {
+    // 0.07 * 100 is 7.000000000000001 in binary float — the dust must never
+    // reach the form field (the bug this helper fixes).
+    expect(formatDecimalAsPercentField(0.07)).toBe("7");
+    expect(formatDecimalAsPercentField(0.04)).toBe("4");
+  });
+
+  test("keeps a legitimate fractional rate intact", () => {
+    expect(formatDecimalAsPercentField(0.035)).toBe("3.5");
+    expect(formatDecimalAsPercentField(0.0425)).toBe("4.25");
+  });
+
+  test("renders zero as a clean string", () => {
+    expect(formatDecimalAsPercentField(0)).toBe("0");
+  });
+
+  test("round-trips with parsePercentToDecimal", () => {
+    const stored = parsePercentToDecimal("7");
+    expect(stored).toBe("0.07");
+    expect(formatDecimalAsPercentField(Number(stored))).toBe("7");
   });
 });
 
