@@ -1,3 +1,5 @@
+import type { PriceFreshnessState } from "@worthline/domain";
+
 export interface AgentViewEnvelope<T> {
   data: T;
   meta?: Record<string, unknown>;
@@ -914,6 +916,29 @@ export class AgentViewHttpError extends Error {
     this.status = params.status;
     this.details = params.details;
   }
+}
+
+/**
+ * A holding's cached-price freshness (#466, PRD #417 S2): the staleness state of
+ * its price-cache row, when it was last fetched, the providing source, and the
+ * degraded/failed reason when one is recorded. Secret-free by construction — it
+ * carries no price figure, no provider payload, and no token. `freshness` is null
+ * when the holding has no cached provider quote (a manual or derived holding): a
+ * documented "no provider quote here" shape, never a guessed freshness.
+ */
+export interface AgentViewPriceFreshnessResult {
+  object: "price_freshness";
+  /** The holding this freshness describes (echoed public `wl_hld_…`). */
+  holding: string;
+  freshness: {
+    freshnessState: PriceFreshnessState;
+    /** When the price was last fetched, as ISO. */
+    fetchedAt: string;
+    /** The provider that supplied the cached price. */
+    source: string;
+    /** Why the last fetch is degraded, when recorded. */
+    staleReason?: string;
+  } | null;
 }
 
 export function successEnvelope<T>(data: T): AgentViewEnvelope<T> {

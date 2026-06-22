@@ -20,6 +20,7 @@ import { buildFireContext } from "./fire-context";
 import { buildHoldingDetail } from "./holding-detail";
 import { buildHoldingOperations } from "./holding-operations";
 import { storeTargetFromMcpAuth } from "./mcp-store-target";
+import { buildPriceFreshness } from "./price-freshness";
 import type { AgentViewMcpServerTool, AgentViewToolContext } from "./mcp-server";
 import { createStubAgentViewMcpToolCatalog, STUB_NOTICE } from "./stub-catalog";
 import { listAgentViewScopes } from "./scopes";
@@ -198,6 +199,12 @@ export function createAgentViewInternalMcpToolCatalog(): AgentViewMcpServerTool[
       const input = raw as { holdingId: string };
       return runAgentView(context, async (agentView) =>
         successEnvelope(await buildHoldingDetail(agentView, input.holdingId)),
+      );
+    }),
+    tool("get_price_freshness", (raw, context) => {
+      const input = raw as { holdingId: string };
+      return runAgentView(context, async (agentView) =>
+        successEnvelope(await buildPriceFreshness(agentView, input.holdingId)),
       );
     }),
     tool("get_operations", (raw, context) => {
