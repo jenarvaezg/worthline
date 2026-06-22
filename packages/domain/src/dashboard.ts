@@ -2,6 +2,8 @@ import type { AssetPrice } from "./prices";
 import type { LocalPersistenceStatus } from "./persistence";
 import type { FireScopeConfig } from "./fire";
 import { calculateFireForScope, fireReservationHorizon } from "./fire";
+import type { FireProjection } from "./fire-projection";
+import { projectFire } from "./fire-projection";
 import type { Goal } from "./goals";
 import { assignedHoldingsValueMinor, totalGoalReservationMinor } from "./goals";
 import type { Liability, ManualAsset, Member, Workspace } from "./workspace-types";
@@ -105,6 +107,8 @@ export interface DashboardState {
   presentation: NetWorthPresentation | undefined;
   fireScopeConfig: FireScopeConfig | null;
   fireResult: ReturnType<typeof calculateFireForScope> | null;
+  /** FIRE projection scenarios (PRD #421, #427); null when FIRE is unconfigured. */
+  fireProjection: FireProjection | null;
   selectedMemberIds: string[];
   pyramid: LiquidityTierBreakdown[];
   deltas: SnapshotDeltas | undefined;
@@ -186,6 +190,21 @@ export function prepareDashboardState(input: {
         )
       : null;
 
+  // FIRE projection (#427): scenarios from the reservation-adjusted eligible
+  // total and the configured monthly savings capacity.
+  const fireProjection =
+    fireScopeConfig && fireResult
+      ? projectFire({
+          startingEligibleMinor: fireResult.eligibleAssets.amountMinor,
+          monthlyContributionMinor: fireScopeConfig.monthlySavingsCapacityMinor ?? 0,
+          expectedRealReturn: fireScopeConfig.expectedRealReturn,
+          fireNumberMinor: fireResult.fireNumber.amountMinor,
+          ...(fireScopeConfig.currentAge === undefined
+            ? {}
+            : { currentAge: fireScopeConfig.currentAge }),
+        })
+      : null;
+
   const selectedMemberIds =
     workspace && selectedScope ? resolveScopeMemberIds(workspace, selectedScope.id) : [];
 
@@ -231,6 +250,7 @@ export function prepareDashboardState(input: {
     assets,
     dashboard,
     deltas,
+    fireProjection,
     fireResult,
     fireScopeConfig,
     investmentAssets,

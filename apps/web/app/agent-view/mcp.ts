@@ -20,6 +20,7 @@ import type {
   AgentViewSnapshotEntry,
   AgentViewSnapshotGranularity,
   AgentViewSnapshotSort,
+  AgentViewFireProjection,
   AgentViewGoal,
   AgentViewMemberProfile,
   AgentViewSourceFreshnessResult,
@@ -60,6 +61,11 @@ export interface GetFireContextInput {
 }
 
 export interface ListGoalsInput {
+  /** Public scope ID; defaults to the household scope when omitted. */
+  scopeId?: string;
+}
+
+export interface GetFireProjectionInput {
   /** Public scope ID; defaults to the household scope when omitted. */
   scopeId?: string;
 }
@@ -244,6 +250,10 @@ export interface AgentViewMcpToolCatalog {
     AgentViewEnvelope<AgentViewMemberProfile[]>
   >;
   list_goals: AgentViewMcpTool<ListGoalsInput, AgentViewEnvelope<AgentViewGoal[]>>;
+  get_fire_projection: AgentViewMcpTool<
+    GetFireProjectionInput,
+    AgentViewEnvelope<AgentViewFireProjection>
+  >;
 }
 
 const EMPTY_INPUT_SCHEMA: AgentViewMcpInputSchema = {
@@ -556,6 +566,24 @@ export function createAgentViewMcpToolCatalog(
         return client.get(`${SCOPES_PATH}/${encodeURIComponent(scopeId)}/goals`);
       },
       name: "list_goals",
+    },
+    get_fire_projection: {
+      description:
+        "Project when a scope reaches FIRE (defaults to the household scope) under optimistic/base/pessimistic scenarios (base = the config's real return; the others ±1.5 %). Each scenario returns years-to-FIRE, age-at-FIRE, final eligible assets, total contributed and a year-by-year capital trajectory. It starts from the goal-reservation-adjusted eligible total and contributes the configured monthly savings capacity. Unconfigured when the scope has no FIRE config. Reads are side-effect-free.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          scopeId: { type: "string" },
+        },
+        type: "object",
+      },
+      invoke: async (input) => {
+        const scopeId = input.scopeId ?? (await defaultScopeId(client));
+        return client.get(
+          `${SCOPES_PATH}/${encodeURIComponent(scopeId)}/fire-projection`,
+        );
+      },
+      name: "get_fire_projection",
     },
   };
 }

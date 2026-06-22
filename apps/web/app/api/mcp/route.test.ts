@@ -149,7 +149,7 @@ describe("POST /api/mcp (non-demo mode)", () => {
     };
     const tools = body.result.tools;
 
-    expect(tools).toHaveLength(17);
+    expect(tools).toHaveLength(18);
     expect(tools.map((tool) => tool.name).sort()).toEqual(
       [
         "list_scopes",
@@ -169,6 +169,7 @@ describe("POST /api/mcp (non-demo mode)", () => {
         "get_warning_overrides",
         "get_member_profile",
         "list_goals",
+        "get_fire_projection",
       ].sort(),
     );
 
