@@ -18,6 +18,7 @@ import { buildDataQuality } from "./data-quality";
 import { buildFigureExplanation, isFigureName } from "./figure-explanations";
 import { buildFinancialContext } from "./financial-context";
 import { buildFireContext } from "./fire-context";
+import { buildGoals } from "./goals-context";
 import { buildHoldingDetail } from "./holding-detail";
 import { buildHoldingOperations } from "./holding-operations";
 import { storeTargetFromMcpAuth } from "./mcp-store-target";
@@ -260,6 +261,13 @@ export function createAgentViewInternalMcpToolCatalog(): AgentViewMcpServerTool[
         successEnvelope(await buildMemberProfiles(agentView)),
       ),
     ),
+    tool("list_goals", (raw, context) => {
+      const input = raw as { scopeId?: string };
+      return runAgentView(context, async (agentView) => {
+        const scopeId = input.scopeId ?? (await defaultScopeId(agentView));
+        return successEnvelope(await buildGoals(agentView, scopeId));
+      });
+    }),
     tool("get_connected_source_positions", async (raw, context) => {
       const input = raw as {
         holdingId?: string;

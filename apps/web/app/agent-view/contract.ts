@@ -1,4 +1,5 @@
 import type {
+  GoalPriority,
   PriceFreshnessState,
   RiskTolerance,
   WorkspaceMode,
@@ -1015,6 +1016,29 @@ export interface AgentViewMemberProfile {
   /** ISO 3166-1 alpha-2 fiscal country (e.g. "ES"), for tax-aware suggestions. */
   fiscalCountry: string | null;
   riskTolerance: RiskTolerance | null;
+}
+
+/**
+ * An intermediate goal as `list_goals` exposes it (PRD #421, #424): its target,
+ * deadline, priority, the public ids of the assigned holdings, the capital
+ * currently reserved (scope-weighted `min(target, assigned value)`), and the
+ * funded ratio (`reserved / target`, 0..1, capped). Goals do not yet affect FIRE
+ * eligibility — that lands in #426.
+ */
+export interface AgentViewGoal {
+  object: "goal";
+  id: string;
+  name: string;
+  targetAmount: AgentViewMoney;
+  /** ISO date (YYYY-MM-DD). */
+  deadline: string;
+  priority: GoalPriority;
+  /** Public holding ids (wl_hld_…) assigned to the goal. */
+  assignedHoldings: string[];
+  /** Scope-weighted reserved capital: `min(target, value of assigned holdings)`. */
+  reservedAmount: AgentViewMoney;
+  /** `reserved / target` as a non-negative decimal string, capped at `"1"`. */
+  fundedRatio: string;
 }
 
 /**

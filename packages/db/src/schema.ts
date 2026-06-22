@@ -7,6 +7,7 @@ import type {
   Instrument,
   InvestmentPriceProvider,
   LiabilityType,
+  GoalPriority,
   OperationKind,
   PriceFreshnessState,
   PriceSource,
@@ -684,4 +685,30 @@ export const snapshotPositionHoldings = sqliteTable(
       table.positionKey,
     ),
   ],
+);
+
+/** Intermediate financial goals (PRD #421, #424). */
+export const goals = sqliteTable("goals", {
+  id: text("id").primaryKey(),
+  scopeId: text("scope_id").notNull(),
+  name: text("name").notNull(),
+  targetAmountMinor: integer("target_amount_minor").notNull(),
+  deadline: text("deadline").notNull(),
+  priority: text("priority").$type<GoalPriority>().notNull(),
+  createdAt: timestamp("created_at"),
+  updatedAt: timestamp("updated_at"),
+});
+
+/** Holdings assigned to a goal (PRD #421, #424); a goal reserves their value. */
+export const goalHoldings = sqliteTable(
+  "goal_holdings",
+  {
+    goalId: text("goal_id")
+      .notNull()
+      .references(() => goals.id, { onDelete: "cascade" }),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+  },
+  (table) => [primaryKey({ columns: [table.goalId, table.assetId] })],
 );

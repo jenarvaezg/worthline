@@ -311,4 +311,23 @@ CREATE TABLE \`positions\` (
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	FOREIGN KEY (\`source_id\`) REFERENCES \`connected_sources\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
+--> statement-breakpoint
+CREATE TABLE \`goals\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`scope_id\` text NOT NULL,
+	\`name\` text NOT NULL,
+	\`target_amount_minor\` integer NOT NULL,
+	\`deadline\` text NOT NULL,
+	\`priority\` text NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE \`goal_holdings\` (
+	\`goal_id\` text NOT NULL,
+	\`asset_id\` text NOT NULL,
+	PRIMARY KEY(\`goal_id\`, \`asset_id\`),
+	FOREIGN KEY (\`goal_id\`) REFERENCES \`goals\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
 `;

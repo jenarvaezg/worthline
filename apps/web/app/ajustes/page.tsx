@@ -1,8 +1,12 @@
 import { bootstrapHealthcheck, withStore } from "@web/store";
 import {
+  assignedHoldingsValueMinor,
   collectWarnings,
   formatMoneyMinorPrivacy,
+  goalFundedRatioBps,
+  goalReservedMinor,
   listScopeOptions,
+  resolveScopeMemberIds,
   suggestMonthlySavingsCapacity,
 } from "@worthline/domain";
 import { cookies } from "next/headers";
@@ -34,6 +38,7 @@ import {
   updateMemberProfileAction,
 } from "./actions";
 import { connectBinanceAction, syncBinanceAction } from "./binance-actions";
+import { createGoalAction, deleteGoalAction, updateGoalAction } from "./goal-actions";
 import { aggregateSourceValueMinor, countNonDustTokens } from "./binance-helpers";
 import DisconnectBinanceFold from "./disconnect-binance-fold";
 import DisconnectNumistaFold from "./disconnect-numista-fold";
@@ -136,9 +141,14 @@ export default async function AjustesPage({
     ).flat();
     const savingsSuggestion = suggestMonthlySavingsCapacity(investmentOps);
 
+    // Goals for the selected scope (#424) + the assets they can be backed by.
+    const goals = selectedScope ? await store.goals.readGoals(selectedScope.id) : [];
+
     return {
+      assets: allAssets,
       binanceSource,
       fireConfig: await store.readFireConfig(),
+      goals,
       numistaSource,
       overrides: await store.readWarningOverrides(),
       savingsSuggestion,
@@ -164,8 +174,30 @@ export default async function AjustesPage({
     numistaSource,
     binanceSource,
     savingsSuggestion,
+    goals,
+    assets,
   } = storeData;
   const fireScopeConfig = selectedScope ? fireConfig[selectedScope.id] : undefined;
+
+  // Goals view (#424): each goal with the scope-weighted value of its assigned
+  // holdings, the reserved capital and the funded ratio. Computed here so the
+  // panel stays declarative. Goals do not affect FIRE eligibility yet (#426).
+  const goalScopeMemberIds = selectedScope
+    ? new Set(resolveScopeMemberIds(workspace, selectedScope.id))
+    : new Set<string>();
+  const assetById = new Map(assets.map((asset) => [asset.id, asset]));
+  const goalsView = goals.map((goal) => {
+    const assignedMinor = assignedHoldingsValueMinor(
+      goal.assetIds,
+      assetById,
+      goalScopeMemberIds,
+    );
+    return {
+      goal,
+      reservedMinor: goalReservedMinor(goal.targetAmountMinor, assignedMinor),
+      fundedBps: goalFundedRatioBps(goal.targetAmountMinor, assignedMinor),
+    };
+  });
 
   // Build warnings for the shell rail (read from full store to be accurate).
   const warnings = await withStore(async (store) => {
@@ -468,6 +500,177 @@ export default async function AjustesPage({
             </form>
           ) : (
             <p className="muted">Selecciona un scope para configurar FIRE.</p>
+          )}
+        </section>
+
+        {/* ── Objetivos ────────────────────────────────────────────── */}
+        <section className="ajustesPanel" aria-label="Objetivos">
+          <div className="panelHeader">
+            <h2>Objetivos</h2>
+            <span>{goalsView.length} activos</span>
+          </div>
+
+          {formError?.formId === "goal" ? (
+            <p className="formError" role="alert">
+              {formError.message}
+            </p>
+          ) : null}
+
+          {selectedScope ? (
+            <>
+              {goalsView.length === 0 ? (
+                <p className="muted">Aún no hay objetivos en este scope.</p>
+              ) : null}
+
+              <div className="goalList">
+                {goalsView.map(({ goal, reservedMinor, fundedBps }) => (
+                  <div className="goalRow" key={goal.id}>
+                    <form action={updateGoalAction} className="stackForm">
+                      <input name="currentUrl" type="hidden" value={currentUrl} />
+                      <input name="id" type="hidden" value={goal.id} />
+                      <input name="scopeId" type="hidden" value={selectedScope.id} />
+                      <label>
+                        Nombre
+                        <input defaultValue={goal.name} name="name" />
+                      </label>
+                      <div className="goalFieldRow">
+                        <label>
+                          Importe objetivo (EUR)
+                          <input
+                            defaultValue={(goal.targetAmountMinor / 100).toString()}
+                            inputMode="decimal"
+                            name="targetAmount"
+                          />
+                        </label>
+                        <label>
+                          Fecha límite
+                          <input
+                            defaultValue={goal.deadline}
+                            name="deadline"
+                            type="date"
+                          />
+                        </label>
+                      </div>
+                      <span className="memberProfileLabel">Prioridad</span>
+                      <span className="segmented">
+                        {(["high", "medium", "low"] as const).map((level) => (
+                          <label key={level}>
+                            <input
+                              defaultChecked={goal.priority === level}
+                              name="priority"
+                              type="radio"
+                              value={level}
+                            />
+                            {level === "high"
+                              ? "Alta"
+                              : level === "medium"
+                                ? "Media"
+                                : "Baja"}
+                          </label>
+                        ))}
+                      </span>
+                      <span className="memberProfileLabel">Holdings asignados</span>
+                      <span className="chipChoice">
+                        {assets.map((asset) => (
+                          <label key={asset.id}>
+                            <input
+                              defaultChecked={goal.assetIds.includes(asset.id)}
+                              name="assetIds"
+                              type="checkbox"
+                              value={asset.id}
+                            />
+                            {asset.name}
+                          </label>
+                        ))}
+                      </span>
+                      <div className="goalFunded">
+                        <span className="memberProfileLabel">
+                          {(fundedBps / 100).toFixed(0)} % financiado
+                        </span>
+                        <div className="fundedBar">
+                          <i
+                            className={fundedBps >= 10_000 ? "full" : undefined}
+                            style={{ width: `${Math.min(100, fundedBps / 100)}%` }}
+                          />
+                        </div>
+                        <span className="muted">
+                          Reservado{" "}
+                          {formatMoneyMinorPrivacy(
+                            {
+                              amountMinor: reservedMinor,
+                              currency: workspace.baseCurrency,
+                            },
+                            privacyMode,
+                          )}
+                        </span>
+                      </div>
+                      <button type="submit">Guardar objetivo</button>
+                    </form>
+                    <form action={deleteGoalAction}>
+                      <input name="currentUrl" type="hidden" value={currentUrl} />
+                      <input name="id" type="hidden" value={goal.id} />
+                      <details className="confirmDelete">
+                        <summary>Eliminar</summary>
+                        <button type="submit">Confirmar borrado</button>
+                      </details>
+                    </form>
+                  </div>
+                ))}
+              </div>
+
+              <div className="createBlock">
+                <div className="memberProfileLabel">Nuevo objetivo</div>
+                <form action={createGoalAction} className="stackForm">
+                  <input name="currentUrl" type="hidden" value={currentUrl} />
+                  <input name="scopeId" type="hidden" value={selectedScope.id} />
+                  <label>
+                    Nombre
+                    <input name="name" placeholder="Entrada vivienda" />
+                  </label>
+                  <div className="goalFieldRow">
+                    <label>
+                      Importe objetivo (EUR)
+                      <input
+                        inputMode="decimal"
+                        name="targetAmount"
+                        placeholder="60000"
+                      />
+                    </label>
+                    <label>
+                      Fecha límite
+                      <input name="deadline" type="date" />
+                    </label>
+                  </div>
+                  <span className="memberProfileLabel">Prioridad</span>
+                  <span className="segmented">
+                    <label>
+                      <input name="priority" type="radio" value="high" />
+                      Alta
+                    </label>
+                    <label>
+                      <input defaultChecked name="priority" type="radio" value="medium" />
+                      Media
+                    </label>
+                    <label>
+                      <input name="priority" type="radio" value="low" />
+                      Baja
+                    </label>
+                  </span>
+                  <span className="memberProfileLabel">Holdings asignados</span>
+                  <span className="chipChoice">
+                    {assets.map((asset) => (
+                      <label key={asset.id}>
+                        <input name="assetIds" type="checkbox" value={asset.id} />
+                        {asset.name}
+                      </label>
+                    ))}
+                  </span>
+                  <button type="submit">Crear objetivo</button>
+                </form>
+              </div>
+            </>
+          ) : (
+            <p className="muted">Selecciona un scope para gestionar objetivos.</p>
           )}
         </section>
 
