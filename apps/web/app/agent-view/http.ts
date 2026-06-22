@@ -51,6 +51,7 @@ import {
   MAX_SNAPSHOT_LIMIT,
 } from "./snapshot-history";
 import { buildTrashSummary, DEFAULT_TRASH_LIMIT, MAX_TRASH_LIMIT } from "./trash-summary";
+import { buildWarningOverrides, buildWorkspaceInfo } from "./workspace-context";
 
 type StoreRunner = <T>(run: (store: WorthlineStore) => T | Promise<T>) => Promise<T>;
 
@@ -369,6 +370,40 @@ export async function handleGetSourceFreshness(
     return json(
       successEnvelope(
         await runWithStore((store) => buildSourceFreshness(store.agentView, sourceId)),
+      ),
+      200,
+    );
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+export async function handleGetWorkspace(
+  request: NextRequest,
+  runWithStore: StoreRunner,
+): Promise<NextResponse> {
+  try {
+    guardAgentViewRequest(request, []);
+
+    return json(
+      successEnvelope(await runWithStore((store) => buildWorkspaceInfo(store.agentView))),
+      200,
+    );
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+export async function handleGetWarningOverrides(
+  request: NextRequest,
+  runWithStore: StoreRunner,
+): Promise<NextResponse> {
+  try {
+    guardAgentViewRequest(request, []);
+
+    return json(
+      successEnvelope(
+        await runWithStore((store) => buildWarningOverrides(store.agentView)),
       ),
       200,
     );

@@ -22,6 +22,8 @@ import type {
   AgentViewSnapshotSort,
   AgentViewSourceFreshnessResult,
   AgentViewTrashedHolding,
+  AgentViewWarningOverride,
+  AgentViewWorkspaceInfo,
 } from "./contract";
 import { FIGURE_NAMES } from "./figure-explanations";
 
@@ -222,6 +224,14 @@ export interface AgentViewMcpToolCatalog {
     GetSourceFreshnessInput,
     AgentViewEnvelope<AgentViewSourceFreshnessResult>
   >;
+  get_workspace: AgentViewMcpTool<
+    Record<string, never>,
+    AgentViewEnvelope<AgentViewWorkspaceInfo>
+  >;
+  get_warning_overrides: AgentViewMcpTool<
+    Record<string, never>,
+    AgentViewEnvelope<AgentViewWarningOverride[]>
+  >;
 }
 
 const EMPTY_INPUT_SCHEMA: AgentViewMcpInputSchema = {
@@ -233,6 +243,8 @@ const EMPTY_INPUT_SCHEMA: AgentViewMcpInputSchema = {
 const SCOPES_PATH = "/api/v1/agent-view/scopes";
 const HOLDINGS_PATH = "/api/v1/agent-view/holdings";
 const CONNECTED_SOURCES_PATH = "/api/v1/agent-view/connected-sources";
+const WORKSPACE_PATH = "/api/v1/agent-view/workspace";
+const WARNING_OVERRIDES_PATH = "/api/v1/agent-view/warning-overrides";
 
 export function createAgentViewMcpToolCatalog(
   client: AgentViewApiClient,
@@ -494,6 +506,20 @@ export function createAgentViewMcpToolCatalog(
           `${CONNECTED_SOURCES_PATH}/${encodeURIComponent(input.sourceId)}/freshness`,
         ),
       name: "get_source_freshness",
+    },
+    get_workspace: {
+      description:
+        "Get the workspace settings: its mode (individual or household) and base currency, so answers match the workspace instead of assuming household/EUR. Both are null until the workspace is provisioned. Reads are side-effect-free.",
+      inputSchema: EMPTY_INPUT_SCHEMA,
+      invoke: () => client.get(WORKSPACE_PATH),
+      name: "get_workspace",
+    },
+    get_warning_overrides: {
+      description:
+        "List the acknowledged overrideable warnings: each carries the warning code and the public holding ID (wl_hld_…) whose warning was silenced, so you can explain which warning was overridden and where. Pure read — surfacing an override never writes one. Reads are side-effect-free.",
+      inputSchema: EMPTY_INPUT_SCHEMA,
+      invoke: () => client.get(WARNING_OVERRIDES_PATH),
+      name: "get_warning_overrides",
     },
   };
 }
