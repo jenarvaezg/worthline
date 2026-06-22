@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 36;
+export const SCHEMA_VERSION = 37;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1243,6 +1243,29 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       await client.executeMultiple("ALTER TABLE members ADD COLUMN risk_tolerance TEXT");
     } catch {}
     await writeSchemaVersion(client, 36);
+  }
+
+  if (version < 37) {
+    // PRD #421 (#424): intermediate goals + their assigned holdings. New tables,
+    // so CREATE TABLE IF NOT EXISTS (a fresh DB already has them from schema-sql).
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS goals (
+      id TEXT PRIMARY KEY NOT NULL,
+      scope_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      target_amount_minor INTEGER NOT NULL,
+      deadline TEXT NOT NULL,
+      priority TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+    );`);
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS goal_holdings (
+      goal_id TEXT NOT NULL,
+      asset_id TEXT NOT NULL,
+      PRIMARY KEY (goal_id, asset_id),
+      FOREIGN KEY (goal_id) REFERENCES goals(id) ON UPDATE no action ON DELETE cascade,
+      FOREIGN KEY (asset_id) REFERENCES assets(id) ON UPDATE no action ON DELETE cascade
+    );`);
+    await writeSchemaVersion(client, 37);
   }
 
   return { ranV18Backfill, ranV33Backfill };

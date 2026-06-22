@@ -135,6 +135,7 @@ import {
   type UpdateInterestRateRevisionInput,
   type UpdateLiabilityInput,
 } from "./liability-store";
+import { createGoalStore, type GoalStore } from "./goal-store";
 import {
   createOperationsStore,
   type OperationsStore,
@@ -304,6 +305,8 @@ export interface WorthlineStore {
   workspace: WorkspaceStore;
   /** Connected-source persistence (PRD #160 / #163, ADR 0016/0017). */
   connectedSources: ConnectedSourceStore;
+  /** Intermediate goals + their assigned holdings (PRD #421, #424). */
+  goals: GoalStore;
   /** Narrow read-only port for the external agent-view API. */
   agentView: AgentViewReadStore;
 
@@ -847,11 +850,13 @@ async function buildStore(
   const liabilityStore = createLiabilityStore(ctx);
   const operationsStore = createOperationsStore(ctx);
   const connectedSourceStore = createConnectedSourceStore(ctx);
+  const goalStore = createGoalStore(ctx);
   const agentViewReadStore = createAgentViewReadStore(ctx, {
     listConnectedSources: connectedSourceStore.listSources,
     listSourceAssetIds: connectedSourceStore.listSourceAssetIds,
     readAmortizationPlan: liabilityStore.readAmortizationPlan,
     readAssets: assetStore.readAssets,
+    readGoals: goalStore.readGoals,
     readBalanceAnchors: liabilityStore.readBalanceAnchors,
     readDebtModel: liabilityStore.readDebtModel,
     readEarlyRepayments: liabilityStore.readEarlyRepayments,
@@ -971,6 +976,7 @@ async function buildStore(
     operations: operationsStore,
     workspace: workspaceStore,
     connectedSources: connectedSourceStore,
+    goals: goalStore,
     agentView: agentViewReadStore,
     close: () => {
       client.close();

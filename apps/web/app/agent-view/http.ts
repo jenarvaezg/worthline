@@ -36,6 +36,7 @@ import {
 import { buildFinancialContext } from "./financial-context";
 import { buildFigureExplanation, isFigureName } from "./figure-explanations";
 import { buildFireContext } from "./fire-context";
+import { buildGoals } from "./goals-context";
 import { buildHoldingDetail } from "./holding-detail";
 import {
   buildHoldingOperations,
@@ -426,6 +427,25 @@ export async function handleGetMemberProfiles(
     return json(
       successEnvelope(
         await runWithStore((store) => buildMemberProfiles(store.agentView)),
+      ),
+      200,
+    );
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+export async function handleListGoals(
+  request: NextRequest,
+  scopeId: string,
+  runWithStore: StoreRunner,
+): Promise<NextResponse> {
+  try {
+    guardAgentViewRequest(request, []);
+
+    return json(
+      successEnvelope(
+        await runWithStore((store) => buildGoals(store.agentView, scopeId)),
       ),
       200,
     );

@@ -20,6 +20,7 @@ import type {
   AgentViewSnapshotEntry,
   AgentViewSnapshotGranularity,
   AgentViewSnapshotSort,
+  AgentViewGoal,
   AgentViewMemberProfile,
   AgentViewSourceFreshnessResult,
   AgentViewTrashedHolding,
@@ -54,6 +55,11 @@ export interface GetFinancialContextInput {
 }
 
 export interface GetFireContextInput {
+  /** Public scope ID; defaults to the household scope when omitted. */
+  scopeId?: string;
+}
+
+export interface ListGoalsInput {
   /** Public scope ID; defaults to the household scope when omitted. */
   scopeId?: string;
 }
@@ -237,6 +243,7 @@ export interface AgentViewMcpToolCatalog {
     Record<string, never>,
     AgentViewEnvelope<AgentViewMemberProfile[]>
   >;
+  list_goals: AgentViewMcpTool<ListGoalsInput, AgentViewEnvelope<AgentViewGoal[]>>;
 }
 
 const EMPTY_INPUT_SCHEMA: AgentViewMcpInputSchema = {
@@ -533,6 +540,22 @@ export function createAgentViewMcpToolCatalog(
       inputSchema: EMPTY_INPUT_SCHEMA,
       invoke: () => client.get(MEMBERS_PATH),
       name: "get_member_profile",
+    },
+    list_goals: {
+      description:
+        "List the intermediate goals for a scope (defaults to the household scope): each carries its target amount, deadline, priority (high/medium/low), the public ids of assigned holdings (wl_hld_…), the scope-weighted reserved capital (min of target and assigned value) and the funded ratio (reserved / target, 0..1). Goals do not yet change FIRE eligibility. Reads are side-effect-free.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          scopeId: { type: "string" },
+        },
+        type: "object",
+      },
+      invoke: async (input) => {
+        const scopeId = input.scopeId ?? (await defaultScopeId(client));
+        return client.get(`${SCOPES_PATH}/${encodeURIComponent(scopeId)}/goals`);
+      },
+      name: "list_goals",
     },
   };
 }
