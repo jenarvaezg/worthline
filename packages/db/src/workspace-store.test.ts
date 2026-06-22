@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Member } from "@worthline/domain";
+import { parseWorkspaceExport } from "@worthline/domain";
 import { describe, expect, it } from "vitest";
 
 import { createWorthlineStore } from "./index";
@@ -84,5 +85,31 @@ describe("member profile persistence", () => {
     expect(member.birthYear).toBeUndefined();
     expect(member.fiscalCountry).toBeUndefined();
     expect(member.riskTolerance).toBeUndefined();
+  });
+
+  it("survives an export → parse → import round-trip", async () => {
+    const source = await freshStore();
+    await source.workspace.updateMemberProfile("m1", {
+      birthYear: 1988,
+      fiscalCountry: "ES",
+      riskTolerance: "conservative",
+    });
+
+    // Exercise the real path: serialize → parseWorkspaceExport (Zod) → import.
+    const doc = await source.workspace.exportWorkspace();
+    const parsed = parseWorkspaceExport(JSON.parse(JSON.stringify(doc)));
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) throw new Error(parsed.errors.join("; "));
+
+    const target = await freshStore();
+    await target.workspace.importWorkspace(parsed.value);
+
+    expect(
+      memberById((await target.workspace.readWorkspace())!.members, "m1"),
+    ).toMatchObject({
+      birthYear: 1988,
+      fiscalCountry: "ES",
+      riskTolerance: "conservative",
+    });
   });
 });

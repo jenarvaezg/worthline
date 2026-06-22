@@ -609,9 +609,12 @@ async function importWorkspace(
         .insert(members)
         .values(
           doc.members.map((member) => ({
+            birthYear: member.birthYear ?? null,
             disabledAt: member.disabledAt ?? null,
+            fiscalCountry: member.fiscalCountry ?? null,
             id: member.id,
             name: member.name,
+            riskTolerance: member.riskTolerance ?? null,
           })),
         )
         .run();
