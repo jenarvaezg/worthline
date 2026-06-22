@@ -1,4 +1,5 @@
 import {
+  deriveFramedSnapshotDeltas,
   DRILL_GROUP_BY_TIER,
   donutArcSegments,
   formatMoneyMinorPrivacy,
@@ -6,6 +7,7 @@ import {
   largestRemainderPercentages,
   LIQUIDITY_TIER_LABELS,
   moneySign,
+  presentNetWorth,
 } from "@worthline/domain";
 import type {
   CompositionHousingMode,
@@ -14,8 +16,10 @@ import type {
   FireProjection,
   FireScenario,
   FramedDelta,
+  FramedSnapshotDeltas,
   LiquidityTier,
   NetWorthFraming,
+  NetWorthPresentation,
   NetWorthSnapshot,
 } from "@worthline/domain";
 import { refreshStalePrices } from "@worthline/pricing";
@@ -34,6 +38,7 @@ import type { RefreshPricesResult } from "./load-dashboard";
 import CompositionChart from "./composition-chart";
 import CompositionRangeControls from "./composition-range-controls";
 import DrilldownPanel from "./drilldown-panel";
+import FramingPanel, { type FramingTab } from "./framing-panel";
 import HeroMovers from "./hero-movers";
 import type { HoldingMover, MoversData, MoversPeriod } from "./hero-movers";
 import PrivacyToggle from "./privacy-toggle";
@@ -411,6 +416,78 @@ function FireProjectionCard({
   );
 }
 
+/**
+ * The view-dependent slice of the hero (#518, S2): headline figure, delta chips,
+ * hero stats and movers for ONE framing. The server renders it for BOTH framings
+ * and hands both to <FramingPanel>, which shows the active one and toggles
+ * client-side with no round-trip. The framing-independent chrome (the donut, the
+ * composition chart, FIRE) stays outside, rendered once.
+ */
+function HeroFraming({
+  hasHoldings,
+  headlineDeltas,
+  movers,
+  moversPeriod,
+  presentation,
+  privacyMode,
+  returnTo,
+  showDeltas,
+}: {
+  hasHoldings: boolean;
+  headlineDeltas: FramedSnapshotDeltas;
+  movers: MoversData | null;
+  moversPeriod: MoversPeriod;
+  presentation: NetWorthPresentation | undefined;
+  privacyMode: boolean;
+  returnTo: string;
+  showDeltas: boolean;
+}) {
+  return (
+    <>
+      {presentation ? (
+        <div className="headline">
+          <span>{presentation.headlineLabel}</span>
+          <strong className={hasHoldings ? undefined : "emptyFigure"}>
+            {formatMoneyMinorPrivacy(presentation.headline, privacyMode)}
+            {!hasHoldings ? <small>sin datos aún</small> : null}
+          </strong>
+          <PrivacyToggle privacyMode={privacyMode} returnTo={returnTo} />
+        </div>
+      ) : null}
+
+      {showDeltas ? (
+        <div className="deltaChips" aria-label="Cambios de snapshots">
+          <DeltaChip
+            delta={headlineDeltas.sincePrevious}
+            label="vs anterior"
+            privacyMode={privacyMode}
+          />
+          <DeltaChip
+            delta={headlineDeltas.sinceMonthlyClose}
+            label="vs cierre mensual"
+            privacyMode={privacyMode}
+          />
+        </div>
+      ) : null}
+
+      {presentation ? (
+        <div className="heroStats">
+          {presentation.breakdown.map((item) => (
+            <div className="heroStat" key={item.id}>
+              <span>{item.label}</span>
+              <b className={hasHoldings ? undefined : "emptyFigure"}>
+                {formatMoneyMinorPrivacy(item.value, privacyMode)}
+              </b>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {movers ? <HeroMovers data={movers} period={moversPeriod} /> : null}
+    </>
+  );
+}
+
 export default async function DashboardContent({
   privacyMode,
   returnTo,
@@ -502,28 +579,61 @@ export default async function DashboardContent({
     redirect("/empezar");
   }
 
-  const {
-    deltas,
-    fireProjection,
-    fireResult,
-    fireScopeConfig,
-    headlineDeltas,
-    onboarding,
-    presentation,
-    pyramid,
-    snapshots,
-  } = state;
+  const { fireProjection, fireResult, fireScopeConfig, onboarding, pyramid, snapshots } =
+    state;
 
   const hasHoldings = state.assets.length + state.liabilities.length > 0;
 
-  const movers = buildMoversData({
-    snapshots,
-    selectedView,
-    period: moversPeriod,
-    holdingRows: moversHoldingRows,
-    currency: presentation?.headline.currency ?? "EUR",
-    privacyMode,
-  });
+  // Both framings, computed server-side from the view-independent summary/deltas
+  // (#518, S2): the heavy store work already ran once, so framing the figures for
+  // both views is cheap pure math. <FramingPanel> ships both and toggles between
+  // them client-side — no second round-trip on a Vista switch.
+  const presentationByView = {
+    liquid: state.summary ? presentNetWorth(state.summary, "liquid") : undefined,
+    total: state.summary ? presentNetWorth(state.summary, "total") : undefined,
+  } as const;
+  const currency = presentationByView.total?.headline.currency ?? "EUR";
+  const emptyFramedDeltas: FramedSnapshotDeltas = {
+    sinceMonthlyClose: null,
+    sincePrevious: null,
+  };
+  const deltasByView = {
+    liquid: state.deltas
+      ? deriveFramedSnapshotDeltas(state.deltas, "liquid")
+      : emptyFramedDeltas,
+    total: state.deltas
+      ? deriveFramedSnapshotDeltas(state.deltas, "total")
+      : emptyFramedDeltas,
+  } as const;
+  const moversByView = {
+    liquid: buildMoversData({
+      snapshots,
+      selectedView: "liquid",
+      period: moversPeriod,
+      holdingRows: moversHoldingRows,
+      currency,
+      privacyMode,
+    }),
+    total: buildMoversData({
+      snapshots,
+      selectedView: "total",
+      period: moversPeriod,
+      holdingRows: moversHoldingRows,
+      currency,
+      privacyMode,
+    }),
+  } as const;
+  const framingTabsWithHref: FramingTab[] = framingTabs.map((tab) => ({
+    href: compositionUrl(
+      tab.id,
+      selectedDrill,
+      selectedRange,
+      selectedHousingMode,
+      false,
+    ),
+    id: tab.id,
+    label: tab.label,
+  }));
 
   const rangeOptions = state.compositionRanges.map((range) => ({
     href: compositionUrl(selectedView, selectedDrill, range, selectedHousingMode),
@@ -536,68 +646,37 @@ export default async function DashboardContent({
   const tierPercents = largestRemainderPercentages(tierBpsValues);
   const donutSegments = donutArcSegments(tierPercents, TIER_DONUT_GEOMETRY);
 
-  const { sincePrevious: vsPrevious, sinceMonthlyClose: vsMonthlyClose } = headlineDeltas;
-
   return (
     <div className="dashGrid">
       <section className="summaryBand heroPanel" aria-label="Resumen patrimonial">
-        <div className="resumenHeader">
-          <nav className="framingTabs" aria-label="Vista de patrimonio">
-            {framingTabs.map((tab) => (
-              <Link
-                className={tab.id === selectedView ? "active" : undefined}
-                href={compositionUrl(
-                  tab.id,
-                  selectedDrill,
-                  selectedRange,
-                  selectedHousingMode,
-                  false,
-                )}
-                key={tab.id}
-                scroll={false}
-              >
-                {tab.label}
-              </Link>
-            ))}
-          </nav>
-        </div>
-
-        {presentation ? (
-          <div className="headline">
-            <span>{presentation.headlineLabel}</span>
-            <strong className={hasHoldings ? undefined : "emptyFigure"}>
-              {formatMoneyMinorPrivacy(presentation.headline, privacyMode)}
-              {!hasHoldings ? <small>sin datos aún</small> : null}
-            </strong>
-            <PrivacyToggle privacyMode={privacyMode} returnTo={returnTo} />
-          </div>
-        ) : null}
-
-        {deltas ? (
-          <div className="deltaChips" aria-label="Cambios de snapshots">
-            <DeltaChip delta={vsPrevious} label="vs anterior" privacyMode={privacyMode} />
-            <DeltaChip
-              delta={vsMonthlyClose}
-              label="vs cierre mensual"
+        <FramingPanel
+          initialView={selectedView}
+          liquid={
+            <HeroFraming
+              hasHoldings={hasHoldings}
+              headlineDeltas={deltasByView.liquid}
+              movers={moversByView.liquid}
+              moversPeriod={moversPeriod}
+              presentation={presentationByView.liquid}
               privacyMode={privacyMode}
+              returnTo={returnTo}
+              showDeltas={Boolean(state.deltas)}
             />
-          </div>
-        ) : null}
-
-        {presentation ? (
-          <div className="heroStats">
-            {presentation.breakdown.map((item) => (
-              <div className="heroStat" key={item.id}>
-                <span>{item.label}</span>
-                <b className={hasHoldings ? undefined : "emptyFigure"}>
-                  {formatMoneyMinorPrivacy(item.value, privacyMode)}
-                </b>
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        {movers ? <HeroMovers data={movers} period={moversPeriod} /> : null}
+          }
+          tabs={framingTabsWithHref}
+          total={
+            <HeroFraming
+              hasHoldings={hasHoldings}
+              headlineDeltas={deltasByView.total}
+              movers={moversByView.total}
+              moversPeriod={moversPeriod}
+              presentation={presentationByView.total}
+              privacyMode={privacyMode}
+              returnTo={returnTo}
+              showDeltas={Boolean(state.deltas)}
+            />
+          }
+        />
       </section>
 
       <section className="liquidityPanel" aria-label="Liquidez por capa">
