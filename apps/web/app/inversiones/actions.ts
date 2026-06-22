@@ -5,6 +5,7 @@ import {
   createInvestmentOperationSafe,
   defaultInvestmentPriceProvider,
   detectSingleAssetBackfillCandidate,
+  isStatementBroker,
   parseStatement,
   planStatementMerge,
   resolveStatementIsinGuard,
@@ -196,7 +197,7 @@ async function readStatementFromForm(
   formData: FormData,
 ): Promise<{ ok: false; message: string } | { ok: true; value: ParsedStatement }> {
   const broker = String(formData.get("broker") ?? "").trim();
-  if (broker !== "myinvestor") {
+  if (!isStatementBroker(broker)) {
     return { message: "Selecciona un bróker compatible (MyInvestor).", ok: false };
   }
 
@@ -205,7 +206,7 @@ async function readStatementFromForm(
     return { message: "Selecciona un archivo .csv con movimientos.", ok: false };
   }
 
-  const parsed = parseStatement(await file.text(), "myinvestor");
+  const parsed = parseStatement(await file.text(), broker);
   if (!parsed.ok) {
     return { message: parsed.errors[0], ok: false };
   }

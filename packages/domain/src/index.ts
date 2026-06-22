@@ -283,7 +283,14 @@ export type {
   SkippedStatementRow,
   StatementBroker,
 } from "./statement-parse";
-export { parseStatement } from "./statement-parse";
+export { parseStatement, parseStatementWithAdapter } from "./statement-parse";
+export type {
+  ColumnResolution,
+  StatementBrokerAdapter,
+  StatementRowOutcome,
+  StatementRowResult,
+} from "./statement-broker-adapter";
+export { getStatementBrokerAdapter, isStatementBroker } from "./statement-broker-adapter";
 export type {
   StatementAnomaly,
   StatementMergePlan,
