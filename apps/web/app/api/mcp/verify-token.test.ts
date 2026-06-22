@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { SignJWT, generateKeyPair } from "jose";
 
 import {
+  acceptedAudiences,
   createJwtVerifier,
   createVerifyMcpToken,
   MCP_READ_SCOPE,
@@ -42,7 +43,7 @@ function buildVerify(
     verifyJwt: createJwtVerifier({
       key: publicKey,
       issuer: ISSUER,
-      audience: AUDIENCE,
+      audience: acceptedAudiences(AUDIENCE),
       algorithms: [ALG],
     }),
     resolveEmail,
@@ -129,6 +130,17 @@ describe("verifyMcpToken (injected JWKS verifier + directory + control-plane loo
     expect(await buildVerify(publicKey)(REQUEST, wrongAudience)).toBeUndefined();
   });
 
+  test("a token whose audience is the full MCP endpoint URL is accepted (Codex resource form)", async () => {
+    const { publicKey, privateKey } = await localKeys();
+    // claude.ai/Claude Code use the origin; Codex uses the full endpoint URL.
+    // Both name this same server, so both are valid audiences.
+    const endpointAudience = await signToken(privateKey, {
+      audience: `${AUDIENCE}/api/mcp`,
+    });
+    const auth = await buildVerify(publicKey)(REQUEST, endpointAudience);
+    expect(auth?.extra).toMatchObject({ workspaceId: "wl_ws_ana" });
+  });
+
   test("a token from another issuer is rejected", async () => {
     const { publicKey, privateKey } = await localKeys();
     const wrongIssuer = await signToken(privateKey, {
@@ -150,6 +162,22 @@ describe("verifyMcpToken (injected JWKS verifier + directory + control-plane loo
       subject: "workos_user_stranger",
     });
     expect(await buildVerify(publicKey)(REQUEST, ungranted)).toBeUndefined();
+  });
+});
+
+describe("acceptedAudiences", () => {
+  test("accepts both the origin and the full MCP endpoint URL", () => {
+    expect(acceptedAudiences("https://worthline.example")).toEqual([
+      "https://worthline.example",
+      "https://worthline.example/api/mcp",
+    ]);
+  });
+
+  test("ignores a trailing slash on the resource origin", () => {
+    expect(acceptedAudiences("https://worthline.example/")).toEqual([
+      "https://worthline.example",
+      "https://worthline.example/api/mcp",
+    ]);
   });
 });
 

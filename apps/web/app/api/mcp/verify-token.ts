@@ -70,8 +70,10 @@ const CLOCK_TOLERANCE_SECONDS = 30;
 
 /**
  * Build a `verifyJwt` from a key source (a static public key in tests, a remote
- * JWKS in production), the expected issuer, and the audience — worthline's RFC
- * 8707 resource identifier, so a token minted for another audience is rejected.
+ * JWKS in production), the expected issuer, and the audience(s) — worthline's
+ * RFC 8707 resource identifier(s), so a token minted for another resource is
+ * rejected. `audience` may be a list: jose accepts the token when its `aud`
+ * matches any one of them (see {@link acceptedAudiences}).
  * `algorithms` is **pinned** (no default): jose otherwise accepts whatever `alg`
  * the token header claims, opening an algorithm-confusion vector when a JWKS
  * hosts more than one key type.
@@ -79,7 +81,7 @@ const CLOCK_TOLERANCE_SECONDS = 30;
 export function createJwtVerifier(config: {
   key: JwtVerifierKey;
   issuer: string;
-  audience: string;
+  audience: string | string[];
   algorithms: string[];
 }): (token: string) => Promise<VerifiedToken | null> {
   const getKey: JWTVerifyGetKey =
@@ -170,6 +172,27 @@ type Env = Record<string, string | undefined>;
 const ACCEPTED_TOKEN_ALGORITHMS = ["RS256"];
 
 /**
+ * The MCP endpoint path. Clients disagree on the RFC 8707 resource indicator for
+ * this server: claude.ai and Claude Code use the origin advertised by
+ * `/.well-known/oauth-protected-resource`, while others (e.g. Codex) use the full
+ * endpoint URL. Both name the same resource.
+ */
+const MCP_ENDPOINT_PATH = "/api/mcp";
+
+/**
+ * The audiences worthline accepts on an access token: the resource origin and
+ * the full MCP endpoint URL built from it. Accepting both keeps cross-resource
+ * replay protection intact — a token minted for any *other* resource is still
+ * rejected — while tolerating clients that compute the resource indicator either
+ * way. The resource indicator must be registered in the Authorization Server for
+ * each form a client may request (WorkOS MCP resource indicators).
+ */
+export function acceptedAudiences(resourceUrl: string): string[] {
+  const origin = resourceUrl.replace(/\/+$/, "");
+  return [origin, `${origin}${MCP_ENDPOINT_PATH}`];
+}
+
+/**
  * Cache the production verifier (and the remote JWKS object it closes over)
  * across requests, keyed by the env tuple — `createRemoteJWKSet` keeps its own
  * key cache with a TTL, so rebuilding it per request would drop that cache and
@@ -192,7 +215,7 @@ function envJwtVerifier(env: Env): VerifyMcpTokenDeps["verifyJwt"] | null {
   const verify = createJwtVerifier({
     key: createRemoteJWKSet(new URL(jwksUrl)),
     issuer,
-    audience,
+    audience: acceptedAudiences(audience),
     algorithms: ACCEPTED_TOKEN_ALGORITHMS,
   });
   cachedJwtVerifier = { key: cacheKey, verify };
