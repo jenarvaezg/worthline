@@ -18,6 +18,10 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["tests/**/*.test.{ts,tsx}"],
+    // src/**: co-located unit tests (the *-store / seam-module specs) run in CI
+    // alongside the tests/** persistence suite. Without this, src-local *.test.ts
+    // are collected only by the root config (dev/`test:watch`), never by
+    // `turbo run test` (CI), so their assertions never gated a merge.
+    include: ["tests/**/*.test.{ts,tsx}", "src/**/*.test.{ts,tsx}"],
   },
 });
