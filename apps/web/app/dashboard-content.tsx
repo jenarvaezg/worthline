@@ -40,6 +40,7 @@ import PrivacyToggle from "./privacy-toggle";
 import { runBinanceRefresh } from "./ajustes/binance-refresh";
 import { runNumistaCoinRefresh } from "./ajustes/numista-coin-refresh";
 import { refreshAndPersistStalePrices } from "./refresh-prices";
+import ObjetivosPrototype from "./objetivos-prototype"; // S0 prototype (PRD #507, throwaway)
 import { readDemoContext } from "@web/demo/read-demo-context";
 import { perfEnd, perfStart } from "@web/perf-log";
 import { bootstrapHealthcheck, openStore } from "@web/store";
@@ -431,6 +432,10 @@ export default async function DashboardContent({
 
   const moversPeriod = parseMoversPeriod(searchParams?.mvp);
 
+  // S0 prototype hook (PRD #507, throwaway): ?variant=objetivos
+  const variant =
+    typeof searchParams?.variant === "string" ? searchParams.variant : undefined;
+
   const composicionHomeUrl = compositionUrl(
     selectedView,
     null,
@@ -513,6 +518,18 @@ export default async function DashboardContent({
     pyramid,
     snapshots,
   } = state;
+
+  // S0 prototype (PRD #507, throwaway): render the /objetivos sketch with real FIRE data.
+  if (variant === "objetivos") {
+    return (
+      <ObjetivosPrototype
+        currency={fireResult?.fireNumber.currency ?? "EUR"}
+        fireProjection={fireProjection}
+        fireResult={fireResult}
+        privacyMode={privacyMode}
+      />
+    );
+  }
 
   const hasHoldings = state.assets.length + state.liabilities.length > 0;
 

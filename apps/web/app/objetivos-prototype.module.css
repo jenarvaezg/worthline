@@ -1,0 +1,308 @@
+/* S0 PROTOTYPE (throwaway, PRD #507) — layout for the /objetivos page sketch.
+   FIRE typography reuses the real global classes; this module is just the new
+   page-level layout. Tokens come from globals.css (var(--panel), etc.). */
+
+.page {
+  display: grid;
+  gap: 16px;
+}
+
+.banner {
+  background: rgba(185, 68, 47, 0.07);
+  border: 1px solid rgba(185, 68, 47, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--red);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 8px 12px;
+}
+.banner code {
+  font-family: var(--font-mono), monospace;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 820;
+  letter-spacing: -0.01em;
+}
+.header p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.sub {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.heroPanel {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  min-width: 0;
+  padding: 16px;
+}
+
+.heroGrid {
+  display: grid;
+  grid-template-columns: 1.05fr 1.35fr;
+  gap: 22px;
+  margin-top: 14px;
+}
+
+.heroLeft {
+  display: grid;
+  gap: 13px;
+  align-content: start;
+}
+
+.heroMetrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 18px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 13px;
+}
+
+.heroRight {
+  display: grid;
+  gap: 11px;
+  align-content: start;
+  border-left: 1px solid var(--hairline);
+  padding-left: 22px;
+}
+
+.bigTrajectory {
+  height: 150px;
+  width: 100%;
+}
+
+.note {
+  color: var(--blue);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.heroFoot {
+  margin-top: 14px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.heroFoot span {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.goalsBar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.addBtn {
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: var(--ink);
+  color: var(--panel);
+  border: none;
+  border-radius: 999px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+
+.goalGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.goalCard {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  padding: 13px 14px;
+  display: grid;
+  gap: 9px;
+  align-content: start;
+}
+
+.goalTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.goalName {
+  font-weight: 800;
+  font-size: 0.96rem;
+}
+
+.prio {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+.alta {
+  background: rgba(185, 68, 47, 0.1);
+  color: var(--red);
+  border: 1px solid rgba(185, 68, 47, 0.28);
+}
+.media {
+  background: rgba(179, 131, 31, 0.12);
+  color: var(--gold);
+  border: 1px solid rgba(179, 131, 31, 0.3);
+}
+.baja {
+  background: rgba(81, 96, 91, 0.1);
+  color: var(--muted);
+  border: 1px solid var(--line-soft);
+}
+
+.goalMeta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.goalMeta b {
+  color: var(--ink);
+}
+
+.fundedBar {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+.fundedBar i {
+  display: block;
+  height: 100%;
+  background: var(--blue);
+  border-radius: 999px;
+}
+
+.goalFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.74rem;
+}
+.reserved {
+  color: var(--muted);
+}
+.reserved b {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.fireImpact {
+  color: var(--red);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.coastNote {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.levelsStrip {
+  margin-top: 16px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.levels {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.levelChip {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: 9px 11px;
+  display: grid;
+  gap: 3px;
+  align-content: start;
+}
+.levelChip h4 {
+  margin: 0;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.levelVal {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.96rem;
+}
+.levelMeta {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.levelChip.reached {
+  background: rgba(0, 111, 95, 0.06);
+  border-color: rgba(0, 111, 95, 0.3);
+}
+.levelChip.reached h4 {
+  color: var(--green);
+}
+.levelChip.regular {
+  border-color: rgba(35, 81, 119, 0.35);
+}
+
+.goalsHeading {
+  display: grid;
+  gap: 2px;
+}
+.goalsHeading h2 {
+  margin: 0;
+  font-size: 1.06rem;
+  font-weight: 800;
+}
+.goalsHeading .sub {
+  margin: 0;
+}
+
+@media (max-width: 820px) {
+  .heroGrid {
+    grid-template-columns: 1fr;
+  }
+  .heroRight {
+    border-left: none;
+    border-top: 1px solid var(--hairline);
+    padding-left: 0;
+    padding-top: 16px;
+  }
+  .goalGrid {
+    grid-template-columns: 1fr;
+  }
+  .levels {
+    grid-template-columns: 1fr 1fr;
+  }
+}
