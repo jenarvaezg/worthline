@@ -1,4 +1,5 @@
-import { withStore, type WorthlineStore } from "@web/store";
+import { type WorthlineStore } from "@web/store";
+import { runActionWithStore } from "@web/action-store";
 import type {
   AdapterPositionDraft,
   ConnectedSourceAdapter,
@@ -31,12 +32,13 @@ import { resolveConnectingOwnership } from "./numista-helpers";
  *     FK-cascading the source + positions) → redirect.
  *
  * It keeps the read-creds-sync / await-network / write-sync ordering the sync-only
- * `withStore` demands, the `_store?` test seam (`runWith`), and the redirect/error
- * vocabulary. The provider keeps ONLY its parsing + network (in the adapter/helpers).
+ * `withStore` demands, the `_store?` test seam (via the shared `runActionWithStore`,
+ * #481), and the redirect/error vocabulary. The provider keeps ONLY its parsing +
+ * network (in the adapter/helpers).
  *
  * This is a plain shared library module, NOT a `"use server"` actions file: it
- * exports sync helpers (`currentUrlOf`/`runWith`), the `BASE` const, and the typed
- * messages/wiring interfaces alongside the async lifecycle functions. The
+ * exports the `currentUrlOf` helper, the `BASE` const, and the typed messages/wiring
+ * interfaces alongside the async lifecycle functions. The
  * `"use server"` boundary stays on the per-provider `*-actions.ts` files, which are
  * the only modules bound to `<form action={...}>`; they call into here.
  */
@@ -46,15 +48,6 @@ export const BASE = "/ajustes";
 /** The return URL carried on every connected-source form. */
 export function currentUrlOf(formData: FormData): string {
   return (formData.get("currentUrl") as string) || BASE;
-}
-
-/** Run `fn` against the injected test store when present, else a real `withStore`
- *  transaction — the `_store?` seam that keeps the actions integration-testable. */
-export function runWith<T>(
-  fn: (store: WorthlineStore) => T | Promise<T>,
-  _store?: WorthlineStore,
-): Promise<T> {
-  return _store ? Promise.resolve(fn(_store)) : withStore(fn);
 }
 
 /** Resolve the active scope member id from the cookie (the connecting member). */
@@ -106,7 +99,7 @@ export async function connectSource<Creds, Token>(
 
   const scoped = await scopeMemberId();
 
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const workspace = await store.workspace.readWorkspace();
 
     if (!workspace) {
@@ -204,7 +197,7 @@ export async function syncSource<Creds, Token>(
   }
 
   // 1) Read the credentials + token (sync, inside the store).
-  const source = await runWith(
+  const source = await runActionWithStore(
     (store) => store.connectedSources.readSource(sourceId),
     _store,
   );
@@ -233,7 +226,7 @@ export async function syncSource<Creds, Token>(
       nowIso,
       nowMs,
       persistToken: (next) =>
-        runWith(
+        runActionWithStore(
           (store) => store.connectedSources.saveToken(sourceId, JSON.stringify(next)),
           _store,
         ),
@@ -242,7 +235,7 @@ export async function syncSource<Creds, Token>(
     const drafts = await adapter.listPositions(ctx);
 
     // 3) Write: replace positions, re-roll the holding value, stamp last sync.
-    await runWith(
+    await runActionWithStore(
       (store) =>
         store.syncConnectedSource({ positions: drafts, sourceId, syncedAt: nowIso }),
       _store,
@@ -256,7 +249,7 @@ export async function syncSource<Creds, Token>(
         nowMs,
         creds,
         drafts,
-        runWith: (fn) => runWith(fn, _store),
+        runWith: (fn) => runActionWithStore(fn, _store),
       });
     }
   } catch {
@@ -292,7 +285,7 @@ export async function disconnectSource(
     redirect(errorRedirectUrl(returnUrl, { message: messages.notFound }));
   }
 
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const source = await store.connectedSources.readSource(sourceId);
 
     if (!source) {

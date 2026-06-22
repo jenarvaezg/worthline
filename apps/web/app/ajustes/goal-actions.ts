@@ -12,8 +12,9 @@ import {
   parseMoneyMinor,
 } from "@web/intake";
 import { guardDemoWrite } from "@web/demo/write-guard";
+import { runActionWithStore } from "@web/action-store";
 
-import { currentUrlOf, runWith } from "./connected-source-lifecycle";
+import { currentUrlOf } from "./connected-source-lifecycle";
 
 type ParsedGoalForm =
   | {
@@ -69,7 +70,7 @@ export async function createGoalAction(formData: FormData, _store?: WorthlineSto
     );
   }
 
-  await runWith(
+  await runActionWithStore(
     (store) =>
       store.goals.createGoal({
         id: createStableId("goal", parsed.name, Date.now()),
@@ -104,7 +105,7 @@ export async function updateGoalAction(formData: FormData, _store?: WorthlineSto
     );
   }
 
-  await runWith(
+  await runActionWithStore(
     (store) =>
       store.goals.updateGoal({
         id,
@@ -133,6 +134,6 @@ export async function deleteGoalAction(formData: FormData, _store?: WorthlineSto
     );
   }
 
-  await runWith((store) => store.goals.deleteGoal(id), _store);
+  await runActionWithStore((store) => store.goals.deleteGoal(id), _store);
   redirect(appendParam(currentUrlOf(formData), "ok", "goal_deleted"));
 }

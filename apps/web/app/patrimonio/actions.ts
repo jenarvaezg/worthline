@@ -1,6 +1,7 @@
 "use server";
 
-import { withStore, type WorthlineStore } from "@web/store";
+import { type WorthlineStore } from "@web/store";
+import { runActionWithStore } from "@web/action-store";
 import {
   assertNotInvestmentAsset,
   checkOwnershipSplit,
@@ -58,8 +59,6 @@ export async function deleteAssetAction(
 ): Promise<never> {
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -69,8 +68,9 @@ export async function deleteAssetAction(
     );
   }
 
-  const changes = await runWith((store) =>
-    store.assets.softDeleteAsset(id, _clock.now()),
+  const changes = await runActionWithStore(
+    (store) => store.assets.softDeleteAsset(id, _clock.now()),
+    _store,
   );
 
   if (changes === 0) {
@@ -91,8 +91,6 @@ export async function deleteLiabilityAction(
 ): Promise<never> {
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -102,8 +100,9 @@ export async function deleteLiabilityAction(
     );
   }
 
-  const changes = await runWith((store) =>
-    store.liabilities.softDeleteLiability(id, _clock.now()),
+  const changes = await runActionWithStore(
+    (store) => store.liabilities.softDeleteLiability(id, _clock.now()),
+    _store,
   );
 
   if (changes === 0) {
@@ -123,8 +122,6 @@ export async function hardDeleteAssetAction(
 ): Promise<never> {
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -134,7 +131,10 @@ export async function hardDeleteAssetAction(
     );
   }
 
-  const changes = await runWith((store) => store.assets.hardDeleteAsset(id));
+  const changes = await runActionWithStore(
+    (store) => store.assets.hardDeleteAsset(id),
+    _store,
+  );
 
   if (changes === 0) {
     redirect(
@@ -153,8 +153,6 @@ export async function hardDeleteLiabilityAction(
 ): Promise<never> {
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -164,7 +162,10 @@ export async function hardDeleteLiabilityAction(
     );
   }
 
-  const changes = await runWith((store) => store.liabilities.hardDeleteLiability(id));
+  const changes = await runActionWithStore(
+    (store) => store.liabilities.hardDeleteLiability(id),
+    _store,
+  );
 
   if (changes === 0) {
     redirect(
@@ -182,10 +183,8 @@ export async function emptyTrashAction(
   _store?: WorthlineStore,
 ): Promise<never> {
   await guardDemoWrite(baseUrl(formData));
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
-  await runWith((store) => store.emptyTrash());
+  await runActionWithStore((store) => store.emptyTrash(), _store);
 
   redirect(successRedirectUrl("/patrimonio", "trash_emptied"));
 }
@@ -196,8 +195,6 @@ export async function restoreAssetAction(
 ): Promise<never> {
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -207,7 +204,10 @@ export async function restoreAssetAction(
     );
   }
 
-  const changes = await runWith((store) => store.assets.restoreAsset(id));
+  const changes = await runActionWithStore(
+    (store) => store.assets.restoreAsset(id),
+    _store,
+  );
 
   if (changes === 0) {
     redirect(
@@ -226,8 +226,6 @@ export async function restoreLiabilityAction(
 ): Promise<never> {
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -237,7 +235,10 @@ export async function restoreLiabilityAction(
     );
   }
 
-  const changes = await runWith((store) => store.liabilities.restoreLiability(id));
+  const changes = await runActionWithStore(
+    (store) => store.liabilities.restoreLiability(id),
+    _store,
+  );
 
   if (changes === 0) {
     redirect(
@@ -257,8 +258,6 @@ export async function acknowledgeWarningAction(
   await guardDemoWrite(baseUrl(formData));
   const code = String(formData.get("code") ?? "").trim();
   const entityId = parseEntityId(formData, "entityId");
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!code || !entityId) {
     redirect(
@@ -268,7 +267,7 @@ export async function acknowledgeWarningAction(
     );
   }
 
-  await runWith((store) => store.acknowledgeWarning(code, entityId));
+  await runActionWithStore((store) => store.acknowledgeWarning(code, entityId), _store);
   redirect(successRedirectUrl("/patrimonio", "warning_acknowledged", entityId));
 }
 
@@ -279,9 +278,6 @@ export async function updateAssetValuationAction(
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const currentValue = parseMoneyMinorField(formData, "currentValue");
-
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -301,8 +297,9 @@ export async function updateAssetValuationAction(
     );
   }
 
-  const asset = await runWith(
+  const asset = await runActionWithStore(
     async (store) => (await store.assets.readAssets()).find((a) => a.id === id) ?? null,
+    _store,
   );
 
   // Domain guard (ADR 0006): an investment's value is always derived and must
@@ -323,7 +320,7 @@ export async function updateAssetValuationAction(
     }
   }
 
-  await runWith(async (store) => {
+  await runActionWithStore(async (store) => {
     if (asset?.type === "real_estate") {
       // Full atomic seam (ADR 0020): updateAssetValuation + upsert-today-anchor
       // + ripple all behind one transaction; from-date derived inside the seam.
@@ -331,7 +328,7 @@ export async function updateAssetValuationAction(
     } else {
       await store.assets.updateAssetValuation(id, currentValue);
     }
-  });
+  }, _store);
   redirect(successRedirectUrl("/patrimonio", "saved", id));
 }
 
@@ -342,8 +339,6 @@ export async function updateLiabilityBalanceAction(
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const balance = parseMoneyMinorField(formData, "balance");
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -363,7 +358,10 @@ export async function updateLiabilityBalanceAction(
     );
   }
 
-  await runWith((store) => store.liabilities.updateLiabilityBalance(id, balance));
+  await runActionWithStore(
+    (store) => store.liabilities.updateLiabilityBalance(id, balance),
+    _store,
+  );
   redirect(successRedirectUrl("/patrimonio", "saved", id));
 }
 
@@ -372,10 +370,8 @@ export async function batchValueUpdateAction(
   _store?: WorthlineStore,
 ): Promise<never> {
   await guardDemoWrite(baseUrl(formData));
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const allAssets = await store.assets.readAssets();
     // The catalog seam decides who the pass hand-updates: every holding whose
     // valuation method is not derived (ADR 0014) — no inline instrument list.
@@ -433,7 +429,7 @@ export async function batchValueUpdateAction(
     await store.operations.batchApplyAllValueUpdates(assetUpdates, liabilityUpdates);
 
     return { ok: true, count: valid.length };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(
@@ -459,8 +455,6 @@ export async function editAssetAction(
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const isLiability = formData.get("isLiability") === "true";
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -492,7 +486,7 @@ export async function editAssetAction(
   }
 
   if (isLiability) {
-    const result = await runWith(async (store) => {
+    const result = await runActionWithStore(async (store) => {
       const workspace = await store.workspace.readWorkspace();
 
       if (!workspace) {
@@ -537,7 +531,7 @@ export async function editAssetAction(
       });
 
       return { ok: true };
-    });
+    }, _store);
 
     if (!result.ok) {
       redirect(editErrorUrl(result.error!));
@@ -546,7 +540,7 @@ export async function editAssetAction(
     redirect(successRedirectUrl("/patrimonio", "saved", id));
   }
 
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const workspace = await store.workspace.readWorkspace();
 
     if (!workspace) {
@@ -582,7 +576,7 @@ export async function editAssetAction(
     });
 
     return { ok: true };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(editErrorUrl(result.error!));
@@ -616,8 +610,6 @@ export async function setAppreciationRateAction(
 ): Promise<never> {
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -639,7 +631,7 @@ export async function setAppreciationRateAction(
     );
   }
 
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const asset = await findAsset(store, id);
 
     if (!asset) {
@@ -658,7 +650,7 @@ export async function setAppreciationRateAction(
     await store.setAnnualAppreciationRateAndRipple(id, parsed.rate);
 
     return { ok: true };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(errorRedirectUrl(editUrl(id), { formId: "rate", message: result.error! }));
@@ -674,8 +666,6 @@ export async function addValuationAnchorAction(
 ): Promise<never> {
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -702,7 +692,7 @@ export async function addValuationAnchorAction(
     );
   }
 
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const asset = await findAsset(store, id);
 
     if (!asset) {
@@ -717,7 +707,7 @@ export async function addValuationAnchorAction(
     await store.addValuationAnchorAndRipple(parsed.command, { today });
 
     return { ok: true };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(errorRedirectUrl(editUrl(id), { formId: "anchor", message: result.error! }));
@@ -734,8 +724,6 @@ export async function updateValuationAnchorAction(
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id || !anchorId) {
     redirect(
@@ -762,7 +750,7 @@ export async function updateValuationAnchorAction(
     );
   }
 
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const asset = await findAsset(store, id);
 
     if (!asset || !isHousingAsset(asset)) {
@@ -790,7 +778,7 @@ export async function updateValuationAnchorAction(
     }
 
     return { ok: true };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(
@@ -812,8 +800,6 @@ export async function deleteValuationAnchorAction(
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id || !anchorId) {
     redirect(
@@ -824,7 +810,7 @@ export async function deleteValuationAnchorAction(
   }
 
   const today = _clock.today();
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const asset = await findAsset(store, id);
 
     if (!asset || !isHousingAsset(asset)) {
@@ -843,7 +829,7 @@ export async function deleteValuationAnchorAction(
     }
 
     return { ok: true };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(errorRedirectUrl(editUrl(id), { message: result.error! }));
@@ -887,8 +873,6 @@ export async function setDebtModelAction(
 ): Promise<never> {
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -906,7 +890,7 @@ export async function setDebtModelAction(
     );
   }
 
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const liability = await findLiability(store, id);
 
     if (!liability) {
@@ -915,7 +899,7 @@ export async function setDebtModelAction(
 
     await store.liabilities.setDebtModel(id, parsed.model);
     return { ok: true };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(
@@ -933,8 +917,6 @@ export async function setValuationCadenceAction(
 ): Promise<never> {
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -952,7 +934,7 @@ export async function setValuationCadenceAction(
 
   const today = _clock.today();
 
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const liability = await findLiability(store, id);
 
     if (!liability) {
@@ -963,7 +945,7 @@ export async function setValuationCadenceAction(
     // parameter edit, so the seam recuts the whole modeled curve behind it.
     await store.setValuationCadenceAndRipple(id, parsed.cadence, { today });
     return { ok: true };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(
@@ -981,8 +963,6 @@ export async function setHousingValuationCadenceAction(
 ): Promise<never> {
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -1000,7 +980,7 @@ export async function setHousingValuationCadenceAction(
 
   const today = _clock.today();
 
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const asset = await findAsset(store, id);
 
     if (!asset) {
@@ -1018,7 +998,7 @@ export async function setHousingValuationCadenceAction(
     // parameter edit, so the seam recuts the whole appreciation curve behind it.
     await store.setHousingValuationCadenceAndRipple(id, parsed.cadence, { today });
     return { ok: true };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(
@@ -1069,8 +1049,6 @@ export async function saveAmortizationPlanAction(
 ): Promise<never> {
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -1099,7 +1077,7 @@ export async function saveAmortizationPlanAction(
     );
   }
 
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
@@ -1127,7 +1105,7 @@ export async function saveAmortizationPlanAction(
     }
 
     return { ok: true as const };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(errorRedirectUrl(editUrl(id), { formId: "plan", message: result.error! }));
@@ -1144,8 +1122,6 @@ export async function deleteAmortizationPlanAction(
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id || !planId) {
     redirect(
@@ -1156,7 +1132,7 @@ export async function deleteAmortizationPlanAction(
   }
 
   const today = _clock.today();
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
@@ -1182,7 +1158,7 @@ export async function deleteAmortizationPlanAction(
     }
 
     return { ok: true as const };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(errorRedirectUrl(editUrl(id), { message: result.error! }));
@@ -1199,8 +1175,6 @@ export async function addInterestRateRevisionAction(
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id || !planId) {
     redirect(
@@ -1223,7 +1197,7 @@ export async function addInterestRateRevisionAction(
     );
   }
 
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
@@ -1238,7 +1212,7 @@ export async function addInterestRateRevisionAction(
     });
 
     return { ok: true as const };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(
@@ -1258,8 +1232,6 @@ export async function updateInterestRateRevisionAction(
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
   const revisionId = parseEntityId(formData, "revisionId");
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id || !planId || !revisionId) {
     redirect(
@@ -1282,7 +1254,7 @@ export async function updateInterestRateRevisionAction(
     );
   }
 
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
@@ -1309,7 +1281,7 @@ export async function updateInterestRateRevisionAction(
     }
 
     return { ok: true as const };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(
@@ -1332,8 +1304,6 @@ export async function deleteInterestRateRevisionAction(
   const id = parseEntityId(formData);
   const revisionId = parseEntityId(formData, "revisionId");
   const planId = parseEntityId(formData, "planId");
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id || !revisionId || !planId) {
     redirect(
@@ -1344,7 +1314,7 @@ export async function deleteInterestRateRevisionAction(
   }
 
   const today = _clock.today();
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
@@ -1366,7 +1336,7 @@ export async function deleteInterestRateRevisionAction(
     }
 
     return { ok: true as const };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(errorRedirectUrl(editUrl(id), { message: result.error! }));
@@ -1383,8 +1353,6 @@ export async function addEarlyRepaymentAction(
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id || !planId) {
     redirect(
@@ -1407,7 +1375,7 @@ export async function addEarlyRepaymentAction(
     );
   }
 
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
@@ -1420,7 +1388,7 @@ export async function addEarlyRepaymentAction(
     await store.addEarlyRepaymentAndRipple(parsed.command, { liabilityId: id, today });
 
     return { ok: true as const };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(
@@ -1440,8 +1408,6 @@ export async function updateEarlyRepaymentAction(
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
   const repaymentId = parseEntityId(formData, "repaymentId");
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id || !planId || !repaymentId) {
     redirect(
@@ -1464,7 +1430,7 @@ export async function updateEarlyRepaymentAction(
     );
   }
 
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
@@ -1492,7 +1458,7 @@ export async function updateEarlyRepaymentAction(
     }
 
     return { ok: true as const };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(
@@ -1515,8 +1481,6 @@ export async function deleteEarlyRepaymentAction(
   const id = parseEntityId(formData);
   const repaymentId = parseEntityId(formData, "repaymentId");
   const planId = parseEntityId(formData, "planId");
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id || !repaymentId || !planId) {
     redirect(
@@ -1527,7 +1491,7 @@ export async function deleteEarlyRepaymentAction(
   }
 
   const today = _clock.today();
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
@@ -1549,7 +1513,7 @@ export async function deleteEarlyRepaymentAction(
     }
 
     return { ok: true as const };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(errorRedirectUrl(editUrl(id), { message: result.error! }));
@@ -1565,8 +1529,6 @@ export async function addBalanceAnchorAction(
 ): Promise<never> {
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id) {
     redirect(
@@ -1589,7 +1551,7 @@ export async function addBalanceAnchorAction(
     );
   }
 
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const guard = await requireDebtModel(store, id, "anchorable");
 
     if (!guard.ok) {
@@ -1601,7 +1563,7 @@ export async function addBalanceAnchorAction(
     await store.addBalanceAnchorAndRipple(parsed.command, { today });
 
     return { ok: true as const };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(
@@ -1620,8 +1582,6 @@ export async function updateBalanceAnchorAction(
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id || !anchorId) {
     redirect(
@@ -1644,7 +1604,7 @@ export async function updateBalanceAnchorAction(
     );
   }
 
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const guard = await requireDebtModel(store, id, "anchorable");
 
     if (!guard.ok) {
@@ -1671,7 +1631,7 @@ export async function updateBalanceAnchorAction(
     }
 
     return { ok: true as const };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(
@@ -1693,8 +1653,6 @@ export async function deleteBalanceAnchorAction(
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   if (!id || !anchorId) {
     redirect(
@@ -1705,7 +1663,7 @@ export async function deleteBalanceAnchorAction(
   }
 
   const today = _clock.today();
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const guard = await requireDebtModel(store, id, "anchorable");
 
     if (!guard.ok) {
@@ -1725,7 +1683,7 @@ export async function deleteBalanceAnchorAction(
     }
 
     return { ok: true as const };
-  });
+  }, _store);
 
   if (!result.ok) {
     redirect(errorRedirectUrl(editUrl(id), { message: result.error! }));
