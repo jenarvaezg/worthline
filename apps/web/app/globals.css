@@ -2034,6 +2034,81 @@ code {
   text-transform: uppercase;
 }
 
+/* Member profile (PRD #421, #423): a full-width row beneath the name/actions,
+   so the inline member grid above is untouched. */
+.memberProfile {
+  border-top: 1px solid var(--hairline);
+  display: grid;
+  gap: 10px;
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  padding-top: 12px;
+}
+
+.memberProfileGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.memberProfile label {
+  display: grid;
+  font-size: 0.78rem;
+  font-weight: 600;
+  gap: 5px;
+}
+
+.memberProfileLabel {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Segmented control — CSS-only radios styled as a pill group (#423). */
+.segmented {
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  display: inline-flex;
+  overflow: hidden;
+  width: fit-content;
+}
+
+.segmented label {
+  align-items: center;
+  border-right: 1px solid var(--line-soft);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 650;
+  gap: 6px;
+  padding: 7px 14px;
+  text-transform: none;
+}
+
+.segmented label:last-child {
+  border-right: none;
+}
+
+.segmented input {
+  height: 0;
+  opacity: 0;
+  position: absolute;
+  width: 0;
+}
+
+.segmented label:has(input:checked) {
+  background: var(--ink);
+  color: var(--paper-strong);
+}
+
+@media (max-width: 560px) {
+  .memberProfileGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .memberStatus.inactive {
   color: var(--red);
 }

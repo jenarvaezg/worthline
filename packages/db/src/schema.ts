@@ -10,6 +10,7 @@ import type {
   OperationKind,
   PriceFreshnessState,
   PriceSource,
+  RiskTolerance,
   SnapshotHoldingKind,
   SourceAdapter,
   ValuationCadence,
@@ -58,6 +59,10 @@ export const members = sqliteTable("members", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   disabledAt: text("disabled_at"),
+  // Member profile (PRD #421, #423). All nullable — a member may have none set.
+  birthYear: integer("birth_year"),
+  fiscalCountry: text("fiscal_country"),
+  riskTolerance: text("risk_tolerance").$type<RiskTolerance>(),
   createdAt: timestamp("created_at"),
   updatedAt: timestamp("updated_at"),
 });

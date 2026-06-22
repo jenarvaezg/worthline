@@ -178,6 +178,11 @@ export interface WorkspaceStore {
   importWorkspace: (doc: WorkspaceExport) => Promise<ImportWorkspaceResult>;
   createMember: (member: Member) => Promise<void>;
   updateMember: (member: Pick<Member, "id" | "name">) => Promise<void>;
+  /** Overwrite a member's profile (PRD #421, #423): unset fields are cleared to NULL. */
+  updateMemberProfile: (
+    memberId: string,
+    profile: Pick<Member, "birthYear" | "fiscalCountry" | "riskTolerance">,
+  ) => Promise<void>;
   disableMember: (memberId: string, disabledAt: string) => Promise<void>;
   reactivateMember: (memberId: string) => Promise<void>;
   /** Hard-delete a member. Returns 0 (no-op) unless the member is disabled and owns no share of any holding. */
@@ -198,6 +203,8 @@ export function createWorkspaceStore(
     importWorkspace: (doc) => importWorkspace(ctx, deps, doc),
     createMember: (member) => createMember(ctx, member),
     updateMember: (member) => updateMember(ctx, member),
+    updateMemberProfile: (memberId, profile) =>
+      updateMemberProfile(ctx, memberId, profile),
     disableMember: (memberId, disabledAt) => disableMember(ctx, memberId, disabledAt),
     reactivateMember: (memberId) => reactivateMember(ctx, memberId),
     hardDeleteMember: (memberId) => hardDeleteMember(ctx, memberId),
@@ -223,7 +230,14 @@ export async function readWorkspace(db: StoreDb): Promise<Workspace | null> {
   }
 
   const memberRows = await db
-    .select({ disabledAt: members.disabledAt, id: members.id, name: members.name })
+    .select({
+      birthYear: members.birthYear,
+      disabledAt: members.disabledAt,
+      fiscalCountry: members.fiscalCountry,
+      id: members.id,
+      name: members.name,
+      riskTolerance: members.riskTolerance,
+    })
     .from(members)
     .orderBy(asc(members.createdAt), asc(members.id))
     .all();
@@ -254,18 +268,14 @@ export async function readWorkspace(db: StoreDb): Promise<Workspace | null> {
   return createWorkspace({
     baseCurrency: workspaceRow.baseCurrency,
     groups,
-    members: memberRows.map((member) =>
-      member.disabledAt
-        ? {
-            disabledAt: member.disabledAt,
-            id: member.id,
-            name: member.name,
-          }
-        : {
-            id: member.id,
-            name: member.name,
-          },
-    ),
+    members: memberRows.map((member) => ({
+      id: member.id,
+      name: member.name,
+      ...(member.disabledAt ? { disabledAt: member.disabledAt } : {}),
+      ...(member.birthYear != null ? { birthYear: member.birthYear } : {}),
+      ...(member.fiscalCountry != null ? { fiscalCountry: member.fiscalCountry } : {}),
+      ...(member.riskTolerance != null ? { riskTolerance: member.riskTolerance } : {}),
+    })),
     mode: workspaceRow.mode,
   });
 }
@@ -303,9 +313,12 @@ async function initializeWorkspace(
         .insert(members)
         .values(
           workspace.members.map((member) => ({
+            birthYear: member.birthYear ?? null,
             disabledAt: member.disabledAt ?? null,
+            fiscalCountry: member.fiscalCountry ?? null,
             id: member.id,
             name: member.name,
+            riskTolerance: member.riskTolerance ?? null,
           })),
         )
         .run();
@@ -357,9 +370,12 @@ async function createMember(ctx: StoreContext, member: Member): Promise<void> {
     await ctx.db
       .insert(members)
       .values({
+        birthYear: member.birthYear ?? null,
         disabledAt: member.disabledAt ?? null,
+        fiscalCountry: member.fiscalCountry ?? null,
         id: member.id,
         name: member.name,
+        riskTolerance: member.riskTolerance ?? null,
       })
       .run();
     await ensureAgentViewPublicIds(ctx, publicIdTargetsForMember(member));
@@ -375,6 +391,24 @@ async function updateMember(
     .update(members)
     .set({ name: member.name, updatedAt: sql`CURRENT_TIMESTAMP` })
     .where(eq(members.id, member.id))
+    .run();
+  ctx.invalidateWorkspace();
+}
+
+async function updateMemberProfile(
+  ctx: StoreContext,
+  memberId: string,
+  profile: Pick<Member, "birthYear" | "fiscalCountry" | "riskTolerance">,
+): Promise<void> {
+  await ctx.db
+    .update(members)
+    .set({
+      birthYear: profile.birthYear ?? null,
+      fiscalCountry: profile.fiscalCountry ?? null,
+      riskTolerance: profile.riskTolerance ?? null,
+      updatedAt: sql`CURRENT_TIMESTAMP`,
+    })
+    .where(eq(members.id, memberId))
     .run();
   ctx.invalidateWorkspace();
 }
@@ -575,9 +609,12 @@ async function importWorkspace(
         .insert(members)
         .values(
           doc.members.map((member) => ({
+            birthYear: member.birthYear ?? null,
             disabledAt: member.disabledAt ?? null,
+            fiscalCountry: member.fiscalCountry ?? null,
             id: member.id,
             name: member.name,
+            riskTolerance: member.riskTolerance ?? null,
           })),
         )
         .run();

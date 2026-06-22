@@ -27,7 +27,11 @@ import { createStubAgentViewMcpToolCatalog, STUB_NOTICE } from "./stub-catalog";
 import { listAgentViewScopes } from "./scopes";
 import { buildSnapshotHistory } from "./snapshot-history";
 import { buildTrashSummary } from "./trash-summary";
-import { buildWarningOverrides, buildWorkspaceInfo } from "./workspace-context";
+import {
+  buildMemberProfiles,
+  buildWarningOverrides,
+  buildWorkspaceInfo,
+} from "./workspace-context";
 
 const STUB_RESPONSE = { data: { notice: STUB_NOTICE } };
 
@@ -249,6 +253,11 @@ export function createAgentViewInternalMcpToolCatalog(): AgentViewMcpServerTool[
     tool("get_warning_overrides", (_input, context) =>
       runAgentView(context, async (agentView) =>
         successEnvelope(await buildWarningOverrides(agentView)),
+      ),
+    ),
+    tool("get_member_profile", (_input, context) =>
+      runAgentView(context, async (agentView) =>
+        successEnvelope(await buildMemberProfiles(agentView)),
       ),
     ),
     tool("get_connected_source_positions", async (raw, context) => {

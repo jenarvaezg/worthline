@@ -6,6 +6,7 @@ import {
   summarizeWorkspaceExport,
   systemClock,
   type Clock,
+  type RiskTolerance,
   type WorkspaceExportSummary,
 } from "@worthline/domain";
 import { cookies } from "next/headers";
@@ -58,6 +59,55 @@ export async function updateMemberAction(formData: FormData, _store?: WorthlineS
   }
 
   await runWith((store) => store.workspace.updateMember({ id, name }), _store);
+  redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
+}
+
+/**
+ * Save a member's profile (PRD #421, #423): birth year, fiscal country and risk
+ * tolerance. Each field is optional — a blank input clears it. Garbage (a
+ * non-numeric year, an unknown risk value) is dropped rather than rejected, so a
+ * partial edit still saves the valid fields.
+ */
+export async function updateMemberProfileAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+) {
+  await guardDemoWrite(currentUrlOf(formData));
+  const id = parseEntityId(formData);
+
+  if (!id) {
+    redirect(
+      errorRedirectUrl(currentUrlOf(formData), {
+        message: "Identificador de miembro no encontrado.",
+      }),
+    );
+  }
+
+  const birthYearRaw = String(formData.get("birthYear") ?? "").trim();
+  const birthYearParsed = Number.parseInt(birthYearRaw, 10);
+  const birthYear =
+    birthYearRaw && !Number.isNaN(birthYearParsed) ? birthYearParsed : undefined;
+
+  const fiscalCountry = String(formData.get("fiscalCountry") ?? "").trim() || undefined;
+
+  const riskRaw = String(formData.get("riskTolerance") ?? "").trim();
+  const riskTolerance: RiskTolerance | undefined =
+    riskRaw === "conservative" || riskRaw === "moderate" || riskRaw === "aggressive"
+      ? riskRaw
+      : undefined;
+
+  // Conditional spread (exactOptionalPropertyTypes): omit an unset field rather
+  // than pass `undefined`. The store clears any omitted field to NULL, so a
+  // blank input still erases the previous value.
+  await runWith(
+    (store) =>
+      store.workspace.updateMemberProfile(id, {
+        ...(birthYear !== undefined ? { birthYear } : {}),
+        ...(fiscalCountry !== undefined ? { fiscalCountry } : {}),
+        ...(riskTolerance !== undefined ? { riskTolerance } : {}),
+      }),
+    _store,
+  );
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
