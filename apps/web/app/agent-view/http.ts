@@ -42,6 +42,7 @@ import {
   DEFAULT_OPERATION_LIMIT,
   MAX_OPERATION_LIMIT,
 } from "./holding-operations";
+import { buildConnectedSourcesList, buildSourceFreshness } from "./connected-sources";
 import { buildPriceFreshness } from "./price-freshness";
 import { listAgentViewScopes } from "./scopes";
 import {
@@ -331,6 +332,43 @@ export async function handleGetPriceFreshness(
     return json(
       successEnvelope(
         await runWithStore((store) => buildPriceFreshness(store.agentView, holdingId)),
+      ),
+      200,
+    );
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+export async function handleListConnectedSources(
+  request: NextRequest,
+  runWithStore: StoreRunner,
+): Promise<NextResponse> {
+  try {
+    guardAgentViewRequest(request, []);
+
+    return json(
+      successEnvelope(
+        await runWithStore((store) => buildConnectedSourcesList(store.agentView)),
+      ),
+      200,
+    );
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+export async function handleGetSourceFreshness(
+  request: NextRequest,
+  sourceId: string,
+  runWithStore: StoreRunner,
+): Promise<NextResponse> {
+  try {
+    guardAgentViewRequest(request, []);
+
+    return json(
+      successEnvelope(
+        await runWithStore((store) => buildSourceFreshness(store.agentView, sourceId)),
       ),
       200,
     );

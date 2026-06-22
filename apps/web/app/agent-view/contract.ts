@@ -941,6 +941,43 @@ export interface AgentViewPriceFreshnessResult {
   } | null;
 }
 
+/**
+ * A connected source as `list_connected_sources` exposes it (#465, PRD #417 S1):
+ * its opaque public id (`wl_src_…`), adapter, label, last sync time, and the
+ * public holding IDs (`wl_hld_…`) it materializes — one per occupied rung.
+ * Secret-free by construction — never a credential, token, or raw provider
+ * payload. Freshness lives in the dedicated `get_source_freshness` tool.
+ */
+export interface AgentViewConnectedSourceListEntry {
+  id: string;
+  object: "connected_source";
+  adapter: string;
+  label: string;
+  lastSyncAt: string | null;
+  /** The public holding IDs (`wl_hld_…`) this source materializes, one per occupied rung. */
+  holdings: string[];
+}
+
+/**
+ * A connected source's valuation freshness (#465, PRD #417 S1): the staleness
+ * state of its primary price-cache row, when it was last fetched, and the
+ * degraded/failed reason when one is recorded. Secret-free — no credential,
+ * token, or provider payload. `freshness` is null when the source has never been
+ * valued: a documented "never valued" shape, never a guess.
+ */
+export interface AgentViewSourceFreshnessResult {
+  object: "source_freshness";
+  /** The source this freshness describes (echoed public `wl_src_…`). */
+  source: string;
+  freshness: {
+    freshnessState: PriceFreshnessState;
+    /** When the value was last fetched, as ISO. */
+    fetchedAt: string;
+    /** Why the last fetch is degraded, when recorded. */
+    staleReason?: string;
+  } | null;
+}
+
 export function successEnvelope<T>(data: T): AgentViewEnvelope<T> {
   return { data };
 }
