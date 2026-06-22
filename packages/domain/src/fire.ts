@@ -38,6 +38,13 @@ export interface FireResult {
   eligibleAssets: MoneyMinor;
   percentFunded: number;
   /**
+   * Capital reserved for goals due before FIRE (PRD #421, #426), already
+   * subtracted from `eligibleAssets`. Present (≥ 0) on `calculateFireForScope`;
+   * absent on `calculateFire`, which only sees a pre-computed eligible total.
+   * It NEVER touches gross assets, net worth or liquid net worth — only FIRE.
+   */
+  reservedForGoals?: MoneyMinor;
+  /**
    * Assets owned within the scope that were left OUT of `eligibleAssets`, with
    * the reason. Powers the dashboard "¿Qué cuenta como elegible?" disclosure
    * (#266). Empty for `calculateFire` (it only sees a total, not the assets).
@@ -46,6 +53,30 @@ export interface FireResult {
   coastFireRequired?: MoneyMinor;
   coastFireAge?: number;
   isAlreadyAtCoastFire?: boolean;
+}
+
+/**
+ * The FIRE horizon a goal's deadline is measured against (PRD #421, #426): the
+ * target-retirement date implied by `currentAge`/`targetRetirementAge`. Without
+ * an age there is no horizon (`undefined` → every future goal reserves). A
+ * horizon already in the past (at/over the target age) collapses to `now`, so
+ * nothing reserves. `now` is an ISO date (YYYY-MM-DD); the result keeps its
+ * month-day, so lexicographic comparison against deadlines stays correct.
+ */
+export function fireReservationHorizon(
+  config: FireScopeConfig,
+  now: string,
+): string | undefined {
+  if (config.currentAge === undefined) {
+    return undefined;
+  }
+
+  const years = (config.targetRetirementAge ?? 65) - config.currentAge;
+  if (years <= 0) {
+    return now;
+  }
+
+  return `${Number(now.slice(0, 4)) + years}${now.slice(4)}`;
 }
 
 export function calculateFire(
@@ -92,6 +123,11 @@ export function calculateFireForScope(
   assets: ManualAsset[],
   workspace: Workspace,
   scopeId: string,
+  /**
+   * Capital reserved for goals due before FIRE (PRD #421, #426). Subtracted from
+   * the scope-eligible total before the FIRE math; defaults to 0 (no goals).
+   */
+  reservedForGoalsMinor = 0,
 ): FireResult {
   const scopeMemberIds = new Set(resolveScopeMemberIds(workspace, scopeId));
   const excludedSet = new Set(config.excludedAssetIds ?? []);
@@ -124,8 +160,12 @@ export function calculateFireForScope(
     }
   }
 
+  const reserved = Math.max(0, Math.min(reservedForGoalsMinor, eligibleAssetsMinor));
+  const eligibleAfterReservation = eligibleAssetsMinor - reserved;
+
   return {
-    ...calculateFire(config, eligibleAssetsMinor, workspace.baseCurrency),
+    ...calculateFire(config, eligibleAfterReservation, workspace.baseCurrency),
     excludedAssets,
+    reservedForGoals: money(reserved, workspace.baseCurrency),
   };
 }

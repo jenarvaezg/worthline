@@ -1,7 +1,9 @@
 import type { AssetPrice } from "./prices";
 import type { LocalPersistenceStatus } from "./persistence";
 import type { FireScopeConfig } from "./fire";
-import { calculateFireForScope } from "./fire";
+import { calculateFireForScope, fireReservationHorizon } from "./fire";
+import type { Goal } from "./goals";
+import { assignedHoldingsValueMinor, totalGoalReservationMinor } from "./goals";
 import type { Liability, ManualAsset, Member, Workspace } from "./workspace-types";
 import type { PositionSummary } from "./investment-types";
 import type { ScopeOption } from "./scope";
@@ -128,6 +130,10 @@ export function prepareDashboardState(input: {
   fireConfig: Record<string, FireScopeConfig>;
   selectedView: NetWorthFraming;
   overrides?: WarningOverride[];
+  /** Goals for the selected scope (PRD #421, #426); reserve capital against FIRE. */
+  goals?: Goal[];
+  /** Today (YYYY-MM-DD), for the goal-reservation horizon; defaults to the system date. */
+  today?: string;
 }): DashboardState {
   const { workspace, assets, liabilities, selectedScope, persistence } = input;
 
@@ -147,9 +153,37 @@ export function prepareDashboardState(input: {
     ? (input.fireConfig[selectedScope.id] ?? null)
     : null;
 
+  const fireReservedMinor =
+    fireScopeConfig && workspace && selectedScope
+      ? (() => {
+          const now = input.today ?? new Date().toISOString().slice(0, 10);
+          const memberIds = new Set(resolveScopeMemberIds(workspace, selectedScope.id));
+          const assetById = new Map(assets.map((asset) => [asset.id, asset]));
+          return totalGoalReservationMinor(
+            (input.goals ?? []).map((goal) => ({
+              targetAmountMinor: goal.targetAmountMinor,
+              deadline: goal.deadline,
+              assignedValueMinor: assignedHoldingsValueMinor(
+                goal.assetIds,
+                assetById,
+                memberIds,
+              ),
+            })),
+            now,
+            fireReservationHorizon(fireScopeConfig, now),
+          );
+        })()
+      : 0;
+
   const fireResult =
     fireScopeConfig && workspace && selectedScope
-      ? calculateFireForScope(fireScopeConfig, assets, workspace, selectedScope.id)
+      ? calculateFireForScope(
+          fireScopeConfig,
+          assets,
+          workspace,
+          selectedScope.id,
+          fireReservedMinor,
+        )
       : null;
 
   const selectedMemberIds =

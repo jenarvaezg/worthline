@@ -635,6 +635,15 @@ export default async function DashboardContent({
                 {formatMoneyMinorPrivacy(fireResult.eligibleAssets, privacyMode)}
               </strong>
             </div>
+            {fireResult.reservedForGoals &&
+            fireResult.reservedForGoals.amountMinor > 0 ? (
+              <div className="fireMetric">
+                <span>Reservado para objetivos</span>
+                <strong className="fireReserved">
+                  −{formatMoneyMinorPrivacy(fireResult.reservedForGoals, privacyMode)}
+                </strong>
+              </div>
+            ) : null}
             <details className="fireEligibleNote">
               <summary>¿Qué cuenta como elegible?</summary>
               <p className="fireEligibleRule">
