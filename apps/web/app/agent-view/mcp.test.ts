@@ -2,9 +2,11 @@ import { describe, expect, test } from "vitest";
 
 import { createAgentViewMcpToolCatalog } from "./mcp";
 import type {
+  AgentViewConnectedSourceListEntry,
   AgentViewEnvelope,
   AgentViewPriceFreshnessResult,
   AgentViewScope,
+  AgentViewSourceFreshnessResult,
 } from "./contract";
 
 describe("agent-view MCP tools", () => {
@@ -67,6 +69,70 @@ describe("agent-view MCP tools", () => {
       additionalProperties: false,
       properties: { holdingId: { type: "string" } },
       required: ["holdingId"],
+      type: "object",
+    });
+  });
+
+  test("list_connected_sources takes no input and hits the connected-sources path", async () => {
+    const response: AgentViewEnvelope<AgentViewConnectedSourceListEntry[]> = {
+      data: [
+        {
+          id: "wl_src_abc123",
+          object: "connected_source",
+          adapter: "binance",
+          label: "Binance",
+          lastSyncAt: "2026-06-16T10:00:00.000Z",
+          holdings: ["wl_hld_def456"],
+        },
+      ],
+    };
+    const calls: string[] = [];
+    const catalog = createAgentViewMcpToolCatalog({
+      get: async <T>(path: string): Promise<T> => {
+        calls.push(path);
+        return response as T;
+      },
+    });
+
+    await expect(catalog.list_connected_sources.invoke({})).resolves.toEqual(response);
+    expect(calls).toEqual(["/api/v1/agent-view/connected-sources"]);
+    expect(catalog.list_connected_sources.inputSchema).toEqual({
+      additionalProperties: false,
+      properties: {},
+      type: "object",
+    });
+  });
+
+  test("get_source_freshness requires a sourceId and hits the source's freshness path", async () => {
+    const response: AgentViewEnvelope<AgentViewSourceFreshnessResult> = {
+      data: {
+        object: "source_freshness",
+        source: "wl_src_abc123",
+        freshness: {
+          freshnessState: "stale",
+          fetchedAt: "2026-06-16T09:00:00.000Z",
+          staleReason: "Precio caducado",
+        },
+      },
+    };
+    const calls: string[] = [];
+    const catalog = createAgentViewMcpToolCatalog({
+      get: async <T>(path: string): Promise<T> => {
+        calls.push(path);
+        return response as T;
+      },
+    });
+
+    await expect(
+      catalog.get_source_freshness.invoke({ sourceId: "wl_src_abc123" }),
+    ).resolves.toEqual(response);
+    expect(calls).toEqual([
+      "/api/v1/agent-view/connected-sources/wl_src_abc123/freshness",
+    ]);
+    expect(catalog.get_source_freshness.inputSchema).toEqual({
+      additionalProperties: false,
+      properties: { sourceId: { type: "string" } },
+      required: ["sourceId"],
       type: "object",
     });
   });

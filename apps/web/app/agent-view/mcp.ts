@@ -1,4 +1,5 @@
 import type {
+  AgentViewConnectedSourceListEntry,
   AgentViewConnectedSourcePosition,
   AgentViewConnectedSourcePositionGroup,
   AgentViewDataQualityCategory,
@@ -19,6 +20,7 @@ import type {
   AgentViewSnapshotEntry,
   AgentViewSnapshotGranularity,
   AgentViewSnapshotSort,
+  AgentViewSourceFreshnessResult,
   AgentViewTrashedHolding,
 } from "./contract";
 import { FIGURE_NAMES } from "./figure-explanations";
@@ -119,6 +121,11 @@ export interface GetPriceFreshnessInput {
   holdingId: string;
 }
 
+export interface GetSourceFreshnessInput {
+  /** Public connected-source ID (`wl_src_…`). */
+  sourceId: string;
+}
+
 export interface GetOperationsInput {
   /** Public holding ID (`wl_hld_…`) of an investment holding. */
   holdingId: string;
@@ -206,6 +213,14 @@ export interface AgentViewMcpToolCatalog {
   get_connected_source_positions: AgentViewMcpTool<
     GetConnectedSourcePositionsInput,
     GetConnectedSourcePositionsOutput
+  >;
+  list_connected_sources: AgentViewMcpTool<
+    Record<string, never>,
+    AgentViewEnvelope<AgentViewConnectedSourceListEntry[]>
+  >;
+  get_source_freshness: AgentViewMcpTool<
+    GetSourceFreshnessInput,
+    AgentViewEnvelope<AgentViewSourceFreshnessResult>
   >;
 }
 
@@ -455,6 +470,30 @@ export function createAgentViewMcpToolCatalog(
       inputSchema: EMPTY_INPUT_SCHEMA,
       invoke: () => client.get(SCOPES_PATH),
       name: "list_scopes",
+    },
+    list_connected_sources: {
+      description:
+        "List every connected source in the workspace: its public ID (wl_src_…), adapter, label, last sync time, and the public holding IDs (wl_hld_…) it materializes (one per occupied rung). Carries no credential, token, or raw provider payload. Use get_source_freshness for a source's valuation freshness. Reads are side-effect-free.",
+      inputSchema: EMPTY_INPUT_SCHEMA,
+      invoke: () => client.get(CONNECTED_SOURCES_PATH),
+      name: "list_connected_sources",
+    },
+    get_source_freshness: {
+      description:
+        "Get a connected source's valuation freshness by its public ID (wl_src_…): the freshness state (fresh/stale/failed/manual) of its primary price-cache row, when it was last fetched, and the degraded reason when one is recorded. Carries no credential, token, or provider payload. A source that has never been valued reports freshness: null, never a guess. Reads are side-effect-free.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          sourceId: { type: "string" },
+        },
+        required: ["sourceId"],
+        type: "object",
+      },
+      invoke: (input) =>
+        client.get(
+          `${CONNECTED_SOURCES_PATH}/${encodeURIComponent(input.sourceId)}/freshness`,
+        ),
+      name: "get_source_freshness",
     },
   };
 }
