@@ -1047,6 +1047,47 @@ export interface AgentViewGoal {
   fundedRatio: string;
 }
 
+/** One point of a FIRE projection's year-by-year capital trajectory (PRD #421, #427). */
+export interface AgentViewFireTrajectoryPoint {
+  /** Years from today (0 = today). */
+  year: number;
+  eligible: AgentViewMoney;
+}
+
+/**
+ * One FIRE projection scenario as `get_fire_projection` exposes it (PRD #421,
+ * #427). `annualReturn` is a decimal string (e.g. `"0.065"`). `yearsToFire` /
+ * `ageAtFire` are `null` when FIRE is not reached within the horizon (or no age
+ * is configured).
+ */
+export interface AgentViewFireScenario {
+  label: "optimistic" | "base" | "pessimistic";
+  annualReturn: string;
+  yearsToFire: number | null;
+  ageAtFire: number | null;
+  finalEligible: AgentViewMoney;
+  totalContributed: AgentViewMoney;
+  trajectory: AgentViewFireTrajectoryPoint[];
+}
+
+/**
+ * A scope's FIRE projection as `get_fire_projection` exposes it (PRD #421,
+ * #427): optimistic/base/pessimistic scenarios over the FIRE number, using the
+ * configured monthly savings capacity and the goal-reservation-adjusted eligible
+ * assets. `unconfigured` when the scope has no FIRE config — no figures invented.
+ */
+export interface AgentViewFireProjection {
+  object: "fire_projection";
+  scope: AgentViewScope;
+  status: AgentViewFireStatus;
+  /** Present only when configured. */
+  fireNumber?: AgentViewMoney;
+  /** The monthly contribution assumed; present only when set on the config. */
+  monthlySavingsCapacity?: AgentViewMoney;
+  /** `[optimistic, base, pessimistic]` when configured; empty when not. */
+  scenarios: AgentViewFireScenario[];
+}
+
 /**
  * An acknowledged overrideable warning as `get_warning_overrides` exposes it
  * (#467, PRD #417 S3): the warning code and the public holding ID (`wl_hld_…`)
