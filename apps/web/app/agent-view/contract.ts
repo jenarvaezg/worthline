@@ -1,4 +1,4 @@
-import type { PriceFreshnessState } from "@worthline/domain";
+import type { PriceFreshnessState, WorkspaceMode } from "@worthline/domain";
 
 export interface AgentViewEnvelope<T> {
   data: T;
@@ -976,6 +976,31 @@ export interface AgentViewSourceFreshnessResult {
     /** Why the last fetch is degraded, when recorded. */
     staleReason?: string;
   } | null;
+}
+
+/**
+ * The workspace's settings as `get_workspace` exposes them (#467, PRD #417 S3):
+ * its mode (individual vs household) and base currency, so the assistant matches
+ * the workspace instead of assuming household/EUR. Both are null until the
+ * workspace is provisioned — a documented uninitialized shape, never a guess.
+ */
+export interface AgentViewWorkspaceInfo {
+  object: "workspace";
+  mode: WorkspaceMode | null;
+  baseCurrency: string | null;
+}
+
+/**
+ * An acknowledged overrideable warning as `get_warning_overrides` exposes it
+ * (#467, PRD #417 S3): the warning code and the public holding ID (`wl_hld_…`)
+ * whose warning was silenced, so the assistant can explain which warning was
+ * overridden and where. Surfacing an override never writes one (pure read).
+ */
+export interface AgentViewWarningOverride {
+  object: "warning_override";
+  code: string;
+  /** The holding (`wl_hld_…`) whose warning was acknowledged. */
+  holding: string;
 }
 
 export function successEnvelope<T>(data: T): AgentViewEnvelope<T> {

@@ -7,6 +7,8 @@ import type {
   AgentViewPriceFreshnessResult,
   AgentViewScope,
   AgentViewSourceFreshnessResult,
+  AgentViewWarningOverride,
+  AgentViewWorkspaceInfo,
 } from "./contract";
 
 describe("agent-view MCP tools", () => {
@@ -133,6 +135,54 @@ describe("agent-view MCP tools", () => {
       additionalProperties: false,
       properties: { sourceId: { type: "string" } },
       required: ["sourceId"],
+      type: "object",
+    });
+  });
+
+  test("get_workspace takes no input and hits the workspace path", async () => {
+    const response: AgentViewEnvelope<AgentViewWorkspaceInfo> = {
+      data: { object: "workspace", mode: "household", baseCurrency: "EUR" },
+    };
+    const calls: string[] = [];
+    const catalog = createAgentViewMcpToolCatalog({
+      get: async <T>(path: string): Promise<T> => {
+        calls.push(path);
+        return response as T;
+      },
+    });
+
+    await expect(catalog.get_workspace.invoke({})).resolves.toEqual(response);
+    expect(calls).toEqual(["/api/v1/agent-view/workspace"]);
+    expect(catalog.get_workspace.inputSchema).toEqual({
+      additionalProperties: false,
+      properties: {},
+      type: "object",
+    });
+  });
+
+  test("get_warning_overrides takes no input and hits the warning-overrides path", async () => {
+    const response: AgentViewEnvelope<AgentViewWarningOverride[]> = {
+      data: [
+        {
+          object: "warning_override",
+          code: "ZERO_VALUE_ASSET",
+          holding: "wl_hld_abc123",
+        },
+      ],
+    };
+    const calls: string[] = [];
+    const catalog = createAgentViewMcpToolCatalog({
+      get: async <T>(path: string): Promise<T> => {
+        calls.push(path);
+        return response as T;
+      },
+    });
+
+    await expect(catalog.get_warning_overrides.invoke({})).resolves.toEqual(response);
+    expect(calls).toEqual(["/api/v1/agent-view/warning-overrides"]);
+    expect(catalog.get_warning_overrides.inputSchema).toEqual({
+      additionalProperties: false,
+      properties: {},
       type: "object",
     });
   });
