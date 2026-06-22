@@ -36,8 +36,14 @@ describe("connected source secret encryption", () => {
   it("stores credentials + token as ciphertext at rest, returns plaintext on read", async () => {
     process.env.WORTHLINE_ENCRYPTION_KEY = KEY;
     const { store, dbPath } = await freshStore();
-    const creds = JSON.stringify({ apiKey: "AK", apiSecret: "SK" });
-    const tokenJson = JSON.stringify({ token: "T" });
+    // Distinctive plaintext canaries with a hyphen — the at-rest ciphertext is
+    // `wlsec1:` + standard base64, whose alphabet has no `-`, so a leak check on
+    // these is deterministic (a short marker like "AK" randomly appears in base64).
+    const creds = JSON.stringify({
+      apiKey: "apikey-leak-canary",
+      apiSecret: "apisecret-leak-canary",
+    });
+    const tokenJson = JSON.stringify({ token: "token-leak-canary" });
 
     const { sourceId } = await store.connectedSources.connect({
       adapter: "binance",
@@ -64,8 +70,10 @@ describe("connected source secret encryption", () => {
     const rawCreds = result.rows[0]?.credentials_json as string;
     const rawToken = result.rows[0]?.token_json as string;
     expect(rawCreds.startsWith("wlsec1:")).toBe(true);
-    expect(rawCreds).not.toContain("AK");
+    expect(rawCreds).not.toContain("apikey-leak-canary");
+    expect(rawCreds).not.toContain("apisecret-leak-canary");
     expect(rawToken.startsWith("wlsec1:")).toBe(true);
+    expect(rawToken).not.toContain("token-leak-canary");
   });
 
   it("opens credentials written before encryption (legacy plaintext) once a key is set", async () => {
