@@ -27,6 +27,7 @@ import { createStubAgentViewMcpToolCatalog, STUB_NOTICE } from "./stub-catalog";
 import { listAgentViewScopes } from "./scopes";
 import { buildSnapshotHistory } from "./snapshot-history";
 import { buildTrashSummary } from "./trash-summary";
+import { buildWarningOverrides, buildWorkspaceInfo } from "./workspace-context";
 
 const STUB_RESPONSE = { data: { notice: STUB_NOTICE } };
 
@@ -240,6 +241,16 @@ export function createAgentViewInternalMcpToolCatalog(): AgentViewMcpServerTool[
         successEnvelope(await buildSourceFreshness(agentView, input.sourceId)),
       );
     }),
+    tool("get_workspace", (_input, context) =>
+      runAgentView(context, async (agentView) =>
+        successEnvelope(await buildWorkspaceInfo(agentView)),
+      ),
+    ),
+    tool("get_warning_overrides", (_input, context) =>
+      runAgentView(context, async (agentView) =>
+        successEnvelope(await buildWarningOverrides(agentView)),
+      ),
+    ),
     tool("get_connected_source_positions", async (raw, context) => {
       const input = raw as {
         holdingId?: string;
