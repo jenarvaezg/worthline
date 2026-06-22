@@ -382,7 +382,7 @@ function FireProjectionCard({
         className="fireTrajectory"
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label="Trayectoria anual del capital elegible hacia el número FIRE"
+        aria-label="Trayectoria anual del capital elegible hacia el número FIRE (escenario base)"
       >
         {points.map((point, index) => {
           const cx = slot * index + slot / 2;
