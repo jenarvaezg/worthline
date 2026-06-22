@@ -6,6 +6,7 @@ import type {
   AgentViewEnvelope,
   AgentViewPriceFreshnessResult,
   AgentViewScope,
+  AgentViewFireProjection,
   AgentViewGoal,
   AgentViewMemberProfile,
   AgentViewSourceFreshnessResult,
@@ -247,5 +248,36 @@ describe("agent-view MCP tools", () => {
       catalog.list_goals.invoke({ scopeId: "wl_scp_abc123" }),
     ).resolves.toEqual(response);
     expect(calls).toEqual(["/api/v1/agent-view/scopes/wl_scp_abc123/goals"]);
+  });
+
+  test("get_fire_projection hits the scoped fire-projection path", async () => {
+    const response: AgentViewEnvelope<AgentViewFireProjection> = {
+      data: {
+        object: "fire_projection",
+        scope: {
+          id: "wl_scp_abc123",
+          isDefault: true,
+          label: "Hogar",
+          members: [],
+          object: "scope",
+          type: "household",
+        },
+        status: "configured",
+        fireNumber: { amountMinor: 75_000_000, currency: "EUR" },
+        scenarios: [],
+      },
+    };
+    const calls: string[] = [];
+    const catalog = createAgentViewMcpToolCatalog({
+      get: async <T>(path: string): Promise<T> => {
+        calls.push(path);
+        return response as T;
+      },
+    });
+
+    await expect(
+      catalog.get_fire_projection.invoke({ scopeId: "wl_scp_abc123" }),
+    ).resolves.toEqual(response);
+    expect(calls).toEqual(["/api/v1/agent-view/scopes/wl_scp_abc123/fire-projection"]);
   });
 });

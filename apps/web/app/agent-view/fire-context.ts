@@ -55,7 +55,7 @@ interface ResolvedFire {
  * `unconfigured` state — never fabricated figures. Current-only: the caller is
  * responsible for rejecting historical requests before this point.
  */
-async function resolveFire(
+export async function resolveFire(
   store: AgentViewReadStore,
   publicScopeId: string,
 ): Promise<{ scope: AgentViewScope; fire: ResolvedFire }> {

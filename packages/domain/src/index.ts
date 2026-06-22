@@ -220,6 +220,15 @@ export {
 export type { FireScopeConfig, FireResult } from "./fire";
 export { calculateFire, calculateFireForScope, fireReservationHorizon } from "./fire";
 
+export type {
+  FireProjection,
+  FireProjectionInput,
+  FireScenario,
+  FireScenarioLabel,
+  FireTrajectoryPoint,
+} from "./fire-projection";
+export { projectFire } from "./fire-projection";
+
 export type { MonthlySavingsSuggestion } from "./monthly-savings";
 export { suggestMonthlySavingsCapacity } from "./monthly-savings";
 

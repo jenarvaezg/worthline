@@ -1609,6 +1609,101 @@ code {
   color: var(--gold);
 }
 
+/* FIRE projection card (PRD #421, #427). */
+.fireProjection {
+  border-top: 1px solid var(--hairline);
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 14px;
+}
+
+.fireProjEyebrow {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.fireProjHeadline {
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-size: 1.4rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+}
+
+.fireProjHeadline small {
+  color: var(--muted);
+  font-family: var(--font-sans), sans-serif;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.fireScenarios {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.fireScenario {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+.fireScenario.base {
+  background: rgba(0, 111, 95, 0.04);
+  border-color: rgba(0, 111, 95, 0.3);
+}
+
+.fireScenario h4 {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  margin: 0 0 4px;
+  text-transform: uppercase;
+}
+
+.fireScenarioYears {
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.fireScenarioMeta {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.72rem;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.fireScenarioMeta span:last-child {
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.fireTrajectory {
+  height: auto;
+  width: 100%;
+}
+
+.fireTrajectory rect {
+  fill: rgba(0, 111, 95, 0.45);
+}
+
+.fireTrajectory rect.reached {
+  fill: rgba(0, 111, 95, 0.75);
+}
+
+.fireTrajectory .fireTarget {
+  stroke: var(--ink);
+  stroke-dasharray: 4 3;
+  stroke-width: 1.5;
+}
+
 /* "¿Qué cuenta como elegible?" disclosure (#266): explains the FIRE eligibility
    rule and lists the assets held out of the total, with the reason. */
 .fireEligibleNote {
