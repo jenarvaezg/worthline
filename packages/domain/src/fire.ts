@@ -12,6 +12,13 @@ export interface FireScopeConfig {
   currentAge?: number;
   targetRetirementAge?: number;
   excludedAssetIds?: string[];
+  /**
+   * Editable monthly savings capacity in minor units (PRD #421, #425): the
+   * default contribution the FIRE projection assumes. Optional — when unset the
+   * UI offers a suggestion from operations history (`suggestMonthlySavingsCapacity`)
+   * but never writes it implicitly; the projection treats `undefined` as 0.
+   */
+  monthlySavingsCapacityMinor?: number;
 }
 
 /**

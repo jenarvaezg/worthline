@@ -3,6 +3,7 @@ import {
   collectWarnings,
   formatMoneyMinorPrivacy,
   listScopeOptions,
+  suggestMonthlySavingsCapacity,
 } from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
@@ -121,11 +122,25 @@ export default async function AjustesPage({
         }
       : null;
 
+    // Monthly savings capacity suggestion (#425): the historical average of net
+    // money invested, offered as the default in the FIRE form. Workspace-wide
+    // across investment holdings — a soft default the user can override.
+    const allAssets = await store.assets.readAssets();
+    const investmentOps = (
+      await Promise.all(
+        allAssets
+          .filter((asset) => asset.type === "investment")
+          .map((asset) => store.operations.readOperations(asset.id)),
+      )
+    ).flat();
+    const savingsSuggestion = suggestMonthlySavingsCapacity(investmentOps);
+
     return {
       binanceSource,
       fireConfig: await store.readFireConfig(),
       numistaSource,
       overrides: await store.readWarningOverrides(),
+      savingsSuggestion,
       scopes,
       selectedScope,
       workspace,
@@ -147,6 +162,7 @@ export default async function AjustesPage({
     overrides,
     numistaSource,
     binanceSource,
+    savingsSuggestion,
   } = storeData;
   const fireScopeConfig = selectedScope ? fireConfig[selectedScope.id] : undefined;
 
@@ -352,6 +368,36 @@ export default async function AjustesPage({
                   inputMode="numeric"
                   name="targetRetirementAge"
                 />
+              </label>
+              <label>
+                Ahorro mensual (EUR)
+                <input
+                  defaultValue={
+                    fireScopeConfig?.monthlySavingsCapacityMinor !== undefined
+                      ? (fireScopeConfig.monthlySavingsCapacityMinor / 100).toString()
+                      : undefined
+                  }
+                  inputMode="decimal"
+                  name="monthlySavingsCapacity"
+                  placeholder={
+                    savingsSuggestion.basis === "operations"
+                      ? (savingsSuggestion.amountMinor / 100).toString()
+                      : "0"
+                  }
+                />
+                {savingsSuggestion.basis === "operations" ? (
+                  <small className="muted">
+                    Sugerido por tu histórico:{" "}
+                    {formatMoneyMinorPrivacy(
+                      {
+                        amountMinor: savingsSuggestion.amountMinor,
+                        currency: workspace.baseCurrency,
+                      },
+                      privacyMode,
+                    )}
+                    /mes
+                  </small>
+                ) : null}
               </label>
               <button type="submit">Guardar configuración FIRE</button>
             </form>
