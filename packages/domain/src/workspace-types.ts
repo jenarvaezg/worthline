@@ -7,10 +7,27 @@ import type { DomainResult, DomainViolation } from "./domain-result";
 
 export type WorkspaceMode = "individual" | "household";
 
+/**
+ * A member's appetite for volatility (PRD #421, #423). Drives the equity/bond
+ * allocation the assistant suggests; stored per member because partners can
+ * differ. Free of any amount — pure preference.
+ */
+export type RiskTolerance = "conservative" | "moderate" | "aggressive";
+
 export interface Member {
   id: string;
   name: string;
   disabledAt?: string;
+  /**
+   * Member profile (PRD #421, #423): the reference age for FIRE projections is
+   * derived from `birthYear`; `fiscalCountry` (ISO 3166-1 alpha-2, e.g. "ES")
+   * lets the assistant avoid tax-inefficient suggestions; `riskTolerance` shapes
+   * allocation advice. All optional — a member may have none set. PII: exposed
+   * only through the authenticated MCP, never a public endpoint.
+   */
+  birthYear?: number;
+  fiscalCountry?: string;
+  riskTolerance?: RiskTolerance;
 }
 
 export interface MemberGroup {

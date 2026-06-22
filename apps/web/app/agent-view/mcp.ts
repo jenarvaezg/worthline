@@ -20,6 +20,7 @@ import type {
   AgentViewSnapshotEntry,
   AgentViewSnapshotGranularity,
   AgentViewSnapshotSort,
+  AgentViewMemberProfile,
   AgentViewSourceFreshnessResult,
   AgentViewTrashedHolding,
   AgentViewWarningOverride,
@@ -232,6 +233,10 @@ export interface AgentViewMcpToolCatalog {
     Record<string, never>,
     AgentViewEnvelope<AgentViewWarningOverride[]>
   >;
+  get_member_profile: AgentViewMcpTool<
+    Record<string, never>,
+    AgentViewEnvelope<AgentViewMemberProfile[]>
+  >;
 }
 
 const EMPTY_INPUT_SCHEMA: AgentViewMcpInputSchema = {
@@ -245,6 +250,7 @@ const HOLDINGS_PATH = "/api/v1/agent-view/holdings";
 const CONNECTED_SOURCES_PATH = "/api/v1/agent-view/connected-sources";
 const WORKSPACE_PATH = "/api/v1/agent-view/workspace";
 const WARNING_OVERRIDES_PATH = "/api/v1/agent-view/warning-overrides";
+const MEMBERS_PATH = "/api/v1/agent-view/members";
 
 export function createAgentViewMcpToolCatalog(
   client: AgentViewApiClient,
@@ -520,6 +526,13 @@ export function createAgentViewMcpToolCatalog(
       inputSchema: EMPTY_INPUT_SCHEMA,
       invoke: () => client.get(WARNING_OVERRIDES_PATH),
       name: "get_warning_overrides",
+    },
+    get_member_profile: {
+      description:
+        "List each active member's profile: public member ID (wl_mbr_…), name, birth year (the reference age for FIRE projections), fiscal country (ISO alpha-2, for tax-aware suggestions) and risk tolerance (conservative/moderate/aggressive). Fields are null until set. Use it to personalize advice instead of assuming. Reads are side-effect-free.",
+      inputSchema: EMPTY_INPUT_SCHEMA,
+      invoke: () => client.get(MEMBERS_PATH),
+      name: "get_member_profile",
     },
   };
 }

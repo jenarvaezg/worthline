@@ -1,6 +1,10 @@
 import type { AgentViewReadStore } from "@worthline/db";
 
-import type { AgentViewWarningOverride, AgentViewWorkspaceInfo } from "./contract";
+import type {
+  AgentViewMemberProfile,
+  AgentViewWarningOverride,
+  AgentViewWorkspaceInfo,
+} from "./contract";
 import { publicIdMap, requirePublicId } from "./scope-resolution";
 
 /**
@@ -38,4 +42,33 @@ export async function buildWarningOverrides(
     code: override.code,
     holding: requirePublicId(holdingPublicIds, override.entityId),
   }));
+}
+
+/**
+ * The active members' profiles (PRD #421, #423): each member's public ID, name
+ * and the optional profile fields (birth year, fiscal country, risk tolerance),
+ * so the assistant can personalize advice. A pure read; disabled members are
+ * omitted, matching the scope view. Each field is `null` until the user sets it.
+ */
+export async function buildMemberProfiles(
+  store: AgentViewReadStore,
+): Promise<AgentViewMemberProfile[]> {
+  const workspace = await store.readWorkspace();
+
+  if (!workspace) {
+    return [];
+  }
+
+  const memberPublicIds = publicIdMap(await store.readPublicIds(), "member");
+
+  return workspace.members
+    .filter((member) => !member.disabledAt)
+    .map((member) => ({
+      object: "member_profile" as const,
+      id: requirePublicId(memberPublicIds, member.id),
+      name: member.name,
+      birthYear: member.birthYear ?? null,
+      fiscalCountry: member.fiscalCountry ?? null,
+      riskTolerance: member.riskTolerance ?? null,
+    }));
 }

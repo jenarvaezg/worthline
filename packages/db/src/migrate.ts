@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 35;
+export const SCHEMA_VERSION = 36;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1226,6 +1226,23 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       await client.executeMultiple("ALTER TABLE positions ADD COLUMN image_url TEXT");
     } catch {}
     await writeSchemaVersion(client, 35);
+  }
+
+  if (version < 36) {
+    // PRD #421 (#423): member profile — birth_year, fiscal_country, risk_tolerance
+    // on members. Additive ALTERs (try/catch like v20/v22/v27/v35): a fresh DB
+    // already has the columns from schema-sql, so the duplicate is ignored.
+    // Existing member rows get NULL (an unset profile), filled from settings.
+    try {
+      await client.executeMultiple("ALTER TABLE members ADD COLUMN birth_year INTEGER");
+    } catch {}
+    try {
+      await client.executeMultiple("ALTER TABLE members ADD COLUMN fiscal_country TEXT");
+    } catch {}
+    try {
+      await client.executeMultiple("ALTER TABLE members ADD COLUMN risk_tolerance TEXT");
+    } catch {}
+    await writeSchemaVersion(client, 36);
   }
 
   return { ranV18Backfill, ranV33Backfill };

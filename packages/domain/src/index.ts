@@ -70,6 +70,7 @@ export type {
   Member,
   MemberGroup,
   OwnershipShare,
+  RiskTolerance,
   Workspace,
   WorkspaceMode,
 } from "./workspace-types";

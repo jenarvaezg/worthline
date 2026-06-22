@@ -6,6 +6,7 @@ import type {
   AgentViewEnvelope,
   AgentViewPriceFreshnessResult,
   AgentViewScope,
+  AgentViewMemberProfile,
   AgentViewSourceFreshnessResult,
   AgentViewWarningOverride,
   AgentViewWorkspaceInfo,
@@ -181,6 +182,36 @@ describe("agent-view MCP tools", () => {
     await expect(catalog.get_warning_overrides.invoke({})).resolves.toEqual(response);
     expect(calls).toEqual(["/api/v1/agent-view/warning-overrides"]);
     expect(catalog.get_warning_overrides.inputSchema).toEqual({
+      additionalProperties: false,
+      properties: {},
+      type: "object",
+    });
+  });
+
+  test("get_member_profile takes no input and hits the members path", async () => {
+    const response: AgentViewEnvelope<AgentViewMemberProfile[]> = {
+      data: [
+        {
+          object: "member_profile",
+          id: "wl_mbr_abc123",
+          name: "Jose",
+          birthYear: 1990,
+          fiscalCountry: "ES",
+          riskTolerance: "moderate",
+        },
+      ],
+    };
+    const calls: string[] = [];
+    const catalog = createAgentViewMcpToolCatalog({
+      get: async <T>(path: string): Promise<T> => {
+        calls.push(path);
+        return response as T;
+      },
+    });
+
+    await expect(catalog.get_member_profile.invoke({})).resolves.toEqual(response);
+    expect(calls).toEqual(["/api/v1/agent-view/members"]);
+    expect(catalog.get_member_profile.inputSchema).toEqual({
       additionalProperties: false,
       properties: {},
       type: "object",

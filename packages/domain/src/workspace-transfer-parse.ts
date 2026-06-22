@@ -46,6 +46,10 @@ const memberSchema = z.object({
   id: nonEmptyString,
   name: nonEmptyString,
   disabledAt: nonEmptyString.optional(),
+  // Member profile (PRD #421, #423) — optional so pre-profile exports still parse.
+  birthYear: z.number().int().optional(),
+  fiscalCountry: nonEmptyString.optional(),
+  riskTolerance: z.enum(["conservative", "moderate", "aggressive"]).optional(),
 });
 
 const groupSchema = z.object({
