@@ -96,6 +96,9 @@ CREATE TABLE \`members\` (
 	\`id\` text PRIMARY KEY NOT NULL,
 	\`name\` text NOT NULL,
 	\`disabled_at\` text,
+	\`birth_year\` integer,
+	\`fiscal_country\` text,
+	\`risk_tolerance\` text,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL
 );

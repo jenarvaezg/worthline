@@ -51,7 +51,11 @@ import {
   MAX_SNAPSHOT_LIMIT,
 } from "./snapshot-history";
 import { buildTrashSummary, DEFAULT_TRASH_LIMIT, MAX_TRASH_LIMIT } from "./trash-summary";
-import { buildWarningOverrides, buildWorkspaceInfo } from "./workspace-context";
+import {
+  buildMemberProfiles,
+  buildWarningOverrides,
+  buildWorkspaceInfo,
+} from "./workspace-context";
 
 type StoreRunner = <T>(run: (store: WorthlineStore) => T | Promise<T>) => Promise<T>;
 
@@ -404,6 +408,24 @@ export async function handleGetWarningOverrides(
     return json(
       successEnvelope(
         await runWithStore((store) => buildWarningOverrides(store.agentView)),
+      ),
+      200,
+    );
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+export async function handleGetMemberProfiles(
+  request: NextRequest,
+  runWithStore: StoreRunner,
+): Promise<NextResponse> {
+  try {
+    guardAgentViewRequest(request, []);
+
+    return json(
+      successEnvelope(
+        await runWithStore((store) => buildMemberProfiles(store.agentView)),
       ),
       200,
     );

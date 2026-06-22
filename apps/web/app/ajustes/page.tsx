@@ -31,6 +31,7 @@ import {
   retractWarningOverrideAction,
   saveFireConfigAction,
   updateMemberAction,
+  updateMemberProfileAction,
 } from "./actions";
 import { connectBinanceAction, syncBinanceAction } from "./binance-actions";
 import { aggregateSourceValueMinor, countNonDustTokens } from "./binance-helpers";
@@ -265,6 +266,70 @@ export default async function AjustesPage({
                     </form>
                   </>
                 )}
+
+                {!member.disabledAt ? (
+                  <form action={updateMemberProfileAction} className="memberProfile">
+                    <input name="currentUrl" type="hidden" value={currentUrl} />
+                    <input name="id" type="hidden" value={member.id} />
+                    <div className="memberProfileGrid">
+                      <label>
+                        Año de nacimiento
+                        <input
+                          defaultValue={member.birthYear?.toString()}
+                          inputMode="numeric"
+                          name="birthYear"
+                          placeholder="1990"
+                        />
+                      </label>
+                      <label>
+                        País fiscal
+                        <select
+                          defaultValue={member.fiscalCountry ?? ""}
+                          name="fiscalCountry"
+                        >
+                          <option value="">—</option>
+                          <option value="ES">España</option>
+                          <option value="PT">Portugal</option>
+                          <option value="FR">Francia</option>
+                          <option value="DE">Alemania</option>
+                          <option value="GB">Reino Unido</option>
+                          <option value="US">Estados Unidos</option>
+                        </select>
+                      </label>
+                    </div>
+                    <span className="memberProfileLabel">Tolerancia al riesgo</span>
+                    <span className="segmented">
+                      <label>
+                        <input
+                          defaultChecked={member.riskTolerance === "conservative"}
+                          name="riskTolerance"
+                          type="radio"
+                          value="conservative"
+                        />
+                        Conservadora
+                      </label>
+                      <label>
+                        <input
+                          defaultChecked={member.riskTolerance === "moderate"}
+                          name="riskTolerance"
+                          type="radio"
+                          value="moderate"
+                        />
+                        Moderada
+                      </label>
+                      <label>
+                        <input
+                          defaultChecked={member.riskTolerance === "aggressive"}
+                          name="riskTolerance"
+                          type="radio"
+                          value="aggressive"
+                        />
+                        Agresiva
+                      </label>
+                    </span>
+                    <button type="submit">Guardar perfil</button>
+                  </form>
+                ) : null}
               </div>
             ))}
           </div>

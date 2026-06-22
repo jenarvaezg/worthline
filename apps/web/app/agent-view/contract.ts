@@ -1,4 +1,8 @@
-import type { PriceFreshnessState, WorkspaceMode } from "@worthline/domain";
+import type {
+  PriceFreshnessState,
+  RiskTolerance,
+  WorkspaceMode,
+} from "@worthline/domain";
 
 export interface AgentViewEnvelope<T> {
   data: T;
@@ -994,6 +998,23 @@ export interface AgentViewWorkspaceInfo {
   object: "workspace";
   mode: WorkspaceMode | null;
   baseCurrency: string | null;
+}
+
+/**
+ * A member's profile as `get_member_profile` exposes it (PRD #421, #423): the
+ * public member ID, name, and the optional profile fields used to personalize
+ * advice. Each field is `null` until set. This is the only surface these PII
+ * fields reach — they are never in a public endpoint.
+ */
+export interface AgentViewMemberProfile {
+  object: "member_profile";
+  id: string;
+  name: string;
+  /** Reference year of birth; the projection derives age from it. */
+  birthYear: number | null;
+  /** ISO 3166-1 alpha-2 fiscal country (e.g. "ES"), for tax-aware suggestions. */
+  fiscalCountry: string | null;
+  riskTolerance: RiskTolerance | null;
 }
 
 /**
