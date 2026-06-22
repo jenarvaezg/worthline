@@ -14,6 +14,7 @@ import type {
   AgentViewIncludeHoldingRows,
   AgentViewOperation,
   AgentViewOperationSort,
+  AgentViewPriceFreshnessResult,
   AgentViewScope,
   AgentViewSnapshotEntry,
   AgentViewSnapshotGranularity,
@@ -113,6 +114,11 @@ export interface GetHoldingDetailInput {
   holdingId: string;
 }
 
+export interface GetPriceFreshnessInput {
+  /** Public holding ID (`wl_hld_…`). */
+  holdingId: string;
+}
+
 export interface GetOperationsInput {
   /** Public holding ID (`wl_hld_…`) of an investment holding. */
   holdingId: string;
@@ -188,6 +194,10 @@ export interface AgentViewMcpToolCatalog {
   get_holding_detail: AgentViewMcpTool<
     GetHoldingDetailInput,
     AgentViewEnvelope<AgentViewHoldingDetail>
+  >;
+  get_price_freshness: AgentViewMcpTool<
+    GetPriceFreshnessInput,
+    AgentViewEnvelope<AgentViewPriceFreshnessResult>
   >;
   get_operations: AgentViewMcpTool<
     GetOperationsInput,
@@ -351,6 +361,23 @@ export function createAgentViewMcpToolCatalog(
       invoke: (input) =>
         client.get(`${HOLDINGS_PATH}/${encodeURIComponent(input.holdingId)}`),
       name: "get_holding_detail",
+    },
+    get_price_freshness: {
+      description:
+        "Get a holding's cached-price freshness by its public ID: the freshness state (fresh/stale/failed/manual), when the price was last fetched, the providing source, and the degraded reason when one is recorded. Carries no price figure, no provider payload, and no secret. A holding with no cached provider quote (manual or derived) reports freshness: null, never a guess. Reads are side-effect-free.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          holdingId: { type: "string" },
+        },
+        required: ["holdingId"],
+        type: "object",
+      },
+      invoke: (input) =>
+        client.get(
+          `${HOLDINGS_PATH}/${encodeURIComponent(input.holdingId)}/price-freshness`,
+        ),
+      name: "get_price_freshness",
     },
     get_operations: {
       description:

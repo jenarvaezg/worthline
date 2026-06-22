@@ -42,6 +42,7 @@ import {
   DEFAULT_OPERATION_LIMIT,
   MAX_OPERATION_LIMIT,
 } from "./holding-operations";
+import { buildPriceFreshness } from "./price-freshness";
 import { listAgentViewScopes } from "./scopes";
 import {
   buildSnapshotHistory,
@@ -311,6 +312,25 @@ export async function handleGetHoldingDetail(
     return json(
       successEnvelope(
         await runWithStore((store) => buildHoldingDetail(store.agentView, holdingId)),
+      ),
+      200,
+    );
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+export async function handleGetPriceFreshness(
+  request: NextRequest,
+  holdingId: string,
+  runWithStore: StoreRunner,
+): Promise<NextResponse> {
+  try {
+    guardAgentViewRequest(request, []);
+
+    return json(
+      successEnvelope(
+        await runWithStore((store) => buildPriceFreshness(store.agentView, holdingId)),
       ),
       200,
     );
