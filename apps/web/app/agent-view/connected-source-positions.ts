@@ -127,7 +127,7 @@ export async function buildSourceConnectedSourcePositions(
     throw unknownSource();
   }
 
-  const source = await resolveSource(store, options.sourceId);
+  const source = await resolveSourceByPublicId(store, options.sourceId);
   const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
   const freshness = toFreshnessSummary(
     source,
@@ -329,7 +329,7 @@ function groupKeyOf(position: SourcePosition): string | null {
 }
 
 /** Resolve a `wl_src_` public id to the source it names, or `404` if unknown. */
-async function resolveSource(
+export async function resolveSourceByPublicId(
   store: AgentViewReadStore,
   publicSourceId: string,
 ): Promise<AgentViewConnectedSource> {

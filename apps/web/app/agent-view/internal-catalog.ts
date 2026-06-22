@@ -13,6 +13,7 @@ import {
   buildHoldingConnectedSourcePositions,
   buildSourceConnectedSourcePositions,
 } from "./connected-source-positions";
+import { buildConnectedSourcesList, buildSourceFreshness } from "./connected-sources";
 import { buildDataQuality } from "./data-quality";
 import { buildFigureExplanation, isFigureName } from "./figure-explanations";
 import { buildFinancialContext } from "./financial-context";
@@ -227,6 +228,17 @@ export function createAgentViewInternalMcpToolCatalog(): AgentViewMcpServerTool[
         });
         return { data: page.operations, meta: page.meta };
       });
+    }),
+    tool("list_connected_sources", (_input, context) =>
+      runAgentView(context, async (agentView) =>
+        successEnvelope(await buildConnectedSourcesList(agentView)),
+      ),
+    ),
+    tool("get_source_freshness", (raw, context) => {
+      const input = raw as { sourceId: string };
+      return runAgentView(context, async (agentView) =>
+        successEnvelope(await buildSourceFreshness(agentView, input.sourceId)),
+      );
     }),
     tool("get_connected_source_positions", async (raw, context) => {
       const input = raw as {
