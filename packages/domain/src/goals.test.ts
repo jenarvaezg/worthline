@@ -4,6 +4,7 @@ import {
   assignedHoldingsValueMinor,
   goalFundedRatioBps,
   goalReservedMinor,
+  totalGoalReservationMinor,
 } from "./goals";
 import type { ManualAsset, OwnershipShare } from "./workspace-types";
 
@@ -77,5 +78,64 @@ describe("assignedHoldingsValueMinor", () => {
     expect(assignedHoldingsValueMinor(["a1", "ghost"], byId, new Set(["m1"]))).toBe(
       100_000,
     );
+  });
+});
+
+describe("totalGoalReservationMinor", () => {
+  const now = "2026-06-22";
+
+  it("sums reservations for future goals before the FIRE horizon (each capped at target)", () => {
+    const goals = [
+      {
+        targetAmountMinor: 3_000_000,
+        deadline: "2027-06-01",
+        assignedValueMinor: 2_280_000,
+      },
+      // assigned exceeds target → capped at 800 000
+      {
+        targetAmountMinor: 800_000,
+        deadline: "2030-01-01",
+        assignedValueMinor: 5_000_000,
+      },
+    ];
+    expect(totalGoalReservationMinor(goals, now, "2039-01-01")).toBe(3_080_000);
+  });
+
+  it("releases a goal whose deadline has passed", () => {
+    const goals = [
+      {
+        targetAmountMinor: 1_000_000,
+        deadline: "2025-01-01",
+        assignedValueMinor: 900_000,
+      },
+    ];
+    expect(totalGoalReservationMinor(goals, now, "2039-01-01")).toBe(0);
+  });
+
+  it("ignores a goal due after the FIRE horizon", () => {
+    const goals = [
+      {
+        targetAmountMinor: 1_000_000,
+        deadline: "2045-01-01",
+        assignedValueMinor: 900_000,
+      },
+    ];
+    expect(totalGoalReservationMinor(goals, now, "2039-01-01")).toBe(0);
+  });
+
+  it("reserves every future goal when there is no horizon", () => {
+    const goals = [
+      {
+        targetAmountMinor: 1_000_000,
+        deadline: "2030-01-01",
+        assignedValueMinor: 900_000,
+      },
+      {
+        targetAmountMinor: 1_000_000,
+        deadline: "2055-01-01",
+        assignedValueMinor: 900_000,
+      },
+    ];
+    expect(totalGoalReservationMinor(goals, now, undefined)).toBe(1_800_000);
   });
 });

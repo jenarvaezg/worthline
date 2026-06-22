@@ -226,6 +226,39 @@ describe("calculateFireForScope", () => {
     expect(result.eligibleAssets.amountMinor).toBe(100_000_00);
   });
 
+  it("subtracts reserved goal capital from eligible assets (#426)", () => {
+    const assets = [
+      makeAsset("stocks", 100_000_00, false, [{ memberId: "alice", shareBps: 10_000 }]),
+    ];
+    const config = {
+      monthlySpendingMinor: 100_000,
+      safeWithdrawalRate: 0.04,
+      expectedRealReturn: 0.07,
+    };
+
+    const result = calculateFireForScope(config, assets, workspace, "alice", 30_000_00);
+
+    // eligible drops by the reservation; gross/excluded are untouched
+    expect(result.eligibleAssets.amountMinor).toBe(70_000_00);
+    expect(result.reservedForGoals?.amountMinor).toBe(30_000_00);
+  });
+
+  it("clamps the reservation to the eligible total (never negative eligible)", () => {
+    const assets = [
+      makeAsset("stocks", 10_000_00, false, [{ memberId: "alice", shareBps: 10_000 }]),
+    ];
+    const config = {
+      monthlySpendingMinor: 100_000,
+      safeWithdrawalRate: 0.04,
+      expectedRealReturn: 0.07,
+    };
+
+    const result = calculateFireForScope(config, assets, workspace, "alice", 50_000_00);
+
+    expect(result.eligibleAssets.amountMinor).toBe(0);
+    expect(result.reservedForGoals?.amountMinor).toBe(10_000_00);
+  });
+
   it("calculateFire returns an empty excludedAssets list", () => {
     const result = calculateFire(
       {

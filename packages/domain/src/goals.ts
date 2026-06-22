@@ -63,6 +63,44 @@ export function assignedHoldingsValueMinor(
   return total;
 }
 
+/** One goal's inputs to the FIRE reservation sum (PRD #421, #426). */
+export interface GoalReservationInput {
+  targetAmountMinor: number;
+  /** ISO date (YYYY-MM-DD). */
+  deadline: string;
+  /** Scope-weighted value of the goal's assigned holdings (`assignedHoldingsValueMinor`). */
+  assignedValueMinor: number;
+}
+
+/**
+ * Total capital reserved against FIRE eligibility (PRD #421, #426): the sum of
+ * each goal's reservation (`min(target, assigned value)`) for the goals whose
+ * deadline is still in the future and falls before the FIRE horizon.
+ *
+ * A deadline on or after `now` is required — a past deadline releases its
+ * reservation (the money is spent or freed). `fireDate` is the horizon (the
+ * projected/target FIRE date, ISO); a goal due after it does not reduce
+ * pre-FIRE eligibility. `undefined` means no horizon (FIRE not reached / no
+ * target age) — every still-future goal reserves. ISO dates compare
+ * lexicographically, so string comparison is correct.
+ */
+export function totalGoalReservationMinor(
+  goals: GoalReservationInput[],
+  now: string,
+  fireDate: string | undefined,
+): number {
+  return goals
+    .filter(
+      (goal) =>
+        goal.deadline >= now && (fireDate === undefined || goal.deadline < fireDate),
+    )
+    .reduce(
+      (sum, goal) =>
+        sum + goalReservedMinor(goal.targetAmountMinor, goal.assignedValueMinor),
+      0,
+    );
+}
+
 /**
  * How funded a goal is, in basis points (0..10 000). It is the reserved capital
  * over the target, so it never exceeds 100 %. Zero for a non-positive target —

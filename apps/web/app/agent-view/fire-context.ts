@@ -1,6 +1,21 @@
 import type { AgentViewReadStore } from "@worthline/db";
-import { calculateFireForScope, listScopeOptions } from "@worthline/domain";
-import type { FireResult, FireScopeConfig, MoneyMinor } from "@worthline/domain";
+import {
+  assignedHoldingsValueMinor,
+  calculateFireForScope,
+  fireReservationHorizon,
+  listScopeOptions,
+  resolveScopeMemberIds,
+  systemClock,
+  totalGoalReservationMinor,
+} from "@worthline/domain";
+import type {
+  FireResult,
+  FireScopeConfig,
+  GoalReservationInput,
+  ManualAsset,
+  MoneyMinor,
+  Workspace,
+} from "@worthline/domain";
 
 import {
   AgentViewHttpError,
@@ -72,20 +87,64 @@ async function resolveFire(
   }
 
   const config = (await store.readFireConfig())[internalScopeId];
-  const result =
-    config === undefined
-      ? undefined
-      : calculateFireForScope(
-          config,
-          await store.readAssets(),
-          workspace,
-          internalScopeId,
-        );
+  let result: FireResult | undefined;
+
+  if (config !== undefined) {
+    const assets = await store.readAssets();
+    const reservedForGoalsMinor = await goalReservationMinor(
+      store,
+      workspace,
+      internalScopeId,
+      config,
+      assets,
+    );
+    result = calculateFireForScope(
+      config,
+      assets,
+      workspace,
+      internalScopeId,
+      reservedForGoalsMinor,
+    );
+  }
 
   return {
     fire: { config, currency: workspace.baseCurrency, result },
     scope,
   };
+}
+
+/**
+ * Capital reserved by goals against the scope's FIRE eligibility (PRD #421,
+ * #426): each goal's `min(target, scope-weighted assigned value)` summed for the
+ * goals due before the FIRE horizon. Returns 0 when the scope has no goals.
+ */
+export async function goalReservationMinor(
+  store: AgentViewReadStore,
+  workspace: Workspace,
+  internalScopeId: string,
+  config: FireScopeConfig,
+  assets: ManualAsset[],
+): Promise<number> {
+  const goals = await store.readGoals(internalScopeId);
+
+  if (goals.length === 0) {
+    return 0;
+  }
+
+  const now = systemClock().today();
+  const scopeMemberIds = new Set(resolveScopeMemberIds(workspace, internalScopeId));
+  const assetById = new Map(assets.map((asset) => [asset.id, asset]));
+  const inputs: GoalReservationInput[] = goals.map((goal) => ({
+    targetAmountMinor: goal.targetAmountMinor,
+    deadline: goal.deadline,
+    assignedValueMinor: assignedHoldingsValueMinor(
+      goal.assetIds,
+      assetById,
+      scopeMemberIds,
+    ),
+  }));
+
+  return totalGoalReservationMinor(inputs, now, fireReservationHorizon(config, now));
 }
 
 /**
@@ -192,6 +251,9 @@ function toResult(result: FireResult): AgentViewFireResult {
     fireNumber: money(result.fireNumber),
     gap: gapOf(result),
     progressRatio: progressRatioOf(result),
+    ...(result.reservedForGoals && result.reservedForGoals.amountMinor > 0
+      ? { reservedForGoals: money(result.reservedForGoals) }
+      : {}),
     ...(result.coastFireRequired === undefined
       ? {}
       : { coastFireRequired: money(result.coastFireRequired) }),
