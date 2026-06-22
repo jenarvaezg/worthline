@@ -59,6 +59,15 @@ export function parseFireConfigFormStrict(
     ? targetRetirementAgeParsed
     : 65;
 
+  // Monthly savings capacity (#425) is optional: a blank or garbage value leaves
+  // it unset so the UI's suggestion-from-history can fill it. Zero is valid — it
+  // means "not saving right now" — so we keep it. Negative is nonsense → drop it.
+  const monthlySavingsCapacityRaw =
+    (formData.get("monthlySavingsCapacity") as string) ?? "";
+  const monthlySavingsCapacityMinor = parseMoneyMinor(monthlySavingsCapacityRaw);
+  const hasSavingsCapacity =
+    monthlySavingsCapacityMinor !== null && monthlySavingsCapacityMinor >= 0;
+
   return {
     ok: true,
     command: {
@@ -68,6 +77,7 @@ export function parseFireConfigFormStrict(
       safeWithdrawalRate: safeWithdrawalRatePct / 100,
       targetRetirementAge,
       ...(currentAge !== undefined ? { currentAge } : {}),
+      ...(hasSavingsCapacity ? { monthlySavingsCapacityMinor } : {}),
     },
   };
 }

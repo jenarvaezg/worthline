@@ -167,6 +167,11 @@ function toConfig(config: FireScopeConfig, currency: string): AgentViewFireConfi
     ...(config.targetRetirementAge === undefined
       ? {}
       : { targetRetirementAge: config.targetRetirementAge }),
+    ...(config.monthlySavingsCapacityMinor === undefined
+      ? {}
+      : {
+          monthlySavingsCapacity: moneyOf(config.monthlySavingsCapacityMinor, currency),
+        }),
   };
 }
 
