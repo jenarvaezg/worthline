@@ -14,6 +14,8 @@ import type {
   Workspace,
 } from "@worthline/domain";
 
+import { isNotNull } from "drizzle-orm";
+
 import { readAgentViewPublicIds } from "./agent-view-public-ids";
 import type { ValuationAnchorRecord } from "./asset-store";
 import type { ConnectedSourceRow } from "./connected-source-store";
@@ -23,8 +25,9 @@ import type {
   EarlyRepaymentRecord,
   InterestRateRevisionRecord,
 } from "./liability-store";
+import { assetOwnerships, assets, liabilities, liabilityOwnerships } from "./schema";
 import type { SnapshotHoldingQuery, SnapshotHoldingRecord } from "./snapshot-store";
-import type { StoreContext } from "./store-context";
+import type { StoreContext, StoreDb } from "./store-context";
 
 /**
  * A connected source as the agent view sees it — identity, label, freshness, and
@@ -195,7 +198,6 @@ export interface AgentViewReadStoreDeps {
     staleReason?: string;
   } | null>;
   readWarningOverrides: () => Promise<WarningOverride[]>;
-  readTrashedHoldings: () => Promise<AgentViewTrashedHolding[]>;
   readGoals: (scopeId?: string) => Promise<Goal[]>;
 }
 
@@ -262,6 +264,97 @@ export function createAgentViewReadStore(
       };
     },
     readWarningOverrides: () => deps.readWarningOverrides(),
-    readTrashedHoldings: () => deps.readTrashedHoldings(),
+    readTrashedHoldings: () => readTrashedHoldings(ctx.db),
   };
+}
+
+/**
+ * Read the trashed (soft-deleted) holdings for the agent view (#342): every
+ * asset/liability WHERE `deleted_at IS NOT NULL`, with the stored value/balance,
+ * instrument, deleted stamp, and owner member ids the trash listing needs. A pure
+ * read — it never restores, hard-deletes, revalues, or writes an audit row, and it
+ * never touches the live context (the live reads exclude trash). No derived /
+ * investment valuation is computed here; the STORED current value/balance is
+ * exposed as-is, mirroring the trash listing the rest of the app shows.
+ */
+async function readTrashedHoldings(db: StoreDb): Promise<AgentViewTrashedHolding[]> {
+  const assetRows = await db
+    .select({
+      currentValueMinor: assets.currentValueMinor,
+      deletedAt: assets.deletedAt,
+      id: assets.id,
+      instrument: assets.instrument,
+      name: assets.name,
+    })
+    .from(assets)
+    .where(isNotNull(assets.deletedAt))
+    .all();
+
+  const liabilityRows = await db
+    .select({
+      currentBalanceMinor: liabilities.currentBalanceMinor,
+      deletedAt: liabilities.deletedAt,
+      id: liabilities.id,
+      instrument: liabilities.instrument,
+      name: liabilities.name,
+    })
+    .from(liabilities)
+    .where(isNotNull(liabilities.deletedAt))
+    .all();
+
+  const assetOwners = groupOwnerMemberIds(
+    await db
+      .select({
+        holdingId: assetOwnerships.assetId,
+        memberId: assetOwnerships.memberId,
+      })
+      .from(assetOwnerships)
+      .all(),
+  );
+  const liabilityOwners = groupOwnerMemberIds(
+    await db
+      .select({
+        holdingId: liabilityOwnerships.liabilityId,
+        memberId: liabilityOwnerships.memberId,
+      })
+      .from(liabilityOwnerships)
+      .all(),
+  );
+
+  return [
+    ...assetRows.map((row) => ({
+      deletedAt: row.deletedAt,
+      id: row.id,
+      instrument: row.instrument,
+      kind: "asset" as const,
+      name: row.name,
+      ownerMemberIds: assetOwners.get(row.id) ?? [],
+      valueMinor: row.currentValueMinor,
+    })),
+    ...liabilityRows.map((row) => ({
+      deletedAt: row.deletedAt,
+      id: row.id,
+      instrument: row.instrument,
+      kind: "liability" as const,
+      name: row.name,
+      ownerMemberIds: liabilityOwners.get(row.id) ?? [],
+      valueMinor: row.currentBalanceMinor,
+    })),
+  ];
+}
+
+/** Group flat `{ holdingId, memberId }` ownership rows into member ids per holding. */
+function groupOwnerMemberIds(
+  rows: { holdingId: string; memberId: string }[],
+): Map<string, string[]> {
+  const byHolding = new Map<string, string[]>();
+  for (const row of rows) {
+    const existing = byHolding.get(row.holdingId);
+    if (existing) {
+      existing.push(row.memberId);
+    } else {
+      byHolding.set(row.holdingId, [row.memberId]);
+    }
+  }
+  return byHolding;
 }

@@ -54,6 +54,7 @@ import {
   readInvestmentIdentity,
   type HistoricalSnapshotDeps,
 } from "./historical-snapshot-deps";
+import type { MigrateResult } from "./migrate";
 import {
   readSnapshotHoldings,
   readSnapshots,
@@ -75,7 +76,7 @@ import {
   positions,
   snapshots,
 } from "./schema";
-import type { CreateHousingHoldingCommand } from "./index";
+import type { CreateHousingHoldingCommand } from "./store-types";
 
 // ── Historical snapshots (ADR 0012, PRD #107) ────────────────────────────────
 //
@@ -1990,4 +1991,105 @@ export function createDatedFactSeams(
       });
     },
   };
+}
+
+/**
+ * Post-migrate snapshot reconstruction (issue #491): after the migration ladder
+ * runs at store construction, two backfills demand that frozen historical
+ * snapshots be re-rippled atomically at migration time rather than drifting
+ * silently on the next curve touch. This is snapshot-reconstruction LOGIC, so it
+ * lives behind the dated-fact seam module, not in the thin wiring factory.
+ */
+export async function applyPostMigrateReripples(
+  ctx: StoreContext,
+  migrateResult: MigrateResult,
+  stores: { assets: AssetStore; liabilities: LiabilityStore; snapshots: SnapshotStore },
+): Promise<void> {
+  // ADR 0019 (#188): after the v18 backfill, re-ripple every amortizable debt
+  // so historical snapshots are rewritten from the new two-date curve. For
+  // day<=28 plans the new curve is byte-identical to the old single-date curve,
+  // so re-ripple is a no-op for figures. For day>=29 plans the clamped
+  // first_payment shifts the cadence (addMonths(addMonths(start,1),m-1) ≠
+  // addMonths(start,m)), so frozen snapshots must be corrected now — atomically
+  // at migration time — rather than drifting silently on the next curve touch.
+  if (migrateResult.ranV18Backfill) {
+    const workspace = await ctx.getWorkspace();
+    if (workspace) {
+      const today = new Date().toISOString().slice(0, 10);
+      const deps = await buildHistoricalSnapshotDeps(ctx.db, workspace);
+      for (const [liabilityId, curve] of deps.debtBalanceByLiability) {
+        if (curve.debtModel === "amortizable" && curve.plan) {
+          await rippleHistoricalSnapshotsForDebt(
+            ctx,
+            workspace,
+            stores.snapshots.saveSnapshot,
+            {
+              kind: "amortizable-plan",
+              liabilityId,
+              today,
+            },
+          );
+        }
+      }
+    }
+  }
+
+  // v33 (ADR 0031, #393): the cadence column was just added to an existing DB, so
+  // the modeled default flipped from interpolated to step (#390–392). Re-ripple
+  // every modeled holding so stale interpolated daily-captures are rewritten as
+  // steps. This fires ONLY on a genuine upgrade (ranV33Backfill), so fresh-DB
+  // tests are unaffected. Mirrors the ranV18Backfill block's structure.
+  if (migrateResult.ranV33Backfill) {
+    const workspace = await ctx.getWorkspace();
+    if (workspace) {
+      const today = new Date().toISOString().slice(0, 10);
+      const deps = await buildHistoricalSnapshotDeps(ctx.db, workspace);
+      // Debts: amortizable plans re-ripple from their plan (every cuota boundary);
+      // revolving with at least one anchor re-ripple from its earliest anchor.
+      // Informal is already a step, and revolving with no anchors is flat — nothing
+      // stale to correct in either, so both are skipped.
+      for (const [liabilityId, curve] of deps.debtBalanceByLiability) {
+        if (curve.debtModel === "amortizable" && curve.plan) {
+          await rippleHistoricalSnapshotsForDebt(
+            ctx,
+            workspace,
+            stores.snapshots.saveSnapshot,
+            {
+              kind: "amortizable-plan",
+              liabilityId,
+              today,
+            },
+          );
+        } else if (
+          curve.debtModel === "revolving" &&
+          curve.anchors &&
+          curve.anchors.length > 0
+        ) {
+          const earliestAnchorDate = [...curve.anchors]
+            .map((a) => a.anchorDate)
+            .sort()[0]!;
+          await rippleHistoricalSnapshotsForDebt(
+            ctx,
+            workspace,
+            stores.snapshots.saveSnapshot,
+            {
+              fromDateKey: earliestAnchorDate,
+              kind: "anchor",
+              liabilityId,
+              today,
+            },
+          );
+        }
+      }
+      // Housing: every appreciating asset re-ripples via the existing helper.
+      for (const assetId of deps.housingValuationByAsset.keys()) {
+        await rippleHousingAfterEdit(
+          ctx,
+          { assets: stores.assets, snapshots: stores.snapshots },
+          assetId,
+          today,
+        );
+      }
+    }
+  }
 }
