@@ -1,6 +1,7 @@
 "use server";
 
-import { withStore, type WorthlineStore } from "@web/store";
+import { type WorthlineStore } from "@web/store";
+import { runActionWithStore } from "@web/action-store";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -31,10 +32,11 @@ export async function initSoloAction(
   }
 
   const { command } = result;
-  const runWith = <T>(fn: (store: WorthlineStore) => T | Promise<T>): Promise<T> =>
-    _store ? Promise.resolve(fn(_store)) : withStore(fn);
 
-  await runWith((store) => store.workspace.initializeWorkspace(command));
+  await runActionWithStore(
+    (store) => store.workspace.initializeWorkspace(command),
+    _store,
+  );
 
   const firstMemberId = command.members[0]?.id;
 
@@ -69,10 +71,11 @@ export async function initHogarAction(
   }
 
   const { command } = result;
-  const runWith = <T>(fn: (store: WorthlineStore) => T | Promise<T>): Promise<T> =>
-    _store ? Promise.resolve(fn(_store)) : withStore(fn);
 
-  await runWith((store) => store.workspace.initializeWorkspace(command));
+  await runActionWithStore(
+    (store) => store.workspace.initializeWorkspace(command),
+    _store,
+  );
 
   // Leave the scope cookie unset — / will fall back to the first scope.
   redirect("/");

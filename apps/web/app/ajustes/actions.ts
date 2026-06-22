@@ -21,8 +21,9 @@ import {
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
 import { guardDemoWrite } from "@web/demo/write-guard";
+import { runActionWithStore } from "@web/action-store";
 
-import { currentUrlOf, runWith } from "./connected-source-lifecycle";
+import { currentUrlOf } from "./connected-source-lifecycle";
 
 // === Member actions ===
 
@@ -39,7 +40,7 @@ export async function createMemberAction(formData: FormData, _store?: WorthlineS
     );
   }
 
-  await runWith((store) => store.workspace.createMember(member), _store);
+  await runActionWithStore((store) => store.workspace.createMember(member), _store);
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
@@ -58,7 +59,7 @@ export async function updateMemberAction(formData: FormData, _store?: WorthlineS
     );
   }
 
-  await runWith((store) => store.workspace.updateMember({ id, name }), _store);
+  await runActionWithStore((store) => store.workspace.updateMember({ id, name }), _store);
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
@@ -99,7 +100,7 @@ export async function updateMemberProfileAction(
   // Conditional spread (exactOptionalPropertyTypes): omit an unset field rather
   // than pass `undefined`. The store clears any omitted field to NULL, so a
   // blank input still erases the previous value.
-  await runWith(
+  await runActionWithStore(
     (store) =>
       store.workspace.updateMemberProfile(id, {
         ...(birthYear !== undefined ? { birthYear } : {}),
@@ -127,7 +128,10 @@ export async function disableMemberAction(
     );
   }
 
-  await runWith((store) => store.workspace.disableMember(id, _clock.now()), _store);
+  await runActionWithStore(
+    (store) => store.workspace.disableMember(id, _clock.now()),
+    _store,
+  );
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
@@ -146,7 +150,7 @@ export async function reactivateMemberAction(
     );
   }
 
-  await runWith((store) => store.workspace.reactivateMember(id), _store);
+  await runActionWithStore((store) => store.workspace.reactivateMember(id), _store);
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
@@ -165,7 +169,7 @@ export async function hardDeleteMemberAction(
     );
   }
 
-  const result = await runWith(async (store) => {
+  const result = await runActionWithStore(async (store) => {
     const workspace = await store.workspace.readWorkspace();
     const member = workspace?.members.find((m) => m.id === id);
 
@@ -225,7 +229,7 @@ export async function resetWorkspaceAction(formData: FormData, _store?: Worthlin
     );
   }
 
-  await runWith((store) => store.workspace.resetWorkspace(), _store);
+  await runActionWithStore((store) => store.workspace.resetWorkspace(), _store);
 
   // No workspace left → the app belongs at onboarding.
   redirect("/empezar");
@@ -331,7 +335,7 @@ export async function confirmImportAction(formData: FormData, _store?: Worthline
     );
   }
 
-  const importResult = await runWith(
+  const importResult = await runActionWithStore(
     (store) => store.workspace.importWorkspace(result.value),
     _store,
   );
@@ -386,7 +390,10 @@ export async function saveFireConfigAction(formData: FormData, _store?: Worthlin
     );
   }
 
-  await runWith((store) => store.saveFireConfig(scopeId, result.command), _store);
+  await runActionWithStore(
+    (store) => store.saveFireConfig(scopeId, result.command),
+    _store,
+  );
   redirect(appendParam(currentUrlOf(formData), "ok", "fire_saved"));
 }
 
@@ -408,6 +415,9 @@ export async function retractWarningOverrideAction(
     );
   }
 
-  await runWith((store) => store.removeWarningOverride(code, entityId), _store);
+  await runActionWithStore(
+    (store) => store.removeWarningOverride(code, entityId),
+    _store,
+  );
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }

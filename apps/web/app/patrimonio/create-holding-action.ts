@@ -1,6 +1,7 @@
 "use server";
 
-import { withStore, type WorthlineStore } from "@web/store";
+import { type WorthlineStore } from "@web/store";
+import { runActionWithStore } from "@web/action-store";
 import {
   checkOwnershipSplit,
   createLiabilitySafe,
@@ -186,8 +187,6 @@ export async function createHoldingAction(
   _clock: Clock = systemClock(),
 ): Promise<never> {
   await guardDemoWrite(ADD_URL);
-  const runWith = <T>(fn: (store: WorthlineStore) => Promise<T>): Promise<T> =>
-    _store ? fn(_store) : withStore(fn);
 
   const today = _clock.today();
   const instrument = parseInstrument(formData.get("instrument"));
@@ -224,7 +223,7 @@ export async function createHoldingAction(
 
   if (assetType) {
     const scoped = scopedAssetForm(formData, instrument, assetType, defaults.rung);
-    const result = await runWith(async (store) => {
+    const result = await runActionWithStore(async (store) => {
       const workspace = await store.workspace.readWorkspace();
 
       if (!workspace) {
@@ -249,7 +248,7 @@ export async function createHoldingAction(
         Date.now(),
         today,
       );
-    });
+    }, _store);
 
     if (!result.ok) {
       redirect(errorUrl(result.error));
@@ -267,7 +266,7 @@ export async function createHoldingAction(
       defaults.priceProvider,
       defaults.rung,
     );
-    const result = await runWith(async (store) => {
+    const result = await runActionWithStore(async (store) => {
       const workspace = await store.workspace.readWorkspace();
 
       if (!workspace) {
@@ -293,7 +292,7 @@ export async function createHoldingAction(
       await store.assets.createInvestmentAsset({ ...parsed.command, instrument });
 
       return { ok: true as const, id: parsed.command.id };
-    });
+    }, _store);
 
     if (!result.ok) {
       redirect(errorUrl(result.error));
@@ -322,7 +321,7 @@ export async function createHoldingAction(
       redirect(errorUrl("El saldo de la deuda no es válido."));
     }
 
-    const result = await runWith(async (store) => {
+    const result = await runActionWithStore(async (store) => {
       const workspace = await store.workspace.readWorkspace();
 
       if (!workspace) {
@@ -367,7 +366,7 @@ export async function createHoldingAction(
       await store.liabilities.setDebtModel(resolved.id, debtModel);
 
       return { ok: true as const, id: resolved.id };
-    });
+    }, _store);
 
     if (!result.ok) {
       redirect(errorUrl(result.error));
