@@ -62,7 +62,7 @@ test("range control: offered when the history spans years, with the bounded rang
   ).toBeVisible();
 });
 
-test("range control: selecting a bounded pill sets the range and marks it active", async ({
+test("range control: selecting a bounded pill re-windows the chart INSTANTLY, no document nav, and Back restores it (S3 #519)", async ({
   page,
 }) => {
   await pinHouseholdScope(page);
@@ -70,19 +70,48 @@ test("range control: selecting a bounded pill sets the range and marks it active
   const rangeTabs = page.getByRole("navigation", {
     name: "Rango temporal de la composición",
   });
-  // The 1A pill links to range=1y and, once followed, becomes the active range.
+  // The 1A pill still links to range=1y — the no-JS fallback and the deep-link.
   const oneYear = rangeTabs.getByRole("link", { name: "1A" });
   await expect(oneYear).toHaveAttribute("href", /range=1y/);
+
+  // Tag the live document; a full navigation would discard window state, so its
+  // survival across the click PROVES the range switched client-side (the round
+  // trip the S0 baseline #516 measured is gone — interaction-patterns §2).
+  await page.evaluate(() => {
+    (window as unknown as { __wlNoReload?: string }).__wlNoReload = "kept";
+  });
+
   await oneYear.click();
 
+  // The choice is mirrored to the URL via pushState (deep-link/share intact §3)…
   await expect(page).toHaveURL(/range=1y/);
-  const activeOneYear = page
-    .getByRole("navigation", { name: "Rango temporal de la composición" })
-    .getByRole("link", { name: "1A" });
-  await expect(activeOneYear).toHaveAttribute("aria-current", "true");
+  // …the active pill moves without a re-render of the document…
+  await expect(rangeTabs.getByRole("link", { name: "1A" })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  // …and the document was never replaced.
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { __wlNoReload?: string }).__wlNoReload,
+    ),
+  ).toBe("kept");
   await expect(
     page.locator("svg.compositionChart").or(page.locator(".compositionEmpty")).first(),
   ).toBeVisible();
+
+  // Back returns to the previous window (Todo), still client-side (popstate).
+  await page.goBack();
+  await expect(page).not.toHaveURL(/range=1y/);
+  await expect(rangeTabs.getByRole("link", { name: "Todo" })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { __wlNoReload?: string }).__wlNoReload,
+    ),
+  ).toBe("kept");
 });
 
 test("range param: composes with a drill and round-trips through the breadcrumb", async ({

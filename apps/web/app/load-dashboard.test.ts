@@ -1158,3 +1158,82 @@ describe("loadDashboard — Binance per-token breakdown capture (ADR 0035, #462)
     store.close();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Composition series per range (S3 #519) — the data the client range island
+// switches between. The server precomputes one series per OFFERED range (the
+// #518 pattern: ship the alternatives, let the client toggle), so a range pill
+// click re-windows the chart with zero round-trip.
+// ---------------------------------------------------------------------------
+
+describe("loadDashboard — composition series per range", () => {
+  test("ships one series per offered range, with the active range's entry equal to compositionSeries", async () => {
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
+
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    // Exactly the offered ranges are keyed — no extra windows shipped.
+    expect(Object.keys(result.compositionSeriesByRange).sort()).toEqual(
+      [...result.compositionRanges].sort(),
+    );
+    // The active range (defaulting to `all`) deep-equals the standalone series,
+    // so the island's initial render is byte-identical to today's server render.
+    expect(result.compositionSeriesByRange.all).toEqual(result.compositionSeries);
+  });
+
+  test("keys the ACTIVE range even when it is narrower than the offered history (deep-link safety)", async () => {
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
+
+    // Only one day of history → the offered ranges are just ["all"], yet a
+    // deep-link asked for range=1y. The active range must still be keyed (equal
+    // to the windowed series) so the island has data to render, not an empty map.
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      range: "1y",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    expect(result.compositionRanges).toEqual(["all"]);
+    expect(result.compositionSeriesByRange["1y"]).toEqual(result.compositionSeries);
+    // The offered range is still keyed alongside the active one.
+    expect(result.compositionSeriesByRange.all).toBeDefined();
+
+    store.close();
+  });
+
+  test("no-workspace result carries an empty per-range map", async () => {
+    const store = await createInMemoryStore();
+
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    expect(result.needsOnboarding).toBe(true);
+    expect(result.compositionSeriesByRange).toEqual({});
+
+    store.close();
+  });
+});
