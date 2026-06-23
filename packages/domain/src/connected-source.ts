@@ -339,6 +339,51 @@ export function tokenPositionSnapshotInput(token: TokenPosition): SnapshotPositi
   };
 }
 
+/**
+ * Carry each token's last-good live unit price forward onto a fresh sync's positions.
+ * A connected-source sync replaces a source's positions wholesale and
+ * re-derives each holding's value live (`balance × unitPrice`, ADR 0021). A token
+ * whose price could NOT be fetched this round arrives with `unitPrice: null`, which
+ * {@link positionValue} scores 0 — silently zeroing a real, previously-valued holding
+ * on a single transient CoinGecko miss (a 429 / empty body, the more likely for a
+ * low-cap token fetched late in the price burst). That is the WBETH-vanished bug: a
+ * Binance balance the account still holds dropping to 0 € until a later sync happens
+ * to price it cleanly.
+ *
+ * The fix: for each incoming token whose `unitPrice` is null, if the SAME position
+ * (matched by its stable `externalId` = `symbol:wallet`) carried a non-null price on
+ * the prior sync, carry that last-good price forward. The value then stays intact
+ * (at most one refresh stale) and self-heals the next time the token prices cleanly;
+ * it is never zeroed by a transient miss. A token genuinely new this sync (no prior
+ * position) or one never priced has nothing to carry and is left null (unchanged) —
+ * we never fabricate a price. Coins are untouched (they freeze their own value, ADR
+ * 0017). Pure: returns a NEW array, mutating neither input.
+ *
+ * Deliberately NOT bounded by a staleness window: a genuinely delisted token would
+ * keep its last price rather than dropping to 0. That is the safe default for a net
+ * worth tool (a stale value beats a phantom loss), and the next clean price corrects
+ * it; bounding it is a future refinement, not this fix.
+ */
+export function carryForwardTokenUnitPrices(
+  incoming: readonly DistributiveOmit<SourcePosition, "id" | "sourceId">[],
+  previous: readonly SourcePosition[],
+): DistributiveOmit<SourcePosition, "id" | "sourceId">[] {
+  const lastGoodByExternalId = new Map<string, DecimalString>();
+  for (const position of previous) {
+    if (position.kind === "token" && position.unitPrice !== null) {
+      lastGoodByExternalId.set(position.externalId, position.unitPrice);
+    }
+  }
+
+  if (lastGoodByExternalId.size === 0) return [...incoming];
+
+  return incoming.map((position) => {
+    if (position.kind !== "token" || position.unitPrice !== null) return position;
+    const carried = lastGoodByExternalId.get(position.externalId);
+    return carried === undefined ? position : { ...position, unitPrice: carried };
+  });
+}
+
 /** A connected source's rolled-up holding on one liquidity rung (ADR 0016). */
 export interface ProjectedHolding {
   /** Stable holding id, derived from the source and rung. */
