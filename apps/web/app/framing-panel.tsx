@@ -4,7 +4,12 @@ import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 
 import type { NetWorthFraming } from "@worthline/domain";
 
-import { FRAMING_VIEW_PARAM, readViewParam, writeViewParam } from "./view-state";
+import {
+  FRAMING_VIEW_PARAM,
+  readViewParam,
+  VIEW_STATE_CHANGE_EVENT,
+  writeViewParam,
+} from "./view-state";
 
 /**
  * The Vista framing toggle as a client island (#518, ADR 0036, Phase 0 S2).
@@ -89,9 +94,14 @@ export default function FramingPanel({
     };
     window.addEventListener("popstate", syncFromUrl);
     window.addEventListener("pageshow", onPageShow);
+    // A sibling island (e.g. the range island, #519) may push a URL change that
+    // does not touch `view`; re-reading on its nudge is a no-op then, but keeps
+    // this island reconciled if a future island ever writes `view` too.
+    window.addEventListener(VIEW_STATE_CHANGE_EVENT, syncFromUrl);
     return () => {
       window.removeEventListener("popstate", syncFromUrl);
       window.removeEventListener("pageshow", onPageShow);
+      window.removeEventListener(VIEW_STATE_CHANGE_EVENT, syncFromUrl);
     };
   }, []);
 
@@ -122,6 +132,9 @@ export default function FramingPanel({
       `${window.location.pathname}${nextSearch}${window.location.hash}`,
     );
     setView(next);
+    // Nudge sibling islands (e.g. the range island) to re-read `view` from the
+    // URL — `pushState` fires no event they could otherwise observe (§3).
+    window.dispatchEvent(new Event(VIEW_STATE_CHANGE_EVENT));
   };
 
   const activeLabel = tabs.find((tab) => tab.id === view)?.label ?? "";
