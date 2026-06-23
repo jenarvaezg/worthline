@@ -66,12 +66,15 @@ export function resolveStoreTarget(input: ResolveStoreTargetInput): StoreTarget 
   }
 
   // Logged out + persona cookie ⇒ the read-only demo on an ephemeral in-memory
-  // database (seeded per request). The clock is pinned by `WORTHLINE_DEMO_NOW`.
+  // database (seeded per request). Every demo fact is seeded relative to `now`,
+  // so an empty `now` lets the demo clock fall back to the real date — the demo
+  // stays current instead of frozen, with no env clock to pin (nor for a
+  // scheduled job to misread). See ADR 0030.
   if (personaCookie) {
     return {
       kind: "demo",
       persona: parsePersonaId(personaCookie),
-      now: (env.WORTHLINE_DEMO_NOW ?? "").trim(),
+      now: "",
     };
   }
 

@@ -58,12 +58,13 @@ describe("resolveStoreTarget", () => {
       env: {
         AUTH_GOOGLE_ID: "google-id",
         AUTH_GOOGLE_SECRET: "google-secret",
-        WORTHLINE_DEMO_NOW: "2026-06-20",
       },
       session: null,
       personaCookie: "inversor",
     });
-    expect(result).toEqual({ kind: "demo", persona: "inversor", now: "2026-06-20" });
+    // `now` is empty so the demo clock falls back to the real date — the demo is
+    // no longer pinned by an env var (it seeds relative to "now").
+    expect(result).toEqual({ kind: "demo", persona: "inversor", now: "" });
   });
 
   test("authentication wins over a stale persona cookie", () => {
