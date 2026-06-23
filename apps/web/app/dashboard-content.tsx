@@ -10,8 +10,6 @@ import {
   presentNetWorth,
 } from "@worthline/domain";
 import type {
-  CompositionHousingMode,
-  CompositionRange,
   DrilldownKey,
   FireProjection,
   FireScenario,
@@ -27,7 +25,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import {
-  appendParam,
   parseDrillParam,
   parseRangeParam,
   parseViewParam,
@@ -36,8 +33,9 @@ import {
 import { loadDashboard } from "./load-dashboard";
 import type { RefreshPricesResult } from "./load-dashboard";
 import CompositionPanel from "./composition-panel";
-import CompositionRangeControls from "./composition-range-controls";
-import DrilldownPanel from "./drilldown-panel";
+import { compositionUrl } from "./composition-url";
+import { parseMode } from "./dashboard-matrix";
+import DonutDrill, { type DonutSegment } from "./donut-drill";
 import FramingPanel, { type FramingTab } from "./framing-panel";
 import HeroMovers from "./hero-movers";
 import type { HoldingMover, MoversData, MoversPeriod } from "./hero-movers";
@@ -98,21 +96,6 @@ function DeltaChip({
       {delta.pct !== null ? ` (${formatPct(delta.pct)})` : ""} {label}
     </span>
   );
-}
-
-function compositionUrl(
-  view: NetWorthFraming,
-  drill: DrilldownKey | null,
-  range: CompositionRange,
-  housingMode: CompositionHousingMode,
-  anchor = true,
-): string {
-  let url = "/";
-  if (view === "liquid") url = appendParam(url, "view", "liquid");
-  if (drill) url = appendParam(url, "drill", drill);
-  if (range !== "all") url = appendParam(url, "range", range);
-  if (housingMode === "hidden") url = appendParam(url, "vivienda", "oculta");
-  return anchor ? `${url}#composicion` : url;
 }
 
 const MOVERS_MAX_PER_COLUMN = 4;
@@ -508,26 +491,6 @@ export default async function DashboardContent({
 
   const moversPeriod = parseMoversPeriod(searchParams?.mvp);
 
-  const composicionHomeUrl = compositionUrl(
-    selectedView,
-    null,
-    selectedRange,
-    selectedHousingMode,
-  );
-  const drillHrefs = {
-    debts: compositionUrl(selectedView, "debts", selectedRange, selectedHousingMode),
-    housing: compositionUrl(selectedView, "housing", selectedRange, selectedHousingMode),
-    liquid: compositionUrl(selectedView, "liquid", selectedRange, selectedHousingMode),
-    rest: compositionUrl(selectedView, "rest", selectedRange, selectedHousingMode),
-  };
-
-  const housingToggleHref = compositionUrl(
-    selectedView,
-    selectedDrill,
-    selectedRange,
-    selectedHousingMode === "hidden" ? "net" : "hidden",
-  );
-
   const now = persistence.checkedAt;
   const today = now.slice(0, 10);
 
@@ -635,16 +598,25 @@ export default async function DashboardContent({
     label: tab.label,
   }));
 
-  const rangeOptions = state.compositionRanges.map((range) => ({
-    href: compositionUrl(selectedView, selectedDrill, range, selectedHousingMode),
-    range,
-  }));
-
   const anyStepPending = onboarding.some((step) => !step.done);
 
   const tierBpsValues = pyramid.map((tier) => tier.shareOfGrossBps);
   const tierPercents = largestRemainderPercentages(tierBpsValues);
   const donutSegments = donutArcSegments(tierPercents, TIER_DONUT_GEOMETRY);
+  // The donut becomes a client island so a segment opens its drill in place
+  // (S4 #520): pre-resolve each segment's geometry, drill destination and a11y
+  // copy server-side; the island builds the live hrefs + intercepts the click.
+  const donutSegmentsForIsland: DonutSegment[] = donutSegments.map((segment) => {
+    const tier = pyramid[segment.index]!;
+    const drillKey = DRILL_GROUP_BY_TIER[tier.tier];
+    return {
+      ariaLabel: `${LIQUIDITY_TIER_LABELS[tier.tier]}: ${DRILL_DESTINATION_LABELS[drillKey]}`,
+      drillKey,
+      path: segment.path,
+      tier: tier.tier,
+      title: `${LIQUIDITY_TIER_LABELS[tier.tier]} · ${segment.share}%`,
+    };
+  });
 
   return (
     <div className="dashGrid">
@@ -684,37 +656,13 @@ export default async function DashboardContent({
           <h2>Liquidez</h2>
           <span>Por capa · % del bruto</span>
         </div>
-        <svg
-          className="tierDonut"
-          viewBox="0 0 100 100"
-          role="img"
-          aria-label="Distribución por capa de liquidez"
-        >
-          <circle
-            className="donutTrack"
-            cx={TIER_DONUT_GEOMETRY.cx}
-            cy={TIER_DONUT_GEOMETRY.cy}
-            r={(TIER_DONUT_GEOMETRY.outerRadius + TIER_DONUT_GEOMETRY.innerRadius) / 2}
-            strokeWidth={
-              TIER_DONUT_GEOMETRY.outerRadius - TIER_DONUT_GEOMETRY.innerRadius
-            }
-          />
-          {donutSegments.map((segment) => {
-            const tier = pyramid[segment.index]!;
-            const drillKey = DRILL_GROUP_BY_TIER[tier.tier];
-            return (
-              <a
-                aria-label={`${LIQUIDITY_TIER_LABELS[tier.tier]}: ${DRILL_DESTINATION_LABELS[drillKey]}`}
-                href={drillHrefs[drillKey]}
-                key={tier.tier}
-              >
-                <path className={`donutSegment ${tier.tier}`} d={segment.path}>
-                  <title>{`${LIQUIDITY_TIER_LABELS[tier.tier]} · ${segment.share}%`}</title>
-                </path>
-              </a>
-            );
-          })}
-        </svg>
+        <DonutDrill
+          geometry={TIER_DONUT_GEOMETRY}
+          initialHousingMode={selectedHousingMode}
+          initialRange={selectedRange}
+          initialView={selectedView}
+          segments={donutSegmentsForIsland}
+        />
         <div className="pyramid">
           {pyramid.map((tier, idx) => {
             const pct = tierPercents[idx] ?? 0;
@@ -753,52 +701,26 @@ export default async function DashboardContent({
         id="composicion"
         aria-label="Evolución del patrimonio"
       >
-        {selectedDrill && state.drilldown ? (
-          // A drill stays server-rendered (its window deep-links): the range
-          // pills remain plain links here — they re-window the open drill on the
-          // server, the case S3's client island deliberately does not cover.
-          <>
-            <div className="panelHeader">
-              <h2>Evolución</h2>
-              <div className="historyControls">
-                <CompositionRangeControls
-                  options={rangeOptions}
-                  selected={selectedRange}
-                />
-                <Link className="panelAction" href="/historico" scroll={false}>
-                  Ver histórico →
-                </Link>
-              </div>
-            </div>
-            <DrilldownPanel
-              backHref={composicionHomeUrl}
-              currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
-              drilldown={state.drilldown}
-              privacyMode={privacyMode}
-            />
-          </>
-        ) : (
-          // No drill → the range pills + chart are one client island (S3 #519):
-          // toggling the window is instant, no round-trip (interaction-patterns
-          // §2). The server still shipped every range's series and the right
-          // initial window from the URL.
-          <CompositionPanel
-            currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
-            drillHrefs={drillHrefs}
-            historicoLink={
-              <Link className="panelAction" href="/historico" scroll={false}>
-                Ver histórico →
-              </Link>
-            }
-            housingMode={selectedHousingMode}
-            housingToggleHref={housingToggleHref}
-            initialRange={selectedRange}
-            initialView={selectedView}
-            privacyMode={privacyMode}
-            rangeOptions={rangeOptions}
-            seriesByRange={state.compositionSeriesByRange}
-          />
-        )}
+        {/* The whole composition surface (range pills + chart ⇄ drilldown) is one
+            client island over the matrix (S4 #520): opening/closing a drill and
+            changing the range are instant, no round-trip (interaction-patterns
+            §2). The server shipped the initial cross; the island prefetches the
+            next from /api/dashboard/cells. */}
+        <CompositionPanel
+          currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
+          historicoLink={
+            <Link className="panelAction" href="/historico" scroll={false}>
+              Ver histórico →
+            </Link>
+          }
+          initialCells={state.matrixCells}
+          initialHousingMode={selectedHousingMode}
+          initialMode={parseMode(selectedDrill)}
+          initialRange={selectedRange}
+          initialView={selectedView}
+          offeredRanges={state.compositionRanges}
+          privacyMode={privacyMode}
+        />
       </section>
 
       <section className="firePanel" aria-label="FIRE">

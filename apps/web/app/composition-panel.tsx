@@ -1,43 +1,58 @@
 "use client";
 
-import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 
 import type {
   CompositionHousingMode,
   CompositionRange,
-  CompositionSeriesPoint,
   DrilldownKey,
   NetWorthFraming,
 } from "@worthline/domain";
 
 import CompositionChart from "./composition-chart";
+import type { MatrixCellPayload } from "./dashboard-cells";
+import {
+  cellKey,
+  crossOf,
+  missingCells,
+  parseMode,
+  type CompositionMode,
+  type MatrixCoord,
+} from "./dashboard-matrix";
+import { compositionUrl } from "./composition-url";
+import DrilldownPanel from "./drilldown-panel";
 import {
   FRAMING_VIEW_PARAM,
   RANGE_VIEW_PARAM,
   readViewParam,
-  retargetHref,
   VIEW_STATE_CHANGE_EVENT,
-  writeViewParam,
 } from "./view-state";
 
 /**
- * The composition chart's temporal-range control as a client island (S3 #519,
- * ADR 0036, Phase 0 — built on the #518 toggle base in `view-state`).
+ * The composition surface as a client island over a 2-D matrix (S4 #520, ADR
+ * 0038): mode (chart / drilldown) × range. Opening or closing a drilldown and
+ * changing the range used to be server `<a>` round-trips (~2.3s on Turso, S0
+ * baseline #516); now the server ships the **cross** of the current cell (the
+ * column + the chart row) and this island swaps between cells from an in-memory
+ * cache — instant, scroll preserved (no document navigation), URL mirrored via
+ * `pushState`. After each move it prefetches the next cross from
+ * `/api/dashboard/cells`, so the following click is instant too. A cache miss
+ * (rapid clicks / network failure) degrades to an honest inline pending (§9).
  *
- * The range pills (1A/3A/5A/Todo) used to be server `<a>` links: each click paid
- * the ~2.3s Turso round-trip the S0 baseline measured (#516). Now the server
- * ships the chart series for EVERY offered range at once and this island swaps
- * between them instantly on click — no round-trip — mirroring the choice to the
- * URL via `history.pushState` (interaction-patterns §2/§3). Deep-link and reload
- * still read `range` from the URL (the server renders the right window); Back /
- * Forward re-read it via `popstate`.
- *
- * It composes with the Vista island (#518) THROUGH THE URL, never by reference:
- * each island writes only its own param, so a link this island rebuilds carries
- * both the range it just toggled and whatever framing the URL currently holds —
- * read live so a client framing toggle since render is respected (§3). The pure
- * toggle/URL logic is `view-state`; this component is the thin pushState/popstate
- * shell (the established `composition-chart-hover` split, §7).
+ * Two orthogonal toggles need no cell data: framing `view` is hero-only (#518)
+ * and only retargets links here; `vivienda` re-derives the chart geometry from
+ * the SAME points client-side. It composes with the framing (#518) and range
+ * (#519) islands through the URL + the shared `VIEW_STATE_CHANGE_EVENT`. Every
+ * link is built with the canonical `compositionUrl`, so the no-JS fallback,
+ * deep-link and keyboard paths stay intact (§3, §8); this component is the thin
+ * shell over the pure matrix logic (§7).
  */
 
 const RANGE_LABELS: Record<CompositionRange, string> = {
@@ -47,7 +62,6 @@ const RANGE_LABELS: Record<CompositionRange, string> = {
   all: "Todo",
 };
 
-/** Spoken label for the live region — a pill abbreviation alone is opaque to SR. */
 const RANGE_ANNOUNCE: Record<CompositionRange, string> = {
   "1y": "1 año",
   "3y": "3 años",
@@ -55,83 +69,119 @@ const RANGE_ANNOUNCE: Record<CompositionRange, string> = {
   all: "todo el histórico",
 };
 
-/**
- * Rewrite the `range` param of the page's OTHER same-page range-bearing links —
- * the liquidity donut's drill segments — so a later server navigation keeps the
- * client-toggled window (interaction-patterns §3). It mirrors the Vista island's
- * `syncSiblingViewLinks` (#518) for the range dimension: same-page only (the
- * "Ver histórico" link points elsewhere), and the history panel's own links are
- * skipped because this island already renders them with the live range.
- */
-function syncSiblingRangeLinks(range: CompositionRange): void {
-  const grid = document.querySelector(".dashGrid");
-  if (!grid) {
-    return;
-  }
-  for (const anchor of grid.querySelectorAll<HTMLAnchorElement>("a[href]")) {
-    if (anchor.closest(".historyPanel") || anchor.closest(".framingTabs")) {
-      continue;
-    }
-    const href = anchor.getAttribute("href");
-    if (!href) {
-      continue;
-    }
-    const url = new URL(href, window.location.origin);
-    if (url.pathname !== window.location.pathname) {
-      continue;
-    }
-    anchor.setAttribute("href", retargetHref(href, [[RANGE_VIEW_PARAM, range]]));
-  }
-}
+const MODE_ANNOUNCE: Record<CompositionMode, string> = {
+  chart: "composición",
+  liquid: "desglose del líquido",
+  rest: "desglose del resto",
+  housing: "desglose de la vivienda",
+  debts: "desglose de las deudas",
+};
 
-export interface CompositionRangeOption {
-  range: CompositionRange;
-  /** Server-built URL for this range — the no-JS fallback and the deep-link. */
-  href: string;
+/** True for a plain left-click we should intercept (not new-tab / middle-click). */
+function isPlainClick(event: MouseEvent): boolean {
+  return (
+    event.button === 0 &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.shiftKey &&
+    !event.altKey
+  );
 }
 
 export default function CompositionPanel({
   currency,
-  drillHrefs,
   historicoLink,
-  housingMode,
-  housingToggleHref,
+  initialCells,
+  initialHousingMode,
+  initialMode,
   initialRange,
   initialView,
+  offeredRanges,
   privacyMode,
-  rangeOptions,
-  seriesByRange,
 }: {
   currency: string;
-  /** Per-group drill URLs (request-time): retargeted to the live range + view. */
-  drillHrefs: Partial<Record<DrilldownKey, string>>;
   /** The "Ver histórico →" link — static chrome the server renders, slotted in. */
   historicoLink: ReactNode;
-  housingMode: CompositionHousingMode;
-  /** "Ocultar/Mostrar vivienda" URL (request-time): retargeted like the drills. */
-  housingToggleHref: string;
+  initialCells: Record<string, MatrixCellPayload>;
+  initialHousingMode: CompositionHousingMode;
+  initialMode: CompositionMode;
   initialRange: CompositionRange;
   initialView: NetWorthFraming;
+  /** Offered range pills; under 2, the control hides (history under a year). */
+  offeredRanges: readonly CompositionRange[];
   privacyMode: boolean;
-  /** Offered ranges with their server-built hrefs; under 2, the pills hide. */
-  rangeOptions: readonly CompositionRangeOption[];
-  seriesByRange: Partial<Record<CompositionRange, CompositionSeriesPoint[]>>;
 }) {
+  const [mode, setMode] = useState<CompositionMode>(initialMode);
   const [range, setRange] = useState<CompositionRange>(initialRange);
-  // The framing the URL currently holds. A range toggle does not change it, but
-  // the sibling Vista island (#518) may have pushed a new one since this island
-  // rendered — `pushState` fires no event, so we cannot subscribe to it. We read
-  // it live on every toggle (and on popstate) and fold it into the links we
-  // rebuild, so the two islands stay consistent through the URL.
+  const [housingMode, setHousingMode] =
+    useState<CompositionHousingMode>(initialHousingMode);
+  // Live framing, folded into the links this island builds so it composes with
+  // the Vista island (#518) through the URL (a range/drill toggle never changes
+  // it, but a framing toggle since render must be honoured).
   const [view, setView] = useState<NetWorthFraming>(initialView);
+  const [cache, setCache] = useState<Record<string, MatrixCellPayload>>(initialCells);
+  // Mirror the cache into a ref (updated in an effect, never during render) so
+  // the prefetch closure reads the freshest keys after rapid moves.
+  const cacheRef = useRef(cache);
+  useEffect(() => {
+    cacheRef.current = cache;
+  }, [cache]);
 
-  // Re-read range + framing from the URL on Back/Forward (popstate) and on a
-  // bfcache restore (pageshow.persisted) — neither re-runs SSR, so the island
-  // reconciles with the URL itself (same pattern as the Vista island).
+  const fetchCells = useCallback(
+    async (coords: readonly MatrixCoord[]): Promise<void> => {
+      const missing = missingCells(coords, new Set(Object.keys(cacheRef.current)));
+      if (missing.length === 0) {
+        return;
+      }
+      const query = missing.map(cellKey).join(",");
+      try {
+        const response = await fetch(
+          `/api/dashboard/cells?cells=${encodeURIComponent(query)}`,
+          {
+            headers: { accept: "application/json" },
+          },
+        );
+        if (!response.ok) {
+          return; // Degrade: keep the cache we have (§9) — no stale figure shown.
+        }
+        const body = (await response.json()) as {
+          cells?: Record<string, MatrixCellPayload>;
+        };
+        if (body.cells) {
+          setCache((prev) => ({ ...prev, ...body.cells }));
+        }
+      } catch {
+        // Network failure: keep the cache; a missing current cell shows pending.
+      }
+    },
+    // Stable: reads only `cacheRef` (synced in an effect) and `setCache`/`fetch`,
+    // none of which change — so `prefetchCross` below stays stable too.
+    [],
+  );
+
+  /** Prefetch the cross of a cell so the NEXT single click is already cached. */
+  const prefetchCross = useCallback(
+    (centre: MatrixCoord): void => {
+      void fetchCells(crossOf(centre, offeredRanges));
+    },
+    [fetchCells, offeredRanges],
+  );
+
+  // Reconcile with the URL on Back/Forward (popstate), bfcache restore
+  // (pageshow.persisted), and a sibling island's push (VIEW_STATE_CHANGE_EVENT).
   useEffect(() => {
     const syncFromUrl = () => {
-      setRange(readViewParam(window.location.search, RANGE_VIEW_PARAM));
-      setView(readViewParam(window.location.search, FRAMING_VIEW_PARAM));
+      const search = window.location.search;
+      const params = new URLSearchParams(search);
+      const urlMode = parseMode(params.get("drill"));
+      const urlRange = readViewParam(search, RANGE_VIEW_PARAM);
+      const urlHousing: CompositionHousingMode =
+        params.get("vivienda") === "oculta" ? "hidden" : "net";
+      setMode(urlMode);
+      setRange(urlRange);
+      setView(readViewParam(search, FRAMING_VIEW_PARAM));
+      setHousingMode(urlHousing);
+      prefetchCross({ mode: urlMode, range: urlRange });
     };
     const onPageShow = (event: PageTransitionEvent) => {
       if (event.persisted) {
@@ -140,81 +190,124 @@ export default function CompositionPanel({
     };
     window.addEventListener("popstate", syncFromUrl);
     window.addEventListener("pageshow", onPageShow);
-    // The Vista island (#518) pushes `view` without a native event; its nudge
-    // lets this island refresh the framing it folds into the links it rebuilds,
-    // so the two compose through the URL even between range toggles (§3).
     window.addEventListener(VIEW_STATE_CHANGE_EVENT, syncFromUrl);
     return () => {
       window.removeEventListener("popstate", syncFromUrl);
       window.removeEventListener("pageshow", onPageShow);
       window.removeEventListener(VIEW_STATE_CHANGE_EVENT, syncFromUrl);
     };
+  }, [prefetchCross]);
+
+  // Prefetch the initial cell's cross on mount so the very first click is instant
+  // even for cells the server did not ship (it ships the cross, so this is a
+  // no-op in the common case).
+  useEffect(() => {
+    prefetchCross({ mode: initialMode, range: initialRange });
+    // Mount only: prefetchCross is stable and the initial coords are fixed —
+    // adding deps would re-fire redundant prefetches on every toggle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Keep the page's other range-bearing server links (the donut) on the live range.
+  // A cache miss for the cell we must render now (rapid moves / cold prefetch /
+  // network failure): fetch it in the foreground; `!currentCell` shows the
+  // pending placeholder until it lands (§9). No setState in the effect body —
+  // the async cache update re-renders.
+  const currentKey = cellKey({ mode, range });
+  const currentCell = cache[currentKey];
   useEffect(() => {
-    syncSiblingRangeLinks(range);
-  }, [range]);
-
-  const select = (next: CompositionRange) => (event: MouseEvent<HTMLAnchorElement>) => {
-    // Let modified clicks (new tab/window) and non-primary buttons navigate.
-    if (
-      event.button !== 0 ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.altKey
-    ) {
-      return;
+    if (!currentCell) {
+      void fetchCells([{ mode, range }]);
     }
-    event.preventDefault();
-    if (next === readViewParam(window.location.search, RANGE_VIEW_PARAM)) {
-      return;
-    }
-    const liveView = readViewParam(window.location.search, FRAMING_VIEW_PARAM);
-    const nextSearch = writeViewParam(window.location.search, RANGE_VIEW_PARAM, next);
-    window.history.pushState(
-      null,
-      "",
-      `${window.location.pathname}${nextSearch}${window.location.hash}`,
-    );
-    setRange(next);
-    setView(liveView);
-    // Nudge sibling islands to re-read range from the URL (symmetric with #518).
-    window.dispatchEvent(new Event(VIEW_STATE_CHANGE_EVENT));
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentKey, currentCell]);
 
-  // Retarget a request-time link to the live range + framing (§3), so drilling
-  // or toggling vivienda after a client range/view switch keeps both choices.
-  const retarget = (href: string): string =>
-    retargetHref(href, [
-      [RANGE_VIEW_PARAM, range],
-      [FRAMING_VIEW_PARAM, view],
-    ]);
+  /** The single state transition: mirror to the URL, set state, prefetch next. */
+  const goTo = useCallback(
+    (next: {
+      mode?: CompositionMode;
+      range?: CompositionRange;
+      housingMode?: CompositionHousingMode;
+    }): void => {
+      const liveView = readViewParam(window.location.search, FRAMING_VIEW_PARAM);
+      const nextMode = next.mode ?? mode;
+      const nextRange = next.range ?? range;
+      const nextHousing = next.housingMode ?? housingMode;
+      const href = compositionUrl(
+        liveView,
+        nextMode === "chart" ? null : nextMode,
+        nextRange,
+        nextHousing,
+        false,
+      );
+      window.history.pushState(
+        null,
+        "",
+        `${href}${window.location.hash || "#composicion"}`,
+      );
+      window.dispatchEvent(new Event(VIEW_STATE_CHANGE_EVENT));
+      setView(liveView);
+      setMode(nextMode);
+      setRange(nextRange);
+      setHousingMode(nextHousing);
+      prefetchCross({ mode: nextMode, range: nextRange });
+    },
+    [mode, range, housingMode, prefetchCross],
+  );
 
-  const liveDrillHrefs = Object.fromEntries(
-    Object.entries(drillHrefs).map(([key, href]) => [key, retarget(href)]),
+  const selectRange =
+    (next: CompositionRange) => (event: MouseEvent<HTMLAnchorElement>) => {
+      if (!isPlainClick(event)) {
+        return; // modified click (new tab/window) → let the href navigate
+      }
+      event.preventDefault();
+      if (next !== range) {
+        goTo({ range: next });
+      }
+    };
+
+  const onDrill = (key: DrilldownKey): void => goTo({ mode: key });
+  const onBack = (): void => goTo({ mode: "chart" });
+  const onToggleHousing = (): void =>
+    goTo({ housingMode: housingMode === "hidden" ? "net" : "hidden" });
+
+  // Links for the children, built canonically from the live state (§3).
+  const drillKeys: DrilldownKey[] = ["liquid", "rest", "housing", "debts"];
+  const drillHrefs = Object.fromEntries(
+    drillKeys.map((key) => [key, compositionUrl(view, key, range, housingMode)]),
   ) as Partial<Record<DrilldownKey, string>>;
-  const liveHousingToggleHref = retarget(housingToggleHref);
+  const housingToggleHref = compositionUrl(
+    view,
+    mode === "chart" ? null : mode,
+    range,
+    housingMode === "hidden" ? "net" : "hidden",
+  );
+  const backHref = compositionUrl(view, null, range, housingMode);
+
+  const showPending = !currentCell;
 
   return (
     <>
       <div className="panelHeader">
         <h2>Evolución</h2>
         <div className="historyControls">
-          {rangeOptions.length >= 2 ? (
+          {offeredRanges.length >= 2 ? (
             <nav className="rangeTabs" aria-label="Rango temporal de la composición">
-              {rangeOptions.map((option) => {
-                const isActive = option.range === range;
+              {offeredRanges.map((option) => {
+                const isActive = option === range;
                 return (
                   <a
                     aria-current={isActive ? "true" : undefined}
                     className={isActive ? "active" : undefined}
-                    href={retargetHref(option.href, [[FRAMING_VIEW_PARAM, view]])}
-                    key={option.range}
-                    onClick={select(option.range)}
+                    href={compositionUrl(
+                      view,
+                      mode === "chart" ? null : mode,
+                      option,
+                      housingMode,
+                    )}
+                    key={option}
+                    onClick={selectRange(option)}
                   >
-                    {RANGE_LABELS[option.range]}
+                    {RANGE_LABELS[option]}
                   </a>
                 );
               })}
@@ -223,17 +316,36 @@ export default function CompositionPanel({
           {historicoLink}
         </div>
       </div>
-      {/* Announce the window change for screen readers — a client toggle is not a
-          document navigation, so it is not announced otherwise (§8). */}
-      <p aria-live="polite" className="srOnly">{`Rango: ${RANGE_ANNOUNCE[range]}`}</p>
-      <CompositionChart
-        currency={currency}
-        drillHrefs={liveDrillHrefs}
-        housingMode={housingMode}
-        housingToggleHref={liveHousingToggleHref}
-        points={seriesByRange[range] ?? []}
-        privacyMode={privacyMode}
-      />
+      {/* Announce the client swap for screen readers — it is not a document
+          navigation, so nothing else announces it (§8). */}
+      <p aria-live="polite" className="srOnly">
+        {`Vista: ${MODE_ANNOUNCE[mode]} · rango ${RANGE_ANNOUNCE[range]}`}
+      </p>
+
+      {showPending ? (
+        <p className="emptyLine compositionPending" aria-busy="true">
+          Cargando…
+        </p>
+      ) : currentCell.kind === "drill" ? (
+        <DrilldownPanel
+          backHref={backHref}
+          currency={currency}
+          drilldown={currentCell.drilldown}
+          onBack={onBack}
+          privacyMode={privacyMode}
+        />
+      ) : (
+        <CompositionChart
+          currency={currency}
+          drillHrefs={drillHrefs}
+          housingMode={housingMode}
+          housingToggleHref={housingToggleHref}
+          onDrill={onDrill}
+          onToggleHousing={onToggleHousing}
+          points={currentCell.series}
+          privacyMode={privacyMode}
+        />
+      )}
     </>
   );
 }

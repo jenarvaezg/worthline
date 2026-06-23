@@ -54,6 +54,8 @@ export default function CompositionChart({
   drillHrefs,
   housingMode = "net",
   housingToggleHref,
+  onDrill,
+  onToggleHousing,
   points,
   privacyMode = false,
 }: {
@@ -73,10 +75,50 @@ export default function CompositionChart({
   housingMode?: CompositionHousingMode;
   /** The href the "Ocultar/Mostrar vivienda" link points to (toggles the mode). */
   housingToggleHref?: string;
+  /**
+   * Open a drilldown as CLIENT state (S4 #520): when set, a plain left-click on
+   * an asset band, the debt band or a legend entry is intercepted and toggled in
+   * place — no round-trip. The anchors keep their `href` for the no-JS, deep-link
+   * and middle-click paths (§3, §8).
+   */
+  onDrill?: (key: DrilldownKey) => void;
+  /** Toggle vivienda as client state (S4): re-derives geometry from the same points. */
+  onToggleHousing?: () => void;
   points: CompositionSeriesPoint[];
   privacyMode?: boolean;
 }) {
   const housingHidden = housingMode === "hidden";
+  // Intercept a plain left-click to toggle client-side; let modified clicks
+  // (new tab/window) and non-primary buttons follow the anchor's href.
+  const drillClick =
+    (key: DrilldownKey | undefined) => (event: MouseEvent<HTMLAnchorElement>) => {
+      if (!onDrill || key === undefined) return;
+      if (
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+      event.preventDefault();
+      onDrill(key);
+    };
+  const housingClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!onToggleHousing) return;
+    if (
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+    event.preventDefault();
+    onToggleHousing();
+  };
   const geometry = useMemo(
     () => buildCompositionChartGeometry(points, { housingMode }),
     [points, housingMode],
@@ -129,7 +171,12 @@ export default function CompositionChart({
           const className = housingHidden && band === "housing" ? `${band} hidden` : band;
 
           return href ? (
-            <a className={className} href={href} key={band}>
+            <a
+              className={className}
+              href={href}
+              key={band}
+              onClick={drillClick(BAND_DRILL_KEY[band])}
+            >
               <i aria-hidden="true" />
               {label}
             </a>
@@ -142,7 +189,7 @@ export default function CompositionChart({
         })}
         {geometry.debtBars ? (
           drillHrefs?.debts ? (
-            <a className="debt" href={drillHrefs.debts}>
+            <a className="debt" href={drillHrefs.debts} onClick={drillClick("debts")}>
               <i aria-hidden="true" />
               Deudas
             </a>
@@ -161,7 +208,11 @@ export default function CompositionChart({
             0009) so the choice survives range/view/drill changes — a link, not a
             client gesture. */}
         {housingToggleHref ? (
-          <a className="compositionToggle" href={housingToggleHref}>
+          <a
+            className="compositionToggle"
+            href={housingToggleHref}
+            onClick={housingClick}
+          >
             {housingHidden ? "Mostrar vivienda" : "Ocultar vivienda"}
           </a>
         ) : null}
@@ -202,6 +253,7 @@ export default function CompositionChart({
                 aria-label={`Ver desglose: ${COMPOSITION_BAND_LABELS[band.band]}`}
                 href={href}
                 key={band.band}
+                onClick={drillClick(BAND_DRILL_KEY[band.band])}
               >
                 {rects}
               </a>
@@ -225,7 +277,11 @@ export default function CompositionChart({
                 // Native SVG anchor to the debts drilldown (#145), like the asset
                 // bars — the hover overlay is pointer-events:none so it stays clickable.
                 return drillHrefs?.debts ? (
-                  <a aria-label="Ver desglose: Deudas" href={drillHrefs.debts}>
+                  <a
+                    aria-label="Ver desglose: Deudas"
+                    href={drillHrefs.debts}
+                    onClick={drillClick("debts")}
+                  >
                     {rects}
                   </a>
                 ) : (
