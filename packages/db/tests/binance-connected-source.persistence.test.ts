@@ -399,6 +399,111 @@ describe("syncPositions (Binance) materializes ONE asset per rung (S3, #248)", (
   });
 });
 
+describe("syncConnectedSource (Binance) carries a token's last-good price forward", () => {
+  test("a token re-synced with a null price keeps its prior value (never zeroed by a price miss)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectBinance(store);
+
+    // First sync: WBETH priced cleanly (2 × 1 655 € = 3 310 €) alongside BNB.
+    await store.syncConnectedSource({
+      sourceId,
+      positions: [
+        token({
+          externalId: "WBETH:flexible-earn",
+          symbol: "WBETH",
+          balance: "2",
+          unitPrice: "1655",
+          wallet: "flexible-earn",
+        }),
+        token({ externalId: "BNB:spot", symbol: "BNB", balance: "10", unitPrice: "500" }),
+      ],
+      syncedAt: "2026-06-21T07:00:00.000Z",
+    });
+
+    // Second sync: CoinGecko missed WBETH (null), BNB still priced. Without the
+    // carry-forward this would zero WBETH; with it, the last-good price survives.
+    await store.syncConnectedSource({
+      sourceId,
+      positions: [
+        token({
+          externalId: "WBETH:flexible-earn",
+          symbol: "WBETH",
+          balance: "2",
+          unitPrice: null,
+          wallet: "flexible-earn",
+        }),
+        token({ externalId: "BNB:spot", symbol: "BNB", balance: "10", unitPrice: "500" }),
+      ],
+      syncedAt: "2026-06-22T07:00:00.000Z",
+    });
+
+    const positions = await store.connectedSources.readPositions(sourceId);
+    const wbeth = positions.find((p) => p.kind === "token" && p.symbol === "WBETH");
+    expect(wbeth).toMatchObject({ unitPrice: "1655" }); // carried forward, not null
+
+    const asset = (await store.assets.readAssets()).find((a) => a.id === assetId)!;
+    expect(asset.currentValue.amountMinor).toBe(831_000); // 2×1 655 € + 10×500 € intact
+    store.close();
+  });
+
+  test("a token never priced before stays null on a null re-sync (nothing to carry)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectBinance(store);
+
+    await store.syncConnectedSource({
+      sourceId,
+      positions: [
+        token({ externalId: "JEX:spot", symbol: "JEX", balance: "100", unitPrice: null }),
+        token({ externalId: "BNB:spot", symbol: "BNB", balance: "10", unitPrice: "500" }),
+      ],
+      syncedAt: "2026-06-21T07:00:00.000Z",
+    });
+    await store.syncConnectedSource({
+      sourceId,
+      positions: [
+        token({ externalId: "JEX:spot", symbol: "JEX", balance: "100", unitPrice: null }),
+        token({ externalId: "BNB:spot", symbol: "BNB", balance: "10", unitPrice: "500" }),
+      ],
+      syncedAt: "2026-06-22T07:00:00.000Z",
+    });
+
+    const positions = await store.connectedSources.readPositions(sourceId);
+    const jex = positions.find((p) => p.kind === "token" && p.symbol === "JEX");
+    expect(jex).toMatchObject({ unitPrice: null }); // never priced → cannot fabricate
+
+    const asset = (await store.assets.readAssets()).find((a) => a.id === assetId)!;
+    expect(asset.currentValue.amountMinor).toBe(500_000); // only BNB counts
+    store.close();
+  });
+
+  test("a freshly-fetched price always wins over the carried-forward one", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectBinance(store);
+
+    await store.syncConnectedSource({
+      sourceId,
+      positions: [
+        token({ externalId: "BNB:spot", symbol: "BNB", balance: "10", unitPrice: "500" }),
+      ],
+      syncedAt: "2026-06-21T07:00:00.000Z",
+    });
+    await store.syncConnectedSource({
+      sourceId,
+      positions: [
+        token({ externalId: "BNB:spot", symbol: "BNB", balance: "10", unitPrice: "509" }),
+      ],
+      syncedAt: "2026-06-22T07:00:00.000Z",
+    });
+
+    const asset = (await store.assets.readAssets()).find((a) => a.id === assetId)!;
+    expect(asset.currentValue.amountMinor).toBe(509_000); // live quote, not the stale 500
+    store.close();
+  });
+});
+
 describe("manual crypto coexists with Binance (no duplicate detection)", () => {
   test("a hand-entered crypto investment and a Binance BTC both count", async () => {
     const store = await createInMemoryStore();
