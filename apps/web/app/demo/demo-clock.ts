@@ -1,8 +1,9 @@
 /**
- * Demo clock helpers (PRD #297, ADR 0029/0024). The demo's "now" is pinned by
- * `WORTHLINE_DEMO_NOW`, carried on the resolved {@link DemoContext}. These turn
- * that raw value into the `Date` / date-key the app and seed read. The demo cares
- * about the configured calendar day, not about UTC midnight: a value such as
+ * Demo clock helpers (PRD #297, ADR 0029/0024/0030). The demo's "now" is carried
+ * on the resolved {@link DemoContext}; these turn it into the `Date` / date-key
+ * the app and seed read, falling back to the real date when it is empty (the
+ * default — the demo is no longer pinned by an env var). The demo cares about the
+ * configured calendar day, not about UTC midnight: a value such as
  * `2026-06-20T00:30:00+02:00` must still seed and render as 2026-06-20.
  */
 

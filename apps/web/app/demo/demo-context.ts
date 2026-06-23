@@ -20,8 +20,9 @@ export interface DemoContext {
   /** Whether this request is the read-only demo (a logged-out persona). */
   enabled: boolean;
   /**
-   * The pinned "now" as the raw `WORTHLINE_DEMO_NOW` value (an ISO-8601 string or
-   * YYYY-MM-DD date-key). Only meaningful when `enabled`; empty when unset.
+   * The demo's "now" as an ISO-8601 string or YYYY-MM-DD date-key. Only
+   * meaningful when `enabled`; empty means the demo clock uses the real date
+   * (the default — the demo seeds relative to "now", so it stays current).
    */
   now: string;
   /** The persona to render — always a valid id, defaulting to familia. */

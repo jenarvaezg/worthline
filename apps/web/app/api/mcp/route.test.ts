@@ -318,17 +318,14 @@ describe("POST /api/mcp (hosted — auth configured)", () => {
 });
 
 describe("POST /api/mcp (demo mode)", () => {
-  const originalDemoNow = process.env.WORTHLINE_DEMO_NOW;
-
   beforeAll(() => {
-    // A logged-out persona cookie ⇒ the read-only demo, on a pinned clock.
+    // A logged-out persona cookie ⇒ the read-only demo (real-clock; seeded
+    // relative to "now", no env pin).
     mockPersonaCookie = "familia";
-    process.env.WORTHLINE_DEMO_NOW = "2026-06-20";
   });
 
   afterAll(() => {
     mockPersonaCookie = undefined;
-    process.env.WORTHLINE_DEMO_NOW = originalDemoNow;
   });
 
   test("list_scopes returns real demo scopes", { timeout: 30000 }, async () => {
