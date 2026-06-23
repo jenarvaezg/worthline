@@ -1,13 +1,10 @@
 /**
  * Multi-scope snapshot capture loop — integration test (PRD #120, R16, issue #136).
  *
- * The production dashboard load path (apps/web/app/load-dashboard.ts:152-170)
- * walks every scope returned by `listScopeOptions` and, for each, runs
- * `captureSnapshotForScope` (internally `planSnapshotCapture` +
- * `captureValuedNetWorthSnapshot`) then persists the result with
- * `store.snapshots.saveSnapshot`. Until now that loop was only exercised by
- * running the web app. This suite drives the exact same loop against a real
- * file-backed store so the end-to-end capture path is regression-covered:
+ * Exercises the extracted `captureDailySnapshotForWorkspace` (issue #529,
+ * PRD #528 S1) against a real file-backed store. This suite drives the same
+ * multi-scope capture loop the production dashboard load path uses,
+ * regression-covering the end-to-end capture path:
  *
  *  - household + 2 members, each scope getting its own ownership-weighted figures
  *  - the ADR 0008 reconciliation invariant holding for every scope's frozen rows
@@ -20,14 +17,10 @@
 import { afterEach, describe, expect, test } from "vitest";
 
 import type { WorthlineStore } from "@worthline/db";
-import type {
-  CaptureSnapshotOutput,
-  InvestmentCaptureDetail,
-  ScopeOption,
-} from "@worthline/domain";
+import { captureDailySnapshotForWorkspace } from "@worthline/db";
+import type { ScopeOption } from "@worthline/domain";
 import {
   assertSnapshotHoldingsReconcile,
-  captureSnapshotForScope,
   deriveMonthlyCloses,
   listScopeOptions,
 } from "@worthline/domain";
@@ -73,58 +66,7 @@ async function seedHousehold(store: WorthlineStore): Promise<void> {
   });
 }
 
-/**
- * Run exactly the load-dashboard multi-scope capture loop against a real store:
- * read the shared inputs once, walk every scope, capture and persist.
- * Returns the captures keyed by scope id so assertions can inspect what was
- * written without re-deriving it.
- */
-async function runCaptureLoop(
-  store: WorthlineStore,
-  now: string,
-): Promise<Map<string, CaptureSnapshotOutput>> {
-  const workspace = (await store.workspace.readWorkspace())!;
-  const assets = await store.assets.readAssets();
-  const liabilities = await store.liabilities.readLiabilities();
-  const scopes = listScopeOptions(workspace);
 
-  const investmentDetails = new Map<string, InvestmentCaptureDetail>(
-    (await store.snapshots.readPositions()).map((position) => [
-      position.assetId,
-      {
-        units: position.currentUnits,
-        ...(position.currentPricePerUnit
-          ? { unitPrice: position.currentPricePerUnit }
-          : {}),
-      },
-    ]),
-  );
-
-  const captures = new Map<string, CaptureSnapshotOutput>();
-
-  for (const scope of scopes) {
-    const capture = captureSnapshotForScope({
-      assets,
-      capturedAt: now,
-      existingSnapshots: await store.snapshots.readSnapshots(scope.id),
-      investmentDetails,
-      liabilities,
-      scope,
-      workspace,
-    });
-
-    if (capture) {
-      await store.snapshots.saveSnapshot({
-        holdings: capture.holdings,
-        replace: capture.replace,
-        snapshot: capture.snapshot,
-      });
-      captures.set(scope.id, capture);
-    }
-  }
-
-  return captures;
-}
 
 describe("multi-scope snapshot capture loop (integration)", () => {
   test("captures one ownership-weighted snapshot per scope: household + 2 members", async () => {
@@ -139,7 +81,7 @@ describe("multi-scope snapshot capture loop (integration)", () => {
       "member_jose",
     ]);
 
-    await runCaptureLoop(store, "2026-06-10T10:00:00.000Z");
+    await captureDailySnapshotForWorkspace(store, "2026-06-10T10:00:00.000Z");
 
     // Every scope accumulated exactly one snapshot for the day.
     const household = await store.snapshots.readSnapshots("household");
@@ -171,7 +113,7 @@ describe("multi-scope snapshot capture loop (integration)", () => {
     const store = await createFileBackedStore("worthline-capture-loop-");
     await seedHousehold(store);
 
-    await runCaptureLoop(store, "2026-06-10T10:00:00.000Z");
+    await captureDailySnapshotForWorkspace(store, "2026-06-10T10:00:00.000Z");
 
     for (const scopeId of ["household", "member_ana", "member_jose"]) {
       const snapshot = (await store.snapshots.readSnapshots(scopeId))[0]!;
@@ -226,7 +168,7 @@ describe("multi-scope snapshot capture loop (integration)", () => {
 
     for (const day of days) {
       await store.assets.updateAssetValuation("asset_cash", day.cashMinor);
-      await runCaptureLoop(store, day.now);
+      await captureDailySnapshotForWorkspace(store, day.now);
     }
 
     // Each scope independently accrues one snapshot per day across both months.
@@ -253,19 +195,17 @@ describe("multi-scope snapshot capture loop (integration)", () => {
     await seedHousehold(store);
 
     // First dashboard load of the day.
-    const morning = await runCaptureLoop(store, "2026-06-10T08:00:00.000Z");
-    // None of the morning captures replaced anything — first of the day.
-    for (const capture of morning.values()) {
-      expect(capture.replace).toBe(false);
+    await captureDailySnapshotForWorkspace(store, "2026-06-10T08:00:00.000Z");
+
+    // Snapshot now exists (no replace yet — this is the first).
+    for (const scopeId of ["household", "member_ana", "member_jose"]) {
+      const snapshots = await store.snapshots.readSnapshots(scopeId);
+      expect(snapshots).toHaveLength(1);
     }
 
     // Re-value mid-day and load again — the policy says recapture, replacing.
     await store.assets.updateAssetValuation("asset_cash", 120_000_00);
-    const evening = await runCaptureLoop(store, "2026-06-10T18:00:00.000Z");
-    // Every evening capture replaced the morning same-day snapshot.
-    for (const capture of evening.values()) {
-      expect(capture.replace).toBe(true);
-    }
+    await captureDailySnapshotForWorkspace(store, "2026-06-10T18:00:00.000Z");
 
     for (const scopeId of ["household", "member_ana", "member_jose"]) {
       const snapshots = await store.snapshots.readSnapshots(scopeId);
@@ -273,9 +213,8 @@ describe("multi-scope snapshot capture loop (integration)", () => {
       expect(snapshots).toHaveLength(1);
 
       const rows = await store.snapshots.readSnapshotHoldings({ scopeId });
-      // And exactly one set of frozen rows, all from the evening capture.
-      const eveningId = evening.get(scopeId)!.snapshot.id;
-      expect(rows.every((row) => row.snapshotId === eveningId)).toBe(true);
+      // All frozen rows belong to the single (evening) snapshot.
+      expect(rows.every((row) => row.snapshotId === snapshots[0]!.id)).toBe(true);
     }
 
     // The re-valued figures replaced the morning ones (household sees the full
