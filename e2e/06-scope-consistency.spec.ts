@@ -38,7 +38,12 @@ test("scope consistency: switch member scope → reconciled views → survives r
   const activeScopeLabel = async () =>
     (await scopeTabs.locator(".scopeTabBtn.active").textContent())?.trim() ?? "";
   const readHeadlineMinor = async () =>
-    parseEuroMinor(await page.locator(".headline strong").textContent());
+    parseEuroMinor(
+      await page
+        .getByRole("region", { name: "Resumen patrimonial" })
+        .locator(".headline strong")
+        .textContent(),
+    );
 
   await expect(scopeButtons.first()).toHaveText("Hogar");
   expect(await activeScopeLabel()).toBe("Hogar");
@@ -67,7 +72,9 @@ test("scope consistency: switch member scope → reconciled views → survives r
   await scopeTabs.getByRole("button", { name: selectedMemberLabel }).click();
   await expect(page).toHaveURL(/[?&]scope=/);
   expect(await activeScopeLabel()).toBe(selectedMemberLabel);
-  await expect(page.locator(".headline strong")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Resumen patrimonial" }).locator(".headline strong"),
+  ).toBeVisible();
 
   await page.goto("/patrimonio");
   await expect(page.getByRole("heading", { name: "Patrimonio" })).toBeVisible();
@@ -76,7 +83,9 @@ test("scope consistency: switch member scope → reconciled views → survives r
   await page.goto("/");
   await page.reload();
   await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
-  await expect(page.locator(".headline strong")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Resumen patrimonial" }).locator(".headline strong"),
+  ).toBeVisible();
   expect(await activeScopeLabel()).toBe(selectedMemberLabel);
 
   await page.goto("/patrimonio");
