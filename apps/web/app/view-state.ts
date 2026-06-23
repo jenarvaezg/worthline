@@ -1,4 +1,5 @@
-import type { NetWorthFraming } from "@worthline/domain";
+import type { CompositionRange, NetWorthFraming } from "@worthline/domain";
+import { COMPOSITION_RANGES } from "@worthline/domain";
 
 /**
  * Pure URL ⇄ view-state mirror (S2, #518, ADR 0036 / interaction-patterns §3).
@@ -65,9 +66,59 @@ export function writeViewParam<T extends string>(
   return qs ? `?${qs}` : "";
 }
 
+/**
+ * Rebuild a (relative or absolute) href so it carries the given view-state
+ * edits, with the path, every untouched param and the hash preserved and the
+ * origin dropped (returns a relative href). Each edit sets — or, on the spec's
+ * fallback, OMITS — one param via `writeViewParam`, applied in order.
+ *
+ * The S3 range island uses it to retarget a server-rendered link to BOTH the
+ * range it just toggled and the framing the sibling Vista island (#518) may have
+ * pushed since render: each island only writes its own param to the URL, so a
+ * link rebuilt from the live URL composes their states without either island
+ * referencing the other (interaction-patterns §3). Pure (no `window`) so it unit
+ * tests in node; the `"http://_"` base only resolves a relative input.
+ */
+export function retargetHref(
+  href: string,
+  edits: ReadonlyArray<readonly [ViewParamSpec<string>, string]>,
+): string {
+  const url = new URL(href, "http://_");
+  let search = url.search;
+  for (const [spec, value] of edits) {
+    search = writeViewParam(search, spec, value);
+  }
+
+  return `${url.pathname}${search}${url.hash}`;
+}
+
+/**
+ * Window event a view-state island fires right after it `pushState`s a change,
+ * so the OTHER islands on the page reconcile with the new URL. `pushState` fires
+ * no native event, so two islands that both mirror to the URL (#518 framing,
+ * #519 range) cannot otherwise observe each other's writes. Each island
+ * dispatches this on toggle and re-reads its value from the URL on hearing it —
+ * the URL stays the single source of truth (interaction-patterns §3); the event
+ * is only the "it changed, re-read" nudge. Back/Forward already nudge via the
+ * native `popstate`, which islands listen to alongside this.
+ */
+export const VIEW_STATE_CHANGE_EVENT = "worthline:viewstatechange";
+
 /** The Vista framing toggle (#518): net worth (default) ↔ liquid net worth. */
 export const FRAMING_VIEW_PARAM: ViewParamSpec<NetWorthFraming> = {
   key: "view",
   allowed: ["total", "liquid"],
   fallback: "total",
+};
+
+/**
+ * The composition chart's temporal range pills (#144, S3 #519): 1A/3A/5A windows
+ * with `all` (full history) as the OMITTED default — matching `parseRangeParam`
+ * and `compositionUrl`, so a client toggle reproduces the exact URL the server
+ * link used to.
+ */
+export const RANGE_VIEW_PARAM: ViewParamSpec<CompositionRange> = {
+  key: "range",
+  allowed: COMPOSITION_RANGES,
+  fallback: "all",
 };

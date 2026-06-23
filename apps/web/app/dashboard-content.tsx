@@ -35,7 +35,7 @@ import {
 } from "./intake";
 import { loadDashboard } from "./load-dashboard";
 import type { RefreshPricesResult } from "./load-dashboard";
-import CompositionChart from "./composition-chart";
+import CompositionPanel from "./composition-panel";
 import CompositionRangeControls from "./composition-range-controls";
 import DrilldownPanel from "./drilldown-panel";
 import FramingPanel, { type FramingTab } from "./framing-panel";
@@ -753,30 +753,50 @@ export default async function DashboardContent({
         id="composicion"
         aria-label="Evolución del patrimonio"
       >
-        <div className="panelHeader">
-          <h2>Evolución</h2>
-          <div className="historyControls">
-            <CompositionRangeControls options={rangeOptions} selected={selectedRange} />
-            <Link className="panelAction" href="/historico" scroll={false}>
-              Ver histórico →
-            </Link>
-          </div>
-        </div>
         {selectedDrill && state.drilldown ? (
-          <DrilldownPanel
-            backHref={composicionHomeUrl}
-            currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
-            drilldown={state.drilldown}
-            privacyMode={privacyMode}
-          />
+          // A drill stays server-rendered (its window deep-links): the range
+          // pills remain plain links here — they re-window the open drill on the
+          // server, the case S3's client island deliberately does not cover.
+          <>
+            <div className="panelHeader">
+              <h2>Evolución</h2>
+              <div className="historyControls">
+                <CompositionRangeControls
+                  options={rangeOptions}
+                  selected={selectedRange}
+                />
+                <Link className="panelAction" href="/historico" scroll={false}>
+                  Ver histórico →
+                </Link>
+              </div>
+            </div>
+            <DrilldownPanel
+              backHref={composicionHomeUrl}
+              currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
+              drilldown={state.drilldown}
+              privacyMode={privacyMode}
+            />
+          </>
         ) : (
-          <CompositionChart
+          // No drill → the range pills + chart are one client island (S3 #519):
+          // toggling the window is instant, no round-trip (interaction-patterns
+          // §2). The server still shipped every range's series and the right
+          // initial window from the URL.
+          <CompositionPanel
             currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
             drillHrefs={drillHrefs}
+            historicoLink={
+              <Link className="panelAction" href="/historico" scroll={false}>
+                Ver histórico →
+              </Link>
+            }
             housingMode={selectedHousingMode}
             housingToggleHref={housingToggleHref}
-            points={state.compositionSeries}
+            initialRange={selectedRange}
+            initialView={selectedView}
             privacyMode={privacyMode}
+            rangeOptions={rangeOptions}
+            seriesByRange={state.compositionSeriesByRange}
           />
         )}
       </section>

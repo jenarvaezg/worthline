@@ -142,6 +142,14 @@ export interface LoadDashboardResult extends DashboardState {
    */
   compositionRanges: CompositionRange[];
   /**
+   * The composition series precomputed for EACH offered range (S3 #519, ADR
+   * 0036): the client range island switches between these with no round-trip
+   * (the #518 pattern — ship the alternatives, toggle in the browser). Keyed by
+   * exactly the `compositionRanges`; the active range's entry equals
+   * `compositionSeries`. Empty `{}` when there is no scope.
+   */
+  compositionSeriesByRange: Partial<Record<CompositionRange, CompositionSeriesPoint[]>>;
+  /**
    * The two hero delta chips (#244), each pre-computed in the active framing —
    * the change vs the previous snapshot and vs the prior-month close, with
    * percent. The page renders these directly; it never re-derives a figure from
@@ -354,6 +362,32 @@ export async function loadDashboard(
     earliestMonthKey ? monthsBetween(earliestMonthKey, input.today.slice(0, 7)) : 0,
   );
 
+  // ── 4b′. Per-range series (S3 #519) — the alternatives the client switches ──
+  // One series per OFFERED range, so a range pill toggles client-side with no
+  // round-trip (interaction-patterns §2). Each builds from the FULL rows: the
+  // series only plots row-backed closes inside its own window, so a per-range
+  // window over the full rows is byte-identical to windowing the rows first. The
+  // active range reuses the series already built above instead of rebuilding it,
+  // and is ALWAYS keyed — even if it is not an offered pill (e.g. a deep-link to
+  // a range narrower than the history) — so the island never renders an empty
+  // chart for the window the URL asked for.
+  const seriesRanges = compositionRanges.includes(activeRange)
+    ? compositionRanges
+    : [...compositionRanges, activeRange];
+  const compositionSeriesByRange = Object.fromEntries(
+    seriesRanges.map((offered) => [
+      offered,
+      offered === activeRange
+        ? compositionSeries
+        : buildCompositionSeries({
+            range: offered,
+            rows: holdingRows,
+            snapshots,
+            today: input.today,
+          }),
+    ]),
+  ) as Partial<Record<CompositionRange, CompositionSeriesPoint[]>>;
+
   // ── 4c. Drilldown (#76, #77, #145) — drill view state from frozen rows ───
   // Reads the SAME windowed rows the composition chart does (§4a), so a drill
   // always mirrors the chart's window — one window owner, two consumers.
@@ -407,6 +441,7 @@ export async function loadDashboard(
     ...state,
     compositionRanges,
     compositionSeries,
+    compositionSeriesByRange,
     drilldown,
     headlineDeltas,
     needsOnboarding: false,
@@ -443,6 +478,7 @@ function buildEmptyResult(
     ...state,
     compositionRanges: [],
     compositionSeries: [],
+    compositionSeriesByRange: {},
     drilldown: null,
     headlineDeltas: { sinceMonthlyClose: null, sincePrevious: null },
     needsOnboarding: true,
