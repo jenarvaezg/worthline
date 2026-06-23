@@ -3,6 +3,7 @@ import {
   binanceCurveStartDate,
   binanceValueAtDate,
   buildSnapshotAtDate,
+  carryForwardTokenUnitPrices,
   coinValue,
   completedMonthEndDates,
   createNetWorthSnapshot,
@@ -335,17 +336,32 @@ export function createConnectedSourceSeams(
       // One transaction so the wholesale replace + every coin ripple commit or
       // roll back together.
       await ctx.transaction(async () => {
-        // Diff BEFORE the wholesale replace reassigns ids: the set of external
-        // ids already mirrored — the coins already on the timeline.
+        // Read the prior positions ONCE: they seed both the new-coin diff below AND
+        // the token price carry-forward — the wholesale replace reassigns ids, so
+        // this must run first.
+        const previousPositions = await stores.connectedSources.readPositions(
+          params.sourceId,
+        );
+
+        // Diff BEFORE the wholesale replace: the set of external ids already
+        // mirrored — the coins already on the timeline.
         const knownExternalIds = new Set(
-          (await stores.connectedSources.readPositions(params.sourceId)).map(
-            (position) => position.externalId,
-          ),
+          previousPositions.map((position) => position.externalId),
+        );
+
+        // A token this sync could not price arrives with unitPrice null, which would
+        // value it 0 — silently zeroing a balance the account still holds on a single
+        // transient price miss (the WBETH-vanished bug). Carry each token's last-good
+        // price forward so a valued holding is never zeroed by a one-off CoinGecko
+        // miss; it self-heals on the next clean price.
+        const positions = carryForwardTokenUnitPrices(
+          params.positions,
+          previousPositions,
         );
 
         await stores.connectedSources.syncPositions(
           params.sourceId,
-          params.positions,
+          positions,
           params.syncedAt,
         );
 

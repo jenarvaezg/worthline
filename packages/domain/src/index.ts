@@ -188,6 +188,7 @@ export type {
   ValuationBasis,
 } from "./connected-source";
 export {
+  carryForwardTokenUnitPrices,
   coinCollectionValueAtDate,
   coinPositionSnapshotInput,
   coinValue,
