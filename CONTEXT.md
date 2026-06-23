@@ -284,7 +284,8 @@ form. UI label: "Puesta al día". Investments are excluded — their values are 
 **Snapshot**:
 A frozen capture, on a date, of a scope's net worth figures and of each holding's
 value behind them (for investments, also units and unit price). Captured
-automatically — at most one per scope per day, the day's latest capture winning.
+automatically — at most one per scope per day, the day's latest capture winning;
+recorded whether or not anyone signs in, finalising at the day's close (ADR 0037).
 Not a user act. Frozen means frozen against **cosmetic** edits to the present: a
 rename or a deletion of a holding never alters what a past snapshot captured.
 Declaring a dated fact about the past — a backdated **operation**, a
