@@ -1,5 +1,6 @@
 import { formatMoneyMinorPrivacy, LIQUIDITY_TIER_LABELS } from "@worthline/domain";
 import type { DrilldownKey, DrilldownState, LiquidityTier } from "@worthline/domain";
+import type { MouseEvent } from "react";
 
 /**
  * The drill view (#76 liquid, #77 rest + housing) — rendered server-side IN
@@ -68,21 +69,44 @@ export default function DrilldownPanel({
   backHref,
   currency,
   drilldown,
+  onBack,
   privacyMode = false,
 }: {
   backHref: string;
   currency: string;
   drilldown: DrilldownState;
+  /**
+   * Close the drill as CLIENT state (S4 #520): when set, a plain left-click on
+   * the breadcrumb is intercepted and the chart returns in place — no
+   * round-trip. The anchor keeps its `href` for the no-JS, deep-link and
+   * middle-click paths (§3, §8).
+   */
+  onBack?: () => void;
   privacyMode?: boolean;
 }) {
   const { key, stack, holdings } = drilldown;
   const copy = GROUP_COPY[key];
   const stackCopy = copy.stackCopy;
 
+  const backClick = (event: MouseEvent<HTMLAnchorElement>): void => {
+    if (!onBack) return;
+    if (
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+    event.preventDefault();
+    onBack();
+  };
+
   return (
     <div className="drillPanel">
       <div className="drillHeader">
-        <a className="drillBreadcrumb" href={backHref}>
+        <a className="drillBreadcrumb" href={backHref} onClick={backClick}>
           ← Composición
         </a>
         <h3>{copy.title}</h3>

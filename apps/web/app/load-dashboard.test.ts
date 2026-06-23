@@ -1237,3 +1237,59 @@ describe("loadDashboard — composition series per range", () => {
     store.close();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Initial matrix cross (S4 #520) — the cells the client island seeds its cache
+// with: the current column (every mode at the active range) + the chart row.
+// ---------------------------------------------------------------------------
+
+describe("loadDashboard — initial matrix cross", () => {
+  test("ships the current column (chart + every drill at the active range) keyed by cellKey", async () => {
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
+
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    // The active cell (chart, all) and the whole column of drills at `all`.
+    expect(result.matrixCells["chart:all"]?.kind).toBe("chart");
+    expect(result.matrixCells["liquid:all"]?.kind).toBe("drill");
+    expect(result.matrixCells["rest:all"]?.kind).toBe("drill");
+    expect(result.matrixCells["housing:all"]?.kind).toBe("drill");
+    expect(result.matrixCells["debts:all"]?.kind).toBe("drill");
+    // The active chart cell equals the standalone series (byte-identical render).
+    const chart = result.matrixCells["chart:all"];
+    if (chart?.kind === "chart") {
+      expect(chart.series).toEqual(result.compositionSeries);
+    }
+
+    store.close();
+  });
+
+  test("no-workspace result carries an empty matrix", async () => {
+    const store = await createInMemoryStore();
+
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    expect(result.needsOnboarding).toBe(true);
+    expect(result.matrixCells).toEqual({});
+
+    store.close();
+  });
+});

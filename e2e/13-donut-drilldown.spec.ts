@@ -61,9 +61,11 @@ test("donut segment click lands in the drill view, preserving the Vista", async 
   if ((await segmentLink.count()) > 0) {
     await expect(segmentLink).toHaveAttribute("href", /view=liquid/);
     await expect(segmentLink).toHaveAttribute("href", /drill=(liquid|rest|housing)/);
-    // A thin annular wedge has no reliable bounding-box center to aim a
-    // pointer at; a dispatched click activates the native anchor the same
-    // way (no client JS involved either way).
+    // A thin annular wedge has no reliable bounding-box center to aim a pointer
+    // at, so we DISPATCH a click — which activates the native anchor (the island
+    // intercepts a REAL click to open the drill cross-panel without a round-trip,
+    // S4 #520; that client path is exercised by a real click in journey 11). The
+    // outcome — landing in the drill with the Vista intact — holds either way.
     await segmentLink.dispatchEvent("click");
   } else {
     // No holdings yet ⇒ no donut. The drill URL is still bookmarkable.
