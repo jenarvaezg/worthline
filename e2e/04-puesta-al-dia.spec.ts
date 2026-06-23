@@ -38,7 +38,10 @@ test("puesta al dia: batch update two assets → values persist → headline cha
   //    (500€ seed + 5000€ test 03 + 3000€ just created = 8500€)
   await page.goto("/");
   const headlineBeforeMinor = parseEuroMinor(
-    await page.locator(".headline strong").textContent(),
+    await page
+      .getByRole("region", { name: "Resumen patrimonial" })
+      .locator(".headline strong")
+      .textContent(),
   );
   expect(headlineBeforeMinor).toBe(8500_00);
 
@@ -61,7 +64,10 @@ test("puesta al dia: batch update two assets → values persist → headline cha
   //    (500€ seed + 8000€ + 4000€ = 12500€)
   await page.goto("/");
   const headlineAfterMinor = parseEuroMinor(
-    await page.locator(".headline strong").textContent(),
+    await page
+      .getByRole("region", { name: "Resumen patrimonial" })
+      .locator(".headline strong")
+      .textContent(),
   );
   expect(headlineAfterMinor).toBe(12500_00);
   expect(headlineAfterMinor).toBeGreaterThan(headlineBeforeMinor);

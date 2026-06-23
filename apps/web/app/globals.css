@@ -5006,3 +5006,17 @@ td.rowActions > * {
   margin-top: 12px;
   width: 100%;
 }
+
+/* Visually hidden but available to assistive tech — for aria-live announce
+   regions on client-side view toggles (#518, interaction-patterns §8). */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
