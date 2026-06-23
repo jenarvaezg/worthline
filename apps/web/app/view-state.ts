@@ -67,32 +67,6 @@ export function writeViewParam<T extends string>(
 }
 
 /**
- * Rebuild a (relative or absolute) href so it carries the given view-state
- * edits, with the path, every untouched param and the hash preserved and the
- * origin dropped (returns a relative href). Each edit sets — or, on the spec's
- * fallback, OMITS — one param via `writeViewParam`, applied in order.
- *
- * The S3 range island uses it to retarget a server-rendered link to BOTH the
- * range it just toggled and the framing the sibling Vista island (#518) may have
- * pushed since render: each island only writes its own param to the URL, so a
- * link rebuilt from the live URL composes their states without either island
- * referencing the other (interaction-patterns §3). Pure (no `window`) so it unit
- * tests in node; the `"http://_"` base only resolves a relative input.
- */
-export function retargetHref(
-  href: string,
-  edits: ReadonlyArray<readonly [ViewParamSpec<string>, string]>,
-): string {
-  const url = new URL(href, "http://_");
-  let search = url.search;
-  for (const [spec, value] of edits) {
-    search = writeViewParam(search, spec, value);
-  }
-
-  return `${url.pathname}${search}${url.hash}`;
-}
-
-/**
  * Window event a view-state island fires right after it `pushState`s a change,
  * so the OTHER islands on the page reconcile with the new URL. `pushState` fires
  * no native event, so two islands that both mirror to the URL (#518 framing,

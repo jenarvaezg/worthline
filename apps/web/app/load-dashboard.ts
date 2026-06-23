@@ -47,6 +47,9 @@ import type {
   LocalPersistenceStatus,
 } from "@worthline/domain";
 
+import { buildMatrixCells, type MatrixCellPayload } from "./dashboard-cells";
+import { cellKey, crossOf, parseMode, type MatrixCoord } from "./dashboard-matrix";
+
 export interface RefreshPricesResult {
   /** Price cache after refresh (always populated — stale cache on failure). */
   priceCache: AssetPrice[];
@@ -149,6 +152,14 @@ export interface LoadDashboardResult extends DashboardState {
    * `compositionSeries`. Empty `{}` when there is no scope.
    */
   compositionSeriesByRange: Partial<Record<CompositionRange, CompositionSeriesPoint[]>>;
+  /**
+   * The initial matrix cross (S4 #520, ADR 0038): the composition cells (chart
+   * series / drilldowns) reachable in one click from the URL's cell — the
+   * current column + the full chart row — keyed by `cellKey`. The client island
+   * seeds its cache with these and prefetches the next cross from the read API.
+   * Empty `{}` when there is no scope.
+   */
+  matrixCells: Record<string, MatrixCellPayload>;
   /**
    * The two hero delta chips (#244), each pre-computed in the active framing —
    * the change vs the previous snapshot and vs the prior-month close, with
@@ -393,24 +404,47 @@ export async function loadDashboard(
   // always mirrors the chart's window — one window owner, two consumers.
   // Only currently-held holdings get per-holding cards now (this design pass):
   // Papelera (soft-deleted, #268) AND retired holdings are dropped from the
-  // grid, their history living on in the aggregate. Read trash only when a
-  // drill is open.
-  const trash =
-    drill && selectedScope ? await store.readTrash() : { assets: [], liabilities: [] };
+  // grid, their history living on in the aggregate. Trash is read whenever there
+  // is a scope now (S4 #520): the initial matrix cross always ships the drill
+  // COLUMN, so the drill builders always need the trashed ids.
+  const trash = selectedScope ? await store.readTrash() : { assets: [], liabilities: [] };
+  const currentHoldingIds = [
+    ...assets.map((asset) => asset.id),
+    ...liabilities.map((liability) => liability.id),
+  ];
+  const trashedHoldingIds = [
+    ...trash.assets.map((asset) => asset.id),
+    ...trash.liabilities.map((liability) => liability.id),
+  ];
   const drilldown =
     drill && selectedScope
       ? buildDrilldown(drill, {
-          currentHoldingIds: [
-            ...assets.map((asset) => asset.id),
-            ...liabilities.map((liability) => liability.id),
-          ],
+          currentHoldingIds,
           rows: windowedRows,
-          trashedHoldingIds: [
-            ...trash.assets.map((asset) => asset.id),
-            ...trash.liabilities.map((liability) => liability.id),
-          ],
+          trashedHoldingIds,
         })
       : null;
+
+  // ── 4d. Initial matrix cross (S4 #520, ADR 0038) — the cells the island can
+  // reach in one click from the URL's cell: the current column (every mode at
+  // the active range) + the full chart row (every offered range), so opening any
+  // drill or toggling any range is instant with no round-trip. The island
+  // prefetches the next cross from /api/dashboard/cells on each move.
+  const currentCell: MatrixCoord = { mode: parseMode(drill), range: activeRange };
+  const shipByKey = new Map<string, MatrixCoord>();
+  for (const coord of [
+    ...crossOf(currentCell, compositionRanges),
+    ...compositionRanges.map((offered) => ({ mode: "chart" as const, range: offered })),
+  ]) {
+    shipByKey.set(cellKey(coord), coord);
+  }
+  const matrixCells = selectedScope
+    ? buildMatrixCells(
+        [...shipByKey.values()],
+        { snapshots, holdingRows, currentHoldingIds, trashedHoldingIds },
+        input.today,
+      )
+    : {};
 
   // ── 5. Compute dashboard state ────────────────────────────────────────────
   const state = prepareDashboardState({
@@ -444,6 +478,7 @@ export async function loadDashboard(
     compositionSeriesByRange,
     drilldown,
     headlineDeltas,
+    matrixCells,
     needsOnboarding: false,
     pricingErrors,
   };
@@ -481,6 +516,7 @@ function buildEmptyResult(
     compositionSeriesByRange: {},
     drilldown: null,
     headlineDeltas: { sinceMonthlyClose: null, sincePrevious: null },
+    matrixCells: {},
     needsOnboarding: true,
     pricingErrors,
   };

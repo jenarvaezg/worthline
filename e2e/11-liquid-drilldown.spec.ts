@@ -25,26 +25,45 @@ test("liquid drilldown: band/legend link → drill panel → breadcrumb back", a
   //    renders.
   const legendLink = page.locator('.compositionLegend a[href*="drill=liquid"]');
   await expect(legendLink.first()).toHaveAttribute("href", /drill=liquid/);
+
+  // Tag the live document; surviving the open+close round-trip PROVES the drill
+  // is CLIENT state (S4 #520) — no document navigation, so scroll is preserved
+  // (interaction-patterns §2/§5). The round-trip the S0 baseline #516 measured
+  // is gone.
+  await page.evaluate(() => {
+    (window as unknown as { __wlNoReload?: string }).__wlNoReload = "kept";
+  });
+
   await legendLink.first().click();
 
   await expect(page).toHaveURL(/drill=liquid/);
 
-  // 3. The drill panel renders in place of the decomposition chart:
-  //    breadcrumb + heading, and either the cash-vs-market chart or its
-  //    placeholder (single-day data ⇒ placeholder is correct behavior).
+  // 3. The drill panel renders in place of the decomposition chart — instantly,
+  //    from the shipped matrix cross, with no new document:
   await expect(page.locator(".drillPanel")).toBeVisible();
   await expect(page.locator(".drillHeader h3")).toHaveText("Líquido · caja y mercado");
   await expect(
     page.locator(".drillChart").or(page.locator(".drillEmpty")).first(),
   ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { __wlNoReload?: string }).__wlNoReload,
+    ),
+  ).toBe("kept");
 
-  // 4. Breadcrumb returns home — no drill param, decomposition slot back.
+  // 4. Breadcrumb returns home — no drill param, decomposition slot back, still
+  //    client-side (the sentinel survives).
   await page.locator(".drillBreadcrumb").click();
   await expect(page).not.toHaveURL(/drill=/);
   await expect(
     page.getByRole("region", { name: "Evolución del patrimonio" }),
   ).toBeVisible();
   await expect(page.locator(".drillPanel")).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { __wlNoReload?: string }).__wlNoReload,
+    ),
+  ).toBe("kept");
 });
 
 test("liquid drilldown: the selected Vista survives entering and leaving", async ({

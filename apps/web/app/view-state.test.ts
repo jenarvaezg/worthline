@@ -4,7 +4,6 @@ import {
   FRAMING_VIEW_PARAM,
   RANGE_VIEW_PARAM,
   readViewParam,
-  retargetHref,
   writeViewParam,
   type ViewParamSpec,
 } from "./view-state";
@@ -109,52 +108,5 @@ describe("RANGE_VIEW_PARAM", () => {
     expect(writeViewParam("?view=liquid&range=1y", RANGE_VIEW_PARAM, "all")).toBe(
       "?view=liquid",
     );
-  });
-});
-
-describe("retargetHref", () => {
-  // The island rebuilds a server-rendered link to carry the live view-state: the
-  // range it just toggled AND the framing the sibling island (#518) may have
-  // pushed — both via the same pure spec, so the two islands compose through the
-  // URL without referencing each other (interaction-patterns §3).
-  test("rewrites a single param in place, preserving path, other params and hash", () => {
-    expect(
-      retargetHref("/?view=liquid&range=3y#composicion", [[RANGE_VIEW_PARAM, "1y"]]),
-    ).toBe("/?view=liquid&range=1y#composicion");
-  });
-
-  test("omits a param set back to its default (clean URL)", () => {
-    expect(
-      retargetHref("/?view=liquid&range=3y#composicion", [[RANGE_VIEW_PARAM, "all"]]),
-    ).toBe("/?view=liquid#composicion");
-  });
-
-  test("applies several edits in order (range + framing compose)", () => {
-    expect(
-      retargetHref("/?range=3y", [
-        [RANGE_VIEW_PARAM, "1y"],
-        [FRAMING_VIEW_PARAM, "liquid"],
-      ]),
-    ).toBe("/?range=1y&view=liquid");
-  });
-
-  test("keeps a non-root pathname", () => {
-    expect(retargetHref("/historico?range=3y", [[RANGE_VIEW_PARAM, "1y"]])).toBe(
-      "/historico?range=1y",
-    );
-  });
-
-  test("keeps the hash even when no query params remain", () => {
-    expect(retargetHref("/?range=3y#composicion", [[RANGE_VIEW_PARAM, "all"]])).toBe(
-      "/#composicion",
-    );
-  });
-
-  test("returns a relative href even when given an absolute URL", () => {
-    expect(
-      retargetHref("http://localhost:3000/?range=3y#composicion", [
-        [RANGE_VIEW_PARAM, "1y"],
-      ]),
-    ).toBe("/?range=1y#composicion");
   });
 });
