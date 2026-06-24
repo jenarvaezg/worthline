@@ -100,3 +100,18 @@ To set up Google sign-in:
 
 No auth, telemetry, cloud sync, personal spreadsheet data, or machine-specific absolute paths
 are required for the bootstrap slice.
+
+## Contributing
+
+Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) — the
+short version is: run `npm run verify` before you push, follow Conventional
+Commits, and respect the design-system and interaction-pattern docs for any UI
+change.
+
+## License
+
+Copyright © 2026 Jose Enrique Narváez Gago.
+
+worthline is licensed under the [GNU Affero General Public License v3.0](LICENSE)
+(AGPL-3.0-only). If you run a modified version as a network service, you must make
+your source available under the same terms.
