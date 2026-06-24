@@ -33,27 +33,12 @@ export interface ViewTransitionLinkProps extends React.ComponentProps<typeof Lin
   href: string;
 }
 
-export default function ViewTransitionLink({
-  href,
-  onClick,
-  ...rest
-}: ViewTransitionLinkProps) {
+export default function ViewTransitionLink({ href, ...rest }: ViewTransitionLinkProps) {
   const pathname = usePathname();
   const { eligible, transitionTypes } = classifyTransition(pathname, href);
   const vtProps =
     supportsViewTransitions() && eligible ? { transitionTypes } : ({} as object);
 
-  function handleClick(e: React.MouseEvent<HTMLAnchorElement>) {
-    // Dispatch a CustomEvent so tests (and devtools) can observe the classified
-    // transition types without instrumenting browser internals.
-    if (supportsViewTransitions() && eligible) {
-      document.dispatchEvent(
-        new CustomEvent("wl:view-transition", { detail: { transitionTypes } }),
-      );
-    }
-    onClick?.(e);
-  }
-
   // rest spread first so our computed href/transitionTypes win over any caller value.
-  return <Link {...rest} href={href} onClick={handleClick} {...vtProps} />;
+  return <Link {...rest} href={href} {...vtProps} />;
 }
