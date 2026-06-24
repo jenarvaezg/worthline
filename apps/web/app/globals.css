@@ -139,6 +139,140 @@ button:focus-visible,
   }
 }
 
+/* ── View Transitions (#517, interaction-patterns §5, ADR 0036) ──────────────
+ *
+ * Next 16 / React 19 activates the View Transitions API automatically for
+ * route navigations when `experimental.viewTransition` is on.  These rules
+ * style the default cross-fade.
+ *
+ * Directional slide-forward / slide-back (classifyTransition in
+ * view-transitions.ts) are scoped to the follow-on issue and are NOT wired
+ * yet — no NavigationTracker island exists in this PR to pass transitionTypes.
+ * Shipping untriggerable CSS rules would be misleading, so the slide rules
+ * live only in the pure module and tests until that island lands.
+ *
+ * Graceful degradation: the `@view-transition` at-rule and
+ * `::view-transition-*` pseudo-elements are simply ignored in browsers that
+ * do not support the API — no broken layout.
+ *
+ * prefers-reduced-motion: the blanket `animation-duration: 0.01ms` rule above
+ * collapses CSS keyframe animations to imperceptible.  As an explicit CSS
+ * contract (and because browser VT snapshot compositing is a separate step),
+ * the block below also nullifies the pseudo-element animations directly.
+ */
+
+/* Default transition: a clean cross-fade between old and new page roots.
+ * NOTE: `@view-transition { navigation: auto }` is intentionally omitted.
+ * Next 16 with `experimental.viewTransition: true` uses React's same-document
+ * transition mechanism (startViewTransition wrapping router navigations).
+ * Adding `navigation: auto` activates the separate cross-document MPA path,
+ * which conflicts and throws "Transition was skipped" when a new navigation
+ * fires while a same-document transition is already in progress. */
+::view-transition-old(root) {
+  animation: 200ms ease-out both wl-fade-out;
+}
+
+::view-transition-new(root) {
+  animation: 200ms ease-in both wl-fade-in;
+}
+
+/* Anchor the topbar so it does not fade with the page content. */
+.topbar {
+  view-transition-name: topbar;
+}
+
+::view-transition-old(topbar),
+::view-transition-new(topbar) {
+  animation: none;
+}
+
+/* Explicit reduced-motion contract: nullify VT animations regardless of
+ * whether the browser's own startViewTransition respects the media query. */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}
+
+@keyframes wl-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes wl-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Directional slide transitions for top-level section navigation
+ * (#517, view-transitions.ts classifyTransition → router.push transitionTypes).
+ *
+ * CSS transition-type selectors (.slide-forward / .slide-back) fire when
+ * ViewTransitionLink calls router.push(href, { transitionTypes: ["slide-forward"] }).
+ * The default cross-fade applies to all other navigations (no type selector).
+ *
+ * prefers-reduced-motion: the blanket `animation: none` rule above already
+ * collapses these; the explicit block is here as a readable contract. */
+::view-transition-old(.slide-forward) {
+  animation: 200ms ease-in both wl-slide-out-left;
+}
+::view-transition-new(.slide-forward) {
+  animation: 200ms ease-out both wl-slide-in-right;
+}
+
+::view-transition-old(.slide-back) {
+  animation: 200ms ease-in both wl-slide-out-right;
+}
+::view-transition-new(.slide-back) {
+  animation: 200ms ease-out both wl-slide-in-left;
+}
+
+@keyframes wl-slide-out-left {
+  to {
+    translate: -40px;
+    opacity: 0;
+  }
+}
+
+@keyframes wl-slide-in-right {
+  from {
+    translate: 40px;
+    opacity: 0;
+  }
+}
+
+@keyframes wl-slide-out-right {
+  to {
+    translate: 40px;
+    opacity: 0;
+  }
+}
+
+@keyframes wl-slide-in-left {
+  from {
+    translate: -40px;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(.slide-forward),
+  ::view-transition-new(.slide-forward),
+  ::view-transition-old(.slide-back),
+  ::view-transition-new(.slide-back) {
+    animation: none;
+  }
+}
+
 input,
 select,
 textarea {
