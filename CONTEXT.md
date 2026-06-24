@@ -175,6 +175,35 @@ _Avoid_: drill-down (the per-**position** second level is a different concept), 
 **Operation**:
 A buy or a sell against one **investment**: date, units, price per unit, fees.
 
+**Return**:
+How an **investment**'s value has grown relative to what was put into it. worthline
+reports three complementary measures — **simple gain**, **money-weighted return** and
+**time-weighted return** — per **holding** and for the whole portfolio. Like **exposure**,
+a return is a present-time derived figure: it is computed from **operations** and
+**snapshots**, never stored, and never a figure the net-worth math reads. It carries its
+honest limits: dividends/distributions are not modelled (a distributing fund understates),
+and any time-series measure starts at the first **snapshot** — there is no return before
+history began.
+_Avoid_: rentabilidad without saying which measure (the three are not interchangeable),
+performance.
+
+**Simple gain**:
+A **holding**'s **realized** plus **unrealized** result, in money and as a percentage of
+its cost basis. The plain "how much am I up". Not time-aware — +30% says nothing about
+over how long. _Unrealized_ is current market value minus the cost basis of units still
+held; _realized_ is proceeds minus the cost of units already sold.
+_Avoid_: gain (unqualified — say realized / unrealized / total).
+
+**Money-weighted return**:
+The annualized rate (an **IRR** / XIRR over the **operation** cashflows plus current value)
+that reflects the investor's own contribution timing — the "how am _I_ doing" number, and
+the default **return**. Distinct from the **time-weighted return**, which strips timing out.
+
+**Time-weighted return**:
+The chain-linked sub-period return (**Modified Dietz** over **monthly closes**) that removes
+the effect of cashflow timing — the measure comparable to a benchmark index. Distinct from
+the **money-weighted return** (IRR), which keeps timing in. See ADR 0040.
+
 **Statement**:
 A file an external broker exports listing one **investment**'s movements (e.g. a
 MyInvestor orders export for a single ISIN). The user uploads it against a chosen
@@ -512,6 +541,7 @@ _Avoid_: connected source, account, financial advisor.
 - A **demo mode** deployment shows the live app over a fictional, read-only workspace; a **persona** selects which fictional workspace is shown. Both are presentation concerns — they add no figure and change no calculation, and exist only in the demo build.
 - **FIRE progress** counts FIRE-eligible assets in the selected **scope** and excludes the primary residence plus any assets manually excluded from FIRE.
 - An **exposure profile** attaches to an **investment**, shared by **ISIN**; **look-through** sums each **holding** weighted by its profile into the scope's **Exposure**, a present-time lens with explicit **coverage**. It is reference metadata — it adds no figure the net-worth math reads and never enters a **snapshot**.
+- A **return** is derived per **investment** from its **operations** and **snapshots** — **simple gain** (realized + unrealized), **money-weighted** (IRR) and **time-weighted** (Modified Dietz over **monthly closes**) — present-time, never stored, never a figure the net-worth math reads (ADR 0040).
 - An **agent view** reads a **scope**'s current portfolio, historical snapshots, **FIRE progress**, data-quality signals, and the calculation facts behind them; it defaults to the household **scope**, may be narrowed to one member or member group, preserves user-authored member, group, and holding labels, exposes context rather than recommendations, excludes secrets and transfer artifacts, never changes live data, and never refreshes or captures data as a side effect of being read.
 
 ## Flagged ambiguities
