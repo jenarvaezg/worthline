@@ -1,0 +1,16 @@
+{
+  "name": "worthline",
+  "short_name": "worthline",
+  "description": "Local-first net worth dashboard",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#eef2ef",
+  "theme_color": "#006f5f",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

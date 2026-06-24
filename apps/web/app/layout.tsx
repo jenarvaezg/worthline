@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 
 import DemoBanner from "@web/demo/demo-banner";
 import { isDemoMode } from "@web/demo/write-guard";
+import ServiceWorkerRegister from "@web/_components/sw-register";
 
 import "./globals.css";
 
@@ -37,6 +38,7 @@ const mono = localFont({
 export const metadata: Metadata = {
   title: "worthline",
   description: "Local-first net worth dashboard",
+  manifest: "/manifest.json",
 };
 
 export default async function RootLayout({
@@ -48,6 +50,7 @@ export default async function RootLayout({
     <html className={`${sans.variable} ${mono.variable}`} lang="es">
       <body>
         {(await isDemoMode()) ? <DemoBanner /> : null}
+        <ServiceWorkerRegister />
         {children}
       </body>
     </html>
