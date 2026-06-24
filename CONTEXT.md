@@ -204,6 +204,32 @@ The chain-linked sub-period return (**Modified Dietz** over **monthly closes**) 
 the effect of cashflow timing — the measure comparable to a benchmark index. Distinct from
 the **money-weighted return** (IRR), which keeps timing in. See ADR 0040.
 
+**Contribution plan**:
+A scope's set of **planned contributions** — its forward savings intentions. A forecast
+layer: it never enters **net worth** or a **snapshot** (like an **exposure profile** or a
+**return**, reference not a figure the math reads). It is the source of the derived monthly
+savings the FIRE projection reads, replacing the lone manual figure when present. UI label:
+"Plan de aportaciones". See ADR 0041.
+
+**Planned contribution**:
+A recurring intended addition to one **holding** — its destination (any holding, an
+investment or a cash account), an amount in money _or_ units, a cadence (weekly, monthly,
+quarterly or annual), a start and an optional end. An intention, not truth: the real purchase
+is entered by hand when it happens — it may execute late, or at an unknown price.
+_Avoid_: operation (the confirmed truth, which alone moves figures and history).
+
+**Contribution occurrence**:
+A single expected instance of a **planned contribution** on a date — a forecast row.
+**Pending** until **reconciled**; never a figure the math reads.
+
+**Reconciliation** (of a contribution):
+Confirming a **contribution occurrence** by recording the real movement — a **buy**
+**operation** for an investment, a balance **value update pass** for a cash holding —
+pre-filled from the plan and corrected to reality, then linked. Manual and explicit:
+worthline never auto-matches an independently entered **operation** to an occurrence.
+States: **pending → fulfilled** (linked) or **skipped**; past pending occurrences are a
+visible backlog.
+
 **Statement**:
 A file an external broker exports listing one **investment**'s movements (e.g. a
 MyInvestor orders export for a single ISIN). The user uploads it against a chosen
@@ -542,6 +568,7 @@ _Avoid_: connected source, account, financial advisor.
 - **FIRE progress** counts FIRE-eligible assets in the selected **scope** and excludes the primary residence plus any assets manually excluded from FIRE.
 - An **exposure profile** attaches to an **investment**, shared by **ISIN**; **look-through** sums each **holding** weighted by its profile into the scope's **Exposure**, a present-time lens with explicit **coverage**. It is reference metadata — it adds no figure the net-worth math reads and never enters a **snapshot**.
 - A **return** is derived per **investment** from its **operations** and **snapshots** — **simple gain** (realized + unrealized), **money-weighted** (IRR) and **time-weighted** (Modified Dietz over **monthly closes**) — present-time, never stored, never a figure the net-worth math reads (ADR 0040).
+- A **contribution plan** forecasts additions to **holdings**; its **occurrences** are **reconciled** by hand into real **operations** / value updates (never auto-matched, never auto-applied). It feeds the derived monthly savings the FIRE projection reads and a what-if, but adds no figure the net-worth math reads and never enters a **snapshot** (ADR 0041).
 - An **agent view** reads a **scope**'s current portfolio, historical snapshots, **FIRE progress**, data-quality signals, and the calculation facts behind them; it defaults to the household **scope**, may be narrowed to one member or member group, preserves user-authored member, group, and holding labels, exposes context rather than recommendations, excludes secrets and transfer artifacts, never changes live data, and never refreshes or captures data as a side effect of being read.
 
 ## Flagged ambiguities
