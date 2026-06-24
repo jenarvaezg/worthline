@@ -143,16 +143,22 @@ button:focus-visible,
  *
  * Next 16 / React 19 activates the View Transitions API automatically for
  * route navigations when `experimental.viewTransition` is on.  These rules
- * style the default cross-fade and the optional slide-forward / slide-back
- * types requested by `classifyTransition` in `view-transitions.ts`.
+ * style the default cross-fade.
+ *
+ * Directional slide-forward / slide-back (classifyTransition in
+ * view-transitions.ts) are scoped to the follow-on issue and are NOT wired
+ * yet — no NavigationTracker island exists in this PR to pass transitionTypes.
+ * Shipping untriggerable CSS rules would be misleading, so the slide rules
+ * live only in the pure module and tests until that island lands.
  *
  * Graceful degradation: the `@view-transition` at-rule and
  * `::view-transition-*` pseudo-elements are simply ignored in browsers that
  * do not support the API — no broken layout.
  *
  * prefers-reduced-motion: the blanket `animation-duration: 0.01ms` rule above
- * already collapses every animation, including these, to imperceptible — no
- * extra guards needed here.
+ * collapses CSS keyframe animations to imperceptible.  As an explicit CSS
+ * contract (and because browser VT snapshot compositing is a separate step),
+ * the block below also nullifies the pseudo-element animations directly.
  */
 
 /* Default transition: a clean cross-fade between old and new page roots.
@@ -170,27 +176,7 @@ button:focus-visible,
   animation: 200ms ease-in both wl-fade-in;
 }
 
-/* slide-forward: new surface enters from the right, old exits to the left. */
-:root[style*="--wl-vt: slide-forward"] ::view-transition-old(root),
-html:active-view-transition-type(slide-forward) ::view-transition-old(root) {
-  animation: 240ms ease-in-out both wl-slide-out-left;
-}
-
-:root[style*="--wl-vt: slide-forward"] ::view-transition-new(root),
-html:active-view-transition-type(slide-forward) ::view-transition-new(root) {
-  animation: 240ms ease-in-out both wl-slide-in-right;
-}
-
-/* slide-back: new surface enters from the left, old exits to the right. */
-html:active-view-transition-type(slide-back) ::view-transition-old(root) {
-  animation: 240ms ease-in-out both wl-slide-out-right;
-}
-
-html:active-view-transition-type(slide-back) ::view-transition-new(root) {
-  animation: 240ms ease-in-out both wl-slide-in-left;
-}
-
-/* Anchor the topbar so it does not slide or fade with the page content. */
+/* Anchor the topbar so it does not fade with the page content. */
 .topbar {
   view-transition-name: topbar;
 }
@@ -198,6 +184,15 @@ html:active-view-transition-type(slide-back) ::view-transition-new(root) {
 ::view-transition-old(topbar),
 ::view-transition-new(topbar) {
   animation: none;
+}
+
+/* Explicit reduced-motion contract: nullify VT animations regardless of
+ * whether the browser's own startViewTransition respects the media query. */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
 }
 
 @keyframes wl-fade-out {
@@ -215,46 +210,6 @@ html:active-view-transition-type(slide-back) ::view-transition-new(root) {
   }
   to {
     opacity: 1;
-  }
-}
-
-@keyframes wl-slide-out-left {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-30px);
-    opacity: 0;
-  }
-}
-
-@keyframes wl-slide-in-right {
-  from {
-    transform: translateX(30px);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-  }
-}
-
-@keyframes wl-slide-out-right {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(30px);
-    opacity: 0;
-  }
-}
-
-@keyframes wl-slide-in-left {
-  from {
-    transform: translateX(-30px);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
   }
 }
 

@@ -66,6 +66,32 @@ test("liquid drilldown: band/legend link → drill panel → breadcrumb back", a
   ).toBe("kept");
 });
 
+test("topnav navigation does not cause a full document reload (VT cross-fade, #517)", async ({
+  page,
+}) => {
+  // Navigate to home and tag the live document with a sentinel.
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
+
+  await page.evaluate(() => {
+    (window as unknown as { __wlNoReload?: string }).__wlNoReload = "kept";
+  });
+
+  // Click a topnav link to a different top-level section.
+  await page
+    .getByRole("navigation", { name: "Secciones principales" })
+    .getByRole("link", { name: "Patrimonio" })
+    .click();
+
+  await expect(page).toHaveURL(/\/patrimonio/);
+
+  // If the VT caused a full document reload the sentinel would be gone.
+  const sentinel = await page.evaluate(
+    () => (window as unknown as { __wlNoReload?: string }).__wlNoReload,
+  );
+  expect(sentinel).toBe("kept");
+});
+
 test("liquid drilldown: the selected Vista survives entering and leaving", async ({
   page,
 }) => {
