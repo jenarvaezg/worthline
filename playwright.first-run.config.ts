@@ -66,6 +66,13 @@ export default defineConfig({
     reuseExistingServer: false,
     env: {
       WORTHLINE_DB_PATH: firstRunDbPath,
+      // Force the local single-tenant (no-login) onboarding mode regardless of the
+      // developer's `.env.local` — without this, a dev with hosted-mode Google auth
+      // (AUTH_GOOGLE_*) hits the login wall and every first-run journey fails.
+      // `@next/env` won't overwrite vars already in `process.env`, so these win.
+      AUTH_GOOGLE_ID: "",
+      AUTH_GOOGLE_SECRET: "",
+      AUTH_SECRET: "",
     },
     timeout: 60_000,
     stdout: "pipe",

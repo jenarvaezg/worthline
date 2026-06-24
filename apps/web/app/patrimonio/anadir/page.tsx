@@ -14,6 +14,7 @@ import {
 } from "@web/intake";
 import Shell from "@web/shell";
 import { createHoldingAction } from "@web/patrimonio/create-holding-action";
+import { PendingSubmit } from "@web/pending-submit";
 import {
   addHoldingFieldValue,
   buildSymbolSearchCurrentParams,
@@ -281,7 +282,9 @@ export default async function AnadirHoldingPage({
                   values={values}
                 />
                 <div className="formActions">
-                  <button type="submit">Añadir al patrimonio</button>
+                  <PendingSubmit pendingLabel="Añadiendo…">
+                    Añadir al patrimonio
+                  </PendingSubmit>
                   <Link href="/patrimonio">Cancelar</Link>
                 </div>
               </div>

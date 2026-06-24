@@ -23,6 +23,7 @@ import {
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
 import { refreshPricesAction } from "@web/inversiones/actions";
+import { isDemoMode } from "@web/demo/write-guard";
 import Shell from "@web/shell";
 import BalanceBoard from "./balance-board";
 import PatrimonioGroupControls from "./group-controls";
@@ -37,6 +38,9 @@ export default async function PatrimonioPage({
 }) {
   const resolvedSearchParams = await searchParams;
   const persistence = await bootstrapHealthcheck();
+  // Demo skips optimistic mutations — the write-guard rejects them, so a faked
+  // change would only flicker before reverting (interaction-patterns §10).
+  const isDemo = await isDemoMode();
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
   const currentUrl = buildCurrentUrlFor("/patrimonio", resolvedSearchParams);
@@ -197,6 +201,7 @@ export default async function PatrimonioPage({
         isHousehold={isHousehold}
         nowIso={persistence.checkedAt}
         privacyMode={privacyMode}
+        readOnly={isDemo}
         trash={trash}
         warnings={warnings}
       />
