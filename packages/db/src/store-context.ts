@@ -396,10 +396,21 @@ export async function buildAssetProjectionContext(
  * ManualAsset reconstitution. Shared by the AssetStore (R2) and the monolith's
  * historical-snapshot reconstruction, so it lives here — the one shared-concerns
  * home — rather than being duplicated across the slices.
+ *
+ * @param projectionContext - Optional pre-built projection context. When
+ *   provided, the internal build (and the hasInvestments gate that drives it) is
+ *   skipped entirely and the supplied context is used directly. The caller is
+ *   responsible for ensuring the context was built after any writes to the four
+ *   underlying tables (operations, investment meta, price cache, ownerships).
+ *   Safety invariant for the dashboard load path: the only write to those tables
+ *   in a cold load is `upsertPrice` in §1, which runs before both projection
+ *   builds, so a single shared context is byte-identical to two separate builds
+ *   (dedup #566).
  */
 export async function readAssets(
   db: StoreDb,
   workspace: Workspace | null,
+  projectionContext?: AssetProjectionContext,
 ): Promise<ManualAsset[]> {
   if (!workspace) {
     return [];
@@ -432,10 +443,14 @@ export async function readAssets(
     type: row.type,
   }));
 
-  const hasInvestments = rawRows.some((row) => row.type === "investment");
-  const projectionContext = await buildAssetProjectionContext(db, hasInvestments);
+  const ctx =
+    projectionContext ??
+    (await buildAssetProjectionContext(
+      db,
+      rawRows.some((row) => row.type === "investment"),
+    ));
 
-  return projectAssets(workspace, rawRows, projectionContext);
+  return projectAssets(workspace, rawRows, ctx);
 }
 
 /**
