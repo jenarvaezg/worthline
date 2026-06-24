@@ -1,5 +1,39 @@
 # Baseline de rendimiento — Phase 0 (junio 2026)
 
+> ## ⚠️ CORRECCIÓN (2026-06-24): este baseline está MAL MEDIDO
+>
+> Este documento midió el **demo público**, que corre sobre una base de datos
+> **en memoria (`:memory:`) sembrada por-request** (`apps/web/app/store.ts`,
+> estado `demo`) — **NO** contra Turso. Los ~2,3–2,7 s que abajo se atribuyen al
+> «round-trip a Turso» son en realidad el coste de **sembrar la persona +
+> proyectarla en memoria** en cada request: un artefacto exclusivo del demo que
+> **no existe en la app real** (que lee datos ya presentes en Turso, sin sembrar).
+>
+> La **app real autenticada** (medida con cookie + Playwright — `curl` ya no
+> sirve: `worthline-web.vercel.app` tiene un Vercel Security Checkpoint que lo
+> 403ea) va, en caliente:
+>
+> | Superficie                 | TTFB        | cifras visibles |
+> | -------------------------- | ----------- | --------------- |
+> | `/` dashboard              | ~150 ms     | ~800 ms         |
+> | `/patrimonio`              | ~215–606 ms | ~257–656 ms     |
+> | `/historico`               | ~480–600 ms | ~550–650 ms     |
+> | toggles (view/range/drill) | ~150 ms     | —               |
+>
+> **No hay problema de perf en la app real** — todo sub-segundo; los picos de
+> cola ~1,2–1,5 s son cold starts de lambda. El diagnóstico «la lentitud es el
+> round-trip a Turso» queda **refutado**: la región ya está co-localizada
+> (Vercel `dub1` ↔ Turso `aws-eu-west-1`, ambos Dublín) y la conexión se reúsa.
+>
+> Implicaciones: #565/#566 (paralelizar/dedup, mergeados) fueron buena higiene
+> sobre un no-problema; #567 (batch) y #568 (región) cerrados como
+> marginal/moot. El único número un pelín alto (dashboard ~800 ms) lo ataca #531
+> (saca el `saveSnapshot` del camino crítico de las cifras).
+>
+> El texto original de abajo se conserva como registro del error de medición.
+
+---
+
 Captura del **antes** exigida por la PRD #485 (_«capturar el baseline de
 rendimiento antes de que Phase 0 cambie nada»_) y por la slice gate #516. Es la
 porción de medición del spike #486; el audit exhaustivo (Lighthouse/Web Vitals
