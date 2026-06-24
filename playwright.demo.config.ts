@@ -55,6 +55,7 @@ export default defineConfig({
     reuseExistingServer: false,
     env: {
       WORTHLINE_DATA_DIR: demoDataDir,
+      NEXT_PUBLIC_ENABLE_SW: "1",
     },
     timeout: 60_000,
     stdout: "pipe",

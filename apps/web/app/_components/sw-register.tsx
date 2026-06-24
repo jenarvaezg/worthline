@@ -6,8 +6,7 @@ export default function ServiceWorkerRegister() {
   useEffect(() => {
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
       const isProd = process.env.NODE_ENV === "production";
-      // E2E local tests run on ports 3001, 3002, 3004.
-      const isE2E = window.location.port !== "3000";
+      const isE2E = process.env.NEXT_PUBLIC_ENABLE_SW === "1";
 
       if (isProd || isE2E) {
         navigator.serviceWorker
