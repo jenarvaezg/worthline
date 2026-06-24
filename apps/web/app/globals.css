@@ -139,6 +139,125 @@ button:focus-visible,
   }
 }
 
+/* ── View Transitions (#517, interaction-patterns §5, ADR 0036) ──────────────
+ *
+ * Next 16 / React 19 activates the View Transitions API automatically for
+ * route navigations when `experimental.viewTransition` is on.  These rules
+ * style the default cross-fade and the optional slide-forward / slide-back
+ * types requested by `classifyTransition` in `view-transitions.ts`.
+ *
+ * Graceful degradation: the `@view-transition` at-rule and
+ * `::view-transition-*` pseudo-elements are simply ignored in browsers that
+ * do not support the API — no broken layout.
+ *
+ * prefers-reduced-motion: the blanket `animation-duration: 0.01ms` rule above
+ * already collapses every animation, including these, to imperceptible — no
+ * extra guards needed here.
+ */
+
+/* Default transition: a clean cross-fade between old and new page roots.
+ * NOTE: `@view-transition { navigation: auto }` is intentionally omitted.
+ * Next 16 with `experimental.viewTransition: true` uses React's same-document
+ * transition mechanism (startViewTransition wrapping router navigations).
+ * Adding `navigation: auto` activates the separate cross-document MPA path,
+ * which conflicts and throws "Transition was skipped" when a new navigation
+ * fires while a same-document transition is already in progress. */
+::view-transition-old(root) {
+  animation: 200ms ease-out both wl-fade-out;
+}
+
+::view-transition-new(root) {
+  animation: 200ms ease-in both wl-fade-in;
+}
+
+/* slide-forward: new surface enters from the right, old exits to the left. */
+:root[style*="--wl-vt: slide-forward"] ::view-transition-old(root),
+html:active-view-transition-type(slide-forward) ::view-transition-old(root) {
+  animation: 240ms ease-in-out both wl-slide-out-left;
+}
+
+:root[style*="--wl-vt: slide-forward"] ::view-transition-new(root),
+html:active-view-transition-type(slide-forward) ::view-transition-new(root) {
+  animation: 240ms ease-in-out both wl-slide-in-right;
+}
+
+/* slide-back: new surface enters from the left, old exits to the right. */
+html:active-view-transition-type(slide-back) ::view-transition-old(root) {
+  animation: 240ms ease-in-out both wl-slide-out-right;
+}
+
+html:active-view-transition-type(slide-back) ::view-transition-new(root) {
+  animation: 240ms ease-in-out both wl-slide-in-left;
+}
+
+/* Anchor the topbar so it does not slide or fade with the page content. */
+.topbar {
+  view-transition-name: topbar;
+}
+
+::view-transition-old(topbar),
+::view-transition-new(topbar) {
+  animation: none;
+}
+
+@keyframes wl-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes wl-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes wl-slide-out-left {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-30px);
+    opacity: 0;
+  }
+}
+
+@keyframes wl-slide-in-right {
+  from {
+    transform: translateX(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes wl-slide-out-right {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(30px);
+    opacity: 0;
+  }
+}
+
+@keyframes wl-slide-in-left {
+  from {
+    transform: translateX(-30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
 input,
 select,
 textarea {
