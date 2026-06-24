@@ -5,7 +5,7 @@
  * Adds a second asset here so there are two values to update in one batch.
  */
 
-import { test, expect, addHolding } from "./fixtures";
+import { test, expect, addHolding, delayServerActions } from "./fixtures";
 
 function parseEuroMinor(text: string | null): number {
   expect(text).toBeTruthy();
@@ -53,10 +53,34 @@ test("puesta al dia: batch update two assets → values persist → headline cha
   await page.getByLabel("Valor de Cuenta ING en EUR").fill("8000");
   await page.getByLabel("Valor de Fondo Monetario en EUR").fill("4000");
 
-  // 5. Submit the form
+  // 5. Submit the form. The pass is OPTIMISTIC (#521, interaction-patterns §4):
+  //    with the Server Action delayed, each row's "Actual:" must show its just-typed
+  //    value BEFORE the action resolves — and without a document reload (a window
+  //    sentinel a full reload would wipe).
+  await page.evaluate(() => {
+    (window as Window & { __wlNoReload?: boolean }).__wlNoReload = true;
+  });
+  const release = await delayServerActions(page, 2000);
+
   await page.getByRole("button", { name: "Guardar todo" }).click();
 
-  // 6. Should redirect back to /patrimonio with success message
+  // Optimistic: Cuenta ING's "Actual:" reflects the new 8000 while the action is
+  // still in-flight (still on /actualizar) and no reload has happened.
+  const cuentaIngActual = page
+    .locator(".puestaRow", { has: page.getByLabel("Valor de Cuenta ING en EUR") })
+    .locator(".puestaCurrent");
+  await expect(cuentaIngActual).toContainText("8000");
+  await expect(page).toHaveURL(/\/patrimonio\/actualizar/);
+  expect(
+    await page.evaluate(
+      () => (window as Window & { __wlNoReload?: boolean }).__wlNoReload,
+    ),
+  ).toBe(true);
+
+  await release();
+
+  // 6. Once the action resolves it redirects back to /patrimonio with the success
+  //    message — settling the optimistic values.
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toContainText("Valores actualizados");
 

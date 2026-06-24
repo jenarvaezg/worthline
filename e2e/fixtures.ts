@@ -35,6 +35,29 @@ export const test = base.extend({
 export { expect };
 
 /**
+ * Delay every Server Action POST by `ms`, so an optimistic mutation's result is
+ * observable in the UI BEFORE the action resolves (#521, interaction-patterns §4).
+ * Server actions POST to the page path carrying a `Next-Action` header; the RSC GET
+ * that the post-action redirect issues is not a POST, so it is never delayed.
+ * Returns an unroute fn — call it once the optimistic assertions are made so the
+ * action can resolve and the redirect can land.
+ */
+export async function delayServerActions(
+  page: import("@playwright/test").Page,
+  ms: number,
+): Promise<() => Promise<void>> {
+  const pattern = "**/*";
+  await page.route(pattern, async (route) => {
+    const request = route.request();
+    if (request.method() === "POST" && request.headers()["next-action"]) {
+      await new Promise((resolve) => setTimeout(resolve, ms));
+    }
+    await route.continue();
+  });
+  return () => page.unroute(pattern);
+}
+
+/**
  * A holding's row in the /patrimonio balance board (#271). Scoped by its visible
  * name so callers locate it the same way a user would — by reading the list.
  */
