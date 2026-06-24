@@ -46,26 +46,28 @@ test.describe("PWA: manifest & service worker", () => {
     // 1. Visit the site normally to ensure Service Worker is active and controlling the client.
     await page.goto("/empezar");
 
-    // Wait for the Service Worker to register and become active.
+    // Wait for the Service Worker to register and become active (poll up to 10 seconds).
     await page.evaluate(async () => {
       if (!("serviceWorker" in navigator)) return;
-      const regs = await navigator.serviceWorker.getRegistrations();
-      const activeReg = regs.find(
-        (r) => r.active && r.active.scriptURL.endsWith("/sw.js"),
-      );
-      if (activeReg && activeReg.active) {
-        if (activeReg.active.state !== "activated") {
-          await new Promise<void>((resolve) => {
-            activeReg.active!.addEventListener("statechange", () => {
-              if (activeReg.active!.state === "activated") resolve();
-            });
-          });
+      for (let i = 0; i < 100; i++) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        const sw = regs.find((r) => r.active && r.active.scriptURL.endsWith("/sw.js"));
+        if (sw && sw.active && sw.active.state === "activated") {
+          return;
         }
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
+      throw new Error("Service Worker was not activated in time");
     });
 
     // 2. Reload the page so the active service worker takes control of the page fetches.
     await page.reload();
+
+    // Verify it is controlling the page
+    const isControlling = await page.evaluate(() => {
+      return !!navigator.serviceWorker.controller;
+    });
+    expect(isControlling).toBe(true);
 
     // 3. Go offline
     await context.setOffline(true);
@@ -82,12 +84,14 @@ test.describe("PWA: manifest & service worker", () => {
     });
     expect(manifestResponse.status).toBe(200);
 
-    // 5. Try fetching a page document (e.g. /empezar)
+    // 5. Try fetching a page document (e.g. /empezar?no-cache=1 to bypass browser HTTP cache)
     // It should NOT load the live page (since we are offline and it's network-first).
     // It must either fail (status 0) or return our custom offline page.
     const docResponse = await page.evaluate(async () => {
       try {
-        const res = await fetch("/empezar", { headers: { Accept: "text/html" } });
+        const res = await fetch("/empezar?no-cache=1", {
+          headers: { Accept: "text/html" },
+        });
         const text = await res.text();
         return {
           status: res.status,
