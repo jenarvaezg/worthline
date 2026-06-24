@@ -1,7 +1,10 @@
+"use client";
+
 import type { TrashView } from "@worthline/db";
 import type { DomainWarning, PortfolioGroup, UnifiedHolding } from "@worthline/domain";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import Link from "next/link";
+import { useOptimistic, useTransition, type FormEvent } from "react";
 
 import { boardRefreshHover } from "@web/price-refresh";
 
@@ -15,6 +18,11 @@ import {
   restoreAssetAction,
   restoreLiabilityAction,
 } from "./actions";
+import {
+  applyBoardMutations,
+  type BoardModel,
+  type BoardMutation,
+} from "./optimistic-board";
 
 /**
  * The /patrimonio holdings list (#271). A two-pane balance sheet: assets left,
@@ -26,8 +34,18 @@ import {
  * A footer reconciles Activos − Pasivos = Patrimonio neto, and the Papelera is part
  * of that footer rather than a stray panel.
  *
- * Zero client JS (ADR 0009): the ⋯ menu, delete confirmations and the trash are all
- * native <details>; every mutation is a server-action <form>.
+ * Optimistic mutations (#521, S5 of #485, interaction-patterns §4/§7/§8). This is the
+ * ADR 0036 client island for the board: deleting a row (and emptying / hard-deleting
+ * from the trash) shows immediately via `useOptimistic` folding the in-flight mutation
+ * over the server model with the pure `applyBoardMutations`; the redirect every action
+ * ends with re-renders server truth and settles it, or — on the error redirect —
+ * reverts the optimistic change while the error band surfaces (§4). The forms keep a
+ * plain server-action `action=` so they still work with JS off (progressive
+ * enhancement); when JS is on, `onSubmit` intercepts to apply the optimistic merge in
+ * a transition. The saving state is announced through a board-level `aria-live` region
+ * (§8) — it lives OUTSIDE the optimistically-removed row, so the announcement is not
+ * torn down with the row. In demo (`readOnly`) the optimism is skipped (§10): the
+ * write-guard rejects the action, so a faked-then-reverted change would only flicker.
  */
 
 type Currency = PortfolioGroup["totalMinor"]["currency"];
@@ -54,6 +72,17 @@ function ownershipLabel(h: UnifiedHolding, isHousehold: boolean): string | null 
   // hides that the holding is co-owned (the whole reason the label exists).
   return bps < 10_000 ? `${Math.min(99, Math.round(bps / 100))} %` : "100 %";
 }
+
+/**
+ * Build an `onSubmit` that applies the optimistic merge before invoking the server
+ * action, all inside a transition so `useOptimistic` tracks it and React keeps the
+ * saving state pending until the action's redirect lands. `null` in demo, where the
+ * form falls back to the plain server-action post (no faked optimism, §10).
+ */
+type OptimisticSubmit = (
+  mutation: BoardMutation,
+  action: (formData: FormData) => unknown,
+) => ((event: FormEvent<HTMLFormElement>) => void) | undefined;
 
 interface Section {
   key: string;
@@ -118,6 +147,7 @@ function HoldingRow({
   showTierLabel,
   nowIso,
   privacyMode,
+  optimisticSubmit,
 }: {
   holding: UnifiedHolding;
   currency: Currency;
@@ -129,6 +159,7 @@ function HoldingRow({
   showTierLabel: boolean;
   nowIso: string;
   privacyMode: boolean;
+  optimisticSubmit: OptimisticSubmit;
 }) {
   const h = holding;
   const rowWarnings = isAsset
@@ -197,7 +228,10 @@ function HoldingRow({
               </button>
             </form>
           ) : null}
-          <form action={deleteAction}>
+          <form
+            action={deleteAction}
+            onSubmit={optimisticSubmit({ kind: "delete", id: h.id }, deleteAction)}
+          >
             <input name="currentUrl" type="hidden" value={currentUrl} />
             <input name="id" type="hidden" value={h.id} />
             <details className="confirmDelete balanceMenuDelete">
@@ -231,6 +265,7 @@ function Pane({
   currentUrl,
   nowIso,
   privacyMode,
+  optimisticSubmit,
 }: {
   title: string;
   total: number;
@@ -242,6 +277,7 @@ function Pane({
   currentUrl: string;
   nowIso: string;
   privacyMode: boolean;
+  optimisticSubmit: OptimisticSubmit;
 }) {
   const { denom, segments } = paneSegments(sections, isAsset);
   const showSubs = sections.length > 1;
@@ -305,6 +341,7 @@ function Pane({
                   isHousehold={isHousehold}
                   key={h.id}
                   nowIso={nowIso}
+                  optimisticSubmit={optimisticSubmit}
                   privacyMode={privacyMode}
                   sectionDenom={secDenom}
                   showTierLabel={!showSubs}
@@ -325,17 +362,22 @@ function TrashRow({
   restoreAction,
   hardDeleteAction,
   currentUrl,
+  optimisticSubmit,
 }: {
   id: string;
   name: string;
   restoreAction: typeof restoreAssetAction;
   hardDeleteAction: typeof hardDeleteAssetAction;
   currentUrl: string;
+  optimisticSubmit: OptimisticSubmit;
 }) {
   return (
     <div className="balanceTrashRow">
       <span>{name}</span>
       <span className="balanceTrashRowActions">
+        {/* Restore is NOT optimistic (§4): the board row it re-adds cannot be
+            reconstructed from the trash's {id,name}, so faking it would show a wrong
+            value. It stays a plain server-action post that re-renders on its redirect. */}
         <form action={restoreAction}>
           <input name="currentUrl" type="hidden" value={currentUrl} />
           <input name="id" type="hidden" value={id} />
@@ -343,7 +385,10 @@ function TrashRow({
             Restaurar
           </button>
         </form>
-        <form action={hardDeleteAction}>
+        <form
+          action={hardDeleteAction}
+          onSubmit={optimisticSubmit({ kind: "hardDelete", id }, hardDeleteAction)}
+        >
           <input name="currentUrl" type="hidden" value={currentUrl} />
           <input name="id" type="hidden" value={id} />
           <details className="confirmDelete">
@@ -365,6 +410,8 @@ export interface BalanceBoardProps {
   /** Server render instant — anchors the derived-value badge's relative date (#303). */
   nowIso: string;
   privacyMode: boolean;
+  /** Demo: skip optimistic state — the write-guard rejects, so optimism would flicker (§10). */
+  readOnly?: boolean;
 }
 
 export default function BalanceBoard({
@@ -375,14 +422,41 @@ export default function BalanceBoard({
   currentUrl,
   nowIso,
   privacyMode,
+  readOnly = false,
 }: BalanceBoardProps) {
-  const currency: Currency = groups[0]?.totalMinor.currency ?? "EUR";
-  const assetSections = sectionsFor(groups, "asset");
-  const debtSections = sectionsFor(groups, "liability");
+  const base: BoardModel = { groups, trash };
+  const [model, addPending] = useOptimistic(
+    base,
+    (current: BoardModel, mutation: BoardMutation) =>
+      applyBoardMutations(current, [mutation]),
+  );
+  const [isPending, startTransition] = useTransition();
+
+  // Apply the optimistic merge, then run the action — both inside the transition so
+  // `useOptimistic` tracks the change and `isPending` stays true until the action's
+  // redirect lands. In demo we return undefined: the form falls back to its plain
+  // `action=` post, which the write-guard rejects — no faked optimism (§10).
+  const optimisticSubmit: OptimisticSubmit = (mutation, action) => {
+    if (readOnly) {
+      return undefined;
+    }
+    return (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      const formData = new FormData(event.currentTarget);
+      startTransition(async () => {
+        addPending(mutation);
+        await action(formData);
+      });
+    };
+  };
+
+  const currency: Currency = model.groups[0]?.totalMinor.currency ?? "EUR";
+  const assetSections = sectionsFor(model.groups, "asset");
+  const debtSections = sectionsFor(model.groups, "liability");
   const grossAssets = assetSections.reduce((acc, s) => acc + sectionTotal(s.rows), 0);
   const totalDebts = debtSections.reduce((acc, s) => acc + sectionTotal(s.rows), 0);
   const net = grossAssets - totalDebts;
-  const trashCount = trash.assets.length + trash.liabilities.length;
+  const trashCount = model.trash.assets.length + model.trash.liabilities.length;
 
   if (groups.length === 0) {
     return (
@@ -396,12 +470,21 @@ export default function BalanceBoard({
 
   return (
     <section aria-label="Activos y pasivos" className="balanceBoard">
+      {/* Announce the in-flight save for screen readers (§8). It sits at the board
+          root — outside any optimistically-removed row — so the announcement is not
+          torn down with the row it describes. The settled outcome is announced by the
+          page's existing success/error band (role="status"/"alert") after the redirect. */}
+      <p aria-live="polite" className="srOnly">
+        {isPending ? "Guardando…" : ""}
+      </p>
+
       <Pane
         currency={currency}
         currentUrl={currentUrl}
         isAsset
         isHousehold={isHousehold}
         nowIso={nowIso}
+        optimisticSubmit={optimisticSubmit}
         privacyMode={privacyMode}
         sections={assetSections}
         title="Activos"
@@ -414,6 +497,7 @@ export default function BalanceBoard({
         isAsset={false}
         isHousehold={isHousehold}
         nowIso={nowIso}
+        optimisticSubmit={optimisticSubmit}
         privacyMode={privacyMode}
         sections={debtSections}
         title="Pasivos"
@@ -453,30 +537,36 @@ export default function BalanceBoard({
           <p className="balanceTrashEmpty">La papelera está vacía.</p>
         ) : (
           <div className="balanceTrashList">
-            {trash.assets.map((item) => (
+            {model.trash.assets.map((item) => (
               <TrashRow
                 currentUrl={currentUrl}
                 hardDeleteAction={hardDeleteAssetAction}
                 id={item.id}
                 key={item.id}
                 name={item.name}
+                optimisticSubmit={optimisticSubmit}
                 restoreAction={restoreAssetAction}
               />
             ))}
-            {trash.liabilities.map((item) => (
+            {model.trash.liabilities.map((item) => (
               <TrashRow
                 currentUrl={currentUrl}
                 hardDeleteAction={hardDeleteLiabilityAction}
                 id={item.id}
                 key={item.id}
                 name={item.name}
+                optimisticSubmit={optimisticSubmit}
                 restoreAction={restoreLiabilityAction}
               />
             ))}
           </div>
         )}
         {trashCount > 0 ? (
-          <form action={emptyTrashAction} className="balanceTrashEmptyAll">
+          <form
+            action={emptyTrashAction}
+            className="balanceTrashEmptyAll"
+            onSubmit={optimisticSubmit({ kind: "emptyTrash" }, emptyTrashAction)}
+          >
             <input name="currentUrl" type="hidden" value={currentUrl} />
             <details className="confirmDelete">
               <summary>Vaciar papelera</summary>
