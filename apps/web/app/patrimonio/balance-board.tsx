@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useOptimistic, useTransition, type FormEvent } from "react";
 
 import { boardRefreshHover } from "@web/price-refresh";
+import { PendingSubmit } from "@web/pending-submit";
 
 import {
   acknowledgeWarningAction,
@@ -381,9 +382,9 @@ function TrashRow({
         <form action={restoreAction}>
           <input name="currentUrl" type="hidden" value={currentUrl} />
           <input name="id" type="hidden" value={id} />
-          <button className="btnSmall" type="submit">
+          <PendingSubmit className="btnSmall" pendingLabel="Restaurando…">
             Restaurar
-          </button>
+          </PendingSubmit>
         </form>
         <form
           action={hardDeleteAction}

@@ -21,6 +21,7 @@ import {
   updateAssetValuationAction,
   updateLiabilityBalanceAction,
 } from "@web/patrimonio/actions";
+import { PendingSubmit } from "@web/pending-submit";
 
 type FormAction = (formData: FormData) => void | Promise<void>;
 
@@ -88,7 +89,7 @@ export function AssetEditForm({
           />
 
           <div className="formActions">
-            <button type="submit">Guardar cambios</button>
+            <PendingSubmit pendingLabel="Guardando…">Guardar cambios</PendingSubmit>
             <Link href={`/patrimonio#${asset.id}`}>Cancelar</Link>
           </div>
         </form>
@@ -179,7 +180,7 @@ export function AssetEditForm({
           </p>
 
           <div className="formActions">
-            <button type="submit">Guardar cambios</button>
+            <PendingSubmit pendingLabel="Guardando…">Guardar cambios</PendingSubmit>
             <Link href={`/patrimonio#${asset.id}`}>Cancelar</Link>
           </div>
         </form>
@@ -259,7 +260,7 @@ export function AssetEditForm({
 
         {!isInvestment ? (
           <div className="formActions">
-            <button type="submit">Guardar cambios</button>
+            <PendingSubmit pendingLabel="Guardando…">Guardar cambios</PendingSubmit>
             <Link href={`/patrimonio#${asset.id}`}>Cancelar</Link>
           </div>
         ) : null}
@@ -291,7 +292,7 @@ export function AssetEditForm({
               name="currentValue"
             />
           </label>
-          <button type="submit">Actualizar valor</button>
+          <PendingSubmit pendingLabel="Actualizando…">Actualizar valor</PendingSubmit>
         </form>
       )}
     </>
@@ -390,7 +391,7 @@ export function LiabilityEditForm({
             name="balance"
           />
         </label>
-        <button type="submit">Actualizar saldo</button>
+        <PendingSubmit pendingLabel="Actualizando…">Actualizar saldo</PendingSubmit>
       </form>
     </>
   );
