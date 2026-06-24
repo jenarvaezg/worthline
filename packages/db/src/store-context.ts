@@ -96,7 +96,13 @@ export function createStoreContext(
   // Per-unit-of-work workspace cache: the workspace only changes on membership
   // writes, so memoize it for the store's (short) lifetime and invalidate on
   // those writes. A single page render then reads it once instead of many times.
-  let cachedWorkspace: Workspace | null | undefined;
+  //
+  // Promise-memoized: the in-flight promise itself is cached, not the awaited
+  // value. This prevents a race where two concurrent callers both pass the
+  // `=== undefined` guard and fire two round-trips. Note: a rejected read caches
+  // the rejection for the store lifetime — acceptable, since a failed workspace
+  // read fails the whole render anyway.
+  let cachedWorkspace: Promise<Workspace | null> | undefined;
 
   // One drizzle instance per store lifetime, bound to the shared client.
   const baseDb = openDrizzle(client);
@@ -205,9 +211,9 @@ export function createStoreContext(
         })
         .run();
     },
-    getWorkspace: async () => {
+    getWorkspace: () => {
       if (cachedWorkspace === undefined) {
-        cachedWorkspace = await readWorkspace(currentDb);
+        cachedWorkspace = readWorkspace(currentDb);
       }
 
       return cachedWorkspace;
@@ -350,15 +356,20 @@ export async function buildAssetProjectionContext(
   db: StoreDb,
   hasInvestments: boolean,
 ): Promise<AssetProjectionContext> {
-  const operationsByAsset = hasInvestments
-    ? await readAllOperations(db)
-    : new Map<string, InvestmentOperation[]>();
-  const metaByAsset = hasInvestments
-    ? await readInvestmentMeta(db)
-    : new Map<string, InvestmentMeta>();
-  const priceCacheByAsset = hasInvestments
-    ? await readAllPriceCache(db)
-    : new Map<string, { price: string }>();
+  // All four reads are independent — fire them in parallel. The investment-only
+  // reads resolve to empty maps immediately when there are no investments; the
+  // ownership read is always needed and runs concurrently with the others.
+  const emptyOpMap = new Map<string, InvestmentOperation[]>();
+  const emptyMetaMap = new Map<string, InvestmentMeta>();
+  const emptyCacheMap = new Map<string, { price: string }>();
+
+  const [operationsByAsset, metaByAsset, priceCacheByAsset, ownershipByAsset] =
+    await Promise.all([
+      hasInvestments ? readAllOperations(db) : Promise.resolve(emptyOpMap),
+      hasInvestments ? readInvestmentMeta(db) : Promise.resolve(emptyMetaMap),
+      hasInvestments ? readAllPriceCache(db) : Promise.resolve(emptyCacheMap),
+      readAssetOwnerships(db),
+    ]);
 
   const manualPriceByAsset = new Map<string, DecimalString | undefined>();
   for (const [assetId, meta] of metaByAsset) {
@@ -374,7 +385,7 @@ export async function buildAssetProjectionContext(
     cachedPriceByAsset,
     manualPriceByAsset,
     operationsByAsset,
-    ownershipByAsset: await readAssetOwnerships(db),
+    ownershipByAsset,
   };
 }
 

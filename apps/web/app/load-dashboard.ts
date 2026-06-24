@@ -177,8 +177,12 @@ export async function loadDashboard(
     input;
 
   // ── 1. Refresh stale prices ───────────────────────────────────────────────
-  const investmentAssets = await store.assets.readInvestmentAssetsWithMeta();
-  const initialCache = await store.operations.readAllPriceCacheEntries();
+  // TX-safety: no transaction is open during the read phase; these two are
+  // independent and can race freely.
+  const [investmentAssets, initialCache] = await Promise.all([
+    store.assets.readInvestmentAssetsWithMeta(),
+    store.operations.readAllPriceCacheEntries(),
+  ]);
 
   const { priceCache, errors: priceErrors } = await refreshPrices({
     cacheEntries: initialCache,
@@ -226,8 +230,12 @@ export async function loadDashboard(
     return buildEmptyResult(persistence, pricingErrors);
   }
 
-  const assets = await store.assets.readAssets();
-  const liabilities = await store.liabilities.readLiabilities();
+  // TX-safety: no transaction is open here; both calls invoke ctx.getWorkspace()
+  // internally — safe because getWorkspace() is promise-memoized (Step 0).
+  const [assets, liabilities] = await Promise.all([
+    store.assets.readAssets(),
+    store.liabilities.readLiabilities(),
+  ]);
   const scopes = listScopeOptions(workspace);
   const selectedScope = scopes.find((s) => s.id === scopeId) ?? scopes[0];
 
@@ -323,21 +331,26 @@ export async function loadDashboard(
   // details above (#208) — no second operation read. Empty when there is no scope
   // (matching the prior `selectedScope ? … : []`).
   const positions = selectedScope ? scopedProjection.positions : [];
-  const overrides = await store.readWarningOverrides();
-  const fireConfig = await store.readFireConfig();
-  // Goals for the selected scope (#426): reserve capital against FIRE eligibility.
-  const goals = selectedScope ? await store.goals.readGoals(selectedScope.id) : [];
-  const snapshots = selectedScope
-    ? await store.snapshots.readSnapshots(selectedScope.id)
-    : [];
 
-  // Frozen holding rows of the scope, read once and shared by the composition
-  // chart (always) and the drilldown (when active). Housing is its own rung now
-  // (ADR 0022): the chart buckets it by rung and the drill selects it by rung, so
-  // no by-id housing carve is threaded through any more.
-  const holdingRows = selectedScope
-    ? await store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id })
-    : [];
+  // ── §4 parallel reads — all five are mutually independent ────────────────
+  // TX-safety: these reads run after all saveSnapshot() calls above have
+  // committed their own transactions, so no interactive tx is open here.
+  // ctx.getWorkspace() is promise-memoized (Step 0), making concurrent internal
+  // calls safe.
+  const [overrides, fireConfig, goals, snapshots, holdingRows] = await Promise.all([
+    store.readWarningOverrides(),
+    store.readFireConfig(),
+    // Goals for the selected scope (#426): reserve capital against FIRE eligibility.
+    selectedScope ? store.goals.readGoals(selectedScope.id) : Promise.resolve([]),
+    selectedScope ? store.snapshots.readSnapshots(selectedScope.id) : Promise.resolve([]),
+    // Frozen holding rows of the scope, read once and shared by the composition
+    // chart (always) and the drilldown (when active). Housing is its own rung now
+    // (ADR 0022): the chart buckets it by rung and the drill selects it by rung, so
+    // no by-id housing carve is threaded through any more.
+    selectedScope
+      ? store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id })
+      : Promise.resolve([]),
+  ]);
   const activeRange = range ?? "all";
 
   // ── 4a. Range window (#144) — owned ONCE here, fed to both consumers ──────
