@@ -123,6 +123,7 @@ export default defineConfig({
         AUTH_GOOGLE_ID: "",
         AUTH_GOOGLE_SECRET: "",
         AUTH_SECRET: "",
+        NEXT_PUBLIC_ENABLE_SW: "1",
       },
       // Give Next.js up to 60s to start on first cold run.
       timeout: 60_000,
