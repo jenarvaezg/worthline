@@ -116,5 +116,5 @@ way to start.
 - **Bugs and features:** open a GitHub issue with enough context to reproduce or
   motivate the change.
 - **Security-sensitive issues:** worthline handles personal financial data.
-  Please report anything security-relevant privately to the maintainer
-  (`@jenarvaezg`) instead of opening a public issue.
+  Please follow the private disclosure process in [SECURITY.md](SECURITY.md)
+  instead of opening a public issue.
