@@ -2,6 +2,13 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  experimental: {
+    // Enable React 19 / Next 16 View Transitions API integration.
+    // Route navigations automatically become transitions; <ViewTransition>
+    // components from 'react' can then animate named elements (ADR 0036 §5,
+    // interaction-patterns §5).
+    viewTransition: true,
+  },
   transpilePackages: ["@worthline/db", "@worthline/domain", "@worthline/pricing"],
   // @libsql/client pulls in a native addon (the `libsql` package) for local
   // file/:memory: databases. Keep both external so Next / Vercel's server file
