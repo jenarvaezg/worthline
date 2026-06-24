@@ -213,6 +213,66 @@ button:focus-visible,
   }
 }
 
+/* Directional slide transitions for top-level section navigation
+ * (#517, view-transitions.ts classifyTransition → router.push transitionTypes).
+ *
+ * CSS transition-type selectors (.slide-forward / .slide-back) fire when
+ * ViewTransitionLink calls router.push(href, { transitionTypes: ["slide-forward"] }).
+ * The default cross-fade applies to all other navigations (no type selector).
+ *
+ * prefers-reduced-motion: the blanket `animation: none` rule above already
+ * collapses these; the explicit block is here as a readable contract. */
+::view-transition-old(.slide-forward) {
+  animation: 200ms ease-in both wl-slide-out-left;
+}
+::view-transition-new(.slide-forward) {
+  animation: 200ms ease-out both wl-slide-in-right;
+}
+
+::view-transition-old(.slide-back) {
+  animation: 200ms ease-in both wl-slide-out-right;
+}
+::view-transition-new(.slide-back) {
+  animation: 200ms ease-out both wl-slide-in-left;
+}
+
+@keyframes wl-slide-out-left {
+  to {
+    translate: -40px;
+    opacity: 0;
+  }
+}
+
+@keyframes wl-slide-in-right {
+  from {
+    translate: 40px;
+    opacity: 0;
+  }
+}
+
+@keyframes wl-slide-out-right {
+  to {
+    translate: 40px;
+    opacity: 0;
+  }
+}
+
+@keyframes wl-slide-in-left {
+  from {
+    translate: -40px;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(.slide-forward),
+  ::view-transition-new(.slide-forward),
+  ::view-transition-old(.slide-back),
+  ::view-transition-new(.slide-back) {
+    animation: none;
+  }
+}
+
 input,
 select,
 textarea {

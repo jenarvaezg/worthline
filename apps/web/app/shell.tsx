@@ -1,7 +1,7 @@
 import type { ScopeOption } from "@worthline/domain";
-import Link from "next/link";
 
 import SignOutButton from "./sign-out-button";
+import ViewTransitionLink from "./view-transition-link";
 
 /**
  * App shell — the topnav, scope bar, warnings rail, and persistence footer
@@ -79,13 +79,13 @@ export default function Shell({
         <div className="topbarEnd">
           <nav className="topNav" aria-label="Secciones principales">
             {NAV_SECTIONS.map((section) => (
-              <Link
+              <ViewTransitionLink
                 className={section.id === activeSection ? "active" : undefined}
                 href={section.href}
                 key={section.id}
               >
                 {section.label}
-              </Link>
+              </ViewTransitionLink>
             ))}
           </nav>
           <SignOutButton />
