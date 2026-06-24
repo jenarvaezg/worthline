@@ -6,7 +6,14 @@
  * active assets table.
  */
 
-import { test, expect, addHolding, holdingRow, deleteHolding } from "./fixtures";
+import {
+  test,
+  expect,
+  addHolding,
+  holdingRow,
+  openHoldingMenu,
+  delayServerActions,
+} from "./fixtures";
 
 test("delete → papelera → restore round-trip", async ({ page }) => {
   // 1. Create a dedicated asset for this test
@@ -21,10 +28,34 @@ test("delete → papelera → restore round-trip", async ({ page }) => {
   // 2. The asset row is visible in the active listing
   await expect(holdingRow(page, "Activo Para Borrar")).toBeVisible();
 
-  // 3. Soft-delete via the row's ⋯ menu → nested two-step confirm.
-  await deleteHolding(page, "Activo Para Borrar");
+  // 3. Soft-delete via the row's ⋯ menu → nested two-step confirm. The delete is
+  //    OPTIMISTIC (#521, interaction-patterns §4): with the Server Action delayed,
+  //    the row must vanish the instant we confirm — before the action resolves and
+  //    without a document reload (a window sentinel that a full reload would wipe).
+  await page.evaluate(() => {
+    (window as Window & { __wlNoReload?: boolean }).__wlNoReload = true;
+  });
+  const release = await delayServerActions(page, 2000);
 
-  // 4. Redirected to /patrimonio with "deleted_recoverable" success message
+  await openHoldingMenu(page, "Activo Para Borrar");
+  const del = holdingRow(page, "Activo Para Borrar").locator("details.confirmDelete");
+  await del.locator("summary").click();
+  await del.getByRole("button", { name: "Confirmar" }).click();
+
+  // Optimistic: gone from the listing immediately. The Server Action is held for
+  // 2s, so the row could only have vanished client-side — before the delete is
+  // processed — and the sentinel proves no document reload happened.
+  await expect(holdingRow(page, "Activo Para Borrar")).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => (window as Window & { __wlNoReload?: boolean }).__wlNoReload,
+    ),
+  ).toBe(true);
+
+  await release();
+
+  // 4. Once the action resolves it redirects to /patrimonio with the
+  //    "deleted_recoverable" success message — settling the optimistic change.
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toContainText("Papelera");
 

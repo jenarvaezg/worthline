@@ -1,7 +1,6 @@
 import { bootstrapHealthcheck, withStore } from "@web/store";
 import {
   formatMoneyInput,
-  formatMoneyMinorPrivacy,
   isValueUpdateEligible,
   listScopeOptions,
 } from "@worthline/domain";
@@ -17,8 +16,11 @@ import {
   PRIVACY_COOKIE_NAME,
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
+import { isDemoMode } from "@web/demo/write-guard";
 import Shell from "@web/shell";
 import { batchValueUpdateAction } from "@web/patrimonio/actions";
+
+import PuestaAlDiaForm, { type PuestaFieldRow } from "./puesta-al-dia-form";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +31,8 @@ export default async function PuestaAlDiaPage({
 }) {
   const resolvedSearchParams = await searchParams;
   const persistence = await bootstrapHealthcheck();
+  // Demo skips optimistic mutations — the write-guard rejects them (§10).
+  const isDemo = await isDemoMode();
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
 
@@ -68,6 +72,39 @@ export default async function PuestaAlDiaPage({
 
   const { assets, liabilities, scopes, selectedScope } = storeData;
 
+  const currency =
+    assets[0]?.currentValue.currency ?? liabilities[0]?.currentBalance.currency ?? "EUR";
+
+  // Project each holding to the field shape the island renders. The per-field error
+  // + preserved value (after an error redirect) is resolved here, server-side.
+  const assetRows: PuestaFieldRow[] = assets.map((asset) => ({
+    id: asset.id,
+    name: asset.name,
+    subLabel: asset.liquidityTier,
+    inputLabel: `Valor de ${asset.name} en EUR`,
+    placeholder: "Valor EUR",
+    currentValueMinor: asset.currentValue.amountMinor,
+    defaultInput:
+      formError?.formId === asset.id
+        ? (formError.values["currentValue"] ?? "")
+        : formatMoneyInput(asset.currentValue.amountMinor),
+    fieldError: formError?.formId === asset.id ? formError.message : null,
+  }));
+
+  const liabilityRows: PuestaFieldRow[] = liabilities.map((liability) => ({
+    id: liability.id,
+    name: liability.name,
+    subLabel: liability.type === "mortgage" ? "Hipoteca" : "Deuda",
+    inputLabel: `Saldo de ${liability.name} en EUR`,
+    placeholder: "Saldo EUR",
+    currentValueMinor: liability.currentBalance.amountMinor,
+    defaultInput:
+      formError?.formId === liability.id
+        ? (formError.values["balance"] ?? "")
+        : formatMoneyInput(liability.currentBalance.amountMinor),
+    fieldError: formError?.formId === liability.id ? formError.message : null,
+  }));
+
   return (
     <Shell
       activeSection="patrimonio"
@@ -101,100 +138,14 @@ export default async function PuestaAlDiaPage({
             <Link href="/patrimonio/anadir">Añadir holding →</Link>
           </p>
         ) : (
-          <form action={batchValueUpdateAction} className="stackForm">
-            <input name="currentUrl" type="hidden" value="/patrimonio/actualizar" />
-
-            {assets.length > 0 ? (
-              <fieldset className="puestaFieldset">
-                <legend>Activos manuales</legend>
-                {assets.map((asset) => {
-                  const fieldError =
-                    formError?.formId === asset.id ? formError.message : null;
-                  const fieldValue =
-                    formError?.formId === asset.id
-                      ? (formError.values["currentValue"] ?? "")
-                      : formatMoneyInput(asset.currentValue.amountMinor);
-
-                  return (
-                    <div className="puestaRow" key={asset.id}>
-                      <label htmlFor={`val_${asset.id}`}>
-                        <span className="puestaName">{asset.name}</span>
-                        <small className="puestaTier">{asset.liquidityTier}</small>
-                      </label>
-                      <div className="puestaInput">
-                        <input
-                          defaultValue={fieldValue}
-                          id={`val_${asset.id}`}
-                          inputMode="decimal"
-                          name={`val_${asset.id}`}
-                          aria-label={`Valor de ${asset.name} en EUR`}
-                          placeholder="Valor EUR"
-                        />
-                        <small className="puestaCurrent">
-                          Actual:{" "}
-                          {formatMoneyMinorPrivacy(asset.currentValue, privacyMode)}
-                        </small>
-                        {fieldError ? (
-                          <p className="formError" role="alert">
-                            {fieldError}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })}
-              </fieldset>
-            ) : null}
-
-            {liabilities.length > 0 ? (
-              <fieldset className="puestaFieldset">
-                <legend>Deudas</legend>
-                {liabilities.map((liability) => {
-                  const fieldError =
-                    formError?.formId === liability.id ? formError.message : null;
-                  const fieldValue =
-                    formError?.formId === liability.id
-                      ? (formError.values["balance"] ?? "")
-                      : formatMoneyInput(liability.currentBalance.amountMinor);
-
-                  return (
-                    <div className="puestaRow" key={liability.id}>
-                      <label htmlFor={`val_${liability.id}`}>
-                        <span className="puestaName">{liability.name}</span>
-                        <small className="puestaTier">
-                          {liability.type === "mortgage" ? "Hipoteca" : "Deuda"}
-                        </small>
-                      </label>
-                      <div className="puestaInput">
-                        <input
-                          defaultValue={fieldValue}
-                          id={`val_${liability.id}`}
-                          inputMode="decimal"
-                          name={`val_${liability.id}`}
-                          aria-label={`Saldo de ${liability.name} en EUR`}
-                          placeholder="Saldo EUR"
-                        />
-                        <small className="puestaCurrent">
-                          Actual:{" "}
-                          {formatMoneyMinorPrivacy(liability.currentBalance, privacyMode)}
-                        </small>
-                        {fieldError ? (
-                          <p className="formError" role="alert">
-                            {fieldError}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })}
-              </fieldset>
-            ) : null}
-
-            <div className="puestaFooter">
-              <button type="submit">Guardar todo</button>
-              <Link href="/patrimonio">Cancelar</Link>
-            </div>
-          </form>
+          <PuestaAlDiaForm
+            action={batchValueUpdateAction}
+            assets={assetRows}
+            currency={currency}
+            liabilities={liabilityRows}
+            privacyMode={privacyMode}
+            readOnly={isDemo}
+          />
         )}
       </section>
     </Shell>

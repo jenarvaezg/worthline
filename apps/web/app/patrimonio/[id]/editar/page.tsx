@@ -14,6 +14,7 @@ import { notFound, redirect } from "next/navigation";
 
 import OperationsEditor from "@web/_components/operations-editor";
 import { detailRefreshCaption } from "@web/price-refresh";
+import { isDemoMode } from "@web/demo/write-guard";
 import {
   parseFormError,
   parsePrivacyCookie,
@@ -302,6 +303,8 @@ export default async function EditarPage({
 
   const today = new Date().toISOString().slice(0, 10);
   const currentUrl = `/patrimonio/${id}/editar`;
+  // Demo skips optimistic mutations — the write-guard rejects them (§10).
+  const isDemo = await isDemoMode();
 
   // The holding's valuation method: an asset reads it off its instrument, a
   // liability off its debt model (#152). This single value dispatches the surface.
@@ -485,6 +488,7 @@ export default async function EditarPage({
         {/* derived: the investment's operations editor (the single place units change) */}
         {asset && method === "derived" && !isCoinCollection && !isBinanceHolding ? (
           <OperationsEditor
+            assetId={id}
             assetName={asset.name}
             context={{
               ...(position ? { currentUnits: position.currentUnits } : {}),
@@ -511,6 +515,7 @@ export default async function EditarPage({
             formError={formError}
             operations={operations}
             privacyMode={privacyMode}
+            readOnly={isDemo}
             recordAction={boundRecordOperationAction}
             today={today}
           />

@@ -113,6 +113,16 @@ export default defineConfig({
         // Point the Binance + CoinGecko clients at the fake server (#252).
         WORTHLINE_BINANCE_BASE_URL: fakeApiBaseUrl,
         WORTHLINE_COINGECKO_BASE_URL: `${fakeApiBaseUrl}/coingecko/api/v3`,
+        // Force the local single-tenant (no-login) mode regardless of the
+        // developer's `.env.local`. The suite is designed for the file-DB mode CI
+        // runs in (no `.env.local`); a dev who has Google auth configured for
+        // hosted-mode local dev (AUTH_GOOGLE_*) would otherwise hit the login wall
+        // on every route and see all journeys fail. Next's `@next/env` does NOT
+        // overwrite vars already present in `process.env`, so these blanks win over
+        // `.env.local` — the same guarantee the config relies on for the DB path.
+        AUTH_GOOGLE_ID: "",
+        AUTH_GOOGLE_SECRET: "",
+        AUTH_SECRET: "",
       },
       // Give Next.js up to 60s to start on first cold run.
       timeout: 60_000,
