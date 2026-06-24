@@ -2,6 +2,7 @@
   "name": "worthline",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "type": "module",
   "packageManager": "npm@11.14.1",
   "engines": {
