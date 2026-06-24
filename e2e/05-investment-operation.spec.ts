@@ -13,7 +13,7 @@
  * the ficha now shows — re-surfacing P/L in the Patrimonio list is S8 (#154).
  */
 
-import { test, expect, addHolding, holdingRow } from "./fixtures";
+import { test, expect, addHolding, holdingRow, delayServerActions } from "./fixtures";
 
 test("investment: create with manual price → buy operation → derived value visible", async ({
   page,
@@ -74,7 +74,27 @@ test("investment: create with manual price → buy operation → derived value v
   await expect(operationForm.getByLabel("Precio por unidad en EUR")).toHaveValue(
     "105,50",
   );
+
+  // 8b. Recording is OPTIMISTIC (#521, interaction-patterns §4): with the Server
+  //     Action held, the operation row must appear in the list BEFORE the action
+  //     resolves — without a document reload (a window sentinel a full reload wipes).
+  //     Only the row is faked; the derived context (units/value) settles on redirect.
+  await page.evaluate(() => {
+    (window as Window & { __wlNoReload?: boolean }).__wlNoReload = true;
+  });
+  const release = await delayServerActions(page, 2000);
+
   await operationForm.getByRole("button", { name: "Registrar operación" }).click();
+
+  await expect(page.locator(".recentOpsPanel")).toContainText("105,50");
+  await expect(page).not.toHaveURL(/ok=saved/);
+  expect(
+    await page.evaluate(
+      () => (window as Window & { __wlNoReload?: boolean }).__wlNoReload,
+    ),
+  ).toBe(true);
+
+  await release();
 
   // 9. Success redirect — the action lands back on the ficha with `ok=saved`.
   //    Wait for that URL transition first (the deterministic signal the operation

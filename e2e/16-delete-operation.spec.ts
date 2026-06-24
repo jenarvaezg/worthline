@@ -10,7 +10,7 @@
  * holding's own ficha (/patrimonio/[id]/editar).
  */
 
-import { test, expect, addHolding, holdingRow } from "./fixtures";
+import { test, expect, addHolding, holdingRow, delayServerActions } from "./fixtures";
 
 test("record an operation, then delete it", async ({ page }) => {
   // 1. New investment with a manual price (no ticker → no network).
@@ -45,12 +45,29 @@ test("record an operation, then delete it", async ({ page }) => {
   await expect(opsPanel).toBeVisible();
   await expect(opsPanel.locator("tbody tr")).toHaveCount(1);
 
-  // 5. Delete that operation (two-step confirm).
+  // 5. Delete that operation (two-step confirm). The delete is OPTIMISTIC (#521,
+  //    interaction-patterns §4): with the Server Action held, the only row vanishes
+  //    the instant we confirm — so the panel unrenders BEFORE the action resolves,
+  //    without a document reload (a window sentinel a full reload wipes).
+  await page.evaluate(() => {
+    (window as Window & { __wlNoReload?: boolean }).__wlNoReload = true;
+  });
+  const release = await delayServerActions(page, 2000);
+
   const opDelete = opsPanel.locator("tbody tr").first().locator("details.confirmDelete");
   await opDelete.locator("summary").click();
   await opDelete.getByRole("button", { name: "Confirmar" }).click();
 
-  // 6. Success banner and the operation is gone (panel no longer rendered).
+  await expect(page.locator("details.recentOpsPanel")).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => (window as Window & { __wlNoReload?: boolean }).__wlNoReload,
+    ),
+  ).toBe(true);
+
+  await release();
+
+  // 6. Success banner and the operation stays gone (panel not rendered).
   await expect(page.getByRole("status")).toContainText("Operación eliminada");
   await expect(page.locator("details.recentOpsPanel")).toHaveCount(0);
 });
