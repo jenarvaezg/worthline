@@ -230,10 +230,22 @@ export async function loadDashboard(
     return buildEmptyResult(persistence, pricingErrors);
   }
 
+  // Build the projection context ONCE (dedup #566): the only writes to the four
+  // underlying tables (operations, investment meta, price cache, ownerships) in a
+  // cold load are the `upsertPrice` calls in §1 above, which have all committed
+  // before this point. A single shared context is therefore byte-identical to the
+  // two separate builds that `readAssets` and `readScopedPositionsWithDetails`
+  // would otherwise each perform. `hasInvestments = true` (the union) means the
+  // three investment-only reads run even when there are no investments — a
+  // negligible one-time cost for empty maps, still cheaper than two full builds.
+  const projectionContext = await store.snapshots.buildProjectionContext();
+
   // TX-safety: no transaction is open here; both calls invoke ctx.getWorkspace()
   // internally — safe because getWorkspace() is promise-memoized (Step 0).
+  // readAssets and readLiabilities are independent and parallelize; readAssets
+  // now uses the pre-built context above (no second projection build).
   const [assets, liabilities] = await Promise.all([
-    store.assets.readAssets(),
+    store.assets.readAssets(projectionContext),
     store.liabilities.readLiabilities(),
   ]);
   const scopes = listScopeOptions(workspace);
@@ -254,6 +266,7 @@ export async function loadDashboard(
   // capture details stay byte-identical to the old unscoped readPositions() map.
   const scopedProjection = await store.snapshots.readScopedPositionsWithDetails(
     selectedScope?.id,
+    projectionContext,
   );
   const investmentDetails: ReadonlyMap<string, InvestmentCaptureDetail> =
     scopedProjection.details;

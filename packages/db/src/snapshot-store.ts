@@ -1,4 +1,5 @@
 import type {
+  AssetProjectionContext,
   DomainWarning,
   InvestmentCaptureDetail,
   NetWorthSnapshot,
@@ -107,10 +108,26 @@ export interface SnapshotStore {
    * request, and building them from a single projection context reads every
    * operation once instead of twice. Byte-identical to deriving the details from
    * `readPositions()` and reading `readPositions(scopeId)` separately.
+   *
+   * @param projectionContext - Optional pre-built context (dedup #566). When
+   *   provided, the internal build is skipped and the supplied context is used
+   *   directly. See `buildProjectionContext` to build the shared context once.
    */
   readScopedPositionsWithDetails: (
     scopeId?: string,
+    projectionContext?: AssetProjectionContext,
   ) => Promise<ScopedPositionsWithDetails>;
+  /**
+   * Build the raw projection context (operations, investment meta, price cache,
+   * ownerships) with `hasInvestments = true` — the union that covers all asset
+   * types. Use this once per cold dashboard load and pass the result to both
+   * `readAssets` and `readScopedPositionsWithDetails` to avoid the second
+   * identical build (dedup #566).
+   *
+   * Safety invariant: call this AFTER all writes to the four underlying tables
+   * complete (i.e. after §1 price refresh + upsertPrice in load-dashboard.ts).
+   */
+  buildProjectionContext: () => Promise<AssetProjectionContext>;
 }
 
 export function createSnapshotStore(ctx: StoreContext): SnapshotStore {
@@ -120,8 +137,14 @@ export function createSnapshotStore(ctx: StoreContext): SnapshotStore {
     readSnapshotHoldings: (query) => readSnapshotHoldings(ctx.db, query),
     readPositions: async (scopeId) =>
       readPositions(ctx.db, await ctx.getWorkspace(), scopeId),
-    readScopedPositionsWithDetails: async (scopeId) =>
-      readScopedPositionsWithDetails(ctx.db, await ctx.getWorkspace(), scopeId),
+    readScopedPositionsWithDetails: async (scopeId, projectionContext) =>
+      readScopedPositionsWithDetails(
+        ctx.db,
+        await ctx.getWorkspace(),
+        scopeId,
+        projectionContext,
+      ),
+    buildProjectionContext: () => buildAssetProjectionContext(ctx.db, true),
   };
 }
 
@@ -511,11 +534,17 @@ export async function readPositions(
  * (projectScopedPositionsWithDetails) derives both views from that single context
  * — so a dashboard load reads every operation once, not once per `readPositions`
  * call. The figures are byte-identical to the two separate reads it replaces.
+ *
+ * @param projectionContext - Optional pre-built context (dedup #566). When
+ *   provided, the internal `buildAssetProjectionContext` call is skipped and the
+ *   supplied context is used directly, eliminating the second redundant build on
+ *   a cold dashboard load.
  */
 export async function readScopedPositionsWithDetails(
   db: StoreDb,
   workspace: Workspace | null,
   scopeId?: string,
+  projectionContext?: AssetProjectionContext,
 ): Promise<ScopedPositionsWithDetails> {
   if (!workspace) {
     return { details: new Map(), positions: [] };
@@ -527,7 +556,7 @@ export async function readScopedPositionsWithDetails(
     return { details: new Map(), positions: [] };
   }
 
-  const projectionContext = await buildAssetProjectionContext(db, true);
+  const ctx = projectionContext ?? (await buildAssetProjectionContext(db, true));
 
-  return projectScopedPositionsWithDetails(workspace, rows, projectionContext, scopeId);
+  return projectScopedPositionsWithDetails(workspace, rows, ctx, scopeId);
 }

@@ -446,4 +446,29 @@ describe("dashboard load read shape — investment projection reuse (#208)", () 
 
     store.close();
   });
+
+  test("a shared projection context reads the operations table once across assets + positions (#566)", async () => {
+    const store = await createFileBackedStore("worthline-perf-dedup-");
+    await seedPerformanceWorkspace(store);
+
+    const workspace = (await store.workspace.readWorkspace())!;
+    const selectedScope = listScopeOptions(workspace)[0]!;
+
+    // load-dashboard builds the projection context ONCE and passes it to both
+    // readAssets and readScopedPositionsWithDetails (dedup #566). The shared
+    // context scans asset_operations exactly once; drop the context-passing and
+    // each call rebuilds it, pushing the count above one and failing this test.
+    fullOperationScans = 0;
+    const projectionContext = await store.snapshots.buildProjectionContext();
+    await store.assets.readAssets(projectionContext);
+    const { positions } = await store.snapshots.readScopedPositionsWithDetails(
+      selectedScope.id,
+      projectionContext,
+    );
+
+    expect(positions.length).toBeGreaterThan(0);
+    expect(fullOperationScans).toBe(1);
+
+    store.close();
+  });
 });

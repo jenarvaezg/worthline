@@ -17,6 +17,8 @@ import {
 } from "@worthline/domain";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
+import type { AssetProjectionContext } from "@worthline/domain";
+
 import {
   ensureAgentViewPublicIds,
   publicIdTargetsForHolding,
@@ -122,7 +124,14 @@ export interface UpdateAssetInput {
 export interface AssetStore {
   createManualAsset: (input: CreateManualAssetInput) => Promise<void>;
   createInvestmentAsset: (input: CreateInvestmentAssetInput) => Promise<void>;
-  readAssets: () => Promise<ManualAsset[]>;
+  /**
+   * @param projectionContext - Optional pre-built projection context (dedup
+   *   #566). When provided, the internal `buildAssetProjectionContext` build is
+   *   skipped. Build once via `store.snapshots.buildProjectionContext()` and pass
+   *   to both this method and `readScopedPositionsWithDetails` to avoid reading
+   *   the four underlying tables twice per cold dashboard load.
+   */
+  readAssets: (projectionContext?: AssetProjectionContext) => Promise<ManualAsset[]>;
   readInvestmentAssetById: (assetId: string) => Promise<InvestmentAssetFull | null>;
   readInvestmentAssetsWithMeta: () => Promise<InvestmentAssetMeta[]>;
   updateAsset: (assetId: string, input: UpdateAssetInput) => Promise<void>;
@@ -187,7 +196,8 @@ export function createAssetStore(ctx: StoreContext): AssetStore {
   return {
     createManualAsset: (input) => createManualAssetRecord(ctx, input),
     createInvestmentAsset: (input) => createInvestmentAsset(ctx, input),
-    readAssets: async () => readAssets(ctx.db, await ctx.getWorkspace()),
+    readAssets: async (projectionContext) =>
+      readAssets(ctx.db, await ctx.getWorkspace(), projectionContext),
     readInvestmentAssetById: (assetId) => readInvestmentAssetById(ctx, assetId),
     readInvestmentAssetsWithMeta: () => readInvestmentAssetsWithMeta(ctx),
     updateAsset: (assetId, input) => updateAsset(ctx, assetId, input),
