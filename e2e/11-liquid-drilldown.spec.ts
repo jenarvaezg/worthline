@@ -95,33 +95,33 @@ test("topnav navigation does not cause a full document reload (VT cross-fade, #5
 test("topnav navigation uses classified View Transition types (slide-forward, #517)", async ({
   page,
 }) => {
-  // Navigate to home. Spy on document.startViewTransition to capture which
-  // transitionTypes were requested — this would fail if ViewTransitionLink is
-  // replaced with a bare Link that does not pass transitionTypes.
+  // ViewTransitionLink dispatches a "wl:view-transition" CustomEvent on document
+  // when it classifies a navigation. We listen for it before the click, then
+  // assert it fired with the correct types.
+  //
+  // This runs on Chromium (supportsViewTransitions() returns true), so the event
+  // is always dispatched for eligible navigations. A bare <Link> never dispatches
+  // this event → vtCalled stays false → test fails deterministically.
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
 
+  // Install the listener before the click.
   await page.evaluate(() => {
     const w = window as unknown as {
       __wlVtTypes?: string[];
       __wlVtCalled?: boolean;
     };
-    w.__wlVtTypes = undefined;
+    w.__wlVtTypes = [];
     w.__wlVtCalled = false;
-
-    const original = document.startViewTransition?.bind(document);
-    if (!original) return; // Browser does not support VT — test is a no-op.
-
-    // @ts-expect-error — patching the native API for test observation only.
-    document.startViewTransition = (
-      options: { types?: string[]; update: () => Promise<void> } | (() => void),
-    ) => {
-      if (typeof options === "object" && options !== null) {
-        w.__wlVtTypes = options.types ?? [];
-      }
-      w.__wlVtCalled = true;
-      return original(options);
-    };
+    document.addEventListener(
+      "wl:view-transition",
+      (e) => {
+        w.__wlVtCalled = true;
+        const detail = (e as CustomEvent<{ transitionTypes: string[] }>).detail;
+        w.__wlVtTypes = detail.transitionTypes;
+      },
+      { once: true },
+    );
   });
 
   // Navigate / → /patrimonio (forward in nav order → should be "slide-forward").
@@ -144,8 +144,10 @@ test("topnav navigation uses classified View Transition types (slide-forward, #5
   );
   expect(sentinelValue).toBe("kept");
 
-  // If the browser supports View Transitions AND the wiring is active,
-  // startViewTransition must have been called with "slide-forward".
+  // The wl:view-transition event must have fired with "slide-forward".
+  // Both assertions are unconditional: Chromium supports View Transitions and
+  // ViewTransitionLink is wired to dispatch the event on every eligible click.
+  // Replacing ViewTransitionLink with bare <Link> → no event → vtCalled = false.
   const { vtCalled, vtTypes } = await page.evaluate(() => {
     const w = window as unknown as {
       __wlVtTypes?: string[];
@@ -154,12 +156,8 @@ test("topnav navigation uses classified View Transition types (slide-forward, #5
     return { vtCalled: w.__wlVtCalled ?? false, vtTypes: w.__wlVtTypes ?? [] };
   });
 
-  if (vtCalled) {
-    // VT is supported — assert the classification wiring produced the correct type.
-    expect(vtTypes).toContain("slide-forward");
-  }
-  // If vtCalled is false the browser does not support VT (graceful degradation);
-  // the test is still green — the sentinel check above already verified no reload.
+  expect(vtCalled).toBe(true);
+  expect(vtTypes).toContain("slide-forward");
 });
 
 test("liquid drilldown: the selected Vista survives entering and leaving", async ({

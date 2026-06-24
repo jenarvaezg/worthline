@@ -9,22 +9,22 @@
  * module holds all logic, the client island holds only the wiring.
  *
  * How it works:
- *   1. `onNavigate` fires before Next.js performs the SPA navigation.
- *   2. We read the current pathname via `usePathname()` (always fresh because
- *      this renders client-side) and classify the transition.
- *   3. If not eligible or the browser does not support the API → let the
- *      default Next navigation proceed (no `preventDefault`, no transition).
- *   4. If eligible → `e.preventDefault()` stops Next's default push, then we
- *      issue `router.push(href, { transitionTypes })` with the classified type
- *      so the CSS `::view-transition-old(.slide-forward)` selectors fire.
+ *   1. At render time, `classifyTransition(pathname, href)` determines whether
+ *      the navigation is eligible and which CSS transition-type tokens to use.
+ *   2. If eligible and the browser supports the API, the classified types are
+ *      passed to `<Link transitionTypes={...}>` — Next 16's native prop that
+ *      threads the types through to `document.startViewTransition` automatically.
+ *   3. If not eligible or the browser does not support the API, `transitionTypes`
+ *      is `undefined` and Next renders a plain link with no transition overhead.
  *
- * Graceful degradation: `supportsViewTransitions()` returns false in browsers
- * without the API (and in SSR) — the component renders a plain `next/link`
- * in those cases with zero extra runtime cost.
+ * Graceful degradation: `supportsViewTransitions()` returns false in non-browser
+ * environments (SSR/node).  `transitionTypes` is NOT rendered to the DOM (Next
+ * destructures it out before spreading to the anchor), so returning `undefined`
+ * on SSR and a real array on the client does NOT cause a hydration mismatch.
  */
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 
 import { classifyTransition, supportsViewTransitions } from "./view-transitions";
 
@@ -35,39 +35,25 @@ export interface ViewTransitionLinkProps extends React.ComponentProps<typeof Lin
 
 export default function ViewTransitionLink({
   href,
-  onNavigate,
+  onClick,
   ...rest
 }: ViewTransitionLinkProps) {
   const pathname = usePathname();
-  const router = useRouter();
+  const { eligible, transitionTypes } = classifyTransition(pathname, href);
+  const vtProps =
+    supportsViewTransitions() && eligible ? { transitionTypes } : ({} as object);
 
-  return (
-    <Link
-      href={href}
-      onNavigate={(e) => {
-        // Forward any caller-supplied onNavigate first, tracking whether it
-        // called preventDefault (the type has no defaultPrevented field).
-        let prevented = false;
-        const wrapped = {
-          preventDefault: () => {
-            prevented = true;
-            e.preventDefault();
-          },
-        };
-        onNavigate?.(wrapped);
-        if (prevented) return;
+  function handleClick(e: React.MouseEvent<HTMLAnchorElement>) {
+    // Dispatch a CustomEvent so tests (and devtools) can observe the classified
+    // transition types without instrumenting browser internals.
+    if (supportsViewTransitions() && eligible) {
+      document.dispatchEvent(
+        new CustomEvent("wl:view-transition", { detail: { transitionTypes } }),
+      );
+    }
+    onClick?.(e);
+  }
 
-        if (!supportsViewTransitions()) return;
-
-        const { eligible, transitionTypes } = classifyTransition(pathname, href);
-        if (!eligible) return;
-
-        // Hand off to router.push with the classified transition types so the
-        // CSS `::view-transition-old(.slide-forward)` selectors fire.
-        e.preventDefault();
-        router.push(href, { transitionTypes });
-      }}
-      {...rest}
-    />
-  );
+  // rest spread first so our computed href/transitionTypes win over any caller value.
+  return <Link {...rest} href={href} onClick={handleClick} {...vtProps} />;
 }
