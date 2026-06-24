@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 
 import DemoBanner from "@web/demo/demo-banner";
@@ -35,10 +35,22 @@ const mono = localFont({
   variable: "--font-mono",
 });
 
+export const viewport: Viewport = {
+  themeColor: "#006f5f", // matches --green design token
+};
+
 export const metadata: Metadata = {
   title: "worthline",
   description: "Local-first net worth dashboard",
   manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "worthline",
+  },
+  icons: {
+    apple: "/icon.svg",
+  },
 };
 
 export default async function RootLayout({

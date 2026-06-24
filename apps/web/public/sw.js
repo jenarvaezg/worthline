@@ -6,7 +6,6 @@ const PRECACHE_ASSETS = ["/manifest.json", "/icon.svg"];
 // Cache static assets on fetch
 const STATIC_ASSETS_PATTERNS = [
   /\/_next\/static\//,
-  /\/fonts\//,
   /\/icon\.svg$/,
   /\/manifest\.json$/,
   /\/mcp-icon\.svg$/,
@@ -21,14 +20,28 @@ self.addEventListener("install", (event) => {
     caches
       .open(CACHE_NAME)
       .then((cache) => {
-        return cache.addAll(PRECACHE_ASSETS);
+        // Individual precaching so single 404 does not break entire installation
+        return Promise.allSettled(
+          PRECACHE_ASSETS.map((asset) =>
+            cache.add(asset).catch((err) => {
+              console.warn(`Failed to precache asset: ${asset}`, err);
+            }),
+          ),
+        );
       })
       .then(() => self.skipWaiting()),
   );
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))),
+      )
+      .then(() => self.clients.claim()),
+  );
 });
 
 // Inline offline HTML response
@@ -40,6 +53,16 @@ const OFFLINE_HTML = `
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sin conexión - worthline</title>
   <style>
+    /* Design tokens mapped from app/globals.css to prevent offline style drift:
+       background: #eef2ef -> --paper
+       color: #17201e -> --ink
+       container background: #fffdf7 -> --panel
+       container border: #78877f -> --line
+       h1 color: #006f5f -> --green
+       p color: #51605b -> --muted
+       button background: #17201e -> --ink
+       button color: #fbfbf4 -> --paper-strong
+    */
     body {
       background: #eef2ef;
       color: #17201e;
