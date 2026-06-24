@@ -136,7 +136,41 @@ _Avoid_: ticker (too narrow — Finect codes are not tickers).
 **ISIN**:
 The International Securities Identification Number of an investment. Stored as
 reference metadata only — it does not participate in price fetching. The
-**provider symbol** is the sole lookup key.
+**provider symbol** is the sole lookup key. It is also the shared key of an
+**exposure profile**.
+
+**Exposure**:
+The composition of a scope's portfolio across axes — its largest **holdings**, its
+split by **liquidity tier** and by **instrument**, its concentration, and (via
+**look-through**) its underlying geography, currency, and asset class. A reporting lens
+over current holdings, not a figure: it re-describes the portfolio, never changes
+**net worth**.
+
+**Exposure profile**:
+The canonical description of what an **investment** actually holds underneath — its
+breakdown by geography (a fixed set of world regions), by underlying currency, and by
+asset class, plus the index it tracks and its TER. Shared and keyed by **ISIN** (with a
+fallback key for instruments that have none, e.g. a crypto coin id), so two **holdings**
+of the same security share one profile. Like an **instrument** it is a descriptive label
+and not a figure the math reads: it never touches **net worth**, **snapshots**, or
+**ripple recalculation**. Each breakdown is a set of bucket→weight entries that need not
+sum to 100% — the remainder is an implicit _other_ (only what is known is declared) and a
+breakdown over 100% is rejected. **Cash** and **property** carry auto-derived profiles
+(from their instrument and the base currency); coins are excluded (ADR 0017).
+_Avoid_: instrument (the coarse kind — an exposure profile says what one specific security
+contains), security master (implementation term).
+
+**Look-through**:
+A scope's **Exposure** resolved down through its funds to the underlying geography,
+currency, and asset class — the portfolio-level aggregation that sums each **holding**
+weighted by its **exposure profile**. A present-time lens, computed live like the existing
+**Exposure** breakdowns and never frozen into **snapshots**, so it stands apart from
+historical reconciliation (ADR 0008). It always reports **coverage** — the share of
+**gross assets** that carries a profile — so an unclassified remainder is surfaced, never
+hidden behind a figure that pretends to cover everything. Because asset class is itself a
+breakdown axis, a reader can restrict to equity and then read geography, answering "how
+much US equity do I hold" without inventing the number.
+_Avoid_: drill-down (the per-**position** second level is a different concept), passthrough.
 
 **Operation**:
 A buy or a sell against one **investment**: date, units, price per unit, fees.
@@ -477,6 +511,7 @@ _Avoid_: connected source, account, financial advisor.
 - Ownership of a **connected source** holding is worthline's own concern (the source has none): a normal **ownership split**, editable, defaulting to 100% the connecting **scope** member.
 - A **demo mode** deployment shows the live app over a fictional, read-only workspace; a **persona** selects which fictional workspace is shown. Both are presentation concerns — they add no figure and change no calculation, and exist only in the demo build.
 - **FIRE progress** counts FIRE-eligible assets in the selected **scope** and excludes the primary residence plus any assets manually excluded from FIRE.
+- An **exposure profile** attaches to an **investment**, shared by **ISIN**; **look-through** sums each **holding** weighted by its profile into the scope's **Exposure**, a present-time lens with explicit **coverage**. It is reference metadata — it adds no figure the net-worth math reads and never enters a **snapshot**.
 - An **agent view** reads a **scope**'s current portfolio, historical snapshots, **FIRE progress**, data-quality signals, and the calculation facts behind them; it defaults to the household **scope**, may be narrowed to one member or member group, preserves user-authored member, group, and holding labels, exposes context rather than recommendations, excludes secrets and transfer artifacts, never changes live data, and never refreshes or captures data as a side effect of being read.
 
 ## Flagged ambiguities
