@@ -149,8 +149,9 @@ over current holdings, not a figure: it re-describes the portfolio, never change
 **Exposure profile**:
 The canonical description of what an **investment** actually holds underneath — its
 breakdown by geography (a fixed set of world regions), by underlying currency, and by
-asset class, plus the index it tracks and its TER. Shared and keyed by **ISIN** (with a
-fallback key for instruments that have none, e.g. a crypto coin id), so two **holdings**
+asset class, plus the index it tracks, its TER, and whether its currency exposure is
+**hedged** to the base currency. Shared and keyed by its identity — **ISIN** when present,
+else its **provider symbol** (a pension plan often has no ISIN), so two **holdings**
 of the same security share one profile. Like an **instrument** it is a descriptive label
 and not a figure the math reads: it never touches **net worth**, **snapshots**, or
 **ripple recalculation**. Each breakdown is a set of bucket→weight entries that need not
@@ -169,7 +170,9 @@ historical reconciliation (ADR 0008). It always reports **coverage** — the sha
 **gross assets** that carries a profile — so an unclassified remainder is surfaced, never
 hidden behind a figure that pretends to cover everything. Because asset class is itself a
 breakdown axis, a reader can restrict to equity and then read geography, answering "how
-much US equity do I hold" without inventing the number.
+much US equity do I hold" without inventing the number. It also derives a **currency-risk**
+lens — the unhedged non-EUR exposure, by currency — as information, never a change to a
+figure (worthline has no FX layer and stays in EUR).
 _Avoid_: drill-down (the per-**position** second level is a different concept), passthrough.
 
 **Operation**:
