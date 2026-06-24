@@ -1,0 +1,47 @@
+name: Bug report
+description: Report something that's broken or behaving unexpectedly
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Please fill in the sections below so it can be reproduced quickly.
+        **For security-sensitive issues, do not use this form — follow [SECURITY.md](https://github.com/jenarvaezg/worthline/security/policy).**
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What's wrong, in a sentence or two?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal, ordered steps. Note whether you're in local no-auth mode or hosted mode.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs. actual behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: The commit SHA or branch you observed this on.
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Environment & extra context
+      description: OS, Node version, browser, relevant logs or screenshots.
+    validations:
+      required: false
