@@ -63,6 +63,10 @@ export interface ControlPlaneStore {
    * lists workspaces directly rather than scoped to a granted user.
    */
   listAllWorkspaces(): Promise<ControlPlaneWorkspace[]>;
+  /** Whether the daily fleet capture has already finalized this UTC date. */
+  hasDailyCaptureRun(dateKey: string): Promise<boolean>;
+  /** Record or update daily fleet capture finalization for this UTC date. */
+  recordDailyCaptureRun(dateKey: string, finalizedAt: string): Promise<void>;
   close(): void;
 }
 
@@ -93,6 +97,11 @@ CREATE TABLE IF NOT EXISTS grants (
   PRIMARY KEY (user_id, workspace_id),
   FOREIGN KEY (user_id) REFERENCES users(id),
   FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+);
+CREATE TABLE IF NOT EXISTS daily_capture_runs (
+  date_key TEXT PRIMARY KEY,
+  finalized_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 `;
 
@@ -201,6 +210,23 @@ async function buildControlPlaneStore(
         "SELECT id, db_name, db_url, created_at FROM workspaces ORDER BY created_at ASC",
       );
       return result.rows.map((row) => toWorkspace(row));
+    },
+    async hasDailyCaptureRun(dateKey) {
+      const result = await client.execute({
+        sql: "SELECT 1 FROM daily_capture_runs WHERE date_key = ? LIMIT 1",
+        args: [dateKey],
+      });
+      return result.rows.length > 0;
+    },
+    async recordDailyCaptureRun(dateKey, finalizedAt) {
+      await client.execute({
+        sql: `INSERT INTO daily_capture_runs (date_key, finalized_at)
+              VALUES (?, ?)
+              ON CONFLICT(date_key) DO UPDATE SET
+                finalized_at = excluded.finalized_at,
+                updated_at = CURRENT_TIMESTAMP`,
+        args: [dateKey, finalizedAt],
+      });
     },
     close() {
       client.close();

@@ -22,20 +22,39 @@ type CronEnv = Record<string, string | undefined>;
 export function buildDailyCaptureDeps(env: CronEnv = process.env): RunDailyCaptureDeps {
   const controlPlaneUrl = env["WORTHLINE_CONTROL_PLANE_DB_URL"];
   const groupToken = env["WORTHLINE_DB_AUTH_TOKEN"];
+  const openControlPlane = async () => {
+    if (!controlPlaneUrl) {
+      throw new Error("Daily capture requires WORTHLINE_CONTROL_PLANE_DB_URL.");
+    }
+    return createControlPlaneStore({
+      url: controlPlaneUrl,
+      ...(groupToken ? { authToken: groupToken } : {}),
+    });
+  };
 
   return {
     now: new Date().toISOString(),
     listAllWorkspaces: async () => {
-      if (!controlPlaneUrl) {
-        throw new Error("Daily capture requires WORTHLINE_CONTROL_PLANE_DB_URL.");
-      }
-      const controlPlane = await createControlPlaneStore({
-        url: controlPlaneUrl,
-        ...(groupToken ? { authToken: groupToken } : {}),
-      });
+      const controlPlane = await openControlPlane();
       try {
         const workspaces = await controlPlane.listAllWorkspaces();
         return workspaces.map((w) => ({ id: w.id, dbUrl: w.dbUrl }));
+      } finally {
+        controlPlane.close();
+      }
+    },
+    isRunFinalized: async (dateKey) => {
+      const controlPlane = await openControlPlane();
+      try {
+        return await controlPlane.hasDailyCaptureRun(dateKey);
+      } finally {
+        controlPlane.close();
+      }
+    },
+    markRunFinalized: async (dateKey, finalizedAt) => {
+      const controlPlane = await openControlPlane();
+      try {
+        await controlPlane.recordDailyCaptureRun(dateKey, finalizedAt);
       } finally {
         controlPlane.close();
       }
