@@ -15,30 +15,23 @@
  */
 
 import type { WorthlineStore } from "@worthline/db";
+import { captureDailySnapshotForWorkspace } from "@worthline/db";
 import type {
   AssetPrice,
-  CoinPosition,
   CompositionRange,
   DrilldownKey,
   DrilldownState,
-  InvestmentCaptureDetail,
-  LiquidityTier,
   NetWorthFraming,
-  SnapshotPositionInput,
-  TokenPosition,
 } from "@worthline/domain";
 import {
   availableCompositionRanges,
   buildCompositionSeries,
   buildDrilldown,
-  captureSnapshotForScope,
-  coinPositionSnapshotInput,
   deriveFramedSnapshotDeltas,
   listScopeOptions,
   monthsBetween,
   prepareDashboardState,
   rangeStartMonthKey,
-  tokenPositionSnapshotInput,
 } from "@worthline/domain";
 import type {
   CompositionSeriesPoint,
@@ -252,97 +245,17 @@ export async function loadDashboard(
   const selectedScope = scopes.find((s) => s.id === scopeId) ?? scopes[0];
 
   // ── 3. Snapshot capture (ADR 0005, ADR 0008) ──────────────────────────────
-  // Runs for every scope so all scopes accumulate history, not just the
-  // currently viewed one. Each capture persists the valued portfolio behind
-  // its figures — one frozen row per holding — atomically with the snapshot.
-  // Investments additionally freeze units and the unit price used that day.
-  //
-  // The dashboard needs two things off the investment positions per request: the
-  // UNSCOPED capture details that freeze every scope's snapshot rows, and the
-  // SELECTED scope's positions for the dashboard state (read in §4). Both derive
-  // from the same raw operations and the same price rule (ADR 0006), so we build
-  // the projection once and reuse it (#208) instead of reading every operation
-  // twice. The selected-scope positions narrow the same per-asset figures; the
-  // capture details stay byte-identical to the old unscoped readPositions() map.
+  // Runs for every scope so all scopes accumulate history. Captures at most
+  // one snapshot per scope per day, day's latest winning (ADR 0005).
+  await captureDailySnapshotForWorkspace(store, now);
+
+  // ── 4. Collect remaining data for state assembly ─────────────────────────
+
+  // The selected scope's positions for the dashboard state (#208). Read here since the capture function owns its own projection.
   const scopedProjection = await store.snapshots.readScopedPositionsWithDetails(
     selectedScope?.id,
     projectionContext,
   );
-  const investmentDetails: ReadonlyMap<string, InvestmentCaptureDetail> =
-    scopedProjection.details;
-
-  // Per-connected-source position breakdown (ADR 0035): freeze each connected
-  // holding's per-position values into the snapshot, keyed by the materialized
-  // asset id so `buildSnapshotHoldingRows` attaches them as child rows. Shared
-  // across scopes like `investmentDetails`; the capture scope-allocates down.
-  // Numista freezes one row per coin (frozen `max(metal, numismatic)`, PRD #459
-  // S1); Binance freezes one row per token (live `balance × price`, PRD #459 S2).
-  const positionDetails = new Map<string, SnapshotPositionInput[]>();
-  for (const source of await store.connectedSources.listSources()) {
-    if (source.adapter === "numista") {
-      const coins = (await store.connectedSources.readPositions(source.id)).filter(
-        (position): position is CoinPosition => position.kind === "coin",
-      );
-      if (coins.length > 0) {
-        positionDetails.set(source.assetId, coins.map(coinPositionSnapshotInput));
-      }
-    } else if (source.adapter === "binance") {
-      // Binance varies live and spans rungs (ADR 0021, #248): freeze the per-token
-      // breakdown beneath EACH materialized rung holding (market + term-locked), so
-      // each token's contribution lands under the holding it actually rolls up into.
-      const tokens = (await store.connectedSources.readPositions(source.id)).filter(
-        (position): position is TokenPosition => position.kind === "token",
-      );
-      if (tokens.length === 0) continue;
-      // Map each occupied rung to the source's asset materialized on it — the
-      // source's assets carry their rung as their liquidity tier, one per rung.
-      const sourceAssetIds = new Set(
-        await store.connectedSources.listSourceAssetIds(source.id),
-      );
-      const assetIdByTier = new Map<LiquidityTier, string>();
-      for (const asset of assets) {
-        if (sourceAssetIds.has(asset.id)) {
-          assetIdByTier.set(asset.liquidityTier, asset.id);
-        }
-      }
-      const tokensByTier = new Map<LiquidityTier, TokenPosition[]>();
-      for (const token of tokens) {
-        const rung = tokensByTier.get(token.liquidityTier);
-        if (rung) rung.push(token);
-        else tokensByTier.set(token.liquidityTier, [token]);
-      }
-      for (const [tier, group] of tokensByTier) {
-        const assetId = assetIdByTier.get(tier);
-        if (assetId) {
-          positionDetails.set(assetId, group.map(tokenPositionSnapshotInput));
-        }
-      }
-    }
-  }
-
-  for (const scope of scopes) {
-    const capture = captureSnapshotForScope({
-      assets,
-      capturedAt: now,
-      existingSnapshots: await store.snapshots.readSnapshots(scope.id),
-      investmentDetails,
-      liabilities,
-      positionDetails,
-      scope,
-      workspace,
-    });
-
-    await store.snapshots.saveSnapshot({
-      holdings: capture.holdings,
-      replace: capture.replace,
-      snapshot: capture.snapshot,
-    });
-  }
-
-  // ── 4. Collect remaining data for state assembly ─────────────────────────
-  // The selected scope's positions came from the same projection as the capture
-  // details above (#208) — no second operation read. Empty when there is no scope
-  // (matching the prior `selectedScope ? … : []`).
   const positions = selectedScope ? scopedProjection.positions : [];
 
   // ── §4 parallel reads — all five are mutually independent ────────────────
