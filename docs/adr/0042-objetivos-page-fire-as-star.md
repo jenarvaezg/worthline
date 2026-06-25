@@ -56,3 +56,40 @@ This introduces `goalFireDelay` as the 5th consumer of the reservation path (aft
 - `prepareDashboardState` is composed, not bypassed — FIRE data stays consistent between the home glance and the `/objetivos` detail.
 - `FireProjectionCard` is reused without forking; the trajectory SVG renders taller on `/objetivos` via a single CSS override (`.objetivosHeroRight .fireTrajectory { height: 150px }`), not a prop.
 - **Drift watch**: `totalGoalReservationMinor` is now consumed in 4 places (dashboard, MCP, home glance, objetivos). Any change to the reservation rule must update all four. The "+X meses" S4 implementation adds a 5th.
+
+## N3: Category-weighted FIRE real return (issue #515)
+
+### Model
+
+Instead of a single hard-coded `expectedRealReturn`, the projection engine now computes an **effective rate** = Σ(tier_weight × tier_return) over the eligible pool. The four eligible tiers (housing is excluded from the FIRE pool) carry documented conservative real-return defaults:
+
+| Tier        | Default real return | Rationale                                          |
+| ----------- | ------------------- | -------------------------------------------------- |
+| cash        | 0.00 (0 %)          | Savings accounts track inflation at best           |
+| market      | 0.05 (5 %)          | Global equity long-run real average (conservative) |
+| term-locked | 0.015 (1.5 %)       | Fixed deposits / bonds, above inflation but low    |
+| illiquid    | 0.03 (3 %)          | Private equity / collectibles, net of illiquidity  |
+
+Crypto / Binance tokens carry whichever tier `tierOfAsset` assigns them (typically market or illiquid) — no separate crypto rate in v1.
+
+### Single rate, one resolution point
+
+`calculateFireForScope` now exposes two new fields on `FireResult`:
+
+- `effectiveRealReturn` — the weighted estimate (always computed, for display).
+- `realReturnUsed` — the resolved scalar = `config.expectedRealReturn ?? effectiveRealReturn`.
+
+**Every consumer** (coast math in `calculateFire`, `projectFire`, `fireLevels`, `goalFireDelay`) receives `realReturnUsed` from the caller — none read `config.expectedRealReturn` directly anymore. This is the anti-drift contract: one computation, one rate, zero divergence.
+
+### Backward safety
+
+Existing stored configs have `expectedRealReturn` set → it is honored as the override → projections are unchanged. `expectedRealReturn` is now `optional` on `FireScopeConfig`. When absent, the weighted effective rate drives everything. Users can also configure per-tier overrides via `FireScopeConfig.tierRealReturns`.
+
+### Engine unchanged
+
+The projection engine (`projectFire`, `calculateFire`) is still a single scalar in → single result out. The weighted rate is just a smarter way to compute that scalar. No per-asset simulation, no rebalancing logic.
+
+### UI
+
+- **Ajustes**: `expectedRealReturn` field is now optional (empty = use weighted estimate); placeholder says "estimado por tu mezcla de activos". A collapsible `<details>` section exposes four per-tier override inputs.
+- **/objetivos footer**: shows "Retorno real estimado de tu cartera: X %" (or "manual" when an override is set).

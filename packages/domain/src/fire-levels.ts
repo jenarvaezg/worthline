@@ -37,6 +37,12 @@ export interface FireLevelsInput {
   /** Current eligible assets in minor units (net of goal reservations, same as the chart). */
   eligibleMinor: number;
   currency: CurrencyCode;
+  /**
+   * The single resolved real return to use (N3, #515). Pass `fireResult.realReturnUsed`
+   * so coast + projection + levels all use the same rate. Falls back to
+   * `config.expectedRealReturn ?? 0.05` when omitted (backward-compat).
+   */
+  resolvedRealReturn?: number;
 }
 
 const LEAN_DEFAULT = 0.7;
@@ -51,8 +57,11 @@ const LABEL: Record<FireLevelKey, string> = {
 
 /** Returns null when config is degenerate — caller should hide the rail. */
 export function fireLevels(input: FireLevelsInput): FireLevel[] | null {
-  const { config, eligibleMinor, currency } = input;
-  const { monthlySpendingMinor, safeWithdrawalRate, expectedRealReturn } = config;
+  const { config, eligibleMinor, currency, resolvedRealReturn } = input;
+  const { monthlySpendingMinor, safeWithdrawalRate } = config;
+  // N3 (#515): use the caller-supplied resolved rate (fireResult.realReturnUsed)
+  // so coast + projection + levels all agree on the same scalar.
+  const expectedRealReturn = resolvedRealReturn ?? config.expectedRealReturn ?? 0.05;
 
   if (!safeWithdrawalRate || !monthlySpendingMinor) return null;
 
@@ -67,8 +76,9 @@ export function fireLevels(input: FireLevelsInput): FireLevel[] | null {
     (monthlySpendingMinor * fatMult * 12) / safeWithdrawalRate,
   );
 
-  // Coast amount: reuse calculateFire which already computes coastFireRequired.
-  const fireResult = calculateFire(config, eligibleMinor, currency);
+  // Coast amount: pass the resolved rate so coast uses the SAME scalar as the
+  // projection ETAs and everything else on this rail (CRITICAL-2 fix, N3 #515).
+  const fireResult = calculateFire(config, eligibleMinor, currency, expectedRealReturn);
   const coastAmountMinor = fireResult.coastFireRequired?.amountMinor ?? null;
 
   // Single projection run with fireNumberMinor = fatAmount so the trajectory is

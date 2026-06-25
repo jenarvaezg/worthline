@@ -34,10 +34,12 @@ export async function buildFireProjection(
   const result = fire.result;
   const currency = fire.currency;
 
+  // N3 (#515): use result.realReturnUsed (the single resolved rate) — not
+  // config.expectedRealReturn directly — so projection is coherent with coast.
   const projection = projectFire({
     startingEligibleMinor: result.eligibleAssets.amountMinor,
     monthlyContributionMinor: config.monthlySavingsCapacityMinor ?? 0,
-    expectedRealReturn: config.expectedRealReturn,
+    expectedRealReturn: result.realReturnUsed ?? config.expectedRealReturn ?? 0.05,
     fireNumberMinor: result.fireNumber.amountMinor,
     ...(config.currentAge === undefined ? {} : { currentAge: config.currentAge }),
   });

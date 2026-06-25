@@ -1248,3 +1248,67 @@ describe("parseWorkspaceExport — connected sources (ADR 0016)", () => {
     expectRejection(document, /posición de la fuente/i);
   });
 });
+
+describe("parseWorkspaceExport — FireScopeConfig N3 fields", () => {
+  test("FireScopeConfig without expectedRealReturn (weighted mode) round-trips", () => {
+    const document = makeDocument((doc) => {
+      doc.fireConfig["household"] = {
+        monthlySpendingMinor: 200_000,
+        safeWithdrawalRate: 0.04,
+        // no expectedRealReturn — weighted tier mode
+      };
+    });
+
+    const result = parseWorkspaceExport(document);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const cfg = result.value.fireConfig["household"]!;
+    expect(cfg.expectedRealReturn).toBeUndefined();
+  });
+
+  test("FireScopeConfig with tierRealReturns round-trips", () => {
+    const document = makeDocument((doc) => {
+      doc.fireConfig["household"] = {
+        monthlySpendingMinor: 200_000,
+        safeWithdrawalRate: 0.04,
+        tierRealReturns: { cash: 0.0, market: 0.06, "term-locked": 0.02, illiquid: 0.04 },
+      };
+    });
+
+    const result = parseWorkspaceExport(document);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const cfg = result.value.fireConfig["household"]!;
+    expect(cfg.tierRealReturns).toEqual({
+      cash: 0.0,
+      market: 0.06,
+      "term-locked": 0.02,
+      illiquid: 0.04,
+    });
+    expect(cfg.expectedRealReturn).toBeUndefined();
+  });
+
+  test("FireScopeConfig N1/N2 fields (leanMultiplier, fatMultiplier, baristaMonthlyIncomeMinor) round-trip", () => {
+    const document = makeDocument((doc) => {
+      doc.fireConfig["household"] = {
+        monthlySpendingMinor: 200_000,
+        safeWithdrawalRate: 0.04,
+        expectedRealReturn: 0.05,
+        leanMultiplier: 0.7,
+        fatMultiplier: 1.5,
+        baristaMonthlyIncomeMinor: 50_000,
+      };
+    });
+
+    const result = parseWorkspaceExport(document);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const cfg = result.value.fireConfig["household"]!;
+    expect(cfg.leanMultiplier).toBe(0.7);
+    expect(cfg.fatMultiplier).toBe(1.5);
+    expect(cfg.baristaMonthlyIncomeMinor).toBe(50_000);
+  });
+});

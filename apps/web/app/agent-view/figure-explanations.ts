@@ -1119,7 +1119,7 @@ async function explainFireEligibleAssets(
 
   return {
     asOf,
-    assumptions: fireAssumptions(config, facts.currency),
+    assumptions: fireAssumptions(config, result, facts.currency),
     excludedHoldings: result.excludedAssets.map((excluded) => ({
       holding: holdingRef(facts.holdingPublicIds, excluded.id, excluded.name),
       reason: excluded.reason,
@@ -1166,7 +1166,7 @@ async function explainFireProgress(
 
   return {
     asOf,
-    assumptions: fireAssumptions(config, facts.currency),
+    assumptions: fireAssumptions(config, result, facts.currency),
     excludedHoldings: result.excludedAssets.map((excluded) => ({
       holding: holdingRef(facts.holdingPublicIds, excluded.id, excluded.name),
       reason: excluded.reason,
@@ -1256,10 +1256,15 @@ function eligibleAssetIds(
 
 function fireAssumptions(
   config: FireScopeConfig,
+  result: ReturnType<typeof calculateFireForScope>,
   currency: string,
 ): AgentViewFireAssumptions {
   return {
-    expectedRealReturn: config.expectedRealReturn.toString(),
+    expectedRealReturn: (
+      result.realReturnUsed ??
+      config.expectedRealReturn ??
+      0.05
+    ).toString(),
     monthlySpending: moneyOf(config.monthlySpendingMinor, currency),
     safeWithdrawalRate: config.safeWithdrawalRate.toString(),
   };

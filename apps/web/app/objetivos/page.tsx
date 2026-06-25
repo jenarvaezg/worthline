@@ -17,6 +17,7 @@ import {
   PRIVACY_COOKIE_NAME,
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
+import { formatDecimalAsPercentField } from "@web/intake-primitives";
 import { bootstrapHealthcheck, withStore } from "@web/store";
 import { PendingSubmit } from "@web/pending-submit";
 import Shell from "@web/shell";
@@ -310,7 +311,26 @@ export default async function ObjetivosPage({
           ) : null}
 
           <div className="objetivosFireFoot">
-            <span>Supuestos FIRE (retirada, retorno, edades) → en Ajustes</span>
+            <span>
+              Supuestos FIRE (retirada, retorno, edades) → en Ajustes
+              {fireResult?.effectiveRealReturn !== undefined ? (
+                <>
+                  {" · "}
+                  {fireScopeConfig?.expectedRealReturn !== undefined ? (
+                    <span title="Retorno fijo configurado manualmente">
+                      Retorno real:{" "}
+                      {formatDecimalAsPercentField(fireScopeConfig.expectedRealReturn)} %
+                      (manual)
+                    </span>
+                  ) : (
+                    <span title="Retorno estimado ponderando tu mezcla de activos por tipo">
+                      Retorno real estimado de tu cartera:{" "}
+                      {formatDecimalAsPercentField(fireResult.effectiveRealReturn)} %
+                    </span>
+                  )}
+                </>
+              ) : null}
+            </span>
             <Link className="panelAction" href="/ajustes">
               Configurar supuestos
             </Link>

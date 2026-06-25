@@ -93,7 +93,7 @@ describe("fireLevels — ETA coherence with base scenario", () => {
     const base = projectFire({
       startingEligibleMinor: BASE.eligibleMinor,
       monthlyContributionMinor: BASE.config.monthlySavingsCapacityMinor!,
-      expectedRealReturn: BASE.config.expectedRealReturn,
+      expectedRealReturn: BASE.config.expectedRealReturn!,
       fireNumberMinor: fatAmount,
     }).scenarios.find((s) => s.label === "base")!;
 
@@ -277,7 +277,7 @@ describe("fireLevels — edge cases", () => {
     const noAge = {
       monthlySpendingMinor: BASE.config.monthlySpendingMinor,
       safeWithdrawalRate: BASE.config.safeWithdrawalRate,
-      expectedRealReturn: BASE.config.expectedRealReturn,
+      expectedRealReturn: BASE.config.expectedRealReturn!,
       monthlySavingsCapacityMinor: 100_000,
     };
     const levels = fireLevels({ ...BASE, config: noAge })!;

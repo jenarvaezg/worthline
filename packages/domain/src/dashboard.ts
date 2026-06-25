@@ -225,12 +225,15 @@ export function prepareDashboardState(input: {
 
   // FIRE projection (#427): scenarios from the reservation-adjusted eligible
   // total and the configured monthly savings capacity.
+  // N3 (#515): use fireResult.realReturnUsed — the single resolved rate — not
+  // config.expectedRealReturn directly, so coast + projection + levels all agree.
   const fireProjection =
     fireScopeConfig && fireResult
       ? projectFire({
           startingEligibleMinor: fireResult.eligibleAssets.amountMinor,
           monthlyContributionMinor: fireScopeConfig.monthlySavingsCapacityMinor ?? 0,
-          expectedRealReturn: fireScopeConfig.expectedRealReturn,
+          expectedRealReturn:
+            fireResult.realReturnUsed ?? fireScopeConfig.expectedRealReturn ?? 0.05,
           fireNumberMinor: fireResult.fireNumber.amountMinor,
           ...(fireScopeConfig.currentAge === undefined
             ? {}
@@ -436,6 +439,11 @@ export function prepareObjetivosState(
             thisGoalReservationMinor: goalReservationMap.get(goal.id) ?? 0,
             config: dash.fireScopeConfig,
             now,
+            // N3 (#515): thread the single resolved rate so goalFireDelay is
+            // coherent with coast + projection + fireLevels.
+            ...(dash.fireResult?.realReturnUsed !== undefined
+              ? { resolvedRealReturn: dash.fireResult.realReturnUsed }
+              : {}),
           })
         : { kind: "no_effect" as const },
     };
@@ -443,12 +451,16 @@ export function prepareObjetivosState(
 
   // fireLevels uses the SAME net eligible the projection chart uses (fireResult.eligibleAssets),
   // not eligibleGrossMinor — so rail ETAs are coherent with the displayed trajectory.
+  // N3 (#515): pass realReturnUsed so coast + levels + projection all agree.
   const fireLevelRail =
     dash.fireScopeConfig && dash.workspace && dash.fireResult
       ? fireLevels({
           config: dash.fireScopeConfig,
           eligibleMinor: dash.fireResult.eligibleAssets.amountMinor,
           currency: dash.workspace.baseCurrency,
+          ...(dash.fireResult.realReturnUsed !== undefined
+            ? { resolvedRealReturn: dash.fireResult.realReturnUsed }
+            : {}),
         })
       : null;
 

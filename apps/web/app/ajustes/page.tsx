@@ -403,17 +403,93 @@ export default async function AjustesPage({
                 />
               </label>
               <label>
-                Retorno real esperado % (por defecto 7)
+                Retorno real esperado % (opcional — estimado por tu mezcla)
                 <input
                   defaultValue={
-                    fireScopeConfig
+                    fireScopeConfig?.expectedRealReturn !== undefined
                       ? formatDecimalAsPercentField(fireScopeConfig.expectedRealReturn)
-                      : "7"
+                      : undefined
                   }
                   inputMode="decimal"
                   name="expectedRealReturn"
+                  placeholder="estimado por tu mezcla de activos"
                 />
+                <small className="muted">
+                  Vacío = se calcula automáticamente ponderando los retornos por tipo de
+                  activo. Rellena para forzar un valor fijo (anula la estimación).
+                </small>
               </label>
+              <details>
+                <summary className="muted">
+                  Retornos reales por tipo de activo (opcional)
+                </summary>
+                <div className="stackForm" style={{ marginTop: "0.5rem" }}>
+                  <label>
+                    Caja %
+                    <input
+                      defaultValue={
+                        fireScopeConfig?.tierRealReturns?.cash !== undefined
+                          ? formatDecimalAsPercentField(
+                              fireScopeConfig.tierRealReturns.cash,
+                            )
+                          : undefined
+                      }
+                      inputMode="decimal"
+                      name="tierReturn_cash"
+                      placeholder="0"
+                    />
+                  </label>
+                  <label>
+                    Mercado %
+                    <input
+                      defaultValue={
+                        fireScopeConfig?.tierRealReturns?.market !== undefined
+                          ? formatDecimalAsPercentField(
+                              fireScopeConfig.tierRealReturns.market,
+                            )
+                          : undefined
+                      }
+                      inputMode="decimal"
+                      name="tierReturn_market"
+                      placeholder="5"
+                    />
+                  </label>
+                  <label>
+                    A plazo %
+                    <input
+                      defaultValue={
+                        fireScopeConfig?.tierRealReturns?.["term-locked"] !== undefined
+                          ? formatDecimalAsPercentField(
+                              fireScopeConfig.tierRealReturns["term-locked"],
+                            )
+                          : undefined
+                      }
+                      inputMode="decimal"
+                      name="tierReturn_term-locked"
+                      placeholder="1.5"
+                    />
+                  </label>
+                  <label>
+                    Ilíquido %
+                    <input
+                      defaultValue={
+                        fireScopeConfig?.tierRealReturns?.illiquid !== undefined
+                          ? formatDecimalAsPercentField(
+                              fireScopeConfig.tierRealReturns.illiquid,
+                            )
+                          : undefined
+                      }
+                      inputMode="decimal"
+                      name="tierReturn_illiquid"
+                      placeholder="3"
+                    />
+                  </label>
+                  <small className="muted">
+                    Retornos reales anuales (tras inflación) por tipo. Vacío = valores por
+                    defecto (Caja 0 %, Mercado 5 %, A plazo 1,5 %, Ilíquido 3 %).
+                  </small>
+                </div>
+              </details>
               <label>
                 Edad actual (opcional)
                 <input
