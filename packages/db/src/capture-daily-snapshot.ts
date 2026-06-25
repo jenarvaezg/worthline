@@ -58,18 +58,14 @@ export async function captureDailySnapshotForWorkspace(
   const positionDetails = new Map<string, SnapshotPositionInput[]>();
   for (const source of await store.connectedSources.listSources()) {
     if (source.adapter === "numista") {
-      const coins = (
-        await store.connectedSources.readPositions(source.id)
-      ).filter(
+      const coins = (await store.connectedSources.readPositions(source.id)).filter(
         (position): position is CoinPosition => position.kind === "coin",
       );
       if (coins.length > 0) {
         positionDetails.set(source.assetId, coins.map(coinPositionSnapshotInput));
       }
     } else if (source.adapter === "binance") {
-      const tokens = (
-        await store.connectedSources.readPositions(source.id)
-      ).filter(
+      const tokens = (await store.connectedSources.readPositions(source.id)).filter(
         (position): position is TokenPosition => position.kind === "token",
       );
       if (tokens.length === 0) continue;

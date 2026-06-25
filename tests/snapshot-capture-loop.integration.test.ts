@@ -66,8 +66,6 @@ async function seedHousehold(store: WorthlineStore): Promise<void> {
   });
 }
 
-
-
 describe("multi-scope snapshot capture loop (integration)", () => {
   test("captures one ownership-weighted snapshot per scope: household + 2 members", async () => {
     const store = await createFileBackedStore("worthline-capture-loop-");

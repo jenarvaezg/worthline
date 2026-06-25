@@ -219,9 +219,7 @@ export async function loadDashboard(
   await captureDailySnapshotForWorkspace(store, now);
 
   // ── 4. Collect remaining data for state assembly ─────────────────────────
-  // The selected scope's positions came from the same projection as the capture
-  // details above (#208) — no second operation read. Empty when there is no scope
-  // (matching the prior `selectedScope ? … : []`).
+
   // The selected scope's positions for the dashboard state (#208). Read here since the capture function owns its own projection.
   const scopedProjection = await store.snapshots.readScopedPositionsWithDetails(
     selectedScope?.id,
