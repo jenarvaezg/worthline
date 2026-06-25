@@ -60,6 +60,13 @@ export {
   resolveDataDir,
 } from "./database-target";
 export { captureDailySnapshotForWorkspace } from "./capture-daily-snapshot";
+export { runDailyCapture } from "./run-daily-capture";
+export type {
+  DailyCaptureFailure,
+  DailyCaptureWorkspace,
+  RunDailyCaptureDeps,
+  RunDailyCaptureResult,
+} from "./run-daily-capture";
 export type {
   AuditLogEntry,
   BootstrapHealthcheckOptions,

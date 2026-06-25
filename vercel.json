@@ -3,5 +3,6 @@
   "regions": ["dub1"],
   "git": {
     "deploymentEnabled": false
-  }
+  },
+  "crons": [{ "path": "/api/cron/snapshot", "schedule": "0 21 * * *" }]
 }
