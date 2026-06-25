@@ -222,7 +222,7 @@ export default function OperationsEditor({
         </label>
 
         <label>
-          Unidades <span aria-hidden="true">*</span>
+          Unidades
           <input
             aria-label="Unidades"
             aria-required="true"
@@ -234,7 +234,7 @@ export default function OperationsEditor({
         </label>
 
         <label>
-          Precio por unidad (EUR) <span aria-hidden="true">*</span>
+          Precio por unidad (EUR)
           <input
             aria-label="Precio por unidad en EUR"
             aria-required="true"
@@ -246,7 +246,7 @@ export default function OperationsEditor({
         </label>
 
         <label>
-          Comisiones (EUR)
+          Comisiones (EUR) <small>(opcional)</small>
           <input
             aria-label="Comisiones en EUR"
             defaultValue={operationValues["fees"] ?? "0"}

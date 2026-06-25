@@ -963,15 +963,17 @@ th:last-child {
   margin-top: 14px;
 }
 
+/* Form FIELD labels — sentence case at a legible size (design-system §2, #603).
+   These are functional field labels, NOT the "labels pequeños" (stats/table
+   headers/h3) that §2 reserves uppercase for. */
 .stackForm label,
 .ownershipGrid label {
   color: var(--muted);
   display: grid;
-  font-size: 0.74rem;
-  font-weight: 800;
+  font-size: 0.85rem;
+  font-weight: 600;
   gap: 6px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: 0;
 }
 
 .entryGrid {
