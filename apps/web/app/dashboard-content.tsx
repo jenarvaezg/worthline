@@ -350,7 +350,7 @@ function FireGlanceCard({
           </strong>
         ) : null}
       </div>
-      <Link className="panelAction" href="/ajustes">
+      <Link className="panelAction" href="/objetivos">
         Ver objetivos →
       </Link>
     </div>

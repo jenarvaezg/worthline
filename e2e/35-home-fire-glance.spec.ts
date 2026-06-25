@@ -18,7 +18,10 @@ test("home FIRE glance: compact card renders, detail removed", async ({ page }) 
   await expect(firePanel).toBeVisible();
 
   // Compact glance elements ARE present.
-  await expect(firePanel.getByText(/Ver objetivos/)).toBeVisible();
+  await expect(firePanel.getByRole("link", { name: /Ver objetivos/ })).toHaveAttribute(
+    "href",
+    "/objetivos",
+  );
   await expect(firePanel.locator(".fireBar")).toBeVisible();
 
   // Detail elements removed from home: 3-scenario table, trajectory SVG.

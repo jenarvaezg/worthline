@@ -1922,6 +1922,226 @@ code {
 
 /* === end #56 resumen === */
 
+/* /objetivos page (PRD #507, S2 #510) ─────────────────────────────────── */
+
+.objetivosPage {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.objetivosHeader h2 {
+  font-size: 1.5rem;
+  font-weight: 820;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.objetivosHeader p {
+  color: var(--muted);
+  font-size: 0.86rem;
+  margin: 2px 0 0;
+}
+
+.objetivosFirePanel {
+  /* inherits .firePanel */
+}
+
+.objetivosHeroGrid {
+  display: grid;
+  gap: 22px;
+  grid-template-columns: 1fr 1.3fr;
+  margin-top: 14px;
+}
+
+.objetivosHeroLeft {
+  align-content: start;
+  display: grid;
+  gap: 12px;
+}
+
+/* Coast FIRE explainer paragraph */
+.objetivosCoastNote {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.objetivosCoastNote strong {
+  color: var(--ink);
+}
+
+.objetivosMetrics {
+  border-top: 1px solid var(--hairline);
+  padding-top: 12px;
+}
+
+.objetivosHeroRight {
+  align-content: start;
+  border-left: 1px solid var(--hairline);
+  display: grid;
+  gap: 11px;
+  padding-left: 22px;
+}
+
+/* Make the trajectory SVG taller on the full page vs the compact home card */
+.objetivosHeroRight .fireTrajectory {
+  height: 150px;
+}
+
+.objetivosSubNote {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.objetivosFireFoot {
+  align-items: center;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: space-between;
+  margin-top: 14px;
+  padding-top: 12px;
+}
+
+.objetivosFireFoot span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+/* Goals list */
+.objetivosGoalGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 14px;
+}
+
+.objetivosGoalCard {
+  align-content: start;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.objetivosGoalTop {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.objetivosGoalName {
+  font-size: 0.96rem;
+  font-weight: 800;
+}
+
+.objetivosPrio {
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.objetivosPrio--high {
+  background: rgba(185, 68, 47, 0.1);
+  border: 1px solid rgba(185, 68, 47, 0.28);
+  color: var(--red);
+}
+
+.objetivosPrio--medium {
+  background: rgba(179, 131, 31, 0.12);
+  border: 1px solid rgba(179, 131, 31, 0.3);
+  color: var(--gold);
+}
+
+.objetivosPrio--low {
+  background: rgba(81, 96, 91, 0.1);
+  border: 1px solid var(--line-soft);
+  color: var(--muted);
+}
+
+.objetivosGoalMeta {
+  color: var(--muted);
+  display: flex;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  justify-content: space-between;
+}
+
+.objetivosGoalMeta b {
+  color: var(--ink);
+}
+
+.objetivosFundedBar {
+  background: var(--hairline);
+  border-radius: 999px;
+  height: 7px;
+  overflow: hidden;
+}
+
+.objetivosFundedBar i {
+  background: var(--blue);
+  border-radius: 999px;
+  display: block;
+  height: 100%;
+}
+
+.objetivosGoalFoot {
+  align-items: baseline;
+  display: flex;
+  font-size: 0.74rem;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.objetivosReserved {
+  color: var(--muted);
+}
+
+.objetivosReserved b {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.objetivosFundedPct {
+  color: var(--blue);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+/* Goal outside the FIRE horizon — its reservation doesn't reduce FIRE. */
+.objetivosGoalNote {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-style: italic;
+}
+
+@media (max-width: 820px) {
+  .objetivosHeroGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .objetivosHeroRight {
+    border-left: none;
+    border-top: 1px solid var(--hairline);
+    padding-left: 0;
+    padding-top: 16px;
+  }
+
+  .objetivosGoalGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 900px) {
   .entryGrid,
   .memberRow,

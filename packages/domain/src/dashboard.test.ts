@@ -3,8 +3,11 @@ import { describe, expect, test } from "vitest";
 import {
   createManualAsset,
   createWorkspace,
+  goalFundedRatioBps,
+  goalReservedMinor,
   largestRemainderPercentages,
   prepareDashboardState,
+  prepareObjetivosState,
 } from "./index";
 import type { FireScopeConfig } from "./index";
 
@@ -200,6 +203,143 @@ describe("fireGlance in prepareDashboardState", () => {
     });
 
     expect(state.fireGlance).toBeNull();
+  });
+});
+
+describe("prepareObjetivosState", () => {
+  const fireConfig: FireScopeConfig = {
+    monthlySpendingMinor: 200_000,
+    safeWithdrawalRate: 0.04,
+    expectedRealReturn: 0.05,
+    currentAge: 35,
+    targetRetirementAge: 55,
+  };
+
+  const investmentAsset = createManualAsset(workspace, {
+    currency: "EUR",
+    currentValueMinor: 30_000_000,
+    id: "asset_obj_inv",
+    liquidityTier: "market",
+    name: "Fondo",
+    ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    type: "investment",
+  });
+
+  const scope = { id: "household", label: "Hogar", type: "household" as const };
+
+  const goal = {
+    id: "goal_obj_1",
+    name: "Coche",
+    targetAmountMinor: 2_000_000,
+    deadline: "2030-01-01",
+    priority: "high" as const,
+    scopeId: "household",
+    assetIds: ["asset_obj_inv"],
+  };
+
+  const baseInput = {
+    assets: [investmentAsset],
+    fireConfig: { household: fireConfig },
+    goals: [goal],
+    liabilities: [],
+    persistence,
+    positions: [],
+    priceCache: [],
+    scopes: [scope],
+    selectedScope: scope,
+    selectedView: "liquid" as const,
+    snapshots: [],
+    today: "2026-06-25",
+    workspace,
+  };
+
+  test("FIRE bits match prepareDashboardState exactly", () => {
+    const dash = prepareDashboardState(baseInput);
+    const obj = prepareObjetivosState(baseInput);
+
+    expect(obj.fireProjection).toEqual(dash.fireProjection);
+    expect(obj.fireResult).toEqual(dash.fireResult);
+    expect(obj.fireScopeConfig).toEqual(dash.fireScopeConfig);
+  });
+
+  test("per-goal fundedRatioBps and reservedMinor match existing helpers", () => {
+    const obj = prepareObjetivosState(baseInput);
+
+    expect(obj.goals).toHaveLength(1);
+    const g = obj.goals[0]!;
+
+    // assignedValueMinor for goal_obj_1: the whole asset (full ownership, household scope)
+    const assignedMinor = 30_000_000;
+    expect(g.fundedRatioBps).toBe(
+      goalFundedRatioBps(goal.targetAmountMinor, assignedMinor),
+    );
+    expect(g.reservedMinor).toBe(
+      goalReservedMinor(goal.targetAmountMinor, assignedMinor),
+    );
+    // capped at target → 2_000_000
+    expect(g.reservedMinor).toBe(2_000_000);
+    // fully funded → 10 000 bps
+    expect(g.fundedRatioBps).toBe(10_000);
+  });
+
+  test("over-target goal is clamped at 10 000 bps funded", () => {
+    const overTarget = { ...goal, targetAmountMinor: 1_000 }; // target well below asset value
+    const obj = prepareObjetivosState({ ...baseInput, goals: [overTarget] });
+    expect(obj.goals[0]!.fundedRatioBps).toBe(10_000);
+    expect(obj.goals[0]!.reservedMinor).toBe(1_000);
+  });
+
+  test("goal with no assigned assets has 0 funded and 0 reserved", () => {
+    const emptyGoal = { ...goal, assetIds: [] };
+    const obj = prepareObjetivosState({ ...baseInput, goals: [emptyGoal] });
+    expect(obj.goals[0]!.fundedRatioBps).toBe(0);
+    expect(obj.goals[0]!.reservedMinor).toBe(0);
+  });
+
+  test("returns null FIRE fields when unconfigured", () => {
+    const obj = prepareObjetivosState({ ...baseInput, fireConfig: {} });
+    expect(obj.fireResult).toBeNull();
+    expect(obj.fireProjection).toBeNull();
+    expect(obj.fireScopeConfig).toBeNull();
+  });
+
+  test("countsTowardFire is true for a goal within the FIRE horizon", () => {
+    // fireConfig has currentAge:35, targetRetirementAge:55 → horizon = today+20y
+    const obj = prepareObjetivosState({ ...baseInput, today: "2026-06-25" });
+    // goal deadline "2030-01-01" is after now and before the ~2046 horizon
+    expect(obj.goals[0]!.countsTowardFire).toBe(true);
+  });
+
+  test("countsTowardFire is false for a past-deadline goal", () => {
+    const pastGoal = { ...goal, deadline: "2020-01-01" };
+    const obj = prepareObjetivosState({
+      ...baseInput,
+      goals: [pastGoal],
+      today: "2026-06-25",
+    });
+    expect(obj.goals[0]!.countsTowardFire).toBe(false);
+  });
+
+  test("countsTowardFire is false for a goal due after the FIRE horizon", () => {
+    // horizon = 2026+20 = 2046; goal due 2060 is after it
+    const farGoal = { ...goal, deadline: "2060-01-01" };
+    const obj = prepareObjetivosState({
+      ...baseInput,
+      goals: [farGoal],
+      today: "2026-06-25",
+    });
+    expect(obj.goals[0]!.countsTowardFire).toBe(false);
+  });
+
+  test("coastTickFraction is clamped to [0,1] and matches fireGlance", () => {
+    const obj = prepareObjetivosState(baseInput);
+    if (obj.coastTickFraction !== null) {
+      expect(obj.coastTickFraction).toBeGreaterThanOrEqual(0);
+      expect(obj.coastTickFraction).toBeLessThanOrEqual(1);
+    }
+    // Must equal what prepareDashboardState puts in fireGlance
+    const dash = prepareDashboardState(baseInput);
+    expect(obj.coastTickFraction).toBe(dash.fireGlance?.coastTickFraction ?? null);
   });
 });
 
