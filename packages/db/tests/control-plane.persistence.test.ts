@@ -111,6 +111,21 @@ describe("control-plane store", () => {
     }
   });
 
+  test("daily capture run finalization is idempotent by date", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      expect(await cp.hasDailyCaptureRun("2026-06-25")).toBe(false);
+
+      await cp.recordDailyCaptureRun("2026-06-25", "2026-06-25T21:00:00.000Z");
+      expect(await cp.hasDailyCaptureRun("2026-06-25")).toBe(true);
+
+      await cp.recordDailyCaptureRun("2026-06-25", "2026-06-25T22:00:00.000Z");
+      expect(await cp.hasDailyCaptureRun("2026-06-25")).toBe(true);
+      expect(await cp.hasDailyCaptureRun("2026-06-26")).toBe(false);
+    } finally {
+      cp.close();
+    }
+  });
   test("two different accounts get isolated workspace lists", async () => {
     const cp = await createInMemoryControlPlaneStore();
     try {

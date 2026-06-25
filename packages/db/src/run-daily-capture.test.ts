@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 
+import { captureDailySnapshotForWorkspace } from "@db/capture-daily-snapshot";
 import { createInMemoryStore } from "@db/index";
 import {
   runDailyCapture,
@@ -195,26 +196,111 @@ describe("runDailyCapture (ADR 0037, PRD #528)", () => {
     good.close();
   });
 
-  test("capture is unconditional: a same-day point is overridden, never duplicated", async () => {
-    const store = await seededStore();
+  test("a partial-failure run is not finalized, so a same-day retry is not skipped", async () => {
+    const good = await seededStore();
+    const finalized = new Set<string>();
+    const listAllWorkspaces = vi.fn(async () => [
+      { id: "bad", dbUrl: "libsql://bad" },
+      { id: "good", dbUrl: "libsql://good" },
+    ]);
+    const markRunFinalized = vi.fn(async (dateKey: string) => {
+      finalized.add(dateKey);
+    });
+
     const deps = {
+      listAllWorkspaces,
+      openStore: async (ws: { id: string }) => {
+        if (ws.id === "bad") throw new Error("unreachable workspace DB");
+        return keepOpen(good);
+      },
+      fetchPrices: noFetchedPrices,
+      isRunFinalized: async (dateKey: string) => finalized.has(dateKey),
+      markRunFinalized,
+      now: NOW,
+    };
+
+    const first = await runDailyCapture(deps);
+    const second = await runDailyCapture(deps);
+
+    expect(first.failures).toHaveLength(1);
+    expect(second.skipped).toBeUndefined();
+    expect(second.failures).toHaveLength(1);
+    expect(listAllWorkspaces).toHaveBeenCalledTimes(2);
+    expect(markRunFinalized).not.toHaveBeenCalled();
+    expect(finalized.has(TODAY)).toBe(false);
+
+    good.close();
+  });
+
+  test("first finalized run of a day overrides a provisional render snapshot", async () => {
+    const store = await seededStore();
+    const finalized = new Set<string>();
+
+    await captureDailySnapshotForWorkspace(store, "2026-06-25T08:00:00.000Z");
+    expect((await store.snapshots.readSnapshots("household"))[0]!.capturedAt).toBe(
+      "2026-06-25T08:00:00.000Z",
+    );
+
+    const result = await runDailyCapture({
       listAllWorkspaces: async () => [{ id: "ws", dbUrl: "libsql://ws" }],
       openStore: async () => keepOpen(store),
       fetchPrices: noFetchedPrices,
-    };
+      isRunFinalized: async (dateKey) => finalized.has(dateKey),
+      markRunFinalized: async (dateKey) => {
+        finalized.add(dateKey);
+      },
+      now: NOW,
+    });
 
-    // A morning render-style provisional point.
-    await runDailyCapture({ ...deps, now: "2026-06-25T08:00:00.000Z" });
-    const morning = await store.snapshots.readSnapshots("household");
-    expect(morning).toHaveLength(1);
-    expect(morning[0]!.capturedAt).toBe("2026-06-25T08:00:00.000Z");
-
-    // The close-of-day run overrides it (latest-wins), no duplicate.
-    await runDailyCapture({ ...deps, now: NOW });
     const close = await store.snapshots.readSnapshots("household");
+    expect(result).toMatchObject({ total: 1, captured: 1, failures: [] });
     expect(close).toHaveLength(1);
     expect(close[0]!.dateKey).toBe(TODAY);
     expect(close[0]!.capturedAt).toBe(NOW);
+    expect(finalized.has(TODAY)).toBe(true);
+
+    store.close();
+  });
+
+  test("same-day retrigger short-circuits at run level before fetching prices", async () => {
+    const store = await seededMarketStore("fund", "AAPL", "1");
+    const finalized = new Set<string>();
+    const listAllWorkspaces = vi.fn(async () => [{ id: "ws", dbUrl: "libsql://ws" }]);
+    const fetchPrices = vi.fn(
+      async (): Promise<DailyCaptureFetchedPrice[]> => [
+        {
+          provider: "yahoo",
+          symbol: "AAPL",
+          currency: "EUR",
+          fetchedAt: NOW,
+          freshnessState: "fresh",
+          price: "250",
+          source: "yahoo",
+        },
+      ],
+    );
+    const deps = {
+      listAllWorkspaces,
+      openStore: async () => keepOpen(store),
+      fetchPrices,
+      isRunFinalized: async (dateKey: string) => finalized.has(dateKey),
+      markRunFinalized: async (dateKey: string) => {
+        finalized.add(dateKey);
+      },
+      now: NOW,
+    };
+
+    await runDailyCapture(deps);
+    const second = await runDailyCapture(deps);
+
+    expect(second).toMatchObject({
+      total: 0,
+      captured: 0,
+      failures: [],
+      skipped: true,
+    });
+    expect(listAllWorkspaces).toHaveBeenCalledOnce();
+    expect(fetchPrices).toHaveBeenCalledOnce();
 
     store.close();
   });
