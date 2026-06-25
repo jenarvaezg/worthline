@@ -75,6 +75,7 @@ export const numistaAdapter: ConnectedSourceAdapter<NumistaCreds, NumistaToken> 
         spotPerOzEur: ctx.spotPerOzEur,
       },
       ctx.nowIso,
+      ctx.existingCoins ?? [],
     );
   },
 

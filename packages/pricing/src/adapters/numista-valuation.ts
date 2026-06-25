@@ -210,13 +210,65 @@ function candidateValues(
 
 // ── The full sync (listPositions) ─────────────────────────────────────────────
 
+/**
+ * A persisted coin whose detail a re-sync reuses instead of re-calling Numista
+ * (ADR 0017 request-cap). Mirror of the stored coin shape; the web layer maps its
+ * `CoinPosition`s to this. Two reuse seams:
+ *  • `getType` — the type detail (composition/weight/thumbnail) is STATIC, so a
+ *    type already in the collection is never refetched.
+ *  • `getPrices` — a still-fresh numismatic estimate (same issue/grade/quantity,
+ *    within the long TTL) is carried forward; the decoupled revalue refetches once
+ *    it lapses.
+ */
+export interface SyncedCoin {
+  externalId: string;
+  /** Numista type id as stored (string); parsed back to a number to key reuse. */
+  catalogueId: string;
+  issueId: number | null;
+  grade: string;
+  quantity: number;
+  metal: MetalKind | null;
+  finenessMillis: number | null;
+  weightGrams: number | null;
+  obverseThumbUrl: string | null;
+  numismaticValueMinor: number | null;
+  numismaticFetchedAt: string | null;
+}
+
+/** The static, type-level detail a coin valuation needs — the part of a `getType`
+ *  response we persist and never need to refetch (composition is fixed). */
+interface CoinTypeDetail {
+  metal: MetalKind | null;
+  finenessMillis: number | null;
+  weightGrams: number | null;
+  obverseThumbUrl: string | null;
+}
+
 export async function syncNumistaCollection(
   deps: NumistaSyncDeps,
   nowIso: string,
+  existing: readonly SyncedCoin[] = [],
+  options: { numismaticTtlDays?: number } = {},
 ): Promise<PositionDraft[]> {
   const items = await deps.listItems();
 
-  const detailByType = new Map<number, NumistaTypeDetail>();
+  // Seed the reuse caches from what's already persisted so a re-sync of an
+  // unchanged collection makes ZERO getType/getPrices calls (ADR 0017): only
+  // genuinely new or changed coins hit the network.
+  const detailByType = new Map<number, CoinTypeDetail>();
+  for (const coin of existing) {
+    const typeId = Number(coin.catalogueId);
+    if (Number.isInteger(typeId) && !detailByType.has(typeId)) {
+      detailByType.set(typeId, {
+        metal: coin.metal,
+        finenessMillis: coin.finenessMillis,
+        weightGrams: coin.weightGrams,
+        obverseThumbUrl: coin.obverseThumbUrl,
+      });
+    }
+  }
+  const priorByExternal = new Map(existing.map((coin) => [coin.externalId, coin]));
+
   const cache = createValuationCache(deps);
   const drafts: PositionDraft[] = [];
 
@@ -224,31 +276,55 @@ export async function syncNumistaCollection(
     const base = mapCollectedItem(item);
     const typeId = item.type.id;
 
+    // getType: static type detail — fetch once per unseen type, reuse thereafter.
     let detail = detailByType.get(typeId);
     if (!detail) {
-      detail = await deps.typeDetail(typeId);
+      const fetched = await deps.typeDetail(typeId);
+      const composition = parseComposition(fetched.compositionText);
+      detail = {
+        metal: composition.metal,
+        finenessMillis: composition.finenessMillis,
+        weightGrams: fetched.weightGrams,
+        obverseThumbUrl: fetched.obverseThumbUrl,
+      };
       detailByType.set(typeId, detail);
     }
 
-    const composition = parseComposition(detail.compositionText);
-    const spot = await cache.resolveSpot(composition.metal);
+    const spot = await cache.resolveSpot(detail.metal);
 
-    // Fetch the per-grade estimate when the coin can be priced (issue + grade);
-    // null until then — that drives the long-TTL refetch gate the module owns.
+    // getPrices: reuse the persisted numismatic estimate when the line is unchanged
+    // and still within its TTL; otherwise (new/changed coin, or lapsed) fetch once.
+    // Passing `prices: null` + the prior stamp/value makes the coin-value module
+    // keep the persisted figure verbatim — byte-identical to the revalue path.
+    const prior = priorByExternal.get(String(item.id));
+    const reusable =
+      prior &&
+      prior.issueId === base.issueId &&
+      prior.grade === base.grade &&
+      prior.quantity === base.quantity &&
+      prior.numismaticFetchedAt !== null &&
+      !numismaticPastTtl(prior.numismaticFetchedAt, nowIso, options.numismaticTtlDays)
+        ? prior
+        : null;
+
     let prices: NumistaPrices | null = null;
     let numismaticFetchedAt: string | null = null;
-    if (base.issueId !== null && base.grade) {
+    let lastNumismaticValueMinor: number | null = null;
+    if (reusable) {
+      numismaticFetchedAt = reusable.numismaticFetchedAt;
+      lastNumismaticValueMinor = reusable.numismaticValueMinor;
+    } else if (base.issueId !== null && base.grade) {
       prices = await cache.resolvePrices(typeId, base.issueId);
       numismaticFetchedAt = nowIso;
     }
 
     // The shared candidate-row construction: the coin-value module owns both
     // candidate computations + the decision; the sync only supplies the
-    // freshly-fetched spot/prices (the I/O).
+    // freshly-fetched (or reused) spot/prices.
     const candidates = candidateValues(
       {
-        metal: composition.metal,
-        finenessMillis: composition.finenessMillis,
+        metal: detail.metal,
+        finenessMillis: detail.finenessMillis,
         weightGrams: detail.weightGrams,
         quantity: item.quantity,
         grade: base.grade,
@@ -259,7 +335,7 @@ export async function syncNumistaCollection(
         numismaticFetchedAt,
         purchasePriceMinor: base.purchasePriceMinor,
         lastMetalValueMinor: null,
-        lastNumismaticValueMinor: null,
+        lastNumismaticValueMinor,
         nowIso,
       },
     );
@@ -274,8 +350,8 @@ export async function syncNumistaCollection(
       quantity: base.quantity,
       year: base.year,
       liquidityTier: "illiquid",
-      metal: composition.metal,
-      finenessMillis: composition.finenessMillis,
+      metal: detail.metal,
+      finenessMillis: detail.finenessMillis,
       weightGrams: detail.weightGrams,
       purchaseDate: base.purchaseDate,
       metalValueMinor: candidates.metalValueMinor,

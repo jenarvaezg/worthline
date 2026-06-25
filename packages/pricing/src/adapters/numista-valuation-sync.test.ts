@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchMetalSpotEur, syncNumistaCollection } from "./numista-valuation";
+import type { SyncedCoin } from "./numista-valuation";
 import type { NumistaCollectedItem } from "@pricing/numista";
 
 const NOW = "2026-06-15T12:00:00.000Z";
@@ -160,6 +161,98 @@ describe("syncNumistaCollection — drafts carry both candidate values", () => {
     expect(drafts[0]!.metalValueMinor).toBeNull();
     expect(drafts[0]!.numismaticValueMinor).toBe(160);
     expect(d.spotPerOzEur).not.toHaveBeenCalled();
+  });
+});
+
+describe("syncNumistaCollection — reuses persisted detail (ADR 0017 request-cap)", () => {
+  // What a previous sync of [SILVER_EAGLE, PESETAS] would have persisted.
+  const existing: SyncedCoin[] = [
+    {
+      externalId: "1",
+      catalogueId: "1493",
+      issueId: 32723,
+      grade: "unc",
+      quantity: 1,
+      metal: "silver",
+      finenessMillis: 999,
+      weightGrams: 31.103,
+      obverseThumbUrl: "https://en.numista.com/catalogue/photos/etats-unis/1493-180.jpg",
+      numismaticValueMinor: 7558,
+      numismaticFetchedAt: "2026-06-10T00:00:00.000Z", // within the 30-day TTL of NOW
+    },
+    {
+      externalId: "2",
+      catalogueId: "5678",
+      issueId: 99001,
+      grade: "vf",
+      quantity: 2,
+      metal: "silver",
+      finenessMillis: 900,
+      weightGrams: 25,
+      obverseThumbUrl: null,
+      numismaticValueMinor: 2400,
+      numismaticFetchedAt: "2026-06-10T00:00:00.000Z",
+    },
+  ];
+
+  it("makes ZERO getType/getPrices calls for an unchanged collection", async () => {
+    const d = deps();
+
+    const drafts = await syncNumistaCollection(d, NOW, existing);
+
+    expect(d.typeDetail).not.toHaveBeenCalled(); // type detail is static → reused
+    expect(d.prices).not.toHaveBeenCalled(); // estimate still within TTL → reused
+    expect(d.spotPerOzEur).toHaveBeenCalledTimes(1); // spot is FREE → still refreshed
+
+    // The persisted numismatic figures are carried forward verbatim; the metal
+    // candidate is recomputed from the (free) spot.
+    expect(drafts.find((x) => x.externalId === "1")).toMatchObject({
+      numismaticValueMinor: 7558,
+      numismaticFetchedAt: "2026-06-10T00:00:00.000Z",
+      metalValueMinor: 2797,
+    });
+    expect(drafts.find((x) => x.externalId === "2")?.numismaticValueMinor).toBe(2400);
+  });
+
+  it("still fetches type + prices for a coin not seen before", async () => {
+    const newCoin: NumistaCollectedItem = {
+      id: 3,
+      quantity: 1,
+      type: { id: 1493, title: "1 Dollar American Silver Eagle" },
+      issue: { id: 32723 },
+      grade: "unc",
+    };
+    const d = deps({ listItems: vi.fn(async () => [newCoin]) });
+
+    await syncNumistaCollection(d, NOW, existing); // type 1493 reused, but item 3 is new
+
+    expect(d.typeDetail).not.toHaveBeenCalled(); // type 1493 detail came from `existing`
+    expect(d.prices).toHaveBeenCalledTimes(1); // a never-priced line must be fetched
+  });
+
+  it("refetches the estimate when the line changed (quantity)", async () => {
+    const regraded = existing.map((c) =>
+      c.externalId === "2" ? { ...c, quantity: 99 } : c,
+    );
+    const d = deps();
+
+    await syncNumistaCollection(d, NOW, regraded);
+
+    expect(d.prices).toHaveBeenCalledTimes(1); // only the changed line re-prices
+    expect(d.prices).toHaveBeenCalledWith(5678, 99001);
+  });
+
+  it("refetches the estimate once the TTL has lapsed", async () => {
+    const stale = existing.map((c) => ({
+      ...c,
+      numismaticFetchedAt: "2026-01-01T00:00:00.000Z", // > 30 days before NOW
+    }));
+    const d = deps();
+
+    await syncNumistaCollection(d, NOW, stale);
+
+    expect(d.typeDetail).not.toHaveBeenCalled(); // detail is still reused
+    expect(d.prices).toHaveBeenCalledTimes(2); // both estimates refetched
   });
 });
 
