@@ -283,7 +283,13 @@ export default async function ObjetivosPage({
 
               <div className="goalList">
                 {goalsView.map(
-                  ({ goal, reservedMinor, fundedRatioBps, countsTowardFire }) => (
+                  ({
+                    goal,
+                    reservedMinor,
+                    fundedRatioBps,
+                    countsTowardFire,
+                    fireDelay,
+                  }) => (
                     <div className="goalRow" key={goal.id}>
                       <form action={updateGoalAction} className="stackForm">
                         <input name="currentUrl" type="hidden" value={currentUrl} />
@@ -362,7 +368,15 @@ export default async function ObjetivosPage({
                           </span>
                           {!countsTowardFire ? (
                             <span className="objetivosGoalNote">no descuenta FIRE</span>
-                          ) : null}
+                          ) : fireDelay.kind === "delays" ? (
+                            <span className="objetivosGoalNote fireDelay">
+                              {fireDelay.months === 0
+                                ? "Retrasa tu FIRE menos de 1 mes"
+                                : `Retrasa tu FIRE +${fireDelay.months} ${fireDelay.months === 1 ? "mes" : "meses"}`}
+                            </span>
+                          ) : (
+                            <span className="objetivosGoalNote">No afecta a tu FIRE</span>
+                          )}
                         </div>
                         <PendingSubmit pendingLabel="Guardando…">
                           Guardar objetivo
