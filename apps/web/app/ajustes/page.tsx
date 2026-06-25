@@ -489,6 +489,23 @@ export default async function AjustesPage({
                   Fracción del gasto mensual para el nivel Fat (por defecto 1,5)
                 </small>
               </label>
+              <label>
+                Ingreso a tiempo parcial (€/mes, opcional)
+                <input
+                  defaultValue={
+                    fireScopeConfig?.baristaMonthlyIncomeMinor
+                      ? (fireScopeConfig.baristaMonthlyIncomeMinor / 100).toString()
+                      : undefined
+                  }
+                  inputMode="decimal"
+                  name="baristaIncome"
+                  placeholder="0"
+                />
+                <small className="muted">
+                  Barista FIRE: ingreso parcial que reduce el capital necesario. Vacío o 0
+                  = sin efecto.
+                </small>
+              </label>
               <button type="submit">Guardar configuración FIRE</button>
             </form>
           ) : (

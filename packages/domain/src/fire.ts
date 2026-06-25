@@ -29,6 +29,12 @@ export interface FireScopeConfig {
    * Stored as a decimal fraction (e.g. 1.5, not 150).
    */
   fatMultiplier?: number;
+  /**
+   * Barista FIRE: part-time income in minor units/month (PRD #507 N2, #514).
+   * When > 0, lowers the FIRE number to cover only (spending − income).
+   * 0 / undefined → no Barista level shown.
+   */
+  baristaMonthlyIncomeMinor?: number;
 }
 
 /**
