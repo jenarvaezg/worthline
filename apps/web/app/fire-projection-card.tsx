@@ -1,4 +1,3 @@
-import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import type { FireProjection, FireScenario } from "@worthline/domain";
 
 const SCENARIO_LABELS: Record<FireScenario["label"], string> = {
@@ -9,12 +8,8 @@ const SCENARIO_LABELS: Record<FireScenario["label"], string> = {
 
 export default function FireProjectionCard({
   projection,
-  currency,
-  privacyMode,
 }: {
   projection: FireProjection;
-  currency: string;
-  privacyMode: boolean;
 }) {
   const byLabel = (label: FireScenario["label"]) =>
     projection.scenarios.find((scenario) => scenario.label === label);
@@ -61,17 +56,11 @@ export default function FireProjectionCard({
           >
             <h4>{SCENARIO_LABELS[scenario.label]}</h4>
             <div className="fireScenarioYears">{yearsLabel(scenario.yearsToFire)}</div>
-            <div className="fireScenarioMeta">
-              {scenario.ageAtFire !== null ? (
+            {scenario.ageAtFire !== null ? (
+              <div className="fireScenarioMeta">
                 <span>edad {scenario.ageAtFire}</span>
-              ) : null}
-              <span>
-                {formatMoneyMinorPrivacy(
-                  { amountMinor: scenario.finalEligibleMinor, currency },
-                  privacyMode,
-                )}
-              </span>
-            </div>
+              </div>
+            ) : null}
           </div>
         ))}
       </div>

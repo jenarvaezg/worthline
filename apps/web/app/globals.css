@@ -2012,6 +2012,86 @@ code {
   font-size: 0.78rem;
 }
 
+/* Niveles FIRE rail (N1, #513) */
+.fireLevelsRail {
+  border-top: 1px solid var(--hairline);
+  margin-top: 18px;
+  padding-top: 14px;
+}
+
+.fireLevelsTitle {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  margin: 0 0 10px;
+  text-transform: uppercase;
+}
+
+.fireLevelsGrid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.fireLevelCard {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+}
+
+.fireLevelCard--reached {
+  background: rgba(39, 119, 73, 0.06);
+  border-color: rgba(39, 119, 73, 0.3);
+}
+
+.fireLevelLabel {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.fireLevelCard--reached .fireLevelLabel {
+  color: var(--green);
+}
+
+.fireLevelAmount {
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  line-height: 1.2;
+  margin-top: 2px;
+}
+
+.fireLevelEta {
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin-top: 1px;
+}
+
+.fireLevelEta--reached {
+  color: var(--green);
+  font-weight: 600;
+}
+
+.fireLevelsCoastNote {
+  color: var(--muted);
+  font-size: 0.73rem;
+  line-height: 1.5;
+  margin: 8px 0 0;
+}
+
+/* Narrow: wrap to 2×2 below 700px */
+@media (max-width: 700px) {
+  .fireLevelsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 /* Goals list */
 .objetivosGoalGrid {
   display: grid;
