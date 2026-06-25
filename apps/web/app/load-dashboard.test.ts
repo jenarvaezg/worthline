@@ -85,12 +85,16 @@ describe("loadDashboard — snapshot capture policy", () => {
     store.close();
   });
 
-  test("replaces existing snapshot on same-day reload (latest wins)", async () => {
+  test("no-ops on same-day reload — the provisional point is held until the close (S3 #531)", async () => {
+    // With the daily cron as the floor (S2), the render captures only when today
+    // is absent and no-ops otherwise. A plain value edit is NOT a dated fact, so
+    // it does not ripple today's snapshot; the live figures reflect it, but the
+    // stored intraday point stays put until the 21:00 cron finalizes the close.
     const store = await createInMemoryStore();
     await makeWorkspace(store);
     await makeAsset(store);
 
-    // First load at 08:00
+    // First load at 08:00 → captures the provisional point (100 000 €).
     const firstResult = await loadDashboard({
       store,
       persistence: makePersistence(),
@@ -106,7 +110,7 @@ describe("loadDashboard — snapshot capture policy", () => {
     expect(snapshotsAfterFirst.filter((s) => s.dateKey === "2026-06-10")).toHaveLength(1);
     const firstId = snapshotsAfterFirst[0]!.id;
 
-    // Update value then reload at 18:00
+    // Edit the value (no ripple), then reload at 18:00 → render no-ops.
     await store.assets.updateAssetValuation("asset_cash", 120_000_00);
     await loadDashboard({
       store,
@@ -119,13 +123,49 @@ describe("loadDashboard — snapshot capture policy", () => {
     });
 
     const snapshotsAfterSecond = await store.snapshots.readSnapshots(scopeId);
-    // Still exactly one snapshot for today per scope
     const todaySnapshots = snapshotsAfterSecond.filter((s) => s.dateKey === "2026-06-10");
+    // Still exactly one snapshot for today, NOT re-captured: same id, same value.
     expect(todaySnapshots).toHaveLength(1);
-    // The id changed (the old one was replaced)
-    expect(todaySnapshots[0]!.id).not.toBe(firstId);
-    // The new value is captured
-    expect(todaySnapshots[0]!.totalNetWorth.amountMinor).toBe(120_000_00);
+    expect(todaySnapshots[0]!.id).toBe(firstId);
+    expect(todaySnapshots[0]!.totalNetWorth.amountMinor).toBe(100_000_00);
+
+    store.close();
+  });
+
+  test("captures on first load even when an earlier day already has a snapshot (today still absent)", async () => {
+    // The no-op gate keys on TODAY specifically — a prior day's snapshot must not
+    // suppress today's self-heal capture.
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
+
+    await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-09",
+      now: "2026-06-09T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    await store.assets.updateAssetValuation("asset_cash", 120_000_00);
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    const today = (await store.snapshots.readSnapshots(result.selectedScope!.id)).filter(
+      (s) => s.dateKey === "2026-06-10",
+    );
+    expect(today).toHaveLength(1);
+    // The new day captures the current (edited) value.
+    expect(today[0]!.totalNetWorth.amountMinor).toBe(120_000_00);
 
     store.close();
   });
@@ -242,7 +282,7 @@ describe("loadDashboard — snapshot holding rows", () => {
     store.close();
   });
 
-  test("same-day reload replaces the holding rows (latest wins)", async () => {
+  test("same-day reload holds the frozen rows — no re-capture (S3 #531)", async () => {
     const store = await createInMemoryStore();
     await makeWorkspace(store);
     await makeAsset(store);
@@ -269,9 +309,10 @@ describe("loadDashboard — snapshot holding rows", () => {
     });
 
     const rows = await store.snapshots.readSnapshotHoldings({ scopeId: "household" });
-    // At most one set of rows per scope per day.
+    // One set of rows per scope per day, NOT re-captured — the provisional value
+    // is held until the close (a non-dated-fact edit does not ripple).
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.valueMinor).toBe(120_000_00);
+    expect(rows[0]!.valueMinor).toBe(100_000_00);
 
     store.close();
   });
