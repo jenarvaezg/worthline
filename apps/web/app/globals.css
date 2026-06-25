@@ -119,6 +119,28 @@ button[aria-busy="true"] {
   cursor: progress;
 }
 
+/* Section-link in-flight spinner (#607, NavPendingIndicator). Shown only while a
+   navigation is pending so a slow RSC fetch reads as working, not frozen. No
+   library: a tiny CSS ring. prefers-reduced-motion is handled by the blanket
+   rule above — the animation collapses, leaving a static (still visible) ring. */
+.navPending {
+  border: 2px solid var(--line-soft);
+  border-radius: 50%;
+  border-top-color: var(--ink);
+  display: inline-block;
+  height: 0.62em;
+  margin-left: 6px;
+  vertical-align: middle;
+  width: 0.62em;
+  animation: wl-spin 0.6s linear infinite;
+}
+
+@keyframes wl-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 :focus-visible {
   outline: 3px solid var(--blue);
   outline-offset: 2px;

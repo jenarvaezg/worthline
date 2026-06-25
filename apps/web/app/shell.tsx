@@ -1,5 +1,6 @@
 import type { ScopeOption } from "@worthline/domain";
 
+import { PendingSubmit } from "./pending-submit";
 import SignOutButton from "./sign-out-button";
 import ViewTransitionLink from "./view-transition-link";
 
@@ -8,8 +9,11 @@ import ViewTransitionLink from "./view-transition-link";
  * that every page renders through. Each page instantiates this directly
  * (not via a layout) so it can pass the active section as a prop.
  *
- * Zero client JS: scope switching is a POST that sets a cookie, then redirects
- * back; active-link state is a prop, not router state.
+ * Server-rendered shell: scope switching is a POST that sets a cookie, then
+ * redirects back; active-link state is a prop, not router state. The only client
+ * islands are in-flight feedback (#607) — section links carry a `useLinkStatus`
+ * spinner, scope tabs a `PendingSubmit` (disable + aria-busy) — both degrade to
+ * plain links/submit buttons with no JS.
  */
 
 export type AppSection = "resumen" | "patrimonio" | "historico" | "objetivos" | "ajustes";
@@ -101,12 +105,11 @@ export default function Shell({
               <form action="/scope" key={scope.id} method="post">
                 <input name="returnTo" type="hidden" value={currentPageUrl} />
                 <input name="scopeId" type="hidden" value={scope.id} />
-                <button
+                <PendingSubmit
                   className={`scopeTabBtn${scope.id === selectedScopeId ? " active" : ""}`}
-                  type="submit"
                 >
                   {scope.label}
-                </button>
+                </PendingSubmit>
               </form>
             ))}
           </nav>
