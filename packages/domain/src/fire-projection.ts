@@ -106,6 +106,38 @@ function projectScenario(
   };
 }
 
+/**
+ * Linearly interpolates the fractional year at which `trajectory` crosses
+ * `target`. Returns `null` when the trajectory never reaches the target.
+ * Handles `yearsToFire === 0` (already FI) by returning 0.
+ *
+ * Shared by `goalFireDelay` and `fireLevels` — both consumers need coherent ETAs.
+ */
+export function fractionalFireYear(
+  trajectory: { year: number; eligibleMinor: number }[],
+  target: number,
+  yearsToFire: number | null,
+): number | null {
+  if (yearsToFire === null) return null;
+  if (yearsToFire === 0) return 0;
+
+  for (let i = 1; i < trajectory.length; i++) {
+    const prev = trajectory[i - 1]!;
+    const curr = trajectory[i]!;
+    if (curr.eligibleMinor >= target) {
+      if (curr.eligibleMinor === prev.eligibleMinor) {
+        return prev.year;
+      }
+      const fraction =
+        (target - prev.eligibleMinor) / (curr.eligibleMinor - prev.eligibleMinor);
+      return prev.year + fraction;
+    }
+  }
+
+  // Unreachable when yearsToFire is non-null (the loop always returns first).
+  return null;
+}
+
 export function projectFire(input: FireProjectionInput): FireProjection {
   return {
     fireNumberMinor: input.fireNumberMinor,

@@ -13,6 +13,8 @@ import {
 } from "./goals";
 import type { GoalFireDelay } from "./goal-fire-delay";
 import { goalFireDelay } from "./goal-fire-delay";
+import type { FireLevel } from "./fire-levels";
+import { fireLevels } from "./fire-levels";
 import type { Liability, ManualAsset, Member, Workspace } from "./workspace-types";
 import type { PositionSummary } from "./investment-types";
 import type { ScopeOption } from "./scope";
@@ -356,6 +358,11 @@ export interface ObjetivosState {
   coastTickFraction: number | null;
   warnings: DashboardState["warnings"];
   goals: ObjetivosGoalView[];
+  /**
+   * Coast · Lean · Regular · Fat milestones (PRD #507 N1, #513).
+   * Null when no FIRE config is available for the scope.
+   */
+  fireLevelRail: FireLevel[] | null;
 }
 
 /**
@@ -434,6 +441,17 @@ export function prepareObjetivosState(
     };
   });
 
+  // fireLevels uses the SAME net eligible the projection chart uses (fireResult.eligibleAssets),
+  // not eligibleGrossMinor — so rail ETAs are coherent with the displayed trajectory.
+  const fireLevelRail =
+    dash.fireScopeConfig && dash.workspace && dash.fireResult
+      ? fireLevels({
+          config: dash.fireScopeConfig,
+          eligibleMinor: dash.fireResult.eligibleAssets.amountMinor,
+          currency: dash.workspace.baseCurrency,
+        })
+      : null;
+
   return {
     coastTickFraction: dash.fireGlance?.coastTickFraction ?? null,
     fireProjection: dash.fireProjection,
@@ -441,5 +459,6 @@ export function prepareObjetivosState(
     fireScopeConfig: dash.fireScopeConfig,
     warnings: dash.warnings,
     goals,
+    fireLevelRail,
   };
 }
