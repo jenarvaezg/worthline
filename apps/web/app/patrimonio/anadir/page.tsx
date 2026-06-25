@@ -129,13 +129,15 @@ export default async function AnadirHoldingPage({
           <h2 id="add-holding-title">Añade algo a tu patrimonio</h2>
           <Link href="/patrimonio">← Volver</Link>
         </div>
-        <p className="addHoldingLead">
-          Elige un cajón y rellena solo lo mínimo. Los detalles finos se añaden luego
-          desde la ficha.
-        </p>
-        <p className="addHoldingLead">
-          <Link href="/patrimonio/anadir/avanzado">Ver todo / modo avanzado</Link>
-        </p>
+        <div className="simpleIntro">
+          <p className="addHoldingLead">
+            Elige el cajón, apunta el nombre y el importe. El resto vive después en la
+            ficha.
+          </p>
+          <Link className="actionLink" href="/patrimonio/anadir/avanzado">
+            Modo avanzado
+          </Link>
+        </div>
 
         {formError?.formId === "holding" ? (
           <p className="errorBand" role="alert">
@@ -158,7 +160,7 @@ export default async function AnadirHoldingPage({
                   value={drawer.id}
                 />
                 <span className="addHoldingDot" aria-hidden="true" />
-                <span>
+                <span className="simpleDrawerCopy">
                   <strong>{drawer.label}</strong>
                   <small>{drawer.hint}</small>
                 </span>
@@ -205,6 +207,7 @@ function PaneActions() {
 function MoneyPane({ values }: { values: Record<string, string> }) {
   return (
     <div className="simpleDrawerPane" data-drawer="dinero">
+      <PaneHeader title="Dinero" text="Cuenta corriente, efectivo o depósito a plazo." />
       <Field label="Nombre">
         <input
           autoComplete="off"
@@ -213,7 +216,7 @@ function MoneyPane({ values }: { values: Record<string, string> }) {
           placeholder="Cuenta del banco"
         />
       </Field>
-      <Field label="Cuánto hay">
+      <Field label="Importe actual">
         <input
           defaultValue={v(values, "simpleValue_dinero")}
           inputMode="decimal"
@@ -238,10 +241,10 @@ function InvestmentPane() {
   return (
     <div className="simpleDrawerPane" data-drawer="inversion">
       <div className="simpleNotice">
-        <h3>Inversión llega en la siguiente slice</h3>
+        <h3>Inversión va al modo avanzado</h3>
         <p>
-          El cajón queda reservado. Para fondos, acciones, planes o cripto, usa de momento
-          el modo avanzado con búsqueda de símbolo.
+          Fondos, acciones, planes y cripto necesitan símbolo o proveedor. Esa búsqueda
+          sigue en la pantalla completa.
         </p>
         <Link className="actionLink" href="/patrimonio/anadir/avanzado">
           Ir al modo avanzado
@@ -254,6 +257,10 @@ function InvestmentPane() {
 function HousingPane({ values }: { values: Record<string, string> }) {
   return (
     <div className="simpleDrawerPane" data-drawer="inmueble">
+      <PaneHeader
+        title="Inmueble"
+        text="Valor actual y si cuenta como vivienda habitual."
+      />
       <Field label="Nombre">
         <input
           autoComplete="off"
@@ -262,7 +269,7 @@ function HousingPane({ values }: { values: Record<string, string> }) {
           placeholder="Mi casa"
         />
       </Field>
-      <Field label="Cuánto vale hoy">
+      <Field label="Valor actual">
         <input
           defaultValue={v(values, "simpleValue_inmueble")}
           inputMode="decimal"
@@ -292,6 +299,7 @@ function OtherAssetPane({ values }: { values: Record<string, string> }) {
 
   return (
     <div className="simpleDrawerPane" data-drawer="bien">
+      <PaneHeader title="Otro bien" text="Coche, oro u otro activo mantenido a mano." />
       <Field label="Nombre">
         <input
           autoComplete="off"
@@ -300,7 +308,7 @@ function OtherAssetPane({ values }: { values: Record<string, string> }) {
           placeholder="Renault Clio"
         />
       </Field>
-      <Field label="Valor">
+      <Field label="Importe actual">
         <input
           defaultValue={v(values, "simpleValue_bien")}
           inputMode="decimal"
@@ -339,6 +347,7 @@ function DebtPane({ values }: { values: Record<string, string> }) {
 
   return (
     <div className="simpleDrawerPane" data-drawer="deuda">
+      <PaneHeader title="Deuda" text="Saldo pendiente y tipo de obligación." />
       <fieldset className="simpleChoiceGroup">
         <legend>Tipo de deuda</legend>
         <RadioChoice
@@ -380,6 +389,15 @@ function DebtPane({ values }: { values: Record<string, string> }) {
         Vincularla a un inmueble y el cuadro de pagos se añaden luego en su ficha.
       </p>
       <PaneActions />
+    </div>
+  );
+}
+
+function PaneHeader({ text, title }: { text: string; title: string }) {
+  return (
+    <div className="simplePaneIntro">
+      <h3>{title}</h3>
+      <p>{text}</p>
     </div>
   );
 }

@@ -4425,26 +4425,45 @@ td.rowActions > * {
 /* ── Simple «Añadir patrimonio» wizard (#596, variant B) ─────────────────── */
 .simpleAdd {
   display: grid;
-  gap: 1.4rem;
-  margin-top: 1.5rem;
+  gap: 1.1rem;
+  margin-top: 1.2rem;
+}
+.simpleIntro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  margin-top: 0.6rem;
+}
+.simpleIntro .addHoldingLead {
+  margin: 0;
 }
 .simpleDrawerGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.75rem;
 }
 .simpleDrawerCard {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr;
   align-items: flex-start;
-  gap: 0.65rem;
-  padding: 0.9rem;
-  min-height: 112px;
-  background: var(--panel);
+  gap: 0.7rem;
+  min-height: 116px;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--panel) 96%, var(--dot) 4%);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
   cursor: pointer;
+  transition-property: transform, border-color, box-shadow, background-color;
+  transition-duration: 140ms;
+  transition-timing-function: ease-out;
+}
+.simpleDrawerCard:hover {
+  transform: translateY(-1px);
+  border-color: var(--line);
+  box-shadow: var(--shadow);
 }
 .simpleDrawerCard input {
   position: absolute;
@@ -4458,6 +4477,7 @@ td.rowActions > * {
   border: 0;
 }
 .simpleDrawerCard:has(input:checked) {
+  background: color-mix(in srgb, var(--panel) 91%, var(--dot) 9%);
   border-color: var(--ink);
   box-shadow:
     var(--shadow),
@@ -4467,6 +4487,7 @@ td.rowActions > * {
   outline: 2px solid var(--blue);
   outline-offset: 2px;
 }
+.simpleDrawerCopy,
 .simpleDrawerCard strong,
 .simpleDrawerCard small {
   display: block;
@@ -4475,14 +4496,17 @@ td.rowActions > * {
   color: var(--ink);
   font-size: 0.96rem;
   margin-bottom: 0.3rem;
+  text-wrap: balance;
 }
 .simpleDrawerCard small,
-.simpleHint {
+.simpleHint,
+.simplePaneIntro p {
   color: var(--muted);
   line-height: 1.45;
+  text-wrap: pretty;
 }
 .simpleAddPanes {
-  min-height: 260px;
+  min-height: 0;
 }
 .simpleAddEmpty,
 .simpleDrawerPane {
@@ -4497,14 +4521,52 @@ td.rowActions > * {
   text-align: center;
 }
 .simpleDrawerPane {
+  --pane-accent: var(--line);
   display: none;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
+  align-items: start;
+  gap: 1rem 1.1rem;
+  border-top: 4px solid var(--pane-accent);
+}
+.simpleDrawerPane[data-drawer="dinero"] {
+  --pane-accent: var(--tier-cash);
+}
+.simpleDrawerPane[data-drawer="inversion"] {
+  --pane-accent: var(--tier-market);
+}
+.simpleDrawerPane[data-drawer="inmueble"] {
+  --pane-accent: var(--tier-housing);
+}
+.simpleDrawerPane[data-drawer="bien"] {
+  --pane-accent: var(--tier-illiquid);
+}
+.simpleDrawerPane[data-drawer="deuda"] {
+  --pane-accent: var(--red);
+}
+@media (max-width: 980px) {
+  .simpleDrawerGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 @media (max-width: 720px) {
+  .simpleDrawerGrid,
   .simpleDrawerPane {
     grid-template-columns: 1fr;
   }
+}
+.simplePaneIntro {
+  grid-column: 1 / -1;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--hairline);
+}
+.simplePaneIntro h3,
+.simplePaneIntro p {
+  margin: 0;
+}
+.simplePaneIntro h3 {
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 700;
 }
 .simpleField,
 .simpleChoiceGroup {
@@ -4515,12 +4577,14 @@ td.rowActions > * {
 }
 .simpleField span,
 .simpleChoiceGroup legend {
-  font-size: 0.85rem;
-  font-weight: 650;
-  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 760;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
-.simpleField input,
-.simpleChoiceGroup input[type="text"] {
+.simpleField input {
+  min-height: 44px;
   padding: 0.58rem 0.65rem;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
@@ -4539,17 +4603,73 @@ td.rowActions > * {
   color: var(--ink);
 }
 .simpleInlineCheck {
-  display: flex;
+  grid-column: 1 / -1;
+  justify-self: start;
+  display: inline-flex;
   align-items: center;
   gap: 0.55rem;
+  min-height: 42px;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--paper) 70%, var(--panel));
+  font-weight: 650;
 }
-.simpleInlineCheck input,
-.simpleChoice input {
-  accent-color: var(--blue);
+.simpleInlineCheck input[type="hidden"] {
+  display: none;
+}
+.simpleInlineCheck input[type="checkbox"] {
+  appearance: none;
+  display: grid;
+  place-content: center;
+  flex: 0 0 auto;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+}
+.simpleInlineCheck input[type="checkbox"]::before {
+  content: "";
+  width: 0.42rem;
+  height: 0.68rem;
+  margin-bottom: 0.1rem;
+  border: solid var(--panel);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) scale(0);
+  transition: transform 120ms ease-out;
+}
+.simpleInlineCheck input[type="checkbox"]:checked {
+  background: var(--blue);
+  border-color: var(--blue);
+}
+.simpleInlineCheck input[type="checkbox"]:checked::before {
+  transform: rotate(45deg) scale(1);
 }
 .simpleChoiceGroup {
-  border: 0;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, max-content));
+  align-items: center;
+  gap: 0.5rem;
   padding: 0;
+  border: 0;
+}
+.simpleChoiceGroup legend {
+  grid-column: 1 / -1;
+  margin-bottom: 0.1rem;
+}
+.simpleChoice {
+  min-height: 38px;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--panel);
+}
+.simpleChoice:has(input:checked) {
+  border-color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 8%, var(--panel));
 }
 .simpleNotice,
 .simplePaneActions,
@@ -4559,6 +4679,10 @@ td.rowActions > * {
 .simpleNotice {
   display: grid;
   gap: 0.65rem;
+  padding: 1rem;
+  border: 1px dashed var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--paper) 74%, var(--panel));
 }
 .simpleNotice h3,
 .simpleNotice p,
