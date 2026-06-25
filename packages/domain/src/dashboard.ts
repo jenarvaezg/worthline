@@ -5,7 +5,12 @@ import { calculateFireForScope, fireReservationHorizon } from "./fire";
 import type { FireProjection } from "./fire-projection";
 import { projectFire } from "./fire-projection";
 import type { Goal } from "./goals";
-import { assignedHoldingsValueMinor, totalGoalReservationMinor } from "./goals";
+import {
+  assignedHoldingsValueMinor,
+  goalFundedRatioBps,
+  goalReservedMinor,
+  totalGoalReservationMinor,
+} from "./goals";
 import type { Liability, ManualAsset, Member, Workspace } from "./workspace-types";
 import type { PositionSummary } from "./investment-types";
 import type { ScopeOption } from "./scope";
@@ -275,8 +280,11 @@ export function prepareDashboardState(input: {
           percentFunded: fireResult.percentFunded,
           coastTickFraction:
             fireResult.coastFireRequired && fireResult.fireNumber.amountMinor > 0
-              ? fireResult.coastFireRequired.amountMinor /
-                fireResult.fireNumber.amountMinor
+              ? Math.min(
+                  1,
+                  fireResult.coastFireRequired.amountMinor /
+                    fireResult.fireNumber.amountMinor,
+                )
               : null,
           isAlreadyAtCoastFire: fireResult.isAlreadyAtCoastFire ?? false,
           isFunded: fireResult.percentFunded >= 100,
@@ -314,5 +322,79 @@ export function prepareDashboardState(input: {
     today,
     warnings,
     workspace,
+  };
+}
+
+/** Shape returned by `prepareObjetivosState`. */
+export interface ObjetivosGoalView {
+  goal: Goal;
+  /** Basis points funded (0–10 000), via `goalFundedRatioBps`. */
+  fundedRatioBps: number;
+  /** Capital reserved in minor units, via `goalReservedMinor`. */
+  reservedMinor: number;
+  /**
+   * True when this goal's deadline is still in the future AND before the FIRE
+   * horizon — i.e. its reservation actually reduces the FIRE-eligible total.
+   * Uses the same filter as `totalGoalReservationMinor`.
+   */
+  countsTowardFire: boolean;
+}
+
+export interface ObjetivosState {
+  fireProjection: DashboardState["fireProjection"];
+  fireResult: DashboardState["fireResult"];
+  fireScopeConfig: DashboardState["fireScopeConfig"];
+  /** coastRequired / fireNumber clamped to [0,1]; null when coast data unavailable. */
+  coastTickFraction: number | null;
+  warnings: DashboardState["warnings"];
+  goals: ObjetivosGoalView[];
+}
+
+/**
+ * Pure state for the /objetivos page (PRD #507, S2 #510).
+ * Composes `prepareDashboardState` for all FIRE data, then layers per-goal
+ * funded/reserved views using the existing `goalFundedRatioBps` /
+ * `goalReservedMinor` helpers. No projection math is duplicated here.
+ */
+export function prepareObjetivosState(
+  input: Parameters<typeof prepareDashboardState>[0],
+): ObjetivosState {
+  const dash = prepareDashboardState(input);
+
+  const { workspace, selectedScope } = dash;
+  const assetById = new Map(input.assets.map((a) => [a.id, a]));
+  const scopeMemberIds: Set<string> =
+    workspace && selectedScope
+      ? new Set(resolveScopeMemberIds(workspace, selectedScope.id))
+      : new Set();
+
+  const now = input.today ?? new Date().toISOString().slice(0, 10);
+  const fireHorizon = dash.fireScopeConfig
+    ? fireReservationHorizon(dash.fireScopeConfig, now)
+    : undefined;
+
+  const goals: ObjetivosGoalView[] = (input.goals ?? []).map((goal) => {
+    const assignedMinor = assignedHoldingsValueMinor(
+      goal.assetIds,
+      assetById,
+      scopeMemberIds,
+    );
+    const countsTowardFire =
+      goal.deadline >= now && (fireHorizon === undefined || goal.deadline < fireHorizon);
+    return {
+      goal,
+      fundedRatioBps: goalFundedRatioBps(goal.targetAmountMinor, assignedMinor),
+      reservedMinor: goalReservedMinor(goal.targetAmountMinor, assignedMinor),
+      countsTowardFire,
+    };
+  });
+
+  return {
+    coastTickFraction: dash.fireGlance?.coastTickFraction ?? null,
+    fireProjection: dash.fireProjection,
+    fireResult: dash.fireResult,
+    fireScopeConfig: dash.fireScopeConfig,
+    warnings: dash.warnings,
+    goals,
   };
 }
