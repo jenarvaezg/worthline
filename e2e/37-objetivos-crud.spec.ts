@@ -103,3 +103,32 @@ test("/objetivos: create, edit, delete a goal — CRUD lives here, not in /ajust
   // But there is a link pointing to /objetivos
   await expect(page.getByRole("link", { name: /Gestionar objetivos/ })).toBeVisible();
 });
+
+test("/objetivos: create form — validation failure preserves fields and anchors to form", async ({
+  page,
+}) => {
+  await page.goto("/objetivos");
+  await expect(page).toHaveURL(/\/objetivos/);
+
+  // Type a name but leave targetAmount blank (triggers validation error)
+  const typedName = "Objetivo e2e preserve test";
+  await page.getByLabel("Nombre").last().fill(typedName);
+  // Intentionally leave Importe objetivo blank → "El importe objetivo debe ser un número positivo."
+  await page.getByLabel("Fecha límite").last().fill("2032-12-31");
+
+  await page.getByRole("button", { name: "Crear objetivo" }).click();
+
+  // (a) Error message is shown (scoped to .formError to avoid Next route announcer)
+  const errorBanner = page.locator(".formError[role='alert']");
+  await expect(errorBanner).toBeVisible();
+  await expect(errorBanner).toContainText(
+    "El importe objetivo debe ser un número positivo",
+  );
+
+  // (b) Name field is preserved (not wiped)
+  const nameInput = page.getByLabel("Nombre").last();
+  await expect(nameInput).toHaveValue(typedName);
+
+  // (c) URL contains the #goalCreateForm fragment so browser scrolled to the form
+  expect(page.url()).toContain("#goalCreateForm");
+});
