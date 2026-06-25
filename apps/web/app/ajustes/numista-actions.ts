@@ -1,16 +1,19 @@
 "use server";
 
 import { type WorthlineStore } from "@worthline/db";
+import type { CoinPosition } from "@worthline/domain";
 import {
   fetchMetalSpotEur,
   getCollectedItems,
   getPrices,
   getTypeDetail,
   isTokenValid,
+  type MetalKind,
   mintNumistaToken,
   numistaAdapter,
 } from "@worthline/pricing";
 
+import { runActionWithStore } from "@web/action-store";
 import { parseEntityId } from "@web/intake";
 import { guardDemoWrite } from "@web/demo/write-guard";
 import {
@@ -86,12 +89,38 @@ export async function syncNumistaAction(
         }
 
         const bound = validToken;
+
+        // Hand the sync the coins we already have so it can skip re-calling Numista
+        // for static type detail + still-fresh estimates (ADR 0017 request-cap, #602).
+        // `sourceId` is non-null here — syncSource validated it before buildContext runs.
+        const existingCoins = (
+          await runActionWithStore(
+            (store) => store.connectedSources.readPositions(sourceId!),
+            _store,
+          )
+        )
+          .filter((position): position is CoinPosition => position.kind === "coin")
+          .map((coin) => ({
+            externalId: coin.externalId,
+            catalogueId: coin.catalogueId,
+            issueId: coin.issueId,
+            grade: coin.grade,
+            quantity: coin.quantity,
+            metal: coin.metal as MetalKind | null,
+            finenessMillis: coin.finenessMillis,
+            weightGrams: coin.weightGrams,
+            obverseThumbUrl: coin.obverseThumbUrl,
+            numismaticValueMinor: coin.numismaticValueMinor,
+            numismaticFetchedAt: coin.numismaticFetchedAt,
+          }));
+
         return {
           creds,
           token: bound,
           saveToken: persistToken,
           nowIso,
           nowMs,
+          existingCoins,
           listItems: () => getCollectedItems(creds, bound.accessToken, bound.userId),
           typeDetail: (typeId) => getTypeDetail(creds, typeId),
           prices: (typeId, issueId) =>

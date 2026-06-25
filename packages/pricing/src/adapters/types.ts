@@ -77,6 +77,9 @@ export interface SyncContext<Creds, Token = null> {
   typeDetail?: (typeId: number) => Promise<NumistaTypeDetail>;
   prices?: (typeId: number, issueId: number) => Promise<NumistaPrices | null>;
   spotPerOzEur?: (metal: MetalKind) => Promise<number | null>;
+  /** Persisted coins whose static type detail + within-TTL numismatic estimate a
+   *  re-sync reuses instead of re-calling Numista (ADR 0017 request-cap, #602). */
+  existingCoins?: SyncedCoinInput[];
   // ── Binance readers (signed; the wallet balances) ──
   listBalances?: () => Promise<{ asset: string; wallet: string; balance: string }[]>;
   priceEur?: (coingeckoId: string) => Promise<number | null>;
@@ -100,6 +103,22 @@ export interface RevalueContext<Creds, Token = null> {
   positions: RevaluePositionInput[];
   prices?: (typeId: number, issueId: number) => Promise<NumistaPrices | null>;
   spotPerOzEur?: (metal: MetalKind) => Promise<number | null>;
+}
+
+/** A persisted coin a re-sync reuses instead of re-calling Numista (mirror of
+ *  pricing's `SyncedCoin`). */
+export interface SyncedCoinInput {
+  externalId: string;
+  catalogueId: string;
+  issueId: number | null;
+  grade: string;
+  quantity: number;
+  metal: MetalKind | null;
+  finenessMillis: number | null;
+  weightGrams: number | null;
+  obverseThumbUrl: string | null;
+  numismaticValueMinor: number | null;
+  numismaticFetchedAt: string | null;
 }
 
 /** A stored position carrying the detail needed to revalue it without re-listing
