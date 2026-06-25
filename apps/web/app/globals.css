@@ -4422,6 +4422,156 @@ td.rowActions > * {
   max-width: 46rem;
 }
 
+/* ── Simple «Añadir patrimonio» wizard (#596, variant B) ─────────────────── */
+.simpleAdd {
+  display: grid;
+  gap: 1.4rem;
+  margin-top: 1.5rem;
+}
+.simpleDrawerGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: 0.75rem;
+}
+.simpleDrawerCard {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.9rem;
+  min-height: 112px;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+.simpleDrawerCard input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.simpleDrawerCard:has(input:checked) {
+  border-color: var(--ink);
+  box-shadow:
+    var(--shadow),
+    inset 0 0 0 1px var(--ink);
+}
+.simpleDrawerCard:has(input:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+.simpleDrawerCard strong,
+.simpleDrawerCard small {
+  display: block;
+}
+.simpleDrawerCard strong {
+  color: var(--ink);
+  font-size: 0.96rem;
+  margin-bottom: 0.3rem;
+}
+.simpleDrawerCard small,
+.simpleHint {
+  color: var(--muted);
+  line-height: 1.45;
+}
+.simpleAddPanes {
+  min-height: 260px;
+}
+.simpleAddEmpty,
+.simpleDrawerPane {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.2rem;
+}
+.simpleAddEmpty {
+  color: var(--muted);
+  text-align: center;
+}
+.simpleDrawerPane {
+  display: none;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+@media (max-width: 720px) {
+  .simpleDrawerPane {
+    grid-template-columns: 1fr;
+  }
+}
+.simpleField,
+.simpleChoiceGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+}
+.simpleField span,
+.simpleChoiceGroup legend {
+  font-size: 0.85rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+.simpleField input,
+.simpleChoiceGroup input[type="text"] {
+  padding: 0.58rem 0.65rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  color: var(--ink);
+  background: var(--paper-strong);
+}
+.simpleField input:focus,
+.simpleChoice input:focus-visible,
+.simpleInlineCheck input:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+.simpleInlineCheck,
+.simpleChoice {
+  color: var(--ink);
+}
+.simpleInlineCheck {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.simpleInlineCheck input,
+.simpleChoice input {
+  accent-color: var(--blue);
+}
+.simpleChoiceGroup {
+  border: 0;
+  padding: 0;
+}
+.simpleNotice,
+.simplePaneActions,
+.simpleHint {
+  grid-column: 1 / -1;
+}
+.simpleNotice {
+  display: grid;
+  gap: 0.65rem;
+}
+.simpleNotice h3,
+.simpleNotice p,
+.simpleHint {
+  margin: 0;
+}
+.simpleAdd:not(:has(input[name="simpleDrawer"]:checked)) .simpleOwnership {
+  display: none;
+}
+.simpleOwnership {
+  max-width: 46rem;
+}
+
 /* ── Numista coin collection (PRD #160, variant B «Reparto por metal») ─────────
    The detail surface for a connected-source coin collection: a connected-source
    tile, a 100 %-stacked composition strip, and a descending equalizer whose

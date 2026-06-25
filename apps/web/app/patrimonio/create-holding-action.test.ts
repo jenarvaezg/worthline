@@ -14,11 +14,15 @@ import {
   defaultInstrumentForLiability,
   valuationMethodOfLiability,
 } from "@worthline/domain";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { fixedClock } from "@worthline/domain";
 
 import { createHoldingAction } from "./create-holding-action";
+
+vi.mock("@web/demo/write-guard", () => ({
+  guardDemoWrite: vi.fn(async () => undefined),
+}));
 
 /** Build a FormData with the given key/value pairs. */
 function form(entries: Record<string, string>): FormData {
@@ -190,6 +194,82 @@ describe("createHoldingAction — appreciating (property)", () => {
     const anchors = await store.assets.readValuationAnchors(asset.id);
     expect(anchors.length).toBeGreaterThanOrEqual(1);
     expect(anchors.some((a) => a.valuationDate === "2020-01-15")).toBe(true);
+  });
+});
+
+describe("createHoldingAction — simple drawer form (#596)", () => {
+  test("cash drawer maps the term toggle to a term deposit and keeps even ownership", async () => {
+    const store = await seedHousehold();
+
+    await runAction(
+      form({
+        simpleDrawer: "dinero",
+        simpleName_dinero: "Depósito Openbank",
+        simpleValue_dinero: "10.000,00",
+        cashTerm_dinero: "on",
+        ownershipPreset: "even",
+      }),
+      store,
+    );
+
+    const asset = (await store.assets.readAssets()).find(
+      (a) => a.name === "Depósito Openbank",
+    )!;
+    expect(asset.type).toBe("manual");
+    expect(asset.instrument).toBe("term_deposit");
+    expect(asset.currentValue.amountMinor).toBe(1_000_000);
+    expect(
+      Object.fromEntries(asset.ownership.map((o) => [o.memberId, o.shareBps])),
+    ).toEqual({
+      mA: 5_000,
+      mJ: 5_000,
+    });
+  });
+
+  test("housing drawer creates a real-estate asset from today's value only", async () => {
+    const store = await seedStore();
+
+    await runAction(
+      form({
+        simpleDrawer: "inmueble",
+        simpleName: "",
+        simpleValue: "",
+        simpleName_inmueble: "Casa",
+        simpleValue_inmueble: "300.000,00",
+        primaryResidence_inmueble: "on",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const asset = (await store.assets.readAssets())[0]!;
+    expect(asset.type).toBe("real_estate");
+    expect(asset.instrument).toBe("property");
+    expect(asset.currentValue.amountMinor).toBe(30_000_000);
+    expect(asset.isPrimaryResidence).toBe(true);
+
+    const anchors = await store.assets.readValuationAnchors(asset.id);
+    expect(anchors.some((a) => a.valuationDate === "2026-06-15")).toBe(true);
+  });
+
+  test("housing drawer preserves the primary-residence opt-out sentinel", async () => {
+    const store = await seedStore();
+
+    await runAction(
+      form({
+        simpleDrawer: "inmueble",
+        simpleName_inmueble: "Local",
+        simpleValue_inmueble: "90.000,00",
+        primaryResidence_inmueble: "off",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const asset = (await store.assets.readAssets())[0]!;
+    expect(asset.isPrimaryResidence).toBe(false);
   });
 });
 

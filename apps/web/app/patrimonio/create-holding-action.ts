@@ -38,6 +38,87 @@ import { persistManualAssetCreation } from "./persist-holding";
 
 /** Where the add flow returns on validation error. */
 const ADD_URL = "/patrimonio/anadir";
+const ADVANCED_ADD_URL = "/patrimonio/anadir/avanzado";
+
+function parseReturnUrl(value: FormDataEntryValue | null): string {
+  return String(value ?? "") === ADVANCED_ADD_URL ? ADVANCED_ADD_URL : ADD_URL;
+}
+
+type SimpleDrawer = "dinero" | "inmueble" | "bien" | "deuda" | "inversion";
+
+function parseSimpleDrawer(value: FormDataEntryValue | null): SimpleDrawer | null {
+  const raw = String(value ?? "").trim();
+  return ["dinero", "inmueble", "bien", "deuda", "inversion"].includes(raw)
+    ? (raw as SimpleDrawer)
+    : null;
+}
+
+function copyFormData(formData: FormData): FormData {
+  const copy = new FormData();
+  for (const [key, value] of formData.entries()) {
+    copy.append(key, value);
+  }
+  return copy;
+}
+
+function normalizeSimpleDrawerForm(
+  formData: FormData,
+  today: string,
+): { formData: FormData; instrument: Instrument | null; unsupported?: string } {
+  const drawer = parseSimpleDrawer(formData.get("simpleDrawer"));
+
+  if (!drawer) {
+    return { formData, instrument: parseInstrument(formData.get("instrument")) };
+  }
+
+  if (drawer === "inversion") {
+    return {
+      formData,
+      instrument: null,
+      unsupported: "El cajón Inversión llegará en la siguiente slice. Usa modo avanzado.",
+    };
+  }
+
+  const normalized = copyFormData(formData);
+  const simpleValueFor = (key: string): string =>
+    String(formData.get(`${key}_${drawer}`) ?? formData.get(key) ?? "");
+  const simpleName = simpleValueFor("simpleName");
+  const simpleValue = simpleValueFor("simpleValue");
+  const instrument =
+    drawer === "dinero"
+      ? formData.get("cashTerm_dinero") === "on" || formData.get("cashTerm") === "on"
+        ? "term_deposit"
+        : "current_account"
+      : drawer === "inmueble"
+        ? "property"
+        : drawer === "bien"
+          ? (parseInstrument(formData.get("simpleAssetKind")) ?? "other")
+          : parseInstrument(formData.get("simpleDebtKind"));
+
+  if (!instrument) {
+    return { formData: normalized, instrument: null };
+  }
+
+  normalized.set("instrument", instrument);
+  normalized.set(`name_${instrument}`, simpleName);
+
+  if (drawer === "deuda") {
+    normalized.set(`balance_${instrument}`, simpleValue);
+  } else if (drawer === "inmueble") {
+    normalized.set("acqDate_property", today);
+    normalized.set("acqValue_property", simpleValue);
+    if (
+      formData.get("primaryResidence_inmueble") === "on" ||
+      formData.get("primaryResidence") === "on"
+    ) {
+      normalized.set("isPrimaryResidence_property", "on");
+    }
+  } else {
+    normalized.set(`value_${instrument}`, simpleValue);
+  }
+
+  return { formData: normalized, instrument };
+}
 
 const INSTRUMENTS: readonly Instrument[] = [
   "current_account",
@@ -75,7 +156,6 @@ function parseLoanDebtModel(formData: FormData): DebtModel {
     : "amortizable";
 }
 
-/** The suffixed field keys an instrument may post — preserved on a validation error. */
 const FIELD_KEYS = [
   "name",
   "value",
@@ -88,6 +168,26 @@ const FIELD_KEYS = [
   "assoc",
   "inheritOwnership",
   "debtModel",
+  "isPrimaryResidence",
+];
+
+const SIMPLE_FIELD_KEYS = [
+  "returnTo",
+  "simpleDrawer",
+  "simpleName",
+  "simpleValue",
+  "simpleName_dinero",
+  "simpleValue_dinero",
+  "cashTerm_dinero",
+  "simpleName_inmueble",
+  "simpleValue_inmueble",
+  "primaryResidence_inmueble",
+  "simpleName_bien",
+  "simpleValue_bien",
+  "simpleName_deuda",
+  "simpleValue_deuda",
+  "simpleAssetKind",
+  "simpleDebtKind",
 ];
 
 /** Copy a suffixed field onto a canonical name, when present. */
@@ -135,6 +235,7 @@ function scopedAssetForm(
   carry(formData, scoped, `acqDate_${instrument}`, "acquisitionDate");
   carry(formData, scoped, `acqValue_${instrument}`, "acquisitionValue");
   carry(formData, scoped, `rate_${instrument}`, "rate");
+  carry(formData, scoped, `isPrimaryResidence_${instrument}`, "isPrimaryResidence");
   carryOwnership(formData, scoped);
 
   return scoped;
@@ -186,26 +287,40 @@ export async function createHoldingAction(
   _store?: WorthlineStore,
   _clock: Clock = systemClock(),
 ): Promise<never> {
-  await guardDemoWrite(ADD_URL);
-
   const today = _clock.today();
-  const instrument = parseInstrument(formData.get("instrument"));
+  const returnUrl = parseReturnUrl(formData.get("returnTo"));
+  await guardDemoWrite(returnUrl);
+
+  const normalized = normalizeSimpleDrawerForm(formData, today);
+  const actionFormData = normalized.formData;
+  const instrument = normalized.instrument;
 
   if (!instrument) {
-    redirect(errorRedirectUrl(ADD_URL, { message: "Elige un tipo de instrumento." }));
+    redirect(
+      errorRedirectUrl(returnUrl, {
+        formId: "holding",
+        message: normalized.unsupported ?? "Elige un tipo de instrumento.",
+        values: preserveFields(
+          actionFormData,
+          ["instrument", "ownershipPreset", "scopeMemberId", ...SIMPLE_FIELD_KEYS],
+          ["owner_"],
+        ),
+      }),
+    );
   }
 
-  // On error, reopen the chosen instrument's pane and refill what was typed.
+  // On error, reopen the chosen pane and refill what was typed.
   const errorUrl = (message: string): string =>
-    errorRedirectUrl(ADD_URL, {
+    errorRedirectUrl(returnUrl, {
       formId: "holding",
       message,
       values: preserveFields(
-        formData,
+        actionFormData,
         [
           "instrument",
           "ownershipPreset",
           "scopeMemberId",
+          ...SIMPLE_FIELD_KEYS,
           ...FIELD_KEYS.map((k) => `${k}_${instrument}`),
         ],
         ["owner_"],
@@ -222,7 +337,7 @@ export async function createHoldingAction(
   const assetType = defaults.assetType;
 
   if (assetType) {
-    const scoped = scopedAssetForm(formData, instrument, assetType, defaults.rung);
+    const scoped = scopedAssetForm(actionFormData, instrument, assetType, defaults.rung);
     const result = await runActionWithStore(async (store) => {
       const workspace = await store.workspace.readWorkspace();
 
@@ -261,7 +376,7 @@ export async function createHoldingAction(
   // instrument (yahoo / finect / coingecko), not a form dropdown.
   if (defaults.valuationMethod === "derived") {
     const scoped = scopedInvestmentForm(
-      formData,
+      actionFormData,
       instrument,
       defaults.priceProvider,
       defaults.rung,
@@ -310,8 +425,10 @@ export async function createHoldingAction(
     // A loan lets the user choose its model at creation (#273); mortgage/credit_card
     // keep the fixed model the catalog assigns.
     const debtModel =
-      instrument === "loan" ? parseLoanDebtModel(formData) : liabilitySpec.debtModel;
-    const scoped = scopedLiabilityForm(formData, instrument, liabilitySpec.type);
+      instrument === "loan"
+        ? parseLoanDebtModel(actionFormData)
+        : liabilitySpec.debtModel;
+    const scoped = scopedLiabilityForm(actionFormData, instrument, liabilitySpec.type);
 
     if (!String(scoped.get("name") ?? "").trim()) {
       redirect(errorUrl("El nombre de la deuda es obligatorio."));
