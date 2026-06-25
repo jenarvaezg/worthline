@@ -252,13 +252,28 @@ export async function loadDashboard(
   const scopes = listScopeOptions(workspace);
   const selectedScope = scopes.find((s) => s.id === scopeId) ?? scopes[0];
 
-  // ── 3. Snapshot capture (ADR 0005, ADR 0008) ──────────────────────────────
-  // Runs for every scope so all scopes accumulate history. Captures at most
-  // one snapshot per scope per day, day's latest winning (ADR 0005). Pass the
-  // shared projection context so the capture's internal reads reuse the single
-  // build from §2 instead of rebuilding it (dedup #566); the cron calls this
-  // with no context and builds its own.
-  await captureDailySnapshotForWorkspace(store, now, projectionContext);
+  // ── 3. Snapshot capture — self-heal only (ADR 0037, PRD #528 S3) ───────────
+  // The daily cron (S2, #530) is the floor: it records every scope's
+  // close-of-day snapshot whether or not anyone signs in. So the render captures
+  // ONLY when today's snapshot is still absent for the scope — a self-heal if the
+  // cron has not yet run — and no-ops otherwise (the common load). This takes the
+  // per-scope saveSnapshot writes (~6 serial round-trips/scope) off the critical
+  // path of the streamed figures (#485); the figures are computed live and never
+  // depend on the write. A declared dated fact (operation, valuation anchor,
+  // housing valuation) still ripples today's snapshot immediately via its own
+  // seam (ADR 0012 / ADR 0020) — unchanged. The 21:00 cron overrides this
+  // provisional intraday point with the day's close (latest-wins, ADR 0005).
+  //
+  // The existence check is free: these are the selected scope's snapshots the
+  // histórico chart already needs (reused in §4, NOT re-read). On the rare
+  // self-heal we re-read so the chart includes today's freshly-captured point.
+  let snapshots = selectedScope
+    ? await store.snapshots.readSnapshots(selectedScope.id)
+    : [];
+  if (selectedScope && !snapshots.some((snapshot) => snapshot.dateKey === input.today)) {
+    await captureDailySnapshotForWorkspace(store, now, projectionContext);
+    snapshots = await store.snapshots.readSnapshots(selectedScope.id);
+  }
 
   // ── 4. Collect remaining data for state assembly ─────────────────────────
 
@@ -270,17 +285,17 @@ export async function loadDashboard(
   );
   const positions = selectedScope ? scopedProjection.positions : [];
 
-  // ── §4 parallel reads — all five are mutually independent ────────────────
-  // TX-safety: these reads run after all saveSnapshot() calls above have
-  // committed their own transactions, so no interactive tx is open here.
-  // ctx.getWorkspace() is promise-memoized (Step 0), making concurrent internal
-  // calls safe.
-  const [overrides, fireConfig, goals, snapshots] = await Promise.all([
+  // ── §4 parallel reads — mutually independent ─────────────────────────────
+  // `snapshots` was already read in §3 (the capture-existence check doubles as
+  // the chart read), so it is not re-read here.
+  // TX-safety: these reads run after any saveSnapshot() above has committed its
+  // own transaction, so no interactive tx is open here. ctx.getWorkspace() is
+  // promise-memoized (Step 0), making concurrent internal calls safe.
+  const [overrides, fireConfig, goals] = await Promise.all([
     store.readWarningOverrides(),
     store.readFireConfig(),
     // Goals for the selected scope (#426): reserve capital against FIRE eligibility.
     selectedScope ? store.goals.readGoals(selectedScope.id) : Promise.resolve([]),
-    selectedScope ? store.snapshots.readSnapshots(selectedScope.id) : Promise.resolve([]),
   ]);
 
   // The ranges worth offering: bounded ranges only when the history exceeds
