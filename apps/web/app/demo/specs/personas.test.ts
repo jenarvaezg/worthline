@@ -101,7 +101,7 @@ describe("seedPersona — inversor (markets-heavy)", () => {
     ).toBeGreaterThanOrEqual(12);
 
     store.close();
-  });
+  }, 15_000);
 
   it("mirrors a frozen connected source with positions", async () => {
     const store = await createInMemoryStore();

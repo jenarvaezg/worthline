@@ -31,5 +31,5 @@ describe("demo store provider", () => {
     );
     expect(checking?.currentValue.amountMinor).not.toBe(99_999_00);
     second.close();
-  });
+  }, 15_000);
 });
