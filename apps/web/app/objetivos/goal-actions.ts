@@ -10,6 +10,7 @@ import {
   errorRedirectUrl,
   parseEntityId,
   parseMoneyMinor,
+  preserveFields,
 } from "@web/intake";
 import { guardDemoWrite } from "@web/demo/write-guard";
 import { runActionWithStore } from "@web/action-store";
@@ -30,6 +31,14 @@ type ParsedGoalForm =
 
 function parsePriority(raw: string): GoalPriority {
   return raw === "high" || raw === "low" ? raw : "medium";
+}
+
+/** Collect goal form fields for error-redirect preservation (including multi-value assetIds). */
+function preserveGoalFields(formData: FormData): Record<string, string> {
+  return {
+    ...preserveFields(formData, ["name", "targetAmount", "deadline", "priority"]),
+    assetIds: formData.getAll("assetIds").map(String).join(","),
+  };
 }
 
 /** Parse and validate the goal form shared by create and update. */
@@ -66,7 +75,12 @@ export async function createGoalAction(formData: FormData, _store?: WorthlineSto
 
   if (!parsed.ok) {
     redirect(
-      errorRedirectUrl(currentUrlOf(formData), { message: parsed.error, formId: "goal" }),
+      errorRedirectUrl(currentUrlOf(formData), {
+        message: parsed.error,
+        formId: "goal",
+        values: preserveGoalFields(formData),
+        anchor: "goalCreateForm",
+      }),
     );
   }
 
@@ -96,12 +110,18 @@ export async function updateGoalAction(formData: FormData, _store?: WorthlineSto
       errorRedirectUrl(currentUrlOf(formData), {
         message: "Identificador de objetivo no encontrado.",
         formId: "goal",
+        anchor: "goalCreateForm",
       }),
     );
   }
   if (!parsed.ok) {
     redirect(
-      errorRedirectUrl(currentUrlOf(formData), { message: parsed.error, formId: "goal" }),
+      errorRedirectUrl(currentUrlOf(formData), {
+        message: parsed.error,
+        formId: `goal-${id}`,
+        values: preserveGoalFields(formData),
+        anchor: `goalEdit-${id}`,
+      }),
     );
   }
 
