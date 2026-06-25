@@ -176,11 +176,11 @@ export async function buildFireContext(
 
   const config = fire.config;
   const result = fire.result;
-  const assumptions = toAssumptions(config, fire.currency);
+  const assumptions = toAssumptions(config, result, fire.currency);
 
   return {
     assumptions,
-    config: toConfig(config, fire.currency),
+    config: toConfig(config, result, fire.currency),
     eligibleAssetsTotal: money(result.eligibleAssets),
     excludedAssets: await toExcludedAssets(store, result),
     qualitySignals: [],
@@ -208,7 +208,7 @@ export async function buildFireSummary(
   const result = fire.result;
 
   return {
-    assumptions: toAssumptions(fire.config, fire.currency),
+    assumptions: toAssumptions(fire.config, result, fire.currency),
     eligibleAssets: money(result.eligibleAssets),
     fireNumber: money(result.fireNumber),
     gap: gapOf(result),
@@ -217,9 +217,15 @@ export async function buildFireSummary(
   };
 }
 
-function toConfig(config: FireScopeConfig, currency: string): AgentViewFireConfig {
+function toConfig(
+  config: FireScopeConfig,
+  result: FireResult,
+  currency: string,
+): AgentViewFireConfig {
   return {
-    expectedRealReturn: rateString(config.expectedRealReturn),
+    expectedRealReturn: rateString(
+      result.realReturnUsed ?? config.expectedRealReturn ?? 0.05,
+    ),
     monthlySpending: moneyOf(config.monthlySpendingMinor, currency),
     safeWithdrawalRate: rateString(config.safeWithdrawalRate),
     ...(config.currentAge === undefined ? {} : { currentAge: config.currentAge }),
@@ -236,10 +242,13 @@ function toConfig(config: FireScopeConfig, currency: string): AgentViewFireConfi
 
 function toAssumptions(
   config: FireScopeConfig,
+  result: FireResult,
   currency: string,
 ): AgentViewFireAssumptions {
   return {
-    expectedRealReturn: rateString(config.expectedRealReturn),
+    expectedRealReturn: rateString(
+      result.realReturnUsed ?? config.expectedRealReturn ?? 0.05,
+    ),
     monthlySpending: moneyOf(config.monthlySpendingMinor, currency),
     safeWithdrawalRate: rateString(config.safeWithdrawalRate),
   };

@@ -194,10 +194,15 @@ const warningOverrideSchema = z.object({
 const fireScopeConfigSchema = z.object({
   monthlySpendingMinor: z.number().int(),
   safeWithdrawalRate: z.number(),
-  expectedRealReturn: z.number(),
+  expectedRealReturn: z.number().optional(),
   currentAge: z.number().optional(),
   targetRetirementAge: z.number().optional(),
   excludedAssetIds: z.array(nonEmptyString).optional(),
+  monthlySavingsCapacityMinor: z.number().int().optional(),
+  leanMultiplier: z.number().optional(),
+  fatMultiplier: z.number().optional(),
+  baristaMonthlyIncomeMinor: z.number().int().optional(),
+  tierRealReturns: z.record(z.string(), z.number()).optional(),
 });
 
 const domainWarningSchema = z.object({

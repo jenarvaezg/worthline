@@ -37,15 +37,48 @@ export function parseFireConfigFormStrict(
     };
   }
 
-  const expectedRealReturnRaw = (formData.get("expectedRealReturn") as string) ?? "";
-  const expectedRealReturnPct = parseDecimalStrict(expectedRealReturnRaw);
+  // N3 (#515): expectedRealReturn is now an OPTIONAL override. Empty → use
+  // weighted tier-mix effective rate. Non-empty → validate positive.
+  const expectedRealReturnRaw = (
+    (formData.get("expectedRealReturn") as string) ?? ""
+  ).trim();
+  const hasExpectedRealReturn = expectedRealReturnRaw.length > 0;
+  const expectedRealReturnPct = hasExpectedRealReturn
+    ? parseDecimalStrict(expectedRealReturnRaw)
+    : null;
 
-  if (!expectedRealReturnPct || expectedRealReturnPct <= 0) {
+  if (hasExpectedRealReturn && (!expectedRealReturnPct || expectedRealReturnPct <= 0)) {
     return {
       ok: false,
-      error: "El retorno real esperado debe ser un número positivo.",
+      error: "El retorno real esperado, si se indica, debe ser un número positivo.",
     };
   }
+
+  // Per-tier real return overrides (N3, #515): optional fields for each eligible tier.
+  const parseTierReturn = (name: string): number | undefined => {
+    const raw = ((formData.get(name) as string) ?? "").trim();
+    if (!raw) return undefined;
+    const parsed = parseDecimalStrict(raw);
+    // ponytail: >= 0 so cash (0%) is a valid explicit override
+    return parsed !== null && parsed >= 0 ? parsed / 100 : undefined;
+  };
+  const tierCash = parseTierReturn("tierReturn_cash");
+  const tierMarket = parseTierReturn("tierReturn_market");
+  const tierTermLocked = parseTierReturn("tierReturn_term-locked");
+  const tierIlliquid = parseTierReturn("tierReturn_illiquid");
+  const hasTierOverrides =
+    tierCash !== undefined ||
+    tierMarket !== undefined ||
+    tierTermLocked !== undefined ||
+    tierIlliquid !== undefined;
+  const tierRealReturns = hasTierOverrides
+    ? {
+        ...(tierCash !== undefined ? { cash: tierCash } : {}),
+        ...(tierMarket !== undefined ? { market: tierMarket } : {}),
+        ...(tierTermLocked !== undefined ? { "term-locked": tierTermLocked } : {}),
+        ...(tierIlliquid !== undefined ? { illiquid: tierIlliquid } : {}),
+      }
+    : undefined;
 
   const currentAgeRaw = (formData.get("currentAge") as string | null) ?? "";
   const currentAgeParsed = parseInt(currentAgeRaw, 10);
@@ -106,7 +139,9 @@ export function parseFireConfigFormStrict(
     ok: true,
     command: {
       excludedAssetIds: [],
-      expectedRealReturn: expectedRealReturnPct / 100,
+      ...(hasExpectedRealReturn && expectedRealReturnPct
+        ? { expectedRealReturn: expectedRealReturnPct / 100 }
+        : {}),
       monthlySpendingMinor,
       safeWithdrawalRate: safeWithdrawalRatePct / 100,
       targetRetirementAge,
@@ -115,6 +150,7 @@ export function parseFireConfigFormStrict(
       ...(leanMultiplier !== undefined ? { leanMultiplier } : {}),
       ...(fatMultiplier !== undefined ? { fatMultiplier } : {}),
       ...(hasBaristaIncome ? { baristaMonthlyIncomeMinor: baristaIncomeMinor! } : {}),
+      ...(tierRealReturns ? { tierRealReturns } : {}),
     },
   };
 }
