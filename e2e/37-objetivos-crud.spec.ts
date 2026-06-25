@@ -60,7 +60,43 @@ test("/objetivos: create, edit, delete a goal — CRUD lives here, not in /ajust
     page.locator(`input[name="name"][value="${editedName}"]`),
   ).not.toBeVisible();
 
-  // ── 5. /ajustes must NOT have the goals CRUD section ─────────────────────
+  // ── 5. goal card shows FIRE delay label (S4 of PRD #507) ────────────────
+  // Create a goal WITH an assigned holding (Cuenta ING, created in journey 03)
+  // so thisGoalReservationMinor > 0 and the delay branch activates.
+  // The serial DB may or may not have FIRE configured, so we accept either
+  // «Retrasa tu FIRE +X meses» or «No afecta a tu FIRE» — but NOT
+  // «no descuenta FIRE» (that label only appears when countsTowardFire=false,
+  // i.e. deadline out-of-horizon, which deadline 2030-01-01 is not).
+  const checkGoalName = "Fondo e2e fireDelay";
+  await page.goto("/objetivos");
+  await page.getByLabel("Nombre").last().fill(checkGoalName);
+  await page.getByLabel("Importe objetivo (EUR)").last().fill("5000");
+  await page.getByLabel("Fecha límite").last().fill("2030-01-01");
+  await page.getByRole("button", { name: "Crear objetivo" }).click();
+  await expect(page).toHaveURL(/\/objetivos/);
+
+  const delayCard = page
+    .locator(".goalRow")
+    .filter({ has: page.locator(`input[name="name"][value="${checkGoalName}"]`) });
+  await expect(delayCard).toBeVisible();
+
+  // The card must show one of the two delay-branch labels (never «no descuenta FIRE»).
+  const delayLabel = delayCard.locator(".objetivosGoalNote");
+  await expect(delayLabel).toBeVisible();
+  const labelText = await delayLabel.textContent();
+  // Exactly one of these two: «Retrasa tu FIRE …» or «No afecta a tu FIRE»
+  const isDelayBranchLabel =
+    labelText?.includes("Retrasa tu FIRE") || labelText?.includes("No afecta a tu FIRE");
+  expect(isDelayBranchLabel).toBe(true);
+  // Explicitly exclude the out-of-horizon label (proves countsTowardFire=true path).
+  expect(labelText).not.toContain("no descuenta FIRE");
+
+  // Clean up: delete the check goal
+  await delayCard.locator("details.confirmDelete summary").click();
+  await delayCard.getByRole("button", { name: "Confirmar borrado" }).click();
+  await expect(page).toHaveURL(/\/objetivos/);
+
+  // ── 6. /ajustes must NOT have the goals CRUD section ─────────────────────
   await page.goto("/ajustes");
   // "Crear objetivo" button must be absent from /ajustes (goals CRUD moved to /objetivos)
   await expect(page.getByRole("button", { name: "Crear objetivo" })).not.toBeVisible();

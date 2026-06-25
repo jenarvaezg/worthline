@@ -11,6 +11,8 @@ import {
   goalReservedMinor,
   totalGoalReservationMinor,
 } from "./goals";
+import type { GoalFireDelay } from "./goal-fire-delay";
+import { goalFireDelay } from "./goal-fire-delay";
 import type { Liability, ManualAsset, Member, Workspace } from "./workspace-types";
 import type { PositionSummary } from "./investment-types";
 import type { ScopeOption } from "./scope";
@@ -338,6 +340,12 @@ export interface ObjetivosGoalView {
    * Uses the same filter as `totalGoalReservationMinor`.
    */
   countsTowardFire: boolean;
+  /**
+   * How many months this goal delays the FIRE date (PRD #507, S4 #512).
+   * Computed by `goalFireDelay` — the 4th reservation consumer. Marginal:
+   * measured against the WITHOUT scenario where other goals are already reserved.
+   */
+  fireDelay: GoalFireDelay;
 }
 
 export interface ObjetivosState {
@@ -373,6 +381,30 @@ export function prepareObjetivosState(
     ? fireReservationHorizon(dash.fireScopeConfig, now)
     : undefined;
 
+  // eligibleGrossMinor = eligible BEFORE goal reservation (needed for goalFireDelay).
+  // fireResult.eligibleAssets is already net of reservation; add it back.
+  const eligibleGrossMinor = dash.fireResult
+    ? dash.fireResult.eligibleAssets.amountMinor +
+      (dash.fireResult.reservedForGoals?.amountMinor ?? 0)
+    : 0;
+
+  // Per-goal in-horizon reservation map: only goals whose deadline is future + before horizon.
+  const goalReservationMap = new Map<string, number>();
+  for (const goal of input.goals ?? []) {
+    const assignedMinor = assignedHoldingsValueMinor(
+      goal.assetIds,
+      assetById,
+      scopeMemberIds,
+    );
+    const inHorizon =
+      goal.deadline >= now && (fireHorizon === undefined || goal.deadline < fireHorizon);
+    goalReservationMap.set(
+      goal.id,
+      inHorizon ? goalReservedMinor(goal.targetAmountMinor, assignedMinor) : 0,
+    );
+  }
+  const totalReservation = [...goalReservationMap.values()].reduce((s, v) => s + v, 0);
+
   const goals: ObjetivosGoalView[] = (input.goals ?? []).map((goal) => {
     const assignedMinor = assignedHoldingsValueMinor(
       goal.assetIds,
@@ -381,11 +413,24 @@ export function prepareObjetivosState(
     );
     const countsTowardFire =
       goal.deadline >= now && (fireHorizon === undefined || goal.deadline < fireHorizon);
+    // otherReservationsMinor = total in-horizon reservation minus this goal's share.
+    const otherReservationsMinor =
+      totalReservation - (goalReservationMap.get(goal.id) ?? 0);
     return {
       goal,
       fundedRatioBps: goalFundedRatioBps(goal.targetAmountMinor, assignedMinor),
       reservedMinor: goalReservedMinor(goal.targetAmountMinor, assignedMinor),
       countsTowardFire,
+      fireDelay: dash.fireScopeConfig
+        ? goalFireDelay({
+            goal,
+            otherReservationsMinor,
+            eligibleGrossMinor,
+            thisGoalReservationMinor: goalReservationMap.get(goal.id) ?? 0,
+            config: dash.fireScopeConfig,
+            now,
+          })
+        : { kind: "no_effect" as const },
     };
   });
 

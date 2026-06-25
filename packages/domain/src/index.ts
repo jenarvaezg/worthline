@@ -228,7 +228,10 @@ export type {
   FireScenarioLabel,
   FireTrajectoryPoint,
 } from "./fire-projection";
-export { projectFire } from "./fire-projection";
+export { DEFAULT_MAX_YEARS, projectFire } from "./fire-projection";
+
+export type { GoalFireDelay, GoalFireDelayInput } from "./goal-fire-delay";
+export { goalFireDelay } from "./goal-fire-delay";
 
 export type { MonthlySavingsSuggestion } from "./monthly-savings";
 export { suggestMonthlySavingsCapacity } from "./monthly-savings";
