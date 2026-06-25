@@ -19,14 +19,18 @@ export function PendingSubmit({
   className,
 }: {
   children: ReactNode;
-  /** Label shown while the form action is in flight, e.g. "Sincronizando…". */
-  pendingLabel: string;
+  /**
+   * Label shown while the form action is in flight, e.g. "Sincronizando…".
+   * Omit to keep `children` unchanged (e.g. scope tabs, #607 — they just disable
+   * + go aria-busy, the label stays the tab name).
+   */
+  pendingLabel?: string;
   className?: string;
 }) {
   const { pending } = useFormStatus();
   return (
     <button aria-busy={pending} className={className} disabled={pending} type="submit">
-      {pending ? pendingLabel : children}
+      {pending ? (pendingLabel ?? children) : children}
     </button>
   );
 }
