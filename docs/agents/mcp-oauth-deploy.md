@@ -56,7 +56,7 @@
 `AUTH_GOOGLE_ID/SECRET`, `WORTHLINE_CONTROL_PLANE_DB_URL`, `WORTHLINE_DB_AUTH_TOKEN` are already set.
 The three `WORTHLINE_MCP_*` engage the verifier together — if any is missing it **fails closed**
 (accepts nobody). After changing any var, **redeploy** (env is baked per deployment): push to main
-(auto-deploy via `.github/workflows/deploy-demo.yml`) or `gh workflow run deploy-demo.yml`.
+(auto-deploy via `.github/workflows/deploy.yml`) or `gh workflow run deploy.yml`.
 
 ⚠️ Mixing environments is the easiest mistake: the `issuer`/`jwks`/`WORKOS_API_KEY` must all be from
 the same WorkOS environment, or the directory lookup hits the wrong env and every token is rejected.

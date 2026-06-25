@@ -84,10 +84,11 @@ project. This is chosen deliberately for low traffic and minimal moving parts: t
   balances). Secrets **stay out of exports** (ADR 0016 holds), so `sync:push` snapshots
   prod's connected-source secrets across the full-replace and re-applies them, never
   severing the live connection.
-- **The native-build saga (ADR 0029) ends.** Dropping the `better-sqlite3` native addon for
-  a pure-JS libSQL HTTP client removes the ABI matching and the Vercel build-sandbox
-  failure that forced the prebuilt-via-GitHub-Action deploy; Vercel can build the app
-  normally again.
+- **The native-addon cause ended; the prebuilt deploy did not.** Dropping the
+  `better-sqlite3` native addon for libSQL removed the ABI-matching concern, but a real
+  non-prebuilt Vercel preview deploy on 2026-06-25 still failed after the Next 16 compiler
+  reported success and skipped type validation. ADR 0029's prebuilt GitHub Action remains the
+  production deploy path until Vercel's native builder can finish that build.
 - **Supersedes** ADR 0029's "the whole deployment is the demo" and "real hosting is out of
   scope" stances; **extends** ADR 0016 (connected-source secrets) for the hosted
   deployment. Calculations are identical local or hosted — ADR 0009 server-rendering and

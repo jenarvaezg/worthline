@@ -1,12 +1,11 @@
 name: Deploy (Vercel prebuilt, Node 24)
 
-# Why prebuilt: historically Vercel's build sandbox could not complete the Next 16
-# production build (it builds fine on Node 22/24/26 everywhere else), so we build
-# the prebuilt output here on a clean Node 24 runner — matching the Vercel
-# project's Node 24 lambda runtime — and ship it with `vercel deploy --prebuilt`.
-# The original native-better-sqlite3 ABI reason is gone since the move to libSQL
-# (PRD #381); whether the sandbox can now build natively (and this workflow can
-# retire in favour of Vercel's Git integration) is tracked separately.
+# Why prebuilt: Vercel's native build sandbox still cannot complete the Next 16
+# production build. A real non-prebuilt preview deploy on 2026-06-25, after the
+# libSQL/Turso migration removed better-sqlite3, reached "Compiled successfully"
+# and then exited 1 immediately after "Skipping validation of types" with no
+# actionable diagnostic. We therefore build the prebuilt output on a clean Node
+# 24 runner and ship it with `vercel deploy --prebuilt`.
 
 on:
   push:
