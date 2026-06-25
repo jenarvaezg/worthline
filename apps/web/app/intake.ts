@@ -504,6 +504,8 @@ export function okMessage(key: string | undefined): string | null {
     revision_added: "Revisión de tipo registrada.",
     revision_deleted: "Revisión de tipo eliminada.",
     revision_saved: "Revisión de tipo actualizada.",
+    goal_deleted: "Objetivo eliminado.",
+    goal_saved: "Objetivo guardado.",
     restored: "Restaurado.",
     saved: "Guardado.",
     trash_emptied: "Papelera vaciada.",
