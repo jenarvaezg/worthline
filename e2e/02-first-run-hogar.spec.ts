@@ -43,16 +43,18 @@ test("hogar onboarding: /empezar → Crear hogar → dashboard with household", 
   // household scope + 3 individual members = 4 buttons
   await expect(scopeButtons).toHaveCount(4);
 
-  // 7. Navigate to anadir — ownership presets must appear (2+ members)
+  // 7. Navigate to the simple add wizard — ownership presets must appear (2+ members)
   await page.goto("/patrimonio/anadir");
-  await expect(page.getByRole("heading", { name: "Añadir holding" })).toBeVisible();
-  await page.locator(`label.addHoldingChip:has(input[value="current_account"])`).click();
+  await expect(
+    page.getByRole("heading", { name: "Añade algo a tu patrimonio" }),
+  ).toBeVisible();
+  await page.getByRole("radio", { name: /Dinero/ }).check();
 
-  const ownershipFieldset = page.getByRole("group", { name: "Propiedad" });
+  const ownershipFieldset = page.getByRole("group", { name: "Reparto" });
   await expect(ownershipFieldset).toBeVisible();
 
-  // "Repartir a partes iguales" preset is present
+  // "De los dos" even split is the simple-flow default.
   await expect(
-    ownershipFieldset.getByRole("radio", { name: /partes iguales/i }),
+    ownershipFieldset.getByRole("radio", { name: /De los dos/i }),
   ).toBeVisible();
 });

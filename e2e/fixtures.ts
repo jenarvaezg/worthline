@@ -97,8 +97,8 @@ export async function addHolding(
   submit: boolean = true,
 ) {
   const { expect } = await import("@playwright/test");
-  await page.goto("/patrimonio/anadir");
-  await expect(page.getByRole("heading", { name: "Añadir holding" })).toBeVisible();
+  await page.goto("/patrimonio/anadir/avanzado");
+  await expect(page.getByRole("heading", { name: /Añadir holding/ })).toBeVisible();
 
   await page
     .locator(`label.addHoldingChip:has(input[value="${fields.instrument}"])`)

@@ -12,8 +12,8 @@ import { test, expect, holdingRow } from "./fixtures";
 
 /** Pick an instrument by clicking its gallery chip (the radio is visually hidden). */
 async function pickInstrument(page: import("@playwright/test").Page, instrument: string) {
-  await page.goto("/patrimonio/anadir");
-  await expect(page.getByRole("heading", { name: "Añadir holding" })).toBeVisible();
+  await page.goto("/patrimonio/anadir/avanzado");
+  await expect(page.getByRole("heading", { name: /Añadir holding/ })).toBeVisible();
   await page.locator(`label.addHoldingChip:has(input[value="${instrument}"])`).click();
 }
 
