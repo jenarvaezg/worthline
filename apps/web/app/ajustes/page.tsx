@@ -465,6 +465,30 @@ export default async function AjustesPage({
                   </small>
                 ) : null}
               </label>
+              <label>
+                Multiplicador Lean FIRE (opcional)
+                <input
+                  defaultValue={fireScopeConfig?.leanMultiplier?.toString()}
+                  inputMode="decimal"
+                  name="leanMultiplier"
+                  placeholder="0.7"
+                />
+                <small className="muted">
+                  Fracción del gasto mensual para el nivel Lean (por defecto 0,7)
+                </small>
+              </label>
+              <label>
+                Multiplicador Fat FIRE (opcional)
+                <input
+                  defaultValue={fireScopeConfig?.fatMultiplier?.toString()}
+                  inputMode="decimal"
+                  name="fatMultiplier"
+                  placeholder="1.5"
+                />
+                <small className="muted">
+                  Fracción del gasto mensual para el nivel Fat (por defecto 1,5)
+                </small>
+              </label>
               <button type="submit">Guardar configuración FIRE</button>
             </form>
           ) : (

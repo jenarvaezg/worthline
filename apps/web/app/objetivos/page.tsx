@@ -1,3 +1,4 @@
+import type { FireLevel } from "@worthline/domain";
 import {
   formatMoneyMinorPrivacy,
   listScopeOptions,
@@ -24,6 +25,47 @@ import FireProjectionCard from "@web/fire-projection-card";
 import { createGoalAction, deleteGoalAction, updateGoalAction } from "./goal-actions";
 
 export const dynamic = "force-dynamic";
+
+function FireLevelCard({
+  level,
+  currency,
+  privacyMode,
+}: {
+  level: FireLevel;
+  currency: string;
+  privacyMode: boolean;
+}) {
+  const reached = level.eta.kind === "reached";
+  const etaLabel =
+    level.eta.kind === "reached"
+      ? "alcanzado"
+      : level.eta.kind === "unreachable"
+        ? "—"
+        : level.eta.years === 0
+          ? "este año"
+          : `en ~${level.eta.years.toFixed(1).replace(".", ",")} años`;
+
+  const coastExplainer =
+    level.key === "coast"
+      ? "Ya puedes dejar de aportar y el interés compuesto te llevará a tu número FIRE"
+      : undefined;
+
+  return (
+    <div className={`fireLevelCard${reached ? " fireLevelCard--reached" : ""}`}>
+      <span className="fireLevelLabel">{level.label}</span>
+      <strong className="fireLevelAmount">
+        {formatMoneyMinorPrivacy(
+          { amountMinor: level.amountMinor, currency },
+          privacyMode,
+        )}
+      </strong>
+      <span className={`fireLevelEta${reached ? " fireLevelEta--reached" : ""}`}>
+        {etaLabel}
+      </span>
+      {coastExplainer ? <small className="fireLevelHint">{coastExplainer}</small> : null}
+    </div>
+  );
+}
 
 export default async function ObjetivosPage({
   searchParams,
@@ -69,6 +111,7 @@ export default async function ObjetivosPage({
     coastTickFraction,
     warnings,
     goals: goalsView,
+    fireLevelRail,
   } = prepareObjetivosState({
     assets,
     fireConfig,
@@ -251,6 +294,23 @@ export default async function ObjetivosPage({
               </Link>
             </div>
           )}
+
+          {/* ── Niveles FIRE rail (N1, #513) ──────────────────────── */}
+          {fireLevelRail ? (
+            <section aria-label="Niveles FIRE" className="fireLevelsRail">
+              <h4 className="fireLevelsTitle">Niveles FIRE</h4>
+              <div className="fireLevelsGrid">
+                {fireLevelRail.map((level) => (
+                  <FireLevelCard
+                    currency={currency}
+                    key={level.key}
+                    level={level}
+                    privacyMode={privacyMode}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <div className="objetivosFireFoot">
             <span>Supuestos FIRE (retirada, retorno, edades) → en Ajustes</span>

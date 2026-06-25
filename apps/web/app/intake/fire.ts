@@ -1,5 +1,5 @@
 import type { FireScopeConfig } from "@worthline/domain";
-import { parseDecimal } from "@worthline/domain";
+import { parseDecimalStrict } from "@worthline/domain";
 
 import { parseMoneyMinor } from "@web/intake-primitives";
 import type { StrictParseResult } from "./shared";
@@ -28,7 +28,7 @@ export function parseFireConfigFormStrict(
   }
 
   const safeWithdrawalRateRaw = (formData.get("safeWithdrawalRate") as string) ?? "";
-  const safeWithdrawalRatePct = parseDecimal(safeWithdrawalRateRaw);
+  const safeWithdrawalRatePct = parseDecimalStrict(safeWithdrawalRateRaw);
 
   if (!safeWithdrawalRatePct || safeWithdrawalRatePct <= 0) {
     return {
@@ -38,7 +38,7 @@ export function parseFireConfigFormStrict(
   }
 
   const expectedRealReturnRaw = (formData.get("expectedRealReturn") as string) ?? "";
-  const expectedRealReturnPct = parseDecimal(expectedRealReturnRaw);
+  const expectedRealReturnPct = parseDecimalStrict(expectedRealReturnRaw);
 
   if (!expectedRealReturnPct || expectedRealReturnPct <= 0) {
     return {
@@ -68,6 +68,35 @@ export function parseFireConfigFormStrict(
   const hasSavingsCapacity =
     monthlySavingsCapacityMinor !== null && monthlySavingsCapacityMinor >= 0;
 
+  // Lean/Fat multipliers (PRD #507 N1): optional. Blank/garbage → undefined (defaults 0.7/1.5).
+  // When provided, both must be present and satisfy 0 < lean < fat ≤ 10.
+  const leanMultiplierRaw = ((formData.get("leanMultiplier") as string) ?? "").trim();
+  const fatMultiplierRaw = ((formData.get("fatMultiplier") as string) ?? "").trim();
+  const leanMultiplierParsed = leanMultiplierRaw
+    ? parseDecimalStrict(leanMultiplierRaw)
+    : null;
+  const fatMultiplierParsed = fatMultiplierRaw
+    ? parseDecimalStrict(fatMultiplierRaw)
+    : null;
+  const hasLean = leanMultiplierParsed !== null;
+  const hasFat = fatMultiplierParsed !== null;
+
+  // If either is provided, validate both together.
+  if (hasLean || hasFat) {
+    const lean = leanMultiplierParsed ?? 0.7;
+    const fat = fatMultiplierParsed ?? 1.5;
+    if (lean <= 0 || fat <= 0 || lean >= fat || fat > 10) {
+      return {
+        ok: false,
+        error:
+          "Los multiplicadores Lean/Fat deben cumplir: 0 < Lean < Fat ≤ 10 (por defecto 0,7 / 1,5).",
+      };
+    }
+  }
+
+  const leanMultiplier = hasLean ? leanMultiplierParsed! : undefined;
+  const fatMultiplier = hasFat ? fatMultiplierParsed! : undefined;
+
   return {
     ok: true,
     command: {
@@ -78,6 +107,8 @@ export function parseFireConfigFormStrict(
       targetRetirementAge,
       ...(currentAge !== undefined ? { currentAge } : {}),
       ...(hasSavingsCapacity ? { monthlySavingsCapacityMinor } : {}),
+      ...(leanMultiplier !== undefined ? { leanMultiplier } : {}),
+      ...(fatMultiplier !== undefined ? { fatMultiplier } : {}),
     },
   };
 }
