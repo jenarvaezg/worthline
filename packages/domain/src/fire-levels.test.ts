@@ -172,6 +172,90 @@ describe("fireLevels — reached vs eta vs unreachable", () => {
   });
 });
 
+describe("fireLevels — Barista FIRE (N2, #514)", () => {
+  const BARISTA_INCOME = 50_000; // 500 EUR/month in minor
+
+  it("emits a Barista level when baristaMonthlyIncomeMinor > 0", () => {
+    const levels = fireLevels({
+      ...BASE,
+      config: { ...BASE.config, baristaMonthlyIncomeMinor: BARISTA_INCOME },
+    })!;
+    expect(levels.find((l) => l.key === "barista")).toBeDefined();
+  });
+
+  it("Barista amount = (spending - income) * 12 / SWR", () => {
+    const levels = fireLevels({
+      ...BASE,
+      config: { ...BASE.config, baristaMonthlyIncomeMinor: BARISTA_INCOME },
+    })!;
+    const barista = levels.find((l) => l.key === "barista")!;
+    // (200_000 - 50_000) * 12 / 0.04 = 45_000_000
+    expect(barista.amountMinor).toBe(Math.round(((200_000 - 50_000) * 12) / 0.04));
+  });
+
+  it("Barista is positioned before regular in the rail", () => {
+    const levels = fireLevels({
+      ...BASE,
+      config: { ...BASE.config, baristaMonthlyIncomeMinor: BARISTA_INCOME },
+    })!;
+    const keys = levels.map((l) => l.key);
+    const bIdx = keys.indexOf("barista");
+    const rIdx = keys.indexOf("regular");
+    expect(bIdx).toBeGreaterThanOrEqual(0);
+    expect(bIdx).toBeLessThan(rIdx);
+  });
+
+  it("Barista ETA ≤ Regular ETA (lower target = sooner)", () => {
+    const levels = fireLevels({
+      ...BASE,
+      config: { ...BASE.config, baristaMonthlyIncomeMinor: BARISTA_INCOME },
+    })!;
+    const barista = levels.find((l) => l.key === "barista")!;
+    const regular = levels.find((l) => l.key === "regular")!;
+    const toYears = (l: typeof barista) =>
+      l.eta.kind === "eta" ? l.eta.years : l.eta.kind === "reached" ? 0 : Infinity;
+    expect(toYears(barista)).toBeLessThanOrEqual(toYears(regular));
+  });
+
+  it("NO Barista level when baristaMonthlyIncomeMinor is undefined", () => {
+    const levels = fireLevels(BASE)!;
+    expect(levels.find((l) => l.key === "barista")).toBeUndefined();
+  });
+
+  it("NO Barista level when baristaMonthlyIncomeMinor is 0", () => {
+    const levels = fireLevels({
+      ...BASE,
+      config: { ...BASE.config, baristaMonthlyIncomeMinor: 0 },
+    })!;
+    expect(levels.find((l) => l.key === "barista")).toBeUndefined();
+  });
+
+  it("Barista amount clamps to 0 when income >= spending", () => {
+    const levels = fireLevels({
+      ...BASE,
+      config: { ...BASE.config, baristaMonthlyIncomeMinor: 300_000 }, // > 200_000 spending
+    })!;
+    const barista = levels.find((l) => l.key === "barista")!;
+    expect(barista).toBeDefined();
+    expect(barista.amountMinor).toBe(0);
+    expect(barista.eta.kind).toBe("reached");
+  });
+
+  it("rail order is coast · lean · barista · regular · fat with Barista", () => {
+    const levels = fireLevels({
+      ...BASE,
+      config: { ...BASE.config, baristaMonthlyIncomeMinor: BARISTA_INCOME },
+    })!;
+    expect(levels.map((l) => l.key)).toEqual([
+      "coast",
+      "lean",
+      "barista",
+      "regular",
+      "fat",
+    ]);
+  });
+});
+
 describe("fireLevels — edge cases", () => {
   it("returns null when SWR is 0 (degenerate config → hide rail)", () => {
     const result = fireLevels({

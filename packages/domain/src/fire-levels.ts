@@ -18,7 +18,7 @@ import type { FireScopeConfig } from "./fire";
 import { calculateFire } from "./fire";
 import { projectFire, fractionalFireYear } from "./fire-projection";
 
-export type FireLevelKey = "coast" | "lean" | "regular" | "fat";
+export type FireLevelKey = "coast" | "lean" | "barista" | "regular" | "fat";
 
 export type FireLevelEta =
   | { kind: "reached" }
@@ -44,6 +44,7 @@ const FAT_DEFAULT = 1.5;
 const LABEL: Record<FireLevelKey, string> = {
   coast: "Coast",
   lean: "Lean",
+  barista: "Barista",
   regular: "Regular",
   fat: "Fat",
 };
@@ -95,6 +96,25 @@ export function fireLevels(input: FireLevelsInput): FireLevel[] | null {
       amountMinor: leanAmount,
       eta: etaForAmount(leanAmount),
     },
+  ];
+
+  // Barista FIRE (N2, #514): part-time income shrinks the required nest egg.
+  // Only emit when income > 0; clamp amount to ≥ 0 (income ≥ spending is fine).
+  const baristaIncome = config.baristaMonthlyIncomeMinor ?? 0;
+  if (baristaIncome > 0) {
+    const baristaAmount = Math.max(
+      0,
+      Math.round(((monthlySpendingMinor - baristaIncome) * 12) / safeWithdrawalRate),
+    );
+    levels.push({
+      key: "barista",
+      label: LABEL.barista,
+      amountMinor: baristaAmount,
+      eta: etaForAmount(baristaAmount),
+    });
+  }
+
+  levels.push(
     {
       key: "regular",
       label: LABEL.regular,
@@ -107,7 +127,7 @@ export function fireLevels(input: FireLevelsInput): FireLevel[] | null {
       amountMinor: fatAmount,
       eta: etaForAmount(fatAmount),
     },
-  ];
+  );
 
   if (coastAmountMinor !== null && config.currentAge !== undefined) {
     levels.unshift({
