@@ -23,6 +23,10 @@ describe("resolveCoinGeckoId — Binance symbol → CoinGecko id (ADR 0021)", ()
 
   test("returns null for an unmapped symbol — the caller values it 0 + warns", () => {
     expect(resolveCoinGeckoId("WAGMI")).toBeNull();
+    expect(resolveCoinGeckoId("BCX")).toBeNull();
+    expect(resolveCoinGeckoId("EDG")).toBeNull();
+    expect(resolveCoinGeckoId("SBTC")).toBeNull();
+    expect(resolveCoinGeckoId("JEX")).toBeNull();
     expect(resolveCoinGeckoId("")).toBeNull();
   });
 });

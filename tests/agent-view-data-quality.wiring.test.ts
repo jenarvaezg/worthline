@@ -425,6 +425,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
     expect(gapSignals).toHaveLength(1);
     expect(gapSignals[0]!.code).toBe("UNVALUED_POSITION");
     expect(gapSignals[0]!.severity).toBe("medium");
+    expect(gapSignals[0]!.label).toContain("sin fuente de precio");
     expect(gapSignals[0]!.affected?.id).toMatch(/^wl_src_/);
     expect(gapSignals[0]!.affected?.object).toBe("connected_source");
   });
