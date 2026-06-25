@@ -1,11 +1,10 @@
 import {
   createControlPlaneStore,
   createWorthlineStore,
+  type DailyCaptureFetchedPrice,
   type RunDailyCaptureDeps,
 } from "@worthline/db";
 import { refreshStalePrices } from "@worthline/pricing";
-
-import { refreshAndPersistStalePrices } from "@web/refresh-prices";
 
 type CronEnv = Record<string, string | undefined>;
 
@@ -46,18 +45,32 @@ export function buildDailyCaptureDeps(env: CronEnv = process.env): RunDailyCaptu
         url: workspace.dbUrl,
         ...(groupToken ? { authToken: groupToken } : {}),
       }),
-    fetchPrices: async (store, now) => {
-      const [assets, cacheEntries] = await Promise.all([
-        store.assets.readInvestmentAssetsWithMeta(),
-        store.operations.readAllPriceCacheEntries(),
-      ]);
-      await refreshAndPersistStalePrices({
-        assets,
-        cacheEntries,
-        nowIso: now,
-        refreshStalePrices,
-        upsertPrice: (price) => store.operations.upsertPrice(price),
-        readCache: () => store.operations.readAllPriceCacheEntries(),
+    fetchPrices: async (pairs, now): Promise<DailyCaptureFetchedPrice[]> => {
+      if (pairs.length === 0) return [];
+
+      const syntheticAssets = pairs.map((pair, index) => ({
+        id: `daily:${index}`,
+        currency: pair.currency,
+        priceProvider: pair.provider,
+        providerSymbol: pair.symbol,
+      }));
+      const result = await refreshStalePrices([], syntheticAssets, now, {
+        force: true,
+      });
+
+      return result.refreshed.map((price, index) => {
+        const pair = pairs[index]!;
+        return {
+          provider: pair.provider,
+          symbol: pair.symbol,
+          currency: price.currency,
+          fetchedAt: price.fetchedAt,
+          freshnessState: price.freshnessState,
+          price: price.price,
+          source: price.source,
+          ...(price.priceDate ? { priceDate: price.priceDate } : {}),
+          ...(price.staleReason ? { staleReason: price.staleReason } : {}),
+        };
       });
     },
   };

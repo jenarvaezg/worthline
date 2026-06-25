@@ -1,7 +1,11 @@
 import { describe, expect, test, vi } from "vitest";
 
 import { createInMemoryStore } from "@db/index";
-import { runDailyCapture } from "@db/run-daily-capture";
+import {
+  runDailyCapture,
+  type DailyCaptureFetchedPrice,
+  type DailyCapturePricePair,
+} from "@db/run-daily-capture";
 import type { WorthlineStore } from "@db/store-types";
 
 const NOW = "2026-06-25T21:00:00.000Z";
@@ -14,6 +18,37 @@ async function seededStore(): Promise<WorthlineStore> {
     members: [{ id: "mJ", name: "Jose" }],
     mode: "individual",
   });
+  return store;
+}
+
+async function seededMarketStore(
+  assetId: string,
+  symbol: string,
+  units: string,
+): Promise<WorthlineStore> {
+  const store = await seededStore();
+  await store.assets.createInvestmentAsset({
+    currency: "EUR",
+    id: assetId,
+    liquidityTier: "market",
+    name: assetId,
+    ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    priceProvider: "yahoo",
+    providerSymbol: symbol,
+  });
+  await store.recordOperationAndRipple(
+    {
+      assetId,
+      currency: "EUR",
+      executedAt: "2026-01-01",
+      feesMinor: 0,
+      id: `op_${assetId}`,
+      kind: "buy",
+      pricePerUnit: "100",
+      units,
+    },
+    { today: TODAY },
+  );
   return store;
 }
 
@@ -30,11 +65,30 @@ function keepOpen(store: WorthlineStore): WorthlineStore {
   });
 }
 
+async function noFetchedPrices(): Promise<DailyCaptureFetchedPrice[]> {
+  return [];
+}
+
 describe("runDailyCapture (ADR 0037, PRD #528)", () => {
-  test("captures a snapshot for every workspace at the run's date", async () => {
-    const a = await seededStore();
-    const b = await seededStore();
-    const fetchPrices = vi.fn(async () => {});
+  test("deduplicates price fetches by provider symbol and warms every workspace cache before capture", async () => {
+    const a = await seededMarketStore("fund_a", "AAPL", "10");
+    const b = await seededMarketStore("fund_b", "AAPL", "2");
+    const fetchPrices = vi.fn(
+      async (pairs: DailyCapturePricePair[]): Promise<DailyCaptureFetchedPrice[]> => {
+        expect(pairs).toEqual([{ provider: "yahoo", symbol: "AAPL", currency: "EUR" }]);
+        return [
+          {
+            provider: "yahoo",
+            symbol: "AAPL",
+            currency: "EUR",
+            price: "250",
+            source: "yahoo",
+            fetchedAt: NOW,
+            freshnessState: "fresh",
+          },
+        ];
+      },
+    );
 
     const result = await runDailyCapture({
       listAllWorkspaces: async () => [
@@ -47,14 +101,74 @@ describe("runDailyCapture (ADR 0037, PRD #528)", () => {
     });
 
     expect(result).toMatchObject({ total: 2, captured: 2, failures: [] });
-    expect(fetchPrices).toHaveBeenCalledTimes(2);
+    expect(fetchPrices).toHaveBeenCalledOnce();
 
-    for (const store of [a, b]) {
-      const snaps = await store.snapshots.readSnapshots("household");
-      expect(snaps).toHaveLength(1);
-      expect(snaps[0]!.dateKey).toBe(TODAY);
-      store.close();
-    }
+    expect(await a.operations.readPriceCache("fund_a")).toMatchObject({
+      price: "250",
+      freshnessState: "fresh",
+    });
+    expect(await b.operations.readPriceCache("fund_b")).toMatchObject({
+      price: "250",
+      freshnessState: "fresh",
+    });
+
+    expect(
+      (await a.snapshots.readSnapshots("household")).find(
+        (snap) => snap.dateKey === TODAY,
+      )?.grossAssets.amountMinor,
+    ).toBe(2_500_00);
+    expect(
+      (await b.snapshots.readSnapshots("household")).find(
+        (snap) => snap.dateKey === TODAY,
+      )?.grossAssets.amountMinor,
+    ).toBe(500_00);
+
+    a.close();
+    b.close();
+  });
+
+  test("failed fleet fetches do not overwrite warm cache rows or snapshot zero prices", async () => {
+    const store = await seededMarketStore("fund", "AAPL", "10");
+    await store.operations.upsertPrice({
+      assetId: "fund",
+      currency: "EUR",
+      fetchedAt: "2026-06-24T21:00:00.000Z",
+      freshnessState: "fresh",
+      price: "100",
+      source: "yahoo",
+    });
+
+    const result = await runDailyCapture({
+      listAllWorkspaces: async () => [{ id: "ws", dbUrl: "libsql://ws" }],
+      openStore: async () => keepOpen(store),
+      fetchPrices: async (): Promise<DailyCaptureFetchedPrice[]> => [
+        {
+          provider: "yahoo",
+          symbol: "AAPL",
+          currency: "EUR",
+          fetchedAt: NOW,
+          freshnessState: "failed",
+          price: "0",
+          source: "yahoo",
+          staleReason: "provider outage",
+        },
+      ],
+      now: NOW,
+    });
+
+    expect(result).toMatchObject({ total: 1, captured: 1, failures: [] });
+    expect(await store.operations.readPriceCache("fund")).toMatchObject({
+      fetchedAt: "2026-06-24T21:00:00.000Z",
+      freshnessState: "fresh",
+      price: "100",
+    });
+    expect(
+      (await store.snapshots.readSnapshots("household")).find(
+        (snap) => snap.dateKey === TODAY,
+      )?.grossAssets.amountMinor,
+    ).toBe(1_000_00);
+
+    store.close();
   });
 
   test("a workspace that fails to open does not block the others (isolation)", async () => {
@@ -69,7 +183,7 @@ describe("runDailyCapture (ADR 0037, PRD #528)", () => {
         if (ws.id === "bad") throw new Error("unreachable workspace DB");
         return keepOpen(good);
       },
-      fetchPrices: async () => {},
+      fetchPrices: noFetchedPrices,
       now: NOW,
     });
 
@@ -86,7 +200,7 @@ describe("runDailyCapture (ADR 0037, PRD #528)", () => {
     const deps = {
       listAllWorkspaces: async () => [{ id: "ws", dbUrl: "libsql://ws" }],
       openStore: async () => keepOpen(store),
-      fetchPrices: async () => {},
+      fetchPrices: noFetchedPrices,
     };
 
     // A morning render-style provisional point.

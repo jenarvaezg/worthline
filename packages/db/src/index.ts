@@ -63,6 +63,8 @@ export { captureDailySnapshotForWorkspace } from "./capture-daily-snapshot";
 export { runDailyCapture } from "./run-daily-capture";
 export type {
   DailyCaptureFailure,
+  DailyCaptureFetchedPrice,
+  DailyCapturePricePair,
   DailyCaptureWorkspace,
   RunDailyCaptureDeps,
   RunDailyCaptureResult,

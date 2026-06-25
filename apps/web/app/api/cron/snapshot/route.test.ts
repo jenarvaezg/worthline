@@ -9,7 +9,7 @@ vi.mock("./daily-capture-deps", () => ({
     openStore: async () => {
       throw new Error("no workspaces to open");
     },
-    fetchPrices: async () => {},
+    fetchPrices: async () => [],
   }),
 }));
 
