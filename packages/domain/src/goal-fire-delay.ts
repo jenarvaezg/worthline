@@ -46,6 +46,13 @@ export interface GoalFireDelayInput {
   config: FireScopeConfig;
   /** ISO YYYY-MM-DD. */
   now: string;
+  /**
+   * The single resolved real return to use for projection (N3, #515).
+   * Pass `fireResult.realReturnUsed` from the caller so this helper uses the
+   * same rate as coast, projection, and fireLevels. Falls back to
+   * `config.expectedRealReturn ?? 0.05` when omitted (backward-compat).
+   */
+  resolvedRealReturn?: number;
 }
 
 export function goalFireDelay(input: GoalFireDelayInput): GoalFireDelay {
@@ -56,6 +63,7 @@ export function goalFireDelay(input: GoalFireDelayInput): GoalFireDelay {
     thisGoalReservationMinor,
     config,
     now,
+    resolvedRealReturn,
   } = input;
 
   // ── Unified horizon: same source of truth as countsTowardFire / totalGoalReservationMinor
@@ -86,9 +94,12 @@ export function goalFireDelay(input: GoalFireDelayInput): GoalFireDelay {
     (config.monthlySpendingMinor * 12) / config.safeWithdrawalRate,
   );
   const monthlyContribution = config.monthlySavingsCapacityMinor ?? 0;
+  // N3 (#515): use resolvedRealReturn from the caller (fireResult.realReturnUsed)
+  // so this projection is coherent with coast + the main projection chart.
+  const rateToUse = resolvedRealReturn ?? config.expectedRealReturn ?? 0.05;
   const projInput = {
     monthlyContributionMinor: monthlyContribution,
-    expectedRealReturn: config.expectedRealReturn,
+    expectedRealReturn: rateToUse,
     fireNumberMinor,
     ...(config.currentAge !== undefined ? { currentAge: config.currentAge } : {}),
   };

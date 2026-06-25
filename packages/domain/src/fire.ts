@@ -1,14 +1,29 @@
 import type { CurrencyCode, MoneyMinor } from "./money";
 
 import { money } from "./money";
+import type { LiquidityTier } from "./liquidity-ladder";
 import type { ManualAsset, Workspace } from "./workspace-types";
 import { resolveScopeMemberIds } from "./scope";
 import { allocateScopedHolding } from "./scope-allocation";
+import { tierOfAsset } from "./classification";
+import { effectiveRealReturn } from "./fire-return";
 
 export interface FireScopeConfig {
   monthlySpendingMinor: number;
   safeWithdrawalRate: number;
-  expectedRealReturn: number;
+  /**
+   * Manual override for the expected real return (N3, #515). When set, this
+   * value is used as-is (backward-compatible with existing stored configs).
+   * When absent, `calculateFireForScope` computes an effective rate from the
+   * weighted tier mix of the eligible pool.
+   */
+  expectedRealReturn?: number;
+  /**
+   * Per-tier real-return overrides (N3, #515). Optional; when absent the
+   * tier defaults from `TIER_REAL_RETURN_DEFAULTS` are used. Only affects
+   * the effective rate computation (ignored when `expectedRealReturn` is set).
+   */
+  tierRealReturns?: Partial<Record<LiquidityTier, number>>;
   currentAge?: number;
   targetRetirementAge?: number;
   excludedAssetIds?: string[];
@@ -69,6 +84,19 @@ export interface FireResult {
   coastFireRequired?: MoneyMinor;
   coastFireAge?: number;
   isAlreadyAtCoastFire?: boolean;
+  /**
+   * Weighted real return estimate from the eligible tier mix (N3, #515).
+   * Σ(tier_weight × tier_return) over the eligible pool. Always present on
+   * `calculateFireForScope`; absent on `calculateFire` (no tier info available).
+   */
+  effectiveRealReturn?: number;
+  /**
+   * The single resolved rate used for ALL projection math in this result
+   * (coast, scenarios, levels, «+X meses»). = `config.expectedRealReturn` when
+   * an override is set; = `effectiveRealReturn` otherwise (N3, #515).
+   * Always present on `calculateFireForScope`; absent on `calculateFire`.
+   */
+  realReturnUsed?: number;
 }
 
 /**
@@ -95,11 +123,21 @@ export function fireReservationHorizon(
   return `${Number(now.slice(0, 4)) + years}${now.slice(4)}`;
 }
 
+/**
+ * Core FIRE math (engine-level). Accepts an explicit `realReturn` so the
+ * caller controls the rate — coast and coastFireAge use this single value.
+ * When called from `calculateFireForScope` the rate is `realReturnUsed`
+ * (the resolved override-or-effective scalar, N3 #515).
+ */
 export function calculateFire(
   config: FireScopeConfig,
   eligibleAssetsMinor: number,
   currency: CurrencyCode,
+  /** Resolved real return to use for coast math. Defaults to `config.expectedRealReturn ?? 0.05`. */
+  realReturn?: number,
 ): FireResult {
+  const rate = realReturn ?? config.expectedRealReturn ?? 0.05;
+
   const fireNumberMinor = Math.round(
     (config.monthlySpendingMinor * 12) / config.safeWithdrawalRate,
   );
@@ -117,7 +155,7 @@ export function calculateFire(
   if (config.currentAge !== undefined) {
     const targetRetirementAge = config.targetRetirementAge ?? 65;
     const yearsToRetirement = targetRetirementAge - config.currentAge;
-    const growthFactor = Math.pow(1 + config.expectedRealReturn, yearsToRetirement);
+    const growthFactor = Math.pow(1 + rate, yearsToRetirement);
     const coastFireRequiredMinor = Math.round(fireNumberMinor / growthFactor);
 
     result.coastFireRequired = money(coastFireRequiredMinor, currency);
@@ -126,8 +164,7 @@ export function calculateFire(
     if (eligibleAssetsMinor > 0 && fireNumberMinor > eligibleAssetsMinor) {
       result.coastFireAge =
         config.currentAge +
-        Math.log(fireNumberMinor / eligibleAssetsMinor) /
-          Math.log(1 + config.expectedRealReturn);
+        Math.log(fireNumberMinor / eligibleAssetsMinor) / Math.log(1 + rate);
     }
   }
 
@@ -150,6 +187,8 @@ export function calculateFireForScope(
 
   let eligibleAssetsMinor = 0;
   const excludedAssets: FireExcludedAsset[] = [];
+  // Accumulate eligible minor units per tier for weighted return computation (N3, #515).
+  const eligibleByTierMinor: Partial<Record<string, number>> = {};
 
   for (const asset of assets) {
     const ownedMinor = allocateScopedHolding(asset.currentValue.amountMinor, {
@@ -165,6 +204,9 @@ export function calculateFireForScope(
 
     if (reason === null) {
       eligibleAssetsMinor += ownedMinor;
+      // Accumulate by tier for the weighted return calculation.
+      const tier = tierOfAsset(asset);
+      eligibleByTierMinor[tier] = (eligibleByTierMinor[tier] ?? 0) + ownedMinor;
       continue;
     }
 
@@ -176,12 +218,26 @@ export function calculateFireForScope(
     }
   }
 
+  // N3 (#515): compute effective weighted rate, then resolve the single rate to use.
+  const effective = effectiveRealReturn({
+    eligibleByTierMinor,
+    ...(config.tierRealReturns ? { tierRealReturns: config.tierRealReturns } : {}),
+  });
+  const realReturnUsed = config.expectedRealReturn ?? effective;
+
   const reserved = Math.max(0, Math.min(reservedForGoalsMinor, eligibleAssetsMinor));
   const eligibleAfterReservation = eligibleAssetsMinor - reserved;
 
   return {
-    ...calculateFire(config, eligibleAfterReservation, workspace.baseCurrency),
+    ...calculateFire(
+      config,
+      eligibleAfterReservation,
+      workspace.baseCurrency,
+      realReturnUsed,
+    ),
     excludedAssets,
     reservedForGoals: money(reserved, workspace.baseCurrency),
+    effectiveRealReturn: effective,
+    realReturnUsed,
   };
 }
