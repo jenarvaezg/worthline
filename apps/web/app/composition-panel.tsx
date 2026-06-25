@@ -120,6 +120,12 @@ export default function CompositionPanel({
   // it, but a framing toggle since render must be honoured).
   const [view, setView] = useState<NetWorthFraming>(initialView);
   const [cache, setCache] = useState<Record<string, MatrixCellPayload>>(initialCells);
+  const readRangeFromUrl = useCallback((): CompositionRange => {
+    const params = new URLSearchParams(window.location.search);
+    return params.has(RANGE_VIEW_PARAM.key)
+      ? readViewParam(window.location.search, RANGE_VIEW_PARAM)
+      : initialRange;
+  }, [initialRange]);
   // Mirror the cache into a ref (updated in an effect, never during render) so
   // the prefetch closure reads the freshest keys after rapid moves.
   const cacheRef = useRef(cache);
@@ -162,9 +168,13 @@ export default function CompositionPanel({
   /** Prefetch the cross of a cell so the NEXT single click is already cached. */
   const prefetchCross = useCallback(
     (centre: MatrixCoord): void => {
-      void fetchCells(crossOf(centre, offeredRanges));
+      const eagerRanges =
+        initialRange === "all"
+          ? offeredRanges
+          : offeredRanges.filter((option) => option !== "all");
+      void fetchCells(crossOf(centre, eagerRanges));
     },
-    [fetchCells, offeredRanges],
+    [fetchCells, initialRange, offeredRanges],
   );
 
   // Reconcile with the URL on Back/Forward (popstate), bfcache restore
@@ -174,7 +184,7 @@ export default function CompositionPanel({
       const search = window.location.search;
       const params = new URLSearchParams(search);
       const urlMode = parseMode(params.get("drill"));
-      const urlRange = readViewParam(search, RANGE_VIEW_PARAM);
+      const urlRange = readRangeFromUrl();
       const urlHousing: CompositionHousingMode =
         params.get("vivienda") === "oculta" ? "hidden" : "net";
       setMode(urlMode);
@@ -196,7 +206,7 @@ export default function CompositionPanel({
       window.removeEventListener("pageshow", onPageShow);
       window.removeEventListener(VIEW_STATE_CHANGE_EVENT, syncFromUrl);
     };
-  }, [prefetchCross]);
+  }, [prefetchCross, readRangeFromUrl]);
 
   // Prefetch the initial cell's cross on mount so the very first click is instant
   // even for cells the server did not ship (it ships the cross, so this is a

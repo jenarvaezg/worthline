@@ -1,8 +1,8 @@
 /**
  * Journey 26: Composition temporal range (#144)
  *
- * The composition chart's temporal window is URL state (`range=1y|3y|5y`, with
- * `all` as the clean default), surfaced as a set of pill links
+ * The composition chart's temporal window is URL state (`range=1y|3y|5y|all`;
+ * omitted means the server-chosen bounded default), surfaced as a set of pill links
  * (`.rangeTabs`). Only the ranges the history actually SPANS are offered: a
  * bounded range appears only when the history is longer than its window
  * (composition-chart.ts: `RANGE_MONTHS[range] < spanMonths`), and with a single
@@ -17,7 +17,42 @@
  * round-trips — including through a drill (#145).
  */
 
+import { createWorthlineStore } from "@worthline/db";
+import { captureValuedNetWorthSnapshot } from "@worthline/domain";
+
 import { test, expect } from "./fixtures";
+
+async function seedMultiYearHistory(): Promise<void> {
+  const databasePath = process.env.WORTHLINE_DB_PATH;
+  if (!databasePath) throw new Error("WORTHLINE_DB_PATH must be set for e2e");
+
+  const store = await createWorthlineStore({ databasePath });
+  try {
+    const workspace = await store.workspace.readWorkspace();
+    if (!workspace) return;
+    const existing = new Set(
+      (await store.snapshots.readSnapshots("household")).map((snapshot) => snapshot.id),
+    );
+    const assets = await store.assets.readAssets();
+    for (const dateKey of ["2020-06-15", "2022-06-15", "2024-06-15"]) {
+      const id = `snapshot_range_${dateKey}`;
+      if (existing.has(id)) continue;
+      const { holdings, snapshot } = captureValuedNetWorthSnapshot({
+        assets,
+        capturedAt: `${dateKey}T10:00:00.000Z`,
+        id,
+        scopeId: "household",
+        scopeLabel: "Hogar",
+        workspace,
+      });
+      await store.snapshots.saveSnapshot({ holdings, snapshot });
+    }
+  } finally {
+    store.close();
+  }
+}
+
+test.beforeEach(seedMultiYearHistory);
 
 /** Pin the household scope, whose accumulated history spans the most years.
  * By the time this journey runs the serial workspace is individual (journey 19
@@ -45,14 +80,19 @@ test("range control: offered when the history spans years, with the bounded rang
   await expect(evolution).toBeVisible();
 
   // The control is present (multi-year history) and exposes the always-on
-  // "Todo" plus at least one bounded range. "Todo" is the active default.
+  // "Todo" plus at least one bounded range. The bounded range is the active
+  // default; "Todo" is explicit/lazy via range=all.
   const rangeTabs = evolution.getByRole("navigation", {
     name: "Rango temporal de la composición",
   });
   await expect(rangeTabs).toBeVisible();
-  await expect(rangeTabs.getByRole("link", { name: "Todo" })).toHaveAttribute(
+  await expect(rangeTabs.getByRole("link", { name: "1A" })).toHaveAttribute(
     "aria-current",
     "true",
+  );
+  await expect(rangeTabs.getByRole("link", { name: "Todo" })).toHaveAttribute(
+    "href",
+    /range=all/,
   );
   expect(await rangeTabs.getByRole("link").count()).toBeGreaterThanOrEqual(2);
 
@@ -62,7 +102,7 @@ test("range control: offered when the history spans years, with the bounded rang
   ).toBeVisible();
 });
 
-test("range control: selecting a bounded pill re-windows the chart INSTANTLY, no document nav, and Back restores it (S3 #519)", async ({
+test("range control: selecting Todo lazy-loads the chart with no document nav, and Back restores the bounded default (#572)", async ({
   page,
 }) => {
   await pinHouseholdScope(page);
@@ -70,9 +110,9 @@ test("range control: selecting a bounded pill re-windows the chart INSTANTLY, no
   const rangeTabs = page.getByRole("navigation", {
     name: "Rango temporal de la composición",
   });
-  // The 1A pill still links to range=1y — the no-JS fallback and the deep-link.
-  const oneYear = rangeTabs.getByRole("link", { name: "1A" });
-  await expect(oneYear).toHaveAttribute("href", /range=1y/);
+  // The Todo pill links to explicit range=all — the no-JS fallback and deep-link.
+  const allTime = rangeTabs.getByRole("link", { name: "Todo" });
+  await expect(allTime).toHaveAttribute("href", /range=all/);
 
   // Tag the live document; a full navigation would discard window state, so its
   // survival across the click PROVES the range switched client-side (the round
@@ -81,12 +121,12 @@ test("range control: selecting a bounded pill re-windows the chart INSTANTLY, no
     (window as unknown as { __wlNoReload?: string }).__wlNoReload = "kept";
   });
 
-  await oneYear.click();
+  await allTime.click();
 
   // The choice is mirrored to the URL via pushState (deep-link/share intact §3)…
-  await expect(page).toHaveURL(/range=1y/);
+  await expect(page).toHaveURL(/range=all/);
   // …the active pill moves without a re-render of the document…
-  await expect(rangeTabs.getByRole("link", { name: "1A" })).toHaveAttribute(
+  await expect(rangeTabs.getByRole("link", { name: "Todo" })).toHaveAttribute(
     "aria-current",
     "true",
   );
@@ -100,10 +140,10 @@ test("range control: selecting a bounded pill re-windows the chart INSTANTLY, no
     page.locator("svg.compositionChart").or(page.locator(".compositionEmpty")).first(),
   ).toBeVisible();
 
-  // Back returns to the previous window (Todo), still client-side (popstate).
+  // Back returns to the previous bounded default, still client-side (popstate).
   await page.goBack();
-  await expect(page).not.toHaveURL(/range=1y/);
-  await expect(rangeTabs.getByRole("link", { name: "Todo" })).toHaveAttribute(
+  await expect(page).not.toHaveURL(/range=all/);
+  await expect(rangeTabs.getByRole("link", { name: "1A" })).toHaveAttribute(
     "aria-current",
     "true",
   );

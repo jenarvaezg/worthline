@@ -19,6 +19,7 @@ import { captureDailySnapshotForWorkspace } from "@worthline/db";
 import type {
   AssetPrice,
   CompositionRange,
+  DatedSnapshotHoldingRow,
   DrilldownKey,
   DrilldownState,
   NetWorthFraming,
@@ -146,6 +147,13 @@ export interface LoadDashboardResult extends DashboardState {
    */
   compositionSeriesByRange: Partial<Record<CompositionRange, CompositionSeriesPoint[]>>;
   /**
+   * Frozen rows read for the selected scope during this dashboard load. Shared
+   * by composition/drill data and page-level movers (#571).
+   */
+  snapshotHoldingRows: DatedSnapshotHoldingRow[];
+  /** The actual active range after defaulting omitted `range` to a bounded window. */
+  activeCompositionRange: CompositionRange;
+  /**
    * The initial matrix cross (S4 #520, ADR 0038): the composition cells (chart
    * series / drilldowns) reachable in one click from the URL's cell — the
    * current column + the full chart row — keyed by `cellKey`. The client island
@@ -267,21 +275,45 @@ export async function loadDashboard(
   // committed their own transactions, so no interactive tx is open here.
   // ctx.getWorkspace() is promise-memoized (Step 0), making concurrent internal
   // calls safe.
-  const [overrides, fireConfig, goals, snapshots, holdingRows] = await Promise.all([
+  const [overrides, fireConfig, goals, snapshots] = await Promise.all([
     store.readWarningOverrides(),
     store.readFireConfig(),
     // Goals for the selected scope (#426): reserve capital against FIRE eligibility.
     selectedScope ? store.goals.readGoals(selectedScope.id) : Promise.resolve([]),
     selectedScope ? store.snapshots.readSnapshots(selectedScope.id) : Promise.resolve([]),
-    // Frozen holding rows of the scope, read once and shared by the composition
-    // chart (always) and the drilldown (when active). Housing is its own rung now
-    // (ADR 0022): the chart buckets it by rung and the drill selects it by rung, so
-    // no by-id housing carve is threaded through any more.
-    selectedScope
-      ? store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id })
-      : Promise.resolve([]),
   ]);
-  const activeRange = range ?? "all";
+
+  // The ranges worth offering: bounded ranges only when the history exceeds
+  // them (else they'd equal "all"), plus "all" (#144). Span = earliest capture
+  // to today, in months.
+  const earliestMonthKey = snapshots.reduce<string | null>(
+    (earliest, snapshot) =>
+      earliest === null || snapshot.monthKey < earliest ? snapshot.monthKey : earliest,
+    null,
+  );
+  const compositionRanges = availableCompositionRanges(
+    earliestMonthKey ? monthsBetween(earliestMonthKey, input.today.slice(0, 7)) : 0,
+  );
+  const activeRange = range ?? compositionRanges[0] ?? "all";
+  const eagerRanges =
+    compositionRanges.length === 1 || activeRange === "all"
+      ? compositionRanges
+      : compositionRanges.filter((offered) => offered !== "all");
+  const longestEagerRange =
+    activeRange === "all"
+      ? "all"
+      : (eagerRanges.filter((offered) => offered !== "all").at(-1) ?? activeRange);
+  const holdingRowsFrom = rangeStartMonthKey(input.today, longestEagerRange);
+  // Frozen holding rows of the scope, read once and shared by the composition
+  // chart, drilldown matrix, and page-level movers (#571). When `all` is lazy,
+  // this read is bounded to the longest eager range; `/api/dashboard/cells`
+  // reads the full history only when the user selects `range=all` (#572).
+  const holdingRows = selectedScope
+    ? await store.snapshots.readSnapshotHoldings({
+        ...(holdingRowsFrom ? { from: `${holdingRowsFrom}-01` } : {}),
+        scopeId: selectedScope.id,
+      })
+    : [];
 
   // ── 4a. Range window (#144) — owned ONCE here, fed to both consumers ──────
   // The active range's cutoff and the holding rows it keeps are computed a single
@@ -304,30 +336,13 @@ export async function loadDashboard(
     today: input.today,
   });
 
-  // The ranges worth offering: bounded ranges only when the history exceeds
-  // them (else they'd equal "all"), plus "all" (#144). Span = earliest capture
-  // to today, in months.
-  const earliestMonthKey = snapshots.reduce<string | null>(
-    (earliest, snapshot) =>
-      earliest === null || snapshot.monthKey < earliest ? snapshot.monthKey : earliest,
-    null,
-  );
-  const compositionRanges = availableCompositionRanges(
-    earliestMonthKey ? monthsBetween(earliestMonthKey, input.today.slice(0, 7)) : 0,
-  );
-
-  // ── 4b′. Per-range series (S3 #519) — the alternatives the client switches ──
-  // One series per OFFERED range, so a range pill toggles client-side with no
-  // round-trip (interaction-patterns §2). Each builds from the FULL rows: the
-  // series only plots row-backed closes inside its own window, so a per-range
-  // window over the full rows is byte-identical to windowing the rows first. The
-  // active range reuses the series already built above instead of rebuilding it,
-  // and is ALWAYS keyed — even if it is not an offered pill (e.g. a deep-link to
-  // a range narrower than the history) — so the island never renders an empty
-  // chart for the window the URL asked for.
-  const seriesRanges = compositionRanges.includes(activeRange)
-    ? compositionRanges
-    : [...compositionRanges, activeRange];
+  // ── 4b′. Per-range series (S3 #519 / #572) ───────────────────────────────
+  // Ship the eager ranges the client can switch instantly. `all` is omitted from
+  // default bounded loads and fetched on demand through /api/dashboard/cells; an
+  // explicit `range=all` deep-link still keys it here for server render safety.
+  const seriesRanges = eagerRanges.includes(activeRange)
+    ? eagerRanges
+    : [...eagerRanges, activeRange];
   const compositionSeriesByRange = Object.fromEntries(
     seriesRanges.map((offered) => [
       offered,
@@ -376,8 +391,8 @@ export async function loadDashboard(
   const currentCell: MatrixCoord = { mode: parseMode(drill), range: activeRange };
   const shipByKey = new Map<string, MatrixCoord>();
   for (const coord of [
-    ...crossOf(currentCell, compositionRanges),
-    ...compositionRanges.map((offered) => ({ mode: "chart" as const, range: offered })),
+    ...crossOf(currentCell, eagerRanges),
+    ...eagerRanges.map((offered) => ({ mode: "chart" as const, range: offered })),
   ]) {
     shipByKey.set(cellKey(coord), coord);
   }
@@ -416,6 +431,7 @@ export async function loadDashboard(
 
   return {
     ...state,
+    activeCompositionRange: activeRange,
     compositionRanges,
     compositionSeries,
     compositionSeriesByRange,
@@ -424,6 +440,7 @@ export async function loadDashboard(
     matrixCells,
     needsOnboarding: false,
     pricingErrors,
+    snapshotHoldingRows: holdingRows,
   };
 }
 
@@ -454,6 +471,7 @@ function buildEmptyResult(
 
   return {
     ...state,
+    activeCompositionRange: "all",
     compositionRanges: [],
     compositionSeries: [],
     compositionSeriesByRange: {},
@@ -462,5 +480,6 @@ function buildEmptyResult(
     matrixCells: {},
     needsOnboarding: true,
     pricingErrors,
+    snapshotHoldingRows: [],
   };
 }
