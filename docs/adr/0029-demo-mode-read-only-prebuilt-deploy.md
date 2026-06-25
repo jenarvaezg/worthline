@@ -1,4 +1,4 @@
-# Demo mode is a read-only prebuilt deploy of the live app
+# Demo mode is read-only; Vercel deploy remains prebuilt
 
 We want to show worthline to people without exposing real holdings and without running
 the live local app — a **demo mode** the public can click around. The obvious host was
@@ -71,19 +71,17 @@ Authenticated, mutable, persistent cloud hosting of the _real_ workspace is expl
   into the demo. (Build-time fixture generation + `outputFileTracingIncludes` was the original
   plan — see the build-fixtures follow-up; deferred as an optimization, not needed for
   correctness.)
-- **Deployment is _prebuilt_, not Vercel-built** (despite this ADR's original title). Vercel's
-  build sandbox silently kills the Next 16 production build — `exit 1` right after "Skipping
-  validation of types", on both Turbopack and webpack — on every Node version Vercel offers (22
-  and 24); only Node 26, which Vercel cannot run, is unaffected. The app itself is healthy: it
-  builds on Node 22/24/26 off Vercel (GitHub Actions, CI, Docker, locally), and `better-sqlite3`
-  loads fine on the Vercel lambda (verified) — the **builder**, not the native module, is the
-  blocker. So a GitHub Action (`.github/workflows/deploy-demo.yml`) builds the output on a
+- **Deployment is _prebuilt_, not Vercel-built.** This is no longer a
+  `better-sqlite3`/native-addon workaround: PRD #381 moved the store to libSQL/Turso. A real
+  non-prebuilt preview deploy on 2026-06-25 still failed inside Vercel's native build sandbox:
+  after putting `vercel.json` under Vercel's configured app root so the build ran
+  `npm run build`, Next 16 compiled successfully and then exited 1 immediately after
+  "Skipping validation of types" with no actionable diagnostic. The same app continues to
+  build off Vercel on Node 24. So `.github/workflows/deploy.yml` builds the output on a clean
   Node 24 runner and ships it with `vercel deploy --prebuilt`; Vercel never runs its own
-  builder. The build Node must equal the lambda Node (both 24 — Vercel's default; pinned via
-  `engines.node`) or the native `better-sqlite3` binary
-  ABI-mismatches at runtime. `vercel.json` disables Vercel's git auto-build (only the Action
-  deploys), and public access required turning off Vercel **Deployment Protection** (on by
-  default → 401 for everyone).
+  builder. `vercel.json` keeps Vercel Git auto-build disabled while this holds, and public
+  access required turning off Vercel **Deployment Protection** (on by default → 401 for
+  everyone).
 - This does **not** solve hosting the real, authenticated, mutable workspace in the cloud —
   that needs auth and a persistent hosted DB (libSQL/Turso is the closest-to-SQLite path) and
   is left for a separate effort. The demo seam is deliberately shaped not to block it.
