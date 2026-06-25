@@ -246,12 +246,16 @@ export async function loadDashboard(
 
   // ── 3. Snapshot capture (ADR 0005, ADR 0008) ──────────────────────────────
   // Runs for every scope so all scopes accumulate history. Captures at most
-  // one snapshot per scope per day, day's latest winning (ADR 0005).
-  await captureDailySnapshotForWorkspace(store, now);
+  // one snapshot per scope per day, day's latest winning (ADR 0005). Pass the
+  // shared projection context so the capture's internal reads reuse the single
+  // build from §2 instead of rebuilding it (dedup #566); the cron calls this
+  // with no context and builds its own.
+  await captureDailySnapshotForWorkspace(store, now, projectionContext);
 
   // ── 4. Collect remaining data for state assembly ─────────────────────────
 
-  // The selected scope's positions for the dashboard state (#208). Read here since the capture function owns its own projection.
+  // The selected scope's positions for the dashboard state (#208), narrowing the
+  // same shared projection built in §2 — no extra operation read (dedup #566).
   const scopedProjection = await store.snapshots.readScopedPositionsWithDetails(
     selectedScope?.id,
     projectionContext,

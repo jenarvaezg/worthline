@@ -6,6 +6,7 @@
  * render path and the future cron share one capture path.
  */
 import type {
+  AssetProjectionContext,
   CoinPosition,
   InvestmentCaptureDetail,
   LiquidityTier,
@@ -31,15 +32,23 @@ import type { WorthlineStore } from "./store-types";
  * ADR 0005). The workspace must exist — no-op when absent.
  *
  * Pure orchestration: no return value. Callers verify state through the store.
+ *
+ * @param projectionContext - Optional pre-built projection context (dedup #566).
+ *   The render path already builds it once after §1 writes and passes it in, so
+ *   `readAssets` and `readScopedPositionsWithDetails` reuse it instead of each
+ *   rebuilding `buildAssetProjectionContext`. The cron calls without it and
+ *   builds on its own — capture only writes snapshot tables, never the four
+ *   projection tables, so a context built before capture stays valid through it.
  */
 export async function captureDailySnapshotForWorkspace(
   store: WorthlineStore,
   now: string,
+  projectionContext?: AssetProjectionContext,
 ): Promise<void> {
   const workspace = await store.workspace.readWorkspace();
   if (!workspace) return;
 
-  const assets = await store.assets.readAssets();
+  const assets = await store.assets.readAssets(projectionContext);
   const liabilities = await store.liabilities.readLiabilities();
   const scopes = listScopeOptions(workspace);
 
@@ -48,6 +57,7 @@ export async function captureDailySnapshotForWorkspace(
   // across scopes (what differs is the scope-weighted allocation downstream).
   const scopedProjection = await store.snapshots.readScopedPositionsWithDetails(
     scopes[0]?.id,
+    projectionContext,
   );
   const investmentDetails: ReadonlyMap<string, InvestmentCaptureDetail> =
     scopedProjection.details;
