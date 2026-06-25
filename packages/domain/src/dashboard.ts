@@ -93,6 +93,28 @@ export function deriveOnboardingProgress(input: {
   ];
 }
 
+/**
+ * Compact summary of FIRE state for the home glance card (PRD #507, S1).
+ * All values derived from `fireResult` + `fireProjection` + goals reservation —
+ * no new projection math here.
+ */
+export interface FireGlance {
+  /** 0–100+, matches `FireResult.percentFunded`. */
+  percentFunded: number;
+  /** coastRequired / fireNumber (0–1); null when coast data is unavailable. */
+  coastTickFraction: number | null;
+  /** True when already at Coast FIRE. */
+  isAlreadyAtCoastFire: boolean;
+  /** True when fully FIRE funded. */
+  isFunded: boolean;
+  /** Whole years to FIRE from the base scenario; null if beyond the horizon. */
+  yearsToFire: number | null;
+  /** Number of active goals for the scope. */
+  goalsCount: number;
+  /** Total capital reserved for goals (minor units). */
+  goalsReservedMinor: number;
+}
+
 export interface DashboardState {
   persistence: LocalPersistenceStatus;
   workspace: Workspace | null;
@@ -109,6 +131,8 @@ export interface DashboardState {
   fireResult: ReturnType<typeof calculateFireForScope> | null;
   /** FIRE projection scenarios (PRD #421, #427); null when FIRE is unconfigured. */
   fireProjection: FireProjection | null;
+  /** Compact glance data for the home FIRE card (PRD #507, S1); null when unconfigured. */
+  fireGlance: FireGlance | null;
   selectedMemberIds: string[];
   pyramid: LiquidityTierBreakdown[];
   deltas: SnapshotDeltas | undefined;
@@ -245,11 +269,31 @@ export function prepareDashboardState(input: {
     snapshotCount: input.snapshots.length,
   });
 
+  const fireGlance: FireGlance | null =
+    fireScopeConfig && fireResult
+      ? {
+          percentFunded: fireResult.percentFunded,
+          coastTickFraction:
+            fireResult.coastFireRequired && fireResult.fireNumber.amountMinor > 0
+              ? fireResult.coastFireRequired.amountMinor /
+                fireResult.fireNumber.amountMinor
+              : null,
+          isAlreadyAtCoastFire: fireResult.isAlreadyAtCoastFire ?? false,
+          isFunded: fireResult.percentFunded >= 100,
+          yearsToFire:
+            fireProjection?.scenarios.find((s) => s.label === "base")?.yearsToFire ??
+            null,
+          goalsCount: (input.goals ?? []).length,
+          goalsReservedMinor: fireResult.reservedForGoals?.amountMinor ?? 0,
+        }
+      : null;
+
   return {
     activeMembers,
     assets,
     dashboard,
     deltas,
+    fireGlance,
     fireProjection,
     fireResult,
     fireScopeConfig,
