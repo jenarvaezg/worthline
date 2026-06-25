@@ -45,11 +45,6 @@ function FireLevelCard({
           ? "este año"
           : `en ~${level.eta.years.toFixed(1).replace(".", ",")} años`;
 
-  const coastExplainer =
-    level.key === "coast"
-      ? "Ya puedes dejar de aportar y el interés compuesto te llevará a tu número FIRE"
-      : undefined;
-
   return (
     <div className={`fireLevelCard${reached ? " fireLevelCard--reached" : ""}`}>
       <span className="fireLevelLabel">{level.label}</span>
@@ -62,7 +57,6 @@ function FireLevelCard({
       <span className={`fireLevelEta${reached ? " fireLevelEta--reached" : ""}`}>
         {etaLabel}
       </span>
-      {coastExplainer ? <small className="fireLevelHint">{coastExplainer}</small> : null}
     </div>
   );
 }
@@ -271,11 +265,7 @@ export default async function ObjetivosPage({
               {/* Right: 3 scenarios + large trajectory */}
               <div className="objetivosHeroRight">
                 {fireProjection ? (
-                  <FireProjectionCard
-                    currency={currency}
-                    privacyMode={privacyMode}
-                    projection={fireProjection}
-                  />
+                  <FireProjectionCard projection={fireProjection} />
                 ) : (
                   <p className="objetivosSubNote">
                     Configura tu edad en Ajustes para ver la proyección.
@@ -309,6 +299,13 @@ export default async function ObjetivosPage({
                   />
                 ))}
               </div>
+              {fireLevelRail.some((l) => l.key === "coast") ? (
+                <p className="fireLevelsCoastNote">
+                  <strong>Coast FIRE</strong>: si alcanzas esa cifra hoy y dejas de
+                  aportar, el interés compuesto te llevará a tu número FIRE para la
+                  jubilación.
+                </p>
+              ) : null}
             </section>
           ) : null}
 

@@ -61,6 +61,6 @@ test("/objetivos: Niveles FIRE rail renders Coast/Lean/Regular/Fat labels", asyn
   await expect(rail).toBeVisible();
 
   for (const label of ["Coast", "Lean", "Regular", "Fat"]) {
-    await expect(rail.getByText(label)).toBeVisible();
+    await expect(rail.getByText(label, { exact: true })).toBeVisible();
   }
 });
