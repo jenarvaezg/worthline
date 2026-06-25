@@ -329,12 +329,6 @@ export default async function ObjetivosPage({
             </span>
           </div>
 
-          {formError?.formId === "goal" ? (
-            <p className="formError" role="alert">
-              {formError.message}
-            </p>
-          ) : null}
-
           {selectedScope ? (
             <>
               {goalsView.length === 0 ? (
@@ -349,163 +343,224 @@ export default async function ObjetivosPage({
                     fundedRatioBps,
                     countsTowardFire,
                     fireDelay,
-                  }) => (
-                    <div className="goalRow" key={goal.id}>
-                      <form action={updateGoalAction} className="stackForm">
-                        <input name="currentUrl" type="hidden" value={currentUrl} />
-                        <input name="id" type="hidden" value={goal.id} />
-                        <input name="scopeId" type="hidden" value={selectedScope.id} />
-                        <label>
-                          Nombre
-                          <input defaultValue={goal.name} name="name" />
-                        </label>
-                        <div className="goalFieldRow">
+                  }) => {
+                    const editValues =
+                      formError?.formId === `goal-${goal.id}` ? formError.values : {};
+                    const ev = (field: string, fallback: string) =>
+                      editValues[field] ?? fallback;
+                    const editAssetIds = editValues.assetIds
+                      ? editValues.assetIds.split(",").filter(Boolean)
+                      : null;
+
+                    return (
+                      <div className="goalRow" id={`goalEdit-${goal.id}`} key={goal.id}>
+                        <form action={updateGoalAction} className="stackForm">
+                          <input name="currentUrl" type="hidden" value={currentUrl} />
+                          <input name="id" type="hidden" value={goal.id} />
+                          <input name="scopeId" type="hidden" value={selectedScope.id} />
+                          {formError?.formId === `goal-${goal.id}` ? (
+                            <p className="formError" role="alert">
+                              {formError.message}
+                            </p>
+                          ) : null}
                           <label>
-                            Importe objetivo (EUR)
-                            <input
-                              defaultValue={(goal.targetAmountMinor / 100).toString()}
-                              inputMode="decimal"
-                              name="targetAmount"
-                            />
+                            Nombre
+                            <input defaultValue={ev("name", goal.name)} name="name" />
                           </label>
-                          <label>
-                            Fecha límite
-                            <input
-                              defaultValue={goal.deadline}
-                              name="deadline"
-                              type="date"
-                            />
-                          </label>
-                        </div>
-                        <span className="memberProfileLabel">Prioridad</span>
-                        <span className="segmented">
-                          {(["high", "medium", "low"] as const).map((level) => (
-                            <label key={level}>
+                          <div className="goalFieldRow">
+                            <label>
+                              Importe objetivo (EUR)
                               <input
-                                defaultChecked={goal.priority === level}
-                                name="priority"
-                                type="radio"
-                                value={level}
+                                defaultValue={ev(
+                                  "targetAmount",
+                                  (goal.targetAmountMinor / 100).toString(),
+                                )}
+                                inputMode="decimal"
+                                name="targetAmount"
                               />
-                              {level === "high"
-                                ? "Alta"
-                                : level === "medium"
-                                  ? "Media"
-                                  : "Baja"}
                             </label>
-                          ))}
-                        </span>
-                        <span className="memberProfileLabel">Holdings asignados</span>
-                        <span className="chipChoice">
-                          {assets.map((asset) => (
-                            <label key={asset.id}>
+                            <label>
+                              Fecha límite
                               <input
-                                defaultChecked={goal.assetIds.includes(asset.id)}
-                                name="assetIds"
-                                type="checkbox"
-                                value={asset.id}
+                                defaultValue={ev("deadline", goal.deadline)}
+                                name="deadline"
+                                type="date"
                               />
-                              {asset.name}
                             </label>
-                          ))}
-                        </span>
-                        <div className="goalFunded">
-                          <span className="memberProfileLabel">
-                            {(fundedRatioBps / 100).toFixed(0)} % financiado
-                          </span>
-                          <div className="fundedBar">
-                            <i
-                              className={fundedRatioBps >= 10_000 ? "full" : undefined}
-                              style={{ width: `${Math.min(100, fundedRatioBps / 100)}%` }}
-                            />
                           </div>
-                          <span className="muted">
-                            Reservado{" "}
-                            {formatMoneyMinorPrivacy(
-                              { amountMinor: reservedMinor, currency },
-                              privacyMode,
-                            )}
+                          <span className="memberProfileLabel">Prioridad</span>
+                          <span className="segmented">
+                            {(["high", "medium", "low"] as const).map((level) => (
+                              <label key={level}>
+                                <input
+                                  defaultChecked={ev("priority", goal.priority) === level}
+                                  name="priority"
+                                  type="radio"
+                                  value={level}
+                                />
+                                {level === "high"
+                                  ? "Alta"
+                                  : level === "medium"
+                                    ? "Media"
+                                    : "Baja"}
+                              </label>
+                            ))}
                           </span>
-                          {!countsTowardFire ? (
-                            <span className="objetivosGoalNote">no descuenta FIRE</span>
-                          ) : fireDelay.kind === "delays" ? (
-                            <span className="objetivosGoalNote fireDelay">
-                              {fireDelay.months === 0
-                                ? "Retrasa tu FIRE menos de 1 mes"
-                                : `Retrasa tu FIRE +${fireDelay.months} ${fireDelay.months === 1 ? "mes" : "meses"}`}
+                          <span className="memberProfileLabel">Holdings asignados</span>
+                          <span className="chipChoice">
+                            {assets.map((asset) => (
+                              <label key={asset.id}>
+                                <input
+                                  defaultChecked={
+                                    editAssetIds
+                                      ? editAssetIds.includes(asset.id)
+                                      : goal.assetIds.includes(asset.id)
+                                  }
+                                  name="assetIds"
+                                  type="checkbox"
+                                  value={asset.id}
+                                />
+                                {asset.name}
+                              </label>
+                            ))}
+                          </span>
+                          <div className="goalFunded">
+                            <span className="memberProfileLabel">
+                              {(fundedRatioBps / 100).toFixed(0)} % financiado
                             </span>
-                          ) : (
-                            <span className="objetivosGoalNote">No afecta a tu FIRE</span>
-                          )}
-                        </div>
-                        <PendingSubmit pendingLabel="Guardando…">
-                          Guardar objetivo
-                        </PendingSubmit>
-                      </form>
-                      <form action={deleteGoalAction}>
-                        <input name="currentUrl" type="hidden" value={currentUrl} />
-                        <input name="id" type="hidden" value={goal.id} />
-                        <details className="confirmDelete">
-                          <summary>Eliminar</summary>
-                          <PendingSubmit pendingLabel="Borrando…">
-                            Confirmar borrado
+                            <div className="fundedBar">
+                              <i
+                                className={fundedRatioBps >= 10_000 ? "full" : undefined}
+                                style={{
+                                  width: `${Math.min(100, fundedRatioBps / 100)}%`,
+                                }}
+                              />
+                            </div>
+                            <span className="muted">
+                              Reservado{" "}
+                              {formatMoneyMinorPrivacy(
+                                { amountMinor: reservedMinor, currency },
+                                privacyMode,
+                              )}
+                            </span>
+                            {!countsTowardFire ? (
+                              <span className="objetivosGoalNote">no descuenta FIRE</span>
+                            ) : fireDelay.kind === "delays" ? (
+                              <span className="objetivosGoalNote fireDelay">
+                                {fireDelay.months === 0
+                                  ? "Retrasa tu FIRE menos de 1 mes"
+                                  : `Retrasa tu FIRE +${fireDelay.months} ${fireDelay.months === 1 ? "mes" : "meses"}`}
+                              </span>
+                            ) : (
+                              <span className="objetivosGoalNote">
+                                No afecta a tu FIRE
+                              </span>
+                            )}
+                          </div>
+                          <PendingSubmit pendingLabel="Guardando…">
+                            Guardar objetivo
                           </PendingSubmit>
-                        </details>
-                      </form>
-                    </div>
-                  ),
+                        </form>
+                        <form action={deleteGoalAction}>
+                          <input name="currentUrl" type="hidden" value={currentUrl} />
+                          <input name="id" type="hidden" value={goal.id} />
+                          <details className="confirmDelete">
+                            <summary>Eliminar</summary>
+                            <PendingSubmit pendingLabel="Borrando…">
+                              Confirmar borrado
+                            </PendingSubmit>
+                          </details>
+                        </form>
+                      </div>
+                    );
+                  },
                 )}
               </div>
 
               <div className="createBlock">
                 <div className="memberProfileLabel">Nuevo objetivo</div>
-                <form action={createGoalAction} className="stackForm">
-                  <input name="currentUrl" type="hidden" value={currentUrl} />
-                  <input name="scopeId" type="hidden" value={selectedScope.id} />
-                  <label>
-                    Nombre
-                    <input name="name" placeholder="Entrada vivienda" />
-                  </label>
-                  <div className="goalFieldRow">
-                    <label>
-                      Importe objetivo (EUR)
-                      <input
-                        inputMode="decimal"
-                        name="targetAmount"
-                        placeholder="60000"
-                      />
-                    </label>
-                    <label>
-                      Fecha límite
-                      <input name="deadline" type="date" />
-                    </label>
-                  </div>
-                  <span className="memberProfileLabel">Prioridad</span>
-                  <span className="segmented">
-                    <label>
-                      <input name="priority" type="radio" value="high" />
-                      Alta
-                    </label>
-                    <label>
-                      <input defaultChecked name="priority" type="radio" value="medium" />
-                      Media
-                    </label>
-                    <label>
-                      <input name="priority" type="radio" value="low" />
-                      Baja
-                    </label>
-                  </span>
-                  <span className="memberProfileLabel">Holdings asignados</span>
-                  <span className="chipChoice">
-                    {assets.map((asset) => (
-                      <label key={asset.id}>
-                        <input name="assetIds" type="checkbox" value={asset.id} />
-                        {asset.name}
+                {(() => {
+                  const cv = formError?.formId === "goal" ? formError.values : {};
+                  const createPriority = cv.priority ?? "medium";
+                  const createAssetIds = cv.assetIds
+                    ? cv.assetIds.split(",").filter(Boolean)
+                    : null;
+                  return (
+                    <form
+                      action={createGoalAction}
+                      className="stackForm"
+                      id="goalCreateForm"
+                    >
+                      <input name="currentUrl" type="hidden" value={currentUrl} />
+                      <input name="scopeId" type="hidden" value={selectedScope.id} />
+                      {formError?.formId === "goal" ? (
+                        <p className="formError" role="alert">
+                          {formError.message}
+                        </p>
+                      ) : null}
+                      <label>
+                        Nombre
+                        <input
+                          defaultValue={cv.name}
+                          name="name"
+                          placeholder="Entrada vivienda"
+                        />
                       </label>
-                    ))}
-                  </span>
-                  <PendingSubmit pendingLabel="Creando…">Crear objetivo</PendingSubmit>
-                </form>
+                      <div className="goalFieldRow">
+                        <label>
+                          Importe objetivo (EUR)
+                          <input
+                            defaultValue={cv.targetAmount}
+                            inputMode="decimal"
+                            name="targetAmount"
+                            placeholder="60000"
+                          />
+                        </label>
+                        <label>
+                          Fecha límite
+                          <input defaultValue={cv.deadline} name="deadline" type="date" />
+                        </label>
+                      </div>
+                      <span className="memberProfileLabel">Prioridad</span>
+                      <span className="segmented">
+                        {(["high", "medium", "low"] as const).map((level) => (
+                          <label key={level}>
+                            <input
+                              defaultChecked={createPriority === level}
+                              name="priority"
+                              type="radio"
+                              value={level}
+                            />
+                            {level === "high"
+                              ? "Alta"
+                              : level === "medium"
+                                ? "Media"
+                                : "Baja"}
+                          </label>
+                        ))}
+                      </span>
+                      <span className="memberProfileLabel">Holdings asignados</span>
+                      <span className="chipChoice">
+                        {assets.map((asset) => (
+                          <label key={asset.id}>
+                            <input
+                              defaultChecked={
+                                createAssetIds ? createAssetIds.includes(asset.id) : false
+                              }
+                              name="assetIds"
+                              type="checkbox"
+                              value={asset.id}
+                            />
+                            {asset.name}
+                          </label>
+                        ))}
+                      </span>
+                      <PendingSubmit pendingLabel="Creando…">
+                        Crear objetivo
+                      </PendingSubmit>
+                    </form>
+                  );
+                })()}
               </div>
             </>
           ) : (
