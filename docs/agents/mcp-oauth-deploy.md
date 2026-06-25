@@ -86,3 +86,17 @@ the same WorkOS environment, or the directory lookup hits the wrong env and ever
   update `WORTHLINE_MCP_RESOURCE_URL` + the WorkOS resource indicator + re-add the connector.
 - **AuthKit custom domain** (e.g. `auth.worthline.app`, WorkOS Production → Domains) — nicer login
   branding; changes `issuer`/`jwks` → update those two env vars + re-add the connector.
+
+## Daily snapshot cron (ADR 0037, PRD #528)
+
+`vercel.json` schedules `GET /api/cron/snapshot` at `0 21 * * *` (21:00 UTC, close-of-day).
+The route captures today's snapshot for **every** workspace (it lists them from the control plane
+and opens each per-workspace DB with the existing `WORTHLINE_DB_AUTH_TOKEN`, no session).
+
+| Var           | Value                             | Notes                                                                                                                   |
+| ------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `CRON_SECRET` | a long random string (Production) | Vercel Cron sends it as `Authorization: Bearer <CRON_SECRET>`; the route **fails closed** if it is unset or mismatched. |
+
+- Set `CRON_SECRET` in the `worthline-web` Production scope, then **redeploy** (env is baked per deployment).
+- Manual trigger by a token holder: `curl -H "Authorization: Bearer $CRON_SECRET" https://worthline-web.vercel.app/api/cron/snapshot`.
+- The job uses the **real clock** and ignores `WORTHLINE_DEMO_NOW` — never set that var in Production.
