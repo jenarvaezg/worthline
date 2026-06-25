@@ -12,12 +12,13 @@ import ViewTransitionLink from "./view-transition-link";
  * back; active-link state is a prop, not router state.
  */
 
-export type AppSection = "resumen" | "patrimonio" | "historico" | "ajustes";
+export type AppSection = "resumen" | "patrimonio" | "historico" | "objetivos" | "ajustes";
 
 const NAV_SECTIONS: Array<{ id: AppSection; label: string; href: string }> = [
   { id: "resumen", label: "Resumen", href: "/" },
   { id: "patrimonio", label: "Patrimonio", href: "/patrimonio" },
   { id: "historico", label: "Histórico", href: "/historico" },
+  { id: "objetivos", label: "Objetivos", href: "/objetivos" },
   { id: "ajustes", label: "Ajustes", href: "/ajustes" },
 ];
 

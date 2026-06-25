@@ -389,12 +389,15 @@ export type {
   DashboardState,
   FireGlance,
   LocalPersistenceStatus,
+  ObjetivosGoalView,
+  ObjetivosState,
   OnboardingStep,
 } from "./dashboard";
 export {
   deriveOnboardingProgress,
   largestRemainderPercentages,
   prepareDashboardState,
+  prepareObjetivosState,
 } from "./dashboard";
 
 export type { DonutArcSegment, DonutGeometry } from "./donut";
