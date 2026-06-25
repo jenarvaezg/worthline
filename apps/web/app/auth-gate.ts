@@ -36,8 +36,14 @@ export function shouldRedirectToLogin(input: {
   // route advertises where to authorize. Bouncing them to /login would return
   // an HTML 302 that the client can't parse — the exact "Failed to parse JSON"
   // symptom this PRD fixes (ADR 0034).
+  //
+  // The daily-snapshot cron (ADR 0037) is likewise a session-less machine
+  // endpoint: Vercel Cron calls it with `Authorization: Bearer CRON_SECRET` and
+  // no Auth.js session, so the gate must let it reach its own bearer check
+  // instead of 307-ing it to /login (which silently no-ops the job).
   if (
     pathname.startsWith("/api/mcp") ||
+    pathname.startsWith("/api/cron") ||
     pathname === "/.well-known/oauth-protected-resource"
   ) {
     return false;

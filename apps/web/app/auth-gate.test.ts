@@ -53,6 +53,17 @@ describe("shouldRedirectToLogin", () => {
     }
   });
 
+  test("never redirects the daily-snapshot cron (it carries a CRON_SECRET bearer, not a session)", () => {
+    expect(
+      shouldRedirectToLogin({
+        authConfigured: true,
+        hasSession: false,
+        hasPersonaCookie: false,
+        pathname: "/api/cron/snapshot",
+      }),
+    ).toBe(false);
+  });
+
   test("never redirects the MCP OAuth discovery paths (the Auth.js redirect would swallow the handshake)", () => {
     for (const pathname of ["/api/mcp", "/.well-known/oauth-protected-resource"]) {
       expect(
