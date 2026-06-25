@@ -26,7 +26,7 @@
 import type { Goal } from "./goals";
 import type { FireScopeConfig } from "./fire";
 import { fireReservationHorizon } from "./fire";
-import { projectFire, DEFAULT_MAX_YEARS } from "./fire-projection";
+import { projectFire, DEFAULT_MAX_YEARS, fractionalFireYear } from "./fire-projection";
 
 export type GoalFireDelay = { kind: "delays"; months: number } | { kind: "no_effect" };
 
@@ -46,36 +46,6 @@ export interface GoalFireDelayInput {
   config: FireScopeConfig;
   /** ISO YYYY-MM-DD. */
   now: string;
-}
-
-/**
- * Linearly interpolates the fractional year at which `trajectory` crosses
- * `target`. Returns `null` when the trajectory never reaches the target.
- * Handles `yearsToFire === 0` (already FI) by returning 0.
- */
-function fractionalFireYear(
-  trajectory: { year: number; eligibleMinor: number }[],
-  target: number,
-  yearsToFire: number | null,
-): number | null {
-  if (yearsToFire === null) return null;
-  if (yearsToFire === 0) return 0;
-
-  for (let i = 1; i < trajectory.length; i++) {
-    const prev = trajectory[i - 1]!;
-    const curr = trajectory[i]!;
-    if (curr.eligibleMinor >= target) {
-      if (curr.eligibleMinor === prev.eligibleMinor) {
-        return prev.year;
-      }
-      const fraction =
-        (target - prev.eligibleMinor) / (curr.eligibleMinor - prev.eligibleMinor);
-      return prev.year + fraction;
-    }
-  }
-
-  // Unreachable when yearsToFire is non-null (the loop always returns first).
-  return null;
 }
 
 export function goalFireDelay(input: GoalFireDelayInput): GoalFireDelay {

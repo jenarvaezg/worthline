@@ -1,0 +1,202 @@
+/**
+ * Tests for fireLevels (PRD #507 N1, issue #513).
+ * Run: cd packages/domain && npx vitest run fire-levels
+ */
+import { describe, expect, it } from "vitest";
+
+import type { FireLevelsInput } from "./fire-levels";
+import { fireLevels } from "./fire-levels";
+import { projectFire } from "./fire-projection";
+
+/** A minimal valid base fixture.
+ *  monthlySpending=2000 EUR, SWR=4%, return=5%, age 35→65.
+ *  Regular FIRE = 200_000 * 12 / 0.04 = 60_000_000 minor (600 000 EUR).
+ */
+const BASE: FireLevelsInput = {
+  config: {
+    monthlySpendingMinor: 200_000, // 2 000 EUR in minor (cents)
+    safeWithdrawalRate: 0.04,
+    expectedRealReturn: 0.05,
+    currentAge: 35,
+    targetRetirementAge: 65,
+    monthlySavingsCapacityMinor: 100_000, // 1 000 EUR/month
+  },
+  eligibleMinor: 0,
+  currency: "EUR",
+};
+
+describe("fireLevels — amounts", () => {
+  it("regular = monthlySpending*12/SWR", () => {
+    const levels = fireLevels(BASE)!;
+    const regular = levels.find((l) => l.key === "regular")!;
+    // 200_000 * 12 / 0.04 = 60_000_000
+    expect(regular.amountMinor).toBe(60_000_000);
+  });
+
+  it("lean = spending*0.7*12/SWR by default", () => {
+    const levels = fireLevels(BASE)!;
+    const lean = levels.find((l) => l.key === "lean")!;
+    expect(lean.amountMinor).toBe(Math.round((200_000 * 0.7 * 12) / 0.04));
+  });
+
+  it("fat = spending*1.5*12/SWR by default", () => {
+    const levels = fireLevels(BASE)!;
+    const fat = levels.find((l) => l.key === "fat")!;
+    expect(fat.amountMinor).toBe(Math.round((200_000 * 1.5 * 12) / 0.04));
+  });
+
+  it("lean multiplier override respected", () => {
+    const levels = fireLevels({
+      ...BASE,
+      config: { ...BASE.config, leanMultiplier: 0.5 },
+    })!;
+    const lean = levels.find((l) => l.key === "lean")!;
+    expect(lean.amountMinor).toBe(Math.round((200_000 * 0.5 * 12) / 0.04));
+  });
+
+  it("fat multiplier override respected", () => {
+    const levels = fireLevels({
+      ...BASE,
+      config: { ...BASE.config, fatMultiplier: 2.0 },
+    })!;
+    const fat = levels.find((l) => l.key === "fat")!;
+    expect(fat.amountMinor).toBe(Math.round((200_000 * 2.0 * 12) / 0.04));
+  });
+
+  it("coast amount comes from calculateFire (coastFireRequired)", () => {
+    // growthFactor = (1.05)^30; coastRequired = fireNumber / growthFactor
+    const regular = Math.round((200_000 * 12) / 0.04);
+    const expected = Math.round(regular / Math.pow(1.05, 30));
+    const levels = fireLevels(BASE)!;
+    const coast = levels.find((l) => l.key === "coast")!;
+    expect(coast.amountMinor).toBe(expected);
+  });
+
+  it("returns 4 levels in order: coast, lean, regular, fat", () => {
+    const levels = fireLevels(BASE)!;
+    expect(levels.map((l) => l.key)).toEqual(["coast", "lean", "regular", "fat"]);
+  });
+});
+
+describe("fireLevels — ETA coherence with base scenario", () => {
+  it("regular ETA uses the same trajectory as the internal projection (net eligible)", () => {
+    // fireLevels runs projectFire with fireNumberMinor = fatAmount, then
+    // interpolates fractionalFireYear for each level on that trajectory.
+    // Verify: if we run the same projection externally and interpolate Regular
+    // on the same trajectory, we get the same ETA as the rail reports.
+    const fatAmount = Math.round(
+      (BASE.config.monthlySpendingMinor * 1.5 * 12) / BASE.config.safeWithdrawalRate,
+    );
+    const regularAmount = Math.round(
+      (BASE.config.monthlySpendingMinor * 12) / BASE.config.safeWithdrawalRate,
+    );
+    const base = projectFire({
+      startingEligibleMinor: BASE.eligibleMinor,
+      monthlyContributionMinor: BASE.config.monthlySavingsCapacityMinor!,
+      expectedRealReturn: BASE.config.expectedRealReturn,
+      fireNumberMinor: fatAmount,
+    }).scenarios.find((s) => s.label === "base")!;
+
+    // Manually interpolate what fireLevels would compute for regular.
+    let expectedYears: number | null = null;
+    for (let i = 1; i < base.trajectory.length; i++) {
+      const prev = base.trajectory[i - 1]!;
+      const curr = base.trajectory[i]!;
+      if (curr.eligibleMinor >= regularAmount) {
+        const frac =
+          (regularAmount - prev.eligibleMinor) /
+          (curr.eligibleMinor - prev.eligibleMinor);
+        expectedYears = Math.round((prev.year + frac) * 10) / 10;
+        break;
+      }
+    }
+
+    const levels = fireLevels(BASE)!;
+    const regular = levels.find((l) => l.key === "regular")!;
+
+    expect(regular.eta.kind).toBe("eta");
+    if (regular.eta.kind === "eta") {
+      expect(regular.eta.years).toBe(expectedYears);
+    }
+  });
+});
+
+describe("fireLevels — eta ordering (lean ≤ regular ≤ fat)", () => {
+  it("lean ETA ≤ regular ETA ≤ fat ETA when starting from 0", () => {
+    const levels = fireLevels(BASE)!;
+    const lean = levels.find((l) => l.key === "lean")!;
+    const regular = levels.find((l) => l.key === "regular")!;
+    const fat = levels.find((l) => l.key === "fat")!;
+
+    const toYears = (l: typeof lean) =>
+      l.eta.kind === "eta" ? l.eta.years : l.eta.kind === "reached" ? 0 : Infinity;
+
+    expect(toYears(lean)).toBeLessThanOrEqual(toYears(regular));
+    expect(toYears(regular)).toBeLessThanOrEqual(toYears(fat));
+  });
+});
+
+describe("fireLevels — reached vs eta vs unreachable", () => {
+  it("all levels reached when eligible far exceeds fat amount", () => {
+    const levels = fireLevels({ ...BASE, eligibleMinor: 200_000_000 })!;
+    for (const level of levels) {
+      expect(level.eta.kind).toBe("reached");
+    }
+  });
+
+  it("eta for levels above eligible, reached for levels below", () => {
+    const leanAmount = Math.round((200_000 * 0.7 * 12) / 0.04);
+    const levels = fireLevels({ ...BASE, eligibleMinor: leanAmount + 1_000_000 })!;
+    expect(levels.find((l) => l.key === "lean")!.eta.kind).toBe("reached");
+    expect(levels.find((l) => l.key === "regular")!.eta.kind).toBe("eta");
+  });
+
+  it("eta years is a positive number when not reached", () => {
+    const levels = fireLevels(BASE)!;
+    const regular = levels.find((l) => l.key === "regular")!;
+    expect(regular.eta.kind).toBe("eta");
+    if (regular.eta.kind === "eta") {
+      expect(regular.eta.years).toBeGreaterThan(0);
+    }
+  });
+
+  it("fat returns unreachable when no contributions and eligible=0", () => {
+    // No contributions, zero eligible, massive fat target → never reached.
+    const levels = fireLevels({
+      ...BASE,
+      eligibleMinor: 0,
+      config: { ...BASE.config, monthlySavingsCapacityMinor: 0 },
+    })!;
+    const fat = levels.find((l) => l.key === "fat")!;
+    expect(fat.eta.kind).toBe("unreachable");
+  });
+});
+
+describe("fireLevels — edge cases", () => {
+  it("returns null when SWR is 0 (degenerate config → hide rail)", () => {
+    const result = fireLevels({
+      ...BASE,
+      config: { ...BASE.config, safeWithdrawalRate: 0 },
+    });
+    expect(result).toBeNull();
+  });
+
+  it("returns null when monthlySpending is 0 (degenerate config → hide rail)", () => {
+    const result = fireLevels({
+      ...BASE,
+      config: { ...BASE.config, monthlySpendingMinor: 0 },
+    });
+    expect(result).toBeNull();
+  });
+
+  it("coast is absent when no currentAge configured", () => {
+    const noAge = {
+      monthlySpendingMinor: BASE.config.monthlySpendingMinor,
+      safeWithdrawalRate: BASE.config.safeWithdrawalRate,
+      expectedRealReturn: BASE.config.expectedRealReturn,
+      monthlySavingsCapacityMinor: 100_000,
+    };
+    const levels = fireLevels({ ...BASE, config: noAge })!;
+    expect(levels.find((l) => l.key === "coast")).toBeUndefined();
+  });
+});

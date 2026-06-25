@@ -25,7 +25,7 @@ test("/objetivos: FIRE hero + goals section render, nav active", async ({ page }
   await expect(page).toHaveURL(/\/objetivos/);
 
   // 3. FIRE star hero region renders.
-  const fireSection = page.getByRole("region", { name: "FIRE" });
+  const fireSection = page.getByRole("region", { name: "FIRE", exact: true });
   await expect(fireSection).toBeVisible();
 
   // 4. Goals section renders (empty state or goal cards).
@@ -46,5 +46,21 @@ test("/objetivos: FIRE hero + goals section render, nav active", async ({ page }
     .getByRole("link", { name: "Objetivos" })
     .click();
   await expect(page).toHaveURL(/\/objetivos/);
-  await expect(page.getByRole("region", { name: "FIRE" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "FIRE", exact: true })).toBeVisible();
+});
+
+test("/objetivos: Niveles FIRE rail renders Coast/Lean/Regular/Fat labels", async ({
+  page,
+}) => {
+  await page.goto("/demo");
+  await page.getByRole("button", { name: /Familia/ }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await page.goto("/objetivos");
+
+  const rail = page.getByRole("region", { name: "Niveles FIRE" });
+  await expect(rail).toBeVisible();
+
+  for (const label of ["Coast", "Lean", "Regular", "Fat"]) {
+    await expect(rail.getByText(label)).toBeVisible();
+  }
 });

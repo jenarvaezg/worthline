@@ -19,6 +19,16 @@ export interface FireScopeConfig {
    * but never writes it implicitly; the projection treats `undefined` as 0.
    */
   monthlySavingsCapacityMinor?: number;
+  /**
+   * Spending multiplier for Lean FIRE level (PRD #507 N1). Default 0.7.
+   * Stored as a decimal fraction (e.g. 0.7, not 70).
+   */
+  leanMultiplier?: number;
+  /**
+   * Spending multiplier for Fat FIRE level (PRD #507 N1). Default 1.5.
+   * Stored as a decimal fraction (e.g. 1.5, not 150).
+   */
+  fatMultiplier?: number;
 }
 
 /**
