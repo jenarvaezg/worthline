@@ -97,6 +97,11 @@ export function parseFireConfigFormStrict(
   const leanMultiplier = hasLean ? leanMultiplierParsed! : undefined;
   const fatMultiplier = hasFat ? fatMultiplierParsed! : undefined;
 
+  // Barista income (N2, #514): optional. 0/empty/negative → undefined (no effect).
+  const baristaIncomeRaw = (formData.get("baristaIncome") as string) ?? "";
+  const baristaIncomeMinor = parseMoneyMinor(baristaIncomeRaw);
+  const hasBaristaIncome = baristaIncomeMinor !== null && baristaIncomeMinor > 0;
+
   return {
     ok: true,
     command: {
@@ -109,6 +114,7 @@ export function parseFireConfigFormStrict(
       ...(hasSavingsCapacity ? { monthlySavingsCapacityMinor } : {}),
       ...(leanMultiplier !== undefined ? { leanMultiplier } : {}),
       ...(fatMultiplier !== undefined ? { fatMultiplier } : {}),
+      ...(hasBaristaIncome ? { baristaMonthlyIncomeMinor: baristaIncomeMinor! } : {}),
     },
   };
 }

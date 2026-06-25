@@ -2031,7 +2031,8 @@ code {
 .fireLevelsGrid {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(4, 1fr);
+  /* auto-fit: holds 4 chips, or 5 (with Barista) on one row at desktop widths */
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
 }
 
 .fireLevelCard {
