@@ -165,6 +165,38 @@ describe("loadDashboard — snapshot capture policy", () => {
 // ---------------------------------------------------------------------------
 
 describe("loadDashboard — snapshot holding rows", () => {
+  test("returns the selected scope holding rows from the single dashboard read (#571)", async () => {
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
+
+    const originalRead = store.snapshots.readSnapshotHoldings.bind(store.snapshots);
+    const reads: Parameters<typeof store.snapshots.readSnapshotHoldings>[0][] = [];
+    store.snapshots.readSnapshotHoldings = (async (input) => {
+      reads.push(input);
+      return originalRead(input);
+    }) as typeof store.snapshots.readSnapshotHoldings;
+
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    expect(reads).toEqual([{ scopeId: result.selectedScope!.id }]);
+    expect(result.snapshotHoldingRows).toHaveLength(1);
+    expect(result.snapshotHoldingRows[0]).toMatchObject({
+      holdingId: "asset_cash",
+      valueMinor: 100_000_00,
+    });
+
+    store.close();
+  });
+
   test("captures holding rows alongside the snapshot for every scope", async () => {
     const store = await createInMemoryStore();
     // A household (not individual) so there is genuinely more than one scope:
@@ -889,32 +921,45 @@ describe("loadDashboard — composition range and density", () => {
       });
     }
 
-    // Default (all): the ~13-month span unlocks 1A (and Todo), monthly density.
+    // Explicit all deep-link: the ~13-month span unlocks 1A (and Todo), monthly density.
     const all = await loadDashboard({
       store,
       persistence: makePersistence(),
       scopeId: undefined,
       selectedView: "total",
+      range: "all",
       today: "2026-06-15",
       now: "2026-06-15T12:00:00.000Z",
       refreshPrices: noOpRefresh,
     });
+    expect(all.activeCompositionRange).toBe("all");
     expect(all.compositionRanges).toEqual(["1y", "all"]);
     expect(all.compositionSeries.length).toBe(14);
 
-    // The 1y window keeps only the last twelve monthly closes.
+    const originalRead = store.snapshots.readSnapshotHoldings.bind(store.snapshots);
+    const reads: Parameters<typeof store.snapshots.readSnapshotHoldings>[0][] = [];
+    store.snapshots.readSnapshotHoldings = (async (input) => {
+      reads.push(input);
+      return originalRead(input);
+    }) as typeof store.snapshots.readSnapshotHoldings;
+
+    // The default load uses the bounded eager range and does not ship all-time data.
     const y1 = await loadDashboard({
       store,
       persistence: makePersistence(),
       scopeId: undefined,
       selectedView: "total",
-      range: "1y",
       today: "2026-06-15",
       now: "2026-06-15T12:00:00.000Z",
       refreshPrices: noOpRefresh,
     });
+    expect(y1.activeCompositionRange).toBe("1y");
     expect(y1.compositionSeries.length).toBe(12);
     expect(y1.compositionSeries.length).toBeLessThan(all.compositionSeries.length);
+    expect(y1.compositionSeriesByRange.all).toBeUndefined();
+    expect(y1.matrixCells["chart:all"]).toBeUndefined();
+    expect(y1.matrixCells["chart:1y"]?.kind).toBe("chart");
+    expect(reads).toEqual([{ from: "2025-07-01", scopeId: y1.selectedScope!.id }]);
 
     store.close();
   });
@@ -952,6 +997,7 @@ describe("loadDashboard — composition range and density", () => {
       scopeId: undefined,
       selectedView: "total",
       drill: "liquid",
+      range: "all",
       today: "2026-06-15",
       now: "2026-06-15T12:00:00.000Z",
       refreshPrices: noOpRefresh,

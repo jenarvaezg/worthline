@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useState, type MouseEvent } from "react";
 
 import type {
   CompositionHousingMode,
@@ -63,6 +63,12 @@ export default function DonutDrill({
   const [range, setRange] = useState<CompositionRange>(initialRange);
   const [housingMode, setHousingMode] =
     useState<CompositionHousingMode>(initialHousingMode);
+  const readRangeFromUrl = useCallback((): CompositionRange => {
+    const params = new URLSearchParams(window.location.search);
+    return params.has(RANGE_VIEW_PARAM.key)
+      ? readViewParam(window.location.search, RANGE_VIEW_PARAM)
+      : initialRange;
+  }, [initialRange]);
 
   // Track the live view-state so the fallback hrefs stay correct after a sibling
   // island toggles framing/range/vivienda (pushState fires no native event).
@@ -70,7 +76,7 @@ export default function DonutDrill({
     const syncFromUrl = () => {
       const search = window.location.search;
       setView(readViewParam(search, FRAMING_VIEW_PARAM));
-      setRange(readViewParam(search, RANGE_VIEW_PARAM));
+      setRange(readRangeFromUrl());
       setHousingMode(
         new URLSearchParams(search).get("vivienda") === "oculta" ? "hidden" : "net",
       );
@@ -86,7 +92,7 @@ export default function DonutDrill({
       window.removeEventListener("pageshow", onPageShow);
       window.removeEventListener(VIEW_STATE_CHANGE_EVENT, syncFromUrl);
     };
-  }, []);
+  }, [readRangeFromUrl]);
 
   const openDrill = (key: DrilldownKey) => (event: MouseEvent<HTMLAnchorElement>) => {
     if (
@@ -100,7 +106,7 @@ export default function DonutDrill({
     }
     event.preventDefault();
     const liveView = readViewParam(window.location.search, FRAMING_VIEW_PARAM);
-    const liveRange = readViewParam(window.location.search, RANGE_VIEW_PARAM);
+    const liveRange = readRangeFromUrl();
     const liveHousing: CompositionHousingMode =
       new URLSearchParams(window.location.search).get("vivienda") === "oculta"
         ? "hidden"

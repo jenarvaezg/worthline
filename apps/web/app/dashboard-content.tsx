@@ -274,15 +274,14 @@ function parseMoversPeriod(raw: string | string[] | undefined): MoversPeriod {
   return v === "year" ? "year" : "month";
 }
 
-async function readMoversHoldingRows(
-  store: Awaited<ReturnType<typeof openStore>>,
-  scopeId: string | undefined,
+function selectMoversHoldingRows(
+  rows: MoversHoldingRow[],
   snapshots: NetWorthSnapshot[],
   period: MoversPeriod,
-): Promise<MoversHoldingRow[]> {
+): MoversHoldingRow[] {
   const base = moversBaseSnapshot(snapshots, period);
-  if (!scopeId || !base) return [];
-  return store.snapshots.readSnapshotHoldings({ scopeId, from: base.dateKey });
+  if (!base) return [];
+  return rows.filter((row) => row.dateKey >= base.dateKey);
 }
 
 const SCENARIO_LABELS: Record<FireScenario["label"], string> = {
@@ -486,7 +485,8 @@ export default async function DashboardContent({
   const demo = await readDemoContext();
   const selectedView = parseViewParam(searchParams?.view);
   const selectedDrill = parseDrillParam(searchParams?.drill);
-  const selectedRange = parseRangeParam(searchParams?.range);
+  const selectedRange =
+    searchParams?.range === undefined ? undefined : parseRangeParam(searchParams.range);
   const selectedHousingMode = parseViviendaParam(searchParams?.vivienda);
 
   const moversPeriod = parseMoversPeriod(searchParams?.mvp);
@@ -497,7 +497,6 @@ export default async function DashboardContent({
   const perfStartedAt = perfStart();
   const store = await openStore();
   let state;
-  let moversHoldingRows: MoversHoldingRow[] = [];
   try {
     state = await loadDashboard({
       store,
@@ -505,9 +504,9 @@ export default async function DashboardContent({
       scopeId,
       selectedView,
       drill: selectedDrill,
-      range: selectedRange,
       today,
       now,
+      ...(selectedRange === undefined ? {} : { range: selectedRange }),
       refreshPrices: demo.enabled
         ? async (): Promise<RefreshPricesResult> => ({ priceCache: [], errors: [] })
         : async ({ cacheEntries, assets, nowIso }): Promise<RefreshPricesResult> => {
@@ -527,12 +526,6 @@ export default async function DashboardContent({
             refreshBinanceSources: () => runBinanceRefresh(store, now),
           }),
     });
-    moversHoldingRows = await readMoversHoldingRows(
-      store,
-      state.selectedScope?.id,
-      state.snapshots,
-      moversPeriod,
-    );
   } finally {
     store.close();
     perfEnd("dashboard", perfStartedAt);
@@ -544,6 +537,12 @@ export default async function DashboardContent({
 
   const { fireProjection, fireResult, fireScopeConfig, onboarding, pyramid, snapshots } =
     state;
+  const selectedRangeForView = state.activeCompositionRange;
+  const moversHoldingRows = selectMoversHoldingRows(
+    state.snapshotHoldingRows,
+    snapshots,
+    moversPeriod,
+  );
 
   const hasHoldings = state.assets.length + state.liabilities.length > 0;
 
@@ -590,7 +589,7 @@ export default async function DashboardContent({
     href: compositionUrl(
       tab.id,
       selectedDrill,
-      selectedRange,
+      selectedRangeForView,
       selectedHousingMode,
       false,
     ),
@@ -659,7 +658,7 @@ export default async function DashboardContent({
         <DonutDrill
           geometry={TIER_DONUT_GEOMETRY}
           initialHousingMode={selectedHousingMode}
-          initialRange={selectedRange}
+          initialRange={selectedRangeForView}
           initialView={selectedView}
           segments={donutSegmentsForIsland}
         />
@@ -716,7 +715,7 @@ export default async function DashboardContent({
           initialCells={state.matrixCells}
           initialHousingMode={selectedHousingMode}
           initialMode={parseMode(selectedDrill)}
-          initialRange={selectedRange}
+          initialRange={selectedRangeForView}
           initialView={selectedView}
           offeredRanges={state.compositionRanges}
           privacyMode={privacyMode}
