@@ -16,8 +16,8 @@ import { test, expect } from "./fixtures";
 test("ownership: custom 60/40 split via real interactions, visible in minority scope", async ({
   page,
 }) => {
-  await page.goto("/patrimonio/anadir");
-  await expect(page.getByRole("heading", { name: "Añadir holding" })).toBeVisible();
+  await page.goto("/patrimonio/anadir/avanzado");
+  await expect(page.getByRole("heading", { name: /Añadir holding/ })).toBeVisible();
   await page.locator(`label.addHoldingChip:has(input[value="current_account"])`).click();
 
   const ownershipFieldset = page.getByRole("group", { name: "Propiedad" });
@@ -70,8 +70,8 @@ test("ownership: custom 60/40 split via real interactions, visible in minority s
 test("ownership: even-split preset makes asset visible in both member scopes", async ({
   page,
 }) => {
-  await page.goto("/patrimonio/anadir");
-  await expect(page.getByRole("heading", { name: "Añadir holding" })).toBeVisible();
+  await page.goto("/patrimonio/anadir/avanzado");
+  await expect(page.getByRole("heading", { name: /Añadir holding/ })).toBeVisible();
   await page.locator(`label.addHoldingChip:has(input[value="current_account"])`).click();
 
   const ownershipFieldset = page.getByRole("group", { name: "Propiedad" });
