@@ -59,6 +59,7 @@ export {
   resolveDatabaseTarget,
   resolveDataDir,
 } from "./database-target";
+export { captureDailySnapshotForWorkspace } from "./capture-daily-snapshot";
 export type {
   AuditLogEntry,
   BootstrapHealthcheckOptions,
