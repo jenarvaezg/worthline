@@ -12,7 +12,7 @@
 
 /** Returns shifted from the base by ±1.5 % (PRD #421). */
 const RETURN_SHIFT = 0.015;
-const DEFAULT_MAX_YEARS = 60;
+export const DEFAULT_MAX_YEARS = 60;
 
 export type FireScenarioLabel = "optimistic" | "base" | "pessimistic";
 

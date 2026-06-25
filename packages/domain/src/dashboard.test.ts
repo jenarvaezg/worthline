@@ -5,6 +5,7 @@ import {
   createWorkspace,
   goalFundedRatioBps,
   goalReservedMinor,
+  goalFireDelay,
   largestRemainderPercentages,
   prepareDashboardState,
   prepareObjetivosState,
@@ -340,6 +341,34 @@ describe("prepareObjetivosState", () => {
     // Must equal what prepareDashboardState puts in fireGlance
     const dash = prepareDashboardState(baseInput);
     expect(obj.coastTickFraction).toBe(dash.fireGlance?.coastTickFraction ?? null);
+  });
+
+  test("per-goal fireDelay matches a direct goalFireDelay call (wiring correctness)", () => {
+    const obj = prepareObjetivosState(baseInput);
+    expect(obj.goals).toHaveLength(1);
+    const g = obj.goals[0]!;
+
+    // Reconstruct what the wiring should compute.
+    // eligibleGrossMinor = eligible (after reservation) + reserved
+    const dash = prepareDashboardState(baseInput);
+    const eligibleGrossMinor =
+      dash.fireResult!.eligibleAssets.amountMinor +
+      (dash.fireResult!.reservedForGoals?.amountMinor ?? 0);
+
+    // The one goal is in-horizon (deadline 2030-01-01 < horizon ~2046) so
+    // thisGoalReservation = min(target, assignedValue) = min(2M, 30M) = 2M.
+    // otherReservationsMinor = 0 (no other goals).
+    // in-horizon reservation = min(target=2M, assignedValue=30M) = 2M
+    const direct = goalFireDelay({
+      goal,
+      otherReservationsMinor: 0,
+      eligibleGrossMinor,
+      thisGoalReservationMinor: 2_000_000,
+      config: fireConfig,
+      now: "2026-06-25",
+    });
+
+    expect(g.fireDelay).toEqual(direct);
   });
 });
 
