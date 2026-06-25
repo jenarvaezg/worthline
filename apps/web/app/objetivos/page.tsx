@@ -9,14 +9,19 @@ import { redirect } from "next/navigation";
 
 import {
   buildCurrentUrlFor,
+  parseFormError,
   parsePrivacyCookie,
   parseScopeCookie,
+  resolveOkMessage,
   PRIVACY_COOKIE_NAME,
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
 import { bootstrapHealthcheck, withStore } from "@web/store";
+import { PendingSubmit } from "@web/pending-submit";
 import Shell from "@web/shell";
 import FireProjectionCard from "@web/fire-projection-card";
+
+import { createGoalAction, deleteGoalAction, updateGoalAction } from "./goal-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +33,8 @@ export default async function ObjetivosPage({
   const resolvedSearchParams = (await searchParams) ?? {};
   const persistence = await bootstrapHealthcheck();
   const currentUrl = buildCurrentUrlFor("/objetivos", resolvedSearchParams);
+  const formError = parseFormError(resolvedSearchParams);
+  const formOk = resolveOkMessage(resolvedSearchParams);
 
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
@@ -101,6 +108,12 @@ export default async function ObjetivosPage({
           <h2>Objetivos</h2>
           <p>A dónde vas · tu independencia financiera y tus metas con fecha</p>
         </header>
+
+        {formOk ? (
+          <p className="successBand" role="status">
+            {formOk}
+          </p>
+        ) : null}
 
         {/* ── FIRE star ─────────────────────────────────────────────── */}
         <section className="firePanel objetivosFirePanel" aria-label="FIRE">
@@ -247,7 +260,7 @@ export default async function ObjetivosPage({
           </div>
         </section>
 
-        {/* ── Goals list (read-only; create/edit/delete → S3) ─────── */}
+        {/* ── Goals (editable; S3) ──────────────────────────────────── */}
         <section className="firePanel" aria-label="Objetivos">
           <div className="panelHeader">
             <h3>Tus objetivos</h3>
@@ -256,73 +269,173 @@ export default async function ObjetivosPage({
             </span>
           </div>
 
-          {goalsView.length === 0 ? (
-            <p className="emptyLine">
-              Sin objetivos todavía. Añade metas (coche, fondo de emergencia, reforma…)
-              desde <Link href="/ajustes">Ajustes</Link> — cada una reserva capital que se
-              descuenta de tu número FIRE.
+          {formError?.formId === "goal" ? (
+            <p className="formError" role="alert">
+              {formError.message}
             </p>
-          ) : (
-            <div className="objetivosGoalGrid">
-              {goalsView.map(
-                ({ goal, fundedRatioBps, reservedMinor, countsTowardFire }) => {
-                  const fundedPct = Math.min(100, fundedRatioBps / 100);
-                  const priorityLabel =
-                    goal.priority === "high"
-                      ? "alta"
-                      : goal.priority === "medium"
-                        ? "media"
-                        : "baja";
-                  return (
-                    <div className="objetivosGoalCard" key={goal.id}>
-                      <div className="objetivosGoalTop">
-                        <span className="objetivosGoalName">{goal.name}</span>
-                        <span className={`objetivosPrio objetivosPrio--${goal.priority}`}>
-                          {priorityLabel}
+          ) : null}
+
+          {selectedScope ? (
+            <>
+              {goalsView.length === 0 ? (
+                <p className="muted">Aún no hay objetivos en este scope.</p>
+              ) : null}
+
+              <div className="goalList">
+                {goalsView.map(
+                  ({ goal, reservedMinor, fundedRatioBps, countsTowardFire }) => (
+                    <div className="goalRow" key={goal.id}>
+                      <form action={updateGoalAction} className="stackForm">
+                        <input name="currentUrl" type="hidden" value={currentUrl} />
+                        <input name="id" type="hidden" value={goal.id} />
+                        <input name="scopeId" type="hidden" value={selectedScope.id} />
+                        <label>
+                          Nombre
+                          <input defaultValue={goal.name} name="name" />
+                        </label>
+                        <div className="goalFieldRow">
+                          <label>
+                            Importe objetivo (EUR)
+                            <input
+                              defaultValue={(goal.targetAmountMinor / 100).toString()}
+                              inputMode="decimal"
+                              name="targetAmount"
+                            />
+                          </label>
+                          <label>
+                            Fecha límite
+                            <input
+                              defaultValue={goal.deadline}
+                              name="deadline"
+                              type="date"
+                            />
+                          </label>
+                        </div>
+                        <span className="memberProfileLabel">Prioridad</span>
+                        <span className="segmented">
+                          {(["high", "medium", "low"] as const).map((level) => (
+                            <label key={level}>
+                              <input
+                                defaultChecked={goal.priority === level}
+                                name="priority"
+                                type="radio"
+                                value={level}
+                              />
+                              {level === "high"
+                                ? "Alta"
+                                : level === "medium"
+                                  ? "Media"
+                                  : "Baja"}
+                            </label>
+                          ))}
                         </span>
-                      </div>
-                      <div className="objetivosGoalMeta">
-                        <span>
-                          <b>
-                            {formatMoneyMinorPrivacy(
-                              { amountMinor: reservedMinor, currency },
-                              privacyMode,
-                            )}
-                          </b>{" "}
-                          /{" "}
-                          {formatMoneyMinorPrivacy(
-                            { amountMinor: goal.targetAmountMinor, currency },
-                            privacyMode,
-                          )}
+                        <span className="memberProfileLabel">Holdings asignados</span>
+                        <span className="chipChoice">
+                          {assets.map((asset) => (
+                            <label key={asset.id}>
+                              <input
+                                defaultChecked={goal.assetIds.includes(asset.id)}
+                                name="assetIds"
+                                type="checkbox"
+                                value={asset.id}
+                              />
+                              {asset.name}
+                            </label>
+                          ))}
                         </span>
-                        <span>{goal.deadline}</span>
-                      </div>
-                      <div className="objetivosFundedBar">
-                        <i style={{ width: `${fundedPct}%` }} />
-                      </div>
-                      <div className="objetivosGoalFoot">
-                        <span className="objetivosReserved">
-                          Reservado{" "}
-                          <b>
-                            {formatMoneyMinorPrivacy(
-                              { amountMinor: reservedMinor, currency },
-                              privacyMode,
-                            )}
-                          </b>
-                        </span>
-                        {!countsTowardFire ? (
-                          <span className="objetivosGoalNote">no descuenta FIRE</span>
-                        ) : (
-                          <span className="objetivosFundedPct">
-                            {fundedPct.toFixed(0)} %
+                        <div className="goalFunded">
+                          <span className="memberProfileLabel">
+                            {(fundedRatioBps / 100).toFixed(0)} % financiado
                           </span>
-                        )}
-                      </div>
+                          <div className="fundedBar">
+                            <i
+                              className={fundedRatioBps >= 10_000 ? "full" : undefined}
+                              style={{ width: `${Math.min(100, fundedRatioBps / 100)}%` }}
+                            />
+                          </div>
+                          <span className="muted">
+                            Reservado{" "}
+                            {formatMoneyMinorPrivacy(
+                              { amountMinor: reservedMinor, currency },
+                              privacyMode,
+                            )}
+                          </span>
+                          {!countsTowardFire ? (
+                            <span className="objetivosGoalNote">no descuenta FIRE</span>
+                          ) : null}
+                        </div>
+                        <PendingSubmit pendingLabel="Guardando…">
+                          Guardar objetivo
+                        </PendingSubmit>
+                      </form>
+                      <form action={deleteGoalAction}>
+                        <input name="currentUrl" type="hidden" value={currentUrl} />
+                        <input name="id" type="hidden" value={goal.id} />
+                        <details className="confirmDelete">
+                          <summary>Eliminar</summary>
+                          <PendingSubmit pendingLabel="Borrando…">
+                            Confirmar borrado
+                          </PendingSubmit>
+                        </details>
+                      </form>
                     </div>
-                  );
-                },
-              )}
-            </div>
+                  ),
+                )}
+              </div>
+
+              <div className="createBlock">
+                <div className="memberProfileLabel">Nuevo objetivo</div>
+                <form action={createGoalAction} className="stackForm">
+                  <input name="currentUrl" type="hidden" value={currentUrl} />
+                  <input name="scopeId" type="hidden" value={selectedScope.id} />
+                  <label>
+                    Nombre
+                    <input name="name" placeholder="Entrada vivienda" />
+                  </label>
+                  <div className="goalFieldRow">
+                    <label>
+                      Importe objetivo (EUR)
+                      <input
+                        inputMode="decimal"
+                        name="targetAmount"
+                        placeholder="60000"
+                      />
+                    </label>
+                    <label>
+                      Fecha límite
+                      <input name="deadline" type="date" />
+                    </label>
+                  </div>
+                  <span className="memberProfileLabel">Prioridad</span>
+                  <span className="segmented">
+                    <label>
+                      <input name="priority" type="radio" value="high" />
+                      Alta
+                    </label>
+                    <label>
+                      <input defaultChecked name="priority" type="radio" value="medium" />
+                      Media
+                    </label>
+                    <label>
+                      <input name="priority" type="radio" value="low" />
+                      Baja
+                    </label>
+                  </span>
+                  <span className="memberProfileLabel">Holdings asignados</span>
+                  <span className="chipChoice">
+                    {assets.map((asset) => (
+                      <label key={asset.id}>
+                        <input name="assetIds" type="checkbox" value={asset.id} />
+                        {asset.name}
+                      </label>
+                    ))}
+                  </span>
+                  <PendingSubmit pendingLabel="Creando…">Crear objetivo</PendingSubmit>
+                </form>
+              </div>
+            </>
+          ) : (
+            <p className="muted">Selecciona un scope para gestionar objetivos.</p>
           )}
         </section>
       </div>
