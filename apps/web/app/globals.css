@@ -3602,10 +3602,12 @@ td.rowActions > * {
 }
 
 .dashGrid > .historyPanel {
+  align-self: start;
   grid-column: span 8;
 }
 
 .dashGrid > .firePanel {
+  align-self: start;
   grid-column: span 4;
 }
 

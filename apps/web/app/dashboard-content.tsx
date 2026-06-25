@@ -11,8 +11,7 @@ import {
 } from "@worthline/domain";
 import type {
   DrilldownKey,
-  FireProjection,
-  FireScenario,
+  FireGlance,
   FramedDelta,
   FramedSnapshotDeltas,
   LiquidityTier,
@@ -284,116 +283,76 @@ function selectMoversHoldingRows(
   return rows.filter((row) => row.dateKey >= base.dateKey);
 }
 
-const SCENARIO_LABELS: Record<FireScenario["label"], string> = {
-  optimistic: "Optimista",
-  base: "Base",
-  pessimistic: "Pesimista",
-};
-
 /**
- * FIRE projection card (PRD #421, #427): the base-scenario headline (years +
- * age to FIRE), the three scenarios side by side, and the year-by-year capital
- * trajectory as discrete bars (ADR 0032) with the FIRE number as a dashed
- * target. Zero JS — a server-rendered SVG.
+ * Compact FIRE glance card for the home dashboard (PRD #507, S1).
+ * Shows: % funded + progress bar with coast tick + status pill +
+ * years-to-FIRE + goals teaser + link to /ajustes until /objetivos exists.
  */
-function FireProjectionCard({
-  projection,
+function FireGlanceCard({
+  glance,
   currency,
   privacyMode,
 }: {
-  projection: FireProjection;
+  glance: FireGlance;
   currency: string;
   privacyMode: boolean;
 }) {
-  const byLabel = (label: FireScenario["label"]) =>
-    projection.scenarios.find((scenario) => scenario.label === label);
-  const base = byLabel("base");
-
-  if (!base) {
-    return null;
-  }
-
-  const ordered = (["optimistic", "base", "pessimistic"] as const)
-    .map(byLabel)
-    .filter((scenario): scenario is FireScenario => scenario !== undefined);
-
   const yearsLabel = (years: number | null) =>
-    years === null ? "—" : `${years} ${years === 1 ? "año" : "años"}`;
-
-  // Discrete yearly bars for the base trajectory.
-  const points = base.trajectory;
-  const target = projection.fireNumberMinor;
-  const maxV =
-    Math.max(target, ...points.map((point) => point.eligibleMinor)) * 1.05 || 1;
-  const width = 320;
-  const height = 110;
-  const padBottom = 4;
-  const padTop = 4;
-  const plotH = height - padBottom - padTop;
-  const slot = width / Math.max(points.length, 1);
-  const barW = Math.max(2, slot * 0.6);
-  const yOf = (value: number) => padTop + plotH - (Math.min(value, maxV) / maxV) * plotH;
+    years === null ? null : `${years} ${years === 1 ? "año" : "años"}`;
 
   return (
-    <div className="fireProjection">
-      <div className="fireProjEyebrow">Alcanzas FIRE en</div>
-      <div className="fireProjHeadline">
-        {yearsLabel(base.yearsToFire)}
-        {base.ageAtFire !== null ? <small> · a los {base.ageAtFire} años</small> : null}
-      </div>
-
-      <div className="fireScenarios">
-        {ordered.map((scenario) => (
-          <div
-            className={`fireScenario${scenario.label === "base" ? " base" : ""}`}
-            key={scenario.label}
-          >
-            <h4>{SCENARIO_LABELS[scenario.label]}</h4>
-            <div className="fireScenarioYears">{yearsLabel(scenario.yearsToFire)}</div>
-            <div className="fireScenarioMeta">
-              {scenario.ageAtFire !== null ? (
-                <span>edad {scenario.ageAtFire}</span>
-              ) : null}
-              <span>
-                {formatMoneyMinorPrivacy(
-                  { amountMinor: scenario.finalEligibleMinor, currency },
-                  privacyMode,
-                )}
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <svg
-        className="fireTrajectory"
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-label="Trayectoria anual del capital elegible hacia el número FIRE (escenario base)"
-      >
-        {points.map((point, index) => {
-          const cx = slot * index + slot / 2;
-          const top = yOf(point.eligibleMinor);
-          return (
-            <rect
-              className={point.eligibleMinor >= target ? "reached" : undefined}
-              height={padTop + plotH - top}
-              key={point.year}
-              rx={1}
-              width={barW}
-              x={cx - barW / 2}
-              y={top}
+    <div className="fireResults">
+      <div className="fireProgress">
+        <p className="fireBig" aria-label="Porcentaje financiado">
+          {glance.percentFunded.toFixed(1).replace(".", ",")} %
+        </p>
+        <div className="fireBar">
+          {glance.coastTickFraction !== null ? (
+            <span
+              aria-hidden="true"
+              className="fireTick"
+              style={{
+                left: `${Math.min(100, glance.coastTickFraction * 100)}%`,
+              }}
             />
-          );
-        })}
-        <line
-          className="fireTarget"
-          x1={0}
-          x2={width}
-          y1={yOf(target)}
-          y2={yOf(target)}
-        />
-      </svg>
+          ) : null}
+          <i
+            style={{
+              width: `${Math.min(100, Math.max(0, glance.percentFunded))}%`,
+            }}
+          />
+        </div>
+        {glance.isFunded ? (
+          <span className="statePill ready">FIRE alcanzado</span>
+        ) : glance.isAlreadyAtCoastFire ? (
+          <span className="statePill ready">Coast FIRE alcanzado</span>
+        ) : null}
+      </div>
+      {glance.yearsToFire !== null ? (
+        <div className="fireMetric">
+          <span>Alcanzas FIRE en</span>
+          <strong>{yearsLabel(glance.yearsToFire)}</strong>
+        </div>
+      ) : null}
+      <div className="fireMetric">
+        <span>
+          {glance.goalsCount > 0
+            ? `${glance.goalsCount} ${glance.goalsCount === 1 ? "objetivo" : "objetivos"}`
+            : "Sin objetivos"}
+        </span>
+        {glance.goalsReservedMinor > 0 ? (
+          <strong className="fireReserved">
+            Reservado{" "}
+            {formatMoneyMinorPrivacy(
+              { amountMinor: glance.goalsReservedMinor, currency },
+              privacyMode,
+            )}
+          </strong>
+        ) : null}
+      </div>
+      <Link className="panelAction" href="/ajustes">
+        Ver objetivos →
+      </Link>
     </div>
   );
 }
@@ -535,8 +494,7 @@ export default async function DashboardContent({
     redirect("/empezar");
   }
 
-  const { fireProjection, fireResult, fireScopeConfig, onboarding, pyramid, snapshots } =
-    state;
+  const { fireGlance, onboarding, pyramid, snapshots } = state;
   const selectedRangeForView = state.activeCompositionRange;
   const moversHoldingRows = selectMoversHoldingRows(
     state.snapshotHoldingRows,
@@ -727,110 +685,12 @@ export default async function DashboardContent({
           <h2>FIRE</h2>
           <span>Independencia financiera</span>
         </div>
-        {fireScopeConfig && fireResult ? (
-          <div className="fireResults">
-            <div className="fireProgress">
-              <p className="fireBig" aria-label="Porcentaje financiado">
-                {fireResult.percentFunded.toFixed(1).replace(".", ",")} %
-              </p>
-              <div className="fireBar">
-                {fireResult.coastFireRequired && fireResult.fireNumber.amountMinor > 0 ? (
-                  <span
-                    aria-hidden="true"
-                    className="fireTick"
-                    style={{
-                      left: `${Math.min(
-                        100,
-                        (fireResult.coastFireRequired.amountMinor /
-                          fireResult.fireNumber.amountMinor) *
-                          100,
-                      )}%`,
-                    }}
-                  />
-                ) : null}
-                <i
-                  style={{
-                    width: `${Math.min(100, Math.max(0, fireResult.percentFunded))}%`,
-                  }}
-                />
-              </div>
-              {fireResult.percentFunded >= 100 ? (
-                <span className="statePill ready">FIRE alcanzado</span>
-              ) : fireResult.isAlreadyAtCoastFire ? (
-                <span className="statePill ready">Coast FIRE alcanzado</span>
-              ) : null}
-            </div>
-            <div className="fireMetric">
-              <span>Número FIRE</span>
-              <strong>
-                {formatMoneyMinorPrivacy(fireResult.fireNumber, privacyMode)}
-              </strong>
-            </div>
-            <div className="fireMetric">
-              <span>Activos elegibles</span>
-              <strong>
-                {formatMoneyMinorPrivacy(fireResult.eligibleAssets, privacyMode)}
-              </strong>
-            </div>
-            {fireResult.reservedForGoals &&
-            fireResult.reservedForGoals.amountMinor > 0 ? (
-              <div className="fireMetric">
-                <span>Reservado para objetivos</span>
-                <strong className="fireReserved">
-                  −{formatMoneyMinorPrivacy(fireResult.reservedForGoals, privacyMode)}
-                </strong>
-              </div>
-            ) : null}
-            <details className="fireEligibleNote">
-              <summary>¿Qué cuenta como elegible?</summary>
-              <p className="fireEligibleRule">
-                Suma todos tus activos del ámbito actual salvo tu vivienda principal y los
-                que excluyas a mano; cada activo cuenta según tu porcentaje de propiedad.
-              </p>
-              {fireResult.excludedAssets.length > 0 ? (
-                <ul className="fireExcludedList">
-                  {fireResult.excludedAssets.map((asset) => (
-                    <li key={asset.id}>
-                      <span>{asset.name}</span>
-                      <span className="fireExcludedReason">
-                        {asset.reason === "primary_residence"
-                          ? "Vivienda principal"
-                          : "Excluido a mano"}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="fireEligibleRule">
-                  Ahora mismo no se excluye ningún activo: todos cuentan.
-                </p>
-              )}
-            </details>
-            {fireResult.coastFireRequired ? (
-              <div className="fireMetric">
-                <span>Coast FIRE requerido</span>
-                <strong>
-                  {formatMoneyMinorPrivacy(fireResult.coastFireRequired, privacyMode)}
-                </strong>
-              </div>
-            ) : null}
-            {fireResult.coastFireAge !== undefined ? (
-              <div className="fireMetric">
-                <span>Edad Coast FIRE</span>
-                <strong>{fireResult.coastFireAge.toFixed(1)}</strong>
-              </div>
-            ) : null}
-            {fireProjection ? (
-              <FireProjectionCard
-                currency={fireResult.fireNumber.currency}
-                privacyMode={privacyMode}
-                projection={fireProjection}
-              />
-            ) : null}
-            <Link className="panelAction" href="/ajustes">
-              Configurar → Ajustes
-            </Link>
-          </div>
+        {fireGlance ? (
+          <FireGlanceCard
+            currency={currency}
+            glance={fireGlance}
+            privacyMode={privacyMode}
+          />
         ) : (
           <div className="fireEmpty">
             <p className="fireEmptyHint">
