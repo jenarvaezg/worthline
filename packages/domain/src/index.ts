@@ -385,7 +385,12 @@ export {
 
 export { daysBetween, MS_PER_DAY } from "./dates";
 
-export type { DashboardState, LocalPersistenceStatus, OnboardingStep } from "./dashboard";
+export type {
+  DashboardState,
+  FireGlance,
+  LocalPersistenceStatus,
+  OnboardingStep,
+} from "./dashboard";
 export {
   deriveOnboardingProgress,
   largestRemainderPercentages,

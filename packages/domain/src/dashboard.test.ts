@@ -6,6 +6,7 @@ import {
   largestRemainderPercentages,
   prepareDashboardState,
 } from "./index";
+import type { FireScopeConfig } from "./index";
 
 const workspace = createWorkspace({
   members: [{ id: "member_jose", name: "Jose" }],
@@ -78,6 +79,127 @@ describe("prepareDashboardState", () => {
     expect(state.warnings).toHaveLength(1);
     expect(state.warnings[0]!.code).toBe("ZERO_VALUE_ASSET");
     expect(state.dashboard.generatedAt).toBeDefined();
+  });
+});
+
+describe("fireGlance in prepareDashboardState", () => {
+  const fireConfig: FireScopeConfig = {
+    monthlySpendingMinor: 200_000, // 2000 €/month
+    safeWithdrawalRate: 0.04,
+    expectedRealReturn: 0.05,
+    currentAge: 35,
+    targetRetirementAge: 55,
+  };
+
+  // fireNumber = 2000*12/0.04 = 600_000 €
+  // coastFireRequired = 600_000 / (1.05^20) ≈ 226_102 €
+  const investmentAsset = createManualAsset(workspace, {
+    currency: "EUR",
+    currentValueMinor: 30_000_000, // 300_000 € → 50% funded
+    id: "asset_inv",
+    liquidityTier: "market",
+    name: "Fondo indexado",
+    ownership: fullOwnership,
+    type: "investment",
+  });
+
+  const scope = { id: "household", label: "Hogar", type: "household" as const };
+
+  test("returns populated fireGlance when FIRE is configured", () => {
+    const state = prepareDashboardState({
+      assets: [investmentAsset],
+      fireConfig: { household: fireConfig },
+      liabilities: [],
+      persistence,
+      positions: [],
+      priceCache: [],
+      scopes: [scope],
+      selectedScope: scope,
+      selectedView: "liquid",
+      snapshots: [],
+      workspace,
+    });
+
+    expect(state.fireGlance).not.toBeNull();
+    const glance = state.fireGlance!;
+    expect(glance.percentFunded).toBeGreaterThan(0);
+    expect(glance.percentFunded).toBeLessThan(100);
+    // coastTickFraction: coastRequired / fireNumber (both > 0)
+    expect(glance.coastTickFraction).not.toBeNull();
+    expect(glance.coastTickFraction).toBeGreaterThan(0);
+    expect(glance.coastTickFraction).toBeLessThan(1);
+    // yearsToFire matches the base scenario exactly.
+    const baseScenario = state.fireProjection!.scenarios.find((s) => s.label === "base");
+    expect(glance.yearsToFire).toBe(baseScenario!.yearsToFire);
+    expect(glance.goalsCount).toBe(0);
+    expect(glance.goalsReservedMinor).toBe(0);
+  });
+
+  test("returns fireGlance with goals data when goals are provided", () => {
+    const state = prepareDashboardState({
+      assets: [investmentAsset],
+      fireConfig: { household: fireConfig },
+      goals: [
+        {
+          id: "goal_1",
+          name: "Coche",
+          // Target < asset value so reservation is capped at target.
+          targetAmountMinor: 2_000_000,
+          deadline: "2030-01-01",
+          priority: "high",
+          scopeId: "household",
+          // Assigned to the funded asset → reservation will be positive.
+          assetIds: ["asset_inv"],
+        },
+        {
+          id: "goal_2",
+          name: "Viaje",
+          targetAmountMinor: 500_000,
+          deadline: "2028-06-01",
+          priority: "medium",
+          scopeId: "household",
+          assetIds: [],
+        },
+      ],
+      liabilities: [],
+      persistence,
+      positions: [],
+      priceCache: [],
+      scopes: [scope],
+      selectedScope: scope,
+      selectedView: "liquid",
+      snapshots: [],
+      today: "2026-06-25",
+      workspace,
+    });
+
+    expect(state.fireGlance).not.toBeNull();
+    const glance = state.fireGlance!;
+    expect(glance.goalsCount).toBe(2);
+    // Reservation must be positive (goal_1 is assigned to the funded asset).
+    expect(glance.goalsReservedMinor).toBeGreaterThan(0);
+    // Must match the clamped value FIRE actually subtracted — not the raw pre-clamp total.
+    expect(glance.goalsReservedMinor).toBe(
+      state.fireResult!.reservedForGoals!.amountMinor,
+    );
+  });
+
+  test("returns null fireGlance when FIRE is not configured", () => {
+    const state = prepareDashboardState({
+      assets: [investmentAsset],
+      fireConfig: {},
+      liabilities: [],
+      persistence,
+      positions: [],
+      priceCache: [],
+      scopes: [scope],
+      selectedScope: scope,
+      selectedView: "liquid",
+      snapshots: [],
+      workspace,
+    });
+
+    expect(state.fireGlance).toBeNull();
   });
 });
 
