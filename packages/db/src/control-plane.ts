@@ -57,6 +57,12 @@ export interface ControlPlaneStore {
   readGrant(userId: string, workspaceId: string): Promise<ControlPlaneGrant | null>;
   /** Every workspace the user has been granted, oldest grant first. */
   listWorkspacesForUser(userId: string): Promise<ControlPlaneWorkspace[]>;
+  /**
+   * Every workspace across all users, oldest first. The daily-capture cron's
+   * global enumeration seam (ADR 0037) — a system actor with no session, so it
+   * lists workspaces directly rather than scoped to a granted user.
+   */
+  listAllWorkspaces(): Promise<ControlPlaneWorkspace[]>;
   close(): void;
 }
 
@@ -188,6 +194,12 @@ async function buildControlPlaneStore(
               ORDER BY g.created_at ASC`,
         args: [userId],
       });
+      return result.rows.map((row) => toWorkspace(row));
+    },
+    async listAllWorkspaces() {
+      const result = await client.execute(
+        "SELECT id, db_name, db_url, created_at FROM workspaces ORDER BY created_at ASC",
+      );
       return result.rows.map((row) => toWorkspace(row));
     },
     close() {

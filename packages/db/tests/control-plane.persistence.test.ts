@@ -86,6 +86,31 @@ describe("control-plane store", () => {
     }
   });
 
+  test("list-all-workspaces returns every workspace across all users (cron enumeration)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const ana = await cp.findOrCreateUser("ana@example.com");
+      const leo = await cp.findOrCreateUser("leo@example.com");
+      const anaWs = await cp.createWorkspace({
+        dbName: "wl-ana",
+        dbUrl: "libsql://wl-ana.turso.io",
+      });
+      const leoWs = await cp.createWorkspace({
+        dbName: "wl-leo",
+        dbUrl: "libsql://wl-leo.turso.io",
+      });
+      await cp.recordGrant(ana.id, anaWs.id);
+      await cp.recordGrant(leo.id, leoWs.id);
+
+      // The cron's system actor enumerates globally — not scoped to any user.
+      const all = await cp.listAllWorkspaces();
+      expect(all.map((w) => w.id).sort()).toEqual([anaWs.id, leoWs.id].sort());
+      expect(all.find((w) => w.id === anaWs.id)?.dbUrl).toBe("libsql://wl-ana.turso.io");
+    } finally {
+      cp.close();
+    }
+  });
+
   test("two different accounts get isolated workspace lists", async () => {
     const cp = await createInMemoryControlPlaneStore();
     try {
