@@ -556,7 +556,7 @@ async function projectionGapSignals(
           "UNVALUED_POSITION",
           `${source.id}:${position.externalId}`,
         ),
-        label: `La posición "${position.name}" de "${source.label}" no pudo valorarse.`,
+        label: `La posición "${position.name}" de "${source.label}" está sin fuente de precio y se informa como 0.`,
         object: "data_quality_signal",
         severity: "medium",
       });
