@@ -1121,7 +1121,7 @@ describe("loadDashboard — Binance per-token breakdown capture (ADR 0035, #462)
     });
   }
 
-  test("freezes one row per token beneath the Binance market holding, summing to it", async () => {
+  test("freezes one row per SYMBOL, folding a token's wallets together (#247)", async () => {
     const store = await createInMemoryStore();
     await makeWorkspace(store);
     const sourceId = await connectBinance(store);
@@ -1133,7 +1133,14 @@ describe("loadDashboard — Binance per-token breakdown capture (ADR 0035, #462)
           symbol: "BTC",
           balance: "0.5",
           unitPrice: "50000",
-        }), // 25 000 €
+        }), // 25 000 € spot
+        token({
+          externalId: "BTC:funding",
+          symbol: "BTC",
+          wallet: "funding",
+          balance: "0.1",
+          unitPrice: "50000",
+        }), // 5 000 € funding — SAME symbol, must fold into the BTC row
         token({ externalId: "ETH:spot", symbol: "ETH", balance: "2", unitPrice: "2000" }), // 4 000 €
       ],
       "2026-06-11T09:00:00.000Z",
@@ -1143,18 +1150,19 @@ describe("loadDashboard — Binance per-token breakdown capture (ADR 0035, #462)
 
     const rows = await store.snapshots.readSnapshotHoldings({ scopeId: "household" });
     const binance = rows.find((row) => row.label === "Binance");
-    expect(binance?.valueMinor).toBe(2_900_000);
-    // Keyed by the stable symbol:wallet externalId, symbol label, no metal/image.
+    expect(binance?.valueMinor).toBe(3_400_000);
+    // Keyed by symbol (NOT symbol:wallet): BTC's two wallets collapse to one row,
+    // so a wallet move never re-keys the drilldown into a phantom sell+buy (#247).
     expect(binance?.positions).toEqual([
       {
-        positionKey: "BTC:spot",
+        positionKey: "BTC",
         label: "BTC",
-        valueMinor: 2_500_000,
+        valueMinor: 3_000_000,
         metal: null,
         imageUrl: null,
       },
       {
-        positionKey: "ETH:spot",
+        positionKey: "ETH",
         label: "ETH",
         valueMinor: 400_000,
         metal: null,
@@ -1195,7 +1203,7 @@ describe("loadDashboard — Binance per-token breakdown capture (ADR 0035, #462)
 
     const rows = await store.snapshots.readSnapshotHoldings({ scopeId: "household" });
     const binance = rows.find((row) => row.label === "Binance");
-    const wagmi = binance?.positions?.find((p) => p.positionKey === "WAGMI:spot");
+    const wagmi = binance?.positions?.find((p) => p.positionKey === "WAGMI");
     expect(wagmi).toMatchObject({ label: "WAGMI", valueMinor: 0 });
     // It is present, not dropped, and the rows still reconcile to the holding.
     const sum = binance!.positions!.reduce((acc, p) => acc + p.valueMinor, 0);
@@ -1237,9 +1245,9 @@ describe("loadDashboard — Binance per-token breakdown capture (ADR 0035, #462)
     // breakdown is attributed to the right materialized holding.
     const market = binanceRows.find((row) => row.liquidityTier === "market");
     const locked = binanceRows.find((row) => row.liquidityTier === "term-locked");
-    expect(market?.positions?.map((p) => p.positionKey)).toEqual(["BTC:spot"]);
+    expect(market?.positions?.map((p) => p.positionKey)).toEqual(["BTC"]);
     expect(market?.valueMinor).toBe(2_500_000);
-    expect(locked?.positions?.map((p) => p.positionKey)).toEqual(["ETH:locked-earn"]);
+    expect(locked?.positions?.map((p) => p.positionKey)).toEqual(["ETH"]);
     expect(locked?.valueMinor).toBe(600_000);
 
     store.close();

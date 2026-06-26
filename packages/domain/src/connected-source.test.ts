@@ -20,7 +20,7 @@ import {
   isTokenDustValue,
   positionValue,
   projectConnectedSource,
-  tokenPositionSnapshotInput,
+  tokenSymbolSnapshotInputs,
 } from "./connected-source";
 import type { CoinPosition, ConnectedSource, TokenPosition } from "./connected-source";
 import { defaultsFor } from "./instrument-catalog";
@@ -425,51 +425,70 @@ describe("isTokenDustValue — junk worth under a cent (#479)", () => {
   });
 });
 
-describe("tokenPositionSnapshotInput (ADR 0035, PRD #459 S2)", () => {
-  test("freezes a token's stable symbol:wallet key, symbol label and live value", () => {
-    const input = tokenPositionSnapshotInput(
-      token({
-        externalId: "BTC:spot",
-        symbol: "BTC",
-        balance: "0.5",
-        unitPrice: "50000",
-      }),
-    );
+describe("tokenSymbolSnapshotInputs (ADR 0035, PRD #459 S2 — keyed by symbol, #247)", () => {
+  test("folds a token spread across wallets into ONE position keyed by symbol", () => {
+    // The whole point: a wallet move must NOT re-key the drilldown into a phantom
+    // sell+buy. spot + funding + flexible-earn of one symbol collapse to one "BTC".
+    const inputs = tokenSymbolSnapshotInputs([
+      token({ externalId: "BTC:spot", wallet: "spot", balance: "0.5" }), // 25 000 €
+      token({ externalId: "BTC:funding", wallet: "funding", balance: "0.1" }), // 5 000 €
+      token({ externalId: "BTC:flexible-earn", wallet: "flexible-earn", balance: "0.4" }), // 20 000 €
+    ]);
 
-    expect(input).toEqual({
-      positionKey: "BTC:spot", // the stable externalId (symbol:wallet), ADR 0021
-      label: "BTC", // the symbol, the Binance detail lens
-      valueMinor: 2_500_000, // live: balance × unit price
-      metal: null, // a token has no metal
-      imageUrl: null, // a token has no thumbnail → metal-glyph fallback
-    });
+    expect(inputs).toEqual([
+      {
+        positionKey: "BTC", // the symbol — survives a wallet move (#247)
+        label: "BTC",
+        valueMinor: 5_000_000, // Σ balance × unit price across wallets
+        metal: null,
+        imageUrl: null,
+      },
+    ]);
+  });
+
+  test("freezes one position per distinct symbol", () => {
+    const inputs = tokenSymbolSnapshotInputs([
+      token({ symbol: "BTC", balance: "0.5", unitPrice: "50000" }), // 25 000 €
+      token({ symbol: "ETH", balance: "2", unitPrice: "2000" }), // 4 000 €
+    ]);
+
+    expect(inputs.map((i) => i.positionKey)).toEqual(["BTC", "ETH"]);
+    expect(inputs.map((i) => i.valueMinor)).toEqual([2_500_000, 400_000]);
   });
 
   test("an unpriceable token still freezes a row valued 0 (value-at-0 case)", () => {
-    const input = tokenPositionSnapshotInput(
+    const inputs = tokenSymbolSnapshotInputs([
       token({
         externalId: "WAGMI:spot",
         symbol: "WAGMI",
         balance: "100",
         unitPrice: null,
       }),
-    );
+    ]);
 
-    expect(input).toEqual({
-      positionKey: "WAGMI:spot",
-      label: "WAGMI",
-      valueMinor: 0,
-      metal: null,
-      imageUrl: null,
-    });
+    expect(inputs).toEqual([
+      {
+        positionKey: "WAGMI",
+        label: "WAGMI",
+        valueMinor: 0,
+        metal: null,
+        imageUrl: null,
+      },
+    ]);
   });
 
-  test("freezes the token's logo so the histórico drilldown can render it (#482)", () => {
-    const input = tokenPositionSnapshotInput(
-      token({ symbol: "BTC", imageUrl: "https://coin-images.test/btc.png" }),
-    );
+  test("freezes the group's first non-null logo so the drilldown can render it (#482)", () => {
+    const inputs = tokenSymbolSnapshotInputs([
+      token({ externalId: "BTC:spot", wallet: "spot", imageUrl: null }),
+      token({
+        externalId: "BTC:funding",
+        wallet: "funding",
+        imageUrl: "https://coin-images.test/btc.png",
+      }),
+    ]);
 
-    expect(input.imageUrl).toBe("https://coin-images.test/btc.png");
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]!.imageUrl).toBe("https://coin-images.test/btc.png");
   });
 });
 
