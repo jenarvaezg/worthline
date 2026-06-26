@@ -46,12 +46,15 @@ jobs:
 
       - name: Pull Vercel project config
         if: env.HAVE_TOKEN == 'true'
+        working-directory: apps/web
         run: vercel pull --yes --environment=production --token="${{ secrets.VERCEL_TOKEN }}"
 
       - name: Build prebuilt output on Node 24
         if: env.HAVE_TOKEN == 'true'
+        working-directory: apps/web
         run: vercel build --prod --token="${{ secrets.VERCEL_TOKEN }}"
 
       - name: Deploy prebuilt output to Vercel
         if: env.HAVE_TOKEN == 'true'
+        working-directory: apps/web
         run: vercel deploy --prebuilt --prod --token="${{ secrets.VERCEL_TOKEN }}"
