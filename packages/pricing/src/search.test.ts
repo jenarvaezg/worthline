@@ -250,6 +250,51 @@ describe("searchSymbols", () => {
     });
   });
 
+  it("resolves a bare Finect pension-plan code for a pension_plan query", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            isin: "N5394",
+            alias: "Myinvestor_indexado_sp_500_pp",
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => `
+          <html>
+            <head><title>N5394 - Myinvestor Indexado S&amp;P 500 PP</title></head>
+            <body><strong>20,29 €</strong>
+            <span>Fecha de valor liquidativo: 10/06/2026</span></body>
+          </html>
+        `,
+      } as Response);
+
+    const result = await searchSymbols("N5394", "pension_plan");
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      "https://api.finect.com/v4/products/collectives/plans/N5394",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Accept: "application/json" }),
+      }),
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      "https://www.finect.com/planes-pensiones/N5394-Myinvestor_indexado_sp_500_pp",
+      expect.any(Object),
+    );
+    expect(result[0]).toEqual({
+      provider: "finect",
+      symbol: "N5394-Myinvestor_indexado_sp_500_pp",
+      name: "N5394 - Myinvestor Indexado S&P 500 PP",
+      currency: "EUR",
+      quoteType: "PENSIONPLAN",
+    });
+  });
+
   it("prepends a resolved Finect plan when the query looks like a plan slug", async () => {
     // First call: Yahoo search (no hits for a Finect slug). Second: Finect page.
     vi.mocked(fetch)

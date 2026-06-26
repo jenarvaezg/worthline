@@ -1,7 +1,7 @@
 import type { Instrument, InvestmentPriceProvider } from "@worthline/domain";
 
 import { coingeckoBaseUrl } from "./coingecko";
-import { resolveFinectPlan } from "./finect";
+import { resolveFinectPlan, resolveFinectPlanSymbolByCode } from "./finect";
 
 /**
  * A symbol-search hit: a provider + symbol pair ready to fill an investment's
@@ -117,10 +117,12 @@ export async function searchCoinGeckoSymbols(query: string): Promise<SymbolCandi
 
 /**
  * A Finect pension-plan slug looks like `<DGS code>-<slug>`, e.g.
- * `N5394-Myinvestor_indexado_sp_500_pp`. Finect has no server-queryable search
- * API, so the only supported lookup is confirming a pasted slug/URL resolves.
+ * `N5394-Myinvestor_indexado_sp_500_pp`; a bare DGS code like `N5394` needs an
+ * API lookup before the public sheet URL can be validated.
  */
-function finectSymbolFromQuery(query: string): string | null {
+function finectSymbolFromQuery(
+  query: string,
+): { kind: "code" | "slug"; value: string } | null {
   let candidate = query.trim();
 
   if (!candidate) return null;
@@ -144,12 +146,26 @@ function finectSymbolFromQuery(query: string): string | null {
     "",
   );
 
-  return /^[A-Za-z]?\d{3,}-[A-Za-z0-9_-]+$/.test(slug) ? slug : null;
+  if (/^[A-Za-z]?\d{3,}-[A-Za-z0-9_-]+$/.test(slug)) {
+    return { kind: "slug", value: slug };
+  }
+
+  if (/^[A-Za-z]?\d{3,}$/.test(slug)) {
+    return { kind: "code", value: slug };
+  }
+
+  return null;
 }
 
 async function resolveFinectCandidate(query: string): Promise<SymbolCandidate | null> {
   try {
-    const symbol = finectSymbolFromQuery(query);
+    const lookup = finectSymbolFromQuery(query);
+    if (!lookup) return null;
+
+    const symbol =
+      lookup.kind === "code"
+        ? await resolveFinectPlanSymbolByCode(lookup.value)
+        : lookup.value;
     if (!symbol) return null;
 
     const plan = await resolveFinectPlan(symbol);
