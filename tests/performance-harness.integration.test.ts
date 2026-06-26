@@ -65,6 +65,7 @@ const THRESHOLDS_MS = {
   valuationRipple: 4_000,
   windowedHistoryRead: 250,
 } as const;
+const HARNESS_TIMEOUT_MS = 20_000;
 
 /**
  * The four hot paths the performance audit flagged (#203 AC: "Dashboard load,
@@ -260,63 +261,75 @@ async function runHarness(): Promise<Measurement[]> {
 }
 
 describe("performance harness (integration, #200)", () => {
-  test("seeds a representative workspace and exercises every hot path within conservative ceilings", async () => {
-    const measurements = await runHarness();
+  test(
+    "seeds a representative workspace and exercises every hot path within conservative ceilings",
+    async () => {
+      const measurements = await runHarness();
 
-    // The seed must actually produce a non-trivial history, else the harness
-    // measures nothing meaningful and a regression would hide.
-    const fullHistory = measurements.find((m) => m.name === "fullHistoryRead")!;
-    expect(fullHistory.touched).toBeGreaterThan(100);
-    const dashboard = measurements.find((m) => m.name === "dashboardLoad")!;
-    expect(dashboard.touched).toBe(SEED_SCOPE_IDS.length);
-    const positions = measurements.find((m) => m.name === "positionProjection")!;
-    expect(positions.touched).toBe(3);
+      // The seed must actually produce a non-trivial history, else the harness
+      // measures nothing meaningful and a regression would hide.
+      const fullHistory = measurements.find((m) => m.name === "fullHistoryRead")!;
+      expect(fullHistory.touched).toBeGreaterThan(100);
+      const dashboard = measurements.find((m) => m.name === "dashboardLoad")!;
+      expect(dashboard.touched).toBe(SEED_SCOPE_IDS.length);
+      const positions = measurements.find((m) => m.name === "positionProjection")!;
+      expect(positions.touched).toBe(3);
 
-    // Every measured path stays under its conservative ceiling.
-    for (const measurement of measurements) {
-      expect(
-        measurement.durationMs,
-        `${measurement.name} took ${measurement.durationMs.toFixed(1)}ms (touched ${measurement.touched}), ceiling ${THRESHOLDS_MS[measurement.name]}ms`,
-      ).toBeLessThan(THRESHOLDS_MS[measurement.name]);
-    }
-  });
+      // Every measured path stays under its conservative ceiling.
+      for (const measurement of measurements) {
+        expect(
+          measurement.durationMs,
+          `${measurement.name} took ${measurement.durationMs.toFixed(1)}ms (touched ${measurement.touched}), ceiling ${THRESHOLDS_MS[measurement.name]}ms`,
+        ).toBeLessThan(THRESHOLDS_MS[measurement.name]);
+      }
+    },
+    HARNESS_TIMEOUT_MS,
+  );
 
-  test("reports a timing breakdown for manual inspection", async () => {
-    const measurements = await runHarness();
+  test(
+    "reports a timing breakdown for manual inspection",
+    async () => {
+      const measurements = await runHarness();
 
-    const lines = [
-      "",
-      "Performance Harness Report (#200) — 3 scopes, seeded history",
-      "──────────────────────────────────────────────────────────",
-      ...measurements.map(
-        (m) =>
-          `  ${m.name.padEnd(22)} ${m.durationMs.toFixed(1).padStart(8)} ms   (touched ${m.touched}, ceiling ${THRESHOLDS_MS[m.name]} ms)`,
-      ),
-      "",
-    ];
-    // The timing report IS a deliverable of this harness (#200).
-    console.log(lines.join("\n"));
+      const lines = [
+        "",
+        "Performance Harness Report (#200) — 3 scopes, seeded history",
+        "──────────────────────────────────────────────────────────",
+        ...measurements.map(
+          (m) =>
+            `  ${m.name.padEnd(22)} ${m.durationMs.toFixed(1).padStart(8)} ms   (touched ${m.touched}, ceiling ${THRESHOLDS_MS[m.name]} ms)`,
+        ),
+        "",
+      ];
+      // The timing report IS a deliverable of this harness (#200).
+      console.log(lines.join("\n"));
 
-    // The report only passes when every path is under its ceiling.
-    for (const m of measurements) {
-      expect(m.durationMs).toBeLessThan(THRESHOLDS_MS[m.name]);
-    }
-  });
+      // The report only passes when every path is under its ceiling.
+      for (const m of measurements) {
+        expect(m.durationMs).toBeLessThan(THRESHOLDS_MS[m.name]);
+      }
+    },
+    HARNESS_TIMEOUT_MS,
+  );
 
-  test("guards the set of measured hot paths via a structural baseline snapshot", async () => {
-    const measurements = await runHarness();
+  test(
+    "guards the set of measured hot paths via a structural baseline snapshot",
+    async () => {
+      const measurements = await runHarness();
 
-    // A STRUCTURAL baseline — names + ceilings + touched counts, never the raw
-    // timings (those vary with the host). This freezes WHAT is measured and the
-    // seeded scale, so a future change to the harness/seed is a deliberate
-    // snapshot update (`npm test -- -u`) rather than a silent drift.
-    const baseline = measurements.map((m) => ({
-      name: m.name,
-      ceilingMs: THRESHOLDS_MS[m.name],
-      touched: m.touched,
-    }));
-    expect(baseline).toMatchSnapshot();
-  });
+      // A STRUCTURAL baseline — names + ceilings + touched counts, never the raw
+      // timings (those vary with the host). This freezes WHAT is measured and the
+      // seeded scale, so a future change to the harness/seed is a deliberate
+      // snapshot update (`npm test -- -u`) rather than a silent drift.
+      const baseline = measurements.map((m) => ({
+        name: m.name,
+        ceilingMs: THRESHOLDS_MS[m.name],
+        touched: m.touched,
+      }));
+      expect(baseline).toMatchSnapshot();
+    },
+    HARNESS_TIMEOUT_MS,
+  );
 });
 
 describe("performance budgets (large-workspace baseline, #203)", () => {

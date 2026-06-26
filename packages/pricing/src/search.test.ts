@@ -220,6 +220,36 @@ describe("searchSymbols", () => {
     });
   });
 
+  it("resolves a pasted Finect pension-plan URL", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      text: async () => `
+        <html>
+          <head><title>N5394 - Myinvestor Indexado S&amp;P 500 PP</title></head>
+          <body><strong>20,29 €</strong>
+          <span>Fecha de valor liquidativo: 10/06/2026</span></body>
+        </html>
+      `,
+    } as Response);
+
+    const result = await searchSymbols(
+      "https://www.finect.com/planes-pensiones/N5394-Myinvestor_indexado_sp_500_pp",
+      "pension_plan",
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://www.finect.com/planes-pensiones/N5394-Myinvestor_indexado_sp_500_pp",
+      expect.any(Object),
+    );
+    expect(result[0]).toEqual({
+      provider: "finect",
+      symbol: "N5394-Myinvestor_indexado_sp_500_pp",
+      name: "N5394 - Myinvestor Indexado S&P 500 PP",
+      currency: "EUR",
+      quoteType: "PENSIONPLAN",
+    });
+  });
+
   it("prepends a resolved Finect plan when the query looks like a plan slug", async () => {
     // First call: Yahoo search (no hits for a Finect slug). Second: Finect page.
     vi.mocked(fetch)
