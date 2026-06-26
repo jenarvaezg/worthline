@@ -10,9 +10,9 @@
 import { expect, test } from "@playwright/test";
 
 test("/objetivos: FIRE hero + goals section render, nav active", async ({ page }) => {
-  // Choose the familia persona (has FIRE configured).
-  await page.goto("/demo");
-  await page.getByRole("button", { name: /Familia/ }).click();
+  // Choose the familia persona (has FIRE configured) via its deep-link — a single
+  // awaited navigation, not a submit-button click that races the seed+redirect.
+  await page.goto("/demo?persona=familia");
   await expect(page).toHaveURL(/\/$/);
 
   // 1. «Ver objetivos →» link on the home FIRE glance card points to /objetivos.
@@ -36,9 +36,9 @@ test("/objetivos: FIRE hero + goals section render, nav active", async ({ page }
   const nav = page.getByRole("navigation", { name: "Secciones principales" });
   await expect(nav.getByRole("link", { name: "Objetivos" })).toHaveClass(/active/);
 
-  // 6. Navigate back to home and use the top-nav "Objetivos" entry directly.
-  await page.goto("/demo");
-  await page.getByRole("button", { name: /Familia/ }).click();
+  // 6. Navigate back to home (still the familia persona) and use the top-nav
+  // "Objetivos" entry directly.
+  await page.goto("/");
   await expect(page).toHaveURL(/\/$/);
 
   await page
@@ -52,8 +52,7 @@ test("/objetivos: FIRE hero + goals section render, nav active", async ({ page }
 test("/objetivos: Niveles FIRE rail renders Coast/Lean/Regular/Fat labels", async ({
   page,
 }) => {
-  await page.goto("/demo");
-  await page.getByRole("button", { name: /Familia/ }).click();
+  await page.goto("/demo?persona=familia");
   await expect(page).toHaveURL(/\/$/);
   await page.goto("/objetivos");
 
