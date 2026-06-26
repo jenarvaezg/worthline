@@ -774,6 +774,11 @@ function OwnershipInputs({
               />
             </label>
           ))}
+          <p className="simpleHint">
+            ¿Un inmueble a medias con alguien de fuera? Pon solo vuestra parte; el resto
+            se da por suyo. Solo se admite en inmuebles — el dinero y las inversiones
+            suman al 100%.
+          </p>
         </div>
       </details>
     </fieldset>
