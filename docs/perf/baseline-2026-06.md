@@ -34,6 +34,34 @@
 
 ---
 
+## Actualización (2026-06-26): caché de demo por proceso (#616 / #617)
+
+Ese coste de **sembrar la persona en cada request** —el artefacto que infló el
+baseline de arriba— ya no se paga en caliente. `getDemoStore`
+(`apps/web/app/demo/store-provider.ts`, #616) cachea la base en memoria sembrada
+**por proceso**, con clave `persona + día`:
+
+- **Frío** (primer request de una persona/día en el proceso): se siembra una vez
+  — sigue costando lo mismo que antes.
+- **Caliente** (navegaciones siguientes en el mismo proceso): reusa la siembra,
+  sin reseed. Cambiar de persona o de día es otra clave y vuelve a sembrar.
+- El modo demo sigue siendo **solo lectura**: `guardDemoWrite` corta toda
+  mutación antes de tocar el store, así que compartir la base entre requests no
+  filtra escrituras a lecturas posteriores.
+
+Guardia anti-regresión: `e2e/demo.spec.ts` («warm navigation reuses the seeded
+workspace») entra a la demo, elige persona (frío) y recarga (caliente), y exige
+que el caliente sea mucho más barato que el frío. Si el camino caliente volviera
+a sembrar en cada request, el recargado costaría ~lo mismo que el frío y el test
+falla. Sin red — la demo siembra en memoria.
+
+**Esto solo afecta a la demo.** La distinción del bloque de corrección sigue en
+pie: el coste de siembra es **exclusivo del demo** (datos ficticios generados al
+vuelo); la **app real autenticada** nunca siembra (lee datos ya presentes en
+Turso) y su rendimiento (~150 ms / ~800 ms) es independiente de este cambio.
+
+---
+
 Captura del **antes** exigida por la PRD #485 (_«capturar el baseline de
 rendimiento antes de que Phase 0 cambie nada»_) y por la slice gate #516. Es la
 porción de medición del spike #486; el audit exhaustivo (Lighthouse/Web Vitals

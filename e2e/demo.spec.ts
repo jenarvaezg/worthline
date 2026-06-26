@@ -9,6 +9,46 @@
  */
 import { expect, test } from "@playwright/test";
 
+/**
+ * Warm-navigation perf guard (#617, verifies #616). Proves the demo no longer
+ * pays the full persona seed on every request: the first request for a persona
+ * seeds (cold), a later navigation in the same warm server process reuses the
+ * cached store (warm). Runs FIRST and uses `familia` (the richest seed, ~1s) so
+ * its first load is a genuine cold seed and the cold↔warm gap is wide — the
+ * journey below then reuses the warmed familia. Compares the two timings as a
+ * ratio (robust under machine/CI load, unlike an absolute ceiling): a
+ * reseed-per-request regression makes the warm reload cost ~the cold seed again,
+ * blowing the margin. Network-free — the demo seeds in memory.
+ */
+test("demo: warm navigation reuses the seeded workspace (no reseed per request)", async ({
+  page,
+}) => {
+  const headline = page.locator(".headline strong").first();
+
+  // Cold: the first request for this persona in the process pays the full seed.
+  await page.goto("/demo");
+  const coldStart = Date.now();
+  await page.getByRole("button", { name: /Familia/ }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(headline).toBeVisible();
+  expect(await headline.innerText()).not.toMatch(/sin datos/i);
+  const coldMs = Date.now() - coldStart;
+
+  // Warm: re-render the same page in the same process — the per-process store
+  // cache (#616) skips the seed, so this is dramatically cheaper.
+  const warmStart = Date.now();
+  await page.reload();
+  await expect(headline).toBeVisible();
+  expect(await headline.innerText()).not.toMatch(/sin datos/i);
+  const warmMs = Date.now() - warmStart;
+
+  expect(
+    warmMs,
+    `warm reload (${warmMs}ms) should be far cheaper than the cold seed (${coldMs}ms); ` +
+      `a comparable cost means the warm path reseeded the persona`,
+  ).toBeLessThan(coldMs * 0.6);
+});
+
 test("demo: landing → familia → blocked edit → switch persona", async ({ page }) => {
   // 1. The landing pitches all three personas.
   await page.goto("/demo");

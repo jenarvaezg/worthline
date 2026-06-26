@@ -2,15 +2,13 @@
  * The web-level store seam (PRD #297, ADR 0029, ADR 0030). One place that
  * resolves the three request states (ADR 0030):
  *   - authenticated → the user's own workspace (libSQL URL + group token);
- *   - demo → an ephemeral in-memory libSQL database seeded per request from the
- *     persona specs, memoized once per request and discarded after the response
- *     ("nothing the viewer does persists" by construction);
+ *   - demo → an ephemeral in-memory libSQL database seeded from the persona
+ *     specs, cached per process so warm navigation reuses the seed (#616);
+ *     read-only by construction ("nothing the viewer does persists");
  *   - local → the env-configured single-user store (no-auth dev / tests).
  * Every read page and read route opens its store through here, so the behavior
  * lives in one seam rather than scattered across pages.
  */
-import { cache } from "react";
-
 import {
   createWorthlineStore,
   runBootstrapHealthcheck,
@@ -19,8 +17,7 @@ import {
 import type { LocalPersistenceStatus } from "@worthline/domain";
 
 import { demoAsOfDateKey, demoNowDate } from "@web/demo/demo-clock";
-import type { PersonaId } from "@web/demo/persona";
-import { seedDemoStore } from "@web/demo/store-provider";
+import { getDemoStore } from "@web/demo/store-provider";
 
 import { perfEnd, perfStart } from "./perf-log";
 import { readStoreTarget } from "./read-store-target";
@@ -39,20 +36,9 @@ function assertReachable(target: StoreTarget): void {
 }
 
 /**
- * One seeded in-memory demo store per request. React's `cache` memoizes for the
- * lifetime of a single server request, so however many times a page opens the
- * store, the persona is seeded once; the store is dropped (and GC'd) once the
- * response is sent. Keyed by persona + pinned day so a persona switch re-seeds.
- */
-const requestDemoStore = cache(
-  (persona: PersonaId, asOf: string): Promise<WorthlineStore> =>
-    seedDemoStore(persona, asOf),
-);
-
-/**
- * Wrap the per-request demo store so `withStore`'s close-after-use cannot tear
- * down the shared instance mid-request; the real store is discarded by GC after
- * the response. Reads/writes pass straight through.
+ * Wrap the shared demo store so `withStore`'s close-after-use cannot tear down
+ * the cached instance; it lives for the process and is reused across warm
+ * requests (#616, see {@link getDemoStore}). Reads/writes pass straight through.
  */
 function withNoopClose(store: WorthlineStore): WorthlineStore {
   return new Proxy(store, {
@@ -131,7 +117,7 @@ export async function openStore(target?: StoreTarget): Promise<WorthlineStore> {
   }
 
   if (resolved.kind === "demo") {
-    const store = await requestDemoStore(resolved.persona, demoAsOfDateKey(resolved.now));
+    const store = await getDemoStore(resolved.persona, demoAsOfDateKey(resolved.now));
     return withNoopClose(store);
   }
 
