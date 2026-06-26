@@ -345,6 +345,106 @@ describe("createHoldingAction — derived investments", () => {
   });
 });
 
+describe("createHoldingAction — investment drawer, saldo-de-hoy (#597)", () => {
+  test("saldo path creates the investment AND an opening BUY with derived units, valued today", async () => {
+    const store = await seedStore();
+
+    const url = await runAction(
+      form({
+        simpleDrawer: "inversion",
+        instrument: "crypto",
+        name_crypto: "Bitcoin",
+        symbol_crypto: "bitcoin",
+        price_crypto: "50.000,00",
+        invMode_crypto: "saldo",
+        saldo_crypto: "1.000,00",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    expect(url).toContain("/patrimonio");
+    expect(url).toContain("ok=");
+
+    // The investment is created with its group's provider.
+    const meta = await store.assets.readInvestmentAssetsWithMeta();
+    expect(meta).toHaveLength(1);
+    expect(meta[0]!.priceProvider).toBe("coingecko");
+    expect(meta[0]!.providerSymbol).toBe("bitcoin");
+
+    // An opening BUY dated today, units = saldo / price (1000 / 50000 = 0.02).
+    const ops = await store.operations.readOperations(meta[0]!.id);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]!.kind).toBe("buy");
+    expect(ops[0]!.executedAt).toBe("2026-06-15");
+    expect(ops[0]!.units).toBe("0.02");
+    expect(ops[0]!.pricePerUnit).toBe("50000.00");
+
+    // It lands valued (≈ saldo), not the 0 € container the alta used to create.
+    const asset = (await store.assets.readAssets()).find((a) => a.type === "investment");
+    expect(asset?.currentValue.amountMinor).toBe(100_000);
+  });
+
+  test("import path creates the investment with NO opening operation and routes to «Cargar movimientos»", async () => {
+    const store = await seedStore();
+
+    const url = await runAction(
+      form({
+        simpleDrawer: "inversion",
+        instrument: "fund",
+        name_fund: "Vanguard Global",
+        symbol_fund: "VANGTLI",
+        // A saldo + price are present but MUST be ignored in import mode (exclusion).
+        price_fund: "215,40",
+        saldo_fund: "10.000,00",
+        invMode_fund: "import",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const meta = await store.assets.readInvestmentAssetsWithMeta();
+    expect(meta).toHaveLength(1);
+    expect(meta[0]!.priceProvider).toBe("yahoo");
+
+    // No synthetic opening — the broker CSV's orders will be the only operations.
+    expect(await store.operations.readOperations(meta[0]!.id)).toHaveLength(0);
+
+    // Routed to the holding's edit page, where «Cargar movimientos» lives (#173).
+    expect(url).toContain(`/patrimonio/${meta[0]!.id}/editar`);
+    expect(url).toContain("ok=investment_import_ready");
+  });
+
+  test("saldo without a price errors with manual-fallback guidance and creates nothing persistent", async () => {
+    const store = await seedStore();
+
+    const url = await runAction(
+      form({
+        simpleDrawer: "inversion",
+        instrument: "crypto",
+        name_crypto: "Bitcoin",
+        symbol_crypto: "bitcoin",
+        price_crypto: "",
+        invMode_crypto: "saldo",
+        saldo_crypto: "1.000,00",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    expect(url).toContain("error=");
+    expect(decodeURIComponent(url)).toContain("precio");
+    // The opening BUY never recorded (the price guard fired before it).
+    const meta = await store.assets.readInvestmentAssetsWithMeta();
+    if (meta.length > 0) {
+      expect(await store.operations.readOperations(meta[0]!.id)).toHaveLength(0);
+    }
+  });
+});
+
 describe("createHoldingAction — debts", () => {
   test("mortgage → mortgage liability with the amortizable model", async () => {
     const store = await seedStore();

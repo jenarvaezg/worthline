@@ -1,6 +1,8 @@
 import { bootstrapHealthcheck, withStore } from "@web/store";
-import { listScopeOptions } from "@worthline/domain";
-import type { Member } from "@worthline/domain";
+import { defaultsFor, listScopeOptions } from "@worthline/domain";
+import type { Instrument, Member } from "@worthline/domain";
+import { fetchPriceNow } from "@worthline/pricing";
+import type { RegisteredSource } from "@worthline/pricing";
 import type { CSSProperties, ReactNode } from "react";
 import { cookies } from "next/headers";
 import Link from "next/link";
@@ -15,6 +17,14 @@ import {
 import { createHoldingAction } from "@web/patrimonio/create-holding-action";
 import { PendingSubmit } from "@web/pending-submit";
 import Shell from "@web/shell";
+import {
+  addHoldingFieldValue,
+  buildSymbolSearchCurrentParams,
+  firstNonEmptyParam,
+  selectedInstrumentFromAddHoldingState,
+} from "@web/patrimonio/anadir/search-state";
+import SymbolSearch from "@web/patrimonio/anadir/symbol-search";
+import { InvestmentCapture } from "@web/patrimonio/anadir/investment-capture";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +70,87 @@ const DRAWERS: Drawer[] = [
   },
 ];
 
+/**
+ * The 3 behavior groups of «Una inversión» (#597): not the 6 fine instrument
+ * labels, but the 3 that price differently. Bolsa maps to `fund` by default (the
+ * fine ETF/acción/índice label is editable in the ficha — ADR 0014); the search
+ * is scoped to each group's provider, which sidesteps cross-provider noise (#304).
+ */
+interface InvestmentGroup {
+  instrument: Extract<Instrument, "fund" | "pension_plan" | "crypto">;
+  label: string;
+  hint: string;
+  providerLabel: string;
+  searchPlaceholder: string;
+  symbolLabel: string;
+  symbolHint?: string;
+}
+
+const INVESTMENT_GROUPS: InvestmentGroup[] = [
+  {
+    instrument: "fund",
+    label: "Cotiza en bolsa",
+    hint: "Fondos, ETFs, acciones o índices.",
+    providerLabel: "Yahoo Finance",
+    searchPlaceholder: "MSCI World, IE00BYX5NX33…",
+    symbolLabel: "Símbolo del proveedor",
+  },
+  {
+    instrument: "pension_plan",
+    label: "Plan de pensiones",
+    hint: "Tu plan, por su código de Finect.",
+    providerLabel: "Finect",
+    searchPlaceholder: "N5394-Myinvestor",
+    symbolLabel: "Código Finect",
+  },
+  {
+    instrument: "crypto",
+    label: "Cripto",
+    hint: "Bitcoin, Ethereum y otras monedas.",
+    providerLabel: "CoinGecko",
+    searchPlaceholder: "bitcoin, ethereum…",
+    symbolLabel: "Id de CoinGecko",
+    symbolHint: "p. ej. «bitcoin»",
+  },
+];
+
+const REGISTERED_SOURCES: readonly RegisteredSource[] = [
+  "yahoo",
+  "stooq",
+  "coingecko",
+  "finect",
+];
+
+function isRegisteredSource(value: string | undefined): value is RegisteredSource {
+  return value !== undefined && (REGISTERED_SOURCES as readonly string[]).includes(value);
+}
+
+/**
+ * The picked symbol's live unit price, fetched once when a candidate has been
+ * chosen (#597 — «búsqueda devuelve símbolo + precio en vivo»). Returns null when
+ * nothing is picked yet or the provider has no quote, so the manual-fallback price
+ * field stays empty for the user to fill.
+ */
+async function fetchPickedSymbolPrice(
+  instrument: Instrument,
+  pickedSymbol: string | undefined,
+): Promise<string | null> {
+  const provider = defaultsFor(instrument).priceProvider;
+
+  if (!pickedSymbol || !isRegisteredSource(provider)) {
+    return null;
+  }
+
+  const fetched = await fetchPriceNow(provider, {
+    assetId: "alta-preview",
+    currency: "EUR",
+    nowIso: new Date().toISOString(),
+    symbol: pickedSymbol,
+  });
+
+  return fetched?.price ?? null;
+}
+
 export default async function AnadirHoldingPage({
   searchParams,
 }: {
@@ -95,16 +186,51 @@ export default async function AnadirHoldingPage({
   }
 
   const { activeMembers, scopes, selectedScope } = storeData;
+  const resolvedParams = resolvedSearchParams ?? {};
   const ownershipScopeMemberId =
     activeMembers.find((m) => m.id === selectedScope?.id)?.id ?? activeMembers[0]?.id;
   const values = formError?.formId === "holding" ? formError.values : {};
-  const selectedDrawer = values["simpleDrawer"] as DrawerId | undefined;
+
+  // The drawer (and the investment group) must survive a search/pick navigation,
+  // so resolve them from BOTH the preserved error values AND the URL params (#597).
+  const selectedDrawer = (values["simpleDrawer"] ??
+    firstNonEmptyParam(resolvedParams["simpleDrawer"])) as DrawerId | undefined;
+  const selectedInstrument = selectedInstrumentFromAddHoldingState(
+    values,
+    resolvedParams,
+  );
+
+  // A candidate has been picked (or a symbol typed) for the chosen investment
+  // group → fetch its live unit price once, to prefill the price field and the
+  // «≈ participaciones» hint. Only the investment drawer pays this fetch.
+  const pickedSymbol =
+    selectedDrawer === "inversion" && selectedInstrument
+      ? (firstNonEmptyParam(resolvedParams["pfSymbol"]) ??
+        addHoldingFieldValue({
+          field: "symbol",
+          instrument: selectedInstrument,
+          searchParams: resolvedParams,
+          selectedInstrument,
+          values,
+        }))
+      : undefined;
+  const livePrice =
+    selectedDrawer === "inversion" && selectedInstrument
+      ? await fetchPickedSymbolPrice(selectedInstrument, pickedSymbol)
+      : null;
+
   const revealCss = [
     `.simpleAdd:has(input[name="simpleDrawer"]:checked) .simpleAddEmpty{display:none}`,
     ...DRAWERS.map(
       (drawer) =>
         `.simpleAdd:has(input[name="simpleDrawer"][value="${drawer.id}"]:checked) .simpleDrawerPane[data-drawer="${drawer.id}"]{display:grid}`,
     ),
+    `.simpleAdd:has(input[name="instrument"]:checked) .invGroupEmpty{display:none}`,
+    ...INVESTMENT_GROUPS.flatMap((group) => [
+      `.simpleAdd:has(input[name="instrument"][value="${group.instrument}"]:checked) .invGroupPane[data-group="${group.instrument}"]{display:grid}`,
+      `.invGroupPane[data-group="${group.instrument}"]:has(input[name="invMode_${group.instrument}"][value="saldo"]:checked) .invModePane[data-mode="saldo"]{display:grid}`,
+      `.invGroupPane[data-group="${group.instrument}"]:has(input[name="invMode_${group.instrument}"][value="import"]:checked) .invModePane[data-mode="import"]{display:block}`,
+    ]),
   ].join("\n");
 
   return (
@@ -174,7 +300,12 @@ export default async function AnadirHoldingPage({
               rellenar.
             </p>
             <MoneyPane values={values} />
-            <InvestmentPane />
+            <InvestmentPane
+              livePrice={livePrice}
+              resolvedParams={resolvedParams}
+              selectedInstrument={selectedInstrument}
+              values={values}
+            />
             <HousingPane values={values} />
             <OtherAssetPane values={values} />
             <DebtPane values={values} />
@@ -237,18 +368,159 @@ function MoneyPane({ values }: { values: Record<string, string> }) {
   );
 }
 
-function InvestmentPane() {
+function InvestmentPane({
+  livePrice,
+  resolvedParams,
+  selectedInstrument,
+  values,
+}: {
+  livePrice: string | null;
+  resolvedParams: Record<string, string | string[] | undefined>;
+  selectedInstrument: Instrument | undefined;
+  values: Record<string, string>;
+}) {
   return (
     <div className="simpleDrawerPane" data-drawer="inversion">
-      <div className="simpleNotice">
-        <h3>Inversión va al modo avanzado</h3>
-        <p>
-          Fondos, acciones, planes y cripto necesitan símbolo o proveedor. Esa búsqueda
-          sigue en la pantalla completa.
+      <PaneHeader
+        title="Una inversión"
+        text="Elige dónde está, busca el símbolo y dinos cuánto tienes hoy."
+      />
+      <fieldset className="simpleChoiceGroup invGroupChoice">
+        <legend>¿Dónde está tu inversión?</legend>
+        {INVESTMENT_GROUPS.map((group) => (
+          <label className="ownerPreset simpleChoice" key={group.instrument}>
+            <input
+              defaultChecked={selectedInstrument === group.instrument}
+              name="instrument"
+              type="radio"
+              value={group.instrument}
+            />
+            <span className="invGroupLabel">
+              <strong>{group.label}</strong>
+              <small>{group.hint}</small>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+
+      <p className="invGroupEmpty simpleHint">
+        Elige arriba y aparecerá la búsqueda del proveedor que le corresponde.
+      </p>
+
+      {INVESTMENT_GROUPS.map((group) => (
+        <InvestmentGroupPane
+          group={group}
+          key={group.instrument}
+          livePrice={livePrice}
+          resolvedParams={resolvedParams}
+          selectedInstrument={selectedInstrument}
+          values={values}
+        />
+      ))}
+    </div>
+  );
+}
+
+function InvestmentGroupPane({
+  group,
+  livePrice,
+  resolvedParams,
+  selectedInstrument,
+  values,
+}: {
+  group: InvestmentGroup;
+  livePrice: string | null;
+  resolvedParams: Record<string, string | string[] | undefined>;
+  selectedInstrument: Instrument | undefined;
+  values: Record<string, string>;
+}) {
+  const id = group.instrument;
+  const isSelected = selectedInstrument === id;
+  const v = (field: string): string | undefined =>
+    addHoldingFieldValue({
+      field,
+      instrument: id,
+      searchParams: resolvedParams,
+      selectedInstrument,
+      values,
+    });
+
+  // Live price only applies to the group actually selected; prefill the price
+  // field with the user's own entry first (error round-trip), else the live quote.
+  const priceValue = v("price") ?? (isSelected && livePrice ? livePrice : "");
+  const captureKey = `${id}:${isSelected ? (livePrice ?? "manual") : ""}:${
+    (isSelected && v("symbol")) || ""
+  }`;
+
+  return (
+    <div className="invGroupPane" data-group={id}>
+      <SymbolSearch
+        basePath="/patrimonio/anadir"
+        instrument={id}
+        pickedSymbol={
+          isSelected && typeof resolvedParams["pfSymbol"] === "string"
+            ? resolvedParams["pfSymbol"]
+            : undefined
+        }
+        query={isSelected ? firstNonEmptyParam(resolvedParams["symbolq"]) : undefined}
+        currentParams={buildSymbolSearchCurrentParams(resolvedParams, selectedInstrument)}
+      />
+
+      <Field label="Nombre">
+        <input
+          autoComplete="off"
+          defaultValue={v("name")}
+          name={`name_${id}`}
+          placeholder="Mi inversión"
+        />
+      </Field>
+      <Field label={group.symbolLabel}>
+        <input
+          autoComplete="off"
+          defaultValue={v("symbol")}
+          name={`symbol_${id}`}
+          placeholder={group.searchPlaceholder}
+        />
+      </Field>
+
+      <fieldset className="simpleChoiceGroup">
+        <legend>¿Cómo lo registramos?</legend>
+        <RadioChoice
+          checked={v("invMode") !== "import"}
+          label="Sé cuánto tengo hoy"
+          name={`invMode_${id}`}
+          value="saldo"
+        />
+        <RadioChoice
+          checked={v("invMode") === "import"}
+          label="Tengo el extracto del bróker"
+          name={`invMode_${id}`}
+          value="import"
+        />
+      </fieldset>
+
+      <div className="invModePane" data-mode="saldo">
+        <InvestmentCapture
+          defaultPrice={priceValue}
+          defaultSaldo={v("saldo") ?? ""}
+          instrument={id}
+          key={captureKey}
+          priceHint={
+            isSelected && livePrice
+              ? `Precio en vivo de ${group.providerLabel}.`
+              : group.symbolHint
+          }
+        />
+        <PaneActions />
+      </div>
+
+      <div className="invModePane" data-mode="import">
+        <p className="simpleHint">
+          Crearemos la inversión vacía y te llevamos a <strong>Cargar movimientos</strong>{" "}
+          para subir el CSV de tu bróker (MyInvestor). Sus órdenes serán el histórico —
+          sin ninguna apertura inventada de hoy.
         </p>
-        <Link className="actionLink" href="/patrimonio/anadir/avanzado">
-          Ir al modo avanzado
-        </Link>
+        <PaneActions />
       </div>
     </div>
   );

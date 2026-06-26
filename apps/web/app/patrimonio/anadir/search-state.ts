@@ -31,9 +31,20 @@ const ADD_HOLDING_FIELD_KEYS = [
   "balance",
   "assoc",
   "inheritOwnership",
+  // The simple investment drawer's capture fields (#597): preserved across a
+  // symbol-pick navigation so a typed saldo / chosen mode survives re-picking.
+  "saldo",
+  "invMode",
 ];
 
-const SHARED_ADD_FORM_KEYS = new Set(["ownershipPreset", "scopeMemberId"]);
+// `simpleDrawer` rides along so the chosen drawer (and thus the revealed pane)
+// survives a symbol pick, which navigates via a built link rather than a full
+// form submit (#597).
+const SHARED_ADD_FORM_KEYS = new Set([
+  "ownershipPreset",
+  "scopeMemberId",
+  "simpleDrawer",
+]);
 
 function paramValues(value: string | string[] | undefined): string[] {
   if (value === undefined) return [];
