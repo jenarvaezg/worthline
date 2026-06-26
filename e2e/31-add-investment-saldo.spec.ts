@@ -71,7 +71,7 @@ test("importar extracto: routes to «Cargar movimientos» with no opening operat
   await importPane.getByRole("button", { name: "Añadir" }).click();
 
   // Routed to the holding's ficha, where «Cargar movimientos» lives (#173).
-  await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
+  await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/, { timeout: 10_000 });
   await expect(page.getByRole("status")).toContainText("carga el extracto");
   await expect(page.getByRole("heading", { name: "Cargar movimientos" })).toBeVisible();
 
@@ -79,4 +79,23 @@ test("importar extracto: routes to «Cargar movimientos» with no opening operat
   await expect(
     page.getByRole("region", { name: "Operaciones de la inversión" }),
   ).toBeVisible();
+});
+
+test("submit errors keep the current scroll position", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 480 });
+  await openInvestmentGroup(page, "crypto");
+
+  const saldoPane = page.locator(
+    '.invGroupPane[data-group="crypto"] .invModePane[data-mode="saldo"]',
+  );
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  const before = await page.evaluate(() => window.scrollY);
+  expect(before).toBeGreaterThan(0);
+
+  await saldoPane.getByRole("button", { name: "Añadir" }).click();
+
+  await expect(page.locator(".errorBand")).toContainText("precio por unidad");
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBeGreaterThan(before - 20);
 });

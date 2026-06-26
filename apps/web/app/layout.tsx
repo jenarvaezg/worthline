@@ -1,8 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
+import { Suspense } from "react";
 
 import DemoBanner from "@web/demo/demo-banner";
 import { isDemoMode } from "@web/demo/write-guard";
+import FormSubmitScrollKeeper from "@web/form-submit-scroll-keeper";
 import ServiceWorkerRegister from "@web/_components/sw-register";
 
 import "./globals.css";
@@ -63,6 +65,9 @@ export default async function RootLayout({
       <body>
         {(await isDemoMode()) ? <DemoBanner /> : null}
         <ServiceWorkerRegister />
+        <Suspense fallback={null}>
+          <FormSubmitScrollKeeper />
+        </Suspense>
         {children}
       </body>
     </html>
