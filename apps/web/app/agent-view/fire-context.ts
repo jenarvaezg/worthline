@@ -91,6 +91,7 @@ export async function resolveFire(
 
   if (config !== undefined) {
     const assets = await store.readAssets();
+    const liabilities = await store.readLiabilities();
     const reservedForGoalsMinor = await goalReservationMinor(
       store,
       workspace,
@@ -101,6 +102,7 @@ export async function resolveFire(
     result = calculateFireForScope(
       config,
       assets,
+      liabilities,
       workspace,
       internalScopeId,
       reservedForGoalsMinor,

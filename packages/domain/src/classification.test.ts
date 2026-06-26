@@ -85,6 +85,7 @@ describe("asset classification", () => {
         expectedRealReturn: 0.07,
       },
       [rental],
+      [],
       workspace,
       "household",
     );
