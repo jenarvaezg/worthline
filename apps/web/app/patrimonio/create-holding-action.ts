@@ -4,6 +4,7 @@ import { type WorthlineStore } from "@web/store";
 import { runActionWithStore } from "@web/action-store";
 import {
   checkOwnershipSplit,
+  createInvestmentOperationSafe,
   createLiabilitySafe,
   defaultsFor,
   systemClock,
@@ -18,9 +19,11 @@ import {
   parseInvestmentAssetCommandStrict,
   parseLiabilityCommand,
   parseMoneyMinorField,
+  parseRouteOperationCommand,
   preserveFields,
   successRedirectUrl,
 } from "@web/intake";
+import { deriveOpeningUnits } from "@web/patrimonio/anadir/investment-units";
 import { guardDemoWrite } from "@web/demo/write-guard";
 import { persistManualAssetCreation } from "./persist-holding";
 
@@ -72,11 +75,23 @@ function normalizeSimpleDrawerForm(
   }
 
   if (drawer === "inversion") {
-    return {
-      formData,
-      instrument: null,
-      unsupported: "El cajón Inversión llegará en la siguiente slice. Usa modo avanzado.",
-    };
+    // The 3 behavior groups (#597): «Cotiza en bolsa»→fund, «Plan de pensiones»→
+    // pension_plan, «Cripto»→crypto. The group radio posts the instrument directly,
+    // and the pane already posts instrument-suffixed fields (name_/symbol_/price_/
+    // saldo_/invMode_), so the derived path reads them with no remap.
+    const instrument = parseInstrument(formData.get("instrument"));
+    if (
+      instrument !== "fund" &&
+      instrument !== "pension_plan" &&
+      instrument !== "crypto"
+    ) {
+      return {
+        formData,
+        instrument: null,
+        unsupported: "Elige dónde está tu inversión: bolsa, plan de pensiones o cripto.",
+      };
+    }
+    return { formData, instrument };
   }
 
   const normalized = copyFormData(formData);
@@ -143,6 +158,53 @@ function parseInstrument(value: FormDataEntryValue | null): Instrument | null {
   return (INSTRUMENTS as readonly string[]).includes(raw) ? (raw as Instrument) : null;
 }
 
+/** The simple investment drawer's two exclusive "how much you have" modes (#597). */
+function parseInvMode(value: FormDataEntryValue | null): "saldo" | "import" | null {
+  const raw = String(value ?? "").trim();
+  return raw === "saldo" || raw === "import" ? raw : null;
+}
+
+/** The Spanish guidance for a saldo-de-hoy derivation that lacks a price or a saldo (#597). */
+function openingUnitsErrorMessage(reason: "saldo" | "price"): string {
+  return reason === "price"
+    ? "Necesito el precio por unidad para calcular las participaciones. Búscalo o escríbelo a mano."
+    : "Indica cuánto tienes hoy en euros.";
+}
+
+/**
+ * Record the opening BUY for a freshly-created derived investment from the "saldo
+ * de hoy" path (#597): the already-derived units × price, dated today, persisted
+ * with its history ripple via the same seam the operations editor uses. Returns a
+ * Spanish error message on a domain violation, or null on success.
+ */
+async function recordOpeningOperation(
+  store: WorthlineStore,
+  assetId: string,
+  opening: { units: string; price: string },
+  today: string,
+): Promise<string | null> {
+  const opForm = new FormData();
+  opForm.set("units", opening.units);
+  opForm.set("pricePerUnit", opening.price);
+  opForm.set("kind", "buy");
+  opForm.set("executedAt", today);
+
+  const parsedOp = parseRouteOperationCommand(opForm, assetId, Date.now(), today);
+
+  if (!parsedOp.ok) {
+    return parsedOp.error;
+  }
+
+  const safe = createInvestmentOperationSafe(parsedOp.command);
+
+  if (!safe.ok) {
+    return mapDomainViolation(safe.violations[0]);
+  }
+
+  await store.recordOperationAndRipple(safe.value, { today });
+  return null;
+}
+
 /**
  * The debt model a `loan` is created with (#273): the user picks «Amortizable»
  * (a French-amortization plan, set up later in the ficha) or «Informal» (declared
@@ -169,6 +231,9 @@ const FIELD_KEYS = [
   "inheritOwnership",
   "debtModel",
   "isPrimaryResidence",
+  // Simple investment drawer capture fields (#597), refilled after a validation error.
+  "saldo",
+  "invMode",
 ];
 
 const SIMPLE_FIELD_KEYS = [
@@ -381,6 +446,25 @@ export async function createHoldingAction(
       defaults.priceProvider,
       defaults.rung,
     );
+    // The simple investment drawer (#597) captures "how much you have" via one of
+    // two mutually-exclusive modes; the avanzado flow posts neither and creates
+    // the empty container exactly as before.
+    const invMode = parseInvMode(actionFormData.get(`invMode_${instrument}`));
+
+    // (a) "Saldo de hoy": derive units (€ ÷ precio) up-front (pure) so a missing
+    // saldo/price fails BEFORE anything is persisted — no orphaned 0 € holding.
+    const opening =
+      invMode === "saldo"
+        ? deriveOpeningUnits({
+            priceRaw: String(scoped.get("manualPricePerUnit") ?? ""),
+            saldoRaw: String(actionFormData.get(`saldo_${instrument}`) ?? ""),
+          })
+        : null;
+
+    if (opening && !opening.ok) {
+      redirect(errorUrl(openingUnitsErrorMessage(opening.reason)));
+    }
+
     const result = await runActionWithStore(async (store) => {
       const workspace = await store.workspace.readWorkspace();
 
@@ -406,11 +490,36 @@ export async function createHoldingAction(
 
       await store.assets.createInvestmentAsset({ ...parsed.command, instrument });
 
+      // Record the opening BUY dated today, so the holding lands valued — not the
+      // 0 € container the alta used to create. Never combined with (b) import: a
+      // today-dated apertura would not match the CSV's historical orders (merge
+      // keys on date) → a duplicate position; the mode exclusion prevents it (#597).
+      if (opening?.ok) {
+        const opError = await recordOpeningOperation(
+          store,
+          parsed.command.id,
+          opening,
+          today,
+        );
+
+        if (opError) {
+          return { ok: false as const, error: opError };
+        }
+      }
+
       return { ok: true as const, id: parsed.command.id };
     }, _store);
 
     if (!result.ok) {
       redirect(errorUrl(result.error));
+    }
+
+    // (b) "Importar extracto": no synthetic opening — route to «Cargar movimientos»
+    // (#173) so the broker CSV's historical orders are the only operations.
+    if (invMode === "import") {
+      redirect(
+        successRedirectUrl(`/patrimonio/${result.id}/editar`, "investment_import_ready"),
+      );
     }
 
     redirect(successRedirectUrl("/patrimonio", "investment_added", result.id));
