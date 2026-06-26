@@ -1,5 +1,7 @@
 # A connected source is one generic lifecycle behind a per-provider adapter
 
+> **Superseded by [ADR 0043](0043-connected-source-lifecycle-stays-explicit-per-provider.md)** (2026-06-26, #577). At two providers with divergent lifecycles the adapter interface + registry + nullable capabilities cost more indirection than they remove; connected-source behaviour goes back to explicit per-provider modules. Kept here for history.
+
 ## Context
 
 worthline has two connected sources — Numista (ADR 0016/0017) and Binance (ADR 0021) — and each re-implements the same connect / sync / disconnect lifecycle. The duplication is concrete:
