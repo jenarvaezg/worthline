@@ -554,6 +554,13 @@ h3 {
   color: var(--red);
 }
 
+.errorActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
 .successBand {
   background: rgba(0, 111, 95, 0.1);
   border-color: var(--green);
