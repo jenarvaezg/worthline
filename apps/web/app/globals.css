@@ -5806,3 +5806,71 @@ td.rowActions > * {
   white-space: nowrap;
   border: 0;
 }
+
+/* === #600 add-wizard success loop + first-run + empty-dashboard CTA ========= */
+
+/* A filled brand CTA (the loop's primary action + the empty-dashboard prompt),
+   complementing the outline .actionLink pill. */
+.primaryAction {
+  display: inline-block;
+  color: var(--paper-strong);
+  background: var(--green);
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-decoration: none;
+  padding: 0.6rem 1.25rem;
+  border: 1px solid var(--green);
+  border-radius: 999px;
+}
+.primaryAction:hover {
+  filter: brightness(1.08);
+}
+
+.addSuccessPanel {
+  display: grid;
+  gap: 1rem;
+  justify-items: start;
+  padding: 1.75rem;
+  background: color-mix(in srgb, var(--panel) 94%, var(--green) 6%);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+}
+.addSuccessTitle {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--green);
+}
+.addSuccessTitle:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 4px;
+}
+.addSuccessTotal {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+.addSuccessTotal strong {
+  color: var(--ink);
+  font-size: 1.15rem;
+}
+.addSuccessActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.emptyDashCta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding: 1.25rem 1.5rem;
+  background: color-mix(in srgb, var(--panel) 94%, var(--green) 6%);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+}
+.emptyDashCta p {
+  margin: 0;
+  color: var(--muted);
+}

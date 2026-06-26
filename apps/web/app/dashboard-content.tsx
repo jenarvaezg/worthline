@@ -608,6 +608,15 @@ export default async function DashboardContent({
         />
       </section>
 
+      {!hasHoldings ? (
+        <section className="emptyDashCta" aria-label="Empieza tu patrimonio">
+          <p>Aún no has añadido nada. Empieza por lo primero.</p>
+          <Link className="primaryAction" href="/patrimonio/anadir">
+            Añade algo →
+          </Link>
+        </section>
+      ) : null}
+
       <section className="liquidityPanel" aria-label="Liquidez por capa">
         <div className="panelHeader">
           <h2>Liquidez</h2>

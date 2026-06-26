@@ -49,11 +49,16 @@ test("saldo-de-hoy: crypto → opening BUY, lands valued, shows ≈ participacio
 
   await saldoPane.getByRole("button", { name: "Añadir" }).click();
 
-  await expect(page).toHaveURL(/\/patrimonio/);
-  await expect(page.getByRole("status")).toHaveText("Inversión añadida.");
+  // S5 (#600): the simple wizard loops — the add lands on the success screen
+  // (not the list), showing the running net worth + the loop CTAs.
+  await expect(page).toHaveURL(/\/patrimonio\/anadir\?ok=investment_added/);
+  await expect(page.getByRole("heading", { name: /Inversión añadida/ })).toBeVisible();
+  await expect(page.locator(".addSuccessTotal")).toContainText("Patrimonio neto");
 
-  // It lands in the list (valued via the opening BUY — asserted in the action
-  // unit test; here we prove the end-to-end wiring reaches the list).
+  // «Ver mi patrimonio» exits the loop to the holdings list, where the new
+  // investment (valued via its opening BUY) is listed.
+  await page.getByRole("link", { name: /Ver mi patrimonio/ }).click();
+  await expect(page).toHaveURL(/\/patrimonio(\?|$)/);
   await expect(holdingRow(page, "Bitcoin saldo E2E")).toBeVisible();
 });
 
