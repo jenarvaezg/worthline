@@ -273,6 +273,66 @@ describe("createHoldingAction — simple drawer form (#596)", () => {
   });
 });
 
+describe("createHoldingAction — inmueble partial split with a non-member (#598)", () => {
+  test("housing drawer keeps a custom split below 100% (rest is a non-member's)", async () => {
+    const store = await seedHousehold();
+
+    // Jose 50% + Ana 30% = 80%; the remaining 20% belongs to someone outside the
+    // workspace. Both members are positive, so the split can NOT auto-complete to
+    // 100% — it is preserved exactly, which only a real_estate holding allows.
+    const url = await runAction(
+      form({
+        simpleDrawer: "inmueble",
+        simpleName_inmueble: "Piso heredado",
+        simpleValue_inmueble: "300.000,00",
+        primaryResidence_inmueble: "off",
+        ownershipPreset: "custom",
+        scopeMemberId: "mJ",
+        owner_mJ: "50",
+        owner_mA: "30",
+      }),
+      store,
+    );
+
+    expect(url).toContain("ok="); // accepted, not rejected as "must sum to 100%"
+
+    const asset = (await store.assets.readAssets()).find(
+      (a) => a.name === "Piso heredado",
+    )!;
+    expect(asset.type).toBe("real_estate");
+    expect(
+      Object.fromEntries(asset.ownership.map((o) => [o.memberId, o.shareBps])),
+    ).toEqual({
+      mJ: 5_000,
+      mA: 3_000,
+    });
+  });
+
+  test("a non-inmueble drawer rejects the same partial split (no phantom net worth)", async () => {
+    const store = await seedHousehold();
+
+    const url = await runAction(
+      form({
+        simpleDrawer: "dinero",
+        simpleName_dinero: "Cuenta compartida con un tercero",
+        simpleValue_dinero: "10.000,00",
+        ownershipPreset: "custom",
+        scopeMemberId: "mJ",
+        owner_mJ: "50",
+        owner_mA: "30",
+      }),
+      store,
+    );
+
+    expect(url).toContain("error=");
+    expect(
+      (await store.assets.readAssets()).some(
+        (a) => a.name === "Cuenta compartida con un tercero",
+      ),
+    ).toBe(false);
+  });
+});
+
 describe("createHoldingAction — derived investments", () => {
   test("stock → investment with instrument=stock and the yahoo provider", async () => {
     const store = await seedStore();
