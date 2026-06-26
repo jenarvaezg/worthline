@@ -1,0 +1,7 @@
+# AI costs are user-funded where possible
+
+worthline should avoid becoming the default payer for open-ended premium AI usage. The assistant has a free shared baseline backed by a cheap provider key such as `GROQ_API_KEY`, so the chat is normally available even when the user has not configured credentials. The product direction for heavier or higher-quality usage is still user-funded access: local users provide their own API key, and hosted users eventually connect a provider account or bring a key rather than consuming an unlimited shared worthline budget.
+
+This keeps the assistant useful by default while preserving provider optionality through the AI SDK. Shared worthline-funded usage should stay explicitly bounded to low-cost/free-tier models, rate limits, or degraded capability; premium models and heavy exploratory chat should require user-funded credentials.
+
+The provider abstraction is **Vercel AI Gateway** (via the AI SDK), not a hand-rolled router. The shared baseline key (`GROQ_API_KEY`) is brought into the gateway as BYOK, so the same code path gives provider swap by model string, a platform-level spend ceiling that backstops the per-user rate limit (ADR 0051), failover, and request observability — and the user-funded future becomes a credential/routing change rather than a re-architecture. Local development may call a provider directly through env credentials behind the same `model` binding, so the gateway is not a hard dependency for offline work.
