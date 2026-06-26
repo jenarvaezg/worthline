@@ -53,6 +53,19 @@ describe("shouldRedirectToLogin", () => {
     }
   });
 
+  test("never redirects PWA public assets behind the sign-in wall", () => {
+    for (const pathname of ["/manifest.json", "/sw.js", "/mcp-icon.svg"]) {
+      expect(
+        shouldRedirectToLogin({
+          authConfigured: true,
+          hasSession: false,
+          hasPersonaCookie: false,
+          pathname,
+        }),
+      ).toBe(false);
+    }
+  });
+
   test("never redirects the daily-snapshot cron (it carries a CRON_SECRET bearer, not a session)", () => {
     expect(
       shouldRedirectToLogin({
