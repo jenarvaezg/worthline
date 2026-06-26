@@ -207,6 +207,28 @@ The chain-linked sub-period return (**Modified Dietz** over **monthly closes**) 
 the effect of cashflow timing — the measure comparable to a benchmark index. Distinct from
 the **money-weighted return** (IRR), which keeps timing in. See ADR 0040.
 
+**Benchmark comparison**:
+A present-time lens overlaying a stored **benchmark series** on an existing growth series to
+answer "am I doing well, or do I need to up my game?". Two levels: **net worth vs inflation**
+globally, and a **holding vs the market index it tracks** (keyed by the **exposure profile**'s
+tracked-index label). Never a figure the math reads and never frozen into a **snapshot** (like
+a **return** or an **exposure profile**); only the raw series is cached. See ADR 0044.
+_Avoid_: benchmark (unqualified — say which series), beating the market (for the whole patrimony —
+the global benchmark is inflation, not an index).
+
+**Benchmark series**:
+A monthly reference series in the shared **control-plane** catalog (`benchmark_prices`): a market
+index (a total-return ETF-NAV proxy, or a price index for distributing funds) from Stooq, or
+**inflation** (Spanish CPI from INE; the source is country-configurable later). Fetched once for
+the whole fleet, backfilled lazily and idempotently by the daily cron, best-effort so it never
+blocks **snapshot** capture. Cached reference data, like a price — not a **figure**.
+
+**Real growth**:
+Net-worth growth net of **inflation** — the global **benchmark comparison**. The honest
+whole-patrimony verdict (cash, property and crypto are not "the market", so comparing the total
+against a market index would mislead). UI: a ghost inflation line on the evolution chart plus a
+verdict card.
+
 **Contribution plan**:
 A scope's set of **planned contributions** — its forward savings intentions. A forecast
 layer: it never enters **net worth** or a **snapshot** (like an **exposure profile** or a
