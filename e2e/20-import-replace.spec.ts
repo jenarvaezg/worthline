@@ -42,7 +42,8 @@ test("import replaces the whole workspace; an invalid file changes nothing", asy
     await expect(page.getByRole("heading", { name: "Empezar solo" })).toBeVisible();
     await page.getByLabel("Tu nombre").fill("TestUser");
     await page.getByRole("button", { name: "Empezar solo" }).click();
-    await expect(page).toHaveURL("/");
+    // First run chains into the add wizard (S4, #599), not the dashboard.
+    await expect(page).toHaveURL("/patrimonio/anadir");
   }
 
   // Guarantee pre-existing data: create one asset through the UI.

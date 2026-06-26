@@ -49,7 +49,9 @@ export async function initSoloAction(
     });
   }
 
-  redirect("/");
+  // S4 (#599): first run flows straight into the add wizard — one continuous
+  // path, never a drop onto an empty dashboard.
+  redirect("/patrimonio/anadir");
 }
 
 export async function initHogarAction(
@@ -77,6 +79,7 @@ export async function initHogarAction(
     _store,
   );
 
-  // Leave the scope cookie unset — / will fall back to the first scope.
-  redirect("/");
+  // Leave the scope cookie unset — the wizard falls back to the first scope.
+  // S4 (#599): chain straight into the add wizard, not the empty dashboard.
+  redirect("/patrimonio/anadir");
 }
