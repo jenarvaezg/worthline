@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { seedDemoStore } from "@web/demo/store-provider";
+import { getDemoStore, seedDemoStore } from "@web/demo/store-provider";
 
 const AS_OF = "2026-06-19";
 
@@ -32,4 +32,36 @@ describe("demo store provider", () => {
     expect(checking?.currentValue.amountMinor).not.toBe(99_999_00);
     second.close();
   }, 15_000);
+});
+
+describe("demo store cache (per process, #616)", () => {
+  it("reuses the seeded workspace for the same persona + as-of date", async () => {
+    const first = await getDemoStore("familia", "2026-06-10");
+    await first.assets.updateAssetValuation("asset_familia_checking", 77_777_00);
+
+    // Same key within the warm process ⇒ the SAME seeded store, mutation visible.
+    const warm = await getDemoStore("familia", "2026-06-10");
+    const checking = (await warm.assets.readAssets()).find(
+      (a) => a.id === "asset_familia_checking",
+    );
+    expect(checking?.currentValue.amountMinor).toBe(77_777_00);
+  }, 15_000);
+
+  it("reseeds for a different as-of date or persona", async () => {
+    const seeded = await getDemoStore("familia", "2026-06-11");
+    await seeded.assets.updateAssetValuation("asset_familia_checking", 88_888_00);
+
+    // A different day is a different key ⇒ a fresh, unmutated seed.
+    const otherDay = await getDemoStore("familia", "2026-06-12");
+    const checking = (await otherDay.assets.readAssets()).find(
+      (a) => a.id === "asset_familia_checking",
+    );
+    expect(checking?.currentValue.amountMinor).not.toBe(88_888_00);
+
+    // A different persona ⇒ a separately seeded workspace.
+    const inversor = await getDemoStore("inversor", "2026-06-11");
+    const inversorWorkspace = await inversor.workspace.readWorkspace();
+    const familiaWorkspace = await seeded.workspace.readWorkspace();
+    expect(inversorWorkspace?.members).not.toEqual(familiaWorkspace?.members);
+  }, 20_000);
 });
