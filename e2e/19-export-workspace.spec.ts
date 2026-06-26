@@ -28,7 +28,8 @@ test("export workspace: bootstrap via UI → Exportar downloads the JSON documen
   await expect(page.getByRole("heading", { name: "Empezar solo" })).toBeVisible();
   await page.getByLabel("Tu nombre").fill("ExportUser");
   await page.getByRole("button", { name: "Empezar solo" }).click();
-  await expect(page).toHaveURL("/");
+  // First run chains into the add wizard (S4, #599), not the dashboard.
+  await expect(page).toHaveURL("/patrimonio/anadir");
 
   // 3. Create one asset through the real form (same as journey 03).
   await addHolding(page, {

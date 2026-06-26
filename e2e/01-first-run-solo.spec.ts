@@ -2,13 +2,14 @@
  * Journey 1: First run — /empezar solo path
  *
  * Opens the app for the first time (empty DB), completes the solo onboarding
- * form, lands on / with a valid scope cookie, and verifies the onboarding
- * checklist links are present and navigable.
+ * form, and chains straight into the add wizard (S4, #599) — first run is one
+ * continuous path, never a drop onto an empty dashboard. The dashboard and its
+ * onboarding checklist remain reachable, with a valid scope cookie.
  */
 
 import { test, expect } from "./fixtures";
 
-test("first run solo: empezar → / with valid scope and onboarding checklist", async ({
+test("first run solo: empezar → add wizard, dashboard checklist still reachable", async ({
   page,
 }) => {
   // 1. Fresh DB → app redirects to /empezar
@@ -22,33 +23,30 @@ test("first run solo: empezar → / with valid scope and onboarding checklist", 
   await page.getByLabel("Tu nombre").fill("TestUser");
   await page.getByRole("button", { name: "Empezar solo" }).click();
 
-  // 4. Should land on / (redirect after workspace init)
-  await expect(page).toHaveURL("/");
+  // 4. First run chains straight into the add wizard (S4, #599) — not the dashboard.
+  await expect(page).toHaveURL("/patrimonio/anadir");
+  await expect(
+    page.getByRole("heading", { name: "Añade algo a tu patrimonio" }),
+  ).toBeVisible();
 
-  // 5. Brand heading is visible — shell rendered
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("worthline");
-
-  // 5b. Individual mode: the scope selector ("Hogar" + the person) is redundant,
-  // so it must not render — household and person are the same scope here (#269).
-  // The household-mode counterpart (02-first-run-hogar) asserts it IS visible.
+  // 4b. Individual mode: the scope selector is redundant, so it must not render —
+  // household and person are the same scope here (#269). Same Shell as the dashboard.
   await expect(page.getByRole("navigation", { name: "Selector de scope" })).toHaveCount(
     0,
   );
 
-  // 6. Onboarding checklist section should appear (some steps still pending)
+  // 5. The dashboard is still reachable and shows the onboarding checklist (steps pending).
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("worthline");
   await expect(page.getByRole("region", { name: "Primeros pasos" })).toBeVisible();
-
-  // 7. "Primeros pasos" heading present
   await expect(page.getByRole("heading", { name: "Primeros pasos" })).toBeVisible();
-
-  // 8. At least one checklist link should be navigable (holdings step → /patrimonio/anadir)
   const holdingsLink = page
     .getByRole("region", { name: "Primeros pasos" })
     .getByRole("link")
     .first();
   await expect(holdingsLink).toBeVisible();
 
-  // 9. Cookie is set — navigating away and back keeps the scope
+  // 6. Cookie is set — navigating away and back keeps the scope
   await page.goto("/patrimonio");
   await expect(page).toHaveURL("/patrimonio");
   await expect(page.getByRole("heading", { name: "Patrimonio" })).toBeVisible();
