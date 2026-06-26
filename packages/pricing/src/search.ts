@@ -116,17 +116,43 @@ export async function searchCoinGeckoSymbols(query: string): Promise<SymbolCandi
 }
 
 /**
- * A Finect pension-plan slug looks like `<DGS code>-<Manager>`, e.g.
- * `N5394-Myinvestor`. Finect has no server-queryable search API, so the only
- * supported Finect lookup is confirming a pasted slug resolves to a real plan.
+ * A Finect pension-plan slug looks like `<DGS code>-<slug>`, e.g.
+ * `N5394-Myinvestor_indexado_sp_500_pp`. Finect has no server-queryable search
+ * API, so the only supported lookup is confirming a pasted slug/URL resolves.
  */
-function looksLikeFinectSlug(query: string): boolean {
-  return /^[A-Za-z]?\d{3,}-[A-Za-z0-9-]+$/.test(query.trim());
+function finectSymbolFromQuery(query: string): string | null {
+  let candidate = query.trim();
+
+  if (!candidate) return null;
+
+  try {
+    const url = new URL(candidate);
+    if (!/(^|\.)finect\.com$/i.test(url.hostname)) return null;
+    candidate = url.pathname;
+  } catch {
+    // Not a URL; treat it as a raw slug or copied path.
+  }
+
+  const marker = "/planes-pensiones/";
+  const markerIndex = candidate.toLowerCase().indexOf(marker);
+  if (markerIndex >= 0) {
+    candidate = candidate.slice(markerIndex + marker.length);
+  }
+
+  const slug = (decodeURIComponent(candidate).split(/[?#]/, 1)[0] ?? "").replace(
+    /^\/+|\/+$/g,
+    "",
+  );
+
+  return /^[A-Za-z]?\d{3,}-[A-Za-z0-9_-]+$/.test(slug) ? slug : null;
 }
 
 async function resolveFinectCandidate(query: string): Promise<SymbolCandidate | null> {
   try {
-    const plan = await resolveFinectPlan(query.trim());
+    const symbol = finectSymbolFromQuery(query);
+    if (!symbol) return null;
+
+    const plan = await resolveFinectPlan(symbol);
     if (!plan) return null;
 
     return {
@@ -161,9 +187,7 @@ export async function searchSymbols(
   }
 
   if (instrument === "pension_plan") {
-    const finect = looksLikeFinectSlug(query)
-      ? await resolveFinectCandidate(query)
-      : null;
+    const finect = await resolveFinectCandidate(query);
     return finect ? [finect] : [];
   }
 
@@ -178,7 +202,7 @@ export async function searchSymbols(
 
   const [yahoo, finect] = await Promise.all([
     searchYahooSymbols(query),
-    looksLikeFinectSlug(query) ? resolveFinectCandidate(query) : Promise.resolve(null),
+    resolveFinectCandidate(query),
   ]);
 
   return finect ? [finect, ...yahoo] : yahoo;
