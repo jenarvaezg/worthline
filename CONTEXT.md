@@ -549,6 +549,29 @@ A read-only context surface over a **scope**'s financial facts, used by an agent
 to inspect and explain the user's full portfolio picture without changing live data.
 _Avoid_: connected source, account, financial advisor.
 
+**Financial assistant**:
+An AI-assisted experience that can explain the user's position, analyze trade-offs,
+and recommend actions over the workspace's financial facts. It may advise in plain
+language, but it does not execute changes, present itself as a regulated advisor, or
+hide the assumptions behind a recommendation. When a fact is missing, it says so;
+estimates are allowed only as explicitly labelled scenario assumptions. Its answers
+surface the internal workspace facts or tool reads they relied on.
+_Avoid_: financial advisor, robo-advisor, automatic manager.
+
+**Assistant proposal**:
+A draft set of workspace changes prepared by an AI assistant from chat, files, or
+agent analysis. It is not live data: worthline validates it against the same domain
+rules as manual input, previews its effects, and applies it only after explicit user
+confirmation.
+_Avoid_: import, sync, automatic fix, agent write.
+
+**Assistant quick action**:
+A one-click action suggested by the **financial assistant** that navigates, changes
+the current analysis view, or runs another read-only analysis. In the first assistant
+slice it never mutates workspace data; future write actions must become an
+**assistant proposal** instead.
+_Avoid_: shortcut (too generic), automation (implies unsupervised execution).
+
 ## Relationships
 
 - **Net worth** decomposes into **gross assets** − **debts**.
@@ -573,6 +596,9 @@ _Avoid_: connected source, account, financial advisor.
 - A **return** is derived per **investment** from its **operations** and **snapshots** — **simple gain** (realized + unrealized), **money-weighted** (IRR) and **time-weighted** (Modified Dietz over **monthly closes**) — present-time, never stored, never a figure the net-worth math reads (ADR 0040).
 - A **contribution plan** forecasts additions to **holdings**; its **occurrences** are **reconciled** by hand into real **operations** / value updates (never auto-matched, never auto-applied). It feeds the derived monthly savings the FIRE projection reads and a what-if, but adds no figure the net-worth math reads and never enters a **snapshot** (ADR 0041).
 - An **agent view** reads a **scope**'s current portfolio, historical snapshots, **FIRE progress**, data-quality signals, and the calculation facts behind them; it defaults to the household **scope**, may be narrowed to one member or member group, preserves user-authored member, group, and holding labels, exposes context rather than recommendations, excludes secrets and transfer artifacts, never changes live data, and never refreshes or captures data as a side effect of being read.
+- A **financial assistant** consumes the **agent view** and may recommend actions, but any workspace mutation still goes through an **assistant proposal** and explicit user confirmation.
+- An **assistant quick action** may open an internal source, change the screen context, or launch another read-only analysis while keeping the assistant layer open.
+- An **assistant proposal** may describe new or corrected **holdings**, **operations**, **valuation anchors**, **balance anchors**, **amortization plans**, or other dated facts; it never mutates them directly, and never edits **snapshots** as first-class user data.
 
 ## Flagged ambiguities
 
