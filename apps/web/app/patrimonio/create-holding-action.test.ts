@@ -197,6 +197,50 @@ describe("createHoldingAction — appreciating (property)", () => {
   });
 });
 
+describe("createHoldingAction — success loop on the simple wizard (#600)", () => {
+  test("a simple-drawer add loops back to the wizard with ok + the new holding id", async () => {
+    const store = await seedStore();
+
+    const url = await runAction(
+      form({
+        simpleDrawer: "dinero",
+        simpleName_dinero: "Cuenta nómina",
+        simpleValue_dinero: "1.000,00",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    // Back to the wizard (not the holdings list) so the success screen can loop.
+    expect(url).toContain("/patrimonio/anadir");
+    expect(url).toContain("ok=asset_added");
+    // The new holding's id rides a query param (not the #hash, which is
+    // client-only) so the wizard can build its links server-side.
+    const added = (await store.assets.readAssets())[0]!.id;
+    expect(url).toContain(`added=${added}`);
+  });
+
+  test("the avanzado form still lands on the patrimonio list (no loop)", async () => {
+    const store = await seedStore();
+
+    const url = await runAction(
+      form({
+        returnTo: "/patrimonio/anadir/avanzado",
+        instrument: "current_account",
+        name_current_account: "Cuenta",
+        value_current_account: "1.000,00",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    expect(url).toContain("ok=asset_added");
+    expect(url).not.toContain("/anadir");
+  });
+});
+
 describe("createHoldingAction — simple drawer form (#596)", () => {
   test("cash drawer maps the term toggle to a term deposit and keeps even ownership", async () => {
     const store = await seedHousehold();

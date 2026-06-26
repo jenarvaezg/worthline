@@ -392,6 +392,16 @@ export async function createHoldingAction(
       ),
     });
 
+  // S5 (#600): the simple wizard loops. A successful add returns to the wizard
+  // with a success panel (the `ok` key + the new holding id as a query param the
+  // server can read — the #anchor is client-only), so first runs chain adds
+  // without friction. The avanzado flow keeps landing on the holdings list; the
+  // investment-import route below is exempt (it goes to «Cargar movimientos»).
+  const successUrl = (okKey: string, id: string): string =>
+    returnUrl === ADD_URL
+      ? `${successRedirectUrl(ADD_URL, okKey)}&added=${id}`
+      : successRedirectUrl("/patrimonio", okKey, id);
+
   // The catalog owns every per-instrument storage decision: the rung, valuation
   // method and provider, plus the legacy AssetType a stored asset persists as
   // and how a debt persists (its type + default model). The action only reads it.
@@ -434,7 +444,7 @@ export async function createHoldingAction(
       redirect(errorUrl(result.error));
     }
 
-    redirect(successRedirectUrl("/patrimonio", "asset_added", result.id));
+    redirect(successUrl("asset_added", result.id));
   }
 
   // Derived investments — value is units × price; the provider comes from the
@@ -522,7 +532,7 @@ export async function createHoldingAction(
       );
     }
 
-    redirect(successRedirectUrl("/patrimonio", "investment_added", result.id));
+    redirect(successUrl("investment_added", result.id));
   }
 
   // Debts — the catalog fixes the type + default debt model so the holding's
@@ -598,7 +608,7 @@ export async function createHoldingAction(
       redirect(errorUrl(result.error));
     }
 
-    redirect(successRedirectUrl("/patrimonio", "liability_added", result.id));
+    redirect(successUrl("liability_added", result.id));
   }
 
   redirect(errorUrl("Instrumento no soportado todavía."));
