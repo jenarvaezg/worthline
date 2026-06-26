@@ -485,8 +485,9 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
 
     const { body } = await explain(scopeId, "fire_eligible_assets");
 
-    // Eligible = cash 10k + fund 20k = 30k (home + watch excluded).
-    expect(body.data.value).toEqual(eur(30_000_00));
+    // Eligible = cash 10k + fund 20k − loan 5k (netted, #51362ac) = 25k
+    // (home + watch excluded; the mortgage stays with the excluded home).
+    expect(body.data.value).toEqual(eur(25_000_00));
     expect(body.data.formula.expression).toBe("sum(fireEligibleAssets)");
 
     const includedLabels = body.data.includedHoldings
@@ -510,11 +511,11 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
 
     const { body } = await explain(scopeId, "fire_progress");
 
-    // 30k / 600k = 0.05.
-    expect(body.data.value).toEqual({ ratio: "0.05" });
+    // 25k / 600k = 0.0417 (eligible is net of the unsecured loan, #51362ac).
+    expect(body.data.value).toEqual({ ratio: "0.0417" });
     expect(body.data.formula.expression).toBe("eligibleAssets ÷ fireNumber");
     expect(body.data.formula.operands).toEqual([
-      { label: "eligibleAssets", value: eur(30_000_00) },
+      { label: "eligibleAssets", value: eur(25_000_00) },
       { label: "fireNumber", value: eur(FIRE_NUMBER) },
     ]);
     expect(body.data.assumptions).toEqual({
