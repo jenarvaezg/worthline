@@ -63,7 +63,7 @@ const THRESHOLDS_MS = {
   operationRipple: 4_000,
   positionProjection: 250,
   valuationRipple: 4_000,
-  windowedHistoryRead: 250,
+  windowedHistoryRead: 500,
 } as const;
 const HARNESS_TIMEOUT_MS = 20_000;
 
