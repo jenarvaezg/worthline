@@ -17,7 +17,7 @@ import {
   captureSnapshotForScope,
   coinPositionSnapshotInput,
   listScopeOptions,
-  tokenPositionSnapshotInput,
+  tokenSymbolSnapshotInputs,
 } from "@worthline/domain";
 
 import type { WorthlineStore } from "./store-types";
@@ -98,7 +98,10 @@ export async function captureDailySnapshotForWorkspace(
       for (const [tier, group] of tokensByTier) {
         const assetId = assetIdByTier.get(tier);
         if (assetId) {
-          positionDetails.set(assetId, group.map(tokenPositionSnapshotInput));
+          // Freeze one position per SYMBOL (folding spot/funding/earn wallets of
+          // the same token together), so a wallet move never re-keys the drilldown
+          // into a phantom sell+buy (#247 lens; PRD #459 S2).
+          positionDetails.set(assetId, tokenSymbolSnapshotInputs(group));
         }
       }
     }

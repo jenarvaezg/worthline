@@ -317,26 +317,35 @@ export function coinPositionSnapshotInput(coin: CoinPosition): SnapshotPositionI
 }
 
 /**
- * Freeze a token into the per-position snapshot input it contributes to its
- * Binance holding's breakdown (ADR 0035, PRD #459 S2) — the live-valued mirror of
- * {@link coinPositionSnapshotInput}. Carries the token's STABLE key (its
- * `symbol:wallet` `externalId`, ADR 0021 — never the reassigned internal id), the
- * symbol as the display label (the Binance detail lens, `groupPositionsByToken`),
- * and its live `positionValue` (`balance × unit price`; 0 when unpriceable, still
- * frozen so the row is never silently dropped). A token has no metal, so that is
- * null; its logo (`imageUrl`, resolved at sync) is frozen so the histórico
- * drilldown can render it for past days too (#482), falling back to a glyph when
- * null. Value and labels only — no secrets. The capture scope-allocates these
- * values down to the holding's owned share.
+ * Freeze a Binance holding's tokens into per-position snapshot inputs keyed by
+ * SYMBOL, not `symbol:wallet` (ADR 0035, PRD #459 S2) — the live-valued mirror of
+ * {@link coinPositionSnapshotInput}, folded through the same {@link
+ * groupPositionsByToken} lens the live detail page uses (#247). A token spread
+ * across wallets (spot · funding · flexible-earn) collapses into ONE position so
+ * the histórico drilldown keys it on the identity a human cares about: BTC stays
+ * BTC whether it sits in Spot or Earn. Keying on `symbol:wallet` instead made a
+ * balance shifting wallets read as the whole position LEAVING under the old key
+ * and a NEW one arriving under the new key — a phantom sell+buy whose net was
+ * only the day's price drift (the SALIÓ/NUEVO artifact).
+ *
+ * `positionKey` and `label` are the symbol; `valueMinor` is the group's summed
+ * live value (`Σ balance × unit price`; 0 for an all-unpriceable group, still
+ * frozen so the row is never silently dropped). A token has no metal → null; the
+ * logo is the group's first non-null `imageUrl` (one symbol resolves to one
+ * logo) so the drilldown can render it for past days too (#482), glyph-falling-
+ * back when null. Value and labels only — no secrets. The capture scope-allocates
+ * these values down to the holding's owned share.
  */
-export function tokenPositionSnapshotInput(token: TokenPosition): SnapshotPositionInput {
-  return {
-    positionKey: token.externalId,
-    label: token.symbol,
-    valueMinor: positionValue(token.balance, token.unitPrice).minor,
+export function tokenSymbolSnapshotInputs(
+  tokens: TokenPosition[],
+): SnapshotPositionInput[] {
+  return groupPositionsByToken(tokens).map((group) => ({
+    positionKey: group.symbol,
+    label: group.symbol,
+    valueMinor: group.subtotalMinor,
     metal: null,
-    imageUrl: token.imageUrl,
-  };
+    imageUrl: group.positions.find((p) => p.imageUrl !== null)?.imageUrl ?? null,
+  }));
 }
 
 /**

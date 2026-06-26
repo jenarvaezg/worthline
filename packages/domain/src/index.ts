@@ -201,7 +201,7 @@ export {
   projectConnectedSource,
   projectedPositionValue,
   TOKEN_DUST_THRESHOLD_MINOR,
-  tokenPositionSnapshotInput,
+  tokenSymbolSnapshotInputs,
 } from "./connected-source";
 
 export type {
