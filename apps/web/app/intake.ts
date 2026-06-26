@@ -486,6 +486,8 @@ export function okMessage(key: string | undefined): string | null {
     fire_saved: "Configuración FIRE guardada.",
     hard_deleted: "Eliminado definitivamente.",
     investment_added: "Inversión añadida.",
+    investment_import_ready:
+      "Inversión creada. Ahora carga el extracto para añadir sus movimientos.",
     liability_added: "Deuda añadida.",
     member_deleted: "Miembro borrado definitivamente.",
     numista_connected: "Colección Numista conectada.",
