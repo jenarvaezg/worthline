@@ -5,9 +5,9 @@
  * opens is the store seam's concern, not the proxy's.
  */
 
-// `/mcp-icon.svg` is the public connector icon claude.ai fetches (unauthenticated)
-// to show in its listing; it must bypass the sign-in wall like the other public paths.
-const PUBLIC_PATHS = new Set(["/login", "/mcp-icon.svg"]);
+// Static public assets fetched before a session exists must bypass the sign-in
+// wall; otherwise PWA install/SW registration receives the login HTML.
+const PUBLIC_PATHS = new Set(["/login", "/manifest.json", "/mcp-icon.svg", "/sw.js"]);
 
 export function shouldRedirectToLogin(input: {
   authConfigured: boolean;

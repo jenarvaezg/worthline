@@ -1,7 +1,7 @@
 // worthline service worker
 const CACHE_NAME = "worthline-shell-v1";
 
-const PRECACHE_ASSETS = ["/manifest.json", "/icon.svg"];
+const PRECACHE_ASSETS = ["/manifest.json", "/mcp-icon.svg"];
 
 // Cache static assets on fetch
 const STATIC_ASSETS_PATTERNS = [
