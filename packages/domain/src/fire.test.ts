@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ManualAsset, Workspace } from "./index";
+import type { Liability, ManualAsset, Workspace } from "./index";
 import { calculateFire, calculateFireForScope } from "./fire";
 
 const workspace: Workspace = {
@@ -31,6 +31,25 @@ function makeAsset(
     liquidityTier: "market",
     ownership,
     isPrimaryResidence,
+  };
+}
+
+function makeLiability(
+  id: string,
+  balanceMinor: number,
+  associatedAssetId?: string,
+  ownership: { memberId: string; shareBps: number }[] = [
+    { memberId: "alice", shareBps: 10_000 },
+  ],
+): Liability {
+  return {
+    id,
+    name: id,
+    type: associatedAssetId ? "mortgage" : "debt",
+    currency: "EUR",
+    currentBalance: { amountMinor: balanceMinor, currency: "EUR" },
+    ownership,
+    ...(associatedAssetId ? { associatedAssetId } : {}),
   };
 }
 
@@ -134,6 +153,7 @@ describe("calculateFireForScope", () => {
         expectedRealReturn: 0.07,
       },
       assets,
+      [],
       workspace,
       "alice",
     );
@@ -155,6 +175,7 @@ describe("calculateFireForScope", () => {
         expectedRealReturn: 0.07,
       },
       assets,
+      [],
       workspace,
       "household",
     );
@@ -177,6 +198,7 @@ describe("calculateFireForScope", () => {
         excludedAssetIds: ["pension"],
       },
       assets,
+      [],
       workspace,
       "household",
     );
@@ -197,6 +219,7 @@ describe("calculateFireForScope", () => {
         expectedRealReturn: 0.07,
       },
       assets,
+      [],
       workspace,
       "household",
     );
@@ -218,6 +241,7 @@ describe("calculateFireForScope", () => {
         expectedRealReturn: 0.07,
       },
       assets,
+      [],
       workspace,
       "alice",
     );
@@ -236,7 +260,14 @@ describe("calculateFireForScope", () => {
       expectedRealReturn: 0.07,
     };
 
-    const result = calculateFireForScope(config, assets, workspace, "alice", 30_000_00);
+    const result = calculateFireForScope(
+      config,
+      assets,
+      [],
+      workspace,
+      "alice",
+      30_000_00,
+    );
 
     // eligible drops by the reservation; gross/excluded are untouched
     expect(result.eligibleAssets.amountMinor).toBe(70_000_00);
@@ -253,10 +284,74 @@ describe("calculateFireForScope", () => {
       expectedRealReturn: 0.07,
     };
 
-    const result = calculateFireForScope(config, assets, workspace, "alice", 50_000_00);
+    const result = calculateFireForScope(
+      config,
+      assets,
+      [],
+      workspace,
+      "alice",
+      50_000_00,
+    );
 
     expect(result.eligibleAssets.amountMinor).toBe(0);
     expect(result.reservedForGoals?.amountMinor).toBe(10_000_00);
+  });
+
+  it("nets the scope's debt against eligible capital (mortgage + unsecured loan)", () => {
+    // A second property (not the primary residence) counts at full value; its
+    // mortgage and an unsecured loan reduce the drawable capital.
+    const assets = [
+      makeAsset("rental", 170_000_00, false, [{ memberId: "alice", shareBps: 10_000 }]),
+    ];
+    const liabilities = [
+      makeLiability("rental-mortgage", 77_000_00, "rental"),
+      makeLiability("loan", 15_000_00),
+    ];
+    const config = {
+      monthlySpendingMinor: 100_000,
+      safeWithdrawalRate: 0.04,
+      expectedRealReturn: 0.07,
+    };
+
+    const result = calculateFireForScope(config, assets, liabilities, workspace, "alice");
+
+    // 170k − 77k mortgage − 15k loan = 78k
+    expect(result.eligibleAssets.amountMinor).toBe(78_000_00);
+  });
+
+  it("does NOT subtract a mortgage secured against the excluded primary residence", () => {
+    // The home is excluded as an asset, so its mortgage is dropped with it —
+    // netting it too would double-count the exclusion.
+    const assets = [
+      makeAsset("home", 480_000_00, true, [{ memberId: "alice", shareBps: 10_000 }]),
+      makeAsset("stocks", 100_000_00, false, [{ memberId: "alice", shareBps: 10_000 }]),
+    ];
+    const liabilities = [makeLiability("home-mortgage", 320_000_00, "home")];
+    const config = {
+      monthlySpendingMinor: 100_000,
+      safeWithdrawalRate: 0.04,
+      expectedRealReturn: 0.07,
+    };
+
+    const result = calculateFireForScope(config, assets, liabilities, workspace, "alice");
+
+    expect(result.eligibleAssets.amountMinor).toBe(100_000_00);
+  });
+
+  it("clamps net eligible at 0 when debt exceeds eligible assets (underwater)", () => {
+    const assets = [
+      makeAsset("stocks", 10_000_00, false, [{ memberId: "alice", shareBps: 10_000 }]),
+    ];
+    const liabilities = [makeLiability("loan", 50_000_00)];
+    const config = {
+      monthlySpendingMinor: 100_000,
+      safeWithdrawalRate: 0.04,
+      expectedRealReturn: 0.07,
+    };
+
+    const result = calculateFireForScope(config, assets, liabilities, workspace, "alice");
+
+    expect(result.eligibleAssets.amountMinor).toBe(0);
   });
 
   it("calculateFire returns an empty excludedAssets list", () => {

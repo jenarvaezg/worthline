@@ -2,7 +2,7 @@ import type { CurrencyCode, MoneyMinor } from "./money";
 
 import { money } from "./money";
 import type { LiquidityTier } from "./liquidity-ladder";
-import type { ManualAsset, Workspace } from "./workspace-types";
+import type { Liability, ManualAsset, Workspace } from "./workspace-types";
 import { resolveScopeMemberIds } from "./scope";
 import { allocateScopedHolding } from "./scope-allocation";
 import { tierOfAsset } from "./classification";
@@ -174,6 +174,7 @@ export function calculateFire(
 export function calculateFireForScope(
   config: FireScopeConfig,
   assets: ManualAsset[],
+  liabilities: Liability[],
   workspace: Workspace,
   scopeId: string,
   /**
@@ -187,6 +188,7 @@ export function calculateFireForScope(
 
   let eligibleAssetsMinor = 0;
   const excludedAssets: FireExcludedAsset[] = [];
+  const excludedAssetIds = new Set<string>();
   // Accumulate eligible minor units per tier for weighted return computation (N3, #515).
   const eligibleByTierMinor: Partial<Record<string, number>> = {};
 
@@ -210,6 +212,7 @@ export function calculateFireForScope(
       continue;
     }
 
+    excludedAssetIds.add(asset.id);
     // Scope-relative: only surface what the scope actually holds. An excluded
     // asset owned entirely outside this scope contributes nothing either way,
     // so listing it would just be noise.
@@ -218,6 +221,27 @@ export function calculateFireForScope(
     }
   }
 
+  // Net the scope's debt against eligible capital: coast/FIRE measures what you
+  // could draw down, and a mortgage or loan is capital you don't own. A liability
+  // secured against an EXCLUDED asset (primary residence / manual) is dropped with
+  // that asset — netting it too would double-count the exclusion.
+  let scopedDebtMinor = 0;
+  for (const liability of liabilities) {
+    if (
+      liability.associatedAssetId &&
+      excludedAssetIds.has(liability.associatedAssetId)
+    ) {
+      continue;
+    }
+    scopedDebtMinor += allocateScopedHolding(liability.currentBalance.amountMinor, {
+      ownership: liability.ownership,
+      scopeMemberIds,
+    }).ownedMinor;
+  }
+  // ponytail: clamp at 0 — an underwater scope reads as 0 drawable capital, not
+  // negative coast math. Tier weights stay gross (debt only shifts the level).
+  const netEligibleMinor = Math.max(0, eligibleAssetsMinor - scopedDebtMinor);
+
   // N3 (#515): compute effective weighted rate, then resolve the single rate to use.
   const effective = effectiveRealReturn({
     eligibleByTierMinor,
@@ -225,8 +249,8 @@ export function calculateFireForScope(
   });
   const realReturnUsed = config.expectedRealReturn ?? effective;
 
-  const reserved = Math.max(0, Math.min(reservedForGoalsMinor, eligibleAssetsMinor));
-  const eligibleAfterReservation = eligibleAssetsMinor - reserved;
+  const reserved = Math.max(0, Math.min(reservedForGoalsMinor, netEligibleMinor));
+  const eligibleAfterReservation = netEligibleMinor - reserved;
 
   return {
     ...calculateFire(

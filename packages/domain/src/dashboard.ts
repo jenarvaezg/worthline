@@ -217,6 +217,7 @@ export function prepareDashboardState(input: {
       ? calculateFireForScope(
           fireScopeConfig,
           assets,
+          liabilities,
           workspace,
           selectedScope.id,
           fireReservedMinor,

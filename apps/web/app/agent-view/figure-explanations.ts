@@ -1229,6 +1229,7 @@ async function resolveFire(
   const result = calculateFireForScope(
     config,
     facts.assets,
+    facts.liabilities,
     facts.workspace,
     facts.internalScopeId,
     reservedForGoalsMinor,

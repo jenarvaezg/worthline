@@ -52,6 +52,7 @@ describe("calculateFireForScope resolution", () => {
     const result = calculateFireForScope(
       { ...BASE_CONFIG, expectedRealReturn: 0.07 },
       assets,
+      [],
       workspace,
       "alice",
     );
@@ -64,7 +65,7 @@ describe("calculateFireForScope resolution", () => {
 
   it("with expectedRealReturn UNDEFINED → realReturnUsed === effectiveRealReturn", () => {
     const assets = [makeAsset("stocks", 1_000_000, "market")];
-    const result = calculateFireForScope(BASE_CONFIG, assets, workspace, "alice");
+    const result = calculateFireForScope(BASE_CONFIG, assets, [], workspace, "alice");
 
     expect(result.realReturnUsed!).toBeCloseTo(result.effectiveRealReturn!, 10);
     // 100% market → market default
@@ -76,7 +77,7 @@ describe("calculateFireForScope resolution", () => {
       makeAsset("stocks", 600_000, "market"),
       makeAsset("cash-acct", 400_000, "cash"),
     ];
-    const result = calculateFireForScope(BASE_CONFIG, assets, workspace, "alice");
+    const result = calculateFireForScope(BASE_CONFIG, assets, [], workspace, "alice");
 
     expect(result.effectiveRealReturn).toBeCloseTo(0.03, 10);
     expect(result.realReturnUsed).toBeCloseTo(0.03, 10);
@@ -96,12 +97,14 @@ describe("coast FIRE uses realReturnUsed (not config.expectedRealReturn)", () =>
     const cashResult = calculateFireForScope(
       configWithAge,
       allCashAssets,
+      [],
       workspace,
       "alice",
     );
     const marketResult = calculateFireForScope(
       configWithAge,
       allMarketAssets,
+      [],
       workspace,
       "alice",
     );
@@ -127,7 +130,7 @@ describe("projectFire base scenario uses realReturnUsed", () => {
       makeAsset("stocks", 600_000, "market"),
       makeAsset("savings", 400_000, "cash"),
     ];
-    const result = calculateFireForScope(BASE_CONFIG, assets, workspace, "alice");
+    const result = calculateFireForScope(BASE_CONFIG, assets, [], workspace, "alice");
 
     // Caller would pass result.realReturnUsed to projectFire:
     const proj = projectFire({
@@ -152,10 +155,17 @@ describe("projectFire base scenario uses realReturnUsed", () => {
       makeAsset("savings", 200_000, "cash"),
     ];
 
-    const cashResult = calculateFireForScope(BASE_CONFIG, cashHeavy, workspace, "alice");
+    const cashResult = calculateFireForScope(
+      BASE_CONFIG,
+      cashHeavy,
+      [],
+      workspace,
+      "alice",
+    );
     const marketResult = calculateFireForScope(
       BASE_CONFIG,
       marketHeavy,
+      [],
       workspace,
       "alice",
     );
