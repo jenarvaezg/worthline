@@ -1,5 +1,6 @@
 import { bootstrapHealthcheck, withStore } from "@web/store";
-import { defaultsFor, listScopeOptions } from "@worthline/domain";
+import { calculateNetWorth, defaultsFor, listScopeOptions } from "@worthline/domain";
+import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import type { Instrument, Member } from "@worthline/domain";
 import { fetchPriceNow } from "@worthline/pricing";
 import type { RegisteredSource } from "@worthline/pricing";
@@ -10,7 +11,9 @@ import { redirect } from "next/navigation";
 
 import {
   parseFormError,
+  parsePrivacyCookie,
   parseScopeCookie,
+  PRIVACY_COOKIE_NAME,
   resolveOkMessage,
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
@@ -25,6 +28,7 @@ import {
 } from "@web/patrimonio/anadir/search-state";
 import SymbolSearch from "@web/patrimonio/anadir/symbol-search";
 import { InvestmentCapture } from "@web/patrimonio/anadir/investment-capture";
+import { AddSuccessPanel } from "@web/patrimonio/anadir/success-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -163,6 +167,7 @@ export default async function AnadirHoldingPage({
 
   const jar = await cookies();
   const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
+  const privacyMode = parsePrivacyCookie(jar.get(PRIVACY_COOKIE_NAME)?.value);
 
   const storeData = await withStore(async (store) => {
     const workspace = await store.workspace.readWorkspace();
@@ -174,8 +179,24 @@ export default async function AnadirHoldingPage({
     const scopes = listScopeOptions(workspace);
     const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
 
+    // Holdings drive the first-run copy (no holdings yet → warm welcome, #600)
+    // and the running net-worth total shown on the success screen's loop.
+    const [assets, liabilities] = await Promise.all([
+      store.assets.readAssets(),
+      store.liabilities.readLiabilities(),
+    ]);
+    const netWorth = calculateNetWorth({
+      assets,
+      liabilities,
+      scopeId: selectedScope?.id ?? scopes[0]?.id ?? "",
+      workspace,
+    });
+
     return {
       activeMembers: workspace.members.filter((m) => !m.disabledAt),
+      currency: workspace.baseCurrency,
+      hasHoldings: assets.length > 0 || liabilities.length > 0,
+      netWorthMinor: netWorth.totalNetWorth.amountMinor,
       scopes,
       selectedScope,
     };
@@ -185,7 +206,8 @@ export default async function AnadirHoldingPage({
     redirect("/empezar");
   }
 
-  const { activeMembers, scopes, selectedScope } = storeData;
+  const { activeMembers, currency, hasHoldings, netWorthMinor, scopes, selectedScope } =
+    storeData;
   const resolvedParams = resolvedSearchParams ?? {};
   const ownershipScopeMemberId =
     activeMembers.find((m) => m.id === selectedScope?.id)?.id ?? activeMembers[0]?.id;
@@ -219,6 +241,18 @@ export default async function AnadirHoldingPage({
       ? await fetchPickedSymbolPrice(selectedInstrument, pickedSymbol)
       : null;
 
+  // Success-loop state (#600): a completed add returns to the wizard with `ok`
+  // (the message) + `added` (the new holding's id). The success panel replaces
+  // the form so the user can chain adds; the running net worth is the hook.
+  const okKey = firstNonEmptyParam(resolvedParams["ok"]);
+  const addedId = firstNonEmptyParam(resolvedParams["added"]);
+  const isSuccess = Boolean(formOk);
+  const firstRun = !hasHoldings;
+  const netWorthLabel = formatMoneyMinorPrivacy(
+    { amountMinor: netWorthMinor, currency },
+    privacyMode,
+  );
+
   const revealCss = [
     `.simpleAdd:has(input[name="simpleDrawer"]:checked) .simpleAddEmpty{display:none}`,
     ...DRAWERS.map(
@@ -244,79 +278,89 @@ export default async function AnadirHoldingPage({
     >
       <style>{revealCss}</style>
 
-      {formOk ? (
-        <p className="successBand" role="status">
-          {formOk}
-        </p>
-      ) : null}
-
-      <section className="addHoldingPage" aria-labelledby="add-holding-title">
-        <div className="panelHeader addHoldingHeader">
-          <h2 id="add-holding-title">Añade algo a tu patrimonio</h2>
-          <Link href="/patrimonio">← Volver</Link>
-        </div>
-        <div className="simpleIntro">
-          <p className="addHoldingLead">
-            Elige el cajón, apunta el nombre y el importe. El resto vive después en la
-            ficha.
-          </p>
-          <Link className="actionLink" href="/patrimonio/anadir/avanzado">
-            Modo avanzado
-          </Link>
-        </div>
-
-        {formError?.formId === "holding" ? (
-          <p className="errorBand" role="alert">
-            {formError.message}
-          </p>
-        ) : null}
-
-        <form action={createHoldingAction} className="simpleAdd">
-          <div className="simpleDrawerGrid" role="group" aria-label="Qué quieres añadir">
-            {DRAWERS.map((drawer) => (
-              <label
-                className="simpleDrawerCard"
-                key={drawer.id}
-                style={{ "--dot": drawer.dot } as CSSProperties}
-              >
-                <input
-                  defaultChecked={selectedDrawer === drawer.id}
-                  name="simpleDrawer"
-                  type="radio"
-                  value={drawer.id}
-                />
-                <span className="addHoldingDot" aria-hidden="true" />
-                <span className="simpleDrawerCopy">
-                  <strong>{drawer.label}</strong>
-                  <small>{drawer.hint}</small>
-                </span>
-              </label>
-            ))}
-          </div>
-
-          <section className="simpleAddPanes" aria-live="polite">
-            <p className="simpleAddEmpty">
-              Elige arriba qué quieres apuntar y aquí aparecerá lo justo que hay que
-              rellenar.
-            </p>
-            <MoneyPane values={values} />
-            <InvestmentPane
-              livePrice={livePrice}
-              resolvedParams={resolvedParams}
-              selectedInstrument={selectedInstrument}
-              values={values}
-            />
-            <HousingPane values={values} />
-            <OtherAssetPane values={values} />
-            <DebtPane values={values} />
-          </section>
-
-          <OwnershipInputs
-            members={activeMembers}
-            scopeMemberId={ownershipScopeMemberId}
-            values={values}
+      <section className="addHoldingPage" aria-label="Añadir al patrimonio">
+        {isSuccess ? (
+          <AddSuccessPanel
+            addedId={addedId}
+            isInvestment={okKey === "investment_added"}
+            message={formOk!}
+            netWorthLabel={netWorthLabel}
           />
-        </form>
+        ) : (
+          <>
+            <div className="panelHeader addHoldingHeader">
+              <h2 id="add-holding-title">Añade algo a tu patrimonio</h2>
+              <Link href="/patrimonio">← Volver</Link>
+            </div>
+            <div className="simpleIntro">
+              <p className="addHoldingLead">
+                {firstRun
+                  ? "¡Bienvenido! Empieza por tu primera cosa —una cuenta, una inversión, tu casa— y verás tu patrimonio tomar forma. Solo el nombre y el importe; el resto vive después en la ficha."
+                  : "Elige el cajón, apunta el nombre y el importe. El resto vive después en la ficha."}
+              </p>
+              <Link className="actionLink" href="/patrimonio/anadir/avanzado">
+                Modo avanzado
+              </Link>
+            </div>
+
+            {formError?.formId === "holding" ? (
+              <p className="errorBand" role="alert">
+                {formError.message}
+              </p>
+            ) : null}
+
+            <form action={createHoldingAction} className="simpleAdd">
+              <div
+                className="simpleDrawerGrid"
+                role="group"
+                aria-label="Qué quieres añadir"
+              >
+                {DRAWERS.map((drawer) => (
+                  <label
+                    className="simpleDrawerCard"
+                    key={drawer.id}
+                    style={{ "--dot": drawer.dot } as CSSProperties}
+                  >
+                    <input
+                      defaultChecked={selectedDrawer === drawer.id}
+                      name="simpleDrawer"
+                      type="radio"
+                      value={drawer.id}
+                    />
+                    <span className="addHoldingDot" aria-hidden="true" />
+                    <span className="simpleDrawerCopy">
+                      <strong>{drawer.label}</strong>
+                      <small>{drawer.hint}</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+
+              <section className="simpleAddPanes" aria-live="polite">
+                <p className="simpleAddEmpty">
+                  Elige arriba qué quieres apuntar y aquí aparecerá lo justo que hay que
+                  rellenar.
+                </p>
+                <MoneyPane values={values} />
+                <InvestmentPane
+                  livePrice={livePrice}
+                  resolvedParams={resolvedParams}
+                  selectedInstrument={selectedInstrument}
+                  values={values}
+                />
+                <HousingPane values={values} />
+                <OtherAssetPane values={values} />
+                <DebtPane values={values} />
+              </section>
+
+              <OwnershipInputs
+                members={activeMembers}
+                scopeMemberId={ownershipScopeMemberId}
+                values={values}
+              />
+            </form>
+          </>
+        )}
       </section>
     </Shell>
   );
