@@ -18,13 +18,13 @@ function stepNamed(name: string): string {
 }
 
 describe("deploy workflow", () => {
-  test("builds and deploys the prebuilt Vercel artifact from the web app root", () => {
+  test("lets Vercel use its configured app root instead of nesting apps/web twice", () => {
     for (const step of [
       "Pull Vercel project config",
       "Build prebuilt output on Node 24",
       "Deploy prebuilt output to Vercel",
     ]) {
-      expect(stepNamed(step)).toContain("working-directory: apps/web");
+      expect(stepNamed(step)).not.toContain("working-directory: apps/web");
     }
   });
 });
