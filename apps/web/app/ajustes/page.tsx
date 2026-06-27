@@ -70,18 +70,18 @@ export default async function AjustesPage({
 
     const scopes = listScopeOptions(workspace);
     const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
+    const sources = await store.connectedSources.listSources();
+    const allAssets = await store.assets.readAssets();
+    const overrides = await store.readWarningOverrides();
 
     // The connected Numista source (PRD #160), if any. The derived holding's value
     // and coin count come from the asset row + its positions.
-    const numistaRow = (await store.connectedSources.listSources()).find(
-      (source) => source.adapter === "numista",
-    );
+    const numistaRow = sources.find((source) => source.adapter === "numista");
     const numistaPositions = numistaRow
       ? await store.connectedSources.readPositions(numistaRow.id)
       : [];
     const numistaAsset = numistaRow
-      ? ((await store.assets.readAssets()).find((a) => a.id === numistaRow.assetId) ??
-        null)
+      ? (allAssets.find((a) => a.id === numistaRow.assetId) ?? null)
       : null;
     const numistaSource = numistaRow
       ? {
@@ -101,9 +101,7 @@ export default async function AjustesPage({
     // rungs — one asset per occupied rung (market + term-locked) — so the tile
     // AGGREGATES across the source's assets: value = Σ asset values, token count =
     // the distinct non-dust tokens (#479). "Ver →" links to the market (primary) asset.
-    const binanceRow = (await store.connectedSources.listSources()).find(
-      (source) => source.adapter === "binance",
-    );
+    const binanceRow = sources.find((source) => source.adapter === "binance");
     const binancePositions = binanceRow
       ? await store.connectedSources.readPositions(binanceRow.id)
       : [];
@@ -111,7 +109,7 @@ export default async function AjustesPage({
       ? new Set(await store.connectedSources.listSourceAssetIds(binanceRow.id))
       : new Set<string>();
     const binanceValueMinor = binanceRow
-      ? aggregateSourceValueMinor(await store.assets.readAssets(), binanceAssetIds)
+      ? aggregateSourceValueMinor(allAssets, binanceAssetIds)
       : 0;
     const binanceSource = binanceRow
       ? {
@@ -127,7 +125,6 @@ export default async function AjustesPage({
     // Monthly savings capacity suggestion (#425): the historical average of net
     // money invested, offered as the default in the FIRE form. Workspace-wide
     // across investment holdings — a soft default the user can override.
-    const allAssets = await store.assets.readAssets();
     const investmentOps = (
       await Promise.all(
         allAssets
@@ -141,10 +138,11 @@ export default async function AjustesPage({
       binanceSource,
       fireConfig: await store.readFireConfig(),
       numistaSource,
-      overrides: await store.readWarningOverrides(),
+      overrides,
       savingsSuggestion,
       scopes,
       selectedScope,
+      warnings: collectWarnings(allAssets, overrides),
       workspace,
     };
   });
@@ -165,15 +163,9 @@ export default async function AjustesPage({
     numistaSource,
     binanceSource,
     savingsSuggestion,
+    warnings,
   } = storeData;
   const fireScopeConfig = selectedScope ? fireConfig[selectedScope.id] : undefined;
-
-  // Build warnings for the shell rail (read from full store to be accurate).
-  const warnings = await withStore(async (store) => {
-    const assets = await store.assets.readAssets();
-    const warningOverrides = await store.readWarningOverrides();
-    return collectWarnings(assets, warningOverrides);
-  });
 
   const persistenceInfo = {
     displayPath: persistence.displayPath,
