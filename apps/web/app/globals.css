@@ -177,11 +177,10 @@ button:focus-visible,
  * route navigations when `experimental.viewTransition` is on.  These rules
  * style the default cross-fade.
  *
- * Directional slide-forward / slide-back (classifyTransition in
- * view-transitions.ts) are scoped to the follow-on issue and are NOT wired
- * yet — no NavigationTracker island exists in this PR to pass transitionTypes.
- * Shipping untriggerable CSS rules would be misleading, so the slide rules
- * live only in the pure module and tests until that island lands.
+ * Directional slide-forward / slide-back are classified and passed through
+ * ViewTransitionLink as transitionTypes. In Next 16 these types feed React's
+ * typed React <ViewTransition> path (React.addTransitionType); this stylesheet
+ * intentionally keeps only the default cross-fade until a typed boundary exists.
  *
  * Graceful degradation: the `@view-transition` at-rule and
  * `::view-transition-*` pseudo-elements are simply ignored in browsers that
@@ -242,66 +241,6 @@ button:focus-visible,
   }
   to {
     opacity: 1;
-  }
-}
-
-/* Directional slide transitions for top-level section navigation
- * (#517, view-transitions.ts classifyTransition → router.push transitionTypes).
- *
- * CSS transition-type selectors (.slide-forward / .slide-back) fire when
- * ViewTransitionLink calls router.push(href, { transitionTypes: ["slide-forward"] }).
- * The default cross-fade applies to all other navigations (no type selector).
- *
- * prefers-reduced-motion: the blanket `animation: none` rule above already
- * collapses these; the explicit block is here as a readable contract. */
-::view-transition-old(.slide-forward) {
-  animation: var(--dur-base) var(--ease-in) both wl-slide-out-left;
-}
-::view-transition-new(.slide-forward) {
-  animation: var(--dur-base) var(--ease-out) both wl-slide-in-right;
-}
-
-::view-transition-old(.slide-back) {
-  animation: var(--dur-base) var(--ease-in) both wl-slide-out-right;
-}
-::view-transition-new(.slide-back) {
-  animation: var(--dur-base) var(--ease-out) both wl-slide-in-left;
-}
-
-@keyframes wl-slide-out-left {
-  to {
-    translate: -40px;
-    opacity: 0;
-  }
-}
-
-@keyframes wl-slide-in-right {
-  from {
-    translate: 40px;
-    opacity: 0;
-  }
-}
-
-@keyframes wl-slide-out-right {
-  to {
-    translate: 40px;
-    opacity: 0;
-  }
-}
-
-@keyframes wl-slide-in-left {
-  from {
-    translate: -40px;
-    opacity: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  ::view-transition-old(.slide-forward),
-  ::view-transition-new(.slide-forward),
-  ::view-transition-old(.slide-back),
-  ::view-transition-new(.slide-back) {
-    animation: none;
   }
 }
 
