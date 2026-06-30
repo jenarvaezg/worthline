@@ -227,6 +227,16 @@ export const investmentAssets = sqliteTable("investment_assets", {
   manualPricedAt: text("manual_priced_at"),
 });
 
+export const exposureProfiles = sqliteTable("exposure_profiles", {
+  key: text("key").primaryKey(),
+  trackedIndex: text("tracked_index"),
+  ter: text("ter"),
+  hedged: integer("hedged").notNull().default(0),
+  breakdownsJson: text("breakdowns_json").notNull().default("{}"),
+  createdAt: timestamp("created_at"),
+  updatedAt: timestamp("updated_at"),
+});
+
 export const assetOperations = sqliteTable(
   "asset_operations",
   {

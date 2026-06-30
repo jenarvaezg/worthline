@@ -340,6 +340,28 @@ export type {
 export { projectPortfolio } from "./portfolio-projection";
 
 export type {
+  CreateExposureProfileInput,
+  ExposureAllocationSlice,
+  ExposureBreakdowns,
+  ExposureCoverage,
+  ExposureDimensionResult,
+  ExposureLookthrough,
+  ExposureLookthroughHolding,
+  ExposureLookthroughInput,
+  ExposureProfile,
+} from "./exposure-lookthrough";
+export { createExposureProfile, lookThroughExposure } from "./exposure-lookthrough";
+export type {
+  ExposureAssetClassBucket,
+  ExposureDimension,
+  ExposureGeographyBucket,
+} from "./exposure-taxonomy";
+export {
+  EXPOSURE_ASSET_CLASS_BUCKETS,
+  EXPOSURE_GEOGRAPHY_BUCKETS,
+} from "./exposure-taxonomy";
+
+export type {
   PortfolioGroup,
   PortfolioGroupKey,
   UnifiedHolding,
