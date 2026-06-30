@@ -85,6 +85,9 @@ const KEY_EXPORTS = [
   "assertSnapshotHoldingsReconcile",
   // portfolio-projection
   "projectPortfolio",
+  // exposure look-through (#540)
+  "createExposureProfile",
+  "lookThroughExposure",
   // portfolio-grouping (#154)
   "groupPortfolio",
   // dashboard
