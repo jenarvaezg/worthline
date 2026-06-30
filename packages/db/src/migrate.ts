@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 37;
+export const SCHEMA_VERSION = 38;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1266,6 +1266,24 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       FOREIGN KEY (asset_id) REFERENCES assets(id) ON UPDATE no action ON DELETE cascade
     );`);
     await writeSchemaVersion(client, 37);
+  }
+
+  if (version < 38) {
+    // ADR 0039 / PRD #539 S0 (#540): hand-entered exposure profiles are
+    // reference metadata keyed by ISIN, falling back to provider symbol. The
+    // breakdown vectors stay JSON because look-through is computed in domain
+    // code, not by SQL aggregation, and there is no reconciliation sub-invariant
+    // that would justify normalized rows.
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS exposure_profiles (
+      key TEXT PRIMARY KEY NOT NULL,
+      tracked_index TEXT,
+      ter TEXT,
+      hedged INTEGER DEFAULT 0 NOT NULL,
+      breakdowns_json TEXT DEFAULT '{}' NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+    );`);
+    await writeSchemaVersion(client, 38);
   }
 
   return { ranV18Backfill, ranV33Backfill };

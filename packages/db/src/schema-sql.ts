@@ -157,6 +157,16 @@ CREATE TABLE \`investment_assets\` (
 	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE TABLE \`exposure_profiles\` (
+	\`key\` text PRIMARY KEY NOT NULL,
+	\`tracked_index\` text,
+	\`ter\` text,
+	\`hedged\` integer DEFAULT 0 NOT NULL,
+	\`breakdowns_json\` text DEFAULT '{}' NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE \`asset_price_cache\` (
 	\`asset_id\` text PRIMARY KEY NOT NULL,
 	\`currency\` text NOT NULL,
