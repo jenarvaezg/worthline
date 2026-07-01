@@ -16,6 +16,7 @@ import type { EarlyRepaymentMode } from "./amortization";
 import type { LiquidityTier } from "./classification";
 import type { DistributiveOmit, SourceAdapter, SourcePosition } from "./connected-source";
 import type { DecimalString } from "./decimal";
+import type { ExposureProfile } from "./exposure-lookthrough";
 import type { ValuationMethod } from "./holding-valuation";
 import type { ValuationCadence } from "./valuation-cadence";
 import type { Instrument } from "./instrument-catalog";
@@ -260,12 +261,22 @@ export interface WorkspaceExportData {
   connectedSources: ExportedConnectedSource[];
   /** Public opaque IDs exposed by agent view; exported so restored workspaces keep references stable. */
   publicIds?: ExportedPublicId[];
+  /**
+   * Hand-entered exposure profiles (PRD #539, ADR 0039), keyed by security
+   * identity. Optional: older export files omit the section and import
+   * unchanged. Auto-derived profiles are never stored/exported (recomputed).
+   */
+  exposureProfiles?: ExposureProfile[];
 }
 
 /** The versioned export document — the on-disk JSON shape. */
-export interface WorkspaceExport extends Omit<WorkspaceExportData, "publicIds"> {
+export interface WorkspaceExport extends Omit<
+  WorkspaceExportData,
+  "publicIds" | "exposureProfiles"
+> {
   version: typeof EXPORT_VERSION;
   publicIds: ExportedPublicId[];
+  exposureProfiles: ExposureProfile[];
 }
 
 /**
@@ -285,6 +296,7 @@ export interface WorkspaceExportSummary {
   priceCacheEntries: number;
   fireConfigScopes: number;
   connectedSources: number;
+  exposureProfiles: number;
 }
 
 /** Count every section of an (already validated) export document. */
@@ -302,6 +314,7 @@ export function summarizeWorkspaceExport(doc: WorkspaceExport): WorkspaceExportS
     priceCacheEntries: doc.priceCache.length,
     fireConfigScopes: Object.keys(doc.fireConfig).length,
     connectedSources: doc.connectedSources.length,
+    exposureProfiles: doc.exposureProfiles.length,
   };
 }
 
@@ -322,5 +335,6 @@ export function serializeWorkspaceExport(data: WorkspaceExportData): WorkspaceEx
     priceCache: data.priceCache,
     connectedSources: data.connectedSources,
     publicIds: data.publicIds ?? [],
+    exposureProfiles: data.exposureProfiles ?? [],
   };
 }

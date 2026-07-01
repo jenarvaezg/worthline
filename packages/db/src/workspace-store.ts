@@ -9,6 +9,7 @@ import type {
   ExportedPosition,
   ExportedSnapshot,
   ExportedValuationAnchor,
+  ExposureBreakdowns,
   FireScopeConfig,
   Member,
   MemberGroup,
@@ -43,6 +44,7 @@ import {
   connectedSources,
   agentViewPublicIds,
   earlyRepayments,
+  exposureProfiles,
   interestRateRevisions,
   liabilities,
   liabilityBalanceAnchors,
@@ -141,6 +143,7 @@ const WORKSPACE_TABLES = [
   "agent_view_public_ids",
   "member_groups",
   "members",
+  "exposure_profiles",
   "workspace",
   "app_settings",
 ] as const;
@@ -880,6 +883,24 @@ async function importWorkspace(
         .run();
     }
 
+    // Hand-entered exposure profiles (PRD #539, ADR 0039), restored verbatim as
+    // the canonical rows keyed by security identity. Auto-derived profiles are
+    // never in the file — they recompute on read.
+    if (doc.exposureProfiles.length > 0) {
+      await db
+        .insert(exposureProfiles)
+        .values(
+          doc.exposureProfiles.map((profile) => ({
+            key: profile.key,
+            trackedIndex: profile.trackedIndex ?? null,
+            ter: profile.ter ?? null,
+            hedged: profile.hedged ? 1 : 0,
+            breakdownsJson: JSON.stringify(profile.breakdowns ?? {}),
+          })),
+        )
+        .run();
+    }
+
     // The whole fire config record lands in the single app_settings row
     // exactly as saveFireConfig leaves it.
     if (Object.keys(doc.fireConfig).length > 0) {
@@ -1280,10 +1301,26 @@ async function buildWorkspaceExport(
     }),
   );
 
+  // Hand-entered exposure profiles (PRD #539, ADR 0039) — the whole table is
+  // hand-entered (auto-derived ones are never stored), ordered by key for a
+  // stable diff between exports.
+  const exposureProfileRows = await db
+    .select()
+    .from(exposureProfiles)
+    .orderBy(asc(exposureProfiles.key))
+    .all();
+
   return serializeWorkspaceExport({
     workspace: { baseCurrency: workspace.baseCurrency, mode: workspace.mode },
     members: workspace.members,
     groups: workspace.groups,
+    exposureProfiles: exposureProfileRows.map((row) => ({
+      key: row.key,
+      trackedIndex: row.trackedIndex,
+      ter: row.ter,
+      hedged: row.hedged === 1,
+      breakdowns: JSON.parse(row.breakdownsJson) as ExposureBreakdowns,
+    })),
     assets: assetRows.filter((row) => row.deletedAt === null).map(toExportedAsset),
     liabilities: liabilityRows
       .filter((row) => row.deletedAt === null)

@@ -221,6 +221,15 @@ function makeExportData(): WorkspaceExportData {
       },
     ],
     connectedSources: [],
+    exposureProfiles: [
+      {
+        key: "IE00B3RBWM25",
+        trackedIndex: "FTSE All-World",
+        ter: "0.0022",
+        hedged: false,
+        breakdowns: { geography: { us: "0.6" }, assetClass: { equity: "1" } },
+      },
+    ],
   };
 }
 
@@ -376,6 +385,7 @@ describe("summarizeWorkspaceExport", () => {
       priceCacheEntries: 1,
       fireConfigScopes: 1,
       connectedSources: 0,
+      exposureProfiles: 1,
     });
   });
 
@@ -408,6 +418,7 @@ describe("summarizeWorkspaceExport", () => {
       priceCacheEntries: 0,
       fireConfigScopes: 0,
       connectedSources: 0,
+      exposureProfiles: 0,
     });
   });
 });
