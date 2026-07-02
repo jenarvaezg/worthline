@@ -418,6 +418,40 @@ describe("historical snapshots from current-state re-baselines", () => {
     expect(await debtsAt(store, "2026-04-10")).toBe(80_000_00);
     store.close();
   });
+
+  test("deleting the sole starts-at-baseline re-baseline of a plan-less liability fails cleanly and deletes nothing", async () => {
+    const store = await createInMemoryStore();
+    await seedCurrentStateDebt(store);
+
+    await store.addBalanceRebaselineAndRipple(
+      {
+        annualInterestRate: "0",
+        baselineDate: "2026-03-10",
+        endDate: "2026-06-10",
+        id: "base1",
+        liabilityId: "mortgage",
+        nextPaymentDate: "2026-04-10",
+        outstandingBalanceMinor: 90_000_00,
+        startsAtBaseline: true,
+      },
+      { today: TODAY },
+    );
+
+    // The liability has no amortization plan row (ADR 0056 current-state entry):
+    // "base1" is the only fact defining its debt curve. Deleting it would leave
+    // debtBalanceAtDate with nothing to derive from — refuse instead of silently
+    // flattening the curve.
+    await expect(
+      store.deleteBalanceRebaselineAndRipple("base1", { today: TODAY }),
+    ).rejects.toThrow(/amortization plan/i);
+
+    const remaining = await store.liabilities.readBalanceRebaselines("mortgage");
+    expect(remaining).toHaveLength(1);
+    expect(await store.liabilities.debtBalanceAtDate("mortgage", "2026-03-10")).toBe(
+      90_000_00,
+    );
+    store.close();
+  });
 });
 
 describe("historical snapshots from balance anchors", () => {
@@ -1236,6 +1270,53 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
 
     expect(changes).toBe(1);
     expect(await debtsAt(store, "2025-01-01")).toBe(6_000_00);
+    store.close();
+  });
+
+  test("deleteBalanceRebaselineAndRipple reverts the curve to the plan from the rebaseline date forward, leaving earlier snapshots untouched", async () => {
+    const store = await createInMemoryStore();
+    await seedAmortizable(store);
+
+    const beforeRebaseline = (await debtsAt(store, "2026-03-15"))!;
+
+    await store.addBalanceRebaselineAndRipple(
+      {
+        annualInterestRate: "0.03",
+        baselineDate: "2026-04-15",
+        endDate: "2046-04-15",
+        id: "base1",
+        liabilityId: "mortgage",
+        nextPaymentDate: "2026-05-15",
+        outstandingBalanceMinor: 140_000_00,
+      },
+      { today: TODAY },
+    );
+    const rebaselinedAt0415 = (await debtsAt(store, "2026-04-15"))!;
+    const rebaselinedAt0515 = (await debtsAt(store, "2026-05-15"))!;
+    expect(rebaselinedAt0415).toBe(140_000_00);
+
+    const changes = await store.deleteBalanceRebaselineAndRipple("base1", {
+      today: TODAY,
+    });
+
+    expect(changes).toBe(1);
+    // Snapshots before the rebaseline's own date were never touched by either
+    // the rebaseline or its deletion.
+    expect(await debtsAt(store, "2026-03-15")).toBe(beforeRebaseline);
+    // On/after the rebaseline date the curve reverts to the plain-plan balance —
+    // the rebaseline's figures are gone.
+    const planOnlyAt0415 = await store.liabilities.debtBalanceAtDate(
+      "mortgage",
+      "2026-04-15",
+    );
+    const planOnlyAt0515 = await store.liabilities.debtBalanceAtDate(
+      "mortgage",
+      "2026-05-15",
+    );
+    expect(await debtsAt(store, "2026-04-15")).toBe(planOnlyAt0415);
+    expect(await debtsAt(store, "2026-05-15")).toBe(planOnlyAt0515);
+    expect(planOnlyAt0415).not.toBe(rebaselinedAt0415);
+    expect(planOnlyAt0515).not.toBe(rebaselinedAt0515);
     store.close();
   });
 });

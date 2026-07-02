@@ -1994,6 +1994,30 @@ export function createDatedFactSeams(
     deleteBalanceRebaselineAndRipple: (rebaselineId, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       return ctx.transaction(async () => {
+        // Guard the degenerate case (#676 review): a re-baseline is sometimes the
+        // ONLY dated fact defining an amortizable debt's curve (ADR 0056
+        // current-state entry — no plan row at all). Deleting the sole survivor
+        // would leave debtBalanceAtDate with neither a plan nor a rebaseline to
+        // derive from, silently flattening the curve to currentBalanceMinor
+        // forever instead of failing loud — mirrors the "no amortization plan"
+        // guard in amortizableBalanceAtDateFor. Refuse before anything is deleted.
+        const target = await ctx.db
+          .select({ liabilityId: liabilityBalanceRebaselines.liabilityId })
+          .from(liabilityBalanceRebaselines)
+          .where(eq(liabilityBalanceRebaselines.id, rebaselineId))
+          .get();
+        if (target) {
+          const [plan, siblings] = await Promise.all([
+            stores.liabilities.readAmortizationPlan(target.liabilityId),
+            stores.liabilities.readBalanceRebaselines(target.liabilityId),
+          ]);
+          if (!plan && siblings.length === 1) {
+            throw new Error(
+              `Liability "${target.liabilityId}" has no amortization plan; deleting its only balance re-baseline would leave the debt with no curve.`,
+            );
+          }
+        }
+
         const {
           baselineDate: previousBaselineDate,
           changes,
@@ -2008,6 +2032,9 @@ export function createDatedFactSeams(
         if (previousBaselineDate <= today) {
           const workspace = await ctx.getWorkspace();
           if (workspace) {
+            // "amortizable-revision": generate nothing, only recalculate the
+            // existing snapshots forward from fromDateKey — a lost rebaseline
+            // never mints new payment-boundary dates.
             await rippleHistoricalSnapshotsForDebt(
               ctx,
               workspace,
