@@ -222,6 +222,7 @@ const FIELD_KEYS = [
   "name",
   "value",
   "symbol",
+  "isin",
   "price",
   "acqDate",
   "acqValue",
@@ -320,6 +321,7 @@ function scopedInvestmentForm(
   const scoped = new FormData();
   carry(formData, scoped, `name_${instrument}`, "name");
   carry(formData, scoped, `symbol_${instrument}`, "providerSymbol");
+  carry(formData, scoped, `isin_${instrument}`, "isin");
   carry(formData, scoped, `price_${instrument}`, "manualPricePerUnit");
   scoped.set("liquidityTier", rung);
   if (priceProvider) {

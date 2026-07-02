@@ -35,6 +35,7 @@ describe("searchYahooSymbols", () => {
         name: "Fidelity MSCI World Index Fund P-ACC-EUR",
         exchange: "Frankfurt",
         quoteType: "MUTUALFUND",
+        isin: "IE00BYX5NX33",
       },
     ]);
   });

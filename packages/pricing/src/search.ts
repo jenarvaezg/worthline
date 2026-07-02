@@ -12,12 +12,14 @@ export interface SymbolCandidate {
   provider: InvestmentPriceProvider;
   symbol: string;
   name: string;
+  isin?: string;
   exchange?: string;
   quoteType?: string;
   currency?: string;
 }
 
 const YAHOO_SEARCH_URL = "https://query1.finance.yahoo.com/v1/finance/search";
+const ISIN_PATTERN = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
 
 /** Quote types worth offering as investments — funds, ETFs, stocks, indices. */
 const RELEVANT_QUOTE_TYPES = new Set(["EQUITY", "ETF", "MUTUALFUND", "INDEX"]);
@@ -56,6 +58,7 @@ export async function searchYahooSymbols(query: string): Promise<SymbolCandidate
     if (!res.ok) return [];
 
     const data = (await res.json()) as YahooSearchResponse;
+    const isin = normalizedIsin(trimmed);
 
     return (data.quotes ?? [])
       .filter((q) => q.symbol && (!q.quoteType || RELEVANT_QUOTE_TYPES.has(q.quoteType)))
@@ -63,12 +66,18 @@ export async function searchYahooSymbols(query: string): Promise<SymbolCandidate
         provider: "yahoo" as const,
         symbol: q.symbol!,
         name: q.longname ?? q.shortname ?? q.symbol!,
+        ...(isin ? { isin } : {}),
         ...((q.exchDisp ?? q.exchange) ? { exchange: q.exchDisp ?? q.exchange } : {}),
         ...(q.quoteType ? { quoteType: q.quoteType } : {}),
       }));
   } catch {
     return [];
   }
+}
+
+function normalizedIsin(query: string): string | undefined {
+  const normalized = query.trim().toUpperCase();
+  return ISIN_PATTERN.test(normalized) ? normalized : undefined;
 }
 
 interface CoinGeckoSearchResponse {

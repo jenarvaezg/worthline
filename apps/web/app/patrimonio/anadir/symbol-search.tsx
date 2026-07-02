@@ -31,7 +31,12 @@ export default async function SymbolSearch({
   const candidates = trimmed ? await searchSymbols(trimmed, instrument) : [];
   const preservedParams = buildSymbolSearchCurrentParams(currentParams);
 
-  function prefillHref(symbol: string, name: string, provider: string): string {
+  function prefillHref(
+    symbol: string,
+    name: string,
+    provider: string,
+    isin?: string,
+  ): string {
     const params = new URLSearchParams();
     // Copy current params to preserve selected instrument and typed values
     for (const [key, value] of Object.entries(preservedParams)) {
@@ -47,6 +52,7 @@ export default async function SymbolSearch({
     params.set("pfName", name);
     params.set("pfSymbol", symbol);
     params.set("pfProvider", provider);
+    if (isin) params.set("pfIsin", isin);
     return `${basePath}?${params.toString()}`;
   }
 
@@ -79,7 +85,7 @@ export default async function SymbolSearch({
                 <li key={`${c.provider}:${c.symbol}`}>
                   <Link
                     className={`symbolResult${isPicked ? " symbolResultPicked" : ""}`}
-                    href={prefillHref(c.symbol, c.name, c.provider)}
+                    href={prefillHref(c.symbol, c.name, c.provider, c.isin)}
                   >
                     <span className="symbolResultSymbol">{c.symbol}</span>
                     <span className="symbolResultName">{c.name}</span>
