@@ -264,17 +264,24 @@ States: **pending → fulfilled** (linked) or **skipped**; past pending occurren
 visible backlog.
 
 **Statement**:
-A file an external broker exports listing one **investment**'s movements (e.g. a
-MyInvestor orders export for a single ISIN). The user uploads it against a chosen
-investment and declares its broker; worthline reads it with a broker-specific
-parser and merges its rows into that investment's **operations** — matched by
-date, the file winning where a date overlaps, and operations whose date is absent
+A file an external broker exports listing investment movements — one fund's or a
+whole account's (e.g. a MyInvestor orders export). The user uploads it and declares
+its broker; worthline reads it with a broker-specific parser, splits its rows by
+**ISIN**, maps each group to an existing **investment** — or offers to create the
+missing ones, prefilled by a live symbol lookup on the ISIN (the export carries no
+fund name) — and merges each group into that investment's **operations**: matched
+by date, the file winning where a date overlaps, operations whose date is absent
 from the file left untouched (never deleted). Only executed rows load; pending or
-rejected ones are skipped. Distinct from an **Import** (a one-shot full-workspace
-replace) and from a **connected source** (a live, read-only API mirror that owns
-its holdings): a statement is a manual, per-investment, file-based feed of
-operations, and the holding's value still derives from its **price provider**.
-UI label: "Cargar movimientos".
+rejected ones are skipped. The upload is previewed per fund — matched, new, or
+ignored — and applied all-or-nothing over the funds the user includes. Uploaded
+from the portfolio (any mix of ISINs) or from one holding, where every row must
+match that holding's ISIN. An investment created without a **provider symbol**
+values at its last operation's price and carries an overrideable **warning** until
+one is set. Distinct from an **Import** (a one-shot full-workspace replace) and
+from a **connected source** (a live, read-only API mirror that owns its holdings):
+a statement is a manual, file-based feed of operations, and each holding's value
+still derives from its **price provider**. UI labels: "Cargar movimientos" (one
+holding), "Importar extracto" (portfolio).
 _Avoid_: import (the full-workspace replace), pisar, sync (a connected source's refresh).
 
 **Valuation anchor**:
@@ -326,6 +333,11 @@ enlarges the displayed first cuota; it does not move the balance curve (ADR 0019
 Supports **interest rate revisions** for variable-rate loans and **early repayments**
 (partial or total). A mortgage and a conventional loan use this identically — they
 differ only as **instruments** (a mortgage is secured against a property), not in method.
+An old debt may instead be declared by **current state** — outstanding balance
+today, end date, and current rate _or_ payment (each derives the other, shown
+back as an honesty check) — amortizing forward only from a **balance
+re-baseline**, the original signing date kept as optional metadata and the years
+before left unmodelled (ADR 0056).
 
 **Interest rate revision**:
 A declared change to the annual interest rate of an **amortization plan** at a
@@ -340,6 +352,19 @@ a total early repayment closes the debt. Like an **interest rate revision** it i
 fact about the past and triggers a **ripple recalculation** (ADR 0012).
 UI label: "Amortización anticipada".
 _Avoid_: overpayment.
+
+**Balance re-baseline**:
+A declared outstanding balance of an **amortized** debt at a date, from which the
+French schedule re-derives forward — rate or payment given, term to the known end
+date. The entry path for an old debt whose decades of **interest rate revisions**
+and **early repayments** are unrecoverable, and the repair for one whose modelled
+balance has drifted from the bank's reality. A dated fact: it ripples from its
+date forward (ADR 0012) and never reconstructs the unmodelled past — snapshots
+before it simply do not include the debt.
+UI label: "Recalibrar con saldo real" (on an existing debt); the create-time form
+is "Alta por estado actual".
+_Avoid_: balance anchor (the **anchored** methods' concept — a re-baseline keeps
+cuota semantics and the payoff projection).
 
 **Balance anchor**:
 A declared outstanding balance of a **revolving** or **informal** debt at a specific
@@ -650,6 +675,7 @@ _Avoid_: shortcut (too generic), automation (implies unsupervised execution).
 - An **import** is a **reset** followed by loading an **export**: both erase the whole workspace, but a reset ends at onboarding while an import ends in a populated dashboard.
 - A **valuation anchor** attaches to a **holding** at a date; **market appraisals** define the interpolation curve, **improvements** are step-ups on top.
 - An **amortization plan** belongs to an **amortizable** liability; **interest rate revisions** and **early repayments** modify the plan from a date forward.
+- A **balance re-baseline** attaches to an **amortized** liability at a date; the schedule re-derives forward from it and the pre-baseline past stays unmodelled — snapshots before it do not include the debt.
 - A **balance anchor** attaches to a **revolving** or **informal** liability at a date.
 - A **debt model** determines how a liability's historical balance is calculated: from an **amortization plan**, from **balance anchors**, or from a step function of anchors.
 - A backdated **operation**, **valuation anchor**, or **balance anchor** triggers a **ripple recalculation** of existing **snapshots**; an **import** restores exported snapshots as-is and only fills gaps (ADR 0012).
