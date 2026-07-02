@@ -9,6 +9,7 @@ function asset(
   amountMinor: number,
   type: AssetType = "cash",
   providerSymbol?: string,
+  connectedSourceId?: string,
 ): ManualAsset {
   return {
     id,
@@ -16,6 +17,7 @@ function asset(
     type,
     currentValue: { amountMinor, currency: "EUR" },
     ...(providerSymbol ? { providerSymbol } : {}),
+    ...(connectedSourceId ? { connectedSourceId } : {}),
   } as ManualAsset;
 }
 
@@ -97,6 +99,14 @@ describe("collectWarnings — MISSING_PROVIDER_SYMBOL (ADR 0055)", () => {
 
   test("does not flag a non-derived (hand-valued) holding for a missing symbol", () => {
     const warnings = collectWarnings([asset("a1", "Cuenta", 100_00, "cash")]);
+
+    expect(warnings).toEqual([]);
+  });
+
+  test("does not flag a symbol-less connected-source holding (Binance, Numista, …, #685 bug)", () => {
+    const warnings = collectWarnings([
+      asset("inv1", "Binance", 100_00, "investment", undefined, "source1"),
+    ]);
 
     expect(warnings).toEqual([]);
   });

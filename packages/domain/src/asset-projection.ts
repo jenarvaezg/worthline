@@ -37,6 +37,12 @@ export interface RawAssetRow {
   isPrimaryResidence: boolean;
   /** The stored instrument (ADR 0014, #149); null/absent for not-yet-backfilled rows. */
   instrument?: Instrument | null;
+  /**
+   * The connected source this asset materializes a rung of (ADR 0016/0021, #248);
+   * null for a hand-maintained holding. Read straight off `assets` — never a
+   * figure the math reads, only warnings metadata.
+   */
+  connectedSourceId?: string | null;
 }
 
 /** A raw investment-asset row with only the fields a position view needs. */
@@ -107,6 +113,7 @@ export function projectAssets(
       type: row.type,
       ...(row.instrument ? { instrument: row.instrument } : {}),
       ...(providerSymbol ? { providerSymbol } : {}),
+      ...(row.connectedSourceId ? { connectedSourceId: row.connectedSourceId } : {}),
     });
   });
 }
