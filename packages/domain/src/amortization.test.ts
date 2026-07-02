@@ -3,7 +3,9 @@ import { describe, expect, test } from "vitest";
 import {
   amortizableBalanceAtDate,
   assertEventWithinTerm,
+  deriveCurrentStateAmortizationPlan,
   firstCuota,
+  remainingMonthlyPayments,
   suggestFirstPaymentDate,
 } from "./amortization";
 import type {
@@ -873,5 +875,104 @@ describe("suggestFirstPaymentDate — editable first-payment default (ADR 0019, 
     // addMonths(2026-12-31, 2) clamps to 2027-02-28, but the suggestion pins the
     // day to 01, so the clamp never leaks into the result.
     expect(suggestFirstPaymentDate("2026-12-31")).toBe("2027-02-01");
+  });
+});
+
+describe("current-state amortization derivation — ADR 0056 / #676", () => {
+  test("derives the term from the confirmed payment day, not the baseline day", () => {
+    expect(
+      remainingMonthlyPayments({
+        endDate: "2026-09-30",
+        nextPaymentDate: "2026-08-31",
+      }),
+    ).toBe(2);
+
+    const derived = deriveCurrentStateAmortizationPlan({
+      annualInterestRate: "0",
+      baselineDate: "2026-07-02",
+      endDate: "2026-09-30",
+      nextPaymentDate: "2026-08-31",
+      outstandingBalanceMinor: 100_000_00,
+    });
+
+    expect(derived.plan).toMatchObject({
+      annualInterestRate: "0",
+      disbursementDate: "2026-07-02",
+      firstPaymentDate: "2026-08-31",
+      initialCapitalMinor: 100_000_00,
+      termMonths: 2,
+    });
+    expect(derived.monthlyPaymentMinor).toBe(50_000_00);
+  });
+
+  test("round-trips rate → payment → solved rate within payment rounding tolerance", () => {
+    const fromRate = deriveCurrentStateAmortizationPlan({
+      annualInterestRate: "0.035",
+      baselineDate: "2026-07-02",
+      endDate: "2036-08-05",
+      nextPaymentDate: "2026-08-05",
+      outstandingBalanceMinor: 180_000_00,
+    });
+
+    const fromPayment = deriveCurrentStateAmortizationPlan({
+      monthlyPaymentMinor: fromRate.monthlyPaymentMinor,
+      baselineDate: "2026-07-02",
+      endDate: "2036-08-05",
+      nextPaymentDate: "2026-08-05",
+      outstandingBalanceMinor: 180_000_00,
+    });
+
+    expect(Number(fromPayment.annualInterestRate)).toBeCloseTo(0.035, 5);
+    expect(fromPayment.plan.annualInterestRate).toBe(fromPayment.annualInterestRate);
+  });
+
+  test("handles zero-rate and within-epsilon zero-rate payment inputs", () => {
+    const fromRate = deriveCurrentStateAmortizationPlan({
+      annualInterestRate: "0",
+      baselineDate: "2026-07-02",
+      endDate: "2026-10-05",
+      nextPaymentDate: "2026-08-05",
+      outstandingBalanceMinor: 120_000_00,
+    });
+    expect(fromRate.monthlyPaymentMinor).toBe(40_000_00);
+
+    const nearZeroPayment = deriveCurrentStateAmortizationPlan({
+      monthlyPaymentMinor: 33_333_33,
+      baselineDate: "2026-07-02",
+      endDate: "2026-10-05",
+      nextPaymentDate: "2026-08-05",
+      outstandingBalanceMinor: 100_000_00,
+    });
+    expect(nearZeroPayment.annualInterestRate).toBe("0");
+  });
+
+  test("rejects invalid inputs before deriving a schedule", () => {
+    expect(() =>
+      deriveCurrentStateAmortizationPlan({
+        annualInterestRate: "0.02",
+        monthlyPaymentMinor: 500_00,
+        baselineDate: "2026-07-02",
+        endDate: "2026-09-05",
+        nextPaymentDate: "2026-08-05",
+        outstandingBalanceMinor: 100_000_00,
+      }),
+    ).toThrow(/exactly one/i);
+
+    expect(() =>
+      deriveCurrentStateAmortizationPlan({
+        monthlyPaymentMinor: 10_00,
+        baselineDate: "2026-07-02",
+        endDate: "2026-09-05",
+        nextPaymentDate: "2026-08-05",
+        outstandingBalanceMinor: 100_000_00,
+      }),
+    ).toThrow(/too low/i);
+
+    expect(() =>
+      remainingMonthlyPayments({
+        endDate: "2026-07-05",
+        nextPaymentDate: "2026-08-05",
+      }),
+    ).toThrow(/before the next payment/i);
   });
 });

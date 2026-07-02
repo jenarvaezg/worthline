@@ -33,6 +33,7 @@ import {
   interestRateRevisions,
   liabilities,
   liabilityBalanceAnchors,
+  liabilityBalanceRebaselines,
   positions,
 } from "./schema";
 import { readSnapshotHoldings, type SnapshotHoldingRecord } from "./snapshot-store";
@@ -313,6 +314,31 @@ async function readDebtBalanceInputs(
     repaymentsByPlan.set(row.planId, list);
   }
 
+  const rebaselineRows = await db.select().from(liabilityBalanceRebaselines).all();
+  const rebaselinesByLiability = new Map<
+    string,
+    {
+      annualInterestRate: DecimalString;
+      baselineDate: string;
+      endDate: string;
+      nextPaymentDate: string;
+      outstandingBalanceMinor: number;
+      startsAtBaseline: boolean;
+    }[]
+  >();
+  for (const row of rebaselineRows) {
+    const list = rebaselinesByLiability.get(row.liabilityId) ?? [];
+    list.push({
+      annualInterestRate: row.annualInterestRate,
+      baselineDate: row.baselineDate,
+      endDate: row.endDate,
+      nextPaymentDate: row.nextPaymentDate,
+      outstandingBalanceMinor: row.outstandingBalanceMinor,
+      startsAtBaseline: row.startsAtBaseline,
+    });
+    rebaselinesByLiability.set(row.liabilityId, list);
+  }
+
   for (const liability of liveLiabilities) {
     const debtModel = modelById.get(liability.id) ?? null;
     if (debtModel === null) continue; // no model → last-known-value basis
@@ -325,6 +351,7 @@ async function readDebtBalanceInputs(
     if (debtModel === "amortizable") {
       const plan = planByLiability.get(liability.id);
       inputs.set(liability.id, {
+        balanceRebaselines: rebaselinesByLiability.get(liability.id) ?? [],
         currentBalanceMinor,
         debtModel,
         ...(cadence != null ? { cadence } : {}),

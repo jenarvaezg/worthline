@@ -198,6 +198,70 @@ describe("amortization plan — CRUD", () => {
   });
 });
 
+describe("balance re-baselines — CRUD", () => {
+  test("create, update, delete and audit a liability-level re-baseline fact", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await store.liabilities.setDebtModel("loan", "amortizable");
+
+    await store.liabilities.addBalanceRebaseline({
+      annualInterestRate: "0",
+      baselineDate: "2026-07-02",
+      endDate: "2026-09-30",
+      id: "base1",
+      liabilityId: "loan",
+      nextPaymentDate: "2026-08-31",
+      outstandingBalanceMinor: 100_000_00,
+      startsAtBaseline: true,
+    });
+
+    expect(await store.liabilities.readBalanceRebaselines("loan")).toEqual([
+      {
+        annualInterestRate: "0",
+        baselineDate: "2026-07-02",
+        endDate: "2026-09-30",
+        id: "base1",
+        inputMode: "annual-rate",
+        liabilityId: "loan",
+        monthlyPaymentMinor: 50_000_00,
+        nextPaymentDate: "2026-08-31",
+        outstandingBalanceMinor: 100_000_00,
+        startsAtBaseline: true,
+      },
+    ]);
+
+    expect(
+      await store.liabilities.updateBalanceRebaseline("base1", {
+        monthlyPaymentMinor: 60_000_00,
+      }),
+    ).toMatchObject({ baselineDate: "2026-07-02", changes: 1, liabilityId: "loan" });
+    const [updated] = await store.liabilities.readBalanceRebaselines("loan");
+    expect(updated).toMatchObject({
+      inputMode: "monthly-payment",
+      monthlyPaymentMinor: 60_000_00,
+    });
+    expect(Number(updated!.annualInterestRate)).toBeGreaterThan(0);
+
+    expect(await store.liabilities.deleteBalanceRebaseline("base1")).toMatchObject({
+      baselineDate: "2026-07-02",
+      changes: 1,
+      liabilityId: "loan",
+    });
+    expect(await store.liabilities.readBalanceRebaselines("loan")).toEqual([]);
+
+    expect(
+      (await store.readAuditLog({ entityId: "loan" })).map((row) => row.action),
+    ).toEqual(
+      expect.arrayContaining([
+        "add_balance_rebaseline",
+        "update_balance_rebaseline",
+        "delete_balance_rebaseline",
+      ]),
+    );
+    store.close();
+  });
+});
+
 describe("interest-rate revisions — CRUD", () => {
   async function seedPlan(store: WorthlineStore): Promise<void> {
     await seed(store);

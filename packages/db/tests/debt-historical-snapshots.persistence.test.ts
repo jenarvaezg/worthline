@@ -295,6 +295,131 @@ describe("historical snapshots from amortizable plans", () => {
   });
 });
 
+describe("historical snapshots from current-state re-baselines", () => {
+  async function seedCurrentStateDebt(store: WorthlineStore): Promise<void> {
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 10_000_00,
+      id: "cash",
+      liquidityTier: "cash",
+      name: "Cuenta",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "cash",
+    });
+    await store.liabilities.createLiability({
+      balanceMinor: 90_000_00,
+      currency: "EUR",
+      id: "mortgage",
+      name: "Hipoteca vieja",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+    await store.liabilities.setDebtModel("mortgage", "amortizable");
+  }
+
+  test("declaring a current-state baseline starts the debt on that date only", async () => {
+    const store = await createInMemoryStore();
+    await seedCurrentStateDebt(store);
+
+    await store.addBalanceRebaselineAndRipple(
+      {
+        annualInterestRate: "0",
+        baselineDate: "2026-03-10",
+        endDate: "2026-06-10",
+        id: "base1",
+        liabilityId: "mortgage",
+        nextPaymentDate: "2026-04-10",
+        outstandingBalanceMinor: 90_000_00,
+        startsAtBaseline: true,
+      },
+      { today: TODAY },
+    );
+
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "fund",
+      liquidityTier: "market",
+      manualPricePerUnit: "100",
+      name: "Fondo",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    await store.recordOperationAndRipple(
+      {
+        assetId: "fund",
+        currency: "EUR",
+        executedAt: "2026-02-01",
+        id: "op-before",
+        kind: "buy",
+        pricePerUnit: "100",
+        units: "10",
+      },
+      { today: TODAY },
+    );
+
+    expect(await debtsAt(store, "2026-02-01")).toBe(0);
+    expect(await debtsAt(store, "2026-03-10")).toBe(90_000_00);
+    expect(await debtsAt(store, "2026-04-10")).toBe(60_000_00);
+    expect(await holdingsReconcile(store, "2026-03-10")).toBe(true);
+    store.close();
+  });
+
+  test("editing a baseline ripples from the earlier baseline date and leaves earlier snapshots untouched", async () => {
+    const store = await createInMemoryStore();
+    await seedCurrentStateDebt(store);
+
+    await store.addBalanceRebaselineAndRipple(
+      {
+        annualInterestRate: "0",
+        baselineDate: "2026-03-10",
+        endDate: "2026-06-10",
+        id: "base1",
+        liabilityId: "mortgage",
+        nextPaymentDate: "2026-04-10",
+        outstandingBalanceMinor: 90_000_00,
+        startsAtBaseline: true,
+      },
+      { today: TODAY },
+    );
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "fund",
+      liquidityTier: "market",
+      manualPricePerUnit: "100",
+      name: "Fondo",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    await store.recordOperationAndRipple(
+      {
+        assetId: "fund",
+        currency: "EUR",
+        executedAt: "2026-02-01",
+        id: "op-before",
+        kind: "buy",
+        pricePerUnit: "100",
+        units: "10",
+      },
+      { today: TODAY },
+    );
+    const beforeBaselineSnapshot = await debtsAt(store, "2026-02-01");
+
+    const changes = await store.updateBalanceRebaselineAndRipple(
+      "base1",
+      { outstandingBalanceMinor: 120_000_00 },
+      { today: TODAY },
+    );
+
+    expect(changes).toBe(1);
+    expect(await debtsAt(store, "2026-02-01")).toBe(beforeBaselineSnapshot);
+    expect(await debtsAt(store, "2026-03-10")).toBe(120_000_00);
+    expect(await debtsAt(store, "2026-04-10")).toBe(80_000_00);
+    store.close();
+  });
+});
+
 describe("historical snapshots from balance anchors", () => {
   async function seedRevolving(store: WorthlineStore): Promise<void> {
     await store.workspace.initializeWorkspace({

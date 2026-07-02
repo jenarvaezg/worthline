@@ -261,6 +261,7 @@ export type {
   ExportedAmortizationPlan,
   ExportedAsset,
   ExportedBalanceAnchor,
+  ExportedBalanceRebaseline,
   ExportedConnectedSource,
   ExportedEarlyRepayment,
   ExportedInterestRateRevision,
@@ -393,6 +394,9 @@ export { valueHousingAtDate } from "./housing-valuation";
 export type {
   AmortizableBalanceAtDateInput,
   AmortizationPlanInput,
+  BalanceRebaselineInput,
+  CurrentStateAmortizationDerivation,
+  CurrentStateAmortizationInput,
   EarlyRepayment,
   EarlyRepaymentMode,
   FirstCuota,
@@ -400,9 +404,14 @@ export type {
 } from "./amortization";
 export {
   addMonths,
+  amortizationPlanFromBalanceRebaseline,
   amortizableBalanceAtDate,
   assertEventWithinTerm,
+  deriveCurrentStateAmortizationPlan,
   firstCuota,
+  monthlyPaymentMinorFromRate,
+  remainingMonthlyPayments,
+  solveAnnualInterestRateFromPayment,
   suggestFirstPaymentDate,
 } from "./amortization";
 

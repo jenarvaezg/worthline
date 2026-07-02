@@ -278,6 +278,22 @@ CREATE TABLE \`early_repayments\` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX \`early_repayments_plan_date_unique\` ON \`early_repayments\` (\`plan_id\`,\`repayment_date\`);--> statement-breakpoint
+CREATE TABLE \`liability_balance_rebaselines\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`liability_id\` text NOT NULL,
+	\`baseline_date\` text NOT NULL,
+	\`outstanding_balance_minor\` integer NOT NULL,
+	\`end_date\` text NOT NULL,
+	\`next_payment_date\` text NOT NULL,
+	\`annual_interest_rate\` text NOT NULL,
+	\`monthly_payment_minor\` integer NOT NULL,
+	\`input_mode\` text NOT NULL,
+	\`starts_at_baseline\` integer DEFAULT 0 NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`liability_id\`) REFERENCES \`liabilities\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX \`liability_balance_rebaselines_liability_date_unique\` ON \`liability_balance_rebaselines\` (\`liability_id\`,\`baseline_date\`);--> statement-breakpoint
 CREATE TABLE \`connected_sources\` (
 	\`id\` text PRIMARY KEY NOT NULL,
 	\`adapter\` text NOT NULL,

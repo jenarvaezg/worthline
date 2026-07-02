@@ -1,8 +1,10 @@
 import Big from "big.js";
 
 import {
+  amortizationPlanFromBalanceRebaseline,
   amortizableBalanceAtDate,
   type AmortizationPlanInput,
+  type BalanceRebaselineInput,
   type EarlyRepayment,
   type InterestRateRevision,
 } from "./amortization";
@@ -65,6 +67,8 @@ export interface DebtBalanceAtDateInput {
   anchors?: readonly DebtBalanceAnchor[];
   /** The amortization plan for an amortizable liability. */
   plan?: AmortizationPlanInput;
+  /** Current-state re-baselines for an amortizable liability, ordered or unordered. */
+  balanceRebaselines?: readonly BalanceRebaselineInput[];
   /** Rate revisions for an amortizable liability (any order). */
   revisions?: readonly InterestRateRevision[];
   /** Early repayments for an amortizable liability (any order). */
@@ -175,6 +179,60 @@ function informalBalance(
   return initialCapitalMinor ?? currentBalanceMinor;
 }
 
+function sortRebaselines(
+  rebaselines: readonly BalanceRebaselineInput[],
+): BalanceRebaselineInput[] {
+  return [...rebaselines].sort((a, b) =>
+    a.baselineDate < b.baselineDate ? -1 : a.baselineDate > b.baselineDate ? 1 : 0,
+  );
+}
+
+function effectiveAmortizationPlan(
+  input: DebtBalanceAtDateInput,
+):
+  | { plan: AmortizationPlanInput; effectiveFrom: string }
+  | { startsAfterTarget: true }
+  | null {
+  const sortedRebaselines = sortRebaselines(input.balanceRebaselines ?? []);
+  const startingBaseline = sortedRebaselines.find((fact) => fact.startsAtBaseline);
+  if (startingBaseline && input.targetDate < startingBaseline.baselineDate) {
+    return { startsAfterTarget: true };
+  }
+
+  let activeRebaseline: BalanceRebaselineInput | undefined;
+  for (const fact of sortedRebaselines) {
+    if (fact.baselineDate <= input.targetDate) {
+      activeRebaseline = fact;
+    } else {
+      break;
+    }
+  }
+
+  if (activeRebaseline) {
+    return {
+      effectiveFrom: activeRebaseline.baselineDate,
+      plan: amortizationPlanFromBalanceRebaseline(activeRebaseline),
+    };
+  }
+
+  if (input.plan) {
+    return { effectiveFrom: input.plan.disbursementDate, plan: input.plan };
+  }
+
+  return null;
+}
+
+function onOrAfter<T extends { revisionDate: string } | { repaymentDate: string }>(
+  events: readonly T[],
+  dateKey: string,
+): T[] {
+  return events.filter((event) =>
+    "revisionDate" in event
+      ? event.revisionDate >= dateKey
+      : event.repaymentDate >= dateKey,
+  );
+}
+
 /**
  * Outstanding balance of the liability on `targetDate`, in integer minor units.
  * Dispatches on `debtModel`; falls back to `currentBalanceMinor` when the model
@@ -203,17 +261,27 @@ export function debtBalanceAtDate(input: DebtBalanceAtDateInput): number {
   }
 
   if (debtModel === "amortizable") {
-    if (!input.plan) {
+    const effective = effectiveAmortizationPlan(input);
+    if (effective === null) {
       return currentBalanceMinor;
     }
+    if ("startsAfterTarget" in effective) return 0;
+
+    const revisions =
+      input.revisions !== undefined
+        ? onOrAfter(input.revisions, effective.effectiveFrom)
+        : undefined;
+    const earlyRepayments =
+      input.earlyRepayments !== undefined
+        ? onOrAfter(input.earlyRepayments, effective.effectiveFrom)
+        : undefined;
+
     return amortizableBalanceAtDate({
-      plan: input.plan,
+      plan: effective.plan,
       targetDate,
       cadence,
-      ...(input.revisions !== undefined ? { revisions: input.revisions } : {}),
-      ...(input.earlyRepayments !== undefined
-        ? { earlyRepayments: input.earlyRepayments }
-        : {}),
+      ...(revisions !== undefined ? { revisions } : {}),
+      ...(earlyRepayments !== undefined ? { earlyRepayments } : {}),
     });
   }
 

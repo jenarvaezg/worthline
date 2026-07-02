@@ -123,6 +123,18 @@ const earlyRepaymentSchema = z.object({
   mode: z.enum(["reduce-payment", "reduce-term"]),
 });
 
+const balanceRebaselineSchema = z.object({
+  id: nonEmptyString,
+  baselineDate: nonEmptyString,
+  outstandingBalanceMinor: z.number().int(),
+  endDate: nonEmptyString,
+  nextPaymentDate: nonEmptyString,
+  annualInterestRate: nonEmptyString,
+  monthlyPaymentMinor: z.number().int(),
+  inputMode: z.enum(["annual-rate", "monthly-payment"]),
+  startsAtBaseline: z.boolean(),
+});
+
 const amortizationPlanSchema = z.object({
   id: nonEmptyString,
   initialCapitalMinor: z.number().int(),
@@ -170,6 +182,7 @@ const liabilitySchema = z.object({
   valuationCadence: valuationCadenceSchema.optional(),
   debtModel: debtModelSchema.optional(),
   amortizationPlan: amortizationPlanSchema.optional(),
+  balanceRebaselines: z.array(balanceRebaselineSchema).optional(),
   balanceAnchors: z.array(balanceAnchorSchema).optional(),
   ownership: z.array(ownershipShareSchema),
   associatedAssetId: nonEmptyString.optional(),
@@ -681,6 +694,13 @@ function collectStructuralIdErrors(
   );
   collectDuplicateIdErrors(
     errors,
+    "recalibración de saldo",
+    allLiabilities.flatMap((liability) =>
+      (liability.balanceRebaselines ?? []).map((r) => r.id),
+    ),
+  );
+  collectDuplicateIdErrors(
+    errors,
     "anclaje de saldo",
     allLiabilities.flatMap((liability) =>
       (liability.balanceAnchors ?? []).map((a) => a.id),
@@ -734,6 +754,14 @@ function collectStructuralKeyErrors(
         (r) => `${plan.id}/${r.repaymentDate}`,
       );
     }
+
+    collectDuplicateKeyErrors(
+      errors,
+      `recalibración de saldo por fecha del pasivo ${liability.id}`,
+      liability.balanceRebaselines ?? [],
+      (r) => r.baselineDate,
+      (r) => `${liability.id}/${r.baselineDate}`,
+    );
 
     // Balance anchors: unique per (liabilityId, anchorDate).
     collectDuplicateKeyErrors(
@@ -1004,6 +1032,14 @@ function collectDecimalStringErrors(
 
   for (const liability of allLiabilities) {
     const plan = liability.amortizationPlan;
+    for (const rebaseline of liability.balanceRebaselines ?? []) {
+      collectDecimalValidityError(
+        errors,
+        `El tipo de la recalibración ${rebaseline.id} de "${liability.name}" (${liability.id})`,
+        rebaseline.annualInterestRate,
+      );
+    }
+
     if (!plan) continue;
 
     collectDecimalValidityError(
