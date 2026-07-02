@@ -9,7 +9,7 @@
  */
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactElement, ReactNode } from "react";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 const calls = vi.hoisted(() => ({
   readAssets: vi.fn(async () => []),
@@ -41,9 +41,21 @@ vi.mock("@web/store", () => ({
   withStore: calls.withStore,
 }));
 
+// Default undefined = live; the demo-visibility test flips it (ADR 0030's
+// persona cookie is how a request reads as demo).
+let mockPersonaCookie: string | undefined;
 vi.mock("next/headers", () => ({
-  cookies: async () => ({ get: () => undefined }),
+  cookies: async () => ({
+    get: (name: string) =>
+      name === "wl_demo_persona" && mockPersonaCookie
+        ? { value: mockPersonaCookie }
+        : undefined,
+  }),
 }));
+
+afterEach(() => {
+  mockPersonaCookie = undefined;
+});
 
 vi.mock("next/navigation", () => ({
   redirect: (url: string) => {
@@ -93,5 +105,12 @@ describe('"Importar extracto" wizard entry point (S3, #674)', () => {
     const html = await renderedHtml();
     const occurrences = html.split('href="/patrimonio/importar-extracto"').length - 1;
     expect(occurrences).toBe(1);
+  });
+
+  test("stays visible in demo mode — the write-guard lives downstream on the import flow, not on the entry point", async () => {
+    mockPersonaCookie = "familia";
+    const html = await renderedHtml();
+
+    expect(html).toContain('href="/patrimonio/importar-extracto"');
   });
 });

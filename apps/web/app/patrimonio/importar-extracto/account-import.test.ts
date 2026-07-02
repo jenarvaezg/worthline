@@ -18,7 +18,9 @@
  */
 import { createInMemoryStore } from "@worthline/db";
 import type { WorthlineStore } from "@worthline/db";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+
+import { DEMO_DISABLED_MESSAGE } from "@web/demo/write-guard";
 
 import {
   confirmImportStatementAction,
@@ -27,10 +29,27 @@ import {
   type IsinSymbolResolver,
 } from "./actions";
 
+// Demo-ness is a per-request fact — the logged-out persona cookie resolved by
+// the store seam (ADR 0030). Default undefined = live; the demo test flips it.
+let mockPersonaCookie: string | undefined;
+vi.mock("next/headers", () => ({
+  cookies: async () => ({
+    get: (name: string) =>
+      name === "wl_demo_persona" && mockPersonaCookie
+        ? { value: mockPersonaCookie }
+        : undefined,
+  }),
+}));
+
+afterEach(() => {
+  mockPersonaCookie = undefined;
+});
+
 const IDLE: ImportStatementPreviewState = { status: "idle" };
 
-// 20 synthetic WL-tagged ISINs (real sample scale, ADR 0055: "153 orders across
-// 26 ISINs") — one prefix per country code, so no two collide.
+// 20 synthetic WL-tagged ISINs (one country prefix each, so no two collide) ×
+// 5 rows = 100 order lines — the shape of ADR 0055's real case ("153 orders
+// across 26 ISINs") at fixture scale.
 const ISIN_COUNTRIES = [
   "ES",
   "LU",
@@ -230,6 +249,28 @@ describe("account-sized statement import — full reconstruction (S3, #674)", ()
     expect([...opsCountAfter.values()].reduce((sum, n) => sum + n, 0)).toBe(80);
 
     expect(await snapshotFingerprint(store)).toEqual(fingerprintBefore); // unchanged
+
+    store.close();
+  });
+});
+
+describe("demo write-gating (S3, #674 — PRD #669 story 17)", () => {
+  test("confirm in demo mode redirects with the deshabilitado message and writes nothing", async () => {
+    const store = await createInMemoryStore();
+    await seedAccount(store);
+
+    mockPersonaCookie = "familia";
+    const digest = await confirmAccount(store);
+    const decoded = decodeURIComponent(digest.replace(/\+/g, " "));
+    expect(decoded).toContain(DEMO_DISABLED_MESSAGE);
+
+    // The store is untouched: only the six seeded funds, no operations, no snapshots.
+    const metas = await store.assets.readInvestmentAssetsWithMeta();
+    expect(metas).toHaveLength(6);
+    for (const meta of metas) {
+      expect(await store.operations.readOperations(meta.id)).toHaveLength(0);
+    }
+    expect(await snapshotFingerprint(store)).toEqual([]);
 
     store.close();
   });
