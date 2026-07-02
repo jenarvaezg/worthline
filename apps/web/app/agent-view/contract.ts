@@ -186,16 +186,77 @@ export interface AgentViewExposureHolding {
   weight: string;
 }
 
+/**
+ * How completely a look-through dimension covers the scope's gross assets, as a
+ * three-way split of money (PRD #539, ADR 0039): `classified` has profile data,
+ * `notApplicable` means the dimension is meaningless for the instrument
+ * (geography/currency of cash or crypto), and `unknown` means the dimension
+ * applies but no profile is entered. Keeping `notApplicable` distinct stops
+ * crypto/cash from reading as missing data — only `unknown` is a gap to fill.
+ * The slices never pretend to cover 100%; the coverage is how the agent reports
+ * "X% classified, Y% still unknown".
+ */
+export interface AgentViewExposureCoverage {
+  classified: AgentViewMoney;
+  notApplicable: AgentViewMoney;
+  unknown: AgentViewMoney;
+}
+
+/**
+ * One look-through dimension (geography / currency / asset class): the allocation
+ * slices (same `AgentViewAllocationSlice` shape as `byInstrument`) plus the
+ * three-way coverage they were computed against (PRD #539, ADR 0039).
+ */
+export interface AgentViewExposureDimension {
+  slices: AgentViewAllocationSlice[];
+  coverage: AgentViewExposureCoverage;
+}
+
 /** Where the scope's money sits and how concentrated it is. */
 export interface AgentViewExposure {
   topHoldings: AgentViewExposureHolding[];
   byLiquidityTier: AgentViewAllocationSlice[];
   byInstrument: AgentViewAllocationSlice[];
+  /**
+   * Present-time look-through by underlying geography (PRD #539, ADR 0039): the
+   * portfolio's real region exposure, aggregated from exposure profiles by the
+   * S0 domain function — never a figure and never frozen into a snapshot.
+   */
+  byGeography: AgentViewExposureDimension;
+  /** Present-time look-through by underlying currency (PRD #539, ADR 0039). */
+  byCurrency: AgentViewExposureDimension;
+  /** Present-time look-through by asset class (PRD #539, ADR 0039). */
+  byAssetClass: AgentViewExposureDimension;
+  /**
+   * The currency-risk lens (PRD #539, ADR 0039): the unhedged, non-base-currency
+   * share of the portfolio, by currency. Informational exposure only — worthline
+   * assumes the base currency for every figure, so this changes no valuation.
+   */
+  currencyRisk: AgentViewAllocationSlice[];
   concentration: {
     /** Largest single holding's weight of gross assets. */
     topHoldingWeight: string;
     /** Combined weight of the top five holdings. */
     topFiveWeight: string;
+  };
+}
+
+/**
+ * A security's resolved exposure profile as the holding detail exposes it (PRD
+ * #539, ADR 0039): the tracked index, TER, hedged flag, and the per-dimension
+ * breakdown vectors (`bucket → weight` decimal strings). Reference metadata, not
+ * a figure — it never touches net worth, snapshots, or ripple. A holding with no
+ * profile (or an instrument that takes none) reports `exposureProfile: null`; the
+ * absence is signalled honestly and a profile is never fabricated.
+ */
+export interface AgentViewExposureProfile {
+  trackedIndex: string | null;
+  ter: string | null;
+  hedged: boolean;
+  breakdowns: {
+    geography?: Record<string, string>;
+    currency?: Record<string, string>;
+    assetClass?: Record<string, string>;
   };
 }
 
@@ -565,6 +626,12 @@ export interface AgentViewHoldingDetail {
   amortization?: AgentViewAmortizationFacts;
   /** Present only for an anchored liability that has balance anchors (#338). */
   balanceAnchors?: AgentViewBalanceAnchorFacts;
+  /**
+   * The security's resolved exposure profile (PRD #539, ADR 0039). `null`/absent
+   * honestly signals "no profile here" — a holding whose instrument takes no
+   * profile, or one with no hand-entered profile. Never a fabricated profile.
+   */
+  exposureProfile?: AgentViewExposureProfile | null;
 }
 
 /**

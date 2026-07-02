@@ -214,8 +214,10 @@ async function buildStore(
     readBalanceAnchors: liabilityStore.readBalanceAnchors,
     readDebtModel: liabilityStore.readDebtModel,
     readEarlyRepayments: liabilityStore.readEarlyRepayments,
+    readExposureProfiles: exposureProfileStore.readExposureProfiles,
     readFireConfig: () => store.readFireConfig(),
     readInterestRateRevisions: liabilityStore.readInterestRateRevisions,
+    readInvestmentAssetsWithMeta: assetStore.readInvestmentAssetsWithMeta,
     readLiabilities: liabilityStore.readLiabilities,
     readOperations: operationsStore.readOperations,
     readPriceCache: async (assetId) => {

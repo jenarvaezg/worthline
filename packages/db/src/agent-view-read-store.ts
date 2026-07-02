@@ -1,6 +1,7 @@
 import type {
   DebtModel,
   ExportedPublicId,
+  ExposureProfile,
   FireScopeConfig,
   Goal,
   InvestmentOperation,
@@ -17,7 +18,7 @@ import type {
 import { isNotNull } from "drizzle-orm";
 
 import { readAgentViewPublicIds } from "./agent-view-public-ids";
-import type { ValuationAnchorRecord } from "./asset-store";
+import type { InvestmentAssetMeta, ValuationAnchorRecord } from "./asset-store";
 import type { ConnectedSourceRow } from "./connected-source-store";
 import type {
   AmortizationPlanRecord,
@@ -166,6 +167,18 @@ export interface AgentViewReadStore {
   readTrashedHoldings: () => Promise<AgentViewTrashedHolding[]>;
   /** Goals (optionally for one scope) with their assigned holdings (#424). A pure read. */
   readGoals: (scopeId?: string) => Promise<Goal[]>;
+  /**
+   * Hand-entered exposure profiles keyed by `isin ?? providerSymbol` (PRD #539,
+   * ADR 0039). A pure read — the look-through aggregation runs in domain code
+   * (`lookThroughExposure`); this port never writes or auto-derives a profile.
+   */
+  readExposureProfiles: () => Promise<ExposureProfile[]>;
+  /**
+   * Investment-asset reference metadata — its identity (`isin`, `providerSymbol`)
+   * and price provider (PRD #539). A pure read; used to key each holding to its
+   * exposure profile for the look-through.
+   */
+  readInvestmentAssetsWithMeta: () => Promise<InvestmentAssetMeta[]>;
 }
 
 export interface AgentViewReadStoreDeps {
@@ -199,6 +212,8 @@ export interface AgentViewReadStoreDeps {
   } | null>;
   readWarningOverrides: () => Promise<WarningOverride[]>;
   readGoals: (scopeId?: string) => Promise<Goal[]>;
+  readExposureProfiles: () => Promise<ExposureProfile[]>;
+  readInvestmentAssetsWithMeta: () => Promise<InvestmentAssetMeta[]>;
 }
 
 export function createAgentViewReadStore(
@@ -265,6 +280,8 @@ export function createAgentViewReadStore(
     },
     readWarningOverrides: () => deps.readWarningOverrides(),
     readTrashedHoldings: () => readTrashedHoldings(ctx.db),
+    readExposureProfiles: () => deps.readExposureProfiles(),
+    readInvestmentAssetsWithMeta: () => deps.readInvestmentAssetsWithMeta(),
   };
 }
 
