@@ -3,9 +3,15 @@ import {
   collectWarnings,
   groupPortfolio,
   listScopeOptions,
+  lookThroughExposure,
   projectPortfolio,
 } from "@worthline/domain";
-import type { PortfolioGroupKey, PriceRefreshMeta } from "@worthline/domain";
+import type {
+  ExposureLookthroughHolding,
+  ExposureProfile,
+  PortfolioGroupKey,
+  PriceRefreshMeta,
+} from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -25,7 +31,9 @@ import {
 import { refreshPricesAction } from "@web/inversiones/actions";
 import { isDemoMode } from "@web/demo/write-guard";
 import Shell from "@web/shell";
+import { EXPOSURE_LENS_VIEW_PARAM, readViewParam } from "@web/view-state";
 import BalanceBoard from "./balance-board";
+import ExposureSection from "./exposure-section";
 import PatrimonioGroupControls from "./group-controls";
 import { PriceRefreshControl } from "./price-refresh-control";
 
@@ -65,15 +73,23 @@ export default async function PatrimonioPage({
 
     // These reads are independent of one another, so fire them in one wave
     // instead of stacking serial round-trips to the (remote) store (#446).
-    const [priceCacheEntries, investmentMeta, assets, liabilities, overrides, trash] =
-      await Promise.all([
-        store.operations.readAllPriceCacheEntries(),
-        store.assets.readInvestmentAssetsWithMeta(),
-        store.assets.readAssets(),
-        store.liabilities.readLiabilities(),
-        store.readWarningOverrides(),
-        store.readTrash(),
-      ]);
+    const [
+      priceCacheEntries,
+      investmentMeta,
+      assets,
+      liabilities,
+      overrides,
+      trash,
+      exposureProfiles,
+    ] = await Promise.all([
+      store.operations.readAllPriceCacheEntries(),
+      store.assets.readInvestmentAssetsWithMeta(),
+      store.assets.readAssets(),
+      store.liabilities.readLiabilities(),
+      store.readWarningOverrides(),
+      store.readTrash(),
+      store.exposureProfiles.readExposureProfiles(),
+    ]);
 
     // Price-refresh metadata for the derived-value badge hover (#303): when + by
     // which source each cached unit price was last fetched, keyed by asset id. The
@@ -95,7 +111,9 @@ export default async function PatrimonioPage({
 
     return {
       assets,
+      exposureProfiles,
       hasPricedHoldings,
+      investmentMeta,
       liabilities,
       overrides,
       priceMetaByAsset,
@@ -112,7 +130,9 @@ export default async function PatrimonioPage({
 
   const {
     assets,
+    exposureProfiles,
     hasPricedHoldings,
+    investmentMeta,
     liabilities,
     overrides,
     priceMetaByAsset,
@@ -137,6 +157,50 @@ export default async function PatrimonioPage({
   // The one unified list, grouped by the selected axis (#154, S8). The selected
   // group doubles as the filter; BalanceBoard splits each group across the two panes.
   const groups = projection ? groupPortfolio(projection, selectedGroup) : [];
+
+  // Present-time exposure look-through (PRD #539 S3, ADR 0039): build the domain
+  // input from the projection's ASSET rows (already scope-weighted; their sum is
+  // the projection's gross assets, so grossAssets stays consistent) keyed to
+  // hand-entered profiles via `isin ?? providerSymbol`, then CALL the S0 domain
+  // aggregation — never re-implemented here. Twice: once full-portfolio, once
+  // equity-restricted; the client lens toggles between the two pre-rendered
+  // results (interaction-patterns §2). It is a lens, never a snapshot/figure.
+  const exposureLensRaw = resolvedSearchParams?.[EXPOSURE_LENS_VIEW_PARAM.key];
+  const exposureLens = readViewParam(
+    typeof exposureLensRaw === "string"
+      ? `${EXPOSURE_LENS_VIEW_PARAM.key}=${exposureLensRaw}`
+      : "",
+    EXPOSURE_LENS_VIEW_PARAM,
+  );
+  const exposureProfileMap = new Map<string, ExposureProfile>(
+    exposureProfiles.map((profile) => [profile.key, profile]),
+  );
+  const metaByAssetId = new Map(investmentMeta.map((row) => [row.id, row]));
+  const exposureHoldings: ExposureLookthroughHolding[] = projection
+    ? projection.sections[0].rows.map((row) => ({
+        currency: workspace.baseCurrency,
+        geography: null,
+        id: row.id,
+        instrument: row.instrument,
+        isin: metaByAssetId.get(row.id)?.isin ?? null,
+        providerSymbol: metaByAssetId.get(row.id)?.providerSymbol ?? null,
+        valueMinor: row.valueMinor,
+      }))
+    : [];
+  const exposureInput = {
+    baseCurrency: workspace.baseCurrency,
+    grossAssets: projection?.totalGrossAssets ?? {
+      amountMinor: 0,
+      currency: workspace.baseCurrency,
+    },
+    holdings: exposureHoldings,
+    profiles: exposureProfileMap,
+  };
+  const exposureFull = lookThroughExposure(exposureInput);
+  const exposureEquity = lookThroughExposure({
+    ...exposureInput,
+    assetClassFilter: "equity",
+  });
 
   const isHousehold = workspace.mode === "household";
 
@@ -204,6 +268,14 @@ export default async function PatrimonioPage({
         readOnly={isDemo}
         trash={trash}
         warnings={warnings}
+      />
+
+      <ExposureSection
+        currentUrl={currentUrl}
+        equity={exposureEquity}
+        full={exposureFull}
+        initialLens={exposureLens}
+        privacyMode={privacyMode}
       />
     </Shell>
   );
