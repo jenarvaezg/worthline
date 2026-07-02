@@ -16,6 +16,7 @@ import type {
 import {
   captureSnapshotForScope,
   coinPositionSnapshotInput,
+  isHousingAsset,
   listScopeOptions,
   tokenSymbolSnapshotInputs,
 } from "@worthline/domain";
@@ -48,12 +49,23 @@ export async function captureDailySnapshotForWorkspace(
   const workspace = await store.workspace.readWorkspace();
   if (!workspace) return;
 
-  const assets = await store.assets.readAssets(projectionContext);
+  const dateKey = now.slice(0, 10);
+  const assets = await Promise.all(
+    (await store.assets.readAssets(projectionContext)).map(async (asset) => {
+      if (!isHousingAsset(asset)) return asset;
+      return {
+        ...asset,
+        currentValue: {
+          ...asset.currentValue,
+          amountMinor: await store.assets.valueHousingAtDate(asset.id, dateKey, dateKey),
+        },
+      };
+    }),
+  );
   // Value each debt on the capture date through the same curve evaluator the
   // ripples use (plan / anchors / re-baselines; stored balance as the
   // model-less fallback). Freezing `current_balance_minor` — which nothing
   // advances on payment dates — meant a captured debt never registered a cuota.
-  const dateKey = now.slice(0, 10);
   const liabilities = await Promise.all(
     (await store.liabilities.readLiabilities()).map(async (liability) => ({
       ...liability,
