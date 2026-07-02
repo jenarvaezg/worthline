@@ -178,15 +178,45 @@ _Avoid_: drill-down (the per-**position** second level is a different concept), 
 **Operation**:
 A buy or a sell against one **investment**: date, units, price per unit, fees.
 
+**Payout**:
+Money a **holding** paid its owner on a date — a dividend, deposit or account
+interest, or rent. A dated attribution record, not a figure: it never touches
+**net worth**, the holding's value, **snapshots**, or **ripple recalculation** —
+the cash it brought arrives through the ordinary **value update pass** of whatever
+account received it, exactly as it does today. Asset-side and income-only: costs
+are not modelled (declare the one amount you consider yours — worthline is not a
+budgeting app), and what a liability charges is already modelled by its
+**amortization plan**. Entered one-off (a variable dividend) or derived from a
+**payout schedule** (rent). Like an **operation** it is small and re-enterable,
+so it deletes directly with confirmation and gets no trash.
+UI label: "Cobro".
+_Avoid_: income (smells of salary and budgeting — in a net-worth app "ingreso"
+reads as an incoming transfer), flow (direction-ambiguous, collides with the
+IRR's cashflows), distribution (fund jargon — wrong for rent or interest).
+
+**Payout schedule**:
+A declared fixed recurrence of **payouts** on one **holding** — amount, cadence,
+start, optional end. Like an **amortization plan** or an **appreciation rate**, it
+is a declared parameter that _derives_ its past occurrences as truth — no
+per-occurrence confirmation, and nothing derived beyond today: expected future
+income is forecast, the **contribution plan** family's territory, not this.
+Amending it re-derives the list live: a retroactive end date removes a dead tail
+in one edit, and an **exclusion** removes a single occurrence (an unpaid month).
+A variable amount never gets a schedule — estimating one would invent facts;
+enter those as one-off **payouts**.
+UI label: "Cobro recurrente".
+_Avoid_: recurring income, planned payout (a schedule derives past truth; a plan
+forecasts the future).
+
 **Return**:
 How an **investment**'s value has grown relative to what was put into it. worthline
 reports three complementary measures — **simple gain**, **money-weighted return** and
 **time-weighted return** — per **holding** and for the whole portfolio. Like **exposure**,
 a return is a present-time derived figure: it is computed from **operations** and
 **snapshots**, never stored, and never a figure the net-worth math reads. It carries its
-honest limits: dividends/distributions are not modelled (a distributing fund understates),
-and any time-series measure starts at the first **snapshot** — there is no return before
-history began.
+honest limits: dividends/distributions enter only as declared **payouts** (a distributing
+fund with none recorded understates), and any time-series measure starts at the first
+**snapshot** — there is no return before history began.
 _Avoid_: rentabilidad without saying which measure (the three are not interchangeable),
 performance.
 
@@ -416,9 +446,46 @@ rename still never touches history).
 **Monthly close**:
 The last **snapshot** of a calendar month. Derived, never declared by the user.
 
+**Delta breakdown**:
+The split of a scope's net-worth change between two **monthly closes** into where
+it came from: market movement (price and model movement of priced and modeled
+holdings, exact per holding), **payouts** (recorded income), and **net savings**
+(the residual). Computed from frozen **snapshots** (which capture each holding's
+value), **operations**, and **payouts** — a lens that reads history and never
+writes it. The same computation at holding granularity ranks the month's movers.
+UI label: "Origen del cambio".
+_Avoid_: performance attribution (a narrower industry technique — allocation and
+selection effects — which this is not).
+
+**Net savings**:
+The residual band of the **delta breakdown**: the net-worth change not explained
+by market movement or recorded **payouts** — what was added minus what was spent.
+Honest by construction: a heavy-spending month is negative, and a transfer whose
+two sides were updated in different months shows as noise in both (the
+value-update lag, an accepted limit — never "fixed" by inventing transfer
+matching). UI label: "Ahorro neto".
+_Avoid_: aportaciones/contributions (implies only money in), savings rate (a
+ratio — this is an amount).
+
 **Warning**:
 A flag the dashboard raises about a holding that may need attention (e.g. an asset
-left at value 0). Carries a severity: **blocking** or **overrideable**.
+left at value 0). Carries a severity: **blocking** or **overrideable**. One
+category of **data-quality signal** — the per-holding misconfiguration flags.
+
+**Data-quality signal**:
+A flag about how much the data behind the figures can be trusted: a **warning**,
+a stale or failed price, a stale or failed **sync**, missing configuration (FIRE,
+a debt model), sparse or gapped **snapshot** history, an unvalued **position**, or
+a manual value long without a **value update pass**. Computed live per **scope**
+from persisted state — never stored, never a figure. Carries a severity and,
+where there is one, the holding, source, or scope it points at. One shared
+collection feeds every consumer — the home's health block, the **agent view**,
+and the **financial assistant** — so the human and the agent see the same
+inventory. Signals that represent a deliberate choice are silenced with the same
+**override** mechanism as warnings.
+UI label: "Salud de datos".
+_Avoid_: health check (implies a pass/fail gate), issue (overloaded), warning
+(one category of signal, not the whole).
 
 **Overrideable warning**:
 A **warning** the user can mark intentional. A **blocking** warning cannot be dismissed.
@@ -594,6 +661,9 @@ _Avoid_: shortcut (too generic), automation (implies unsupervised execution).
 - **FIRE progress** counts FIRE-eligible assets in the selected **scope** and excludes the primary residence plus any assets manually excluded from FIRE.
 - An **exposure profile** attaches to an **investment**, shared by **ISIN**; **look-through** sums each **holding** weighted by its profile into the scope's **Exposure**, a present-time lens with explicit **coverage**. It is reference metadata — it adds no figure the net-worth math reads and never enters a **snapshot**.
 - A **return** is derived per **investment** from its **operations** and **snapshots** — **simple gain** (realized + unrealized), **money-weighted** (IRR) and **time-weighted** (Modified Dietz over **monthly closes**) — present-time, never stored, never a figure the net-worth math reads (ADR 0040).
+- A **payout** attaches to one asset **holding**; a **payout schedule** derives its past payouts as truth up to today, never beyond. Payouts feed the **return** (a recorded distribution enters the money-weighted cashflows and the realized **simple gain**) and the passive-income lens; they add no figure the net-worth math reads and never enter a **snapshot**.
+- A **delta breakdown** splits the change between two **snapshots** (normally **monthly closes**) into market movement, **payouts**, and **net savings** — the residual; it reads frozen snapshots, per-holding rows, **operations**, and **payouts**, and never writes history.
+- A **data-quality signal** is derived live from persisted state; **warnings** are one category of it, and one shared collection feeds the home health block, the **agent view**, and the **financial assistant** alike.
 - A **contribution plan** forecasts additions to **holdings**; its **occurrences** are **reconciled** by hand into real **operations** / value updates (never auto-matched, never auto-applied). It feeds the derived monthly savings the FIRE projection reads and a what-if, but adds no figure the net-worth math reads and never enters a **snapshot** (ADR 0041).
 - An **agent view** reads a **scope**'s current portfolio, historical snapshots, **FIRE progress**, data-quality signals, and the calculation facts behind them; it defaults to the household **scope**, may be narrowed to one member or member group, preserves user-authored member, group, and holding labels, exposes context rather than recommendations, excludes secrets and transfer artifacts, never changes live data, and never refreshes or captures data as a side effect of being read.
 - A **financial assistant** consumes the **agent view** and may recommend actions, but any workspace mutation still goes through an **assistant proposal** and explicit user confirmation.
