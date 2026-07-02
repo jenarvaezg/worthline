@@ -6,16 +6,22 @@
  * the verdict (block on `mismatch`, backfill the asset on `backfill`, proceed on
  * `match`/`absent`). Comparison is case- and whitespace-insensitive.
  *
- * `absent` means the file carried no ISIN (the parser rejects a mixed-ISIN file
- * upstream, so this is the no-ISIN case): there is nothing to guard, so the load
- * proceeds without touching the asset's ISIN.
+ * `absent` means the file carried no ISIN: there is nothing to guard, so the load
+ * proceeds without touching the asset's ISIN. The per-holding guard below handles
+ * mixed-ISIN statements as the ADR 0055 one-fund case.
  */
+
+import type { ParsedStatement } from "./statement-parse";
 
 export type StatementIsinGuard =
   | { status: "match" }
   | { status: "mismatch" }
   | { status: "backfill"; isin: string }
   | { status: "absent" };
+
+export type PerHoldingStatementIsinGuard =
+  | Exclude<StatementIsinGuard, { status: "mismatch" }>
+  | { status: "mismatch"; fileIsins: string[] };
 
 function normalize(isin: string | null | undefined): string | null {
   const trimmed = (isin ?? "").trim();
@@ -39,4 +45,48 @@ export function resolveStatementIsinGuard(
   }
 
   return file === asset ? { status: "match" } : { status: "mismatch" };
+}
+
+function distinctStatementIsins(statement: ParsedStatement): string[] {
+  const isins = new Set<string>();
+
+  for (const row of statement.rows) {
+    const isin = normalize(row.isin);
+    if (isin) isins.add(isin);
+  }
+
+  for (const row of statement.skipped) {
+    const isin = normalize(row.isin);
+    if (isin) isins.add(isin);
+  }
+
+  return [...isins];
+}
+
+/**
+ * Per-holding upload is now the one-fund case of ADR 0055: parsing may accept a
+ * mixed file, but every row carrying an ISIN must match the selected holding. An
+ * empty holding still backfills from a single file ISIN, preserving the ADR 0018
+ * guard behavior.
+ */
+export function resolvePerHoldingStatementIsinGuard(
+  statement: ParsedStatement,
+  assetIsin: string | null | undefined,
+): PerHoldingStatementIsinGuard {
+  const fileIsins = distinctStatementIsins(statement);
+  const asset = normalize(assetIsin);
+
+  if (fileIsins.length === 0) {
+    return { status: "absent" };
+  }
+
+  if (asset === null) {
+    return fileIsins.length === 1
+      ? { isin: fileIsins[0]!, status: "backfill" }
+      : { fileIsins, status: "mismatch" };
+  }
+
+  return fileIsins.every((isin) => isin === asset)
+    ? { status: "match" }
+    : { fileIsins, status: "mismatch" };
 }

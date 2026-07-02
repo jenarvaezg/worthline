@@ -143,15 +143,23 @@ describe("parseStatement — MyInvestor (ADR 0018, S1)", () => {
     expect(result.ok).toBe(false);
   });
 
-  test("a file carrying more than one distinct ISIN is rejected as malformed", () => {
-    // A statement is per-ISIN (ADR 0018); a mixed file is a wrong-file slip.
+  test("a file carrying more than one distinct ISIN parses and exposes its ISINs", () => {
+    // ADR 0055: portfolio-level routing handles mixed files after parsing.
     const mixed = [
       "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
       "01/10/2025;IE00BYX5NX33;100 EUR;7,226;Finalizada",
       "01/11/2025;LU0000000000;100 EUR;7,180;Finalizada",
     ].join("\n");
 
-    expect(parseStatement(mixed, "myinvestor").ok).toBe(false);
+    const result = parseStatement(mixed, "myinvestor");
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.value.isin).toBeNull();
+    expect(result.value.isins).toEqual(["IE00BYX5NX33", "LU0000000000"]);
+    expect(result.value.rows.map((row) => row.isin)).toEqual([
+      "IE00BYX5NX33",
+      "LU0000000000",
+    ]);
   });
 
   test("a missing required column is an error, not a silent empty parse", () => {

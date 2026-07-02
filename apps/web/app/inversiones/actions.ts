@@ -10,7 +10,7 @@ import {
   isStatementBroker,
   parseStatement,
   planStatementMerge,
-  resolveStatementIsinGuard,
+  resolvePerHoldingStatementIsinGuard,
   systemClock,
 } from "@worthline/domain";
 import type {
@@ -184,8 +184,12 @@ export type StatementPreviewState =
     };
 
 /** The Spanish error shown when the file's ISIN does not match the asset's (S4). */
-function isinMismatchMessage(fileIsin: string | null, assetIsin: string): string {
-  return `El ISIN del archivo (${fileIsin ?? "—"}) no coincide con el de esta inversión (${assetIsin}). No se ha cargado nada.`;
+function isinMismatchMessage(
+  fileIsin: string | string[] | null,
+  assetIsin: string,
+): string {
+  const fileLabel = Array.isArray(fileIsin) ? fileIsin.join(", ") : (fileIsin ?? "—");
+  return `El ISIN del archivo (${fileLabel}) no coincide con el de esta inversión (${assetIsin}). No se ha cargado nada.`;
 }
 
 /** Count the sells among the rows a plan will actually write (created + overwritten). */
@@ -248,14 +252,17 @@ export async function previewStatementAction(
     return { message: read.message, status: "error" };
   }
 
-  const { isin, rows, skipped } = read.value;
+  const { rows, skipped } = read.value;
 
   return runActionWithStore(async (store) => {
     // ISIN guard (S4): block a wrong-file slip before showing any summary.
     const asset = await store.assets.readInvestmentAssetById(routeAssetId);
-    const guard = resolveStatementIsinGuard(isin, asset?.isin ?? null);
+    const guard = resolvePerHoldingStatementIsinGuard(read.value, asset?.isin ?? null);
     if (guard.status === "mismatch") {
-      return { message: isinMismatchMessage(isin, asset?.isin ?? ""), status: "error" };
+      return {
+        message: isinMismatchMessage(guard.fileIsins, asset?.isin ?? ""),
+        status: "error",
+      };
     }
 
     const plan = planStatementMerge(
@@ -300,7 +307,7 @@ export async function confirmStatementAction(
     redirect(statementErrorUrl(read.message));
   }
 
-  const { isin, rows, skipped } = read.value;
+  const { rows, skipped } = read.value;
   const today = _clock.today();
   const seed = Date.now();
 
@@ -308,9 +315,9 @@ export async function confirmStatementAction(
     // ISIN guard (S4): block a mismatch before any write; backfill an empty asset
     // so a later upload to the same holding is guarded too.
     const asset = await store.assets.readInvestmentAssetById(routeAssetId);
-    const guard = resolveStatementIsinGuard(isin, asset?.isin ?? null);
+    const guard = resolvePerHoldingStatementIsinGuard(read.value, asset?.isin ?? null);
     if (guard.status === "mismatch") {
-      return { error: isinMismatchMessage(isin, asset?.isin ?? "") } as const;
+      return { error: isinMismatchMessage(guard.fileIsins, asset?.isin ?? "") } as const;
     }
     if (guard.status === "backfill") {
       await store.assets.backfillInvestmentIsin(routeAssetId, guard.isin);
