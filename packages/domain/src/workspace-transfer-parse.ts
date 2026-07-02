@@ -12,6 +12,7 @@
 import { z } from "zod";
 
 import { compareUnits } from "./decimal";
+import { createExposureProfile } from "./exposure-lookthrough";
 import type { OwnershipShare, Workspace } from "./workspace-types";
 import { checkOwnershipSplit } from "./workspace-types";
 import { assertSnapshotHoldingsReconcile } from "./snapshot-holdings";
@@ -345,6 +346,17 @@ const publicIdSchema = z.object({
   publicId: nonEmptyString,
 });
 
+// Exposure profile (PRD #539, ADR 0039): a dimension-agnostic bucket→weight map
+// per dimension, plus scalars. Structure only here; the >100% invariant is
+// enforced in the domain-error phase via createExposureProfile.
+const exposureProfileSchema = z.object({
+  key: nonEmptyString,
+  trackedIndex: nonEmptyString.nullish(),
+  ter: nonEmptyString.nullish(),
+  hedged: z.boolean().optional(),
+  breakdowns: z.record(z.string(), z.record(z.string(), z.string())).default({}),
+});
+
 const documentSchema = z.object({
   version: z.literal(EXPORT_VERSION),
   workspace: z.object({
@@ -368,6 +380,7 @@ const documentSchema = z.object({
   priceCache: z.array(priceSchema).default([]),
   connectedSources: z.array(connectedSourceSchema).default([]),
   publicIds: z.array(publicIdSchema).default([]),
+  exposureProfiles: z.array(exposureProfileSchema).default([]),
 });
 
 // ── Entry point ──────────────────────────────────────────────────────────────
@@ -541,6 +554,7 @@ function collectDomainErrors(doc: WorkspaceExport): string[] {
   collectDatabaseKeyErrors(errors, doc);
   collectPublicIdErrors(errors, doc);
   collectSnapshotReconciliationErrors(errors, doc);
+  collectExposureProfileErrors(errors, doc);
 
   return errors;
 }
@@ -729,6 +743,32 @@ function collectStructuralKeyErrors(
       (a) => a.anchorDate,
       (a) => `${liability.id}/${a.anchorDate}`,
     );
+  }
+}
+
+/**
+ * Exposure profiles (PRD #539, ADR 0039): reject duplicate keys and any profile
+ * whose breakdown exceeds 100% — the same invariant the write path enforces via
+ * createExposureProfile, applied here so a hand-edited file cannot smuggle in a
+ * profile that would throw at look-through read time.
+ */
+function collectExposureProfileErrors(errors: string[], doc: WorkspaceExport): void {
+  collectDuplicateIdErrors(
+    errors,
+    "perfil de exposición",
+    doc.exposureProfiles.map((profile) => profile.key),
+  );
+
+  for (const profile of doc.exposureProfiles) {
+    try {
+      createExposureProfile(profile);
+    } catch (error) {
+      errors.push(
+        `El perfil de exposición "${profile.key}" no es válido: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 }
 
