@@ -1095,6 +1095,7 @@ export async function saveCurrentStateAmortizationAction(
     inputMode,
     monthlyPayment: String(formData.get("csMonthlyPayment") ?? ""),
     nextPaymentDate,
+    originalSigningDate,
     outstandingBalance: String(formData.get("csOutstandingBalance") ?? ""),
   });
 
@@ -1103,16 +1104,6 @@ export async function saveCurrentStateAmortizationAction(
       errorRedirectUrl(editUrl(id), {
         formId: "currentStateDebt",
         message: derived.error,
-        values,
-      }),
-    );
-  }
-
-  if (originalSigningDate && originalSigningDate > today) {
-    redirect(
-      errorRedirectUrl(editUrl(id), {
-        formId: "currentStateDebt",
-        message: "La fecha de firma original no puede ser futura.",
         values,
       }),
     );

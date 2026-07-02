@@ -1312,8 +1312,11 @@ export async function migrate(client: Client): Promise<MigrateResult> {
   if (version < 40) {
     // ADR 0056 / PRD #670 S2 (#677): optional original-signing-date metadata on
     // an amortization plan created by current-state entry — descriptive only,
-    // never read by the balance curve. Additive ALTER (try/catch like v20/v22/
-    // v27/v35): a fresh DB already has the column from the block above.
+    // never read by the balance curve. A fresh DB already has the column via
+    // `schemaSql` (regenerated with `npm run db:generate`, `version < 2`
+    // block); this ALTER only matters for a DB already past v2 before this
+    // column existed — try/catch like v20/v22/v27/v35, tolerating the
+    // already-there case.
     try {
       await client.executeMultiple(
         "ALTER TABLE amortization_plans ADD COLUMN original_signing_date TEXT",

@@ -558,18 +558,26 @@ export async function createHoldingAction(
         ? parseLoanDebtModel(actionFormData)
         : liabilitySpec.debtModel;
 
-    // «Alta por estado actual» (ADR 0056, #677): the wizard's debt drawer offers
-    // it as the DEFAULT path for an amortizable mortgage/loan — filling the end
-    // date opts in. Its "saldo pendiente hoy" becomes the liability's balance
-    // too (never asked twice); leaving it blank keeps today's plan-less
-    // creation ("origin path" — decide the model later, in the ficha).
-    const csEndDate = String(actionFormData.get("csEndDate") ?? "").trim();
-    const usesCurrentState =
+    // «Alta por estado actual» (ADR 0056, #677): the SIMPLE wizard drawer's
+    // debt pane (simpleDrawer==="deuda") offers it as the DEFAULT path for an
+    // amortizable mortgage/loan — the CSS reveal (anadir/page.tsx) hides the
+    // plain "Saldo pendiente" field for those two and shows the current-state
+    // block instead, so `csOutstandingBalance` is the ONLY visible balance
+    // input for them regardless of whether the rest of the block (end date,
+    // cuota/tipo) is filled — it must always become the liability's balance,
+    // never gated on `csEndDate`. Filling the end date on top additionally
+    // opts into persisting the plan + re-baseline; leaving it blank keeps a
+    // plan-less creation ("origin path" — decide the model later, in the
+    // ficha) with the current-state balance intact. Gated on the ORIGINAL
+    // `simpleDrawer` (not just the instrument) so the avanzado/canonical form
+    // — which has no current-state fields and already posts `balance_*`
+    // directly — is untouched.
+    const showsCurrentStateBalanceField =
+      formData.get("simpleDrawer") === "deuda" &&
       (instrument === "mortgage" ||
-        (instrument === "loan" && debtModel === "amortizable")) &&
-      csEndDate !== "";
+        (instrument === "loan" && debtModel === "amortizable"));
 
-    if (usesCurrentState) {
+    if (showsCurrentStateBalanceField) {
       actionFormData.set(
         `balance_${instrument}`,
         String(actionFormData.get("csOutstandingBalance") ?? ""),
@@ -586,6 +594,8 @@ export async function createHoldingAction(
       redirect(errorUrl("El saldo de la deuda no es válido."));
     }
 
+    const csEndDate = String(actionFormData.get("csEndDate") ?? "").trim();
+    const usesCurrentState = showsCurrentStateBalanceField && csEndDate !== "";
     const currentStateNextPaymentDate = String(
       actionFormData.get("csNextPaymentDate") ?? "",
     ).trim();
@@ -603,6 +613,7 @@ export async function createHoldingAction(
           inputMode: currentStateInputMode,
           monthlyPayment: String(actionFormData.get("csMonthlyPayment") ?? ""),
           nextPaymentDate: currentStateNextPaymentDate,
+          originalSigningDate: currentStateOriginalSigningDate,
           outstandingBalance: String(actionFormData.get("csOutstandingBalance") ?? ""),
         })
       : null;

@@ -1,11 +1,12 @@
-import type { DecimalString } from "@worthline/domain";
+import type { AmortizationPlanInput, DecimalString } from "@worthline/domain";
 import {
   deriveCurrentStateAmortizationPlan,
   formatMoneyInput,
-  parseDecimalStrict,
   parseDecimalToMinorStrict,
   remainingMonthlyPayments,
 } from "@worthline/domain";
+
+import { parsePercentToDecimal } from "@web/intake-primitives";
 
 /**
  * Pure "alta por estado actual" derivation (ADR 0056, PRD #670 S2, #677).
@@ -17,6 +18,9 @@ import {
  * (`deriveCurrentStateAmortizationPlan`) is the sole authority on the math —
  * this module only parses es-ES form strings into its inputs and translates its
  * failure modes into Spanish, user-facing messages (interaction-patterns §7).
+ * It also owns the optional original-signing-date validation, so both the
+ * wizard and the advanced edit surface reject a malformed/future date BEFORE
+ * anything is persisted, instead of each call site re-deriving the check.
  */
 
 export type CurrentStateInputMode = "rate" | "payment";
@@ -39,6 +43,8 @@ export interface CurrentStateDebtRawInput {
   annualRatePercent: string;
   /** Cuota mensual actual, es-ES money string, read when inputMode is "payment". */
   monthlyPayment: string;
+  /** Optional descriptive metadata, YYYY-MM-DD; never fed into the derivation. */
+  originalSigningDate?: string;
 }
 
 export interface CurrentStateDebtDerived {
@@ -47,6 +53,8 @@ export interface CurrentStateDebtDerived {
   months: number;
   annualInterestRate: DecimalString;
   monthlyPaymentMinor: number;
+  /** The exact plan the S1 engine derived — persist this, never re-assembled by hand. */
+  plan: AmortizationPlanInput;
 }
 
 export type CurrentStateDebtResult =
@@ -55,14 +63,6 @@ export type CurrentStateDebtResult =
 
 function isInputModeValid(mode: CurrentStateInputMode): boolean {
   return mode === "rate" || mode === "payment";
-}
-
-/** Es-ES decimal → the `DecimalString` an annual rate of X % is stored as. */
-function percentToDecimalString(pct: number): DecimalString {
-  const decimal = pct / 100;
-  return (
-    Number.isInteger(decimal) ? String(decimal) : decimal.toString()
-  ) as DecimalString;
 }
 
 /**
@@ -97,6 +97,16 @@ export function deriveCurrentStateDebt(
     };
   }
 
+  const signingDate = raw.originalSigningDate?.trim();
+  if (signingDate) {
+    if (!ISO_DATE.test(signingDate)) {
+      return { ok: false, error: "La fecha de firma original no es válida." };
+    }
+    if (signingDate > raw.baselineDate) {
+      return { ok: false, error: "La fecha de firma original no puede ser futura." };
+    }
+  }
+
   const months = remainingMonthlyPayments({
     endDate: raw.endDate,
     nextPaymentDate: raw.nextPaymentDate,
@@ -106,14 +116,14 @@ export function deriveCurrentStateDebt(
   }
 
   if (raw.inputMode === "rate") {
-    const pct = parseDecimalStrict(raw.annualRatePercent);
-    if (pct === null || pct < 0) {
+    const rate = parsePercentToDecimal(raw.annualRatePercent);
+    if (rate === null) {
       return { ok: false, error: "Introduce un tipo anual igual o mayor que 0 %." };
     }
 
     try {
       const derivation = deriveCurrentStateAmortizationPlan({
-        annualInterestRate: percentToDecimalString(pct),
+        annualInterestRate: rate,
         baselineDate: raw.baselineDate,
         endDate: raw.endDate,
         nextPaymentDate: raw.nextPaymentDate,
@@ -125,6 +135,7 @@ export function deriveCurrentStateDebt(
         months,
         ok: true,
         outstandingBalanceMinor,
+        plan: derivation.plan,
       };
     } catch {
       return {
@@ -153,6 +164,7 @@ export function deriveCurrentStateDebt(
       months,
       ok: true,
       outstandingBalanceMinor,
+      plan: derivation.plan,
     };
   } catch {
     // The domain solver is the sole authority on the feasibility boundary; this

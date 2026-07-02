@@ -11,15 +11,11 @@ import type {
  * Persist a "alta por estado actual" declaration (ADR 0056, PRD #670 S2, #677).
  *
  * Shared by the wizard's debt drawer (`createHoldingAction`) and the advanced
- * edit surface's create action (`saveCurrentStateAmortizationAction`) — the ONE
- * place that composes the two dated-fact seams the #676 review requires
- * together: a derived amortization **plan row** (so a future rate revision or
- * early repayment has a `plan_id` to hang off) plus the `startsAtBaseline`
- * balance re-baseline fact (which governs the curve from the baseline forward,
- * per `effectiveAmortizationPlan`). A current-state debt is never persisted
- * with one but not the other. The liability's stored `currentBalanceMinor` is
- * also synced to the declared balance, so today's net worth (and housing-equity
- * netting) reflects it immediately, not the value the liability was created with.
+ * edit surface's create action (`saveCurrentStateAmortizationAction`) — a thin
+ * shell over the ONE atomic store seam (`createCurrentStateDebtAndRipple`, the
+ * #676 review's requirement that a current-state debt never lands with a plan
+ * row but no re-baseline, or the reverse: both dated facts, the balance sync,
+ * and the ripple commit or roll back together).
  */
 export async function persistCurrentStateAmortization(
   store: WorthlineStore,
@@ -35,20 +31,6 @@ export async function persistCurrentStateAmortization(
   seed: number,
   today: string,
 ): Promise<void> {
-  await store.createAmortizationPlanAndRipple(
-    {
-      annualInterestRate: derived.annualInterestRate,
-      disbursementDate: raw.baselineDate,
-      firstPaymentDate: raw.nextPaymentDate,
-      id: createStableId("plan", liabilityId, seed),
-      initialCapitalMinor: derived.outstandingBalanceMinor,
-      liabilityId,
-      originalSigningDate: raw.originalSigningDate ?? null,
-      termMonths: derived.months,
-    },
-    { today },
-  );
-
   const rebaselineBase = {
     baselineDate: raw.baselineDate,
     endDate: raw.endDate,
@@ -58,15 +40,18 @@ export async function persistCurrentStateAmortization(
     outstandingBalanceMinor: derived.outstandingBalanceMinor,
     startsAtBaseline: true as const,
   };
-  await store.addBalanceRebaselineAndRipple(
-    raw.inputMode === "rate"
-      ? { ...rebaselineBase, annualInterestRate: derived.annualInterestRate }
-      : { ...rebaselineBase, monthlyPaymentMinor: derived.monthlyPaymentMinor },
-    { today },
-  );
 
-  await store.liabilities.updateLiabilityBalance(
-    liabilityId,
-    derived.outstandingBalanceMinor,
-  );
+  await store.createCurrentStateDebtAndRipple({
+    plan: {
+      ...derived.plan,
+      id: createStableId("plan", liabilityId, seed),
+      liabilityId,
+      originalSigningDate: raw.originalSigningDate ?? null,
+    },
+    rebaseline:
+      raw.inputMode === "rate"
+        ? { ...rebaselineBase, annualInterestRate: derived.annualInterestRate }
+        : { ...rebaselineBase, monthlyPaymentMinor: derived.monthlyPaymentMinor },
+    today,
+  });
 }

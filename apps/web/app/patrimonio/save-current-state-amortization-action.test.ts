@@ -11,7 +11,7 @@
  */
 import { createInMemoryStore } from "@worthline/db";
 import type { WorthlineStore } from "@worthline/db";
-import { fixedClock, type Clock } from "@worthline/domain";
+import { calculateNetWorth, fixedClock, type Clock } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import { saveCurrentStateAmortizationAction } from "./actions";
@@ -182,6 +182,90 @@ describe("saveCurrentStateAmortizationAction — baseline debt", () => {
     expect((await store.liabilities.readAmortizationPlan("mortgage"))?.id).toBe(
       "existing_plan",
     );
+
+    store.close();
+  });
+});
+
+describe("saveCurrentStateAmortizationAction — original signing date (M3)", () => {
+  test("rejects a future signing date BEFORE persisting anything (no orphaned plan)", async () => {
+    const store = await seedAmortizableMortgage();
+
+    const url = await runAction(
+      form({
+        id: "mortgage",
+        csAnnualRate: "2,35",
+        csEndDate: "2032-06-30",
+        csInputMode: "rate",
+        csNextPaymentDate: "2026-08-01",
+        csOriginalSigningDate: "2026-07-03",
+        csOutstandingBalance: "118.000,00",
+      }),
+      store,
+      CLOCK,
+    );
+    expect(url).toContain("error=");
+    expect(await store.liabilities.readAmortizationPlan("mortgage")).toBeNull();
+    expect(await store.liabilities.readBalanceRebaselines("mortgage")).toHaveLength(0);
+
+    store.close();
+  });
+});
+
+describe("saveCurrentStateAmortizationAction — housing equity nets a current-state mortgage (ADR 0013, #677)", () => {
+  test("an associated property's equity nets against the declared current-state balance", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 200_000_00,
+      id: "piso",
+      liquidityTier: "illiquid",
+      name: "Piso",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "real_estate",
+    });
+    await store.liabilities.createLiability({
+      associatedAssetId: "piso",
+      balanceMinor: 1, // stale placeholder from whatever path created the debt
+      currency: "EUR",
+      id: "mortgage",
+      name: "Hipoteca Santander",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+    await store.liabilities.setDebtModel("mortgage", "amortizable");
+
+    await runAction(
+      form({
+        id: "mortgage",
+        csAnnualRate: "2,35",
+        csEndDate: "2032-06-30",
+        csInputMode: "rate",
+        csNextPaymentDate: "2026-08-01",
+        csOutstandingBalance: "120.000,00",
+      }),
+      store,
+      CLOCK,
+    );
+
+    const workspace = (await store.workspace.readWorkspace())!;
+    const [assets, liabilities] = await Promise.all([
+      store.assets.readAssets(),
+      store.liabilities.readLiabilities(),
+    ]);
+    const netWorth = calculateNetWorth({
+      assets,
+      liabilities,
+      scopeId: "household",
+      workspace,
+    });
+
+    // Piso 200k − hipoteca por-estado-actual 120k = 80k de equity de vivienda.
+    expect(netWorth.housingEquity.amountMinor).toBe(80_000_00);
 
     store.close();
   });

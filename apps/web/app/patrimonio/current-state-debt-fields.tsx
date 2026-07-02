@@ -18,7 +18,9 @@
  * "Dato del banco" → el dato variable. The unmodelled past is communicated as
  * a mini-timeline, not prose under each field. The original signing date is
  * optional, secondary-placed metadata inside a `<details>` — it never competes
- * with saldo/fin/cuota and never feeds the derivation.
+ * with saldo/fin/cuota and never feeds the cuota/tipo math, but the shared
+ * module still validates it (ISO, not future), so a bad date surfaces here
+ * live instead of on the server after the rest of the form was accepted.
  */
 import { formatMoneyInput, suggestFirstPaymentDate } from "@worthline/domain";
 import { useMemo, useState } from "react";
@@ -79,6 +81,9 @@ export function CurrentStateDebtFields({
   const [monthlyPayment, setMonthlyPayment] = useState(
     initialValues?.csMonthlyPayment ?? "",
   );
+  const [originalSigningDate, setOriginalSigningDate] = useState(
+    initialValues?.csOriginalSigningDate ?? "",
+  );
 
   const derived = useMemo(
     () =>
@@ -89,6 +94,7 @@ export function CurrentStateDebtFields({
         inputMode,
         monthlyPayment,
         nextPaymentDate,
+        originalSigningDate,
         outstandingBalance,
       }),
     [
@@ -98,11 +104,15 @@ export function CurrentStateDebtFields({
       inputMode,
       monthlyPayment,
       nextPaymentDate,
+      originalSigningDate,
       outstandingBalance,
     ],
   );
 
   const hasError = !derived.ok;
+  // A pristine form (nothing typed yet) derives an error too (an empty saldo),
+  // but that is not a mistake to flag red before the user has done anything.
+  const pristine = outstandingBalance.trim() === "" && endDate.trim() === "";
 
   return (
     <>
@@ -205,27 +215,31 @@ export function CurrentStateDebtFields({
         <input name="csMonthlyPayment" type="hidden" value={monthlyPayment} />
       )}
 
-      <div aria-live="polite" className={hasError ? "errorBand" : "warningBand"}>
-        {derived.ok ? (
-          <>
-            <span>
-              {inputMode === "rate" ? "Cuota mensual estimada" : "Tipo anual equivalente"}
-            </span>
-            <strong>
-              {inputMode === "rate"
-                ? formatEur(derived.monthlyPaymentMinor)
-                : formatPercent(Number(derived.annualInterestRate) * 100)}
-            </strong>
-            <p>
-              {inputMode === "rate"
-                ? `Con estos datos tu cuota sale ${formatEur(derived.monthlyPaymentMinor)} al mes. ¿Cuadra con tu banco?`
-                : `Con estos datos el tipo sale ${formatPercent(Number(derived.annualInterestRate) * 100)} anual. ¿Cuadra con tu banco?`}
-            </p>
-          </>
-        ) : (
-          <p>{derived.error}</p>
-        )}
-      </div>
+      {pristine ? null : (
+        <div aria-live="polite" className={hasError ? "errorBand" : "warningBand"}>
+          {derived.ok ? (
+            <>
+              <span>
+                {inputMode === "rate"
+                  ? "Cuota mensual estimada"
+                  : "Tipo anual equivalente"}
+              </span>
+              <strong>
+                {inputMode === "rate"
+                  ? formatEur(derived.monthlyPaymentMinor)
+                  : formatPercent(Number(derived.annualInterestRate) * 100)}
+              </strong>
+              <p>
+                {inputMode === "rate"
+                  ? `Con estos datos tu cuota sale ${formatEur(derived.monthlyPaymentMinor)} al mes. ¿Cuadra con tu banco?`
+                  : `Con estos datos el tipo sale ${formatPercent(Number(derived.annualInterestRate) * 100)} anual. ¿Cuadra con tu banco?`}
+              </p>
+            </>
+          ) : (
+            <p>{derived.error}</p>
+          )}
+        </div>
+      )}
 
       <div className="debtBaselineTimeline" aria-label="Alcance histórico">
         <div>
@@ -244,10 +258,11 @@ export function CurrentStateDebtFields({
           <span>Fecha de firma original</span>
           <input
             aria-label="Fecha de firma original"
-            defaultValue={initialValues?.csOriginalSigningDate ?? ""}
             max={baselineDate}
             name="csOriginalSigningDate"
+            onChange={(event) => setOriginalSigningDate(event.target.value)}
             type="date"
+            value={originalSigningDate}
           />
         </label>
         <p className="infoNote">

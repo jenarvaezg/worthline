@@ -242,6 +242,7 @@ CREATE TABLE \`amortization_plans\` (
 	\`term_months\` integer NOT NULL,
 	\`disbursement_date\` text NOT NULL,
 	\`first_payment_date\` text NOT NULL,
+	\`original_signing_date\` text,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	FOREIGN KEY (\`liability_id\`) REFERENCES \`liabilities\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );

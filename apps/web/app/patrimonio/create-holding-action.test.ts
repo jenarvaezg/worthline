@@ -11,7 +11,6 @@
 import { createInMemoryStore } from "@worthline/db";
 import type { WorthlineStore } from "@worthline/db";
 import {
-  calculateNetWorth,
   defaultInstrumentForLiability,
   valuationMethodOfLiability,
 } from "@worthline/domain";
@@ -790,15 +789,17 @@ describe("createHoldingAction — debt ownership inheritance (#171)", () => {
 });
 
 describe("createHoldingAction — «alta por estado actual» wizard drawer mode (ADR 0056, #677)", () => {
+  // Real drawer shape (simpleDrawer/simpleDebtKind/simpleName_deuda), not the
+  // canonical instrument/name_mortgage/balance_mortgage form the avanzado flow
+  // posts directly — this is what anadir/page.tsx's DebtPane actually submits.
   test("a mortgage with current-state fields saves a plan + startsAtBaseline re-baseline (default for old debts)", async () => {
     const store = await seedStore();
 
     await runAction(
       form({
-        instrument: "mortgage",
-        name_mortgage: "Hipoteca Santander",
-        // Ignored — the current-state balance wins once its fields are filled.
-        balance_mortgage: "999,00",
+        simpleDrawer: "deuda",
+        simpleDebtKind: "mortgage",
+        simpleName_deuda: "Hipoteca Santander",
         csAnnualRate: "2,35",
         csEndDate: "2032-06-30",
         csInputMode: "rate",
@@ -825,14 +826,19 @@ describe("createHoldingAction — «alta por estado actual» wizard drawer mode 
     expect(rebaselines[0]).toMatchObject({ startsAtBaseline: true });
   });
 
-  test("leaving the end date blank keeps today's plan-less creation (origin path intact)", async () => {
+  // Regression for the #677 review's H1: the CSS hides the plain "Saldo
+  // pendiente" field for mortgage/loan (the current-state balance is the only
+  // visible input), so leaving the end date blank must NOT also lose the
+  // balance — it still creates a plan-less debt WITH the declared saldo.
+  test("leaving the end date blank keeps today's plan-less creation, WITH the current-state saldo (origin path intact)", async () => {
     const store = await seedStore();
 
     await runAction(
       form({
-        instrument: "mortgage",
-        name_mortgage: "Hipoteca",
-        balance_mortgage: "120.000,00",
+        simpleDrawer: "deuda",
+        simpleDebtKind: "mortgage",
+        simpleName_deuda: "Hipoteca",
+        csOutstandingBalance: "120.000,00",
         ownershipPreset: "scope",
         scopeMemberId: "mJ",
       }),
@@ -849,9 +855,10 @@ describe("createHoldingAction — «alta por estado actual» wizard drawer mode 
 
     await runAction(
       form({
-        instrument: "credit_card",
-        name_credit_card: "Visa BBVA",
-        balance_credit_card: "850,00",
+        simpleDrawer: "deuda",
+        simpleDebtKind: "credit_card",
+        simpleName_deuda: "Visa BBVA",
+        simpleValue_deuda: "850,00",
         csAnnualRate: "20",
         csEndDate: "2032-06-30",
         csInputMode: "rate",
@@ -873,8 +880,9 @@ describe("createHoldingAction — «alta por estado actual» wizard drawer mode 
 
     const url = await runAction(
       form({
-        instrument: "mortgage",
-        name_mortgage: "Hipoteca",
+        simpleDrawer: "deuda",
+        simpleDebtKind: "mortgage",
+        simpleName_deuda: "Hipoteca",
         csEndDate: "2032-06-30",
         csInputMode: "payment",
         csMonthlyPayment: "1,00",
@@ -888,43 +896,5 @@ describe("createHoldingAction — «alta por estado actual» wizard drawer mode 
 
     expect(url).toContain("error=");
     expect(await store.liabilities.readLiabilities()).toHaveLength(0);
-  });
-});
-
-describe("createHoldingAction — housing equity nets a current-state mortgage (ADR 0013, #677)", () => {
-  test("an associated property's equity nets against the declared current-state balance", async () => {
-    const store = await seedHousehold(); // "piso": 200_000_00, 65/35 Jose/Ana
-
-    await runAction(
-      form({
-        instrument: "mortgage",
-        name_mortgage: "Hipoteca Santander",
-        assoc_mortgage: "piso",
-        csAnnualRate: "2,35",
-        csEndDate: "2032-06-30",
-        csInputMode: "rate",
-        csNextPaymentDate: "2026-08-01",
-        csOutstandingBalance: "120.000,00",
-        inheritOwnership_mortgage: "on",
-        ownershipPreset: "scope",
-        scopeMemberId: "mJ",
-      }),
-      store,
-    );
-
-    const workspace = (await store.workspace.readWorkspace())!;
-    const [assets, liabilities] = await Promise.all([
-      store.assets.readAssets(),
-      store.liabilities.readLiabilities(),
-    ]);
-    const netWorth = calculateNetWorth({
-      assets,
-      liabilities,
-      scopeId: "household",
-      workspace,
-    });
-
-    // Piso 200k − hipoteca por-estado-actual 120k = 80k de equity de vivienda.
-    expect(netWorth.housingEquity.amountMinor).toBe(80_000_00);
   });
 });

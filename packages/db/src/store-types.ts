@@ -460,6 +460,19 @@ export interface WorthlineStore {
     repaymentId: string,
     opts?: { today?: string },
   ) => Promise<number>;
+  /**
+   * Current-state debt dated-fact seam (ADR 0056, #677): create the derived
+   * amortization plan row AND the `startsAtBaseline` balance re-baseline AND
+   * sync the liability's `currentBalanceMinor`, atomically, with ONE ripple.
+   * The #676 review's requirement that a current-state debt never exists with
+   * one fact but not the other. Wraps `liabilities.createAmortizationPlan` +
+   * `liabilities.addBalanceRebaseline` + `liabilities.updateLiabilityBalance`.
+   */
+  createCurrentStateDebtAndRipple: (params: {
+    plan: CreateAmortizationPlanInput;
+    rebaseline: AddBalanceRebaselineInput;
+    today?: string;
+  }) => Promise<void>;
   addBalanceRebaselineAndRipple: (
     input: AddBalanceRebaselineInput,
     opts?: { today?: string },

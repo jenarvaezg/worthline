@@ -127,3 +127,55 @@ describe("deriveCurrentStateDebt — guards", () => {
     expect(result.error).toContain("cuota mensual mayor que 0");
   });
 });
+
+describe("deriveCurrentStateDebt — original signing date (shared validation, M3)", () => {
+  test("accepts a blank signing date (optional metadata)", () => {
+    const result = deriveCurrentStateDebt({ ...BASE, originalSigningDate: "" });
+    expect(result.ok).toBe(true);
+  });
+
+  test("accepts a past signing date", () => {
+    const result = deriveCurrentStateDebt({
+      ...BASE,
+      originalSigningDate: "2004-03-01",
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  test("rejects a malformed signing date", () => {
+    const result = deriveCurrentStateDebt({
+      ...BASE,
+      originalSigningDate: "01/03/2004",
+    });
+    expect(result).toEqual({
+      error: "La fecha de firma original no es válida.",
+      ok: false,
+    });
+  });
+
+  test("rejects a future signing date — BEFORE anything would be persisted", () => {
+    const result = deriveCurrentStateDebt({
+      ...BASE,
+      originalSigningDate: "2026-07-03",
+    });
+    expect(result).toEqual({
+      error: "La fecha de firma original no puede ser futura.",
+      ok: false,
+    });
+  });
+});
+
+describe("deriveCurrentStateDebt — returns the S1 engine's plan verbatim (L3)", () => {
+  test("the plan mirrors baseline/next-payment/end-date/balance, not re-assembled by hand", () => {
+    const result = deriveCurrentStateDebt(BASE);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan).toMatchObject({
+      disbursementDate: BASE.baselineDate,
+      firstPaymentDate: BASE.nextPaymentDate,
+      initialCapitalMinor: result.outstandingBalanceMinor,
+      termMonths: result.months,
+    });
+    expect(result.plan.annualInterestRate).toBe(result.annualInterestRate);
+  });
+});
