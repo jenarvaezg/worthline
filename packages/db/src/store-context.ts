@@ -424,6 +424,7 @@ export async function readAssets(
 
   const rows = await db
     .select({
+      connectedSourceId: assets.connectedSourceId,
       currency: assets.currency,
       currentValueMinor: assets.currentValueMinor,
       id: assets.id,
@@ -439,6 +440,7 @@ export async function readAssets(
     .all();
 
   const rawRows: RawAssetRow[] = rows.map((row) => ({
+    connectedSourceId: row.connectedSourceId,
     currency: row.currency,
     currentValueMinor: row.currentValueMinor,
     id: row.id,
