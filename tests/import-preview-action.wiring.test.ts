@@ -73,6 +73,7 @@ describe("previewImportAction wiring", () => {
         priceCacheEntries: 0,
         fireConfigScopes: 0,
         connectedSources: 0,
+        exposureProfiles: 0,
       },
     });
   });
