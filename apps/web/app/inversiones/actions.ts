@@ -3,6 +3,7 @@
 import { type WorthlineStore } from "@web/store";
 import { runActionWithStore } from "@web/action-store";
 import {
+  EXPOSURE_GEOGRAPHY_BUCKETS,
   createInvestmentOperationSafe,
   defaultInvestmentPriceProvider,
   detectSingleAssetBackfillCandidate,
@@ -14,12 +15,19 @@ import {
 } from "@worthline/domain";
 import type {
   Clock,
+  ExposureGeographyBucket,
   InvestmentPriceProvider,
   LiquidityTier,
   ParsedStatement,
   PriceBackfillCandidate,
   StatementMergePlan,
 } from "@worthline/domain";
+
+import {
+  buildExposureProfileResult,
+  isEmptyExposureFields,
+  type ExposureProfileFields,
+} from "@web/patrimonio/[id]/editar/_surfaces/exposure-profile-form";
 import {
   coingeckoHistoricalSource,
   fetchAndCachePrice,
@@ -614,6 +622,85 @@ export async function confirmPriceBackfillAction(
   );
 
   redirect(priceBackfillDoneRedirectUrl(returnUrl, result.source));
+}
+
+// ── Exposure profile hand-entry (PRD #539 S1, #541) ──────────────────────────
+
+/**
+ * Save (or clear) the hand-entered exposure profile for an investment (PRD #539
+ * S1, #541). Mirrors `updateInvestmentAction`: resolve the security's profile key
+ * (`isin ?? providerSymbol`), parse the form via the pure module, run the domain
+ * validation gate (`createExposureProfile` throws over 100% → redirect back with
+ * the Spanish error in the "edit" errorBand), then upsert the *shared canonical*
+ * row keyed by that identity — every holding of the same security resolves to it
+ * (ADR 0039). An all-blank submission deletes the row instead. Respects the demo
+ * write-guard like every other write action.
+ */
+export async function saveExposureProfileAction(
+  routeAssetId: string,
+  formData: FormData,
+  _store?: WorthlineStore,
+) {
+  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+  // A distinct formId so the error renders AT the exposure section, not on the
+  // holding-edit form at the top of the page (which owns "edit").
+  const exposureErrorUrl = (message: string) =>
+    errorRedirectUrl(returnUrl, { formId: "exposure", message });
+
+  const investment = await runActionWithStore(
+    (store) => store.assets.readInvestmentAssetById(routeAssetId),
+    _store,
+  );
+
+  // The profile key is the security's identity — ISIN when present, else the
+  // provider symbol (a pension plan usually has no ISIN → keyed by symbol).
+  const key = investment?.isin ?? investment?.providerSymbol ?? null;
+  if (!key) {
+    redirect(
+      exposureErrorUrl(
+        "Añade un ISIN o símbolo de proveedor antes de definir la exposición.",
+      ),
+    );
+  }
+
+  const fields = parseExposureProfileFieldsFromForm(formData);
+
+  // The "Vaciar" button posts clear=1; an all-blank submission clears too.
+  if (formData.get("clear") === "1" || isEmptyExposureFields(fields)) {
+    await runActionWithStore(
+      (store) => store.exposureProfiles.deleteExposureProfile(key),
+      _store,
+    );
+    redirect(successRedirectUrl(returnUrl, "exposure_profile_cleared"));
+  }
+
+  const result = buildExposureProfileResult(key, fields);
+  if (!result.ok) {
+    redirect(exposureErrorUrl(result.error));
+  }
+
+  await runActionWithStore(
+    (store) => store.exposureProfiles.saveExposureProfile(result.profile),
+    _store,
+  );
+  redirect(successRedirectUrl(returnUrl, "exposure_profile_saved"));
+}
+
+/** Lift the exposure-profile inputs off the FormData into the pure field map. */
+function parseExposureProfileFieldsFromForm(formData: FormData): ExposureProfileFields {
+  const str = (name: string) => String(formData.get(name) ?? "");
+  const geography = Object.fromEntries(
+    EXPOSURE_GEOGRAPHY_BUCKETS.map((bucket) => [bucket, str(`geo_${bucket}`)]),
+  ) as Record<ExposureGeographyBucket, string>;
+
+  return {
+    geography,
+    assetClass: str("assetClass"),
+    ter: str("ter"),
+    trackedIndex: str("trackedIndex"),
+    hedged: formData.get("hedged") === "on",
+  };
 }
 
 export async function refreshPricesAction(

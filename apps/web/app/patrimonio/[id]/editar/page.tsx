@@ -1,5 +1,6 @@
 import { bootstrapHealthcheck, withStore } from "@web/store";
 import {
+  canHandEnterExposureProfile,
   collectWarnings,
   detectSingleAssetBackfillCandidate,
   getPriceFreshness,
@@ -7,7 +8,7 @@ import {
   valuationMethodOfAsset,
   valuationMethodOfLiability,
 } from "@worthline/domain";
-import type { CoinPosition, ValuationMethod } from "@worthline/domain";
+import type { CoinPosition, ExposureProfile, ValuationMethod } from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -32,6 +33,7 @@ import {
   type PriceBackfillPreviewState,
   recordOperationAction,
   refreshPricesAction,
+  saveExposureProfileAction,
   type StatementPreviewState,
   updateInvestmentAction,
 } from "@web/inversiones/actions";
@@ -45,6 +47,7 @@ import { BinanceHoldingSection } from "./_surfaces/binance-holding-section";
 import { tokenPositionsOnRung } from "./_surfaces/binance-holding-view";
 import { CoinCollectionSection } from "./_surfaces/coin-collection-section";
 import { DebtModelSection } from "./_surfaces/debt-model-section";
+import { ExposureProfileSection } from "./_surfaces/exposure-profile-section";
 import { AssetEditForm, LiabilityEditForm } from "./_surfaces/holding-forms";
 import { HousingValuationSection } from "./_surfaces/housing-valuation-section";
 import { PriceBackfillSection } from "./_surfaces/price-backfill-section";
@@ -202,6 +205,20 @@ export default async function EditarPage({
           }) !== null
         : false;
 
+    // Exposure profile hand-entry (PRD #539 S1, #541): a hand-enterable
+    // instrument (fund/etf/stock/index/pension_plan) keyed by the security's
+    // identity (`isin ?? providerSymbol`). The section renders only with a key;
+    // the existing shared row (if any) prefills the form. Read server-side.
+    const canHandEnterExposure =
+      asset?.instrument != null && canHandEnterExposureProfile(asset.instrument);
+    const exposureProfileKey =
+      canHandEnterExposure && investment
+        ? (investment.isin ?? investment.providerSymbol ?? null)
+        : null;
+    const exposureProfile = exposureProfileKey
+      ? await store.exposureProfiles.readExposureProfile(exposureProfileKey)
+      : null;
+
     // amortized / anchored: the debt-model data (PRD #109).
     const debtModel = liability ? await store.liabilities.readDebtModel(id) : null;
     const amortizationPlan =
@@ -242,6 +259,9 @@ export default async function EditarPage({
       coinValuationCache,
       debtModel,
       earlyRepayments,
+      canHandEnterExposure,
+      exposureProfile,
+      exposureProfileKey,
       housingValuationCadence,
       isBackfillCandidate,
       isBinanceHolding,
@@ -281,6 +301,9 @@ export default async function EditarPage({
     coinValuationCache,
     debtModel,
     earlyRepayments,
+    canHandEnterExposure,
+    exposureProfile,
+    exposureProfileKey,
     housingValuationCadence,
     isBackfillCandidate,
     isBinanceHolding,
@@ -361,6 +384,11 @@ export default async function EditarPage({
     await updateInvestmentAction(id, formData);
   }
 
+  async function boundSaveExposureProfileAction(formData: FormData) {
+    "use server";
+    await saveExposureProfileAction(id, formData);
+  }
+
   const freshness =
     method === "derived" && priceCache
       ? getPriceFreshness(priceCache, persistence.checkedAt)
@@ -410,7 +438,9 @@ export default async function EditarPage({
           </div>
         ) : null}
 
-        {formError && formError.formId !== "operation" ? (
+        {formError &&
+        formError.formId !== "operation" &&
+        formError.formId !== "exposure" ? (
           <p className="errorBand" role="alert">
             {formError.message}
           </p>
@@ -541,6 +571,30 @@ export default async function EditarPage({
             currentUrl={currentUrl}
             previewAction={boundPreviewPriceBackfillAction}
           />
+        ) : null}
+
+        {/* Exposición: hand-entered exposure profile for a fund/etf/stock/index/
+            pension_plan (PRD #539 S1, #541). Keyed by isin ?? providerSymbol —
+            shared across every holding of the same security (ADR 0039). With no
+            key yet, prompt for an ISIN/símbolo instead of showing the form. */}
+        {asset && canHandEnterExposure ? (
+          exposureProfileKey ? (
+            <ExposureProfileSection
+              action={boundSaveExposureProfileAction}
+              currentUrl={currentUrl}
+              error={formError?.formId === "exposure" ? formError.message : null}
+              profile={exposureProfile as ExposureProfile | null}
+              profileKey={exposureProfileKey}
+            />
+          ) : (
+            <section className="exposureProfile" aria-label="Exposición">
+              <h3>Exposición</h3>
+              <p className="infoNote">
+                Añade un ISIN o un símbolo de proveedor arriba para poder definir la
+                exposición de este valor.
+              </p>
+            </section>
+          )
         ) : null}
 
         {/* appreciating: the housing valuation curve + appraisals */}

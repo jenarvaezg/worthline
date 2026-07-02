@@ -350,7 +350,11 @@ export type {
   ExposureLookthroughInput,
   ExposureProfile,
 } from "./exposure-lookthrough";
-export { createExposureProfile, lookThroughExposure } from "./exposure-lookthrough";
+export {
+  canHandEnterExposureProfile,
+  createExposureProfile,
+  lookThroughExposure,
+} from "./exposure-lookthrough";
 export type {
   ExposureAssetClassBucket,
   ExposureDimension,
