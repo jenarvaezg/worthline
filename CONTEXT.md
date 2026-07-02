@@ -178,15 +178,45 @@ _Avoid_: drill-down (the per-**position** second level is a different concept), 
 **Operation**:
 A buy or a sell against one **investment**: date, units, price per unit, fees.
 
+**Payout**:
+Money a **holding** paid its owner on a date — a dividend, deposit or account
+interest, or rent. A dated attribution record, not a figure: it never touches
+**net worth**, the holding's value, **snapshots**, or **ripple recalculation** —
+the cash it brought arrives through the ordinary **value update pass** of whatever
+account received it, exactly as it does today. Asset-side and income-only: costs
+are not modelled (declare the one amount you consider yours — worthline is not a
+budgeting app), and what a liability charges is already modelled by its
+**amortization plan**. Entered one-off (a variable dividend) or derived from a
+**payout schedule** (rent). Like an **operation** it is small and re-enterable,
+so it deletes directly with confirmation and gets no trash.
+UI label: "Cobro".
+_Avoid_: income (smells of salary and budgeting — in a net-worth app "ingreso"
+reads as an incoming transfer), flow (direction-ambiguous, collides with the
+IRR's cashflows), distribution (fund jargon — wrong for rent or interest).
+
+**Payout schedule**:
+A declared fixed recurrence of **payouts** on one **holding** — amount, cadence,
+start, optional end. Like an **amortization plan** or an **appreciation rate**, it
+is a declared parameter that _derives_ its past occurrences as truth — no
+per-occurrence confirmation, and nothing derived beyond today: expected future
+income is forecast, the **contribution plan** family's territory, not this.
+Amending it re-derives the list live: a retroactive end date removes a dead tail
+in one edit, and an **exclusion** removes a single occurrence (an unpaid month).
+A variable amount never gets a schedule — estimating one would invent facts;
+enter those as one-off **payouts**.
+UI label: "Cobro recurrente".
+_Avoid_: recurring income, planned payout (a schedule derives past truth; a plan
+forecasts the future).
+
 **Return**:
 How an **investment**'s value has grown relative to what was put into it. worthline
 reports three complementary measures — **simple gain**, **money-weighted return** and
 **time-weighted return** — per **holding** and for the whole portfolio. Like **exposure**,
 a return is a present-time derived figure: it is computed from **operations** and
 **snapshots**, never stored, and never a figure the net-worth math reads. It carries its
-honest limits: dividends/distributions are not modelled (a distributing fund understates),
-and any time-series measure starts at the first **snapshot** — there is no return before
-history began.
+honest limits: dividends/distributions enter only as declared **payouts** (a distributing
+fund with none recorded understates), and any time-series measure starts at the first
+**snapshot** — there is no return before history began.
 _Avoid_: rentabilidad without saying which measure (the three are not interchangeable),
 performance.
 
@@ -234,17 +264,24 @@ States: **pending → fulfilled** (linked) or **skipped**; past pending occurren
 visible backlog.
 
 **Statement**:
-A file an external broker exports listing one **investment**'s movements (e.g. a
-MyInvestor orders export for a single ISIN). The user uploads it against a chosen
-investment and declares its broker; worthline reads it with a broker-specific
-parser and merges its rows into that investment's **operations** — matched by
-date, the file winning where a date overlaps, and operations whose date is absent
+A file an external broker exports listing investment movements — one fund's or a
+whole account's (e.g. a MyInvestor orders export). The user uploads it and declares
+its broker; worthline reads it with a broker-specific parser, splits its rows by
+**ISIN**, maps each group to an existing **investment** — or offers to create the
+missing ones, prefilled by a live symbol lookup on the ISIN (the export carries no
+fund name) — and merges each group into that investment's **operations**: matched
+by date, the file winning where a date overlaps, operations whose date is absent
 from the file left untouched (never deleted). Only executed rows load; pending or
-rejected ones are skipped. Distinct from an **Import** (a one-shot full-workspace
-replace) and from a **connected source** (a live, read-only API mirror that owns
-its holdings): a statement is a manual, per-investment, file-based feed of
-operations, and the holding's value still derives from its **price provider**.
-UI label: "Cargar movimientos".
+rejected ones are skipped. The upload is previewed per fund — matched, new, or
+ignored — and applied all-or-nothing over the funds the user includes. Uploaded
+from the portfolio (any mix of ISINs) or from one holding, where every row must
+match that holding's ISIN. An investment created without a **provider symbol**
+values at its last operation's price and carries an overrideable **warning** until
+one is set. Distinct from an **Import** (a one-shot full-workspace replace) and
+from a **connected source** (a live, read-only API mirror that owns its holdings):
+a statement is a manual, file-based feed of operations, and each holding's value
+still derives from its **price provider**. UI labels: "Cargar movimientos" (one
+holding), "Importar extracto" (portfolio).
 _Avoid_: import (the full-workspace replace), pisar, sync (a connected source's refresh).
 
 **Valuation anchor**:
@@ -296,6 +333,11 @@ enlarges the displayed first cuota; it does not move the balance curve (ADR 0019
 Supports **interest rate revisions** for variable-rate loans and **early repayments**
 (partial or total). A mortgage and a conventional loan use this identically — they
 differ only as **instruments** (a mortgage is secured against a property), not in method.
+An old debt may instead be declared by **current state** — outstanding balance
+today, end date, and current rate _or_ payment (each derives the other, shown
+back as an honesty check) — amortizing forward only from a **balance
+re-baseline**, the original signing date kept as optional metadata and the years
+before left unmodelled (ADR 0056).
 
 **Interest rate revision**:
 A declared change to the annual interest rate of an **amortization plan** at a
@@ -310,6 +352,19 @@ a total early repayment closes the debt. Like an **interest rate revision** it i
 fact about the past and triggers a **ripple recalculation** (ADR 0012).
 UI label: "Amortización anticipada".
 _Avoid_: overpayment.
+
+**Balance re-baseline**:
+A declared outstanding balance of an **amortized** debt at a date, from which the
+French schedule re-derives forward — rate or payment given, term to the known end
+date. The entry path for an old debt whose decades of **interest rate revisions**
+and **early repayments** are unrecoverable, and the repair for one whose modelled
+balance has drifted from the bank's reality. A dated fact: it ripples from its
+date forward (ADR 0012) and never reconstructs the unmodelled past — snapshots
+before it simply do not include the debt.
+UI label: "Recalibrar con saldo real" (on an existing debt); the create-time form
+is "Alta por estado actual".
+_Avoid_: balance anchor (the **anchored** methods' concept — a re-baseline keeps
+cuota semantics and the payoff projection).
 
 **Balance anchor**:
 A declared outstanding balance of a **revolving** or **informal** debt at a specific
@@ -416,9 +471,46 @@ rename still never touches history).
 **Monthly close**:
 The last **snapshot** of a calendar month. Derived, never declared by the user.
 
+**Delta breakdown**:
+The split of a scope's net-worth change between two **monthly closes** into where
+it came from: market movement (price and model movement of priced and modeled
+holdings, exact per holding), **payouts** (recorded income), and **net savings**
+(the residual). Computed from frozen **snapshots** (which capture each holding's
+value), **operations**, and **payouts** — a lens that reads history and never
+writes it. The same computation at holding granularity ranks the month's movers.
+UI label: "Origen del cambio".
+_Avoid_: performance attribution (a narrower industry technique — allocation and
+selection effects — which this is not).
+
+**Net savings**:
+The residual band of the **delta breakdown**: the net-worth change not explained
+by market movement or recorded **payouts** — what was added minus what was spent.
+Honest by construction: a heavy-spending month is negative, and a transfer whose
+two sides were updated in different months shows as noise in both (the
+value-update lag, an accepted limit — never "fixed" by inventing transfer
+matching). UI label: "Ahorro neto".
+_Avoid_: aportaciones/contributions (implies only money in), savings rate (a
+ratio — this is an amount).
+
 **Warning**:
 A flag the dashboard raises about a holding that may need attention (e.g. an asset
-left at value 0). Carries a severity: **blocking** or **overrideable**.
+left at value 0). Carries a severity: **blocking** or **overrideable**. One
+category of **data-quality signal** — the per-holding misconfiguration flags.
+
+**Data-quality signal**:
+A flag about how much the data behind the figures can be trusted: a **warning**,
+a stale or failed price, a stale or failed **sync**, missing configuration (FIRE,
+a debt model), sparse or gapped **snapshot** history, an unvalued **position**, or
+a manual value long without a **value update pass**. Computed live per **scope**
+from persisted state — never stored, never a figure. Carries a severity and,
+where there is one, the holding, source, or scope it points at. One shared
+collection feeds every consumer — the home's health block, the **agent view**,
+and the **financial assistant** — so the human and the agent see the same
+inventory. Signals that represent a deliberate choice are silenced with the same
+**override** mechanism as warnings.
+UI label: "Salud de datos".
+_Avoid_: health check (implies a pass/fail gate), issue (overloaded), warning
+(one category of signal, not the whole).
 
 **Overrideable warning**:
 A **warning** the user can mark intentional. A **blocking** warning cannot be dismissed.
@@ -583,6 +675,7 @@ _Avoid_: shortcut (too generic), automation (implies unsupervised execution).
 - An **import** is a **reset** followed by loading an **export**: both erase the whole workspace, but a reset ends at onboarding while an import ends in a populated dashboard.
 - A **valuation anchor** attaches to a **holding** at a date; **market appraisals** define the interpolation curve, **improvements** are step-ups on top.
 - An **amortization plan** belongs to an **amortizable** liability; **interest rate revisions** and **early repayments** modify the plan from a date forward.
+- A **balance re-baseline** attaches to an **amortized** liability at a date; the schedule re-derives forward from it and the pre-baseline past stays unmodelled — snapshots before it do not include the debt.
 - A **balance anchor** attaches to a **revolving** or **informal** liability at a date.
 - A **debt model** determines how a liability's historical balance is calculated: from an **amortization plan**, from **balance anchors**, or from a step function of anchors.
 - A backdated **operation**, **valuation anchor**, or **balance anchor** triggers a **ripple recalculation** of existing **snapshots**; an **import** restores exported snapshots as-is and only fills gaps (ADR 0012).
@@ -594,6 +687,9 @@ _Avoid_: shortcut (too generic), automation (implies unsupervised execution).
 - **FIRE progress** counts FIRE-eligible assets in the selected **scope** and excludes the primary residence plus any assets manually excluded from FIRE.
 - An **exposure profile** attaches to an **investment**, shared by **ISIN**; **look-through** sums each **holding** weighted by its profile into the scope's **Exposure**, a present-time lens with explicit **coverage**. It is reference metadata — it adds no figure the net-worth math reads and never enters a **snapshot**.
 - A **return** is derived per **investment** from its **operations** and **snapshots** — **simple gain** (realized + unrealized), **money-weighted** (IRR) and **time-weighted** (Modified Dietz over **monthly closes**) — present-time, never stored, never a figure the net-worth math reads (ADR 0040).
+- A **payout** attaches to one asset **holding**; a **payout schedule** derives its past payouts as truth up to today, never beyond. Payouts feed the **return** (a recorded distribution enters the money-weighted cashflows and the realized **simple gain**) and the passive-income lens; they add no figure the net-worth math reads and never enter a **snapshot**.
+- A **delta breakdown** splits the change between two **snapshots** (normally **monthly closes**) into market movement, **payouts**, and **net savings** — the residual; it reads frozen snapshots, per-holding rows, **operations**, and **payouts**, and never writes history.
+- A **data-quality signal** is derived live from persisted state; **warnings** are one category of it, and one shared collection feeds the home health block, the **agent view**, and the **financial assistant** alike.
 - A **contribution plan** forecasts additions to **holdings**; its **occurrences** are **reconciled** by hand into real **operations** / value updates (never auto-matched, never auto-applied). It feeds the derived monthly savings the FIRE projection reads and a what-if, but adds no figure the net-worth math reads and never enters a **snapshot** (ADR 0041).
 - An **agent view** reads a **scope**'s current portfolio, historical snapshots, **FIRE progress**, data-quality signals, and the calculation facts behind them; it defaults to the household **scope**, may be narrowed to one member or member group, preserves user-authored member, group, and holding labels, exposes context rather than recommendations, excludes secrets and transfer artifacts, never changes live data, and never refreshes or captures data as a side effect of being read.
 - A **financial assistant** consumes the **agent view** and may recommend actions, but any workspace mutation still goes through an **assistant proposal** and explicit user confirmation.
