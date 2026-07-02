@@ -96,6 +96,14 @@ export interface ManualAsset {
    * it from the backfilled column. `instrumentOfAsset` derives it when absent.
    */
   instrument?: Instrument;
+  /**
+   * The investment's price-provider lookup key (ADR 0055). Only meaningful for a
+   * `derived` (investment) holding; absent on every other type. Read-only
+   * metadata for the warnings system (`MISSING_PROVIDER_SYMBOL`) — never a figure
+   * the math reads. Optional on the type for the many in-memory fixtures that
+   * predate it, like `instrument` above.
+   */
+  providerSymbol?: string;
 }
 
 export type LiabilityType = "mortgage" | "debt";
@@ -129,6 +137,8 @@ export interface CreateManualAssetInput {
   isPrimaryResidence?: boolean;
   /** What the asset is (ADR 0014, #149); derived from `type` when not given. */
   instrument?: Instrument;
+  /** The investment's price-provider lookup key (ADR 0055), when known. */
+  providerSymbol?: string;
 }
 
 export interface CreateLiabilityInput {
@@ -166,6 +176,7 @@ export function createManualAsset(
     name: input.name,
     ownership: input.ownership,
     type: input.type,
+    ...(input.providerSymbol ? { providerSymbol: input.providerSymbol } : {}),
   };
 }
 

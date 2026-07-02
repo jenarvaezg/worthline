@@ -129,7 +129,10 @@ export async function seedPerformanceWorkspace(
     liquidityTier: "illiquid",
     name: "Coleccion de arte",
     ownership: [{ memberId: "member_ana", shareBps: 10_000 }],
-    type: "other",
+    // "other" is the INSTRUMENT (ADR 0014), not the AssetType — the stored kind
+    // is "manual" (hand-valued), matching precious_metal/vehicle/other's shared
+    // `stored` valuation method (packages/domain/src/instrument-catalog.ts).
+    type: "manual",
   });
   await store.assets.createManualAsset({
     currency: "EUR",
@@ -138,7 +141,7 @@ export async function seedPerformanceWorkspace(
     liquidityTier: "illiquid",
     name: "Vehiculo",
     ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
-    type: "other",
+    type: "manual",
   });
 
   // ── Housing assets (appreciating, with appraisal + improvement anchors) ──────
