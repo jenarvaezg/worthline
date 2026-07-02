@@ -483,6 +483,8 @@ export function okMessage(key: string | undefined): string | null {
     binance_synced: "Cuenta de Binance sincronizada.",
     debt_model_saved: "Modelo de deuda guardado.",
     deleted_recoverable: "Eliminado — recuperable en Papelera.",
+    exposure_profile_cleared: "Perfil de exposición vaciado.",
+    exposure_profile_saved: "Perfil de exposición guardado.",
     fire_saved: "Configuración FIRE guardada.",
     hard_deleted: "Eliminado definitivamente.",
     investment_added: "Inversión añadida.",

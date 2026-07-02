@@ -3745,6 +3745,24 @@ td.rowActions > * {
   margin: 0;
 }
 
+/* Exposición section (PRD #539 S1, #541): same separator + heading treatment as
+   the other method-dispatched surfaces. */
+.exposureProfile {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+}
+
+.exposureProfile h3 {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 0;
+}
+
 .housingValuation .anchorEdit {
   margin-bottom: 8px;
 }

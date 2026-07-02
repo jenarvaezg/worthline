@@ -102,6 +102,16 @@ const GEO_CURRENCY_NOT_APPLICABLE_INSTRUMENTS = new Set<Instrument>([
   "vehicle",
 ]);
 
+/**
+ * Whether an instrument takes a *hand-entered* exposure profile (PRD #539 S1).
+ * fund/etf/stock/index/pension_plan carry an underlying portfolio the user
+ * fills; everything else auto-derives its class/geography from the instrument
+ * (see resolveDimension) and must never show the hand-entry form.
+ */
+export function canHandEnterExposureProfile(instrument: Instrument): boolean {
+  return INVESTMENT_PROFILE_INSTRUMENTS.has(instrument);
+}
+
 export function createExposureProfile(
   input: CreateExposureProfileInput,
 ): ExposureProfile {
