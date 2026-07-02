@@ -386,6 +386,39 @@ export const earlyRepayments = sqliteTable(
 );
 
 /**
+ * A current-state balance re-baseline for an amortizable liability (ADR 0056,
+ * #676). The fact lives on the liability, not as a new valuation method: at and
+ * after `baseline_date`, the amortized curve derives an effective French plan
+ * from the declared outstanding balance, next cuota date, end date, and rate.
+ */
+export const liabilityBalanceRebaselines = sqliteTable(
+  "liability_balance_rebaselines",
+  {
+    id: text("id").primaryKey(),
+    liabilityId: text("liability_id")
+      .notNull()
+      .references(() => liabilities.id, { onDelete: "cascade" }),
+    baselineDate: text("baseline_date").notNull(),
+    outstandingBalanceMinor: integer("outstanding_balance_minor").notNull(),
+    endDate: text("end_date").notNull(),
+    nextPaymentDate: text("next_payment_date").notNull(),
+    annualInterestRate: text("annual_interest_rate").notNull(),
+    monthlyPaymentMinor: integer("monthly_payment_minor").notNull(),
+    inputMode: text("input_mode").$type<"annual-rate" | "monthly-payment">().notNull(),
+    startsAtBaseline: integer("starts_at_baseline", { mode: "boolean" })
+      .default(false)
+      .notNull(),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    uniqueIndex("liability_balance_rebaselines_liability_date_unique").on(
+      table.liabilityId,
+      table.baselineDate,
+    ),
+  ],
+);
+
+/**
  * A declared balance for a revolving or informal liability on a given date (PRD
  * #109, slice 8). `balance_minor` is the TOTAL owed on that date — if the debt
  * accrues interest the user declares it already included; there is intentionally

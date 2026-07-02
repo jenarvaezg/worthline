@@ -19,12 +19,14 @@ import type { AgentViewReadStore } from "./agent-view-read-store";
 import type { ConnectedSourceStore, SourcePositionInput } from "./connected-source-store";
 import type {
   AddBalanceAnchorInput,
+  AddBalanceRebaselineInput,
   AddEarlyRepaymentInput,
   AddInterestRateRevisionInput,
   CreateAmortizationPlanInput,
   LiabilityStore,
   UpdateAmortizationPlanInput,
   UpdateBalanceAnchorInput,
+  UpdateBalanceRebaselineInput,
   UpdateEarlyRepaymentInput,
   UpdateInterestRateRevisionInput,
   UpdateLiabilityInput,
@@ -456,6 +458,19 @@ export interface WorthlineStore {
    */
   deleteEarlyRepaymentAndRipple: (
     repaymentId: string,
+    opts?: { today?: string },
+  ) => Promise<number>;
+  addBalanceRebaselineAndRipple: (
+    input: AddBalanceRebaselineInput,
+    opts?: { today?: string },
+  ) => Promise<void>;
+  updateBalanceRebaselineAndRipple: (
+    rebaselineId: string,
+    input: UpdateBalanceRebaselineInput,
+    opts?: { today?: string },
+  ) => Promise<number>;
+  deleteBalanceRebaselineAndRipple: (
+    rebaselineId: string,
     opts?: { today?: string },
   ) => Promise<number>;
   /**

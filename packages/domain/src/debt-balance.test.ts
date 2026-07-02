@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
 
+import {
+  amortizationPlanFromBalanceRebaseline,
+  amortizableBalanceAtDate,
+} from "./amortization";
 import { debtBalanceAtDate } from "./debt-balance";
 import type { DebtBalanceAtDateInput } from "./debt-balance";
 
@@ -349,6 +353,68 @@ describe("debtBalanceAtDate — amortizable (delegates to French curve)", () => 
         targetDate: "2024-07-01",
       }),
     ).toBe(4_500_00);
+  });
+
+  test("a current-state re-baseline is forward-only before its baseline", () => {
+    const input: DebtBalanceAtDateInput = {
+      balanceRebaselines: [
+        {
+          annualInterestRate: "0",
+          baselineDate: "2026-07-02",
+          endDate: "2026-09-30",
+          nextPaymentDate: "2026-08-31",
+          outstandingBalanceMinor: 100_000_00,
+          startsAtBaseline: true,
+        },
+      ],
+      currentBalanceMinor: 100_000_00,
+      debtModel: "amortizable",
+      targetDate: "2026-07-01",
+    };
+
+    expect(debtBalanceAtDate(input)).toBe(0);
+    expect(debtBalanceAtDate({ ...input, targetDate: "2026-07-02" })).toBe(100_000_00);
+    expect(debtBalanceAtDate({ ...input, targetDate: "2026-08-31" })).toBe(50_000_00);
+  });
+
+  test("a re-baseline composes later revisions and early repayments on the derived plan", () => {
+    const rebaseline = {
+      annualInterestRate: "0.02",
+      baselineDate: "2026-07-02",
+      endDate: "2027-08-05",
+      nextPaymentDate: "2026-08-05",
+      outstandingBalanceMinor: 120_000_00,
+    };
+    const revisions = [{ revisionDate: "2026-11-05", newAnnualInterestRate: "0.04" }];
+    const earlyRepayments = [
+      { repaymentDate: "2026-12-05", amountMinor: 10_000_00, mode: "reduce-payment" },
+    ] as const;
+    const targetDate = "2027-03-05";
+
+    expect(
+      debtBalanceAtDate({
+        balanceRebaselines: [rebaseline],
+        currentBalanceMinor: 0,
+        debtModel: "amortizable",
+        earlyRepayments,
+        plan: {
+          annualInterestRate: "0.01",
+          disbursementDate: "2020-01-01",
+          firstPaymentDate: "2020-02-01",
+          initialCapitalMinor: 200_000_00,
+          termMonths: 360,
+        },
+        revisions,
+        targetDate,
+      }),
+    ).toBe(
+      amortizableBalanceAtDate({
+        earlyRepayments,
+        plan: amortizationPlanFromBalanceRebaseline(rebaseline),
+        revisions,
+        targetDate,
+      }),
+    );
   });
 });
 

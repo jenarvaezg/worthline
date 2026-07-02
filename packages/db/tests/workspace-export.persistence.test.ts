@@ -491,6 +491,15 @@ async function seedStructuredWorkspace(store: WorthlineStore): Promise<void> {
     planId: "plan1",
     repaymentDate: "2024-07-01",
   });
+  await store.liabilities.addBalanceRebaseline({
+    annualInterestRate: "0.02",
+    baselineDate: "2025-01-01",
+    endDate: "2030-01-01",
+    id: "reb1",
+    liabilityId: "l_mort",
+    nextPaymentDate: "2025-02-01",
+    outstandingBalanceMinor: 11000000,
+  });
 
   // Revolving line of credit with two balance anchors on distinct dates.
   // This is the AC#1 element that was previously un-exercised in the round-trip.
@@ -527,6 +536,7 @@ describe("full holding model round-trips through export/import (#155)", () => {
     const anchorsBefore = await source.assets.readValuationAnchors("a_home");
     const debtModelBefore = await source.liabilities.readDebtModel("l_mort");
     const planBefore = await source.liabilities.readAmortizationPlan("l_mort");
+    const rebaselinesBefore = await source.liabilities.readBalanceRebaselines("l_mort");
     const revisionsBefore = await source.liabilities.readInterestRateRevisions("plan1");
     const repaymentsBefore = await source.liabilities.readEarlyRepayments("plan1");
 
@@ -567,6 +577,9 @@ describe("full holding model round-trips through export/import (#155)", () => {
     expect(await restored.assets.readValuationAnchors("a_home")).toEqual(anchorsBefore);
     expect(await restored.liabilities.readDebtModel("l_mort")).toEqual(debtModelBefore);
     expect(await restored.liabilities.readAmortizationPlan("l_mort")).toEqual(planBefore);
+    expect(await restored.liabilities.readBalanceRebaselines("l_mort")).toEqual(
+      rebaselinesBefore,
+    );
     expect(await restored.liabilities.readInterestRateRevisions("plan1")).toEqual(
       revisionsBefore,
     );

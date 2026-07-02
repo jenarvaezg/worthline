@@ -4,6 +4,7 @@ import type {
   ExportedAmortizationPlan,
   ExportedAsset,
   ExportedBalanceAnchor,
+  ExportedBalanceRebaseline,
   ExportedConnectedSource,
   ExportedLiability,
   ExportedPosition,
@@ -48,6 +49,7 @@ import {
   interestRateRevisions,
   liabilities,
   liabilityBalanceAnchors,
+  liabilityBalanceRebaselines,
   liabilityOwnerships,
   investmentAssets,
   memberGroupMembers,
@@ -131,6 +133,7 @@ const WORKSPACE_TABLES = [
   "asset_valuations",
   "early_repayments",
   "interest_rate_revisions",
+  "liability_balance_rebaselines",
   "amortization_plans",
   "liability_balance_anchors",
   "asset_ownerships",
@@ -834,6 +837,26 @@ async function importWorkspace(
         }
       }
 
+      if (liability.balanceRebaselines && liability.balanceRebaselines.length > 0) {
+        await db
+          .insert(liabilityBalanceRebaselines)
+          .values(
+            liability.balanceRebaselines.map((rebaseline) => ({
+              annualInterestRate: rebaseline.annualInterestRate,
+              baselineDate: rebaseline.baselineDate,
+              endDate: rebaseline.endDate,
+              id: rebaseline.id,
+              inputMode: rebaseline.inputMode,
+              liabilityId: liability.id,
+              monthlyPaymentMinor: rebaseline.monthlyPaymentMinor,
+              nextPaymentDate: rebaseline.nextPaymentDate,
+              outstandingBalanceMinor: rebaseline.outstandingBalanceMinor,
+              startsAtBaseline: rebaseline.startsAtBaseline,
+            })),
+          )
+          .run();
+      }
+
       // Balance anchors for a revolving/informal debt (ADR 0015, #155).
       if (liability.balanceAnchors && liability.balanceAnchors.length > 0) {
         await db
@@ -1185,12 +1208,14 @@ async function buildWorkspaceExport(
   // The full debt model (ADR 0015, #155): amortization plans (each with its
   // rate revisions + early repayments) and balance anchors, grouped by liability.
   const planByLiability = await readAmortizationPlansByLiability(db);
+  const rebaselinesByLiability = await readBalanceRebaselinesByLiability(db);
   const balanceAnchorsByLiability = await readBalanceAnchorsByLiability(db);
 
   const toExportedLiability = (
     row: typeof liabilities.$inferSelect,
   ): ExportedLiability => {
     const plan = planByLiability.get(row.id);
+    const balanceRebaselines = rebaselinesByLiability.get(row.id) ?? [];
     const balanceAnchors = balanceAnchorsByLiability.get(row.id) ?? [];
 
     return {
@@ -1210,6 +1235,7 @@ async function buildWorkspaceExport(
         : {}),
       ...(row.debtModel ? { debtModel: row.debtModel } : {}),
       ...(plan ? { amortizationPlan: plan } : {}),
+      ...(balanceRebaselines.length > 0 ? { balanceRebaselines } : {}),
       ...(balanceAnchors.length > 0 ? { balanceAnchors } : {}),
       ownership: ownershipByLiability.get(row.id) ?? [],
       ...(row.associatedAssetId ? { associatedAssetId: row.associatedAssetId } : {}),
@@ -1475,6 +1501,48 @@ async function readAmortizationPlansByLiability(
       interestRateRevisions: revisionsByPlan.get(row.id) ?? [],
       earlyRepayments: repaymentsByPlan.get(row.id) ?? [],
     });
+  }
+
+  return byLiability;
+}
+
+/**
+ * Current-state balance re-baselines grouped by liability (ADR 0056, #676),
+ * ordered by baseline date then id so the exported forward schedule is stable.
+ */
+async function readBalanceRebaselinesByLiability(
+  db: StoreDb,
+): Promise<Map<string, ExportedBalanceRebaseline[]>> {
+  const rows = await db
+    .select()
+    .from(liabilityBalanceRebaselines)
+    .orderBy(
+      asc(liabilityBalanceRebaselines.baselineDate),
+      asc(liabilityBalanceRebaselines.id),
+    )
+    .all();
+
+  const byLiability = new Map<string, ExportedBalanceRebaseline[]>();
+
+  for (const row of rows) {
+    const rebaseline: ExportedBalanceRebaseline = {
+      annualInterestRate: row.annualInterestRate,
+      baselineDate: row.baselineDate,
+      endDate: row.endDate,
+      id: row.id,
+      inputMode: row.inputMode,
+      monthlyPaymentMinor: row.monthlyPaymentMinor,
+      nextPaymentDate: row.nextPaymentDate,
+      outstandingBalanceMinor: row.outstandingBalanceMinor,
+      startsAtBaseline: row.startsAtBaseline,
+    };
+    const existing = byLiability.get(row.liabilityId);
+
+    if (existing) {
+      existing.push(rebaseline);
+    } else {
+      byLiability.set(row.liabilityId, [rebaseline]);
+    }
   }
 
   return byLiability;
