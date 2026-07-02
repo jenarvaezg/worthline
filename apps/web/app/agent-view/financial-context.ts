@@ -4,9 +4,14 @@ import {
   calculateNetWorth,
   defaultsFor,
   listScopeOptions,
+  lookThroughExposure,
   projectPortfolio,
 } from "@worthline/domain";
 import type {
+  ExposureAllocationSlice,
+  ExposureDimensionResult,
+  ExposureLookthroughHolding,
+  ExposureProfile,
   Instrument,
   Liability,
   LiquidityTier,
@@ -24,6 +29,8 @@ import {
   type AgentViewAllocationSlice,
   type AgentViewConnectedSourceSummary,
   type AgentViewExposure,
+  type AgentViewExposureCoverage,
+  type AgentViewExposureDimension,
   type AgentViewFinancialContext,
   type AgentViewFinancialSummary,
   type AgentViewHoldingDirection,
@@ -109,13 +116,19 @@ export async function buildFinancialContext(
     assets,
     liabilities,
   );
+  const lookthrough = await buildExposureLookthrough(
+    store,
+    workspace,
+    holdingSummaries,
+    summary.grossAssets,
+  );
 
   return {
     asOf: options.asOf,
     baseCurrency: workspace.baseCurrency,
     connectedSources: await buildConnectedSources(store, holdingSummaries),
     dataQuality: await buildDataQualitySummary(store, options.scopeId),
-    exposure: buildExposure(holdingSummaries, summary.grossAssets),
+    exposure: buildExposure(holdingSummaries, summary.grossAssets, lookthrough),
     fire: await buildFireSummary(store, options.scopeId),
     holdings: toHoldingsBlock(
       holdingSummaries,
@@ -277,14 +290,25 @@ function toHoldingsBlock(
 
 const EXPOSURE_TOP_HOLDINGS = 5;
 
+/** The four look-through dimensions the S0 aggregation adds to the exposure block. */
+interface ExposureLookthroughFields {
+  byGeography: AgentViewExposureDimension;
+  byCurrency: AgentViewExposureDimension;
+  byAssetClass: AgentViewExposureDimension;
+  currencyRisk: AgentViewAllocationSlice[];
+}
+
 /**
  * Concentration and allocation facts derived from the scope's holdings.
  * Weights are this holding/slice over total gross assets, as `0..1` decimal
  * strings (PRD #328). Allocation buckets cover assets only (gross exposure).
+ * The look-through dimensions (PRD #539) are computed by the S0 domain function
+ * and merged in via `lookthrough`.
  */
 function buildExposure(
   summaries: AgentViewHoldingSummary[],
   grossAssets: AgentViewMoney,
+  lookthrough: ExposureLookthroughFields,
 ): AgentViewExposure {
   const grossMinor = grossAssets.amountMinor;
   const assetHoldings = summaries.filter((holding) => holding.direction === "asset");
@@ -304,6 +328,9 @@ function buildExposure(
   );
 
   return {
+    byAssetClass: lookthrough.byAssetClass,
+    byCurrency: lookthrough.byCurrency,
+    byGeography: lookthrough.byGeography,
     byInstrument: allocationByKey(
       assetHoldings,
       (holding) => holding.instrument,
@@ -320,8 +347,91 @@ function buildExposure(
       topFiveWeight: ratioStringFromBps(topFiveWeightBps),
       topHoldingWeight,
     },
+    currencyRisk: lookthrough.currencyRisk,
     topHoldings,
   };
+}
+
+/**
+ * Present-time exposure look-through (PRD #539, ADR 0039): geography / currency /
+ * asset-class breakdowns + the currency-risk lens, computed by CALLING the S0
+ * domain aggregation (`lookThroughExposure`) — never re-implemented here. The
+ * look-through is a lens, never a figure: it touches no snapshot, net worth, or
+ * ripple. Holdings key to their exposure profile via `isin ?? providerSymbol`,
+ * so this reads the asset meta alongside the stored profiles.
+ */
+async function buildExposureLookthrough(
+  store: AgentViewReadStore,
+  workspace: Workspace,
+  summaries: AgentViewHoldingSummary[],
+  grossAssets: AgentViewMoney,
+): Promise<ExposureLookthroughFields> {
+  const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
+  const meta = await store.readInvestmentAssetsWithMeta();
+  // Holding summaries carry public IDs; meta is keyed by internal asset id, so
+  // key the meta lookup by the holding's public ID to match.
+  const metaByPublicId = new Map(
+    meta
+      .map((row) => [holdingPublicIds.get(row.id), row] as const)
+      .filter(
+        (entry): entry is [string, (typeof meta)[number]] => entry[0] !== undefined,
+      ),
+  );
+  const profiles = new Map<string, ExposureProfile>(
+    (await store.readExposureProfiles()).map((profile) => [profile.key, profile]),
+  );
+
+  const holdings: ExposureLookthroughHolding[] = summaries
+    .filter((holding) => holding.direction === "asset")
+    .map((holding) => ({
+      currency: workspace.baseCurrency,
+      geography: null,
+      id: holding.id,
+      instrument: holding.instrument as Instrument,
+      isin: metaByPublicId.get(holding.id)?.isin ?? null,
+      providerSymbol: metaByPublicId.get(holding.id)?.providerSymbol ?? null,
+      valueMinor: holding.currentValue.amountMinor,
+    }));
+
+  const result = lookThroughExposure({
+    baseCurrency: workspace.baseCurrency,
+    grossAssets: {
+      amountMinor: grossAssets.amountMinor,
+      currency: workspace.baseCurrency,
+    },
+    holdings,
+    profiles,
+  });
+
+  return {
+    byAssetClass: toExposureDimension(result.assetClass),
+    byCurrency: toExposureDimension(result.currency),
+    byGeography: toExposureDimension(result.geography),
+    currencyRisk: result.currencyRisk.map(toAllocationSlice),
+  };
+}
+
+function toExposureDimension(
+  dimension: ExposureDimensionResult,
+): AgentViewExposureDimension {
+  return {
+    coverage: toCoverage(dimension.coverage),
+    slices: dimension.slices.map(toAllocationSlice),
+  };
+}
+
+function toCoverage(
+  coverage: ExposureDimensionResult["coverage"],
+): AgentViewExposureCoverage {
+  return {
+    classified: money(coverage.classified),
+    notApplicable: money(coverage.notApplicable),
+    unknown: money(coverage.unknown),
+  };
+}
+
+function toAllocationSlice(slice: ExposureAllocationSlice): AgentViewAllocationSlice {
+  return { key: slice.key, value: money(slice.value), weight: slice.weight };
 }
 
 function allocationByKey(
