@@ -12,7 +12,7 @@ repayments**. Reconstructing that plan means typing ~30 revisions from old bank
 letters; skipping them means the derived balance is confidently wrong. His
 verdict: "esa no va a funcionar — por lo menos que me deje meter el valor".
 
-What the user reliably knows about an old debt is its *current state*: the
+What the user reliably knows about an old debt is its _current state_: the
 outstanding balance today, the end date, and the current payment (or rate). The
 add-holding wizard already applied this "no wall" philosophy to property; debts
 never got it. The same gap appears later in a debt's life: a modelled balance

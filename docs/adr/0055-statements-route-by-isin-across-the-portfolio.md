@@ -6,7 +6,7 @@ ADR 0018 shaped the broker **statement** as strictly per-investment: one file, o
 ISIN, uploaded against one chosen investment, with an ISIN guard that rejects a
 file with mixed ISINs. That was the right v1 — it made a wrong-file slip an
 obvious error — but it encodes an assumption the first real external user
-immediately broke: brokers export the *whole account*. A MyInvestor "Órdenes"
+immediately broke: brokers export the _whole account_. A MyInvestor "Órdenes"
 export carries every order across every fund (a real sample: 153 orders across
 26 ISINs, columns exactly as ADR 0018 documents, with **no fund-name column —
 only ISIN**). Under the per-investment contract that file demands 26 manual
@@ -24,9 +24,9 @@ A **statement** upload accepts any mix of ISINs and routes rows across the
 portfolio:
 
 1. **Group by ISIN.** The parsed rows split into per-ISIN groups. Each group
-   resolves to one of three buckets in a single preview: *matched* (an existing
-   investment carries that ISIN — merge preview exactly as ADR 0018), *new*
-   (no investment has it — a creation row), or *ignored* (the user excludes the
+   resolves to one of three buckets in a single preview: _matched_ (an existing
+   investment carries that ISIN — merge preview exactly as ADR 0018), _new_
+   (no investment has it — a creation row), or _ignored_ (the user excludes the
    fund; not everything at a broker is worth tracking).
 2. **Creation rows are prefilled by live symbol lookup keyed on the ISIN** (the
    add-holding wizard's search), because the export has no name column: the

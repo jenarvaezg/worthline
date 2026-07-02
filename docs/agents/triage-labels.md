@@ -18,6 +18,6 @@ Edit the right-hand column to match whatever vocabulary you actually use.
 
 Orthogonal to the triage roles above. One label; absence means normal priority.
 
-| Label           | Meaning                                                                 |
-| --------------- | ----------------------------------------------------------------------- |
+| Label           | Meaning                                                                                                                               |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `priority-high` | Grab first — jumps the `ready-for-agent` queue. Reserved for real-user-blocking work; if most open issues carry it, it means nothing. |
