@@ -26,6 +26,8 @@ type YahooChartResult = NonNullable<
 >[number];
 
 const YAHOO_CHART_URL = "https://query2.finance.yahoo.com/v8/finance/chart/";
+const YAHOO_STALE_MARKET_DATE_DAYS = 7;
+const MS_PER_DAY = 86_400_000;
 
 // Yahoo only fetches from Yahoo. The Yahoo→Stooq fallback is policy, declared
 // in `./registry` (`fallbackChains`) and applied by `fetchWithFallback`, so a
@@ -49,6 +51,8 @@ export const yahooProvider: PriceProvider = {
       const result = data.chart?.result?.[0];
       const meta = result?.meta;
       const seriesPrice = latestSeriesPrice(result);
+      if (isStaleYahooMarketDate(seriesPrice?.priceDate, ctx.nowIso)) return null;
+
       const price = seriesPrice?.price ?? meta?.regularMarketPrice;
 
       if (price == null || !Number.isFinite(price)) return null;
@@ -101,6 +105,17 @@ function latestSeriesPrice(
   }
 
   return null;
+}
+
+function isStaleYahooMarketDate(priceDate: string | undefined, nowIso: string): boolean {
+  if (!priceDate) return false;
+
+  const now = Date.parse(nowIso);
+  const marketDate = Date.parse(`${priceDate}T00:00:00.000Z`);
+  if (!Number.isFinite(now) || !Number.isFinite(marketDate)) return false;
+
+  // Seven days tolerates weekends/holidays while rejecting dead listings.
+  return now - marketDate > YAHOO_STALE_MARKET_DATE_DAYS * MS_PER_DAY;
 }
 
 async function convertYahooPriceToEur(
