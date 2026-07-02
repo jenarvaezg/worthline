@@ -564,6 +564,15 @@ function InvestmentGroupPane({
           para subir el CSV de tu bróker (MyInvestor). Sus órdenes serán el histórico —
           sin ninguna apertura inventada de hoy.
         </p>
+        {group.instrument === "fund" ? (
+          <p className="simpleHint">
+            ¿El extracto de tu bróker trae varios fondos a la vez?{" "}
+            <Link href="/patrimonio/importar-extracto">
+              Importar extracto de toda la cartera
+            </Link>{" "}
+            reparte cada ISIN entre lo que ya tienes y lo que falta por crear.
+          </p>
+        ) : null}
         <PaneActions />
       </div>
     </div>
