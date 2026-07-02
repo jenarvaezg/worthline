@@ -1563,13 +1563,13 @@ export function createDatedFactSeams(
             valueMinor: currentValue,
           });
         }
-        // Derive from-date: first past anchor, else earliest snapshot (see #184).
-        const firstPastAnchorDate = (await stores.assets.readValuationAnchors(assetId))
+        // Derive from-date: first anchor through today, else earliest snapshot (see #184).
+        const firstAnchorDate = (await stores.assets.readValuationAnchors(assetId))
           .map((a) => a.valuationDate)
-          .filter((d) => d < today)
+          .filter((d) => d <= today)
           .sort()[0];
         const fromDateKey =
-          firstPastAnchorDate ??
+          firstAnchorDate ??
           (await housingEarliestSnapshotDate(stores.snapshots, assetId, today));
         if (fromDateKey === null || fromDateKey > today) return;
         const workspace = await ctx.getWorkspace();
