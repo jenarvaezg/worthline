@@ -11,6 +11,7 @@
 import { createInMemoryStore } from "@worthline/db";
 import type { WorthlineStore } from "@worthline/db";
 import {
+  calculateNetWorth,
   defaultInstrumentForLiability,
   valuationMethodOfLiability,
 } from "@worthline/domain";
@@ -785,5 +786,145 @@ describe("createHoldingAction — debt ownership inheritance (#171)", () => {
     });
 
     expect(await ownershipByMember(store)).toEqual({ mJ: 6_500, mA: 3_500 });
+  });
+});
+
+describe("createHoldingAction — «alta por estado actual» wizard drawer mode (ADR 0056, #677)", () => {
+  test("a mortgage with current-state fields saves a plan + startsAtBaseline re-baseline (default for old debts)", async () => {
+    const store = await seedStore();
+
+    await runAction(
+      form({
+        instrument: "mortgage",
+        name_mortgage: "Hipoteca Santander",
+        // Ignored — the current-state balance wins once its fields are filled.
+        balance_mortgage: "999,00",
+        csAnnualRate: "2,35",
+        csEndDate: "2032-06-30",
+        csInputMode: "rate",
+        csNextPaymentDate: "2026-08-01",
+        csOutstandingBalance: "118.000,00",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const liability = (await store.liabilities.readLiabilities())[0]!;
+    expect(liability.currentBalance.amountMinor).toBe(118_000_00);
+
+    const plan = await store.liabilities.readAmortizationPlan(liability.id);
+    expect(plan).toMatchObject({
+      disbursementDate: CLOCK.today(),
+      firstPaymentDate: "2026-08-01",
+      initialCapitalMinor: 118_000_00,
+    });
+
+    const rebaselines = await store.liabilities.readBalanceRebaselines(liability.id);
+    expect(rebaselines).toHaveLength(1);
+    expect(rebaselines[0]).toMatchObject({ startsAtBaseline: true });
+  });
+
+  test("leaving the end date blank keeps today's plan-less creation (origin path intact)", async () => {
+    const store = await seedStore();
+
+    await runAction(
+      form({
+        instrument: "mortgage",
+        name_mortgage: "Hipoteca",
+        balance_mortgage: "120.000,00",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const liability = (await store.liabilities.readLiabilities())[0]!;
+    expect(liability.currentBalance.amountMinor).toBe(120_000_00);
+    expect(await store.liabilities.readAmortizationPlan(liability.id)).toBeNull();
+  });
+
+  test("a credit card ignores current-state fields even when present (revolving, no plan)", async () => {
+    const store = await seedStore();
+
+    await runAction(
+      form({
+        instrument: "credit_card",
+        name_credit_card: "Visa BBVA",
+        balance_credit_card: "850,00",
+        csAnnualRate: "20",
+        csEndDate: "2032-06-30",
+        csInputMode: "rate",
+        csNextPaymentDate: "2026-08-01",
+        csOutstandingBalance: "850,00",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const liability = (await store.liabilities.readLiabilities())[0]!;
+    expect(await store.liabilities.readDebtModel(liability.id)).toBe("revolving");
+    expect(await store.liabilities.readAmortizationPlan(liability.id)).toBeNull();
+  });
+
+  test("an infeasible current-state declaration rejects the whole add (no liability created)", async () => {
+    const store = await seedStore();
+
+    const url = await runAction(
+      form({
+        instrument: "mortgage",
+        name_mortgage: "Hipoteca",
+        csEndDate: "2032-06-30",
+        csInputMode: "payment",
+        csMonthlyPayment: "1,00",
+        csNextPaymentDate: "2026-08-01",
+        csOutstandingBalance: "118.000,00",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    expect(url).toContain("error=");
+    expect(await store.liabilities.readLiabilities()).toHaveLength(0);
+  });
+});
+
+describe("createHoldingAction — housing equity nets a current-state mortgage (ADR 0013, #677)", () => {
+  test("an associated property's equity nets against the declared current-state balance", async () => {
+    const store = await seedHousehold(); // "piso": 200_000_00, 65/35 Jose/Ana
+
+    await runAction(
+      form({
+        instrument: "mortgage",
+        name_mortgage: "Hipoteca Santander",
+        assoc_mortgage: "piso",
+        csAnnualRate: "2,35",
+        csEndDate: "2032-06-30",
+        csInputMode: "rate",
+        csNextPaymentDate: "2026-08-01",
+        csOutstandingBalance: "120.000,00",
+        inheritOwnership_mortgage: "on",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const workspace = (await store.workspace.readWorkspace())!;
+    const [assets, liabilities] = await Promise.all([
+      store.assets.readAssets(),
+      store.liabilities.readLiabilities(),
+    ]);
+    const netWorth = calculateNetWorth({
+      assets,
+      liabilities,
+      scopeId: "household",
+      workspace,
+    });
+
+    // Piso 200k − hipoteca por-estado-actual 120k = 80k de equity de vivienda.
+    expect(netWorth.housingEquity.amountMinor).toBe(80_000_00);
   });
 });

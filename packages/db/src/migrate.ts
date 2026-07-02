@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 39;
+export const SCHEMA_VERSION = 40;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1307,6 +1307,19 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       `CREATE UNIQUE INDEX IF NOT EXISTS liability_balance_rebaselines_liability_date_unique ON liability_balance_rebaselines (liability_id, baseline_date);`,
     );
     await writeSchemaVersion(client, 39);
+  }
+
+  if (version < 40) {
+    // ADR 0056 / PRD #670 S2 (#677): optional original-signing-date metadata on
+    // an amortization plan created by current-state entry — descriptive only,
+    // never read by the balance curve. Additive ALTER (try/catch like v20/v22/
+    // v27/v35): a fresh DB already has the column from the block above.
+    try {
+      await client.executeMultiple(
+        "ALTER TABLE amortization_plans ADD COLUMN original_signing_date TEXT",
+      );
+    } catch {}
+    await writeSchemaVersion(client, 40);
   }
 
   return { ranV18Backfill, ranV33Backfill };

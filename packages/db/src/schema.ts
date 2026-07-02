@@ -331,6 +331,13 @@ export const amortizationPlans = sqliteTable(
     /** First-payment date, YYYY-MM-DD — the first cuota; the balance amortizes
      * from here on this date's day-of-month, term counted from here (ADR 0019). */
     firstPaymentDate: text("first_payment_date").notNull(),
+    /**
+     * Optional descriptive metadata (ADR 0056, #677): the debt's true original
+     * signing date, for a plan created by current-state entry whose
+     * `disbursementDate` is the re-baseline date, not the real firma. Nullable,
+     * never read by the balance curve — display-only identity, like `firstCuota`.
+     */
+    originalSigningDate: text("original_signing_date"),
     createdAt: timestamp("created_at"),
   },
   (table) => [uniqueIndex("amortization_plans_liability_unique").on(table.liabilityId)],

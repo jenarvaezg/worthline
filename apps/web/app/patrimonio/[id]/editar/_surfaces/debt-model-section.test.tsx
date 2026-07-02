@@ -22,6 +22,7 @@ const BANK_PLAN: AmortizationPlanRecord = {
   id: "plan_1",
   initialCapitalMinor: 200_000_00,
   liabilityId: "l_mortgage",
+  originalSigningDate: null,
   termMonths: 240,
 };
 
@@ -120,5 +121,23 @@ describe("DebtModelSection — valuation cadence advanced control (ADR 0031, #39
   test("defaults to step when the stored cadence is null", () => {
     const markup = renderFor("amortizable", null);
     expect(markup).toMatch(/value="step"[^>]*selected/);
+  });
+});
+
+describe("DebtModelSection — «alta por estado actual» is the default create path (ADR 0056, #677)", () => {
+  test("shows the current-state form (not the origin plan form) when no plan exists yet", () => {
+    const markup = renderFor("amortizable", null);
+    expect(markup).toContain("Saldo pendiente hoy");
+    expect(markup).toContain("Guardar por estado actual");
+    // The origin-declared form (ADR 0019) stays available, demoted to a details.
+    expect(markup).toContain("¿Tienes los datos originales del préstamo?");
+    expect(markup).toContain("Guardar plan");
+  });
+
+  test("an existing plan keeps the origin editor as the only surface (update path unchanged)", () => {
+    const markup = render(BANK_PLAN);
+    expect(markup).not.toContain("Saldo pendiente hoy");
+    expect(markup).not.toContain("Guardar por estado actual");
+    expect(markup).toContain("Actualizar plan");
   });
 });

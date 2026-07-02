@@ -25,7 +25,9 @@ import {
 } from "@web/intake";
 import { deriveOpeningUnits } from "@web/patrimonio/anadir/investment-units";
 import { guardDemoWrite } from "@web/demo/write-guard";
+import { deriveCurrentStateDebt } from "./current-state-debt";
 import { persistManualAssetCreation } from "./persist-holding";
+import { persistCurrentStateAmortization } from "./persist-current-state-debt";
 
 /**
  * The unified «Añadir holding» server action (issue #151, PRD #146 S5).
@@ -253,6 +255,14 @@ const SIMPLE_FIELD_KEYS = [
   "simpleValue_deuda",
   "simpleAssetKind",
   "simpleDebtKind",
+  // «Alta por estado actual» (ADR 0056, #677) — the debt drawer's default path.
+  "csOutstandingBalance",
+  "csEndDate",
+  "csNextPaymentDate",
+  "csInputMode",
+  "csAnnualRate",
+  "csMonthlyPayment",
+  "csOriginalSigningDate",
 ];
 
 /** Copy a suffixed field onto a canonical name, when present. */
@@ -547,6 +557,25 @@ export async function createHoldingAction(
       instrument === "loan"
         ? parseLoanDebtModel(actionFormData)
         : liabilitySpec.debtModel;
+
+    // «Alta por estado actual» (ADR 0056, #677): the wizard's debt drawer offers
+    // it as the DEFAULT path for an amortizable mortgage/loan — filling the end
+    // date opts in. Its "saldo pendiente hoy" becomes the liability's balance
+    // too (never asked twice); leaving it blank keeps today's plan-less
+    // creation ("origin path" — decide the model later, in the ficha).
+    const csEndDate = String(actionFormData.get("csEndDate") ?? "").trim();
+    const usesCurrentState =
+      (instrument === "mortgage" ||
+        (instrument === "loan" && debtModel === "amortizable")) &&
+      csEndDate !== "";
+
+    if (usesCurrentState) {
+      actionFormData.set(
+        `balance_${instrument}`,
+        String(actionFormData.get("csOutstandingBalance") ?? ""),
+      );
+    }
+
     const scoped = scopedLiabilityForm(actionFormData, instrument, liabilitySpec.type);
 
     if (!String(scoped.get("name") ?? "").trim()) {
@@ -555,6 +584,31 @@ export async function createHoldingAction(
 
     if (parseMoneyMinorField(scoped, "balance") === null) {
       redirect(errorUrl("El saldo de la deuda no es válido."));
+    }
+
+    const currentStateNextPaymentDate = String(
+      actionFormData.get("csNextPaymentDate") ?? "",
+    ).trim();
+    const currentStateInputMode =
+      actionFormData.get("csInputMode") === "payment" ? "payment" : "rate";
+    const currentStateOriginalSigningDate = String(
+      actionFormData.get("csOriginalSigningDate") ?? "",
+    ).trim();
+
+    const currentStateDerived = usesCurrentState
+      ? deriveCurrentStateDebt({
+          annualRatePercent: String(actionFormData.get("csAnnualRate") ?? ""),
+          baselineDate: today,
+          endDate: csEndDate,
+          inputMode: currentStateInputMode,
+          monthlyPayment: String(actionFormData.get("csMonthlyPayment") ?? ""),
+          nextPaymentDate: currentStateNextPaymentDate,
+          outstandingBalance: String(actionFormData.get("csOutstandingBalance") ?? ""),
+        })
+      : null;
+
+    if (currentStateDerived && !currentStateDerived.ok) {
+      redirect(errorUrl(currentStateDerived.error));
     }
 
     const result = await runActionWithStore(async (store) => {
@@ -600,6 +654,23 @@ export async function createHoldingAction(
 
       await store.liabilities.createLiability(resolved);
       await store.liabilities.setDebtModel(resolved.id, debtModel);
+
+      if (currentStateDerived && currentStateDerived.ok) {
+        await persistCurrentStateAmortization(
+          store,
+          resolved.id,
+          currentStateDerived,
+          {
+            baselineDate: today,
+            endDate: csEndDate,
+            inputMode: currentStateInputMode,
+            nextPaymentDate: currentStateNextPaymentDate,
+            originalSigningDate: currentStateOriginalSigningDate || null,
+          },
+          Date.now(),
+          today,
+        );
+      }
 
       return { ok: true as const, id: resolved.id };
     }, _store);

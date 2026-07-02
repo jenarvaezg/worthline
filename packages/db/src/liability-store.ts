@@ -61,6 +61,12 @@ export interface CreateAmortizationPlanInput {
   disbursementDate: string;
   /** First-payment date, YYYY-MM-DD (its day-of-month is the recurring pay day). */
   firstPaymentDate: string;
+  /**
+   * Optional descriptive metadata (ADR 0056, #677): the debt's true original
+   * signing date, when it differs from `disbursementDate` (current-state entry).
+   * Never read by the balance curve.
+   */
+  originalSigningDate?: string | null;
 }
 
 /** An amortization plan as read back from the store. */
@@ -72,6 +78,7 @@ export interface AmortizationPlanRecord {
   termMonths: number;
   disbursementDate: string;
   firstPaymentDate: string;
+  originalSigningDate: string | null;
 }
 
 /** Fields that can be patched on an existing amortization plan. */
@@ -81,6 +88,7 @@ export interface UpdateAmortizationPlanInput {
   termMonths?: number;
   disbursementDate?: string;
   firstPaymentDate?: string;
+  originalSigningDate?: string | null;
 }
 
 /** Input for a single interest-rate revision (PRD #109, slice 7). */
@@ -491,6 +499,9 @@ async function createAmortizationPlan(
     );
   }
   assertDecimalString(input.annualInterestRate, "Annual interest rate");
+  if (input.originalSigningDate) {
+    assertIsoDate(input.originalSigningDate, "Original signing date");
+  }
 
   // The "liability must be amortizable" invariant is a domain/caller guard (R9),
   // not enforced here. The unique index on liability_id keeps the plan 1:1.
@@ -503,6 +514,7 @@ async function createAmortizationPlan(
       id: input.id,
       initialCapitalMinor: input.initialCapitalMinor,
       liabilityId: input.liabilityId,
+      originalSigningDate: input.originalSigningDate ?? null,
       termMonths: input.termMonths,
     })
     .run();
@@ -531,6 +543,7 @@ async function readAmortizationPlan(
     id: row.id,
     initialCapitalMinor: row.initialCapitalMinor,
     liabilityId: row.liabilityId,
+    originalSigningDate: row.originalSigningDate ?? null,
     termMonths: row.termMonths,
   };
 }
@@ -589,6 +602,9 @@ async function updateAmortizationPlan(
   if (input.annualInterestRate !== undefined) {
     assertDecimalString(input.annualInterestRate, "Annual interest rate");
   }
+  if (input.originalSigningDate) {
+    assertIsoDate(input.originalSigningDate, "Original signing date");
+  }
   // Guard ordering when both dates are being updated together.
   if (
     input.disbursementDate !== undefined &&
@@ -621,6 +637,9 @@ async function updateAmortizationPlan(
   }
   if (input.firstPaymentDate !== undefined) {
     fields.firstPaymentDate = input.firstPaymentDate;
+  }
+  if (input.originalSigningDate !== undefined) {
+    fields.originalSigningDate = input.originalSigningDate;
   }
 
   const result = await ctx.db
