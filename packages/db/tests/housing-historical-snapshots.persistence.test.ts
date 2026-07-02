@@ -8,7 +8,7 @@
  */
 import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore } from "@db/index";
+import { captureDailySnapshotForWorkspace, createInMemoryStore } from "@db/index";
 import type { WorthlineStore } from "@db/index";
 
 const TODAY = "2026-06-12";
@@ -43,6 +43,17 @@ async function housingEquityAt(
 ): Promise<number | undefined> {
   return (await store.snapshots.readSnapshots()).find((snap) => snap.dateKey === dateKey)
     ?.housingEquity.amountMinor;
+}
+
+async function housingRowAt(
+  store: WorthlineStore,
+  dateKey: string,
+): Promise<number | undefined> {
+  const rows = await store.snapshots.readSnapshotHoldings({
+    holdingId: "piso",
+    kind: "asset",
+  });
+  return rows.find((row) => row.dateKey === dateKey)?.valueMinor;
 }
 
 /** Add a market appraisal anchor and ripple it. */
@@ -420,6 +431,21 @@ describe("housing historical snapshots — empty-curve basis consistency (fix 1)
 });
 
 describe("housing fully-behind-seam methods (ADR 0020)", () => {
+  test("recordHousingValuationAndRipple refreshes a same-day housing snapshot", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await captureDailySnapshotForWorkspace(store, `${TODAY}T21:00:00.000Z`);
+
+    expect(await housingRowAt(store, TODAY)).toBe(130_000_00);
+
+    await store.recordHousingValuationAndRipple("piso", 260_000_00, { today: TODAY });
+
+    expect(await housingRowAt(store, TODAY)).toBe(260_000_00);
+    expect(await grossAt(store, TODAY)).toBe(260_000_00);
+    expect(await housingEquityAt(store, TODAY)).toBe(260_000_00);
+    store.close();
+  });
+
   test("recordHousingValuationAndRipple upserts today anchor and ripples from the first past anchor", async () => {
     const store = await createInMemoryStore();
     await seed(store);
