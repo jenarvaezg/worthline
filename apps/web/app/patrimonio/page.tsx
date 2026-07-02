@@ -242,6 +242,9 @@ export default async function PatrimonioPage({
           <Link className="actionLink" href="/patrimonio/anadir">
             + Añadir holding
           </Link>
+          <Link className="actionLink" href="/patrimonio/importar-extracto">
+            Importar extracto
+          </Link>
           {hasPricedHoldings ? (
             <PriceRefreshControl
               action={refreshPricesAction}
