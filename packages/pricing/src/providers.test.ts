@@ -243,6 +243,36 @@ describe("yahooProvider", () => {
     });
   });
 
+  it("returns null for dead Yahoo listings whose latest market date is stale", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        chart: {
+          result: [
+            {
+              meta: {
+                currency: "EUR",
+                regularMarketPrice: 20.28,
+              },
+              timestamp: [1443744000],
+              indicators: {
+                quote: [{ close: [20.28] }],
+              },
+            },
+          ],
+        },
+      }),
+    } as Response);
+
+    const result = await yahooProvider.fetchPrice({
+      ...baseCtx,
+      nowIso: "2026-07-02T08:00:00.000Z",
+      symbol: "IE00B4ND3602.IR",
+    });
+
+    expect(result).toBeNull();
+  });
+
   it("converts non-EUR Yahoo prices to EUR through ECB rates", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce({
@@ -470,5 +500,24 @@ describe("fetchAndCachePrice", () => {
     expect(result.currency).toBe("EUR");
     expect(result.priceDate).toBe("2024-01-15");
     expect(result.fetchedAt).toBe(baseCtx.nowIso);
+  });
+
+  it("returns failed AssetPrice when provider currency does not match asset currency", async () => {
+    const provider = {
+      name: "stooq" as const,
+      fetchPrice: async () => ({
+        price: "42.50",
+        currency: "USD",
+      }),
+    };
+
+    const result: AssetPrice = await fetchAndCachePrice(provider, baseCtx);
+
+    expect(result.freshnessState).toBe("failed");
+    expect(result.currency).toBe("EUR");
+    expect(result.price).toBe("0");
+    expect(result.staleReason).toBe(
+      "La divisa del proveedor (USD) no coincide con la del activo (EUR)",
+    );
   });
 });

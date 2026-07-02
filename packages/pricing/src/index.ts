@@ -34,6 +34,8 @@ export const PRICE_FAILURE_REASONS = {
   symbolNotFound: "Símbolo no encontrado en el proveedor",
   noQuote: "El proveedor no devolvió cotización",
   httpError: (status: number) => `El proveedor respondió con un error (${status})`,
+  currencyMismatch: (providerCurrency: string, assetCurrency: string) =>
+    `La divisa del proveedor (${providerCurrency}) no coincide con la del activo (${assetCurrency})`,
 } as const;
 
 /**
@@ -79,6 +81,20 @@ export async function fetchAndCachePrice(
         fetchedAt: ctx.nowIso,
         freshnessState: "failed",
         staleReason: isProviderFailure(result) ? result.reason : "No price returned",
+      };
+    }
+    if (fetched.currency !== ctx.currency) {
+      return {
+        assetId: ctx.assetId,
+        currency: ctx.currency,
+        price: "0",
+        source: fetched.source,
+        fetchedAt: ctx.nowIso,
+        freshnessState: "failed",
+        staleReason: PRICE_FAILURE_REASONS.currencyMismatch(
+          fetched.currency,
+          ctx.currency,
+        ),
       };
     }
     return {
