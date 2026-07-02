@@ -22,6 +22,7 @@
 
 import type {
   AmortizationPlanInput,
+  BalanceRebaselineInput,
   EarlyRepayment,
   InterestRateRevision,
 } from "./amortization";
@@ -81,6 +82,8 @@ export interface DebtBalanceCurveInputs {
   anchors?: readonly DebtBalanceAnchor[];
   /** The amortization plan for an amortizable liability. */
   plan?: AmortizationPlanInput;
+  /** Current-state re-baselines for an amortizable liability. */
+  balanceRebaselines?: readonly BalanceRebaselineInput[];
   /** Rate revisions for an amortizable liability (any order). */
   revisions?: readonly InterestRateRevision[];
   /** Early repayments for an amortizable liability (any order). */
@@ -114,6 +117,9 @@ export function debtCurveValuationInput(
       currentBalanceMinor: curve.currentBalanceMinor,
       method: "amortized",
       ...(curve.plan !== undefined ? { plan: curve.plan } : {}),
+      ...(curve.balanceRebaselines !== undefined
+        ? { balanceRebaselines: curve.balanceRebaselines }
+        : {}),
       ...(curve.revisions !== undefined ? { revisions: curve.revisions } : {}),
       ...(curve.earlyRepayments !== undefined
         ? { earlyRepayments: curve.earlyRepayments }
@@ -353,6 +359,25 @@ function firstBalanceAnchorDate(
   return anchors[0];
 }
 
+function amortizableLiabilityStartDate(
+  curve: DebtBalanceCurveInputs | undefined,
+): string | undefined {
+  const startingBaseline = (curve?.balanceRebaselines ?? [])
+    .filter((fact) => fact.startsAtBaseline)
+    .map((fact) => fact.baselineDate)
+    .sort()[0];
+  if (startingBaseline !== undefined) return startingBaseline;
+
+  const firstRebaseline = (curve?.balanceRebaselines ?? [])
+    .map((fact) => fact.baselineDate)
+    .sort()[0];
+  if (curve?.plan === undefined) return firstRebaseline;
+  if (firstRebaseline === undefined) return curve.plan.disbursementDate;
+  return curve.plan.disbursementDate < firstRebaseline
+    ? curve.plan.disbursementDate
+    : firstRebaseline;
+}
+
 function liabilityExistsAtHistoricalDate(input: {
   liability: Liability;
   curve: DebtBalanceCurveInputs | undefined;
@@ -370,8 +395,9 @@ function liabilityExistsAtHistoricalDate(input: {
     return false;
   }
 
-  if (curve?.debtModel === "amortizable" && curve.plan !== undefined) {
-    return targetDate >= curve.plan.disbursementDate;
+  if (curve?.debtModel === "amortizable") {
+    const startDate = amortizableLiabilityStartDate(curve);
+    return startDate === undefined || targetDate >= startDate;
   }
 
   if (

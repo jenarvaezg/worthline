@@ -9,6 +9,7 @@ import type {
   Workspace,
 } from "@worthline/domain";
 import {
+  amortizationPlanFromBalanceRebaseline,
   amortizationPaymentDatesUpTo,
   buildSnapshotAtDate,
   globalHoldingValueAtDate,
@@ -35,10 +36,12 @@ import {
   type AddBalanceAnchorInput,
   type AddEarlyRepaymentInput,
   type AddInterestRateRevisionInput,
+  type AddBalanceRebaselineInput,
   type CreateAmortizationPlanInput,
   type LiabilityStore,
   type UpdateAmortizationPlanInput,
   type UpdateBalanceAnchorInput,
+  type UpdateBalanceRebaselineInput,
   type UpdateEarlyRepaymentInput,
   type UpdateInterestRateRevisionInput,
   type UpdateLiabilityInput,
@@ -73,6 +76,7 @@ import {
   interestRateRevisions,
   liabilities,
   liabilityBalanceAnchors,
+  liabilityBalanceRebaselines,
   liabilityOwnerships,
   positions,
   snapshots,
@@ -145,6 +149,14 @@ async function dateHasJustifyingFact(db: StoreDb, dateKey: string): Promise<bool
     .get();
   if (balanceAnchor !== undefined) return true;
 
+  const balanceRebaseline = await db
+    .select({ marker: liabilityBalanceRebaselines.id })
+    .from(liabilityBalanceRebaselines)
+    .where(eq(liabilityBalanceRebaselines.baselineDate, dateKey))
+    .limit(1)
+    .get();
+  if (balanceRebaseline !== undefined) return true;
+
   const revision = await db
     .select({ marker: interestRateRevisions.id })
     .from(interestRateRevisions)
@@ -182,6 +194,21 @@ async function dateHasJustifyingFact(db: StoreDb, dateKey: string): Promise<bool
         initialCapitalMinor: plan.initialCapitalMinor,
         termMonths: plan.termMonths,
       },
+      targetAfterDate,
+    );
+    if (boundaries.includes(dateKey)) return true;
+  }
+
+  for (const fact of await db.select().from(liabilityBalanceRebaselines).all()) {
+    const boundaries = amortizationPaymentDatesUpTo(
+      amortizationPlanFromBalanceRebaseline({
+        annualInterestRate: fact.annualInterestRate,
+        baselineDate: fact.baselineDate,
+        endDate: fact.endDate,
+        nextPaymentDate: fact.nextPaymentDate,
+        outstandingBalanceMinor: fact.outstandingBalanceMinor,
+        startsAtBaseline: fact.startsAtBaseline,
+      }),
       targetAfterDate,
     );
     if (boundaries.includes(dateKey)) return true;
@@ -663,7 +690,11 @@ export async function rippleHistoricalSnapshotsForDebt(
     | { liabilityId: string; kind: "amortizable-plan"; today: string }
     | {
         liabilityId: string;
-        kind: "amortizable-revision" | "anchor" | "amortizable-repayment";
+        kind:
+          | "amortizable-revision"
+          | "anchor"
+          | "amortizable-repayment"
+          | "amortizable-rebaseline";
         fromDateKey: string;
         today: string;
       },
@@ -693,6 +724,14 @@ export async function rippleHistoricalSnapshotsForDebt(
     generateDates = amortizationPaymentDatesUpTo(curve.plan, today);
     // The debt appears at the disbursement date (ADR 0019), the earliest boundary.
     recalcFrom = curve.plan.disbursementDate;
+  } else if (params.kind === "amortizable-rebaseline") {
+    const { fromDateKey } = params;
+    generateDates = (curve.balanceRebaselines ?? [])
+      .filter((fact) => fact.baselineDate >= fromDateKey)
+      .flatMap((fact) =>
+        amortizationPaymentDatesUpTo(amortizationPlanFromBalanceRebaseline(fact), today),
+      );
+    recalcFrom = fromDateKey;
   } else {
     const { fromDateKey } = params;
     // A revision never generates new dates; an anchor and an early repayment are
@@ -1216,6 +1255,19 @@ export interface DatedFactSeams {
   ) => Promise<number>;
   deleteEarlyRepaymentAndRipple: (
     repaymentId: string,
+    opts?: { today?: string },
+  ) => Promise<number>;
+  addBalanceRebaselineAndRipple: (
+    input: AddBalanceRebaselineInput,
+    opts?: { today?: string },
+  ) => Promise<void>;
+  updateBalanceRebaselineAndRipple: (
+    rebaselineId: string,
+    input: UpdateBalanceRebaselineInput,
+    opts?: { today?: string },
+  ) => Promise<number>;
+  deleteBalanceRebaselineAndRipple: (
+    rebaselineId: string,
     opts?: { today?: string },
   ) => Promise<number>;
   addBalanceAnchorAndRipple: (
@@ -1936,6 +1988,121 @@ export function createDatedFactSeams(
               stores.snapshots.saveSnapshot,
               {
                 fromDateKey: previousRepaymentDate,
+                kind: "amortizable-revision",
+                liabilityId,
+                today,
+              },
+            );
+          }
+        }
+        return changes;
+      });
+    },
+    addBalanceRebaselineAndRipple: async (input, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      await ctx.transaction(async () => {
+        await stores.liabilities.addBalanceRebaseline(input);
+        const workspace = await ctx.getWorkspace();
+        if (!workspace) return;
+        await rippleHistoricalSnapshotsForDebt(
+          ctx,
+          workspace,
+          stores.snapshots.saveSnapshot,
+          {
+            fromDateKey: input.baselineDate,
+            kind: "amortizable-rebaseline",
+            liabilityId: input.liabilityId,
+            today,
+          },
+        );
+      });
+    },
+    updateBalanceRebaselineAndRipple: (rebaselineId, input, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      return ctx.transaction(async () => {
+        const {
+          baselineDate: previousBaselineDate,
+          changes,
+          liabilityId,
+        } = await stores.liabilities.updateBalanceRebaseline(rebaselineId, input);
+        if (
+          changes === 0 ||
+          previousBaselineDate === undefined ||
+          liabilityId === undefined
+        )
+          return 0;
+        const newDate = input.baselineDate ?? previousBaselineDate;
+        const fromDateKey =
+          previousBaselineDate < newDate ? previousBaselineDate : newDate;
+        if (fromDateKey <= today) {
+          const workspace = await ctx.getWorkspace();
+          if (workspace) {
+            await rippleHistoricalSnapshotsForDebt(
+              ctx,
+              workspace,
+              stores.snapshots.saveSnapshot,
+              {
+                fromDateKey,
+                kind: "amortizable-rebaseline",
+                liabilityId,
+                today,
+              },
+            );
+          }
+        }
+        return changes;
+      });
+    },
+    deleteBalanceRebaselineAndRipple: (rebaselineId, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      return ctx.transaction(async () => {
+        // Guard the degenerate case (#676 review): a re-baseline is sometimes the
+        // ONLY dated fact defining an amortizable debt's curve (ADR 0056
+        // current-state entry — no plan row at all). Deleting the sole survivor
+        // would leave debtBalanceAtDate with neither a plan nor a rebaseline to
+        // derive from, silently flattening the curve to currentBalanceMinor
+        // forever instead of failing loud — mirrors the "no amortization plan"
+        // guard in amortizableBalanceAtDateFor. Refuse before anything is deleted.
+        const target = await ctx.db
+          .select({ liabilityId: liabilityBalanceRebaselines.liabilityId })
+          .from(liabilityBalanceRebaselines)
+          .where(eq(liabilityBalanceRebaselines.id, rebaselineId))
+          .get();
+        if (target) {
+          const [plan, siblings] = await Promise.all([
+            stores.liabilities.readAmortizationPlan(target.liabilityId),
+            stores.liabilities.readBalanceRebaselines(target.liabilityId),
+          ]);
+          if (!plan && siblings.length === 1) {
+            throw new Error(
+              `Liability "${target.liabilityId}" has no amortization plan; deleting its only balance re-baseline would leave the debt with no curve.`,
+            );
+          }
+        }
+
+        const {
+          baselineDate: previousBaselineDate,
+          changes,
+          liabilityId,
+        } = await stores.liabilities.deleteBalanceRebaseline(rebaselineId);
+        if (
+          changes === 0 ||
+          previousBaselineDate === undefined ||
+          liabilityId === undefined
+        )
+          return 0;
+        if (previousBaselineDate <= today) {
+          const workspace = await ctx.getWorkspace();
+          if (workspace) {
+            // "amortizable-revision": generate nothing, only recalculate the
+            // existing snapshots forward from fromDateKey — a lost rebaseline
+            // never mints new payment-boundary dates.
+            await rippleHistoricalSnapshotsForDebt(
+              ctx,
+              workspace,
+              stores.snapshots.saveSnapshot,
+              {
+                fromDateKey: previousBaselineDate,
                 kind: "amortizable-revision",
                 liabilityId,
                 today,

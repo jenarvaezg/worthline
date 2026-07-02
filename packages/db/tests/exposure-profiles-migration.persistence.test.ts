@@ -12,7 +12,14 @@ async function seedV37(): Promise<Client> {
   return client;
 }
 
-describe("exposure profile schema migration (v38)", () => {
+async function seedV38(): Promise<Client> {
+  const client = openLibsqlClient(":memory:");
+  await client.execute("CREATE TABLE schema_meta (version INTEGER NOT NULL)");
+  await client.execute("INSERT INTO schema_meta (version) VALUES (38)");
+  return client;
+}
+
+describe("schema migrations v38/v39", () => {
   test("creates the exposure_profiles table with JSON breakdown defaults", async () => {
     const client = await seedV37();
 
@@ -58,7 +65,7 @@ describe("exposure profile schema migration (v38)", () => {
     ).toBe(SCHEMA_VERSION);
 
     await migrate(client);
-    expect(SCHEMA_VERSION).toBe(38);
+    expect(SCHEMA_VERSION).toBe(39);
   });
 
   test("fresh schemaSql includes the exposure_profiles table", async () => {
@@ -74,5 +81,31 @@ describe("exposure profile schema migration (v38)", () => {
         )
       ).rows[0],
     ).toMatchObject({ breakdowns_json: "{}", hedged: 0 });
+  });
+
+  test("creates the liability balance re-baselines table", async () => {
+    const client = await seedV38();
+
+    await migrate(client);
+
+    const columns = (
+      await client.execute("PRAGMA table_info(liability_balance_rebaselines)")
+    ).rows as unknown as Array<{ name: string }>;
+    expect(columns.map((column) => column.name)).toEqual([
+      "id",
+      "liability_id",
+      "baseline_date",
+      "outstanding_balance_minor",
+      "end_date",
+      "next_payment_date",
+      "annual_interest_rate",
+      "monthly_payment_minor",
+      "input_mode",
+      "starts_at_baseline",
+      "created_at",
+    ]);
+    expect(
+      Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
+    ).toBe(SCHEMA_VERSION);
   });
 });

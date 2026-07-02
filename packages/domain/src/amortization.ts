@@ -99,6 +99,36 @@ export interface AmortizationPlanInput {
   firstPaymentDate: string;
 }
 
+export interface BalanceRebaselineInput {
+  /** YYYY-MM-DD the declared current-state balance becomes the schedule baseline. */
+  baselineDate: string;
+  /** Outstanding principal at the baseline, integer minor units. */
+  outstandingBalanceMinor: number;
+  /** Contractual end date, YYYY-MM-DD. */
+  endDate: string;
+  /** Confirmed next cuota date; its day-of-month defines the remaining cadence. */
+  nextPaymentDate: string;
+  /** Decimal-string annual rate used by the effective forward schedule. */
+  annualInterestRate: DecimalString;
+  /** True when dates before the baseline are intentionally unmodelled. */
+  startsAtBaseline?: boolean;
+}
+
+export interface CurrentStateAmortizationInput {
+  outstandingBalanceMinor: number;
+  baselineDate: string;
+  endDate: string;
+  nextPaymentDate: string;
+  annualInterestRate?: DecimalString;
+  monthlyPaymentMinor?: number;
+}
+
+export interface CurrentStateAmortizationDerivation {
+  plan: AmortizationPlanInput;
+  annualInterestRate: DecimalString;
+  monthlyPaymentMinor: number;
+}
+
 export interface AmortizableBalanceAtDateInput {
   plan: AmortizationPlanInput;
   /** Rate revisions in any order; applied from each revision's month boundary. */
@@ -157,6 +187,215 @@ export function addMonths(dateKey: string, count: number): string {
  */
 export function suggestFirstPaymentDate(disbursementDate: string): string {
   return `${addMonths(disbursementDate, 2).slice(0, 7)}-01`;
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const ZERO_RATE_PAYMENT_EPSILON_MINOR = 1;
+
+function assertIsoDate(value: string, label: string): void {
+  if (!ISO_DATE.test(value)) {
+    throw new Error(`${label} must be in YYYY-MM-DD format, got "${value}".`);
+  }
+}
+
+function assertPositiveMinor(value: number, label: string): void {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${label} must be a positive integer minor-unit amount.`);
+  }
+}
+
+function assertNonNegativeAnnualRate(value: DecimalString): void {
+  let rate: Big;
+  try {
+    rate = new Big(value);
+  } catch {
+    throw new Error(`Annual interest rate must be a decimal string, got "${value}".`);
+  }
+  if (rate.lt(0)) {
+    throw new Error(`Annual interest rate must be non-negative, got "${value}".`);
+  }
+}
+
+function normalizeDecimalString(value: number): DecimalString {
+  const fixed = value.toFixed(12);
+  const trimmed = fixed.replace(/0+$/, "").replace(/\.$/, "");
+  return (trimmed === "-0" ? "0" : trimmed) as DecimalString;
+}
+
+/**
+ * Count remaining monthly cuotas from the confirmed next payment through the
+ * end date, inclusive. The next payment date, not the baseline date, defines the
+ * recurring day-of-month; addMonths handles 31st/short-month clamping.
+ */
+export function remainingMonthlyPayments(input: {
+  nextPaymentDate: string;
+  endDate: string;
+}): number {
+  assertIsoDate(input.nextPaymentDate, "Next payment date");
+  assertIsoDate(input.endDate, "End date");
+  if (input.endDate < input.nextPaymentDate) {
+    throw new Error(
+      `End date ${input.endDate} is before the next payment ${input.nextPaymentDate}.`,
+    );
+  }
+
+  let count = 0;
+  while (addMonths(input.nextPaymentDate, count) <= input.endDate) {
+    count += 1;
+    if (count > 1_200) {
+      throw new Error("Remaining term is too long to derive safely.");
+    }
+  }
+  return count;
+}
+
+export function monthlyPaymentMinorFromRate(input: {
+  outstandingBalanceMinor: number;
+  annualInterestRate: DecimalString;
+  termMonths: number;
+}): number {
+  assertPositiveMinor(input.outstandingBalanceMinor, "Outstanding balance");
+  if (!Number.isInteger(input.termMonths) || input.termMonths <= 0) {
+    throw new Error("Term must be a positive whole number of months.");
+  }
+  assertNonNegativeAnnualRate(input.annualInterestRate);
+
+  return toMinorInt(
+    monthlyPayment(
+      new Big(input.outstandingBalanceMinor),
+      new Big(input.annualInterestRate).div(12),
+      input.termMonths,
+    ),
+  );
+}
+
+function rawPaymentMinorForMonthlyRate(
+  outstandingBalanceMinor: number,
+  monthlyRate: number,
+  termMonths: number,
+): number {
+  if (monthlyRate === 0) {
+    return outstandingBalanceMinor / termMonths;
+  }
+  const factor = (1 + monthlyRate) ** termMonths;
+  return (outstandingBalanceMinor * monthlyRate * factor) / (factor - 1);
+}
+
+export function solveAnnualInterestRateFromPayment(input: {
+  outstandingBalanceMinor: number;
+  monthlyPaymentMinor: number;
+  termMonths: number;
+}): DecimalString {
+  assertPositiveMinor(input.outstandingBalanceMinor, "Outstanding balance");
+  assertPositiveMinor(input.monthlyPaymentMinor, "Monthly payment");
+  if (!Number.isInteger(input.termMonths) || input.termMonths <= 0) {
+    throw new Error("Term must be a positive whole number of months.");
+  }
+
+  const zeroPayment = input.outstandingBalanceMinor / input.termMonths;
+  const delta = input.monthlyPaymentMinor - zeroPayment;
+  if (Math.abs(delta) <= ZERO_RATE_PAYMENT_EPSILON_MINOR) {
+    return "0" as DecimalString;
+  }
+  if (delta < 0) {
+    throw new Error(
+      "Monthly payment is too low to amortize the balance by the end date.",
+    );
+  }
+
+  let low = 0;
+  let high = 0.01;
+  while (
+    rawPaymentMinorForMonthlyRate(input.outstandingBalanceMinor, high, input.termMonths) <
+    input.monthlyPaymentMinor
+  ) {
+    high *= 2;
+    if (high > 1) {
+      throw new Error("Monthly payment implies an unsupported interest rate.");
+    }
+  }
+
+  for (let i = 0; i < 100; i += 1) {
+    const mid = (low + high) / 2;
+    const payment = rawPaymentMinorForMonthlyRate(
+      input.outstandingBalanceMinor,
+      mid,
+      input.termMonths,
+    );
+    if (payment < input.monthlyPaymentMinor) low = mid;
+    else high = mid;
+  }
+
+  return normalizeDecimalString(((low + high) / 2) * 12);
+}
+
+export function amortizationPlanFromBalanceRebaseline(
+  input: BalanceRebaselineInput,
+): AmortizationPlanInput {
+  return {
+    annualInterestRate: input.annualInterestRate,
+    disbursementDate: input.baselineDate,
+    firstPaymentDate: input.nextPaymentDate,
+    initialCapitalMinor: input.outstandingBalanceMinor,
+    termMonths: remainingMonthlyPayments({
+      endDate: input.endDate,
+      nextPaymentDate: input.nextPaymentDate,
+    }),
+  };
+}
+
+export function deriveCurrentStateAmortizationPlan(
+  input: CurrentStateAmortizationInput,
+): CurrentStateAmortizationDerivation {
+  assertPositiveMinor(input.outstandingBalanceMinor, "Outstanding balance");
+  assertIsoDate(input.baselineDate, "Baseline date");
+  assertIsoDate(input.nextPaymentDate, "Next payment date");
+  assertIsoDate(input.endDate, "End date");
+  if (input.baselineDate > input.nextPaymentDate) {
+    throw new Error(
+      `Baseline date must be on or before the next payment date, got ${input.baselineDate} > ${input.nextPaymentDate}.`,
+    );
+  }
+
+  const hasRate = input.annualInterestRate !== undefined;
+  const hasPayment = input.monthlyPaymentMinor !== undefined;
+  if (hasRate === hasPayment) {
+    throw new Error("Provide exactly one of annualInterestRate or monthlyPaymentMinor.");
+  }
+
+  const termMonths = remainingMonthlyPayments({
+    endDate: input.endDate,
+    nextPaymentDate: input.nextPaymentDate,
+  });
+
+  const annualInterestRate = hasRate
+    ? input.annualInterestRate!
+    : solveAnnualInterestRateFromPayment({
+        monthlyPaymentMinor: input.monthlyPaymentMinor!,
+        outstandingBalanceMinor: input.outstandingBalanceMinor,
+        termMonths,
+      });
+  assertNonNegativeAnnualRate(annualInterestRate);
+
+  const monthlyPaymentMinor = hasPayment
+    ? input.monthlyPaymentMinor!
+    : monthlyPaymentMinorFromRate({
+        annualInterestRate,
+        outstandingBalanceMinor: input.outstandingBalanceMinor,
+        termMonths,
+      });
+
+  return {
+    annualInterestRate,
+    monthlyPaymentMinor,
+    plan: {
+      annualInterestRate,
+      disbursementDate: input.baselineDate,
+      firstPaymentDate: input.nextPaymentDate,
+      initialCapitalMinor: input.outstandingBalanceMinor,
+      termMonths,
+    },
+  };
 }
 
 /** Fixed monthly payment for the given capital, monthly rate, and term. */

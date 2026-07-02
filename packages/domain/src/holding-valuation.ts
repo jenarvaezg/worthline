@@ -12,6 +12,7 @@
 
 import type {
   AmortizationPlanInput,
+  BalanceRebaselineInput,
   EarlyRepayment,
   InterestRateRevision,
 } from "./amortization";
@@ -138,6 +139,8 @@ export type HoldingValuationInput =
       method: "amortized";
       /** The French-amortization plan; omit to fall back to the current balance. */
       plan?: AmortizationPlanInput;
+      /** Current-state re-baselines that can override the effective forward plan. */
+      balanceRebaselines?: readonly BalanceRebaselineInput[];
       /** Interest-rate revisions (any order). */
       revisions?: readonly InterestRateRevision[];
       /** Early repayments (any order). */
@@ -232,6 +235,9 @@ export function valueAt(
           debtModel: "amortizable",
           targetDate,
           ...(input.plan !== undefined ? { plan: input.plan } : {}),
+          ...(input.balanceRebaselines !== undefined
+            ? { balanceRebaselines: input.balanceRebaselines }
+            : {}),
           ...(input.revisions !== undefined ? { revisions: input.revisions } : {}),
           ...(input.earlyRepayments !== undefined
             ? { earlyRepayments: input.earlyRepayments }

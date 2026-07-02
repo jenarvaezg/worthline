@@ -98,6 +98,19 @@ export interface ExportedEarlyRepayment {
   mode: EarlyRepaymentMode;
 }
 
+/** A current-state balance re-baseline on an amortizable liability (ADR 0056). */
+export interface ExportedBalanceRebaseline {
+  id: string;
+  baselineDate: string;
+  outstandingBalanceMinor: number;
+  endDate: string;
+  nextPaymentDate: string;
+  annualInterestRate: DecimalString;
+  monthlyPaymentMinor: number;
+  inputMode: "annual-rate" | "monthly-payment";
+  startsAtBaseline: boolean;
+}
+
 /**
  * The French-amortization plan of an amortizable debt (ADR 0015, #155): its
  * declared conditions plus the dated facts that reshape its schedule — rate
@@ -189,6 +202,8 @@ export interface ExportedLiability {
   debtModel?: DebtModel;
   /** The amortization plan (with its revisions + early repayments) when debtModel is amortizable. */
   amortizationPlan?: ExportedAmortizationPlan;
+  /** Current-state re-baselines for an amortizable debt; ordered by baseline date. */
+  balanceRebaselines?: ExportedBalanceRebaseline[];
   /** Declared balance anchors when debtModel is revolving/informal; ordered by date. */
   balanceAnchors?: ExportedBalanceAnchor[];
   ownership: OwnershipShare[];

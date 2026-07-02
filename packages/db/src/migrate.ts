@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 38;
+export const SCHEMA_VERSION = 39;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1284,6 +1284,29 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
     );`);
     await writeSchemaVersion(client, 38);
+  }
+
+  if (version < 39) {
+    // ADR 0056 / PRD #670 S1 (#676): current-state amortizable debts carry their
+    // forward-only balance re-baseline as a liability-level dated fact.
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS liability_balance_rebaselines (
+      id TEXT PRIMARY KEY NOT NULL,
+      liability_id TEXT NOT NULL,
+      baseline_date TEXT NOT NULL,
+      outstanding_balance_minor INTEGER NOT NULL,
+      end_date TEXT NOT NULL,
+      next_payment_date TEXT NOT NULL,
+      annual_interest_rate TEXT NOT NULL,
+      monthly_payment_minor INTEGER NOT NULL,
+      input_mode TEXT NOT NULL,
+      starts_at_baseline INTEGER DEFAULT 0 NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      FOREIGN KEY (liability_id) REFERENCES liabilities(id) ON UPDATE no action ON DELETE cascade
+    );`);
+    await client.executeMultiple(
+      `CREATE UNIQUE INDEX IF NOT EXISTS liability_balance_rebaselines_liability_date_unique ON liability_balance_rebaselines (liability_id, baseline_date);`,
+    );
+    await writeSchemaVersion(client, 39);
   }
 
   return { ranV18Backfill, ranV33Backfill };
