@@ -305,8 +305,27 @@ export type {
   StatementOverwrite,
 } from "./statement-merge";
 export { planStatementMerge } from "./statement-merge";
-export type { StatementIsinGuard } from "./statement-isin";
-export { resolveStatementIsinGuard } from "./statement-isin";
+export type { PerHoldingStatementIsinGuard, StatementIsinGuard } from "./statement-isin";
+export {
+  resolvePerHoldingStatementIsinGuard,
+  resolveStatementIsinGuard,
+} from "./statement-isin";
+export type {
+  MatchedStatementFund,
+  NewStatementFund,
+  StatementFundGroup,
+  StatementFundSelection,
+  StatementImportBucket,
+  StatementImportPlan,
+  StatementImportPlanFund,
+  StatementNewInvestmentSelection,
+  StatementPortfolioInvestment,
+} from "./statement-import-plan";
+export {
+  buildStatementImportPlan,
+  groupStatementRowsByIsin,
+  resolveStatementImportBuckets,
+} from "./statement-import-plan";
 
 export type {
   BuildSnapshotHoldingRowsInput,

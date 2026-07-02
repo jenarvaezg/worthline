@@ -16,6 +16,7 @@ function buy(dateKey: string, units = "10", pricePerUnit = "100"): ParsedStateme
     currency: "EUR",
     dateKey,
     feesMinor: 0,
+    isin: "IE00TEST0001",
     kind: "buy",
     pricePerUnit: pricePerUnit as ParsedStatementRow["pricePerUnit"],
     units: units as ParsedStatementRow["units"],

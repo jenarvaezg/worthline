@@ -11,6 +11,7 @@ import type {
 import type {
   AddValuationAnchorInput,
   AssetStore,
+  CreateInvestmentAssetInput,
   UpdateAssetInput,
   UpdateValuationAnchorInput,
 } from "./asset-store";
@@ -151,6 +152,27 @@ export interface WorthlineStore {
     assetId: string;
     creates: CreateInvestmentOperationInput[];
     overwrites: UpdateInvestmentOperationInput[];
+    today?: string;
+  }) => Promise<void>;
+  /**
+   * Portfolio-level statement import seam (ADR 0055): create any included new
+   * investments, merge operations into matched investments, and ripple the affected
+   * history atomically across the confirmed selection.
+   */
+  applyStatementImportAndRipple: (params: {
+    funds: Array<
+      | {
+          kind: "matched";
+          assetId: string;
+          creates: CreateInvestmentOperationInput[];
+          overwrites: UpdateInvestmentOperationInput[];
+        }
+      | {
+          kind: "new";
+          asset: CreateInvestmentAssetInput;
+          creates: CreateInvestmentOperationInput[];
+        }
+    >;
     today?: string;
   }) => Promise<void>;
   /**
