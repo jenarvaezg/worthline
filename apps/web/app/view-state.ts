@@ -96,3 +96,18 @@ export const RANGE_VIEW_PARAM: ViewParamSpec<CompositionRange> = {
   allowed: COMPOSITION_RANGES,
   fallback: "all",
 };
+
+/** The two exposure-lens values: full portfolio (default) ↔ equity-only. */
+export type ExposureLens = "all" | "equity";
+
+/**
+ * The /patrimonio exposure section's geography lens (PRD #539 S3, #543): the
+ * full-portfolio look-through (default, OMITTED) ↔ the equity-restricted one.
+ * The server pre-renders BOTH `lookThroughExposure` results; this only picks
+ * which is shown, so toggling costs no round-trip (interaction-patterns §2).
+ */
+export const EXPOSURE_LENS_VIEW_PARAM: ViewParamSpec<ExposureLens> = {
+  key: "exp",
+  allowed: ["all", "equity"],
+  fallback: "all",
+};
