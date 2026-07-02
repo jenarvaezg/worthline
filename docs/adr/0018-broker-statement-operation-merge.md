@@ -1,5 +1,7 @@
 # Broker statements: per-investment operation merge
 
+> **Partially superseded by [ADR 0055](0055-statements-route-by-isin-across-the-portfolio.md)** (2026-07-02): the single-ISIN entry contract — one file, one chosen investment, reject mixed ISINs — is replaced by portfolio-level ISIN routing with match/create/ignore. The merge-by-date, executed-rows-only, preview-then-confirm, and ripple semantics below remain accepted.
+
 A user can upload a broker's exported order file (a **statement**, e.g. a
 MyInvestor orders CSV for one ISIN) against a chosen **investment** to populate
 its **operations**. The statement is neither an **Import** (a one-shot

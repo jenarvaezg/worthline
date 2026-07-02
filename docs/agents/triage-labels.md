@@ -13,3 +13,11 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 When a skill mentions a role, use the corresponding GitHub label string from this table.
 
 Edit the right-hand column to match whatever vocabulary you actually use.
+
+## Priority axis
+
+Orthogonal to the triage roles above. One label; absence means normal priority.
+
+| Label           | Meaning                                                                                                                               |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `priority-high` | Grab first — jumps the `ready-for-agent` queue. Reserved for real-user-blocking work; if most open issues carry it, it means nothing. |
