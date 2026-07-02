@@ -447,6 +447,26 @@ describe("createHoldingAction — derived investments", () => {
     expect(asset?.instrument).toBe("pension_plan");
     expect(asset?.liquidityTier).toBe("term-locked");
   });
+
+  test("fund → investment persists the searched ISIN", async () => {
+    const store = await seedStore();
+
+    await runAction(
+      form({
+        instrument: "fund",
+        name_fund: "Vanguard Global",
+        symbol_fund: "0P0001CLDK.F",
+        isin_fund: "IE00BYX5NX33",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const meta = (await store.assets.readInvestmentAssetsWithMeta())[0]!;
+    expect(meta.isin).toBe("IE00BYX5NX33");
+    expect(meta.providerSymbol).toBe("0P0001CLDK.F");
+  });
 });
 
 describe("createHoldingAction — investment drawer, saldo-de-hoy (#597)", () => {

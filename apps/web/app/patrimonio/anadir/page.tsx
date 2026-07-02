@@ -526,6 +526,7 @@ function InvestmentGroupPane({
           placeholder={group.searchPlaceholder}
         />
       </Field>
+      <input name={`isin_${id}`} type="hidden" value={v("isin") ?? ""} />
 
       <fieldset className="simpleChoiceGroup">
         <legend>¿Cómo lo registramos?</legend>

@@ -444,6 +444,7 @@ function MethodFields({
               autoComplete="off"
             />
           </label>
+          <input name={`isin_${id}`} type="hidden" value={v("isin") ?? ""} />
           <label>
             Precio manual por unidad (EUR) <small>(opcional)</small>
             <input

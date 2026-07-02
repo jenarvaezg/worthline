@@ -24,6 +24,7 @@ const ADD_HOLDING_FIELD_KEYS = [
   "name",
   "value",
   "symbol",
+  "isin",
   "price",
   "acqDate",
   "acqValue",
@@ -105,6 +106,11 @@ export function addHoldingFieldValue({
     if (pickedSymbol) return pickedSymbol;
   }
 
+  if (field === "isin") {
+    const pickedIsin = firstNonEmptyParam(searchParams["pfIsin"]);
+    if (pickedIsin) return pickedIsin;
+  }
+
   return savedValue ?? firstNonEmptyParam(searchParams[`${field}_${instrument}`]);
 }
 
@@ -144,6 +150,7 @@ export function buildSymbolSearchCurrentParams(
       key === "symbolq" ||
       key === "pfName" ||
       key === "pfSymbol" ||
+      key === "pfIsin" ||
       key === "pfProvider" ||
       key.startsWith("$ACTION_")
     ) {

@@ -10,6 +10,7 @@ vi.mock("@worthline/pricing", () => ({
       provider: "yahoo",
       quoteType: "MUTUALFUND",
       symbol: "IE0007987708.IR",
+      isin: "IE0007987708",
     },
   ]),
 }));
@@ -43,6 +44,7 @@ describe("SymbolSearch", () => {
     expect(decoded).toContain("instrument=fund");
     expect(decoded).toContain("symbolq=IE0007987708.IR");
     expect(decoded).toContain("pfSymbol=IE0007987708.IR");
+    expect(decoded).toContain("pfIsin=IE0007987708");
     expect(decoded).not.toContain("$ACTION_ID");
     expect(decoded).not.toContain("name_etf");
     expect(decoded).not.toContain("value_current_account");
