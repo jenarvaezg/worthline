@@ -1,14 +1,21 @@
 import type { AgentViewReadStore } from "@worthline/db";
 import {
+  canHandEnterExposureProfile,
   collectWarnings,
   defaultsFor,
   listScopeOptions,
   projectPortfolio,
 } from "@worthline/domain";
-import type { RowOwnership, Workspace } from "@worthline/domain";
+import type {
+  ExposureProfile,
+  Instrument,
+  RowOwnership,
+  Workspace,
+} from "@worthline/domain";
 
 import {
   AgentViewHttpError,
+  type AgentViewExposureProfile,
   type AgentViewHoldingDetail,
   type AgentViewHoldingSourceSummary,
   type AgentViewMoney,
@@ -80,10 +87,16 @@ export async function buildHoldingDetail(
       valuationMethod,
       currency,
     );
+    const exposureProfile = await resolveExposureProfile(
+      store,
+      internalHoldingId,
+      assetRow.instrument,
+    );
 
     return {
       currentValue: moneyOf(assetRow.valueMinor, currency),
       direction: "asset",
+      exposureProfile,
       id: publicHoldingId,
       instrument: assetRow.instrument,
       label: assetRow.name,
@@ -199,6 +212,54 @@ function holdingHasWarnings(
   return collectWarnings(assets).some(
     (warning) => warning.entityId === internalHoldingId,
   );
+}
+
+/**
+ * Resolve a holding's exposure profile (PRD #539, ADR 0039). Only instruments
+ * with an underlying portfolio (`canHandEnterExposureProfile`) carry one; the key
+ * is the security identity `isin ?? providerSymbol`. Returns `null` — never a
+ * fabricated profile — when the instrument takes none, has no identity, or has no
+ * hand-entered profile stored.
+ */
+async function resolveExposureProfile(
+  store: AgentViewReadStore,
+  internalHoldingId: string,
+  instrument: Instrument,
+): Promise<AgentViewExposureProfile | null> {
+  if (!canHandEnterExposureProfile(instrument)) {
+    return null;
+  }
+
+  const meta = (await store.readInvestmentAssetsWithMeta()).find(
+    (row) => row.id === internalHoldingId,
+  );
+  const key = meta?.isin ?? meta?.providerSymbol ?? null;
+  if (!key) {
+    return null;
+  }
+
+  const profile = (await store.readExposureProfiles()).find(
+    (candidate) => candidate.key === key,
+  );
+  return profile ? toExposureProfile(profile) : null;
+}
+
+/** Map the domain profile to the contract shape (nullable scalars, string breakdowns). */
+function toExposureProfile(profile: ExposureProfile): AgentViewExposureProfile {
+  return {
+    breakdowns: {
+      ...(profile.breakdowns.geography
+        ? { geography: profile.breakdowns.geography }
+        : {}),
+      ...(profile.breakdowns.currency ? { currency: profile.breakdowns.currency } : {}),
+      ...(profile.breakdowns.assetClass
+        ? { assetClass: profile.breakdowns.assetClass }
+        : {}),
+    },
+    hedged: profile.hedged ?? false,
+    ter: profile.ter ?? null,
+    trackedIndex: profile.trackedIndex ?? null,
+  };
 }
 
 /** The connected source that materialized this holding, when one did. */

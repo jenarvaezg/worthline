@@ -52,6 +52,7 @@ export interface InvestmentAssetMeta {
   currency: string;
   liquidityTier: LiquidityTier;
   priceProvider: InvestmentPriceProvider;
+  isin?: string;
   providerSymbol?: string;
 }
 
@@ -669,6 +670,7 @@ async function readInvestmentAssetsWithMeta(
       currency: assets.currency,
       liquidityTier: assets.liquidityTier,
       priceProvider: investmentAssets.priceProvider,
+      isin: investmentAssets.isin,
       providerSymbol: investmentAssets.providerSymbol,
     })
     .from(assets)
@@ -683,6 +685,7 @@ async function readInvestmentAssetsWithMeta(
     currency: row.currency,
     liquidityTier: row.liquidityTier,
     priceProvider: row.priceProvider ?? defaultInvestmentPriceProvider(row.liquidityTier),
+    ...(row.isin ? { isin: row.isin } : {}),
     ...(row.providerSymbol ? { providerSymbol: row.providerSymbol } : {}),
   }));
 }
