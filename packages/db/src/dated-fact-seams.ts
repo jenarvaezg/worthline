@@ -27,6 +27,7 @@ import { and, eq, like } from "drizzle-orm";
 import {
   type AddValuationAnchorInput,
   type AssetStore,
+  type CreateInvestmentAssetInput,
   type UpdateAssetInput,
   type UpdateValuationAnchorInput,
 } from "./asset-store";
@@ -1111,6 +1112,22 @@ export interface DatedFactSeams {
     overwrites: UpdateInvestmentOperationInput[];
     today?: string;
   }) => Promise<void>;
+  applyStatementImportAndRipple: (params: {
+    funds: Array<
+      | {
+          kind: "matched";
+          assetId: string;
+          creates: CreateInvestmentOperationInput[];
+          overwrites: UpdateInvestmentOperationInput[];
+        }
+      | {
+          kind: "new";
+          asset: CreateInvestmentAssetInput;
+          creates: CreateInvestmentOperationInput[];
+        }
+    >;
+    today?: string;
+  }) => Promise<void>;
   deleteOperationAndRipple: (params: {
     operationId: string;
     today?: string;
@@ -1282,6 +1299,51 @@ export function createDatedFactSeams(
           stores.snapshots.saveSnapshot,
           { assetId, operationDateKeys, today },
         );
+      });
+    },
+    applyStatementImportAndRipple: async ({ funds, today: todayOpt }) => {
+      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
+      const operationDateKeysByAsset = new Map<string, string[]>();
+
+      const noteOperationDate = (assetId: string, dateKey: string) => {
+        const current = operationDateKeysByAsset.get(assetId) ?? [];
+        current.push(dateKey);
+        operationDateKeysByAsset.set(assetId, current);
+      };
+
+      await ctx.transaction(async () => {
+        for (const fund of funds) {
+          if (fund.kind === "new") {
+            await stores.assets.createInvestmentAsset(fund.asset);
+          }
+        }
+
+        for (const fund of funds) {
+          const assetId = fund.kind === "new" ? fund.asset.id : fund.assetId;
+          for (const input of fund.creates) {
+            await stores.operations.recordOperation(input);
+            noteOperationDate(assetId, input.executedAt.slice(0, 10));
+          }
+
+          if (fund.kind === "matched") {
+            for (const input of fund.overwrites) {
+              const result = await stores.operations.updateOperation(input);
+              if (result) noteOperationDate(assetId, result.executedAt.slice(0, 10));
+            }
+          }
+        }
+
+        const workspace = await ctx.getWorkspace();
+        if (!workspace) return;
+
+        for (const [assetId, operationDateKeys] of operationDateKeysByAsset) {
+          await rippleHistoricalSnapshotsForOperations(
+            ctx,
+            workspace,
+            stores.snapshots.saveSnapshot,
+            { assetId, operationDateKeys, today },
+          );
+        }
       });
     },
     deleteOperationAndRipple: ({ operationId, today: todayOpt }) => {

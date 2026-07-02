@@ -7,7 +7,7 @@
  * captures everything broker-specific (delimiter, column mapping + header
  * validation, row parsing incl. date/amount/units/sell detection), a registry maps
  * broker ids to adapter instances, and the generic core (`parseStatementWithAdapter`
- * in `./statement-parse`) keeps the broker-agnostic rules: the single-ISIN guard,
+ * in `./statement-parse`) keeps the broker-agnostic rules: row ISIN attribution,
  * all-or-nothing aborts, and the empty-file / unknown-broker errors.
  *
  * Adding a broker is now a new adapter file + one registry entry, never a new
@@ -17,18 +17,21 @@
 import type { ParsedStatementRow, SkippedStatementRow } from "./statement-parse";
 import { myinvestorAdapter } from "./statement-myinvestor-adapter";
 
+type ParsedStatementRowDraft = Omit<ParsedStatementRow, "isin">;
+type SkippedStatementRowDraft = Omit<SkippedStatementRow, "isin">;
+
 /**
  * What interpreting one data row produced. The ISIN is reported alongside the
- * outcome (not folded into it) so the core can run the cross-row single-ISIN guard
- * over EVERY row — loaded, skipped, or errored — exactly as the inline parser did.
+ * outcome (not folded into it) so the core can attach the source ISIN to loaded
+ * and skipped rows before portfolio-level routing.
  */
 export type StatementRowOutcome =
-  | { kind: "row"; row: ParsedStatementRow }
-  | { kind: "skipped"; skipped: SkippedStatementRow }
+  | { kind: "row"; row: ParsedStatementRowDraft }
+  | { kind: "skipped"; skipped: SkippedStatementRowDraft }
   | { kind: "error"; error: string };
 
 export interface StatementRowResult {
-  /** The ISIN this row carried, for the core's single-ISIN guard, or null. */
+  /** The ISIN this row carried, for grouping/routing, or null. */
   isin: string | null;
   outcome: StatementRowOutcome;
 }

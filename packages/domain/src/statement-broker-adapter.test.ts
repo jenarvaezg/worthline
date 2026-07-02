@@ -12,8 +12,9 @@ import { parseStatement, parseStatementWithAdapter } from "./statement-parse";
  * Tests for the broker-adapter seam (issue #480). The MyInvestor end-to-end
  * sample lives in statement-parse.test.ts (kept as the behavior anchor); here we
  * pin the three new seams: the registry, the generic dispatcher driven by a FAKE
- * adapter (so the core's ISIN guard / all-or-nothing is tested independent of any
- * real broker), and the MyInvestor adapter's column + row parsing in isolation.
+ * adapter (so the core's row attribution / all-or-nothing is tested independent
+ * of any real broker), and the MyInvestor adapter's column + row parsing in
+ * isolation.
  */
 
 describe("statement broker registry", () => {
@@ -117,33 +118,34 @@ describe("parseStatementWithAdapter — generic core (fake adapter)", () => {
     expect(result.errors[0]).toContain("fila 3 mala");
   });
 
-  test("more than one distinct ISIN is rejected by the core, not the adapter", () => {
+  test("more than one distinct ISIN is accepted and exposed by the core", () => {
     const file = ["tag\tisin", "row\tAAA", "row\tBBB"].join("\n");
     const result = parseStatementWithAdapter(file, fakeAdapter);
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error("expected failure");
-    expect(result.errors[0]).toContain("varios ISIN");
-    expect(result.errors[0]).toContain("AAA");
-    expect(result.errors[0]).toContain("BBB");
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.value.isin).toBeNull();
+    expect(result.value.isins).toEqual(["AAA", "BBB"]);
+    expect(result.value.rows.map((row) => row.isin)).toEqual(["AAA", "BBB"]);
   });
 
-  test("the ISIN guard counts skipped rows, not just loaded ones", () => {
-    // The skipped row carries the second ISIN — the guard must still trip.
+  test("distinct ISIN extraction counts skipped rows, not just loaded ones", () => {
+    // The skipped row carries the second ISIN; routing still needs to see it.
     const file = ["tag\tisin", "row\tAAA", "skip\tBBB"].join("\n");
     const result = parseStatementWithAdapter(file, fakeAdapter);
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error("expected failure");
-    expect(result.errors[0]).toContain("varios ISIN");
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.value.isins).toEqual(["AAA", "BBB"]);
+    expect(result.value.skipped.map((row) => row.isin)).toEqual(["BBB"]);
   });
 
-  test("the ISIN guard counts errored rows too", () => {
-    // The errored row carries the second ISIN — the guard must still trip (the
-    // ISIN is reported alongside an error outcome, not swallowed by it).
+  test("row-level errors still abort the whole load", () => {
+    // The errored row carries a second ISIN, but the parse failure is the row error
+    // itself; mixed-ISIN handling moved to the routing layer in ADR 0055.
     const file = ["tag\tisin", "row\tAAA", "err\tBBB"].join("\n");
     const result = parseStatementWithAdapter(file, fakeAdapter);
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected failure");
-    expect(result.errors.some((e) => e.includes("varios ISIN"))).toBe(true);
+    expect(result.errors[0]).toContain("fila 3 mala");
   });
 
   test("no ISIN at all yields a null isin, not an error", () => {

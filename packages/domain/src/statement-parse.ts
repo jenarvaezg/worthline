@@ -11,9 +11,10 @@
  *
  * Since #480 the broker-specific work (delimiter, columns, dates, amounts, sells)
  * lives in a {@link StatementBrokerAdapter} selected from the registry; this module
- * keeps only the broker-agnostic core: the empty-file / unknown-broker guards, the
- * single-ISIN guard, and all-or-nothing aborts (ADR 0010 — a single malformed
- * `Finalizada` row, or a mixed-ISIN file, writes nothing).
+ * keeps only the broker-agnostic core: the empty-file / unknown-broker guards and
+ * all-or-nothing aborts (ADR 0010 — a single malformed `Finalizada` row writes
+ * nothing). ADR 0055 moves mixed-ISIN routing out of parsing and into the statement
+ * import planner, so rows preserve their own ISIN instead of being rejected here.
  */
 
 import type { DecimalString } from "./decimal";
@@ -29,6 +30,8 @@ export type { StatementBroker };
 
 /** One executed order from the statement, ready to become an operation. */
 export interface ParsedStatementRow {
+  /** The ISIN carried by this broker row, when present. */
+  isin: string | null;
   /** ISO `YYYY-MM-DD` execution date. */
   dateKey: string;
   /** A negative amount or units loads as a `sell` (abs values); otherwise a buy. */
@@ -43,13 +46,16 @@ export interface ParsedStatementRow {
 
 /** A row that did not load, with the `Estado` that caused it to be skipped. */
 export interface SkippedStatementRow {
+  isin: string | null;
   dateKey: string | null;
   estado: string;
 }
 
 export interface ParsedStatement {
-  /** The single ISIN the file's rows carry, when present. */
+  /** The single ISIN the file's rows carry, when there is exactly one. */
   isin: string | null;
+  /** Distinct non-empty ISINs seen across loaded and skipped rows, in file order. */
+  isins: string[];
   rows: ParsedStatementRow[];
   skipped: SkippedStatementRow[];
 }
@@ -76,9 +82,9 @@ export function parseStatement(
 
 /**
  * The broker-agnostic core: split + trim lines, let the adapter validate the header
- * and interpret each data row, then apply the generic rules — the single-ISIN guard
- * (across rows of EVERY outcome) and all-or-nothing. Exported so the dispatcher can
- * be tested against a fake adapter, independent of the registry.
+ * and interpret each data row, then apply the generic all-or-nothing rule. Exported
+ * so the dispatcher can be tested against a fake adapter, independent of the
+ * registry.
  *
  * @internal — prefer {@link parseStatement} (which enforces the {@link StatementBroker}
  * registry guard); this entry point accepts an arbitrary adapter, for tests.
@@ -117,10 +123,10 @@ export function parseStatementWithAdapter<C>(
 
     switch (result.outcome.kind) {
       case "row":
-        rows.push(result.outcome.row);
+        rows.push({ ...result.outcome.row, isin: result.isin });
         break;
       case "skipped":
-        skipped.push(result.outcome.skipped);
+        skipped.push({ ...result.outcome.skipped, isin: result.isin });
         break;
       case "error":
         errors.push(result.outcome.error);
@@ -128,24 +134,18 @@ export function parseStatementWithAdapter<C>(
     }
   }
 
-  // A statement is per-ISIN (ADR 0018, S4): a file carrying more than one
-  // distinct ISIN is a wrong-file slip, not something to graft onto one holding.
-  if (isins.size > 1) {
-    errors.push(
-      `El archivo contiene varios ISIN (${[...isins].join(", ")}); un extracto debe ser de un solo fondo.`,
-    );
-  }
-
-  // All-or-nothing (ADR 0010): a single malformed Finalizada row, or a mixed-ISIN
-  // file, writes nothing.
+  // All-or-nothing (ADR 0010): a single malformed Finalizada row writes nothing.
   if (errors.length > 0) {
     return fail(errors);
   }
 
+  const distinctIsins = [...isins];
+
   return {
     ok: true,
     value: {
-      isin: isins.size === 1 ? [...isins][0]! : null,
+      isin: distinctIsins.length === 1 ? distinctIsins[0]! : null,
+      isins: distinctIsins,
       rows,
       skipped,
     },
