@@ -429,6 +429,15 @@ export function resolveOkMessage(
     return `${createdPart}${overwrittenPart}${sellsPart}${skippedPart}${anomalyPart}.`;
   }
 
+  if (key === "statement_import_loaded") {
+    const funds = Number.parseInt(normalizeParam(searchParams?.["funds"]) ?? "", 10) || 0;
+    const created =
+      Number.parseInt(normalizeParam(searchParams?.["created"]) ?? "", 10) || 0;
+    const createdPart =
+      created > 0 ? ` (${created} nuevo${created === 1 ? "" : "s"})` : "";
+    return `${funds} fondo${funds === 1 ? "" : "s"} importado${funds === 1 ? "" : "s"}${createdPart}.`;
+  }
+
   if (key === "price_backfill_done") {
     // Surface the source that produced the frozen prices so the post-confirm
     // banner — not just the preview — carries the audit trail (#380, criterion 8).

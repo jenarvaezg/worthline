@@ -52,6 +52,12 @@ export interface AssetProjectionContext {
   operationsByAsset: Map<string, InvestmentOperation[]>;
   manualPriceByAsset: Map<string, DecimalString | undefined>;
   cachedPriceByAsset: Map<string, DecimalString | undefined>;
+  /**
+   * The investment's provider-symbol metadata (ADR 0055), for the
+   * `MISSING_PROVIDER_SYMBOL` warning. Optional so the many fixtures/contexts
+   * that predate it keep compiling; absent is read the same as "no symbol".
+   */
+  providerSymbolByAsset?: Map<string, string | undefined>;
 }
 
 /** A derived position plus the asset name, for the dashboard positions table. */
@@ -84,8 +90,10 @@ export function projectAssets(
   rows: RawAssetRow[],
   ctx: AssetProjectionContext,
 ): ManualAsset[] {
-  return rows.map((row) =>
-    createManualAsset(workspace, {
+  return rows.map((row) => {
+    const providerSymbol = ctx.providerSymbolByAsset?.get(row.id);
+
+    return createManualAsset(workspace, {
       currency: row.currency,
       currentValueMinor:
         row.type === "investment"
@@ -98,8 +106,9 @@ export function projectAssets(
       ownership: ctx.ownershipByAsset.get(row.id) ?? [],
       type: row.type,
       ...(row.instrument ? { instrument: row.instrument } : {}),
-    }),
-  );
+      ...(providerSymbol ? { providerSymbol } : {}),
+    });
+  });
 }
 
 /**
