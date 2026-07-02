@@ -25,6 +25,23 @@ import { parsePercentToDecimal } from "@web/intake-primitives";
 
 export type CurrentStateInputMode = "rate" | "payment";
 
+/**
+ * The `name` attribute of every current-state debt field, as posted by
+ * `CurrentStateDebtFields` — the ONE list both server actions preserve on a
+ * validation-error redisplay (`preserveFields`) and the wizard's field
+ * allowlist (`SIMPLE_FIELD_KEYS`), so all three never drift from what that
+ * component actually renders.
+ */
+export const CURRENT_STATE_DEBT_FIELD_NAMES = [
+  "csOutstandingBalance",
+  "csEndDate",
+  "csNextPaymentDate",
+  "csInputMode",
+  "csAnnualRate",
+  "csMonthlyPayment",
+  "csOriginalSigningDate",
+] as const;
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Raw (unparsed) es-ES form strings for the current-state debt fields. */

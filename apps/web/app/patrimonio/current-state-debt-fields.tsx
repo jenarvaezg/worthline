@@ -25,20 +25,18 @@
 import { formatMoneyInput, suggestFirstPaymentDate } from "@worthline/domain";
 import { useMemo, useState } from "react";
 
-import { deriveCurrentStateDebt, type CurrentStateInputMode } from "./current-state-debt";
+import {
+  CURRENT_STATE_DEBT_FIELD_NAMES,
+  deriveCurrentStateDebt,
+  type CurrentStateInputMode,
+} from "./current-state-debt";
 
 /** Keyed by the field's own `name` attribute — the same shape `preserveFields`
  *  returns for redisplay after a validation error, so call sites pass it
  *  through with no translation layer. */
-export interface CurrentStateDebtInitialValues {
-  csOutstandingBalance?: string;
-  csEndDate?: string;
-  csNextPaymentDate?: string;
-  csInputMode?: string;
-  csAnnualRate?: string;
-  csMonthlyPayment?: string;
-  csOriginalSigningDate?: string;
-}
+export type CurrentStateDebtInitialValues = Partial<
+  Record<(typeof CURRENT_STATE_DEBT_FIELD_NAMES)[number], string>
+>;
 
 function formatPercent(pct: number): string {
   return `${pct.toLocaleString("es-ES", { maximumFractionDigits: 2, minimumFractionDigits: 2 })} %`;
@@ -124,7 +122,7 @@ export function CurrentStateDebtFields({
           name="csOutstandingBalance"
           onChange={(event) => setOutstandingBalance(event.target.value)}
           placeholder="118.000,00"
-          required
+          required={Boolean(submitLabel)}
           value={outstandingBalance}
         />
       </label>
@@ -136,7 +134,7 @@ export function CurrentStateDebtFields({
           min={baselineDate}
           name="csEndDate"
           onChange={(event) => setEndDate(event.target.value)}
-          required
+          required={Boolean(submitLabel)}
           type="date"
           value={endDate}
         />
@@ -149,7 +147,7 @@ export function CurrentStateDebtFields({
           min={baselineDate}
           name="csNextPaymentDate"
           onChange={(event) => setNextPaymentDate(event.target.value)}
-          required
+          required={Boolean(submitLabel)}
           type="date"
           value={nextPaymentDate}
         />

@@ -25,7 +25,10 @@ import {
 } from "@web/intake";
 import { deriveOpeningUnits } from "@web/patrimonio/anadir/investment-units";
 import { guardDemoWrite } from "@web/demo/write-guard";
-import { deriveCurrentStateDebt } from "./current-state-debt";
+import {
+  CURRENT_STATE_DEBT_FIELD_NAMES,
+  deriveCurrentStateDebt,
+} from "./current-state-debt";
 import { persistManualAssetCreation } from "./persist-holding";
 import { persistCurrentStateAmortization } from "./persist-current-state-debt";
 
@@ -256,13 +259,7 @@ const SIMPLE_FIELD_KEYS = [
   "simpleAssetKind",
   "simpleDebtKind",
   // «Alta por estado actual» (ADR 0056, #677) — the debt drawer's default path.
-  "csOutstandingBalance",
-  "csEndDate",
-  "csNextPaymentDate",
-  "csInputMode",
-  "csAnnualRate",
-  "csMonthlyPayment",
-  "csOriginalSigningDate",
+  ...CURRENT_STATE_DEBT_FIELD_NAMES,
 ];
 
 /** Copy a suffixed field onto a canonical name, when present. */

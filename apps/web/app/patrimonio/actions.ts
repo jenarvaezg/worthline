@@ -32,7 +32,10 @@ import {
   successRedirectUrl,
 } from "@web/intake";
 import { guardDemoWrite } from "@web/demo/write-guard";
-import { deriveCurrentStateDebt } from "./current-state-debt";
+import {
+  CURRENT_STATE_DEBT_FIELD_NAMES,
+  deriveCurrentStateDebt,
+} from "./current-state-debt";
 import { persistCurrentStateAmortization } from "./persist-current-state-debt";
 
 /**
@@ -1044,16 +1047,6 @@ async function requireDebtModel(
 
 type DebtModelGuard = "amortizable" | "anchorable";
 
-const CURRENT_STATE_DEBT_FIELDS = [
-  "csOutstandingBalance",
-  "csEndDate",
-  "csNextPaymentDate",
-  "csInputMode",
-  "csAnnualRate",
-  "csMonthlyPayment",
-  "csOriginalSigningDate",
-];
-
 /**
  * "Alta por estado actual" on the advanced edit surface (ADR 0056, PRD #670 S2,
  * #677) — a liability's FIRST amortization plan, declared from what the user
@@ -1086,7 +1079,7 @@ export async function saveCurrentStateAmortizationAction(
   const endDate = String(formData.get("csEndDate") ?? "").trim();
   const nextPaymentDate = String(formData.get("csNextPaymentDate") ?? "").trim();
   const originalSigningDate = String(formData.get("csOriginalSigningDate") ?? "").trim();
-  const values = preserveFields(formData, CURRENT_STATE_DEBT_FIELDS);
+  const values = preserveFields(formData, [...CURRENT_STATE_DEBT_FIELD_NAMES]);
 
   const derived = deriveCurrentStateDebt({
     annualRatePercent: String(formData.get("csAnnualRate") ?? ""),
