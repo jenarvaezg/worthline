@@ -49,7 +49,20 @@ export async function captureDailySnapshotForWorkspace(
   if (!workspace) return;
 
   const assets = await store.assets.readAssets(projectionContext);
-  const liabilities = await store.liabilities.readLiabilities();
+  // Value each debt on the capture date through the same curve evaluator the
+  // ripples use (plan / anchors / re-baselines; stored balance as the
+  // model-less fallback). Freezing `current_balance_minor` — which nothing
+  // advances on payment dates — meant a captured debt never registered a cuota.
+  const dateKey = now.slice(0, 10);
+  const liabilities = await Promise.all(
+    (await store.liabilities.readLiabilities()).map(async (liability) => ({
+      ...liability,
+      currentBalance: {
+        ...liability.currentBalance,
+        amountMinor: await store.liabilities.debtBalanceAtDate(liability.id, dateKey),
+      },
+    })),
+  );
   const scopes = listScopeOptions(workspace);
 
   // ── Shared investment details (one per asset, scope-agnostic) ────────────
