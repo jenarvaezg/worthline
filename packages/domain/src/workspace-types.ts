@@ -104,6 +104,13 @@ export interface ManualAsset {
    * predate it, like `instrument` above.
    */
   providerSymbol?: string;
+  /**
+   * The connected source this asset materializes a rung of (ADR 0016/0021, #248);
+   * absent for a hand-maintained holding. Read-only metadata for the warnings
+   * system (`MISSING_PROVIDER_SYMBOL`) — a connected-source holding is priced by
+   * its source's own sync and will never carry a `providerSymbol` (#685 bug).
+   */
+  connectedSourceId?: string;
 }
 
 export type LiabilityType = "mortgage" | "debt";
@@ -139,6 +146,8 @@ export interface CreateManualAssetInput {
   instrument?: Instrument;
   /** The investment's price-provider lookup key (ADR 0055), when known. */
   providerSymbol?: string;
+  /** The connected source this asset materializes a rung of (ADR 0016/0021, #248), when known. */
+  connectedSourceId?: string;
 }
 
 export interface CreateLiabilityInput {
@@ -177,6 +186,7 @@ export function createManualAsset(
     ownership: input.ownership,
     type: input.type,
     ...(input.providerSymbol ? { providerSymbol: input.providerSymbol } : {}),
+    ...(input.connectedSourceId ? { connectedSourceId: input.connectedSourceId } : {}),
   };
 }
 

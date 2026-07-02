@@ -47,7 +47,13 @@ export function collectWarnings(
     // flagged state (ADR 0055): a pending task to set it later from Yahoo Finance
     // or similar, or to override for a hand-quoted fund. Applies to any
     // symbol-less investment, not only ones created by a statement import.
-    if (valuationMethodOfAsset(a) === "derived" && !a.providerSymbol)
+    // Exempt connected-source holdings (Binance, Numista, …, #685 bug): they
+    // price via their source's own sync and will never carry a provider symbol.
+    if (
+      valuationMethodOfAsset(a) === "derived" &&
+      !a.providerSymbol &&
+      !a.connectedSourceId
+    )
       warnings.push({
         code: "MISSING_PROVIDER_SYMBOL",
         severity: "overrideable",
