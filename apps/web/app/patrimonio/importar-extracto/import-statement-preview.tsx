@@ -1,0 +1,373 @@
+"use client";
+
+import { startTransition, useActionState, useState } from "react";
+
+import type { FundPreviewRow, ImportStatementPreviewState } from "./actions";
+import {
+  pluralize,
+  summarizeImportSelection,
+  type FundSelectionState,
+} from "./import-statement-summary";
+
+/**
+ * Multi-fund statement preview → confirm island (PRD #669 S2, #673, ADR 0055).
+ *
+ * Mirrors `StatementUploadSection` (#176): the preview submit bypasses React's
+ * form-action path (onSubmit + preventDefault + manual dispatch) because React
+ * 19 resets uncontrolled fields — including the file input — after a form
+ * action runs, which would drop the file before confirm; the confirm button
+ * goes through `formAction`, where the post-action reset is harmless because a
+ * successful confirm redirects away.
+ *
+ * The only client state is per-fund include/symbol-empty flags — the confirm
+ * summary (fondos, operaciones, importe, aviso pendiente) recomputes from that
+ * state through the pure `summarizeImportSelection` module on every toggle, no
+ * server round-trip (docs/interaction-patterns.md §7).
+ */
+
+const IDLE: ImportStatementPreviewState = { status: "idle" };
+
+interface FundSelectionFlags {
+  included: boolean;
+  symbolEmpty: boolean;
+}
+
+function bucketLabel(bucket: "matched" | "new"): string {
+  return bucket === "matched" ? "Encaja" : "Nuevo";
+}
+
+function fundDisplayName(fund: FundPreviewRow): string {
+  if (fund.bucket === "matched") return fund.existingName;
+  return fund.lookup.status === "found" ? fund.lookup.name : fund.isin;
+}
+
+function formatMoney(amountMinor: number): string {
+  return new Intl.NumberFormat("es-ES", {
+    currency: "EUR",
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+    style: "currency",
+  }).format(amountMinor / 100);
+}
+
+function defaultFlagsFor(fund: FundPreviewRow): FundSelectionFlags {
+  if (fund.bucket === "matched") {
+    return { included: true, symbolEmpty: false };
+  }
+  // Unresolved lookup lands unchecked by default (S0 prototype's convention) —
+  // the user opts in explicitly, since the row would create with
+  // MISSING_PROVIDER_SYMBOL raised.
+  return {
+    included: fund.lookup.status === "found",
+    symbolEmpty: fund.lookup.status !== "found",
+  };
+}
+
+export function ImportStatementPreview({
+  previewAction,
+  confirmAction,
+  currentUrl,
+  readOnly,
+}: {
+  previewAction: (
+    prev: ImportStatementPreviewState,
+    formData: FormData,
+  ) => Promise<ImportStatementPreviewState>;
+  confirmAction: (formData: FormData) => Promise<void>;
+  currentUrl: string;
+  readOnly: boolean;
+}) {
+  const [preview, dispatchPreview, isPreviewPending] = useActionState(
+    previewAction,
+    IDLE,
+  );
+  // A newly-picked file makes the last preview stale — hide it, like #176.
+  const [fileChangedSincePreview, setFileChangedSincePreview] = useState(false);
+  const [selection, setSelection] = useState<Record<string, FundSelectionFlags>>({});
+  // The funds array a new preview last seeded `selection` from — adjusting state
+  // during render (not in an effect) when it changes, per React's recommended
+  // "storing information from previous renders" pattern.
+  const [seededFunds, setSeededFunds] = useState<FundPreviewRow[] | null>(null);
+
+  const shown = fileChangedSincePreview || isPreviewPending ? IDLE : preview;
+  const funds = shown.status === "ready" ? shown.funds : [];
+
+  if (shown.status === "ready" && shown.funds !== seededFunds) {
+    setSeededFunds(shown.funds);
+    setSelection(
+      Object.fromEntries(shown.funds.map((fund) => [fund.isin, defaultFlagsFor(fund)])),
+    );
+  }
+
+  const summaryInput: FundSelectionState[] = funds.map((fund) => ({
+    amountMinor: fund.amountMinor,
+    bucket: fund.bucket,
+    executedCount: fund.executedCount,
+    included: selection[fund.isin]?.included ?? false,
+    isin: fund.isin,
+    skippedCount: fund.skippedCount,
+    symbolEmpty: selection[fund.isin]?.symbolEmpty ?? false,
+  }));
+  const summary = summarizeImportSelection(summaryInput);
+
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    const submitter = (event.nativeEvent as SubmitEvent).submitter;
+    const isPreview =
+      submitter instanceof HTMLButtonElement && submitter.value === "preview";
+
+    if (!isPreview) return; // confirm goes through formAction={confirmAction}
+
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    setFileChangedSincePreview(false);
+    startTransition(() => dispatchPreview(formData));
+  }
+
+  function toggleIncluded(isin: string) {
+    setSelection((current) => ({
+      ...current,
+      [isin]: {
+        ...(current[isin] ?? defaultFlagsForIsin()),
+        included: !current[isin]?.included,
+      },
+    }));
+  }
+
+  function defaultFlagsForIsin(): FundSelectionFlags {
+    return { included: false, symbolEmpty: false };
+  }
+
+  function setSymbolEmpty(isin: string, symbolEmpty: boolean) {
+    setSelection((current) => ({
+      ...current,
+      [isin]: { ...(current[isin] ?? defaultFlagsForIsin()), symbolEmpty },
+    }));
+  }
+
+  return (
+    <section aria-label="Importar extracto">
+      <p className="contextLabel">
+        Sube el archivo de órdenes exportado por tu bróker: se agrupa por ISIN y se
+        reparte por toda la cartera — encaja con lo que ya tienes, ofrece crear lo que no,
+        y puedes dejar fuera lo que no quieras seguir.
+      </p>
+
+      <form className="stackForm inversionesForm" onSubmit={handleSubmit}>
+        <input name="currentUrl" type="hidden" value={currentUrl} />
+
+        <label>
+          Bróker
+          <select defaultValue="myinvestor" disabled={readOnly} name="broker">
+            <option value="myinvestor">MyInvestor</option>
+          </select>
+        </label>
+
+        <label>
+          Archivo de órdenes (.csv)
+          <input
+            accept=".csv,text/csv"
+            disabled={readOnly}
+            name="file"
+            onChange={() => setFileChangedSincePreview(true)}
+            required
+            type="file"
+          />
+        </label>
+
+        <button
+          disabled={readOnly || isPreviewPending}
+          name="intent"
+          type="submit"
+          value="preview"
+        >
+          Ver preview
+        </button>
+
+        {shown.status === "error" ? (
+          <div className="formError" role="alert">
+            <p>No se puede leer este archivo:</p>
+            <p>{shown.message}</p>
+          </div>
+        ) : null}
+
+        {shown.status === "ready" ? (
+          <div className="importPreview">
+            <div className="tableScroll">
+              <table>
+                <caption>
+                  Una fila por ISIN. El detalle de fusión se abre dentro de la fila.
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Incluir</th>
+                    <th scope="col">Estado</th>
+                    <th scope="col">ISIN</th>
+                    <th scope="col">Inversión</th>
+                    <th scope="col">Órdenes</th>
+                    <th scope="col">Importe</th>
+                    <th scope="col">Detalle</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {funds.map((fund) => {
+                    const flags = selection[fund.isin] ?? defaultFlagsFor(fund);
+                    const displayName = fundDisplayName(fund);
+                    const unresolved =
+                      fund.bucket === "new" && fund.lookup.status !== "found";
+
+                    return (
+                      <tr key={fund.isin}>
+                        <td>
+                          <label>
+                            <input
+                              aria-label={`Incluir ${displayName}`}
+                              checked={flags.included}
+                              disabled={readOnly}
+                              name={`include_${fund.isin}`}
+                              onChange={() => toggleIncluded(fund.isin)}
+                              type="checkbox"
+                            />
+                            <span aria-hidden="true">{flags.included ? "Sí" : "No"}</span>
+                          </label>
+                        </td>
+                        <td>
+                          <span
+                            className={`statePill ${fund.bucket === "matched" ? "matched" : "new"}`}
+                          >
+                            {bucketLabel(fund.bucket)}
+                          </span>
+                        </td>
+                        <th scope="row">
+                          <code>{fund.isin}</code>
+                        </th>
+                        <td>
+                          {fund.bucket === "matched" ? (
+                            <strong>{fund.existingName}</strong>
+                          ) : (
+                            <div className="stackForm">
+                              <label>
+                                Nombre
+                                <input
+                                  defaultValue={
+                                    fund.lookup.status === "found" ? fund.lookup.name : ""
+                                  }
+                                  disabled={readOnly || !flags.included}
+                                  name={`name_${fund.isin}`}
+                                  placeholder={fund.isin}
+                                  type="text"
+                                />
+                              </label>
+                              <label>
+                                Símbolo
+                                <input
+                                  defaultValue={
+                                    fund.lookup.status === "found"
+                                      ? fund.lookup.symbol
+                                      : ""
+                                  }
+                                  disabled={readOnly || !flags.included}
+                                  name={`symbol_${fund.isin}`}
+                                  onChange={(e) =>
+                                    setSymbolEmpty(
+                                      fund.isin,
+                                      e.currentTarget.value.trim() === "",
+                                    )
+                                  }
+                                  placeholder="p. ej. IWDA.AS"
+                                  type="text"
+                                />
+                              </label>
+                              {unresolved ? (
+                                <p className="contextLabel">
+                                  {fund.lookup.status === "error"
+                                    ? "La búsqueda de símbolo falló — edítalo a mano."
+                                    : "Sin coincidencia para este ISIN — edítalo a mano."}{" "}
+                                  Sin símbolo, el fondo nacerá con el aviso pendiente
+                                  MISSING_PROVIDER_SYMBOL.
+                                </p>
+                              ) : null}
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          <strong>
+                            {pluralize(fund.executedCount, "operación", "operaciones")}
+                          </strong>
+                          {fund.skippedCount > 0 ? (
+                            <span className="contextLabel">
+                              {" "}
+                              · {pluralize(fund.skippedCount, "saltada", "saltadas")}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td>{formatMoney(fund.amountMinor)}</td>
+                        <td>
+                          {fund.bucket === "matched" ? (
+                            <details>
+                              <summary>Ver fusión</summary>
+                              <p>
+                                {pluralize(
+                                  fund.toCreateCount,
+                                  "operación nueva",
+                                  "operaciones nuevas",
+                                )}
+                                {" · "}
+                                {pluralize(
+                                  fund.toOverwriteCount,
+                                  "sobrescrita",
+                                  "sobrescritas",
+                                )}
+                              </p>
+                            </details>
+                          ) : (
+                            <span className="contextLabel">Fondo nuevo</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div aria-live="polite" className="importPreviewSummary">
+              <p>
+                {pluralize(summary.fundCount, "fondo incluido", "fondos incluidos")} ·{" "}
+                {pluralize(summary.executedRows, "operación", "operaciones")} ·{" "}
+                {formatMoney(summary.amountMinor)}
+              </p>
+              <p className="contextLabel">
+                {pluralize(summary.matchedCount, "fondo encaja", "fondos encajan")} ·{" "}
+                {pluralize(summary.newCount, "fondo nuevo", "fondos nuevos")} ·{" "}
+                {pluralize(summary.excludedCount, "fondo fuera", "fondos fuera")}
+              </p>
+              {summary.unresolvedSymbolCount > 0 ? (
+                <p className="warningBand" role="alert">
+                  {pluralize(
+                    summary.unresolvedSymbolCount,
+                    "fondo incluido sin símbolo",
+                    "fondos incluidos sin símbolo",
+                  )}
+                  : {summary.unresolvedSymbolCount === 1 ? "nacerá" : "nacerán"} con el
+                  aviso pendiente MISSING_PROVIDER_SYMBOL.
+                </p>
+              ) : null}
+              <p className="contextLabel">
+                Confirmar aplica los fondos incluidos todo o nada: si algo falla, no se
+                escribe nada.
+              </p>
+            </div>
+
+            <button
+              disabled={readOnly || summary.fundCount === 0}
+              formAction={confirmAction}
+              type="submit"
+            >
+              Confirmar {pluralize(summary.fundCount, "fondo", "fondos")}
+            </button>
+          </div>
+        ) : null}
+      </form>
+    </section>
+  );
+}

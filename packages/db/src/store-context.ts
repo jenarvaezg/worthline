@@ -231,6 +231,8 @@ export function createStoreContext(
 
 export interface InvestmentMeta {
   manualPricePerUnit?: DecimalString;
+  /** The provider-symbol lookup key (ADR 0055), for the warnings projection. */
+  providerSymbol?: string;
 }
 
 export function toOperation(
@@ -278,15 +280,16 @@ export async function readInvestmentMeta(
     .select({
       assetId: investmentAssets.assetId,
       manualPricePerUnit: investmentAssets.manualPricePerUnit,
+      providerSymbol: investmentAssets.providerSymbol,
     })
     .from(investmentAssets)
     .all();
 
   return rows.reduce((byAsset, row) => {
-    byAsset.set(
-      row.assetId,
-      row.manualPricePerUnit ? { manualPricePerUnit: row.manualPricePerUnit } : {},
-    );
+    byAsset.set(row.assetId, {
+      ...(row.manualPricePerUnit ? { manualPricePerUnit: row.manualPricePerUnit } : {}),
+      ...(row.providerSymbol ? { providerSymbol: row.providerSymbol } : {}),
+    });
 
     return byAsset;
   }, new Map<string, InvestmentMeta>());
@@ -372,8 +375,10 @@ export async function buildAssetProjectionContext(
     ]);
 
   const manualPriceByAsset = new Map<string, DecimalString | undefined>();
+  const providerSymbolByAsset = new Map<string, string | undefined>();
   for (const [assetId, meta] of metaByAsset) {
     manualPriceByAsset.set(assetId, meta.manualPricePerUnit);
+    providerSymbolByAsset.set(assetId, meta.providerSymbol);
   }
 
   const cachedPriceByAsset = new Map<string, DecimalString | undefined>();
@@ -386,6 +391,7 @@ export async function buildAssetProjectionContext(
     manualPriceByAsset,
     operationsByAsset,
     ownershipByAsset,
+    providerSymbolByAsset,
   };
 }
 

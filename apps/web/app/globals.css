@@ -837,6 +837,20 @@ th:last-child {
   color: var(--green);
 }
 
+/* Statement-import bucket pills (PRD #669 S2, #673) — deliberately distinct
+   from --tier-market (liquidity identity) and --blue (interaction accent):
+   "matched" reads as neutral/known (ink), "new" as a pending decision (gold),
+   matching the avisos semantic rather than borrowing an unrelated token. */
+.statePill.matched {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.statePill.new {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
 .fireProgress {
   display: grid;
   gap: 8px;

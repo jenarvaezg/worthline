@@ -42,6 +42,19 @@ export function collectWarnings(
         entityId: a.id,
         message: `"${a.name}" tiene valor 0.`,
       });
+
+    // A `derived` holding (investment) with no provider symbol is an honest,
+    // flagged state (ADR 0055): a pending task to set it later from Yahoo Finance
+    // or similar, or to override for a hand-quoted fund. Applies to any
+    // symbol-less investment, not only ones created by a statement import.
+    if (valuationMethodOfAsset(a) === "derived" && !a.providerSymbol)
+      warnings.push({
+        code: "MISSING_PROVIDER_SYMBOL",
+        severity: "overrideable",
+        entityType: "asset",
+        entityId: a.id,
+        message: `"${a.name}" no tiene símbolo de proveedor de precio. Indícalo o márcalo como intencional si cotiza a mano.`,
+      });
   }
 
   return warnings.filter(
