@@ -81,14 +81,28 @@ export default async function ObjetivosPage({
     const workspace = await store.workspace.readWorkspace();
     if (!workspace) return null;
 
+    const today = new Date().toISOString().slice(0, 10);
     const scopes = listScopeOptions(workspace);
     const selectedScope = scopes.find((s) => s.id === cookieScopeId) ?? scopes[0];
-    const assets = await store.assets.readAssets();
-    const goals = selectedScope ? await store.goals.readGoals(selectedScope.id) : [];
-    const fireConfig = await store.readFireConfig();
-    const overrides = await store.readWarningOverrides();
+    const projectionContext = await store.snapshots.buildProjectionContext();
+    const [{ assets, liabilities }, goals, fireConfig, overrides] = await Promise.all([
+      store.snapshots.readCurveValuedHoldingsAtDate(today, projectionContext),
+      selectedScope ? store.goals.readGoals(selectedScope.id) : Promise.resolve([]),
+      store.readFireConfig(),
+      store.readWarningOverrides(),
+    ]);
 
-    return { workspace, scopes, selectedScope, assets, goals, fireConfig, overrides };
+    return {
+      workspace,
+      scopes,
+      selectedScope,
+      assets,
+      liabilities,
+      goals,
+      fireConfig,
+      overrides,
+      today,
+    };
   });
 
   if (!storeData) {
@@ -96,8 +110,17 @@ export default async function ObjetivosPage({
   }
 
   // workspace is non-null after the redirect guard above
-  const { workspace, scopes, selectedScope, assets, goals, fireConfig, overrides } =
-    storeData;
+  const {
+    workspace,
+    scopes,
+    selectedScope,
+    assets,
+    liabilities,
+    goals,
+    fireConfig,
+    overrides,
+    today,
+  } = storeData;
 
   const {
     fireProjection,
@@ -111,7 +134,7 @@ export default async function ObjetivosPage({
     assets,
     fireConfig,
     goals,
-    liabilities: [],
+    liabilities,
     persistence,
     positions: [],
     priceCache: [],
@@ -119,6 +142,7 @@ export default async function ObjetivosPage({
     selectedScope,
     selectedView: "liquid",
     snapshots: [],
+    today,
     overrides,
     workspace,
   });
