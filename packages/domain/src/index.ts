@@ -76,6 +76,7 @@ export type {
 } from "./workspace-types";
 export {
   checkOwnershipSplit,
+  checkSinglePrimaryResidence,
   createLiability,
   createLiabilitySafe,
   createManualAsset,

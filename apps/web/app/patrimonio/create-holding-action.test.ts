@@ -315,6 +315,36 @@ describe("createHoldingAction — simple drawer form (#596)", () => {
     const asset = (await store.assets.readAssets())[0]!;
     expect(asset.isPrimaryResidence).toBe(false);
   });
+
+  test("a second primary residence is rejected naming the current one", async () => {
+    const store = await seedStore();
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 30_000_000,
+      id: "casa",
+      isPrimaryResidence: true,
+      liquidityTier: "illiquid",
+      name: "Casa",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "real_estate",
+    });
+
+    const url = await runAction(
+      form({
+        simpleDrawer: "inmueble",
+        simpleName_inmueble: "Chalet",
+        simpleValue_inmueble: "250.000,00",
+        primaryResidence_inmueble: "on",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    expect(url).not.toContain("ok=");
+    expect(url).toContain("vivienda+habitual");
+    expect(await store.assets.readAssets()).toHaveLength(1);
+  });
 });
 
 describe("createHoldingAction — inmueble partial split with a non-member (#598)", () => {

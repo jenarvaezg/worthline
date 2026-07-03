@@ -114,3 +114,34 @@ describe('"Importar extracto" wizard entry point (S3, #674)', () => {
     expect(html).toContain('href="/patrimonio/importar-extracto"');
   });
 });
+
+describe("vivienda-habitual default — single primary residence", () => {
+  function inmuebleCheckbox(html: string): string {
+    const checkbox = html
+      .match(/<input[^>]*type="checkbox"[^>]*>/g)
+      ?.find((tag) => tag.includes("primaryResidence_inmueble"));
+    expect(checkbox).toBeDefined();
+    return checkbox!;
+  }
+
+  test("defaults UNCHECKED when the workspace already has a primary residence", async () => {
+    calls.readAssets.mockResolvedValueOnce([
+      {
+        currency: "EUR",
+        currentValue: { amountMinor: 30_000_000, currency: "EUR" },
+        id: "casa",
+        isPrimaryResidence: true,
+        liquidityTier: "illiquid",
+        name: "Casa",
+        ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+        type: "real_estate",
+      },
+    ] as never);
+
+    expect(inmuebleCheckbox(await renderedHtml())).not.toContain("checked");
+  });
+
+  test("defaults CHECKED for the first property", async () => {
+    expect(inmuebleCheckbox(await renderedHtml())).toContain("checked");
+  });
+});
