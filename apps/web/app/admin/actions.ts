@@ -31,6 +31,7 @@ export async function impersonateWorkspaceAction(formData: FormData): Promise<ne
     maxAge: IMPERSONATE_COOKIE_MAX_AGE_SECONDS,
     path: "/",
     sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
   });
   redirect("/");
 }

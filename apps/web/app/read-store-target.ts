@@ -8,7 +8,11 @@ import { createControlPlaneStore, type ControlPlaneStore } from "@worthline/db";
 import { IMPERSONATE_COOKIE_NAME } from "@web/admin/impersonate-cookie";
 import { DEMO_PERSONA_COOKIE_NAME } from "@web/demo/demo-context";
 
-import { resolveStoreTarget, type StoreTarget } from "./store-resolver";
+import {
+  normalizeAdminEmail,
+  resolveStoreTarget,
+  type StoreTarget,
+} from "./store-resolver";
 
 function isAuthConfigured(env: Record<string, string | undefined>): boolean {
   return Boolean(env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET);
@@ -43,7 +47,7 @@ export async function readSessionEmail(): Promise<string | null> {
 
   const { auth } = await import("@web/auth");
   const session = await auth();
-  return session?.user?.email ?? null;
+  return session?.user?.email ? normalizeAdminEmail(session.user.email) : null;
 }
 
 /**

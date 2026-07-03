@@ -183,6 +183,28 @@ describe("resolveStoreTarget", () => {
     });
   });
 
+  test("a padded/mis-cased WORTHLINE_ADMIN_EMAIL still matches the session — a deploy typo must not lock out the admin", () => {
+    const result = resolveStoreTarget({
+      env: { ...ADMIN_ENV, WORTHLINE_ADMIN_EMAIL: "  JenArvaezg@GMAIL.com  " },
+      session: {
+        user: { email: "jenarvaezg@gmail.com" },
+        workspace: { id: "ws-admin", dbUrl: "libsql://wl-admin.turso.io" },
+      },
+      impersonateWorkspace: {
+        workspaceId: "ws-target",
+        dbUrl: "libsql://wl-target.turso.io",
+        email: "target@example.com",
+      },
+    });
+    expect(result).toEqual({
+      kind: "authenticated",
+      workspaceId: "ws-target",
+      dbUrl: "libsql://wl-target.turso.io",
+      token: "group-token",
+      impersonatedEmail: "target@example.com",
+    });
+  });
+
   test("a non-admin session with a resolved impersonation target still opens its OWN workspace — the cookie alone grants nothing", () => {
     const result = resolveStoreTarget({
       env: ADMIN_ENV,

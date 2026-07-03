@@ -15,14 +15,15 @@
 import { notFound } from "next/navigation";
 
 import { readSessionEmail } from "@web/read-store-target";
+import { normalizeAdminEmail } from "@web/store-resolver";
 
 export interface AdminContext {
-  /** The confirmed admin's email — always exactly WORTHLINE_ADMIN_EMAIL. */
+  /** The confirmed admin's email — normalized (trim + lowercase) WORTHLINE_ADMIN_EMAIL. */
   email: string;
 }
 
 export async function guardAdmin(): Promise<AdminContext> {
-  const adminEmail = process.env.WORTHLINE_ADMIN_EMAIL;
+  const adminEmail = normalizeAdminEmail(process.env.WORTHLINE_ADMIN_EMAIL);
   if (!adminEmail) {
     notFound();
   }

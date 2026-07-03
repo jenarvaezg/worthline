@@ -60,6 +60,18 @@ export interface ResolveStoreTargetInput {
     | undefined;
 }
 
+/**
+ * Normalize an email for the admin comparison (#697): trim + lowercase.
+ * Shared by every admin-email comparison (this file, `guard-admin.ts`, and the
+ * session-email read in `read-store-target.ts`) so a stray capital or trailing
+ * space in the deployed `WORTHLINE_ADMIN_EMAIL` — or an unusually-cased
+ * session email — never compares a normalized value against a raw one and
+ * silently 404s the real admin.
+ */
+export function normalizeAdminEmail(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
 export function resolveStoreTarget(input: ResolveStoreTargetInput): StoreTarget {
   const { env, session, personaCookie, mcpWorkspace, impersonateWorkspace } = input;
   const authConfigured = Boolean(env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET);
@@ -75,8 +87,9 @@ export function resolveStoreTarget(input: ResolveStoreTargetInput): StoreTarget 
   // a stale or forged signal to leak through. A non-admin (or logged-out)
   // session with the impersonate cookie set falls straight through to the
   // branches below, resolving EXACTLY as if the cookie were absent.
-  const adminEmail = env.WORTHLINE_ADMIN_EMAIL;
-  const isAdmin = Boolean(adminEmail) && session?.user?.email === adminEmail;
+  const adminEmail = normalizeAdminEmail(env.WORTHLINE_ADMIN_EMAIL);
+  const isAdmin =
+    Boolean(adminEmail) && normalizeAdminEmail(session?.user?.email) === adminEmail;
 
   if (isAdmin && impersonateWorkspace) {
     return {
