@@ -4,7 +4,7 @@ import {
   amortizationPlanFromBalanceRebaseline,
   amortizableBalanceAtDate,
 } from "./amortization";
-import { debtBalanceAtDate } from "./debt-balance";
+import { debtBalanceAtDate, effectiveAmortizationPlan } from "./debt-balance";
 import type { DebtBalanceAtDateInput } from "./debt-balance";
 
 /**
@@ -415,6 +415,61 @@ describe("debtBalanceAtDate — amortizable (delegates to French curve)", () => 
         targetDate,
       }),
     );
+  });
+});
+
+describe("effectiveAmortizationPlan — exported for recalibration (PRD #670 S3, #678)", () => {
+  const PLAN = {
+    annualInterestRate: "0.01",
+    disbursementDate: "2020-01-01",
+    firstPaymentDate: "2020-02-01",
+    initialCapitalMinor: 200_000_00,
+    termMonths: 360,
+  };
+
+  test("with no re-baselines, the plan itself governs from its own disbursement date", () => {
+    const result = effectiveAmortizationPlan({ plan: PLAN, targetDate: "2024-01-01" });
+    expect(result).toEqual({ effectiveFrom: PLAN.disbursementDate, plan: PLAN });
+  });
+
+  test("the latest re-baseline on/before the target date governs instead of the plan", () => {
+    const rebaseline = {
+      annualInterestRate: "0.02",
+      baselineDate: "2026-07-02",
+      endDate: "2027-08-05",
+      nextPaymentDate: "2026-08-05",
+      outstandingBalanceMinor: 120_000_00,
+    };
+    const result = effectiveAmortizationPlan({
+      balanceRebaselines: [rebaseline],
+      plan: PLAN,
+      targetDate: "2026-09-01",
+    });
+    expect(result).toEqual({
+      effectiveFrom: rebaseline.baselineDate,
+      plan: amortizationPlanFromBalanceRebaseline(rebaseline),
+    });
+  });
+
+  test("a target before a startsAtBaseline re-baseline reports startsAfterTarget", () => {
+    const result = effectiveAmortizationPlan({
+      balanceRebaselines: [
+        {
+          annualInterestRate: "0",
+          baselineDate: "2026-07-02",
+          endDate: "2026-09-30",
+          nextPaymentDate: "2026-08-31",
+          outstandingBalanceMinor: 100_000_00,
+          startsAtBaseline: true,
+        },
+      ],
+      targetDate: "2026-07-01",
+    });
+    expect(result).toEqual({ startsAfterTarget: true });
+  });
+
+  test("with neither a plan nor re-baselines, returns null", () => {
+    expect(effectiveAmortizationPlan({ targetDate: "2024-01-01" })).toBeNull();
   });
 });
 
