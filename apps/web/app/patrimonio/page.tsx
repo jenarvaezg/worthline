@@ -5,6 +5,7 @@ import {
   listScopeOptions,
   lookThroughExposure,
   projectPortfolio,
+  systemClock,
 } from "@worthline/domain";
 import type {
   ExposureLookthroughHolding,
@@ -76,16 +77,18 @@ export default async function PatrimonioPage({
     const [
       priceCacheEntries,
       investmentMeta,
-      assets,
-      liabilities,
+      // Curve-valued today (housing appreciation, amortized debt balances) so
+      // the board shows the same live figures the dashboard derives — a raw
+      // readAssets/readLiabilities would freeze modelled balances at whatever
+      // the user last typed (the curve's fallback input).
+      { assets, liabilities },
       overrides,
       trash,
       exposureProfiles,
     ] = await Promise.all([
       store.operations.readAllPriceCacheEntries(),
       store.assets.readInvestmentAssetsWithMeta(),
-      store.assets.readAssets(),
-      store.liabilities.readLiabilities(),
+      store.snapshots.readCurveValuedHoldingsAtDate(systemClock().today()),
       store.readWarningOverrides(),
       store.readTrash(),
       store.exposureProfiles.readExposureProfiles(),

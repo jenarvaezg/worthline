@@ -13,10 +13,9 @@ import { describe, expect, test, vi } from "vitest";
 const calls = vi.hoisted(() => ({
   isDemoMode: vi.fn(async () => false),
   readAllPriceCacheEntries: vi.fn(async () => []),
-  readAssets: vi.fn(async () => []),
+  readCurveValuedHoldingsAtDate: vi.fn(async () => ({ assets: [], liabilities: [] })),
   readExposureProfiles: vi.fn(async () => []),
   readInvestmentAssetsWithMeta: vi.fn(async () => []),
-  readLiabilities: vi.fn(async () => []),
   readTrash: vi.fn(async () => ({ assets: [], liabilities: [] })),
   readWarningOverrides: vi.fn(async () => []),
   readWorkspace: vi.fn(async () => ({
@@ -28,12 +27,11 @@ const calls = vi.hoisted(() => ({
   withStore: vi.fn(async (run: (store: unknown) => unknown) =>
     run({
       assets: {
-        readAssets: calls.readAssets,
         readInvestmentAssetsWithMeta: calls.readInvestmentAssetsWithMeta,
       },
       exposureProfiles: { readExposureProfiles: calls.readExposureProfiles },
-      liabilities: { readLiabilities: calls.readLiabilities },
       operations: { readAllPriceCacheEntries: calls.readAllPriceCacheEntries },
+      snapshots: { readCurveValuedHoldingsAtDate: calls.readCurveValuedHoldingsAtDate },
       readTrash: calls.readTrash,
       readWarningOverrides: calls.readWarningOverrides,
       workspace: { readWorkspace: calls.readWorkspace },
