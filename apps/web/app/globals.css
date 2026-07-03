@@ -2632,6 +2632,36 @@ code {
   color: var(--paper-strong);
 }
 
+/* Debt current-state entry — mini "unmodelled past" timeline (ADR 0056, #677).
+   Two facts, not prose under each field: what stays unmodelled, what's derived. */
+.debtBaselineTimeline {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr 1fr;
+  margin: 4px 0;
+  padding: 10px 14px;
+}
+
+.debtBaselineTimeline div {
+  display: grid;
+  gap: 2px;
+}
+
+.debtBaselineTimeline span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.debtBaselineTimeline strong {
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+
 @media (max-width: 560px) {
   .memberProfileGrid {
     grid-template-columns: 1fr;

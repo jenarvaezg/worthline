@@ -18,6 +18,7 @@ import {
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
 import { createHoldingAction } from "@web/patrimonio/create-holding-action";
+import { CurrentStateDebtFields } from "@web/patrimonio/current-state-debt-fields";
 import { PendingSubmit } from "@web/pending-submit";
 import Shell from "@web/shell";
 import {
@@ -252,6 +253,8 @@ export default async function AnadirHoldingPage({
     { amountMinor: netWorthMinor, currency },
     privacyMode,
   );
+  // "Hoy" for the debt drawer's «alta por estado actual» baseline (ADR 0056, #677).
+  const today = new Date().toISOString().slice(0, 10);
 
   const revealCss = [
     `.simpleAdd:has(input[name="simpleDrawer"]:checked) .simpleAddEmpty{display:none}`,
@@ -265,6 +268,12 @@ export default async function AnadirHoldingPage({
       `.invGroupPane[data-group="${group.instrument}"]:has(input[name="invMode_${group.instrument}"][value="saldo"]:checked) .invModePane[data-mode="saldo"]{display:grid}`,
       `.invGroupPane[data-group="${group.instrument}"]:has(input[name="invMode_${group.instrument}"][value="import"]:checked) .invModePane[data-mode="import"]{display:block}`,
     ]),
+    // «Alta por estado actual» (ADR 0056, #677): the default path for hipoteca/
+    // préstamo; tarjeta (revolving) never gets a plan, so it keeps the plain
+    // balance field instead.
+    `.simpleDrawerPane[data-drawer="deuda"]:has(input[name="simpleDebtKind"][value="mortgage"]:checked) .debtSimpleBalanceField{display:none}`,
+    `.simpleDrawerPane[data-drawer="deuda"]:has(input[name="simpleDebtKind"][value="loan"]:checked) .debtSimpleBalanceField{display:none}`,
+    `.simpleDrawerPane[data-drawer="deuda"]:has(input[name="simpleDebtKind"][value="credit_card"]:checked) .debtCurrentStateBlock{display:none}`,
   ].join("\n");
 
   return (
@@ -350,7 +359,7 @@ export default async function AnadirHoldingPage({
                 />
                 <HousingPane values={values} />
                 <OtherAssetPane values={values} />
-                <DebtPane values={values} />
+                <DebtPane today={today} values={values} />
               </section>
 
               <OwnershipInputs
@@ -668,7 +677,7 @@ function OtherAssetPane({ values }: { values: Record<string, string> }) {
   );
 }
 
-function DebtPane({ values }: { values: Record<string, string> }) {
+function DebtPane({ today, values }: { today: string; values: Record<string, string> }) {
   const selected = v(values, "simpleDebtKind") ?? "mortgage";
 
   return (
@@ -703,14 +712,34 @@ function DebtPane({ values }: { values: Record<string, string> }) {
           placeholder="Hipoteca de casa"
         />
       </Field>
-      <Field label="Saldo pendiente">
-        <input
-          defaultValue={v(values, "simpleValue_deuda")}
-          inputMode="decimal"
-          name="simpleValue_deuda"
-          placeholder="120.000,00"
+
+      {/* Tarjeta: no admite «alta por estado actual» (revolving, sin plan). */}
+      <div className="debtSimpleBalanceField">
+        <Field label="Saldo pendiente">
+          <input
+            defaultValue={v(values, "simpleValue_deuda")}
+            inputMode="decimal"
+            name="simpleValue_deuda"
+            placeholder="120.000,00"
+          />
+        </Field>
+      </div>
+
+      {/* Hipoteca/préstamo: «alta por estado actual» (ADR 0056, #677) — el
+          camino por defecto para una deuda antigua. Deja «Fecha de fin» en
+          blanco para dar de alta solo el saldo y rellenar el plan más tarde. */}
+      <div className="debtCurrentStateBlock">
+        <p className="simpleHint">
+          Recomendado para una deuda antigua: lo que debes hoy, cuándo termina y tu cuota
+          o tipo actual.
+        </p>
+        <CurrentStateDebtFields
+          baselineDate={today}
+          idPrefix="wizard-deuda"
+          initialValues={values}
         />
-      </Field>
+      </div>
+
       <p className="simpleHint">
         Vincularla a un inmueble y el cuadro de pagos se añaden luego en su ficha.
       </p>

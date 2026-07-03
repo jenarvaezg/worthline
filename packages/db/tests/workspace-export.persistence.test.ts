@@ -474,8 +474,8 @@ async function seedStructuredWorkspace(store: WorthlineStore): Promise<void> {
     initialCapitalMinor: 15000000,
     liabilityId: "l_mort",
     disbursementDate: "2020-01-01",
-
     firstPaymentDate: "2020-02-01",
+    originalSigningDate: "2004-03-01",
     termMonths: 360,
   });
   await store.liabilities.addInterestRateRevision({
@@ -536,6 +536,9 @@ describe("full holding model round-trips through export/import (#155)", () => {
     const anchorsBefore = await source.assets.readValuationAnchors("a_home");
     const debtModelBefore = await source.liabilities.readDebtModel("l_mort");
     const planBefore = await source.liabilities.readAmortizationPlan("l_mort");
+    // The optional original-signing-date metadata (ADR 0056, #677 review M2)
+    // must survive the round-trip too — not silently dropped by export/import.
+    expect(planBefore?.originalSigningDate).toBe("2004-03-01");
     const rebaselinesBefore = await source.liabilities.readBalanceRebaselines("l_mort");
     const revisionsBefore = await source.liabilities.readInterestRateRevisions("plan1");
     const repaymentsBefore = await source.liabilities.readEarlyRepayments("plan1");
