@@ -7,11 +7,14 @@
     "node": ">=24"
   },
   "dependencies": {
+    "@ai-sdk/groq": "^4.0.5",
+    "@ai-sdk/react": "^4.0.15",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@tursodatabase/api": "^2.0.4",
     "@worthline/db": "*",
     "@worthline/domain": "*",
     "@worthline/pricing": "*",
+    "ai": "^7.0.14",
     "jose": "^6.2.3",
     "mcp-handler": "^1.1.0",
     "next": "latest",
