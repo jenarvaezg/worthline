@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import { Suspense } from "react";
 
 import ImpersonationBanner from "@web/admin/impersonation-banner";
+import AssistantMount from "@web/asistente/assistant-mount";
 import DemoBanner from "@web/demo/demo-banner";
 import { isDemoMode, isImpersonating } from "@web/demo/write-guard";
 import FormSubmitScrollKeeper from "@web/form-submit-scroll-keeper";
@@ -69,6 +70,10 @@ export default async function RootLayout({
         <ServiceWorkerRegister />
         <Suspense fallback={null}>
           <FormSubmitScrollKeeper />
+        </Suspense>
+        {/* Root-layout mount: el panel sobrevive a la navegación (#628/#629) */}
+        <Suspense fallback={null}>
+          <AssistantMount />
         </Suspense>
         {children}
       </body>

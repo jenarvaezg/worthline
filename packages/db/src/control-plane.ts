@@ -89,6 +89,13 @@ export interface ControlPlaneStore {
   hasDailyCaptureRun(dateKey: string): Promise<boolean>;
   /** Record or update daily fleet capture finalization for this UTC date. */
   recordDailyCaptureRun(dateKey: string, finalizedAt: string): Promise<void>;
+  /**
+   * Count one shared-baseline chat request and return the running count for
+   * (rateKey, windowKey) — the serverless-safe counter behind the assistant's
+   * rate limit (ADR 0051). Increment-then-check: the caller compares the
+   * returned count against its limit, so the counter needs no policy.
+   */
+  recordChatRequest(rateKey: string, windowKey: string): Promise<number>;
   close(): void;
 }
 
@@ -124,6 +131,13 @@ CREATE TABLE IF NOT EXISTS daily_capture_runs (
   date_key TEXT PRIMARY KEY,
   finalized_at TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS chat_usage (
+  rate_key TEXT NOT NULL,
+  window_key TEXT NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (rate_key, window_key)
 );
 `;
 
@@ -285,6 +299,20 @@ async function buildControlPlaneStore(
                 updated_at = CURRENT_TIMESTAMP`,
         args: [dateKey, finalizedAt],
       });
+    },
+    async recordChatRequest(rateKey, windowKey) {
+      // ponytail: stale hourly rows are never purged — ~24 tiny rows/day/key;
+      // add a sweep if the table ever matters.
+      const result = await client.execute({
+        sql: `INSERT INTO chat_usage (rate_key, window_key, count)
+              VALUES (?, ?, 1)
+              ON CONFLICT(rate_key, window_key) DO UPDATE SET
+                count = count + 1,
+                updated_at = CURRENT_TIMESTAMP
+              RETURNING count`,
+        args: [rateKey, windowKey],
+      });
+      return Number(result.rows[0]?.["count"] ?? 1);
     },
     close() {
       client.close();

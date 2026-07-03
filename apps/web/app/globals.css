@@ -6018,3 +6018,142 @@ td.rowActions > * {
   margin: 0;
   color: var(--muted);
 }
+
+/* ── Asistente financiero: capa contextual (#629, contenedor S0 #628) ──── */
+
+.assistantFab {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 60;
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  border: none;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 1.3rem;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+.assistantFab:hover {
+  background: var(--blue);
+}
+
+.assistantPanel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 70;
+  width: min(400px, 100vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-left: 1px solid var(--line-soft);
+  box-shadow: -12px 0 32px rgba(23, 32, 30, 0.18);
+}
+@media (max-width: 720px) {
+  .assistantPanel {
+    top: auto;
+    width: 100vw;
+    height: 85dvh;
+    border-left: none;
+    border-top: 1px solid var(--line-soft);
+    border-radius: var(--radius) var(--radius) 0 0;
+  }
+}
+
+.assistantHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+.assistantHead h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+.assistantHead button {
+  border: none;
+  background: none;
+  font-size: 1.3rem;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+.assistantHead button:hover {
+  color: var(--blue);
+}
+
+.assistantMessages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+.assistantHint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.assistantMsg {
+  margin-bottom: 14px;
+}
+.assistantMsg p {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+.assistantMsg.user p {
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  margin-left: 15%;
+}
+.assistantTool {
+  display: block;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.assistantError {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--red);
+}
+
+.assistantInputRow {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--hairline);
+}
+.assistantInputRow input {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+.assistantInputRow button {
+  border: none;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: var(--radius-sm);
+  padding: 0 16px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.assistantInputRow button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
