@@ -90,8 +90,12 @@ export async function resolveFire(
   let result: FireResult | undefined;
 
   if (config !== undefined) {
-    const assets = await store.readAssets();
-    const liabilities = await store.readLiabilities();
+    // Curve-valued today: FIRE eligibility counts the same live balances the
+    // dashboard shows, not the stored ledger (same clock read as the goal
+    // reservation below — FIRE is current-only, so "today" is the only date).
+    const { assets, liabilities } = await store.readCurveValuedHoldings(
+      systemClock().today(),
+    );
     const reservedForGoalsMinor = await goalReservationMinor(
       store,
       workspace,

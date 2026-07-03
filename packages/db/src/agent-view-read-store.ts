@@ -114,6 +114,17 @@ export interface AgentViewReadStore {
   readPublicIds: () => Promise<ExportedPublicId[]>;
   readAssets: () => Promise<ManualAsset[]>;
   readLiabilities: () => Promise<Liability[]>;
+  /**
+   * The live ledger valued on `dateKey`: housing and modelled debts are sampled
+   * through their curves (amortization plans, early repayments, anchors); holdings
+   * without a curve keep their stored value/balance. This is the read agent-view
+   * figures use so they match the dashboard, which values live figures the same
+   * way — `readAssets`/`readLiabilities` return the STORED ledger and remain for
+   * fact listings that must echo what the user typed.
+   */
+  readCurveValuedHoldings: (
+    dateKey: string,
+  ) => Promise<{ assets: ManualAsset[]; liabilities: Liability[] }>;
   readOperations: (assetId: string) => Promise<InvestmentOperation[]>;
   readConnectedSources: () => Promise<AgentViewConnectedSource[]>;
   /**
@@ -184,6 +195,9 @@ export interface AgentViewReadStore {
 export interface AgentViewReadStoreDeps {
   readAssets: () => Promise<ManualAsset[]>;
   readLiabilities: () => Promise<Liability[]>;
+  readCurveValuedHoldings: (
+    dateKey: string,
+  ) => Promise<{ assets: ManualAsset[]; liabilities: Liability[] }>;
   readOperations: (assetId: string) => Promise<InvestmentOperation[]>;
   listConnectedSources: () => Promise<ConnectedSourceRow[]>;
   listSourceAssetIds: (sourceId: string) => Promise<string[]>;
@@ -225,6 +239,7 @@ export function createAgentViewReadStore(
     readPublicIds: () => readAgentViewPublicIds(ctx.db),
     readAssets: () => deps.readAssets(),
     readLiabilities: () => deps.readLiabilities(),
+    readCurveValuedHoldings: (dateKey) => deps.readCurveValuedHoldings(dateKey),
     readOperations: (assetId) => deps.readOperations(assetId),
     readGoals: (scopeId) => deps.readGoals(scopeId),
     readConnectedSources: async () => {
