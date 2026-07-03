@@ -197,6 +197,7 @@ export default async function AnadirHoldingPage({
       activeMembers: workspace.members.filter((m) => !m.disabledAt),
       currency: workspace.baseCurrency,
       hasHoldings: assets.length > 0 || liabilities.length > 0,
+      hasPrimaryResidence: assets.some((asset) => asset.isPrimaryResidence),
       netWorthMinor: netWorth.totalNetWorth.amountMinor,
       scopes,
       selectedScope,
@@ -207,8 +208,15 @@ export default async function AnadirHoldingPage({
     redirect("/empezar");
   }
 
-  const { activeMembers, currency, hasHoldings, netWorthMinor, scopes, selectedScope } =
-    storeData;
+  const {
+    activeMembers,
+    currency,
+    hasHoldings,
+    hasPrimaryResidence,
+    netWorthMinor,
+    scopes,
+    selectedScope,
+  } = storeData;
   const resolvedParams = resolvedSearchParams ?? {};
   const ownershipScopeMemberId =
     activeMembers.find((m) => m.id === selectedScope?.id)?.id ?? activeMembers[0]?.id;
@@ -357,7 +365,7 @@ export default async function AnadirHoldingPage({
                   selectedInstrument={selectedInstrument}
                   values={values}
                 />
-                <HousingPane values={values} />
+                <HousingPane hasPrimaryResidence={hasPrimaryResidence} values={values} />
                 <OtherAssetPane values={values} />
                 <DebtPane today={today} values={values} />
               </section>
@@ -589,7 +597,13 @@ function InvestmentGroupPane({
   );
 }
 
-function HousingPane({ values }: { values: Record<string, string> }) {
+function HousingPane({
+  hasPrimaryResidence,
+  values,
+}: {
+  hasPrimaryResidence: boolean;
+  values: Record<string, string>;
+}) {
   return (
     <div className="simpleDrawerPane" data-drawer="inmueble">
       <PaneHeader
@@ -614,7 +628,11 @@ function HousingPane({ values }: { values: Record<string, string> }) {
       </Field>
       <label className="simpleInlineCheck">
         <input
-          defaultChecked={v(values, "primaryResidence_inmueble") !== "off"}
+          defaultChecked={
+            v(values, "primaryResidence_inmueble") !== undefined
+              ? v(values, "primaryResidence_inmueble") !== "off"
+              : !hasPrimaryResidence
+          }
           name="primaryResidence_inmueble"
           type="checkbox"
         />

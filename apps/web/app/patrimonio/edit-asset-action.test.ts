@@ -208,3 +208,77 @@ describe("editAssetAction — ownership-split ripple (#172)", () => {
     expect(await debtsAt(store, "household")).toBe(before.household);
   });
 });
+
+describe("editAssetAction — single primary residence", () => {
+  async function seedTwoHomes(): Promise<WorthlineStore> {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 30_000_000,
+      id: "casa",
+      isPrimaryResidence: true,
+      liquidityTier: "illiquid",
+      name: "Casa",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "real_estate",
+    });
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 20_000_000,
+      id: "piso",
+      liquidityTier: "illiquid",
+      name: "Piso",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "real_estate",
+    });
+    return store;
+  }
+
+  test("marking a second asset as primary residence is rejected naming the current one", async () => {
+    const store = await seedTwoHomes();
+
+    const url = await runAction(
+      form({
+        id: "piso",
+        name: "Piso",
+        type: "real_estate",
+        liquidityTier: "illiquid",
+        isPrimaryResidence: "on",
+        ownershipPreset: "custom",
+        owner_mJ: "100",
+      }),
+      store,
+    );
+
+    expect(url).toContain("vivienda+habitual");
+    expect(
+      (await store.assets.readAssets()).find((a) => a.id === "piso")!.isPrimaryResidence,
+    ).toBe(false);
+  });
+
+  test("re-affirming the current primary residence on itself still saves", async () => {
+    const store = await seedTwoHomes();
+
+    const url = await runAction(
+      form({
+        id: "casa",
+        name: "Casa renombrada",
+        type: "real_estate",
+        liquidityTier: "illiquid",
+        isPrimaryResidence: "on",
+        ownershipPreset: "custom",
+        owner_mJ: "100",
+      }),
+      store,
+    );
+
+    expect(url).toContain("saved");
+    const casa = (await store.assets.readAssets()).find((a) => a.id === "casa")!;
+    expect(casa.name).toBe("Casa renombrada");
+    expect(casa.isPrimaryResidence).toBe(true);
+  });
+});

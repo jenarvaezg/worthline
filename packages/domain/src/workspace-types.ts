@@ -298,6 +298,29 @@ export function checkOwnershipSplit(
   return null;
 }
 
+/**
+ * Only one primary residence can exist per workspace. Returns a violation
+ * naming the current holder when `candidate` would mark a second one, `null`
+ * when valid. `assetId` excludes the asset being edited, so re-affirming its
+ * own flag never violates.
+ */
+export function checkSinglePrimaryResidence(
+  assets: readonly Pick<ManualAsset, "id" | "name" | "isPrimaryResidence">[],
+  candidate: { assetId?: string; isPrimaryResidence: boolean },
+): Extract<DomainViolation, { code: "duplicate_primary_residence" }> | null {
+  if (!candidate.isPrimaryResidence) {
+    return null;
+  }
+
+  const existing = assets.find(
+    (asset) => asset.isPrimaryResidence && asset.id !== candidate.assetId,
+  );
+
+  return existing
+    ? { code: "duplicate_primary_residence", existingName: existing.name }
+    : null;
+}
+
 function assertOwnership(
   workspace: Workspace,
   ownership: OwnershipShare[],
