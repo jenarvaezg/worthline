@@ -1,5 +1,5 @@
 import type { WorthlineStore } from "@worthline/db";
-import { createManualAssetSafe } from "@worthline/domain";
+import { checkSinglePrimaryResidence, createManualAssetSafe } from "@worthline/domain";
 import type { CreateManualAssetInput, Workspace } from "@worthline/domain";
 
 import {
@@ -38,6 +38,17 @@ export async function persistManualAssetCreation(
 
   if (!domainResult.ok) {
     return { ok: false, error: mapDomainViolation(domainResult.violations[0]) };
+  }
+
+  if (assetCommand.isPrimaryResidence) {
+    const primaryViolation = checkSinglePrimaryResidence(
+      await store.assets.readAssets(),
+      { isPrimaryResidence: true },
+    );
+
+    if (primaryViolation) {
+      return { ok: false, error: mapDomainViolation(primaryViolation) };
+    }
   }
 
   if (assetCommand.type === "real_estate" && acquisitionDate && acquisitionValueMinor) {

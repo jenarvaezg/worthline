@@ -556,6 +556,8 @@ export function mapDomainViolation(violation: DomainViolation): string {
       return "El valor de una inversión es siempre calculado — registra una operación o actualiza el precio.";
     case "value_update_investment_holding":
       return "Las inversiones no se pueden actualizar en la puesta al día — su valor es siempre calculado.";
+    case "duplicate_primary_residence":
+      return `Ya hay una vivienda habitual («${violation.existingName}»). Solo puede haber una — desmárcala primero.`;
   }
 }
 

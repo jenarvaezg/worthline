@@ -5,6 +5,7 @@ import { runActionWithStore } from "@web/action-store";
 import {
   assertNotInvestmentAsset,
   checkOwnershipSplit,
+  checkSinglePrimaryResidence,
   effectiveAmortizationPlan,
   isHousingAsset,
   isValueUpdateEligible,
@@ -572,6 +573,17 @@ export async function editAssetAction(
 
     if (splitViolation) {
       return { ok: false, error: mapDomainViolation(splitViolation) };
+    }
+
+    if (isPrimaryResidence) {
+      const primaryViolation = checkSinglePrimaryResidence(
+        await store.assets.readAssets(),
+        { assetId: id, isPrimaryResidence },
+      );
+
+      if (primaryViolation) {
+        return { ok: false, error: mapDomainViolation(primaryViolation) };
+      }
     }
 
     // #172 / ADR 0020: an ownership-split change ripples per-member snapshot
