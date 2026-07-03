@@ -2,8 +2,9 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import { Suspense } from "react";
 
+import ImpersonationBanner from "@web/admin/impersonation-banner";
 import DemoBanner from "@web/demo/demo-banner";
-import { isDemoMode } from "@web/demo/write-guard";
+import { isDemoMode, isImpersonating } from "@web/demo/write-guard";
 import FormSubmitScrollKeeper from "@web/form-submit-scroll-keeper";
 import ServiceWorkerRegister from "@web/_components/sw-register";
 
@@ -64,6 +65,7 @@ export default async function RootLayout({
     <html className={`${sans.variable} ${mono.variable}`} lang="es">
       <body>
         {(await isDemoMode()) ? <DemoBanner /> : null}
+        {(await isImpersonating()) ? <ImpersonationBanner /> : null}
         <ServiceWorkerRegister />
         <Suspense fallback={null}>
           <FormSubmitScrollKeeper />
