@@ -33,19 +33,37 @@ const ALL_SECTIONS: readonly ScreenSection[] = [
   "otra",
 ];
 
-/** Boundary guard for the untrusted screenContext the chat route receives. */
+/**
+ * Boundary guard for the untrusted screenContext the chat route receives.
+ * Size bounds matter: the object is embedded verbatim in the system prompt,
+ * so an unbounded `view` would be a token-cost amplifier on the shared key.
+ */
+const MAX_VIEW_ENTRIES = 8;
+const MAX_VIEW_STRING = 128;
+
 export function isScreenContext(value: unknown): value is ScreenContext {
   if (value === null || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
+
+  const view = v["view"];
+  const viewOk =
+    view !== null &&
+    typeof view === "object" &&
+    Object.entries(view as object).length <= MAX_VIEW_ENTRIES &&
+    Object.entries(view as object).every(
+      ([key, val]) =>
+        key.length <= MAX_VIEW_STRING &&
+        typeof val === "string" &&
+        val.length <= MAX_VIEW_STRING,
+    );
 
   return (
     typeof v["route"] === "string" &&
     v["route"].length <= 512 &&
     ALL_SECTIONS.includes(v["section"] as ScreenSection) &&
-    (v["holdingId"] === null || typeof v["holdingId"] === "string") &&
-    v["view"] !== null &&
-    typeof v["view"] === "object" &&
-    Object.values(v["view"] as object).every((x) => typeof x === "string")
+    (v["holdingId"] === null ||
+      (typeof v["holdingId"] === "string" && v["holdingId"].length <= MAX_VIEW_STRING)) &&
+    viewOk
   );
 }
 

@@ -8,6 +8,7 @@ import {
 } from "ai";
 import { NextResponse } from "next/server";
 
+import { chatAsOf } from "@web/asistente/chat-clock";
 import { resolveChatModel } from "@web/asistente/chat-model";
 import { createChatTools } from "@web/asistente/chat-tools";
 import { chatRatePlan, chatRateWindow } from "@web/asistente/rate-limit";
@@ -49,6 +50,13 @@ function parseChatBody(raw: unknown): ChatBody | null {
   if (!Array.isArray(messages) || messages.length === 0) return null;
   if (messages.length > MAX_MESSAGES) return null;
   if (JSON.stringify(messages).length > MAX_TOTAL_CHARS) return null;
+  const shapedLikeUIMessages = messages.every(
+    (m) =>
+      m !== null &&
+      typeof m === "object" &&
+      Array.isArray((m as { parts?: unknown }).parts),
+  );
+  if (!shapedLikeUIMessages) return null;
 
   return {
     messages: messages as UIMessage[],
@@ -57,8 +65,13 @@ function parseChatBody(raw: unknown): ChatBody | null {
 }
 
 function clientIp(request: Request): string | null {
+  // x-real-ip is platform-set on Vercel; the RIGHTMOST forwarded hop is the
+  // one appended by the proxy. The leftmost is client-controlled — keying the
+  // rate limit on it would let a caller mint fresh buckets per request.
+  const real = request.headers.get("x-real-ip");
+  if (real) return real.trim();
   const forwarded = request.headers.get("x-forwarded-for");
-  return forwarded?.split(",")[0]?.trim() || null;
+  return forwarded?.split(",").at(-1)?.trim() || null;
 }
 
 function jsonError(error: string, status: number): NextResponse {
@@ -82,6 +95,12 @@ export async function POST(request: Request): Promise<Response> {
     return jsonError("unauthenticated", 401);
   }
 
+  // Config check first: a misconfigured deploy must not burn callers' quota.
+  const model = resolveChatModel();
+  if (model === null) {
+    return jsonError("assistant_unavailable", 503);
+  }
+
   const plan = chatRatePlan(target, clientIp(request));
   if (plan.mode === "count") {
     const count = await countChatRequest(
@@ -93,30 +112,34 @@ export async function POST(request: Request): Promise<Response> {
     }
   }
 
-  const model = resolveChatModel();
-  if (model === null) {
-    return jsonError("assistant_unavailable", 503);
+  let modelMessages;
+  try {
+    modelMessages = await convertToModelMessages(body.messages);
+  } catch {
+    return jsonError("invalid_body", 400);
   }
-
-  const asOf =
-    target.kind === "demo"
-      ? target.now.slice(0, 10)
-      : new Date().toISOString().slice(0, 10);
 
   const result = streamText({
     model,
     system: buildChatSystemPrompt(body.screenContext),
-    messages: await convertToModelMessages(body.messages),
+    messages: modelMessages,
     tools: createChatTools({
       runWithStore: (run) =>
         withStore((store) => run({ agentView: store.agentView }), target),
-      asOf,
+      asOf: chatAsOf(target),
     }),
     stopWhen: isStepCount(MAX_STEPS),
   });
 
   return createUIMessageStreamResponse({
-    stream: toUIMessageStream({ stream: result.stream }),
+    stream: toUIMessageStream({
+      stream: result.stream,
+      onError: (error) => {
+        // Log the real cause server-side; the client gets a generic string.
+        console.error("Chat stream failed", error);
+        return "provider_error";
+      },
+    }),
     headers: NO_STORE,
   });
 }

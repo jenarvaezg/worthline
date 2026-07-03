@@ -137,21 +137,27 @@ describe("POST /api/chat", () => {
 
   it("returns 429 without calling the provider when over the limit", async () => {
     vi.mocked(countChatRequest).mockResolvedValue(999);
+    const model = fakeChatModel();
+    vi.mocked(resolveChatModel).mockReturnValue(model);
 
     const response = await POST(chatRequest({ messages: [userMessage("hola")] }));
 
     expect(response.status).toBe(429);
     expect(await response.json()).toEqual({ error: "rate_limited" });
-    expect(vi.mocked(resolveChatModel)).not.toHaveBeenCalled();
+    // The model object may be resolved (config check), but the provider is
+    // never invoked: zero doStream calls.
+    expect(model.doStreamCalls.length).toBe(0);
   });
 
   it("returns 401 for unauthenticated callers without touching the provider", async () => {
     vi.mocked(readStoreTarget).mockResolvedValue({ kind: "unauthenticated" });
+    const model = fakeChatModel();
+    vi.mocked(resolveChatModel).mockReturnValue(model);
 
     const response = await POST(chatRequest({ messages: [userMessage("hola")] }));
 
     expect(response.status).toBe(401);
-    expect(vi.mocked(resolveChatModel)).not.toHaveBeenCalled();
+    expect(model.doStreamCalls.length).toBe(0);
   });
 
   it("returns 503 when no shared credential is configured", async () => {
@@ -165,6 +171,11 @@ describe("POST /api/chat", () => {
   it("rejects malformed bodies before doing any work", async () => {
     const noMessages = await POST(chatRequest({}));
     expect(noMessages.status).toBe(400);
+
+    const partlessMessage = await POST(
+      chatRequest({ messages: [{ id: "m1", role: "user" }] }),
+    );
+    expect(partlessMessage.status).toBe(400);
 
     const notJson = await POST(
       new Request("http://127.0.0.1/api/chat", { method: "POST", body: "nope" }),
