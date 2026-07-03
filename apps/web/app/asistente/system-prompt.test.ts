@@ -19,10 +19,14 @@ describe("buildChatSystemPrompt", () => {
     const prompt = buildChatSystemPrompt(null);
 
     // The non-negotiables: Spanish default, no invented facts, read-only,
-    // and amounts cited verbatim (they arrive pre-formatted).
+    // amounts cited verbatim (they arrive pre-formatted), and it must OPINE
+    // on the user's data (ADR 0045 allows recommending; refusing to assess
+    // the position is a failure, not prudence).
     expect(prompt).toMatch(/español/i);
     expect(prompt).toMatch(/no inventes/i);
     expect(prompt).toMatch(/solo lectura|no puedes modificar/i);
     expect(prompt).toMatch(/ya formateados/i);
+    expect(prompt).toMatch(/nunca te niegues a valorar/i);
+    expect(prompt).toMatch(/recomienda/i);
   });
 });
