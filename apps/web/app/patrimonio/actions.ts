@@ -1209,29 +1209,32 @@ export async function recalibrateDebtBalanceAction(
       return guard;
     }
 
-    const plan = await store.liabilities.readAmortizationPlan(id);
-
-    if (!plan) {
-      return {
-        ok: false as const,
-        error: "Esta deuda no tiene un plan de amortización que recalibrar.",
-      };
-    }
-
-    const [revisions, rebaselines] = await Promise.all([
-      store.liabilities.readInterestRateRevisions(plan.id),
+    // Gate on the effective CURVE, not the plan row (#678 review): an imported
+    // current-state debt can be rebaselined with no plan row at all (S1's
+    // `startsAtBaseline` fact alone governs the curve) — that debt still has a
+    // valid schedule to recalibrate, so requiring a plan row would falsely
+    // reject it. Revisions hang off `planId`, so they only exist with a plan.
+    const [plan, rebaselines] = await Promise.all([
+      store.liabilities.readAmortizationPlan(id),
       store.liabilities.readBalanceRebaselines(id),
     ]);
+    const revisions = plan
+      ? await store.liabilities.readInterestRateRevisions(plan.id)
+      : [];
 
     const effective = effectiveAmortizationPlan({
       balanceRebaselines: rebaselines,
-      plan: {
-        annualInterestRate: plan.annualInterestRate,
-        disbursementDate: plan.disbursementDate,
-        firstPaymentDate: plan.firstPaymentDate,
-        initialCapitalMinor: plan.initialCapitalMinor,
-        termMonths: plan.termMonths,
-      },
+      ...(plan
+        ? {
+            plan: {
+              annualInterestRate: plan.annualInterestRate,
+              disbursementDate: plan.disbursementDate,
+              firstPaymentDate: plan.firstPaymentDate,
+              initialCapitalMinor: plan.initialCapitalMinor,
+              termMonths: plan.termMonths,
+            },
+          }
+        : {}),
       targetDate: validated.balanceDate,
     });
 

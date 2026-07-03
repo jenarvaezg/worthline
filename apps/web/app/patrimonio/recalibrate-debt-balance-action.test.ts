@@ -206,6 +206,123 @@ describe("recalibrateDebtBalanceAction — declares the re-baseline and re-deriv
     store.close();
   });
 
+  test("a second (chained) recalibration composes off the FIRST re-baseline, not the original plan (#678 review)", async () => {
+    const store = await seedAmortizableMortgage();
+
+    await runAction(
+      form({
+        id: "mortgage",
+        rbBalanceDate: "2026-04-15",
+        rbOutstandingBalance: "145.000,00",
+      }),
+      store,
+      CLOCK,
+    );
+    const afterFirst = await store.liabilities.readBalanceRebaselines("mortgage");
+    expect(afterFirst).toHaveLength(1);
+
+    await runAction(
+      form({
+        id: "mortgage",
+        rbBalanceDate: "2026-06-15",
+        rbOutstandingBalance: "140.000,00",
+      }),
+      store,
+      CLOCK,
+    );
+
+    const rebaselines = await store.liabilities.readBalanceRebaselines("mortgage");
+    expect(rebaselines).toHaveLength(2);
+    const second = rebaselines.find((r) => r.baselineDate === "2026-06-15")!;
+    expect(second).toMatchObject({
+      annualInterestRate: "0.03",
+      outstandingBalanceMinor: 140_000_00,
+      startsAtBaseline: false,
+    });
+    // The contractual end date is an invariant across the chain (ADR 0056: rate
+    // and term compose forward, they don't reset), so it must survive unchanged
+    // through TWO re-baselines.
+    expect(second.endDate).toBe(afterFirst[0]!.endDate);
+
+    // The first recalibration's own snapshot is untouched by the second ripple
+    // (forward-only, ADR 0012); the second's snapshot reflects its own balance.
+    expect(await debtsAt(store, "2026-04-15")).toBe(145_000_00);
+    expect(await debtsAt(store, "2026-06-15")).toBe(140_000_00);
+
+    store.close();
+  });
+
+  test("recalibrates a current-state (startsAtBaseline) debt with no plan row — an imported debt (#678 review)", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.liabilities.createLiability({
+      balanceMinor: 90_000_00,
+      currency: "EUR",
+      id: "mortgage",
+      name: "Hipoteca vieja",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+    await store.liabilities.setDebtModel("mortgage", "amortizable");
+    // No plan row at all — only the startsAtBaseline fact governs the curve.
+    // The #676 create-time atomicity guarantee (plan + rebaseline together) is
+    // a CREATE-time invariant; an imported workspace round-trips the rebaseline
+    // alone (ADR 0010/0015), so this is a real shape the action must accept.
+    await store.liabilities.addBalanceRebaseline({
+      annualInterestRate: "0.02",
+      baselineDate: "2026-03-10",
+      endDate: "2026-06-10",
+      id: "base1",
+      liabilityId: "mortgage",
+      nextPaymentDate: "2026-04-10",
+      outstandingBalanceMinor: 90_000_00,
+      startsAtBaseline: true,
+    });
+
+    const url = await runAction(
+      form({
+        id: "mortgage",
+        rbBalanceDate: "2026-05-10",
+        rbOutstandingBalance: "80.000,00",
+      }),
+      store,
+      CLOCK,
+    );
+    expect(url).toContain("debt_recalibrated");
+
+    const rebaselines = await store.liabilities.readBalanceRebaselines("mortgage");
+    expect(rebaselines).toHaveLength(2);
+    const recalibrated = rebaselines.find((r) => r.baselineDate === "2026-05-10")!;
+    expect(recalibrated).toMatchObject({
+      annualInterestRate: "0.02",
+      outstandingBalanceMinor: 80_000_00,
+      startsAtBaseline: false,
+    });
+
+    store.close();
+  });
+
+  test("refuses a balance date before an ORIGIN plan's own disbursement date (#678 review)", async () => {
+    const store = await seedAmortizableMortgage(); // plan disbursed 2026-01-15
+
+    const url = await runAction(
+      form({
+        id: "mortgage",
+        rbBalanceDate: "2025-12-01",
+        rbOutstandingBalance: "150.000,00",
+      }),
+      store,
+      CLOCK,
+    );
+    expect(url).toContain("error=");
+    expect(await store.liabilities.readBalanceRebaselines("mortgage")).toHaveLength(0);
+
+    store.close();
+  });
+
   test("refuses a debt with no amortization plan to recalibrate", async () => {
     const store = await createInMemoryStore();
     await store.workspace.initializeWorkspace({

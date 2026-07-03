@@ -152,6 +152,19 @@ export function deriveRecalibrationRebaseline(input: {
 
   const { plan, effectiveFrom } = input.effective;
 
+  // Symmetric guard for an origin-declared plan (#678 review): the
+  // startsAfterTarget branch above only fires for a current-state debt's own
+  // `startsAtBaseline` fact. A plan has no such fact, so without this check a
+  // balance date before its disbursement would silently pass and ripple the
+  // ENTIRE modelled history forward from a pre-origin date — ADR 0056 never
+  // rewrites what came before.
+  if (input.balanceDate < effectiveFrom) {
+    return {
+      error: "La fecha del saldo no puede ser anterior al inicio de esta deuda.",
+      ok: false,
+    };
+  }
+
   return {
     annualInterestRate: activeAnnualRate(
       plan.annualInterestRate,

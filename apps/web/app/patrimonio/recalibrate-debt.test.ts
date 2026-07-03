@@ -167,6 +167,32 @@ describe("deriveRecalibrationRebaseline", () => {
     });
   });
 
+  test("errors when the balance date is before an ORIGIN plan's own disbursement date (#678 review)", () => {
+    // Symmetric to the startsAfterTarget guard above, but for a plan with no
+    // current-state rebaseline at all: `effectiveAmortizationPlan` happily
+    // returns {effectiveFrom: disbursementDate, plan} for ANY target date, so
+    // without this guard a pre-origin balance date would silently ripple the
+    // debt's entire modelled history forward from before it existed.
+    const result = deriveRecalibrationRebaseline({
+      balanceDate: "2019-06-01", // before EFFECTIVE.plan.disbursementDate (2020-01-01)
+      effective: EFFECTIVE,
+      revisions: [],
+    });
+    expect(result).toEqual({
+      error: "La fecha del saldo no puede ser anterior al inicio de esta deuda.",
+      ok: false,
+    });
+  });
+
+  test("accepts a balance date exactly on the effective plan's own start date", () => {
+    const result = deriveRecalibrationRebaseline({
+      balanceDate: EFFECTIVE.effectiveFrom,
+      effective: EFFECTIVE,
+      revisions: [],
+    });
+    expect(result.ok).toBe(true);
+  });
+
   test("errors when the debt has no plan or re-baseline to recalibrate", () => {
     const result = deriveRecalibrationRebaseline({
       balanceDate: "2026-01-01",
