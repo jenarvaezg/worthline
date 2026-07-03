@@ -803,6 +803,7 @@ async function importWorkspace(
             id: plan.id,
             initialCapitalMinor: plan.initialCapitalMinor,
             liabilityId: liability.id,
+            originalSigningDate: plan.originalSigningDate ?? null,
             termMonths: plan.termMonths,
           })
           .run();
@@ -1498,6 +1499,9 @@ async function readAmortizationPlansByLiability(
       termMonths: row.termMonths,
       disbursementDate: row.disbursementDate,
       firstPaymentDate: row.firstPaymentDate,
+      ...(row.originalSigningDate
+        ? { originalSigningDate: row.originalSigningDate }
+        : {}),
       interestRateRevisions: revisionsByPlan.get(row.id) ?? [],
       earlyRepayments: repaymentsByPlan.get(row.id) ?? [],
     });

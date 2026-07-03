@@ -2,6 +2,8 @@ import type {
   AssetProjectionContext,
   DomainWarning,
   InvestmentCaptureDetail,
+  Liability,
+  ManualAsset,
   NetWorthSnapshot,
   PositionSummary,
   RawInvestmentRow,
@@ -29,8 +31,11 @@ import {
 } from "drizzle-orm";
 
 import { assets, snapshotHoldings, snapshotPositionHoldings, snapshots } from "./schema";
+import { valueLiveHoldingsAtDate } from "./curve-valued-holdings";
 import {
   buildAssetProjectionContext,
+  readAssets as readLiveAssets,
+  readLiabilities as readLiveLiabilities,
   type StoreContext,
   type StoreDb,
 } from "./store-context";
@@ -118,6 +123,16 @@ export interface SnapshotStore {
     projectionContext?: AssetProjectionContext,
   ) => Promise<ScopedPositionsWithDetails>;
   /**
+   * Read the current live ledger valued on the supplied date. Housing and
+   * modelled debts are sampled through their curves with batched reads; holdings
+   * without a curve keep their stored current value/balance. Callers use this
+   * before computing live figures or freezing a snapshot so both paths agree.
+   */
+  readCurveValuedHoldingsAtDate: (
+    dateKey: string,
+    projectionContext?: AssetProjectionContext,
+  ) => Promise<{ assets: ManualAsset[]; liabilities: Liability[] }>;
+  /**
    * Build the raw projection context (operations, investment meta, price cache,
    * ownerships) with `hasInvestments = true` — the union that covers all asset
    * types. Use this once per cold dashboard load and pass the result to both
@@ -144,6 +159,15 @@ export function createSnapshotStore(ctx: StoreContext): SnapshotStore {
         scopeId,
         projectionContext,
       ),
+    readCurveValuedHoldingsAtDate: async (dateKey, projectionContext) => {
+      const workspace = await ctx.getWorkspace();
+      if (!workspace) return { assets: [], liabilities: [] };
+      const [liveAssets, liveLiabilities] = await Promise.all([
+        readLiveAssets(ctx.db, workspace, projectionContext),
+        readLiveLiabilities(ctx.db, workspace),
+      ]);
+      return valueLiveHoldingsAtDate(ctx.db, liveAssets, liveLiabilities, dateKey);
+    },
     buildProjectionContext: () => buildAssetProjectionContext(ctx.db, true),
   };
 }

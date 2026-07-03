@@ -22,14 +22,19 @@ const BANK_PLAN: AmortizationPlanRecord = {
   id: "plan_1",
   initialCapitalMinor: 200_000_00,
   liabilityId: "l_mortgage",
+  originalSigningDate: null,
   termMonths: 240,
 };
 
-function render(plan: AmortizationPlanRecord | null) {
+function render(
+  plan: AmortizationPlanRecord | null,
+  currentModelledBalanceMinor: number | null = plan ? 195_000_00 : null,
+) {
   return renderToStaticMarkup(
     <DebtModelSection
       amortizationPlan={plan}
       balanceAnchors={[]}
+      currentModelledBalanceMinor={currentModelledBalanceMinor}
       debtModel="amortizable"
       earlyRepayments={[]}
       formError={null}
@@ -50,6 +55,7 @@ function renderFor(
     <DebtModelSection
       amortizationPlan={null}
       balanceAnchors={[]}
+      currentModelledBalanceMinor={null}
       debtModel={debtModel}
       earlyRepayments={[]}
       formError={null}
@@ -120,5 +126,40 @@ describe("DebtModelSection — valuation cadence advanced control (ADR 0031, #39
   test("defaults to step when the stored cadence is null", () => {
     const markup = renderFor("amortizable", null);
     expect(markup).toMatch(/value="step"[^>]*selected/);
+  });
+});
+
+describe("DebtModelSection — «alta por estado actual» is the default create path (ADR 0056, #677)", () => {
+  test("shows the current-state form (not the origin plan form) when no plan exists yet", () => {
+    const markup = renderFor("amortizable", null);
+    expect(markup).toContain("Saldo pendiente hoy");
+    expect(markup).toContain("Guardar por estado actual");
+    // The origin-declared form (ADR 0019) stays available, demoted to a details.
+    expect(markup).toContain("¿Tienes los datos originales del préstamo?");
+    expect(markup).toContain("Guardar plan");
+  });
+
+  test("an existing plan keeps the origin editor as the only surface (update path unchanged)", () => {
+    const markup = render(BANK_PLAN);
+    expect(markup).not.toContain("Saldo pendiente hoy");
+    expect(markup).not.toContain("Guardar por estado actual");
+    expect(markup).toContain("Actualizar plan");
+  });
+});
+
+describe("DebtModelSection — «recalibrar con saldo real» (ADR 0056, PRD #670 S3, #678)", () => {
+  test("shows the recalibrate action with the current modelled balance beside it, once a plan exists", () => {
+    const markup = render(BANK_PLAN, 195_000_00);
+    expect(markup).toContain("Recalibrar con saldo real");
+    expect(markup).toContain("Saldo modelado a día de hoy");
+    expect(markup).toContain("195.000");
+    expect(markup).toContain("Saldo real (EUR)");
+    expect(markup).toContain("Fecha de recalibración");
+    expect(markup).toContain("Recalibrar saldo");
+  });
+
+  test("does NOT show the recalibrate action when there is no plan yet", () => {
+    const markup = render(null, null);
+    expect(markup).not.toContain("Recalibrar con saldo real");
   });
 });

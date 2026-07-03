@@ -149,4 +149,75 @@ describe("control-plane store", () => {
       cp.close();
     }
   });
+
+  test("get-workspace-with-owner resolves the owner's email by workspace id (#697)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const ana = await cp.findOrCreateUser("ana@example.com");
+      const ws = await cp.createWorkspace({
+        dbName: "wl-ana",
+        dbUrl: "libsql://wl-ana.turso.io",
+      });
+      await cp.recordGrant(ana.id, ws.id);
+
+      const found = await cp.getWorkspaceWithOwner(ws.id);
+      expect(found).toMatchObject({
+        id: ws.id,
+        dbUrl: "libsql://wl-ana.turso.io",
+        ownerEmail: "ana@example.com",
+      });
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("get-workspace-with-owner returns null for an unknown workspace id (#697)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      expect(await cp.getWorkspaceWithOwner("ghost")).toBeNull();
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("get-workspace-with-owner returns a null ownerEmail for a dangling workspace with no grant (#697)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const ws = await cp.createWorkspace({
+        dbName: "wl-orphan",
+        dbUrl: "libsql://wl-orphan.turso.io",
+      });
+
+      const found = await cp.getWorkspaceWithOwner(ws.id);
+      expect(found).toMatchObject({ id: ws.id, ownerEmail: null });
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("list-workspaces-with-owners returns every workspace with its owner's email, oldest first (#697)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const ana = await cp.findOrCreateUser("ana@example.com");
+      const leo = await cp.findOrCreateUser("leo@example.com");
+      const anaWs = await cp.createWorkspace({
+        dbName: "wl-ana",
+        dbUrl: "libsql://wl-ana.turso.io",
+      });
+      const leoWs = await cp.createWorkspace({
+        dbName: "wl-leo",
+        dbUrl: "libsql://wl-leo.turso.io",
+      });
+      await cp.recordGrant(ana.id, anaWs.id);
+      await cp.recordGrant(leo.id, leoWs.id);
+
+      const all = await cp.listWorkspacesWithOwners();
+      expect(all.map((w) => ({ id: w.id, ownerEmail: w.ownerEmail }))).toEqual([
+        { id: anaWs.id, ownerEmail: "ana@example.com" },
+        { id: leoWs.id, ownerEmail: "leo@example.com" },
+      ]);
+    } finally {
+      cp.close();
+    }
+  });
 });

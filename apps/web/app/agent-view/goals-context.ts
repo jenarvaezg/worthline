@@ -4,6 +4,7 @@ import {
   goalFundedRatioBps,
   goalReservedMinor,
   resolveScopeMemberIds,
+  systemClock,
 } from "@worthline/domain";
 
 import type { AgentViewGoal } from "./contract";
@@ -33,7 +34,9 @@ export async function buildGoals(
   const internalScopeId = await resolveInternalScopeId(store, publicScopeId);
   const scopeMemberIds = new Set(resolveScopeMemberIds(workspace, internalScopeId));
   const goals = await store.readGoals(internalScopeId);
-  const assetById = new Map((await store.readAssets()).map((asset) => [asset.id, asset]));
+  // Curve-valued today so funded ratios count live housing values, matching FIRE.
+  const { assets } = await store.readCurveValuedHoldings(systemClock().today());
+  const assetById = new Map(assets.map((asset) => [asset.id, asset]));
   const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
   const currency = workspace.baseCurrency;
 

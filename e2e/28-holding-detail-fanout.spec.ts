@@ -150,13 +150,27 @@ test("amortized & anchored: a liability switches debt-model surfaces from the de
   // amortized: pick amortizable → the plan editor appears.
   await modelSelect.selectOption("amortizable");
   await page.getByRole("button", { name: "Guardar modelo" }).click();
-  await expect(page.getByRole("form", { name: "Plan de amortización" })).toBeVisible();
-  await page.getByLabel("Capital inicial en EUR").fill("30000");
-  await page.getByLabel("Tipo de interés anual (%)").fill("2,5");
-  await page.getByLabel("Plazo en meses").fill("120");
-  await page.getByLabel("Fecha de firma").fill("2023-01-01");
-  await page.getByLabel("Fecha del primer pago").fill("2023-03-01");
-  await page.getByRole("button", { name: "Guardar plan" }).click();
+  // With no plan yet, the origin-declared plan form starts demoted inside a
+  // <details> (current-state entry is the primary path, S2 #677) — expand it.
+  const originalPlanDetails = debtRegion.locator("details", {
+    hasText: "¿Tienes los datos originales del préstamo?",
+  });
+  await originalPlanDetails.locator("summary").click();
+  await expect(originalPlanDetails).toHaveJSProperty("open", true);
+  // Scope to the plan form: the current-state block also renders a
+  // "Fecha de firma original" field, so page-level getByLabel is ambiguous.
+  const planForm = originalPlanDetails.getByRole("form", {
+    name: "Plan de amortización",
+  });
+  await expect(planForm).toBeVisible();
+  await planForm.getByLabel("Capital inicial en EUR").fill("30000");
+  await planForm.getByLabel("Tipo de interés anual (%)").fill("2,5");
+  await planForm.getByLabel("Plazo en meses").fill("120");
+  await planForm.getByLabel("Fecha de firma").fill("2023-01-01");
+  await planForm.getByLabel("Fecha del primer pago").fill("2023-03-01");
+  await planForm.getByRole("button", { name: "Guardar plan" }).click({
+    force: true,
+  });
   await expect(page.getByRole("status")).toBeVisible();
 
   // anchored: switch to revolving → the balance-anchor editor appears.

@@ -837,3 +837,114 @@ describe("createHoldingAction — debt ownership inheritance (#171)", () => {
     expect(await ownershipByMember(store)).toEqual({ mJ: 6_500, mA: 3_500 });
   });
 });
+
+describe("createHoldingAction — «alta por estado actual» wizard drawer mode (ADR 0056, #677)", () => {
+  // Real drawer shape (simpleDrawer/simpleDebtKind/simpleName_deuda), not the
+  // canonical instrument/name_mortgage/balance_mortgage form the avanzado flow
+  // posts directly — this is what anadir/page.tsx's DebtPane actually submits.
+  test("a mortgage with current-state fields saves a plan + startsAtBaseline re-baseline (default for old debts)", async () => {
+    const store = await seedStore();
+
+    await runAction(
+      form({
+        simpleDrawer: "deuda",
+        simpleDebtKind: "mortgage",
+        simpleName_deuda: "Hipoteca Santander",
+        csAnnualRate: "2,35",
+        csEndDate: "2032-06-30",
+        csInputMode: "rate",
+        csNextPaymentDate: "2026-08-01",
+        csOutstandingBalance: "118.000,00",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const liability = (await store.liabilities.readLiabilities())[0]!;
+    expect(liability.currentBalance.amountMinor).toBe(118_000_00);
+
+    const plan = await store.liabilities.readAmortizationPlan(liability.id);
+    expect(plan).toMatchObject({
+      disbursementDate: CLOCK.today(),
+      firstPaymentDate: "2026-08-01",
+      initialCapitalMinor: 118_000_00,
+    });
+
+    const rebaselines = await store.liabilities.readBalanceRebaselines(liability.id);
+    expect(rebaselines).toHaveLength(1);
+    expect(rebaselines[0]).toMatchObject({ startsAtBaseline: true });
+  });
+
+  // Regression for the #677 review's H1: the CSS hides the plain "Saldo
+  // pendiente" field for mortgage/loan (the current-state balance is the only
+  // visible input), so leaving the end date blank must NOT also lose the
+  // balance — it still creates a plan-less debt WITH the declared saldo.
+  test("leaving the end date blank keeps today's plan-less creation, WITH the current-state saldo (origin path intact)", async () => {
+    const store = await seedStore();
+
+    await runAction(
+      form({
+        simpleDrawer: "deuda",
+        simpleDebtKind: "mortgage",
+        simpleName_deuda: "Hipoteca",
+        csOutstandingBalance: "120.000,00",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const liability = (await store.liabilities.readLiabilities())[0]!;
+    expect(liability.currentBalance.amountMinor).toBe(120_000_00);
+    expect(await store.liabilities.readAmortizationPlan(liability.id)).toBeNull();
+  });
+
+  test("a credit card ignores current-state fields even when present (revolving, no plan)", async () => {
+    const store = await seedStore();
+
+    await runAction(
+      form({
+        simpleDrawer: "deuda",
+        simpleDebtKind: "credit_card",
+        simpleName_deuda: "Visa BBVA",
+        simpleValue_deuda: "850,00",
+        csAnnualRate: "20",
+        csEndDate: "2032-06-30",
+        csInputMode: "rate",
+        csNextPaymentDate: "2026-08-01",
+        csOutstandingBalance: "850,00",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const liability = (await store.liabilities.readLiabilities())[0]!;
+    expect(await store.liabilities.readDebtModel(liability.id)).toBe("revolving");
+    expect(await store.liabilities.readAmortizationPlan(liability.id)).toBeNull();
+  });
+
+  test("an infeasible current-state declaration rejects the whole add (no liability created)", async () => {
+    const store = await seedStore();
+
+    const url = await runAction(
+      form({
+        simpleDrawer: "deuda",
+        simpleDebtKind: "mortgage",
+        simpleName_deuda: "Hipoteca",
+        csEndDate: "2032-06-30",
+        csInputMode: "payment",
+        csMonthlyPayment: "1,00",
+        csNextPaymentDate: "2026-08-01",
+        csOutstandingBalance: "118.000,00",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    expect(url).toContain("error=");
+    expect(await store.liabilities.readLiabilities()).toHaveLength(0);
+  });
+});

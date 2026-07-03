@@ -5,6 +5,7 @@ import {
   defaultsFor,
   listScopeOptions,
   projectPortfolio,
+  systemClock,
 } from "@worthline/domain";
 import type {
   ExposureProfile,
@@ -52,8 +53,11 @@ export async function buildHoldingDetail(
   }
 
   const internalHoldingId = await resolveInternalHoldingId(store, publicHoldingId);
-  const assets = await store.readAssets();
-  const liabilities = await store.readLiabilities();
+  // Curve-valued today so `currentValue` matches the dashboard's live figure —
+  // the deep facts below (plan, anchors, repayments) still echo the stored record.
+  const { assets, liabilities } = await store.readCurveValuedHoldings(
+    systemClock().today(),
+  );
   const scope = householdScope(workspace);
   const projection = projectPortfolio({ assets, liabilities, scope, workspace });
 

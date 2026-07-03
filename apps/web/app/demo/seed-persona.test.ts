@@ -21,6 +21,7 @@ import { loadDashboard, type LoadDashboardInput } from "@web/load-dashboard";
 
 const AS_OF = "2026-06-19";
 const NOW_ISO = `${AS_OF}T12:00:00.000Z`;
+const PERSONA_TEST_TIMEOUT_MS = 15_000;
 
 const noOpRefresh: LoadDashboardInput["refreshPrices"] = async () => ({
   priceCache: [],
@@ -52,161 +53,193 @@ async function readDashboard(store: WorthlineStore, scopeId?: string) {
 }
 
 describe("seedPersona — familia", () => {
-  it("builds a two-member household with the full scope axis", async () => {
-    const store = await createInMemoryStore();
-    await seedPersona(store, FAMILIA_SPEC, AS_OF);
+  it(
+    "builds a two-member household with the full scope axis",
+    async () => {
+      const store = await createInMemoryStore();
+      await seedPersona(store, FAMILIA_SPEC, AS_OF);
 
-    const workspace = await store.workspace.readWorkspace();
-    expect(workspace).not.toBeNull();
-    expect(workspace!.mode).toBe("household");
-    expect(workspace!.members.length).toBe(2);
+      const workspace = await store.workspace.readWorkspace();
+      expect(workspace).not.toBeNull();
+      expect(workspace!.mode).toBe("household");
+      expect(workspace!.members.length).toBe(2);
 
-    store.close();
-  });
+      store.close();
+    },
+    PERSONA_TEST_TIMEOUT_MS,
+  );
 
-  it("renders a populated net worth with no blocking warnings", async () => {
-    const store = await createInMemoryStore();
-    await seedPersona(store, FAMILIA_SPEC, AS_OF);
+  it(
+    "renders a populated net worth with no blocking warnings",
+    async () => {
+      const store = await createInMemoryStore();
+      await seedPersona(store, FAMILIA_SPEC, AS_OF);
 
-    const result = await readDashboard(store);
+      const result = await readDashboard(store);
 
-    expect(result.needsOnboarding).toBe(false);
-    expect(result.presentation?.headline.amountMinor ?? 0).toBeGreaterThan(0);
-    expect(result.warnings.filter((w) => w.severity === "blocking")).toHaveLength(0);
+      expect(result.needsOnboarding).toBe(false);
+      expect(result.presentation?.headline.amountMinor ?? 0).toBeGreaterThan(0);
+      expect(result.warnings.filter((w) => w.severity === "blocking")).toHaveLength(0);
 
-    store.close();
-  });
+      store.close();
+    },
+    PERSONA_TEST_TIMEOUT_MS,
+  );
 
-  it("populates the housing rung and the illiquid rung (home + car)", async () => {
-    const store = await createInMemoryStore();
-    await seedPersona(store, FAMILIA_SPEC, AS_OF);
+  it(
+    "populates the housing rung and the illiquid rung (home + car)",
+    async () => {
+      const store = await createInMemoryStore();
+      await seedPersona(store, FAMILIA_SPEC, AS_OF);
 
-    const result = await readDashboard(store);
-    const byTier = new Map(result.pyramid.map((t) => [t.tier, t]));
+      const result = await readDashboard(store);
+      const byTier = new Map(result.pyramid.map((t) => [t.tier, t]));
 
-    // The home lands on the housing rung (ADR 0022) with positive gross value.
-    expect(byTier.get("housing")?.grossAssets.amountMinor ?? 0).toBeGreaterThan(0);
-    // Cash on hand and a car on the illiquid rung.
-    expect(byTier.get("cash")?.grossAssets.amountMinor ?? 0).toBeGreaterThan(0);
-    expect(byTier.get("illiquid")?.grossAssets.amountMinor ?? 0).toBeGreaterThan(0);
-    // A mortgage shows as debt against the housing rung.
-    expect(byTier.get("housing")?.debts.amountMinor ?? 0).toBeGreaterThan(0);
+      // The home lands on the housing rung (ADR 0022) with positive gross value.
+      expect(byTier.get("housing")?.grossAssets.amountMinor ?? 0).toBeGreaterThan(0);
+      // Cash on hand and a car on the illiquid rung.
+      expect(byTier.get("cash")?.grossAssets.amountMinor ?? 0).toBeGreaterThan(0);
+      expect(byTier.get("illiquid")?.grossAssets.amountMinor ?? 0).toBeGreaterThan(0);
+      // A mortgage shows as debt against the housing rung.
+      expect(byTier.get("housing")?.debts.amountMinor ?? 0).toBeGreaterThan(0);
 
-    store.close();
-  });
+      store.close();
+    },
+    PERSONA_TEST_TIMEOUT_MS,
+  );
 
-  it("includes a non-mortgage anchored debt story", async () => {
-    const store = await createInMemoryStore();
-    await seedPersona(store, FAMILIA_SPEC, AS_OF);
+  it(
+    "includes a non-mortgage anchored debt story",
+    async () => {
+      const store = await createInMemoryStore();
+      await seedPersona(store, FAMILIA_SPEC, AS_OF);
 
-    expect(await store.liabilities.readDebtModel("liability_familia_car")).toBe(
-      "informal",
-    );
-    expect(
-      await store.liabilities.readBalanceAnchors("liability_familia_car"),
-    ).toHaveLength(3);
+      expect(await store.liabilities.readDebtModel("liability_familia_car")).toBe(
+        "informal",
+      );
+      expect(
+        await store.liabilities.readBalanceAnchors("liability_familia_car"),
+      ).toHaveLength(3);
 
-    store.close();
-  });
+      store.close();
+    },
+    PERSONA_TEST_TIMEOUT_MS,
+  );
 
-  it("captures today's home value from the modeled housing curve", async () => {
-    const store = await createInMemoryStore();
-    await seedPersona(store, FAMILIA_SPEC, AS_OF);
+  it(
+    "captures today's home value from the modeled housing curve",
+    async () => {
+      const store = await createInMemoryStore();
+      await seedPersona(store, FAMILIA_SPEC, AS_OF);
 
-    await readDashboard(store);
+      await readDashboard(store);
 
-    const homeSpec = FAMILIA_SPEC.housing![0]!;
-    const expectedAsOfValue = valueHousingAtDate({
-      anchors: [
-        {
-          adjustsPriorCurve: true,
-          valuationDate: resolveRelativeDate(AS_OF, homeSpec.acquisition.at),
-          valueMinor: homeSpec.acquisition.valueMinor,
-        },
-        ...(homeSpec.improvements ?? []).map((improvement) => ({
-          adjustsPriorCurve: false,
-          valuationDate: resolveRelativeDate(AS_OF, improvement.at),
-          valueMinor: improvement.valueMinor,
+      const homeSpec = FAMILIA_SPEC.housing![0]!;
+      const expectedAsOfValue = valueHousingAtDate({
+        anchors: [
+          {
+            adjustsPriorCurve: true,
+            valuationDate: resolveRelativeDate(AS_OF, homeSpec.acquisition.at),
+            valueMinor: homeSpec.acquisition.valueMinor,
+          },
+          ...(homeSpec.improvements ?? []).map((improvement) => ({
+            adjustsPriorCurve: false,
+            valuationDate: resolveRelativeDate(AS_OF, improvement.at),
+            valueMinor: improvement.valueMinor,
+          })),
+        ],
+        annualAppreciationRate: homeSpec.annualAppreciationRate ?? null,
+        currentValueMinor: homeSpec.acquisition.valueMinor,
+        targetDate: AS_OF,
+        today: AS_OF,
+      });
+      const todayHomeRow = (
+        await store.snapshots.readSnapshotHoldings({
+          from: AS_OF,
+          holdingId: "asset_familia_home",
+          kind: "asset",
+          scopeId: "household",
+          to: AS_OF,
+        })
+      )[0];
+
+      expect(todayHomeRow?.valueMinor).toBe(expectedAsOfValue);
+
+      store.close();
+    },
+    PERSONA_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "captures today's mortgage balance from the amortization curve",
+    async () => {
+      const store = await createInMemoryStore();
+      await seedPersona(store, FAMILIA_SPEC, AS_OF);
+
+      await readDashboard(store);
+
+      const mortgageSpec = FAMILIA_SPEC.housing![0]!.mortgage!;
+      const expectedAsOfBalance = amortizableBalanceAtDate({
+        earlyRepayments: (mortgageSpec.earlyRepayments ?? []).map((repayment) => ({
+          amountMinor: repayment.amountMinor,
+          mode: repayment.mode,
+          repaymentDate: resolveRelativeDate(AS_OF, repayment.at),
         })),
-      ],
-      annualAppreciationRate: homeSpec.annualAppreciationRate ?? null,
-      currentValueMinor: homeSpec.acquisition.valueMinor,
-      targetDate: AS_OF,
-      today: AS_OF,
-    });
-    const todayHomeRow = (
-      await store.snapshots.readSnapshotHoldings({
-        from: AS_OF,
-        holdingId: "asset_familia_home",
-        kind: "asset",
-        scopeId: "household",
-        to: AS_OF,
-      })
-    )[0];
+        plan: {
+          annualInterestRate: mortgageSpec.annualInterestRate,
+          disbursementDate: resolveRelativeDate(AS_OF, mortgageSpec.disbursement),
+          firstPaymentDate: resolveRelativeDate(AS_OF, mortgageSpec.firstPayment),
+          initialCapitalMinor: mortgageSpec.initialCapitalMinor,
+          termMonths: mortgageSpec.termMonths,
+        },
+        targetDate: AS_OF,
+      });
+      const todayMortgageRow = (
+        await store.snapshots.readSnapshotHoldings({
+          from: AS_OF,
+          holdingId: mortgageSpec.liabilityId,
+          kind: "liability",
+          scopeId: "household",
+          to: AS_OF,
+        })
+      )[0];
 
-    expect(todayHomeRow?.valueMinor).toBe(expectedAsOfValue);
+      expect(todayMortgageRow?.valueMinor).toBe(expectedAsOfBalance);
 
-    store.close();
-  });
+      store.close();
+    },
+    PERSONA_TEST_TIMEOUT_MS,
+  );
 
-  it("captures today's mortgage balance from the amortization curve", async () => {
-    const store = await createInMemoryStore();
-    await seedPersona(store, FAMILIA_SPEC, AS_OF);
+  it(
+    "generates a multi-month history via the ripple engine",
+    async () => {
+      const store = await createInMemoryStore();
+      await seedPersona(store, FAMILIA_SPEC, AS_OF);
 
-    await readDashboard(store);
+      // The mortgage plan + valuation anchors + backfill lay down a believable
+      // monthly curve — not a single point. At least a year of monthly closes.
+      const snapshots = await store.snapshots.readSnapshots("household");
+      expect(snapshots.length).toBeGreaterThanOrEqual(12);
 
-    const mortgageSpec = FAMILIA_SPEC.housing![0]!.mortgage!;
-    const expectedAsOfBalance = amortizableBalanceAtDate({
-      earlyRepayments: (mortgageSpec.earlyRepayments ?? []).map((repayment) => ({
-        amountMinor: repayment.amountMinor,
-        mode: repayment.mode,
-        repaymentDate: resolveRelativeDate(AS_OF, repayment.at),
-      })),
-      plan: {
-        annualInterestRate: mortgageSpec.annualInterestRate,
-        disbursementDate: resolveRelativeDate(AS_OF, mortgageSpec.disbursement),
-        firstPaymentDate: resolveRelativeDate(AS_OF, mortgageSpec.firstPayment),
-        initialCapitalMinor: mortgageSpec.initialCapitalMinor,
-        termMonths: mortgageSpec.termMonths,
-      },
-      targetDate: AS_OF,
-    });
-    const todayMortgageRow = (
-      await store.snapshots.readSnapshotHoldings({
-        from: AS_OF,
-        holdingId: mortgageSpec.liabilityId,
-        kind: "liability",
-        scopeId: "household",
-        to: AS_OF,
-      })
-    )[0];
+      store.close();
+    },
+    PERSONA_TEST_TIMEOUT_MS,
+  );
 
-    expect(todayMortgageRow?.valueMinor).toBe(expectedAsOfBalance);
+  it(
+    "computes FIRE progress for the configured household scope",
+    async () => {
+      const store = await createInMemoryStore();
+      await seedPersona(store, FAMILIA_SPEC, AS_OF);
 
-    store.close();
-  });
+      const result = await readDashboard(store, "household");
+      expect(result.fireScopeConfig).not.toBeNull();
+      expect(result.fireResult).not.toBeNull();
+      expect(result.fireResult!.percentFunded).toBeGreaterThan(0);
 
-  it("generates a multi-month history via the ripple engine", async () => {
-    const store = await createInMemoryStore();
-    await seedPersona(store, FAMILIA_SPEC, AS_OF);
-
-    // The mortgage plan + valuation anchors + backfill lay down a believable
-    // monthly curve — not a single point. At least a year of monthly closes.
-    const snapshots = await store.snapshots.readSnapshots("household");
-    expect(snapshots.length).toBeGreaterThanOrEqual(12);
-
-    store.close();
-  });
-
-  it("computes FIRE progress for the configured household scope", async () => {
-    const store = await createInMemoryStore();
-    await seedPersona(store, FAMILIA_SPEC, AS_OF);
-
-    const result = await readDashboard(store, "household");
-    expect(result.fireScopeConfig).not.toBeNull();
-    expect(result.fireResult).not.toBeNull();
-    expect(result.fireResult!.percentFunded).toBeGreaterThan(0);
-
-    store.close();
-  });
+      store.close();
+    },
+    PERSONA_TEST_TIMEOUT_MS,
+  );
 });

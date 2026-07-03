@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { NextRequest } from "next/server";
 
 import { createWorthlineStore } from "@worthline/db";
+import { debtBalanceAtDate, systemClock } from "@worthline/domain";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
 import { GET as getFinancialContext } from "@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
 import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
@@ -597,5 +598,73 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
     const groupCtx = await financialContext(groupScope.id);
     expect(groupCtx.body.data.scope.type).toBe("group");
     expect(groupCtx.body.data.summary.grossAssets).toEqual(eur(10_000_00));
+  });
+
+  test("values amortizable debts on the curve, not the stored balance", async () => {
+    // Regression (2026-07-03): an early repayment was recorded but every
+    // agent-view figure kept echoing the stored current balance — the curve
+    // (plan + repayments) is the live figure the dashboard shows.
+    const databasePath = tempDatabasePath("worthline-agent-view-fc-curve-");
+    process.env.WORTHLINE_DB_PATH = databasePath;
+    process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
+
+    const plan = {
+      annualInterestRate: "0.0589",
+      disbursementDate: "2026-05-08",
+      firstPaymentDate: "2026-06-08",
+      initialCapitalMinor: 6_000_00,
+      termMonths: 42,
+    };
+    const repayment = {
+      amountMinor: 154_34,
+      mode: "reduce-term" as const,
+      repaymentDate: "2026-07-03",
+    };
+    const storedBalanceMinor = 5_879_18;
+
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "member_jose", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.liabilities.createLiability({
+      balanceMinor: storedBalanceMinor,
+      currency: "EUR",
+      id: "liab_loan",
+      name: "Préstamo Revolut",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "loan",
+    });
+    await store.liabilities.setDebtModel("liab_loan", "amortizable");
+    await store.liabilities.createAmortizationPlan({
+      ...plan,
+      id: "amp_loan",
+      liabilityId: "liab_loan",
+    });
+    await store.liabilities.addEarlyRepayment({
+      ...repayment,
+      id: "erp_loan",
+      planId: "amp_loan",
+    });
+    store.close();
+
+    // The expected figure is the SAME domain curve at the SAME date the route
+    // values with, so the assertion is deterministic on any test day.
+    const expectedBalanceMinor = debtBalanceAtDate({
+      currentBalanceMinor: storedBalanceMinor,
+      debtModel: "amortizable",
+      earlyRepayments: [repayment],
+      plan,
+      targetDate: systemClock().today(),
+    });
+
+    const { body } = await financialContext(await householdScopeId());
+
+    expect(expectedBalanceMinor).not.toBe(storedBalanceMinor);
+    expect(body.data.summary.debts).toEqual(eur(expectedBalanceMinor));
+    const loan = body.data.holdings.items.find(
+      (h: { label: string }) => h.label === "Préstamo Revolut",
+    );
+    expect(loan.currentValue).toEqual(eur(expectedBalanceMinor));
   });
 });

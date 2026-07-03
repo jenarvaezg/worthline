@@ -1257,6 +1257,21 @@ export interface DatedFactSeams {
     repaymentId: string,
     opts?: { today?: string },
   ) => Promise<number>;
+  /**
+   * Current-state debt dated-fact seam (ADR 0056, #677): create the derived
+   * amortization plan row AND the `startsAtBaseline` balance re-baseline AND
+   * sync the liability's `currentBalanceMinor`, atomically, with ONE ripple
+   * (the `amortizable-rebaseline` kind, which governs the curve from the
+   * baseline forward). The #676 review's requirement that a current-state
+   * debt never exists with one fact but not the other — a mid-failure leaves
+   * NEITHER persisted. Wraps `liabilities.createAmortizationPlan` +
+   * `liabilities.addBalanceRebaseline` + `liabilities.updateLiabilityBalance`.
+   */
+  createCurrentStateDebtAndRipple: (params: {
+    plan: CreateAmortizationPlanInput;
+    rebaseline: AddBalanceRebaselineInput;
+    today?: string;
+  }) => Promise<void>;
   addBalanceRebaselineAndRipple: (
     input: AddBalanceRebaselineInput,
     opts?: { today?: string },
@@ -1996,6 +2011,34 @@ export function createDatedFactSeams(
           }
         }
         return changes;
+      });
+    },
+    createCurrentStateDebtAndRipple: async ({ plan, rebaseline, today: todayOpt }) => {
+      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
+      // One transaction: the plan row, the rebaseline fact, the balance sync,
+      // and the single ripple commit or roll back together (ADR 0020 / 0056).
+      await ctx.transaction(async () => {
+        await stores.liabilities.createAmortizationPlan(plan);
+        await stores.liabilities.addBalanceRebaseline(rebaseline);
+        await stores.liabilities.updateLiabilityBalance(
+          rebaseline.liabilityId,
+          rebaseline.outstandingBalanceMinor,
+        );
+        const workspace = await ctx.getWorkspace();
+        if (!workspace) return;
+        // The rebaseline (with startsAtBaseline) governs the curve from here
+        // forward regardless of the plan row's own dates — one ripple suffices.
+        await rippleHistoricalSnapshotsForDebt(
+          ctx,
+          workspace,
+          stores.snapshots.saveSnapshot,
+          {
+            fromDateKey: rebaseline.baselineDate,
+            kind: "amortizable-rebaseline",
+            liabilityId: rebaseline.liabilityId,
+            today,
+          },
+        );
       });
     },
     addBalanceRebaselineAndRipple: async (input, opts) => {

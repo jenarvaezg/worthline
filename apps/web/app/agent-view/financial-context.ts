@@ -105,8 +105,10 @@ export async function buildFinancialContext(
     });
   }
 
-  const assets = await store.readAssets();
-  const liabilities = await store.readLiabilities();
+  // Curve-valued at asOf (housing appreciation, amortized debt balances) so the
+  // agent view reports the same live figures the dashboard derives — the stored
+  // ledger would freeze modelled balances at whatever the user last typed.
+  const { assets, liabilities } = await store.readCurveValuedHoldings(options.asOf);
   const figuresInput = { assets, liabilities, scopeId: internalScopeId, workspace };
   const summary = toSummary(calculateNetWorth(figuresInput));
   const holdingSummaries = await buildHoldingSummaries(

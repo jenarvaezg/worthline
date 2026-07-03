@@ -126,7 +126,7 @@ export async function buildFigureExplanation(
     return buildHistoricalFigureExplanation(store, options, options.date);
   }
 
-  const facts = await resolveScopeFacts(store, options.scopeId);
+  const facts = await resolveScopeFacts(store, options.scopeId, options.asOf);
 
   switch (options.figure) {
     case "net_worth":
@@ -1286,6 +1286,7 @@ function fireProgressRatio(eligibleAssets: MoneyMinor, fireNumber: MoneyMinor): 
 async function resolveScopeFacts(
   store: AgentViewReadStore,
   publicScopeId: string,
+  asOf: string,
 ): Promise<ResolvedScopeFacts> {
   const workspace = await store.readWorkspace();
 
@@ -1314,12 +1315,16 @@ async function resolveScopeFacts(
     });
   }
 
+  // Curve-valued at asOf so a CURRENT explanation reports the same figures the
+  // dashboard derives; the historical path reads frozen snapshots instead.
+  const { assets, liabilities } = await store.readCurveValuedHoldings(asOf);
+
   return {
-    assets: await store.readAssets(),
+    assets,
     currency: workspace.baseCurrency,
     holdingPublicIds: publicIdMap(await store.readPublicIds(), "holding"),
     internalScopeId,
-    liabilities: await store.readLiabilities(),
+    liabilities,
     scope,
     scopeOption,
     workspace,

@@ -60,6 +60,81 @@ const noOpRefresh: LoadDashboardInput["refreshPrices"] = async () => ({
 // ---------------------------------------------------------------------------
 
 describe("loadDashboard — snapshot capture policy", () => {
+  test("live figures equal today's captured snapshot when curves drift from stored values", async () => {
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 650_000_00,
+      id: "asset_home",
+      isPrimaryResidence: true,
+      liquidityTier: "illiquid",
+      name: "Casa",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "real_estate",
+    });
+    await store.assets.addValuationAnchor({
+      adjustsPriorCurve: true,
+      assetId: "asset_home",
+      id: "anchor_home",
+      valuationDate: "2026-06-21",
+      valueMinor: 650_000_00,
+    });
+    await store.assets.setAnnualAppreciationRate("asset_home", "0.1");
+    await store.liabilities.createLiability({
+      balanceMinor: 100_000_00,
+      currency: "EUR",
+      id: "liability_mortgage",
+      name: "Hipoteca",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+    await store.liabilities.setDebtModel("liability_mortgage", "amortizable");
+    await store.createAmortizationPlanAndRipple(
+      {
+        annualInterestRate: "0.03",
+        disbursementDate: "2026-01-15",
+        firstPaymentDate: "2026-02-15",
+        id: "plan_mortgage",
+        initialCapitalMinor: 150_000_00,
+        liabilityId: "liability_mortgage",
+        termMonths: 240,
+      },
+      { today: "2026-07-02" },
+    );
+
+    const [valuedHome, valuedMortgage] = await Promise.all([
+      store.assets.valueHousingAtDate("asset_home", "2026-07-02", "2026-07-02"),
+      store.liabilities.debtBalanceAtDate("liability_mortgage", "2026-07-02"),
+    ]);
+    expect(valuedHome).not.toBe(650_000_00);
+    expect(valuedMortgage).not.toBe(100_000_00);
+
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-07-02",
+      now: "2026-07-02T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    const todaySnapshot = (
+      await store.snapshots.readSnapshots(result.selectedScope!.id)
+    ).find((snapshot) => snapshot.dateKey === "2026-07-02");
+    expect(todaySnapshot).toBeDefined();
+    expect(result.summary!.grossAssets.amountMinor).toBe(
+      todaySnapshot!.grossAssets.amountMinor,
+    );
+    expect(result.summary!.debts.amountMinor).toBe(todaySnapshot!.debts.amountMinor);
+    expect(result.presentation!.headline.amountMinor).toBe(
+      todaySnapshot!.totalNetWorth.amountMinor,
+    );
+
+    store.close();
+  });
+
   test("captures a snapshot on first load of the day", async () => {
     const store = await createInMemoryStore();
     await makeWorkspace(store);

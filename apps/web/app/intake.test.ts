@@ -806,6 +806,15 @@ describe("okMessage — specific catalog keys for intake v2", () => {
   test("investment_added is present", () => {
     expect(okMessage("investment_added")).not.toBeNull();
   });
+
+  // #677 final gate (MEDIUM): saveCurrentStateAmortizationAction redirects
+  // with this ok key; it was missing from the map, so the advanced edit
+  // surface showed no confirmation banner after a successful save.
+  test("current_state_debt_saved maps to a confirmation message", () => {
+    expect(okMessage("current_state_debt_saved")).toBe(
+      "Deuda dada de alta por estado actual.",
+    );
+  });
 });
 
 describe("successRedirectUrl — anchor-carrying redirects", () => {

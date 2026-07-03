@@ -46,6 +46,7 @@ export {
   type ControlPlaneStoreOptions,
   type ControlPlaneUser,
   type ControlPlaneWorkspace,
+  type ControlPlaneWorkspaceWithOwner,
   type ControlPlaneGrant,
 } from "./control-plane";
 export {
@@ -213,6 +214,8 @@ async function buildStore(
     listSourceAssetIds: connectedSourceStore.listSourceAssetIds,
     readAmortizationPlan: liabilityStore.readAmortizationPlan,
     readAssets: assetStore.readAssets,
+    readCurveValuedHoldings: (dateKey) =>
+      snapshotStore.readCurveValuedHoldingsAtDate(dateKey),
     readGoals: goalStore.readGoals,
     readBalanceAnchors: liabilityStore.readBalanceAnchors,
     readDebtModel: liabilityStore.readDebtModel,

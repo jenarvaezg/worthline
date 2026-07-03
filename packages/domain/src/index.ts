@@ -435,8 +435,12 @@ export {
   suggestFirstPaymentDate,
 } from "./amortization";
 
-export type { DebtBalanceAnchor, DebtBalanceAtDateInput } from "./debt-balance";
-export { debtBalanceAtDate } from "./debt-balance";
+export type {
+  DebtBalanceAnchor,
+  DebtBalanceAtDateInput,
+  EffectiveAmortizationPlan,
+} from "./debt-balance";
+export { debtBalanceAtDate, effectiveAmortizationPlan } from "./debt-balance";
 
 export type { InterpolateOrStepInput, ValuationCadence } from "./valuation-cadence";
 export {

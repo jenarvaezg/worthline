@@ -241,14 +241,14 @@ export async function loadDashboard(
   // negligible one-time cost for empty maps, still cheaper than two full builds.
   const projectionContext = await store.snapshots.buildProjectionContext();
 
-  // TX-safety: no transaction is open here; both calls invoke ctx.getWorkspace()
-  // internally — safe because getWorkspace() is promise-memoized (Step 0).
-  // readAssets and readLiabilities are independent and parallelize; readAssets
-  // now uses the pre-built context above (no second projection build).
-  const [assets, liabilities] = await Promise.all([
-    store.assets.readAssets(projectionContext),
-    store.liabilities.readLiabilities(),
-  ]);
+  const dateKey = now.slice(0, 10);
+  // The live figures use the same curve-valued ledger as snapshot capture:
+  // housing appreciation and modelled debt balances are sampled at the dashboard
+  // date, while model-less holdings keep their stored current value/balance.
+  const { assets, liabilities } = await store.snapshots.readCurveValuedHoldingsAtDate(
+    dateKey,
+    projectionContext,
+  );
   const scopes = listScopeOptions(workspace);
   const selectedScope = scopes.find((s) => s.id === scopeId) ?? scopes[0];
 
@@ -270,7 +270,7 @@ export async function loadDashboard(
   let snapshots = selectedScope
     ? await store.snapshots.readSnapshots(selectedScope.id)
     : [];
-  if (selectedScope && !snapshots.some((snapshot) => snapshot.dateKey === input.today)) {
+  if (selectedScope && !snapshots.some((snapshot) => snapshot.dateKey === dateKey)) {
     await captureDailySnapshotForWorkspace(store, now, projectionContext);
     snapshots = await store.snapshots.readSnapshots(selectedScope.id);
   }
