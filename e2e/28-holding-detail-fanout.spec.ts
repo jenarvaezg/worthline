@@ -153,12 +153,15 @@ test("amortized & anchored: a liability switches debt-model surfaces from the de
   // With no plan yet, the origin-declared plan form starts demoted inside a
   // <details> (current-state entry is the primary path, S2 #677) — expand it.
   await page.getByText("¿Tienes los datos originales del préstamo?").click();
-  await expect(page.getByRole("form", { name: "Plan de amortización" })).toBeVisible();
-  await page.getByLabel("Capital inicial en EUR").fill("30000");
-  await page.getByLabel("Tipo de interés anual (%)").fill("2,5");
-  await page.getByLabel("Plazo en meses").fill("120");
-  await page.getByLabel("Fecha de firma").fill("2023-01-01");
-  await page.getByLabel("Fecha del primer pago").fill("2023-03-01");
+  // Scope to the plan form: the current-state block also renders a
+  // "Fecha de firma original" field, so page-level getByLabel is ambiguous.
+  const planForm = page.getByRole("form", { name: "Plan de amortización" });
+  await expect(planForm).toBeVisible();
+  await planForm.getByLabel("Capital inicial en EUR").fill("30000");
+  await planForm.getByLabel("Tipo de interés anual (%)").fill("2,5");
+  await planForm.getByLabel("Plazo en meses").fill("120");
+  await planForm.getByLabel("Fecha de firma").fill("2023-01-01");
+  await planForm.getByLabel("Fecha del primer pago").fill("2023-03-01");
   await page.getByRole("button", { name: "Guardar plan" }).click();
   await expect(page.getByRole("status")).toBeVisible();
 
