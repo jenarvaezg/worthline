@@ -490,6 +490,7 @@ export function okMessage(key: string | undefined): string | null {
     binance_disconnected: "Cuenta de Binance desconectada.",
     binance_frozen: "Cuenta de Binance convertida en activo manual.",
     binance_synced: "Cuenta de Binance sincronizada.",
+    current_state_debt_saved: "Deuda dada de alta por estado actual.",
     debt_model_saved: "Modelo de deuda guardado.",
     deleted_recoverable: "Eliminado — recuperable en Papelera.",
     exposure_profile_cleared: "Perfil de exposición vaciado.",

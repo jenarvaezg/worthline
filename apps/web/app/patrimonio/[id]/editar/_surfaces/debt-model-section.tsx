@@ -25,6 +25,7 @@ import {
 import type { DebtModel, EarlyRepaymentMode, ValuationCadence } from "@worthline/domain";
 
 import type { FormErrorContext } from "@web/intake";
+import { CurrentStateDebtFields } from "@web/patrimonio/current-state-debt-fields";
 import { PlanDateFields } from "./plan-date-fields";
 import {
   addBalanceAnchorAction,
@@ -35,6 +36,7 @@ import {
   deleteEarlyRepaymentAction,
   deleteInterestRateRevisionAction,
   saveAmortizationPlanAction,
+  saveCurrentStateAmortizationAction,
   setDebtModelAction,
   setValuationCadenceAction,
   updateBalanceAnchorAction,
@@ -322,18 +324,55 @@ function AmortizablePlanEditor({
 
   return (
     <div className="debtModelDetail">
-      <form
-        action={saveAmortizationPlanAction}
-        aria-label="Plan de amortización"
-        className="stackForm"
-      >
-        <input name="currentUrl" type="hidden" value={currentUrl} />
-        <input name="id" type="hidden" value={liabilityId} />
-        <PlanFields max={today} values={planValues} />
-        <div className="formActions">
-          <button type="submit">{plan ? "Actualizar plan" : "Guardar plan"}</button>
-        </div>
-      </form>
+      {plan ? (
+        <form
+          action={saveAmortizationPlanAction}
+          aria-label="Plan de amortización"
+          className="stackForm"
+        >
+          <input name="currentUrl" type="hidden" value={currentUrl} />
+          <input name="id" type="hidden" value={liabilityId} />
+          <PlanFields max={today} values={planValues} />
+          <div className="formActions">
+            <button type="submit">Actualizar plan</button>
+          </div>
+        </form>
+      ) : (
+        <>
+          <form
+            action={saveCurrentStateAmortizationAction}
+            aria-label="Alta por estado actual"
+            className="stackForm"
+          >
+            <input name="currentUrl" type="hidden" value={currentUrl} />
+            <input name="id" type="hidden" value={liabilityId} />
+            <CurrentStateDebtFields
+              baselineDate={today}
+              idPrefix={`plan-${liabilityId}`}
+              initialValues={
+                formError?.formId === "currentStateDebt" ? formError.values : {}
+              }
+              submitLabel="Guardar por estado actual"
+            />
+          </form>
+
+          <details className="anchorEdit">
+            <summary>¿Tienes los datos originales del préstamo?</summary>
+            <form
+              action={saveAmortizationPlanAction}
+              aria-label="Plan de amortización"
+              className="stackForm"
+            >
+              <input name="currentUrl" type="hidden" value={currentUrl} />
+              <input name="id" type="hidden" value={liabilityId} />
+              <PlanFields max={today} values={planValues} />
+              <div className="formActions">
+                <button type="submit">Guardar plan</button>
+              </div>
+            </form>
+          </details>
+        </>
+      )}
 
       {plan ? (
         <form action={deleteAmortizationPlanAction}>

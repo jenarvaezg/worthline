@@ -128,6 +128,10 @@ export interface ExportedAmortizationPlan {
   disbursementDate: string;
   /** First-payment date, YYYY-MM-DD (ADR 0019). */
   firstPaymentDate: string;
+  /** Optional descriptive metadata (ADR 0056, #677): the debt's true original
+   *  signing date, for a plan created by current-state entry. Never read by
+   *  the balance curve. */
+  originalSigningDate?: string;
   interestRateRevisions: ExportedInterestRateRevision[];
   earlyRepayments: ExportedEarlyRepayment[];
 }
