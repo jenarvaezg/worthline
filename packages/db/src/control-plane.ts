@@ -33,6 +33,14 @@ export interface ControlPlaneGrant {
   createdAt: string;
 }
 
+/** A workspace plus its owner's email — the oldest grant; v1 is always exactly
+ * one owner per workspace. `ownerEmail` is null only for a dangling workspace
+ * with no grant row (should not happen post-provisioning, but the admin
+ * surface must not crash on it, #697). */
+export interface ControlPlaneWorkspaceWithOwner extends ControlPlaneWorkspace {
+  ownerEmail: string | null;
+}
+
 export interface ControlPlaneStore {
   /** Idempotent by email: the same address always maps to the same user row. */
   findOrCreateUser(email: string): Promise<ControlPlaneUser>;
@@ -63,6 +71,20 @@ export interface ControlPlaneStore {
    * lists workspaces directly rather than scoped to a granted user.
    */
   listAllWorkspaces(): Promise<ControlPlaneWorkspace[]>;
+  /**
+   * A single workspace plus its owner's email, or null when the id is unknown.
+   * The admin impersonation seam's lookup (#697): the cookie carries only a
+   * workspace id, so resolving "who owns it" (for the banner) and "where does
+   * it live" (for the store) both go through this one query.
+   */
+  getWorkspaceWithOwner(
+    workspaceId: string,
+  ): Promise<ControlPlaneWorkspaceWithOwner | null>;
+  /**
+   * Every workspace with its owner's email, oldest first — the admin user list
+   * (#697).
+   */
+  listWorkspacesWithOwners(): Promise<ControlPlaneWorkspaceWithOwner[]>;
   /** Whether the daily fleet capture has already finalized this UTC date. */
   hasDailyCaptureRun(dateKey: string): Promise<boolean>;
   /** Record or update daily fleet capture finalization for this UTC date. */
@@ -130,6 +152,25 @@ function toGrant(row: Record<string, unknown>): ControlPlaneGrant {
     createdAt: String(row["created_at"]),
   };
 }
+
+function toWorkspaceWithOwner(
+  row: Record<string, unknown>,
+): ControlPlaneWorkspaceWithOwner {
+  return {
+    ...toWorkspace(row),
+    ownerEmail: row["owner_email"] == null ? null : String(row["owner_email"]),
+  };
+}
+
+/** Correlated subquery: the oldest grant's owner email for a given workspace —
+ * shared by the single-workspace and list-all queries below. */
+const OWNER_EMAIL_SUBQUERY = `(
+  SELECT u.email FROM grants g
+  JOIN users u ON u.id = g.user_id
+  WHERE g.workspace_id = w.id
+  ORDER BY g.created_at ASC
+  LIMIT 1
+) AS owner_email`;
 
 async function buildControlPlaneStore(
   client: Client,
@@ -210,6 +251,23 @@ async function buildControlPlaneStore(
         "SELECT id, db_name, db_url, created_at FROM workspaces ORDER BY created_at ASC",
       );
       return result.rows.map((row) => toWorkspace(row));
+    },
+    async getWorkspaceWithOwner(workspaceId) {
+      const result = await client.execute({
+        sql: `SELECT w.id, w.db_name, w.db_url, w.created_at, ${OWNER_EMAIL_SUBQUERY}
+              FROM workspaces w
+              WHERE w.id = ?`,
+        args: [workspaceId],
+      });
+      return result.rows.length > 0 ? toWorkspaceWithOwner(result.rows[0]!) : null;
+    },
+    async listWorkspacesWithOwners() {
+      const result = await client.execute(
+        `SELECT w.id, w.db_name, w.db_url, w.created_at, ${OWNER_EMAIL_SUBQUERY}
+         FROM workspaces w
+         ORDER BY w.created_at ASC`,
+      );
+      return result.rows.map((row) => toWorkspaceWithOwner(row));
     },
     async hasDailyCaptureRun(dateKey) {
       const result = await client.execute({
