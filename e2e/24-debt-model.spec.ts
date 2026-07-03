@@ -57,6 +57,9 @@ test("debt model: amortizable plan + revisions, revolving anchors, future reject
   await section.getByLabel("Modelo de deuda").selectOption("amortizable");
   await page.getByRole("button", { name: "Guardar modelo" }).click();
   await expect(page.getByRole("status")).toHaveText("Modelo de deuda guardado.");
+  // With no plan yet, the origin-declared plan form starts demoted inside a
+  // <details> (current-state entry is the primary path, S2 #677) — expand it.
+  await page.getByText("¿Tienes los datos originales del préstamo?").click();
   await expect(page.getByRole("form", { name: "Plan de amortización" })).toBeVisible();
 
   // 4. Declare a PAST amortization plan (firma ~6 years ago). Two dates now

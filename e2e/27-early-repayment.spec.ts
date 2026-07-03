@@ -54,6 +54,9 @@ test("early repayment: add reduce-payment, edit to reduce-term, future rejected,
   // 3. Declare a PAST amortization plan (start ~6 years ago).
   const planStart = yearsAgo(6);
   await page.goto(editUrl(liabilityId));
+  // With no plan yet, the origin-declared plan form starts demoted inside a
+  // <details> (current-state entry is the primary path, S2 #677) — expand it.
+  await page.getByText("¿Tienes los datos originales del préstamo?").click();
   const planForm = page.getByRole("form", { name: "Plan de amortización" });
   await planForm.getByLabel("Capital inicial en EUR").fill("200000");
   await planForm.getByLabel("Tipo de interés anual (%)").fill("2,5");
