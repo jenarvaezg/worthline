@@ -151,4 +151,154 @@ describe("resolveStoreTarget", () => {
     });
     expect(result).toEqual({ kind: "unauthenticated" });
   });
+
+  // === Admin impersonation (#697, ADR 0030) ===
+
+  const ADMIN_ENV = {
+    AUTH_GOOGLE_ID: "google-id",
+    AUTH_GOOGLE_SECRET: "google-secret",
+    WORTHLINE_ADMIN_EMAIL: "admin@example.com",
+    WORTHLINE_DB_AUTH_TOKEN: "group-token",
+  };
+
+  test("an admin session with a resolved impersonation target opens the impersonated workspace", () => {
+    const result = resolveStoreTarget({
+      env: ADMIN_ENV,
+      session: {
+        user: { email: "admin@example.com" },
+        workspace: { id: "ws-admin", dbUrl: "libsql://wl-admin.turso.io" },
+      },
+      impersonateWorkspace: {
+        workspaceId: "ws-target",
+        dbUrl: "libsql://wl-target.turso.io",
+        email: "target@example.com",
+      },
+    });
+    expect(result).toEqual({
+      kind: "authenticated",
+      workspaceId: "ws-target",
+      dbUrl: "libsql://wl-target.turso.io",
+      token: "group-token",
+      impersonatedEmail: "target@example.com",
+    });
+  });
+
+  test("a padded/mis-cased WORTHLINE_ADMIN_EMAIL still matches the session — a deploy typo must not lock out the admin", () => {
+    const result = resolveStoreTarget({
+      env: { ...ADMIN_ENV, WORTHLINE_ADMIN_EMAIL: "  JenArvaezg@GMAIL.com  " },
+      session: {
+        user: { email: "jenarvaezg@gmail.com" },
+        workspace: { id: "ws-admin", dbUrl: "libsql://wl-admin.turso.io" },
+      },
+      impersonateWorkspace: {
+        workspaceId: "ws-target",
+        dbUrl: "libsql://wl-target.turso.io",
+        email: "target@example.com",
+      },
+    });
+    expect(result).toEqual({
+      kind: "authenticated",
+      workspaceId: "ws-target",
+      dbUrl: "libsql://wl-target.turso.io",
+      token: "group-token",
+      impersonatedEmail: "target@example.com",
+    });
+  });
+
+  test("a non-admin session with a resolved impersonation target still opens its OWN workspace — the cookie alone grants nothing", () => {
+    const result = resolveStoreTarget({
+      env: ADMIN_ENV,
+      session: {
+        user: { email: "ana@example.com" },
+        workspace: { id: "ws-ana", dbUrl: "libsql://wl-ana.turso.io" },
+      },
+      // As if a non-admin visitor hand-crafted the wl_impersonate cookie and
+      // it were (incorrectly) resolved anyway — resolveStoreTarget is the
+      // last line of defense and must still refuse it.
+      impersonateWorkspace: {
+        workspaceId: "ws-target",
+        dbUrl: "libsql://wl-target.turso.io",
+        email: "target@example.com",
+      },
+    });
+    expect(result).toEqual({
+      kind: "authenticated",
+      workspaceId: "ws-ana",
+      dbUrl: "libsql://wl-ana.turso.io",
+      token: "group-token",
+    });
+  });
+
+  test("no session with a resolved impersonation target resolves as unauthenticated, not the impersonated workspace", () => {
+    const result = resolveStoreTarget({
+      env: ADMIN_ENV,
+      session: null,
+      impersonateWorkspace: {
+        workspaceId: "ws-target",
+        dbUrl: "libsql://wl-target.turso.io",
+        email: "target@example.com",
+      },
+    });
+    expect(result).toEqual({ kind: "unauthenticated" });
+  });
+
+  test("an admin session without WORTHLINE_ADMIN_EMAIL configured never impersonates, even with a target resolved", () => {
+    const envWithoutAdmin = {
+      AUTH_GOOGLE_ID: ADMIN_ENV.AUTH_GOOGLE_ID,
+      AUTH_GOOGLE_SECRET: ADMIN_ENV.AUTH_GOOGLE_SECRET,
+      WORTHLINE_DB_AUTH_TOKEN: ADMIN_ENV.WORTHLINE_DB_AUTH_TOKEN,
+    };
+    const result = resolveStoreTarget({
+      env: envWithoutAdmin,
+      session: {
+        user: { email: "admin@example.com" },
+        workspace: { id: "ws-admin", dbUrl: "libsql://wl-admin.turso.io" },
+      },
+      impersonateWorkspace: {
+        workspaceId: "ws-target",
+        dbUrl: "libsql://wl-target.turso.io",
+        email: "target@example.com",
+      },
+    });
+    expect(result).toEqual({
+      kind: "authenticated",
+      workspaceId: "ws-admin",
+      dbUrl: "libsql://wl-admin.turso.io",
+      token: "group-token",
+    });
+  });
+
+  test("an admin session with no impersonation target opens the admin's own workspace as usual", () => {
+    const result = resolveStoreTarget({
+      env: ADMIN_ENV,
+      session: {
+        user: { email: "admin@example.com" },
+        workspace: { id: "ws-admin", dbUrl: "libsql://wl-admin.turso.io" },
+      },
+      impersonateWorkspace: null,
+    });
+    expect(result).toEqual({
+      kind: "authenticated",
+      workspaceId: "ws-admin",
+      dbUrl: "libsql://wl-admin.turso.io",
+      token: "group-token",
+    });
+  });
+
+  test("an MCP request never carries an impersonation target, admin session or not", () => {
+    // storeTargetFromMcpAuth never sets impersonateWorkspace — this asserts
+    // the resolver's own behavior when it is genuinely absent, mirroring the
+    // MCP call shape (session: null, mcpWorkspace set).
+    const result = resolveStoreTarget({
+      env: ADMIN_ENV,
+      session: null,
+      mcpWorkspace: { workspaceId: "ws-mcp", dbUrl: "libsql://wl-mcp.turso.io" },
+    });
+    expect(result).toEqual({
+      kind: "authenticated",
+      workspaceId: "ws-mcp",
+      dbUrl: "libsql://wl-mcp.turso.io",
+      token: "group-token",
+    });
+  });
 });

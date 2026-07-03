@@ -46,6 +46,7 @@ export {
   type ControlPlaneStoreOptions,
   type ControlPlaneUser,
   type ControlPlaneWorkspace,
+  type ControlPlaneWorkspaceWithOwner,
   type ControlPlaneGrant,
 } from "./control-plane";
 export {

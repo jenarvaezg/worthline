@@ -1,7 +1,20 @@
 import { parsePersonaId, type PersonaId } from "@web/demo/persona";
 
 export type StoreTarget =
-  | { kind: "authenticated"; workspaceId: string; dbUrl: string; token: string }
+  | {
+      kind: "authenticated";
+      workspaceId: string;
+      dbUrl: string;
+      token: string;
+      /**
+       * Set only when this is the admin viewing another user's workspace
+       * (#697, ADR 0030) — carries that user's email for the persistent
+       * banner. Absent (not `false`) on every ordinary authenticated
+       * resolution, so existing callers/tests that don't know about
+       * impersonation are unaffected.
+       */
+      impersonatedEmail?: string;
+    }
   | { kind: "demo"; persona: PersonaId; now: string }
   | { kind: "local" }
   | { kind: "unauthenticated" };
@@ -30,10 +43,37 @@ export interface ResolveStoreTargetInput {
    * control plane — rather than on `session.workspace`.
    */
   mcpWorkspace?: { workspaceId: string; dbUrl: string } | null | undefined;
+  /**
+   * The impersonation target resolved from the `wl_impersonate` cookie's
+   * workspace id (a control-plane lookup — see `lookupImpersonationTarget` in
+   * `read-store-target.ts`), or null/undefined when there is none to honor.
+   * CRITICAL: this value alone grants nothing. It may be resolved for ANY
+   * request that merely carries the cookie — including a hand-crafted one from
+   * a non-admin or logged-out visitor. The `isAdmin` check computed below, from
+   * THIS request's own `session`/`env`, is what decides whether it is ever
+   * used. Never skip that check, and never trust a pre-computed "is admin"
+   * boolean passed in from the caller instead of recomputing it here (#697).
+   */
+  impersonateWorkspace?:
+    | { workspaceId: string; dbUrl: string; email: string }
+    | null
+    | undefined;
+}
+
+/**
+ * Normalize an email for the admin comparison (#697): trim + lowercase.
+ * Shared by every admin-email comparison (this file, `guard-admin.ts`, and the
+ * session-email read in `read-store-target.ts`) so a stray capital or trailing
+ * space in the deployed `WORTHLINE_ADMIN_EMAIL` — or an unusually-cased
+ * session email — never compares a normalized value against a raw one and
+ * silently 404s the real admin.
+ */
+export function normalizeAdminEmail(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
 }
 
 export function resolveStoreTarget(input: ResolveStoreTargetInput): StoreTarget {
-  const { env, session, personaCookie, mcpWorkspace } = input;
+  const { env, session, personaCookie, mcpWorkspace, impersonateWorkspace } = input;
   const authConfigured = Boolean(env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET);
 
   // One shared Turso group token in env opens whichever per-workspace URL the
@@ -41,6 +81,25 @@ export function resolveStoreTarget(input: ResolveStoreTargetInput): StoreTarget 
   // MCP token, ADR 0034). The OAuth token that identified the MCP caller is NOT
   // this token — it never reaches the store seam.
   const groupToken = env.WORTHLINE_DB_AUTH_TOKEN ?? "";
+
+  // Admin impersonation (#697, ADR 0030): recomputed from THIS call's session
+  // + env every time — never cached, never passed in — so it is impossible for
+  // a stale or forged signal to leak through. A non-admin (or logged-out)
+  // session with the impersonate cookie set falls straight through to the
+  // branches below, resolving EXACTLY as if the cookie were absent.
+  const adminEmail = normalizeAdminEmail(env.WORTHLINE_ADMIN_EMAIL);
+  const isAdmin =
+    Boolean(adminEmail) && normalizeAdminEmail(session?.user?.email) === adminEmail;
+
+  if (isAdmin && impersonateWorkspace) {
+    return {
+      kind: "authenticated",
+      workspaceId: impersonateWorkspace.workspaceId,
+      dbUrl: impersonateWorkspace.dbUrl,
+      token: groupToken,
+      impersonatedEmail: impersonateWorkspace.email,
+    };
+  }
 
   // An authenticated workspace always wins — a stale persona cookie left over
   // from a demo session never shadows a signed-in user's real data.
