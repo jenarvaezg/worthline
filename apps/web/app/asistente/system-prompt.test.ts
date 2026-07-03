@@ -18,9 +18,11 @@ describe("buildChatSystemPrompt", () => {
   it("works without a screen context and pins the core rules", () => {
     const prompt = buildChatSystemPrompt(null);
 
-    // The non-negotiables: Spanish default, no invented facts, read-only.
+    // The non-negotiables: Spanish default, no invented facts, read-only,
+    // and amounts cited verbatim (they arrive pre-formatted).
     expect(prompt).toMatch(/español/i);
     expect(prompt).toMatch(/no inventes/i);
     expect(prompt).toMatch(/solo lectura|no puedes modificar/i);
+    expect(prompt).toMatch(/ya formateados/i);
   });
 });

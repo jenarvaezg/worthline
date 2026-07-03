@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createInMemoryStore } from "@worthline/db";
+import { formatMoneyMinor } from "@worthline/domain";
 
 import { buildFinancialContext } from "@web/agent-view/financial-context";
 import { listAgentViewScopes } from "@web/agent-view/scopes";
@@ -45,8 +46,15 @@ describe("createChatTools · get_financial_context", () => {
         holdingLimit: 10,
       });
 
-      expect(result.summary.netWorth).toEqual(expected.summary.netWorth);
+      // Amounts arrive FORMATTED (es-ES strings): a model reading raw
+      // amountMinor recites céntimos as euros — the #629 smoke bug.
+      expect(result.summary.netWorth).toBe(formatMoneyMinor(expected.summary.netWorth));
+      expect(result.summary.netWorth).toMatch(/€/);
+      expect(JSON.stringify(result)).not.toContain("amountMinor");
+
       expect(result.scope.id).toBe(defaultScope?.id);
+      expect(result.liquidity.length).toBeGreaterThan(0);
+      expect(result.holdings.length).toBeGreaterThan(0);
       expect(Object.keys(result.links).length).toBeGreaterThan(0);
     },
     SEED_TIMEOUT_MS,
