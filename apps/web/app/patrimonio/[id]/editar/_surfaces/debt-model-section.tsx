@@ -35,6 +35,7 @@ import {
   deleteBalanceAnchorAction,
   deleteEarlyRepaymentAction,
   deleteInterestRateRevisionAction,
+  recalibrateDebtBalanceAction,
   saveAmortizationPlanAction,
   saveCurrentStateAmortizationAction,
   setDebtModelAction,
@@ -125,6 +126,7 @@ const DEBT_MODEL_LABELS: Record<DebtModel, string> = {
 export function DebtModelSection({
   amortizationPlan,
   balanceAnchors,
+  currentModelledBalanceMinor,
   debtModel,
   earlyRepayments,
   formError,
@@ -136,6 +138,10 @@ export function DebtModelSection({
 }: {
   amortizationPlan: AmortizationPlanRecord | null;
   balanceAnchors: BalanceAnchorRecord[];
+  /** Current modelled balance as of today (ADR 0056, PRD #670 S3, #678) — shown
+   *  beside "Recalibrar con saldo real" so drift against the bank's real figure
+   *  is visible at the moment of repair. Null until a plan exists. */
+  currentModelledBalanceMinor: number | null;
   debtModel: DebtModel | null;
   earlyRepayments: EarlyRepaymentRecord[];
   formError: FormErrorContext | null;
@@ -203,6 +209,7 @@ export function DebtModelSection({
 
       {debtModel === "amortizable" ? (
         <AmortizablePlanEditor
+          currentModelledBalanceMinor={currentModelledBalanceMinor}
           currentUrl={currentUrl}
           earlyRepayments={earlyRepayments}
           formError={formError}
@@ -283,6 +290,7 @@ function PlanFields({ max, values }: { max: string; values: Record<string, strin
  * its early repayments (amortización anticipada, PRD #146 / #150).
  */
 function AmortizablePlanEditor({
+  currentModelledBalanceMinor,
   currentUrl,
   earlyRepayments,
   formError,
@@ -292,6 +300,7 @@ function AmortizablePlanEditor({
   rateRevisions,
   today,
 }: {
+  currentModelledBalanceMinor: number | null;
   currentUrl: string;
   earlyRepayments: EarlyRepaymentRecord[];
   formError: FormErrorContext | null;
@@ -301,6 +310,8 @@ function AmortizablePlanEditor({
   rateRevisions: InterestRateRevisionRecord[];
   today: string;
 }) {
+  const recalibrateValues =
+    formError?.formId === "recalibrateDebt" ? formError.values : {};
   const planValues =
     formError?.formId === "plan"
       ? formError.values
@@ -387,6 +398,57 @@ function AmortizablePlanEditor({
       ) : null}
 
       {plan ? <PlanCuotaSummary plan={plan} privacyMode={privacyMode} /> : null}
+
+      {plan && currentModelledBalanceMinor !== null ? (
+        <details className="anchorEdit">
+          <summary>Recalibrar con saldo real</summary>
+          <p className="infoNote">
+            Saldo modelado a día de hoy:{" "}
+            <strong>
+              {formatMoneyMinorPrivacy(
+                { amountMinor: currentModelledBalanceMinor, currency: "EUR" },
+                privacyMode,
+              )}
+            </strong>
+            . Si el saldo real de tu banco difiere, decláralo con su fecha para recalibrar
+            el plan hacia delante — el pasado no se toca.
+          </p>
+          <form
+            action={recalibrateDebtBalanceAction}
+            aria-label="Recalibrar saldo real"
+            className="stackForm"
+          >
+            <input name="currentUrl" type="hidden" value={currentUrl} />
+            <input name="id" type="hidden" value={liabilityId} />
+            <label>
+              <span>Saldo real (EUR)</span>
+              <input
+                aria-label="Saldo real (EUR)"
+                defaultValue={recalibrateValues["rbOutstandingBalance"]}
+                inputMode="decimal"
+                min="0"
+                name="rbOutstandingBalance"
+                placeholder="118.000,00"
+                required
+              />
+            </label>
+            <label>
+              <span>Fecha de recalibración</span>
+              <input
+                aria-label="Fecha de recalibración"
+                defaultValue={recalibrateValues["rbBalanceDate"]}
+                max={today}
+                name="rbBalanceDate"
+                required
+                type="date"
+              />
+            </label>
+            <div className="formActions">
+              <button type="submit">Recalibrar saldo</button>
+            </div>
+          </form>
+        </details>
+      ) : null}
 
       {plan ? (
         <>

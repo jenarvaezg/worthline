@@ -5,6 +5,7 @@ import { runActionWithStore } from "@web/action-store";
 import {
   assertNotInvestmentAsset,
   checkOwnershipSplit,
+  effectiveAmortizationPlan,
   isHousingAsset,
   isValueUpdateEligible,
   systemClock,
@@ -14,6 +15,7 @@ import { redirect } from "next/navigation";
 
 import {
   appendParam,
+  createStableId,
   errorRedirectUrl,
   mapDomainViolation,
   parseAppreciationRateStrict,
@@ -37,6 +39,11 @@ import {
   deriveCurrentStateDebt,
 } from "./current-state-debt";
 import { persistCurrentStateAmortization } from "./persist-current-state-debt";
+import {
+  RECALIBRATE_DEBT_FIELD_NAMES,
+  deriveRecalibrationRebaseline,
+  validateRecalibrateDebt,
+} from "./recalibrate-debt";
 
 /**
  * Server actions for the /patrimonio section.
@@ -1147,6 +1154,128 @@ export async function saveCurrentStateAmortizationAction(
   }
 
   redirect(successRedirectUrl(editUrl(id), "current_state_debt_saved", id));
+}
+
+/**
+ * "Recalibrar con saldo real" on the advanced edit surface (ADR 0056, PRD #670
+ * S3, #678) — the drift repair for an EXISTING amortizable debt. Declares a
+ * fresh balance re-baseline at the given date (the SAME dated-fact kind S1/S2
+ * use, `startsAtBaseline: false` here — it corrects a running curve, it does
+ * not redefine the debt's origin) and rides `addBalanceRebaselineAndRipple`
+ * for the forward-only ripple + audit trail (ADR 0012). Rate, end date and
+ * next-cuota date are NOT re-entered: `effectiveAmortizationPlan` resolves
+ * whichever plan or prior re-baseline currently governs the declared date, and
+ * `deriveRecalibrationRebaseline` folds in any rate revisions on/before it.
+ */
+export async function recalibrateDebtBalanceAction(
+  formData: FormData,
+  _store?: WorthlineStore,
+  _clock: Clock = systemClock(),
+): Promise<never> {
+  await guardDemoWrite(baseUrl(formData));
+  const id = parseEntityId(formData);
+
+  if (!id) {
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador de deuda no encontrado.",
+      }),
+    );
+  }
+
+  const today = _clock.today();
+  const values = preserveFields(formData, [...RECALIBRATE_DEBT_FIELD_NAMES]);
+
+  const validated = validateRecalibrateDebt({
+    balanceDate: String(formData.get("rbBalanceDate") ?? "").trim(),
+    outstandingBalance: String(formData.get("rbOutstandingBalance") ?? ""),
+    today,
+  });
+
+  if (!validated.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        formId: "recalibrateDebt",
+        message: validated.error,
+        values,
+      }),
+    );
+  }
+
+  const result = await runActionWithStore(async (store) => {
+    const guard = await requireDebtModel(store, id, "amortizable");
+
+    if (!guard.ok) {
+      return guard;
+    }
+
+    // Gate on the effective CURVE, not the plan row (#678 review): an imported
+    // current-state debt can be rebaselined with no plan row at all (S1's
+    // `startsAtBaseline` fact alone governs the curve) — that debt still has a
+    // valid schedule to recalibrate, so requiring a plan row would falsely
+    // reject it. Revisions hang off `planId`, so they only exist with a plan.
+    const [plan, rebaselines] = await Promise.all([
+      store.liabilities.readAmortizationPlan(id),
+      store.liabilities.readBalanceRebaselines(id),
+    ]);
+    const revisions = plan
+      ? await store.liabilities.readInterestRateRevisions(plan.id)
+      : [];
+
+    const effective = effectiveAmortizationPlan({
+      balanceRebaselines: rebaselines,
+      ...(plan
+        ? {
+            plan: {
+              annualInterestRate: plan.annualInterestRate,
+              disbursementDate: plan.disbursementDate,
+              firstPaymentDate: plan.firstPaymentDate,
+              initialCapitalMinor: plan.initialCapitalMinor,
+              termMonths: plan.termMonths,
+            },
+          }
+        : {}),
+      targetDate: validated.balanceDate,
+    });
+
+    const derived = deriveRecalibrationRebaseline({
+      balanceDate: validated.balanceDate,
+      effective,
+      revisions,
+    });
+
+    if (!derived.ok) {
+      return derived;
+    }
+
+    await store.addBalanceRebaselineAndRipple(
+      {
+        annualInterestRate: derived.annualInterestRate,
+        baselineDate: validated.balanceDate,
+        endDate: derived.endDate,
+        id: createStableId("rebaseline", id, Date.now()),
+        liabilityId: id,
+        nextPaymentDate: derived.nextPaymentDate,
+        outstandingBalanceMinor: validated.outstandingBalanceMinor,
+        startsAtBaseline: false,
+      },
+      { today },
+    );
+
+    return { ok: true as const };
+  }, _store);
+
+  if (!result.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        formId: "recalibrateDebt",
+        message: result.error!,
+        values,
+      }),
+    );
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "debt_recalibrated", id));
 }
 
 export async function saveAmortizationPlanAction(

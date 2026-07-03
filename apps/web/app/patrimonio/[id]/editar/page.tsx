@@ -241,10 +241,20 @@ export default async function EditarPage({
     const valuationCadence = liability
       ? await store.liabilities.readValuationCadence(id)
       : null;
+    // The current MODELLED balance, shown beside "Recalibrar con saldo real"
+    // (ADR 0056, PRD #670 S3, #678) so the drift against the bank's real figure
+    // is visible at the moment of repair — only meaningful once a plan exists.
+    const currentModelledBalanceMinor = amortizationPlan
+      ? await store.liabilities.debtBalanceAtDate(
+          id,
+          new Date().toISOString().slice(0, 10),
+        )
+      : null;
 
     return {
       activeMembers: workspace.members.filter((m) => !m.disabledAt),
       amortizationPlan,
+      currentModelledBalanceMinor,
       anchors,
       appreciationRate,
       asset,
@@ -299,6 +309,7 @@ export default async function EditarPage({
     coinPositions,
     coinSource,
     coinValuationCache,
+    currentModelledBalanceMinor,
     debtModel,
     earlyRepayments,
     canHandEnterExposure,
@@ -615,6 +626,7 @@ export default async function EditarPage({
           <DebtModelSection
             amortizationPlan={amortizationPlan}
             balanceAnchors={balanceAnchors}
+            currentModelledBalanceMinor={currentModelledBalanceMinor}
             debtModel={debtModel}
             earlyRepayments={earlyRepayments}
             formError={formError}

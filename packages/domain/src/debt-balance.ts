@@ -187,12 +187,21 @@ function sortRebaselines(
   );
 }
 
-function effectiveAmortizationPlan(
-  input: DebtBalanceAtDateInput,
-):
-  | { plan: AmortizationPlanInput; effectiveFrom: string }
-  | { startsAfterTarget: true }
-  | null {
+/**
+ * Which base amortization schedule governs a target date: the plan itself, or
+ * the most recent balance re-baseline active by then (ADR 0056). Exported so a
+ * recalibration action can resolve "what's the currently active rate / end
+ * date" for an existing debt without re-deriving the plan-vs-rebaseline
+ * precedence rule itself (PRD #670 S3, #678).
+ */
+export interface EffectiveAmortizationPlan {
+  plan: AmortizationPlanInput;
+  effectiveFrom: string;
+}
+
+export function effectiveAmortizationPlan(
+  input: Pick<DebtBalanceAtDateInput, "plan" | "balanceRebaselines" | "targetDate">,
+): EffectiveAmortizationPlan | { startsAfterTarget: true } | null {
   const sortedRebaselines = sortRebaselines(input.balanceRebaselines ?? []);
   const startingBaseline = sortedRebaselines.find((fact) => fact.startsAtBaseline);
   if (startingBaseline && input.targetDate < startingBaseline.baselineDate) {
