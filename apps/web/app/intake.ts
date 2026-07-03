@@ -492,6 +492,7 @@ export function okMessage(key: string | undefined): string | null {
     binance_synced: "Cuenta de Binance sincronizada.",
     current_state_debt_saved: "Deuda dada de alta por estado actual.",
     debt_model_saved: "Modelo de deuda guardado.",
+    debt_recalibrated: "Deuda recalibrada con el saldo real.",
     deleted_recoverable: "Eliminado — recuperable en Papelera.",
     exposure_profile_cleared: "Perfil de exposición vaciado.",
     exposure_profile_saved: "Perfil de exposición guardado.",
