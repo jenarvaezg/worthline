@@ -11,6 +11,12 @@ import type { ReactElement, ReactNode } from "react";
 import { describe, expect, test, vi } from "vitest";
 
 const calls = vi.hoisted(() => ({
+  buildProjectionContext: vi.fn(async () => ({
+    cachedPriceByAsset: new Map(),
+    manualPriceByAsset: new Map(),
+    operationsByAsset: new Map(),
+    ownershipByAsset: new Map(),
+  })),
   isDemoMode: vi.fn(async () => false),
   readAllPriceCacheEntries: vi.fn(async () => []),
   readCurveValuedHoldingsAtDate: vi.fn(async () => ({ assets: [], liabilities: [] })),
@@ -31,7 +37,10 @@ const calls = vi.hoisted(() => ({
       },
       exposureProfiles: { readExposureProfiles: calls.readExposureProfiles },
       operations: { readAllPriceCacheEntries: calls.readAllPriceCacheEntries },
-      snapshots: { readCurveValuedHoldingsAtDate: calls.readCurveValuedHoldingsAtDate },
+      snapshots: {
+        buildProjectionContext: calls.buildProjectionContext,
+        readCurveValuedHoldingsAtDate: calls.readCurveValuedHoldingsAtDate,
+      },
       readTrash: calls.readTrash,
       readWarningOverrides: calls.readWarningOverrides,
       workspace: { readWorkspace: calls.readWorkspace },

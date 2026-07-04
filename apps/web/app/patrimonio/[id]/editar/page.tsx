@@ -1,10 +1,14 @@
 import { bootstrapHealthcheck, withStore } from "@web/store";
 import {
+  buildHoldingReturnsView,
   canHandEnterExposureProfile,
   collectWarnings,
   detectSingleAssetBackfillCandidate,
   getPriceFreshness,
+  holdingIrr,
+  instrumentOfAsset,
   listScopeOptions,
+  simpleGain,
   valuationMethodOfAsset,
   valuationMethodOfLiability,
 } from "@worthline/domain";
@@ -51,6 +55,7 @@ import { ExposureProfileSection } from "./_surfaces/exposure-profile-section";
 import { AssetEditForm, LiabilityEditForm } from "./_surfaces/holding-forms";
 import { HousingValuationSection } from "./_surfaces/housing-valuation-section";
 import { PriceBackfillSection } from "./_surfaces/price-backfill-section";
+import { ReturnsPanel } from "./_surfaces/returns-panel";
 import { StatementUploadSection } from "./_surfaces/statement-upload-section";
 import { PriceRefreshControl } from "@web/patrimonio/price-refresh-control";
 
@@ -405,6 +410,33 @@ export default async function EditarPage({
       ? getPriceFreshness(priceCache, persistence.checkedAt)
       : null;
 
+  // Returns surface for a market investment (#551, ADR 0040): fold this holding's
+  // operations + current market value through the return engine, framed by
+  // instrument. Only a derived (operation-ledger) investment qualifies — a
+  // coin/Binance holding mirrors positions, not operations, so it carries none.
+  const isMarketInvestment =
+    Boolean(asset) && method === "derived" && !isCoinCollection && !isBinanceHolding;
+  const returnsView =
+    isMarketInvestment && asset
+      ? buildHoldingReturnsView({
+          instrument: instrumentOfAsset(asset),
+          irr: holdingIrr({
+            currency: asset.currency,
+            marketValueMinor: position?.marketValue?.amountMinor ?? 0,
+            operations,
+            valuationDate: today,
+          }),
+          simpleGain: simpleGain({
+            currency: asset.currency,
+            marketValueMinor: position?.marketValue?.amountMinor ?? 0,
+            operations,
+            valuationDate: today,
+          }),
+          ...(position?.realizedPnl ? { realizedPnl: position.realizedPnl } : {}),
+          ...(position?.unrealizedPnl ? { unrealizedPnl: position.unrealizedPnl } : {}),
+        })
+      : null;
+
   return (
     <Shell
       activeSection="patrimonio"
@@ -524,6 +556,12 @@ export default async function EditarPage({
             label="Actualizar precio"
             pendingLabel="Actualizando…"
           />
+        ) : null}
+
+        {/* derived: the returns surface — three measures + realized/unrealized
+            split + honest caveats (#551, ADR 0040), above the operations ledger. */}
+        {returnsView ? (
+          <ReturnsPanel privacyMode={privacyMode} view={returnsView} />
         ) : null}
 
         {/* derived: the investment's operations editor (the single place units change) */}

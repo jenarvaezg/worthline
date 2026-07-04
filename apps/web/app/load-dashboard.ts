@@ -31,6 +31,7 @@ import {
   deriveFramedSnapshotDeltas,
   listScopeOptions,
   monthsBetween,
+  portfolioReturnsView,
   prepareDashboardState,
   rangeStartMonthKey,
 } from "@worthline/domain";
@@ -38,6 +39,7 @@ import type {
   CompositionSeriesPoint,
   DashboardState,
   FramedSnapshotDeltas,
+  HoldingReturnsView,
   LocalPersistenceStatus,
 } from "@worthline/domain";
 
@@ -121,6 +123,13 @@ export interface LoadDashboardResult extends DashboardState {
    * Never undefined — always an array so the page can conditionally render.
    */
   pricingErrors: string[];
+  /**
+   * Portfolio investment returns (#551, ADR 0040): the three present-time measures
+   * over every operation-bearing holding, for the hero's returns line. Whole-
+   * portfolio (unscoped) — returns are intrinsic to the investments, not a
+   * member's slice. Null when there are no operation-bearing investments.
+   */
+  portfolioReturns: HoldingReturnsView | null;
   /**
    * Drill view state (#76, #77) when a drill was requested — built from the
    * scope's frozen snapshot holding rows. `null` when no drill is active.
@@ -284,6 +293,20 @@ export async function loadDashboard(
     projectionContext,
   );
   const positions = selectedScope ? scopedProjection.positions : [];
+
+  // Portfolio investment returns for the hero's returns line (#551, ADR 0040):
+  // folds every operation-bearing holding through the return engine, reusing the
+  // shared context (no extra operation read). Whole-portfolio, not scope-weighted
+  // — a fund's return is the same figure whoever owns which share.
+  // ponytail: unscoped portfolio return; per-member-scope weighting is deferred
+  // until a scoped consumer needs it (household member scopes are the edge case).
+  const portfolioReturns = portfolioReturnsView({
+    cachedPriceByAsset: projectionContext.cachedPriceByAsset,
+    currency: workspace.baseCurrency,
+    manualPriceByAsset: projectionContext.manualPriceByAsset,
+    operationsByAsset: projectionContext.operationsByAsset,
+    valuationDate: dateKey,
+  });
 
   // ── §4 parallel reads — mutually independent ─────────────────────────────
   // `snapshots` was already read in §3 (the capture-existence check doubles as
@@ -454,6 +477,7 @@ export async function loadDashboard(
     headlineDeltas,
     matrixCells,
     needsOnboarding: false,
+    portfolioReturns,
     pricingErrors,
     snapshotHoldingRows: holdingRows,
   };
@@ -494,6 +518,7 @@ function buildEmptyResult(
     headlineDeltas: { sinceMonthlyClose: null, sincePrevious: null },
     matrixCells: {},
     needsOnboarding: true,
+    portfolioReturns: null,
     pricingErrors,
     snapshotHoldingRows: [],
   };
