@@ -52,6 +52,13 @@ const KEY_EXPORTS = [
   // positions
   "createInvestmentOperation",
   "derivePosition",
+  // returns (#548)
+  "operationCashflows",
+  "xirr",
+  "simpleGain",
+  "holdingIrr",
+  "portfolioSimpleGain",
+  "portfolioIrr",
   // investment-valuation
   "deriveInvestmentValuation",
   "selectInvestmentPrice",

@@ -166,6 +166,7 @@ export function derivePosition(
 ): PositionSummary {
   let units: DecimalString = "0";
   let costMinor = 0;
+  let realizedMinor = 0;
   const warnings: string[] = [];
 
   const ordered = [...operations].sort((left, right) =>
@@ -181,8 +182,9 @@ export function derivePosition(
       units = addUnits(units, operation.units);
     } else {
       // Sell: remove units and a proportional slice of cost basis at the running
-      // weighted average. The sale price affects realized P/L (out of scope here),
-      // not the cost basis of the remaining units, so it is not read.
+      // weighted average. The sale price does not move the remaining cost basis,
+      // but it does realize P/L — proceeds (net of fees) minus the cost of the
+      // units sold (#548).
       let sellUnits = operation.units;
 
       if (compareUnits(sellUnits, units) > 0) {
@@ -194,7 +196,11 @@ export function derivePosition(
         sellUnits = units;
       }
 
-      costMinor -= proportionMinor(costMinor, sellUnits, units);
+      const costOfUnitsSold = proportionMinor(costMinor, sellUnits, units);
+      const proceedsMinor =
+        multiplyToMinor(sellUnits, operation.pricePerUnit) - operation.feesMinor;
+      realizedMinor += proceedsMinor - costOfUnitsSold;
+      costMinor -= costOfUnitsSold;
       units = subtractUnits(units, sellUnits);
     }
   }
@@ -205,6 +211,7 @@ export function derivePosition(
     costBasis: money(costMinor, options.currency),
     currency: options.currency,
     currentUnits: units,
+    realizedPnl: money(realizedMinor, options.currency),
     warnings,
   };
 
