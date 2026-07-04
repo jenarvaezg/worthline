@@ -8,9 +8,12 @@ import {
   lookThroughExposure,
   monthlyCloseValuesFromSnapshotRows,
   projectPortfolio,
+  resolveAssetClassBreakdown,
+  returnsByAssetClassView,
   systemClock,
 } from "@worthline/domain";
 import type {
+  AssetClassResolution,
   ExposureLookthroughHolding,
   ExposureProfile,
   Instrument,
@@ -41,6 +44,7 @@ import BalanceBoard from "./balance-board";
 import ExposureSection from "./exposure-section";
 import PatrimonioGroupControls from "./group-controls";
 import { PriceRefreshControl } from "./price-refresh-control";
+import ReturnsByClassSection from "./returns-by-class-section";
 
 export const dynamic = "force-dynamic";
 
@@ -141,6 +145,34 @@ export default async function PatrimonioPage({
       valuationDate: today,
     });
 
+    // Per-asset-class decomposition of the portfolio returns (#552, ADR 0040
+    // fast-follow). Resolves each holding's asset class from the SAME exposure
+    // profiles the look-through uses (`resolveAssetClassBreakdown`, ADR 0039), then
+    // folds the market holdings through the return engine per class. Present-time
+    // and unscoped, mirroring the per-holding board figures above.
+    const exposureProfileByKey = new Map<string, ExposureProfile>(
+      exposureProfiles.map((profile) => [profile.key, profile]),
+    );
+    const metaById = new Map(investmentMeta.map((row) => [row.id, row]));
+    const assetClassByAsset = new Map<string, AssetClassResolution>(
+      assets.map((asset) => {
+        const meta = metaById.get(asset.id);
+        const key = meta?.isin ?? meta?.providerSymbol ?? null;
+        const profile = key ? (exposureProfileByKey.get(key) ?? null) : null;
+        return [asset.id, resolveAssetClassBreakdown(instrumentOfAsset(asset), profile)];
+      }),
+    );
+    const returnsByClass = returnsByAssetClassView({
+      assetClassByAsset,
+      cachedPriceByAsset: projectionContext.cachedPriceByAsset,
+      currency: workspace.baseCurrency,
+      instrumentByAsset,
+      manualPriceByAsset: projectionContext.manualPriceByAsset,
+      monthlyClosesByAsset,
+      operationsByAsset: projectionContext.operationsByAsset,
+      valuationDate: today,
+    });
+
     // Price-refresh metadata for the derived-value badge hover (#303): when + by
     // which source each cached unit price was last fetched, keyed by asset id. The
     // projection attaches it to investment rows only; non-investment entries are
@@ -168,6 +200,7 @@ export default async function PatrimonioPage({
       liabilities,
       overrides,
       priceMetaByAsset,
+      returnsByClass,
       scopes,
       selectedScope,
       trash,
@@ -188,6 +221,7 @@ export default async function PatrimonioPage({
     liabilities,
     overrides,
     priceMetaByAsset,
+    returnsByClass,
     scopes,
     selectedScope,
     trash,
@@ -333,6 +367,10 @@ export default async function PatrimonioPage({
         initialLens={exposureLens}
         privacyMode={privacyMode}
       />
+
+      {returnsByClass ? (
+        <ReturnsByClassSection privacyMode={privacyMode} returns={returnsByClass} />
+      ) : null}
     </Shell>
   );
 }

@@ -1,4 +1,5 @@
 import type {
+  ExposureAssetClassBucket,
   ExposureCoverage,
   ExposureDimensionResult,
   ExposureGeographyBucket,
@@ -33,6 +34,34 @@ const GEOGRAPHY_LABELS: Record<ExposureGeographyBucket, string> = {
 /** The Spanish label for a geography slice key, or the raw key if unrecognised. */
 export function geographyLabel(key: string): string {
   return GEOGRAPHY_LABELS[key as ExposureGeographyBucket] ?? key;
+}
+
+/**
+ * Asset-class buckets → Spanish labels, plus the two non-bucket keys the returns
+ * decomposition emits: `other` (a breakdown's declared-under-100% remainder) and
+ * `unclassified` (a holding with no resolvable class). Mirrors the S1 hand-entry
+ * vocabulary (#552).
+ */
+const ASSET_CLASS_LABELS: Record<
+  ExposureAssetClassBucket | "other" | "unclassified",
+  string
+> = {
+  bond: "Renta fija",
+  cash: "Efectivo",
+  commodity: "Materias primas",
+  crypto: "Cripto",
+  equity: "Renta variable",
+  mixed: "Mixto",
+  other: "Otros",
+  property: "Inmobiliario",
+  unclassified: "Sin clasificar",
+};
+
+/** The Spanish label for an asset-class slice key, or the raw key if unrecognised. */
+export function assetClassLabel(key: string): string {
+  return (
+    ASSET_CLASS_LABELS[key as ExposureAssetClassBucket | "other" | "unclassified"] ?? key
+  );
 }
 
 /**

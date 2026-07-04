@@ -64,6 +64,10 @@ const KEY_EXPORTS = [
   "portfolioIrr",
   "portfolioTwr",
   "timeWeightedReturn",
+  "simpleGainFromCashflows",
+  // returns-by-class (#552)
+  "returnsByAssetClass",
+  "returnsByAssetClassView",
   // investment-valuation
   "deriveInvestmentValuation",
   "selectInvestmentPrice",
@@ -100,6 +104,7 @@ const KEY_EXPORTS = [
   // exposure look-through (#540)
   "createExposureProfile",
   "lookThroughExposure",
+  "resolveAssetClassBreakdown",
   // portfolio-grouping (#154)
   "groupPortfolio",
   // dashboard

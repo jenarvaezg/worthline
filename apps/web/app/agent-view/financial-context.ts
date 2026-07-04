@@ -6,8 +6,10 @@ import {
   listScopeOptions,
   lookThroughExposure,
   projectPortfolio,
+  resolveAssetClassBreakdown,
 } from "@worthline/domain";
 import type {
+  AssetClassResolution,
   ExposureAllocationSlice,
   ExposureDimensionResult,
   ExposureLookthroughHolding,
@@ -125,11 +127,30 @@ export async function buildFinancialContext(
     assets,
     liabilities,
   );
+
+  // Meta (ISIN / provider symbol) + exposure profiles, read once and shared by the
+  // exposure look-through and the per-asset-class returns block (PRD #552) so both
+  // resolve a holding's asset class identically (ADR 0039). Keyed by internal id;
+  // a holding's profile keys on `isin ?? providerSymbol`.
+  const investmentMeta = await store.readInvestmentAssetsWithMeta();
+  const metaById = new Map(investmentMeta.map((row) => [row.id, row]));
+  const exposureProfiles = new Map<string, ExposureProfile>(
+    (await store.readExposureProfiles()).map((profile) => [profile.key, profile]),
+  );
+  const assetClassOf = (id: string, instrument: Instrument): AssetClassResolution => {
+    const meta = metaById.get(id);
+    const key = meta?.isin ?? meta?.providerSymbol ?? null;
+    const profile = key ? (exposureProfiles.get(key) ?? null) : null;
+    return resolveAssetClassBreakdown(instrument, profile);
+  };
+
   const lookthrough = await buildExposureLookthrough(
     store,
     workspace,
     holdingSummaries,
     summary.grossAssets,
+    investmentMeta,
+    exposureProfiles,
   );
 
   return {
@@ -149,6 +170,7 @@ export async function buildFinancialContext(
     returns: await buildPortfolioReturns({
       currency: workspace.baseCurrency,
       holdings: projection.sections[0].rows.map((row) => ({
+        assetClass: assetClassOf(row.id, row.instrument),
         currentValueMinor: row.valueMinor,
         id: row.id,
         instrument: row.instrument,
@@ -386,9 +408,10 @@ async function buildExposureLookthrough(
   workspace: Workspace,
   summaries: AgentViewHoldingSummary[],
   grossAssets: AgentViewMoney,
+  meta: Awaited<ReturnType<AgentViewReadStore["readInvestmentAssetsWithMeta"]>>,
+  profiles: ReadonlyMap<string, ExposureProfile>,
 ): Promise<ExposureLookthroughFields> {
   const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
-  const meta = await store.readInvestmentAssetsWithMeta();
   // Holding summaries carry public IDs; meta is keyed by internal asset id, so
   // key the meta lookup by the holding's public ID to match.
   const metaByPublicId = new Map(
@@ -397,9 +420,6 @@ async function buildExposureLookthrough(
       .filter(
         (entry): entry is [string, (typeof meta)[number]] => entry[0] !== undefined,
       ),
-  );
-  const profiles = new Map<string, ExposureProfile>(
-    (await store.readExposureProfiles()).map((profile) => [profile.key, profile]),
   );
 
   const holdings: ExposureLookthroughHolding[] = summaries
