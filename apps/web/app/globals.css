@@ -3933,6 +3933,99 @@ td.rowActions > * {
   text-transform: uppercase;
 }
 
+/* Per-asset-class returns (#552): same panel frame as exposure; each class row
+   shows its value + the three measures, gains/losses on the semantic sign hue. */
+.returnsByClassSection {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  margin-top: 24px;
+  padding: 16px 24px;
+}
+
+.returnsByClassSection .panelHeader {
+  border-bottom: none;
+  padding-bottom: 8px;
+}
+
+.returnsClassRows {
+  display: grid;
+  gap: 14px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.returnsClassRow {
+  border-top: 1px solid var(--hairline);
+  padding-top: 12px;
+}
+
+.returnsClassRow:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.returnsClassHead {
+  align-items: baseline;
+  display: grid;
+  gap: 4px 12px;
+  grid-template-columns: minmax(120px, 1fr) auto 52px;
+}
+
+.returnsClassLabel {
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+
+.returnsClassHead b {
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  text-align: right;
+}
+
+.returnsClassShare {
+  color: var(--muted);
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.returnsClassMeasures {
+  display: grid;
+  gap: 4px 18px;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 8px 0 0;
+}
+
+.returnsClassMeasures > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.returnsClassMeasures dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.returnsClassMeasures dd {
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  margin: 0;
+}
+
+.returnsByClassCaveat {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  margin: 12px 0 0;
+}
+
 .housingValuation .anchorEdit {
   margin-bottom: 8px;
 }

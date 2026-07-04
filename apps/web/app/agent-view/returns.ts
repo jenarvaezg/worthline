@@ -6,19 +6,27 @@ import {
   monthlyCloseValuesFromSnapshotRows,
   operationCashflows,
   operationTwrCashflows,
+  returnsByAssetClass,
   returnsKindForInstrument,
   timeWeightedReturn,
   xirr,
 } from "@worthline/domain";
 import type {
+  AssetClassResolution,
+  AssetClassReturns,
   CurrencyCode,
+  ExposureCoverage,
   Instrument,
   InvestmentOperation,
+  MonthlyCloseSnapshotRow,
   MonthlyCloseValue,
   TwrCashflow,
 } from "@worthline/domain";
 
 import type {
+  AgentViewAssetClassReturns,
+  AgentViewAssetClassReturnsBlock,
+  AgentViewExposureCoverage,
   AgentViewMoney,
   AgentViewMoneyWeightedReturn,
   AgentViewReturns,
@@ -80,6 +88,8 @@ export async function buildPortfolioReturns(input: {
     currentValueMinor: number;
     instrument: Instrument;
     totalShareBps: number;
+    /** The holding's resolved asset class, for the per-class block (PRD #552). */
+    assetClass?: AssetClassResolution;
   }[];
   scopeId: string;
   valuationDate: string;
@@ -90,6 +100,13 @@ export async function buildPortfolioReturns(input: {
   let marketValueMinor = 0;
 
   const operationBearingIds = new Set<string>();
+  const classHoldings: {
+    id: string;
+    operations: readonly InvestmentOperation[];
+    marketValueMinor: number;
+    ownershipBps: number;
+    assetClass: AssetClassResolution;
+  }[] = [];
   for (const holding of input.holdings) {
     if (returnsKindForInstrument(holding.instrument) !== "market") {
       continue;
@@ -116,24 +133,152 @@ export async function buildPortfolioReturns(input: {
         amountMinor: allocateByBps(flow.amountMinor, holding.totalShareBps),
       })),
     );
+
+    if (holding.assetClass) {
+      classHoldings.push({
+        assetClass: holding.assetClass,
+        id: holding.id,
+        marketValueMinor: holding.currentValueMinor,
+        operations,
+        ownershipBps: holding.totalShareBps,
+      });
+    }
   }
 
   if (operationBearingIds.size === 0) {
     return null;
   }
 
-  return buildReturnsFromCashflows({
+  const snapshotRows = await input.store.readSnapshotHoldings({
+    scopeId: input.scopeId,
+  });
+
+  const base = buildReturnsFromCashflows({
     cashflows,
     currency: input.currency,
     firstOperationDate: firstDate,
     marketValueMinor,
-    monthlyCloses: monthlyPortfolioCloses(
-      await input.store.readSnapshotHoldings({ scopeId: input.scopeId }),
-      operationBearingIds,
-    ),
+    monthlyCloses: monthlyPortfolioCloses(snapshotRows, operationBearingIds),
     twrCashflows,
     valuationDate: input.valuationDate,
   });
+
+  const byAssetClass = buildAssetClassReturnsBlock({
+    currency: input.currency,
+    holdings: classHoldings,
+    snapshotRows,
+    valuationDate: input.valuationDate,
+  });
+
+  return byAssetClass ? { ...base, byAssetClass } : base;
+}
+
+/**
+ * The per-asset-class decomposition of the portfolio returns (PRD #552): resolves
+ * each operation-bearing market holding's monthly-close series, then folds the
+ * holdings — with their resolved class and ownership share — through the pure
+ * `returnsByAssetClass` engine. Ownership-scoped (`ownershipBps` = the holding's
+ * `totalShareBps`, its value the scoped `ownedMinor`), the SAME basis as the
+ * portfolio block above and `exposure.byAssetClass`, so the three reconcile. Null
+ * when no holding carries a resolved class, so the block is only added when present.
+ */
+function buildAssetClassReturnsBlock(input: {
+  currency: CurrencyCode;
+  holdings: {
+    id: string;
+    operations: readonly InvestmentOperation[];
+    marketValueMinor: number;
+    ownershipBps: number;
+    assetClass: AssetClassResolution;
+  }[];
+  snapshotRows: Awaited<ReturnType<AgentViewReadStore["readSnapshotHoldings"]>>;
+  valuationDate: string;
+}): AgentViewAssetClassReturnsBlock | null {
+  if (input.holdings.length === 0) {
+    return null;
+  }
+
+  const closesByHolding = monthlyClosesByHolding(
+    input.snapshotRows,
+    new Set(input.holdings.map((holding) => holding.id)),
+  );
+
+  const result = returnsByAssetClass({
+    currency: input.currency,
+    holdings: input.holdings.map((holding) => ({
+      assetClass: holding.assetClass,
+      marketValueMinor: holding.marketValueMinor,
+      monthlyCloses: closesByHolding.get(holding.id) ?? [],
+      operations: holding.operations,
+      ownershipBps: holding.ownershipBps,
+    })),
+    valuationDate: input.valuationDate,
+  });
+
+  return {
+    classes: result.classes.map(toAssetClassReturns),
+    coverage: toExposureCoverage(result.coverage),
+  };
+}
+
+function toAssetClassReturns(entry: AssetClassReturns): AgentViewAssetClassReturns {
+  return {
+    key: entry.key,
+    moneyWeighted: toMoneyWeighted(entry.irr),
+    simple: simpleGainToReturn(entry.simpleGain, entry.value.currency),
+    timeWeighted: toTimeWeighted(entry.twr),
+    value: moneyOf(entry.value.amountMinor, entry.value.currency),
+  };
+}
+
+function simpleGainToReturn(
+  gain: AssetClassReturns["simpleGain"],
+  currency: CurrencyCode,
+): AgentViewSimpleReturn {
+  return {
+    annualized: gain.annualized,
+    cagr: gain.cagr === null ? null : gain.cagr.toString(),
+    totalGain: moneyOf(gain.totalGain.amountMinor, currency),
+    totalInvested: moneyOf(gain.totalInvestedMinor, currency),
+    totalReturnRatio:
+      gain.totalReturnRatio === null ? null : gain.totalReturnRatio.toString(),
+  };
+}
+
+function toExposureCoverage(coverage: ExposureCoverage): AgentViewExposureCoverage {
+  return {
+    classified: moneyOf(coverage.classified.amountMinor, coverage.classified.currency),
+    notApplicable: moneyOf(
+      coverage.notApplicable.amountMinor,
+      coverage.notApplicable.currency,
+    ),
+    unknown: moneyOf(coverage.unknown.amountMinor, coverage.unknown.currency),
+  };
+}
+
+function monthlyClosesByHolding(
+  rows: Awaited<ReturnType<AgentViewReadStore["readSnapshotHoldings"]>>,
+  holdingIds: Set<string>,
+): Map<string, MonthlyCloseValue[]> {
+  const byHolding = new Map<string, MonthlyCloseSnapshotRow[]>();
+  for (const row of rows) {
+    if (row.kind !== "asset" || !holdingIds.has(row.holdingId)) {
+      continue;
+    }
+    const list = byHolding.get(row.holdingId) ?? [];
+    list.push({
+      dateKey: row.dateKey,
+      snapshotId: row.snapshotId,
+      valueMinor: row.valueMinor,
+    });
+    byHolding.set(row.holdingId, list);
+  }
+
+  const closes = new Map<string, MonthlyCloseValue[]>();
+  for (const [holdingId, list] of byHolding) {
+    closes.set(holdingId, monthlyCloseValuesFromSnapshotRows(list));
+  }
+  return closes;
 }
 
 function buildReturnsFromCashflows(input: {

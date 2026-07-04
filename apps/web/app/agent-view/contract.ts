@@ -294,11 +294,41 @@ export interface AgentViewTimeWeightedReturn {
   reason: TwrReason | null;
 }
 
+/**
+ * One asset class's blended returns (PRD #552, ADR 0040 fast-follow): the three
+ * measures over the fractional, present-time slice every operation-bearing market
+ * holding contributes to the class. `key` is an asset-class bucket (`equity`,
+ * `bond`, …), `other` (a breakdown's declared-under-100% remainder), or
+ * `unclassified` (a holding with no resolvable class). Reference lens, never a
+ * figure — a present-time decomposition of the portfolio returns.
+ */
+export interface AgentViewAssetClassReturns {
+  key: string;
+  value: AgentViewMoney;
+  simple: AgentViewSimpleReturn;
+  moneyWeighted: AgentViewMoneyWeightedReturn;
+  timeWeighted: AgentViewTimeWeightedReturn;
+}
+
+/**
+ * Per-asset-class returns for the portfolio (PRD #552): one entry per class the
+ * operation-bearing market holdings resolve to, plus the three-way coverage of
+ * attributed value (asset class has no `notApplicable`, so it splits classified
+ * vs unknown). Present only on the portfolio returns block — a single holding has
+ * one class, not a breakdown.
+ */
+export interface AgentViewAssetClassReturnsBlock {
+  classes: AgentViewAssetClassReturns[];
+  coverage: AgentViewExposureCoverage;
+}
+
 export interface AgentViewReturns {
   simple: AgentViewSimpleReturn;
   moneyWeighted: AgentViewMoneyWeightedReturn;
   timeWeighted: AgentViewTimeWeightedReturn;
   qualitySignals: AgentViewReturnQualitySignal[];
+  /** Present-time per-asset-class decomposition (portfolio block only, PRD #552). */
+  byAssetClass?: AgentViewAssetClassReturnsBlock;
 }
 
 /** Whether a scope has a FIRE configuration (PRD #328, #340). */

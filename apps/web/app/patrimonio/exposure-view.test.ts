@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import type { ExposureDimensionResult, ExposureLookthrough } from "@worthline/domain";
 
 import {
+  assetClassLabel,
   coverageParts,
   formatExposureWeight,
   geographyForLens,
@@ -107,5 +108,18 @@ describe("coverageParts", () => {
 
     expect(parts).toHaveLength(3);
     expect(parts[2]?.value.amountMinor).toBe(0);
+  });
+});
+
+describe("assetClassLabel", () => {
+  test("labels each bucket in Spanish, including the returns-only keys", () => {
+    expect(assetClassLabel("equity")).toBe("Renta variable");
+    expect(assetClassLabel("bond")).toBe("Renta fija");
+    expect(assetClassLabel("other")).toBe("Otros");
+    expect(assetClassLabel("unclassified")).toBe("Sin clasificar");
+  });
+
+  test("falls back to the raw key when unrecognised", () => {
+    expect(assetClassLabel("weird")).toBe("weird");
   });
 });
