@@ -26,3 +26,15 @@ export function resolveChatModel(): LanguageModel | null {
 
   return null; // no shared credential — the route answers 503, never guesses
 }
+
+/**
+ * A human label for the resolved model — `provider · model-id` — so an eval run
+ * (#668) names exactly what it measured and runs stay comparable. Null mirrors
+ * `resolveChatModel`: no credential, nothing to evaluate.
+ */
+export function chatModelLabel(): string | null {
+  const modelId = process.env["WORTHLINE_CHAT_MODEL"] ?? DEFAULT_CHAT_MODEL;
+  if (process.env["AI_GATEWAY_API_KEY"]) return `gateway · ${modelId}`;
+  if (process.env["GROQ_API_KEY"]) return `groq · ${modelId.replace(/^groq\//, "")}`;
+  return null;
+}
