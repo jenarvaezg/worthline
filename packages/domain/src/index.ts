@@ -132,6 +132,23 @@ export {
   derivePosition,
 } from "./positions";
 export type {
+  DatedCashflow,
+  HoldingReturnsInput,
+  IrrReason,
+  IrrResult,
+  PortfolioHolding,
+  PortfolioReturnsInput,
+  SimpleGain,
+} from "./returns";
+export {
+  holdingIrr,
+  operationCashflows,
+  portfolioIrr,
+  portfolioSimpleGain,
+  simpleGain,
+  xirr,
+} from "./returns";
+export type {
   InvestmentPriceSource,
   SelectedInvestmentPrice,
   DeriveInvestmentValuationInput,

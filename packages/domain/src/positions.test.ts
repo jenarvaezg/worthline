@@ -164,6 +164,60 @@ describe("derivePosition — oversell", () => {
   });
 });
 
+describe("derivePosition — realized P/L (#548)", () => {
+  test("a buy-only position has zero realized P/L", () => {
+    const position = derivePosition([buy("10", "100", { id: "op1" })], {
+      assetId: "asset_inv",
+      currency: "EUR",
+    });
+
+    expect(position.realizedPnl).toEqual({ amountMinor: 0, currency: "EUR" });
+  });
+
+  test("a partial sell realizes proceeds minus the cost of the units sold", () => {
+    const position = derivePosition(
+      [
+        buy("10", "100", { executedAt: "2026-01-01", id: "op1" }),
+        sell("4", "150", { executedAt: "2026-02-01", id: "op2" }),
+      ],
+      { assetId: "asset_inv", currency: "EUR" },
+    );
+
+    // sold 4 units bought at 100.00, sold at 150.00 → 4 × 50.00 = 200.00 realized
+    expect(position.realizedPnl).toEqual({ amountMinor: 20_000, currency: "EUR" });
+    // remaining 6 units keep their proportional cost basis
+    expect(position.costBasis).toEqual({ amountMinor: 60_000, currency: "EUR" });
+  });
+
+  test("a fully-sold position has the full realized gain and zero unrealized", () => {
+    const position = derivePosition(
+      [
+        buy("10", "100", { executedAt: "2026-01-01", id: "op1" }),
+        sell("10", "130", { executedAt: "2026-02-01", id: "op2" }),
+      ],
+      { assetId: "asset_inv", currency: "EUR", currentPricePerUnit: "140" },
+    );
+
+    expect(position.realizedPnl).toEqual({ amountMinor: 30_000, currency: "EUR" });
+    // no units remain → market value 0, unrealized 0 (against a 0 cost basis)
+    expect(position.marketValue).toEqual({ amountMinor: 0, currency: "EUR" });
+    expect(position.unrealizedPnl).toEqual({ amountMinor: 0, currency: "EUR" });
+  });
+
+  test("sell fees reduce the realized gain", () => {
+    const position = derivePosition(
+      [
+        buy("10", "100", { executedAt: "2026-01-01", id: "op1" }),
+        sell("5", "120", { executedAt: "2026-02-01", feesMinor: 500, id: "op2" }),
+      ],
+      { assetId: "asset_inv", currency: "EUR" },
+    );
+
+    // proceeds 600.00 − 5.00 fees = 595.00; cost of 5 units = 500.00 → 95.00 realized
+    expect(position.realizedPnl).toEqual({ amountMinor: 9_500, currency: "EUR" });
+  });
+});
+
 describe("createInvestmentOperation", () => {
   const base: CreateInvestmentOperationInput = {
     assetId: "asset_inv",
