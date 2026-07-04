@@ -149,6 +149,24 @@ export {
   xirr,
 } from "./returns";
 export type {
+  HoldingReturnsView,
+  HoldingReturnsViewInput,
+  InvestmentReturnsContext,
+  ProvisionalTwr,
+  ReturnsKind,
+} from "./returns-display";
+export {
+  APPRECIATING_CAVEAT,
+  MARKET_CAVEAT,
+  TWR_PROVISIONAL_CAVEAT,
+  buildHoldingReturnsView,
+  buildPortfolioReturnsView,
+  investmentReturnsById,
+  portfolioReturnsView,
+  provisionalTwr,
+  returnsKindForInstrument,
+} from "./returns-display";
+export type {
   InvestmentPriceSource,
   SelectedInvestmentPrice,
   DeriveInvestmentValuationInput,

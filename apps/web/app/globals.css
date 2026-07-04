@@ -6239,3 +6239,114 @@ td.rowActions > * {
   opacity: 0.45;
   cursor: default;
 }
+
+/* ── Investment returns (#551, ADR 0040) ─────────────────────────────────────
+   Present-time, derived measures surfaced on the board, hero and ficha. Gains /
+   losses use the semantic --green/--red tokens via the shared .pos/.neg classes
+   (design-system §2), never raw colour. */
+
+/* A reliable, focusable hover — not a native `title` (slow, unreliable, #562). */
+.returnsHint {
+  position: relative;
+  cursor: help;
+}
+.returnsHint:focus-visible {
+  outline: 2px solid var(--line-strong);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.returnsHintBody {
+  position: absolute;
+  z-index: 30;
+  left: 0;
+  top: calc(100% + 6px);
+  display: none;
+  flex-direction: column;
+  gap: 3px;
+  width: max-content;
+  max-width: 280px;
+  padding: 10px 12px;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: left;
+  white-space: normal;
+}
+.returnsHint:hover .returnsHintBody,
+.returnsHint:focus-visible .returnsHintBody,
+.returnsHint:focus-within .returnsHintBody {
+  display: flex;
+}
+
+/* Per-holding simple gain, inline under the board amount. */
+.balanceRowReturns {
+  margin-top: 2px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.balanceRowReturns .returnsHintBody {
+  left: auto;
+  right: 0;
+  font-weight: 500;
+}
+
+/* The home hero's one-line portfolio returns, inside the hero cell. */
+.heroReturns {
+  display: inline-block;
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.heroReturns strong {
+  font-weight: 700;
+}
+
+/* The ficha's full three-measure returns panel. */
+.returnsPanel {
+  margin-top: 18px;
+}
+.returnsPanel h3 {
+  margin: 0 0 10px;
+}
+.returnsMeasures,
+.returnsSplit {
+  display: grid;
+  gap: 6px 18px;
+  margin: 0 0 10px;
+}
+.returnsSplit {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+.returnsMeasure {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+}
+.returnsMeasure dt {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.returnsMeasure dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.returnsCaveats {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
