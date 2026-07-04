@@ -3,9 +3,18 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 
-import { parseQuickActions, type QuickAction } from "./assistant-actions";
+import {
+  parseExposureProfileProposal,
+  parseQuickActions,
+  type QuickAction,
+} from "./assistant-actions";
+import { confirmExposureProfileProposalAction } from "./exposure-profile-proposal-action";
+import type {
+  ExposureProfileProposal,
+  ExposureProfileProposalPreviewProfile,
+} from "./exposure-profile-proposals";
 import { deriveScreenContext, type ScreenSection } from "./screen-context";
 import { suggestedPrompts } from "./suggested-prompts";
 
@@ -37,6 +46,90 @@ function currentQuickActions(messages: UIMessage[]): QuickAction[] {
     return [];
   }
   return [];
+}
+
+function formatWeight(weight: string): string {
+  const n = Number(weight);
+  if (!Number.isFinite(n)) return weight;
+  return `${new Intl.NumberFormat("es-ES", { maximumFractionDigits: 2 }).format(n * 100)}%`;
+}
+
+function breakdownSummary(
+  breakdowns: ExposureProfileProposalPreviewProfile["breakdowns"],
+): string[] {
+  return Object.entries(breakdowns).flatMap(([dimension, values]) =>
+    Object.entries(values ?? {}).map(
+      ([bucket, weight]) => `${dimension}.${bucket} ${formatWeight(String(weight))}`,
+    ),
+  );
+}
+
+function profileSummary(profile: ExposureProfileProposalPreviewProfile): string {
+  const bits = [
+    profile.trackedIndex ? `Índice ${profile.trackedIndex}` : null,
+    profile.ter ? `TER ${formatWeight(profile.ter)}` : null,
+    profile.hedged ? "Cubierto EUR" : null,
+    ...breakdownSummary(profile.breakdowns),
+  ].filter((bit): bit is string => bit !== null);
+
+  return bits.length > 0 ? bits.join(" · ") : "Sin datos";
+}
+
+function ExposureProposalCard({ proposal }: { proposal: ExposureProfileProposal }) {
+  const [rejected, setRejected] = useState(false);
+  const [result, setResult] = useState<Awaited<
+    ReturnType<typeof confirmExposureProfileProposalAction>
+  > | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  if (rejected) return null;
+
+  function confirm() {
+    startTransition(async () => {
+      setResult(await confirmExposureProfileProposalAction(proposal.drafts));
+    });
+  }
+
+  return (
+    <div className="assistantProposal">
+      <p>Propuesta de exposición</p>
+      <ul>
+        {proposal.previews.map((preview) => (
+          <li key={preview.key}>
+            <strong>{preview.labels.join(", ")}</strong>
+            <span>Antes: {profileSummary(preview.before)}</span>
+            <span>Después: {profileSummary(preview.after)}</span>
+          </li>
+        ))}
+      </ul>
+      {result ? (
+        <p className={result.status === "applied" ? "assistantOk" : "assistantError"}>
+          {result.status === "applied"
+            ? "Propuesta aplicada."
+            : result.status === "blocked"
+              ? result.message
+              : result.message}
+        </p>
+      ) : null}
+      <div className="assistantProposalActions">
+        <button
+          disabled={pending || result?.status === "applied"}
+          onClick={confirm}
+          type="button"
+        >
+          Confirmar
+        </button>
+        <button
+          className="secondary"
+          disabled={pending || result?.status === "applied"}
+          onClick={() => setRejected(true)}
+          type="button"
+        >
+          Descartar
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -196,6 +289,15 @@ export default function AssistantLayer() {
                   "toolName" in part ? String(part.toolName) : part.type.slice(5);
                 // suggest_actions renders as chips below, not as tool activity.
                 if (name === "suggest_actions") return null;
+                if (name === "propose_exposure_profiles" && "output" in part) {
+                  const proposal = parseExposureProfileProposal(part.output);
+                  return proposal ? (
+                    <ExposureProposalCard
+                      key={`${message.id}-${i}`}
+                      proposal={proposal}
+                    />
+                  ) : null;
+                }
                 return (
                   <span className="assistantTool" key={`${message.id}-${i}`}>
                     → {name}

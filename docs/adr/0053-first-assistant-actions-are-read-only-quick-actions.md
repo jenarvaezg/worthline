@@ -10,3 +10,9 @@ The initial action set is intentionally small:
 The model may propose actions, but the app only renders actions that validate against this typed set.
 
 Write-capable actions are deliberately excluded from this first action model. When the assistant later needs to create or correct data, it should draft an **assistant proposal** with validation, preview, and explicit confirmation instead of reusing the quick-action path.
+
+## Amendment: confirmed proposal actions
+
+Issue #706 adds the first write-capable assistant action class without changing the quick-action contract. `suggest_actions` remains read-only. Write-capable assistant output is a separate **confirmed proposal**: the model calls a proposal tool (`propose_exposure_profiles`) whose output writes nothing, the chat layer renders a before/after preview, and only an explicit user confirmation invokes a server action.
+
+Confirmed proposal actions must re-validate on the server before writing, must be rejectable without side effects, and must no-op in demo mode. The first member is exposure-profile proposals; future import/fix proposals should copy this shape rather than extending read-only quick actions.
