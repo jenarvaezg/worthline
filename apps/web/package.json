@@ -29,6 +29,7 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev --hostname 127.0.0.1",
+    "eval:assistant": "tsx --env-file-if-exists=.env.local app/asistente/eval/run.ts",
     "lint": "eslint . --max-warnings=0 --cache --cache-location node_modules/.cache/eslint",
     "test": "vitest run --config vitest.config.ts --passWithNoTests",
     "start": "next start --hostname 127.0.0.1",
