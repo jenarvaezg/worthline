@@ -13,7 +13,7 @@ export default function ServiceWorkerRegister() {
           .register("/sw.js")
           .then((registration) => {
             if (!isProd) {
-              console.log("Service Worker registered with scope:", registration.scope);
+              console.log("Service Worker registered with scope:", registration?.scope);
             }
           })
           .catch((error) => {

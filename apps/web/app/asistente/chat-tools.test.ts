@@ -114,12 +114,15 @@ describe("createChatTools · get_financial_context", () => {
 });
 
 describe("createChatTools · full read catalog (#630)", () => {
-  it("mirrors every agent-view read tool the MCP catalog serves", () => {
+  it("serves every agent-view read tool the MCP catalog exposes", () => {
     // The chat catalog is the same read surface as agent-view (ADR 0047): if a
     // tool exists over MCP but not here, the assistant is blind to that lens.
+    // It may add non-read tools (e.g. suggest_actions, #631) on top.
     const mcp = createAgentViewMcpToolCatalog({ get: async () => ({}) as never });
-    const chat = toolsOver({} as AgentViewReadStore);
-    expect(new Set(Object.keys(chat))).toEqual(new Set(Object.keys(mcp)));
+    const chat = new Set(Object.keys(toolsOver({} as AgentViewReadStore)));
+    for (const name of Object.keys(mcp)) {
+      expect(chat).toContain(name);
+    }
   });
 
   it(
@@ -195,6 +198,71 @@ describe("createChatTools · full read catalog (#630)", () => {
     const result = await tools["get_data_quality"]?.execute?.({}, toolCallContext());
 
     expect(result).toEqual({ error: "empty_workspace" });
+  });
+});
+
+describe("createChatTools · suggest_actions (#631)", () => {
+  it(
+    "resolves a cited holding to its worthline surface and keeps follow-ups",
+    async () => {
+      const store = await seededStore();
+      const holding = (await store.agentView.readPublicIds()).find(
+        (row) => row.entityType === "holding",
+      )!;
+      const tools = toolsOver(store.agentView);
+
+      const result = await tools["suggest_actions"]?.execute?.(
+        {
+          actions: [
+            {
+              type: "openInternalSource",
+              label: "Ver posición",
+              holding: holding.publicId,
+            },
+            { type: "openInternalSource", label: "Histórico", section: "historico" },
+            {
+              type: "runSuggestedAnalysis",
+              label: "¿Y mi FIRE?",
+              prompt: "¿Cómo va mi FIRE?",
+            },
+          ],
+        },
+        toolCallContext(),
+      );
+
+      expect(result.actions).toEqual([
+        {
+          type: "openInternalSource",
+          label: "Ver posición",
+          href: `/patrimonio/${holding.entityId}/editar`,
+        },
+        { type: "openInternalSource", label: "Histórico", href: "/historico" },
+        {
+          type: "runSuggestedAnalysis",
+          label: "¿Y mi FIRE?",
+          prompt: "¿Cómo va mi FIRE?",
+        },
+      ]);
+    },
+    SEED_TIMEOUT_MS,
+  );
+
+  it("drops actions it cannot resolve or that fall outside the typed set", async () => {
+    const store = await createInMemoryStore();
+    const tools = toolsOver(store.agentView);
+
+    const result = await tools["suggest_actions"]?.execute?.(
+      {
+        actions: [
+          { type: "openInternalSource", label: "Fantasma", holding: "wl_hld_ghost" },
+          { type: "mutateHolding", label: "Borrar", holding: "wl_hld_x" },
+          { type: "runSuggestedAnalysis", label: "sin prompt" },
+        ],
+      },
+      toolCallContext(),
+    );
+
+    expect(result.actions).toEqual([]);
   });
 });
 
