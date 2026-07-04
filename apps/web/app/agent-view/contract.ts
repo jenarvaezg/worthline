@@ -1,7 +1,9 @@
 import type {
+  IrrReason,
   GoalPriority,
   PriceFreshnessState,
   RiskTolerance,
+  TwrReason,
   WorkspaceMode,
 } from "@worthline/domain";
 
@@ -260,6 +262,45 @@ export interface AgentViewExposureProfile {
   };
 }
 
+export interface AgentViewReturnQualitySignal {
+  code: "DISTRIBUTIONS_NOT_CAPTURED" | "TWR_STARTS_AFTER_FIRST_OPERATION";
+  severity: AgentViewDataQualitySeverity;
+  label: string;
+  firstOperationDate?: string;
+  twrStartDate?: string;
+}
+
+export interface AgentViewSimpleReturn {
+  totalGain: AgentViewMoney;
+  totalInvested: AgentViewMoney;
+  totalReturnRatio: string | null;
+  annualized: boolean;
+  cagr: string | null;
+  realizedGain?: AgentViewMoney;
+  unrealizedGain?: AgentViewMoney;
+}
+
+export interface AgentViewMoneyWeightedReturn {
+  rate: string | null;
+  reason: IrrReason | null;
+}
+
+export interface AgentViewTimeWeightedReturn {
+  rate: string | null;
+  annualizedRate: string | null;
+  annualized: boolean;
+  startDate: string | null;
+  endDate: string | null;
+  reason: TwrReason | null;
+}
+
+export interface AgentViewReturns {
+  simple: AgentViewSimpleReturn;
+  moneyWeighted: AgentViewMoneyWeightedReturn;
+  timeWeighted: AgentViewTimeWeightedReturn;
+  qualitySignals: AgentViewReturnQualitySignal[];
+}
+
 /** Whether a scope has a FIRE configuration (PRD #328, #340). */
 export type AgentViewFireStatus = "configured" | "unconfigured";
 
@@ -375,6 +416,8 @@ export interface AgentViewFinancialContext {
   summary: AgentViewFinancialSummary;
   liquidityBreakdown: AgentViewLiquidityRung[];
   exposure: AgentViewExposure;
+  /** Present-time investment returns for operation-bearing market holdings. */
+  returns: AgentViewReturns | null;
   holdings: AgentViewHoldingsBlock;
   connectedSources: AgentViewConnectedSourceSummary[];
   /** The scope's FIRE progress summary; status-only when unconfigured (#340). */
@@ -618,6 +661,8 @@ export interface AgentViewHoldingDetail {
   qualitySummary: AgentViewHoldingQualitySummary;
   /** Present only for investment holdings with recorded operations. */
   operationSummary?: AgentViewOperationSummary;
+  /** Present for operation-bearing market holdings; null when returns do not apply. */
+  returns?: AgentViewReturns | null;
   /** Present only when a connected source materialized this holding. */
   sourceSummary?: AgentViewHoldingSourceSummary;
   /** Present only for an appreciating asset that has valuation anchors (#338). */

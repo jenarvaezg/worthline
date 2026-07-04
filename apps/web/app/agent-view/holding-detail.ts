@@ -34,6 +34,7 @@ import {
   requirePublicId,
   resolveInternalHoldingId,
 } from "./scope-resolution";
+import { buildHoldingReturns } from "./returns";
 
 /**
  * Assemble one holding's full detail from persisted state, with no side effects
@@ -55,9 +56,8 @@ export async function buildHoldingDetail(
   const internalHoldingId = await resolveInternalHoldingId(store, publicHoldingId);
   // Curve-valued today so `currentValue` matches the dashboard's live figure —
   // the deep facts below (plan, anchors, repayments) still echo the stored record.
-  const { assets, liabilities } = await store.readCurveValuedHoldings(
-    systemClock().today(),
-  );
+  const valuationDate = systemClock().today();
+  const { assets, liabilities } = await store.readCurveValuedHoldings(valuationDate);
   const scope = householdScope(workspace);
   const projection = projectPortfolio({ assets, liabilities, scope, workspace });
 
@@ -80,8 +80,9 @@ export async function buildHoldingDetail(
     const isInvestment = assets.some(
       (asset) => asset.id === internalHoldingId && asset.type === "investment",
     );
+    const operations = isInvestment ? await store.readOperations(internalHoldingId) : [];
     const operationSummary = isInvestment
-      ? summarizeOperations(await store.readOperations(internalHoldingId), currency)
+      ? summarizeOperations(operations, currency)
       : undefined;
     const sourceSummary = await buildSourceSummary(store, internalHoldingId);
     const valuationMethod = defaultsFor(assetRow.instrument).valuationMethod;
@@ -111,6 +112,16 @@ export async function buildHoldingDetail(
         holdingHasWarnings(assets, internalHoldingId),
         facts,
       ),
+      returns: await buildHoldingReturns({
+        assetId: internalHoldingId,
+        currency,
+        currentValueMinor: assetRow.valueMinor,
+        instrument: assetRow.instrument,
+        operations,
+        snapshotScopeId: "household",
+        store,
+        valuationDate,
+      }),
       valuationMethod,
       ...(operationSummary ? { operationSummary } : {}),
       ...(sourceSummary ? { sourceSummary } : {}),
