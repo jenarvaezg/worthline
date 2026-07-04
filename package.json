@@ -21,6 +21,7 @@
     "test": "turbo run test --concurrency=1",
     "test:related": "vitest related --run",
     "test:e2e": "playwright test",
+    "eval:assistant": "npm run eval:assistant --workspace @worthline/web",
     "test:e2e:first-run": "npm run test:e2e:first-run:solo && npm run test:e2e:first-run:hogar",
     "test:e2e:first-run:solo": "FIRST_RUN_SCENARIO=solo playwright test --config playwright.first-run.config.ts",
     "test:e2e:first-run:hogar": "FIRST_RUN_SCENARIO=hogar playwright test --config playwright.first-run.config.ts",
