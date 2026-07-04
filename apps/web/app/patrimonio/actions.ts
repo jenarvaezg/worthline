@@ -1,7 +1,7 @@
 "use server";
 
 import { type WorthlineStore } from "@web/store";
-import { runActionWithStore } from "@web/action-store";
+import { runActionWithStore, runDatedFactAction } from "@web/action-store";
 import {
   assertNotInvestmentAsset,
   checkOwnershipSplit,
@@ -1214,7 +1214,7 @@ export async function recalibrateDebtBalanceAction(
     );
   }
 
-  const result = await runActionWithStore(async (store) => {
+  const result = await runDatedFactAction(async (store) => {
     const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
@@ -1445,7 +1445,7 @@ export async function addInterestRateRevisionAction(
     );
   }
 
-  const result = await runActionWithStore(async (store) => {
+  const result = await runDatedFactAction(async (store) => {
     const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
@@ -1502,7 +1502,7 @@ export async function updateInterestRateRevisionAction(
     );
   }
 
-  const result = await runActionWithStore(async (store) => {
+  const result = await runDatedFactAction(async (store) => {
     const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
@@ -1623,7 +1623,7 @@ export async function addEarlyRepaymentAction(
     );
   }
 
-  const result = await runActionWithStore(async (store) => {
+  const result = await runDatedFactAction(async (store) => {
     const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {
@@ -1678,7 +1678,7 @@ export async function updateEarlyRepaymentAction(
     );
   }
 
-  const result = await runActionWithStore(async (store) => {
+  const result = await runDatedFactAction(async (store) => {
     const guard = await requireDebtModel(store, id, "amortizable");
 
     if (!guard.ok) {

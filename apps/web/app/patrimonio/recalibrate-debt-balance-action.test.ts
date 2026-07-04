@@ -252,6 +252,34 @@ describe("recalibrateDebtBalanceAction — declares the re-baseline and re-deriv
     store.close();
   });
 
+  test("re-submitting the SAME balance date returns a friendly error, not a 500 (#692)", async () => {
+    const store = await seedAmortizableMortgage();
+    const sameDate = {
+      id: "mortgage",
+      rbBalanceDate: "2026-06-15",
+      rbOutstandingBalance: "140.000,00",
+    };
+
+    const first = await runAction(form(sameDate), store, CLOCK);
+    expect(first).toContain("debt_recalibrated");
+
+    // Same (liability, date) again → the unique index rejects it. The action must
+    // surface a friendly error redirect, never let the raw SQL throw bubble as a 500.
+    const second = await runAction(
+      form({ ...sameDate, rbOutstandingBalance: "138.000,00" }),
+      store,
+      CLOCK,
+    );
+    expect(second).toContain("error=");
+
+    // The rejected insert rolled back — still exactly the first re-baseline.
+    const rebaselines = await store.liabilities.readBalanceRebaselines("mortgage");
+    expect(rebaselines).toHaveLength(1);
+    expect(rebaselines[0]!.outstandingBalanceMinor).toBe(140_000_00);
+
+    store.close();
+  });
+
   test("recalibrates a current-state (startsAtBaseline) debt with no plan row — an imported debt (#678 review)", async () => {
     const store = await createInMemoryStore();
     await store.workspace.initializeWorkspace({
