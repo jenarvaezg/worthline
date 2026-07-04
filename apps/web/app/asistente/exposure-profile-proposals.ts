@@ -50,6 +50,19 @@ export interface ExposureProfileProposal {
   previews: ExposureProfileProposalPreview[];
 }
 
+export type ExposureProfileGapDimension = "geography" | "currency" | "assetClass";
+export type ExposureProfileFillTargetStatus =
+  | "missing_profile"
+  | "partial_profile"
+  | "classified";
+
+export interface ExposureProfileFillTarget {
+  gapDimensions: ExposureProfileGapDimension[];
+  key: string;
+  labels: string[];
+  status: ExposureProfileFillTargetStatus;
+}
+
 export type ExposureProfileProposalParseResult =
   | { ok: true; drafts: ExposureProfileProposalDraft[] }
   | { ok: false; error: string };
@@ -60,7 +73,18 @@ export type ExposureProfileProposalBuildResult =
 
 const DECIMAL = /^(?:0|[1-9]\d*)(?:\.\d+)?$/;
 const CURRENCY_BUCKET = /^(?:[A-Z]{3}|other)$/;
+const EXPOSURE_PROFILE_DIMENSIONS = [
+  "geography",
+  "currency",
+  "assetClass",
+] as const satisfies readonly ExposureProfileGapDimension[];
 const MAX_DRAFTS = 10;
+
+export const AGENT_FILL_EXPOSURE_POLICY = {
+  neverNormalizePartialBreakdowns: true,
+  noWebLookup: true,
+  underDeclareWhenUnsure: true,
+} as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -221,6 +245,50 @@ export async function readEligibleExposureProfileTargets(
   }
 
   return targets;
+}
+
+function exposureProfileGapDimensions(
+  profile: ExposureProfile | undefined,
+): ExposureProfileGapDimension[] {
+  if (!profile) return [...EXPOSURE_PROFILE_DIMENSIONS];
+
+  return EXPOSURE_PROFILE_DIMENSIONS.filter((dimension) => {
+    const entries = profile.breakdowns[dimension];
+    return !entries || Object.keys(entries).length === 0;
+  });
+}
+
+export async function listExposureProfileFillTargets(
+  store: ExposureProfileProposalReadPort,
+): Promise<ExposureProfileFillTarget[]> {
+  const [targets, currentProfiles] = await Promise.all([
+    readEligibleExposureProfileTargets(store),
+    store.readExposureProfiles(),
+  ]);
+  const currentByKey = new Map(currentProfiles.map((profile) => [profile.key, profile]));
+
+  return [...targets.entries()]
+    .map(([key, labels]) => {
+      const current = currentByKey.get(key);
+      const gapDimensions = exposureProfileGapDimensions(current);
+      return {
+        gapDimensions,
+        key,
+        labels,
+        status: current
+          ? gapDimensions.length > 0
+            ? "partial_profile"
+            : "classified"
+          : "missing_profile",
+      } satisfies ExposureProfileFillTarget;
+    })
+    .sort(
+      (left, right) =>
+        Number(right.gapDimensions.length > 0) - Number(left.gapDimensions.length > 0) ||
+        right.gapDimensions.length - left.gapDimensions.length ||
+        (left.labels[0] ?? left.key).localeCompare(right.labels[0] ?? right.key) ||
+        left.key.localeCompare(right.key),
+    );
 }
 
 export function agentStampedProfile(
