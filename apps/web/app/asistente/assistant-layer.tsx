@@ -2,11 +2,22 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { parseQuickActions, type QuickAction } from "./assistant-actions";
-import { deriveScreenContext } from "./screen-context";
+import { deriveScreenContext, type ScreenSection } from "./screen-context";
+import { suggestedPrompts } from "./suggested-prompts";
+
+/** Human-readable section names for screen-reader context announcements (#633). */
+const SECTION_LABEL: Record<ScreenSection, string> = {
+  resumen: "Resumen",
+  patrimonio: "Patrimonio",
+  historico: "Histórico",
+  objetivos: "Objetivos",
+  ajustes: "Ajustes",
+  otra: "worthline",
+};
 
 /**
  * The typed quick actions the model proposed on the CURRENT turn (#631, ADR
@@ -56,11 +67,35 @@ export default function AssistantLayer() {
   const [draft, setDraft] = useState("");
   const { messages, sendMessage, status, error } = useChat({ transport });
   const router = useRouter();
+  const pathname = usePathname();
   const inputRef = useRef<HTMLInputElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const fabRef = useRef<HTMLButtonElement>(null);
+  // Set the instant BEFORE we close so focus returns to the trigger, not the
+  // top of the page — but never steals focus on first mount (#633, a11y).
+  const closingRef = useRef(false);
 
   const busy = status === "submitted" || status === "streaming";
   const quickActions = currentQuickActions(messages);
+  // Prompts depend only on the section, which comes from the pathname; recomputed
+  // on every navigation so the starter set matches the surface underneath (#632).
+  const section = deriveScreenContext(pathname, "").section;
+  const prompts = suggestedPrompts({
+    route: pathname,
+    section,
+    holdingId: null,
+    view: {},
+  });
+
+  function close() {
+    closingRef.current = true;
+    setOpen(false);
+  }
+
+  function seed(text: string) {
+    if (busy) return;
+    void sendMessage({ role: "user", parts: [{ type: "text", text }] });
+  }
 
   function runAction(action: QuickAction) {
     if (action.type === "openInternalSource") {
@@ -69,12 +104,15 @@ export default function AssistantLayer() {
       router.push(action.href);
       return;
     }
-    if (busy) return;
-    void sendMessage({ role: "user", parts: [{ type: "text", text: action.prompt }] });
+    seed(action.prompt);
   }
 
   useEffect(() => {
     if (open) inputRef.current?.focus();
+    else if (closingRef.current) {
+      fabRef.current?.focus();
+      closingRef.current = false;
+    }
   }, [open]);
 
   useEffect(() => {
@@ -84,7 +122,7 @@ export default function AssistantLayer() {
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") close();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -104,6 +142,7 @@ export default function AssistantLayer() {
         aria-label="Abrir asistente"
         className="assistantFab"
         onClick={() => setOpen(true)}
+        ref={fabRef}
         type="button"
       >
         ✳
@@ -113,22 +152,38 @@ export default function AssistantLayer() {
 
   return (
     <section aria-label="Asistente financiero" className="assistantPanel" role="dialog">
+      {/* Polite live region: announces streaming and the current screen context
+          so the layer is not a silent state change for screen readers (#633). */}
+      <p aria-live="polite" className="srOnly" role="status">
+        {busy
+          ? "El asistente está respondiendo."
+          : `Asistente abierto sobre ${SECTION_LABEL[section]}.`}
+      </p>
+
       <header className="assistantHead">
         <h2>Asistente</h2>
-        <button
-          aria-label="Cerrar asistente"
-          onClick={() => setOpen(false)}
-          type="button"
-        >
+        <button aria-label="Cerrar asistente" onClick={close} type="button">
           ×
         </button>
       </header>
 
       <div className="assistantMessages">
         {messages.length === 0 ? (
-          <p className="assistantHint">
-            Pregunta sobre tu patrimonio: cifras, deudas, liquidez, exposición…
-          </p>
+          <div className="assistantHint">
+            <p>Pregunta sobre tu patrimonio: cifras, deudas, liquidez, exposición…</p>
+            <div aria-label="Preguntas sugeridas" className="assistantPrompts">
+              {prompts.map((p) => (
+                <button
+                  className="assistantChip"
+                  key={p.id}
+                  onClick={() => seed(p.prompt)}
+                  type="button"
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
         ) : null}
         {messages.map((message) => (
           <div className={`assistantMsg ${message.role}`} key={message.id}>
