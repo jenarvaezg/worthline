@@ -4,8 +4,21 @@ import type { InvestmentOperation } from "./investment-types";
 import { selectInvestmentPrice } from "./investment-valuation";
 import type { CurrencyCode, MoneyMinor } from "./money";
 import { derivePosition } from "./positions";
-import type { IrrResult, PortfolioHolding, SimpleGain } from "./returns";
-import { holdingIrr, portfolioIrr, portfolioSimpleGain, simpleGain } from "./returns";
+import type {
+  IrrResult,
+  MonthlyCloseValue,
+  PortfolioHolding,
+  SimpleGain,
+  TwrResult,
+} from "./returns";
+import {
+  holdingIrr,
+  holdingTwr,
+  portfolioIrr,
+  portfolioSimpleGain,
+  portfolioTwr,
+  simpleGain,
+} from "./returns";
 
 /**
  * Presentation-selection layer for investment returns (#551, ADR 0040). Turns the
@@ -53,36 +66,7 @@ export function returnsKindForInstrument(instrument: Instrument): ReturnsKind | 
   return null;
 }
 
-/** A provisional time-weighted return: a placeholder until S1 (#549) lands. */
-export interface ProvisionalTwr {
-  rate: number | null;
-  provisional: true;
-}
-
-/**
- * The provisional factor the stub applies to the IRR. TWR removes cashflow
- * timing, so for a steadily-contributed holding it typically sits a little below
- * the money-weighted IRR — 0.9 is a deliberately rough, clearly-provisional
- * stand-in, not a measured figure.
- */
-const PROVISIONAL_TWR_FACTOR = 0.9;
-
-/**
- * TODO(#549): replace with the real Modified Dietz TWR chain-linked over monthly
- * closes (S1). This is the SINGLE place the provisional TWR is derived — swap the
- * body here once #549 exists and every surface picks it up. A null IRR yields a
- * null TWR: never fabricate a rate.
- */
-export function provisionalTwr(irr: IrrResult): ProvisionalTwr {
-  return {
-    provisional: true,
-    rate: irr.rate === null ? null : irr.rate * PROVISIONAL_TWR_FACTOR,
-  };
-}
-
 export const MARKET_CAVEAT = "No incluye dividendos ni cupones.";
-export const TWR_PROVISIONAL_CAVEAT =
-  "TWR provisional: aún sin la serie de cierres mensuales.";
 export const APPRECIATING_CAVEAT =
   "Revalorización = valor actual − coste. Sin IRR ni TWR de mercado.";
 
@@ -99,8 +83,8 @@ export interface HoldingReturnsView {
   cagr: number | null;
   /** money-weighted IRR (market only; null for appreciating), reason preserved. */
   irr: IrrResult | null;
-  /** provisional time-weighted return (market only; null for appreciating). */
-  twr: ProvisionalTwr | null;
+  /** time-weighted return (market only; null for appreciating or missing history). */
+  twr: TwrResult | null;
   /** realized P/L split (market only; null otherwise). */
   realizedPnl: MoneyMinor | null;
   /** unrealized P/L split (market only; null otherwise). */
@@ -123,15 +107,16 @@ function fromSimpleGain(
 function marketView(
   gain: SimpleGain,
   irr: IrrResult,
+  twr: TwrResult | null,
   split: { realizedPnl?: MoneyMinor; unrealizedPnl?: MoneyMinor },
 ): HoldingReturnsView {
   return {
     kind: "market",
     ...fromSimpleGain(gain),
-    caveats: [MARKET_CAVEAT, TWR_PROVISIONAL_CAVEAT],
+    caveats: [MARKET_CAVEAT],
     irr,
     realizedPnl: split.realizedPnl ?? null,
-    twr: provisionalTwr(irr),
+    twr,
     unrealizedPnl: split.unrealizedPnl ?? null,
   };
 }
@@ -141,6 +126,7 @@ export interface HoldingReturnsViewInput {
   instrument: Instrument;
   simpleGain: SimpleGain;
   irr: IrrResult;
+  twr?: TwrResult | null;
   realizedPnl?: MoneyMinor;
   unrealizedPnl?: MoneyMinor;
 }
@@ -168,7 +154,7 @@ export function buildHoldingReturnsView(
       unrealizedPnl: null,
     };
   }
-  return marketView(input.simpleGain, input.irr, {
+  return marketView(input.simpleGain, input.irr, input.twr ?? null, {
     ...(input.realizedPnl ? { realizedPnl: input.realizedPnl } : {}),
     ...(input.unrealizedPnl ? { unrealizedPnl: input.unrealizedPnl } : {}),
   });
@@ -181,8 +167,9 @@ export function buildHoldingReturnsView(
 export function buildPortfolioReturnsView(
   gain: SimpleGain,
   irr: IrrResult,
+  twr: TwrResult | null = null,
 ): HoldingReturnsView {
-  return marketView(gain, irr, {});
+  return marketView(gain, irr, twr, {});
 }
 
 /** The raw per-asset reads the returns computation folds through the engine. */
@@ -190,6 +177,8 @@ export interface InvestmentReturnsContext {
   operationsByAsset: ReadonlyMap<string, readonly InvestmentOperation[]>;
   cachedPriceByAsset: ReadonlyMap<string, DecimalString | undefined>;
   manualPriceByAsset: ReadonlyMap<string, DecimalString | undefined>;
+  monthlyClosesByAsset?: ReadonlyMap<string, readonly MonthlyCloseValue[]>;
+  portfolioMonthlyCloses?: readonly MonthlyCloseValue[];
   currency: CurrencyCode;
   valuationDate: string;
 }
@@ -234,6 +223,7 @@ export function investmentReturnsById(
       continue;
     }
     const marketValueMinor = holdingMarketValueMinor(assetId, operations, ctx);
+    const monthlyCloses = ctx.monthlyClosesByAsset?.get(assetId);
     const returnsInput = {
       currency: ctx.currency,
       marketValueMinor,
@@ -244,6 +234,7 @@ export function investmentReturnsById(
       instrument,
       irr: holdingIrr(returnsInput),
       simpleGain: simpleGain(returnsInput),
+      twr: monthlyCloses ? holdingTwr({ monthlyCloses, operations }) : null,
     });
     if (view !== null) {
       views.set(assetId, view);
@@ -281,5 +272,14 @@ export function portfolioReturnsView(
     holdings,
     valuationDate: ctx.valuationDate,
   };
-  return buildPortfolioReturnsView(portfolioSimpleGain(input), portfolioIrr(input));
+  return buildPortfolioReturnsView(
+    portfolioSimpleGain(input),
+    portfolioIrr(input),
+    ctx.portfolioMonthlyCloses
+      ? portfolioTwr({
+          holdings,
+          monthlyCloses: ctx.portfolioMonthlyCloses,
+        })
+      : null,
+  );
 }

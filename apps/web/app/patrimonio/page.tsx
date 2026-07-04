@@ -6,6 +6,7 @@ import {
   investmentReturnsById,
   listScopeOptions,
   lookThroughExposure,
+  monthlyCloseValuesFromSnapshotRows,
   projectPortfolio,
   systemClock,
 } from "@worthline/domain";
@@ -94,6 +95,7 @@ export default async function PatrimonioPage({
       overrides,
       trash,
       exposureProfiles,
+      returnSnapshotRows,
     ] = await Promise.all([
       store.operations.readAllPriceCacheEntries(),
       store.assets.readInvestmentAssetsWithMeta(),
@@ -101,6 +103,7 @@ export default async function PatrimonioPage({
       store.readWarningOverrides(),
       store.readTrash(),
       store.exposureProfiles.readExposureProfiles(),
+      store.snapshots.readSnapshotHoldings({ kind: "asset", scopeId: "household" }),
     ]);
 
     // Per-holding simple total gain, inline on the board (#551, ADR 0040). Folds
@@ -110,11 +113,30 @@ export default async function PatrimonioPage({
     const instrumentByAsset = new Map<string, Instrument>(
       assets.map((asset) => [asset.id, instrumentOfAsset(asset)]),
     );
+    const snapshotRowsByAsset = new Map<string, typeof returnSnapshotRows>();
+    for (const row of returnSnapshotRows) {
+      if (!projectionContext.operationsByAsset.has(row.holdingId)) {
+        continue;
+      }
+      const rows = snapshotRowsByAsset.get(row.holdingId);
+      if (rows) {
+        rows.push(row);
+      } else {
+        snapshotRowsByAsset.set(row.holdingId, [row]);
+      }
+    }
+    const monthlyClosesByAsset = new Map(
+      [...snapshotRowsByAsset].map(([assetId, rows]) => [
+        assetId,
+        monthlyCloseValuesFromSnapshotRows(rows),
+      ]),
+    );
     const investmentReturns = investmentReturnsById({
       cachedPriceByAsset: projectionContext.cachedPriceByAsset,
       currency: workspace.baseCurrency,
       instrumentByAsset,
       manualPriceByAsset: projectionContext.manualPriceByAsset,
+      monthlyClosesByAsset,
       operationsByAsset: projectionContext.operationsByAsset,
       valuationDate: today,
     });

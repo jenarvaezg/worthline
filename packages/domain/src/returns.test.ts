@@ -3,10 +3,14 @@ import { describe, expect, test } from "vitest";
 import type { InvestmentOperation, OperationKind } from "./index";
 import {
   holdingIrr,
+  holdingTwr,
+  monthlyCloseValuesFromSnapshotRows,
   operationCashflows,
   portfolioIrr,
   portfolioSimpleGain,
+  portfolioTwr,
   simpleGain,
+  timeWeightedReturn,
   xirr,
 } from "./returns";
 
@@ -146,6 +150,112 @@ describe("holdingIrr", () => {
 
     expect(result.rate).toBeNull();
     expect(result.reason).toBe("single_sign");
+  });
+});
+
+describe("timeWeightedReturn", () => {
+  test("no cashflows equals the chained price-driven change between monthly closes", () => {
+    const result = timeWeightedReturn({
+      cashflows: [],
+      monthlyCloses: [
+        { date: "2024-01-31", valueMinor: 100_000 },
+        { date: "2024-02-29", valueMinor: 110_000 },
+        { date: "2024-03-31", valueMinor: 121_000 },
+      ],
+    });
+
+    expect(result.reason).toBeNull();
+    expect(result.rate).toBeCloseTo(0.21, 10);
+    expect(result.startDate).toBe("2024-01-31");
+    expect(result.endDate).toBe("2024-03-31");
+    expect(result.spanDays).toBe(60);
+    expect(result.annualized).toBe(false);
+    expect(result.annualizedRate).toBeNull();
+  });
+
+  test("mid-month contributions are weighted by the fraction of the month remaining", () => {
+    const result = timeWeightedReturn({
+      cashflows: [{ amountMinor: 20_000, date: "2024-02-15" }],
+      monthlyCloses: [
+        { date: "2024-01-31", valueMinor: 100_000 },
+        { date: "2024-02-29", valueMinor: 130_000 },
+      ],
+    });
+
+    const expected = 10_000 / (100_000 + 20_000 * (14 / 29));
+    expect(result.reason).toBeNull();
+    expect(result.rate).toBeCloseTo(expected, 10);
+  });
+
+  test("holding TWR diverges from IRR when a large late contribution enters a rising market", () => {
+    const operations = [buy("10", "100", "2024-01-31"), buy("10", "100", "2024-03-25")];
+    const twr = holdingTwr({
+      monthlyCloses: [
+        { date: "2024-01-31", valueMinor: 100_000 },
+        { date: "2024-02-29", valueMinor: 110_000 },
+        { date: "2024-03-31", valueMinor: 220_000 },
+      ],
+      operations,
+    });
+    const irr = holdingIrr({
+      currency: "EUR",
+      marketValueMinor: 220_000,
+      operations,
+      valuationDate: "2024-03-31",
+    });
+
+    const marchDietz = 10_000 / (110_000 + 100_000 * (6 / 31));
+    expect(twr.reason).toBeNull();
+    expect(twr.rate).toBeCloseTo(1.1 * (1 + marchDietz) - 1, 10);
+    expect(irr.rate).not.toBeNull();
+    expect(twr.rate as number).toBeLessThan(irr.rate as number);
+  });
+
+  test("starts at the first monthly close and annualizes only spans of at least one year", () => {
+    const result = timeWeightedReturn({
+      cashflows: [{ amountMinor: 50_000, date: "2024-01-15" }],
+      monthlyCloses: [
+        { date: "2024-06-30", valueMinor: 100_000 },
+        { date: "2025-06-30", valueMinor: 110_000 },
+      ],
+    });
+
+    expect(result.reason).toBeNull();
+    expect(result.startDate).toBe("2024-06-30");
+    expect(result.spanDays).toBe(365);
+    expect(result.rate).toBeCloseTo(0.1, 10);
+    expect(result.annualized).toBe(true);
+    expect(result.annualizedRate).toBeCloseTo(0.1, 10);
+  });
+
+  test("portfolio TWR merges holding cashflows against the portfolio monthly closes", () => {
+    const result = portfolioTwr({
+      holdings: [
+        { operations: [buy("10", "100", "2024-01-31", { assetId: "asset_a" })] },
+        { operations: [buy("5", "100", "2024-02-15", { assetId: "asset_b" })] },
+      ],
+      monthlyCloses: [
+        { date: "2024-01-31", valueMinor: 100_000 },
+        { date: "2024-02-29", valueMinor: 170_000 },
+      ],
+    });
+
+    const expected = 20_000 / (100_000 + 50_000 * (14 / 29));
+    expect(result.reason).toBeNull();
+    expect(result.rate).toBeCloseTo(expected, 10);
+  });
+
+  test("snapshot rows feed TWR as the last available close in each month", () => {
+    expect(
+      monthlyCloseValuesFromSnapshotRows([
+        { snapshotId: "jan_1", dateKey: "2024-01-15", valueMinor: 90_000 },
+        { snapshotId: "jan_2", dateKey: "2024-01-31", valueMinor: 100_000 },
+        { snapshotId: "feb_1", dateKey: "2024-02-20", valueMinor: 110_000 },
+      ]),
+    ).toEqual([
+      { date: "2024-01-31", valueMinor: 100_000 },
+      { date: "2024-02-20", valueMinor: 110_000 },
+    ]);
   });
 });
 
