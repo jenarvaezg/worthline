@@ -150,6 +150,11 @@ test("amortized & anchored: a liability switches debt-model surfaces from the de
   // amortized: pick amortizable → the plan editor appears.
   await modelSelect.selectOption("amortizable");
   await page.getByRole("button", { name: "Guardar modelo" }).click();
+  // Saving the model redirects (?ok=debt_model_saved) and re-renders the region
+  // via RSC. Wait for that navigation to LAND before touching the revealed plan
+  // form — otherwise the in-flight re-render tears down and rebuilds the whole
+  // subtree, detaching inputs and the submit button mid-action (flaked ~1/3).
+  await expect(page).toHaveURL(/ok=debt_model_saved/);
   // With no plan yet, the origin-declared plan form starts demoted inside a
   // <details> (current-state entry is the primary path, S2 #677) — expand it.
   const originalPlanDetails = debtRegion.locator("details", {
@@ -168,9 +173,8 @@ test("amortized & anchored: a liability switches debt-model surfaces from the de
   await planForm.getByLabel("Plazo en meses").fill("120");
   await planForm.getByLabel("Fecha de firma").fill("2023-01-01");
   await planForm.getByLabel("Fecha del primer pago").fill("2023-03-01");
-  await planForm.getByRole("button", { name: "Guardar plan" }).click({
-    force: true,
-  });
+  await planForm.getByRole("button", { name: "Guardar plan" }).click();
+  await expect(page).toHaveURL(/ok=plan_saved/);
   await expect(page.getByRole("status")).toBeVisible();
 
   // anchored: switch to revolving → the balance-anchor editor appears.
@@ -178,10 +182,14 @@ test("amortized & anchored: a liability switches debt-model surfaces from the de
     .getByRole("combobox", { name: "Modelo de deuda" })
     .selectOption("revolving");
   await page.getByRole("button", { name: "Guardar modelo" }).click();
+  // Same settle-before-interact: wait for the model-save redirect to land so the
+  // balance-anchor form is the stable, post-navigation node.
+  await expect(page).toHaveURL(/ok=debt_model_saved/);
   await expect(page.getByRole("form", { name: "Registrar saldo" })).toBeVisible();
   await page.getByLabel("Fecha del saldo").fill(today);
   await page.getByLabel("Saldo restante en EUR").fill("12500");
   await page.getByRole("button", { name: "Registrar saldo" }).click();
+  await expect(page).toHaveURL(/ok=balance_anchor_added/);
   await expect(page.getByRole("status")).toBeVisible();
   await expect(page.getByRole("table", { name: "Saldos declarados" })).toBeVisible();
 });
