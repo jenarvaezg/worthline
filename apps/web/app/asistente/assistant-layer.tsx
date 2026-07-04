@@ -1,10 +1,32 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import { DefaultChatTransport, type UIMessage } from "ai";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { parseQuickActions, type QuickAction } from "./assistant-actions";
 import { deriveScreenContext } from "./screen-context";
+
+/**
+ * The typed quick actions the model proposed on the CURRENT turn (#631, ADR
+ * 0053): the newest assistant message's `suggest_actions` output, re-validated
+ * client-side so only the internal-only typed set ever renders. Older turns'
+ * chips fall away as the conversation moves on.
+ */
+function currentQuickActions(messages: UIMessage[]): QuickAction[] {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role !== "assistant") continue;
+    for (const part of message.parts) {
+      if (part.type === "tool-suggest_actions" && "output" in part) {
+        return parseQuickActions((part.output as { actions?: unknown } | null)?.actions);
+      }
+    }
+    return [];
+  }
+  return [];
+}
 
 /**
  * The financial assistant's contextual layer (#629, container decided in S0
@@ -33,10 +55,23 @@ export default function AssistantLayer() {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const { messages, sendMessage, status, error } = useChat({ transport });
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   const busy = status === "submitted" || status === "streaming";
+  const quickActions = currentQuickActions(messages);
+
+  function runAction(action: QuickAction) {
+    if (action.type === "openInternalSource") {
+      // Client navigation only — the panel is mounted in the root layout, so the
+      // conversation survives the route change underneath it (S0 decision).
+      router.push(action.href);
+      return;
+    }
+    if (busy) return;
+    void sendMessage({ role: "user", parts: [{ type: "text", text: action.prompt }] });
+  }
 
   useEffect(() => {
     if (open) inputRef.current?.focus();
@@ -104,6 +139,8 @@ export default function AssistantLayer() {
               if (part.type.startsWith("tool-") || part.type === "dynamic-tool") {
                 const name =
                   "toolName" in part ? String(part.toolName) : part.type.slice(5);
+                // suggest_actions renders as chips below, not as tool activity.
+                if (name === "suggest_actions") return null;
                 return (
                   <span className="assistantTool" key={`${message.id}-${i}`}>
                     → {name}
@@ -121,6 +158,21 @@ export default function AssistantLayer() {
         ) : null}
         <div ref={endRef} />
       </div>
+
+      {quickActions.length > 0 ? (
+        <div aria-label="Acciones sugeridas" className="assistantActions">
+          {quickActions.map((action, i) => (
+            <button
+              className={`assistantChip ${action.type}`}
+              key={`${action.label}-${i}`}
+              onClick={() => runAction(action)}
+              type="button"
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <form className="assistantInputRow" onSubmit={submit}>
         <input

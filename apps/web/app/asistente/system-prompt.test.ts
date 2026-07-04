@@ -28,5 +28,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toMatch(/ya formateados/i);
     expect(prompt).toMatch(/nunca te niegues a valorar/i);
     expect(prompt).toMatch(/recomienda/i);
+    // #631: it must offer typed read-only follow-ups via the action tool.
+    expect(prompt).toMatch(/suggest_actions/);
   });
 });

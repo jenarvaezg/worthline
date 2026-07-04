@@ -32,8 +32,8 @@ export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
 const MAX_MESSAGES = 40;
 const MAX_TOTAL_CHARS = 16_000;
-/** Tool step + answer step, with one retry step of headroom. */
-const MAX_STEPS = 3;
+/** Read tool + suggest_actions (#631) + answer, with one step of headroom. */
+const MAX_STEPS = 4;
 
 interface ChatBody {
   messages: UIMessage[];
