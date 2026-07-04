@@ -159,6 +159,8 @@ CREATE TABLE \`investment_assets\` (
 --> statement-breakpoint
 CREATE TABLE \`exposure_profiles\` (
 	\`key\` text PRIMARY KEY NOT NULL,
+	\`source\` text DEFAULT 'user' NOT NULL,
+	\`declared_at\` text,
 	\`tracked_index\` text,
 	\`ter\` text,
 	\`hedged\` integer DEFAULT 0 NOT NULL,

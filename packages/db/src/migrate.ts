@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 40;
+export const SCHEMA_VERSION = 41;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1323,6 +1323,18 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       );
     } catch {}
     await writeSchemaVersion(client, 40);
+  }
+
+  if (version < 41) {
+    try {
+      await client.execute(
+        "ALTER TABLE exposure_profiles ADD COLUMN source TEXT DEFAULT 'user' NOT NULL",
+      );
+    } catch {}
+    try {
+      await client.execute("ALTER TABLE exposure_profiles ADD COLUMN declared_at TEXT");
+    } catch {}
+    await writeSchemaVersion(client, 41);
   }
 
   return { ranV18Backfill, ranV33Backfill };

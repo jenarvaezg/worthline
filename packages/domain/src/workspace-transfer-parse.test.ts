@@ -232,6 +232,31 @@ describe("parseWorkspaceExport — acceptance", () => {
     }
   });
 
+  test("pre-provenance exposure profiles parse as user-authored legacy rows", () => {
+    const document = makeDocument((doc) => {
+      (doc as { exposureProfiles: unknown[] }).exposureProfiles = [
+        {
+          key: "IE00B3RBWM25",
+          breakdowns: { geography: { us: "1" } },
+        },
+      ];
+    });
+
+    const result = parseWorkspaceExport(document);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.exposureProfiles).toEqual([
+        {
+          key: "IE00B3RBWM25",
+          source: "user",
+          declaredAt: null,
+          breakdowns: { geography: { us: "1" } },
+        },
+      ]);
+    }
+  });
+
   test("a holding's instrument survives the parse (#149)", () => {
     const document = makeDocument((doc) => {
       doc.assets[0]!.instrument = "property";

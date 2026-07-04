@@ -370,6 +370,7 @@ export type {
   ExposureLookthroughHolding,
   ExposureLookthroughInput,
   ExposureProfile,
+  ExposureProfileSource,
 } from "./exposure-lookthrough";
 export {
   canHandEnterExposureProfile,

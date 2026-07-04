@@ -12,7 +12,7 @@ describe("lookThroughExposure", () => {
     const profiles = new Map<string, ExposureProfile>([
       [
         "IE00SP500",
-        {
+        createExposureProfile({
           breakdowns: {
             assetClass: { equity: "1" },
             currency: { USD: "1" },
@@ -20,11 +20,11 @@ describe("lookThroughExposure", () => {
           },
           hedged: false,
           key: "IE00SP500",
-        },
+        }),
       ],
       [
         "IE00WORLD",
-        {
+        createExposureProfile({
           breakdowns: {
             assetClass: { equity: "1" },
             currency: { EUR: "0.2", JPY: "0.1", USD: "0.7" },
@@ -36,7 +36,7 @@ describe("lookThroughExposure", () => {
           },
           hedged: false,
           key: "IE00WORLD",
-        },
+        }),
       ],
     ]);
 
@@ -335,6 +335,42 @@ describe("lookThroughExposure", () => {
         value: { amountMinor: 100_000, currency: "EUR" },
         weight: "0.3333",
       },
+    ]);
+  });
+
+  test("row provenance does not affect look-through allocation", () => {
+    const profiles = new Map<string, ExposureProfile>([
+      [
+        "AGENT",
+        createExposureProfile({
+          breakdowns: {
+            assetClass: { equity: "1" },
+            geography: { us: "1" },
+          },
+          declaredAt: "2026-02-01T00:00:00.000Z",
+          key: "AGENT",
+          source: "agent",
+        }),
+      ],
+    ]);
+
+    const result = lookThroughExposure({
+      baseCurrency: "EUR",
+      grossAssets: { amountMinor: 100_000, currency: "EUR" },
+      holdings: [
+        {
+          currency: "EUR",
+          id: "asset_agent",
+          instrument: "etf",
+          isin: "AGENT",
+          valueMinor: 100_000,
+        },
+      ],
+      profiles,
+    });
+
+    expect(result.geography.slices).toEqual([
+      { key: "us", value: { amountMinor: 100_000, currency: "EUR" }, weight: "1" },
     ]);
   });
 

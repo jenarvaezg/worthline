@@ -224,6 +224,8 @@ function makeExportData(): WorkspaceExportData {
     exposureProfiles: [
       {
         key: "IE00B3RBWM25",
+        source: "user",
+        declaredAt: "2026-06-15T12:00:00.000Z",
         trackedIndex: "FTSE All-World",
         ter: "0.0022",
         hedged: false,
