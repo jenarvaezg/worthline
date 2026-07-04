@@ -2,6 +2,8 @@ import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { readStoreTarget } from "@web/read-store-target";
+import { buildFinancialContext } from "@web/agent-view/financial-context";
+import { listAgentViewScopes } from "@web/agent-view/scopes";
 
 import { confirmExposureProfileProposalAction } from "./exposure-profile-proposal-action";
 
@@ -23,6 +25,11 @@ async function seedFund(
     ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     providerSymbol: input.id.toUpperCase(),
   });
+}
+
+async function defaultScopeId(store: WorthlineStore): Promise<string> {
+  const scopes = await listAgentViewScopes(store.agentView);
+  return (scopes.find((scope) => scope.isDefault) ?? scopes[0])!.id;
 }
 
 describe("confirmExposureProfileProposalAction", () => {
@@ -160,6 +167,71 @@ describe("confirmExposureProfileProposalAction", () => {
 
     expect(result.status).toBe("error");
     expect(await store.exposureProfiles.readExposureProfile("BTC")).toBeNull();
+  });
+
+  test("confirmed agent fills reclassify look-through without normalizing partials", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await seedFund(store, {
+      id: "world",
+      isin: "IE00B4L5Y983",
+      name: "iShares MSCI World",
+    });
+    await store.recordOperationAndRipple(
+      {
+        assetId: "world",
+        currency: "EUR",
+        executedAt: "2026-01-10",
+        feesMinor: 0,
+        id: "op_world",
+        kind: "buy",
+        pricePerUnit: "100.00",
+        units: "10",
+      },
+      { today: "2026-06-19" },
+    );
+    const scopeId = await defaultScopeId(store);
+    const before = await buildFinancialContext(store.agentView, {
+      asOf: "2026-06-19",
+      scopeId,
+    });
+
+    expect(before.exposure.byGeography.coverage.unknown).toEqual({
+      amountMinor: 100_000,
+      currency: "EUR",
+    });
+
+    const result = await confirmExposureProfileProposalAction(
+      [{ key: "IE00B4L5Y983", breakdowns: { geography: { us: "0.7" } } }],
+      store,
+      "2026-07-04T12:00:00.000Z",
+    );
+    const after = await buildFinancialContext(store.agentView, {
+      asOf: "2026-06-19",
+      scopeId,
+    });
+
+    expect(result).toEqual({ applied: 1, status: "applied" });
+    expect(
+      await store.exposureProfiles.readExposureProfile("IE00B4L5Y983"),
+    ).toMatchObject({
+      declaredAt: "2026-07-04T12:00:00.000Z",
+      source: "agent",
+    });
+    expect(after.exposure.byGeography.coverage).toEqual({
+      classified: { amountMinor: 100_000, currency: "EUR" },
+      notApplicable: { amountMinor: 0, currency: "EUR" },
+      unknown: { amountMinor: 0, currency: "EUR" },
+    });
+    expect(
+      after.exposure.byGeography.slices.find((slice) => slice.key === "us")?.value,
+    ).toEqual({ amountMinor: 70_000, currency: "EUR" });
+    expect(
+      after.exposure.byGeography.slices.find((slice) => slice.key === "other")?.value,
+    ).toEqual({ amountMinor: 30_000, currency: "EUR" });
   });
 
   test("is a no-op in demo mode", async () => {

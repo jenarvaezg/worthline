@@ -8,7 +8,11 @@ import {
   sourceHref,
   type QuickAction,
 } from "@web/asistente/assistant-actions";
-import { buildExposureProfileProposal } from "@web/asistente/exposure-profile-proposals";
+import {
+  AGENT_FILL_EXPOSURE_POLICY,
+  buildExposureProfileProposal,
+  listExposureProfileFillTargets,
+} from "@web/asistente/exposure-profile-proposals";
 import type { ScreenSection } from "@web/asistente/screen-context";
 import { resolveInternalHoldingId } from "@web/agent-view/scope-resolution";
 
@@ -233,6 +237,7 @@ function toChatFinancialContext(context: AgentViewFinancialContext) {
       debts: rung.debts,
       shareOfGross: rung.shareOfGross,
     })),
+    exposure: context.exposure,
     holdings: context.holdings.items.map((holding) => ({
       label: holding.label,
       instrument: holding.instrument,
@@ -311,8 +316,9 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     get_financial_context: tool({
       description:
         "Foto financiera actual del scope (por defecto el del hogar): patrimonio neto, " +
-        "líquido, deudas, desglose de liquidez y principales posiciones. Fuente canónica " +
-        "de cifras; importes ya formateados es-ES. Incluye `links` con las fuentes citables.",
+        "líquido, deudas, desglose de liquidez, exposición look-through y principales " +
+        "posiciones. Fuente canónica de cifras; importes ya formateados es-ES. Incluye " +
+        "`links` con las fuentes citables.",
       inputSchema: SCOPE_ONLY_SCHEMA,
       execute: (args) =>
         chatRead(input, async (store) => {
@@ -750,6 +756,21 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
           // Final trust boundary: only the typed, bounded, internal-href set renders.
           return { actions: parseQuickActions(built) satisfies QuickAction[] };
         }),
+    }),
+
+    list_exposure_profile_fill_targets: tool({
+      description:
+        "Lista posiciones elegibles para rellenar perfiles de exposición, ordenadas gap-first. " +
+        "Incluye fund/etf/stock/index/pension_plan con clave ISIN o provider symbol y excluye " +
+        "perfiles auto-derivados como cash/property/crypto/commodity. Usa esta tool antes de " +
+        "`propose_exposure_profiles`: sin buscar en web, declara solo conocimiento entrenado " +
+        "fiable, deja `other` implícito si dudas y nunca normalices un parcial a 100%.",
+      inputSchema: EMPTY_SCHEMA,
+      execute: () =>
+        input.runWithStore(async (store) => ({
+          policy: AGENT_FILL_EXPOSURE_POLICY,
+          targets: await listExposureProfileFillTargets(store.agentView),
+        })),
     }),
 
     propose_exposure_profiles: tool({
