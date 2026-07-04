@@ -1,4 +1,8 @@
-import type { ExposureBreakdowns, ExposureProfile } from "@worthline/domain";
+import type {
+  CreateExposureProfileInput,
+  ExposureBreakdowns,
+  ExposureProfile,
+} from "@worthline/domain";
 import { asc, eq, sql } from "drizzle-orm";
 
 import { exposureProfiles } from "./schema";
@@ -21,8 +25,8 @@ export interface ExposureProfileStore {
   readExposureProfiles: () => Promise<ExposureProfile[]>;
   /** One profile by key, or null when the security has no hand-entered profile. */
   readExposureProfile: (key: string) => Promise<ExposureProfile | null>;
-  /** Upsert the canonical row for this key (create or overwrite). */
-  saveExposureProfile: (profile: ExposureProfile) => Promise<void>;
+  /** Upsert the canonical row for this key, preserving fields omitted by the write. */
+  saveExposureProfile: (profile: CreateExposureProfileInput) => Promise<void>;
   deleteExposureProfile: (key: string) => Promise<void>;
 }
 
@@ -40,6 +44,8 @@ type ExposureProfileRow = typeof exposureProfiles.$inferSelect;
 function rowToProfile(row: ExposureProfileRow): ExposureProfile {
   return {
     key: row.key,
+    source: row.source,
+    declaredAt: row.declaredAt,
     trackedIndex: row.trackedIndex,
     ter: row.ter,
     hedged: row.hedged === 1,
@@ -70,14 +76,23 @@ async function readExposureProfile(
 
 async function saveExposureProfile(
   ctx: StoreContext,
-  profile: ExposureProfile,
+  profile: CreateExposureProfileInput,
 ): Promise<void> {
+  const current = await readExposureProfile(ctx, profile.key);
+  const declaredAt = profile.declaredAt ?? new Date().toISOString();
   const values = {
     key: profile.key,
-    trackedIndex: profile.trackedIndex ?? null,
-    ter: profile.ter ?? null,
-    hedged: profile.hedged ? 1 : 0,
-    breakdownsJson: JSON.stringify(profile.breakdowns ?? {}),
+    source: profile.source ?? "user",
+    declaredAt,
+    trackedIndex:
+      profile.trackedIndex !== undefined
+        ? profile.trackedIndex
+        : (current?.trackedIndex ?? null),
+    ter: profile.ter !== undefined ? profile.ter : (current?.ter ?? null),
+    hedged: (profile.hedged ?? current?.hedged ?? false) ? 1 : 0,
+    breakdownsJson: JSON.stringify(
+      mergeBreakdowns(current?.breakdowns, profile.breakdowns),
+    ),
   };
   await ctx.db
     .insert(exposureProfiles)
@@ -89,10 +104,22 @@ async function saveExposureProfile(
         ter: values.ter,
         hedged: values.hedged,
         breakdownsJson: values.breakdownsJson,
+        source: values.source,
+        declaredAt: values.declaredAt,
         updatedAt: sql`CURRENT_TIMESTAMP`,
       },
     })
     .run();
+}
+
+function mergeBreakdowns(
+  current: ExposureBreakdowns | undefined,
+  next: ExposureBreakdowns | undefined,
+): ExposureBreakdowns {
+  return {
+    ...(current ?? {}),
+    ...(next ?? {}),
+  };
 }
 
 async function deleteExposureProfile(ctx: StoreContext, key: string): Promise<void> {

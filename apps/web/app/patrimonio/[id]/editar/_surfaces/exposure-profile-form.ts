@@ -2,7 +2,7 @@
  * Pure exposure-profile form logic (PRD #539 S1, #541).
  *
  * All the parsing + among-fields maths for the hand-entry surface lives here
- * (interaction-patterns §7): the field map → `ExposureProfile` (geography
+ * (interaction-patterns §7): the field map → exposure-profile write input (geography
  * percents → decimal-string fractions, TER percent → fraction, asset class →
  * single-bucket vector), the geography `Otros` remainder shown to the user, and
  * the >100% validation gate (delegated to the domain's `createExposureProfile`).
@@ -17,6 +17,7 @@ import {
 } from "@worthline/domain";
 import type {
   DecimalString,
+  CreateExposureProfileInput,
   ExposureAssetClassBucket,
   ExposureBreakdowns,
   ExposureGeographyBucket,
@@ -142,28 +143,28 @@ function parseAssetClass(
 }
 
 /**
- * Turn the raw field map into an `ExposureProfile` for the given key — the pure
- * parse with NO validation (validation is {@link buildExposureProfileResult}).
+ * Turn the raw field map into a profile write for the given key — the pure parse
+ * with NO validation (validation is {@link buildExposureProfileResult}).
  * Percents become decimal-string fractions; TER percent (0.22%) becomes a
  * fraction ("0.0022"); the single asset class becomes a one-bucket vector.
  */
 export function parseExposureProfileFields(
   key: string,
   fields: ExposureProfileFields,
-): ExposureProfile {
+): CreateExposureProfileInput & { breakdowns: ExposureBreakdowns } {
   const breakdowns: ExposureBreakdowns = {};
   const geography = parseGeography(fields.geography);
-  if (geography) breakdowns.geography = geography;
+  breakdowns.geography = geography ?? {};
   const assetClass = parseAssetClass(fields.assetClass);
-  if (assetClass) breakdowns.assetClass = assetClass;
+  breakdowns.assetClass = assetClass ?? {};
 
   const ter = isFilled(fields.ter) ? parsePercentToDecimal(fields.ter) : null;
   const trackedIndex = fields.trackedIndex.trim();
 
   return {
     key,
-    ...(trackedIndex ? { trackedIndex } : {}),
-    ...(ter !== null ? { ter } : {}),
+    trackedIndex: trackedIndex || null,
+    ter,
     hedged: fields.hedged,
     breakdowns,
   };

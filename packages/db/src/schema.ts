@@ -14,6 +14,7 @@ import type {
   RiskTolerance,
   SnapshotHoldingKind,
   SourceAdapter,
+  ExposureProfileSource,
   ValuationCadence,
   ValuationMethod,
   WorkspaceMode,
@@ -229,6 +230,8 @@ export const investmentAssets = sqliteTable("investment_assets", {
 
 export const exposureProfiles = sqliteTable("exposure_profiles", {
   key: text("key").primaryKey(),
+  source: text("source").$type<ExposureProfileSource>().notNull().default("user"),
+  declaredAt: text("declared_at"),
   trackedIndex: text("tracked_index"),
   ter: text("ter"),
   hedged: integer("hedged").notNull().default(0),

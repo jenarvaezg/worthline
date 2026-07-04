@@ -365,6 +365,8 @@ const publicIdSchema = z.object({
 // enforced in the domain-error phase via createExposureProfile.
 const exposureProfileSchema = z.object({
   key: nonEmptyString,
+  source: z.enum(["user", "agent"]).default("user"),
+  declaredAt: nonEmptyString.nullable().default(null),
   trackedIndex: nonEmptyString.nullish(),
   ter: nonEmptyString.nullish(),
   hedged: z.boolean().optional(),

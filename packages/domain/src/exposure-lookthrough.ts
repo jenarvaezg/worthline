@@ -21,15 +21,27 @@ export interface ExposureBreakdowns {
   assetClass?: Partial<Record<ExposureAssetClassBucket, DecimalString>>;
 }
 
+export type ExposureProfileSource = "user" | "agent";
+
 export interface ExposureProfile {
   key: string;
+  source: ExposureProfileSource;
+  declaredAt: string | null;
   trackedIndex?: string | null;
   ter?: DecimalString | null;
   hedged?: boolean;
   breakdowns: ExposureBreakdowns;
 }
 
-export type CreateExposureProfileInput = ExposureProfile;
+export interface CreateExposureProfileInput {
+  key: string;
+  source?: ExposureProfileSource;
+  declaredAt?: string | null;
+  trackedIndex?: string | null;
+  ter?: DecimalString | null;
+  hedged?: boolean;
+  breakdowns?: ExposureBreakdowns;
+}
 
 export interface ExposureLookthroughHolding {
   id: string;
@@ -115,13 +127,17 @@ export function canHandEnterExposureProfile(instrument: Instrument): boolean {
 export function createExposureProfile(
   input: CreateExposureProfileInput,
 ): ExposureProfile {
+  const breakdowns = input.breakdowns ?? {};
   for (const dimension of EXPOSURE_DIMENSIONS) {
-    assertBreakdownTotal(input.breakdowns[dimension] as Breakdown | undefined, dimension);
+    assertBreakdownTotal(breakdowns[dimension] as Breakdown | undefined, dimension);
   }
 
   return {
     ...input,
+    breakdowns,
+    declaredAt: input.declaredAt ?? null,
     hedged: input.hedged ?? false,
+    source: input.source ?? "user",
   };
 }
 

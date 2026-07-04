@@ -1,4 +1,5 @@
 import {
+  createExposureProfile,
   lookThroughExposure,
   type ExposureLookthroughHolding,
   type ExposureProfile,
@@ -29,17 +30,20 @@ const EUR = "EUR";
 const profiles = new Map<string, ExposureProfile>([
   [
     "US-EQ",
-    { breakdowns: { assetClass: { equity: "1" }, geography: { us: "1" } }, key: "US-EQ" },
+    createExposureProfile({
+      breakdowns: { assetClass: { equity: "1" }, geography: { us: "1" } },
+      key: "US-EQ",
+    }),
   ],
   [
     "EU-BOND",
-    {
+    createExposureProfile({
       breakdowns: {
         assetClass: { bond: "1" },
         geography: { europe_developed: "0.6", us: "0.4" },
       },
       key: "EU-BOND",
-    },
+    }),
   ],
 ]);
 
