@@ -266,6 +266,67 @@ describe("createChatTools · suggest_actions (#631)", () => {
   });
 });
 
+describe("createChatTools · propose_exposure_profiles (#706)", () => {
+  it("returns a preview proposal without writing exposure profiles", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "world",
+      instrument: "etf",
+      isin: "IE00B4L5Y983",
+      liquidityTier: "market",
+      name: "iShares MSCI World",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      providerSymbol: "SWDA",
+    });
+    await store.exposureProfiles.saveExposureProfile({
+      key: "IE00B4L5Y983",
+      source: "user",
+      ter: "0.002",
+    });
+    const before = await store.exposureProfiles.readExposureProfiles();
+    const tools = toolsOver(store.agentView);
+
+    const result = await tools["propose_exposure_profiles"]?.execute?.(
+      {
+        drafts: [
+          {
+            key: "IE00B4L5Y983",
+            breakdowns: { geography: { us: "0.7" } },
+            trackedIndex: "MSCI World",
+          },
+        ],
+      },
+      toolCallContext(),
+    );
+
+    expect(result.proposalType).toBe("exposure_profiles");
+    expect(result.previews).toEqual([
+      {
+        after: {
+          breakdowns: { geography: { us: "0.7" } },
+          hedged: false,
+          ter: "0.002",
+          trackedIndex: "MSCI World",
+        },
+        before: {
+          breakdowns: {},
+          hedged: false,
+          ter: "0.002",
+          trackedIndex: null,
+        },
+        key: "IE00B4L5Y983",
+        labels: ["iShares MSCI World"],
+      },
+    ]);
+    expect(await store.exposureProfiles.readExposureProfiles()).toEqual(before);
+  });
+});
+
 /** Minimal execution options the AI SDK passes to execute — unused by our tools. */
 function toolCallContext(): never {
   return { toolCallId: "call-1", messages: [] } as unknown as never;

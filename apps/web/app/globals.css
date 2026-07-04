@@ -6134,6 +6134,55 @@ td.rowActions > * {
   font-size: 0.88rem;
   color: var(--red);
 }
+.assistantOk {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--green);
+}
+
+.assistantProposal {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  padding: 10px 12px;
+}
+.assistantProposal p,
+.assistantProposal ul {
+  margin: 0;
+}
+.assistantProposal > p:first-child {
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+.assistantProposal ul {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+.assistantProposal li {
+  display: grid;
+  gap: 3px;
+}
+.assistantProposal strong {
+  font-size: 0.86rem;
+}
+.assistantProposal span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+.assistantProposalActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.assistantProposalActions .secondary {
+  background: transparent;
+  color: var(--ink);
+}
 
 .assistantActions {
   display: flex;

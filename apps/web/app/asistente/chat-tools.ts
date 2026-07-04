@@ -8,6 +8,7 @@ import {
   sourceHref,
   type QuickAction,
 } from "@web/asistente/assistant-actions";
+import { buildExposureProfileProposal } from "@web/asistente/exposure-profile-proposals";
 import type { ScreenSection } from "@web/asistente/screen-context";
 import { resolveInternalHoldingId } from "@web/agent-view/scope-resolution";
 
@@ -175,6 +176,18 @@ interface ProposedAction {
   prompt?: string;
 }
 
+interface ProposedExposureProfileDraft {
+  key: string;
+  trackedIndex?: string | null;
+  ter?: string | null;
+  hedged?: boolean;
+  breakdowns?: {
+    geography?: Record<string, string>;
+    currency?: Record<string, string>;
+    assetClass?: Record<string, string>;
+  };
+}
+
 /**
  * Resolve one proposed `openInternalSource` reference to an internal href, or
  * null if it points nowhere we can navigate. The model supplies a PUBLIC
@@ -255,6 +268,39 @@ const HOLDING_ID_SCHEMA = jsonSchema<{ holdingId: string }>({
   type: "object",
   properties: { holdingId: { type: "string" } },
   required: ["holdingId"],
+  additionalProperties: false,
+});
+
+const EXPOSURE_PROFILE_PROPOSAL_SCHEMA = jsonSchema<{
+  drafts?: ProposedExposureProfileDraft[];
+}>({
+  type: "object",
+  properties: {
+    drafts: {
+      type: "array",
+      maxItems: 10,
+      items: {
+        type: "object",
+        properties: {
+          key: { type: "string" },
+          trackedIndex: { type: ["string", "null"] },
+          ter: { type: ["string", "null"] },
+          hedged: { type: "boolean" },
+          breakdowns: {
+            type: "object",
+            properties: {
+              geography: { type: "object", additionalProperties: { type: "string" } },
+              currency: { type: "object", additionalProperties: { type: "string" } },
+              assetClass: { type: "object", additionalProperties: { type: "string" } },
+            },
+            additionalProperties: false,
+          },
+        },
+        required: ["key"],
+        additionalProperties: false,
+      },
+    },
+  },
   additionalProperties: false,
 });
 
@@ -703,6 +749,24 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
           }
           // Final trust boundary: only the typed, bounded, internal-href set renders.
           return { actions: parseQuickActions(built) satisfies QuickAction[] };
+        }),
+    }),
+
+    propose_exposure_profiles: tool({
+      description:
+        "Prepara una propuesta de perfiles de exposición para posiciones elegibles " +
+        "(fund/etf/stock/index/pension_plan), keyed by ISIN o provider symbol. No escribe " +
+        "nada: devuelve el borrador validado y un before/after para que la app lo previsualice " +
+        "y el usuario lo confirme. Pesos en fracción decimal: 0.7 = 70%. Omite campos que " +
+        "quieras preservar; usa null solo para limpiarlos.",
+      inputSchema: EXPOSURE_PROFILE_PROPOSAL_SCHEMA,
+      execute: (args) =>
+        input.runWithStore(async (store) => {
+          const built = await buildExposureProfileProposal(
+            store.agentView,
+            args.drafts ?? [],
+          );
+          return built.ok ? built.proposal : { error: built.error };
         }),
     }),
   };
