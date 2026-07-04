@@ -4,6 +4,14 @@ import type { AgentViewReadStore } from "@worthline/db";
 import { formatMoneyMinor } from "@worthline/domain";
 
 import {
+  parseQuickActions,
+  sourceHref,
+  type QuickAction,
+} from "@web/asistente/assistant-actions";
+import type { ScreenSection } from "@web/asistente/screen-context";
+import { resolveInternalHoldingId } from "@web/agent-view/scope-resolution";
+
+import {
   AgentViewHttpError,
   errorEnvelope,
   type AgentViewFinancialContext,
@@ -151,6 +159,47 @@ async function resolveScopeId(
 function clampLimit(limit: number | undefined, fallback: number, max: number): number {
   if (limit === undefined) return fallback;
   return Math.min(Math.max(1, Math.trunc(limit)), max);
+}
+
+/** One action the model proposed via `suggest_actions`, before validation. */
+interface ProposedAction {
+  type?: string;
+  label?: string;
+  /** Public holding id (`wl_hld_…`) to open, when the source is a holding. */
+  holding?: string;
+  /** Product section to open, when the source is a whole surface. */
+  section?: ScreenSection;
+  /** Explained figure to open, when the source is a headline number. */
+  figure?: string;
+  /** Follow-up prompt, for `runSuggestedAnalysis`. */
+  prompt?: string;
+}
+
+/**
+ * Resolve one proposed `openInternalSource` reference to an internal href, or
+ * null if it points nowhere we can navigate. The model supplies a PUBLIC
+ * holding id; we resolve it to the internal id the product route uses (an
+ * unknown id resolves to null, so the action is simply dropped — never a guess).
+ */
+async function resolveActionHref(
+  store: ChatReadStore,
+  action: ProposedAction,
+): Promise<string | null> {
+  if (action.holding !== undefined) {
+    try {
+      const internalId = await resolveInternalHoldingId(store.agentView, action.holding);
+      return sourceHref({ kind: "holding", internalId });
+    } catch {
+      return null;
+    }
+  }
+  if (action.section !== undefined) {
+    return sourceHref({ kind: "section", section: action.section });
+  }
+  if (action.figure !== undefined) {
+    return sourceHref({ kind: "figure", figure: action.figure });
+  }
+  return null;
 }
 
 /**
@@ -596,6 +645,65 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "referencia FIRE), país fiscal y tolerancia al riesgo. Para personalizar el consejo.",
       inputSchema: EMPTY_SCHEMA,
       execute: () => chatRead(input, (store) => buildMemberProfiles(store.agentView)),
+    }),
+
+    suggest_actions: tool({
+      description:
+        "Propón acciones de seguimiento SOLO-LECTURA para el usuario (ADR 0053), tras " +
+        "responder. Dos tipos: `openInternalSource` abre una superficie de worthline citada " +
+        "— indica `holding` (id `wl_hld_…` que ya has leído), `section` " +
+        "(patrimonio/historico/objetivos) o `figure` (p.ej. net_worth); NO pases URLs. " +
+        "`runSuggestedAnalysis` sugiere una pregunta de seguimiento con su `prompt`. La app " +
+        "descarta lo que no resuelva a una superficie interna. No modifica nada.",
+      inputSchema: jsonSchema<{ actions?: ProposedAction[] }>({
+        type: "object",
+        properties: {
+          actions: {
+            type: "array",
+            maxItems: 8,
+            items: {
+              type: "object",
+              properties: {
+                type: {
+                  enum: ["openInternalSource", "runSuggestedAnalysis"],
+                  type: "string",
+                },
+                label: { type: "string" },
+                holding: { type: "string" },
+                section: {
+                  enum: ["resumen", "patrimonio", "historico", "objetivos", "ajustes"],
+                  type: "string",
+                },
+                figure: { type: "string" },
+                prompt: { type: "string" },
+              },
+              required: ["type", "label"],
+              additionalProperties: false,
+            },
+          },
+        },
+        additionalProperties: false,
+      }),
+      execute: (args) =>
+        input.runWithStore(async (store) => {
+          const built: unknown[] = [];
+          for (const action of args.actions ?? []) {
+            if (action.type === "runSuggestedAnalysis") {
+              built.push({
+                type: "runSuggestedAnalysis",
+                label: action.label,
+                prompt: action.prompt,
+              });
+            } else if (action.type === "openInternalSource") {
+              const href = await resolveActionHref(store, action);
+              if (href !== null) {
+                built.push({ type: "openInternalSource", label: action.label, href });
+              }
+            }
+          }
+          // Final trust boundary: only the typed, bounded, internal-href set renders.
+          return { actions: parseQuickActions(built) satisfies QuickAction[] };
+        }),
     }),
   };
 }
