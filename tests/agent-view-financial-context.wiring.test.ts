@@ -459,6 +459,16 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
       grossSellAmount: eur(390_00),
       feesTotal: eur(5_00),
     });
+    expect(body.data.returns.simple.totalGain).toEqual(eur(69_00));
+    expect(body.data.returns.simple.realizedGain).toBeUndefined();
+    expect(Number(body.data.returns.simple.totalReturnRatio)).toBeCloseTo(
+      69_00 / 1_605_00,
+      10,
+    );
+    expect(body.data.returns.moneyWeighted.reason).toBeNull();
+    expect(
+      body.data.returns.qualitySignals.map((signal: { code: string }) => signal.code),
+    ).toContain("DISTRIBUTIONS_NOT_CAPTURED");
 
     const sources = body.data.connectedSources;
     expect(sources).toHaveLength(1);

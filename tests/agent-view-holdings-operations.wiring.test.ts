@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { NextRequest } from "next/server";
 
 import { createWorthlineStore } from "@worthline/db";
+import { captureValuedNetWorthSnapshot } from "@worthline/domain";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
 import { GET as getHolding } from "@web/api/v1/agent-view/holdings/[holdingId]/route";
 import { GET as getOperations } from "@web/api/v1/agent-view/holdings/[holdingId]/operations/route";
@@ -299,6 +300,107 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}", () => {
     expect(detail.operationSummary.unitsBought).toBe("13");
     expect(detail.operationSummary.unitsSold).toBe("2");
     expect(detail.operationSummary.feesTotal).toEqual(eur(200));
+  });
+
+  test("returns investment returns with null reasons and honest quality signals", async () => {
+    await seedPortfolio();
+    const scopeId = await householdScopeId();
+    const fundId = await holdingIdByLabel(scopeId, "Fondo indexado");
+
+    const { body } = await holding(fundId);
+    const returns = body.data.returns as {
+      simple: {
+        totalGain: { amountMinor: number; currency: string };
+        realizedGain: { amountMinor: number; currency: string };
+        unrealizedGain: { amountMinor: number; currency: string };
+        totalReturnRatio: string | null;
+      };
+      moneyWeighted: { rate: string | null; reason: string | null };
+      timeWeighted: { rate: string | null; reason: string | null };
+      qualitySignals: Array<{ code: string }>;
+    };
+
+    expect(returns.simple.totalGain).toEqual(eur(17_619));
+    expect(returns.simple.realizedGain).toEqual(eur(17_619));
+    expect(returns.simple.unrealizedGain).toEqual(eur(0));
+    expect(Number(returns.simple.totalReturnRatio)).toBeCloseTo(17_619 / 1_965_150, 10);
+    expect(returns.moneyWeighted.rate).not.toBeNull();
+    expect(returns.moneyWeighted.reason).toBeNull();
+    expect(returns.timeWeighted.rate).toBeNull();
+    expect(returns.timeWeighted.reason).toBe("insufficient_monthly_closes");
+    expect(returns.qualitySignals.map((signal) => signal.code)).toContain(
+      "DISTRIBUTIONS_NOT_CAPTURED",
+    );
+  });
+
+  test("flags when TWR starts after the first operation", async () => {
+    const databasePath = tempDatabasePath("worthline-agent-view-hold-returns-gap-");
+    process.env.WORTHLINE_DB_PATH = databasePath;
+    process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
+
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "member_jose", name: "Jose" }],
+      mode: "individual",
+    });
+    const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset_fund",
+      liquidityTier: "market",
+      manualPricePerUnit: "150",
+      name: "Fondo indexado",
+      ownership: owner,
+    });
+    await store.operations.recordOperation({
+      assetId: "asset_fund",
+      currency: "EUR",
+      executedAt: "2026-01-10",
+      feesMinor: 0,
+      id: "op_buy",
+      kind: "buy",
+      pricePerUnit: "100",
+      units: "10",
+    });
+
+    for (const [id, capturedAt] of [
+      ["snap_feb", "2026-02-28T10:00:00.000Z"],
+      ["snap_mar", "2026-03-31T10:00:00.000Z"],
+    ] as const) {
+      const { holdings, snapshot } = captureValuedNetWorthSnapshot({
+        assets: await store.assets.readAssets(),
+        capturedAt,
+        id,
+        liabilities: await store.liabilities.readLiabilities(),
+        scopeId: "household",
+        scopeLabel: "Hogar",
+        workspace: (await store.workspace.readWorkspace())!,
+      });
+      await store.snapshots.saveSnapshot({ holdings, snapshot });
+    }
+    store.close();
+
+    const scopeId = await householdScopeId();
+    const fundId = await holdingIdByLabel(scopeId, "Fondo indexado");
+    const { body } = await holding(fundId);
+    const returns = body.data.returns as {
+      timeWeighted: { startDate: string | null; reason: string | null };
+      qualitySignals: Array<{
+        code: string;
+        firstOperationDate?: string;
+        twrStartDate?: string;
+      }>;
+    };
+
+    expect(returns.timeWeighted.reason).toBeNull();
+    expect(returns.timeWeighted.startDate).toBe("2026-02-28");
+    expect(returns.qualitySignals).toContainEqual(
+      expect.objectContaining({
+        code: "TWR_STARTS_AFTER_FIRST_OPERATION",
+        firstOperationDate: "2026-01-10",
+        twrStartDate: "2026-02-28",
+      }),
+    );
   });
 
   test("returns a liability holding as direction=liability", async () => {

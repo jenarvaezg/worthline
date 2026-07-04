@@ -45,6 +45,7 @@ import { deriveSourcePublicId, toFreshnessSummary } from "./connected-source-pos
 import { buildDataQualitySummary } from "./data-quality";
 import { buildFireSummary } from "./fire-context";
 import { summarizeOperations } from "./operation-summary";
+import { buildPortfolioReturns } from "./returns";
 import { publicIdMap, requirePublicId, resolveInternalScopeId } from "./scope-resolution";
 import { listAgentViewScopes } from "./scopes";
 
@@ -111,6 +112,12 @@ export async function buildFinancialContext(
   const { assets, liabilities } = await store.readCurveValuedHoldings(options.asOf);
   const figuresInput = { assets, liabilities, scopeId: internalScopeId, workspace };
   const summary = toSummary(calculateNetWorth(figuresInput));
+  const projection = projectPortfolio({
+    assets,
+    liabilities,
+    scope: scopeOption,
+    workspace,
+  });
   const holdingSummaries = await buildHoldingSummaries(
     store,
     workspace,
@@ -139,6 +146,18 @@ export async function buildFinancialContext(
     ),
     links: buildLinks(options.scopeId),
     liquidityBreakdown: buildLiquidityBreakdown(figuresInput).map(toLiquidityRung),
+    returns: await buildPortfolioReturns({
+      currency: workspace.baseCurrency,
+      holdings: projection.sections[0].rows.map((row) => ({
+        currentValueMinor: row.valueMinor,
+        id: row.id,
+        instrument: row.instrument,
+        totalShareBps: row.ownership.totalShareBps,
+      })),
+      scopeId: internalScopeId,
+      store,
+      valuationDate: options.asOf,
+    }),
     scope,
     summary,
   };
