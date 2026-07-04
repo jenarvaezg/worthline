@@ -1,13 +1,19 @@
 "use client";
 
 import type { TrashView } from "@worthline/db";
-import type { DomainWarning, PortfolioGroup, UnifiedHolding } from "@worthline/domain";
+import type {
+  DomainWarning,
+  HoldingReturnsView,
+  PortfolioGroup,
+  UnifiedHolding,
+} from "@worthline/domain";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import Link from "next/link";
 import { useOptimistic, useTransition, type FormEvent } from "react";
 
 import { boardRefreshHover } from "@web/price-refresh";
 import { PendingSubmit } from "@web/pending-submit";
+import { formatRatioPct, returnsTooltipLines } from "@web/_components/returns-format";
 
 import {
   acknowledgeWarningAction,
@@ -72,6 +78,53 @@ function ownershipLabel(h: UnifiedHolding, isHousehold: boolean): string | null 
   // Floor-cap the partial branch so 99.5–99.99 % never rounds up to "100 %" and
   // hides that the holding is co-owned (the whole reason the label exists).
   return bps < 10_000 ? `${Math.min(99, Math.round(bps / 100))} %` : "100 %";
+}
+
+/** Per-holding returns keyed by asset id (#551) — market investments only. */
+type ReturnsById = ReadonlyMap<string, HoldingReturnsView>;
+
+/**
+ * The per-holding simple total gain, inline under the amount (#551, ADR 0040). The
+ * gain is computed on the FULL position, so scale it to the row's scope share to
+ * stay consistent with the (scope-weighted) value above it; the percentage is
+ * share-invariant. Semantic gain/loss colour via the shared `.pos`/`.neg` tokens
+ * (design-system §2), never raw green/red. The hover — a real focusable tooltip,
+ * not a native `title` — explains the three measures and the honest caveats.
+ */
+function RowReturns({
+  returns,
+  shareBps,
+  currency,
+  privacyMode,
+}: {
+  returns: HoldingReturnsView;
+  shareBps: number;
+  currency: Currency;
+  privacyMode: boolean;
+}) {
+  if (returns.totalReturnRatio === null) {
+    return null;
+  }
+  const scaledGainMinor = Math.round((returns.totalGain.amountMinor * shareBps) / 10_000);
+  const positive = returns.totalReturnRatio >= 0;
+  const lines = returnsTooltipLines(returns);
+
+  return (
+    <div
+      className={`balanceRowReturns returnsHint ${positive ? "pos" : "neg"}`}
+      tabIndex={0}
+      aria-label={`Rentabilidad: ${lines.join(". ")}`}
+    >
+      <span aria-hidden="true">{positive ? "▲" : "▼"}</span>{" "}
+      {money(scaledGainMinor, currency, privacyMode)} ·{" "}
+      {formatRatioPct(returns.totalReturnRatio)}
+      <span className="returnsHintBody" role="tooltip">
+        {lines.map((line) => (
+          <span key={line}>{line}</span>
+        ))}
+      </span>
+    </div>
+  );
 }
 
 /**
@@ -149,6 +202,7 @@ function HoldingRow({
   nowIso,
   privacyMode,
   optimisticSubmit,
+  returns,
 }: {
   holding: UnifiedHolding;
   currency: Currency;
@@ -161,6 +215,7 @@ function HoldingRow({
   nowIso: string;
   privacyMode: boolean;
   optimisticSubmit: OptimisticSubmit;
+  returns: HoldingReturnsView | undefined;
 }) {
   const h = holding;
   const rowWarnings = isAsset
@@ -213,6 +268,14 @@ function HoldingRow({
         {isAsset
           ? money(magnitude(h), currency, privacyMode)
           : `− ${money(magnitude(h), currency, privacyMode)}`}
+        {isAsset && returns ? (
+          <RowReturns
+            currency={currency}
+            privacyMode={privacyMode}
+            returns={returns}
+            shareBps={h.direction === "asset" ? h.ownership.totalShareBps : 10_000}
+          />
+        ) : null}
       </div>
 
       <details className="balanceActions">
@@ -267,6 +330,7 @@ function Pane({
   nowIso,
   privacyMode,
   optimisticSubmit,
+  returnsById,
 }: {
   title: string;
   total: number;
@@ -279,6 +343,7 @@ function Pane({
   nowIso: string;
   privacyMode: boolean;
   optimisticSubmit: OptimisticSubmit;
+  returnsById: ReturnsById;
 }) {
   const { denom, segments } = paneSegments(sections, isAsset);
   const showSubs = sections.length > 1;
@@ -344,6 +409,7 @@ function Pane({
                   nowIso={nowIso}
                   optimisticSubmit={optimisticSubmit}
                   privacyMode={privacyMode}
+                  returns={returnsById.get(h.id)}
                   sectionDenom={secDenom}
                   showTierLabel={!showSubs}
                   warnings={warnings}
@@ -413,6 +479,8 @@ export interface BalanceBoardProps {
   privacyMode: boolean;
   /** Demo: skip optimistic state — the write-guard rejects, so optimism would flicker (§10). */
   readOnly?: boolean;
+  /** Per-holding simple gain, keyed by asset id (#551); absent → no returns shown. */
+  returnsById?: ReturnsById;
 }
 
 export default function BalanceBoard({
@@ -424,7 +492,9 @@ export default function BalanceBoard({
   nowIso,
   privacyMode,
   readOnly = false,
+  returnsById,
 }: BalanceBoardProps) {
+  const returns: ReturnsById = returnsById ?? new Map();
   const base: BoardModel = { groups, trash };
   const [model, addPending] = useOptimistic(
     base,
@@ -487,6 +557,7 @@ export default function BalanceBoard({
         nowIso={nowIso}
         optimisticSubmit={optimisticSubmit}
         privacyMode={privacyMode}
+        returnsById={returns}
         sections={assetSections}
         title="Activos"
         total={grossAssets}
@@ -500,6 +571,7 @@ export default function BalanceBoard({
         nowIso={nowIso}
         optimisticSubmit={optimisticSubmit}
         privacyMode={privacyMode}
+        returnsById={returns}
         sections={debtSections}
         title="Pasivos"
         total={totalDebts}

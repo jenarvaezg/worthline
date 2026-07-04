@@ -39,6 +39,7 @@ import FramingPanel, { type FramingTab } from "./framing-panel";
 import HeroMovers from "./hero-movers";
 import type { HoldingMover, MoversData, MoversPeriod } from "./hero-movers";
 import PrivacyToggle from "./privacy-toggle";
+import { formatRatioPct, returnsTooltipLines } from "@web/_components/returns-format";
 import { runBinanceRefresh } from "./ajustes/binance-refresh";
 import { runNumistaCoinRefresh } from "./ajustes/numista-coin-refresh";
 import { refreshAndPersistStalePrices } from "./refresh-prices";
@@ -606,6 +607,33 @@ export default async function DashboardContent({
             />
           }
         />
+        {/* Portfolio returns line (#551, ADR 0040): one small line INSIDE the hero
+            cell — never a new dashGrid child (that broke the layout in #562). The
+            hover explains the three measures + honest caveats. */}
+        {hasHoldings &&
+        state.portfolioReturns &&
+        state.portfolioReturns.totalReturnRatio !== null ? (
+          <p
+            className="heroReturns returnsHint"
+            tabIndex={0}
+            aria-label={`Rentabilidad: ${returnsTooltipLines(state.portfolioReturns).join(". ")}`}
+          >
+            Rentabilidad{" "}
+            <strong
+              className={state.portfolioReturns.totalReturnRatio >= 0 ? "pos" : "neg"}
+            >
+              {formatRatioPct(state.portfolioReturns.totalReturnRatio)}
+            </strong>
+            {state.portfolioReturns.irr?.rate != null
+              ? ` · IRR ${formatRatioPct(state.portfolioReturns.irr.rate)} anual`
+              : null}
+            <span className="returnsHintBody" role="tooltip">
+              {returnsTooltipLines(state.portfolioReturns).map((line) => (
+                <span key={line}>{line}</span>
+              ))}
+            </span>
+          </p>
+        ) : null}
       </section>
 
       {!hasHoldings ? (

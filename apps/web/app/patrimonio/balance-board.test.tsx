@@ -1,9 +1,11 @@
 import type {
   DomainWarning,
+  HoldingReturnsView,
   PortfolioGroup,
   PriceSource,
   UnifiedHolding,
 } from "@worthline/domain";
+import { buildHoldingReturnsView, money } from "@worthline/domain";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
@@ -103,6 +105,54 @@ function render(props: Partial<Parameters<typeof BalanceBoard>[0]> = {}) {
     />,
   );
 }
+
+function marketReturns(
+  totalGainMinor: number,
+  totalReturnRatio: number,
+): HoldingReturnsView {
+  return buildHoldingReturnsView({
+    instrument: "fund",
+    irr: { rate: 0.082, reason: null },
+    simpleGain: {
+      annualized: true,
+      cagr: 0.1,
+      spanDays: 800,
+      totalGain: money(totalGainMinor, "EUR"),
+      totalInvestedMinor: Math.round(totalGainMinor / totalReturnRatio),
+      totalReturnRatio,
+    },
+  })!;
+}
+
+describe("BalanceBoard returns (#551)", () => {
+  test("shows the per-holding simple gain inline, with the hover measures", () => {
+    const html = render({
+      returnsById: new Map([["a_big", marketReturns(5_039_00, 0.299)]]),
+    });
+
+    expect(html).toContain("+29,9 %");
+    // es-ES omits the grouping separator for 4-digit integers → "5039" (NBSP + €).
+    expect(html).toContain("5039");
+    // The hover explains the three measures + honest caveats.
+    expect(html).toContain("IRR anual: +8,2 %");
+    expect(html).toContain("No incluye dividendos ni cupones.");
+  });
+
+  test("scales the € gain to the row's scope share (percentage stays share-invariant)", () => {
+    // a_home is 60%-owned (shareBps 6000); a 300.000 full gain shows as 180.000.
+    const html = render({
+      returnsById: new Map([["a_home", marketReturns(300_000_00, 0.25)]]),
+    });
+
+    expect(html).toContain("180.000");
+    expect(html).toContain("+25,0 %");
+  });
+
+  test("holdings without a returns view show no inline gain", () => {
+    const html = render();
+    expect(html).not.toContain("returnsHint");
+  });
+});
 
 describe("BalanceBoard (#271)", () => {
   test("splits assets and liabilities into the two panes and reconciles the net", () => {

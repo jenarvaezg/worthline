@@ -2,6 +2,8 @@ import { bootstrapHealthcheck, withStore } from "@web/store";
 import {
   collectWarnings,
   groupPortfolio,
+  instrumentOfAsset,
+  investmentReturnsById,
   listScopeOptions,
   lookThroughExposure,
   projectPortfolio,
@@ -10,6 +12,7 @@ import {
 import type {
   ExposureLookthroughHolding,
   ExposureProfile,
+  Instrument,
   PortfolioGroupKey,
   PriceRefreshMeta,
 } from "@worthline/domain";
@@ -72,6 +75,12 @@ export default async function PatrimonioPage({
     const selectedScope =
       scopes.find((scope) => scope.id === selectedScopeId) ?? scopes[0];
 
+    const today = systemClock().today();
+    // The shared raw-reads context (operations, prices, ownership) built once and
+    // reused: it both feeds the curve valuation below (dedup, #566) and drives the
+    // per-holding returns without a second operation read (#551).
+    const projectionContext = await store.snapshots.buildProjectionContext();
+
     // These reads are independent of one another, so fire them in one wave
     // instead of stacking serial round-trips to the (remote) store (#446).
     const [
@@ -88,11 +97,27 @@ export default async function PatrimonioPage({
     ] = await Promise.all([
       store.operations.readAllPriceCacheEntries(),
       store.assets.readInvestmentAssetsWithMeta(),
-      store.snapshots.readCurveValuedHoldingsAtDate(systemClock().today()),
+      store.snapshots.readCurveValuedHoldingsAtDate(today, projectionContext),
       store.readWarningOverrides(),
       store.readTrash(),
       store.exposureProfiles.readExposureProfiles(),
     ]);
+
+    // Per-holding simple total gain, inline on the board (#551, ADR 0040). Folds
+    // each operation-bearing investment through the return engine — market
+    // instruments only; a stored/mirrored holding carries no operations, so it is
+    // absent from the map and shows no returns (never a fabricated figure).
+    const instrumentByAsset = new Map<string, Instrument>(
+      assets.map((asset) => [asset.id, instrumentOfAsset(asset)]),
+    );
+    const investmentReturns = investmentReturnsById({
+      cachedPriceByAsset: projectionContext.cachedPriceByAsset,
+      currency: workspace.baseCurrency,
+      instrumentByAsset,
+      manualPriceByAsset: projectionContext.manualPriceByAsset,
+      operationsByAsset: projectionContext.operationsByAsset,
+      valuationDate: today,
+    });
 
     // Price-refresh metadata for the derived-value badge hover (#303): when + by
     // which source each cached unit price was last fetched, keyed by asset id. The
@@ -117,6 +142,7 @@ export default async function PatrimonioPage({
       exposureProfiles,
       hasPricedHoldings,
       investmentMeta,
+      investmentReturns,
       liabilities,
       overrides,
       priceMetaByAsset,
@@ -136,6 +162,7 @@ export default async function PatrimonioPage({
     exposureProfiles,
     hasPricedHoldings,
     investmentMeta,
+    investmentReturns,
     liabilities,
     overrides,
     priceMetaByAsset,
@@ -272,6 +299,7 @@ export default async function PatrimonioPage({
         nowIso={persistence.checkedAt}
         privacyMode={privacyMode}
         readOnly={isDemo}
+        returnsById={investmentReturns}
         trash={trash}
         warnings={warnings}
       />
