@@ -24,6 +24,11 @@ function signedMoney(
   return `${prefix}${formatMoneyMinorPrivacy(value, privacyMode)}`;
 }
 
+function shortDate(date: string): string {
+  const [year, month, day] = date.split("-");
+  return `${day}/${month}/${year}`;
+}
+
 export function ReturnsPanel({
   view,
   privacyMode,
@@ -62,9 +67,16 @@ export function ReturnsPanel({
           <div className="returnsMeasure">
             <dt>
               TWR (ponderada por tiempo)
-              {view.twr.provisional ? " · provisional" : ""}
+              {view.twr.startDate ? ` · desde ${shortDate(view.twr.startDate)}` : ""}
             </dt>
             <dd>{formatMeasurePct(view.twr.rate)}</dd>
+          </div>
+        ) : null}
+
+        {view.twr?.annualized && view.twr.annualizedRate !== null ? (
+          <div className="returnsMeasure">
+            <dt>TWR anualizada</dt>
+            <dd>{formatRatioPct(view.twr.annualizedRate)}</dd>
           </div>
         ) : null}
       </dl>

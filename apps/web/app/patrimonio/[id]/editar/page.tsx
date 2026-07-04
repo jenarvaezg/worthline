@@ -6,8 +6,10 @@ import {
   detectSingleAssetBackfillCandidate,
   getPriceFreshness,
   holdingIrr,
+  holdingTwr,
   instrumentOfAsset,
   listScopeOptions,
+  monthlyCloseValuesFromSnapshotRows,
   simpleGain,
   valuationMethodOfAsset,
   valuationMethodOfLiability,
@@ -174,7 +176,7 @@ export default async function EditarPage({
     const isDerived = assetMethod === "derived" && !isCoinCollection && !isBinanceHolding;
     // The four derived-investment reads are independent of one another — fetch
     // them in one wave instead of stacking serial round-trips to the store (#446).
-    const [investment, operations, priceCache, position] = isDerived
+    const [investment, operations, priceCache, position, twrSnapshotRows] = isDerived
       ? await Promise.all([
           store.assets.readInvestmentAssetById(id),
           store.operations.readOperations(id),
@@ -182,8 +184,13 @@ export default async function EditarPage({
           store.snapshots
             .readPositions()
             .then((ps) => ps.find((p) => p.assetId === id) ?? null),
+          store.snapshots.readSnapshotHoldings({
+            holdingId: id,
+            kind: "asset",
+            scopeId: "household",
+          }),
         ])
-      : [null, [], null, null];
+      : [null, [], null, null, []];
     // The coin collection's decoupled valuation freshness (PRD #166): its own
     // `numista`-source cache row, separate from the investment derived path above.
     const coinValuationCache = isCoinCollection
@@ -203,12 +210,10 @@ export default async function EditarPage({
             ...(investment.providerSymbol
               ? { providerSymbol: investment.providerSymbol }
               : {}),
-            snapshotRows: await store.snapshots.readSnapshotHoldings({
-              holdingId: id,
-              kind: "asset",
-            }),
+            snapshotRows: twrSnapshotRows,
           }) !== null
         : false;
+    const twrMonthlyCloses = monthlyCloseValuesFromSnapshotRows(twrSnapshotRows);
 
     // Exposure profile hand-entry (PRD #539 S1, #541): a hand-enterable
     // instrument (fund/etf/stock/index/pension_plan) keyed by the security's
@@ -290,6 +295,7 @@ export default async function EditarPage({
       rateRevisions,
       scopes,
       selectedScope,
+      twrMonthlyCloses,
       valuationCadence,
       workspace,
     };
@@ -333,6 +339,7 @@ export default async function EditarPage({
     rateRevisions,
     scopes,
     selectedScope,
+    twrMonthlyCloses,
     valuationCadence,
   } = storeData;
 
@@ -432,6 +439,10 @@ export default async function EditarPage({
             operations,
             valuationDate: today,
           }),
+          twr:
+            twrMonthlyCloses.length > 0
+              ? holdingTwr({ monthlyCloses: twrMonthlyCloses, operations })
+              : null,
           ...(position?.realizedPnl ? { realizedPnl: position.realizedPnl } : {}),
           ...(position?.unrealizedPnl ? { unrealizedPnl: position.unrealizedPnl } : {}),
         })

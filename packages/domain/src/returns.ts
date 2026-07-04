@@ -4,6 +4,7 @@ import { daysBetween } from "./dates";
 import { multiplyToMinor } from "./decimal";
 import type { InvestmentOperation } from "./investment-types";
 import { money } from "./money";
+import { deriveMonthlyCloses } from "./snapshot-policy";
 
 /**
  * Investment return measures (#548, ADR 0040). Present-time, derived, and never
@@ -13,6 +14,8 @@ import { money } from "./money";
  *   total invested, with a CAGR only when the span reaches a year.
  * - **Money-weighted return (XIRR)**: the internal rate of return over the
  *   operation cashflows plus the current market value as a terminal inflow.
+ * - **Time-weighted return (TWR)**: Modified Dietz over monthly closes, chained
+ *   across the available snapshot span.
  *
  * The module is pure: it reads operations and an injected valuation date, so tests
  * are deterministic without touching the wall clock.
@@ -83,6 +86,59 @@ export interface PortfolioReturnsInput {
   valuationDate: string;
 }
 
+/** One monthly-close value in the series TWR can honestly compute from. */
+export interface MonthlyCloseValue {
+  date: string;
+  valueMinor: number;
+}
+
+export interface MonthlyCloseSnapshotRow {
+  snapshotId: string;
+  dateKey: string;
+  valueMinor: number;
+}
+
+/**
+ * A cashflow into the measured holding/portfolio. Positive = contribution/buy,
+ * negative = withdrawal/sell. This is the opposite sign of XIRR cashflows.
+ */
+export interface TwrCashflow {
+  date: string;
+  amountMinor: number;
+}
+
+/** Why a TWR could not be computed — returned instead of a bogus rate. */
+export type TwrReason =
+  | "insufficient_monthly_closes"
+  | "zero_time_span"
+  | "zero_denominator";
+
+/** Time-weighted return over the available monthly-close span. */
+export interface TwrResult {
+  rate: number | null;
+  annualizedRate: number | null;
+  annualized: boolean;
+  startDate: string | null;
+  endDate: string | null;
+  spanDays: number;
+  reason: TwrReason | null;
+}
+
+export interface TimeWeightedReturnInput {
+  monthlyCloses: readonly MonthlyCloseValue[];
+  cashflows: readonly TwrCashflow[];
+}
+
+export interface HoldingTwrInput {
+  operations: readonly InvestmentOperation[];
+  monthlyCloses: readonly MonthlyCloseValue[];
+}
+
+export interface PortfolioTwrInput {
+  holdings: readonly { operations: readonly InvestmentOperation[] }[];
+  monthlyCloses: readonly MonthlyCloseValue[];
+}
+
 function byExecutedAtThenId(
   left: InvestmentOperation,
   right: InvestmentOperation,
@@ -106,6 +162,149 @@ export function operationCashflows(
         ? -(gross + operation.feesMinor)
         : gross - operation.feesMinor;
     return { amountMinor, date: operation.executedAt.slice(0, 10) };
+  });
+}
+
+export function operationTwrCashflows(
+  operations: readonly InvestmentOperation[],
+): TwrCashflow[] {
+  return operationCashflows(operations).map((cashflow) => ({
+    amountMinor: -cashflow.amountMinor,
+    date: cashflow.date,
+  }));
+}
+
+export function monthlyCloseValuesFromSnapshotRows(
+  rows: readonly MonthlyCloseSnapshotRow[],
+): MonthlyCloseValue[] {
+  const closeIds = new Set(
+    deriveMonthlyCloses(
+      rows.map((row) => ({
+        dateKey: row.dateKey,
+        id: row.snapshotId,
+        monthKey: row.dateKey.slice(0, 7),
+        scopeId: "returns",
+      })),
+    ).values(),
+  );
+
+  return rows
+    .filter((row) => closeIds.has(row.snapshotId))
+    .map((row) => ({ date: row.dateKey, valueMinor: row.valueMinor }))
+    .sort((left, right) => left.date.localeCompare(right.date));
+}
+
+export function timeWeightedReturn(input: TimeWeightedReturnInput): TwrResult {
+  const monthlyCloses = [...input.monthlyCloses].sort((left, right) =>
+    left.date.localeCompare(right.date),
+  );
+
+  if (monthlyCloses.length < 2) {
+    return {
+      annualized: false,
+      annualizedRate: null,
+      endDate: monthlyCloses[0]?.date ?? null,
+      rate: null,
+      reason: "insufficient_monthly_closes",
+      spanDays: 0,
+      startDate: monthlyCloses[0]?.date ?? null,
+    };
+  }
+
+  const startDate = monthlyCloses[0]!.date;
+  const endDate = monthlyCloses[monthlyCloses.length - 1]!.date;
+  const spanDays = daysBetween(startDate, endDate);
+
+  if (spanDays <= 0) {
+    return {
+      annualized: false,
+      annualizedRate: null,
+      endDate,
+      rate: null,
+      reason: "zero_time_span",
+      spanDays,
+      startDate,
+    };
+  }
+
+  let factor = 1;
+  for (let index = 1; index < monthlyCloses.length; index += 1) {
+    const start = monthlyCloses[index - 1]!;
+    const end = monthlyCloses[index]!;
+    const periodDays = daysBetween(start.date, end.date);
+
+    if (periodDays <= 0) {
+      return {
+        annualized: false,
+        annualizedRate: null,
+        endDate,
+        rate: null,
+        reason: "zero_time_span",
+        spanDays,
+        startDate,
+      };
+    }
+
+    const periodCashflows = input.cashflows.filter(
+      (cashflow) => cashflow.date > start.date && cashflow.date <= end.date,
+    );
+    const totalCashflowMinor = periodCashflows.reduce(
+      (sum, cashflow) => sum + cashflow.amountMinor,
+      0,
+    );
+    const weightedCashflowMinor = periodCashflows.reduce(
+      (sum, cashflow) =>
+        sum + cashflow.amountMinor * (daysBetween(cashflow.date, end.date) / periodDays),
+      0,
+    );
+    const denominator = start.valueMinor + weightedCashflowMinor;
+
+    if (denominator === 0) {
+      return {
+        annualized: false,
+        annualizedRate: null,
+        endDate,
+        rate: null,
+        reason: "zero_denominator",
+        spanDays,
+        startDate,
+      };
+    }
+
+    const periodRate =
+      (end.valueMinor - start.valueMinor - totalCashflowMinor) / denominator;
+    factor *= 1 + periodRate;
+  }
+
+  const rate = factor - 1;
+  const annualized = spanDays >= YEAR_DAYS;
+  const annualizedRate =
+    annualized && factor > 0 ? factor ** (YEAR_DAYS / spanDays) - 1 : null;
+
+  return {
+    annualized,
+    annualizedRate,
+    endDate,
+    rate,
+    reason: null,
+    spanDays,
+    startDate,
+  };
+}
+
+export function holdingTwr(input: HoldingTwrInput): TwrResult {
+  return timeWeightedReturn({
+    cashflows: operationTwrCashflows(input.operations),
+    monthlyCloses: input.monthlyCloses,
+  });
+}
+
+export function portfolioTwr(input: PortfolioTwrInput): TwrResult {
+  return timeWeightedReturn({
+    cashflows: input.holdings.flatMap((holding) =>
+      operationTwrCashflows(holding.operations),
+    ),
+    monthlyCloses: input.monthlyCloses,
   });
 }
 
