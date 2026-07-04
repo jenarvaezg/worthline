@@ -488,6 +488,30 @@ export function simpleGain(input: HoldingReturnsInput): SimpleGain {
   );
 }
 
+/**
+ * Simple total gain from an already-built (possibly merged) cashflow stream plus a
+ * terminal market value — the entry point used when the flows are pre-scaled (e.g.
+ * per-asset-class attribution, #552), where operations no longer map one-to-one to
+ * a single holding. The span runs from the earliest flow to the valuation date.
+ */
+export function simpleGainFromCashflows(input: {
+  cashflows: readonly DatedCashflow[];
+  marketValueMinor: number;
+  currency: CurrencyCode;
+  valuationDate: string;
+}): SimpleGain {
+  const sorted = [...input.cashflows].sort((left, right) =>
+    left.date.localeCompare(right.date),
+  );
+  return simpleGainFromFlows(
+    sorted,
+    input.marketValueMinor,
+    input.currency,
+    sorted[0]?.date ?? null,
+    input.valuationDate,
+  );
+}
+
 /** Build a holding's full cashflow stream: operations plus the terminal market value. */
 function holdingCashflows(
   input: HoldingReturnsInput | PortfolioHolding,

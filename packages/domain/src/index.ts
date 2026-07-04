@@ -158,10 +158,24 @@ export {
   portfolioSimpleGain,
   portfolioTwr,
   simpleGain,
+  simpleGainFromCashflows,
   timeWeightedReturn,
   xirr,
 } from "./returns";
 export type {
+  AssetClassReturns,
+  AssetClassReturnsHolding,
+  ReturnsByAssetClass,
+  ReturnsByAssetClassInput,
+} from "./returns-by-class";
+export {
+  OTHER_ASSET_CLASS_KEY,
+  returnsByAssetClass,
+  UNCLASSIFIED_ASSET_CLASS_KEY,
+} from "./returns-by-class";
+export type {
+  AssetClassReturnsView,
+  AssetClassReturnsViewResult,
   HoldingReturnsView,
   HoldingReturnsViewInput,
   InvestmentReturnsContext,
@@ -169,11 +183,13 @@ export type {
 } from "./returns-display";
 export {
   APPRECIATING_CAVEAT,
+  CLASS_ATTRIBUTION_CAVEAT,
   MARKET_CAVEAT,
   buildHoldingReturnsView,
   buildPortfolioReturnsView,
   investmentReturnsById,
   portfolioReturnsView,
+  returnsByAssetClassView,
   returnsKindForInstrument,
 } from "./returns-display";
 export type {
@@ -406,6 +422,7 @@ export type {
 export { projectPortfolio } from "./portfolio-projection";
 
 export type {
+  AssetClassResolution,
   CreateExposureProfileInput,
   ExposureAllocationSlice,
   ExposureBreakdowns,
@@ -421,6 +438,7 @@ export {
   canHandEnterExposureProfile,
   createExposureProfile,
   lookThroughExposure,
+  resolveAssetClassBreakdown,
 } from "./exposure-lookthrough";
 export type {
   ExposureAssetClassBucket,

@@ -8,8 +8,10 @@ import {
   MARKET_CAVEAT,
   buildHoldingReturnsView,
   buildPortfolioReturnsView,
+  CLASS_ATTRIBUTION_CAVEAT,
   investmentReturnsById,
   portfolioReturnsView,
+  returnsByAssetClassView,
   returnsKindForInstrument,
 } from "./returns-display";
 
@@ -251,6 +253,72 @@ describe("portfolioReturnsView", () => {
         cachedPriceByAsset: new Map(),
         manualPriceByAsset: new Map(),
         currency: "EUR",
+        valuationDate: "2026-07-04",
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("returnsByAssetClassView", () => {
+  test("frames each class as a market view carrying the class-attribution caveat", () => {
+    const result = returnsByAssetClassView({
+      assetClassByAsset: new Map([
+        ["a1", { breakdown: { equity: "1" }, kind: "classified" }],
+        ["a2", { breakdown: { bond: "1" }, kind: "classified" }],
+      ]),
+      cachedPriceByAsset: new Map([
+        ["a1", "150"],
+        ["a2", "200"],
+      ]),
+      currency: "EUR",
+      instrumentByAsset: new Map([
+        ["a1", "fund"],
+        ["a2", "fund"],
+      ]),
+      manualPriceByAsset: new Map(),
+      operationsByAsset: new Map([
+        ["a1", [op("buy", "10", "100", "2024-01-01", "a1")]],
+        ["a2", [op("buy", "5", "200", "2024-01-01", "a2")]],
+      ]),
+      valuationDate: "2026-07-04",
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.classes.map((c) => c.key).sort()).toEqual(["bond", "equity"]);
+    const equity = result!.classes.find((c) => c.key === "equity")!;
+    expect(equity.view.kind).toBe("market");
+    // a1: invested 1000, value 1500 → +50%.
+    expect(equity.view.totalReturnRatio).toBeCloseTo(0.5, 6);
+    expect(equity.view.caveats).toContain(CLASS_ATTRIBUTION_CAVEAT);
+    expect(equity.value.amountMinor).toBe(150_000);
+    expect(result!.coverage.unknown.amountMinor).toBe(0);
+  });
+
+  test("a holding whose class is unknown lands in the unclassified bucket", () => {
+    const result = returnsByAssetClassView({
+      assetClassByAsset: new Map([["a1", { kind: "unknown" }]]),
+      cachedPriceByAsset: new Map([["a1", "150"]]),
+      currency: "EUR",
+      instrumentByAsset: new Map([["a1", "fund"]]),
+      manualPriceByAsset: new Map(),
+      operationsByAsset: new Map([["a1", [op("buy", "10", "100", "2024-01-01", "a1")]]]),
+      valuationDate: "2026-07-04",
+    });
+
+    expect(result!.classes.map((c) => c.key)).toEqual(["unclassified"]);
+    expect(result!.coverage.unknown.amountMinor).toBe(150_000);
+    expect(result!.coverage.classified.amountMinor).toBe(0);
+  });
+
+  test("is null when no operation-bearing market holding resolves", () => {
+    expect(
+      returnsByAssetClassView({
+        assetClassByAsset: new Map(),
+        cachedPriceByAsset: new Map(),
+        currency: "EUR",
+        instrumentByAsset: new Map(),
+        manualPriceByAsset: new Map(),
+        operationsByAsset: new Map(),
         valuationDate: "2026-07-04",
       }),
     ).toBeNull();

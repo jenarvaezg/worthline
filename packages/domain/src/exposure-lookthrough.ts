@@ -124,6 +124,35 @@ export function canHandEnterExposureProfile(instrument: Instrument): boolean {
   return INVESTMENT_PROFILE_INSTRUMENTS.has(instrument);
 }
 
+/**
+ * A holding's resolved asset-class breakdown: the profile's stored vector when
+ * present, else the single auto-derived class for instruments without a hand-
+ * entered profile (cash/property/crypto/commodity), else `unknown`. Asset class
+ * has no `not-applicable` state — every holding either resolves to a class
+ * breakdown or is unknown. The single source of truth for the asset-class axis:
+ * both the look-through (`resolveDimension`) and per-asset-class returns (#552)
+ * read the class from here, so grouping stays consistent with the exposure
+ * surface (ADR 0039).
+ */
+export type AssetClassResolution =
+  | { kind: "classified"; breakdown: Breakdown }
+  | { kind: "unknown" };
+
+export function resolveAssetClassBreakdown(
+  instrument: Instrument,
+  profile: ExposureProfile | null,
+): AssetClassResolution {
+  const stored = profile?.breakdowns.assetClass as Breakdown | undefined;
+  if (stored && Object.keys(stored).length > 0) {
+    return { breakdown: stored, kind: "classified" };
+  }
+
+  const autoClass = AUTO_ASSET_CLASS_BY_INSTRUMENT[instrument];
+  return autoClass
+    ? { breakdown: { [autoClass]: "1" }, kind: "classified" }
+    : { kind: "unknown" };
+}
+
 export function createExposureProfile(
   input: CreateExposureProfileInput,
 ): ExposureProfile {
@@ -291,16 +320,13 @@ function resolveDimension(
   profile: ExposureProfile | null,
   dimension: ExposureDimension,
 ): DimensionResolution {
+  if (dimension === "assetClass") {
+    return resolveAssetClassBreakdown(holding.instrument, profile);
+  }
+
   const storedBreakdown = profile?.breakdowns[dimension] as Breakdown | undefined;
   if (storedBreakdown && Object.keys(storedBreakdown).length > 0) {
     return { breakdown: storedBreakdown, kind: "classified" };
-  }
-
-  if (dimension === "assetClass") {
-    const autoClass = AUTO_ASSET_CLASS_BY_INSTRUMENT[holding.instrument];
-    return autoClass
-      ? { breakdown: { [autoClass]: "1" }, kind: "classified" }
-      : { kind: "unknown" };
   }
 
   if (holding.instrument === "property") {
