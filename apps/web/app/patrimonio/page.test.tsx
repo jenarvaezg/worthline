@@ -22,6 +22,7 @@ const calls = vi.hoisted(() => ({
   readCurveValuedHoldingsAtDate: vi.fn(async () => ({ assets: [], liabilities: [] })),
   readExposureProfiles: vi.fn(async () => []),
   readInvestmentAssetsWithMeta: vi.fn(async () => []),
+  readSnapshotHoldings: vi.fn(async () => []),
   readTrash: vi.fn(async () => ({ assets: [], liabilities: [] })),
   readWarningOverrides: vi.fn(async () => []),
   readWorkspace: vi.fn(async () => ({
@@ -40,6 +41,7 @@ const calls = vi.hoisted(() => ({
       snapshots: {
         buildProjectionContext: calls.buildProjectionContext,
         readCurveValuedHoldingsAtDate: calls.readCurveValuedHoldingsAtDate,
+        readSnapshotHoldings: calls.readSnapshotHoldings,
       },
       readTrash: calls.readTrash,
       readWarningOverrides: calls.readWarningOverrides,

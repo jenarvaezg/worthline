@@ -14,7 +14,15 @@ function marketView(overrides: Partial<HoldingReturnsView> = {}): HoldingReturns
     realizedPnl: null,
     totalGain: money(5_039_00, "EUR"),
     totalReturnRatio: 0.299,
-    twr: { rate: 0.0738, provisional: true },
+    twr: {
+      annualized: false,
+      annualizedRate: null,
+      endDate: "2024-03-31",
+      rate: 0.0738,
+      reason: null,
+      spanDays: 60,
+      startDate: "2024-01-31",
+    },
     unrealizedPnl: null,
     ...overrides,
   };
@@ -36,13 +44,30 @@ describe("formatMeasurePct", () => {
 });
 
 describe("returnsTooltipLines", () => {
-  test("market: three measures, annualized label, provisional TWR and caveat", () => {
+  test("market: three measures, annualized label, real TWR start date and caveat", () => {
     const lines = returnsTooltipLines(marketView());
     expect(lines).toContain("Ganancia total: +29,9 %");
     expect(lines).toContain("Anualizada (CAGR): +10,0 %");
     expect(lines).toContain("IRR anual: +8,2 %");
-    expect(lines).toContain("TWR (provisional): +7,4 %");
+    expect(lines).toContain("TWR desde 31/01/2024: +7,4 %");
     expect(lines).toContain(MARKET_CAVEAT);
+  });
+
+  test("annualized TWR gets its own line once the snapshot span reaches a year", () => {
+    const lines = returnsTooltipLines(
+      marketView({
+        twr: {
+          annualized: true,
+          annualizedRate: 0.05,
+          endDate: "2025-01-31",
+          rate: 0.05,
+          reason: null,
+          spanDays: 366,
+          startDate: "2024-01-31",
+        },
+      }),
+    );
+    expect(lines).toContain("TWR anualizado: +5,0 %");
   });
 
   test("sub-year span omits the annualized line", () => {
@@ -54,11 +79,11 @@ describe("returnsTooltipLines", () => {
     const lines = returnsTooltipLines(
       marketView({
         irr: { rate: null, reason: "single_sign" },
-        twr: { rate: null, provisional: true },
+        twr: null,
       }),
     );
     expect(lines).toContain("IRR anual: —");
-    expect(lines).toContain("TWR (provisional): —");
+    expect(lines).toContain("TWR: —");
   });
 
   test("appreciating: only revalorización, no IRR/TWR, with its caveat", () => {

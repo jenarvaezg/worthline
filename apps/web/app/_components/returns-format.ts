@@ -20,6 +20,11 @@ export function formatMeasurePct(rate: number | null): string {
   return rate === null ? "—" : formatRatioPct(rate);
 }
 
+function formatIsoDate(date: string): string {
+  const [year, month, day] = date.split("-");
+  return `${day}/${month}/${year}`;
+}
+
 /**
  * The hover lines explaining a holding's (or the portfolio's) returns. Market
  * instruments list the three measures with the total-vs-annualized distinction
@@ -39,11 +44,13 @@ export function returnsTooltipLines(view: HoldingReturnsView): string[] {
       lines.push(`Anualizada (CAGR): ${formatRatioPct(view.cagr)}`);
     }
     lines.push(`IRR anual: ${formatMeasurePct(view.irr?.rate ?? null)}`);
-    lines.push(
-      `TWR${view.twr?.provisional ? " (provisional)" : ""}: ${formatMeasurePct(
-        view.twr?.rate ?? null,
-      )}`,
-    );
+    const twrStart = view.twr?.startDate
+      ? ` desde ${formatIsoDate(view.twr.startDate)}`
+      : "";
+    lines.push(`TWR${twrStart}: ${formatMeasurePct(view.twr?.rate ?? null)}`);
+    if (view.twr?.annualized && view.twr.annualizedRate !== null) {
+      lines.push(`TWR anualizado: ${formatRatioPct(view.twr.annualizedRate)}`);
+    }
   }
 
   lines.push(...view.caveats);

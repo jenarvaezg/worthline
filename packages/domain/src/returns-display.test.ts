@@ -2,16 +2,14 @@ import { describe, expect, test } from "vitest";
 
 import type { InvestmentOperation, OperationKind } from "./index";
 import { money } from "./money";
-import type { IrrResult, SimpleGain } from "./returns";
+import type { IrrResult, SimpleGain, TwrResult } from "./returns";
 import {
   APPRECIATING_CAVEAT,
   MARKET_CAVEAT,
-  TWR_PROVISIONAL_CAVEAT,
   buildHoldingReturnsView,
   buildPortfolioReturnsView,
   investmentReturnsById,
   portfolioReturnsView,
-  provisionalTwr,
   returnsKindForInstrument,
 } from "./returns-display";
 
@@ -29,6 +27,15 @@ function gain(overrides: Partial<SimpleGain> = {}): SimpleGain {
 
 const okIrr: IrrResult = { rate: 0.082, reason: null };
 const failedIrr: IrrResult = { rate: null, reason: "single_sign" };
+const okTwr: TwrResult = {
+  annualized: false,
+  annualizedRate: null,
+  endDate: "2024-03-31",
+  rate: 0.071,
+  reason: null,
+  spanDays: 60,
+  startDate: "2024-01-31",
+};
 
 function op(
   kind: OperationKind,
@@ -84,22 +91,13 @@ describe("returnsKindForInstrument", () => {
   });
 });
 
-describe("provisionalTwr", () => {
-  test("derives a documented fraction of the IRR (stub pending #549)", () => {
-    expect(provisionalTwr(okIrr)).toEqual({ rate: 0.082 * 0.9, provisional: true });
-  });
-
-  test("a null IRR yields a null TWR — never a fabricated rate", () => {
-    expect(provisionalTwr(failedIrr)).toEqual({ rate: null, provisional: true });
-  });
-});
-
 describe("buildHoldingReturnsView", () => {
-  test("market: simple gain + IRR + provisional TWR + realized/unrealized split", () => {
+  test("market: simple gain + IRR + TWR + realized/unrealized split", () => {
     const view = buildHoldingReturnsView({
       instrument: "fund",
       simpleGain: gain(),
       irr: okIrr,
+      twr: okTwr,
       realizedPnl: money(200_00, "EUR"),
       unrealizedPnl: money(4_839_00, "EUR"),
     });
@@ -108,11 +106,10 @@ describe("buildHoldingReturnsView", () => {
     expect(view!.kind).toBe("market");
     expect(view!.totalReturnRatio).toBe(0.299);
     expect(view!.irr).toEqual(okIrr);
-    expect(view!.twr).toEqual({ rate: 0.082 * 0.9, provisional: true });
+    expect(view!.twr).toEqual(okTwr);
     expect(view!.realizedPnl).toEqual(money(200_00, "EUR"));
     expect(view!.unrealizedPnl).toEqual(money(4_839_00, "EUR"));
     expect(view!.caveats).toContain(MARKET_CAVEAT);
-    expect(view!.caveats).toContain(TWR_PROVISIONAL_CAVEAT);
   });
 
   test("appreciating: simple gain only — IRR/TWR forced there are null, not bogus", () => {
@@ -159,16 +156,16 @@ describe("buildHoldingReturnsView", () => {
     });
 
     expect(view!.irr).toEqual(failedIrr);
-    expect(view!.twr).toEqual({ rate: null, provisional: true });
+    expect(view!.twr).toBeNull();
   });
 });
 
 describe("buildPortfolioReturnsView", () => {
   test("is a market view (three measures) regardless of instrument mix", () => {
-    const view = buildPortfolioReturnsView(gain(), okIrr);
+    const view = buildPortfolioReturnsView(gain(), okIrr, okTwr);
     expect(view.kind).toBe("market");
     expect(view.irr).toEqual(okIrr);
-    expect(view.twr).toEqual({ rate: 0.082 * 0.9, provisional: true });
+    expect(view.twr).toEqual(okTwr);
     expect(view.caveats).toContain(MARKET_CAVEAT);
   });
 });
@@ -183,6 +180,15 @@ describe("investmentReturnsById", () => {
       instrumentByAsset: new Map([["a1", "fund"]]),
       cachedPriceByAsset: new Map([["a1", "150"]]),
       manualPriceByAsset: new Map(),
+      monthlyClosesByAsset: new Map([
+        [
+          "a1",
+          [
+            { date: "2024-01-31", valueMinor: 100_000 },
+            { date: "2026-07-04", valueMinor: 150_000 },
+          ],
+        ],
+      ]),
       currency,
       valuationDate,
     });
@@ -194,6 +200,8 @@ describe("investmentReturnsById", () => {
     expect(view!.totalReturnRatio).toBeCloseTo(0.5, 6);
     expect(view!.totalGain).toEqual(money(500_00, "EUR"));
     expect(view!.irr!.rate).not.toBeNull();
+    expect(view!.twr!.rate).toBeCloseTo(0.5, 6);
+    expect(view!.twr!.startDate).toBe("2024-01-31");
   });
 
   test("skips holdings without operations", () => {
@@ -221,6 +229,10 @@ describe("portfolioReturnsView", () => {
         ["a2", "200"],
       ]),
       manualPriceByAsset: new Map(),
+      portfolioMonthlyCloses: [
+        { date: "2024-01-31", valueMinor: 200_000 },
+        { date: "2026-07-04", valueMinor: 250_000 },
+      ],
       currency: "EUR",
       valuationDate: "2026-07-04",
     });
@@ -229,6 +241,7 @@ describe("portfolioReturnsView", () => {
     expect(view!.kind).toBe("market");
     // invested 1000 + 1000 = 2000; value 1500 + 1000 = 2500 → +25%.
     expect(view!.totalReturnRatio).toBeCloseTo(0.25, 6);
+    expect(view!.twr!.rate).toBeCloseTo(0.25, 6);
   });
 
   test("is null when there are no operation-bearing holdings", () => {
