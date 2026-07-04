@@ -33,6 +33,13 @@ const DEFAULT_PROMPTS: readonly SuggestedPrompt[] = [
   },
 ];
 
+const EXPOSURE_FILL_PROMPT: SuggestedPrompt = {
+  id: "patrimonio-fill-exposure",
+  label: "Rellenar exposición",
+  prompt:
+    "Lista primero los perfiles de exposición elegibles con gaps y prepara una propuesta solo para los que puedas declarar con seguridad. No busques en web; si dudas, declara menos y deja el resto como Otros implícito.",
+};
+
 /** Per-section catalogs. Sections not listed here use DEFAULT_PROMPTS. */
 const BY_SECTION: Partial<Record<ScreenSection, readonly SuggestedPrompt[]>> = {
   patrimonio: [
@@ -92,5 +99,8 @@ const BY_SECTION: Partial<Record<ScreenSection, readonly SuggestedPrompt[]>> = {
  */
 export function suggestedPrompts(context: ScreenContext | null): SuggestedPrompt[] {
   const catalog = context ? BY_SECTION[context.section] : undefined;
+  if (context?.section === "patrimonio" && context.view.exp !== undefined && catalog) {
+    return [EXPOSURE_FILL_PROMPT, ...catalog];
+  }
   return [...(catalog ?? DEFAULT_PROMPTS)];
 }

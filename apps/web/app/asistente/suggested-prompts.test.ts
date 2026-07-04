@@ -7,6 +7,13 @@ function ctx(section: ScreenContext["section"]): ScreenContext {
   return { route: `/${section}`, section, holdingId: null, view: {} };
 }
 
+function ctxWithView(
+  section: ScreenContext["section"],
+  view: ScreenContext["view"],
+): ScreenContext {
+  return { route: `/${section}`, section, holdingId: null, view };
+}
+
 /**
  * Assert by stable prompt id, never by the user-facing string (#632): the
  * copy is free to change, the screen→prompt mapping is the contract.
@@ -18,6 +25,15 @@ function ids(context: ScreenContext | null): string[] {
 describe("suggestedPrompts", () => {
   it("surfaces patrimonio prompts on patrimonio: imbalance, stale, concentration", () => {
     expect(ids(ctx("patrimonio"))).toEqual([
+      "patrimonio-imbalance",
+      "patrimonio-stale",
+      "patrimonio-concentration",
+    ]);
+  });
+
+  it("offers agent-fill first on the patrimonio exposure surface (#707)", () => {
+    expect(ids(ctxWithView("patrimonio", { exp: "geography" }))).toEqual([
+      "patrimonio-fill-exposure",
       "patrimonio-imbalance",
       "patrimonio-stale",
       "patrimonio-concentration",

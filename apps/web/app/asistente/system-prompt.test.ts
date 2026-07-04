@@ -31,4 +31,14 @@ describe("buildChatSystemPrompt", () => {
     // #631: it must offer typed read-only follow-ups via the action tool.
     expect(prompt).toMatch(/suggest_actions/);
   });
+
+  it("pins the agent-fill exposure guardrails (#707)", () => {
+    const prompt = buildChatSystemPrompt(null);
+
+    expect(prompt).toMatch(/list_exposure_profile_fill_targets/);
+    expect(prompt).toMatch(/propose_exposure_profiles/);
+    expect(prompt).toMatch(/web/i);
+    expect(prompt).toMatch(/dudas/i);
+    expect(prompt).toMatch(/100%/);
+  });
 });

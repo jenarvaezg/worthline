@@ -68,6 +68,13 @@ describe("createChatTools · get_financial_context", () => {
 
       expect(result.scope.id).toBe(defaultScope?.id);
       expect(result.liquidity.length).toBeGreaterThan(0);
+      expect(result.exposure.byGeography.coverage).toEqual({
+        classified: formatMoneyMinor(expected.exposure.byGeography.coverage.classified),
+        notApplicable: formatMoneyMinor(
+          expected.exposure.byGeography.coverage.notApplicable,
+        ),
+        unknown: formatMoneyMinor(expected.exposure.byGeography.coverage.unknown),
+      });
       expect(result.holdings.length).toBeGreaterThan(0);
       expect(Object.keys(result.links).length).toBeGreaterThan(0);
     },
@@ -324,6 +331,79 @@ describe("createChatTools · propose_exposure_profiles (#706)", () => {
       },
     ]);
     expect(await store.exposureProfiles.readExposureProfiles()).toEqual(before);
+  });
+});
+
+describe("createChatTools · list_exposure_profile_fill_targets (#707)", () => {
+  it("lists only hand-enterable exposure targets, gap-first", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "world",
+      instrument: "etf",
+      isin: "IE00B4L5Y983",
+      liquidityTier: "market",
+      name: "MSCI World",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      providerSymbol: "SWDA",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "sp500",
+      instrument: "etf",
+      isin: "IE00B5BMR087",
+      liquidityTier: "market",
+      name: "S&P 500",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      providerSymbol: "CSPX",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "btc",
+      instrument: "crypto",
+      liquidityTier: "market",
+      name: "Bitcoin",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      providerSymbol: "bitcoin",
+    });
+    await store.exposureProfiles.saveExposureProfile({
+      key: "IE00B5BMR087",
+      breakdowns: {
+        assetClass: { equity: "1" },
+        currency: { USD: "1" },
+        geography: { us: "1" },
+      },
+    });
+    const tools = toolsOver(store.agentView);
+
+    const result = await tools["list_exposure_profile_fill_targets"]?.execute?.(
+      {},
+      toolCallContext(),
+    );
+
+    expect(result.policy).toEqual({
+      neverNormalizePartialBreakdowns: true,
+      noWebLookup: true,
+      underDeclareWhenUnsure: true,
+    });
+    expect(result.targets).toEqual([
+      {
+        gapDimensions: ["geography", "currency", "assetClass"],
+        key: "IE00B4L5Y983",
+        labels: ["MSCI World"],
+        status: "missing_profile",
+      },
+      {
+        gapDimensions: [],
+        key: "IE00B5BMR087",
+        labels: ["S&P 500"],
+        status: "classified",
+      },
+    ]);
   });
 });
 
