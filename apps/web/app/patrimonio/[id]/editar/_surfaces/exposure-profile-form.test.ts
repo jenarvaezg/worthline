@@ -95,10 +95,13 @@ describe("parseExposureProfileFields", () => {
     expect(profile.hedged).toBe(true);
   });
 
-  test("no asset class selected leaves the assetClass breakdown out", () => {
+  test("blank optional fields assert explicit clears", () => {
     const profile = parseExposureProfileFields("K", { ...emptyFields(), assetClass: "" });
 
-    expect(profile.breakdowns.assetClass).toBeUndefined();
+    expect(profile.breakdowns.geography).toEqual({});
+    expect(profile.breakdowns.assetClass).toEqual({});
+    expect(profile.ter).toBeNull();
+    expect(profile.trackedIndex).toBeNull();
   });
 });
 

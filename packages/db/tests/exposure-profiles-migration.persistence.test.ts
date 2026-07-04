@@ -19,7 +19,24 @@ async function seedV38(): Promise<Client> {
   return client;
 }
 
-describe("schema migrations v38/v39", () => {
+async function seedV40WithExposureProfile(): Promise<Client> {
+  const client = openLibsqlClient(":memory:");
+  await client.execute("CREATE TABLE schema_meta (version INTEGER NOT NULL)");
+  await client.execute("INSERT INTO schema_meta (version) VALUES (40)");
+  await client.executeMultiple(`CREATE TABLE exposure_profiles (
+    key TEXT PRIMARY KEY NOT NULL,
+    tracked_index TEXT,
+    ter TEXT,
+    hedged INTEGER DEFAULT 0 NOT NULL,
+    breakdowns_json TEXT DEFAULT '{}' NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+  );`);
+  await client.execute("INSERT INTO exposure_profiles (key) VALUES ('IE00SP500')");
+  return client;
+}
+
+describe("schema migrations v38/v41", () => {
   test("creates the exposure_profiles table with JSON breakdown defaults", async () => {
     const client = await seedV37();
 
@@ -39,9 +56,15 @@ describe("schema migrations v38/v39", () => {
       "breakdowns_json",
       "created_at",
       "updated_at",
+      "source",
+      "declared_at",
     ]);
     expect(columns.find((column) => column.name === "hedged")).toMatchObject({
       dflt_value: "0",
+      notnull: 1,
+    });
+    expect(columns.find((column) => column.name === "source")).toMatchObject({
+      dflt_value: "'user'",
       notnull: 1,
     });
     expect(columns.find((column) => column.name === "breakdowns_json")).toMatchObject({
@@ -53,10 +76,15 @@ describe("schema migrations v38/v39", () => {
     expect(
       (
         await client.execute(
-          "SELECT hedged, breakdowns_json FROM exposure_profiles WHERE key = 'IE00SP500'",
+          "SELECT source, declared_at, hedged, breakdowns_json FROM exposure_profiles WHERE key = 'IE00SP500'",
         )
       ).rows[0],
-    ).toMatchObject({ breakdowns_json: "{}", hedged: 0 });
+    ).toMatchObject({
+      breakdowns_json: "{}",
+      declared_at: null,
+      hedged: 0,
+      source: "user",
+    });
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
@@ -65,7 +93,7 @@ describe("schema migrations v38/v39", () => {
     ).toBe(SCHEMA_VERSION);
 
     await migrate(client);
-    expect(SCHEMA_VERSION).toBe(40);
+    expect(SCHEMA_VERSION).toBe(41);
   });
 
   test("fresh schemaSql includes the exposure_profiles table", async () => {
@@ -77,10 +105,32 @@ describe("schema migrations v38/v39", () => {
     expect(
       (
         await client.execute(
-          "SELECT hedged, breakdowns_json FROM exposure_profiles WHERE key = 'N5394'",
+          "SELECT source, declared_at, hedged, breakdowns_json FROM exposure_profiles WHERE key = 'N5394'",
         )
       ).rows[0],
-    ).toMatchObject({ breakdowns_json: "{}", hedged: 0 });
+    ).toMatchObject({
+      breakdowns_json: "{}",
+      declared_at: null,
+      hedged: 0,
+      source: "user",
+    });
+  });
+
+  test("adds provenance columns to existing exposure profile rows", async () => {
+    const client = await seedV40WithExposureProfile();
+
+    await migrate(client);
+
+    expect(
+      (
+        await client.execute(
+          "SELECT source, declared_at FROM exposure_profiles WHERE key = 'IE00SP500'",
+        )
+      ).rows[0],
+    ).toMatchObject({ declared_at: null, source: "user" });
+    expect(
+      Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
+    ).toBe(SCHEMA_VERSION);
   });
 
   test("creates the liability balance re-baselines table", async () => {

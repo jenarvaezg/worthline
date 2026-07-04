@@ -916,6 +916,8 @@ async function importWorkspace(
         .values(
           doc.exposureProfiles.map((profile) => ({
             key: profile.key,
+            source: profile.source,
+            declaredAt: profile.declaredAt,
             trackedIndex: profile.trackedIndex ?? null,
             ter: profile.ter ?? null,
             hedged: profile.hedged ? 1 : 0,
@@ -1343,6 +1345,8 @@ async function buildWorkspaceExport(
     groups: workspace.groups,
     exposureProfiles: exposureProfileRows.map((row) => ({
       key: row.key,
+      source: row.source,
+      declaredAt: row.declaredAt,
       trackedIndex: row.trackedIndex,
       ter: row.ter,
       hedged: row.hedged === 1,

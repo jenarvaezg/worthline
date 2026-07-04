@@ -140,6 +140,34 @@ describe("saveExposureProfileAction", () => {
     });
   });
 
+  test("blank form fields clear previously saved optional profile fields", async () => {
+    const store = await createInMemoryStore();
+    await seedFund(store);
+    await run(exposureForm(), store);
+
+    const digest = await run(
+      exposureForm({
+        assetClass: "",
+        geo_europe_developed: "",
+        geo_us: "",
+        hedged: "on",
+        ter: "",
+        trackedIndex: "",
+      }),
+      store,
+    );
+
+    expect(digest).toContain("ok=exposure_profile_saved");
+    const saved = await store.exposureProfiles.readExposureProfile("IE00B4L5Y983");
+    expect(saved).toMatchObject({
+      hedged: true,
+      ter: null,
+      trackedIndex: null,
+    });
+    expect(saved!.breakdowns.geography).toEqual({});
+    expect(saved!.breakdowns.assetClass).toEqual({});
+  });
+
   test("an over-100% geography vector is rejected with the Spanish error, nothing saved", async () => {
     const store = await createInMemoryStore();
     await seedFund(store);
