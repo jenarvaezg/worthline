@@ -6094,10 +6094,16 @@ td.rowActions > * {
   overflow-y: auto;
   padding: 16px;
 }
-.assistantHint {
-  margin: 0;
+.assistantHint p {
+  margin: 0 0 14px;
   color: var(--muted);
   font-size: 0.9rem;
+}
+.assistantPrompts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
 }
 .assistantMsg {
   margin-bottom: 14px;
