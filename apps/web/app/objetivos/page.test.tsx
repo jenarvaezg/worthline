@@ -50,6 +50,15 @@ const calls = vi.hoisted(() => {
       },
     })),
     readGoals: vi.fn(async () => []),
+    readPayouts: vi.fn(async () => [
+      {
+        id: "p_rent",
+        holdingId: "asset_cash",
+        dateISO: "2026-03-01",
+        amountMinor: 1_200_000,
+      },
+    ]),
+    readPayoutSchedules: vi.fn(async () => []),
     readWarningOverrides: vi.fn(async () => []),
     readWorkspace: vi.fn(async () => ({
       baseCurrency: "EUR",
@@ -61,6 +70,10 @@ const calls = vi.hoisted(() => {
       run({
         assets: { readAssets: calls.readAssets },
         goals: { readGoals: calls.readGoals },
+        payouts: {
+          readPayouts: calls.readPayouts,
+          readPayoutSchedules: calls.readPayoutSchedules,
+        },
         readFireConfig: calls.readFireConfig,
         readWarningOverrides: calls.readWarningOverrides,
         snapshots: {
@@ -132,5 +145,65 @@ describe("ObjetivosPage FIRE wiring", () => {
     expect(html).toContain("50.000");
     expect(html).toContain("Casa");
     expect(html).toContain("vivienda habitual");
+  });
+});
+
+describe("ObjetivosPage passive-income lens (#658)", () => {
+  test("renders the scope's trailing payouts and coverage vs declared spending", async () => {
+    const html = await renderedHtml();
+
+    // asset_cash is fully owned by the scope → its 12.000,00 € payout attributes whole.
+    expect(html).toContain("Renta pasiva");
+    expect(html).toContain("12.000");
+    // coverage = 1.200.000 / (200.000 · 12 = 2.400.000) = 50 %
+    expect(html).toContain("50,0 %");
+    // window/coverage honesty: the annualization caveat is visible on the surface.
+    expect(html.toLowerCase()).toContain("anualizar");
+  });
+
+  test("weights the payout by the scope's ownership share of the holding", async () => {
+    // asset_cash owned 50% by the scope member → half the payout attributes.
+    calls.readCurveValuedHoldingsAtDate.mockResolvedValueOnce({
+      assets: [
+        {
+          id: "asset_cash",
+          name: "Caja",
+          type: "cash",
+          currency: "EUR",
+          currentValue: { amountMinor: 100_000_00, currency: "EUR" },
+          liquidityTier: "cash",
+          ownership: [
+            { memberId: "member_jose", shareBps: 5_000 },
+            { memberId: "member_ext", shareBps: 5_000 },
+          ],
+          isPrimaryResidence: false,
+        },
+      ],
+      liabilities: [],
+    });
+    calls.readPayouts.mockResolvedValueOnce([
+      {
+        id: "p_rent",
+        holdingId: "asset_cash",
+        dateISO: "2026-03-01",
+        amountMinor: 3_000_000,
+      },
+    ]);
+
+    const html = await renderedHtml();
+
+    // 30.000 € payout × 50% scope ownership = 15.000 €
+    expect(html).toContain("15.000");
+    expect(html).not.toContain("30.000");
+  });
+
+  test("shows an empty state when the scope has recorded no payouts", async () => {
+    calls.readPayouts.mockResolvedValueOnce([]);
+    calls.readPayoutSchedules.mockResolvedValueOnce([]);
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("Renta pasiva");
+    expect(html.toLowerCase()).toContain("aún no");
   });
 });
