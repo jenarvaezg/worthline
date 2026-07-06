@@ -229,6 +229,33 @@ describe("POST /api/mcp (non-demo mode)", () => {
     });
   });
 
+  test("a malformed call still returns the stub payload (validation runs on real data)", async () => {
+    // #576: input validation (the connected-source-positions XOR selector,
+    // figure-name checks) lives inside the catalog's `run`, which executes only
+    // once a workspace is bound. In local no-auth stub mode there is no
+    // workspace, so a malformed call returns the deterministic stub rather than
+    // the 400/422 envelope — the deployed endpoint is always authenticated, so
+    // real callers still get the proper error (see catalog.test.ts + demo mode).
+    const response = await mcpRequest({
+      jsonrpc: "2.0",
+      id: 7,
+      method: "tools/call",
+      params: {
+        name: "get_connected_source_positions",
+        arguments: {},
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await parseSingleMcpMessage(response)) as {
+      result: { content: Array<{ text: string }> };
+    };
+    const payload = JSON.parse(body.result.content[0]?.text ?? "");
+    expect(payload).toEqual({
+      data: { notice: "This tool is not yet wired to real data." },
+    });
+  });
+
   test("calling an unknown tool returns an error result", async () => {
     const response = await mcpRequest({
       jsonrpc: "2.0",

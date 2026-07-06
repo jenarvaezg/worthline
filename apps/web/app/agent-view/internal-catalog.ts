@@ -5,9 +5,15 @@ import { readDemoContext } from "@web/demo/read-demo-context";
 import { withStore } from "@web/store";
 
 import {
+  createAgentViewCatalog,
+  type AgentViewBackend,
+  type AgentViewCatalogTool,
+} from "./catalog";
+import {
   successEnvelope,
   type AgentViewDataQualityCategory,
   type AgentViewDataQualitySeverity,
+  type AgentViewEnvelope,
 } from "./contract";
 import {
   buildHoldingConnectedSourcePositions,
@@ -25,7 +31,7 @@ import { buildHoldingOperations } from "./holding-operations";
 import { storeTargetFromMcpAuth } from "./mcp-store-target";
 import { buildPriceFreshness } from "./price-freshness";
 import type { AgentViewMcpServerTool, AgentViewToolContext } from "./mcp-server";
-import { createStubAgentViewMcpToolCatalog, STUB_NOTICE } from "./stub-catalog";
+import { STUB_NOTICE } from "./stub-catalog";
 import { listAgentViewScopes } from "./scopes";
 import { buildSnapshotHistory } from "./snapshot-history";
 import { buildTrashSummary } from "./trash-summary";
@@ -37,27 +43,154 @@ import {
 
 const STUB_RESPONSE = { data: { notice: STUB_NOTICE } };
 
-async function defaultScopeId(agentView: AgentViewReadStore): Promise<string> {
-  const scopes = await listAgentViewScopes(agentView);
-  const household = scopes.find((scope) => scope.isDefault) ?? scopes[0];
-  if (!household) {
-    throw new Error("No agent-view scopes are available.");
-  }
-  return household.id;
+/** Clamp a model-supplied page size to the service's `[1, max]` contract. */
+function clampLimit(limit: number | undefined, max: number): number {
+  if (limit === undefined) return 100;
+  if (!Number.isFinite(limit) || limit < 1) return 100;
+  return Math.min(limit, max);
 }
 
 /**
- * Run an agent-view read against the store the request is bound to. An
- * OAuth-authenticated MCP request (ADR 0034) carries a token whose AuthInfo
- * resolves to exactly one workspace — every read runs against *that* workspace's
- * database. With no token the catalog keeps its prior behavior: the logged-out
- * demo (persona cookie) returns real demo data, and any other context (local
- * no-auth dev) returns the not-yet-wired stub.
+ * Wrap a paginated builder result as an envelope. The builder metas are typed
+ * interfaces; the envelope's `meta` is the intentionally-loose `Record` the API
+ * serializes, so the pagination meta is widened at this one seam.
  */
-async function runAgentView(
+function pageEnvelope<T>(data: T, meta: unknown): AgentViewEnvelope<T> {
+  return { data, meta: meta as Record<string, unknown> };
+}
+
+/**
+ * The read-store backend: resolves every agent-view read directly against the
+ * bound {@link AgentViewReadStore} (the same builders the HTTP routes call). It
+ * clamps page sizes and validates the figure name in-process — the concerns the
+ * HTTP routes enforce for the API adapter.
+ */
+function createReadStoreBackend(agentView: AgentViewReadStore): AgentViewBackend {
+  return {
+    listScopes: async () => successEnvelope(await listAgentViewScopes(agentView)),
+    financialContext: async (scopeId, params) =>
+      successEnvelope(
+        await buildFinancialContext(agentView, {
+          asOf: systemClock().today(),
+          holdingLimit: params.holdingLimit,
+          scopeId,
+        }),
+      ),
+    fireContext: async (scopeId) =>
+      successEnvelope(await buildFireContext(agentView, { scopeId })),
+    explainFigure: async (scopeId, params) => {
+      if (!isFigureName(params.figure)) {
+        // A documented 400 the read store surfaces as an error envelope, the
+        // same body the HTTP route returns (chat/MCP show it as uncertainty).
+        return {
+          error: { code: "bad_request", message: `Unknown figure: ${params.figure}` },
+        } as never;
+      }
+      const explanation = await buildFigureExplanation(agentView, {
+        asOf: systemClock().today(),
+        figure: params.figure,
+        holdingId: params.holdingId,
+        scopeId,
+        ...(params.date === undefined ? {} : { date: params.date }),
+      });
+      return successEnvelope(explanation);
+    },
+    snapshotHistory: async (scopeId, params) => {
+      const history = await buildSnapshotHistory(agentView, {
+        scopeId,
+        cursor: params.cursor,
+        from: params.from,
+        granularity: params.granularity ?? "monthly-close",
+        includeHoldingRows: params.includeHoldingRows ?? "none",
+        limit: clampLimit(params.limit, 500),
+        sort: params.sort ?? "date",
+        to: params.to,
+      });
+      return pageEnvelope(history.entries, history.meta);
+    },
+    dataQuality: async (scopeId, params) => {
+      const page = await buildDataQuality(agentView, {
+        scopeId,
+        cursor: params.cursor,
+        limit: clampLimit(params.limit, 500),
+        ...(params.category === undefined
+          ? {}
+          : { category: params.category as AgentViewDataQualityCategory }),
+        ...(params.severity === undefined
+          ? {}
+          : { severity: params.severity as AgentViewDataQualitySeverity }),
+      });
+      return pageEnvelope(page.signals, page.meta);
+    },
+    trashSummary: async (scopeId, params) => {
+      const summary = await buildTrashSummary(agentView, {
+        scopeId,
+        cursor: params.cursor,
+        limit: clampLimit(params.limit, 500),
+      });
+      return pageEnvelope(summary.holdings, summary.meta);
+    },
+    holdingDetail: async (holdingId) =>
+      successEnvelope(await buildHoldingDetail(agentView, holdingId)),
+    priceFreshness: async (holdingId) =>
+      successEnvelope(await buildPriceFreshness(agentView, holdingId)),
+    operations: async (params) => {
+      const page = await buildHoldingOperations(agentView, {
+        holdingId: params.holdingId,
+        cursor: params.cursor,
+        from: params.from,
+        limit: clampLimit(params.limit, 500),
+        sort: params.sort ?? "-date",
+        to: params.to,
+      });
+      return pageEnvelope(page.operations, page.meta);
+    },
+    holdingConnectedSourcePositions: async (params) => {
+      const page = await buildHoldingConnectedSourcePositions(agentView, {
+        holdingId: params.holdingId,
+        cursor: params.cursor,
+        limit: clampLimit(params.limit, 500),
+      });
+      return pageEnvelope(page.positions, page.meta);
+    },
+    sourceConnectedSourcePositions: async (params) => {
+      const page = await buildSourceConnectedSourcePositions(agentView, {
+        sourceId: params.sourceId,
+        cursor: params.cursor,
+        limit: clampLimit(params.limit, 500),
+      });
+      return pageEnvelope(page.groups, page.meta);
+    },
+    connectedSources: async () =>
+      successEnvelope(await buildConnectedSourcesList(agentView)),
+    sourceFreshness: async (sourceId) =>
+      successEnvelope(await buildSourceFreshness(agentView, sourceId)),
+    workspace: async () => successEnvelope(await buildWorkspaceInfo(agentView)),
+    warningOverrides: async () => successEnvelope(await buildWarningOverrides(agentView)),
+    memberProfiles: async () => successEnvelope(await buildMemberProfiles(agentView)),
+    goals: async (scopeId) => successEnvelope(await buildGoals(agentView, scopeId)),
+    fireProjection: async (scopeId) =>
+      successEnvelope(await buildFireProjection(agentView, scopeId)),
+  };
+}
+
+/**
+ * Run one catalog tool against the store the request is bound to. An
+ * OAuth-authenticated MCP request (ADR 0034) carries a token whose AuthInfo
+ * resolves to exactly one workspace — the read (and its default-scope
+ * resolution) runs against *that* workspace's database in a single binding. With
+ * no token the catalog keeps its prior behavior: the logged-out demo (persona
+ * cookie) returns real demo data, and any other context (local no-auth dev)
+ * returns the not-yet-wired stub.
+ */
+async function runCatalogTool(
+  tool: AgentViewCatalogTool<unknown, unknown>,
+  input: unknown,
   context: AgentViewToolContext,
-  run: (agentView: AgentViewReadStore) => Promise<unknown>,
 ): Promise<unknown> {
+  const run = (agentView: AgentViewReadStore) =>
+    tool.run(input, createReadStoreBackend(agentView));
+
   const target = storeTargetFromMcpAuth(context.authInfo);
   if (target) {
     return withStore((store) => run(store.agentView), target);
@@ -68,255 +201,21 @@ async function runAgentView(
   return withStore((store) => run(store.agentView));
 }
 
+/**
+ * Build the agent-view tool catalog for the public MCP endpoint (#576) bound to
+ * the internal read store. Tool names, descriptions, and input schemas come from
+ * the single catalog definition in `catalog.ts`; each tool's read runs in-process
+ * against the token-bound (or demo) read store.
+ */
 export function createAgentViewInternalMcpToolCatalog(): AgentViewMcpServerTool[] {
-  const stubs = createStubAgentViewMcpToolCatalog();
-  const stubsByName = Object.fromEntries(
-    stubs.map((tool) => [tool.name, tool]),
-  ) as Record<string, AgentViewMcpServerTool>;
-
-  function tool(
-    name: string,
-    invoke: (input: unknown, context: AgentViewToolContext) => Promise<unknown>,
-  ): AgentViewMcpServerTool {
-    const stub = stubsByName[name];
-    if (!stub) {
-      throw new Error(`Unknown agent-view tool: ${name}`);
-    }
+  const catalog = createAgentViewCatalog();
+  return Object.values(catalog).map((entry) => {
+    const tool = entry as AgentViewCatalogTool<unknown, unknown>;
     return {
-      description: stub.description,
-      inputSchema: stub.inputSchema,
-      name: stub.name,
-      invoke,
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+      invoke: (input, context) => runCatalogTool(tool, input, context),
     };
-  }
-
-  return [
-    tool("list_scopes", (_input, context) =>
-      runAgentView(context, async (agentView) =>
-        successEnvelope(await listAgentViewScopes(agentView)),
-      ),
-    ),
-    tool("get_financial_context", (raw, context) => {
-      const input = raw as { scopeId?: string; holdingLimit?: number };
-      return runAgentView(context, async (agentView) => {
-        const scopeId = input.scopeId ?? (await defaultScopeId(agentView));
-        const result = await buildFinancialContext(agentView, {
-          asOf: systemClock().today(),
-          holdingLimit: input.holdingLimit,
-          scopeId,
-        });
-        return successEnvelope(result);
-      });
-    }),
-    tool("get_fire_context", (raw, context) => {
-      const input = raw as { scopeId?: string };
-      return runAgentView(context, async (agentView) => {
-        const scopeId = input.scopeId ?? (await defaultScopeId(agentView));
-        const result = await buildFireContext(agentView, { scopeId });
-        return successEnvelope(result);
-      });
-    }),
-    tool("explain_figure", async (raw, context) => {
-      const input = raw as {
-        figure: string;
-        scopeId?: string;
-        holdingId?: string;
-        date?: string;
-      };
-      if (!isFigureName(input.figure)) {
-        return {
-          error: { code: "bad_request", message: `Unknown figure: ${input.figure}` },
-        };
-      }
-      const figure = input.figure;
-      return runAgentView(context, async (agentView) => {
-        const scopeId = input.scopeId ?? (await defaultScopeId(agentView));
-        const explanation = await buildFigureExplanation(agentView, {
-          asOf: systemClock().today(),
-          figure,
-          holdingId: input.holdingId,
-          scopeId,
-          ...(input.date === undefined ? {} : { date: input.date }),
-        });
-        return successEnvelope(explanation);
-      });
-    }),
-    tool("get_snapshot_history", (raw, context) => {
-      const input = raw as {
-        scopeId?: string;
-        granularity?: "monthly-close" | "raw";
-        from?: string;
-        to?: string;
-        sort?: "date" | "-date";
-        limit?: number;
-        cursor?: string;
-        includeHoldingRows?: "none" | "summary" | "full";
-      };
-      return runAgentView(context, async (agentView) => {
-        const scopeId = input.scopeId ?? (await defaultScopeId(agentView));
-        const history = await buildSnapshotHistory(agentView, {
-          scopeId,
-          cursor: input.cursor,
-          from: input.from,
-          granularity: input.granularity ?? "monthly-close",
-          includeHoldingRows: input.includeHoldingRows ?? "none",
-          limit: clampLimit(input.limit, 500),
-          sort: input.sort ?? "date",
-          to: input.to,
-        });
-        return { data: history.entries, meta: history.meta };
-      });
-    }),
-    tool("get_data_quality", (raw, context) => {
-      const input = raw as {
-        scopeId?: string;
-        category?: string;
-        severity?: string;
-        limit?: number;
-        cursor?: string;
-      };
-      return runAgentView(context, async (agentView) => {
-        const scopeId = input.scopeId ?? (await defaultScopeId(agentView));
-        const page = await buildDataQuality(agentView, {
-          scopeId,
-          cursor: input.cursor,
-          limit: clampLimit(input.limit, 500),
-          ...(input.category === undefined
-            ? {}
-            : { category: input.category as AgentViewDataQualityCategory }),
-          ...(input.severity === undefined
-            ? {}
-            : { severity: input.severity as AgentViewDataQualitySeverity }),
-        });
-        return { data: page.signals, meta: page.meta };
-      });
-    }),
-    tool("get_trash_summary", (raw, context) => {
-      const input = raw as { scopeId?: string; limit?: number; cursor?: string };
-      return runAgentView(context, async (agentView) => {
-        const scopeId = input.scopeId ?? (await defaultScopeId(agentView));
-        const summary = await buildTrashSummary(agentView, {
-          scopeId,
-          cursor: input.cursor,
-          limit: clampLimit(input.limit, 500),
-        });
-        return { data: summary.holdings, meta: summary.meta };
-      });
-    }),
-    tool("get_holding_detail", (raw, context) => {
-      const input = raw as { holdingId: string };
-      return runAgentView(context, async (agentView) =>
-        successEnvelope(await buildHoldingDetail(agentView, input.holdingId)),
-      );
-    }),
-    tool("get_price_freshness", (raw, context) => {
-      const input = raw as { holdingId: string };
-      return runAgentView(context, async (agentView) =>
-        successEnvelope(await buildPriceFreshness(agentView, input.holdingId)),
-      );
-    }),
-    tool("get_operations", (raw, context) => {
-      const input = raw as {
-        holdingId: string;
-        from?: string;
-        to?: string;
-        sort?: "date" | "-date";
-        limit?: number;
-        cursor?: string;
-      };
-      return runAgentView(context, async (agentView) => {
-        const page = await buildHoldingOperations(agentView, {
-          holdingId: input.holdingId,
-          cursor: input.cursor,
-          from: input.from,
-          limit: clampLimit(input.limit, 500),
-          sort: input.sort ?? "-date",
-          to: input.to,
-        });
-        return { data: page.operations, meta: page.meta };
-      });
-    }),
-    tool("list_connected_sources", (_input, context) =>
-      runAgentView(context, async (agentView) =>
-        successEnvelope(await buildConnectedSourcesList(agentView)),
-      ),
-    ),
-    tool("get_source_freshness", (raw, context) => {
-      const input = raw as { sourceId: string };
-      return runAgentView(context, async (agentView) =>
-        successEnvelope(await buildSourceFreshness(agentView, input.sourceId)),
-      );
-    }),
-    tool("get_workspace", (_input, context) =>
-      runAgentView(context, async (agentView) =>
-        successEnvelope(await buildWorkspaceInfo(agentView)),
-      ),
-    ),
-    tool("get_warning_overrides", (_input, context) =>
-      runAgentView(context, async (agentView) =>
-        successEnvelope(await buildWarningOverrides(agentView)),
-      ),
-    ),
-    tool("get_member_profile", (_input, context) =>
-      runAgentView(context, async (agentView) =>
-        successEnvelope(await buildMemberProfiles(agentView)),
-      ),
-    ),
-    tool("list_goals", (raw, context) => {
-      const input = raw as { scopeId?: string };
-      return runAgentView(context, async (agentView) => {
-        const scopeId = input.scopeId ?? (await defaultScopeId(agentView));
-        return successEnvelope(await buildGoals(agentView, scopeId));
-      });
-    }),
-    tool("get_fire_projection", (raw, context) => {
-      const input = raw as { scopeId?: string };
-      return runAgentView(context, async (agentView) => {
-        const scopeId = input.scopeId ?? (await defaultScopeId(agentView));
-        return successEnvelope(await buildFireProjection(agentView, scopeId));
-      });
-    }),
-    tool("get_connected_source_positions", async (raw, context) => {
-      const input = raw as {
-        holdingId?: string;
-        sourceId?: string;
-        limit?: number;
-        cursor?: string;
-      };
-      const hasHolding = input.holdingId !== undefined;
-      const hasSource = input.sourceId !== undefined;
-      if (hasHolding === hasSource) {
-        return {
-          error: {
-            code: "unprocessable_entity",
-            message:
-              "Supply exactly one of holdingId or sourceId for connected-source positions.",
-          },
-        };
-      }
-      return runAgentView(context, async (agentView) => {
-        const limit = clampLimit(input.limit, 500);
-        if (input.holdingId !== undefined) {
-          const page = await buildHoldingConnectedSourcePositions(agentView, {
-            holdingId: input.holdingId,
-            cursor: input.cursor,
-            limit,
-          });
-          return { data: page.positions, meta: page.meta };
-        }
-        const page = await buildSourceConnectedSourcePositions(agentView, {
-          sourceId: input.sourceId!,
-          cursor: input.cursor,
-          limit,
-        });
-        return { data: page.groups, meta: page.meta };
-      });
-    }),
-  ];
-}
-
-function clampLimit(limit: number | undefined, max: number): number {
-  if (limit === undefined) return 100;
-  if (!Number.isFinite(limit) || limit < 1) return 100;
-  return Math.min(limit, max);
+  });
 }
