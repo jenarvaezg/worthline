@@ -532,6 +532,12 @@ export {
 } from "./payouts";
 
 export type {
+  PassiveIncomeLens,
+  ScopePassiveIncomeInput,
+} from "./objetivos-passive-income";
+export { scopePassiveIncome } from "./objetivos-passive-income";
+
+export type {
   DashboardState,
   FireGlance,
   LocalPersistenceStatus,

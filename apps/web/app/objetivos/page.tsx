@@ -1,8 +1,11 @@
-import type { FireLevel } from "@worthline/domain";
+import type { FireLevel, PassiveIncomeLens } from "@worthline/domain";
 import {
+  collectHoldingPayouts,
   formatMoneyMinorPrivacy,
   listScopeOptions,
   prepareObjetivosState,
+  resolveScopeMemberIds,
+  scopePassiveIncome,
 } from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
@@ -26,6 +29,84 @@ import FireProjectionCard from "@web/fire-projection-card";
 import { createGoalAction, deleteGoalAction, updateGoalAction } from "./goal-actions";
 
 export const dynamic = "force-dynamic";
+
+const dayFormatter = new Intl.DateTimeFormat("es-ES", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  timeZone: "UTC",
+});
+const formatDay = (iso: string) => dayFormatter.format(new Date(`${iso}T00:00:00Z`));
+
+/**
+ * Passive-income lens (#658): the selected scope's trailing-12m payouts against
+ * declared spending — "how much of my spending do my holdings already pay?".
+ * Server-rendered; honest about window and coverage (no annualization, coverage
+ * only when spending is known).
+ */
+function PassiveIncomePanel({
+  lens,
+  currency,
+  privacyMode,
+}: {
+  lens: PassiveIncomeLens;
+  currency: string;
+  privacyMode: boolean;
+}) {
+  const fmt = (amountMinor: number) =>
+    formatMoneyMinorPrivacy({ amountMinor, currency }, privacyMode);
+  const coveragePct =
+    lens.coverageRatio != null
+      ? `${(lens.coverageRatio * 100).toFixed(1).replace(".", ",")} %`
+      : null;
+
+  return (
+    <section className="firePanel objetivosPasivaPanel" aria-label="Renta pasiva">
+      <div className="panelHeader">
+        <h3>Renta pasiva</h3>
+        <span>cuánto de tu gasto ya pagan tus activos</span>
+      </div>
+
+      {lens.hasPayouts ? (
+        <>
+          <div className="objetivosPasivaTop">
+            <div className="objetivosPasivaFigure">
+              <span className="objetivosPasivaCap">Cobros · últimos 12 meses</span>
+              <strong className="objetivosPasivaBig">{fmt(lens.totalMinor)}</strong>
+            </div>
+            {coveragePct != null ? (
+              <div className="objetivosPasivaFigure objetivosPasivaCoverage">
+                <strong className="objetivosPasivaBig">{coveragePct}</strong>
+                <span className="objetivosPasivaCap">de tu gasto declarado</span>
+              </div>
+            ) : null}
+          </div>
+
+          {lens.coverageRatio != null ? (
+            <div className="objetivosPasivaBar" aria-hidden="true">
+              <i style={{ width: `${Math.min(100, lens.coverageRatio * 100)}%` }} />
+            </div>
+          ) : null}
+
+          <p className="objetivosPasivaNote">
+            Ventana: {formatDay(lens.windowStartISO)} – {formatDay(lens.windowEndISO)} ·{" "}
+            {lens.count} {lens.count === 1 ? "cobro" : "cobros"}
+            {lens.annualSpendingMinor != null
+              ? ` · cobertura sobre ${fmt(lens.annualSpendingMinor)}/año`
+              : " · añade tu gasto en Ajustes para ver la cobertura"}
+            . Suma cobros reales del periodo, sin anualizar los parciales.
+          </p>
+        </>
+      ) : (
+        <p className="objetivosPasivaEmpty">
+          Aún no has registrado cobros (dividendos, intereses o alquileres) en este
+          ámbito. Regístralos en la ficha de cada activo para ver cuánto de tu gasto ya
+          cubren.
+        </p>
+      )}
+    </section>
+  );
+}
 
 function FireLevelCard({
   level,
@@ -85,12 +166,25 @@ export default async function ObjetivosPage({
     const scopes = listScopeOptions(workspace);
     const selectedScope = scopes.find((s) => s.id === cookieScopeId) ?? scopes[0];
     const projectionContext = await store.snapshots.buildProjectionContext();
-    const [{ assets, liabilities }, goals, fireConfig, overrides] = await Promise.all([
+    const [
+      { assets, liabilities },
+      goals,
+      fireConfig,
+      overrides,
+      payoutRecords,
+      payoutSchedules,
+    ] = await Promise.all([
       store.snapshots.readCurveValuedHoldingsAtDate(today, projectionContext),
       selectedScope ? store.goals.readGoals(selectedScope.id) : Promise.resolve([]),
       store.readFireConfig(),
       store.readWarningOverrides(),
+      store.payouts.readPayouts(),
+      store.payouts.readPayoutSchedules(),
     ]);
+
+    // Recorded payouts up to today, keyed by holding — the single source S1
+    // owns, so this surface never re-derives a schedule.
+    const payoutsByHolding = collectHoldingPayouts(payoutRecords, payoutSchedules, today);
 
     return {
       workspace,
@@ -101,6 +195,7 @@ export default async function ObjetivosPage({
       goals,
       fireConfig,
       overrides,
+      payoutsByHolding,
       today,
     };
   });
@@ -119,6 +214,7 @@ export default async function ObjetivosPage({
     goals,
     fireConfig,
     overrides,
+    payoutsByHolding,
     today,
   } = storeData;
 
@@ -148,6 +244,19 @@ export default async function ObjetivosPage({
   });
 
   const currency = workspace.baseCurrency;
+
+  // Passive-income lens (#658): the selected scope's trailing-12m payouts,
+  // weighted by ownership, against declared spending. Server-rendered figures;
+  // coverage is shown only when spending is known.
+  const passiveIncome: PassiveIncomeLens | null = selectedScope
+    ? scopePassiveIncome({
+        payoutsByHolding,
+        holdings: assets,
+        scopeMemberIds: new Set(resolveScopeMemberIds(workspace, selectedScope.id)),
+        monthlySpendingMinor: fireScopeConfig?.monthlySpendingMinor ?? null,
+        todayISO: today,
+      })
+    : null;
 
   return (
     <Shell
@@ -360,6 +469,15 @@ export default async function ObjetivosPage({
             </Link>
           </div>
         </section>
+
+        {/* ── Renta pasiva lens (#658) ──────────────────────────────── */}
+        {passiveIncome ? (
+          <PassiveIncomePanel
+            currency={currency}
+            lens={passiveIncome}
+            privacyMode={privacyMode}
+          />
+        ) : null}
 
         {/* ── Goals (editable; S3) ──────────────────────────────────── */}
         <section className="firePanel" aria-label="Objetivos">
