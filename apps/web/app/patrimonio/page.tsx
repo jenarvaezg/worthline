@@ -1,5 +1,6 @@
 import { bootstrapHealthcheck, withStore } from "@web/store";
 import {
+  collectHoldingPayouts,
   collectWarnings,
   groupPortfolio,
   instrumentOfAsset,
@@ -14,6 +15,7 @@ import {
 } from "@worthline/domain";
 import type {
   AssetClassResolution,
+  DatedPayout,
   ExposureLookthroughHolding,
   ExposureProfile,
   Instrument,
@@ -100,6 +102,8 @@ export default async function PatrimonioPage({
       trash,
       exposureProfiles,
       returnSnapshotRows,
+      payoutRecords,
+      payoutSchedules,
     ] = await Promise.all([
       store.operations.readAllPriceCacheEntries(),
       store.assets.readInvestmentAssetsWithMeta(),
@@ -108,6 +112,8 @@ export default async function PatrimonioPage({
       store.readTrash(),
       store.exposureProfiles.readExposureProfiles(),
       store.snapshots.readSnapshotHoldings({ kind: "asset", scopeId: "household" }),
+      store.payouts.readPayouts(),
+      store.payouts.readPayoutSchedules(),
     ]);
 
     // Per-holding simple total gain, inline on the board (#551, ADR 0040). Folds
@@ -135,6 +141,17 @@ export default async function PatrimonioPage({
         monthlyCloseValuesFromSnapshotRows(rows),
       ]),
     );
+    // Recorded payouts (one-offs + derived schedule occurrences up to today) fed
+    // to the return engine so distributing holdings stop understating (#657, ADR
+    // 0054). Keyed by holding id — the same key `operationsByAsset` uses.
+    const payoutsByAsset = new Map<string, DatedPayout[]>(
+      [...collectHoldingPayouts(payoutRecords, payoutSchedules, today)].map(
+        ([assetId, rows]) => [
+          assetId,
+          rows.map((row) => ({ amountMinor: row.amountMinor, date: row.dateISO })),
+        ],
+      ),
+    );
     const investmentReturns = investmentReturnsById({
       cachedPriceByAsset: projectionContext.cachedPriceByAsset,
       currency: workspace.baseCurrency,
@@ -142,6 +159,7 @@ export default async function PatrimonioPage({
       manualPriceByAsset: projectionContext.manualPriceByAsset,
       monthlyClosesByAsset,
       operationsByAsset: projectionContext.operationsByAsset,
+      payoutsByAsset,
       valuationDate: today,
     });
 
@@ -170,6 +188,7 @@ export default async function PatrimonioPage({
       manualPriceByAsset: projectionContext.manualPriceByAsset,
       monthlyClosesByAsset,
       operationsByAsset: projectionContext.operationsByAsset,
+      payoutsByAsset,
       valuationDate: today,
     });
 

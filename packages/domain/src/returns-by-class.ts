@@ -5,12 +5,14 @@ import type { CurrencyCode, MoneyMinor } from "./money";
 import {
   operationCashflows,
   operationTwrCashflows,
+  payoutCashflows,
   simpleGainFromCashflows,
   timeWeightedReturn,
   xirr,
 } from "./returns";
 import type {
   DatedCashflow,
+  DatedPayout,
   IrrResult,
   MonthlyCloseValue,
   SimpleGain,
@@ -75,6 +77,12 @@ export interface AssetClassReturnsHolding {
    * basis is what makes each class's simple gain / IRR internally consistent.
    */
   ownershipBps?: number;
+  /**
+   * Recorded distributions (dividends/coupons/rent, #657), scaled by ownership
+   * then class weight exactly like the operation cashflows, so a class's simple
+   * gain / IRR stays coherent with the portfolio measures.
+   */
+  payouts?: readonly DatedPayout[];
 }
 
 /** One asset class's blended returns over the fractional slice of every holding. */
@@ -86,6 +94,9 @@ export interface AssetClassReturns {
   simpleGain: SimpleGain;
   irr: IrrResult;
   twr: TwrResult;
+  /** Whether any recorded payout was folded into this class (#657) — per-class so a
+   *  payout-free class never claims income it did not receive. */
+  payoutsIncluded: boolean;
 }
 
 export interface ReturnsByAssetClassInput {
@@ -106,6 +117,7 @@ interface BucketAccumulator {
   twrCashflows: TwrCashflow[];
   marketValueMinor: number;
   monthlyByDate: Map<string, number>;
+  payoutsIncluded: boolean;
 }
 
 /**
@@ -153,6 +165,7 @@ export function returnsByAssetClass(
       cashflows: [],
       marketValueMinor: 0,
       monthlyByDate: new Map(),
+      payoutsIncluded: false,
       twrCashflows: [],
     };
     buckets.set(key, created);
@@ -165,7 +178,13 @@ export function returnsByAssetClass(
     // portfolio block's per-flow scaling); `marketValueMinor` / `monthlyCloses`
     // arrive already on the caller's basis, so only the class weight applies to
     // them below. Both on one basis → each class's simple gain / IRR is coherent.
-    const cashflows = operationCashflows(holding.operations).map((flow) => ({
+    // Operations and recorded payouts share one signed stream (a payout is a
+    // positive inflow); TWR excludes payouts (#657 scope) and stays on operations.
+    const hasPayouts = (holding.payouts?.length ?? 0) > 0;
+    const cashflows = [
+      ...operationCashflows(holding.operations),
+      ...payoutCashflows(holding.payouts),
+    ].map((flow) => ({
       amountMinor: allocateByBps(flow.amountMinor, ownershipBps),
       date: flow.date,
     }));
@@ -176,6 +195,9 @@ export function returnsByAssetClass(
 
     for (const [bucket, bps] of classShares(holding.assetClass)) {
       const acc = ensure(bucket);
+      if (hasPayouts) {
+        acc.payoutsIncluded = true;
+      }
       for (const flow of cashflows) {
         acc.cashflows.push({
           amountMinor: allocateByBps(flow.amountMinor, bps),
@@ -214,6 +236,7 @@ export function returnsByAssetClass(
           : []),
       ]),
       key,
+      payoutsIncluded: acc.payoutsIncluded,
       simpleGain: simpleGainFromCashflows({
         cashflows: acc.cashflows,
         currency: input.currency,

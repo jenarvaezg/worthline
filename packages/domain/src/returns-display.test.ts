@@ -6,6 +6,7 @@ import type { IrrResult, SimpleGain, TwrResult } from "./returns";
 import {
   APPRECIATING_CAVEAT,
   MARKET_CAVEAT,
+  MARKET_PAYOUTS_CAVEAT,
   buildHoldingReturnsView,
   buildPortfolioReturnsView,
   CLASS_ATTRIBUTION_CAVEAT,
@@ -160,6 +161,18 @@ describe("buildHoldingReturnsView", () => {
     expect(view!.irr).toEqual(failedIrr);
     expect(view!.twr).toBeNull();
   });
+
+  test("with payouts recorded, the honest-limits copy switches (#657)", () => {
+    const view = buildHoldingReturnsView({
+      instrument: "fund",
+      simpleGain: gain(),
+      irr: okIrr,
+      payoutsIncluded: true,
+    });
+
+    expect(view!.caveats).toContain(MARKET_PAYOUTS_CAVEAT);
+    expect(view!.caveats).not.toContain(MARKET_CAVEAT);
+  });
 });
 
 describe("buildPortfolioReturnsView", () => {
@@ -217,6 +230,23 @@ describe("investmentReturnsById", () => {
     });
     expect(views.has("a1")).toBe(false);
   });
+
+  test("folds a holding's recorded payouts into its figures and caveat (#657)", () => {
+    const views = investmentReturnsById({
+      operationsByAsset: new Map([["a1", [op("buy", "10", "100", "2024-01-01", "a1")]]]),
+      instrumentByAsset: new Map([["a1", "fund"]]),
+      cachedPriceByAsset: new Map([["a1", "100"]]), // flat: value == cost
+      manualPriceByAsset: new Map(),
+      payoutsByAsset: new Map([["a1", [{ amountMinor: 50_000, date: "2025-01-01" }]]]),
+      currency,
+      valuationDate,
+    });
+
+    const view = views.get("a1")!;
+    // +500.00 distribution lands as realized gain on a flat holding.
+    expect(view.totalGain).toEqual(money(500_00, "EUR"));
+    expect(view.caveats).toContain(MARKET_PAYOUTS_CAVEAT);
+  });
 });
 
 describe("portfolioReturnsView", () => {
@@ -257,6 +287,20 @@ describe("portfolioReturnsView", () => {
       }),
     ).toBeNull();
   });
+
+  test("folds recorded payouts and switches the caveat (#657)", () => {
+    const view = portfolioReturnsView({
+      operationsByAsset: new Map([["a1", [op("buy", "10", "100", "2024-01-01", "a1")]]]),
+      cachedPriceByAsset: new Map([["a1", "100"]]), // flat
+      manualPriceByAsset: new Map(),
+      payoutsByAsset: new Map([["a1", [{ amountMinor: 50_000, date: "2025-01-01" }]]]),
+      currency: "EUR",
+      valuationDate: "2026-07-04",
+    });
+
+    expect(view!.totalGain).toEqual(money(500_00, "EUR"));
+    expect(view!.caveats).toContain(MARKET_PAYOUTS_CAVEAT);
+  });
 });
 
 describe("returnsByAssetClassView", () => {
@@ -292,6 +336,42 @@ describe("returnsByAssetClassView", () => {
     expect(equity.view.caveats).toContain(CLASS_ATTRIBUTION_CAVEAT);
     expect(equity.value.amountMinor).toBe(150_000);
     expect(result!.coverage.unknown.amountMinor).toBe(0);
+  });
+
+  test("the payout caveat is per-class — only classes that received a payout claim it (#657)", () => {
+    const result = returnsByAssetClassView({
+      assetClassByAsset: new Map([
+        ["a1", { breakdown: { equity: "1" }, kind: "classified" }],
+        ["a2", { breakdown: { bond: "1" }, kind: "classified" }],
+      ]),
+      cachedPriceByAsset: new Map([
+        ["a1", "100"], // flat
+        ["a2", "200"],
+      ]),
+      currency: "EUR",
+      instrumentByAsset: new Map([
+        ["a1", "fund"],
+        ["a2", "fund"],
+      ]),
+      manualPriceByAsset: new Map(),
+      operationsByAsset: new Map([
+        ["a1", [op("buy", "10", "100", "2024-01-01", "a1")]],
+        ["a2", [op("buy", "5", "200", "2024-01-01", "a2")]],
+      ]),
+      // Only the equity fund distributes; the bond fund does not.
+      payoutsByAsset: new Map([["a1", [{ amountMinor: 50_000, date: "2025-01-01" }]]]),
+      valuationDate: "2026-07-04",
+    });
+
+    const equity = result!.classes.find((c) => c.key === "equity")!;
+    expect(equity.view.totalGain).toEqual(money(500_00, "EUR"));
+    expect(equity.view.caveats).toContain(MARKET_PAYOUTS_CAVEAT);
+    expect(equity.view.caveats).toContain(CLASS_ATTRIBUTION_CAVEAT);
+
+    // The bond class saw no payout, so it must not claim one.
+    const bond = result!.classes.find((c) => c.key === "bond")!;
+    expect(bond.view.caveats).toContain(MARKET_CAVEAT);
+    expect(bond.view.caveats).not.toContain(MARKET_PAYOUTS_CAVEAT);
   });
 
   test("a holding whose class is unknown lands in the unclassified bucket", () => {

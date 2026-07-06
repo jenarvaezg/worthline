@@ -28,6 +28,7 @@ import {
   availableCompositionRanges,
   buildCompositionSeries,
   buildDrilldown,
+  collectHoldingPayouts,
   deriveFramedSnapshotDeltas,
   listScopeOptions,
   monthsBetween,
@@ -38,6 +39,7 @@ import {
 import type {
   CompositionSeriesPoint,
   DashboardState,
+  DatedPayout,
   FramedSnapshotDeltas,
   HoldingReturnsView,
   LocalPersistenceStatus,
@@ -300,11 +302,27 @@ export async function loadDashboard(
   // — a fund's return is the same figure whoever owns which share.
   // ponytail: unscoped portfolio return; per-member-scope weighting is deferred
   // until a scoped consumer needs it (household member scopes are the edge case).
+  // Recorded payouts (one-offs + derived occurrences up to today) enter the
+  // hero's money-weighted return and realized gain so distributing holdings stop
+  // understating (#657, ADR 0054). Keyed by holding id, as operationsByAsset is.
+  const [payoutRecords, payoutSchedules] = await Promise.all([
+    store.payouts.readPayouts(),
+    store.payouts.readPayoutSchedules(),
+  ]);
+  const payoutsByAsset = new Map<string, DatedPayout[]>(
+    [...collectHoldingPayouts(payoutRecords, payoutSchedules, dateKey)].map(
+      ([assetId, rows]) => [
+        assetId,
+        rows.map((row) => ({ amountMinor: row.amountMinor, date: row.dateISO })),
+      ],
+    ),
+  );
   const portfolioReturns = portfolioReturnsView({
     cachedPriceByAsset: projectionContext.cachedPriceByAsset,
     currency: workspace.baseCurrency,
     manualPriceByAsset: projectionContext.manualPriceByAsset,
     operationsByAsset: projectionContext.operationsByAsset,
+    payoutsByAsset,
     valuationDate: dateKey,
   });
 
