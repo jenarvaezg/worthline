@@ -1990,6 +1990,49 @@ code {
   margin: 0;
 }
 
+/* renta pasiva lens (#658) — mirrors the ficha cobros strip */
+.objetivosPasivaTop {
+  align-items: baseline;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+.objetivosPasivaFigure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.objetivosPasivaCoverage {
+  text-align: right;
+}
+.objetivosPasivaCap {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.objetivosPasivaBig {
+  font-size: 1.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.objetivosPasivaBar {
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
+  border-radius: 999px;
+  height: 8px;
+  margin-top: 12px;
+  overflow: hidden;
+}
+.objetivosPasivaBar i {
+  background: var(--gold);
+  display: block;
+  height: 100%;
+}
+.objetivosPasivaNote,
+.objetivosPasivaEmpty {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin: 12px 0 0;
+}
+
 .objetivosFireFoot {
   align-items: center;
   border-top: 1px solid var(--hairline);
