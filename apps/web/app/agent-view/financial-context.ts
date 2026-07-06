@@ -47,6 +47,7 @@ import { deriveSourcePublicId, toFreshnessSummary } from "./connected-source-pos
 import { buildDataQualitySummary } from "./data-quality";
 import { buildFireSummary } from "./fire-context";
 import { summarizeOperations } from "./operation-summary";
+import { buildScopePassiveIncome } from "./payouts";
 import { buildPortfolioReturns } from "./returns";
 import { publicIdMap, requirePublicId, resolveInternalScopeId } from "./scope-resolution";
 import { listAgentViewScopes } from "./scopes";
@@ -167,6 +168,13 @@ export async function buildFinancialContext(
     ),
     links: buildLinks(options.scopeId),
     liquidityBreakdown: buildLiquidityBreakdown(figuresInput).map(toLiquidityRung),
+    passiveIncome: await buildScopePassiveIncome({
+      store,
+      workspace,
+      internalScopeId,
+      holdings: assets,
+      todayISO: options.asOf,
+    }),
     returns: await buildPortfolioReturns({
       currency: workspace.baseCurrency,
       holdings: projection.sections[0].rows.map((row) => ({

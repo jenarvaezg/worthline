@@ -7,7 +7,8 @@ import { createHash } from "node:crypto";
  * No registry write — a read derives it without mutating state, exactly like
  * `deriveOperationPublicId`/`deriveSnapshotPublicId`. Prefixes per PRD #328:
  * `van` valuation anchor, `amp` amortization plan, `irr` interest-rate revision,
- * `erp` early repayment, `ban` balance anchor.
+ * `erp` early repayment, `ban` balance anchor; plus PRD #652: `pay` payout,
+ * `psc` payout schedule.
  */
 export function derivePublicId(prefix: string, stableInternalId: string): string {
   const digest = createHash("sha256").update(stableInternalId).digest("hex").slice(0, 32);
