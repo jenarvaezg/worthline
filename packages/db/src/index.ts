@@ -240,6 +240,10 @@ async function buildStore(
         ...(cache.staleReason === undefined ? {} : { staleReason: cache.staleReason }),
       };
     },
+    readPayouts: payoutStore.readPayouts,
+    readPayoutsForHolding: payoutStore.readPayoutsForHolding,
+    readPayoutSchedules: payoutStore.readPayoutSchedules,
+    readPayoutSchedulesForHolding: payoutStore.readPayoutSchedulesForHolding,
     readSnapshotHoldings: snapshotStore.readSnapshotHoldings,
     readSnapshots: (scopeId) => snapshotStore.readSnapshots(scopeId),
     readSourcePositions: connectedSourceStore.readPositions,

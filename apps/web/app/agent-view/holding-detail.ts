@@ -29,6 +29,7 @@ import {
   type HoldingFacts,
 } from "./holding-facts";
 import { summarizeOperations } from "./operation-summary";
+import { buildHoldingPayouts } from "./payouts";
 import {
   publicIdMap,
   requirePublicId,
@@ -112,6 +113,12 @@ export async function buildHoldingDetail(
         holdingHasWarnings(assets, internalHoldingId),
         facts,
       ),
+      payouts: await buildHoldingPayouts({
+        assetId: internalHoldingId,
+        currency,
+        store,
+        todayISO: valuationDate,
+      }),
       returns: await buildHoldingReturns({
         assetId: internalHoldingId,
         currency,

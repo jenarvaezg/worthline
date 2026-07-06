@@ -8,6 +8,8 @@ import type {
   Liability,
   ManualAsset,
   NetWorthSnapshot,
+  Payout,
+  PayoutSchedule,
   PriceFreshnessState,
   SourceAdapter,
   SourcePosition,
@@ -190,6 +192,18 @@ export interface AgentViewReadStore {
    * exposure profile for the look-through.
    */
   readInvestmentAssetsWithMeta: () => Promise<InvestmentAssetMeta[]>;
+  /**
+   * Recorded one-off payouts — dividends, interest, rent as attribution records
+   * (PRD #652, ADR 0054). A pure read: payouts touch no figure, snapshot, or
+   * ripple, so surfacing them cannot mutate state. Occurrences of a schedule are
+   * derived in domain code (`deriveScheduleOccurrences`), never stored — this port
+   * exposes only the persisted declarations. Optionally scoped to one holding.
+   */
+  readPayouts: () => Promise<Payout[]>;
+  readPayoutsForHolding: (holdingId: string) => Promise<Payout[]>;
+  /** Declared payout schedules; their occurrences are derived on read, never stored. */
+  readPayoutSchedules: () => Promise<PayoutSchedule[]>;
+  readPayoutSchedulesForHolding: (holdingId: string) => Promise<PayoutSchedule[]>;
 }
 
 export interface AgentViewReadStoreDeps {
@@ -228,6 +242,10 @@ export interface AgentViewReadStoreDeps {
   readGoals: (scopeId?: string) => Promise<Goal[]>;
   readExposureProfiles: () => Promise<ExposureProfile[]>;
   readInvestmentAssetsWithMeta: () => Promise<InvestmentAssetMeta[]>;
+  readPayouts: () => Promise<Payout[]>;
+  readPayoutsForHolding: (holdingId: string) => Promise<Payout[]>;
+  readPayoutSchedules: () => Promise<PayoutSchedule[]>;
+  readPayoutSchedulesForHolding: (holdingId: string) => Promise<PayoutSchedule[]>;
 }
 
 export function createAgentViewReadStore(
@@ -297,6 +315,11 @@ export function createAgentViewReadStore(
     readTrashedHoldings: () => readTrashedHoldings(ctx.db),
     readExposureProfiles: () => deps.readExposureProfiles(),
     readInvestmentAssetsWithMeta: () => deps.readInvestmentAssetsWithMeta(),
+    readPayouts: () => deps.readPayouts(),
+    readPayoutsForHolding: (holdingId) => deps.readPayoutsForHolding(holdingId),
+    readPayoutSchedules: () => deps.readPayoutSchedules(),
+    readPayoutSchedulesForHolding: (holdingId) =>
+      deps.readPayoutSchedulesForHolding(holdingId),
   };
 }
 
