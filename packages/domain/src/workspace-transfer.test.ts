@@ -232,6 +232,27 @@ function makeExportData(): WorkspaceExportData {
         breakdowns: { geography: { us: "0.6" }, assetClass: { equity: "1" } },
       },
     ],
+    payouts: [
+      {
+        id: "p1",
+        holdingId: "a1",
+        dateISO: "2025-11-20",
+        amountMinor: 34000,
+        note: "Div",
+      },
+    ],
+    payoutSchedules: [
+      {
+        id: "s1",
+        holdingId: "a1",
+        label: "Alquiler",
+        amountMinor: 100000,
+        cadence: "monthly",
+        startISO: "2024-01-01",
+        endISO: null,
+        exclusions: [],
+      },
+    ],
   };
 }
 
@@ -388,6 +409,8 @@ describe("summarizeWorkspaceExport", () => {
       fireConfigScopes: 1,
       connectedSources: 0,
       exposureProfiles: 1,
+      payouts: 1,
+      payoutSchedules: 1,
     });
   });
 
@@ -421,6 +444,8 @@ describe("summarizeWorkspaceExport", () => {
       fireConfigScopes: 0,
       connectedSources: 0,
       exposureProfiles: 0,
+      payouts: 0,
+      payoutSchedules: 0,
     });
   });
 });

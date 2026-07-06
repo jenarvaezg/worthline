@@ -93,7 +93,7 @@ describe("schema migrations v38/v41", () => {
     ).toBe(SCHEMA_VERSION);
 
     await migrate(client);
-    expect(SCHEMA_VERSION).toBe(41);
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(41);
   });
 
   test("fresh schemaSql includes the exposure_profiles table", async () => {

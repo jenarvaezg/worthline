@@ -169,6 +169,31 @@ CREATE TABLE \`exposure_profiles\` (
 	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE \`payouts\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`holding_id\` text NOT NULL,
+	\`date\` text NOT NULL,
+	\`amount_minor\` integer NOT NULL,
+	\`note\` text,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`holding_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX \`payouts_holding_date_idx\` ON \`payouts\` (\`holding_id\`,\`date\`,\`id\`);--> statement-breakpoint
+CREATE TABLE \`payout_schedules\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`holding_id\` text NOT NULL,
+	\`label\` text NOT NULL,
+	\`amount_minor\` integer NOT NULL,
+	\`cadence\` text NOT NULL,
+	\`start_date\` text NOT NULL,
+	\`end_date\` text,
+	\`exclusions_json\` text DEFAULT '[]' NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`holding_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX \`payout_schedules_holding_idx\` ON \`payout_schedules\` (\`holding_id\`,\`id\`);--> statement-breakpoint
 CREATE TABLE \`asset_price_cache\` (
 	\`asset_id\` text PRIMARY KEY NOT NULL,
 	\`currency\` text NOT NULL,

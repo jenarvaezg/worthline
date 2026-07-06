@@ -17,6 +17,7 @@ import type { LiquidityTier } from "./classification";
 import type { DistributiveOmit, SourceAdapter, SourcePosition } from "./connected-source";
 import type { DecimalString } from "./decimal";
 import type { ExposureProfile } from "./exposure-lookthrough";
+import type { Payout, PayoutSchedule } from "./payouts";
 import type { ValuationMethod } from "./holding-valuation";
 import type { ValuationCadence } from "./valuation-cadence";
 import type { Instrument } from "./instrument-catalog";
@@ -286,16 +287,25 @@ export interface WorkspaceExportData {
    * unchanged. Auto-derived profiles are never stored/exported (recomputed).
    */
   exposureProfiles?: ExposureProfile[];
+  /**
+   * Payouts and payout schedules (PRD #652, ADR 0054), attribution records
+   * attached to a holding. Optional: older export files omit the sections and
+   * import unchanged. Schedule occurrences are derived on read, never exported.
+   */
+  payouts?: Payout[];
+  payoutSchedules?: PayoutSchedule[];
 }
 
 /** The versioned export document — the on-disk JSON shape. */
 export interface WorkspaceExport extends Omit<
   WorkspaceExportData,
-  "publicIds" | "exposureProfiles"
+  "publicIds" | "exposureProfiles" | "payouts" | "payoutSchedules"
 > {
   version: typeof EXPORT_VERSION;
   publicIds: ExportedPublicId[];
   exposureProfiles: ExposureProfile[];
+  payouts: Payout[];
+  payoutSchedules: PayoutSchedule[];
 }
 
 /**
@@ -316,6 +326,8 @@ export interface WorkspaceExportSummary {
   fireConfigScopes: number;
   connectedSources: number;
   exposureProfiles: number;
+  payouts: number;
+  payoutSchedules: number;
 }
 
 /** Count every section of an (already validated) export document. */
@@ -334,6 +346,8 @@ export function summarizeWorkspaceExport(doc: WorkspaceExport): WorkspaceExportS
     fireConfigScopes: Object.keys(doc.fireConfig).length,
     connectedSources: doc.connectedSources.length,
     exposureProfiles: doc.exposureProfiles.length,
+    payouts: doc.payouts.length,
+    payoutSchedules: doc.payoutSchedules.length,
   };
 }
 
@@ -355,5 +369,7 @@ export function serializeWorkspaceExport(data: WorkspaceExportData): WorkspaceEx
     connectedSources: data.connectedSources,
     publicIds: data.publicIds ?? [],
     exposureProfiles: data.exposureProfiles ?? [],
+    payouts: data.payouts ?? [],
+    payoutSchedules: data.payoutSchedules ?? [],
   };
 }

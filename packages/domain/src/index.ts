@@ -516,6 +516,15 @@ export {
 export { daysBetween, MS_PER_DAY } from "./dates";
 
 export type {
+  DerivedPayout,
+  PassiveIncomeWindow,
+  Payout,
+  PayoutCadence,
+  PayoutSchedule,
+} from "./payouts";
+export { deriveScheduleOccurrences, passiveIncomeTrailing } from "./payouts";
+
+export type {
   DashboardState,
   FireGlance,
   LocalPersistenceStatus,

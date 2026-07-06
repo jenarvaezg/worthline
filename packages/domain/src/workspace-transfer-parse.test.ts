@@ -1337,3 +1337,102 @@ describe("parseWorkspaceExport — FireScopeConfig N3 fields", () => {
     expect(cfg.baristaMonthlyIncomeMinor).toBe(50_000);
   });
 });
+
+describe("parseWorkspaceExport — payouts referential integrity (PRD #652)", () => {
+  test("rejects a payout whose holdingId is not an exported asset", () => {
+    expectRejection(
+      makeDocument((doc) => {
+        doc.payouts = [
+          { id: "pay1", holdingId: "ghost", dateISO: "2025-06-01", amountMinor: 1000 },
+        ];
+      }),
+      /El cobro pay1 referencia un activo inexistente: ghost/,
+    );
+  });
+
+  test("rejects a payout attached to a liability id (income is asset-side)", () => {
+    expectRejection(
+      makeDocument((doc) => {
+        doc.payouts = [
+          { id: "pay1", holdingId: "l1", dateISO: "2025-06-01", amountMinor: 1000 },
+        ];
+      }),
+      /activo inexistente: l1/,
+    );
+  });
+
+  test("rejects a schedule whose holdingId is not an exported asset", () => {
+    expectRejection(
+      makeDocument((doc) => {
+        doc.payoutSchedules = [
+          {
+            id: "sch1",
+            holdingId: "ghost",
+            label: "Alquiler",
+            amountMinor: 100000,
+            cadence: "monthly",
+            startISO: "2024-01-01",
+            endISO: null,
+            exclusions: [],
+          },
+        ];
+      }),
+      /cobro recurrente.*activo inexistente: ghost/,
+    );
+  });
+
+  test("rejects duplicate payout ids", () => {
+    expectRejection(
+      makeDocument((doc) => {
+        doc.payouts = [
+          { id: "dup", holdingId: "a1", dateISO: "2025-06-01", amountMinor: 1000 },
+          { id: "dup", holdingId: "a1", dateISO: "2025-07-01", amountMinor: 1000 },
+        ];
+      }),
+      /Id de cobro duplicado: dup/,
+    );
+  });
+
+  test("rejects a non-positive schedule amount (income-only)", () => {
+    expectRejection(
+      makeDocument((doc) => {
+        doc.payoutSchedules = [
+          {
+            id: "s9",
+            holdingId: "a1",
+            label: "X",
+            amountMinor: 0,
+            cadence: "monthly",
+            startISO: "2024-01-01",
+            endISO: null,
+            exclusions: [],
+          },
+        ];
+      }),
+      /importe no positivo/,
+    );
+  });
+
+  test("accepts a payout + schedule that reference a live asset", () => {
+    const result = parseWorkspaceExport(
+      makeDocument((doc) => {
+        doc.payouts = [
+          { id: "pay1", holdingId: "a1", dateISO: "2025-06-01", amountMinor: 1000 },
+        ];
+        doc.payoutSchedules = [
+          {
+            id: "sch1",
+            holdingId: "a1",
+            label: "Alquiler",
+            amountMinor: 100000,
+            cadence: "monthly",
+            startISO: "2024-01-01",
+            endISO: null,
+            exclusions: [],
+          },
+        ];
+      }),
+    );
+    expect(result.ok).toBe(true);
+  });
+});

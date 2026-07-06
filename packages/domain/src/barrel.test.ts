@@ -139,6 +139,9 @@ const KEY_EXPORTS = [
   "debtBalanceAtDate",
   // dates
   "daysBetween",
+  // payouts
+  "deriveScheduleOccurrences",
+  "passiveIncomeTrailing",
 ] as const;
 
 describe("@worthline/domain barrel", () => {
