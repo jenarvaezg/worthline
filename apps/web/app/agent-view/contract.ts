@@ -1,6 +1,7 @@
 import type {
   IrrReason,
   GoalPriority,
+  PayoutCadence,
   PriceFreshnessState,
   RiskTolerance,
   TwrReason,
@@ -331,6 +332,89 @@ export interface AgentViewReturns {
   byAssetClass?: AgentViewAssetClassReturnsBlock;
 }
 
+/**
+ * One recorded payout — a dividend, interest, or rent a holding paid its owner
+ * (PRD #652, ADR 0054). A pure attribution record, never a figure: reading it
+ * touches no net worth, holding value, snapshot, or ripple. `id` is an opaque,
+ * export/import-stable drilldown id (`wl_pay_…`) derived from the payout's stable
+ * internal id — no registry write, exactly like an operation's id (ADR 0023).
+ */
+export interface AgentViewPayout {
+  id: string;
+  object: "payout";
+  date: string;
+  amount: AgentViewMoney;
+  note?: string;
+}
+
+/**
+ * A declared payout schedule — a fixed recurrence like rent (PRD #652, ADR 0054).
+ * Only the DECLARATION is exposed (amount, cadence, start, optional inclusive end,
+ * per-occurrence exclusions); occurrences are derived on read by the domain and are
+ * never materialized, so none are surfaced here. `id` is an opaque, stable
+ * drilldown id (`wl_psc_…`) derived from the schedule's internal id.
+ */
+export interface AgentViewPayoutSchedule {
+  id: string;
+  object: "payout_schedule";
+  label: string;
+  cadence: PayoutCadence;
+  amount: AgentViewMoney;
+  startDate: string;
+  /** Inclusive end date, or null for an open-ended schedule. */
+  endDate: string | null;
+  /** ISO dates removed one by one (an unpaid month). */
+  exclusions: string[];
+}
+
+/**
+ * A trailing-window passive-income aggregate (PRD #652). Honest by construction:
+ * the sum of every payout dated inside the window — one-offs plus each schedule's
+ * derived occurrences — with the window bounds and the occurrence count stated, and
+ * nothing annualized. The lower bound is exclusive and the upper (today) inclusive.
+ */
+export interface AgentViewPassiveIncomeWindow {
+  total: AgentViewMoney;
+  count: number;
+  windowStart: string;
+  windowEnd: string;
+  months: number;
+}
+
+/**
+ * A holding's payouts as the agent view sees them (PRD #652, #659): its recorded
+ * one-off payouts, its declared schedules, and a trailing-12-month aggregate. Full
+ * (household) amounts — NOT scope-weighted — matching the holding detail's
+ * `currentValue`, which is the full household value. Present only when the holding
+ * has at least one payout or schedule; otherwise the block is null.
+ */
+export interface AgentViewHoldingPayouts {
+  recorded: AgentViewPayout[];
+  schedules: AgentViewPayoutSchedule[];
+  trailing12m: AgentViewPassiveIncomeWindow;
+}
+
+/**
+ * A scope's passive-income lens (PRD #652, #658/#659): the selected scope's
+ * trailing-12-month payouts weighted by its ownership share, and coverage against
+ * declared spending. Mirrors the /objetivos "renta pasiva" lens (`scopePassiveIncome`).
+ * `annualSpending`/`coverageRatio` are null when spending is unknown — coverage is
+ * never fabricated, and a partial-window payout is summed as-is, never annualized.
+ */
+export interface AgentViewScopePassiveIncome {
+  total: AgentViewMoney;
+  count: number;
+  windowStart: string;
+  windowEnd: string;
+  months: number;
+  /** Declared annual spending (monthly × 12) as money, or null when unknown. */
+  annualSpending: AgentViewMoney | null;
+  /** `total / annualSpending` as a decimal string, or null when spending is unknown. */
+  coverageRatio: string | null;
+  /** Whether the scope has any recorded payout at all (drives an empty state). */
+  hasPayouts: boolean;
+}
+
 /** Whether a scope has a FIRE configuration (PRD #328, #340). */
 export type AgentViewFireStatus = "configured" | "unconfigured";
 
@@ -448,6 +532,8 @@ export interface AgentViewFinancialContext {
   exposure: AgentViewExposure;
   /** Present-time investment returns for operation-bearing market holdings. */
   returns: AgentViewReturns | null;
+  /** The scope's trailing-12m passive income (renta pasiva), scope-weighted (#659). */
+  passiveIncome: AgentViewScopePassiveIncome;
   holdings: AgentViewHoldingsBlock;
   connectedSources: AgentViewConnectedSourceSummary[];
   /** The scope's FIRE progress summary; status-only when unconfigured (#340). */
@@ -693,6 +779,8 @@ export interface AgentViewHoldingDetail {
   operationSummary?: AgentViewOperationSummary;
   /** Present for operation-bearing market holdings; null when returns do not apply. */
   returns?: AgentViewReturns | null;
+  /** Recorded payouts + declared schedules + trailing-12m; null when none (#659). */
+  payouts?: AgentViewHoldingPayouts | null;
   /** Present only when a connected source materialized this holding. */
   sourceSummary?: AgentViewHoldingSourceSummary;
   /** Present only for an appreciating asset that has valuation anchors (#338). */

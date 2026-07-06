@@ -40,7 +40,8 @@ are not exposed.
 The API exposes public, prefixed, opaque IDs (`wl_scp_...`, `wl_mbr_...`,
 `wl_grp_...`, `wl_hld_...`, `wl_snp_...`, `wl_op_...`, `wl_src_...`,
 `wl_pos_...`, plus the dated-fact and signal prefixes `wl_van_`, `wl_amp_`,
-`wl_irr_`, `wl_erp_`, `wl_ban_`, `wl_dqs_`) plus explicit object fields and human
+`wl_irr_`, `wl_erp_`, `wl_ban_`, `wl_dqs_`, `wl_pay_` (payout), `wl_psc_` (payout
+schedule)) plus explicit object fields and human
 labels. None are derived from user labels or internal slug IDs, and clients must
 not parse prefixes for behavior. There are two ID sources, by entity kind:
 
@@ -53,10 +54,11 @@ not parse prefixes for behavior. There are two ID sources, by entity kind:
   during the read.
 - **Read-only drilldown objects** — snapshots, investment operations,
   connected-source positions, valuation anchors, amortization plans, interest-rate
-  revisions, early repayments, balance anchors, and data-quality signals — derive
+  revisions, early repayments, balance anchors, data-quality signals, payouts, and
+  payout schedules — derive
   their opaque ID deterministically from a stable natural or internal key that
   already survives export/import (e.g. a snapshot from `scope + date`, a position
-  from `source + external line id`, an operation from its internal id), as
+  from `source + external line id`, an operation or payout from its internal id), as
   `wl_<prefix>_ + sha256(key)`. Derivation is a pure read: it writes nothing, so it
   cannot churn on a same-day snapshot replace or a wholesale source re-sync, and it
   honors the same opacity and export/import-stability guarantees as the registry
