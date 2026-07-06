@@ -133,6 +133,7 @@ export {
 } from "./positions";
 export type {
   DatedCashflow,
+  DatedPayout,
   HoldingReturnsInput,
   HoldingTwrInput,
   IrrReason,
@@ -185,6 +186,7 @@ export {
   APPRECIATING_CAVEAT,
   CLASS_ATTRIBUTION_CAVEAT,
   MARKET_CAVEAT,
+  MARKET_PAYOUTS_CAVEAT,
   buildHoldingReturnsView,
   buildPortfolioReturnsView,
   investmentReturnsById,
@@ -516,13 +518,18 @@ export {
 export { daysBetween, MS_PER_DAY } from "./dates";
 
 export type {
+  DatedAmount,
   DerivedPayout,
   PassiveIncomeWindow,
   Payout,
   PayoutCadence,
   PayoutSchedule,
 } from "./payouts";
-export { deriveScheduleOccurrences, passiveIncomeTrailing } from "./payouts";
+export {
+  collectHoldingPayouts,
+  deriveScheduleOccurrences,
+  passiveIncomeTrailing,
+} from "./payouts";
 
 export type {
   DashboardState,

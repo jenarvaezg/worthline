@@ -16,7 +16,7 @@ Report investment performance as **three complementary, present-time, derived me
 
 - **Annualize only for spans ≥ 1 year.** IRR is inherently annual; simple gain and TWR report total over the span and an annualized figure (`CAGR` / `(1+TWR)^(365/days)−1`) only when the span reaches a year. Sub-year is shown as total, flagged "not annualized" — never annualized (it overstates).
 - **Granularity v1 = per-holding + portfolio** (portfolio IRR merges all holdings' cashflows into one dated stream; portfolio simple gain sums; portfolio TWR is Modified Dietz over the whole portfolio's monthly value series). Both are **independent of the exposure-profile work**. **Per-asset-class returns is a fast-follow gated on #539 S0** (it reuses that asset-class axis) — kept off this PRD's critical path.
-- **Honest limits, surfaced as signals, not hidden.** Dividends / distributions are **not modeled** (operations are buy/sell only), so distributing funds understate — accumulating funds (most index ETFs / pension plans) are unaffected; a quality signal says so. TWR and any time-series figure start at the **first available monthly close / operation**; the reported figure carries that start date and nothing is invented before it.
+- **Honest limits, surfaced as signals, not hidden.** Dividends / distributions enter **only as declared payouts** (#657, ADR 0054): a recorded **payout** feeds the money-weighted return (IRR) and the realized **simple gain** as a dated inflow, so distributing funds stop understating for the holdings where income is recorded — but a distribution never recorded is still invisible, and **TWR still tracks price only** (a payout is not folded into the monthly-close series). The per-holding caveat switches to say which measures moved. TWR and any time-series figure start at the **first available monthly close / operation**; the reported figure carries that start date and nothing is invented before it.
 
 ## Considered options
 
@@ -25,7 +25,7 @@ Report investment performance as **three complementary, present-time, derived me
 - **Unrealized-only simple gain (rejected).** Cheapest (it already exists), but a partly-sold holding would understate; adding realized P&L is small and makes the simple measure honest.
 - **Annualizing sub-year periods (rejected).** Extrapolating a 3-month +10% to ~+46%/yr is misleading; sub-year stays total.
 - **Per-asset-class returns in v1 (deferred).** It would couple this PRD to #539's critical path. Per-holding + portfolio deliver the core value alone; per-class is cheap once #539's asset-class resolution exists.
-- **Modeling distributions now (deferred).** Would need a new cashflow kind (income) on operations; out of scope. Declared as a limitation and surfaced as a signal instead.
+- **Modeling distributions on operations (rejected).** A new income cashflow kind on `operations` was the first instinct; instead distributions live as their own **payout** records (ADR 0054) that the engine folds in as inflows (#657) — keeping operations buy/sell-only and payouts a non-figure attribution layer. IRR and realized simple gain now include recorded payouts; folding them into TWR's monthly-close series is the remaining deferred step.
 
 ## Consequences
 
