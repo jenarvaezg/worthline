@@ -74,6 +74,8 @@ describe("previewImportAction wiring", () => {
         fireConfigScopes: 0,
         connectedSources: 0,
         exposureProfiles: 0,
+        payouts: 0,
+        payoutSchedules: 0,
       },
     });
   });

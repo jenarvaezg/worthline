@@ -373,6 +373,27 @@ const exposureProfileSchema = z.object({
   breakdowns: z.record(z.string(), z.record(z.string(), z.string())).default({}),
 });
 
+// Payouts (PRD #652, ADR 0054): attribution records attached to a holding.
+// Schedule occurrences are derived on read, never exported — only the declaration.
+const payoutSchema = z.object({
+  id: nonEmptyString,
+  holdingId: nonEmptyString,
+  dateISO: nonEmptyString,
+  amountMinor: z.number().int(),
+  note: nonEmptyString.optional(),
+});
+
+const payoutScheduleSchema = z.object({
+  id: nonEmptyString,
+  holdingId: nonEmptyString,
+  label: nonEmptyString,
+  amountMinor: z.number().int(),
+  cadence: z.enum(["weekly", "monthly", "quarterly", "annual"]),
+  startISO: nonEmptyString,
+  endISO: nonEmptyString.nullable().default(null),
+  exclusions: z.array(nonEmptyString).default([]),
+});
+
 const documentSchema = z.object({
   version: z.literal(EXPORT_VERSION),
   workspace: z.object({
@@ -397,6 +418,8 @@ const documentSchema = z.object({
   connectedSources: z.array(connectedSourceSchema).default([]),
   publicIds: z.array(publicIdSchema).default([]),
   exposureProfiles: z.array(exposureProfileSchema).default([]),
+  payouts: z.array(payoutSchema).default([]),
+  payoutSchedules: z.array(payoutScheduleSchema).default([]),
 });
 
 // ── Entry point ──────────────────────────────────────────────────────────────
@@ -567,6 +590,7 @@ function collectDomainErrors(doc: WorkspaceExport): string[] {
   collectStructuralKeyErrors(errors, allAssets, allLiabilities);
   collectReferentialIntegrityErrors(errors, doc, allAssets, allLiabilities);
   collectConnectedSourceErrors(errors, doc, allAssets);
+  collectPayoutErrors(errors, doc, allAssets);
   collectDatabaseKeyErrors(errors, doc);
   collectPublicIdErrors(errors, doc);
   collectSnapshotReconciliationErrors(errors, doc);
@@ -1184,6 +1208,56 @@ function collectConnectedSourceErrors(
       `posición de la fuente ${source.id}`,
       source.positions.map((position) => position.id),
     );
+  }
+}
+
+// Payouts (PRD #652, ADR 0054) are attribution records attached to an asset
+// holding. Mirror the clean-error contract of every other referential section:
+// unique ids, the holding must be an exported ASSET (income is asset-side — a
+// liability id is rejected), and amounts are positive (income-only). Structure is
+// already validated by the zod schemas; this adds the semantic checks.
+function collectPayoutErrors(
+  errors: string[],
+  doc: WorkspaceExport,
+  allAssets: ExportedAsset[],
+): void {
+  const assetIds = new Set(allAssets.map((asset) => asset.id));
+
+  collectDuplicateIdErrors(
+    errors,
+    "cobro",
+    doc.payouts.map((payout) => payout.id),
+  );
+  collectDuplicateIdErrors(
+    errors,
+    "cobro recurrente",
+    doc.payoutSchedules.map((schedule) => schedule.id),
+  );
+
+  for (const payout of doc.payouts) {
+    if (!assetIds.has(payout.holdingId)) {
+      errors.push(
+        `El cobro ${payout.id} referencia un activo inexistente: ${payout.holdingId}.`,
+      );
+    }
+    if (payout.amountMinor <= 0) {
+      errors.push(
+        `El cobro ${payout.id} tiene un importe no positivo: ${payout.amountMinor}.`,
+      );
+    }
+  }
+
+  for (const schedule of doc.payoutSchedules) {
+    if (!assetIds.has(schedule.holdingId)) {
+      errors.push(
+        `El cobro recurrente "${schedule.label}" (${schedule.id}) referencia un activo inexistente: ${schedule.holdingId}.`,
+      );
+    }
+    if (schedule.amountMinor <= 0) {
+      errors.push(
+        `El cobro recurrente "${schedule.label}" (${schedule.id}) tiene un importe no positivo: ${schedule.amountMinor}.`,
+      );
+    }
   }
 }
 

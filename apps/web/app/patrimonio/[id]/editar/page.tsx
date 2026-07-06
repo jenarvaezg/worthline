@@ -33,7 +33,11 @@ import {
 import {
   confirmPriceBackfillAction,
   confirmStatementAction,
+  createPayoutAction,
+  createPayoutScheduleAction,
   deleteOperationAction,
+  deletePayoutAction,
+  deletePayoutScheduleAction,
   previewPriceBackfillAction,
   previewStatementAction,
   type PriceBackfillPreviewState,
@@ -42,6 +46,7 @@ import {
   saveExposureProfileAction,
   type StatementPreviewState,
   updateInvestmentAction,
+  updatePayoutScheduleAction,
 } from "@web/inversiones/actions";
 import Shell from "@web/shell";
 import {
@@ -51,6 +56,7 @@ import {
 } from "@web/patrimonio/actions";
 import { BinanceHoldingSection } from "./_surfaces/binance-holding-section";
 import { tokenPositionsOnRung } from "./_surfaces/binance-holding-view";
+import { CobrosSection } from "./_surfaces/cobros-section";
 import { CoinCollectionSection } from "./_surfaces/coin-collection-section";
 import { DebtModelSection } from "./_surfaces/debt-model-section";
 import { ExposureProfileSection } from "./_surfaces/exposure-profile-section";
@@ -229,6 +235,20 @@ export default async function EditarPage({
       ? await store.exposureProfiles.readExposureProfile(exposureProfileKey)
       : null;
 
+    // Cobros (PRD #652 S1, #656, ADR 0054): a payout is a pure attribution record
+    // on an asset holding — never a figure. Read this holding's one-off payouts +
+    // declared schedules, plus the scope's declared monthly spending (for the
+    // renta-pasiva coverage; omitted gracefully when the scope has no FIRE figure).
+    const payouts = asset ? await store.payouts.readPayoutsForHolding(id) : [];
+    const payoutSchedules = asset
+      ? await store.payouts.readPayoutSchedulesForHolding(id)
+      : [];
+    const scopeFireConfig =
+      asset && selectedScope
+        ? (await store.readFireConfig())[selectedScope.id]
+        : undefined;
+    const payoutMonthlySpendingMinor = scopeFireConfig?.monthlySpendingMinor ?? null;
+
     // amortized / anchored: the debt-model data (PRD #109).
     const debtModel = liability ? await store.liabilities.readDebtModel(id) : null;
     const amortizationPlan =
@@ -290,6 +310,9 @@ export default async function EditarPage({
       liability,
       operations,
       overrides,
+      payouts,
+      payoutSchedules,
+      payoutMonthlySpendingMinor,
       position,
       priceCache,
       rateRevisions,
@@ -334,6 +357,9 @@ export default async function EditarPage({
     liability,
     operations,
     overrides,
+    payouts,
+    payoutSchedules,
+    payoutMonthlySpendingMinor,
     position,
     priceCache,
     rateRevisions,
@@ -410,6 +436,31 @@ export default async function EditarPage({
   async function boundSaveExposureProfileAction(formData: FormData) {
     "use server";
     await saveExposureProfileAction(id, formData);
+  }
+
+  async function boundCreatePayoutAction(formData: FormData) {
+    "use server";
+    await createPayoutAction(id, formData);
+  }
+
+  async function boundDeletePayoutAction(formData: FormData) {
+    "use server";
+    await deletePayoutAction(id, formData);
+  }
+
+  async function boundCreatePayoutScheduleAction(formData: FormData) {
+    "use server";
+    await createPayoutScheduleAction(id, formData);
+  }
+
+  async function boundUpdatePayoutScheduleAction(formData: FormData) {
+    "use server";
+    await updatePayoutScheduleAction(id, formData);
+  }
+
+  async function boundDeletePayoutScheduleAction(formData: FormData) {
+    "use server";
+    await deletePayoutScheduleAction(id, formData);
   }
 
   const freshness =
@@ -494,7 +545,8 @@ export default async function EditarPage({
 
         {formError &&
         formError.formId !== "operation" &&
-        formError.formId !== "exposure" ? (
+        formError.formId !== "exposure" &&
+        formError.formId !== "payout" ? (
           <p className="errorBand" role="alert">
             {formError.message}
           </p>
@@ -655,6 +707,27 @@ export default async function EditarPage({
               </p>
             </section>
           )
+        ) : null}
+
+        {/* Cobros: dividends / interest / rent this asset pays its owner — a pure
+            attribution record, never a figure (PRD #652 S1, #656, ADR 0054). Shown
+            for every asset (income-side); never for a liability. */}
+        {asset ? (
+          <CobrosSection
+            createPayoutAction={boundCreatePayoutAction}
+            createPayoutScheduleAction={boundCreatePayoutScheduleAction}
+            currency={asset.currency}
+            currentUrl={currentUrl}
+            deletePayoutAction={boundDeletePayoutAction}
+            deletePayoutScheduleAction={boundDeletePayoutScheduleAction}
+            error={formError?.formId === "payout" ? formError.message : null}
+            monthlySpendingMinor={payoutMonthlySpendingMinor}
+            payouts={payouts}
+            privacyMode={privacyMode}
+            schedules={payoutSchedules}
+            today={today}
+            updatePayoutScheduleAction={boundUpdatePayoutScheduleAction}
+          />
         ) : null}
 
         {/* appreciating: the housing valuation curve + appraisals */}

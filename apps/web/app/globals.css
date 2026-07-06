@@ -6443,3 +6443,321 @@ td.rowActions > * {
   color: var(--muted);
   line-height: 1.5;
 }
+
+/* ── Cobros surface (PRD #652 S1, folded from S0 variant C2) ─────────────── */
+.cobros {
+  background: var(--panel);
+  color: var(--ink-panel);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.cobros h3 {
+  margin: 0 0 4px;
+  font-size: 1.05rem;
+}
+.cobros h4 {
+  margin: 0 0 4px;
+  font-size: 0.92rem;
+}
+.cobrosCap {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* renta pasiva strip */
+.cobrosPasiva {
+  background: color-mix(in srgb, var(--gold) 10%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--gold) 30%, transparent);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin: 12px 0 16px;
+}
+.cobrosPasivaTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.cobrosPasivaCoverage {
+  text-align: right;
+}
+.cobrosPasivaBig {
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.cobrosPasivaBar {
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
+  overflow: hidden;
+  margin-top: 12px;
+}
+.cobrosPasivaBar i {
+  display: block;
+  height: 100%;
+  background: var(--gold);
+}
+
+/* year selector + legend */
+.cobrosYearBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.cobrosSegmented {
+  display: inline-flex;
+  border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  width: fit-content;
+}
+.cobrosSegmented button {
+  background: transparent;
+  color: var(--ink-panel);
+  border: none;
+  border-radius: 0;
+  padding: 7px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.cobrosSegmented button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+.cobrosLegend {
+  display: flex;
+  gap: 14px;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+.cobrosLegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cobrosSwatchDerived {
+  width: 16px;
+  height: 8px;
+  border-radius: 3px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--muted),
+    var(--muted) 2px,
+    transparent 2px,
+    transparent 4px
+  );
+}
+.cobrosSwatchOneoff {
+  width: 16px;
+  height: 8px;
+  border-radius: 3px;
+  background: var(--blue);
+}
+
+/* month grid */
+.cobrosCells {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.cobrosCell {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  min-height: 66px;
+  border: 1px solid color-mix(in srgb, var(--muted) 20%, transparent);
+  background: transparent;
+  color: var(--ink-panel);
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.cobrosCell:hover {
+  transform: translateY(-2px);
+}
+.cobrosCellFuture {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--muted) 20%, transparent);
+  opacity: 0.55;
+  cursor: default;
+}
+.cobrosCellMonth {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: capitalize;
+}
+.cobrosCellAmt {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  margin-top: 4px;
+}
+.cobrosCellEmpty {
+  color: color-mix(in srgb, var(--muted) 60%, transparent);
+  font-weight: 400;
+}
+.cobrosCellPct {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.cobrosSplitBar {
+  display: flex;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 6px;
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+}
+.cobrosSplitDerived {
+  height: 100%;
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--muted) 55%, transparent),
+    color-mix(in srgb, var(--muted) 55%, transparent) 2px,
+    transparent 2px,
+    transparent 4px
+  );
+}
+.cobrosSplitOneoff {
+  height: 100%;
+  background: var(--blue);
+}
+
+/* month drawer */
+.cobrosDrawer {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--muted) 10%, transparent);
+}
+.cobrosDrawerHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  text-transform: capitalize;
+}
+.cobrosRowList {
+  display: flex;
+  flex-direction: column;
+}
+.cobrosRow {
+  display: grid;
+  grid-template-columns: 96px 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid color-mix(in srgb, var(--muted) 22%, transparent);
+}
+.cobrosRow:first-child {
+  border-top: none;
+}
+.cobrosRowDate {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.cobrosRowAmount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: right;
+  color: var(--green);
+}
+.cobrosBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.cobrosBadgeOneoff {
+  background: color-mix(in srgb, var(--blue) 16%, transparent);
+  color: var(--blue);
+}
+.cobrosBadgeDerived {
+  background: transparent;
+  color: var(--muted);
+  border: 1px dashed color-mix(in srgb, var(--muted) 55%, transparent);
+}
+.cobrosLinkBtn {
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid color-mix(in srgb, var(--muted) 40%, transparent);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.cobrosLinkBtn:hover {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+/* entry forms + schedule management */
+.cobrosForm {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid color-mix(in srgb, var(--muted) 18%, transparent);
+}
+.cobrosFormGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.cobrosFormGrid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.cobrosSchedules {
+  margin-top: 16px;
+}
+.cobrosSchedule {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid color-mix(in srgb, var(--muted) 18%, transparent);
+}
+.cobrosScheduleMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cobrosScheduleActions {
+  display: flex;
+  gap: 8px;
+}
+.cobrosScheduleActions form {
+  display: inline;
+}
+.cobrosHonestNote {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--muted) 18%, transparent);
+}
+
+@media (max-width: 640px) {
+  .cobrosCells {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .cobrosFormGrid {
+    grid-template-columns: 1fr;
+  }
+}

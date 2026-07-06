@@ -29,6 +29,13 @@ import {
   type ExposureProfileFields,
 } from "@web/patrimonio/[id]/editar/_surfaces/exposure-profile-form";
 import {
+  buildPayoutResult,
+  buildPayoutScheduleResult,
+  toggleExclusion,
+  type PayoutFields,
+  type PayoutScheduleFields,
+} from "@web/patrimonio/[id]/editar/_surfaces/cobros-form";
+import {
   coingeckoHistoricalSource,
   fetchAndCachePrice,
   fetchPriceNow,
@@ -708,6 +715,159 @@ function parseExposureProfileFieldsFromForm(formData: FormData): ExposureProfile
     trackedIndex: str("trackedIndex"),
     hedged: formData.get("hedged") === "on",
   };
+}
+
+// ── Payout attribution (PRD #652 S1, #656, ADR 0054) ─────────────────────────
+
+/**
+ * A payout is a dated attribution record that a holding paid its owner an amount —
+ * a pure fact, NEVER a figure: it touches no snapshot, no ripple, no net-worth
+ * path, only the `store.payouts` methods. These five actions mirror the exposure
+ * surface: `guardDemoWrite` first, an optional `_store` seam for tests, and a
+ * redirect-with-message. Validation errors render at the "payout" section (its own
+ * formId), not on the holding-edit form at the top of the page.
+ */
+
+/** Lift the one-off payout inputs off the FormData into the pure field map. */
+function parsePayoutFieldsFromForm(formData: FormData): PayoutFields {
+  const str = (name: string) => String(formData.get(name) ?? "");
+  return { dateISO: str("dateISO"), amount: str("amount"), note: str("note") };
+}
+
+/** Lift the schedule inputs off the FormData into the pure field map. */
+function parsePayoutScheduleFieldsFromForm(formData: FormData): PayoutScheduleFields {
+  const str = (name: string) => String(formData.get(name) ?? "");
+  return {
+    label: str("label"),
+    amount: str("amount"),
+    cadence: str("cadence"),
+    startISO: str("startISO"),
+    endISO: str("endISO"),
+  };
+}
+
+export async function createPayoutAction(
+  routeAssetId: string,
+  formData: FormData,
+  _store?: WorthlineStore,
+) {
+  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+
+  const result = buildPayoutResult(parsePayoutFieldsFromForm(formData));
+  if (!result.ok) {
+    redirect(errorRedirectUrl(returnUrl, { formId: "payout", message: result.error }));
+  }
+
+  await runActionWithStore(
+    (store) => store.payouts.createPayout({ holdingId: routeAssetId, ...result.payout }),
+    _store,
+  );
+  redirect(successRedirectUrl(returnUrl, "payout_saved"));
+}
+
+export async function deletePayoutAction(
+  routeAssetId: string,
+  formData: FormData,
+  _store?: WorthlineStore,
+) {
+  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+  const payoutId = parseEntityId(formData, "payoutId");
+
+  if (!payoutId) {
+    redirect(errorRedirectUrl(returnUrl, { message: "Cobro no encontrado." }));
+  }
+
+  await runActionWithStore((store) => store.payouts.deletePayout(payoutId), _store);
+  redirect(successRedirectUrl(returnUrl, "payout_deleted"));
+}
+
+export async function createPayoutScheduleAction(
+  routeAssetId: string,
+  formData: FormData,
+  _store?: WorthlineStore,
+) {
+  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+
+  const result = buildPayoutScheduleResult(parsePayoutScheduleFieldsFromForm(formData));
+  if (!result.ok) {
+    redirect(errorRedirectUrl(returnUrl, { formId: "payout", message: result.error }));
+  }
+
+  await runActionWithStore(
+    (store) =>
+      store.payouts.createPayoutSchedule({ holdingId: routeAssetId, ...result.schedule }),
+    _store,
+  );
+  redirect(successRedirectUrl(returnUrl, "payout_schedule_saved"));
+}
+
+/**
+ * Update a schedule via the two ficha affordances (never a full re-entry):
+ * "terminar hoy" posts an `endISO` (or `clearEnd=1` to reactivate a dead tail),
+ * and "excluir mes" posts an `excludeDate` that is toggled against the schedule's
+ * current exclusion list (read back so the toggle is honest, not a blind append).
+ */
+export async function updatePayoutScheduleAction(
+  routeAssetId: string,
+  formData: FormData,
+  _store?: WorthlineStore,
+) {
+  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+  const scheduleId = parseEntityId(formData, "scheduleId");
+
+  if (!scheduleId) {
+    redirect(errorRedirectUrl(returnUrl, { message: "Cobro recurrente no encontrado." }));
+  }
+
+  const excludeDate = String(formData.get("excludeDate") ?? "").trim();
+  const endISO = String(formData.get("endISO") ?? "").trim();
+
+  await runActionWithStore(async (store) => {
+    if (excludeDate) {
+      const schedule = (
+        await store.payouts.readPayoutSchedulesForHolding(routeAssetId)
+      ).find((candidate) => candidate.id === scheduleId);
+      if (schedule) {
+        await store.payouts.updatePayoutSchedule(scheduleId, {
+          exclusions: toggleExclusion(schedule.exclusions, excludeDate),
+        });
+      }
+      return;
+    }
+    if (formData.get("clearEnd") === "1") {
+      await store.payouts.updatePayoutSchedule(scheduleId, { endISO: null });
+      return;
+    }
+    if (endISO) {
+      await store.payouts.updatePayoutSchedule(scheduleId, { endISO });
+    }
+  }, _store);
+
+  redirect(successRedirectUrl(returnUrl, "payout_schedule_updated"));
+}
+
+export async function deletePayoutScheduleAction(
+  routeAssetId: string,
+  formData: FormData,
+  _store?: WorthlineStore,
+) {
+  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+  const scheduleId = parseEntityId(formData, "scheduleId");
+
+  if (!scheduleId) {
+    redirect(errorRedirectUrl(returnUrl, { message: "Cobro recurrente no encontrado." }));
+  }
+
+  await runActionWithStore(
+    (store) => store.payouts.deletePayoutSchedule(scheduleId),
+    _store,
+  );
+  redirect(successRedirectUrl(returnUrl, "payout_schedule_deleted"));
 }
 
 export async function refreshPricesAction(

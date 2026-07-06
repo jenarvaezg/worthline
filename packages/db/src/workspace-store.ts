@@ -53,6 +53,8 @@ import {
   liabilityOwnerships,
   investmentAssets,
   memberGroupMembers,
+  payouts,
+  payoutSchedules,
   memberGroups,
   members,
   positions,
@@ -140,6 +142,8 @@ const WORKSPACE_TABLES = [
   "liability_ownerships",
   "warning_overrides",
   "audit_log",
+  "payouts",
+  "payout_schedules",
   "liabilities",
   "assets",
   "member_group_members",
@@ -927,6 +931,40 @@ async function importWorkspace(
         .run();
     }
 
+    // Payouts + schedules (PRD #652, ADR 0054), restored verbatim by id after
+    // their holdings (FK). Occurrences are never in the file — they derive on read.
+    if (doc.payouts.length > 0) {
+      await db
+        .insert(payouts)
+        .values(
+          doc.payouts.map((payout) => ({
+            id: payout.id,
+            holdingId: payout.holdingId,
+            date: payout.dateISO,
+            amountMinor: payout.amountMinor,
+            note: payout.note ?? null,
+          })),
+        )
+        .run();
+    }
+    if (doc.payoutSchedules.length > 0) {
+      await db
+        .insert(payoutSchedules)
+        .values(
+          doc.payoutSchedules.map((schedule) => ({
+            id: schedule.id,
+            holdingId: schedule.holdingId,
+            label: schedule.label,
+            amountMinor: schedule.amountMinor,
+            cadence: schedule.cadence,
+            startDate: schedule.startISO,
+            endDate: schedule.endISO,
+            exclusionsJson: JSON.stringify(schedule.exclusions),
+          })),
+        )
+        .run();
+    }
+
     // The whole fire config record lands in the single app_settings row
     // exactly as saveFireConfig leaves it.
     if (Object.keys(doc.fireConfig).length > 0) {
@@ -1339,6 +1377,19 @@ async function buildWorkspaceExport(
     .orderBy(asc(exposureProfiles.key))
     .all();
 
+  // Payouts + schedules (PRD #652, ADR 0054), ordered for a stable diff. Only the
+  // declaration is exported; occurrences derive on read and are never stored.
+  const payoutRows = await db
+    .select()
+    .from(payouts)
+    .orderBy(asc(payouts.date), asc(payouts.id))
+    .all();
+  const payoutScheduleRows = await db
+    .select()
+    .from(payoutSchedules)
+    .orderBy(asc(payoutSchedules.holdingId), asc(payoutSchedules.id))
+    .all();
+
   return serializeWorkspaceExport({
     workspace: { baseCurrency: workspace.baseCurrency, mode: workspace.mode },
     members: workspace.members,
@@ -1351,6 +1402,23 @@ async function buildWorkspaceExport(
       ter: row.ter,
       hedged: row.hedged === 1,
       breakdowns: JSON.parse(row.breakdownsJson) as ExposureBreakdowns,
+    })),
+    payouts: payoutRows.map((row) => ({
+      id: row.id,
+      holdingId: row.holdingId,
+      dateISO: row.date,
+      amountMinor: row.amountMinor,
+      ...(row.note != null ? { note: row.note } : {}),
+    })),
+    payoutSchedules: payoutScheduleRows.map((row) => ({
+      id: row.id,
+      holdingId: row.holdingId,
+      label: row.label,
+      amountMinor: row.amountMinor,
+      cadence: row.cadence,
+      startISO: row.startDate,
+      endISO: row.endDate,
+      exclusions: JSON.parse(row.exclusionsJson) as string[],
     })),
     assets: assetRows.filter((row) => row.deletedAt === null).map(toExportedAsset),
     liabilities: liabilityRows
