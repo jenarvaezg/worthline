@@ -32,6 +32,7 @@ const dayFormatter = new Intl.DateTimeFormat("es-ES", {
   day: "numeric",
   month: "short",
   year: "numeric",
+  timeZone: "UTC",
 });
 const formatDay = (iso: string) => dayFormatter.format(new Date(`${iso}T00:00:00Z`));
 
