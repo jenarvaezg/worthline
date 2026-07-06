@@ -1,8 +1,10 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  collectHoldingPayouts,
   deriveScheduleOccurrences,
   passiveIncomeTrailing,
+  type Payout,
   type PayoutSchedule,
 } from "./payouts";
 
@@ -168,5 +170,44 @@ describe("passiveIncomeTrailing", () => {
   test("empty input yields a zero total", () => {
     const result = passiveIncomeTrailing([], "2026-01-01");
     expect(result).toMatchObject({ totalMinor: 0, count: 0 });
+  });
+});
+
+describe("collectHoldingPayouts", () => {
+  const oneOff = (overrides: Partial<Payout> = {}): Payout => ({
+    id: "p1",
+    holdingId: "h1",
+    dateISO: "2025-03-01",
+    amountMinor: 50000,
+    ...overrides,
+  });
+
+  test("groups one-offs and derived schedule occurrences by holding, up to today", () => {
+    const byHolding = collectHoldingPayouts(
+      [oneOff(), oneOff({ id: "p2", holdingId: "h2", dateISO: "2025-02-01" })],
+      [schedule({ startISO: "2025-01-15" })], // h1 monthly
+      "2025-03-20",
+    );
+
+    // h1: one-off + three derived occurrences (Jan 15, Feb 15, Mar 15).
+    expect(byHolding.get("h1")).toEqual(
+      expect.arrayContaining([
+        { dateISO: "2025-03-01", amountMinor: 50000 },
+        { dateISO: "2025-01-15", amountMinor: 100000 },
+        { dateISO: "2025-02-15", amountMinor: 100000 },
+        { dateISO: "2025-03-15", amountMinor: 100000 },
+      ]),
+    );
+    expect(byHolding.get("h1")).toHaveLength(4);
+    expect(byHolding.get("h2")).toEqual([{ dateISO: "2025-02-01", amountMinor: 50000 }]);
+  });
+
+  test("excludes one-offs dated after today (nothing beyond the terminal date)", () => {
+    const byHolding = collectHoldingPayouts(
+      [oneOff({ dateISO: "2025-12-31" })],
+      [],
+      "2025-03-20",
+    );
+    expect(byHolding.has("h1")).toBe(false);
   });
 });

@@ -34,6 +34,28 @@ export interface DatedCashflow {
   amountMinor: number;
 }
 
+/**
+ * A distribution a holding paid its owner — a dividend, coupon, or rent (#657,
+ * ADR 0054). Money in, dated: it rides the same signed-cashflow primitive as a
+ * sell (positive = inflow), so a recorded payout enters the IRR and the realized
+ * simple gain without ever touching a net-worth figure. Amounts are the positive
+ * minor units the payout record carries.
+ */
+export interface DatedPayout {
+  date: string;
+  amountMinor: number;
+}
+
+/** Recorded payouts as positive dated inflows (a no-op for an empty/absent series). */
+export function payoutCashflows(
+  payouts: readonly DatedPayout[] | undefined,
+): DatedCashflow[] {
+  return (payouts ?? []).map((payout) => ({
+    amountMinor: payout.amountMinor,
+    date: payout.date,
+  }));
+}
+
 /** Why an IRR could not be computed — returned instead of a bogus rate. */
 export type IrrReason =
   | "insufficient_cashflows"
@@ -71,12 +93,16 @@ export interface HoldingReturnsInput {
   marketValueMinor: number;
   /** The "today" the terminal flow is dated at — injected so tests stay deterministic. */
   valuationDate: string;
+  /** Recorded distributions (dividends/coupons/rent), folded as inflows (#657). */
+  payouts?: readonly DatedPayout[];
 }
 
 /** A holding in a portfolio-level aggregation. */
 export interface PortfolioHolding {
   operations: readonly InvestmentOperation[];
   marketValueMinor: number;
+  /** Recorded distributions folded into the merged portfolio cashflows (#657). */
+  payouts?: readonly DatedPayout[];
 }
 
 /** The holdings whose returns are aggregated into one portfolio figure. */
@@ -478,12 +504,14 @@ function simpleGainFromFlows(
  * invested, with a CAGR only when the span reaches a year.
  */
 export function simpleGain(input: HoldingReturnsInput): SimpleGain {
-  const flows = operationCashflows(input.operations);
+  const operationFlows = operationCashflows(input.operations);
+  const flows = [...operationFlows, ...payoutCashflows(input.payouts)];
   return simpleGainFromFlows(
     flows,
     input.marketValueMinor,
     input.currency,
-    flows[0]?.date ?? null,
+    // Span runs from the first operation (holding life), not a later payout.
+    operationFlows[0]?.date ?? flows[0]?.date ?? null,
     input.valuationDate,
   );
 }
@@ -518,6 +546,7 @@ function holdingCashflows(
   valuationDate: string,
 ): DatedCashflow[] {
   const flows = operationCashflows(input.operations);
+  flows.push(...payoutCashflows(input.payouts));
   if (input.marketValueMinor > 0) {
     flows.push({ amountMinor: input.marketValueMinor, date: valuationDate });
   }
@@ -539,17 +568,18 @@ export function portfolioSimpleGain(input: PortfolioReturnsInput): SimpleGain {
   let earliestDate: string | null = null;
 
   for (const holding of input.holdings) {
-    const flows = operationCashflows(holding.operations);
+    const operationFlows = operationCashflows(holding.operations);
+    const flows = [...operationFlows, ...payoutCashflows(holding.payouts)];
     const gain = simpleGainFromFlows(
       flows,
       holding.marketValueMinor,
       input.currency,
-      flows[0]?.date ?? null,
+      operationFlows[0]?.date ?? flows[0]?.date ?? null,
       input.valuationDate,
     );
     totalInvestedMinor += gain.totalInvestedMinor;
     totalGainMinor += gain.totalGain.amountMinor;
-    const first = flows[0]?.date;
+    const first = operationFlows[0]?.date;
     if (first && (earliestDate === null || first < earliestDate)) {
       earliestDate = first;
     }

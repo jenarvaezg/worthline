@@ -124,6 +124,56 @@ export function deriveScheduleOccurrences(
   return occurrences;
 }
 
+// ── returns integration (#657) ───────────────────────────────────────────────
+
+/** A dated minor-unit amount: the shape a payout contributes to a return. */
+export interface DatedAmount {
+  dateISO: string;
+  amountMinor: number;
+}
+
+/**
+ * Every recorded payout up to `todayISO` (inclusive), grouped by holding id:
+ * one-off payouts plus each schedule's derived occurrences. The upper bound
+ * matches the return engine's terminal-value date — nothing dated after today
+ * enters a return. This is the single place returns surfaces read payouts from,
+ * so no consumer re-derives a schedule.
+ */
+export function collectHoldingPayouts(
+  oneOffs: readonly Payout[],
+  schedules: readonly PayoutSchedule[],
+  todayISO: string,
+): Map<string, DatedAmount[]> {
+  const byHolding = new Map<string, DatedAmount[]>();
+  const push = (holdingId: string, row: DatedAmount): void => {
+    const rows = byHolding.get(holdingId);
+    if (rows) {
+      rows.push(row);
+    } else {
+      byHolding.set(holdingId, [row]);
+    }
+  };
+
+  for (const payout of oneOffs) {
+    if (payout.dateISO <= todayISO) {
+      push(payout.holdingId, {
+        dateISO: payout.dateISO,
+        amountMinor: payout.amountMinor,
+      });
+    }
+  }
+  for (const schedule of schedules) {
+    // deriveScheduleOccurrences already caps at today and honors end/exclusions.
+    for (const occurrence of deriveScheduleOccurrences(schedule, todayISO)) {
+      push(occurrence.holdingId, {
+        dateISO: occurrence.dateISO,
+        amountMinor: occurrence.amountMinor,
+      });
+    }
+  }
+  return byHolding;
+}
+
 // ── trailing passive income ──────────────────────────────────────────────────
 
 export interface PassiveIncomeWindow {

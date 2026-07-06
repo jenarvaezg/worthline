@@ -22,6 +22,8 @@ const calls = vi.hoisted(() => ({
   readCurveValuedHoldingsAtDate: vi.fn(async () => ({ assets: [], liabilities: [] })),
   readExposureProfiles: vi.fn(async () => []),
   readInvestmentAssetsWithMeta: vi.fn(async () => []),
+  readPayouts: vi.fn(async () => []),
+  readPayoutSchedules: vi.fn(async () => []),
   readSnapshotHoldings: vi.fn(async () => []),
   readTrash: vi.fn(async () => ({ assets: [], liabilities: [] })),
   readWarningOverrides: vi.fn(async () => []),
@@ -38,6 +40,10 @@ const calls = vi.hoisted(() => ({
       },
       exposureProfiles: { readExposureProfiles: calls.readExposureProfiles },
       operations: { readAllPriceCacheEntries: calls.readAllPriceCacheEntries },
+      payouts: {
+        readPayoutSchedules: calls.readPayoutSchedules,
+        readPayouts: calls.readPayouts,
+      },
       snapshots: {
         buildProjectionContext: calls.buildProjectionContext,
         readCurveValuedHoldingsAtDate: calls.readCurveValuedHoldingsAtDate,

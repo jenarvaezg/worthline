@@ -6,6 +6,7 @@ import { selectInvestmentPrice } from "./investment-valuation";
 import type { CurrencyCode, MoneyMinor } from "./money";
 import { derivePosition } from "./positions";
 import type {
+  DatedPayout,
   IrrResult,
   MonthlyCloseValue,
   PortfolioHolding,
@@ -70,6 +71,13 @@ export function returnsKindForInstrument(instrument: Instrument): ReturnsKind | 
 }
 
 export const MARKET_CAVEAT = "No incluye dividendos ni cupones.";
+/**
+ * Shown instead of {@link MARKET_CAVEAT} once the holding has recorded payouts
+ * (#657): distributions now enter the money-weighted return and realized simple
+ * gain, but TWR still tracks price only — honest about which measures moved.
+ */
+export const MARKET_PAYOUTS_CAVEAT =
+  "IRR y ganancia simple incluyen los cobros registrados; la TWR, no.";
 export const APPRECIATING_CAVEAT =
   "Revalorización = valor actual − coste. Sin IRR ni TWR de mercado.";
 
@@ -112,11 +120,12 @@ function marketView(
   irr: IrrResult,
   twr: TwrResult | null,
   split: { realizedPnl?: MoneyMinor; unrealizedPnl?: MoneyMinor },
+  payoutsIncluded = false,
 ): HoldingReturnsView {
   return {
     kind: "market",
     ...fromSimpleGain(gain),
-    caveats: [MARKET_CAVEAT],
+    caveats: [payoutsIncluded ? MARKET_PAYOUTS_CAVEAT : MARKET_CAVEAT],
     irr,
     realizedPnl: split.realizedPnl ?? null,
     twr,
@@ -132,6 +141,8 @@ export interface HoldingReturnsViewInput {
   twr?: TwrResult | null;
   realizedPnl?: MoneyMinor;
   unrealizedPnl?: MoneyMinor;
+  /** Whether recorded payouts fed the measures, switching the honest caveat (#657). */
+  payoutsIncluded?: boolean;
 }
 
 /**
@@ -157,10 +168,16 @@ export function buildHoldingReturnsView(
       unrealizedPnl: null,
     };
   }
-  return marketView(input.simpleGain, input.irr, input.twr ?? null, {
-    ...(input.realizedPnl ? { realizedPnl: input.realizedPnl } : {}),
-    ...(input.unrealizedPnl ? { unrealizedPnl: input.unrealizedPnl } : {}),
-  });
+  return marketView(
+    input.simpleGain,
+    input.irr,
+    input.twr ?? null,
+    {
+      ...(input.realizedPnl ? { realizedPnl: input.realizedPnl } : {}),
+      ...(input.unrealizedPnl ? { unrealizedPnl: input.unrealizedPnl } : {}),
+    },
+    input.payoutsIncluded ?? false,
+  );
 }
 
 /**
@@ -171,8 +188,9 @@ export function buildPortfolioReturnsView(
   gain: SimpleGain,
   irr: IrrResult,
   twr: TwrResult | null = null,
+  payoutsIncluded = false,
 ): HoldingReturnsView {
-  return marketView(gain, irr, twr, {});
+  return marketView(gain, irr, twr, {}, payoutsIncluded);
 }
 
 /** The raw per-asset reads the returns computation folds through the engine. */
@@ -182,6 +200,8 @@ export interface InvestmentReturnsContext {
   manualPriceByAsset: ReadonlyMap<string, DecimalString | undefined>;
   monthlyClosesByAsset?: ReadonlyMap<string, readonly MonthlyCloseValue[]>;
   portfolioMonthlyCloses?: readonly MonthlyCloseValue[];
+  /** Recorded payouts (one-offs + derived occurrences) per asset id (#657). */
+  payoutsByAsset?: ReadonlyMap<string, readonly DatedPayout[]>;
   currency: CurrencyCode;
   valuationDate: string;
 }
@@ -227,15 +247,18 @@ export function investmentReturnsById(
     }
     const marketValueMinor = holdingMarketValueMinor(assetId, operations, ctx);
     const monthlyCloses = ctx.monthlyClosesByAsset?.get(assetId);
+    const payouts = ctx.payoutsByAsset?.get(assetId) ?? [];
     const returnsInput = {
       currency: ctx.currency,
       marketValueMinor,
       operations,
+      payouts,
       valuationDate: ctx.valuationDate,
     };
     const view = buildHoldingReturnsView({
       instrument,
       irr: holdingIrr(returnsInput),
+      payoutsIncluded: payouts.length > 0,
       simpleGain: simpleGain(returnsInput),
       twr: monthlyCloses ? holdingTwr({ monthlyCloses, operations }) : null,
     });
@@ -256,13 +279,19 @@ export function portfolioReturnsView(
   ctx: InvestmentReturnsContext,
 ): HoldingReturnsView | null {
   const holdings: PortfolioHolding[] = [];
+  let payoutsIncluded = false;
   for (const [assetId, operations] of ctx.operationsByAsset) {
     if (operations.length === 0) {
       continue;
     }
+    const payouts = ctx.payoutsByAsset?.get(assetId) ?? [];
+    if (payouts.length > 0) {
+      payoutsIncluded = true;
+    }
     holdings.push({
       marketValueMinor: holdingMarketValueMinor(assetId, operations, ctx),
       operations,
+      payouts,
     });
   }
 
@@ -284,6 +313,7 @@ export function portfolioReturnsView(
           monthlyCloses: ctx.portfolioMonthlyCloses,
         })
       : null,
+    payoutsIncluded,
   );
 }
 
@@ -333,11 +363,13 @@ export function returnsByAssetClassView(
     if (instrument === undefined || returnsKindForInstrument(instrument) !== "market") {
       continue;
     }
+    const payouts = ctx.payoutsByAsset?.get(assetId) ?? [];
     holdings.push({
       assetClass: ctx.assetClassByAsset.get(assetId) ?? { kind: "unknown" },
       marketValueMinor: holdingMarketValueMinor(assetId, operations, ctx),
       monthlyCloses: ctx.monthlyClosesByAsset?.get(assetId) ?? [],
       operations,
+      payouts,
     });
   }
 
@@ -353,7 +385,12 @@ export function returnsByAssetClassView(
 
   return {
     classes: result.classes.map((entry) => {
-      const view = buildPortfolioReturnsView(entry.simpleGain, entry.irr, entry.twr);
+      const view = buildPortfolioReturnsView(
+        entry.simpleGain,
+        entry.irr,
+        entry.twr,
+        entry.payoutsIncluded,
+      );
       return {
         key: entry.key,
         value: entry.value,

@@ -220,4 +220,57 @@ describe("returnsByAssetClass", () => {
     expect(equity.twr.reason).toBeNull();
     expect(equity.twr.rate).toBeCloseTo(0.1, 6);
   });
+
+  test("a payout folds into the class simple gain, reconciling with the portfolio", () => {
+    const operations = [buy("10", "100", "2023-01-01")]; // invested 100_000
+    const payouts = [{ amountMinor: 50_000, date: "2023-06-01" }];
+    const result = returnsByAssetClass({
+      currency: "EUR",
+      holdings: [
+        {
+          assetClass: classified({ equity: "1" }),
+          marketValueMinor: 100_000, // flat: value == cost
+          monthlyCloses: [],
+          operations,
+          payouts,
+        },
+      ],
+      valuationDate: "2024-01-01",
+    });
+
+    const equity = result.classes.find((c) => c.key === "equity")!;
+    // Flat holding: the whole gain is the recorded distribution.
+    expect(equity.simpleGain.totalGain.amountMinor).toBe(50_000);
+    expect(equity.simpleGain).toEqual(
+      portfolioSimpleGain({
+        currency: "EUR",
+        holdings: [{ marketValueMinor: 100_000, operations, payouts }],
+        valuationDate: "2024-01-01",
+      }),
+    );
+  });
+
+  test("a payout is scaled by ownership then class weight", () => {
+    const result = returnsByAssetClass({
+      currency: "EUR",
+      holdings: [
+        {
+          assetClass: classified({ bond: "0.4", equity: "0.6" }),
+          marketValueMinor: 50_000, // owned slice, flat
+          monthlyCloses: [],
+          operations: [buy("10", "100", "2024-01-01")], // gross invested 100_000
+          ownershipBps: 5_000, // owner holds half
+          payouts: [{ amountMinor: 100_000, date: "2024-06-01" }],
+        },
+      ],
+      valuationDate: "2024-12-01",
+    });
+
+    // 100_000 × 50% ownership × 60% equity = 30_000 attributed to equity.
+    const equity = result.classes.find((c) => c.key === "equity")!;
+    expect(equity.simpleGain.totalGain.amountMinor).toBe(30_000);
+    // 100_000 × 50% × 40% bond = 20_000.
+    const bond = result.classes.find((c) => c.key === "bond")!;
+    expect(bond.simpleGain.totalGain.amountMinor).toBe(20_000);
+  });
 });

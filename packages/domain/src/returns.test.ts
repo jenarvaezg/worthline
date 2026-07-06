@@ -343,3 +343,98 @@ describe("portfolio aggregation", () => {
     expect(result.rate).toBeCloseTo(merged.rate as number, 8);
   });
 });
+
+describe("payouts in returns (#657)", () => {
+  const flatBuy = buy("100", "100", "2021-01-01"); // −10 000.00, terminal flat
+
+  test("simpleGain: a payout is realized proceeds, not extra invested", () => {
+    const withPayout = simpleGain({
+      currency: "EUR",
+      marketValueMinor: 1_000_000, // flat: value == cost
+      operations: [flatBuy],
+      payouts: [{ amountMinor: 50_000, date: "2022-01-01" }],
+      valuationDate: "2024-01-01",
+    });
+
+    // +500.00 of income lands as gain; the invested denominator is unchanged.
+    expect(withPayout.totalGain.amountMinor).toBe(50_000);
+    expect(withPayout.totalInvestedMinor).toBe(1_000_000);
+    expect(withPayout.totalReturnRatio).toBeCloseTo(0.05, 8);
+  });
+
+  test("holdingIrr: a payout raises the money-weighted return", () => {
+    const input = {
+      currency: "EUR" as const,
+      marketValueMinor: 1_000_000, // flat
+      operations: [flatBuy],
+      valuationDate: "2024-01-01",
+    };
+    const without = holdingIrr(input);
+    const withPayout = holdingIrr({
+      ...input,
+      payouts: [{ amountMinor: 50_000, date: "2022-01-01" }],
+    });
+
+    expect(without.rate).toBeCloseTo(0, 6); // flat holding earns nothing
+    expect(withPayout.reason).toBeNull();
+    expect(withPayout.rate as number).toBeGreaterThan(0);
+  });
+
+  test("empty (or omitted) payout series is a no-op", () => {
+    const input = {
+      currency: "EUR" as const,
+      marketValueMinor: 1_300_000,
+      operations: [flatBuy],
+      valuationDate: "2024-01-01",
+    };
+    expect(simpleGain({ ...input, payouts: [] })).toEqual(simpleGain(input));
+    expect(holdingIrr({ ...input, payouts: [] })).toEqual(holdingIrr(input));
+  });
+
+  test("a reinvested dividend (+payout, −buy) nets out by construction", () => {
+    // Reinvestment: the fund pays 1 000.00 and it is immediately bought back as
+    // 10 units @100 on the same day. Recording both must leave the return
+    // identical to never recording either (the fund simply grew its units).
+    const reinvested = {
+      currency: "EUR" as const,
+      marketValueMinor: 1_200_000, // 110 units now worth this
+      operations: [flatBuy, buy("10", "100", "2022-01-01")],
+      payouts: [{ amountMinor: 100_000, date: "2022-01-01" }],
+      valuationDate: "2024-01-01",
+    };
+    const asIfGrown = {
+      currency: "EUR" as const,
+      marketValueMinor: 1_200_000,
+      operations: [flatBuy],
+      valuationDate: "2024-01-01",
+    };
+
+    expect(simpleGain(reinvested).totalGain.amountMinor).toBe(
+      simpleGain(asIfGrown).totalGain.amountMinor,
+    );
+    expect(holdingIrr(reinvested).rate as number).toBeCloseTo(
+      holdingIrr(asIfGrown).rate as number,
+      8,
+    );
+  });
+
+  test("portfolio measures fold each holding's payouts", () => {
+    const input = {
+      currency: "EUR" as const,
+      holdings: [
+        {
+          marketValueMinor: 1_000_000,
+          operations: [flatBuy],
+          payouts: [{ amountMinor: 50_000, date: "2022-01-01" }],
+        },
+      ],
+      valuationDate: "2024-01-01",
+    };
+    const gain = portfolioSimpleGain(input);
+    const irr = portfolioIrr(input);
+
+    expect(gain.totalGain.amountMinor).toBe(50_000);
+    expect(irr.reason).toBeNull();
+    expect(irr.rate as number).toBeGreaterThan(0);
+  });
+});
