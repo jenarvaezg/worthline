@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 41;
+export const SCHEMA_VERSION = 42;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1335,6 +1335,35 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       await client.execute("ALTER TABLE exposure_profiles ADD COLUMN declared_at TEXT");
     } catch {}
     await writeSchemaVersion(client, 41);
+  }
+
+  if (version < 42) {
+    // Payouts (PRD #652 / ADR 0054): one-off payouts + declared schedules. Pure
+    // attribution — no snapshot, no ripple. FK cascade from the holding.
+    await client.executeMultiple(`
+      CREATE TABLE IF NOT EXISTS payouts (
+        id TEXT PRIMARY KEY,
+        holding_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+        date TEXT NOT NULL,
+        amount_minor INTEGER NOT NULL,
+        note TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS payouts_holding_date_idx ON payouts (holding_id, date, id);
+      CREATE TABLE IF NOT EXISTS payout_schedules (
+        id TEXT PRIMARY KEY,
+        holding_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+        label TEXT NOT NULL,
+        amount_minor INTEGER NOT NULL,
+        cadence TEXT NOT NULL,
+        start_date TEXT NOT NULL,
+        end_date TEXT,
+        exclusions_json TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS payout_schedules_holding_idx ON payout_schedules (holding_id, id);
+    `);
+    await writeSchemaVersion(client, 42);
   }
 
   return { ranV18Backfill, ranV33Backfill };

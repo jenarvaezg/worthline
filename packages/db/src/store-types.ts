@@ -32,6 +32,7 @@ import type {
   UpdateLiabilityInput,
 } from "./liability-store";
 import type { ExposureProfileStore } from "./exposure-profile-store";
+import type { PayoutStore } from "./payout-store";
 import type { GoalStore } from "./goal-store";
 import type { OperationsStore, UpdateInvestmentOperationInput } from "./operations-store";
 import type { SnapshotStore } from "./snapshot-store";
@@ -115,6 +116,7 @@ export interface WorthlineStore {
   goals: GoalStore;
   /** Hand-entered exposure profiles keyed by security identity (PRD #539, ADR 0039). */
   exposureProfiles: ExposureProfileStore;
+  payouts: PayoutStore;
   /** Narrow read-only port for the external agent-view API. */
   agentView: AgentViewReadStore;
 

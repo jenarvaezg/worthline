@@ -82,6 +82,7 @@ export type {
 import { createLiabilityStore } from "./liability-store";
 import { createGoalStore } from "./goal-store";
 import { createExposureProfileStore } from "./exposure-profile-store";
+import { createPayoutStore } from "./payout-store";
 import { createOperationsStore } from "./operations-store";
 import { createSnapshotStore } from "./snapshot-store";
 import {
@@ -209,6 +210,7 @@ async function buildStore(
   const connectedSourceStore = createConnectedSourceStore(ctx);
   const goalStore = createGoalStore(ctx);
   const exposureProfileStore = createExposureProfileStore(ctx);
+  const payoutStore = createPayoutStore(ctx);
   const agentViewReadStore = createAgentViewReadStore(ctx, {
     listConnectedSources: connectedSourceStore.listSources,
     listSourceAssetIds: connectedSourceStore.listSourceAssetIds,
@@ -274,6 +276,7 @@ async function buildStore(
     connectedSources: connectedSourceStore,
     goals: goalStore,
     exposureProfiles: exposureProfileStore,
+    payouts: payoutStore,
     agentView: agentViewReadStore,
     // The connected-source cross-cutting seams (issue #487) — syncConnectedSource
     // and applyBinanceHistoryAndRipple — live in their own module; spread the

@@ -9,6 +9,7 @@ import type {
   LiabilityType,
   GoalPriority,
   OperationKind,
+  PayoutCadence,
   PriceFreshnessState,
   PriceSource,
   RiskTolerance,
@@ -239,6 +240,46 @@ export const exposureProfiles = sqliteTable("exposure_profiles", {
   createdAt: timestamp("created_at"),
   updatedAt: timestamp("updated_at"),
 });
+
+// Payouts (PRD #652 / ADR 0054): attribution records, never figures. A payout
+// attaches to one asset holding and touches no snapshot or ripple; FK cascade
+// removes them when the holding is hard-deleted.
+export const payouts = sqliteTable(
+  "payouts",
+  {
+    id: text("id").primaryKey(),
+    holdingId: text("holding_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    date: text("date").notNull(),
+    amountMinor: integer("amount_minor").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    index("payouts_holding_date_idx").on(table.holdingId, table.date, table.id),
+  ],
+);
+
+// A declared fixed recurrence. Only the declaration is stored; occurrences are
+// derived on read (never materialized). Exclusions are a JSON array of ISO dates.
+export const payoutSchedules = sqliteTable(
+  "payout_schedules",
+  {
+    id: text("id").primaryKey(),
+    holdingId: text("holding_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+    amountMinor: integer("amount_minor").notNull(),
+    cadence: text("cadence").$type<PayoutCadence>().notNull(),
+    startDate: text("start_date").notNull(),
+    endDate: text("end_date"),
+    exclusionsJson: text("exclusions_json").notNull().default("[]"),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [index("payout_schedules_holding_idx").on(table.holdingId, table.id)],
+);
 
 export const assetOperations = sqliteTable(
   "asset_operations",

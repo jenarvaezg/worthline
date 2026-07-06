@@ -373,6 +373,27 @@ const exposureProfileSchema = z.object({
   breakdowns: z.record(z.string(), z.record(z.string(), z.string())).default({}),
 });
 
+// Payouts (PRD #652, ADR 0054): attribution records attached to a holding.
+// Schedule occurrences are derived on read, never exported — only the declaration.
+const payoutSchema = z.object({
+  id: nonEmptyString,
+  holdingId: nonEmptyString,
+  dateISO: nonEmptyString,
+  amountMinor: z.number().int(),
+  note: nonEmptyString.optional(),
+});
+
+const payoutScheduleSchema = z.object({
+  id: nonEmptyString,
+  holdingId: nonEmptyString,
+  label: nonEmptyString,
+  amountMinor: z.number().int(),
+  cadence: z.enum(["weekly", "monthly", "quarterly", "annual"]),
+  startISO: nonEmptyString,
+  endISO: nonEmptyString.nullable().default(null),
+  exclusions: z.array(nonEmptyString).default([]),
+});
+
 const documentSchema = z.object({
   version: z.literal(EXPORT_VERSION),
   workspace: z.object({
@@ -397,6 +418,8 @@ const documentSchema = z.object({
   connectedSources: z.array(connectedSourceSchema).default([]),
   publicIds: z.array(publicIdSchema).default([]),
   exposureProfiles: z.array(exposureProfileSchema).default([]),
+  payouts: z.array(payoutSchema).default([]),
+  payoutSchedules: z.array(payoutScheduleSchema).default([]),
 });
 
 // ── Entry point ──────────────────────────────────────────────────────────────
