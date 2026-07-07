@@ -3,16 +3,46 @@
  * Kept free of Next.js, the store, and the network so the ajustes tile stays thin
  * glue and the cross-rung value aggregation is unit-testable.
  *
- * Credential shaping/read-back moved into the Binance ADAPTER (#322, ADR 0027):
- * `binanceAdapter.parseConnectForm` / `serializeCredentials` / `readCredentials`
- * now single-source that logic. Ownership resolution and last-sync formatting are
- * generic across adapters, so they are re-exported from numista-helpers.
+ * Credential shaping/read-back is explicit Binance glue (ADR 0043). Ownership
+ * resolution and last-sync formatting are generic leaf helpers, so they are
+ * re-exported from numista-helpers.
  */
 
 import { groupPositionsByToken, isTokenDustValue } from "@worthline/domain";
 import type { SourcePosition, TokenPosition } from "@worthline/domain";
+import type { BinanceCredentials } from "@worthline/pricing";
 
 export { formatLastSync, resolveConnectingOwnership } from "./numista-helpers";
+
+export function parseBinanceCredentials(
+  apiKey: FormDataEntryValue | null,
+  apiSecret: FormDataEntryValue | null,
+): BinanceCredentials | null {
+  const key = String(apiKey ?? "").trim();
+  const secret = String(apiSecret ?? "").trim();
+  return key && secret ? { apiKey: key, apiSecret: secret } : null;
+}
+
+export function serializeBinanceCredentials(creds: BinanceCredentials): string {
+  return JSON.stringify({ apiKey: creds.apiKey, apiSecret: creds.apiSecret });
+}
+
+export function readBinanceCredentials(
+  credentialsJson: string,
+): BinanceCredentials | null {
+  try {
+    const parsed = JSON.parse(credentialsJson) as {
+      apiKey?: unknown;
+      apiSecret?: unknown;
+    };
+    return parseBinanceCredentials(
+      typeof parsed.apiKey === "string" ? parsed.apiKey : null,
+      typeof parsed.apiSecret === "string" ? parsed.apiSecret : null,
+    );
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Count the DISTINCT non-dust tokens a Binance source holds (#479): group the

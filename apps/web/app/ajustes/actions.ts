@@ -23,7 +23,7 @@ import {
 import { guardDemoWrite } from "@web/demo/write-guard";
 import { runActionWithStore } from "@web/action-store";
 
-import { currentUrlOf } from "./connected-source-lifecycle";
+import { currentUrlOf } from "./connected-source-helpers";
 
 // === Member actions ===
 

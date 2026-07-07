@@ -1,12 +1,9 @@
 /**
- * Numista valuation consolidation (ADR 0027, #323).
+ * Numista valuation consolidation (ADR 0043).
  *
- * Pins that the two former orchestrators (`numista-sync.ts` + `numista-revalue.ts`)
- * now live in ONE module — `numista-valuation.ts` — exporting both `listPositions`
- * (the full sync) and `revalue`, and that the shared candidate-value construction
- * is used by both modes (the melt value a coin gets on sync is byte-identical to
- * the melt value it gets on revalue, given the same detail + spot). Also asserts
- * the request-budget dedup and the numismatic TTL are preserved by both modes.
+ * The full sync and revalue paths share candidate-value construction: the melt
+ * value a coin gets on sync is byte-identical to the melt value it gets on revalue,
+ * given the same detail + spot. Also asserts request-budget dedup and TTL.
  */
 import { describe, expect, it, vi } from "vitest";
 

@@ -10,27 +10,25 @@ import {
   isTokenValid,
   type MetalKind,
   mintNumistaToken,
-  numistaAdapter,
+  syncNumistaCollection,
 } from "@worthline/pricing";
+import { redirect } from "next/navigation";
 
 import { runActionWithStore } from "@web/action-store";
-import { parseEntityId } from "@web/intake";
+import { appendParam, errorRedirectUrl, parseEntityId } from "@web/intake";
 import { guardDemoWrite } from "@web/demo/write-guard";
+import { currentUrlOf, scopeMemberId } from "./connected-source-helpers";
 import {
-  connectSource,
-  currentUrlOf,
-  disconnectSource,
-  syncSource,
-} from "./connected-source-lifecycle";
-import { parseNumistaToken } from "./numista-helpers";
+  normalizeApiKey,
+  parseNumistaToken,
+  readApiKey,
+  resolveConnectingOwnership,
+} from "./numista-helpers";
 
 /**
  * Server actions for the Numista connected source (PRD #160 / #163, ADR 0016/0017).
- * Since #319 (ADR 0027) these are thin wrappers over the GENERIC connect/sync/
- * disconnect lifecycle (`connected-source-lifecycle.ts`), parameterized by the
- * Numista adapter (`numistaAdapter`). Numista-specific parsing + valuation live in
- * the adapter; this file only wires the real OAuth-gated network readers into the
- * sync context (mint/refresh the token, then the token-bound collection reads).
+ * ADR 0043 keeps the lifecycle explicit per provider: Numista owns its connect,
+ * sync and disconnect flow here; shared code is limited to leaf helpers.
  *
  * The API key is a SECRET: never logged, never placed in a redirect URL/query.
  * `withStore` is sync-only, so the sync wiring mints/refreshes the token and lists
@@ -44,120 +42,215 @@ export async function connectNumistaAction(
   _store?: WorthlineStore,
 ): Promise<never> {
   await guardDemoWrite("/ajustes");
-  return connectSource(
-    numistaAdapter,
-    formData,
-    {
-      formId: "numista",
-      missingCredentials: "Pega tu clave de API de Numista para conectar la colección.",
-      alreadyConnected: "Ya hay una colección Numista conectada.",
-      noOwner: "No hay ningún miembro activo que pueda ser propietario de la colección.",
+  const returnUrl = currentUrlOf(formData);
+  const apiKey = normalizeApiKey(formData.get("apiKey"));
+
+  if (!apiKey) {
+    redirect(
+      errorRedirectUrl(returnUrl, {
+        formId: "numista",
+        message: "Pega tu clave de API de Numista para conectar la colección.",
+      }),
+    );
+  }
+
+  const scoped = await scopeMemberId();
+  const result = await runActionWithStore(async (store) => {
+    const workspace = await store.workspace.readWorkspace();
+
+    if (!workspace) {
+      return { ok: false as const, error: "Workspace no inicializado." };
+    }
+
+    const existing = (await store.connectedSources.listSources()).find(
+      (source) => source.adapter === "numista",
+    );
+
+    if (existing) {
+      return {
+        ok: false as const,
+        error: "Ya hay una colección Numista conectada.",
+      };
+    }
+
+    const ownership = resolveConnectingOwnership(workspace.members, scoped);
+
+    if (!ownership) {
+      return {
+        ok: false as const,
+        error: "No hay ningún miembro activo que pueda ser propietario de la colección.",
+      };
+    }
+
+    await store.connectedSources.connect({
+      adapter: "numista",
       label: NUMISTA_LABEL,
-      okParam: "numista_connected",
-    },
-    _store,
-  );
+      credentialsJson: JSON.stringify({ apiKey }),
+      ownership,
+    });
+
+    return { ok: true as const };
+  }, _store);
+
+  if (!result.ok) {
+    redirect(errorRedirectUrl(returnUrl, { formId: "numista", message: result.error }));
+  }
+
+  redirect(appendParam(returnUrl, "ok", "numista_connected"));
 }
 
 export async function syncNumistaAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  await guardDemoWrite(currentUrlOf(formData));
+  const returnUrl = currentUrlOf(formData);
+  await guardDemoWrite(returnUrl);
   const sourceId = parseEntityId(formData, "sourceId");
 
-  return syncSource(
-    numistaAdapter,
-    sourceId,
-    {
-      notFound: "No se encontró la fuente conectada de Numista.",
-      missingCredentials:
-        "La clave de API de Numista no está disponible. Vuelve a conectar la colección.",
-      syncFailed:
-        "No se pudo sincronizar con Numista. Revisa la clave de API y la conexión.",
-      okParam: "numista_synced",
-      parseToken: parseNumistaToken,
-      // Mint/refresh the OAuth token (persisting a freshly-minted one), then bind
-      // the token to the real Numista collection readers + a Stooq/ECB spot
-      // resolver. Awaited OUTSIDE the store write, as the sync ordering demands.
-      buildContext: async ({ creds, token, nowIso, nowMs, persistToken }) => {
-        let validToken = token;
+  if (!sourceId) {
+    redirect(
+      errorRedirectUrl(returnUrl, {
+        message: "No se encontró la fuente conectada de Numista.",
+      }),
+    );
+  }
 
-        if (!validToken || !isTokenValid(validToken, nowMs)) {
-          validToken = await mintNumistaToken(creds, nowMs);
-          persistToken(validToken);
-        }
-
-        const bound = validToken;
-
-        // Hand the sync the coins we already have so it can skip re-calling Numista
-        // for static type detail + still-fresh estimates (ADR 0017 request-cap, #602).
-        // `sourceId` is non-null here — syncSource validated it before buildContext runs.
-        const existingCoins = (
-          await runActionWithStore(
-            (store) => store.connectedSources.readPositions(sourceId!),
-            _store,
-          )
-        )
-          .filter((position): position is CoinPosition => position.kind === "coin")
-          .map((coin) => ({
-            externalId: coin.externalId,
-            catalogueId: coin.catalogueId,
-            issueId: coin.issueId,
-            grade: coin.grade,
-            quantity: coin.quantity,
-            metal: coin.metal as MetalKind | null,
-            finenessMillis: coin.finenessMillis,
-            weightGrams: coin.weightGrams,
-            obverseThumbUrl: coin.obverseThumbUrl,
-            numismaticValueMinor: coin.numismaticValueMinor,
-            numismaticFetchedAt: coin.numismaticFetchedAt,
-          }));
-
-        return {
-          creds,
-          token: bound,
-          saveToken: persistToken,
-          nowIso,
-          nowMs,
-          existingCoins,
-          listItems: () => getCollectedItems(creds, bound.accessToken, bound.userId),
-          typeDetail: (typeId) => getTypeDetail(creds, typeId),
-          prices: (typeId, issueId) =>
-            getPrices(creds, typeId, issueId)
-              .then((prices) => prices)
-              .catch(() => null),
-          spotPerOzEur: (metal) => fetchMetalSpotEur(metal, nowIso),
-        };
-      },
-    },
-    currentUrlOf(formData),
+  const source = await runActionWithStore(
+    (store) => store.connectedSources.readSource(sourceId),
     _store,
   );
+
+  if (!source) {
+    redirect(
+      errorRedirectUrl(returnUrl, {
+        message: "No se encontró la fuente conectada de Numista.",
+      }),
+    );
+  }
+
+  const apiKey = readApiKey(source.credentialsJson);
+
+  if (!apiKey) {
+    redirect(
+      errorRedirectUrl(returnUrl, {
+        message:
+          "La clave de API de Numista no está disponible. Vuelve a conectar la colección.",
+      }),
+    );
+  }
+
+  const creds = { apiKey };
+  const now = new Date();
+  const nowMs = now.getTime();
+  const nowIso = now.toISOString();
+
+  try {
+    let token = parseNumistaToken(source.tokenJson);
+
+    if (!token || !isTokenValid(token, nowMs)) {
+      token = await mintNumistaToken(creds, nowMs);
+      await runActionWithStore(
+        (store) => store.connectedSources.saveToken(sourceId, JSON.stringify(token)),
+        _store,
+      );
+    }
+
+    const bound = token;
+    const existingCoins = (
+      await runActionWithStore(
+        (store) => store.connectedSources.readPositions(sourceId),
+        _store,
+      )
+    )
+      .filter((position): position is CoinPosition => position.kind === "coin")
+      .map((coin) => ({
+        externalId: coin.externalId,
+        catalogueId: coin.catalogueId,
+        issueId: coin.issueId,
+        grade: coin.grade,
+        quantity: coin.quantity,
+        metal: coin.metal as MetalKind | null,
+        finenessMillis: coin.finenessMillis,
+        weightGrams: coin.weightGrams,
+        obverseThumbUrl: coin.obverseThumbUrl,
+        numismaticValueMinor: coin.numismaticValueMinor,
+        numismaticFetchedAt: coin.numismaticFetchedAt,
+      }));
+
+    const drafts = await syncNumistaCollection(
+      {
+        listItems: () => getCollectedItems(creds, bound.accessToken, bound.userId),
+        typeDetail: (typeId) => getTypeDetail(creds, typeId),
+        prices: (typeId, issueId) =>
+          getPrices(creds, typeId, issueId)
+            .then((prices) => prices)
+            .catch(() => null),
+        spotPerOzEur: (metal) => fetchMetalSpotEur(metal, nowIso),
+      },
+      nowIso,
+      existingCoins,
+    );
+
+    await runActionWithStore(
+      (store) =>
+        store.syncConnectedSource({ positions: drafts, sourceId, syncedAt: nowIso }),
+      _store,
+    );
+  } catch {
+    redirect(
+      errorRedirectUrl(returnUrl, {
+        message:
+          "No se pudo sincronizar con Numista. Revisa la clave de API y la conexión.",
+      }),
+    );
+  }
+
+  redirect(appendParam(returnUrl, "ok", "numista_synced"));
 }
 
 export async function disconnectNumistaAction(
   formData: FormData,
   _store?: WorthlineStore,
 ): Promise<never> {
-  await guardDemoWrite(currentUrlOf(formData));
+  const returnUrl = currentUrlOf(formData);
+  await guardDemoWrite(returnUrl);
   const sourceId = parseEntityId(formData, "sourceId");
-  // The disconnect CHOICE (PRD #160 story 21, ADR 0016): "freeze" keeps the
-  // holding as a plain hand-maintained one; anything else (the default) removes
-  // the live holding while frozen snapshots keep the history.
   const freeze = (formData.get("mode") as string) === "freeze";
 
-  return disconnectSource(
-    sourceId,
-    freeze,
-    {
-      notFound: "No se encontró la fuente conectada de Numista.",
-      freezeFailed: "No se pudo congelar la colección.",
-      removeFailed: "No se pudo desconectar la colección.",
-      frozenParam: "numista_frozen",
-      disconnectedParam: "numista_disconnected",
-    },
-    currentUrlOf(formData),
-    _store,
-  );
+  if (!sourceId) {
+    redirect(
+      errorRedirectUrl(returnUrl, {
+        message: "No se encontró la fuente conectada de Numista.",
+      }),
+    );
+  }
+
+  const result = await runActionWithStore(async (store) => {
+    const source = await store.connectedSources.readSource(sourceId);
+
+    if (!source) {
+      return {
+        ok: false as const,
+        error: "No se encontró la fuente conectada de Numista.",
+      };
+    }
+
+    if (freeze) {
+      const frozen = await store.connectedSources.freezeIntoStoredHolding(sourceId);
+      return frozen
+        ? { ok: true as const, message: "numista_frozen" }
+        : { ok: false as const, error: "No se pudo congelar la colección." };
+    }
+
+    const { removed } = await store.connectedSources.removeSourceHoldings(sourceId);
+    return removed > 0
+      ? { ok: true as const, message: "numista_disconnected" }
+      : { ok: false as const, error: "No se pudo desconectar la colección." };
+  }, _store);
+
+  if (!result.ok) {
+    redirect(errorRedirectUrl(returnUrl, { message: result.error }));
+  }
+
+  redirect(appendParam(returnUrl, "ok", result.message));
 }

@@ -4,6 +4,15 @@
 
 Issues and PRDs are tracked in GitHub Issues for `jenarvaezg/worthline`. See `docs/agents/issue-tracker.md`.
 
+### Pull requests
+
+Open normal PRs by default; use draft PRs only when explicitly requested.
+
+For Codex in this repo, skip the GitHub connector for PR creation and use
+`gh pr create` with network escalation after pushing the branch. Do not spend
+calls preflighting `gh auth status` unless PR creation fails; sandboxed GitHub
+network checks can report false auth/connectivity failures here.
+
 ### Triage labels
 
 The repo uses the default Matt Pocock skill label vocabulary as GitHub labels. See `docs/agents/triage-labels.md`.
