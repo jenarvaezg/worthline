@@ -39,7 +39,7 @@ function bucketLabel(bucket: "matched" | "new"): string {
 
 function fundDisplayName(fund: FundPreviewRow): string {
   if (fund.bucket === "matched") return fund.existingName;
-  return fund.lookup.status === "found" ? fund.lookup.name : fund.isin;
+  return fund.suggestedName || fund.isin;
 }
 
 function formatMoney(amountMinor: number): string {
@@ -55,12 +55,13 @@ function defaultFlagsFor(fund: FundPreviewRow): FundSelectionFlags {
   if (fund.bucket === "matched") {
     return { included: true, symbolEmpty: false };
   }
-  // Unresolved lookup lands unchecked by default (S0 prototype's convention) —
-  // the user opts in explicitly, since the row would create with
-  // MISSING_PROVIDER_SYMBOL raised.
+  // A row without a suggested symbol lands unchecked by default (S0
+  // prototype's convention) — the user opts in explicitly, since it would
+  // create with MISSING_PROVIDER_SYMBOL raised. A plantilla identifier that IS
+  // the symbol (Finect code, CoinGecko id) arrives suggested and checked.
   return {
-    included: fund.lookup.status === "found",
-    symbolEmpty: fund.lookup.status !== "found",
+    included: fund.suggestedSymbol !== "",
+    symbolEmpty: fund.suggestedSymbol === "",
   };
 }
 
@@ -177,25 +178,26 @@ export function ImportStatementPreview({
   return (
     <section aria-label="Importar extracto">
       <p className="contextLabel">
-        Sube el archivo de órdenes exportado por tu bróker: se agrupa por ISIN y se
-        reparte por toda la cartera — encaja con lo que ya tienes, ofrece crear lo que no,
-        y puedes dejar fuera lo que no quieras seguir.
+        Sube el archivo de órdenes de tu bróker o la plantilla de Worthline: se agrupa por
+        identificador y se reparte por toda la cartera — encaja con lo que ya tienes,
+        ofrece crear lo que no, y puedes dejar fuera lo que no quieras seguir.
       </p>
 
       <form className="stackForm inversionesForm" onSubmit={handleSubmit}>
         <input name="currentUrl" type="hidden" value={currentUrl} />
 
         <label>
-          Bróker
+          Formato
           <select defaultValue="myinvestor" disabled={readOnly} name="broker">
-            <option value="myinvestor">MyInvestor</option>
+            <option value="myinvestor">MyInvestor (órdenes)</option>
+            <option value="plantilla">Plantilla Worthline (CSV o Excel)</option>
           </select>
         </label>
 
         <label>
-          Archivo de órdenes (.csv)
+          Archivo de órdenes (.csv o .xlsx)
           <input
-            accept=".csv,text/csv"
+            accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             disabled={readOnly}
             name="file"
             onChange={() => setFileChangedSincePreview(true)}
@@ -203,6 +205,17 @@ export function ImportStatementPreview({
             type="file"
           />
         </label>
+
+        <p className="contextLabel">
+          ¿Tu bróker no exporta, o exporta mal?{" "}
+          <a download href="/plantilla-operaciones.csv">
+            Descarga la plantilla
+          </a>{" "}
+          y rellénala: una fila por operación (Compra o Venta, importes siempre en
+          positivo, un traspaso son dos filas), mezclando fondos, ETFs, acciones, planes y
+          cripto en el mismo archivo. Vale mantenerla en Excel y subir el .xlsx
+          directamente; al re-subirla solo se aplican los cambios.
+        </p>
 
         <button
           disabled={readOnly || isPreviewPending}
@@ -232,13 +245,14 @@ export function ImportStatementPreview({
             <div className="tableScroll">
               <table>
                 <caption>
-                  Una fila por ISIN. El detalle de fusión se abre dentro de la fila.
+                  Una fila por identificador. El detalle de fusión se abre dentro de la
+                  fila.
                 </caption>
                 <thead>
                   <tr>
                     <th scope="col">Incluir</th>
                     <th scope="col">Estado</th>
-                    <th scope="col">ISIN</th>
+                    <th scope="col">Identificador</th>
                     <th scope="col">Inversión</th>
                     <th scope="col">Órdenes</th>
                     <th scope="col">Importe</th>
@@ -285,9 +299,7 @@ export function ImportStatementPreview({
                               <label>
                                 Nombre
                                 <input
-                                  defaultValue={
-                                    fund.lookup.status === "found" ? fund.lookup.name : ""
-                                  }
+                                  defaultValue={fund.suggestedName}
                                   disabled={readOnly || !flags.included}
                                   name={`name_${fund.isin}`}
                                   placeholder={fund.isin}
@@ -297,11 +309,7 @@ export function ImportStatementPreview({
                               <label>
                                 Símbolo
                                 <input
-                                  defaultValue={
-                                    fund.lookup.status === "found"
-                                      ? fund.lookup.symbol
-                                      : ""
-                                  }
+                                  defaultValue={fund.suggestedSymbol}
                                   disabled={readOnly || !flags.included}
                                   name={`symbol_${fund.isin}`}
                                   onChange={(e) =>
@@ -314,12 +322,12 @@ export function ImportStatementPreview({
                                   type="text"
                                 />
                               </label>
-                              {unresolved ? (
+                              {unresolved && fund.suggestedSymbol === "" ? (
                                 <p className="contextLabel">
                                   {fund.lookup.status === "error"
                                     ? "La búsqueda de símbolo falló — edítalo a mano."
-                                    : "Sin coincidencia para este ISIN — edítalo a mano."}{" "}
-                                  Sin símbolo, el fondo nacerá con el aviso pendiente
+                                    : "Sin coincidencia para este identificador — edítalo a mano."}{" "}
+                                  Sin símbolo, el activo nacerá con el aviso pendiente
                                   MISSING_PROVIDER_SYMBOL.
                                 </p>
                               ) : null}
@@ -357,7 +365,7 @@ export function ImportStatementPreview({
                               </p>
                             </details>
                           ) : (
-                            <span className="contextLabel">Fondo nuevo</span>
+                            <span className="contextLabel">Activo nuevo</span>
                           )}
                         </td>
                       </tr>
@@ -369,28 +377,28 @@ export function ImportStatementPreview({
 
             <div aria-live="polite" className="importPreviewSummary">
               <p>
-                {pluralize(summary.fundCount, "fondo incluido", "fondos incluidos")} ·{" "}
+                {pluralize(summary.fundCount, "activo incluido", "activos incluidos")} ·{" "}
                 {pluralize(summary.executedRows, "operación", "operaciones")} ·{" "}
                 {formatMoney(summary.amountMinor)}
               </p>
               <p className="contextLabel">
-                {pluralize(summary.matchedCount, "fondo encaja", "fondos encajan")} ·{" "}
-                {pluralize(summary.newCount, "fondo nuevo", "fondos nuevos")} ·{" "}
-                {pluralize(summary.excludedCount, "fondo fuera", "fondos fuera")}
+                {pluralize(summary.matchedCount, "activo encaja", "activos encajan")} ·{" "}
+                {pluralize(summary.newCount, "activo nuevo", "activos nuevos")} ·{" "}
+                {pluralize(summary.excludedCount, "activo fuera", "activos fuera")}
               </p>
               {summary.unresolvedSymbolCount > 0 ? (
                 <p className="warningBand" role="alert">
                   {pluralize(
                     summary.unresolvedSymbolCount,
-                    "fondo incluido sin símbolo",
-                    "fondos incluidos sin símbolo",
+                    "activo incluido sin símbolo",
+                    "activos incluidos sin símbolo",
                   )}
                   : {summary.unresolvedSymbolCount === 1 ? "nacerá" : "nacerán"} con el
                   aviso pendiente MISSING_PROVIDER_SYMBOL.
                 </p>
               ) : null}
               <p className="contextLabel">
-                Confirmar aplica los fondos incluidos todo o nada: si algo falla, no se
+                Confirmar aplica los activos incluidos todo o nada: si algo falla, no se
                 escribe nada.
               </p>
             </div>
@@ -398,7 +406,7 @@ export function ImportStatementPreview({
             <ConfirmSubmit
               confirmAction={confirmAction}
               disabled={readOnly || summary.fundCount === 0}
-              label={`Confirmar ${pluralize(summary.fundCount, "fondo", "fondos")}`}
+              label={`Confirmar ${pluralize(summary.fundCount, "activo", "activos")}`}
             />
           </div>
         ) : null}

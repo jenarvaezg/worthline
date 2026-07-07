@@ -24,6 +24,8 @@ import { runActionWithStore } from "@web/action-store";
 import {
   buildStatementImportPlan,
   defaultsFor,
+  findStatementTypeConflict,
+  isIsinShaped,
   isStatementBroker,
   parseStatement,
   resolveStatementImportBuckets,
@@ -32,6 +34,7 @@ import {
 } from "@worthline/domain";
 import type {
   Clock,
+  Instrument,
   InvestmentPriceProvider,
   OwnershipShare,
   ParsedStatement,
@@ -50,6 +53,11 @@ import {
   successRedirectUrl,
 } from "@web/intake";
 import { guardDemoWrite } from "@web/demo/write-guard";
+import {
+  isSpreadsheet,
+  SpreadsheetReadError,
+  spreadsheetToDelimitedText,
+} from "./spreadsheet-text";
 
 function currentUrlOf(formData: FormData): string {
   return (formData.get("currentUrl") as string) || "/patrimonio/importar-extracto";
@@ -64,7 +72,10 @@ export type IsinLookupResult =
   | { status: "error" };
 
 /** Injected port (tests use a fake — found / not-found / error, never live Yahoo). */
-export type IsinSymbolResolver = (isin: string) => Promise<IsinLookupResult>;
+export type IsinSymbolResolver = (
+  isin: string,
+  instrument?: Instrument,
+) => Promise<IsinLookupResult>;
 
 function toLookupResult(candidates: SymbolCandidate[]): IsinLookupResult {
   const hit = candidates[0];
@@ -72,10 +83,17 @@ function toLookupResult(candidates: SymbolCandidate[]): IsinLookupResult {
   return { name: hit.name, provider: hit.provider, status: "found", symbol: hit.symbol };
 }
 
-/** The real resolver: the wizard's live Yahoo search (#593), keyed on the ISIN. */
-async function defaultIsinSymbolResolver(isin: string): Promise<IsinLookupResult> {
+/**
+ * The real resolver: the wizard's group-scoped search (#593), keyed on the
+ * identifier and routed by the bucket's instrument — Yahoo for listed
+ * instruments (the historical default), Finect for plans, CoinGecko for crypto.
+ */
+async function defaultIsinSymbolResolver(
+  isin: string,
+  instrument?: Instrument,
+): Promise<IsinLookupResult> {
   try {
-    return toLookupResult(await searchSymbols(isin, "fund"));
+    return toLookupResult(await searchSymbols(isin, instrument ?? "fund"));
   } catch {
     return { status: "error" };
   }
@@ -97,7 +115,17 @@ export type FundPreviewRow = {
       toCreateCount: number;
       toOverwriteCount: number;
     }
-  | { bucket: "new"; lookup: IsinLookupResult }
+  | {
+      bucket: "new";
+      lookup: IsinLookupResult;
+      /**
+       * Creation prefills (#695): the lookup wins; a plantilla row's own Nombre
+       * backs the name up, and a non-ISIN identifier (Finect code, CoinGecko
+       * id) IS the provider symbol, so it self-suggests.
+       */
+      suggestedName: string;
+      suggestedSymbol: string;
+    }
 );
 
 export type ImportStatementPreviewState =
@@ -118,15 +146,37 @@ async function readStatementFromForm(
 ): Promise<{ ok: false; message: string } | { ok: true; value: ParsedStatement }> {
   const broker = String(formData.get("broker") ?? "").trim();
   if (!isStatementBroker(broker)) {
-    return { message: "Selecciona un bróker compatible (MyInvestor).", ok: false };
+    return {
+      message: "Selecciona un formato compatible (MyInvestor o la plantilla).",
+      ok: false,
+    };
   }
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
-    return { message: "Selecciona un archivo .csv con movimientos.", ok: false };
+    return {
+      message: "Selecciona un archivo .csv o .xlsx con movimientos.",
+      ok: false,
+    };
   }
 
-  const parsed = parseStatement(await file.text(), broker);
+  // An .xlsx travels as bytes; its first sheet normalizes to the same
+  // `;`-delimited text a CSV upload carries, so every validation and Spanish
+  // error lives in the one parser (#695).
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let text: string;
+  try {
+    text = isSpreadsheet(bytes)
+      ? spreadsheetToDelimitedText(bytes)
+      : new TextDecoder().decode(bytes);
+  } catch (error) {
+    if (error instanceof SpreadsheetReadError) {
+      return { message: error.message, ok: false };
+    }
+    throw error;
+  }
+
+  const parsed = parseStatement(text, broker);
   if (!parsed.ok) {
     return { message: parsed.errors[0], ok: false };
   }
@@ -146,19 +196,24 @@ function rowsAmountMinor(rows: readonly ParsedStatementRow[]): number {
   return rows.reduce((sum, row) => sum + multiplyToMinor(row.units, row.pricePerUnit), 0);
 }
 
-/** Read every current investment with an ISIN, plus its operations, for bucket resolution. */
+/**
+ * Read every current investment with a matching key — ISIN or provider symbol
+ * (how the plantilla identifies plans and crypto, #695) — plus its operations,
+ * for bucket resolution.
+ */
 async function readPortfolioInvestments(
   store: WorthlineStore,
 ): Promise<StatementPortfolioInvestment[]> {
   const metas = await store.assets.readInvestmentAssetsWithMeta();
   return Promise.all(
     metas
-      .filter((meta) => meta.isin)
+      .filter((meta) => meta.isin || meta.providerSymbol)
       .map(async (meta) => ({
         assetId: meta.id,
-        isin: meta.isin!,
+        isin: meta.isin ?? null,
         name: meta.name,
         operations: await store.operations.readOperations(meta.id),
+        providerSymbol: meta.providerSymbol ?? null,
       })),
   );
 }
@@ -183,13 +238,22 @@ async function bucketToPreviewRow(
     };
   }
 
+  const lookup = await resolver(bucket.isin, bucket.instrument);
   return {
     amountMinor,
     bucket: "new",
     executedCount: bucket.rows.length,
     isin: bucket.isin,
-    lookup: await resolver(bucket.isin),
+    lookup,
     skippedCount: bucket.skipped.length,
+    suggestedName: lookup.status === "found" ? lookup.name : (bucket.name ?? ""),
+    // A non-ISIN identifier (Finect code, CoinGecko id) IS the provider symbol.
+    suggestedSymbol:
+      lookup.status === "found"
+        ? lookup.symbol
+        : isIsinShaped(bucket.isin)
+          ? ""
+          : bucket.isin,
   };
 }
 
@@ -213,12 +277,23 @@ export async function previewImportStatementAction(
   return runActionWithStore(async (store) => {
     const investments = await readPortfolioInvestments(store);
     const buckets = resolveStatementImportBuckets(read.value, investments);
+
+    const conflict = findStatementTypeConflict(buckets);
+    if (conflict) {
+      return { message: typeConflictMessage(conflict), status: "error" };
+    }
+
     const funds = await Promise.all(
       buckets.map((bucket) => bucketToPreviewRow(bucket, _resolver)),
     );
 
     return { directionResolved: read.value.directionResolved, funds, status: "ready" };
   }, _store);
+}
+
+/** One identifier = one asset type; a mixed declaration aborts before any write. */
+function typeConflictMessage(identifier: string): string {
+  return `El identificador ${identifier} aparece con dos tipos de activo distintos — revisa el archivo. No se ha cargado nada.`;
 }
 
 // ── Confirm ───────────────────────────────────────────────────────────────
@@ -234,8 +309,6 @@ function selectionsFromForm(
   ownership: OwnershipShare[],
   seed: number,
 ): StatementFundSelection[] {
-  const defaults = defaultsFor("fund");
-
   return buckets.map((bucket, index) => {
     const included = formData.get(isinFormKey("include", bucket.isin)) === "on";
 
@@ -244,6 +317,12 @@ function selectionsFromForm(
         ? ({ action: "include", isin: bucket.isin } as const)
         : ({ action: "ignore", isin: bucket.isin } as const);
     }
+
+    // The instrument comes from the re-derived bucket (the file's own rows),
+    // never from the client (#695); MyInvestor rows carry none → fund, the
+    // historical default. Its catalog defaults pick the provider and rung.
+    const instrument = bucket.instrument ?? "fund";
+    const defaults = defaultsFor(instrument);
 
     const name =
       String(formData.get(isinFormKey("name", bucket.isin)) ?? "").trim() || bucket.isin;
@@ -254,7 +333,7 @@ function selectionsFromForm(
       creation: {
         assetId: createStableId("asset", name, seed + index),
         currency: "EUR",
-        instrument: "fund",
+        instrument,
         liquidityTier: defaults.rung,
         name,
         ownership,
@@ -317,6 +396,11 @@ export async function confirmImportStatementAction(
     const investments = await readPortfolioInvestments(store);
     const buckets = resolveStatementImportBuckets(read.value, investments);
 
+    const conflict = findStatementTypeConflict(buckets);
+    if (conflict) {
+      return { error: typeConflictMessage(conflict) } as const;
+    }
+
     const activeMembers = workspace.members.filter((member) => !member.disabledAt);
     // Wizard ownership default (#593): 100% to the connecting scope member —
     // here, absent an explicit scope, the workspace's first active member.
@@ -362,7 +446,9 @@ export async function confirmImportStatementAction(
         asset: {
           currency: fund.creation.currency,
           id: fund.creation.assetId,
-          isin: fund.isin,
+          // A plantilla identifier without ISIN shape (Finect code, CoinGecko
+          // id) lives in providerSymbol, never in the isin column (#695).
+          ...(isIsinShaped(fund.isin) ? { isin: fund.isin } : {}),
           name: fund.creation.name,
           ownership: fund.creation.ownership,
           ...(fund.creation.instrument ? { instrument: fund.creation.instrument } : {}),

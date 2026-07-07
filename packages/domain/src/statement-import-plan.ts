@@ -23,11 +23,22 @@ export interface StatementPortfolioInvestment {
   assetId: string;
   name: string;
   isin?: string | null;
+  /**
+   * The investment's provider symbol, a second matching key (#695): plantilla
+   * identifiers for pension plans (Finect code) and crypto (CoinGecko id) live
+   * here, never in `isin`, so without it every re-upload would duplicate them.
+   */
+  providerSymbol?: string | null;
   operations: InvestmentOperation[];
 }
 
 export interface StatementFundGroup {
+  /** The group's identifier — an ISIN for broker rows; any key for plantilla. */
   isin: string;
+  /** The asset type the group's rows declare, when the format carries one (#695). */
+  instrument?: Instrument;
+  /** A display name carried by the rows, used only to prefill creation (#695). */
+  name?: string;
   rows: ParsedStatementRow[];
   skipped: SkippedStatementRow[];
 }
@@ -85,9 +96,22 @@ export interface StatementImportPlan {
   ignored: StatementFundGroup[];
 }
 
+const ISIN_SHAPE = /^[A-Za-z]{2}[A-Za-z0-9]{9}[0-9]$/;
+
+/**
+ * Normalize a statement identifier: uppercase only when it has ISIN shape.
+ * Plantilla identifiers (#695) include CoinGecko ids, which are lowercase by
+ * contract — uppercasing "bitcoin" would break both grouping and matching.
+ */
 function normalizeIsin(isin: string | null | undefined): string | null {
   const trimmed = (isin ?? "").trim();
-  return trimmed ? trimmed.toUpperCase() : null;
+  if (!trimmed) return null;
+  return ISIN_SHAPE.test(trimmed) ? trimmed.toUpperCase() : trimmed;
+}
+
+/** Whether an identifier can be persisted as the created asset's ISIN. */
+export function isIsinShaped(identifier: string): boolean {
+  return ISIN_SHAPE.test(identifier.trim());
 }
 
 export function groupStatementRowsByIsin(
@@ -108,7 +132,13 @@ export function groupStatementRowsByIsin(
   };
 
   for (const row of statement.rows) {
-    groupFor(row.isin)?.rows.push({ ...row, isin: normalizeIsin(row.isin) });
+    const group = groupFor(row.isin);
+    if (!group) continue;
+    group.rows.push({ ...row, isin: normalizeIsin(row.isin) });
+    // The group's instrument/name come from its first row that carries them;
+    // conflicting declarations are surfaced by findStatementTypeConflict.
+    if (row.instrument && !group.instrument) group.instrument = row.instrument;
+    if (row.name && !group.name) group.name = row.name;
   }
 
   for (const row of statement.skipped) {
@@ -118,20 +148,46 @@ export function groupStatementRowsByIsin(
   return [...groupsByIsin.values()];
 }
 
+/**
+ * The first identifier whose rows declare two different asset types, or null.
+ * One identifier = one instrument: a mixed group would silently create with
+ * whichever type happened to come first, so the caller aborts instead (#695).
+ */
+export function findStatementTypeConflict(groups: StatementFundGroup[]): string | null {
+  for (const group of groups) {
+    const declared = new Set(
+      group.rows
+        .map((row) => row.instrument)
+        .filter((instrument): instrument is Instrument => instrument !== undefined),
+    );
+    if (declared.size > 1) return group.isin;
+  }
+  return null;
+}
+
 export function resolveStatementImportBuckets(
   statement: ParsedStatement,
   investments: StatementPortfolioInvestment[],
 ): StatementImportBucket[] {
-  const investmentByIsin = new Map<string, StatementPortfolioInvestment>();
+  // Two matching keys per investment (#695): its ISIN and its provider symbol
+  // (Finect code / CoinGecko id — how plantilla identifies plans and crypto).
+  // The symbol also indexes case-insensitively so "Bitcoin" finds "bitcoin".
+  const investmentByKey = new Map<string, StatementPortfolioInvestment>();
+  const claim = (key: string | null, investment: StatementPortfolioInvestment) => {
+    if (key && !investmentByKey.has(key)) investmentByKey.set(key, investment);
+  };
   for (const investment of investments) {
-    const isin = normalizeIsin(investment.isin);
-    if (isin && !investmentByIsin.has(isin)) {
-      investmentByIsin.set(isin, investment);
+    claim(normalizeIsin(investment.isin), investment);
+    const symbol = (investment.providerSymbol ?? "").trim();
+    if (symbol) {
+      claim(symbol, investment);
+      claim(symbol.toLowerCase(), investment);
     }
   }
 
   return groupStatementRowsByIsin(statement).map((group) => {
-    const investment = investmentByIsin.get(group.isin);
+    const investment =
+      investmentByKey.get(group.isin) ?? investmentByKey.get(group.isin.toLowerCase());
 
     if (!investment) {
       return { ...group, bucket: "new" };
