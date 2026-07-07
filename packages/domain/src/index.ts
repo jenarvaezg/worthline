@@ -517,7 +517,8 @@ export {
   sampleDateForCadence,
 } from "./valuation-cadence";
 
-export { daysBetween, MS_PER_DAY } from "./dates";
+export type { DateKey, Instant } from "./dates";
+export { asDateKey, asInstant, daysBetween, MS_PER_DAY } from "./dates";
 
 export type {
   DatedAmount,

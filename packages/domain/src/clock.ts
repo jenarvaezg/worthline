@@ -11,19 +11,21 @@
  * deterministic and explicit at the call site.
  */
 
+import { asDateKey, asInstant, type DateKey, type Instant } from "./dates";
+
 /** A two-method source of the current date the action layer injects. */
 export interface Clock {
   /** Today's calendar day as a YYYY-MM-DD date-key. */
-  today(): string;
+  today(): DateKey;
   /** The current instant as a full ISO-8601 timestamp. */
-  now(): string;
+  now(): Instant;
 }
 
 /** Production adapter: reads the real wall clock on every call. */
 export function systemClock(): Clock {
   return {
-    today: () => new Date().toISOString().slice(0, 10),
-    now: () => new Date().toISOString(),
+    today: () => asDateKey(new Date().toISOString().slice(0, 10)),
+    now: () => asInstant(new Date().toISOString()),
   };
 }
 
@@ -33,5 +35,5 @@ export function systemClock(): Clock {
  */
 export function fixedClock(instant: string | Date): Clock {
   const iso = (typeof instant === "string" ? new Date(instant) : instant).toISOString();
-  return { today: () => iso.slice(0, 10), now: () => iso };
+  return { today: () => asDateKey(iso.slice(0, 10)), now: () => asInstant(iso) };
 }

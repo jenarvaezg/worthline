@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { openLibsqlClient, SCHEMA_VERSION, withStore } from "@worthline/db";
+import { schemaSql } from "@db/schema-sql";
 
 const tempDirs: string[] = [];
 
@@ -85,6 +86,18 @@ describe("migrate idempotency", () => {
       "CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     );
     legacy.close();
+
+    await expect(
+      withStore(async (store) => await store.workspace.readWorkspace(), { databasePath }),
+    ).resolves.not.toThrow();
+  });
+
+  test("migrates a version-0 database that already has schema indexes", async () => {
+    const databasePath = tempDatabasePath();
+
+    const pushed = openLibsqlClient(databasePath);
+    await pushed.executeMultiple(schemaSql);
+    pushed.close();
 
     await expect(
       withStore(async (store) => await store.workspace.readWorkspace(), { databasePath }),

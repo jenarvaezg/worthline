@@ -1,11 +1,13 @@
 import type { LiquidityTier } from "@worthline/domain";
 import type {
   AssetType,
+  DateKey,
   DebtModel,
   ExportedPublicIdEntityType,
   EarlyRepaymentMode,
   Instrument,
   InvestmentPriceProvider,
+  Instant,
   LiabilityType,
   GoalPriority,
   OperationKind,
@@ -289,7 +291,7 @@ export const assetOperations = sqliteTable(
       .notNull()
       .references(() => assets.id, { onDelete: "cascade" }),
     kind: text("kind").$type<OperationKind>().notNull(),
-    executedAt: text("executed_at").notNull(),
+    executedAt: text("executed_at").$type<DateKey>().notNull(),
     units: text("units").notNull(),
     pricePerUnit: text("price_per_unit").notNull(),
     currency: text("currency").notNull(),
@@ -667,8 +669,8 @@ export const snapshots = sqliteTable(
     id: text("id").primaryKey(),
     scopeId: text("scope_id").notNull(),
     scopeLabel: text("scope_label").notNull(),
-    capturedAt: text("captured_at").notNull(),
-    dateKey: text("date_key").notNull(),
+    capturedAt: text("captured_at").$type<Instant>().notNull(),
+    dateKey: text("date_key").$type<DateKey>().notNull(),
     monthKey: text("month_key").notNull(),
     isMonthlyClose: integer("is_monthly_close").notNull().default(0),
     currency: text("currency").notNull(),
