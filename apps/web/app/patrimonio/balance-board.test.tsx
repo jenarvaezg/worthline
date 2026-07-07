@@ -277,3 +277,51 @@ describe("BalanceBoard (#271)", () => {
     expect(render({ groups: [] })).toContain("Sin holdings");
   });
 });
+
+describe("BalanceBoard closed positions", () => {
+  /** Two live rows plus fully-sold derived positions and a stored asset at 0. */
+  function groupsWithClosed(): PortfolioGroup[] {
+    return [
+      group("market", "Mercado", 25_000_00, [
+        assetRow("a_live", "Fondo Vivo", 25_000_00, { derived: true }),
+        assetRow("a_sold_b", "Fondo Vendido B", 0, { derived: true }),
+        assetRow("a_sold_a", "Fondo Vendido A", 0, { derived: true }),
+        // A STORED asset at 0 is an anomaly (ZERO_VALUE_ASSET), not a closed
+        // position — it must stay in the live list where its warning points.
+        assetRow("a_zero_manual", "Cuenta A Cero", 0),
+      ]),
+    ];
+  }
+
+  test("folds fully-sold derived positions behind a counter, out of the live rows", () => {
+    const html = render({ groups: groupsWithClosed() });
+
+    expect(html).toContain("Posiciones cerradas (2)");
+    // The fold is a details AFTER the live rows: the sold funds render inside
+    // it (alphabetical), still as first-class rows with their ficha link.
+    const foldAt = html.indexOf("balanceClosed");
+    expect(foldAt).toBeGreaterThan(html.indexOf("Fondo Vivo"));
+    expect(html.indexOf("Fondo Vendido A")).toBeGreaterThan(foldAt);
+    expect(html.indexOf("Fondo Vendido A")).toBeLessThan(html.indexOf("Fondo Vendido B"));
+    expect(html).toContain('href="/patrimonio/a_sold_a/editar"');
+    // The stored zero-value asset is NOT folded away.
+    expect(html.indexOf("Cuenta A Cero")).toBeLessThan(foldAt);
+  });
+
+  test("no fold when nothing is fully sold", () => {
+    expect(render()).not.toContain("Posiciones cerradas");
+  });
+
+  test("a portfolio that is ONLY closed positions still shows the fold, not the empty state", () => {
+    const html = render({
+      groups: [
+        group("market", "Mercado", 0, [
+          assetRow("a_sold", "Fondo Vendido", 0, { derived: true }),
+        ]),
+      ],
+    });
+
+    expect(html).toContain("Posiciones cerradas (1)");
+    expect(html).not.toContain("Sin activos.");
+  });
+});

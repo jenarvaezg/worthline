@@ -3551,7 +3551,8 @@ code {
 }
 
 /* Papelera — part of the board footer, not a stray panel. */
-.balanceTrash {
+.balanceTrash,
+.balanceClosed {
   grid-column: 1 / -1;
   background: color-mix(in srgb, var(--paper) 70%, var(--panel));
   border: 1px dashed var(--line);
@@ -3559,7 +3560,14 @@ code {
   padding: 2px 18px;
 }
 
-.balanceTrash > summary {
+/* The closed-positions fold lives INSIDE the assets pane, under its sections. */
+.balanceClosed {
+  grid-column: auto;
+  margin-top: 12px;
+}
+
+.balanceTrash > summary,
+.balanceClosed > summary {
   list-style: none;
   cursor: pointer;
   padding: 12px 0;
@@ -3569,7 +3577,8 @@ code {
   color: var(--muted);
 }
 
-.balanceTrash > summary::-webkit-details-marker {
+.balanceTrash > summary::-webkit-details-marker,
+.balanceClosed > summary::-webkit-details-marker {
   display: none;
 }
 
