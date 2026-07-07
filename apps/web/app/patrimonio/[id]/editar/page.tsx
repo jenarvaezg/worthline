@@ -552,213 +552,221 @@ export default async function EditarPage({
           </p>
         ) : null}
 
-        {asset ? (
-          <AssetEditForm
-            asset={asset}
-            investment={investment}
-            isBinanceHolding={isBinanceHolding}
-            isCoinCollection={isCoinCollection}
-            members={activeMembers}
-            method={method}
-            privacyMode={privacyMode}
-            scopeMemberId={ownershipScopeMemberId}
-            updateInvestmentAction={boundUpdateInvestmentAction}
-            values={formError?.formId === "edit" ? formError.values : {}}
-          />
-        ) : liability ? (
-          <LiabilityEditForm
-            assets={assets}
-            liability={liability}
-            members={activeMembers}
-            scopeMemberId={ownershipScopeMemberId}
-            values={formError?.formId === "edit" ? formError.values : {}}
-          />
-        ) : null}
-
-        {/* ── Method-dispatched configuration surface (#152, ADR 0014) ───────── */}
-
-        {/* coin_collection: the Numista catalogue (variant B) — derived, but its
-            sub-detail is mirrored positions, not operations (PRD #160, ADR 0016). */}
-        {asset && isCoinCollection ? (
-          <CoinCollectionSection
-            currentUrl={currentUrl}
-            lastSyncAt={coinSource?.lastSyncAt ?? null}
-            positions={coinPositions}
-            privacyMode={privacyMode}
-            sourceId={coinSource?.id ?? null}
-            valuationFreshness={coinValuationCache?.freshnessState ?? null}
-            valuationStaleReason={coinValuationCache?.staleReason ?? null}
-          />
-        ) : null}
-
-        {/* crypto + binance source: the read-only token list — derived, but its
-            sub-detail is mirrored token positions, not operations (PRD #245, ADR 0021). */}
-        {asset && isBinanceHolding ? (
-          <BinanceHoldingSection
-            currentUrl={currentUrl}
-            lastSyncAt={binanceSource?.lastSyncAt ?? null}
-            positions={binancePositions}
-            privacyMode={privacyMode}
-            sinceDateKey={binanceSinceDateKey}
-            sourceId={binanceSource?.id ?? null}
-          />
-        ) : null}
-
-        {/* derived + priced: on-demand provider refresh for just this holding
-            (#406) — the narrow counterpart to the global /patrimonio trigger.
-            Hidden when the holding has no price provider (manual/stored). */}
-        {asset &&
-        method === "derived" &&
-        !isCoinCollection &&
-        !isBinanceHolding &&
-        investment?.providerSymbol ? (
-          <PriceRefreshControl
-            action={refreshPricesAction}
-            assetId={asset.id}
-            currentUrl={currentUrl}
-            label="Actualizar precio"
-            pendingLabel="Actualizando…"
-          />
-        ) : null}
-
-        {/* derived: the returns surface — three measures + realized/unrealized
-            split + honest caveats (#551, ADR 0040), above the operations ledger. */}
-        {returnsView ? (
-          <ReturnsPanel privacyMode={privacyMode} view={returnsView} />
-        ) : null}
-
-        {/* derived: the investment's operations editor (the single place units change) */}
-        {asset && method === "derived" && !isCoinCollection && !isBinanceHolding ? (
-          <OperationsEditor
-            assetId={id}
-            assetName={asset.name}
-            context={{
-              ...(position ? { currentUnits: position.currentUnits } : {}),
-              ...(priceCache
-                ? {
-                    unitPrice: priceCache.price,
-                    priceFreshness: freshness,
-                    // Visible caption (#303): when + by which source the cached
-                    // unit price was last refreshed (absolute es-ES date). Null for
-                    // a manual quote (its `source` is `manual`, so no provider date).
-                    priceRefreshCaption: detailRefreshCaption(
-                      priceCache.source === "manual" ? null : priceCache.fetchedAt,
-                      priceCache.source === "manual" ? null : priceCache.source,
-                    ),
-                  }
-                : {}),
-              ...(position?.marketValue ? { marketValue: position.marketValue } : {}),
-              ...(position?.unrealizedPnl
-                ? { unrealizedPnl: position.unrealizedPnl }
-                : {}),
-            }}
-            currentUrl={currentUrl}
-            deleteAction={boundDeleteOperationAction}
-            formError={formError}
-            operations={operations}
-            privacyMode={privacyMode}
-            readOnly={isDemo}
-            recordAction={boundRecordOperationAction}
-            today={today}
-          />
-        ) : null}
-
-        {/* derived: load operations from a broker statement (ADR 0018, #174/#176) */}
-        {asset && method === "derived" && !isCoinCollection && !isBinanceHolding ? (
-          <StatementUploadSection
-            confirmAction={boundConfirmStatementAction}
-            currentUrl={currentUrl}
-            previewAction={boundPreviewStatementAction}
-          />
-        ) : null}
-
-        {/* derived + candidate: the explicit historical-price backfill (#380, ADR 0033) */}
-        {asset &&
-        method === "derived" &&
-        !isCoinCollection &&
-        !isBinanceHolding &&
-        isBackfillCandidate ? (
-          <PriceBackfillSection
-            confirmAction={boundConfirmPriceBackfillAction}
-            currentUrl={currentUrl}
-            previewAction={boundPreviewPriceBackfillAction}
-          />
-        ) : null}
-
-        {/* Exposición: hand-entered exposure profile for a fund/etf/stock/index/
-            pension_plan (PRD #539 S1, #541). Keyed by isin ?? providerSymbol —
-            shared across every holding of the same security (ADR 0039). With no
-            key yet, prompt for an ISIN/símbolo instead of showing the form. */}
-        {asset && canHandEnterExposure ? (
-          exposureProfileKey ? (
-            <ExposureProfileSection
-              action={boundSaveExposureProfileAction}
-              currentUrl={currentUrl}
-              error={formError?.formId === "exposure" ? formError.message : null}
-              profile={exposureProfile as ExposureProfile | null}
-              profileKey={exposureProfileKey}
+        <section className="editBasic" aria-labelledby="edit-basic-title">
+          <h3 id="edit-basic-title">Lo básico</h3>
+          {asset ? (
+            <AssetEditForm
+              asset={asset}
+              investment={investment}
+              isBinanceHolding={isBinanceHolding}
+              isCoinCollection={isCoinCollection}
+              members={activeMembers}
+              method={method}
+              privacyMode={privacyMode}
+              scopeMemberId={ownershipScopeMemberId}
+              updateInvestmentAction={boundUpdateInvestmentAction}
+              values={formError?.formId === "edit" ? formError.values : {}}
             />
-          ) : (
-            <section className="exposureProfile" aria-label="Exposición">
-              <h3>Exposición</h3>
-              <p className="infoNote">
-                Añade un ISIN o un símbolo de proveedor arriba para poder definir la
-                exposición de este valor.
-              </p>
-            </section>
-          )
-        ) : null}
+          ) : liability ? (
+            <LiabilityEditForm
+              assets={assets}
+              liability={liability}
+              members={activeMembers}
+              scopeMemberId={ownershipScopeMemberId}
+              values={formError?.formId === "edit" ? formError.values : {}}
+            />
+          ) : null}
+        </section>
 
-        {/* Cobros: dividends / interest / rent this asset pays its owner — a pure
-            attribution record, never a figure (PRD #652 S1, #656, ADR 0054). Shown
-            for every asset (income-side); never for a liability. */}
-        {asset ? (
-          <CobrosSection
-            createPayoutAction={boundCreatePayoutAction}
-            createPayoutScheduleAction={boundCreatePayoutScheduleAction}
-            currency={asset.currency}
-            currentUrl={currentUrl}
-            deletePayoutAction={boundDeletePayoutAction}
-            deletePayoutScheduleAction={boundDeletePayoutScheduleAction}
-            error={formError?.formId === "payout" ? formError.message : null}
-            monthlySpendingMinor={payoutMonthlySpendingMinor}
-            payouts={payouts}
-            privacyMode={privacyMode}
-            schedules={payoutSchedules}
-            today={today}
-            updatePayoutScheduleAction={boundUpdatePayoutScheduleAction}
-          />
-        ) : null}
+        <details className="editAdvanced">
+          <summary>Configuración avanzada</summary>
+          <div className="editAdvancedBody">
+            {/* ── Method-dispatched configuration surface (#152, ADR 0014) ───── */}
 
-        {/* appreciating: the housing valuation curve + appraisals */}
-        {asset && method === "appreciating" ? (
-          <HousingValuationSection
-            anchors={anchors}
-            appreciationRate={appreciationRate}
-            assetId={asset.id}
-            formError={formError}
-            privacyMode={privacyMode}
-            today={today}
-            valuationCadence={housingValuationCadence}
-          />
-        ) : null}
+            {/* coin_collection: the Numista catalogue (variant B) — derived, but its
+                sub-detail is mirrored positions, not operations (PRD #160, ADR 0016). */}
+            {asset && isCoinCollection ? (
+              <CoinCollectionSection
+                currentUrl={currentUrl}
+                lastSyncAt={coinSource?.lastSyncAt ?? null}
+                positions={coinPositions}
+                privacyMode={privacyMode}
+                sourceId={coinSource?.id ?? null}
+                valuationFreshness={coinValuationCache?.freshnessState ?? null}
+                valuationStaleReason={coinValuationCache?.staleReason ?? null}
+              />
+            ) : null}
 
-        {/* amortized / anchored: the debt-model editor (the selector fans out within) */}
-        {liability ? (
-          <DebtModelSection
-            amortizationPlan={amortizationPlan}
-            balanceAnchors={balanceAnchors}
-            currentModelledBalanceMinor={currentModelledBalanceMinor}
-            debtModel={debtModel}
-            earlyRepayments={earlyRepayments}
-            formError={formError}
-            liabilityId={id}
-            privacyMode={privacyMode}
-            rateRevisions={rateRevisions}
-            today={today}
-            valuationCadence={valuationCadence}
-          />
-        ) : null}
+            {/* crypto + binance source: the read-only token list — derived, but its
+                sub-detail is mirrored token positions, not operations (PRD #245, ADR 0021). */}
+            {asset && isBinanceHolding ? (
+              <BinanceHoldingSection
+                currentUrl={currentUrl}
+                lastSyncAt={binanceSource?.lastSyncAt ?? null}
+                positions={binancePositions}
+                privacyMode={privacyMode}
+                sinceDateKey={binanceSinceDateKey}
+                sourceId={binanceSource?.id ?? null}
+              />
+            ) : null}
+
+            {/* derived + priced: on-demand provider refresh for just this holding
+                (#406) — the narrow counterpart to the global /patrimonio trigger.
+                Hidden when the holding has no price provider (manual/stored). */}
+            {asset &&
+            method === "derived" &&
+            !isCoinCollection &&
+            !isBinanceHolding &&
+            investment?.providerSymbol ? (
+              <PriceRefreshControl
+                action={refreshPricesAction}
+                assetId={asset.id}
+                currentUrl={currentUrl}
+                label="Actualizar precio"
+                pendingLabel="Actualizando…"
+              />
+            ) : null}
+
+            {/* derived: the returns surface — three measures + realized/unrealized
+                split + honest caveats (#551, ADR 0040), above the operations ledger. */}
+            {returnsView ? (
+              <ReturnsPanel privacyMode={privacyMode} view={returnsView} />
+            ) : null}
+
+            {/* derived: the investment's operations editor (the single place units change) */}
+            {asset && method === "derived" && !isCoinCollection && !isBinanceHolding ? (
+              <OperationsEditor
+                assetId={id}
+                assetName={asset.name}
+                context={{
+                  ...(position ? { currentUnits: position.currentUnits } : {}),
+                  ...(priceCache
+                    ? {
+                        unitPrice: priceCache.price,
+                        priceFreshness: freshness,
+                        // Visible caption (#303): when + by which source the cached
+                        // unit price was last refreshed (absolute es-ES date). Null for
+                        // a manual quote (its `source` is `manual`, so no provider date).
+                        priceRefreshCaption: detailRefreshCaption(
+                          priceCache.source === "manual" ? null : priceCache.fetchedAt,
+                          priceCache.source === "manual" ? null : priceCache.source,
+                        ),
+                      }
+                    : {}),
+                  ...(position?.marketValue ? { marketValue: position.marketValue } : {}),
+                  ...(position?.unrealizedPnl
+                    ? { unrealizedPnl: position.unrealizedPnl }
+                    : {}),
+                }}
+                currentUrl={currentUrl}
+                deleteAction={boundDeleteOperationAction}
+                formError={formError}
+                operations={operations}
+                privacyMode={privacyMode}
+                readOnly={isDemo}
+                recordAction={boundRecordOperationAction}
+                today={today}
+              />
+            ) : null}
+
+            {/* derived: load operations from a broker statement (ADR 0018, #174/#176) */}
+            {asset && method === "derived" && !isCoinCollection && !isBinanceHolding ? (
+              <StatementUploadSection
+                confirmAction={boundConfirmStatementAction}
+                currentUrl={currentUrl}
+                previewAction={boundPreviewStatementAction}
+              />
+            ) : null}
+
+            {/* derived + candidate: the explicit historical-price backfill (#380, ADR 0033) */}
+            {asset &&
+            method === "derived" &&
+            !isCoinCollection &&
+            !isBinanceHolding &&
+            isBackfillCandidate ? (
+              <PriceBackfillSection
+                confirmAction={boundConfirmPriceBackfillAction}
+                currentUrl={currentUrl}
+                previewAction={boundPreviewPriceBackfillAction}
+              />
+            ) : null}
+
+            {/* Exposición: hand-entered exposure profile for a fund/etf/stock/index/
+                pension_plan (PRD #539 S1, #541). Keyed by isin ?? providerSymbol —
+                shared across every holding of the same security (ADR 0039). With no
+                key yet, prompt for an ISIN/símbolo instead of showing the form. */}
+            {asset && canHandEnterExposure ? (
+              exposureProfileKey ? (
+                <ExposureProfileSection
+                  action={boundSaveExposureProfileAction}
+                  currentUrl={currentUrl}
+                  error={formError?.formId === "exposure" ? formError.message : null}
+                  profile={exposureProfile as ExposureProfile | null}
+                  profileKey={exposureProfileKey}
+                />
+              ) : (
+                <section className="exposureProfile" aria-label="Exposición">
+                  <h3>Exposición</h3>
+                  <p className="infoNote">
+                    Añade un ISIN o un símbolo de proveedor arriba para poder definir la
+                    exposición de este valor.
+                  </p>
+                </section>
+              )
+            ) : null}
+
+            {/* Cobros: dividends / interest / rent this asset pays its owner — a pure
+                attribution record, never a figure (PRD #652 S1, #656, ADR 0054).
+                Shown for every asset (income-side); never for a liability. */}
+            {asset ? (
+              <CobrosSection
+                createPayoutAction={boundCreatePayoutAction}
+                createPayoutScheduleAction={boundCreatePayoutScheduleAction}
+                currency={asset.currency}
+                currentUrl={currentUrl}
+                deletePayoutAction={boundDeletePayoutAction}
+                deletePayoutScheduleAction={boundDeletePayoutScheduleAction}
+                error={formError?.formId === "payout" ? formError.message : null}
+                monthlySpendingMinor={payoutMonthlySpendingMinor}
+                payouts={payouts}
+                privacyMode={privacyMode}
+                schedules={payoutSchedules}
+                today={today}
+                updatePayoutScheduleAction={boundUpdatePayoutScheduleAction}
+              />
+            ) : null}
+
+            {/* appreciating: the housing valuation curve + appraisals */}
+            {asset && method === "appreciating" ? (
+              <HousingValuationSection
+                anchors={anchors}
+                appreciationRate={appreciationRate}
+                assetId={asset.id}
+                formError={formError}
+                privacyMode={privacyMode}
+                today={today}
+                valuationCadence={housingValuationCadence}
+              />
+            ) : null}
+
+            {/* amortized / anchored: the debt-model editor (the selector fans out within) */}
+            {liability ? (
+              <DebtModelSection
+                amortizationPlan={amortizationPlan}
+                balanceAnchors={balanceAnchors}
+                currentModelledBalanceMinor={currentModelledBalanceMinor}
+                debtModel={debtModel}
+                earlyRepayments={earlyRepayments}
+                formError={formError}
+                liabilityId={id}
+                privacyMode={privacyMode}
+                rateRevisions={rateRevisions}
+                today={today}
+                valuationCadence={valuationCadence}
+              />
+            ) : null}
+          </div>
+        </details>
 
         {/* Danger zone — two-step delete */}
         <div className="dangerZone">
