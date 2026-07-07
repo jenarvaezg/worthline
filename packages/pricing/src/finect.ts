@@ -2,6 +2,12 @@ import { PRICE_FAILURE_REASONS, type PriceProvider } from "./index";
 
 const FINECT_BASE_URL = "https://www.finect.com/planes-pensiones/";
 const FINECT_API_BASE_URL = "https://api.finect.com/v4/";
+// Finect's own public frontend key (the `key` header their website sends to
+// api.finect.com), not a credential we registered — so it's intentionally
+// inline, not a secret to rotate or move to env. Only used for the read-only
+// pension-code → ISIN/alias lookup below. It may stop working if Finect rotates
+// it; `resolveFinectPlanSymbolByCode` already degrades to null on any non-OK
+// response, so that failure mode is handled.
 const FINECT_API_KEY = "OgcqanUxQ4S6Y5VVvnwlJayUuxeg8Ah5";
 
 export const finectProvider: PriceProvider = {
