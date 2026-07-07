@@ -2356,6 +2356,11 @@ code {
     min-width: 520px;
   }
 
+  /* 7-column import preview needs more room before it scrolls. */
+  .importPreview .tableScroll table {
+    min-width: 680px;
+  }
+
   .topbar {
     align-items: flex-start;
     flex-direction: column;
@@ -3877,6 +3882,25 @@ td.rowActions > * {
 .importPreview {
   display: grid;
   gap: 12px;
+}
+
+/* This table has 7 columns; the global table-layout:fixed splits them evenly
+   (~14% each), which crushes the ISIN (breaks mid-code) and the state pill.
+   Size by content instead so "Inversión" absorbs the slack. */
+.importPreview table {
+  table-layout: auto;
+}
+
+/* Never break an ISIN mid-string. */
+.importPreview th[scope="row"] code {
+  white-space: nowrap;
+}
+
+/* Keep the checkbox and its Sí/No label on one line. */
+.includeToggle {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
 }
 
 .importPreview p {
