@@ -6,6 +6,7 @@ import type {
   NetWorthSnapshot,
   OwnershipShare,
   ValuationCadence,
+  ValuedNetWorthSnapshot,
   Workspace,
 } from "@worthline/domain";
 import {
@@ -416,42 +417,60 @@ async function rippleHistoricalSnapshots(
  * amortization-plan exception in `rippleHistoricalSnapshotsForDebt`: generate a
  * fresh whole-portfolio snapshot at each affected past operation date that has
  * none yet, then run ONE forward recalculation of every existing snapshot dated
- * ≥ the earliest affected date — re-evaluating only the operated asset's row.
+ * ≥ the earliest affected date — re-evaluating only the operated assets' rows.
  *
  * This replaces calling the per-operation ripple once per created operation
  * (which would re-derive history N times — the #158 O(N×snapshots) cliff): deps
  * are built once, the frozen rows are read in one batched query per scope, and a
- * single forward pass folds the asset across the band regardless of how many
- * operation dates the load carried. Dates today or in the future generate no
- * history (the daily capture owns today). Legacy captures with no holding rows
- * are skipped (ADR 0008). A no-op when the asset is unknown or no dates given.
+ * single forward pass folds every affected asset across the band regardless of
+ * how many operation dates the load carried. Multi-asset for the same reason: a
+ * multi-ISIN statement import (ADR 0055) rippling once per fund re-wrote every
+ * snapshot in the band once per fund — thousands of saveSnapshots that, at
+ * hosted network latency (one libsql round trip per statement), blew past the
+ * serverless 300s ceiling. Folding all funds in memory persists each snapshot
+ * exactly once. Dates today or in the future generate no history (the daily
+ * capture owns today). Legacy captures with no holding rows are skipped (ADR
+ * 0008). Unknown assets and empty date lists are skipped; a no-op when nothing
+ * remains.
  */
 async function rippleHistoricalSnapshotsForOperations(
   ctx: StoreContext,
   workspace: Workspace,
   saveSnapshot: (input: SaveSnapshotInput) => Promise<void>,
   params: {
-    assetId: string;
-    operationDateKeys: string[];
+    assets: ReadonlyArray<{ assetId: string; operationDateKeys: string[] }>;
     today: string;
   },
 ): Promise<void> {
   const { db } = ctx;
-  const { assetId, operationDateKeys, today } = params;
-  if (operationDateKeys.length === 0) return;
+  const { today } = params;
+  const requested = params.assets.filter((a) => a.operationDateKeys.length > 0);
+  if (requested.length === 0) return;
 
-  // The operated asset's identity — read including trashed, since it existed on
-  // the snapshot dates even if it was trashed afterwards (ADR 0012).
-  const asset = await readInvestmentIdentity(db, assetId);
-  if (!asset) return;
-  const operations = (await readAllOperations(db)).get(assetId) ?? [];
+  // Every affected asset's identity (read including trashed, since it existed on
+  // the snapshot dates even if it was trashed afterwards, ADR 0012), full ledger,
+  // and frozen classification captures (#242) — all read ONCE before any recalc
+  // mutates rows (see rippleHistoricalSnapshots).
+  const operationsByAsset = await readAllOperations(db);
+  const affected = (
+    await Promise.all(
+      requested.map(async ({ assetId, operationDateKeys }) => {
+        const asset = await readInvestmentIdentity(db, assetId);
+        if (!asset) return null;
+        return {
+          asset,
+          frozenIdentity: await readFrozenIdentityCaptures(db, assetId, "asset"),
+          operationDateKeys,
+          operations: operationsByAsset.get(assetId) ?? [],
+        };
+      }),
+    )
+  ).filter((entry) => entry !== null);
+  if (affected.length === 0) return;
 
-  // The asset's frozen classification captures across every snapshot (#242), read
-  // ONCE before any recalc mutates rows (see rippleHistoricalSnapshots).
-  const frozenIdentity = await readFrozenIdentityCaptures(db, assetId, "asset");
-
-  // Unique affected dates, and the earliest from which existing snapshots recalc.
-  const generateDates = [...new Set(operationDateKeys)];
+  // Unique affected dates across every asset, and the earliest from which
+  // existing snapshots recalc.
+  const generateDates = [...new Set(affected.flatMap((a) => a.operationDateKeys))];
   const recalcFrom = generateDates.reduce(
     (min, date) => (date < min ? date : min),
     generateDates[0]!,
@@ -504,7 +523,16 @@ async function rippleHistoricalSnapshotsForOperations(
       );
 
       // Recalculate every existing snapshot ≥ the earliest affected date by
-      // re-folding only the operated asset's row from its operations.
+      // re-folding only the operated assets' rows from their operations. The
+      // fold chains in memory — each asset recalculates against the previous
+      // fold's snapshot + rows, the state a per-asset ripple would have re-read
+      // from the DB — and persists ONCE per snapshot at the end. That
+      // equivalence holds because every current multi-asset caller only ADDS
+      // rows: a fold that EMPTIES the snapshot (null) stops the chain and drops
+      // it, abandoning later assets' contributions, whereas per-asset ripples
+      // would have regenerated the date for them. If this seam is ever reused
+      // for deletions/mixed edits, fold the remaining assets against an empty
+      // base instead of breaking.
       for (const snap of existing) {
         if (snap.dateKey < recalcFrom) continue;
 
@@ -513,23 +541,36 @@ async function rippleHistoricalSnapshotsForOperations(
         // A legacy capture predating holdings (ADR 0008) has nothing to recompute.
         if (frozenHoldings.length === 0) continue;
 
-        const recalculated = recalculateSnapshotForAsset({
-          asset,
-          frozenHoldings,
-          frozenIdentity,
-          operations,
+        let current: ValuedNetWorthSnapshot = {
+          holdings: frozenHoldings,
           snapshot: snap,
-          workspace,
-        });
-
-        if (recalculated) {
-          await saveSnapshot({
-            holdings: recalculated.holdings,
-            replace: true,
-            snapshot: recalculated.snapshot,
+        };
+        let dropped = false;
+        for (const { asset, frozenIdentity, operations } of affected) {
+          const recalculated = recalculateSnapshotForAsset({
+            asset,
+            frozenHoldings: current.holdings,
+            frozenIdentity,
+            operations,
+            snapshot: current.snapshot,
+            workspace,
           });
-        } else {
+          // No holdings remain — stop folding; the snapshot is dropped below.
+          if (recalculated === null) {
+            dropped = true;
+            break;
+          }
+          current = recalculated;
+        }
+
+        if (dropped) {
           await db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
+        } else {
+          await saveSnapshot({
+            holdings: current.holdings,
+            replace: true,
+            snapshot: current.snapshot,
+          });
         }
       }
     }
@@ -1364,7 +1405,7 @@ export function createDatedFactSeams(
           ctx,
           workspace,
           stores.snapshots.saveSnapshot,
-          { assetId, operationDateKeys, today },
+          { assets: [{ assetId, operationDateKeys }], today },
         );
       });
     },
@@ -1403,14 +1444,23 @@ export function createDatedFactSeams(
         const workspace = await ctx.getWorkspace();
         if (!workspace) return;
 
-        for (const [assetId, operationDateKeys] of operationDateKeysByAsset) {
-          await rippleHistoricalSnapshotsForOperations(
-            ctx,
-            workspace,
-            stores.snapshots.saveSnapshot,
-            { assetId, operationDateKeys, today },
-          );
-        }
+        // ONE multi-asset ripple for the whole import. Rippling once per fund
+        // re-wrote every snapshot in the band once per fund — for a real
+        // multi-ISIN statement (26 funds × ~150 snapshots × ~6 libsql round
+        // trips each) that exceeded the hosted 300s function ceiling, and all
+        // but the last pass per snapshot was redundant work.
+        await rippleHistoricalSnapshotsForOperations(
+          ctx,
+          workspace,
+          stores.snapshots.saveSnapshot,
+          {
+            assets: [...operationDateKeysByAsset].map(([assetId, operationDateKeys]) => ({
+              assetId,
+              operationDateKeys,
+            })),
+            today,
+          },
+        );
       });
     },
     deleteOperationAndRipple: ({ operationId, today: todayOpt }) => {

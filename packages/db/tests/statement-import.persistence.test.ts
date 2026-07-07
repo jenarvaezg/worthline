@@ -103,6 +103,86 @@ describe("applyStatementImportAndRipple (ADR 0055)", () => {
     store.close();
   });
 
+  test("folds every fund of the import into each snapshot in one pass (shared dates chain)", async () => {
+    // The ripple runs ONCE for the whole import (not once per fund): every
+    // affected asset chains through each snapshot in memory and persists once.
+    // A date shared by two funds is the regression trap — both rows must land
+    // on the same snapshot.
+    const store = await createInMemoryStore();
+    await seed(store);
+
+    await store.applyStatementImportAndRipple({
+      funds: [
+        {
+          asset: {
+            currency: "EUR",
+            id: "fund_a",
+            isin: "LU00WL000003",
+            liquidityTier: "market",
+            name: "Fondo A",
+            ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+          },
+          creates: [
+            {
+              assetId: "fund_a",
+              currency: "EUR",
+              executedAt: "2024-01-10",
+              feesMinor: 0,
+              id: "op_a_jan",
+              kind: "buy",
+              pricePerUnit: "50",
+              units: "12",
+            },
+            {
+              assetId: "fund_a",
+              currency: "EUR",
+              executedAt: "2024-02-20",
+              feesMinor: 0,
+              id: "op_a_feb",
+              kind: "buy",
+              pricePerUnit: "50",
+              units: "2",
+            },
+          ],
+          kind: "new",
+        },
+        {
+          asset: {
+            currency: "EUR",
+            id: "fund_b",
+            isin: "LU00WL000004",
+            liquidityTier: "market",
+            name: "Fondo B",
+            ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+          },
+          creates: [
+            {
+              assetId: "fund_b",
+              currency: "EUR",
+              executedAt: "2024-02-20",
+              feesMinor: 0,
+              id: "op_b_feb",
+              kind: "buy",
+              pricePerUnit: "10",
+              units: "10",
+            },
+          ],
+          kind: "new",
+        },
+      ],
+      today: TODAY,
+    });
+
+    // 2024-01-10: only A's first buy (the matched fund's op is later).
+    expect(await grossAt(store, "2024-01-10")).toBe(12 * 50_00);
+    // 2024-02-20: A folded to 14 units AND B's buy on the SAME snapshot.
+    expect(await grossAt(store, "2024-02-20")).toBe(14 * 50_00 + 10 * 10_00);
+    // 2024-03-01 (pre-existing snapshot): both new funds folded in plus the
+    // matched fund's own 1×100.
+    expect(await grossAt(store, "2024-03-01")).toBe(14 * 50_00 + 10 * 10_00 + 100_00);
+    store.close();
+  });
+
   test("rolls back creations and merges when any operation in the confirmed selection fails", async () => {
     const store = await createInMemoryStore();
     await seed(store);
