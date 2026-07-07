@@ -1,12 +1,10 @@
 /**
- * The Binance wallet → liquidity rung map (ADR 0016/0021, S3 #248, relocated by
- * #322 out of `@worthline/domain`).
+ * The Binance wallet → liquidity rung map (ADR 0016/0021, S3 #248).
  *
- * A Binance fact — which wallets are market-liquid vs term-locked — so it lives in
- * the Binance adapter's package, not in shared domain code (ADR 0027 §Consequences).
- * Kept in a tiny leaf module (only a domain TYPE import) so both the adapter
- * (`classifyRung`) and the sync orchestrator (`binance-sync.ts`, which stamps the
- * rung onto each draft) can import it without a circular dependency on the adapter.
+ * A Binance fact — which wallets are market-liquid vs term-locked — so it lives
+ * with connected-source pricing, not in shared domain code. Kept in a tiny leaf
+ * module (only a domain TYPE import) so the sync orchestrator can stamp the rung
+ * onto each draft.
  */
 
 import type { LiquidityTier } from "@worthline/domain";

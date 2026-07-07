@@ -1,8 +1,7 @@
 /**
  * Unit tests for the pure Binance TILE helpers (PRD #245/#248, ADR 0021): the
- * cross-rung value aggregation + the re-exported generic helpers. Credential
- * shaping/read-back moved into the Binance ADAPTER (#322, ADR 0027) — those tests
- * live in packages/pricing/src/adapters/binance.test.ts now. No store, no network.
+ * cross-rung value aggregation + the re-exported generic helpers + credential
+ * shaping/read-back. No store, no network.
  */
 
 import type { SourcePosition, TokenPosition } from "@worthline/domain";
@@ -12,7 +11,10 @@ import {
   aggregateSourceValueMinor,
   countNonDustTokens,
   formatLastSync,
+  parseBinanceCredentials,
+  readBinanceCredentials,
   resolveConnectingOwnership,
+  serializeBinanceCredentials,
 } from "./binance-helpers";
 
 function asset(id: string, amountMinor: number) {
@@ -51,6 +53,24 @@ describe("re-exported generic helpers", () => {
   test("formatLastSync is the shared numista helper", () => {
     expect(formatLastSync(null)).toBe("Nunca");
     expect(formatLastSync("2026-06-16T11:20:00.000Z")).toMatch(/2026/);
+  });
+});
+
+describe("Binance credentials", () => {
+  test("parses key + secret, trimming, and rejects a missing half", () => {
+    expect(parseBinanceCredentials("  key  ", "  secret  ")).toEqual({
+      apiKey: "key",
+      apiSecret: "secret",
+    });
+    expect(parseBinanceCredentials("key", "")).toBeNull();
+    expect(parseBinanceCredentials(null, "secret")).toBeNull();
+  });
+
+  test("serializes and reads stored credentials", () => {
+    const creds = { apiKey: "k", apiSecret: "s" };
+    expect(readBinanceCredentials(serializeBinanceCredentials(creds))).toEqual(creds);
+    expect(readBinanceCredentials("not json")).toBeNull();
+    expect(readBinanceCredentials(JSON.stringify({ apiKey: "k" }))).toBeNull();
   });
 });
 

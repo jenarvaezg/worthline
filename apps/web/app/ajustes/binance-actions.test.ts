@@ -11,7 +11,15 @@ import { createInMemoryStore } from "@worthline/db";
 import type { WorthlineStore } from "@worthline/db";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { disconnectBinanceAction, syncBinanceAction } from "./binance-actions";
+vi.mock("next/headers", () => ({
+  cookies: async () => ({ get: () => undefined }),
+}));
+
+import {
+  connectBinanceAction,
+  disconnectBinanceAction,
+  syncBinanceAction,
+} from "./binance-actions";
 
 function form(entries: Record<string, string>): FormData {
   const fd = new FormData();
@@ -56,6 +64,49 @@ async function seedWithSource(
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("connectBinanceAction", () => {
+  test("connects the first Binance source", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+
+    const digest = await runAction(
+      connectBinanceAction,
+      form({
+        currentUrl: "/ajustes",
+        apiKey: "the-key",
+        apiSecret: "the-secret",
+      }),
+      store,
+    );
+
+    expect(digest).toContain("ok=binance_connected");
+    const sources = await store.connectedSources.listSources();
+    expect(sources).toHaveLength(1);
+    expect(sources[0]!.adapter).toBe("binance");
+    expect(JSON.parse(sources[0]!.credentialsJson)).toEqual({
+      apiKey: "the-key",
+      apiSecret: "the-secret",
+    });
+  });
+
+  test("refuses a second Binance source", async () => {
+    const store = await createInMemoryStore();
+    await seedWithSource(store);
+
+    const digest = await runAction(
+      connectBinanceAction,
+      form({ currentUrl: "/ajustes", apiKey: "k2", apiSecret: "s2" }),
+      store,
+    );
+
+    expect(digest).toContain("error=");
+    expect(await store.connectedSources.listSources()).toHaveLength(1);
+  });
 });
 
 describe("disconnectBinanceAction", () => {

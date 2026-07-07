@@ -8,9 +8,17 @@
 
 import { createInMemoryStore } from "@worthline/db";
 import type { WorthlineStore } from "@worthline/db";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
-import { disconnectNumistaAction, syncNumistaAction } from "./numista-actions";
+vi.mock("next/headers", () => ({
+  cookies: async () => ({ get: () => undefined }),
+}));
+
+import {
+  connectNumistaAction,
+  disconnectNumistaAction,
+  syncNumistaAction,
+} from "./numista-actions";
 
 function form(entries: Record<string, string>): FormData {
   const fd = new FormData();
@@ -52,6 +60,42 @@ async function seedWithSource(
     ownership: [{ memberId: "mJ", shareBps: 10_000 }],
   });
 }
+
+describe("connectNumistaAction", () => {
+  test("connects the first Numista source", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+
+    const digest = await runAction(
+      connectNumistaAction,
+      form({ currentUrl: "/ajustes", apiKey: "the-key" }),
+      store,
+    );
+
+    expect(digest).toContain("ok=numista_connected");
+    const sources = await store.connectedSources.listSources();
+    expect(sources).toHaveLength(1);
+    expect(sources[0]!.adapter).toBe("numista");
+    expect(JSON.parse(sources[0]!.credentialsJson)).toEqual({ apiKey: "the-key" });
+  });
+
+  test("refuses a second Numista source", async () => {
+    const store = await createInMemoryStore();
+    await seedWithSource(store);
+
+    const digest = await runAction(
+      connectNumistaAction,
+      form({ currentUrl: "/ajustes", apiKey: "another" }),
+      store,
+    );
+
+    expect(digest).toContain("error=");
+    expect(await store.connectedSources.listSources()).toHaveLength(1);
+  });
+});
 
 describe("disconnectNumistaAction", () => {
   test("removes the source, its positions, and the projected holding (cascade)", async () => {
