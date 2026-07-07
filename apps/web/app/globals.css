@@ -3891,9 +3891,24 @@ td.rowActions > * {
   table-layout: auto;
 }
 
+/* Size to content and let the wrapper scroll: a table pinned to 100% width
+   compresses whatever CAN wrap before it overflows — with a long nowrap
+   identifier (plantilla ids aren't 12-char ISINs) the other headers collapsed
+   into vertical letter stacks. max-content overflows into .tableScroll
+   instead; min-width keeps the full-width look when content fits. */
+.importPreview .tableScroll table {
+  min-width: 100%;
+  width: max-content;
+}
+
 /* Never break an ISIN mid-string. */
 .importPreview th[scope="row"] code {
   white-space: nowrap;
+}
+
+/* The creation Nombre/Símbolo inputs need a usable line each. */
+.importPreview td .stackForm {
+  min-width: 240px;
 }
 
 /* Keep the checkbox and its Sí/No label on one line. */

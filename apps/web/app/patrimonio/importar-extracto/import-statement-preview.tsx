@@ -206,7 +206,9 @@ export function ImportStatementPreview({
           />
         </label>
 
-        <p className="contextLabel">
+        {/* Body prose, not a label: .contextLabel is uppercase by design and
+            four shouting lines read like a ransom note. */}
+        <p className="infoNote">
           ¿Tu bróker no exporta, o exporta mal?{" "}
           <a download href="/plantilla-operaciones.csv">
             Descarga la plantilla
