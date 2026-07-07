@@ -61,14 +61,15 @@ This introduces `goalFireDelay` as the 5th consumer of the reservation path (aft
 
 ### Model
 
-Instead of a single hard-coded `expectedRealReturn`, the projection engine now computes an **effective rate** = Σ(tier_weight × tier_return) over the eligible pool. The four eligible tiers (housing is excluded from the FIRE pool) carry documented conservative real-return defaults:
+Instead of a single hard-coded `expectedRealReturn`, the projection engine now computes an **effective rate** = Σ(tier_weight × tier_return) over the eligible pool. Primary residences are excluded from the FIRE pool, but non-primary property remains FIRE-eligible (ADR 0022), so the housing rung carries a documented conservative real-return default too:
 
-| Tier        | Default real return | Rationale                                          |
-| ----------- | ------------------- | -------------------------------------------------- |
-| cash        | 0.00 (0 %)          | Savings accounts track inflation at best           |
-| market      | 0.05 (5 %)          | Global equity long-run real average (conservative) |
-| term-locked | 0.015 (1.5 %)       | Fixed deposits / bonds, above inflation but low    |
-| illiquid    | 0.03 (3 %)          | Private equity / collectibles, net of illiquidity  |
+| Tier        | Default real return | Rationale                                                    |
+| ----------- | ------------------- | ------------------------------------------------------------ |
+| cash        | 0.00 (0 %)          | Savings accounts track inflation at best                     |
+| market      | 0.05 (5 %)          | Global equity long-run real average (conservative)           |
+| term-locked | 0.015 (1.5 %)       | Fixed deposits / bonds, above inflation but low              |
+| illiquid    | 0.03 (3 %)          | Private equity / collectibles, net of illiquidity            |
+| housing     | 0.03 (3 %)          | Non-primary property, matching the former illiquid treatment |
 
 Crypto / Binance tokens carry whichever tier `tierOfAsset` assigns them (typically market or illiquid) — no separate crypto rate in v1.
 

@@ -26,7 +26,7 @@ describe("effectiveRealReturn", () => {
     expect(result).toBeCloseTo(0, 10);
   });
 
-  it("all four eligible tiers equal weight → average of defaults", () => {
+  it("the four non-housing tiers equal weight → average of defaults", () => {
     const avg =
       (TIER_REAL_RETURN_DEFAULTS.cash +
         TIER_REAL_RETURN_DEFAULTS.market +
@@ -76,14 +76,14 @@ describe("effectiveRealReturn", () => {
     expect(result).toBeCloseTo(0.08, 10);
   });
 
-  it("housing tier in input is ignored (not an eligible tier)", () => {
-    // Only market counts; housing should be ignored
-    const withHousing = effectiveRealReturn({
-      eligibleByTierMinor: { market: 100_000, housing: 500_000 },
+  it("housing tier participates when property is FIRE-eligible", () => {
+    const result = effectiveRealReturn({
+      eligibleByTierMinor: { market: 100_000, housing: 100_000 },
     });
-    const withoutHousing = effectiveRealReturn({
-      eligibleByTierMinor: { market: 100_000 },
-    });
-    expect(withHousing).toBeCloseTo(withoutHousing, 10);
+
+    expect(result).toBeCloseTo(
+      (TIER_REAL_RETURN_DEFAULTS.market + TIER_REAL_RETURN_DEFAULTS.housing) / 2,
+      10,
+    );
   });
 });

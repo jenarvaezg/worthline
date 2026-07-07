@@ -1258,8 +1258,8 @@ export interface AgentViewMemberProfile {
  * An intermediate goal as `list_goals` exposes it (PRD #421, #424): its target,
  * deadline, priority, the public ids of the assigned holdings, the capital
  * currently reserved (scope-weighted `min(target, assigned value)`), and the
- * funded ratio (`reserved / target`, 0..1, capped). Goals do not yet affect FIRE
- * eligibility — that lands in #426.
+ * funded ratio (`reserved / target`, 0..1, capped). FIRE tools subtract only
+ * future in-horizon reservations backed by FIRE-eligible assigned holdings.
  */
 export interface AgentViewGoal {
   object: "goal";
@@ -1304,7 +1304,8 @@ export interface AgentViewFireScenario {
  * A scope's FIRE projection as `get_fire_projection` exposes it (PRD #421,
  * #427): optimistic/base/pessimistic scenarios over the FIRE number, using the
  * configured monthly savings capacity and the goal-reservation-adjusted eligible
- * assets. `unconfigured` when the scope has no FIRE config — no figures invented.
+ * assets. Goal reservations only subtract FIRE-eligible assigned holdings.
+ * `unconfigured` when the scope has no FIRE config — no figures invented.
  */
 export interface AgentViewFireProjection {
   object: "fire_projection";

@@ -1,7 +1,11 @@
 import type { AssetPrice } from "./prices";
 import type { LocalPersistenceStatus } from "./persistence";
 import type { FireScopeConfig } from "./fire";
-import { calculateFireForScope, fireReservationHorizon } from "./fire";
+import {
+  calculateFireForScope,
+  fireReservationHorizon,
+  isFireEligibleAsset,
+} from "./fire";
 import type { FireProjection } from "./fire-projection";
 import { projectFire } from "./fire-projection";
 import type { Goal } from "./goals";
@@ -204,6 +208,7 @@ export function prepareDashboardState(input: {
                 goal.assetIds,
                 assetById,
                 memberIds,
+                (asset) => isFireEligibleAsset(asset, fireScopeConfig),
               ),
             })),
             now,
@@ -402,11 +407,11 @@ export function prepareObjetivosState(
   // Per-goal in-horizon reservation map: only goals whose deadline is future + before horizon.
   const goalReservationMap = new Map<string, number>();
   for (const goal of input.goals ?? []) {
-    const assignedMinor = assignedHoldingsValueMinor(
-      goal.assetIds,
-      assetById,
-      scopeMemberIds,
-    );
+    const assignedMinor = dash.fireScopeConfig
+      ? assignedHoldingsValueMinor(goal.assetIds, assetById, scopeMemberIds, (asset) =>
+          isFireEligibleAsset(asset, dash.fireScopeConfig!),
+        )
+      : 0;
     const inHorizon =
       goal.deadline >= now && (fireHorizon === undefined || goal.deadline < fireHorizon);
     goalReservationMap.set(
@@ -422,8 +427,9 @@ export function prepareObjetivosState(
       assetById,
       scopeMemberIds,
     );
-    const countsTowardFire =
+    const inHorizon =
       goal.deadline >= now && (fireHorizon === undefined || goal.deadline < fireHorizon);
+    const countsTowardFire = inHorizon && (goalReservationMap.get(goal.id) ?? 0) > 0;
     // otherReservationsMinor = total in-horizon reservation minus this goal's share.
     const otherReservationsMinor =
       totalReservation - (goalReservationMap.get(goal.id) ?? 0);

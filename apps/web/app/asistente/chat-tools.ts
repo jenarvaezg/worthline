@@ -388,7 +388,8 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     get_fire_context: tool({
       description:
         "Contexto FIRE actual del scope: config y supuestos, número FIRE, activos elegibles, " +
-        "brecha, progreso y activos excluidos con su motivo. Solo estado actual.",
+        "reservas de objetivos aplicadas solo sobre capital elegible, brecha, progreso y " +
+        "activos excluidos con su motivo. Solo estado actual.",
       inputSchema: SCOPE_ONLY_SCHEMA,
       execute: (args) =>
         chatRead(input, async (store) => {
@@ -401,7 +402,8 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     get_fire_projection: tool({
       description:
         "Proyecta cuándo el scope alcanza FIRE en escenarios optimista/base/pesimista " +
-        "(años, edad, activos finales, trayectoria anual). `unconfigured` sin config FIRE.",
+        "desde el elegible ajustado por reservas de objetivos elegibles (años, edad, " +
+        "activos finales, trayectoria anual). `unconfigured` sin config FIRE.",
       inputSchema: SCOPE_ONLY_SCHEMA,
       execute: (args) =>
         chatRead(input, async (store) => {
@@ -414,7 +416,8 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     list_goals: tool({
       description:
         "Lista los objetivos intermedios del scope: importe objetivo, fecha, prioridad, " +
-        "posiciones asignadas, capital reservado y ratio de financiación.",
+        "posiciones asignadas, capital reservado y ratio de financiación. FIRE solo resta " +
+        "reservas en horizonte respaldadas por holdings elegibles.",
       inputSchema: SCOPE_ONLY_SCHEMA,
       execute: (args) =>
         chatRead(input, async (store) => {

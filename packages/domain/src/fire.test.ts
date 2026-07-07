@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Liability, ManualAsset, Workspace } from "./index";
 import { calculateFire, calculateFireForScope } from "./fire";
+import { TIER_REAL_RETURN_DEFAULTS } from "./fire-return";
 
 const workspace: Workspace = {
   baseCurrency: "EUR",
@@ -127,6 +128,21 @@ describe("calculateFire", () => {
     );
 
     expect(result.coastFireAge).toBeCloseTo(expectedAge, 5);
+  });
+
+  it("suppresses coastFireAge when the real return cannot compound to FIRE", () => {
+    const config = {
+      monthlySpendingMinor: 200_000,
+      safeWithdrawalRate: 0.04,
+      currentAge: 35,
+      targetRetirementAge: 65,
+    };
+
+    const zeroReturn = calculateFire(config, 10_000_000, "EUR", 0);
+    const negativeReturn = calculateFire(config, 10_000_000, "EUR", -0.01);
+
+    expect(zeroReturn.coastFireAge).toBeUndefined();
+    expect(negativeReturn.coastFireAge).toBeUndefined();
   });
 });
 
@@ -317,6 +333,37 @@ describe("calculateFireForScope", () => {
 
     // 170k − 77k mortgage − 15k loan = 78k
     expect(result.eligibleAssets.amountMinor).toBe(78_000_00);
+  });
+
+  it("keeps non-primary property eligible and includes housing in the return weighting", () => {
+    const stocks = makeAsset("stocks", 100_000_00, false, [
+      { memberId: "alice", shareBps: 10_000 },
+    ]);
+    const rental: ManualAsset = {
+      ...makeAsset("rental", 100_000_00, false, [
+        { memberId: "alice", shareBps: 10_000 },
+      ]),
+      instrument: "property",
+      liquidityTier: "illiquid",
+      type: "real_estate",
+    };
+
+    const result = calculateFireForScope(
+      {
+        monthlySpendingMinor: 100_000,
+        safeWithdrawalRate: 0.04,
+      },
+      [stocks, rental],
+      [],
+      workspace,
+      "alice",
+    );
+
+    expect(result.eligibleAssets.amountMinor).toBe(200_000_00);
+    expect(result.effectiveRealReturn).toBeCloseTo(
+      (TIER_REAL_RETURN_DEFAULTS.market + TIER_REAL_RETURN_DEFAULTS.housing) / 2,
+      10,
+    );
   });
 
   it("does NOT subtract a mortgage secured against the excluded primary residence", () => {

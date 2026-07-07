@@ -5,8 +5,8 @@
  * by its share of the eligible pool — so a portfolio 60 % market / 40 % cash
  * uses 0.60×0.05 + 0.40×0.00 = 0.03 instead of a fixed 5 % override.
  *
- * Housing is excluded from the FIRE-eligible pool (primary residence exclusion,
- * ADR 0042), so it carries no rate here.
+ * Primary residences are excluded from FIRE, but non-primary property is still
+ * eligible (ADR 0022), so the housing rung carries a rate too.
  *
  * Crypto / Binance tokens land on whatever tier `tierOfAsset` assigns them
  * (typically "market" or "illiquid") — no separate crypto rate in v1.
@@ -14,12 +14,7 @@
 
 import type { LiquidityTier } from "./liquidity-ladder";
 
-/**
- * The eligible tiers — housing is excluded because it is never in the
- * FIRE-eligible pool (primary residences are excluded, and all housing assets
- * are property instruments).
- */
-export type EligibleTier = Exclude<LiquidityTier, "housing">;
+export type EligibleTier = LiquidityTier;
 
 /**
  * Conservative real (after-inflation) return defaults per eligible tier.
@@ -29,6 +24,7 @@ export type EligibleTier = Exclude<LiquidityTier, "housing">;
  * - market:      5 % — global equity long-run real average (conservative).
  * - term-locked: 1.5 % — fixed deposits / bonds, above inflation but low.
  * - illiquid:    3 % — private equity / collectibles, illiquidity premium offset by higher risk.
+ * - housing:     3 % — non-primary property, preserving the pre-housing-rung illiquid treatment.
  *
  * These are overridable per-config via `FireScopeConfig.tierRealReturns`.
  */
@@ -37,6 +33,7 @@ export const TIER_REAL_RETURN_DEFAULTS: Record<EligibleTier, number> = {
   market: 0.05,
   "term-locked": 0.015,
   illiquid: 0.03,
+  housing: 0.03,
 };
 
 /**
@@ -54,7 +51,7 @@ export function effectiveRealReturn(input: {
 }): number {
   const { eligibleByTierMinor, tierRealReturns } = input;
 
-  const eligibleTiers: EligibleTier[] = ["cash", "market", "term-locked", "illiquid"];
+  const eligibleTiers = Object.keys(TIER_REAL_RETURN_DEFAULTS) as EligibleTier[];
 
   let totalMinor = 0;
   for (const tier of eligibleTiers) {
