@@ -48,11 +48,12 @@ export function assignedHoldingsValueMinor(
   assetIds: string[],
   assetById: Map<string, ManualAsset>,
   scopeMemberIds: Set<string>,
+  shouldCountAsset: (asset: ManualAsset) => boolean = () => true,
 ): number {
   let total = 0;
   for (const assetId of assetIds) {
     const asset = assetById.get(assetId);
-    if (!asset) {
+    if (!asset || !shouldCountAsset(asset)) {
       continue;
     }
     total += allocateScopedHolding(asset.currentValue.amountMinor, {

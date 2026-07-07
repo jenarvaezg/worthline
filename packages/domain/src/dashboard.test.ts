@@ -188,6 +188,59 @@ describe("fireGlance in prepareDashboardState", () => {
     );
   });
 
+  test("does not reserve FIRE capital from a goal assigned only to an excluded asset", () => {
+    const excludedAsset = createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 20_000_000,
+      id: "asset_excluded",
+      liquidityTier: "market",
+      name: "Plan excluido",
+      ownership: fullOwnership,
+      type: "investment",
+    });
+    const eligibleAsset = createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 30_000_000,
+      id: "asset_eligible",
+      liquidityTier: "market",
+      name: "Fondo elegible",
+      ownership: fullOwnership,
+      type: "investment",
+    });
+
+    const state = prepareDashboardState({
+      assets: [excludedAsset, eligibleAsset],
+      fireConfig: {
+        household: { ...fireConfig, excludedAssetIds: ["asset_excluded"] },
+      },
+      goals: [
+        {
+          id: "goal_excluded",
+          name: "Coche",
+          targetAmountMinor: 5_000_000,
+          deadline: "2030-01-01",
+          priority: "high",
+          scopeId: "household",
+          assetIds: ["asset_excluded"],
+        },
+      ],
+      liabilities: [],
+      persistence,
+      positions: [],
+      priceCache: [],
+      scopes: [scope],
+      selectedScope: scope,
+      selectedView: "liquid",
+      snapshots: [],
+      today: "2026-06-25",
+      workspace,
+    });
+
+    expect(state.fireResult!.eligibleAssets.amountMinor).toBe(30_000_000);
+    expect(state.fireResult!.reservedForGoals!.amountMinor).toBe(0);
+    expect(state.fireGlance!.goalsReservedMinor).toBe(0);
+  });
+
   test("returns null fireGlance when FIRE is not configured", () => {
     const state = prepareDashboardState({
       assets: [investmentAsset],

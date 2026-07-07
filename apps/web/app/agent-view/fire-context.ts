@@ -3,6 +3,7 @@ import {
   assignedHoldingsValueMinor,
   calculateFireForScope,
   fireReservationHorizon,
+  isFireEligibleAsset,
   listScopeOptions,
   resolveScopeMemberIds,
   systemClock,
@@ -147,6 +148,7 @@ export async function goalReservationMinor(
       goal.assetIds,
       assetById,
       scopeMemberIds,
+      (asset) => isFireEligibleAsset(asset, config),
     ),
   }));
 

@@ -99,6 +99,13 @@ export interface FireResult {
   realReturnUsed?: number;
 }
 
+export function isFireEligibleAsset(
+  asset: Pick<ManualAsset, "id" | "isPrimaryResidence">,
+  config: Pick<FireScopeConfig, "excludedAssetIds">,
+): boolean {
+  return !asset.isPrimaryResidence && !(config.excludedAssetIds ?? []).includes(asset.id);
+}
+
 /**
  * The FIRE horizon a goal's deadline is measured against (PRD #421, #426): the
  * target-retirement date implied by `currentAge`/`targetRetirementAge`. Without
@@ -155,13 +162,16 @@ export function calculateFire(
   if (config.currentAge !== undefined) {
     const targetRetirementAge = config.targetRetirementAge ?? 65;
     const yearsToRetirement = targetRetirementAge - config.currentAge;
-    const growthFactor = Math.pow(1 + rate, yearsToRetirement);
-    const coastFireRequiredMinor = Math.round(fireNumberMinor / growthFactor);
+    const growthFactor = rate > -1 ? Math.pow(1 + rate, yearsToRetirement) : NaN;
 
-    result.coastFireRequired = money(coastFireRequiredMinor, currency);
-    result.isAlreadyAtCoastFire = eligibleAssetsMinor >= coastFireRequiredMinor;
+    if (Number.isFinite(growthFactor) && growthFactor > 0) {
+      const coastFireRequiredMinor = Math.round(fireNumberMinor / growthFactor);
 
-    if (eligibleAssetsMinor > 0 && fireNumberMinor > eligibleAssetsMinor) {
+      result.coastFireRequired = money(coastFireRequiredMinor, currency);
+      result.isAlreadyAtCoastFire = eligibleAssetsMinor >= coastFireRequiredMinor;
+    }
+
+    if (rate > 0 && eligibleAssetsMinor > 0 && fireNumberMinor > eligibleAssetsMinor) {
       result.coastFireAge =
         config.currentAge +
         Math.log(fireNumberMinor / eligibleAssetsMinor) / Math.log(1 + rate);

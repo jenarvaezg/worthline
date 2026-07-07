@@ -17,9 +17,9 @@ import { publicIdMap, requirePublicId, resolveInternalScopeId } from "./scope-re
  * scope-weighted reserved amount + funded ratio. Reads only.
  *
  * The reserved amount is the scope-allocated value of the assigned holdings,
- * capped at the target (`goalReservedMinor`) — the same rule the FIRE-eligibility
- * slice (#426) will subtract, but here it only powers the funded ratio; goals do
- * not yet change any FIRE figure.
+ * capped at the target (`goalReservedMinor`). FIRE context/projection apply an
+ * additional filter: only future in-horizon reservations backed by FIRE-eligible
+ * assigned holdings reduce FIRE.
  */
 export async function buildGoals(
   store: AgentViewReadStore,

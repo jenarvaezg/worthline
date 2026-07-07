@@ -398,7 +398,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
     },
     get_fire_context: {
       description:
-        "Get the current FIRE context for a scope (defaults to the household scope): configured/unconfigured status, the FIRE config and assumptions, the computed result (FIRE number, eligible assets, gap, progress ratio, coast-FIRE facts when an age is set), the scope-weighted eligible total, and the assets excluded with their reason (primary residence or manual). Figures are current-only — a dated request is rejected. Reads are side-effect-free.",
+        "Get the current FIRE context for a scope (defaults to the household scope): configured/unconfigured status, the FIRE config and assumptions, the computed result (FIRE number, eligible assets after goal reservations, gap, progress ratio, coast-FIRE facts when an age is set), the scope-weighted eligible total, and the assets excluded with their reason (primary residence or manual). Goal reservations only subtract in-horizon assigned capital that is FIRE-eligible. Figures are current-only — a dated request is rejected. Reads are side-effect-free.",
       inputSchema: {
         additionalProperties: false,
         properties: {
@@ -634,7 +634,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
     },
     list_goals: {
       description:
-        "List the intermediate goals for a scope (defaults to the household scope): each carries its target amount, deadline, priority (high/medium/low), the public ids of assigned holdings (wl_hld_…), the scope-weighted reserved capital (min of target and assigned value) and the funded ratio (reserved / target, 0..1). Goals do not yet change FIRE eligibility. Reads are side-effect-free.",
+        "List the intermediate goals for a scope (defaults to the household scope): each carries its target amount, deadline, priority (high/medium/low), the public ids of assigned holdings (wl_hld_…), the scope-weighted reserved capital (min of target and assigned value) and the funded ratio (reserved / target, 0..1). FIRE context and projection subtract only future in-horizon reservations backed by FIRE-eligible assigned holdings; primary residences and manually excluded assets do not reduce FIRE. Reads are side-effect-free.",
       inputSchema: {
         additionalProperties: false,
         properties: {
@@ -650,7 +650,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
     },
     get_fire_projection: {
       description:
-        "Project when a scope reaches FIRE (defaults to the household scope) under optimistic/base/pessimistic scenarios (base = the config's real return; the others ±1.5 %). Each scenario returns years-to-FIRE, age-at-FIRE, final eligible assets, total contributed and a year-by-year capital trajectory. It starts from the goal-reservation-adjusted eligible total and contributes the configured monthly savings capacity. Unconfigured when the scope has no FIRE config. Reads are side-effect-free.",
+        "Project when a scope reaches FIRE (defaults to the household scope) under optimistic/base/pessimistic scenarios (base = the config's real return; the others ±1.5 %). Each scenario returns years-to-FIRE, age-at-FIRE, final eligible assets, total contributed and a year-by-year capital trajectory. It starts from the goal-reservation-adjusted eligible total, where in-horizon goals subtract only FIRE-eligible assigned holdings, and contributes the configured monthly savings capacity. Unconfigured when the scope has no FIRE config. Reads are side-effect-free.",
       inputSchema: {
         additionalProperties: false,
         properties: {

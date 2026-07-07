@@ -116,6 +116,19 @@ describe("agent-view catalog · single source of truth (#576)", () => {
       expect(tool.inputSchema.type).toBe("object");
     }
   });
+
+  test("FIRE tool descriptions agree that in-horizon goals reserve eligible capital", () => {
+    const catalog = createAgentViewCatalog();
+
+    expect(catalog.list_goals.description).not.toContain(
+      "Goals do not yet change FIRE eligibility",
+    );
+    expect(catalog.list_goals.description).toContain("FIRE-eligible");
+    expect(catalog.get_fire_context.description).toContain("goal reservations");
+    expect(catalog.get_fire_projection.description).toContain(
+      "goal-reservation-adjusted",
+    );
+  });
 });
 
 describe("agent-view catalog · scope defaulting", () => {
