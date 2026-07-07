@@ -123,7 +123,9 @@ export function StatementUploadSection({
               <li>
                 {count(shown.skipped, "movimiento omitido", "movimientos omitidos")}
               </li>
-              {shown.sells > 0 ? (
+              {shown.sells > 0 && shown.directionResolved ? (
+                // Only meaningful when the file carries the tipo column; under
+                // the sign-rule fallback it would contradict the warning below.
                 <li>{count(shown.sells, "venta detectada", "ventas detectadas")}</li>
               ) : null}
               {shown.anomalies > 0 ? (
@@ -137,11 +139,11 @@ export function StatementUploadSection({
               ) : null}
             </ul>
 
-            {shown.sells > 0 ? (
-              <p className="contextLabel">
-                Las ventas se detectan por importe o participaciones en negativo — una
-                suposición sin verificar con un reembolso real. Revisa que sean ventas de
-                verdad antes de confirmar.
+            {!shown.directionResolved ? (
+              <p className="warningBand" role="alert">
+                Este archivo no indica si cada orden es compra o venta: todas se cargarán
+                como compras. Si tienes ventas o reembolsos, exporta desde MyInvestor el
+                archivo de órdenes que incluye la columna «Tipo de operación».
               </p>
             ) : null}
 

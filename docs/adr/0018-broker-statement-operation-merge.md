@@ -91,11 +91,16 @@ the per-operation `rippleHistoricalSnapshotsForOperation`.
 
 ## Consequences
 
-- The buy/sell sign convention is **assumed, not observed** — we have no sample of
-  a MyInvestor sell. If sells turn out to be unsigned (positive amount and units,
-  direction encoded outside these columns), a sell silently imports as a buy and
-  the preview will not catch it. A real reembolso export must be checked before
-  the sell rule is trusted in anger.
+- The buy/sell sign convention was **assumed, not observed**. **Amended
+  2026-07-07**: a real reembolso sample confirmed the fear — the reduced 5-column
+  export carries sells with POSITIVE amount and units, so that export has no
+  direction signal at all. MyInvestor's full orders export carries a
+  `Tipo de operación` column; when present it is authoritative
+  (Reembolso/Venta/Baja → sell, Suscripción/Compra/Alta/Aportación → buy, an
+  unknown prefix is a row error, all-or-nothing). Without it the sign rule stays
+  as a best effort and the parse reports `directionResolved: false`, which both
+  preview surfaces turn into an explicit warning that every row will load as a
+  buy.
 - Statement load is idempotent: re-uploading the same file overwrites matching
   dates with identical values and triggers a ripple that rebuilds nothing.
 - Editing an imported operation by hand and then re-uploading restores the file's
