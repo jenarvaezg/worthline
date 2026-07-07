@@ -177,7 +177,7 @@ export function ImportStatementPreview({
 
   return (
     <section aria-label="Importar extracto">
-      <p className="contextLabel">
+      <p className="infoNote">
         Sube el archivo de órdenes de tu bróker o la plantilla de Worthline: se agrupa por
         identificador y se reparte por toda la cartera — encaja con lo que ya tienes,
         ofrece crear lo que no, y puedes dejar fuera lo que no quieras seguir.
@@ -325,7 +325,7 @@ export function ImportStatementPreview({
                                 />
                               </label>
                               {unresolved && fund.suggestedSymbol === "" ? (
-                                <p className="contextLabel">
+                                <p className="infoNote">
                                   {fund.lookup.status === "error"
                                     ? "La búsqueda de símbolo falló — edítalo a mano."
                                     : "Sin coincidencia para este identificador — edítalo a mano."}{" "}

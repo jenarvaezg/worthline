@@ -3895,10 +3895,23 @@ td.rowActions > * {
    compresses whatever CAN wrap before it overflows — with a long nowrap
    identifier (plantilla ids aren't 12-char ISINs) the other headers collapsed
    into vertical letter stacks. max-content overflows into .tableScroll
-   instead; min-width keeps the full-width look when content fits. */
+   instead. NO min-width:100%: under max-content sizing any slack the table is
+   forced to absorb lands on the widest column, and its 100%-width inputs
+   stretch with it — a compact table beats a rubber one. */
 .importPreview .tableScroll table {
-  min-width: 100%;
   width: max-content;
+}
+
+/* The global cell padding is vertical-only (14px 0); with content-sized
+   columns that glues Incluir to Estado and Órdenes to Importe. */
+.importPreview table th:not(:last-child),
+.importPreview table td:not(:last-child) {
+  padding-right: 18px;
+}
+
+/* The caption reads as the table's lead-in, not a floating centered title. */
+.importPreview table caption {
+  text-align: left;
 }
 
 /* Never break an ISIN mid-string. */
@@ -3906,9 +3919,12 @@ td.rowActions > * {
   white-space: nowrap;
 }
 
-/* The creation Nombre/Símbolo inputs need a usable line each. */
+/* A FIXED track for the creation Nombre/Símbolo column: under max-content
+   sizing a block of text (the sin-símbolo hint) refuses to wrap and turns the
+   column kilometric — bounding the block makes the paragraph wrap and keeps
+   the inputs at a usable, stable width. */
 .importPreview td .stackForm {
-  min-width: 240px;
+  width: 280px;
 }
 
 /* Keep the checkbox and its Sí/No label on one line. */
