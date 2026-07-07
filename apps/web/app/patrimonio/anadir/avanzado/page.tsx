@@ -584,32 +584,28 @@ function OwnershipInputs({
         />
         Repartir a partes iguales
       </label>
-      <details className="ownerCustomDetails">
-        <summary>
-          <label className="ownerPreset" style={{ display: "inline" }}>
+      <label className="ownerPreset">
+        <input
+          defaultChecked={preset === "custom"}
+          name="ownershipPreset"
+          type="radio"
+          value="custom"
+        />
+        Personalizado
+      </label>
+      <div className="ownerCustom">
+        {members.map((member, index) => (
+          <label key={member.id}>
+            {member.name}
             <input
-              defaultChecked={preset === "custom"}
-              name="ownershipPreset"
-              type="radio"
-              value="custom"
+              defaultValue={values[`owner_${member.id}`] ?? (index === 0 ? "100" : "0")}
+              inputMode="decimal"
+              name={`owner_${member.id}`}
+              aria-label={`Porcentaje de ${member.name}`}
             />
-            Personalizado
           </label>
-        </summary>
-        <div className="ownerCustom">
-          {members.map((member, index) => (
-            <label key={member.id}>
-              {member.name}
-              <input
-                defaultValue={values[`owner_${member.id}`] ?? (index === 0 ? "100" : "0")}
-                inputMode="decimal"
-                name={`owner_${member.id}`}
-                aria-label={`Porcentaje de ${member.name}`}
-              />
-            </label>
-          ))}
-        </div>
-      </details>
+        ))}
+      </div>
     </fieldset>
   );
 }
