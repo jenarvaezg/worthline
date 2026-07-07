@@ -255,7 +255,7 @@ export function ImportStatementPreview({
                     return (
                       <tr key={fund.isin}>
                         <td>
-                          <label>
+                          <label className="includeToggle">
                             <input
                               aria-label={`Incluir ${displayName}`}
                               checked={flags.included}
