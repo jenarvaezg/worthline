@@ -1,0 +1,8 @@
+﻿Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre
+01/02/2026;Fondo;IE00BYX5NX33;Compra;7,226;100;;Fidelity MSCI World Index P-ACC-EUR
+18/06/2026;Fondo;LU0208853274;Venta;62;1943,08;;
+15/03/2026;Cripto;bitcoin;Compra;0,015;850;1,5;Bitcoin
+02/01/2026;Plan de pensiones;N5572-myinvestor;Compra;9,044;119,38;;MyInvestor Indexado Global PP
+05/04/2026;Acción;ES0105589008;Compra;20;63,71;;Endurance Motive
+24/05/2026;Fondo;LU1670707527;Venta;337;7403,99;;Traspaso: fondo que sale
+26/05/2026;Fondo;LU1935059029;Compra;364,092;7536,70;;Traspaso: fondo que entra

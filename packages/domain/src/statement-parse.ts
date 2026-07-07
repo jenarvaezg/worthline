@@ -18,6 +18,7 @@
  */
 
 import type { DecimalString } from "./decimal";
+import type { Instrument } from "./instrument-catalog";
 import type { OperationKind } from "./investment-types";
 import type { CurrencyCode } from "./money";
 import {
@@ -30,8 +31,17 @@ export type { StatementBroker };
 
 /** One executed order from the statement, ready to become an operation. */
 export interface ParsedStatementRow {
-  /** The ISIN carried by this broker row, when present. */
+  /**
+   * The instrument identifier carried by this broker row, when present. Broker
+   * exports carry an ISIN; the plantilla format (#695) widens it to any
+   * grouping/matching key — ISIN, Finect code, or CoinGecko id. The field keeps
+   * its historical name to spare every consumer a rename.
+   */
   isin: string | null;
+  /** The asset type declared by the row, when the format carries one (#695). */
+  instrument?: Instrument;
+  /** A display name carried by the row, used only to prefill creation (#695). */
+  name?: string;
   /** ISO `YYYY-MM-DD` execution date. */
   dateKey: string;
   /**
