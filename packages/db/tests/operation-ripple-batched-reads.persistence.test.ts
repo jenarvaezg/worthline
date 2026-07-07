@@ -249,4 +249,51 @@ describe("operation ripple batches frozen reads (#205)", () => {
 
     store.close();
   });
+
+  test("batch-deletes operations with one bounded ripple", async () => {
+    const { store, holdingReads, reset } = await createCountingStore();
+    const { startDate, snapshotCount } = await seedManySnapshots(store);
+
+    const creates = Array.from({ length: 10 }, (_, i) => {
+      const dateKey = addDays(startDate, i);
+      return {
+        assetId: "fund",
+        currency: "EUR",
+        executedAt: dateKey,
+        id: `fundop_${dateKey}`,
+        kind: "buy" as const,
+        pricePerUnit: "100",
+        units: "10",
+      };
+    });
+    await store.recordOperationsAndRipple({
+      assetId: "fund",
+      creates,
+      overwrites: [],
+      today: TODAY,
+    });
+    const scopeCount = (await store.snapshots.readSnapshots()).reduce(
+      (acc, snap) => acc.add(snap.scopeId),
+      new Set<string>(),
+    ).size;
+
+    reset();
+    const deleted = await store.deleteOperationsAndRipple({
+      operationIds: creates.map((op) => op.id),
+      today: TODAY,
+    });
+
+    expect(deleted).toHaveLength(creates.length);
+    expect(await store.operations.readOperations("fund")).toHaveLength(0);
+    const reads = holdingReads();
+    expect(reads).toBeLessThanOrEqual(scopeCount * 4);
+    expect(reads).toBeLessThan(snapshotCount);
+
+    const seedAt = (i: number): number => (i + 1) * 100_00;
+    for (let i = 0; i < snapshotCount; i += 1) {
+      expect(await grossAt(store, addDays(startDate, i))).toBe(seedAt(i));
+    }
+
+    store.close();
+  });
 });
