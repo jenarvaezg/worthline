@@ -210,6 +210,14 @@ export default async function PatrimonioPage({
       Boolean(asset.providerSymbol),
     );
 
+    // Assets with at least one recorded operation — the board's guard that
+    // separates a fully-sold position (folds away) from a just-created one.
+    const operatedAssetIds = new Set(
+      [...projectionContext.operationsByAsset]
+        .filter(([, rows]) => rows.length > 0)
+        .map(([assetId]) => assetId),
+    );
+
     return {
       assets,
       exposureProfiles,
@@ -217,6 +225,7 @@ export default async function PatrimonioPage({
       investmentMeta,
       investmentReturns,
       liabilities,
+      operatedAssetIds,
       overrides,
       priceMetaByAsset,
       returnsByClass,
@@ -238,6 +247,7 @@ export default async function PatrimonioPage({
     investmentMeta,
     investmentReturns,
     liabilities,
+    operatedAssetIds,
     overrides,
     priceMetaByAsset,
     returnsByClass,
@@ -372,6 +382,7 @@ export default async function PatrimonioPage({
         groups={groups}
         isHousehold={isHousehold}
         nowIso={persistence.checkedAt}
+        operatedAssetIds={operatedAssetIds}
         privacyMode={privacyMode}
         readOnly={isDemo}
         returnsById={investmentReturns}
