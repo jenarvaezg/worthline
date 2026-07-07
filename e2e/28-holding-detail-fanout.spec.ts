@@ -10,7 +10,7 @@
  * appreciating, amortized, anchored) must still render/edit from the detail page.
  */
 
-import { test, expect, addHolding, holdingRow } from "./fixtures";
+import { test, expect, addHolding, holdingRow, openAdvancedSettings } from "./fixtures";
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -32,14 +32,16 @@ test("derived: manage an investment's operations from /patrimonio/[id]/editar", 
   await expect(row).toBeVisible();
   await row.getByRole("link", { name: "Fondo Ficha S6" }).first().click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
+  await openAdvancedSettings(page);
   const assetId = new URL(page.url()).pathname.split("/")[2]!;
   expect(assetId).toBeTruthy();
 
   // 3. The detail page shows the DERIVED operations surface (units × price), not
   //    a manual value field (ADR 0006: an investment's value is never edited).
-  await expect(
-    page.getByRole("region", { name: "Operaciones de la inversión" }),
-  ).toBeVisible();
+  const operationsRegion = page.getByRole("region", {
+    name: "Operaciones de la inversión",
+  });
+  await expect(operationsRegion).toBeVisible();
   await expect(page.getByLabel("Valor actual en EUR")).toHaveCount(0);
 
   // 4. Record a BUY of 10 units @ 100 from the detail page.
@@ -49,9 +51,10 @@ test("derived: manage an investment's operations from /patrimonio/[id]/editar", 
   await page.getByRole("button", { name: "Registrar operación" }).click();
   await expect(page).toHaveURL(/ok=saved/);
   await expect(page.getByRole("status")).toHaveText("Guardado.");
+  await openAdvancedSettings(page);
 
   // 5. The detail surface now reports the units held and the derived value.
-  const ctx = page.locator(".operacionContext");
+  const ctx = operationsRegion.locator(".operacionContext");
   await expect(ctx.getByText("10", { exact: true })).toBeVisible();
   await expect(ctx.getByText(/1\.?000\s*€/)).toBeVisible(); // 10 × 100 = 1000 €
 
@@ -60,10 +63,15 @@ test("derived: manage an investment's operations from /patrimonio/[id]/editar", 
   await opForm.getByLabel("Unidades").fill("4");
   await opForm.getByLabel("Precio por unidad en EUR").fill("120");
   await page.getByRole("button", { name: "Registrar operación" }).click();
-  await expect(page).toHaveURL(/ok=saved/);
+  await expect(
+    page.locator("details.editAdvanced .operacionContext").getByText("6", {
+      exact: true,
+    }),
+  ).toHaveCount(1);
+  await openAdvancedSettings(page);
 
   // 7. Both operations are listed; remaining units = 6.
-  const opsPanel = page.locator("details.recentOpsPanel");
+  const opsPanel = operationsRegion.locator("details.recentOpsPanel");
   await expect(opsPanel).toBeVisible();
   await expect(opsPanel.locator("tbody tr")).toHaveCount(2);
   await expect(ctx.getByText("6", { exact: true })).toBeVisible();
@@ -73,12 +81,13 @@ test("derived: manage an investment's operations from /patrimonio/[id]/editar", 
   await sellRow.locator("details.confirmDelete summary").click();
   await sellRow.getByRole("button", { name: "Confirmar" }).click();
   await expect(page.getByRole("status")).toContainText("Operación eliminada");
+  await openAdvancedSettings(page);
 
   // 9. Only the buy remains; units back to 10.
-  await expect(page.locator("details.recentOpsPanel tbody tr")).toHaveCount(1);
-  await expect(
-    page.locator(".operacionContext").getByText("10", { exact: true }),
-  ).toBeVisible();
+  await expect(operationsRegion.locator("details.recentOpsPanel tbody tr")).toHaveCount(
+    1,
+  );
+  await expect(ctx.getByText("10", { exact: true })).toBeVisible();
 });
 
 test("stored: a cash asset edits its current value from the detail page", async ({
@@ -120,6 +129,7 @@ test("appreciating: a property edits its valuation curve from the detail page", 
   const id = new URL(page.url()).hash.slice(1);
 
   await page.goto(`/patrimonio/${id}/editar`);
+  await openAdvancedSettings(page);
   // Appreciating surface: the housing valuation region with a rate field.
   await expect(
     page.getByRole("region", { name: "Valoración del inmueble" }),
@@ -142,6 +152,7 @@ test("amortized & anchored: a liability switches debt-model surfaces from the de
   const id = new URL(page.url()).hash.slice(1);
 
   await page.goto(`/patrimonio/${id}/editar`);
+  await openAdvancedSettings(page);
   // The debt-model region lets the user pick the method, which fans out a surface.
   const debtRegion = page.getByRole("region", { name: "Modelo de deuda" });
   await expect(debtRegion).toBeVisible();
@@ -155,6 +166,7 @@ test("amortized & anchored: a liability switches debt-model surfaces from the de
   // form — otherwise the in-flight re-render tears down and rebuilds the whole
   // subtree, detaching inputs and the submit button mid-action (flaked ~1/3).
   await expect(page).toHaveURL(/ok=debt_model_saved/);
+  await openAdvancedSettings(page);
   // With no plan yet, the origin-declared plan form starts demoted inside a
   // <details> (current-state entry is the primary path, S2 #677) — expand it.
   const originalPlanDetails = debtRegion.locator("details", {
@@ -176,6 +188,7 @@ test("amortized & anchored: a liability switches debt-model surfaces from the de
   await planForm.getByRole("button", { name: "Guardar plan" }).click();
   await expect(page).toHaveURL(/ok=plan_saved/);
   await expect(page.getByRole("status")).toBeVisible();
+  await openAdvancedSettings(page);
 
   // anchored: switch to revolving → the balance-anchor editor appears.
   await debtRegion
@@ -185,11 +198,13 @@ test("amortized & anchored: a liability switches debt-model surfaces from the de
   // Same settle-before-interact: wait for the model-save redirect to land so the
   // balance-anchor form is the stable, post-navigation node.
   await expect(page).toHaveURL(/ok=debt_model_saved/);
+  await openAdvancedSettings(page);
   await expect(page.getByRole("form", { name: "Registrar saldo" })).toBeVisible();
   await page.getByLabel("Fecha del saldo").fill(today);
   await page.getByLabel("Saldo restante en EUR").fill("12500");
   await page.getByRole("button", { name: "Registrar saldo" }).click();
   await expect(page).toHaveURL(/ok=balance_anchor_added/);
   await expect(page.getByRole("status")).toBeVisible();
+  await openAdvancedSettings(page);
   await expect(page.getByRole("table", { name: "Saldos declarados" })).toBeVisible();
 });

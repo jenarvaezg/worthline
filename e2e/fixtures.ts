@@ -65,6 +65,16 @@ export function holdingRow(page: import("@playwright/test").Page, name: string) 
   return page.locator(".balanceRow", { hasText: name });
 }
 
+/** Expand the edit page's progressive-disclosure block before using advanced forms. */
+export async function openAdvancedSettings(page: import("@playwright/test").Page) {
+  const advanced = page.locator("details.editAdvanced");
+  await expect(advanced).toBeVisible();
+  if (!(await advanced.evaluate((el: HTMLDetailsElement) => el.open))) {
+    await advanced.getByText("Configuración avanzada", { exact: true }).click();
+  }
+  await expect(advanced).toHaveJSProperty("open", true);
+}
+
 /** Open a holding row's ⋯ actions popover (the menu hides Editar/Eliminar/ack). */
 export async function openHoldingMenu(
   page: import("@playwright/test").Page,
