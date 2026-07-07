@@ -16,6 +16,7 @@
 
 import type { ParsedStatementRow, SkippedStatementRow } from "./statement-parse";
 import { myinvestorAdapter } from "./statement-myinvestor-adapter";
+import { plantillaAdapter } from "./statement-plantilla-adapter";
 
 type ParsedStatementRowDraft = Omit<ParsedStatementRow, "isin">;
 type SkippedStatementRowDraft = Omit<SkippedStatementRow, "isin">;
@@ -68,8 +69,12 @@ export interface StatementBrokerAdapter<C = unknown> {
   directionResolved?(columns: C): boolean;
 }
 
-/** The brokers with a configured reader. A new broker extends this union. */
-export type StatementBroker = "myinvestor";
+/**
+ * The formats with a configured reader: real broker exports plus `plantilla`,
+ * Worthline's own universal statement format (#695). A new entry extends this
+ * union.
+ */
+export type StatementBroker = "myinvestor" | "plantilla";
 
 /**
  * The broker → adapter registry. Typed as a total `Record<StatementBroker, …>` so a
@@ -80,6 +85,7 @@ const STATEMENT_BROKER_ADAPTERS: Record<
   StatementBrokerAdapter<unknown>
 > = {
   myinvestor: myinvestorAdapter,
+  plantilla: plantillaAdapter,
 };
 
 /** Whether `value` is a broker id the registry can parse (narrows the type). */

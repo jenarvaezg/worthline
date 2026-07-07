@@ -388,7 +388,9 @@ export type {
 } from "./statement-import-plan";
 export {
   buildStatementImportPlan,
+  findStatementTypeConflict,
   groupStatementRowsByIsin,
+  isIsinShaped,
   resolveStatementImportBuckets,
 } from "./statement-import-plan";
 
