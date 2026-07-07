@@ -115,6 +115,7 @@ export function ImportStatementPreview({
   // A newly-picked file makes the last preview stale — hide it, like #176.
   const [fileChangedSincePreview, setFileChangedSincePreview] = useState(false);
   const [selection, setSelection] = useState<Record<string, FundSelectionFlags>>({});
+  const [directionAmbiguityAccepted, setDirectionAmbiguityAccepted] = useState(false);
   // The funds array a new preview last seeded `selection` from — adjusting state
   // during render (not in an effect) when it changes, per React's recommended
   // "storing information from previous renders" pattern.
@@ -122,6 +123,7 @@ export function ImportStatementPreview({
 
   const shown = fileChangedSincePreview || isPreviewPending ? IDLE : preview;
   const funds = shown.status === "ready" ? shown.funds : [];
+  const needsDirectionOptIn = shown.status === "ready" && !shown.directionResolved;
 
   if (shown.status === "ready" && shown.funds !== seededFunds) {
     setSeededFunds(shown.funds);
@@ -151,6 +153,7 @@ export function ImportStatementPreview({
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     setFileChangedSincePreview(false);
+    setDirectionAmbiguityAccepted(false);
     startTransition(() => dispatchPreview(formData));
   }
 
@@ -200,7 +203,10 @@ export function ImportStatementPreview({
             accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             disabled={readOnly}
             name="file"
-            onChange={() => setFileChangedSincePreview(true)}
+            onChange={() => {
+              setFileChangedSincePreview(true);
+              setDirectionAmbiguityAccepted(false);
+            }}
             required
             type="file"
           />
@@ -238,11 +244,23 @@ export function ImportStatementPreview({
         {shown.status === "ready" ? (
           <div className="importPreview">
             {!shown.directionResolved ? (
-              <p className="warningBand" role="alert">
-                Este archivo no indica si cada orden es compra o venta: todas se cargarán
-                como compras. Si tienes ventas o reembolsos, exporta desde MyInvestor el
-                archivo de órdenes que incluye la columna «Tipo de operación».
-              </p>
+              <>
+                <p className="warningBand" role="alert">
+                  Este archivo no distingue compras de ventas. Exporta el archivo COMPLETO
+                  de órdenes (con la columna «Tipo de operación»).
+                </p>
+                <label className="directionOptIn">
+                  <input
+                    checked={directionAmbiguityAccepted}
+                    name="confirmNoSalesOrRedemptions"
+                    onChange={(event) =>
+                      setDirectionAmbiguityAccepted(event.currentTarget.checked)
+                    }
+                    type="checkbox"
+                  />
+                  Confirmo que en este periodo no hice ninguna venta ni reembolso.
+                </label>
+              </>
             ) : null}
             <div className="tableScroll">
               <table>
@@ -407,7 +425,11 @@ export function ImportStatementPreview({
 
             <ConfirmSubmit
               confirmAction={confirmAction}
-              disabled={readOnly || summary.fundCount === 0}
+              disabled={
+                readOnly ||
+                summary.fundCount === 0 ||
+                (needsDirectionOptIn && !directionAmbiguityAccepted)
+              }
               label={`Confirmar ${pluralize(summary.fundCount, "activo", "activos")}`}
             />
           </div>

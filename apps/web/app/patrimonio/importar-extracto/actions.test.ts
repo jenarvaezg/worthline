@@ -46,6 +46,11 @@ function uploadForm(csv = MULTI_ISIN_CSV): FormData {
   return fd;
 }
 
+function confirmNoSales(fd: FormData): FormData {
+  fd.set("confirmNoSalesOrRedemptions", "on");
+  return fd;
+}
+
 async function seed(store: WorthlineStore): Promise<void> {
   await store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jose" }],
@@ -210,6 +215,20 @@ describe("previewImportStatementAction (#673)", () => {
 });
 
 describe("confirmImportStatementAction — all-or-nothing (#673)", () => {
+  test("rejects a reduced MyInvestor export unless the user confirms there were no sells", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+
+    const fd = uploadForm();
+    fd.set("include_ES00WL000001", "on");
+
+    const digest = await confirm(fd, store);
+    expect(digest).toContain("error=");
+    expect(digest).toContain("Este+archivo+no+distingue+compras+de+ventas");
+    expect(await store.operations.readOperations("matched_fund")).toHaveLength(0);
+    expect(await store.assets.readInvestmentAssetsWithMeta()).toHaveLength(1);
+  });
+
   test("applies only the included funds; the excluded fund is untouched", async () => {
     const store = await createInMemoryStore();
     await seed(store);
@@ -221,7 +240,7 @@ describe("confirmImportStatementAction — all-or-nothing (#673)", () => {
     fd.set("symbol_LU00WL000002", "BRUJULA.FAKE");
     // IE00WL000003 and FR00WL000004 left unchecked -> excluded.
 
-    const digest = await confirm(fd, store);
+    const digest = await confirm(confirmNoSales(fd), store);
     expect(digest).toContain("ok=statement_import_loaded");
     expect(digest).toContain("funds=2");
     expect(digest).toContain("created=1");
@@ -249,7 +268,7 @@ describe("confirmImportStatementAction — all-or-nothing (#673)", () => {
     fd.set("include_FR00WL000004", "on");
     // name/symbol left blank.
 
-    await confirm(fd, store);
+    await confirm(confirmNoSales(fd), store);
 
     const metas = await store.assets.readInvestmentAssetsWithMeta();
     const created = metas.find((meta) => meta.isin === "FR00WL000004");
@@ -267,7 +286,7 @@ describe("confirmImportStatementAction — all-or-nothing (#673)", () => {
       form.set("include_ES00WL000001", "on");
       form.set("include_LU00WL000002", "on");
       form.set("symbol_LU00WL000002", "BRUJULA.FAKE");
-      return form;
+      return confirmNoSales(form);
     };
 
     await confirm(fd(), store);
