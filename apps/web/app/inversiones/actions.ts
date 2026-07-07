@@ -83,6 +83,10 @@ function currentUrlOf(formData: FormData, fallback = "/patrimonio"): string {
   return (formData.get("currentUrl") as string) || fallback;
 }
 
+const DIRECTION_AMBIGUITY_ACK_FIELD = "confirmNoSalesOrRedemptions";
+const DIRECTION_AMBIGUITY_MESSAGE =
+  "Este archivo no distingue compras de ventas. Exporta el archivo COMPLETO de órdenes (con la columna «Tipo de operación»).";
+
 async function validateInvestmentProviderSymbol(input: {
   assetId: string;
   currency: string;
@@ -315,6 +319,12 @@ export async function confirmStatementAction(
   const read = await readStatementFromForm(formData);
   if (!read.ok) {
     redirect(statementErrorUrl(read.message));
+  }
+  if (
+    !read.value.directionResolved &&
+    formData.get(DIRECTION_AMBIGUITY_ACK_FIELD) !== "on"
+  ) {
+    redirect(statementErrorUrl(DIRECTION_AMBIGUITY_MESSAGE));
   }
 
   const { rows, skipped } = read.value;

@@ -3943,6 +3943,18 @@ td.rowActions > * {
   gap: 8px;
 }
 
+.directionOptIn {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.directionOptIn input {
+  margin-top: 0.2rem;
+}
+
 .importPreview p {
   font-size: 0.85rem;
   margin: 0;
