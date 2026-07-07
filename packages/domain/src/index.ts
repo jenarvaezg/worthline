@@ -283,7 +283,12 @@ export {
 } from "./prices";
 
 export type { FireScopeConfig, FireResult } from "./fire";
-export { calculateFire, calculateFireForScope, fireReservationHorizon } from "./fire";
+export {
+  calculateFire,
+  calculateFireForScope,
+  fireReservationHorizon,
+  isFireEligibleAsset,
+} from "./fire";
 export type { EligibleTier } from "./fire-return";
 export { TIER_REAL_RETURN_DEFAULTS, effectiveRealReturn } from "./fire-return";
 
