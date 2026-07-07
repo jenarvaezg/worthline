@@ -218,6 +218,15 @@ export interface WorthlineStore {
     today?: string;
   }) => Promise<{ assetId: string; executedAt: string } | null>;
   /**
+   * Batched operation delete seam (ADR 0020): delete many investment operations
+   * and run ONE batched ripple across the affected dates, atomically. Unknown ids
+   * are skipped; returns the deleted operations' asset ids and dates.
+   */
+  deleteOperationsAndRipple: (params: {
+    operationIds: string[];
+    today?: string;
+  }) => Promise<Array<{ assetId: string; executedAt: string }>>;
+  /**
    * Valuation dated-fact seam (ADR 0020): persist ONE housing valuation anchor
    * AND ripple the snapshots from its date, atomically in one transaction. The
    * from-date is the anchor's own date, derived behind the seam; `today` defaults
