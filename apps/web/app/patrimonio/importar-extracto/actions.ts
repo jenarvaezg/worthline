@@ -103,7 +103,15 @@ export type FundPreviewRow = {
 export type ImportStatementPreviewState =
   | { status: "idle" }
   | { status: "error"; message: string }
-  | { status: "ready"; funds: FundPreviewRow[] };
+  | {
+      status: "ready";
+      funds: FundPreviewRow[];
+      /**
+       * False when the file shape can't distinguish buys from sells (MyInvestor's
+       * reduced export) — the preview warns so sells aren't confirmed as buys.
+       */
+      directionResolved: boolean;
+    };
 
 async function readStatementFromForm(
   formData: FormData,
@@ -209,7 +217,7 @@ export async function previewImportStatementAction(
       buckets.map((bucket) => bucketToPreviewRow(bucket, _resolver)),
     );
 
-    return { funds, status: "ready" };
+    return { directionResolved: read.value.directionResolved, funds, status: "ready" };
   }, _store);
 }
 

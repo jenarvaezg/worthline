@@ -222,6 +222,13 @@ export function ImportStatementPreview({
 
         {shown.status === "ready" ? (
           <div className="importPreview">
+            {!shown.directionResolved ? (
+              <p className="warningBand" role="alert">
+                Este archivo no indica si cada orden es compra o venta: todas se cargarán
+                como compras. Si tienes ventas o reembolsos, exporta desde MyInvestor el
+                archivo de órdenes que incluye la columna «Tipo de operación».
+              </p>
+            ) : null}
             <div className="tableScroll">
               <table>
                 <caption>

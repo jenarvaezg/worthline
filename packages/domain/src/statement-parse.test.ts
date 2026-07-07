@@ -171,3 +171,85 @@ describe("parseStatement — MyInvestor (ADR 0018, S1)", () => {
     expect(parseStatement(noEstado, "myinvestor").ok).toBe(false);
   });
 });
+
+/**
+ * The FULL orders export (ADR 0018, amended 2026-07-07): same columns plus
+ * `Tipo de operación`, which is authoritative for direction. The real reembolso
+ * sample that disproved the sign rule arrives with POSITIVE amount and units —
+ * only the tipo distinguishes it from a buy.
+ */
+const FULL_HEADER =
+  "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado;Tipo de operación";
+
+describe("parseStatement — MyInvestor full export (`Tipo de operación`)", () => {
+  test("the tipo column is authoritative: positive-signed reembolsos/ventas/bajas load as sells", () => {
+    const { rows, directionResolved } = parsedOk(
+      [
+        FULL_HEADER,
+        "18/06/2026;LU0208853274;1943.08 EUR;62;Finalizada;Reembolso Fondos de Inversión",
+        "26/05/2026;LU1935059029;7536.7 EUR;364,092;Finalizada;Suscripción por Traspaso Interno",
+        "24/05/2026;LU1670707527;7403.99 EUR;337;Finalizada;Reembolso por Traspaso Interno",
+        "23/06/2026;JE00B8DFY052;703.9 EUR;33;Finalizada;Compra rv contado de WT PHYSICAL GOLD",
+        "25/06/2026;ES0165265002;119.38 EUR;9,044;Finalizada;Aportación",
+        "20/06/2026;IE00B42W4L06;500 EUR;10;Finalizada;Baja switch",
+        "21/06/2026;IE00B67T5G21;500 EUR;10;Finalizada;Alta switch",
+        "22/06/2026;IE00BDRK7L36;250 EUR;5;Finalizada;Venta rv contado de VANECK URANIUM",
+      ].join("\n"),
+    );
+
+    expect(directionResolved).toBe(true);
+    expect(rows.map((row) => row.kind)).toEqual([
+      "sell",
+      "buy",
+      "sell",
+      "buy",
+      "buy",
+      "sell",
+      "buy",
+      "sell",
+    ]);
+    // Sells still store absolute magnitudes — the kind carries the direction.
+    expect(rows[0]!.units).toBe("62");
+  });
+
+  test("an unrecognized tipo aborts the whole load instead of guessing a direction", () => {
+    const result = parseStatement(
+      [
+        FULL_HEADER,
+        "18/06/2026;LU0208853274;1943.08 EUR;62;Finalizada;Reembolso Fondos de Inversión",
+        "19/06/2026;LU0208853274;100 EUR;3;Finalizada;Canje de participaciones",
+      ].join("\n"),
+      "myinvestor",
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected error");
+    expect(result.errors[0]).toContain("Canje de participaciones");
+  });
+
+  test("an empty tipo cell on a Finalizada row aborts the load (no silent sign guess)", () => {
+    // With the tipo column present the file reports directionResolved: true and
+    // shows NO warning — so a per-row sign fallback here would silently
+    // re-introduce the mis-import this feature exists to prevent.
+    const result = parseStatement(
+      [
+        FULL_HEADER,
+        "18/06/2026;LU0208853274;1943.08 EUR;62;Finalizada;Reembolso Fondos de Inversión",
+        "19/06/2026;LU0208853274;100 EUR;3;Finalizada;",
+      ].join("\n"),
+      "myinvestor",
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected error");
+    expect(result.errors[0]).toContain("sin tipo de operación");
+    expect(result.errors[0]).toContain("LU0208853274");
+  });
+
+  test("the reduced export (no tipo column) parses but reports directionResolved: false", () => {
+    const { directionResolved, rows } = parsedOk(SAMPLE);
+
+    expect(directionResolved).toBe(false);
+    expect(rows).toHaveLength(8);
+  });
+});
