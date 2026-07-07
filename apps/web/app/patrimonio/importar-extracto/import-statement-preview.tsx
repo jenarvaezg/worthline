@@ -1,6 +1,7 @@
 "use client";
 
 import { startTransition, useActionState, useState } from "react";
+import { useFormStatus } from "react-dom";
 
 import type { FundPreviewRow, ImportStatementPreviewState } from "./actions";
 import {
@@ -61,6 +62,35 @@ function defaultFlagsFor(fund: FundPreviewRow): FundSelectionFlags {
     included: fund.lookup.status === "found",
     symbolEmpty: fund.lookup.status !== "found",
   };
+}
+
+/**
+ * The confirm button with in-flight feedback (mirrors PendingSubmit, which
+ * doesn't take a formAction). Applying a large import creates funds, records
+ * every operation and ripples snapshot history — seconds, not millis — and a
+ * server-action POST gives NO native feedback, so without this the click reads
+ * as dead and users re-click, queuing duplicate imports.
+ */
+function ConfirmSubmit({
+  confirmAction,
+  disabled,
+  label,
+}: {
+  confirmAction: (formData: FormData) => Promise<void>;
+  disabled: boolean;
+  label: string;
+}) {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      aria-busy={pending}
+      disabled={disabled || pending}
+      formAction={confirmAction}
+      type="submit"
+    >
+      {pending ? "Aplicando…" : label}
+    </button>
+  );
 }
 
 export function ImportStatementPreview({
@@ -358,13 +388,11 @@ export function ImportStatementPreview({
               </p>
             </div>
 
-            <button
+            <ConfirmSubmit
+              confirmAction={confirmAction}
               disabled={readOnly || summary.fundCount === 0}
-              formAction={confirmAction}
-              type="submit"
-            >
-              Confirmar {pluralize(summary.fundCount, "fondo", "fondos")}
-            </button>
+              label={`Confirmar ${pluralize(summary.fundCount, "fondo", "fondos")}`}
+            />
           </div>
         ) : null}
       </form>
