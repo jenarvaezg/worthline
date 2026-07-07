@@ -10,7 +10,7 @@
  * Runs after journey 30 so the holdings it adds don't perturb earlier totals.
  */
 
-import { test, expect, holdingRow } from "./fixtures";
+import { test, expect, holdingRow, openAdvancedSettings } from "./fixtures";
 
 /** Open the investment drawer and select one of the 3 behavior groups. */
 async function openInvestmentGroup(
@@ -78,6 +78,7 @@ test("importar extracto: routes to «Cargar movimientos» with no opening operat
   // Routed to the holding's ficha, where «Cargar movimientos» lives (#173).
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/, { timeout: 10_000 });
   await expect(page.getByRole("status")).toContainText("carga el extracto");
+  await openAdvancedSettings(page);
   await expect(page.getByRole("heading", { name: "Cargar movimientos" })).toBeVisible();
 
   // No opening operation was invented — the operations list is empty.

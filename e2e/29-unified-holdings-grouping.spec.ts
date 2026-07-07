@@ -9,7 +9,14 @@
  * instrument — all server-rendered via the `?group=` query param (ADR 0009).
  */
 
-import { test, expect, addHolding, holdingRow, openHoldingMenu } from "./fixtures";
+import {
+  test,
+  expect,
+  addHolding,
+  holdingRow,
+  openHoldingMenu,
+  openAdvancedSettings,
+} from "./fixtures";
 
 test("unified list: investment row is actionable (not a ghost) + grouping by direction/rung/instrument", async ({
   page,
@@ -48,6 +55,7 @@ test("unified list: investment row is actionable (not a ghost) + grouping by dir
   //    there (the derived operations surface, not a ghost dead-end).
   await invRow.getByRole("link", { name: "Editar" }).click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
+  await openAdvancedSettings(page);
   await expect(
     page.getByRole("region", { name: "Operaciones de la inversión" }),
   ).toBeVisible();

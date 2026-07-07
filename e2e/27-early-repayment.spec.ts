@@ -9,7 +9,7 @@
  * client-side (native max) and on the server.
  */
 
-import { test, expect, addHolding } from "./fixtures";
+import { test, expect, addHolding, openAdvancedSettings } from "./fixtures";
 
 /** A YYYY-MM-DD a given number of whole years before today. */
 function yearsAgo(years: number): string {
@@ -45,6 +45,7 @@ test("early repayment: add reduce-payment, edit to reduce-term, future rejected,
 
   // 2. Choose the amortizable model.
   await page.goto(editUrl(liabilityId));
+  await openAdvancedSettings(page);
   const section = page.getByRole("region", { name: "Modelo de deuda" });
   await expect(section).toBeVisible();
   await section.getByLabel("Modelo de deuda").selectOption("amortizable");
@@ -54,6 +55,7 @@ test("early repayment: add reduce-payment, edit to reduce-term, future rejected,
   // 3. Declare a PAST amortization plan (start ~6 years ago).
   const planStart = yearsAgo(6);
   await page.goto(editUrl(liabilityId));
+  await openAdvancedSettings(page);
   // With no plan yet, the origin-declared plan form starts demoted inside a
   // <details> (current-state entry is the primary path, S2 #677) — expand it.
   await page.getByText("¿Tienes los datos originales del préstamo?").click();
@@ -65,10 +67,12 @@ test("early repayment: add reduce-payment, edit to reduce-term, future rejected,
   await planForm.getByLabel("Fecha del primer pago").fill(planStart);
   await page.getByRole("button", { name: "Guardar plan" }).click();
   await expect(page.getByRole("status")).toHaveText("Plan de amortización guardado.");
+  await openAdvancedSettings(page);
 
   // 4. Add a PAST early repayment (~3 years ago), reduce-payment.
   const repaymentDate = yearsAgo(3);
   await page.goto(editUrl(liabilityId));
+  await openAdvancedSettings(page);
   const addRepayment = page.getByRole("form", {
     name: "Registrar amortización anticipada",
   });
@@ -89,6 +93,7 @@ test("early repayment: add reduce-payment, edit to reduce-term, future rejected,
   await expect(page.getByRole("status")).toHaveText(
     "Amortización anticipada registrada.",
   );
+  await openAdvancedSettings(page);
 
   const repaymentTable = page.getByRole("table", {
     name: "Amortizaciones anticipadas",
@@ -101,6 +106,7 @@ test("early repayment: add reduce-payment, edit to reduce-term, future rejected,
 
   // 5. Edit the repayment: change the amount and switch the mode to reduce-term.
   await page.goto(editUrl(liabilityId));
+  await openAdvancedSettings(page);
   const repaymentRow = page.getByRole("row", { name: new RegExp(repaymentDate) });
   await repaymentRow.locator("summary", { hasText: "Editar" }).click();
   const editRepayment = page.getByRole("form", {
@@ -112,6 +118,7 @@ test("early repayment: add reduce-payment, edit to reduce-term, future rejected,
   await expect(page.getByRole("status")).toHaveText(
     "Amortización anticipada actualizada.",
   );
+  await openAdvancedSettings(page);
   await expect(repaymentTable.getByText(/12\.000/)).toBeVisible();
   await expect(repaymentTable.getByRole("cell", { name: "Reducir plazo" })).toBeVisible();
 
@@ -124,10 +131,12 @@ test("early repayment: add reduce-payment, edit to reduce-term, future rejected,
 
   // 7. Delete the repayment (two-step confirm).
   await page.goto(editUrl(liabilityId));
+  await openAdvancedSettings(page);
   const deleteRow = page.getByRole("row", { name: new RegExp(repaymentDate) });
   await deleteRow.locator("summary", { hasText: "Eliminar" }).click();
   await deleteRow.getByRole("button", { name: "Confirmar" }).click();
   await expect(page.getByRole("status")).toHaveText("Amortización anticipada eliminada.");
+  await openAdvancedSettings(page);
   await expect(
     page
       .getByRole("table", { name: "Amortizaciones anticipadas" })

@@ -118,7 +118,7 @@ export function AssetEditForm({
           </label>
 
           <label>
-            Capa de liquidez
+            Disponibilidad
             <select
               defaultValue={values["liquidityTier"] ?? investment.liquidityTier}
               name="liquidityTier"
@@ -216,14 +216,14 @@ export function AssetEditForm({
             <label>
               Tipo
               <select defaultValue={values["type"] ?? asset.type} name="type">
-                <option value="cash">Cash</option>
-                <option value="manual">Manual</option>
-                <option value="real_estate">Inmueble</option>
+                <option value="cash">Cuenta o efectivo</option>
+                <option value="manual">Activo general</option>
+                <option value="real_estate">Vivienda o inmueble</option>
               </select>
             </label>
 
             <label>
-              Capa de liquidez
+              Disponibilidad
               <select
                 defaultValue={values["liquidityTier"] ?? asset.liquidityTier}
                 name="liquidityTier"
@@ -232,6 +232,7 @@ export function AssetEditForm({
                 <option value="market">Mercado</option>
                 <option value="term-locked">A plazo</option>
                 <option value="illiquid">Ilíquido</option>
+                <option value="housing">Vivienda</option>
               </select>
             </label>
 
@@ -415,7 +416,9 @@ export function OwnershipInputs({
   }
 
   const scopeMember = members.find((m) => m.id === scopeMemberId) ?? members[0]!;
-  const preset = values["ownershipPreset"] ?? "custom";
+  const preset =
+    values["ownershipPreset"] ??
+    deriveOwnershipPreset(members, scopeMember.id, currentOwnership);
 
   const currentBpsFor = (memberId: string): string => {
     const share = currentOwnership.find((s) => s.memberId === memberId);
@@ -433,7 +436,7 @@ export function OwnershipInputs({
           type="radio"
           value="scope"
         />
-        100% {scopeMember.name}
+        Solo mío
       </label>
       {members.length > 1 ? (
         <label className="ownerPreset">
@@ -443,7 +446,7 @@ export function OwnershipInputs({
             type="radio"
             value="even"
           />
-          Repartir a partes iguales
+          De los dos (mitad y mitad)
         </label>
       ) : null}
       <details className="ownerCustomDetails" open={preset === "custom"}>
@@ -455,7 +458,7 @@ export function OwnershipInputs({
               type="radio"
               value="custom"
             />
-            Personalizado
+            Otro reparto…
           </label>
         </summary>
         <div className="ownerCustom">
@@ -470,8 +473,52 @@ export function OwnershipInputs({
               />
             </label>
           ))}
+          {allowPartial ? (
+            <p className="simpleHint">
+              ¿Un inmueble a medias con alguien de fuera? Pon solo vuestra parte; el resto
+              se da por suyo.
+            </p>
+          ) : null}
         </div>
       </details>
     </fieldset>
   );
+}
+
+function deriveOwnershipPreset(
+  members: Member[],
+  scopeMemberId: string,
+  currentOwnership: Array<{ memberId: string; shareBps: number }>,
+): "scope" | "even" | "custom" {
+  if (
+    currentOwnership.length === 1 &&
+    currentOwnership[0]?.memberId === scopeMemberId &&
+    currentOwnership[0]?.shareBps === 10_000
+  ) {
+    return "scope";
+  }
+
+  if (members.length > 1 && isEvenOwnership(members, currentOwnership)) {
+    return "even";
+  }
+
+  return "custom";
+}
+
+function isEvenOwnership(
+  members: Member[],
+  currentOwnership: Array<{ memberId: string; shareBps: number }>,
+): boolean {
+  const shareByMember = new Map(
+    currentOwnership.map((share) => [share.memberId, share.shareBps]),
+  );
+  const base = Math.floor(10_000 / members.length);
+  let remainder = 10_000 - base * members.length;
+
+  return members.every((member) => {
+    const expected = base + (remainder > 0 ? 1 : 0);
+    remainder -= remainder > 0 ? 1 : 0;
+
+    return shareByMember.get(member.id) === expected;
+  });
 }

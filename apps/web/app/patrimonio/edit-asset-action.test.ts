@@ -281,4 +281,36 @@ describe("editAssetAction — single primary residence", () => {
     expect(casa.name).toBe("Casa renombrada");
     expect(casa.isPrimaryResidence).toBe(true);
   });
+
+  test("editing a housing-rung property preserves its liquidity tier", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 30_000_000,
+      id: "casa",
+      liquidityTier: "housing",
+      name: "Casa",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "real_estate",
+    });
+
+    const url = await runAction(
+      form({
+        id: "casa",
+        name: "Casa",
+        type: "real_estate",
+        liquidityTier: "housing",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    expect(url).toContain("saved");
+    expect((await store.assets.readAssets())[0]!.liquidityTier).toBe("housing");
+  });
 });

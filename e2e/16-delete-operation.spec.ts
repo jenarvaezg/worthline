@@ -10,7 +10,14 @@
  * holding's own ficha (/patrimonio/[id]/editar).
  */
 
-import { test, expect, addHolding, holdingRow, delayServerActions } from "./fixtures";
+import {
+  test,
+  expect,
+  addHolding,
+  holdingRow,
+  delayServerActions,
+  openAdvancedSettings,
+} from "./fixtures";
 
 test("record an operation, then delete it", async ({ page }) => {
   // 1. New investment with a manual price (no ticker → no network).
@@ -28,6 +35,7 @@ test("record an operation, then delete it", async ({ page }) => {
     .first()
     .click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
+  await openAdvancedSettings(page);
   await expect(
     page.getByRole("region", { name: "Operaciones de la inversión" }),
   ).toBeVisible();
@@ -39,6 +47,7 @@ test("record an operation, then delete it", async ({ page }) => {
   await page.getByRole("button", { name: "Registrar operación" }).click();
   await expect(page).toHaveURL(/ok=saved/);
   await expect(page.getByRole("status")).toBeVisible();
+  await openAdvancedSettings(page);
 
   // 4. The recent-operations panel lists exactly one row.
   const opsPanel = page.locator("details.recentOpsPanel");

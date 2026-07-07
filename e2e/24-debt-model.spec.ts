@@ -14,7 +14,7 @@
  * /historico at their dates.
  */
 
-import { test, expect, addHolding } from "./fixtures";
+import { test, expect, addHolding, openAdvancedSettings } from "./fixtures";
 
 /** A YYYY-MM-DD a given number of whole years before today. */
 function yearsAgo(years: number): string {
@@ -50,6 +50,7 @@ test("debt model: amortizable plan + revisions, revolving anchors, future reject
 
   // 2. Open the editar page — the debt-model section must be present.
   await page.goto(`/patrimonio/${liabilityId}/editar`);
+  await openAdvancedSettings(page);
   const section = page.getByRole("region", { name: "Modelo de deuda" });
   await expect(section).toBeVisible();
 
@@ -57,6 +58,7 @@ test("debt model: amortizable plan + revisions, revolving anchors, future reject
   await section.getByLabel("Modelo de deuda").selectOption("amortizable");
   await page.getByRole("button", { name: "Guardar modelo" }).click();
   await expect(page.getByRole("status")).toHaveText("Modelo de deuda guardado.");
+  await openAdvancedSettings(page);
   // With no plan yet, the origin-declared plan form starts demoted inside a
   // <details> (current-state entry is the primary path, S2 #677) — expand it.
   await page.getByText("¿Tienes los datos originales del préstamo?").click();
@@ -75,6 +77,7 @@ test("debt model: amortizable plan + revisions, revolving anchors, future reject
   await planForm.getByLabel("Fecha del primer pago").fill(planStart);
   await page.getByRole("button", { name: "Guardar plan" }).click();
   await expect(page.getByRole("status")).toHaveText("Plan de amortización guardado.");
+  await openAdvancedSettings(page);
   // Persisted plan is shown back in the form.
   await expect(planForm.getByLabel("Fecha de firma")).toHaveValue(planStart);
   await expect(planForm.getByLabel("Fecha del primer pago")).toHaveValue(planStart);
@@ -98,6 +101,7 @@ test("debt model: amortizable plan + revisions, revolving anchors, future reject
   await addRevision.getByLabel("Nuevo tipo de interés (%)").fill("3");
   await page.getByRole("button", { name: "Registrar revisión" }).click();
   await expect(page.getByRole("status")).toHaveText("Revisión de tipo registrada.");
+  await openAdvancedSettings(page);
 
   const revisionTable = page.getByRole("table", { name: "Revisiones de tipo" });
   await expect(revisionTable.getByText(revisionDate)).toBeVisible();
@@ -110,6 +114,7 @@ test("debt model: amortizable plan + revisions, revolving anchors, future reject
   await editRevision.getByLabel("Nuevo tipo de interés (%)").fill("3,5");
   await editRevision.getByRole("button", { name: "Guardar revisión" }).click();
   await expect(page.getByRole("status")).toHaveText("Revisión de tipo actualizada.");
+  await openAdvancedSettings(page);
   await expect(revisionTable.getByText("3.5 %")).toBeVisible();
 
   // 8. The past plan produced historical snapshots — visible in /historico.
@@ -121,10 +126,12 @@ test("debt model: amortizable plan + revisions, revolving anchors, future reject
 
   // 9. Delete the revision.
   await page.goto(`/patrimonio/${liabilityId}/editar`);
+  await openAdvancedSettings(page);
   const deleteRevisionRow = page.getByRole("row", { name: new RegExp(revisionDate) });
   await deleteRevisionRow.locator("summary", { hasText: "Eliminar" }).click();
   await deleteRevisionRow.getByRole("button", { name: "Confirmar" }).click();
   await expect(page.getByRole("status")).toHaveText("Revisión de tipo eliminada.");
+  await openAdvancedSettings(page);
   await expect(
     page.getByRole("table", { name: "Revisiones de tipo" }).getByText(revisionDate),
   ).toHaveCount(0);
@@ -135,6 +142,7 @@ test("debt model: amortizable plan + revisions, revolving anchors, future reject
   await page.getByRole("combobox", { name: "Modelo de deuda" }).selectOption("revolving");
   await page.getByRole("button", { name: "Guardar modelo" }).click();
   await expect(page.getByRole("status")).toHaveText("Modelo de deuda guardado.");
+  await openAdvancedSettings(page);
   await expect(page.getByRole("form", { name: "Plan de amortización" })).toHaveCount(0);
   await expect(page.getByRole("form", { name: "Registrar saldo" })).toBeVisible();
 
@@ -145,6 +153,7 @@ test("debt model: amortizable plan + revisions, revolving anchors, future reject
   await addAnchor.getByLabel("Saldo restante en EUR").fill("15000");
   await page.getByRole("button", { name: "Registrar saldo" }).click();
   await expect(page.getByRole("status")).toHaveText("Saldo registrado.");
+  await openAdvancedSettings(page);
 
   const anchorTable = page.getByRole("table", { name: "Saldos declarados" });
   await expect(anchorTable.getByText(anchorDate)).toBeVisible();
@@ -165,6 +174,7 @@ test("debt model: amortizable plan + revisions, revolving anchors, future reject
   await editAnchor.getByLabel("Saldo restante en EUR").fill("14000");
   await editAnchor.getByRole("button", { name: "Guardar saldo" }).click();
   await expect(page.getByRole("status")).toHaveText("Saldo actualizado.");
+  await openAdvancedSettings(page);
   await expect(anchorTable.getByText(/14\.000/)).toBeVisible();
 
   // 14. The past anchor produced a historical snapshot — visible in /historico.
@@ -173,10 +183,12 @@ test("debt model: amortizable plan + revisions, revolving anchors, future reject
 
   // 15. Delete the anchor (two-step confirm).
   await page.goto(`/patrimonio/${liabilityId}/editar`);
+  await openAdvancedSettings(page);
   const deleteAnchorRow = page.getByRole("row", { name: new RegExp(anchorDate) });
   await deleteAnchorRow.locator("summary", { hasText: "Eliminar" }).click();
   await deleteAnchorRow.getByRole("button", { name: "Confirmar" }).click();
   await expect(page.getByRole("status")).toHaveText("Saldo eliminado.");
+  await openAdvancedSettings(page);
   await expect(
     page.getByRole("table", { name: "Saldos declarados" }).getByText(anchorDate),
   ).toHaveCount(0);

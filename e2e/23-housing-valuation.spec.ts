@@ -11,7 +11,7 @@
  * historical snapshot that appears in /historico at that date.
  */
 
-import { test, expect, addHolding } from "./fixtures";
+import { test, expect, addHolding, openAdvancedSettings } from "./fixtures";
 
 /** Today as YYYY-MM-DD — the native `max` the future-date guards advertise. */
 const today = new Date().toISOString().slice(0, 10);
@@ -36,6 +36,7 @@ test("housing valuation: rate, anchor CRUD, future rejected, past snapshot in hi
 
   // 2. Open the editar page — the housing valuation section must be present.
   await page.goto(`/patrimonio/${assetId}/editar`);
+  await openAdvancedSettings(page);
   await expect(
     page.getByRole("region", { name: "Valoración del inmueble" }),
   ).toBeVisible();
@@ -44,6 +45,7 @@ test("housing valuation: rate, anchor CRUD, future rejected, past snapshot in hi
   await page.getByLabel("Tasa de revalorización anual (%)").fill("3");
   await page.getByRole("button", { name: "Guardar tasa" }).click();
   await expect(page.getByRole("status")).toHaveText("Tasa de revalorización guardada.");
+  await openAdvancedSettings(page);
   // Persisted value is shown back in the input.
   await expect(page.getByLabel("Tasa de revalorización anual (%)")).toHaveValue("3");
 
@@ -56,6 +58,7 @@ test("housing valuation: rate, anchor CRUD, future rejected, past snapshot in hi
   await addForm.getByLabel("Es una tasación de mercado").check();
   await page.getByRole("button", { name: "Registrar tasación" }).click();
   await expect(page.getByRole("status")).toHaveText("Tasación registrada.");
+  await openAdvancedSettings(page);
 
   // 5. The acquisition anchor and the added anchor are listed with dates/values.
   const anchorTable = page.getByRole("table", { name: "Tasaciones" });
@@ -89,6 +92,7 @@ test("housing valuation: rate, anchor CRUD, future rejected, past snapshot in hi
   await editForm.getByLabel("Valor de la tasación en EUR").fill("190000");
   await editForm.getByRole("button", { name: "Guardar tasación" }).click();
   await expect(page.getByRole("status")).toHaveText("Tasación actualizada.");
+  await openAdvancedSettings(page);
   await expect(anchorTable.getByText(/190\.000/)).toBeVisible();
 
   // 8. The past anchor produced a historical snapshot — visible in /historico.
@@ -98,10 +102,12 @@ test("housing valuation: rate, anchor CRUD, future rejected, past snapshot in hi
 
   // 9. Delete the anchor (two-step confirm inside the row's <details>).
   await page.goto(`/patrimonio/${assetId}/editar`);
+  await openAdvancedSettings(page);
   const deleteRow = page.getByRole("row", { name: /2024-03-15/ });
   await deleteRow.locator("summary", { hasText: "Eliminar" }).click();
   await deleteRow.getByRole("button", { name: "Confirmar" }).click();
   await expect(page.getByRole("status")).toHaveText("Tasación eliminada.");
+  await openAdvancedSettings(page);
   await expect(
     page.getByRole("table", { name: "Tasaciones" }).getByText("2024-03-15"),
   ).toHaveCount(0);
@@ -110,5 +116,6 @@ test("housing valuation: rate, anchor CRUD, future rejected, past snapshot in hi
   await page.getByLabel("Tasa de revalorización anual (%)").fill("");
   await page.getByRole("button", { name: "Guardar tasa" }).click();
   await expect(page.getByRole("status")).toHaveText("Tasa de revalorización guardada.");
+  await openAdvancedSettings(page);
   await expect(page.getByLabel("Tasa de revalorización anual (%)")).toHaveValue("");
 });
