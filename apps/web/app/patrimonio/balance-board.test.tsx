@@ -293,8 +293,10 @@ describe("BalanceBoard closed positions", () => {
     ];
   }
 
+  const operated = new Set(["a_live", "a_sold_a", "a_sold_b", "a_zero_manual"]);
+
   test("folds fully-sold derived positions behind a counter, out of the live rows", () => {
-    const html = render({ groups: groupsWithClosed() });
+    const html = render({ groups: groupsWithClosed(), operatedAssetIds: operated });
 
     expect(html).toContain("Posiciones cerradas (2)");
     // The fold is a details AFTER the live rows: the sold funds render inside
@@ -308,8 +310,26 @@ describe("BalanceBoard closed positions", () => {
     expect(html.indexOf("Cuenta A Cero")).toBeLessThan(foldAt);
   });
 
+  test("a just-created investment (derived 0, NO operations) stays in the live list", () => {
+    // The regression the E2E suite caught: a brand-new investment also reads 0
+    // until its first buy — folding it away would make it look lost.
+    const html = render({
+      groups: [
+        group("market", "Mercado", 0, [
+          assetRow("a_new", "Fondo Recien Creado", 0, { derived: true }),
+        ]),
+      ],
+      operatedAssetIds: new Set(),
+    });
+
+    expect(html).not.toContain("Posiciones cerradas");
+    const foldAt = html.indexOf("balanceClosed");
+    expect(foldAt).toBe(-1);
+    expect(html).toContain("Fondo Recien Creado");
+  });
+
   test("no fold when nothing is fully sold", () => {
-    expect(render()).not.toContain("Posiciones cerradas");
+    expect(render({ operatedAssetIds: operated })).not.toContain("Posiciones cerradas");
   });
 
   test("a portfolio that is ONLY closed positions still shows the fold, not the empty state", () => {
@@ -319,6 +339,7 @@ describe("BalanceBoard closed positions", () => {
           assetRow("a_sold", "Fondo Vendido", 0, { derived: true }),
         ]),
       ],
+      operatedAssetIds: new Set(["a_sold"]),
     });
 
     expect(html).toContain("Posiciones cerradas (1)");
