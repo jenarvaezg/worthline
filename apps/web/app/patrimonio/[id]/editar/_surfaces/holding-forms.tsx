@@ -449,38 +449,34 @@ export function OwnershipInputs({
           De los dos (mitad y mitad)
         </label>
       ) : null}
-      <details className="ownerCustomDetails" open={preset === "custom"}>
-        <summary>
-          <label className="ownerPreset" style={{ display: "inline" }}>
+      <label className="ownerPreset">
+        <input
+          defaultChecked={preset === "custom"}
+          name="ownershipPreset"
+          type="radio"
+          value="custom"
+        />
+        Otro reparto…
+      </label>
+      <div className="ownerCustom">
+        {members.map((member) => (
+          <label key={member.id}>
+            {member.name}
             <input
-              defaultChecked={preset === "custom"}
-              name="ownershipPreset"
-              type="radio"
-              value="custom"
+              defaultValue={values[`owner_${member.id}`] ?? currentBpsFor(member.id)}
+              inputMode="decimal"
+              name={`owner_${member.id}`}
+              aria-label={`Porcentaje de ${member.name}`}
             />
-            Otro reparto…
           </label>
-        </summary>
-        <div className="ownerCustom">
-          {members.map((member) => (
-            <label key={member.id}>
-              {member.name}
-              <input
-                defaultValue={values[`owner_${member.id}`] ?? currentBpsFor(member.id)}
-                inputMode="decimal"
-                name={`owner_${member.id}`}
-                aria-label={`Porcentaje de ${member.name}`}
-              />
-            </label>
-          ))}
-          {allowPartial ? (
-            <p className="simpleHint">
-              ¿Un inmueble a medias con alguien de fuera? Pon solo vuestra parte; el resto
-              se da por suyo.
-            </p>
-          ) : null}
-        </div>
-      </details>
+        ))}
+        {allowPartial ? (
+          <p className="simpleHint">
+            ¿Un inmueble a medias con alguien de fuera? Pon solo vuestra parte; el resto
+            se da por suyo.
+          </p>
+        ) : null}
+      </div>
     </fieldset>
   );
 }

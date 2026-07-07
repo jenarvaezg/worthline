@@ -851,37 +851,33 @@ function OwnershipInputs({
         />
         De los dos (mitad y mitad)
       </label>
-      <details className="ownerCustomDetails">
-        <summary>
-          <label className="ownerPreset" style={{ display: "inline" }}>
+      <label className="ownerPreset">
+        <input
+          defaultChecked={preset === "custom"}
+          name="ownershipPreset"
+          type="radio"
+          value="custom"
+        />
+        Otro reparto…
+      </label>
+      <div className="ownerCustom">
+        {members.map((member, index) => (
+          <label key={member.id}>
+            {member.name}
             <input
-              defaultChecked={preset === "custom"}
-              name="ownershipPreset"
-              type="radio"
-              value="custom"
+              aria-label={`Porcentaje de ${member.name}`}
+              defaultValue={values[`owner_${member.id}`] ?? (index === 0 ? "50" : "50")}
+              inputMode="decimal"
+              name={`owner_${member.id}`}
             />
-            Otro reparto…
           </label>
-        </summary>
-        <div className="ownerCustom">
-          {members.map((member, index) => (
-            <label key={member.id}>
-              {member.name}
-              <input
-                aria-label={`Porcentaje de ${member.name}`}
-                defaultValue={values[`owner_${member.id}`] ?? (index === 0 ? "50" : "50")}
-                inputMode="decimal"
-                name={`owner_${member.id}`}
-              />
-            </label>
-          ))}
-          <p className="simpleHint">
-            ¿Un inmueble a medias con alguien de fuera? Pon solo vuestra parte; el resto
-            se da por suyo. Solo se admite en inmuebles — el dinero y las inversiones
-            suman al 100%.
-          </p>
-        </div>
-      </details>
+        ))}
+        <p className="simpleHint">
+          ¿Un inmueble a medias con alguien de fuera? Pon solo vuestra parte; el resto se
+          da por suyo. Solo se admite en inmuebles — el dinero y las inversiones suman al
+          100%.
+        </p>
+      </div>
     </fieldset>
   );
 }

@@ -106,4 +106,23 @@ describe("OwnershipInputs", () => {
     expect(markup).toContain('name="ownershipPreset"');
     expect(markup).toContain('value="custom"');
   });
+
+  test("the custom-split pane is a CSS :has() reveal, not a details/summary", () => {
+    // A radio inside a <summary> checks without ever opening the details
+    // (interactive content swallows the toggle), leaving the pane unreachable.
+    const markup = renderToStaticMarkup(
+      <OwnershipInputs
+        allowPartial={true}
+        currentOwnership={[{ memberId: "m1", shareBps: 10_000 }]}
+        members={[{ id: "m1", name: "Jorge" }]}
+        scopeMemberId="m1"
+        values={{}}
+      />,
+    );
+
+    expect(markup).not.toContain("<details");
+    expect(markup).not.toContain("<summary");
+    expect(markup).toContain('class="ownerCustom"');
+    expect(markup).toContain("Porcentaje de Jorge");
+  });
 });
