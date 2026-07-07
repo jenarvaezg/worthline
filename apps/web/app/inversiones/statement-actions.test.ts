@@ -42,6 +42,12 @@ function uploadForm(csv: string, broker = "myinvestor"): FormData {
   return fd;
 }
 
+function noSalesForm(csv: string, broker = "myinvestor"): FormData {
+  const fd = uploadForm(csv, broker);
+  fd.set("confirmNoSalesOrRedemptions", "on");
+  return fd;
+}
+
 async function seedFund(store: WorthlineStore): Promise<void> {
   await store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jose" }],
@@ -83,11 +89,22 @@ function preview(
 }
 
 describe("confirmStatementAction (#174)", () => {
-  test("creates 8 buy operations from the Finalizada rows and skips the other 2", async () => {
+  test("rejects a reduced MyInvestor export unless the user confirms there were no sells", async () => {
     const store = await createInMemoryStore();
     await seedFund(store);
 
     const digest = await run(uploadForm(CSV), store);
+
+    expect(digest).toContain("error=");
+    expect(digest).toContain("Este+archivo+no+distingue+compras+de+ventas");
+    expect(await store.operations.readOperations("fund")).toHaveLength(0);
+  });
+
+  test("creates 8 buy operations from the Finalizada rows and skips the other 2", async () => {
+    const store = await createInMemoryStore();
+    await seedFund(store);
+
+    const digest = await run(noSalesForm(CSV), store);
 
     expect(digest).toContain("ok=statement_loaded");
     expect(digest).toContain("created=8");
@@ -117,7 +134,7 @@ describe("confirmStatementAction (#174)", () => {
     const store = await createInMemoryStore();
     await seedFund(store);
 
-    await run(uploadForm(CSV), store);
+    await run(noSalesForm(CSV), store);
 
     const dates = (await store.snapshots.readSnapshots("household"))
       .map((s) => s.dateKey)
@@ -169,11 +186,11 @@ describe("confirmStatementAction — merge by date (#175)", () => {
     const store = await createInMemoryStore();
     await seedFund(store);
 
-    await run(uploadForm(CSV), store);
+    await run(noSalesForm(CSV), store);
     expect(await store.operations.readOperations("fund")).toHaveLength(8);
 
     // The second identical load overwrites all 8 by date — no duplicates.
-    const digest = await run(uploadForm(CSV), store);
+    const digest = await run(noSalesForm(CSV), store);
 
     expect(digest).toContain("created=0");
     expect(digest).toContain("overwritten=8");
@@ -206,7 +223,7 @@ describe("confirmStatementAction — merge by date (#175)", () => {
       units: "999",
     });
 
-    const digest = await run(uploadForm(CSV), store);
+    const digest = await run(noSalesForm(CSV), store);
 
     // 7 created (the other Finalizada dates) + the 01/03 match overwritten.
     expect(digest).toContain("created=7");
@@ -235,7 +252,7 @@ describe("confirmStatementAction — merge by date (#175)", () => {
       units: "5",
     });
 
-    await run(uploadForm(CSV), store);
+    await run(noSalesForm(CSV), store);
 
     const ops = await store.operations.readOperations("fund");
     // 8 from the file + the 1 untouched manual operation = 9, none deleted.
@@ -343,7 +360,7 @@ describe("statement ISIN guard + anomalies (#178)", () => {
     await seedFundWithIsin(store, "LU0000000000");
 
     // CSV carries IE00BYX5NX33 — a different fund.
-    const digest = await run(uploadForm(CSV), store);
+    const digest = await run(noSalesForm(CSV), store);
     expect(digest).toContain("error=");
     expect(await store.operations.readOperations("fund")).toHaveLength(0);
   });
@@ -360,14 +377,14 @@ describe("statement ISIN guard + anomalies (#178)", () => {
     const store = await createInMemoryStore();
     await seedFund(store); // no ISIN
 
-    await run(uploadForm(CSV), store);
+    await run(noSalesForm(CSV), store);
     // The asset's ISIN is now the file's.
     expect((await store.assets.readInvestmentAssetById("fund"))?.isin).toBe(
       "IE00BYX5NX33",
     );
 
     // A subsequent upload of a DIFFERENT ISIN is now blocked by the backfill.
-    const digest = await run(uploadForm(csvForIsin("LU0000000000")), store);
+    const digest = await run(noSalesForm(csvForIsin("LU0000000000")), store);
     expect(digest).toContain("error=");
   });
 
@@ -411,6 +428,11 @@ describe("statement sells (#179)", () => {
     "01/02/2024;IE00BYX5NX33;100 EUR;7,226;Finalizada",
     "01/03/2024;IE00BYX5NX33;-50 EUR;3,000;Finalizada",
   ].join("\n");
+  const WITH_SELL_FULL = [
+    "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado;Tipo de operación",
+    "01/02/2024;IE00BYX5NX33;100 EUR;7,226;Finalizada;Suscripción Fondos de Inversión",
+    "01/03/2024;IE00BYX5NX33;50 EUR;3,000;Finalizada;Reembolso Fondos de Inversión",
+  ].join("\n");
 
   test("preview calls out detected sells distinctly", async () => {
     const store = await createInMemoryStore();
@@ -426,7 +448,7 @@ describe("statement sells (#179)", () => {
     const store = await createInMemoryStore();
     await seedFund(store);
 
-    await run(uploadForm(WITH_SELL), store);
+    await run(uploadForm(WITH_SELL_FULL), store);
 
     const ops = await store.operations.readOperations("fund");
     const sell = ops.find((op) => op.kind === "sell");

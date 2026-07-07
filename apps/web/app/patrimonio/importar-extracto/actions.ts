@@ -63,6 +63,10 @@ function currentUrlOf(formData: FormData): string {
   return (formData.get("currentUrl") as string) || "/patrimonio/importar-extracto";
 }
 
+const DIRECTION_AMBIGUITY_ACK_FIELD = "confirmNoSalesOrRedemptions";
+const DIRECTION_AMBIGUITY_MESSAGE =
+  "Este archivo no distingue compras de ventas. Exporta el archivo COMPLETO de órdenes (con la columna «Tipo de operación»).";
+
 // ── ISIN symbol lookup port ──────────────────────────────────────────────────
 
 /** The result of looking up a creation row's provider symbol by ISIN. */
@@ -382,6 +386,12 @@ export async function confirmImportStatementAction(
   const read = await readStatementFromForm(formData);
   if (!read.ok) {
     redirect(errorUrl(read.message));
+  }
+  if (
+    !read.value.directionResolved &&
+    formData.get(DIRECTION_AMBIGUITY_ACK_FIELD) !== "on"
+  ) {
+    redirect(errorUrl(DIRECTION_AMBIGUITY_MESSAGE));
   }
 
   const today = _clock.today();

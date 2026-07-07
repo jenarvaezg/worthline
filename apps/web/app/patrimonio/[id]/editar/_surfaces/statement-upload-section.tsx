@@ -48,8 +48,10 @@ export function StatementUploadSection({
   // Picking a different file makes the last preview stale: hide it so a summary
   // of file A never blesses a confirm that would load file B.
   const [fileChangedSincePreview, setFileChangedSincePreview] = useState(false);
+  const [directionAmbiguityAccepted, setDirectionAmbiguityAccepted] = useState(false);
 
   const shown = fileChangedSincePreview || isPreviewPending ? IDLE : preview;
+  const needsDirectionOptIn = shown.status === "summary" && !shown.directionResolved;
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     const submitter = (event.nativeEvent as SubmitEvent).submitter;
@@ -65,6 +67,7 @@ export function StatementUploadSection({
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     setFileChangedSincePreview(false);
+    setDirectionAmbiguityAccepted(false);
     startTransition(() => dispatchPreview(formData));
   }
 
@@ -91,7 +94,10 @@ export function StatementUploadSection({
           <input
             accept=".csv,text/csv"
             name="file"
-            onChange={() => setFileChangedSincePreview(true)}
+            onChange={() => {
+              setFileChangedSincePreview(true);
+              setDirectionAmbiguityAccepted(false);
+            }}
             required
             type="file"
           />
@@ -140,11 +146,23 @@ export function StatementUploadSection({
             </ul>
 
             {!shown.directionResolved ? (
-              <p className="warningBand" role="alert">
-                Este archivo no indica si cada orden es compra o venta: todas se cargarán
-                como compras. Si tienes ventas o reembolsos, exporta desde MyInvestor el
-                archivo de órdenes que incluye la columna «Tipo de operación».
-              </p>
+              <>
+                <p className="warningBand" role="alert">
+                  Este archivo no distingue compras de ventas. Exporta el archivo COMPLETO
+                  de órdenes (con la columna «Tipo de operación»).
+                </p>
+                <label className="directionOptIn">
+                  <input
+                    checked={directionAmbiguityAccepted}
+                    name="confirmNoSalesOrRedemptions"
+                    onChange={(event) =>
+                      setDirectionAmbiguityAccepted(event.currentTarget.checked)
+                    }
+                    type="checkbox"
+                  />
+                  Confirmo que en este periodo no hice ninguna venta ni reembolso.
+                </label>
+              </>
             ) : null}
 
             {shown.anomalies > 0 ? (
@@ -154,7 +172,11 @@ export function StatementUploadSection({
               </p>
             ) : null}
 
-            <button formAction={confirmAction} type="submit">
+            <button
+              disabled={needsDirectionOptIn && !directionAmbiguityAccepted}
+              formAction={confirmAction}
+              type="submit"
+            >
               Confirmar y cargar
             </button>
           </div>

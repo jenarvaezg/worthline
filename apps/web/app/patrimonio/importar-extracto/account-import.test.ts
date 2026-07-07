@@ -134,6 +134,7 @@ function uploadForm(): FormData {
 
 function confirmForm(): FormData {
   const fd = uploadForm();
+  fd.set("confirmNoSalesOrRedemptions", "on");
   for (const isin of ALL_ISINS) {
     fd.set(`include_${isin}`, "on");
   }
