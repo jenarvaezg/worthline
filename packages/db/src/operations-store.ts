@@ -6,7 +6,7 @@ import type {
   InvestmentOperation,
   OperationKind,
 } from "@worthline/domain";
-import { createInvestmentOperation } from "@worthline/domain";
+import { asDateKey, createInvestmentOperation } from "@worthline/domain";
 import { asc, eq, sql } from "drizzle-orm";
 
 import { assetOperations, assetPriceCache, assets, liabilities } from "./schema";
@@ -102,7 +102,7 @@ async function recordOperation(
     .values({
       assetId: operation.assetId,
       currency: operation.currency,
-      executedAt: operation.executedAt,
+      executedAt: asDateKey(operation.executedAt.slice(0, 10)),
       feesMinor: operation.feesMinor,
       id: operation.id,
       kind: operation.kind,

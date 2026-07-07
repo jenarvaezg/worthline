@@ -318,7 +318,7 @@ describe("importWorkspace", () => {
       {
         assetId: "b-a2",
         currency: "EUR",
-        executedAt: "2026-05-15T09:30:00.000Z",
+        executedAt: "2026-05-15",
         feesMinor: 150,
         id: "b-op1",
         kind: "buy",

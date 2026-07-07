@@ -165,7 +165,8 @@ export async function migrate(client: Client): Promise<MigrateResult> {
   if (version < 2) {
     const safeSql = schemaSql
       .replaceAll("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
-      .replaceAll("CREATE UNIQUE INDEX ", "CREATE UNIQUE INDEX IF NOT EXISTS ");
+      .replaceAll("CREATE UNIQUE INDEX ", "CREATE UNIQUE INDEX IF NOT EXISTS ")
+      .replaceAll("CREATE INDEX ", "CREATE INDEX IF NOT EXISTS ");
     await client.executeMultiple(safeSql);
     await writeSchemaVersion(client, 2);
   }

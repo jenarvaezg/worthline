@@ -8,6 +8,20 @@
 
 export const MS_PER_DAY = 86_400_000;
 
+declare const dateKeyBrand: unique symbol;
+declare const instantBrand: unique symbol;
+
+export type DateKey = string & { readonly [dateKeyBrand]: true };
+export type Instant = string & { readonly [instantBrand]: true };
+
+export function asDateKey(value: string): DateKey {
+  return value as DateKey;
+}
+
+export function asInstant(value: string): Instant {
+  return value as Instant;
+}
+
 /** Whole days from `from` to `to` (UTC midnights), signed. */
 export function daysBetween(from: string, to: string): number {
   const fromMs = Date.parse(`${from}T00:00:00.000Z`);
