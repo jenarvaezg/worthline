@@ -413,11 +413,12 @@ async function rippleHistoricalSnapshots(
 }
 
 /**
- * Batched ripple for a statement load (ADR 0018, #174). Mirrors the
- * amortization-plan exception in `rippleHistoricalSnapshotsForDebt`: generate a
- * fresh whole-portfolio snapshot at each affected past operation date that has
- * none yet, then run ONE forward recalculation of every existing snapshot dated
- * ≥ the earliest affected date — re-evaluating only the operated assets' rows.
+ * Batched ripple for operation loads/deletes (ADR 0018, #174, #753). Mirrors
+ * the amortization-plan exception in `rippleHistoricalSnapshotsForDebt`: record
+ * mode generates a fresh whole-portfolio snapshot at each affected past
+ * operation date that has none yet, then both modes run ONE forward
+ * recalculation of every existing snapshot dated ≥ the earliest affected date —
+ * re-evaluating only the operated assets' rows.
  *
  * This replaces calling the per-operation ripple once per created operation
  * (which would re-derive history N times — the #158 O(N×snapshots) cliff): deps
@@ -439,11 +440,12 @@ async function rippleHistoricalSnapshotsForOperations(
   saveSnapshot: (input: SaveSnapshotInput) => Promise<void>,
   params: {
     assets: ReadonlyArray<{ assetId: string; operationDateKeys: string[] }>;
+    mode?: "record" | "delete";
     today: string;
   },
 ): Promise<void> {
   const { db } = ctx;
-  const { today } = params;
+  const { mode = "record", today } = params;
   const requested = params.assets.filter((a) => a.operationDateKeys.length > 0);
   if (requested.length === 0) return;
 
@@ -476,8 +478,11 @@ async function rippleHistoricalSnapshotsForOperations(
     generateDates[0]!,
   );
 
-  // Build deps once — the same for every scope (lesson from #114).
-  const deps = await buildHistoricalSnapshotDeps(db, workspace);
+  // Build deps once — the same for every scope (lesson from #114). Deletes never
+  // generate fresh snapshots, so they do not need whole-portfolio deps.
+  const deps =
+    mode === "record" ? await buildHistoricalSnapshotDeps(db, workspace) : null;
+  const affectedDateKeys = new Set(generateDates);
 
   await ctx.transaction(async () => {
     for (const scope of listScopeOptions(workspace)) {
@@ -488,6 +493,7 @@ async function rippleHistoricalSnapshotsForOperations(
       // has none yet (ADR 0012). The single forward recalc below then folds the
       // operated asset across every existing snapshot ≥ the earliest date.
       for (const dateKey of generateDates) {
+        if (mode === "delete" || deps === null) continue;
         if (dateKey >= today || existingByDate.has(dateKey)) continue;
         const built = buildSnapshotAtDate({
           assets: deps.assets,
@@ -526,15 +532,17 @@ async function rippleHistoricalSnapshotsForOperations(
       // re-folding only the operated assets' rows from their operations. The
       // fold chains in memory — each asset recalculates against the previous
       // fold's snapshot + rows, the state a per-asset ripple would have re-read
-      // from the DB — and persists ONCE per snapshot at the end. That
-      // equivalence holds because every current multi-asset caller only ADDS
-      // rows: a fold that EMPTIES the snapshot (null) stops the chain and drops
-      // it, abandoning later assets' contributions, whereas per-asset ripples
-      // would have regenerated the date for them. If this seam is ever reused
-      // for deletions/mixed edits, fold the remaining assets against an empty
-      // base instead of breaking.
+      // from the DB — and persists ONCE per snapshot at the end.
       for (const snap of existing) {
         if (snap.dateKey < recalcFrom) continue;
+
+        if (
+          mode === "delete" &&
+          affectedDateKeys.has(snap.dateKey) &&
+          (await pruneOrphanedBackfillSnapshot(db, snap))
+        ) {
+          continue;
+        }
 
         const frozenHoldings = frozenByDate.get(snap.dateKey) ?? [];
 
@@ -1212,6 +1220,10 @@ export interface DatedFactSeams {
     operationId: string;
     today?: string;
   }) => Promise<{ assetId: string; executedAt: string } | null>;
+  deleteOperationsAndRipple: (params: {
+    operationIds: string[];
+    today?: string;
+  }) => Promise<Array<{ assetId: string; executedAt: string }>>;
   addValuationAnchorAndRipple: (
     input: AddValuationAnchorInput,
     opts?: { today?: string },
@@ -1481,6 +1493,45 @@ export function createDatedFactSeams(
           });
         }
         return result;
+      });
+    },
+    deleteOperationsAndRipple: ({ operationIds, today: todayOpt }) => {
+      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
+      return ctx.transaction(async () => {
+        const deleted: Array<{ assetId: string; executedAt: string }> = [];
+        const operationDateKeysByAsset = new Map<string, string[]>();
+
+        for (const operationId of operationIds) {
+          const result = await stores.operations.deleteOperation(operationId);
+          if (!result) continue;
+          deleted.push(result);
+          const dateKey = result.executedAt.slice(0, 10);
+          const current = operationDateKeysByAsset.get(result.assetId) ?? [];
+          current.push(dateKey);
+          operationDateKeysByAsset.set(result.assetId, current);
+        }
+
+        if (deleted.length === 0) return [];
+        const workspace = await ctx.getWorkspace();
+        if (workspace) {
+          await rippleHistoricalSnapshotsForOperations(
+            ctx,
+            workspace,
+            stores.snapshots.saveSnapshot,
+            {
+              assets: [...operationDateKeysByAsset].map(
+                ([assetId, operationDateKeys]) => ({
+                  assetId,
+                  operationDateKeys,
+                }),
+              ),
+              mode: "delete",
+              today,
+            },
+          );
+        }
+
+        return deleted;
       });
     },
     addValuationAnchorAndRipple: async (input, opts) => {
