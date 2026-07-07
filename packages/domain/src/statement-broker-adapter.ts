@@ -59,6 +59,13 @@ export interface StatementBrokerAdapter<C = unknown> {
     columns: C;
     lineNumber: number;
   }): StatementRowResult;
+  /**
+   * Whether the resolved header carries an explicit buy/sell signal. Omit when
+   * the broker's rows are always directional (the common case — signed amounts);
+   * return false when the file shape can't distinguish sells (e.g. MyInvestor's
+   * reduced export), so the UI can warn before anything is confirmed.
+   */
+  directionResolved?(columns: C): boolean;
 }
 
 /** The brokers with a configured reader. A new broker extends this union. */

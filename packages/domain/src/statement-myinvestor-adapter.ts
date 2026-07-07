@@ -6,10 +6,20 @@
  * pipeline (single-ISIN guard, all-or-nothing) stays in the core.
  *
  * Only `Finalizada` rows load; `En curso`/`Rechazada` are skipped (not errors).
- * A `Finalizada` row with a negative `Importe estimado` or negative units loads as
- * a `sell`, stored with ABSOLUTE units/price (the kind carries the direction);
- * everything else is a buy. The sell-sign convention is an UNVERIFIED assumption
- * (ADR 0018 Consequences) — we have no real MyInvestor reembolso sample.
+ *
+ * Direction: MyInvestor exports two shapes. The full orders export carries a
+ * `Tipo de operación` column — when present it is AUTHORITATIVE: Reembolso /
+ * Venta / Baja prefixes load as `sell`, Suscripción / Compra / Alta / Aportación
+ * as `buy`, and an unrecognized OR EMPTY tipo on a Finalizada row is a row error
+ * (all-or-nothing) rather than a silent guess — a per-row sign fallback under a
+ * direction-resolved file would defeat the warning. The reduced 5-column export
+ * has NO direction signal at all —
+ * a real reembolso sample (2026-07-07) came through with positive amount and
+ * units, disproving ADR 0018's negative-sign assumption — so without the tipo
+ * column the sign rule stays as a best effort (negative amount/units → sell)
+ * and the adapter reports `directionResolved: false` for the UI to warn on.
+ * Either way sells are stored with ABSOLUTE units/price (the kind carries the
+ * direction).
  */
 
 import { compareUnits, divideUnits, normalizeDecimal } from "./decimal";
@@ -30,9 +40,19 @@ const MYINVESTOR_COLUMNS = {
   units: "Nº de participaciones",
 } as const;
 
+/** Optional in the export: present in the full orders file, absent in the reduced one. */
+const TIPO_COLUMN = "Tipo de operación";
+
 const FINALIZADA = "finalizada";
 
-type MyInvestorColumns = Record<keyof typeof MYINVESTOR_COLUMNS, number>;
+/** `Tipo de operación` prefixes → direction (normalized: lowercase, no accents). */
+const SELL_TIPO_PREFIXES = ["reembolso", "venta", "baja"] as const;
+const BUY_TIPO_PREFIXES = ["suscripcion", "compra", "alta", "aportacion"] as const;
+
+type MyInvestorColumns = Record<keyof typeof MYINVESTOR_COLUMNS, number> & {
+  /** Index of `Tipo de operación`, or null when the export doesn't carry it. */
+  tipo: number | null;
+};
 
 const EUR: CurrencyCode = "EUR";
 
@@ -67,7 +87,14 @@ export const myinvestorAdapter: StatementBrokerAdapter<MyInvestorColumns> = {
       };
     }
 
+    const tipoAt = normalized.indexOf(TIPO_COLUMN.toLowerCase());
+    columns.tipo = tipoAt === -1 ? null : tipoAt;
+
     return { columns, ok: true };
+  },
+
+  directionResolved(columns: MyInvestorColumns): boolean {
+    return columns.tipo !== null;
   },
 
   parseRow({ cells, columns, lineNumber }): StatementRowResult {
@@ -93,9 +120,34 @@ export const myinvestorAdapter: StatementBrokerAdapter<MyInvestorColumns> = {
       };
     }
 
-    // Sell sign convention (ADR 0018, S5, UNVERIFIED): a negative amount or units
-    // is a reembolso. We store absolute magnitudes — the kind carries direction.
-    const kind: OperationKind = units.negative || amount.negative ? "sell" : "buy";
+    // Direction: `Tipo de operación` is authoritative when the export carries it
+    // (the reduced export doesn't — a real reembolso came through with positive
+    // amount AND units, so the sign rule below is only a fallback best effort).
+    // With the column present, a Finalizada row missing its tipo is an ERROR,
+    // not a fallback: a per-row sign guess under a directionResolved file would
+    // silently re-introduce the mis-import this exists to prevent.
+    let kind: OperationKind;
+    if (columns.tipo !== null) {
+      const tipo = (cells[columns.tipo] ?? "").trim();
+      const direction = tipo === "" ? null : directionOfTipo(tipo);
+      if (direction === null) {
+        const where = `La fila ${lineNumber}${isin ? ` (${isin})` : ""}`;
+        const problem =
+          tipo === ""
+            ? "viene sin tipo de operación"
+            : `tiene un tipo de operación que no reconozco («${tipo}»)`;
+        return {
+          isin,
+          outcome: {
+            kind: "error",
+            error: `${where} ${problem}: no sé si es compra o venta. Corrige o quita esa fila y vuelve a subir — no se ha cargado nada.`,
+          },
+        };
+      }
+      kind = direction;
+    } else {
+      kind = units.negative || amount.negative ? "sell" : "buy";
+    }
 
     return {
       isin,
@@ -113,6 +165,24 @@ export const myinvestorAdapter: StatementBrokerAdapter<MyInvestorColumns> = {
     };
   },
 };
+
+/**
+ * Classify a `Tipo de operación` by prefix, accent/case-insensitive: «Reembolso
+ * Fondos de Inversión», «Venta rv contado de …», «Baja switch» → sell;
+ * «Suscripción …», «Compra rv contado de …», «Alta por traspaso …»,
+ * «Aportación» → buy. Null when no prefix matches — the caller errors the row
+ * instead of guessing a direction.
+ */
+function directionOfTipo(tipo: string): OperationKind | null {
+  const normalized = tipo
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+
+  if (SELL_TIPO_PREFIXES.some((prefix) => normalized.startsWith(prefix))) return "sell";
+  if (BUY_TIPO_PREFIXES.some((prefix) => normalized.startsWith(prefix))) return "buy";
+  return null;
+}
 
 /** `dd/mm/yyyy` → `yyyy-mm-dd`, or null when the date is not a valid calendar date. */
 function parseDate(raw: string): string | null {

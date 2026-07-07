@@ -34,7 +34,10 @@ export interface ParsedStatementRow {
   isin: string | null;
   /** ISO `YYYY-MM-DD` execution date. */
   dateKey: string;
-  /** A negative amount or units loads as a `sell` (abs values); otherwise a buy. */
+  /**
+   * From the broker's direction signal (`Tipo de operación` when the export
+   * carries it; else a negative amount/units); stored with absolute values.
+   */
   kind: OperationKind;
   units: DecimalString;
   /** Reconstructed NAV: amount ÷ units, at high precision. */
@@ -58,6 +61,12 @@ export interface ParsedStatement {
   isins: string[];
   rows: ParsedStatementRow[];
   skipped: SkippedStatementRow[];
+  /**
+   * False when the file shape carries no explicit buy/sell signal (e.g.
+   * MyInvestor's reduced export, where every row loads as a buy) — the UI warns
+   * before confirm so a statement with sells isn't silently mis-imported.
+   */
+  directionResolved: boolean;
 }
 
 export type ParseStatementResult =
@@ -144,6 +153,7 @@ export function parseStatementWithAdapter<C>(
   return {
     ok: true,
     value: {
+      directionResolved: adapter.directionResolved?.(resolved.columns) ?? true,
       isin: distinctIsins.length === 1 ? distinctIsins[0]! : null,
       isins: distinctIsins,
       rows,

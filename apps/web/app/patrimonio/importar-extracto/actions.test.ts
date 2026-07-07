@@ -173,6 +173,36 @@ describe("previewImportStatementAction (#673)", () => {
     const result = await preview(fd, store);
     expect(result.status).toBe("error");
   });
+
+  test("the reduced export reports directionResolved: false; the full export classifies sells", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+
+    // Reduced 5-column export: no direction signal (ADR 0018, amended) —
+    // the island turns this flag into the every-row-loads-as-a-buy warning.
+    const reduced = await preview(uploadForm(), store);
+    if (reduced.status !== "ready") throw new Error("expected a ready preview");
+    expect(reduced.directionResolved).toBe(false);
+
+    // Full export with `Tipo de operación`: authoritative, positive-signed
+    // reembolsos load as sells.
+    const full = await preview(
+      uploadForm(
+        [
+          "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado;Tipo de operación",
+          "05/01/2024;ES00WL000001;1200 EUR;34,2857;Finalizada;Suscripción Fondos de Inversión",
+          "05/02/2024;ES00WL000001;600 EUR;17,0000;Finalizada;Reembolso Fondos de Inversión",
+        ].join("\r\n"),
+      ),
+      store,
+    );
+    if (full.status !== "ready") throw new Error("expected a ready preview");
+    expect(full.directionResolved).toBe(true);
+
+    const matched = full.funds[0];
+    if (matched?.bucket !== "matched") throw new Error("expected the matched bucket");
+    expect(matched.executedCount).toBe(2);
+  });
 });
 
 describe("confirmImportStatementAction — all-or-nothing (#673)", () => {

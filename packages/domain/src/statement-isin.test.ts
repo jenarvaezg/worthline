@@ -49,6 +49,7 @@ describe("resolveStatementIsinGuard (ADR 0018, S4)", () => {
 
 function statementWithIsins(isins: Array<string | null>): ParsedStatement {
   return {
+    directionResolved: true,
     isin: isins.length === 1 ? (isins[0] ?? null) : null,
     isins: isins.filter((isin): isin is string => Boolean(isin)),
     rows: isins.map((isin, index) => ({

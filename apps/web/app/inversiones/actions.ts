@@ -186,8 +186,10 @@ export type StatementPreviewState =
       skipped: number;
       /** Ambiguous same-date rows set aside, neither created nor overwritten (S4). */
       anomalies: number;
-      /** Rows detected as sells (negative amount/units) among those applied (S5). */
+      /** Rows detected as sells among those applied (S5; tipo column or sign). */
       sells: number;
+      /** False when the file shape can't distinguish buys from sells. */
+      directionResolved: boolean;
     };
 
 /** The Spanish error shown when the file's ISIN does not match the asset's (S4). */
@@ -279,6 +281,7 @@ export async function previewStatementAction(
     return {
       anomalies: plan.anomalies.length,
       created: plan.toCreate.length,
+      directionResolved: read.value.directionResolved,
       overwritten: plan.toOverwrite.length,
       sells: countSells(plan),
       skipped: skipped.length,
