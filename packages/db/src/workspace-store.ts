@@ -21,6 +21,8 @@ import type {
   WorkspaceMode,
 } from "@worthline/domain";
 import {
+  asDateKey,
+  asInstant,
   assertSnapshotHoldingsReconcile,
   createWorkspace,
   defaultInstrumentForAssetType,
@@ -888,7 +890,7 @@ async function importWorkspace(
           doc.operations.map((operation) => ({
             assetId: operation.assetId,
             currency: operation.currency,
-            executedAt: operation.executedAt,
+            executedAt: asDateKey(operation.executedAt.slice(0, 10)),
             feesMinor: operation.feesMinor,
             id: operation.id,
             kind: operation.kind,
@@ -991,9 +993,9 @@ async function importWorkspace(
       await db
         .insert(snapshots)
         .values({
-          capturedAt: snapshot.capturedAt,
+          capturedAt: asInstant(snapshot.capturedAt),
           currency: snapshot.totalNetWorth.currency,
-          dateKey: snapshot.dateKey,
+          dateKey: asDateKey(snapshot.dateKey),
           debtsMinor: snapshot.debts.amountMinor,
           grossAssetsMinor: snapshot.grossAssets.amountMinor,
           housingEquityMinor: snapshot.housingEquity.amountMinor,

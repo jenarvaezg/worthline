@@ -286,7 +286,7 @@ describe("exportWorkspace", () => {
     expect(doc.operations.find((op) => op.id === "op1")).toEqual({
       assetId: "a_inv",
       currency: "EUR",
-      executedAt: "2026-01-10T00:00:00.000Z",
+      executedAt: "2026-01-10",
       feesMinor: 150,
       id: "op1",
       kind: "buy",

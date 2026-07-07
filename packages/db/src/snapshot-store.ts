@@ -13,6 +13,8 @@ import type {
   Workspace,
 } from "@worthline/domain";
 import {
+  asDateKey,
+  asInstant,
   assertSnapshotHoldingsReconcile,
   projectPositions,
   projectScopedPositionsWithDetails,
@@ -211,7 +213,7 @@ async function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): Promis
       .where(
         and(
           eq(snapshots.scopeId, snapshot.scopeId),
-          eq(snapshots.dateKey, snapshot.dateKey),
+          eq(snapshots.dateKey, asDateKey(snapshot.dateKey)),
         ),
       )
       .get();
@@ -239,9 +241,9 @@ async function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): Promis
     await db
       .insert(snapshots)
       .values({
-        capturedAt: snapshot.capturedAt,
+        capturedAt: asInstant(snapshot.capturedAt),
         currency: snapshot.totalNetWorth.currency,
-        dateKey: snapshot.dateKey,
+        dateKey: asDateKey(snapshot.dateKey),
         debtsMinor: snapshot.debts.amountMinor,
         grossAssetsMinor: snapshot.grossAssets.amountMinor,
         housingEquityMinor: snapshot.housingEquity.amountMinor,
@@ -377,11 +379,11 @@ export async function readSnapshotHoldings(
   }
 
   if (query.from !== undefined) {
-    conditions.push(gte(snapshots.dateKey, query.from));
+    conditions.push(gte(snapshots.dateKey, asDateKey(query.from)));
   }
 
   if (query.to !== undefined) {
-    conditions.push(lte(snapshots.dateKey, query.to));
+    conditions.push(lte(snapshots.dateKey, asDateKey(query.to)));
   }
 
   // Targeted single-holding read (#207): keyed by the frozen row's own id + kind
