@@ -62,6 +62,30 @@ function magnitude(h: UnifiedHolding): number {
   return h.direction === "asset" ? h.valueMinor : h.balanceMinor;
 }
 
+/**
+ * A fully-sold position: a derived (units × price) asset reading exactly 0
+ * WITH recorded operations. The domain already blesses the derived 0 as
+ * "correct, not an anomaly" (the ZERO_VALUE_ASSET warning exempts derived
+ * holdings), and a derived 0 can ONLY mean no units — a priceless position
+ * falls back to its cost basis, never to 0. A statement import with a real
+ * sell history leaves dozens of these; they stay fully functional (ficha,
+ * returns, history) behind the fold instead of burying the live portfolio.
+ *
+ * The operated-set guard is what separates "sold out" from "just created": a
+ * brand-new investment also reads 0 until its first buy, and folding it away
+ * the moment the user adds it would make it look lost. A manual/stored asset
+ * at 0 stays in the list either way: for those, 0 IS the anomaly its warning
+ * points at.
+ */
+function isClosedPosition(h: UnifiedHolding, operatedIds: ReadonlySet<string>): boolean {
+  return (
+    h.direction === "asset" &&
+    h.valueIsDerived &&
+    h.valueMinor === 0 &&
+    operatedIds.has(h.id)
+  );
+}
+
 function money(amountMinor: number, currency: Currency, privacyMode: boolean): string {
   return formatMoneyMinorPrivacy({ amountMinor, currency }, privacyMode);
 }
@@ -323,6 +347,7 @@ function Pane({
   total,
   currency,
   sections,
+  closedRows = [],
   isAsset,
   isHousehold,
   warnings,
@@ -336,6 +361,8 @@ function Pane({
   total: number;
   currency: Currency;
   sections: Section[];
+  /** Fully-sold positions, folded at the pane's foot (assets pane only). */
+  closedRows?: UnifiedHolding[];
   isAsset: boolean;
   isHousehold: boolean;
   warnings: DomainWarning[];
@@ -377,7 +404,7 @@ function Pane({
         ) : null}
       </div>
 
-      {sections.length === 0 ? (
+      {sections.length === 0 && closedRows.length === 0 ? (
         <p className="balancePaneEmpty">{isAsset ? "Sin activos." : "Sin deudas."}</p>
       ) : (
         sections.map((s) => {
@@ -419,6 +446,32 @@ function Pane({
           );
         })
       )}
+
+      {/* Fully-sold positions, folded like the Papelera: still first-class rows
+          (ficha, realized returns, delete) — just not buried among the live
+          ones. Their value is 0, so no sum or bar above changes. */}
+      {closedRows.length > 0 ? (
+        <details className="balanceClosed">
+          <summary>Posiciones cerradas ({closedRows.length})</summary>
+          {closedRows.map((h) => (
+            <HoldingRow
+              currency={currency}
+              currentUrl={currentUrl}
+              holding={h}
+              isAsset={isAsset}
+              isHousehold={isHousehold}
+              key={h.id}
+              nowIso={nowIso}
+              optimisticSubmit={optimisticSubmit}
+              privacyMode={privacyMode}
+              returns={returnsById.get(h.id)}
+              sectionDenom={1}
+              showTierLabel={false}
+              warnings={warnings}
+            />
+          ))}
+        </details>
+      ) : null}
     </div>
   );
 }
@@ -481,6 +534,12 @@ export interface BalanceBoardProps {
   readOnly?: boolean;
   /** Per-holding simple gain, keyed by asset id (#551); absent → no returns shown. */
   returnsById?: ReturnsById;
+  /**
+   * Asset ids with at least one recorded operation — the guard that separates a
+   * fully-sold position (folds away) from a just-created one (stays visible).
+   * Absent → nothing folds.
+   */
+  operatedAssetIds?: ReadonlySet<string>;
 }
 
 export default function BalanceBoard({
@@ -493,6 +552,7 @@ export default function BalanceBoard({
   privacyMode,
   readOnly = false,
   returnsById,
+  operatedAssetIds,
 }: BalanceBoardProps) {
   const returns: ReturnsById = returnsById ?? new Map();
   const base: BoardModel = { groups, trash };
@@ -522,8 +582,18 @@ export default function BalanceBoard({
   };
 
   const currency: Currency = model.groups[0]?.totalMinor.currency ?? "EUR";
-  const assetSections = sectionsFor(model.groups, "asset");
-  const debtSections = sectionsFor(model.groups, "liability");
+  // Split fully-sold positions out of the live sections before building them —
+  // they fold at the assets pane's foot instead. All 0 €, so no total changes.
+  const operatedIds = operatedAssetIds ?? new Set<string>();
+  const closedRows = model.groups
+    .flatMap((g) => g.holdings.filter((h) => isClosedPosition(h, operatedIds)))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const liveGroups = model.groups.map((g) => ({
+    ...g,
+    holdings: g.holdings.filter((h) => !isClosedPosition(h, operatedIds)),
+  }));
+  const assetSections = sectionsFor(liveGroups, "asset");
+  const debtSections = sectionsFor(liveGroups, "liability");
   const grossAssets = assetSections.reduce((acc, s) => acc + sectionTotal(s.rows), 0);
   const totalDebts = debtSections.reduce((acc, s) => acc + sectionTotal(s.rows), 0);
   const net = grossAssets - totalDebts;
@@ -550,6 +620,7 @@ export default function BalanceBoard({
       </p>
 
       <Pane
+        closedRows={closedRows}
         currency={currency}
         currentUrl={currentUrl}
         isAsset
