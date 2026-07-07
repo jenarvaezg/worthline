@@ -13,7 +13,14 @@
  * the ficha now shows — re-surfacing P/L in the Patrimonio list is S8 (#154).
  */
 
-import { test, expect, addHolding, holdingRow, delayServerActions } from "./fixtures";
+import {
+  test,
+  expect,
+  addHolding,
+  holdingRow,
+  delayServerActions,
+  openAdvancedSettings,
+} from "./fixtures";
 
 test("investment: create with manual price → buy operation → derived value visible", async ({
   page,
@@ -32,6 +39,7 @@ test("investment: create with manual price → buy operation → derived value v
   await expect(investmentRow).toBeVisible();
   await investmentRow.getByRole("link", { name: "Fondo Test E2E" }).first().click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
+  await openAdvancedSettings(page);
 
   // 5. The ficha shows the DERIVED operations surface (units × price), not a
   //    manual value field (ADR 0006: an investment's value is never edited).
@@ -57,6 +65,7 @@ test("investment: create with manual price → buy operation → derived value v
   //    own error band: Next.js mounts a `role="alert"` route announcer during
   //    client navigation, so a bare getByRole("alert") is ambiguous in strict mode.
   await expect(page).toHaveURL(/error=/);
+  await openAdvancedSettings(page);
   const errorBand = page.locator("#operation-error");
   await expect(errorBand).toBeVisible();
   await expect(errorBand).toHaveText("Las unidades son obligatorias.");
@@ -101,6 +110,7 @@ test("investment: create with manual price → buy operation → derived value v
   //    persisted), then assert the status banner.
   await expect(page).toHaveURL(/ok=saved/);
   await expect(page.getByRole("status")).toHaveText("Guardado.");
+  await openAdvancedSettings(page);
 
   // 10. The ficha's derived context now reports 10 units and the derived market
   //     value (10 × 100 EUR manual price = 1.000 €). The manual price is 100 even

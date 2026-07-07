@@ -14,7 +14,7 @@
  * start date.
  */
 
-import { test, expect } from "./fixtures";
+import { test, expect, openAdvancedSettings } from "./fixtures";
 
 test("binance: connect (stubbed API) → market + term-locked holdings → token detail + history curve", async ({
   page,
@@ -49,6 +49,7 @@ test("binance: connect (stubbed API) → market + term-locked holdings → token
   //    grouped by symbol (BTC) + the history curve's "Datos desde" start marker.
   await page.getByRole("link", { name: "Binance", exact: true }).click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
+  await openAdvancedSettings(page);
   const detail = page.getByRole("region", { name: "Cuenta Binance" });
   await expect(detail).toBeVisible();
   await expect(detail).toContainText("Conectado");
@@ -60,6 +61,7 @@ test("binance: connect (stubbed API) → market + term-locked holdings → token
   await page.goto("/patrimonio");
   await page.getByRole("link", { name: "Binance (bloqueado)", exact: true }).click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
+  await openAdvancedSettings(page);
   await expect(page.getByRole("region", { name: "Cuenta Binance" })).toContainText("ETH");
 
   // 6. The dashboard renders, populated, with no hydration/console errors (fixture).
