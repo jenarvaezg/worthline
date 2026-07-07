@@ -162,7 +162,7 @@ export {
   fetchMetalSpotEur,
   refreshCoinValuations,
   syncNumistaCollection,
-} from "./adapters/numista-valuation";
+} from "./numista-valuation";
 export type {
   NumistaSyncDeps,
   PositionDraft,
@@ -170,7 +170,7 @@ export type {
   RevalueOptions,
   RevaluedPosition,
   RevaluePosition,
-} from "./adapters/numista-valuation";
+} from "./numista-valuation";
 export { getAccountSnapshots, getAllBalances } from "./binance";
 export type {
   BinanceAccountSnapshot,
@@ -187,6 +187,7 @@ export {
 export type { BinanceSyncDeps, TokenPositionDraft } from "./binance-sync";
 export { fetchCoinGeckoHistoryEur, reconstructBinanceHistory } from "./binance-history";
 export type { ReconstructBinanceHistoryDeps } from "./binance-history";
+export { rungForWallet } from "./binance-rung";
 export { coingeckoHistoricalSource, parsePriceCsv } from "./historical-price-source";
 export type {
   HistoricalPriceSeries,
@@ -197,19 +198,3 @@ export type {
   RefreshOptions,
   RefreshStalePricesResult,
 } from "./refresh-stale-prices";
-export { numistaAdapter } from "./adapters/numista";
-export type { NumistaCreds } from "./adapters/numista";
-export { binanceAdapter, rungForWallet } from "./adapters/binance";
-export type { BinanceCreds } from "./adapters/binance";
-export { adapterForTag } from "./adapters/registry";
-export type { SourceAdapterMetadata } from "./adapters/registry";
-export type {
-  ConnectedSourceAdapter,
-  HistoryContext,
-  PositionDraft as AdapterPositionDraft,
-  PositionValuationUpdate as AdapterPositionValuationUpdate,
-  RevalueContext,
-  RevaluePositionInput,
-  SourceHistory,
-  SyncContext,
-} from "./adapters/types";

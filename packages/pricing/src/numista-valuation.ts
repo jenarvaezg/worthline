@@ -1,14 +1,13 @@
 /**
  * Numista valuation — the single home for "value a Numista coin" (ADR 0017, #323).
  *
- * The Numista adapter (ADR 0027) lists coins (the on-demand sync) and re-derives
- * what stored coins are worth (the decoupled stale-price pass). Both resolve the
+ * Numista lists coins (the on-demand sync) and re-derives what stored coins are
+ * worth (the decoupled stale-price pass). Both resolve the
  * SAME two candidate values per coin — the melt value (composition × weight ×
  * metal spot) and Numista's per-grade numismatic estimate — and leave the
- * `max(metal, numismatic)` decision to the domain (`coinValuation`). #323 folds
- * the two former orchestrators (`numista-sync.ts` + `numista-revalue.ts`) into
- * this one module so that parsing, request-cap dedup, the numismatic TTL gate, and
- * the candidate-row construction live in ONE place shared by both modes.
+ * `max(metal, numismatic)` decision to the domain (`coinValuation`). Parsing,
+ * request-cap dedup, the numismatic TTL gate, and the candidate-row construction
+ * live in ONE place shared by both modes.
  *
  * Every external read is injected, so this is a pure unit of work testable without
  * the network: the web layer wires the real readers (with the API key + token) and

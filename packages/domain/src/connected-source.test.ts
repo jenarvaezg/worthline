@@ -295,8 +295,7 @@ describe("projectConnectedSource — Binance tokens roll up live-valued (ADR 002
   });
 });
 
-// rungForWallet moved to the Binance adapter (#322, ADR 0027) — its tests now live
-// in packages/pricing/src/adapters/binance.test.ts (a Binance fact, not domain).
+// rungForWallet is Binance-specific; its tests live in @worthline/pricing.
 
 describe("instrumentForAdapter — the holding instrument a source projects into", () => {
   test("Numista projects a coin_collection; Binance a crypto holding", () => {
