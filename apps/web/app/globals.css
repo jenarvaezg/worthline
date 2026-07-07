@@ -1104,10 +1104,19 @@ th:last-child {
   width: 18px;
 }
 
+/* The custom-split pane reveals with its radio via pure CSS :has(), like the
+   wizard drawers (ADR 0009). A details/summary can't do this: a click on the
+   radio (interactive content inside summary) swallows the toggle, leaving the
+   pane unreachable. */
 .ownerCustom {
-  display: grid;
+  display: none;
   gap: 8px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 6px;
+}
+
+.ownershipGrid:has(input[name="ownershipPreset"][value="custom"]:checked) .ownerCustom {
+  display: grid;
 }
 
 .checkLine {
@@ -3846,15 +3855,6 @@ td.rowActions > * {
   margin: 0;
   font-size: 0.8rem;
   color: var(--muted);
-}
-
-.ownerCustomDetails {
-  margin-top: 6px;
-}
-
-.ownerCustomDetails summary {
-  cursor: pointer;
-  list-style: none;
 }
 
 /* Danger zone ─────────────────────────────────────────────────────────── */
