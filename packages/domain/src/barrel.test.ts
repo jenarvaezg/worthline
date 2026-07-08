@@ -142,6 +142,8 @@ const KEY_EXPORTS = [
   // payouts
   "deriveScheduleOccurrences",
   "passiveIncomeTrailing",
+  // benchmark-comparison
+  "compareGrowthToBenchmark",
 ] as const;
 
 describe("@worthline/domain barrel", () => {

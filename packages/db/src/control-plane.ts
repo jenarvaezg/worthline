@@ -33,6 +33,12 @@ export interface ControlPlaneGrant {
   createdAt: string;
 }
 
+export interface BenchmarkPrice {
+  seriesId: string;
+  dateKey: string;
+  value: string;
+}
+
 /** A workspace plus its owner's email — the oldest grant; v1 is always exactly
  * one owner per workspace. `ownerEmail` is null only for a dangling workspace
  * with no grant row (should not happen post-provisioning, but the admin
@@ -89,6 +95,13 @@ export interface ControlPlaneStore {
   hasDailyCaptureRun(dateKey: string): Promise<boolean>;
   /** Record or update daily fleet capture finalization for this UTC date. */
   recordDailyCaptureRun(dateKey: string, finalizedAt: string): Promise<void>;
+  /** Benchmark series cached globally in the control plane (ADR 0060). */
+  readBenchmarkPrices(seriesId: string): Promise<BenchmarkPrice[]>;
+  /** Upsert monthly benchmark rows by `(series_id, date)`. */
+  upsertBenchmarkPrices(
+    seriesId: string,
+    prices: { dateKey: string; value: string }[],
+  ): Promise<void>;
   /**
    * Count one shared-baseline chat request and return the running count for
    * (rateKey, windowKey) — the serverless-safe counter behind the assistant's
@@ -139,6 +152,14 @@ CREATE TABLE IF NOT EXISTS chat_usage (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (rate_key, window_key)
 );
+CREATE TABLE IF NOT EXISTS benchmark_prices (
+  series_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  value TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (series_id, date)
+);
 `;
 
 function toUser(row: Record<string, unknown>): ControlPlaneUser {
@@ -173,6 +194,14 @@ function toWorkspaceWithOwner(
   return {
     ...toWorkspace(row),
     ownerEmail: row["owner_email"] == null ? null : String(row["owner_email"]),
+  };
+}
+
+function toBenchmarkPrice(row: Record<string, unknown>): BenchmarkPrice {
+  return {
+    seriesId: String(row["series_id"]),
+    dateKey: String(row["date"]),
+    value: String(row["value"]),
   };
 }
 
@@ -299,6 +328,28 @@ async function buildControlPlaneStore(
                 updated_at = CURRENT_TIMESTAMP`,
         args: [dateKey, finalizedAt],
       });
+    },
+    async readBenchmarkPrices(seriesId) {
+      const result = await client.execute({
+        sql: `SELECT series_id, date, value
+              FROM benchmark_prices
+              WHERE series_id = ?
+              ORDER BY date ASC`,
+        args: [seriesId],
+      });
+      return result.rows.map((row) => toBenchmarkPrice(row));
+    },
+    async upsertBenchmarkPrices(seriesId, prices) {
+      for (const price of prices) {
+        await client.execute({
+          sql: `INSERT INTO benchmark_prices (series_id, date, value)
+                VALUES (?, ?, ?)
+                ON CONFLICT(series_id, date) DO UPDATE SET
+                  value = excluded.value,
+                  updated_at = CURRENT_TIMESTAMP`,
+          args: [seriesId, price.dateKey, price.value],
+        });
+      }
     },
     async recordChatRequest(rateKey, windowKey) {
       // ponytail: stale hourly rows are never purged — ~24 tiny rows/day/key;

@@ -4,9 +4,10 @@ import {
   type DailyCaptureFetchedPrice,
   type RunDailyCaptureDeps,
 } from "@worthline/db";
-import { refreshStalePrices } from "@worthline/pricing";
+import { fetchSpanishCpi, refreshStalePrices } from "@worthline/pricing";
 
 type CronEnv = Record<string, string | undefined>;
+const SPANISH_CPI_SERIES_ID = "ipc-es";
 
 /**
  * Wire the real dependencies for the daily-capture cron (ADR 0037, PRD #528).
@@ -55,6 +56,27 @@ export function buildDailyCaptureDeps(env: CronEnv = process.env): RunDailyCaptu
       const controlPlane = await openControlPlane();
       try {
         await controlPlane.recordDailyCaptureRun(dateKey, finalizedAt);
+      } finally {
+        controlPlane.close();
+      }
+    },
+    listBenchmarkSeries: async () => [{ id: SPANISH_CPI_SERIES_ID }],
+    readBenchmarkPrices: async (seriesId) => {
+      const controlPlane = await openControlPlane();
+      try {
+        return await controlPlane.readBenchmarkPrices(seriesId);
+      } finally {
+        controlPlane.close();
+      }
+    },
+    fetchBenchmarkPrices: async (series) => {
+      if (series.id !== SPANISH_CPI_SERIES_ID) return [];
+      return fetchSpanishCpi();
+    },
+    saveBenchmarkPrices: async (seriesId, prices) => {
+      const controlPlane = await openControlPlane();
+      try {
+        await controlPlane.upsertBenchmarkPrices(seriesId, prices);
       } finally {
         controlPlane.close();
       }
