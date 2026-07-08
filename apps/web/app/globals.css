@@ -1602,6 +1602,12 @@ svg a:hover .compositionBand {
   margin: 2px 0 0;
 }
 
+.benchmarkCoverage {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: 0;
+}
+
 .benchmarkHundred {
   border-top: 1px solid var(--hairline);
   display: flex;

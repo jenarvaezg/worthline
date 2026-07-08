@@ -72,7 +72,8 @@ export default defineConfig({
       // `@next/env` won't overwrite vars already in `process.env`, so these win.
       AUTH_GOOGLE_ID: "",
       AUTH_GOOGLE_SECRET: "",
-      AUTH_SECRET: "",
+      // NextAuth still boots on every request; see playwright.config.ts.
+      AUTH_SECRET: "worthline-e2e-test-secret-not-for-production",
       NEXT_PUBLIC_ENABLE_SW: "1",
     },
     timeout: 60_000,
