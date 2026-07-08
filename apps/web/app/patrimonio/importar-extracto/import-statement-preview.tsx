@@ -51,6 +51,27 @@ function formatMoney(amountMinor: number): string {
   }).format(amountMinor / 100);
 }
 
+function formatUnits(units: string): string {
+  const value = Number(units);
+  if (!Number.isFinite(value)) return units;
+  return new Intl.NumberFormat("es-ES", {
+    maximumFractionDigits: 6,
+  }).format(value);
+}
+
+function positionFlagLabel(
+  flag: FundPreviewRow["positionImpact"]["flags"][number],
+): string {
+  switch (flag) {
+    case "nearly_doubles":
+      return "posible duplicado";
+    case "oversell":
+      return "venta excede posición";
+    case "near_zero":
+      return "queda a cero";
+  }
+}
+
 function defaultFlagsFor(fund: FundPreviewRow): FundSelectionFlags {
   if (fund.bucket === "matched") {
     return { included: true, symbolEmpty: false };
@@ -367,26 +388,46 @@ export function ImportStatementPreview({
                         </td>
                         <td>{formatMoney(fund.amountMinor)}</td>
                         <td>
-                          {fund.bucket === "matched" ? (
-                            <details>
-                              <summary>Ver fusión</summary>
-                              <p>
-                                {pluralize(
-                                  fund.toCreateCount,
-                                  "operación nueva",
-                                  "operaciones nuevas",
-                                )}
-                                {" · "}
-                                {pluralize(
-                                  fund.toOverwriteCount,
-                                  "sobrescrita",
-                                  "sobrescritas",
-                                )}
-                              </p>
-                            </details>
-                          ) : (
-                            <span className="contextLabel">Activo nuevo</span>
-                          )}
+                          <div className="positionImpact">
+                            <p className="positionImpactLine">
+                              {formatUnits(fund.positionImpact.beforeUnits)} uds (
+                              {formatMoney(fund.positionImpact.beforeValueMinor)}) →{" "}
+                              {formatUnits(fund.positionImpact.afterUnits)} uds (
+                              {formatMoney(fund.positionImpact.afterValueMinor)})
+                            </p>
+                            {fund.positionImpact.flags.length > 0 ? (
+                              <ul
+                                aria-label="Avisos de posición"
+                                className="positionFlags"
+                              >
+                                {fund.positionImpact.flags.map((flag) => (
+                                  <li className="positionFlag" key={flag}>
+                                    {positionFlagLabel(flag)}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
+                            {fund.bucket === "matched" ? (
+                              <details>
+                                <summary>Ver fusión</summary>
+                                <p>
+                                  {pluralize(
+                                    fund.toCreateCount,
+                                    "operación nueva",
+                                    "operaciones nuevas",
+                                  )}
+                                  {" · "}
+                                  {pluralize(
+                                    fund.toOverwriteCount,
+                                    "sobrescrita",
+                                    "sobrescritas",
+                                  )}
+                                </p>
+                              </details>
+                            ) : (
+                              <span className="contextLabel">Activo nuevo</span>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );

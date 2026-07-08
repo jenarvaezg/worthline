@@ -104,6 +104,19 @@ function newRow(
   return fund;
 }
 
+function matchedRow(
+  preview: ImportStatementPreviewState,
+  isin: string,
+): FundPreviewRow & {
+  bucket: "matched";
+} {
+  if (preview.status !== "ready") throw new Error("expected a ready preview");
+  const fund = preview.funds.find((f) => f.isin === isin);
+  if (fund?.bucket !== "matched")
+    throw new Error(`expected a matched bucket for ${isin}`);
+  return fund;
+}
+
 describe("previewImportStatementAction (#673)", () => {
   test("groups the file by ISIN into matched/new buckets with per-fund counts", async () => {
     const store = await createInMemoryStore();
@@ -211,6 +224,68 @@ describe("previewImportStatementAction (#673)", () => {
     const matched = full.funds[0];
     if (matched?.bucket !== "matched") throw new Error("expected the matched bucket");
     expect(matched.executedCount).toBe(2);
+  });
+
+  test("matched preview shows position before and after the simulated merge", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await store.operations.recordOperation({
+      assetId: "matched_fund",
+      currency: "EUR",
+      executedAt: "2024-03-01",
+      id: "opening",
+      kind: "buy",
+      pricePerUnit: "100",
+      units: "10",
+    });
+
+    const result = await preview(
+      plantillaForm(
+        [
+          "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Nombre",
+          "01/01/2024;Fondo;ES00WL000001;Compra;10;1000;",
+        ].join("\r\n"),
+      ),
+      store,
+    );
+
+    expect(matchedRow(result, "ES00WL000001").positionImpact).toEqual({
+      afterUnits: "20",
+      afterValueMinor: 2000_00,
+      beforeUnits: "10",
+      beforeValueMinor: 1000_00,
+      flags: ["nearly_doubles"],
+    });
+  });
+
+  test("matched preview flags oversell and a resulting zero position", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await store.operations.recordOperation({
+      assetId: "matched_fund",
+      currency: "EUR",
+      executedAt: "2024-03-01",
+      id: "opening",
+      kind: "buy",
+      pricePerUnit: "100",
+      units: "10",
+    });
+
+    const result = await preview(
+      plantillaForm(
+        [
+          "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Nombre",
+          "01/04/2024;Fondo;ES00WL000001;Venta;12;1200;",
+        ].join("\r\n"),
+      ),
+      store,
+    );
+
+    expect(matchedRow(result, "ES00WL000001").positionImpact).toMatchObject({
+      afterUnits: "0",
+      afterValueMinor: 0,
+      flags: ["oversell", "near_zero"],
+    });
   });
 });
 
@@ -373,6 +448,16 @@ describe("plantilla import (#695)", () => {
     const ops = await store.operations.readOperations(created!.id);
     expect(ops.map((op) => op.kind).sort()).toEqual(["buy", "sell"]);
     expect(await store.operations.readOperations("btc_holding")).toHaveLength(1);
+  });
+
+  test("preview amount nets buys and sells", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+
+    const result = await preview(plantillaForm(), store);
+    if (result.status !== "ready") throw new Error("expected a ready preview");
+
+    expect(newRow(result, "LU00WL000002").amountMinor).toBe(280_00);
   });
 
   test("a crypto identifier that creates suggests itself as the provider symbol", async () => {

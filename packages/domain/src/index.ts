@@ -130,6 +130,7 @@ export {
   createInvestmentOperation,
   createInvestmentOperationSafe,
   derivePosition,
+  latestOperationPrice,
 } from "./positions";
 export type {
   DatedCashflow,
