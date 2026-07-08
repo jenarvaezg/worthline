@@ -36,6 +36,23 @@ describe("benchmark comparison", () => {
     expect(comparison?.points[1]?.realGrowth).toBeCloseTo(0.1428571428571428);
   });
 
+  test("annualizes the subject, benchmark and real growth over the shared window", () => {
+    const result = compareGrowthToBenchmark({
+      benchmark: [
+        { dateKey: "2023-01-01", value: 100 },
+        { dateKey: "2024-01-01", value: 104 },
+      ],
+      subject: [
+        { dateKey: "2023-01-31", value: 100_000_00 },
+        { dateKey: "2024-01-31", value: 110_000_00 },
+      ],
+    });
+
+    expect(result.comparison?.subjectAnnualGrowth).toBeCloseTo(0.1, 4);
+    expect(result.comparison?.benchmarkAnnualGrowth).toBeCloseTo(0.04, 4);
+    expect(result.comparison?.realAnnualGrowth).toBeCloseTo(1.1 / 1.04 - 1, 4);
+  });
+
   test("returns an unavailable reason when the benchmark series does not cover the window", () => {
     expect(
       compareGrowthToBenchmark({

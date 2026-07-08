@@ -1,3 +1,7 @@
+import { daysBetween } from "./dates";
+
+const YEAR_DAYS = 365;
+
 export interface GrowthSeriesPoint {
   dateKey: string;
   value: number;
@@ -16,6 +20,9 @@ export interface BenchmarkComparison {
   subjectGrowth: number;
   benchmarkGrowth: number;
   realGrowth: number;
+  subjectAnnualGrowth: number;
+  benchmarkAnnualGrowth: number;
+  realAnnualGrowth: number;
   points: BenchmarkComparisonPoint[];
 }
 
@@ -51,6 +58,10 @@ export function compareGrowthToBenchmark(input: {
   if (first.subject.value === 0 || first.benchmark.value === 0) {
     return { comparison: null, unavailableReason: "zero_start_value" };
   }
+  const spanDays = daysBetween(first.subject.dateKey, last.subject.dateKey);
+  if (spanDays <= 0) {
+    return { comparison: null, unavailableReason: "benchmark_unavailable" };
+  }
 
   const comparisonPoints = points.map(({ benchmark, subject }) => {
     const subjectIndex = subject.value / first.subject.value;
@@ -69,11 +80,18 @@ export function compareGrowthToBenchmark(input: {
       sinceDate: first.subject.dateKey,
       untilDate: last.subject.dateKey,
       benchmarkGrowth: finalPoint.benchmarkGrowth,
+      benchmarkAnnualGrowth: annualize(finalPoint.benchmarkGrowth, spanDays),
       points: comparisonPoints,
       realGrowth: finalPoint.realGrowth,
+      realAnnualGrowth: annualize(finalPoint.realGrowth, spanDays),
+      subjectAnnualGrowth: annualize(finalPoint.subjectGrowth, spanDays),
       subjectGrowth: finalPoint.subjectGrowth,
     },
   };
+}
+
+function annualize(growth: number, spanDays: number): number {
+  return (1 + growth) ** (YEAR_DAYS / spanDays) - 1;
 }
 
 function monthKey(dateKey: string): string {

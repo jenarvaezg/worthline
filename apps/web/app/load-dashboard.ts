@@ -18,6 +18,7 @@ import type { WorthlineStore } from "@worthline/db";
 import { captureDailySnapshotForWorkspace } from "@worthline/db";
 import type {
   AssetPrice,
+  BenchmarkComparisonResult,
   CompositionRange,
   DatedSnapshotHoldingRow,
   DrilldownKey,
@@ -29,6 +30,7 @@ import {
   buildCompositionSeries,
   buildDrilldown,
   collectHoldingPayouts,
+  compareGrowthToBenchmark,
   deriveFramedSnapshotDeltas,
   listScopeOptions,
   monthsBetween,
@@ -47,6 +49,8 @@ import type {
 
 import { buildMatrixCells, type MatrixCellPayload } from "./dashboard-cells";
 import { cellKey, crossOf, parseMode, type MatrixCoord } from "./dashboard-matrix";
+
+const SPANISH_CPI_SERIES_ID = "ipc-es";
 
 export interface RefreshPricesResult {
   /** Price cache after refresh (always populated — stale cache on failure). */
@@ -111,6 +115,10 @@ export interface LoadDashboardInput {
    * Returns one message per source that failed, merged into `pricingErrors`.
    */
   refreshBinanceSources?: () => Promise<{ errors: string[] }>;
+  /** Optional CPI benchmark read from the control plane (ADR 0060). */
+  readBenchmarkPrices?: (
+    seriesId: string,
+  ) => Promise<Array<{ dateKey: string; value: string }>>;
 }
 
 export interface LoadDashboardResult extends DashboardState {
@@ -180,6 +188,8 @@ export interface LoadDashboardResult extends DashboardState {
    * Mirrors `presentation`, which already carries the framed headline figure.
    */
   headlineDeltas: FramedSnapshotDeltas;
+  /** Net worth vs CPI over the same active window as the Evolución chart. */
+  benchmarkComparison: BenchmarkComparisonResult;
 }
 
 export async function loadDashboard(
@@ -391,6 +401,10 @@ export async function loadDashboard(
     snapshots,
     today: input.today,
   });
+  const benchmarkComparison = await buildBenchmarkComparison({
+    readBenchmarkPrices: input.readBenchmarkPrices,
+    series: compositionSeries,
+  });
 
   // ── 4b′. Per-range series (S3 #519 / #572) ───────────────────────────────
   // Ship the eager ranges the client can switch instantly. `all` is omitted from
@@ -488,6 +502,7 @@ export async function loadDashboard(
   return {
     ...state,
     activeCompositionRange: activeRange,
+    benchmarkComparison,
     compositionRanges,
     compositionSeries,
     compositionSeriesByRange,
@@ -529,6 +544,10 @@ function buildEmptyResult(
   return {
     ...state,
     activeCompositionRange: "all",
+    benchmarkComparison: {
+      comparison: null,
+      unavailableReason: "benchmark_unavailable",
+    },
     compositionRanges: [],
     compositionSeries: [],
     compositionSeriesByRange: {},
@@ -540,4 +559,32 @@ function buildEmptyResult(
     pricingErrors,
     snapshotHoldingRows: [],
   };
+}
+
+async function buildBenchmarkComparison(input: {
+  readBenchmarkPrices: LoadDashboardInput["readBenchmarkPrices"];
+  series: CompositionSeriesPoint[];
+}): Promise<BenchmarkComparisonResult> {
+  if (!input.readBenchmarkPrices) {
+    return { comparison: null, unavailableReason: "benchmark_unavailable" };
+  }
+
+  try {
+    const benchmark = (await input.readBenchmarkPrices(SPANISH_CPI_SERIES_ID))
+      .map((point) => ({
+        dateKey: point.dateKey,
+        value: Number(point.value),
+      }))
+      .filter((point) => Number.isFinite(point.value));
+
+    return compareGrowthToBenchmark({
+      benchmark,
+      subject: input.series.map((point) => ({
+        dateKey: point.dateKey,
+        value: point.netWorthMinor,
+      })),
+    });
+  } catch {
+    return { comparison: null, unavailableReason: "benchmark_unavailable" };
+  }
 }

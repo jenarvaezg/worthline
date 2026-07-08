@@ -1532,6 +1532,96 @@ svg a:hover .compositionBand {
   padding-top: 4px;
 }
 
+.benchmarkCard {
+  background: rgba(255, 253, 247, 0.65);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 12px;
+}
+
+.benchmarkVerdict span,
+.benchmarkEmpty span {
+  color: var(--muted);
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.benchmarkVerdict strong {
+  display: block;
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-size: 1.55rem;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+
+.benchmarkVerdict strong.pos {
+  color: var(--green);
+}
+
+.benchmarkVerdict strong.neg {
+  color: var(--red);
+}
+
+.benchmarkVerdict small,
+.benchmarkEmpty p,
+.benchmarkHundred {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.benchmarkStats {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.benchmarkStats div {
+  min-width: 0;
+}
+
+.benchmarkStats dt {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.benchmarkStats dd {
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  margin: 2px 0 0;
+}
+
+.benchmarkHundred {
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding-top: 10px;
+}
+
+.benchmarkHundred b {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .benchmarkStats {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* === #76 liquid drilldown === */
 
 .drillHeader {

@@ -1151,6 +1151,61 @@ describe("loadDashboard — composition range and density", () => {
 
     store.close();
   });
+
+  test("returns the CPI comparison for the active composition window", async () => {
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
+
+    const cpi: { dateKey: string; value: string }[] = [];
+    // Build 14 monthly snapshots: 2025-05 .. 2026-06, enough to default to 1A.
+    for (let i = 0; i < 14; i++) {
+      const total = 2025 * 12 + 4 + i;
+      const y = Math.floor(total / 12);
+      const m = (total % 12) + 1;
+      const month = `${y}-${String(m).padStart(2, "0")}`;
+      const today = `${month}-15`;
+      await store.assets.updateAssetValuation("asset_cash", 100_000_00 + i * 1_000_00);
+      cpi.push({ dateKey: `${month}-01`, value: String(100 + i) });
+      await loadDashboard({
+        store,
+        persistence: makePersistence(),
+        scopeId: undefined,
+        selectedView: "total",
+        today,
+        now: `${today}T10:00:00.000Z`,
+        refreshPrices: noOpRefresh,
+      });
+    }
+
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-15",
+      now: "2026-06-15T12:00:00.000Z",
+      refreshPrices: noOpRefresh,
+      readBenchmarkPrices: async (seriesId) => {
+        expect(seriesId).toBe("ipc-es");
+        return cpi;
+      },
+    });
+
+    const comparison = result.benchmarkComparison.comparison;
+    expect(comparison?.sinceDate).toBe(result.compositionSeries[0]!.dateKey);
+    expect(comparison?.untilDate).toBe(result.compositionSeries.at(-1)!.dateKey);
+
+    const startMonth = comparison!.sinceDate.slice(0, 7);
+    const endMonth = comparison!.untilDate.slice(0, 7);
+    const startCpi = Number(
+      cpi.find((point) => point.dateKey.startsWith(startMonth))!.value,
+    );
+    const endCpi = Number(cpi.find((point) => point.dateKey.startsWith(endMonth))!.value);
+    expect(comparison?.benchmarkGrowth).toBeCloseTo(endCpi / startCpi - 1);
+
+    store.close();
+  });
 });
 
 // ---------------------------------------------------------------------------
