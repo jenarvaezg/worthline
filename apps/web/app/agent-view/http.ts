@@ -341,7 +341,11 @@ export async function handleGetHoldingDetail(
 
     return json(
       successEnvelope(
-        await runWithStore((store) => buildHoldingDetail(store.agentView, holdingId)),
+        await runWithStore((store) =>
+          buildHoldingDetail(store.agentView, holdingId, {
+            readBenchmarkPrices: readBenchmarkPricesFromControlPlane,
+          }),
+        ),
       ),
       200,
     );

@@ -149,7 +149,11 @@ function createReadStoreBackend(agentView: AgentViewReadStore): AgentViewBackend
       return pageEnvelope(summary.holdings, summary.meta);
     },
     holdingDetail: async (holdingId) =>
-      successEnvelope(await buildHoldingDetail(agentView, holdingId)),
+      successEnvelope(
+        await buildHoldingDetail(agentView, holdingId, {
+          readBenchmarkPrices: readBenchmarkPricesFromControlPlane,
+        }),
+      ),
     priceFreshness: async (holdingId) =>
       successEnvelope(await buildPriceFreshness(agentView, holdingId)),
     operations: async (params) => {

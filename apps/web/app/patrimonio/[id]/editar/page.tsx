@@ -66,6 +66,11 @@ import { PriceBackfillSection } from "./_surfaces/price-backfill-section";
 import { ReturnsPanel } from "./_surfaces/returns-panel";
 import { StatementUploadSection } from "./_surfaces/statement-upload-section";
 import { PriceRefreshControl } from "@web/patrimonio/price-refresh-control";
+import {
+  buildHoldingBenchmarkComparison,
+  readBenchmarkPricesFromControlPlane,
+} from "@web/build-holding-benchmark";
+import HoldingBenchmarkComparisonCard from "@web/holding-benchmark-comparison-card";
 
 export const dynamic = "force-dynamic";
 
@@ -499,6 +504,17 @@ export default async function EditarPage({
         })
       : null;
 
+  const holdingBenchmarkResult =
+    isMarketInvestment && exposureProfile?.trackedIndex
+      ? await buildHoldingBenchmarkComparison({
+          distributing: investment?.benchmarkDistributing ?? false,
+          monthlyCloses: twrMonthlyCloses,
+          operations,
+          readBenchmarkPrices: readBenchmarkPricesFromControlPlane,
+          trackedIndex: exposureProfile.trackedIndex,
+        })
+      : null;
+
   return (
     <Shell
       activeSection="patrimonio"
@@ -631,6 +647,13 @@ export default async function EditarPage({
                 split + honest caveats (#551, ADR 0040), above the operations ledger. */}
             {returnsView ? (
               <ReturnsPanel privacyMode={privacyMode} view={returnsView} />
+            ) : null}
+
+            {holdingBenchmarkResult && exposureProfile?.trackedIndex ? (
+              <HoldingBenchmarkComparisonCard
+                result={holdingBenchmarkResult}
+                trackedIndex={exposureProfile.trackedIndex}
+              />
             ) : null}
 
             {/* derived: the investment's operations editor (the single place units change) */}

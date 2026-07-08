@@ -4,6 +4,7 @@ import {
   collectWarnings,
   defaultsFor,
   listScopeOptions,
+  monthlyCloseValuesFromSnapshotRows,
   projectPortfolio,
   systemClock,
 } from "@worthline/domain";
@@ -14,6 +15,7 @@ import type {
   Workspace,
 } from "@worthline/domain";
 
+import { buildHoldingBenchmarkComparison } from "@web/build-holding-benchmark";
 import {
   AgentViewHttpError,
   type AgentViewExposureProfile,
@@ -21,7 +23,9 @@ import {
   type AgentViewHoldingSourceSummary,
   type AgentViewMoney,
   type AgentViewOwnershipShare,
+  type AgentViewVsBenchmark,
 } from "./contract";
+import type { AgentViewBenchmarkPrice } from "./financial-context";
 import { ratioStringFromBps } from "./financial-context";
 import {
   assetHoldingFacts,
@@ -37,6 +41,10 @@ import {
 } from "./scope-resolution";
 import { buildHoldingReturns } from "./returns";
 
+export interface BuildHoldingDetailOptions {
+  readBenchmarkPrices?: (seriesId: string) => Promise<AgentViewBenchmarkPrice[]>;
+}
+
 /**
  * Assemble one holding's full detail from persisted state, with no side effects
  * (PRD #328, #337). Values come from the household scope projection (full,
@@ -47,6 +55,7 @@ import { buildHoldingReturns } from "./returns";
 export async function buildHoldingDetail(
   store: AgentViewReadStore,
   publicHoldingId: string,
+  options: BuildHoldingDetailOptions = {},
 ): Promise<AgentViewHoldingDetail> {
   const workspace = await store.readWorkspace();
 
@@ -98,6 +107,9 @@ export async function buildHoldingDetail(
       internalHoldingId,
       assetRow.instrument,
     );
+    const investmentMeta = (await store.readInvestmentAssetsWithMeta()).find(
+      (row) => row.id === internalHoldingId,
+    );
 
     return {
       currentValue: moneyOf(assetRow.valueMinor, currency),
@@ -130,6 +142,14 @@ export async function buildHoldingDetail(
         valuationDate,
       }),
       valuationMethod,
+      vsBenchmark: await buildVsBenchmark({
+        assetId: internalHoldingId,
+        distributing: investmentMeta?.benchmarkDistributing ?? false,
+        operations,
+        readBenchmarkPrices: options.readBenchmarkPrices,
+        store,
+        trackedIndex: exposureProfile?.trackedIndex,
+      }),
       ...(operationSummary ? { operationSummary } : {}),
       ...(sourceSummary ? { sourceSummary } : {}),
       ...factBlocks(facts),
@@ -155,8 +175,68 @@ export async function buildHoldingDetail(
     ownership: toOwnership(row.ownership, common),
     qualitySummary: qualitySummary(false, facts),
     valuationMethod,
+    vsBenchmark: unavailableVsBenchmark("no_tracked_index"),
     ...factBlocks(facts),
   };
+}
+
+async function buildVsBenchmark(input: {
+  assetId: string;
+  distributing: boolean;
+  operations: Awaited<ReturnType<AgentViewReadStore["readOperations"]>>;
+  readBenchmarkPrices: BuildHoldingDetailOptions["readBenchmarkPrices"];
+  store: AgentViewReadStore;
+  trackedIndex: string | null | undefined;
+}): Promise<AgentViewVsBenchmark> {
+  const monthlyCloses = monthlyCloseValuesFromSnapshotRows(
+    await input.store.readSnapshotHoldings({
+      holdingId: input.assetId,
+      kind: "asset",
+      scopeId: "household",
+    }),
+  );
+  const result = await buildHoldingBenchmarkComparison({
+    distributing: input.distributing,
+    monthlyCloses,
+    operations: input.operations,
+    trackedIndex: input.trackedIndex,
+    ...(input.readBenchmarkPrices
+      ? { readBenchmarkPrices: input.readBenchmarkPrices }
+      : {}),
+  });
+  return toAgentViewVsBenchmark(result);
+}
+
+function toAgentViewVsBenchmark(
+  result: Awaited<ReturnType<typeof buildHoldingBenchmarkComparison>>,
+): AgentViewVsBenchmark {
+  if (!result.comparison) {
+    return {
+      comparison: null,
+      unavailableReason: result.unavailableReason,
+    };
+  }
+
+  return {
+    comparison: {
+      coverageNote: result.comparison.coverageNote,
+      excessGrowth: result.comparison.realGrowth,
+      holdingTwr: result.comparison.subjectGrowth,
+      indexGrowth: result.comparison.benchmarkGrowth,
+      seriesId: result.comparison.seriesId,
+      sinceDate: result.comparison.sinceDate,
+      trackedIndex: result.comparison.trackedIndex,
+      untilDate: result.comparison.untilDate,
+      variant: result.comparison.variant,
+    },
+    unavailableReason: null,
+  };
+}
+
+function unavailableVsBenchmark(
+  reason: NonNullable<AgentViewVsBenchmark["unavailableReason"]>,
+): AgentViewVsBenchmark {
+  return { comparison: null, unavailableReason: reason };
 }
 
 /** Fold the holding's fact blocks into the detail, omitting any that are absent. */

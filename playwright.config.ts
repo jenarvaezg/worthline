@@ -122,7 +122,10 @@ export default defineConfig({
         // `.env.local` — the same guarantee the config relies on for the DB path.
         AUTH_GOOGLE_ID: "",
         AUTH_GOOGLE_SECRET: "",
-        AUTH_SECRET: "",
+        // NextAuth still boots on every request (proxy + `/api/auth`) and logs
+        // MissingSecret when this is empty. No-login mode is gated on blank
+        // AUTH_GOOGLE_* — not on AUTH_SECRET — so a throwaway value is fine.
+        AUTH_SECRET: "worthline-e2e-test-secret-not-for-production",
         NEXT_PUBLIC_ENABLE_SW: "1",
       },
       // Give Next.js up to 60s to start on first cold run.
