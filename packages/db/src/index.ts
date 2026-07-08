@@ -48,6 +48,7 @@ export {
   type ControlPlaneWorkspace,
   type ControlPlaneWorkspaceWithOwner,
   type ControlPlaneGrant,
+  type BenchmarkPrice,
 } from "./control-plane";
 export {
   provisionWorkspaceForUser,
@@ -64,6 +65,9 @@ export { captureDailySnapshotForWorkspace } from "./capture-daily-snapshot";
 export { runDailyCapture } from "./run-daily-capture";
 export type {
   DailyCaptureFailure,
+  DailyCaptureBenchmarkFailure,
+  DailyCaptureBenchmarkPrice,
+  DailyCaptureBenchmarkSeries,
   DailyCaptureFetchedPrice,
   DailyCapturePricePair,
   DailyCaptureWorkspace,

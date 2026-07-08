@@ -126,6 +126,29 @@ describe("control-plane store", () => {
       cp.close();
     }
   });
+
+  test("benchmark prices upsert by series and month in the control plane", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      await cp.upsertBenchmarkPrices("ipc-es", [
+        { dateKey: "2024-02-01", value: "105.2" },
+        { dateKey: "2024-01-01", value: "100" },
+      ]);
+      await cp.upsertBenchmarkPrices("ipc-es", [
+        { dateKey: "2024-02-01", value: "105.4" },
+      ]);
+      await cp.upsertBenchmarkPrices("stoxx-600", [
+        { dateKey: "2024-01-01", value: "492.1" },
+      ]);
+
+      expect(await cp.readBenchmarkPrices("ipc-es")).toEqual([
+        { seriesId: "ipc-es", dateKey: "2024-01-01", value: "100" },
+        { seriesId: "ipc-es", dateKey: "2024-02-01", value: "105.4" },
+      ]);
+    } finally {
+      cp.close();
+    }
+  });
   test("two different accounts get isolated workspace lists", async () => {
     const cp = await createInMemoryControlPlaneStore();
     try {
