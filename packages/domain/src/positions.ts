@@ -79,6 +79,7 @@ export function createInvestmentOperation(
     id: input.id,
     kind: input.kind,
     pricePerUnit: input.pricePerUnit,
+    source: input.source ?? "manual",
     units: input.units,
   };
 }
@@ -142,6 +143,7 @@ export function createInvestmentOperationSafe(
       id: input.id,
       kind: input.kind,
       pricePerUnit: input.pricePerUnit,
+      source: input.source ?? "manual",
       units: input.units,
     },
   };

@@ -287,6 +287,76 @@ describe("previewImportStatementAction (#673)", () => {
       flags: ["oversell", "near_zero"],
     });
   });
+
+  test("matched preview replaces a source=opening operation by default", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await store.operations.recordOperation({
+      assetId: "matched_fund",
+      currency: "EUR",
+      executedAt: "2026-06-15",
+      id: "opening",
+      kind: "buy",
+      pricePerUnit: "100",
+      source: "opening",
+      units: "10",
+    });
+
+    const fd = plantillaForm(
+      [
+        "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Nombre",
+        "01/01/2024;Fondo;ES00WL000001;Compra;10;1000;",
+      ].join("\r\n"),
+    );
+    const result = await preview(fd, store);
+
+    const matched = matchedRow(result, "ES00WL000001");
+    expect(matched.toCreateCount).toBe(1);
+    expect(matched.toDeleteCount).toBe(1);
+    expect(matched.positionImpact).toMatchObject({
+      afterUnits: "10",
+      beforeUnits: "10",
+      flags: [],
+    });
+
+    fd.set("include_ES00WL000001", "on");
+    await confirm(fd, store);
+
+    expect(await store.operations.readOperations("matched_fund")).toMatchObject([
+      { executedAt: "2024-01-01", source: "statement", units: "10" },
+    ]);
+  });
+
+  test("confirm can opt out of replacing a source=opening operation", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await store.operations.recordOperation({
+      assetId: "matched_fund",
+      currency: "EUR",
+      executedAt: "2026-06-15",
+      id: "opening",
+      kind: "buy",
+      pricePerUnit: "100",
+      source: "opening",
+      units: "10",
+    });
+
+    const fd = plantillaForm(
+      [
+        "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Nombre",
+        "01/01/2024;Fondo;ES00WL000001;Compra;10;1000;",
+      ].join("\r\n"),
+    );
+    fd.set("include_ES00WL000001", "on");
+    fd.set("replaceOpeningSeen_ES00WL000001", "on");
+
+    await confirm(fd, store);
+
+    expect(await store.operations.readOperations("matched_fund")).toMatchObject([
+      { executedAt: "2024-01-01", source: "statement" },
+      { id: "opening", source: "opening" },
+    ]);
+  });
 });
 
 describe("confirmImportStatementAction — all-or-nothing (#673)", () => {

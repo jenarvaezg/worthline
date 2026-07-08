@@ -56,6 +56,10 @@ export interface NewStatementFund extends StatementFundGroup {
 
 export type StatementImportBucket = MatchedStatementFund | NewStatementFund;
 
+export interface ResolveStatementImportBucketsOptions {
+  replaceOpening?: (group: StatementFundGroup) => boolean;
+}
+
 export interface StatementNewInvestmentSelection {
   assetId: string;
   name: string;
@@ -168,6 +172,7 @@ export function findStatementTypeConflict(groups: StatementFundGroup[]): string 
 export function resolveStatementImportBuckets(
   statement: ParsedStatement,
   investments: StatementPortfolioInvestment[],
+  options: ResolveStatementImportBucketsOptions = {},
 ): StatementImportBucket[] {
   // Two matching keys per investment (#695): its ISIN and its provider symbol
   // (Finect code / CoinGecko id — how plantilla identifies plans and crypto).
@@ -197,7 +202,9 @@ export function resolveStatementImportBuckets(
       ...group,
       assetId: investment.assetId,
       bucket: "matched",
-      mergePlan: planStatementMerge(group.rows, investment.operations),
+      mergePlan: planStatementMerge(group.rows, investment.operations, {
+        replaceOpening: options.replaceOpening?.(group) ?? true,
+      }),
       name: investment.name,
     };
   });

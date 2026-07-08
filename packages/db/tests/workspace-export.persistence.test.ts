@@ -291,6 +291,7 @@ describe("exportWorkspace", () => {
       id: "op1",
       kind: "buy",
       pricePerUnit: "100",
+      source: "manual",
       units: "10",
     });
 

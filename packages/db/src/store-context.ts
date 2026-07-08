@@ -246,6 +246,7 @@ export function toOperation(
     id: row.id,
     kind: row.kind,
     pricePerUnit: row.pricePerUnit,
+    source: row.source,
     units: row.units,
   };
 }
@@ -505,6 +506,7 @@ export async function hardDeleteAssetTx(
             pricePerUnit: assetOperations.pricePerUnit,
             currency: assetOperations.currency,
             feesMinor: assetOperations.feesMinor,
+            source: assetOperations.source,
           })
           .from(assetOperations)
           .where(eq(assetOperations.assetId, assetId))

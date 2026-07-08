@@ -43,10 +43,16 @@ export interface StatementMergePlan {
   toCreate: ParsedStatementRow[];
   /** File rows whose date matches exactly one existing operation (the file wins). */
   toOverwrite: StatementOverwrite[];
+  /** Opening operations replaced by the imported history. */
+  toDelete: InvestmentOperation[];
   /** Existing operations the load does not modify — never deleted. */
   untouched: InvestmentOperation[];
   /** Ambiguous dates set aside (neither created nor overwritten), for the preview. */
   anomalies: StatementAnomaly[];
+}
+
+export interface StatementMergeOptions {
+  replaceOpening?: boolean;
 }
 
 /** The date key (`YYYY-MM-DD`) of an operation, tolerating a stored time component. */
@@ -66,11 +72,19 @@ function countByKey<T>(items: T[], keyOf: (item: T) => string): Map<string, numb
 export function planStatementMerge(
   rows: ParsedStatementRow[],
   existing: InvestmentOperation[],
+  options: StatementMergeOptions = {},
 ): StatementMergePlan {
+  const replaceOpening = options.replaceOpening ?? true;
+  const toDelete = replaceOpening
+    ? existing.filter((operation) => operation.source === "opening")
+    : [];
+  const mergeExisting = replaceOpening
+    ? existing.filter((operation) => operation.source !== "opening")
+    : existing;
   const fileDateCounts = countByKey(rows, (row) => row.dateKey);
-  const assetDateCounts = countByKey(existing, dateKeyOf);
+  const assetDateCounts = countByKey(mergeExisting, dateKeyOf);
   const existingByDate = new Map<string, InvestmentOperation>();
-  for (const operation of existing) {
+  for (const operation of mergeExisting) {
     existingByDate.set(dateKeyOf(operation), operation);
   }
 
@@ -106,9 +120,11 @@ export function planStatementMerge(
 
   // Every existing operation the load did not overwrite keeps its place — both
   // operations on uncovered dates and those held back by an anomaly. None deleted.
-  const untouched = existing.filter((operation) => !overwrittenIds.has(operation.id));
+  const untouched = mergeExisting.filter(
+    (operation) => !overwrittenIds.has(operation.id),
+  );
 
   const anomalies = [...anomalyDates].map(([dateKey, reason]) => ({ dateKey, reason }));
 
-  return { anomalies, toCreate, toOverwrite, untouched };
+  return { anomalies, toCreate, toDelete, toOverwrite, untouched };
 }
