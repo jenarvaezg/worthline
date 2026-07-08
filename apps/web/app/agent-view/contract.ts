@@ -516,6 +516,21 @@ export interface AgentViewDataQualitySummary {
   topSignals: AgentViewDataQualitySignal[];
 }
 
+export interface AgentViewVsInflation {
+  comparison: {
+    netWorthGrowth: number;
+    cpiGrowth: number;
+    realGrowth: number;
+    sinceDate: string;
+    untilDate: string;
+  } | null;
+  unavailableReason: "benchmark_unavailable" | "zero_start_value" | null;
+  coverage: {
+    source: "IPC-ES";
+    cadence: "monthly";
+  };
+}
+
 /** Cursor-paginated data-quality signals for a scope (PRD #328, #341). */
 export interface AgentViewDataQualityPage {
   signals: AgentViewDataQualitySignal[];
@@ -532,6 +547,7 @@ export interface AgentViewFinancialContext {
   exposure: AgentViewExposure;
   /** Present-time investment returns for operation-bearing market holdings. */
   returns: AgentViewReturns | null;
+  vsInflation: AgentViewVsInflation;
   /** The scope's trailing-12m passive income (renta pasiva), scope-weighted (#659). */
   passiveIncome: AgentViewScopePassiveIncome;
   holdings: AgentViewHoldingsBlock;

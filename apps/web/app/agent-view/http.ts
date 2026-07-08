@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 
-import type { WorthlineStore } from "@worthline/db";
+import { createControlPlaneStore, type WorthlineStore } from "@worthline/db";
 import { systemClock } from "@worthline/domain";
 
 import {
@@ -65,6 +65,23 @@ const NO_STORE_HEADERS = {
   "Cache-Control": "no-store",
 };
 
+async function readBenchmarkPricesFromControlPlane(seriesId: string) {
+  const url = process.env.WORTHLINE_CONTROL_PLANE_DB_URL;
+  if (!url) return [];
+
+  const controlPlane = await createControlPlaneStore({
+    url,
+    ...(process.env.WORTHLINE_DB_AUTH_TOKEN
+      ? { authToken: process.env.WORTHLINE_DB_AUTH_TOKEN }
+      : {}),
+  });
+  try {
+    return await controlPlane.readBenchmarkPrices(seriesId);
+  } finally {
+    controlPlane.close();
+  }
+}
+
 export async function handleListScopes(
   request: NextRequest,
   runWithStore: StoreRunner,
@@ -99,7 +116,12 @@ export async function handleGetFinancialContext(
     return json(
       successEnvelope(
         await runWithStore((store) =>
-          buildFinancialContext(store.agentView, { asOf, holdingLimit, scopeId }),
+          buildFinancialContext(store.agentView, {
+            asOf,
+            holdingLimit,
+            readBenchmarkPrices: readBenchmarkPricesFromControlPlane,
+            scopeId,
+          }),
         ),
       ),
       200,
