@@ -173,7 +173,7 @@ export async function syncBinanceAction(
             Date.parse(from),
             Date.parse(`${to}T23:59:59Z`),
             nowIso,
-          ),
+          ).then((r) => r.pricesByDate),
       });
       await runActionWithStore(
         (store) => store.applyBinanceHistoryAndRipple({ sourceId, curve }),

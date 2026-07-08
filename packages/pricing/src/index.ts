@@ -1,5 +1,6 @@
 import type { AssetPrice, InvestmentPriceProvider, PriceSource } from "@worthline/domain";
 
+import { TRANSIENT_HTTP_STATUSES } from "./fetch-with-retry";
 import { unwrapFetched } from "./registry";
 
 export type { AssetPrice, InvestmentPriceProvider, PriceSource };
@@ -62,10 +63,46 @@ export function isProviderFailure(
   return result !== null && "failed" in result && result.failed === true;
 }
 
+export interface FetchAndCacheOptions {
+  /** Prior cache row — its good price is preserved on a transient failure. */
+  prior?: AssetPrice | null;
+}
+
+function hasGoodCachedPrice(prior: AssetPrice): boolean {
+  return prior.price !== "0";
+}
+
+/**
+ * Whether a fetch miss is transient (retry/backoff candidate) vs a permanent
+ * symbol/data problem. Transient failures preserve the prior good price.
+ */
+export function isTransientFetchFailure(
+  result: PriceProviderResult | PriceProviderFailure | null,
+  reason: string,
+): boolean {
+  if (result === null) return true;
+  if (!isProviderFailure(result)) return false;
+
+  if (result.reason === PRICE_FAILURE_REASONS.symbolNotFound) return false;
+  if (result.reason === PRICE_FAILURE_REASONS.noQuote) return false;
+  if (result.reason.startsWith("La divisa del proveedor")) return false;
+
+  const httpMatch = result.reason.match(/error \((\d+)\)/);
+  if (httpMatch) {
+    const status = Number(httpMatch[1]);
+    if (status === 404) return false;
+    return TRANSIENT_HTTP_STATUSES.has(status) || status >= 500;
+  }
+
+  return reason !== PRICE_FAILURE_REASONS.symbolNotFound;
+}
+
 export async function fetchAndCachePrice(
   provider: PriceProvider,
   ctx: PriceProviderContext,
+  options: FetchAndCacheOptions = {},
 ): Promise<AssetPrice> {
+  const { prior } = options;
   try {
     // Fetch once; `fetched` is the cache-free success unwrap shared with
     // `fetchPriceNow` (ADR 0026). The `failed`-row branch reads the RAW result
@@ -73,6 +110,15 @@ export async function fetchAndCachePrice(
     const result = await provider.fetchPrice(ctx);
     const fetched = unwrapFetched(result, provider.name);
     if (!fetched) {
+      const reason = isProviderFailure(result) ? result.reason : "No price returned";
+      if (prior && hasGoodCachedPrice(prior) && isTransientFetchFailure(result, reason)) {
+        return {
+          ...prior,
+          freshnessState: "stale",
+          staleReason: reason,
+          fetchedAt: ctx.nowIso,
+        };
+      }
       return {
         assetId: ctx.assetId,
         currency: ctx.currency,
@@ -80,10 +126,22 @@ export async function fetchAndCachePrice(
         source: provider.name,
         fetchedAt: ctx.nowIso,
         freshnessState: "failed",
-        staleReason: isProviderFailure(result) ? result.reason : "No price returned",
+        staleReason: reason,
       };
     }
     if (fetched.currency !== ctx.currency) {
+      const mismatchReason = PRICE_FAILURE_REASONS.currencyMismatch(
+        fetched.currency,
+        ctx.currency,
+      );
+      if (prior && hasGoodCachedPrice(prior)) {
+        return {
+          ...prior,
+          freshnessState: "stale",
+          staleReason: mismatchReason,
+          fetchedAt: ctx.nowIso,
+        };
+      }
       return {
         assetId: ctx.assetId,
         currency: ctx.currency,
@@ -91,10 +149,7 @@ export async function fetchAndCachePrice(
         source: fetched.source,
         fetchedAt: ctx.nowIso,
         freshnessState: "failed",
-        staleReason: PRICE_FAILURE_REASONS.currencyMismatch(
-          fetched.currency,
-          ctx.currency,
-        ),
+        staleReason: mismatchReason,
       };
     }
     return {
@@ -107,6 +162,15 @@ export async function fetchAndCachePrice(
       ...(fetched.priceDate ? { priceDate: fetched.priceDate } : {}),
     };
   } catch (err) {
+    const reason = err instanceof Error ? err.message : "Unknown error";
+    if (prior && hasGoodCachedPrice(prior)) {
+      return {
+        ...prior,
+        freshnessState: "stale",
+        staleReason: reason,
+        fetchedAt: ctx.nowIso,
+      };
+    }
     return {
       assetId: ctx.assetId,
       currency: ctx.currency,
@@ -114,7 +178,7 @@ export async function fetchAndCachePrice(
       source: provider.name,
       fetchedAt: ctx.nowIso,
       freshnessState: "failed",
-      staleReason: err instanceof Error ? err.message : "Unknown error",
+      staleReason: reason,
     };
   }
 }
@@ -178,7 +242,7 @@ export type {
   BinanceRequestDeps,
   BinanceWalletBalance,
 } from "./binance";
-export { resolveCoinGeckoId } from "./binance-symbols";
+export { resolveCoinGeckoId, isBinanceFiatEur } from "./binance-symbols";
 export {
   fetchCoinGeckoLogos,
   fetchCoinGeckoPriceEur,
@@ -186,7 +250,10 @@ export {
 } from "./binance-sync";
 export type { BinanceSyncDeps, TokenPositionDraft } from "./binance-sync";
 export { fetchCoinGeckoHistoryEur, reconstructBinanceHistory } from "./binance-history";
-export type { ReconstructBinanceHistoryDeps } from "./binance-history";
+export type {
+  CoinGeckoHistoryResult,
+  ReconstructBinanceHistoryDeps,
+} from "./binance-history";
 export { rungForWallet } from "./binance-rung";
 export { coingeckoHistoricalSource, parsePriceCsv } from "./historical-price-source";
 export type {

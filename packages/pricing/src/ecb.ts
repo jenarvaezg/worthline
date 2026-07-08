@@ -1,4 +1,5 @@
 import type { PriceProvider } from "./index";
+import { fetchHttpWithRetry } from "./fetch-with-retry";
 
 export const ecbProvider: PriceProvider = {
   name: "ecb",
@@ -7,7 +8,7 @@ export const ecbProvider: PriceProvider = {
       "https://data-api.ecb.europa.eu/service/data/EXR/D." +
       ctx.symbol +
       ".EUR.SP00.A?format=jsondata&lastNObservations=1";
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const res = await fetchHttpWithRetry(url, { signal: AbortSignal.timeout(5000) });
     if (!res.ok) return null;
     const data = (await res.json()) as Record<string, unknown>;
     const obs = (

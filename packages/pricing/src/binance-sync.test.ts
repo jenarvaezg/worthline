@@ -53,6 +53,21 @@ describe("syncBinanceAccount — balances → live-valued token drafts", () => {
     ]);
   });
 
+  test("EUR cash is valued at flat 1:1 parity without a CoinGecko lookup", async () => {
+    const priceEur = vi.fn(async () => 9_999);
+    const drafts = await syncBinanceAccount({
+      listBalances: async () => [{ asset: "EUR", wallet: "spot", balance: "1500.50" }],
+      priceEur,
+    });
+
+    expect(priceEur).not.toHaveBeenCalled();
+    expect(drafts[0]).toMatchObject({
+      symbol: "EUR",
+      unitPrice: "1",
+      balance: "1500.50",
+    });
+  });
+
   test("an unmapped symbol carries a null price (value 0 + warning), still a draft", async () => {
     const drafts = await syncBinanceAccount({
       listBalances: async () => [{ asset: "WAGMI", wallet: "spot", balance: "100" }],
@@ -266,7 +281,9 @@ describe("fetchCoinGeckoPriceEur — the real live-price seam (ADR 0021 consiste
     fallbackChains.coingecko = ["stooq"];
     try {
       vi.mocked(fetch)
-        // CoinGecko /simple/price miss (non-OK):
+        // CoinGecko /simple/price miss (429) — retried up to 3 times before the chain moves on:
+        .mockResolvedValueOnce({ ok: false, status: 429 } as Response)
+        .mockResolvedValueOnce({ ok: false, status: 429 } as Response)
         .mockResolvedValueOnce({ ok: false, status: 429 } as Response)
         // Stooq rescue with a valid EUR close:
         .mockResolvedValueOnce({

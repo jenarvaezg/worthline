@@ -29,6 +29,8 @@ export interface HistoricalPriceSeries {
   pricesByDate: ReadonlyMap<string, DecimalString>;
   /** The source label (audit metadata surfaced in the UI). */
   source: string;
+  /** Set when the upstream fetch failed (e.g. CoinGecko HTTP 429). */
+  fetchError?: string;
 }
 
 /** A historical price source: provider symbol + range → EUR series. */
@@ -72,8 +74,8 @@ export const coingeckoHistoricalSource: HistoricalPriceSource = {
     if (id === null) {
       return { pricesByDate: new Map(), source: "coingecko" };
     }
-    const pricesByDate = await fetchCoinGeckoHistoryEur(id, fromMs, toMs);
-    return { pricesByDate, source: "coingecko" };
+    const { pricesByDate, fetchError } = await fetchCoinGeckoHistoryEur(id, fromMs, toMs);
+    return { pricesByDate, source: "coingecko", ...(fetchError ? { fetchError } : {}) };
   },
 };
 

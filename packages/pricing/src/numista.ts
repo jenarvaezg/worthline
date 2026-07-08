@@ -212,7 +212,8 @@ export function numismaticEstimateMinor(
   prices: readonly NumistaPriceEntry[],
   grade: string,
 ): number | null {
-  const match = prices.find((entry) => entry.grade === grade.toLowerCase());
+  const normalized = grade.toLowerCase();
+  const match = prices.find((entry) => entry.grade.toLowerCase() === normalized);
   return match ? Math.round(match.price * 100) : null;
 }
 

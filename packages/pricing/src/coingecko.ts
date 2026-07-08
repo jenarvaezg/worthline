@@ -1,4 +1,5 @@
 import type { PriceProvider } from "./index";
+import { fetchHttpWithRetry } from "./fetch-with-retry";
 
 /**
  * The CoinGecko API origin (including `/api/v3`). Defaults to the real host;
@@ -38,7 +39,7 @@ export const coingeckoProvider: PriceProvider = {
       `${coingeckoBaseUrl()}/simple/price?ids=` +
       encodeURIComponent(id) +
       "&vs_currencies=eur";
-    const res = await fetch(url, {
+    const res = await fetchHttpWithRetry(url, {
       headers: coingeckoHeaders(),
       signal: AbortSignal.timeout(8000),
     });

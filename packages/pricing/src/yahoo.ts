@@ -1,4 +1,5 @@
 import type { PriceProvider } from "./index";
+import { fetchHttpWithRetry } from "./fetch-with-retry";
 import { resolveProvider } from "./registry";
 
 interface YahooChartResponse {
@@ -40,7 +41,7 @@ export const yahooProvider: PriceProvider = {
     try {
       const url =
         YAHOO_CHART_URL + encodeURIComponent(ctx.symbol) + "?interval=1d&range=5d";
-      const res = await fetch(url, {
+      const res = await fetchHttpWithRetry(url, {
         headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" },
         signal: AbortSignal.timeout(8000),
       });
@@ -53,7 +54,9 @@ export const yahooProvider: PriceProvider = {
       const seriesPrice = latestSeriesPrice(result);
       if (isStaleYahooMarketDate(seriesPrice?.priceDate, ctx.nowIso)) return null;
 
-      const price = seriesPrice?.price ?? meta?.regularMarketPrice;
+      // Undated meta fallback cannot be judged for staleness — reject it so a
+      // dead listing is not recorded as fresh (issue #730).
+      const price = seriesPrice?.price ?? null;
 
       if (price == null || !Number.isFinite(price)) return null;
 
