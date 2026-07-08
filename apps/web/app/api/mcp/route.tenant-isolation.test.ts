@@ -37,6 +37,7 @@ const PROTOCOL_VERSION = "2024-11-05";
 
 const TOKEN_A = "token-workspace-a";
 const TOKEN_B = "token-workspace-b";
+const TOKEN_EMPTY = "token-empty-workspace";
 // Distinct, known net worths — a single cash asset per workspace.
 const NET_WORTH_A = 750_000;
 const NET_WORTH_B = 500_000;
@@ -73,6 +74,20 @@ async function seedWorkspace(url: string, cashMinor: number): Promise<void> {
 }
 
 async function callNetWorth(bearerToken: string): Promise<number> {
+  const message = (await callTool(bearerToken, "get_financial_context", {})) as {
+    result: { content: Array<{ text: string }> };
+  };
+  const payload = JSON.parse(message.result.content[0]!.text) as {
+    data: { summary: { netWorth: { amountMinor: number } } };
+  };
+  return payload.data.summary.netWorth.amountMinor;
+}
+
+async function callTool(
+  bearerToken: string,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<unknown> {
   const response = await POST(
     new Request(MCP_URL, {
       method: "POST",
@@ -86,20 +101,14 @@ async function callNetWorth(bearerToken: string): Promise<number> {
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
-        params: { name: "get_financial_context", arguments: {} },
+        params: { name, arguments: args },
       }),
     }),
   );
   expect(response.status).toBe(200);
   const text = await response.text();
   const line = text.split("\n").find((l) => l.startsWith("data: "));
-  const message = JSON.parse(line!.slice("data: ".length)) as {
-    result: { content: Array<{ text: string }> };
-  };
-  const payload = JSON.parse(message.result.content[0]!.text) as {
-    data: { summary: { netWorth: { amountMinor: number } } };
-  };
-  return payload.data.summary.netWorth.amountMinor;
+  return JSON.parse(line!.slice("data: ".length));
 }
 
 describe("POST /api/mcp — tenant isolation (a token reaches only its own workspace)", () => {
@@ -114,12 +123,14 @@ describe("POST /api/mcp — tenant isolation (a token reaches only its own works
     const dir = mkdtempSync(join(tmpdir(), "wl-mcp-isolation-"));
     const urlA = `file:${join(dir, "workspace-a.db")}`;
     const urlB = `file:${join(dir, "workspace-b.db")}`;
+    const urlEmpty = `file:${join(dir, "workspace-empty.db")}`;
 
     await seedWorkspace(urlA, NET_WORTH_A);
     await seedWorkspace(urlB, NET_WORTH_B);
 
     mcpAuthByToken.set(TOKEN_A, authFor("ws-a", urlA));
     mcpAuthByToken.set(TOKEN_B, authFor("ws-b", urlB));
+    mcpAuthByToken.set(TOKEN_EMPTY, authFor("ws-empty", urlEmpty));
   }, 30000);
 
   afterAll(() => {
@@ -139,5 +150,20 @@ describe("POST /api/mcp — tenant isolation (a token reaches only its own works
     const fromB = await callNetWorth(TOKEN_B);
     expect(fromB).toBe(NET_WORTH_B);
     expect(fromB).not.toBe(NET_WORTH_A);
+  });
+
+  test("a just-provisioned empty workspace returns an MCP tool error envelope", async () => {
+    const message = (await callTool(TOKEN_EMPTY, "get_financial_context", {})) as {
+      result: { isError: boolean; content: Array<{ text: string }> };
+    };
+    const payload = JSON.parse(message.result.content[0]!.text);
+
+    expect(message.result.isError).toBe(true);
+    expect(payload).toEqual({
+      error: {
+        code: "empty_workspace",
+        message: "Workspace has no agent-view scopes yet.",
+      },
+    });
   });
 });
