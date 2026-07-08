@@ -1,3 +1,4 @@
+import { AgentViewHttpError } from "./contract";
 import type {
   AgentViewConnectedSourceListEntry,
   AgentViewConnectedSourcePosition,
@@ -36,8 +37,10 @@ import { FIGURE_NAMES } from "./figure-explanations";
  * WHAT it reads against an {@link AgentViewBackend} port; the two adapters —
  * the HTTP API client (`mcp.ts`) and the internal read store
  * (`internal-catalog.ts`) — supply HOW. Default-scope resolution and the
- * connected-source-positions XOR selector live here once, so both adapters (and
- * therefore MCP clients and the in-app assistant) share identical behavior.
+ * connected-source-positions XOR selector live here once, so both MCP adapters
+ * share that behavior. The in-app assistant deliberately owns a separate chat
+ * catalog (ADR 0047) that wraps the same agent-view builders with
+ * conversation-specific trimming and money formatting.
  */
 
 /** A hand-written JSON Schema for a tool's input (per ADR 0023 and #398 — no Zod). */
@@ -328,6 +331,17 @@ const EMPTY_INPUT_SCHEMA: AgentViewMcpInputSchema = {
   type: "object",
 };
 
+const HOLDING_LIMIT_INPUT_SCHEMA = clampedPositiveIntegerSchema("holdings cap", 100);
+const PAGE_LIMIT_INPUT_SCHEMA = clampedPositiveIntegerSchema("page size", 500);
+
+function clampedPositiveIntegerSchema(label: string, max: number) {
+  return {
+    description: `Positive integer ${label}; values above ${max} are accepted and clamped to ${max}.`,
+    minimum: 1,
+    type: "integer" as const,
+  };
+}
+
 /**
  * The selector error envelope for `get_connected_source_positions` when the XOR
  * constraint (exactly one of holdingId/sourceId) is violated — surfaced before
@@ -355,7 +369,11 @@ async function defaultScopeId(backend: AgentViewBackend): Promise<string> {
   const scopes = await backend.listScopes();
   const household = scopes.data.find((scope) => scope.isDefault) ?? scopes.data[0];
   if (!household) {
-    throw new Error("No agent-view scopes are available.");
+    throw new AgentViewHttpError({
+      code: "empty_workspace",
+      message: "Workspace has no agent-view scopes yet.",
+      status: 404,
+    });
   }
   return household.id;
 }
@@ -382,7 +400,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
       inputSchema: {
         additionalProperties: false,
         properties: {
-          holdingLimit: { maximum: 100, minimum: 1, type: "integer" },
+          holdingLimit: HOLDING_LIMIT_INPUT_SCHEMA,
           scopeId: { type: "string" },
         },
         type: "object",
@@ -446,7 +464,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
           from: { type: "string" },
           granularity: { enum: ["monthly-close", "raw"], type: "string" },
           includeHoldingRows: { enum: ["none", "summary", "full"], type: "string" },
-          limit: { maximum: 500, minimum: 1, type: "integer" },
+          limit: PAGE_LIMIT_INPUT_SCHEMA,
           scopeId: { type: "string" },
           sort: { enum: ["date", "-date"], type: "string" },
           to: { type: "string" },
@@ -478,7 +496,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
             type: "string",
           },
           cursor: { type: "string" },
-          limit: { maximum: 500, minimum: 1, type: "integer" },
+          limit: PAGE_LIMIT_INPUT_SCHEMA,
           scopeId: { type: "string" },
           severity: { enum: ["high", "medium", "low"], type: "string" },
         },
@@ -498,7 +516,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
         additionalProperties: false,
         properties: {
           cursor: { type: "string" },
-          limit: { maximum: 500, minimum: 1, type: "integer" },
+          limit: PAGE_LIMIT_INPUT_SCHEMA,
           scopeId: { type: "string" },
         },
         type: "object",
@@ -547,7 +565,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
           cursor: { type: "string" },
           from: { type: "string" },
           holdingId: { type: "string" },
-          limit: { maximum: 500, minimum: 1, type: "integer" },
+          limit: PAGE_LIMIT_INPUT_SCHEMA,
           sort: { enum: ["date", "-date"], type: "string" },
           to: { type: "string" },
         },
@@ -565,7 +583,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
         properties: {
           cursor: { type: "string" },
           holdingId: { type: "string" },
-          limit: { maximum: 500, minimum: 1, type: "integer" },
+          limit: PAGE_LIMIT_INPUT_SCHEMA,
           sourceId: { type: "string" },
         },
         type: "object",
