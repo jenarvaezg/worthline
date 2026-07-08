@@ -19,6 +19,7 @@ import type {
   NetWorthPresentation,
   NetWorthSnapshot,
 } from "@worthline/domain";
+import { createControlPlaneStore } from "@worthline/db";
 import { refreshStalePrices } from "@worthline/pricing";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -31,6 +32,7 @@ import {
 } from "./intake";
 import { loadDashboard } from "./load-dashboard";
 import type { RefreshPricesResult } from "./load-dashboard";
+import BenchmarkComparisonCard from "./benchmark-comparison-card";
 import CompositionPanel from "./composition-panel";
 import { compositionUrl } from "./composition-url";
 import { parseMode } from "./dashboard-matrix";
@@ -67,6 +69,23 @@ const ONBOARDING_LINKS: Record<string, string> = {
   fire: "/ajustes",
   snapshot: "/",
 };
+
+async function readBenchmarkPricesFromControlPlane(seriesId: string) {
+  const url = process.env.WORTHLINE_CONTROL_PLANE_DB_URL;
+  if (!url) return [];
+
+  const controlPlane = await createControlPlaneStore({
+    url,
+    ...(process.env.WORTHLINE_DB_AUTH_TOKEN
+      ? { authToken: process.env.WORTHLINE_DB_AUTH_TOKEN }
+      : {}),
+  });
+  try {
+    return await controlPlane.readBenchmarkPrices(seriesId);
+  } finally {
+    controlPlane.close();
+  }
+}
 
 function formatPct(pct: number): string {
   const sign = pct > 0 ? "+" : pct < 0 ? "−" : "";
@@ -467,6 +486,7 @@ export default async function DashboardContent({
       today,
       now,
       ...(selectedRange === undefined ? {} : { range: selectedRange }),
+      readBenchmarkPrices: readBenchmarkPricesFromControlPlane,
       refreshPrices: demo.enabled
         ? async (): Promise<RefreshPricesResult> => ({ priceCache: [], errors: [] })
         : async ({ cacheEntries, assets, nowIso }): Promise<RefreshPricesResult> => {
@@ -715,6 +735,7 @@ export default async function DashboardContent({
           offeredRanges={state.compositionRanges}
           privacyMode={privacyMode}
         />
+        <BenchmarkComparisonCard result={state.benchmarkComparison} />
       </section>
 
       <section className="firePanel" aria-label="FIRE">
