@@ -93,12 +93,20 @@ describe("selectStalePrices (per-source TTL)", () => {
     expect(selectStalePrices([entry], "2026-06-09T10:00:00Z")).toEqual([entry]);
   });
 
-  test("failed entries are never selected (already in error state)", () => {
+  test("failed entries within TTL are not selected", () => {
+    const entry = makeEntry({
+      fetchedAt: "2026-06-09T08:00:00Z",
+      freshnessState: "failed",
+    });
+    expect(selectStalePrices([entry], "2026-06-09T10:00:00Z")).toEqual([]);
+  });
+
+  test("failed entries are re-selected once their TTL elapses (issue #730)", () => {
     const entry = makeEntry({
       fetchedAt: "2020-01-01T00:00:00Z",
       freshnessState: "failed",
     });
-    expect(selectStalePrices([entry], "2026-06-09T10:00:00Z")).toEqual([]);
+    expect(selectStalePrices([entry], "2026-06-09T10:00:00Z")).toEqual([entry]);
   });
 
   test("selects only stale entries from a mixed list", () => {
@@ -126,7 +134,7 @@ describe("selectStalePrices (per-source TTL)", () => {
 
     expect(
       selectStalePrices([stale, fresh, manual, failed], "2026-06-09T10:00:00Z"),
-    ).toEqual([stale]);
+    ).toEqual([stale, failed]);
   });
 
   test("entry just under 1-day TTL is not stale", () => {

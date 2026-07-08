@@ -23,6 +23,10 @@ describe("refreshStalePrices provider routing", () => {
     vi.unstubAllGlobals();
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   test("retirement investments default to Finect when no price provider is set", async () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
@@ -64,6 +68,10 @@ describe("refreshStalePrices provider routing", () => {
               meta: {
                 currency: "EUR",
                 regularMarketPrice: 12.34,
+              },
+              timestamp: [Math.floor(Date.parse("2026-06-09T08:00:00Z") / 1000)],
+              indicators: {
+                quote: [{ close: [12.34] }],
               },
             },
           ],
@@ -173,9 +181,36 @@ describe("refreshStalePrices provider routing", () => {
     ]);
   });
 
+  test("preserves the prior good price when a transient outage blips", async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error("timeout"));
+
+    const prior = stalePrice("asset-direct-stooq");
+    const result = await refreshStalePrices(
+      [prior],
+      [
+        {
+          id: "asset-direct-stooq",
+          currency: "EUR",
+          liquidityTier: "market",
+          priceProvider: "stooq",
+          providerSymbol: "VUSA.L",
+        },
+      ],
+      "2026-06-09T10:00:00Z",
+    );
+
+    expect(result.updated).toBe(0);
+    expect(result.refreshed[0]).toMatchObject({
+      assetId: "asset-direct-stooq",
+      price: "100",
+      freshnessState: "stale",
+    });
+    expect(result.failedSymbols).toEqual([]);
+  });
+
   test("explicit price provider overrides the liquidity-tier default", async () => {
     const csv =
-      "Symbol,Date,Time,Open,High,Low,Close,Volume\nVUSA,2026-06-09,16:00:00,80,81,79,80.50,1234";
+      "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2026-06-09,16:00:00,4.10,4.30,4.05,4.25,1234";
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
       text: async () => csv,
@@ -189,7 +224,7 @@ describe("refreshStalePrices provider routing", () => {
           currency: "EUR",
           liquidityTier: "market",
           priceProvider: "stooq",
-          providerSymbol: "VUSA.L",
+          providerSymbol: "SAN.MC",
         },
       ],
       "2026-06-09T10:00:00Z",
@@ -197,7 +232,7 @@ describe("refreshStalePrices provider routing", () => {
 
     expect(result.refreshed[0]).toMatchObject({
       assetId: "asset-direct-stooq",
-      price: "80.50",
+      price: "4.25",
       source: "stooq",
     });
   });

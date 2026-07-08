@@ -38,13 +38,21 @@ const COINGECKO_ID_BY_SYMBOL: Record<string, string> = {
   OP: "optimism",
   FIL: "filecoin",
   APT: "aptos",
-  EUR: "stasis-eurs",
   DAI: "dai",
   SHIB: "shiba-inu",
   PEPE: "pepe",
   WBETH: "wrapped-beacon-eth",
   BETH: "binance-eth",
 };
+
+/**
+ * Whether a Binance balance symbol is fiat EUR cash (not the EURS stablecoin).
+ * EUR cash is valued at flat 1:1 parity with EUR — it has no CoinGecko id
+ * (issue #730).
+ */
+export function isBinanceFiatEur(symbol: string): boolean {
+  return symbol.trim().toUpperCase() === "EUR";
+}
 
 /**
  * The CoinGecko id for a Binance symbol, or null when it is not in the map (the

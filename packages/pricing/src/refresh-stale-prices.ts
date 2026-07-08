@@ -122,17 +122,23 @@ export async function refreshStalePrices(
     return { refreshed: [], updated: 0, failedSymbols: [], failures: [] };
   }
 
+  const priorByAssetId = new Map(cacheEntries.map((entry) => [entry.assetId, entry]));
+
   const results = await mapWithConcurrency(
     refreshable,
     REFRESH_CONCURRENCY_LIMIT,
     async (asset) => {
       const provider = resolveInvestmentPriceProvider(asset);
-      const price = await fetchAndCachePrice(provider, {
-        assetId: asset.id,
-        symbol: asset.providerSymbol!,
-        currency: asset.currency,
-        nowIso,
-      });
+      const price = await fetchAndCachePrice(
+        provider,
+        {
+          assetId: asset.id,
+          symbol: asset.providerSymbol!,
+          currency: asset.currency,
+          nowIso,
+        },
+        { prior: priorByAssetId.get(asset.id) ?? null },
+      );
       onRefreshed?.(price);
       return { price, symbol: asset.providerSymbol! };
     },

@@ -16,8 +16,9 @@
 
 import type { BinanceHistoryCurve, DecimalString } from "@worthline/domain";
 
-import { resolveCoinGeckoId } from "./binance-symbols";
+import { isBinanceFiatEur, resolveCoinGeckoId } from "./binance-symbols";
 import { coingeckoBaseUrl, coingeckoHeaders } from "./coingecko";
+import { fetchHttpWithRetry, HttpTransientError } from "./fetch-with-retry";
 
 /** One normalized daily SPOT snapshot (mirrors `BinanceAccountSnapshot`). */
 interface AccountSnapshot {
@@ -88,6 +89,10 @@ export async function reconstructBinanceHistory(
     };
 
     for (const symbol of monthEndBalances.keys()) {
+      if (isBinanceFiatEur(symbol)) {
+        dailyPriceBySymbol.set(symbol, flatEurPriceSeries(dateKeys));
+        continue;
+      }
       const id = resolveCoinGeckoId(symbol);
       if (id === null) continue; // unmapped → no price entries (valued 0 downstream)
       dailyPriceBySymbol.set(symbol, await fetchSeries(id));
@@ -100,14 +105,28 @@ export async function reconstructBinanceHistory(
 /** The raw CoinGecko market-chart point: `[unixMs, eurPrice]`. */
 type RawPricePoint = [number, number];
 
+/** Result of a CoinGecko history-range fetch — never throws. */
+export interface CoinGeckoHistoryResult {
+  pricesByDate: ReadonlyMap<string, DecimalString>;
+  /** Set when the fetch failed after retries (e.g. HTTP 429 on the public tier). */
+  fetchError?: string;
+}
+
+function flatEurPriceSeries(
+  dateKeys: readonly string[],
+): ReadonlyMap<string, DecimalString> {
+  return new Map(dateKeys.map((dateKey) => [dateKey, "1"]));
+}
+
 /**
  * Fetch a CoinGecko id's daily EUR price series over [fromMs, toMs] from
  * `/coins/{id}/market_chart/range`, parsed into a dateKey → price map. CoinGecko's
  * `from`/`to` are UNIX *seconds*; its `prices` are `[unixMs, eur]` points — for a
  * multi-week range it returns roughly one point per day, but several intraday
  * points are possible, so the LAST point of each UTC day wins (the closing-ish
- * quote). Never throws: a non-OK / thrown / price-less response → an empty map,
- * which the builder values 0 (the unpriceable-→-0 contract).
+ * quote). Never throws: a non-OK / thrown / price-less response → an empty map
+ * with `fetchError` set so callers can surface the outage instead of silently
+ * zeroing history (issue #730).
  *
  * `nowIso` (when given) clamps the upper bound so the request never reaches past
  * the present: a faithful, API-bounded history never values the future, even if a
@@ -118,7 +137,7 @@ export async function fetchCoinGeckoHistoryEur(
   fromMs: number,
   toMs: number,
   nowIso?: string,
-): Promise<ReadonlyMap<string, DecimalString>> {
+): Promise<CoinGeckoHistoryResult> {
   const cappedToMs = nowIso ? Math.min(toMs, Date.parse(nowIso)) : toMs;
   const fromSec = Math.floor(fromMs / 1000);
   const toSec = Math.floor(cappedToMs / 1000);
@@ -127,11 +146,16 @@ export async function fetchCoinGeckoHistoryEur(
     `?vs_currency=eur&from=${fromSec}&to=${toSec}`;
 
   try {
-    const res = await fetch(url, {
+    const res = await fetchHttpWithRetry(url, {
       headers: coingeckoHeaders(),
       signal: AbortSignal.timeout(8000),
     });
-    if (!res.ok) return new Map();
+    if (!res.ok) {
+      return {
+        pricesByDate: new Map(),
+        fetchError: `CoinGecko respondió con un error (${res.status})`,
+      };
+    }
 
     const data = (await res.json()) as { prices?: RawPricePoint[] };
     const byDate = new Map<string, DecimalString>();
@@ -140,8 +164,14 @@ export async function fetchCoinGeckoHistoryEur(
       // is the day's latest point.
       byDate.set(new Date(ms).toISOString().slice(0, 10), String(eur));
     }
-    return byDate;
-  } catch {
-    return new Map();
+    return { pricesByDate: byDate };
+  } catch (err) {
+    const message =
+      err instanceof HttpTransientError
+        ? `CoinGecko respondió con un error (${err.status})`
+        : err instanceof Error
+          ? err.message
+          : "Error de red al consultar CoinGecko";
+    return { pricesByDate: new Map(), fetchError: message };
   }
 }

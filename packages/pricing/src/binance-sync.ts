@@ -17,7 +17,7 @@
 import type { DistributiveOmit, TokenPosition } from "@worthline/domain";
 
 import { rungForWallet } from "./binance-rung";
-import { resolveCoinGeckoId } from "./binance-symbols";
+import { isBinanceFiatEur, resolveCoinGeckoId } from "./binance-symbols";
 import { coingeckoBaseUrl, coingeckoHeaders } from "./coingecko";
 import { fetchPriceNow } from "./registry";
 
@@ -43,8 +43,14 @@ export async function syncBinanceAccount(
   const balances = await deps.listBalances();
 
   // Resolve each balance's CoinGecko id once (null when the symbol is unmapped).
-  const idByLine = balances.map((line) => resolveCoinGeckoId(line.asset));
-  const distinctIds = [...new Set(idByLine.filter((id): id is string => id !== null))];
+  const idByLine = balances.map((line) =>
+    isBinanceFiatEur(line.asset) ? "__fiat_eur__" : resolveCoinGeckoId(line.asset),
+  );
+  const distinctIds = [
+    ...new Set(
+      idByLine.filter((id): id is string => id !== null && id !== "__fiat_eur__"),
+    ),
+  ];
 
   // One batched logo lookup over the deduped, mapped id set (#482) — no per-token
   // call. A failure NEVER aborts the sync: it degrades to an empty map, so every
@@ -62,6 +68,7 @@ export async function syncBinanceAccount(
   // token held across several wallets shares the single lookup (rate-cap hygiene).
   const priceById = new Map<string, Promise<number | null>>();
   const resolvePrice = (coingeckoId: string): Promise<number | null> => {
+    if (coingeckoId === "__fiat_eur__") return Promise.resolve(1);
     let pending = priceById.get(coingeckoId);
     if (!pending) {
       pending = deps.priceEur(coingeckoId);
@@ -73,8 +80,13 @@ export async function syncBinanceAccount(
   const drafts: TokenPositionDraft[] = [];
   for (let i = 0; i < balances.length; i++) {
     const line = balances[i]!;
-    const coingeckoId = idByLine[i];
-    const price = coingeckoId == null ? null : await resolvePrice(coingeckoId);
+    const coingeckoId = idByLine[i] ?? null;
+    const price =
+      coingeckoId === null
+        ? null
+        : coingeckoId === "__fiat_eur__"
+          ? 1
+          : await resolvePrice(coingeckoId);
 
     drafts.push({
       kind: "token",
@@ -87,7 +99,10 @@ export async function syncBinanceAccount(
       // staking → term-locked (ADR 0016/0021, S3 #248). One source spans rungs.
       liquidityTier: rungForWallet(line.wallet),
       unitPrice: price === null ? null : String(price),
-      imageUrl: coingeckoId == null ? null : (logosById[coingeckoId] ?? null),
+      imageUrl:
+        coingeckoId === null || coingeckoId === "__fiat_eur__"
+          ? null
+          : (logosById[coingeckoId] ?? null),
       currency: "EUR",
     });
   }

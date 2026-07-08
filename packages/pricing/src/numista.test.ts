@@ -167,6 +167,7 @@ describe("Numista readers — parse the live response shapes (fixtures, spike #1
     // 75.585 EUR → 7558 minor: 75.585 * 100 is 7558.4999… in IEEE-754, just under
     // the half, so Math.round floors it. A sub-cent quirk on an estimate — fine.
     expect(numismaticEstimateMinor(prices, "unc")).toBe(7558);
+    expect(numismaticEstimateMinor(prices, "UNC")).toBe(7558);
     expect(numismaticEstimateMinor(prices, "xf")).toBe(6654);
     // A grade with no estimate → null (no fabricated value).
     expect(numismaticEstimateMinor(prices, "g")).toBeNull();
