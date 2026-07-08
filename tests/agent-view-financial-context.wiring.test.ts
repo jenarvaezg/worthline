@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { NextRequest } from "next/server";
 
-import { createWorthlineStore } from "@worthline/db";
+import { createControlPlaneStore, createWorthlineStore } from "@worthline/db";
 import { debtBalanceAtDate, systemClock } from "@worthline/domain";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
 import { GET as getFinancialContext } from "@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
@@ -11,6 +11,7 @@ import { cleanupTempDirs, tempDatabasePath } from "./helpers";
 
 const ORIGINAL_DB_PATH = process.env.WORTHLINE_DB_PATH;
 const ORIGINAL_TOKEN = process.env.WORTHLINE_AGENT_VIEW_TOKEN;
+const ORIGINAL_CONTROL_PLANE_DB_URL = process.env.WORTHLINE_CONTROL_PLANE_DB_URL;
 
 afterEach(() => {
   if (ORIGINAL_DB_PATH === undefined) {
@@ -23,6 +24,12 @@ afterEach(() => {
     delete process.env.WORTHLINE_AGENT_VIEW_TOKEN;
   } else {
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = ORIGINAL_TOKEN;
+  }
+
+  if (ORIGINAL_CONTROL_PLANE_DB_URL === undefined) {
+    delete process.env.WORTHLINE_CONTROL_PLANE_DB_URL;
+  } else {
+    process.env.WORTHLINE_CONTROL_PLANE_DB_URL = ORIGINAL_CONTROL_PLANE_DB_URL;
   }
 
   cleanupTempDirs();
@@ -500,6 +507,79 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
     const capped = await catalog.get_financial_context.invoke({ holdingLimit: 2 });
     expect(capped.data.holdings.limit).toBe(2);
     expect(capped.data.holdings.omittedCount).toBe(2);
+  });
+
+  test("exposes net-worth vs inflation with honest IPC coverage", async () => {
+    const databasePath = tempDatabasePath("worthline-agent-view-fc-inflation-");
+    const controlPlanePath = tempDatabasePath("worthline-control-plane-inflation-");
+    process.env.WORTHLINE_DB_PATH = databasePath;
+    process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
+    process.env.WORTHLINE_CONTROL_PLANE_DB_URL = `file:${controlPlanePath}`;
+
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "member_jose", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.snapshots.saveSnapshot({
+      snapshot: {
+        capturedAt: "2024-01-31T20:00:00.000Z",
+        dateKey: "2024-01-31",
+        debts: eur(0),
+        grossAssets: eur(100_000_00),
+        housingEquity: eur(0),
+        id: "snap_2024_01_31",
+        isMonthlyClose: true,
+        liquidNetWorth: eur(100_000_00),
+        monthKey: "2024-01",
+        scopeId: "household",
+        scopeLabel: "Hogar",
+        totalNetWorth: eur(100_000_00),
+        warnings: [],
+      },
+    });
+    await store.snapshots.saveSnapshot({
+      snapshot: {
+        capturedAt: "2024-03-31T20:00:00.000Z",
+        dateKey: "2024-03-31",
+        debts: eur(0),
+        grossAssets: eur(130_000_00),
+        housingEquity: eur(0),
+        id: "snap_2024_03_31",
+        isMonthlyClose: true,
+        liquidNetWorth: eur(130_000_00),
+        monthKey: "2024-03",
+        scopeId: "household",
+        scopeLabel: "Hogar",
+        totalNetWorth: eur(130_000_00),
+        warnings: [],
+      },
+    });
+    store.close();
+
+    const controlPlane = await createControlPlaneStore({
+      url: `file:${controlPlanePath}`,
+    });
+    await controlPlane.upsertBenchmarkPrices("ipc-es", [
+      { dateKey: "2024-01-01", value: "100" },
+      { dateKey: "2024-03-01", value: "110" },
+    ]);
+    controlPlane.close();
+
+    const catalog = createAgentViewMcpToolCatalog(routeClient);
+    const body = await catalog.get_financial_context.invoke({});
+
+    expect(body.data.vsInflation).toEqual({
+      comparison: {
+        cpiGrowth: expect.closeTo(0.1),
+        netWorthGrowth: expect.closeTo(0.3),
+        realGrowth: expect.closeTo(0.18181818181818182),
+        sinceDate: "2024-01-31",
+        untilDate: "2024-03-31",
+      },
+      coverage: { source: "IPC-ES", cadence: "monthly" },
+      unavailableReason: null,
+    });
   });
 
   test("returns 404 for an unknown scope id", async () => {

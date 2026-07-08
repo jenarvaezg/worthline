@@ -1,4 +1,4 @@
-import type { AgentViewReadStore } from "@worthline/db";
+import { createControlPlaneStore, type AgentViewReadStore } from "@worthline/db";
 import { systemClock } from "@worthline/domain";
 
 import { readDemoContext } from "@web/demo/read-demo-context";
@@ -43,6 +43,23 @@ import {
 
 const STUB_RESPONSE = { data: { notice: STUB_NOTICE } };
 
+async function readBenchmarkPricesFromControlPlane(seriesId: string) {
+  const url = process.env.WORTHLINE_CONTROL_PLANE_DB_URL;
+  if (!url) return [];
+
+  const controlPlane = await createControlPlaneStore({
+    url,
+    ...(process.env.WORTHLINE_DB_AUTH_TOKEN
+      ? { authToken: process.env.WORTHLINE_DB_AUTH_TOKEN }
+      : {}),
+  });
+  try {
+    return await controlPlane.readBenchmarkPrices(seriesId);
+  } finally {
+    controlPlane.close();
+  }
+}
+
 /** Clamp a model-supplied page size to the service's `[1, max]` contract. */
 function clampLimit(limit: number | undefined, max: number): number {
   if (limit === undefined) return 100;
@@ -73,6 +90,7 @@ function createReadStoreBackend(agentView: AgentViewReadStore): AgentViewBackend
         await buildFinancialContext(agentView, {
           asOf: systemClock().today(),
           holdingLimit: params.holdingLimit,
+          readBenchmarkPrices: readBenchmarkPricesFromControlPlane,
           scopeId,
         }),
       ),

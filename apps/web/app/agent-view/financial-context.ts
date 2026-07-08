@@ -2,6 +2,8 @@ import type { AgentViewReadStore } from "@worthline/db";
 import {
   buildLiquidityBreakdown,
   calculateNetWorth,
+  compareGrowthToBenchmark,
+  deriveMonthlyCloses,
   defaultsFor,
   listScopeOptions,
   lookThroughExposure,
@@ -42,6 +44,7 @@ import {
   type AgentViewMoney,
   type AgentViewOperationSummary,
   type AgentViewOwnershipShare,
+  type AgentViewVsInflation,
 } from "./contract";
 import { deriveSourcePublicId, toFreshnessSummary } from "./connected-source-positions";
 import { buildDataQualitySummary } from "./data-quality";
@@ -54,6 +57,12 @@ import { listAgentViewScopes } from "./scopes";
 
 export const DEFAULT_HOLDING_LIMIT = 25;
 export const MAX_HOLDING_LIMIT = 100;
+const SPANISH_CPI_SERIES_ID = "ipc-es";
+
+export interface AgentViewBenchmarkPrice {
+  dateKey: string;
+  value: string;
+}
 
 export interface BuildFinancialContextOptions {
   /** Public scope ID (`wl_scp_…`) selected by the caller. */
@@ -62,6 +71,7 @@ export interface BuildFinancialContextOptions {
   asOf: string;
   /** Cap on summarized holdings (default 25, clamped to 100). */
   holdingLimit?: number | undefined;
+  readBenchmarkPrices?: (seriesId: string) => Promise<AgentViewBenchmarkPrice[]>;
 }
 
 /**
@@ -190,7 +200,57 @@ export async function buildFinancialContext(
     }),
     scope,
     summary,
+    vsInflation: await buildVsInflation(store, internalScopeId, options),
   };
+}
+
+async function buildVsInflation(
+  store: AgentViewReadStore,
+  internalScopeId: string,
+  options: BuildFinancialContextOptions,
+): Promise<AgentViewVsInflation> {
+  const coverage = { source: "IPC-ES" as const, cadence: "monthly" as const };
+  if (!options.readBenchmarkPrices) {
+    return { comparison: null, unavailableReason: "benchmark_unavailable", coverage };
+  }
+
+  try {
+    const snapshots = await store.readSnapshots(internalScopeId);
+    const closeIds = new Set(deriveMonthlyCloses(snapshots).values());
+    const result = compareGrowthToBenchmark({
+      benchmark: (await options.readBenchmarkPrices(SPANISH_CPI_SERIES_ID))
+        .map((point) => ({ dateKey: point.dateKey, value: Number(point.value) }))
+        .filter((point) => Number.isFinite(point.value)),
+      subject: snapshots
+        .filter((snapshot) => closeIds.has(snapshot.id))
+        .map((snapshot) => ({
+          dateKey: snapshot.dateKey,
+          value: snapshot.totalNetWorth.amountMinor,
+        })),
+    });
+
+    if (!result.comparison) {
+      return {
+        comparison: null,
+        unavailableReason: result.unavailableReason,
+        coverage,
+      };
+    }
+
+    return {
+      comparison: {
+        cpiGrowth: result.comparison.benchmarkGrowth,
+        netWorthGrowth: result.comparison.subjectGrowth,
+        realGrowth: result.comparison.realGrowth,
+        sinceDate: result.comparison.sinceDate,
+        untilDate: result.comparison.untilDate,
+      },
+      coverage,
+      unavailableReason: null,
+    };
+  } catch {
+    return { comparison: null, unavailableReason: "benchmark_unavailable", coverage };
+  }
 }
 
 /**
