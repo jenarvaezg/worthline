@@ -198,3 +198,5 @@ export type {
   RefreshOptions,
   RefreshStalePricesResult,
 } from "./refresh-stale-prices";
+export { fetchSpanishCpi, INE_SPANISH_CPI_TABLE_ID } from "./ine-cpi";
+export type { BenchmarkPricePoint } from "./ine-cpi";

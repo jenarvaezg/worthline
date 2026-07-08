@@ -304,4 +304,60 @@ describe("runDailyCapture (ADR 0037, PRD #528)", () => {
 
     store.close();
   });
+
+  test("benchmark source failures do not block snapshot capture", async () => {
+    const store = await seededStore();
+
+    const result = await runDailyCapture({
+      listAllWorkspaces: async () => [{ id: "ws", dbUrl: "libsql://ws" }],
+      openStore: async () => keepOpen(store),
+      fetchPrices: noFetchedPrices,
+      listBenchmarkSeries: async () => [{ id: "ipc-es" }],
+      readBenchmarkPrices: async () => [],
+      fetchBenchmarkPrices: async () => {
+        throw new Error("INE outage");
+      },
+      saveBenchmarkPrices: async () => {
+        throw new Error("should not save");
+      },
+      now: NOW,
+    });
+
+    expect(result).toMatchObject({
+      total: 1,
+      captured: 1,
+      failures: [],
+      benchmarkFailures: [{ seriesId: "ipc-es", error: "INE outage" }],
+    });
+    expect(await store.snapshots.readSnapshots("household")).toHaveLength(1);
+
+    store.close();
+  });
+
+  test("benchmark phase stores only months missing from the control-plane cache", async () => {
+    const saveBenchmarkPrices = vi.fn(async () => {});
+
+    const result = await runDailyCapture({
+      listAllWorkspaces: async () => [],
+      openStore: async () => {
+        throw new Error("no workspaces to open");
+      },
+      fetchPrices: noFetchedPrices,
+      listBenchmarkSeries: async () => [{ id: "ipc-es" }],
+      readBenchmarkPrices: async () => [
+        { seriesId: "ipc-es", dateKey: "2024-01-01", value: "100" },
+      ],
+      fetchBenchmarkPrices: async () => [
+        { dateKey: "2024-01-01", value: "100" },
+        { dateKey: "2024-02-01", value: "101.2" },
+      ],
+      saveBenchmarkPrices,
+      now: NOW,
+    });
+
+    expect(result.benchmarkFailures).toEqual([]);
+    expect(saveBenchmarkPrices).toHaveBeenCalledWith("ipc-es", [
+      { dateKey: "2024-02-01", value: "101.2" },
+    ]);
+  });
 });

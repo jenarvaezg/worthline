@@ -21,6 +21,15 @@ export interface DailyCaptureFetchedPrice extends Omit<AssetPrice, "assetId"> {
   symbol: string;
 }
 
+export interface DailyCaptureBenchmarkSeries {
+  id: string;
+}
+
+export interface DailyCaptureBenchmarkPrice {
+  dateKey: string;
+  value: string;
+}
+
 interface WorkspaceCapturePlan {
   workspace: DailyCaptureWorkspace;
   store: WorthlineStore;
@@ -44,6 +53,22 @@ export interface RunDailyCaptureDeps {
   isRunFinalized?: (dateKey: string) => Promise<boolean>;
   /** Persist successful run finalization after all workspaces capture. */
   markRunFinalized?: (dateKey: string, finalizedAt: string) => Promise<void>;
+  /** Catalog series fetched into the shared control-plane benchmark cache. */
+  listBenchmarkSeries?: () => Promise<DailyCaptureBenchmarkSeries[]>;
+  /** Existing cached rows for one benchmark series. */
+  readBenchmarkPrices?: (
+    seriesId: string,
+  ) => Promise<Array<DailyCaptureBenchmarkPrice & { seriesId: string }>>;
+  /** Fetch source rows for one benchmark series. */
+  fetchBenchmarkPrices?: (
+    series: DailyCaptureBenchmarkSeries,
+    now: string,
+  ) => Promise<DailyCaptureBenchmarkPrice[]>;
+  /** Persist missing benchmark rows for one series. */
+  saveBenchmarkPrices?: (
+    seriesId: string,
+    prices: DailyCaptureBenchmarkPrice[],
+  ) => Promise<void>;
   /** Real wall-clock ISO timestamp — the day's close. Never the demo pin. */
   now: string;
 }
@@ -53,10 +78,16 @@ export interface DailyCaptureFailure {
   error: string;
 }
 
+export interface DailyCaptureBenchmarkFailure {
+  seriesId: string;
+  error: string;
+}
+
 export interface RunDailyCaptureResult {
   total: number;
   captured: number;
   failures: DailyCaptureFailure[];
+  benchmarkFailures: DailyCaptureBenchmarkFailure[];
   dateKey?: string;
   skipped?: boolean;
 }
@@ -81,7 +112,14 @@ export async function runDailyCapture(
 ): Promise<RunDailyCaptureResult> {
   const dateKey = dateKeyFromIso(deps.now);
   if (await deps.isRunFinalized?.(dateKey)) {
-    return { total: 0, captured: 0, failures: [], dateKey, skipped: true };
+    return {
+      total: 0,
+      captured: 0,
+      failures: [],
+      benchmarkFailures: [],
+      dateKey,
+      skipped: true,
+    };
   }
 
   const workspaces = await deps.listAllWorkspaces();
@@ -147,7 +185,42 @@ export async function runDailyCapture(
     await deps.markRunFinalized?.(dateKey, deps.now);
   }
 
-  return { total: workspaces.length, captured, failures, dateKey };
+  const benchmarkFailures = await runBenchmarkPhase(deps);
+
+  return { total: workspaces.length, captured, failures, benchmarkFailures, dateKey };
+}
+
+async function runBenchmarkPhase(
+  deps: RunDailyCaptureDeps,
+): Promise<DailyCaptureBenchmarkFailure[]> {
+  if (
+    !deps.listBenchmarkSeries ||
+    !deps.readBenchmarkPrices ||
+    !deps.fetchBenchmarkPrices ||
+    !deps.saveBenchmarkPrices
+  ) {
+    return [];
+  }
+
+  const failures: DailyCaptureBenchmarkFailure[] = [];
+  const seriesList = await deps.listBenchmarkSeries();
+  for (const series of seriesList) {
+    try {
+      const existing = await deps.readBenchmarkPrices(series.id);
+      const existingDates = new Set(existing.map((point) => point.dateKey));
+      const fetched = await deps.fetchBenchmarkPrices(series, deps.now);
+      const missing = fetched.filter((point) => !existingDates.has(point.dateKey));
+      if (missing.length > 0) {
+        await deps.saveBenchmarkPrices(series.id, missing);
+      }
+    } catch (error) {
+      failures.push({
+        seriesId: series.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return failures;
 }
 
 function collectUniquePricePairs(plans: WorkspaceCapturePlan[]): DailyCapturePricePair[] {

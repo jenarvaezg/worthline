@@ -518,6 +518,14 @@ export type {
 export { debtBalanceAtDate, effectiveAmortizationPlan } from "./debt-balance";
 
 export type { InterpolateOrStepInput, ValuationCadence } from "./valuation-cadence";
+export type {
+  BenchmarkComparison,
+  BenchmarkComparisonPoint,
+  BenchmarkComparisonResult,
+  BenchmarkComparisonUnavailableReason,
+  GrowthSeriesPoint,
+} from "./benchmark-comparison";
+export { compareGrowthToBenchmark } from "./benchmark-comparison";
 export {
   cadenceOrDefault,
   interpolateOrStep,
