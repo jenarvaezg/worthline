@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 42;
+export const SCHEMA_VERSION = 43;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1365,6 +1365,32 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       CREATE INDEX IF NOT EXISTS payout_schedules_holding_idx ON payout_schedules (holding_id, id);
     `);
     await writeSchemaVersion(client, 42);
+  }
+
+  if (version < 43) {
+    try {
+      await client.executeMultiple(
+        "ALTER TABLE asset_operations ADD COLUMN source TEXT DEFAULT 'manual' NOT NULL",
+      );
+    } catch {}
+    await execToleratingMissingTable(
+      client,
+      `UPDATE asset_operations
+       SET source = 'opening'
+       WHERE id IN (
+         SELECT ao.id
+         FROM asset_operations ao
+         JOIN assets a ON a.id = ao.asset_id
+         WHERE ao.kind = 'buy'
+           AND substr(ao.executed_at, 1, 10) = substr(a.created_at, 1, 10)
+           AND (
+             SELECT count(*)
+             FROM asset_operations only_op
+             WHERE only_op.asset_id = ao.asset_id
+           ) = 1
+       );`,
+    );
+    await writeSchemaVersion(client, 43);
   }
 
   return { ranV18Backfill, ranV33Backfill };

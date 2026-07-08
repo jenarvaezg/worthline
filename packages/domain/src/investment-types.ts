@@ -2,6 +2,7 @@ import type { CurrencyCode, MoneyMinor } from "./money";
 import type { DecimalString } from "./decimal";
 
 export type OperationKind = "buy" | "sell";
+export type OperationSource = "manual" | "opening" | "statement" | "connected";
 
 /** A single buy or sell against a unit-based (investment) asset. */
 export interface InvestmentOperation {
@@ -13,6 +14,7 @@ export interface InvestmentOperation {
   pricePerUnit: DecimalString;
   currency: CurrencyCode;
   feesMinor: number;
+  source?: OperationSource;
 }
 
 export interface CreateInvestmentOperationInput {
@@ -24,6 +26,7 @@ export interface CreateInvestmentOperationInput {
   pricePerUnit: DecimalString;
   currency: CurrencyCode;
   feesMinor?: number;
+  source?: OperationSource;
 }
 
 /** Derived state of a unit-based asset after folding its operations. */

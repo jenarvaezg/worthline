@@ -141,6 +141,7 @@ CREATE TABLE \`asset_operations\` (
 	\`price_per_unit\` text NOT NULL,
 	\`currency\` text NOT NULL,
 	\`fees_minor\` integer DEFAULT 0 NOT NULL,
+	\`source\` text DEFAULT 'manual' NOT NULL,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );

@@ -895,6 +895,7 @@ async function importWorkspace(
             id: operation.id,
             kind: operation.kind,
             pricePerUnit: operation.pricePerUnit,
+            source: operation.source ?? "manual",
             units: operation.units,
           })),
         )

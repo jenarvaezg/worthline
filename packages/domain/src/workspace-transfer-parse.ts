@@ -199,6 +199,7 @@ const operationSchema = z.object({
   pricePerUnit: nonEmptyString,
   currency: nonEmptyString,
   feesMinor: z.number().int(),
+  source: z.enum(["manual", "opening", "statement", "connected"]).default("manual"),
 });
 
 const warningOverrideSchema = z.object({

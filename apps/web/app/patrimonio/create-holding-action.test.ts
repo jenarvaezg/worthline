@@ -534,6 +534,7 @@ describe("createHoldingAction — investment drawer, saldo-de-hoy (#597)", () =>
     expect(ops[0]!.executedAt).toBe("2026-06-15");
     expect(ops[0]!.units).toBe("0.02");
     expect(ops[0]!.pricePerUnit).toBe("50000.00");
+    expect(ops[0]!.source).toBe("opening");
 
     // It lands valued (≈ saldo), not the 0 € container the alta used to create.
     const asset = (await store.assets.readAssets()).find((a) => a.type === "investment");

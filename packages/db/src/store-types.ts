@@ -156,6 +156,7 @@ export interface WorthlineStore {
     assetId: string;
     creates: CreateInvestmentOperationInput[];
     overwrites: UpdateInvestmentOperationInput[];
+    deletes?: string[];
     today?: string;
   }) => Promise<void>;
   /**
@@ -170,6 +171,7 @@ export interface WorthlineStore {
           assetId: string;
           creates: CreateInvestmentOperationInput[];
           overwrites: UpdateInvestmentOperationInput[];
+          deletes?: string[];
         }
       | {
           kind: "new";
