@@ -144,6 +144,8 @@ const KEY_EXPORTS = [
   "passiveIncomeTrailing",
   // benchmark-comparison
   "compareGrowthToBenchmark",
+  "holdingBenchmarkComparison",
+  "resolveBenchmarkSeriesId",
 ] as const;
 
 describe("@worthline/domain barrel", () => {

@@ -17,7 +17,7 @@
  */
 
 import { formatDecimalAsPercentField } from "@web/intake-primitives";
-import type { ExposureProfile } from "@worthline/domain";
+import { listTrackedIndexLabels, type ExposureProfile } from "@worthline/domain";
 
 import { PendingSubmit } from "@web/pending-submit";
 import {
@@ -136,9 +136,15 @@ export function ExposureProfileSection({
             aria-label="Índice de referencia"
             autoComplete="off"
             defaultValue={profile?.trackedIndex ?? ""}
+            list="tracked-index-catalog"
             name="trackedIndex"
             placeholder="p. ej. MSCI World"
           />
+          <datalist id="tracked-index-catalog">
+            {listTrackedIndexLabels().map((label) => (
+              <option key={label} value={label} />
+            ))}
+          </datalist>
         </label>
 
         <label className="checkLine">

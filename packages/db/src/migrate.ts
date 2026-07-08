@@ -1393,5 +1393,14 @@ export async function migrate(client: Client): Promise<MigrateResult> {
     await writeSchemaVersion(client, 43);
   }
 
+  if (version < 44) {
+    try {
+      await client.executeMultiple(
+        "ALTER TABLE investment_assets ADD COLUMN benchmark_distributing INTEGER NOT NULL DEFAULT 0",
+      );
+    } catch {}
+    await writeSchemaVersion(client, 44);
+  }
+
   return { ranV18Backfill, ranV33Backfill };
 }

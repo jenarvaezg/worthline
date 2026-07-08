@@ -518,6 +518,15 @@ export type {
 export { debtBalanceAtDate, effectiveAmortizationPlan } from "./debt-balance";
 
 export type { InterpolateOrStepInput, ValuationCadence } from "./valuation-cadence";
+export type { BenchmarkCatalogEntry, BenchmarkVariant } from "./benchmark-catalog";
+export {
+  BENCHMARK_CATALOG,
+  benchmarkCatalogEntryBySeriesId,
+  benchmarkCoverageNote,
+  listMarketIndexSeriesIds,
+  listTrackedIndexLabels,
+  resolveBenchmarkSeriesId,
+} from "./benchmark-catalog";
 export type {
   BenchmarkComparison,
   BenchmarkComparisonPoint,
@@ -526,6 +535,16 @@ export type {
   GrowthSeriesPoint,
 } from "./benchmark-comparison";
 export { compareGrowthToBenchmark } from "./benchmark-comparison";
+export type {
+  HoldingBenchmarkComparison,
+  HoldingBenchmarkComparisonResult,
+  HoldingBenchmarkUnavailableReason,
+} from "./holding-benchmark-comparison";
+export {
+  compareHoldingToBenchmark,
+  holdingBenchmarkComparison,
+  holdingTwrIndexSeries,
+} from "./holding-benchmark-comparison";
 export {
   cadenceOrDefault,
   interpolateOrStep,
