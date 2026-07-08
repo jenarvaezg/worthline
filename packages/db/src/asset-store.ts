@@ -54,6 +54,8 @@ export interface InvestmentAssetMeta {
   priceProvider: InvestmentPriceProvider;
   isin?: string;
   providerSymbol?: string;
+  /** Compare vs price index when true (ADR 0060, #625). */
+  benchmarkDistributing: boolean;
 }
 
 /** Full investment asset record for edit/detail pages. */
@@ -68,6 +70,7 @@ export interface InvestmentAssetFull {
   priceProvider: InvestmentPriceProvider;
   providerSymbol?: string;
   manualPricePerUnit?: DecimalString;
+  benchmarkDistributing?: boolean;
 }
 
 export interface UpdateInvestmentAssetInput {
@@ -79,6 +82,7 @@ export interface UpdateInvestmentAssetInput {
   priceProvider?: InvestmentPriceProvider;
   providerSymbol?: string;
   manualPricePerUnit?: DecimalString;
+  benchmarkDistributing?: boolean;
 }
 
 /** Input for a single housing valuation anchor (PRD #108, slice 4). */
@@ -625,6 +629,7 @@ async function readInvestmentAssetById(
       priceProvider: investmentAssets.priceProvider,
       providerSymbol: investmentAssets.providerSymbol,
       manualPricePerUnit: investmentAssets.manualPricePerUnit,
+      benchmarkDistributing: investmentAssets.benchmarkDistributing,
     })
     .from(investmentAssets)
     .where(eq(investmentAssets.assetId, assetId))
@@ -656,6 +661,7 @@ async function readInvestmentAssetById(
     ...(investRow.manualPricePerUnit
       ? { manualPricePerUnit: investRow.manualPricePerUnit }
       : {}),
+    benchmarkDistributing: investRow.benchmarkDistributing === 1,
   };
 }
 
@@ -672,6 +678,7 @@ async function readInvestmentAssetsWithMeta(
       priceProvider: investmentAssets.priceProvider,
       isin: investmentAssets.isin,
       providerSymbol: investmentAssets.providerSymbol,
+      benchmarkDistributing: investmentAssets.benchmarkDistributing,
     })
     .from(assets)
     .innerJoin(investmentAssets, eq(investmentAssets.assetId, assets.id))
@@ -685,6 +692,7 @@ async function readInvestmentAssetsWithMeta(
     currency: row.currency,
     liquidityTier: row.liquidityTier,
     priceProvider: row.priceProvider ?? defaultInvestmentPriceProvider(row.liquidityTier),
+    benchmarkDistributing: row.benchmarkDistributing === 1,
     ...(row.isin ? { isin: row.isin } : {}),
     ...(row.providerSymbol ? { providerSymbol: row.providerSymbol } : {}),
   }));
@@ -816,6 +824,9 @@ async function updateInvestmentAsset(
         priceProvider: input.priceProvider ?? null,
         providerSymbol: input.providerSymbol ?? null,
         manualPricePerUnit: input.manualPricePerUnit ?? null,
+        ...(input.benchmarkDistributing === undefined
+          ? {}
+          : { benchmarkDistributing: input.benchmarkDistributing ? 1 : 0 }),
       })
       .where(eq(investmentAssets.assetId, input.id))
       .run();

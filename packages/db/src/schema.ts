@@ -230,6 +230,8 @@ export const investmentAssets = sqliteTable("investment_assets", {
   providerSymbol: text("provider_symbol"),
   manualPricePerUnit: text("manual_price_per_unit"),
   manualPricedAt: text("manual_priced_at"),
+  /** Per-holding benchmark honesty: compare vs price index when distributing (#625). */
+  benchmarkDistributing: integer("benchmark_distributing").notNull().default(0),
 });
 
 export const exposureProfiles = sqliteTable("exposure_profiles", {
