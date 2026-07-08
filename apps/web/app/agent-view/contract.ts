@@ -531,6 +531,28 @@ export interface AgentViewVsInflation {
   };
 }
 
+/** Per-holding TWR vs tracked index (ADR 0060, #626). */
+export interface AgentViewVsBenchmark {
+  comparison: {
+    holdingTwr: number;
+    indexGrowth: number;
+    excessGrowth: number;
+    sinceDate: string;
+    untilDate: string;
+    seriesId: string;
+    trackedIndex: string;
+    variant: "total_return" | "price";
+    coverageNote: string;
+  } | null;
+  unavailableReason:
+    | "no_tracked_index"
+    | "benchmark_unmapped"
+    | "twr_unavailable"
+    | "benchmark_unavailable"
+    | "zero_start_value"
+    | null;
+}
+
 /** Cursor-paginated data-quality signals for a scope (PRD #328, #341). */
 export interface AgentViewDataQualityPage {
   signals: AgentViewDataQualitySignal[];
@@ -811,6 +833,8 @@ export interface AgentViewHoldingDetail {
    * profile, or one with no hand-entered profile. Never a fabricated profile.
    */
   exposureProfile?: AgentViewExposureProfile | null;
+  /** TWR vs the holding's tracked index; null comparison with a reason when unavailable (#626). */
+  vsBenchmark: AgentViewVsBenchmark;
 }
 
 /**
