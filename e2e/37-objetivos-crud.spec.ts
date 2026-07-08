@@ -61,17 +61,26 @@ test("/objetivos: create, edit, delete a goal — CRUD lives here, not in /ajust
   ).not.toBeVisible();
 
   // ── 5. goal card shows FIRE delay label (S4 of PRD #507) ────────────────
-  // Create a goal WITH an assigned holding (Cuenta ING, created in journey 03)
-  // so thisGoalReservationMinor > 0 and the delay branch activates.
-  // The serial DB may or may not have FIRE configured, so we accept either
-  // «Retrasa tu FIRE +X meses» or «No afecta a tu FIRE» — but NOT
-  // «no descuenta FIRE» (that label only appears when countsTowardFire=false,
-  // i.e. deadline out-of-horizon, which deadline 2030-01-01 is not).
+  // Prepare the FIRE precondition explicitly: the serial DB can be reset by
+  // earlier journeys, and a goal only reserves FIRE capital when it has an
+  // assigned holding.
+  await page.goto("/ajustes");
+  const fireSettings = page.getByRole("region", { name: "Configuración FIRE" });
+  await fireSettings.getByLabel(/^Gasto mensual/).fill("2000");
+  await fireSettings.getByLabel(/^Tasa de retirada segura/).fill("4");
+  await fireSettings.getByLabel(/^Retorno real esperado/).fill("5");
+  await fireSettings.getByLabel(/^Edad actual/).fill("35");
+  await fireSettings.getByLabel(/^Edad objetivo/).fill("65");
+  await fireSettings.getByLabel(/^Ahorro mensual/).fill("1000");
+  await fireSettings.getByRole("button", { name: "Guardar configuración FIRE" }).click();
+  await expect(page).toHaveURL(/\/ajustes/);
+
   const checkGoalName = "Fondo e2e fireDelay";
   await page.goto("/objetivos");
   await page.getByLabel("Nombre").last().fill(checkGoalName);
   await page.getByLabel("Importe objetivo (EUR)").last().fill("5000");
   await page.getByLabel("Fecha límite").last().fill("2030-01-01");
+  await page.locator("#goalCreateForm .chipChoice label").first().click();
   await page.getByRole("button", { name: "Crear objetivo" }).click();
   await expect(page).toHaveURL(/\/objetivos/);
 

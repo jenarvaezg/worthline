@@ -27,15 +27,18 @@ import {
   findStatementTypeConflict,
   isIsinShaped,
   isStatementBroker,
+  latestOperationPrice,
   parseStatement,
   resolveStatementImportBuckets,
   systemClock,
   multiplyToMinor,
+  derivePosition,
 } from "@worthline/domain";
 import type {
   Clock,
   Instrument,
   InvestmentPriceProvider,
+  InvestmentOperation,
   OwnershipShare,
   ParsedStatement,
   ParsedStatementRow,
@@ -111,6 +114,7 @@ export type FundPreviewRow = {
   executedCount: number;
   skippedCount: number;
   amountMinor: number;
+  positionImpact: FundPositionImpact;
 } & (
   | {
       bucket: "matched";
@@ -131,6 +135,16 @@ export type FundPreviewRow = {
       suggestedSymbol: string;
     }
 );
+
+export type PositionImpactFlag = "nearly_doubles" | "oversell" | "near_zero";
+
+export interface FundPositionImpact {
+  beforeUnits: string;
+  beforeValueMinor: number;
+  afterUnits: string;
+  afterValueMinor: number;
+  flags: PositionImpactFlag[];
+}
 
 export type ImportStatementPreviewState =
   | { status: "idle" }
@@ -197,7 +211,86 @@ async function readStatementFromForm(
 
 /** Sum a fund group's executed rows into a minor-unit amount (units × price). */
 function rowsAmountMinor(rows: readonly ParsedStatementRow[]): number {
-  return rows.reduce((sum, row) => sum + multiplyToMinor(row.units, row.pricePerUnit), 0);
+  return rows.reduce((sum, row) => {
+    const amountMinor = multiplyToMinor(row.units, row.pricePerUnit);
+    return row.kind === "sell" ? sum - amountMinor : sum + amountMinor;
+  }, 0);
+}
+
+function rowToPreviewOperation(
+  assetId: string,
+  row: ParsedStatementRow,
+  id: string,
+): InvestmentOperation {
+  return {
+    assetId,
+    currency: row.currency,
+    executedAt: row.dateKey,
+    feesMinor: row.feesMinor,
+    id,
+    kind: row.kind,
+    pricePerUnit: row.pricePerUnit,
+    units: row.units,
+  };
+}
+
+function isNearlyDouble(beforeValueMinor: number, afterValueMinor: number): boolean {
+  return (
+    beforeValueMinor > 0 &&
+    afterValueMinor * 10 >= beforeValueMinor * 19 &&
+    afterValueMinor * 10 <= beforeValueMinor * 21
+  );
+}
+
+function derivePositionImpact(
+  bucket: StatementImportBucket,
+  existingOperations: readonly InvestmentOperation[],
+): FundPositionImpact {
+  const assetId = bucket.bucket === "matched" ? bucket.assetId : bucket.isin;
+  const currency = existingOperations[0]?.currency ?? bucket.rows[0]?.currency ?? "EUR";
+  const beforeOperations = [...existingOperations];
+  const afterOperations =
+    bucket.bucket === "matched"
+      ? [
+          ...existingOperations.filter(
+            (operation) =>
+              !bucket.mergePlan.toOverwrite.some(
+                (overwrite) => overwrite.operationId === operation.id,
+              ),
+          ),
+          ...bucket.mergePlan.toOverwrite.map((overwrite) =>
+            rowToPreviewOperation(assetId, overwrite.row, overwrite.operationId),
+          ),
+          ...bucket.mergePlan.toCreate.map((row, index) =>
+            rowToPreviewOperation(assetId, row, `preview_create_${index}`),
+          ),
+        ]
+      : bucket.rows.map((row, index) =>
+          rowToPreviewOperation(assetId, row, `preview_create_${index}`),
+        );
+  const currentPricePerUnit =
+    latestOperationPrice(afterOperations) ?? latestOperationPrice(beforeOperations);
+  const options = currentPricePerUnit
+    ? { assetId, currency, currentPricePerUnit }
+    : { assetId, currency };
+  const before = derivePosition(beforeOperations, options);
+  const after = derivePosition(afterOperations, options);
+  const beforeValueMinor =
+    before.marketValue?.amountMinor ?? before.costBasis.amountMinor;
+  const afterValueMinor = after.marketValue?.amountMinor ?? after.costBasis.amountMinor;
+  const flags: PositionImpactFlag[] = [];
+
+  if (isNearlyDouble(beforeValueMinor, afterValueMinor)) flags.push("nearly_doubles");
+  if (after.warnings.length > 0) flags.push("oversell");
+  if (beforeValueMinor > 0 && afterValueMinor === 0) flags.push("near_zero");
+
+  return {
+    afterUnits: after.currentUnits,
+    afterValueMinor,
+    beforeUnits: before.currentUnits,
+    beforeValueMinor,
+    flags,
+  };
 }
 
 /**
@@ -225,8 +318,10 @@ async function readPortfolioInvestments(
 async function bucketToPreviewRow(
   bucket: StatementImportBucket,
   resolver: IsinSymbolResolver,
+  existingOperations: readonly InvestmentOperation[] = [],
 ): Promise<FundPreviewRow> {
   const amountMinor = rowsAmountMinor(bucket.rows);
+  const positionImpact = derivePositionImpact(bucket, existingOperations);
 
   if (bucket.bucket === "matched") {
     return {
@@ -236,6 +331,7 @@ async function bucketToPreviewRow(
       executedCount: bucket.rows.length,
       existingName: bucket.name,
       isin: bucket.isin,
+      positionImpact,
       skippedCount: bucket.skipped.length,
       toCreateCount: bucket.mergePlan.toCreate.length,
       toOverwriteCount: bucket.mergePlan.toOverwrite.length,
@@ -249,6 +345,7 @@ async function bucketToPreviewRow(
     executedCount: bucket.rows.length,
     isin: bucket.isin,
     lookup,
+    positionImpact,
     skippedCount: bucket.skipped.length,
     suggestedName: lookup.status === "found" ? lookup.name : (bucket.name ?? ""),
     // A non-ISIN identifier (Finect code, CoinGecko id) IS the provider symbol.
@@ -281,6 +378,9 @@ export async function previewImportStatementAction(
   return runActionWithStore(async (store) => {
     const investments = await readPortfolioInvestments(store);
     const buckets = resolveStatementImportBuckets(read.value, investments);
+    const operationsByAssetId = new Map(
+      investments.map((investment) => [investment.assetId, investment.operations]),
+    );
 
     const conflict = findStatementTypeConflict(buckets);
     if (conflict) {
@@ -288,7 +388,15 @@ export async function previewImportStatementAction(
     }
 
     const funds = await Promise.all(
-      buckets.map((bucket) => bucketToPreviewRow(bucket, _resolver)),
+      buckets.map((bucket) =>
+        bucketToPreviewRow(
+          bucket,
+          _resolver,
+          bucket.bucket === "matched"
+            ? (operationsByAssetId.get(bucket.assetId) ?? [])
+            : [],
+        ),
+      ),
     );
 
     return { directionResolved: read.value.directionResolved, funds, status: "ready" };
