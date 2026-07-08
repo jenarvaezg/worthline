@@ -115,17 +115,42 @@ describe("stooqProvider", () => {
     vi.unstubAllGlobals();
   });
 
-  it("parses valid CSV with header + data line", async () => {
+  it("parses valid CSV with header + data line for a EUR-listed symbol", async () => {
     const csv =
-      "Symbol,Date,Time,Open,High,Low,Close,Volume\nAAPL,2024-01-15,16:00:00,180.00,182.50,179.50,181.25,55000000";
+      "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2024-01-15,16:00:00,4.10,4.30,4.05,4.25,55000000";
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
       text: async () => csv,
     } as Response);
 
+    const result = await stooqProvider.fetchPrice({ ...baseCtx, symbol: "san.mc" });
+
+    expect(result).toEqual({ price: "4.25", currency: "EUR", priceDate: "2024-01-15" });
+  });
+
+  it("converts USD Stooq quotes to EUR via ECB", async () => {
+    const csv =
+      "Symbol,Date,Time,Open,High,Low,Close,Volume\nAAPL,2024-01-15,16:00:00,180,182,179,100,1000";
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({ ok: true, text: async () => csv } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          dataSets: [
+            {
+              series: {
+                "0:0:0:0:0": {
+                  observations: { "0": [1.25] },
+                },
+              },
+            },
+          ],
+        }),
+      } as Response);
+
     const result = await stooqProvider.fetchPrice({ ...baseCtx, symbol: "aapl.us" });
 
-    expect(result).toEqual({ price: "181.25", currency: "EUR", priceDate: "2024-01-15" });
+    expect(result).toEqual({ price: "80", currency: "EUR", priceDate: "2024-01-15" });
   });
 
   it("reports a no-quote failure when close price is N/D", async () => {
@@ -159,13 +184,13 @@ describe("stooqProvider", () => {
   });
 
   it("reports an HTTP-error failure when response is not ok", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 500 } as Response);
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 404 } as Response);
 
     const result = await stooqProvider.fetchPrice({ ...baseCtx, symbol: "aapl.us" });
 
     expect(result).toEqual({
       failed: true,
-      reason: "El proveedor respondió con un error (500)",
+      reason: "El proveedor respondió con un error (404)",
     });
   });
 });
@@ -179,7 +204,7 @@ describe("yahooProvider", () => {
     vi.unstubAllGlobals();
   });
 
-  it("parses the latest regular market price from Yahoo chart responses", async () => {
+  it("rejects undated Yahoo metadata when the price series is empty", async () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -198,7 +223,7 @@ describe("yahooProvider", () => {
 
     const result = await yahooProvider.fetchPrice({ ...baseCtx, symbol: "SAN.MC" });
 
-    expect(result).toEqual({ price: "123.45", currency: "EUR" });
+    expect(result).toBeNull();
   });
 
   it("prefers the latest valid chart close over stale Yahoo metadata", async () => {
@@ -285,6 +310,10 @@ describe("yahooProvider", () => {
                   currency: "USD",
                   regularMarketPrice: 100,
                 },
+                timestamp: [Math.floor(Date.parse("2024-01-15T12:00:00Z") / 1000)],
+                indicators: {
+                  quote: [{ close: [100] }],
+                },
               },
             ],
           },
@@ -309,7 +338,45 @@ describe("yahooProvider", () => {
 
     const result = await yahooProvider.fetchPrice({ ...baseCtx, symbol: "AAPL" });
 
-    expect(result).toEqual({ price: "80", currency: "EUR" });
+    expect(result).toEqual({ price: "80", currency: "EUR", priceDate: "2024-01-15" });
+  });
+
+  it("falls back to Stooq with USD→EUR conversion when Yahoo has no dated series", async () => {
+    const csv =
+      "Symbol,Date,Time,Open,High,Low,Close,Volume\nAAPL,2024-01-15,16:00:00,180,182,179,100,1000";
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          chart: {
+            result: [{ meta: { currency: "USD", regularMarketPrice: 100 } }],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({ ok: true, text: async () => csv } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          dataSets: [
+            {
+              series: {
+                "0:0:0:0:0": {
+                  observations: { "0": [1.25] },
+                },
+              },
+            },
+          ],
+        }),
+      } as Response);
+
+    const result = await fetchAndCachePrice(
+      { name: "yahoo", fetchPrice: (ctx) => fetchWithFallback("yahoo", ctx) },
+      { ...baseCtx, symbol: "AAPL.US" },
+    );
+
+    expect(result.freshnessState).toBe("fresh");
+    expect(result.price).toBe("80");
+    expect(result.source).toBe("stooq");
   });
 
   // The Yahoo→Stooq fallback is now POLICY (issue #243): the chain lives in
@@ -356,6 +423,8 @@ describe("yahooProvider", () => {
     const csv =
       "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2024-01-15,16:00:00,4.10,4.30,4.05,4.25,55000000";
     vi.mocked(fetch)
+      .mockRejectedValueOnce(new Error("timeout"))
+      .mockRejectedValueOnce(new Error("timeout"))
       .mockRejectedValueOnce(new Error("timeout"))
       .mockResolvedValueOnce({
         ok: true,
@@ -439,6 +508,27 @@ describe("finectProvider", () => {
 });
 
 describe("fetchAndCachePrice", () => {
+  it("preserves the prior good price on a transient failure", async () => {
+    const provider = {
+      name: "stooq" as const,
+      fetchPrice: async () => null,
+    };
+    const prior: AssetPrice = {
+      assetId: "asset-1",
+      currency: "EUR",
+      price: "42.50",
+      source: "stooq",
+      fetchedAt: "2026-06-08T10:00:00Z",
+      freshnessState: "fresh",
+    };
+
+    const result = await fetchAndCachePrice(provider, baseCtx, { prior });
+
+    expect(result.freshnessState).toBe("stale");
+    expect(result.price).toBe("42.50");
+    expect(result.staleReason).toBe("No price returned");
+  });
+
   it("returns failed AssetPrice when provider returns null", async () => {
     const provider = {
       name: "stooq" as const,

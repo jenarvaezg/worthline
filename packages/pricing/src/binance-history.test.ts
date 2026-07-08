@@ -97,6 +97,28 @@ describe("reconstructBinanceHistory — snapshots → month-end balances + daily
     expect(curve.dailyPriceBySymbol.has("WAGMI")).toBe(false);
   });
 
+  it("EUR cash gets a flat 1:1 price series without a CoinGecko fetch", async () => {
+    const fetched: string[] = [];
+    const curve = await reconstructBinanceHistory({
+      accountSnapshots: async () => [
+        {
+          dateKey: "2026-03-31",
+          balances: [
+            { asset: "EUR", balance: "1500" },
+            { asset: "BTC", balance: "0.5" },
+          ],
+        },
+      ],
+      historicalPriceEur: async (id) => {
+        fetched.push(id);
+        return new Map([["2026-03-31", "50000"]]);
+      },
+    });
+
+    expect(fetched).toEqual(["bitcoin"]);
+    expect(curve.dailyPriceBySymbol.get("EUR")?.get("2026-03-31")).toBe("1");
+  });
+
   it("a CoinGecko miss leaves the symbol with an empty price series (still a balance)", async () => {
     const curve = await reconstructBinanceHistory({
       accountSnapshots: async () => [
@@ -226,7 +248,7 @@ describe("fetchCoinGeckoHistoryEur — /market_chart/range → dateKey→price (
       }),
     } as Response);
 
-    const map = await fetchCoinGeckoHistoryEur(
+    const { pricesByDate: map } = await fetchCoinGeckoHistoryEur(
       "bitcoin",
       Date.UTC(2026, 2, 1),
       Date.UTC(2026, 3, 30),
@@ -266,14 +288,20 @@ describe("fetchCoinGeckoHistoryEur — /market_chart/range → dateKey→price (
     expect(url).not.toContain(`to=${Math.floor(Date.UTC(2026, 3, 30) / 1000)}`);
   });
 
-  it("returns an empty map on a non-OK response (never throws)", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 429 } as Response);
-    expect(await fetchCoinGeckoHistoryEur("bitcoin", 0, 1)).toEqual(new Map());
+  it("returns an empty map with fetchError on a non-OK response (never throws)", async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 429 } as Response);
+    expect(await fetchCoinGeckoHistoryEur("bitcoin", 0, 1)).toEqual({
+      pricesByDate: new Map(),
+      fetchError: "CoinGecko respondió con un error (429)",
+    });
   });
 
-  it("returns an empty map on a thrown network error (never throws)", async () => {
-    vi.mocked(fetch).mockRejectedValueOnce(new Error("network down"));
-    expect(await fetchCoinGeckoHistoryEur("bitcoin", 0, 1)).toEqual(new Map());
+  it("returns an empty map with fetchError on a thrown network error (never throws)", async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error("network down"));
+    expect(await fetchCoinGeckoHistoryEur("bitcoin", 0, 1)).toEqual({
+      pricesByDate: new Map(),
+      fetchError: "network down",
+    });
   });
 
   it("returns an empty map when the response carries no prices", async () => {
@@ -281,6 +309,8 @@ describe("fetchCoinGeckoHistoryEur — /market_chart/range → dateKey→price (
       ok: true,
       json: async () => ({}),
     } as Response);
-    expect(await fetchCoinGeckoHistoryEur("bitcoin", 0, 1)).toEqual(new Map());
+    expect(await fetchCoinGeckoHistoryEur("bitcoin", 0, 1)).toEqual({
+      pricesByDate: new Map(),
+    });
   });
 });

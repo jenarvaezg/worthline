@@ -122,12 +122,12 @@ describe("fetchWithFallback", () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
       text: async () =>
-        "Symbol,Date,Time,Open,High,Low,Close,Volume\nVUSA,2026-06-09,16:00:00,80,81,79,80.50,1234",
+        "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2026-06-09,16:00:00,4.10,4.30,4.05,4.25,1234",
     } as Response);
 
-    const result = await fetchWithFallback("stooq", { ...baseCtx, symbol: "VUSA.L" });
+    const result = await fetchWithFallback("stooq", { ...baseCtx, symbol: "SAN.MC" });
 
-    expect(result).toMatchObject({ price: "80.50", currency: "EUR" });
+    expect(result).toMatchObject({ price: "4.25", currency: "EUR" });
   });
 
   it("the bare Yahoo provider no longer rescues itself (rescue is policy, not body)", async () => {
@@ -167,7 +167,15 @@ describe("fetchPriceNow", () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
       json: async () => ({
-        chart: { result: [{ meta: { currency: "EUR", regularMarketPrice: 12.34 } }] },
+        chart: {
+          result: [
+            {
+              meta: { currency: "EUR", regularMarketPrice: 12.34 },
+              timestamp: [Math.floor(Date.parse("2024-01-15T12:00:00Z") / 1000)],
+              indicators: { quote: [{ close: [12.34] }] },
+            },
+          ],
+        },
       }),
     } as Response);
 

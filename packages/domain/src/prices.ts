@@ -69,8 +69,9 @@ export function getPriceFreshness(
  * Rules:
  * - manual quotes (freshnessState === "manual") are never stale — user-controlled,
  *   no provider to refresh from.
- * - failed entries are not re-selected — already in error state; manual
- *   "Actualizar precios" handles retry.
+ * - failed entries are re-selected once their per-source TTL elapses so a
+ *   transient outage can recover on the next auto-refresh pass (issue #730).
+ *   Manual "Actualizar precios" (`force: true`) retries immediately.
  * - all other entries are stale when their age reaches the per-source TTL from
  *   PRICE_TTL_DAYS (ecb/coingecko/stooq = 1 day, manual tier = 30 days).
  */
@@ -82,7 +83,6 @@ export function selectStalePrices(
 
   return cacheEntries.filter((entry) => {
     if (entry.freshnessState === "manual") return false;
-    if (entry.freshnessState === "failed") return false;
 
     const ttlMs = PRICE_TTL_DAYS[entry.source] * 86400000;
     const ageMs = now - new Date(entry.fetchedAt).getTime();

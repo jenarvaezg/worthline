@@ -40,7 +40,7 @@ async function seedEtf(store: WorthlineStore): Promise<void> {
     name: "ETF",
     ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     priceProvider: "yahoo",
-    providerSymbol: "VUSA.L",
+    providerSymbol: "SAN.MC",
   });
 }
 
@@ -61,7 +61,15 @@ function yahooQuote(price: number) {
   return {
     ok: true,
     json: async () => ({
-      chart: { result: [{ meta: { currency: "EUR", regularMarketPrice: price } }] },
+      chart: {
+        result: [
+          {
+            meta: { currency: "EUR", regularMarketPrice: price },
+            timestamp: [Math.floor(Date.parse(NOW) / 1000)],
+            indicators: { quote: [{ close: [price] }] },
+          },
+        ],
+      },
     }),
   } as Response;
 }
@@ -109,7 +117,7 @@ describe("refreshPricesAction honest force-refresh (#317)", () => {
     const store = await createInMemoryStore();
     await seedEtf(store);
     const csv =
-      "Symbol,Date,Time,Open,High,Low,Close,Volume\nVUSA,2026-06-18,16:00:00,80,81,79,80.50,1234";
+      "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2026-06-18,16:00:00,4.10,4.30,4.05,4.25,1234";
     // Yahoo not-ok, then the registry's Yahoo→Stooq chain rescues via Stooq.
     vi.mocked(fetch)
       .mockResolvedValueOnce({ ok: false } as Response)
@@ -118,6 +126,6 @@ describe("refreshPricesAction honest force-refresh (#317)", () => {
     await run(store);
 
     const persisted = await store.operations.readPriceCache("etf");
-    expect(persisted).toMatchObject({ price: "80.50", source: "stooq" });
+    expect(persisted).toMatchObject({ price: "4.25", source: "stooq" });
   });
 });

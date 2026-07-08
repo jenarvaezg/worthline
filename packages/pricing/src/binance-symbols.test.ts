@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { resolveCoinGeckoId } from "./binance-symbols";
+import { isBinanceFiatEur, resolveCoinGeckoId } from "./binance-symbols";
 
 describe("resolveCoinGeckoId — Binance symbol → CoinGecko id (ADR 0021)", () => {
   test("maps common symbols to their CoinGecko id", () => {
@@ -21,6 +21,12 @@ describe("resolveCoinGeckoId — Binance symbol → CoinGecko id (ADR 0021)", ()
     expect(resolveCoinGeckoId("LDBTC")).toBe("bitcoin");
   });
 
+  test("isBinanceFiatEur identifies EUR cash (not EURS)", () => {
+    expect(isBinanceFiatEur("EUR")).toBe(true);
+    expect(isBinanceFiatEur("eur")).toBe(true);
+    expect(isBinanceFiatEur("BTC")).toBe(false);
+  });
+
   test("returns null for an unmapped symbol — the caller values it 0 + warns", () => {
     expect(resolveCoinGeckoId("WAGMI")).toBeNull();
     expect(resolveCoinGeckoId("BCX")).toBeNull();
@@ -28,5 +34,6 @@ describe("resolveCoinGeckoId — Binance symbol → CoinGecko id (ADR 0021)", ()
     expect(resolveCoinGeckoId("SBTC")).toBeNull();
     expect(resolveCoinGeckoId("JEX")).toBeNull();
     expect(resolveCoinGeckoId("")).toBeNull();
+    expect(resolveCoinGeckoId("EUR")).toBeNull();
   });
 });
