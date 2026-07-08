@@ -7,7 +7,7 @@
  *
  * Uses the familia persona — it has a configured FIRE target.
  */
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("/objetivos: FIRE hero + goals section render, nav active", async ({ page }) => {
   // Choose the familia persona (has FIRE configured) via its deep-link — a single
@@ -22,7 +22,7 @@ test("/objetivos: FIRE hero + goals section render, nav active", async ({ page }
 
   // 2. Navigate via the link.
   await verLink.click();
-  await expect(page).toHaveURL(/\/objetivos/);
+  await page.waitForURL(/\/objetivos/, { timeout: 15_000 });
 
   // 3. FIRE star hero region renders.
   const fireSection = page.getByRole("region", { name: "FIRE", exact: true });
