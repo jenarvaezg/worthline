@@ -664,6 +664,33 @@ slice it never mutates workspace data; future write actions must become an
 **assistant proposal** instead.
 _Avoid_: shortcut (too generic), automation (implies unsupervised execution).
 
+**Present-state declaration**:
+What the onboarding wizard captures — a **scope**'s holdings and balances "as of today" —
+recorded as opening facts dated today. Deliberately distinct from historical depth, which
+is ingested later and separately, not typed into the wizard (ADR 0059). Doubles as a
+**reconciliation anchor** for any history reconstructed afterwards.
+_Avoid_: snapshot (that is the frozen daily capture), onboarding data.
+
+**Reconciliation anchor**:
+A present-day position or balance the user already knows — from a **present-state
+declaration** or a document's own closing figure — that a reconstructed history must
+reproduce end-to-end. The checksum for bulk historical ingestion: the engine confirms the
+extracted **dated facts** add up to the anchor, so the user can trust the whole in
+aggregate without checking each fact. Validates the endpoint, not the intermediate curve.
+_Avoid_: baseline (overloaded with balance rebaseline), opening balance.
+
+**Reconstructed history**:
+Historical **dated facts** an assistant extracted from an uploaded document and proposed
+(an **assistant proposal**), reconciled to a **reconciliation anchor** and stamped
+`source: agent`. A distinct provenance tier — below broker-verified and hand-entered facts
+— that worthline surfaces transparently and the user can correct point by point. Trust
+comes from knowing what is reconstructed and being able to fix it, not from assuming the
+extraction was right. It splits in two by whether a **reconciliation anchor** exists:
+**reconciled** (an anchor exists and the checksum passed) and **unverified** (no anchor —
+e.g. a holding no longer held, present only in the document — so the preview forces a look
+at that item, since no checksum covers it).
+_Avoid_: imported history (implies verified), synced history.
+
 ## Relationships
 
 - **Net worth** decomposes into **gross assets** − **debts**.
