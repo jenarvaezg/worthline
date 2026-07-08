@@ -24,6 +24,7 @@ export interface AgentViewErrorEnvelope {
 
 export type AgentViewErrorCode =
   | "bad_request"
+  | "empty_workspace"
   | "unauthorized"
   | "forbidden"
   | "not_found"

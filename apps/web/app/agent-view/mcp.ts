@@ -30,10 +30,10 @@ export type {
 /**
  * The HTTP adapter for the agent-view MCP catalog (#576): it binds the single
  * catalog definition (`catalog.ts`) to a backend that resolves every read over
- * the read-only HTTP API. The in-app assistant and the wiring tests consume this
- * catalog; the public MCP endpoint uses the internal read-store adapter instead
- * (`internal-catalog.ts`). Both share the catalog's tool names, descriptions,
- * input schemas, default-scope resolution, and selector rules.
+ * the read-only HTTP API. Wiring tests use this adapter to assert parity between
+ * HTTP routes and the catalog. The public MCP endpoint uses the internal
+ * read-store adapter instead (`internal-catalog.ts`). The in-app assistant does
+ * not consume this catalog; it owns a separate chat catalog per ADR 0047.
  */
 export interface AgentViewApiClient {
   get: <T>(path: string) => Promise<T>;

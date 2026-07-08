@@ -122,8 +122,8 @@ describe("createChatTools · get_financial_context", () => {
 
 describe("createChatTools · full read catalog (#630)", () => {
   it("serves every agent-view read tool the MCP catalog exposes", () => {
-    // The chat catalog is the same read surface as agent-view (ADR 0047): if a
-    // tool exists over MCP but not here, the assistant is blind to that lens.
+    // ADR 0047 keeps chat as a separate catalog, but it should still expose the
+    // same read lenses by name unless a divergence is intentional and documented.
     // It may add non-read tools (e.g. suggest_actions, #631) on top.
     const mcp = createAgentViewMcpToolCatalog({ get: async () => ({}) as never });
     const chat = new Set(Object.keys(toolsOver({} as AgentViewReadStore)));
@@ -206,6 +206,23 @@ describe("createChatTools · full read catalog (#630)", () => {
 
     expect(result).toEqual({ error: "empty_workspace" });
   });
+
+  it(
+    "reports invalid paginated limits instead of silently clamping to one",
+    async () => {
+      const store = await seededStore();
+      const tools = toolsOver(store.agentView);
+
+      const result = await tools["get_snapshot_history"]?.execute?.(
+        { limit: 0 },
+        toolCallContext(),
+      );
+
+      expect(result.error.code).toBe("bad_request");
+      expect(result.error.message).toBe("limit must be a positive integer.");
+    },
+    SEED_TIMEOUT_MS,
+  );
 });
 
 describe("createChatTools · suggest_actions (#631)", () => {

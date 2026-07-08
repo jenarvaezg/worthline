@@ -163,6 +163,12 @@ export function createVerifyMcpToken(deps: VerifyMcpTokenDeps) {
   };
 }
 
+export function selectSingleMcpWorkspace(
+  workspaces: McpWorkspaceRef[],
+): McpWorkspaceRef | null {
+  return workspaces.length === 1 ? workspaces[0]! : null;
+}
+
 type Env = Record<string, string | undefined>;
 
 /**
@@ -255,7 +261,7 @@ async function envResolveEmail(subject: string, env: Env): Promise<string | null
   }
 }
 
-/** The production control-plane lookup: email → user → first granted workspace. */
+/** The production control-plane lookup: email → user → exactly one granted workspace. */
 async function envResolveWorkspace(
   claims: McpTokenClaims,
   env: Env,
@@ -271,9 +277,19 @@ async function envResolveWorkspace(
     const user = await controlPlane.findUserByEmail(claims.email);
     if (!user) return null;
     const workspaces = await controlPlane.listWorkspacesForUser(user.id);
-    const workspace = workspaces[0];
+    if (workspaces.length > 1) {
+      console.warn("[mcp-auth] reject: caller has multiple granted workspaces", {
+        workspaceCount: workspaces.length,
+      });
+    }
+    const workspace = selectSingleMcpWorkspace(
+      workspaces.map((entry) => ({
+        workspaceId: entry.id,
+        dbUrl: entry.dbUrl,
+      })),
+    );
     if (!workspace) return null;
-    return { workspaceId: workspace.id, dbUrl: workspace.dbUrl };
+    return workspace;
   } finally {
     controlPlane.close();
   }

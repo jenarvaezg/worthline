@@ -6,6 +6,7 @@ import {
   createJwtVerifier,
   createVerifyMcpToken,
   MCP_READ_SCOPE,
+  selectSingleMcpWorkspace,
   verifyMcpToken,
   type McpWorkspaceRef,
 } from "./verify-token";
@@ -178,6 +179,22 @@ describe("acceptedAudiences", () => {
       "https://worthline.example",
       "https://worthline.example/api/mcp",
     ]);
+  });
+});
+
+describe("selectSingleMcpWorkspace", () => {
+  test("returns the only granted workspace", () => {
+    expect(selectSingleMcpWorkspace([ANA_WORKSPACE])).toBe(ANA_WORKSPACE);
+  });
+
+  test("rejects absent or ambiguous workspace grants instead of picking the first", () => {
+    expect(selectSingleMcpWorkspace([])).toBeNull();
+    expect(
+      selectSingleMcpWorkspace([
+        ANA_WORKSPACE,
+        { workspaceId: "wl_ws_leo", dbUrl: "libsql://wl-leo.turso.io" },
+      ]),
+    ).toBeNull();
   });
 });
 
