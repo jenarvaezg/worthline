@@ -133,7 +133,7 @@ describe("POST /api/mcp (non-demo mode)", () => {
     });
   });
 
-  test("lists the 10 agent-view tools with their catalog schemas", async () => {
+  test("lists the 18 agent-view tools with their catalog schemas", async () => {
     const response = await mcpRequest({
       jsonrpc: "2.0",
       id: 2,
@@ -144,7 +144,12 @@ describe("POST /api/mcp (non-demo mode)", () => {
     expect(response.status).toBe(200);
     const body = (await parseSingleMcpMessage(response)) as {
       result: {
-        tools: Array<{ name: string; inputSchema: unknown; description: string }>;
+        tools: Array<{
+          name: string;
+          inputSchema: unknown;
+          outputSchema: unknown;
+          description: string;
+        }>;
       };
     };
     const tools = body.result.tools;
@@ -182,6 +187,32 @@ describe("POST /api/mcp (non-demo mode)", () => {
       },
     });
     expect(explainFigure?.description).toContain("Explain how a scope's figure");
+
+    const financialContext = tools.find((tool) => tool.name === "get_financial_context");
+    expect(financialContext?.description).toContain("amountMinor");
+    expect(financialContext?.description).toContain("minor currency units");
+    expect(financialContext?.description).toContain("not euros");
+    expect(financialContext?.outputSchema).toMatchObject({
+      type: "object",
+      description: expect.stringContaining("minor currency units"),
+      properties: {
+        data: {
+          description: expect.stringContaining("#/$defs/money"),
+        },
+      },
+      $defs: {
+        money: {
+          properties: {
+            amountMinor: {
+              description: expect.stringContaining("minor currency units"),
+            },
+            currency: {
+              description: expect.stringContaining("ISO 4217"),
+            },
+          },
+        },
+      },
+    });
   });
 
   test("calling a tool returns the stub payload", async () => {
@@ -229,31 +260,49 @@ describe("POST /api/mcp (non-demo mode)", () => {
     });
   });
 
-  test("a malformed call still returns the stub payload (validation runs on real data)", async () => {
-    // #576: input validation (the connected-source-positions XOR selector,
-    // figure-name checks) lives inside the catalog's `run`, which executes only
-    // once a workspace is bound. In local no-auth stub mode there is no
-    // workspace, so a malformed call returns the deterministic stub rather than
-    // the 400/422 envelope — the deployed endpoint is always authenticated, so
-    // real callers still get the proper error (see catalog.test.ts + demo mode).
+  test("a malformed call returns a tool error before stub execution", async () => {
     const response = await mcpRequest({
       jsonrpc: "2.0",
       id: 7,
       method: "tools/call",
       params: {
-        name: "get_connected_source_positions",
-        arguments: {},
+        name: "list_scopes",
+        arguments: { unexpected: true },
       },
     });
 
     expect(response.status).toBe(200);
     const body = (await parseSingleMcpMessage(response)) as {
-      result: { content: Array<{ text: string }> };
+      result: { isError: boolean; content: Array<{ text: string }> };
     };
     const payload = JSON.parse(body.result.content[0]?.text ?? "");
-    expect(payload).toEqual({
-      data: { notice: "This tool is not yet wired to real data." },
+    expect(body.result.isError).toBe(true);
+    expect(payload).toMatchObject({
+      error: {
+        code: "bad_request",
+        details: { properties: ["unexpected"] },
+      },
     });
+  });
+
+  test("an invalid limit returns a tool error instead of defaulting to 100", async () => {
+    const response = await mcpRequest({
+      jsonrpc: "2.0",
+      id: 8,
+      method: "tools/call",
+      params: {
+        name: "get_snapshot_history",
+        arguments: { limit: 0 },
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await parseSingleMcpMessage(response)) as {
+      result: { isError: boolean; content: Array<{ text: string }> };
+    };
+    const payload = JSON.parse(body.result.content[0]?.text ?? "");
+    expect(body.result.isError).toBe(true);
+    expect(payload.error.code).toBe("bad_request");
   });
 
   test("calling an unknown tool returns an error result", async () => {
@@ -437,6 +486,46 @@ describe("POST /api/mcp (demo mode)", () => {
     };
     expect(payload.data.length).toBeGreaterThan(0);
     expect(payload.meta.limit).toBeGreaterThan(0);
+  });
+
+  test(
+    "get_snapshot_history clamps an over-max limit like the HTTP contract",
+    { timeout: 30000 },
+    async () => {
+      const response = await mcpRequest({
+        jsonrpc: "2.0",
+        id: 15,
+        method: "tools/call",
+        params: { name: "get_snapshot_history", arguments: { limit: 9999 } },
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await parseSingleMcpMessage(response)) as {
+        result: { isError?: boolean; content: Array<{ text: string }> };
+      };
+      const payload = JSON.parse(body.result.content[0]?.text ?? "") as {
+        meta: { limit: number };
+      };
+      expect(body.result.isError).not.toBe(true);
+      expect(payload.meta.limit).toBe(500);
+    },
+  );
+
+  test("documented error envelopes set isError true", { timeout: 30000 }, async () => {
+    const response = await mcpRequest({
+      jsonrpc: "2.0",
+      id: 16,
+      method: "tools/call",
+      params: { name: "get_connected_source_positions", arguments: {} },
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await parseSingleMcpMessage(response)) as {
+      result: { isError: boolean; content: Array<{ text: string }> };
+    };
+    const payload = JSON.parse(body.result.content[0]?.text ?? "");
+    expect(body.result.isError).toBe(true);
+    expect(payload.error.code).toBe("unprocessable_entity");
   });
 
   test(

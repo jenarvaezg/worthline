@@ -70,10 +70,12 @@ import {
 
 /**
  * The assistant's chat tools (#629/#630, ADR 0047): thin conversational
- * wrappers over the agent-view services — the SAME read surface the agent-view
- * MCP catalog serves over HTTP, called here in-process against the read store.
- * Calculation logic stays in agent-view; the model never defines its own
- * net-worth formula, only summarizes/compares what these reads return.
+ * wrappers over the agent-view builders, called here in-process against the
+ * read store. This is intentionally a separate chat catalog, not the MCP
+ * catalog: tool names stay in parity where the assistant needs the same lens,
+ * while chat-specific payload trimming and money formatting stay local to this
+ * boundary. Calculation logic stays in agent-view; the model never defines its
+ * own net-worth formula, only summarizes/compares what these reads return.
  *
  * Writes are impossible by construction: tools receive ONLY the read store
  * (`agentView`) — the write API never crosses this boundary (ADR 0044).
@@ -83,9 +85,9 @@ import {
  * and a missing/unknown fact surfaces as an error envelope instead of throwing
  * — visible uncertainty, never a guess (ADR 0048).
  *
- * Exposure look-through (#542) and investment returns (#550) have no agent-view
- * surface yet, so they are an explicit gap in this catalog (issue #630
- * sequencing note), not a blocker — add a wrapper when their service ships.
+ * Exposure look-through and investment returns are now agent-view facts exposed
+ * through the relevant context/detail tools; add dedicated chat wrappers only
+ * when the conversation needs a new public tool shape.
  */
 
 export interface ChatReadStore {
@@ -160,10 +162,18 @@ async function resolveScopeId(
   return (scopes.find((s) => s.isDefault) ?? scopes[0])?.id ?? null;
 }
 
-/** Clamp a model-supplied page size to the service's `[1, max]` contract. */
+/** Validate and clamp a model-supplied page size to the HTTP/MCP contract. */
 function clampLimit(limit: number | undefined, fallback: number, max: number): number {
   if (limit === undefined) return fallback;
-  return Math.min(Math.max(1, Math.trunc(limit)), max);
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new AgentViewHttpError({
+      code: "bad_request",
+      details: { limit },
+      message: "limit must be a positive integer.",
+      status: 400,
+    });
+  }
+  return Math.min(limit, max);
 }
 
 /** One action the model proposed via `suggest_actions`, before validation. */
@@ -256,7 +266,8 @@ function toChatFinancialContext(context: AgentViewFinancialContext) {
   };
 }
 
-// Shared input schemas — the same read surface as the agent-view MCP catalog.
+// Chat-owned input schemas. They mirror MCP names where useful, but remain a
+// separate ADR 0047 tool boundary with chat-specific execution semantics.
 const EMPTY_SCHEMA = jsonSchema<Record<string, never>>({
   type: "object",
   properties: {},
