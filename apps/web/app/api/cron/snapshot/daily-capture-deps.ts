@@ -4,7 +4,15 @@ import {
   type DailyCaptureFetchedPrice,
   type RunDailyCaptureDeps,
 } from "@worthline/db";
-import { fetchSpanishCpi, refreshStalePrices } from "@worthline/pricing";
+import {
+  benchmarkCatalogEntryBySeriesId,
+  listMarketIndexSeriesIds,
+} from "@worthline/domain";
+import {
+  fetchSpanishCpi,
+  fetchStooqMonthlyBenchmark,
+  refreshStalePrices,
+} from "@worthline/pricing";
 
 type CronEnv = Record<string, string | undefined>;
 const SPANISH_CPI_SERIES_ID = "ipc-es";
@@ -60,7 +68,10 @@ export function buildDailyCaptureDeps(env: CronEnv = process.env): RunDailyCaptu
         controlPlane.close();
       }
     },
-    listBenchmarkSeries: async () => [{ id: SPANISH_CPI_SERIES_ID }],
+    listBenchmarkSeries: async () => [
+      { id: SPANISH_CPI_SERIES_ID },
+      ...listMarketIndexSeriesIds().map((id) => ({ id })),
+    ],
     readBenchmarkPrices: async (seriesId) => {
       const controlPlane = await openControlPlane();
       try {
@@ -70,8 +81,12 @@ export function buildDailyCaptureDeps(env: CronEnv = process.env): RunDailyCaptu
       }
     },
     fetchBenchmarkPrices: async (series) => {
-      if (series.id !== SPANISH_CPI_SERIES_ID) return [];
-      return fetchSpanishCpi();
+      if (series.id === SPANISH_CPI_SERIES_ID) {
+        return fetchSpanishCpi();
+      }
+      const entry = benchmarkCatalogEntryBySeriesId(series.id);
+      if (!entry) return [];
+      return fetchStooqMonthlyBenchmark(entry.stooqSymbol);
     },
     saveBenchmarkPrices: async (seriesId, prices) => {
       const controlPlane = await openControlPlane();

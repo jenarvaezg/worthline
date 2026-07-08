@@ -56,6 +56,6 @@ describe("schema migration v43 (operation source)", () => {
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(43);
+    expect(SCHEMA_VERSION).toBe(44);
   });
 });
