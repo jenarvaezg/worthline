@@ -29,7 +29,7 @@ test("holding ficha shows vs-benchmark card when tracked index is assigned", asy
   await exposure.locator('select[name="assetClass"]').selectOption("equity");
   await exposure.getByLabel("Índice de referencia").fill("MSCI World");
   await exposure.getByRole("button", { name: "Guardar exposición" }).click();
-  await expect(page.getByRole("status")).toHaveText("Guardado.");
+  await expect(page.getByRole("status")).toHaveText("Perfil de exposición guardado.");
   await openAdvancedSettings(page);
 
   const benchmark = page.getByLabel("Comparación con MSCI World");
