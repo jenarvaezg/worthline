@@ -19,6 +19,8 @@
     "verify": "turbo run typecheck lint && npm run test && npm run format",
     "lint": "turbo run lint && eslint e2e scripts --max-warnings=0 --cache --cache-location node_modules/.cache/eslint-root",
     "test": "turbo run test --concurrency=1",
+    "test:coverage": "turbo run test:coverage --concurrency=1",
+    "test:globs": "tsx scripts/check-test-globs.ts",
     "test:related": "vitest related --run",
     "test:e2e": "playwright test",
     "eval:assistant": "npm run eval:assistant --workspace @worthline/web",
@@ -47,6 +49,7 @@
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "@types/node": "latest",
+    "@vitest/coverage-v8": "^4.1.8",
     "drizzle-kit": "^0.31.10",
     "eslint": "latest",
     "eslint-config-next": "latest",

@@ -40,8 +40,11 @@ jobs:
       - name: Format check
         run: npm run format
 
-      - name: Unit tests (vitest)
-        run: npm test
+      - name: Test glob integrity
+        run: npm run test:globs
+
+      - name: Unit tests with coverage (vitest)
+        run: npm run test:coverage
 
       - name: Build
         run: npm run build
@@ -72,10 +75,32 @@ jobs:
       - name: Run E2E tests
         run: npm run test:e2e
 
+      - name: Run first-run onboarding E2E (solo + hogar)
+        run: npm run test:e2e:first-run
+
+      - name: Run demo E2E
+        run: npm run test:e2e:demo
+
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: playwright-report/
+          retention-days: 14
+
+      - name: Upload first-run Playwright reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-first-run
+          path: playwright-report-first-run-*/
+          retention-days: 14
+
+      - name: Upload demo Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-demo
+          path: playwright-report-demo/
           retention-days: 14
