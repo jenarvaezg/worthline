@@ -11,6 +11,7 @@ import type {
   LiabilityType,
   GoalPriority,
   OperationKind,
+  OperationSource,
   PayoutCadence,
   PriceFreshnessState,
   PriceSource,
@@ -296,6 +297,7 @@ export const assetOperations = sqliteTable(
     pricePerUnit: text("price_per_unit").notNull(),
     currency: text("currency").notNull(),
     feesMinor: integer("fees_minor").notNull().default(0),
+    source: text("source").$type<OperationSource>().notNull().default("manual"),
     createdAt: timestamp("created_at"),
   },
   (table) => [

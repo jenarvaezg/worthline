@@ -113,6 +113,7 @@ function makeExportData(): WorkspaceExportData {
         pricePerUnit: "100.25",
         currency: "EUR",
         feesMinor: 150,
+        source: "manual",
       },
     ],
     warningOverrides: [{ code: "ZERO_VALUE_ASSET", entityId: "a1" }],

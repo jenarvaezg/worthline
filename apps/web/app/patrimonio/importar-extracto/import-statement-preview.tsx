@@ -30,6 +30,7 @@ const IDLE: ImportStatementPreviewState = { status: "idle" };
 
 interface FundSelectionFlags {
   included: boolean;
+  replaceOpening: boolean;
   symbolEmpty: boolean;
 }
 
@@ -74,7 +75,11 @@ function positionFlagLabel(
 
 function defaultFlagsFor(fund: FundPreviewRow): FundSelectionFlags {
   if (fund.bucket === "matched") {
-    return { included: true, symbolEmpty: false };
+    return {
+      included: true,
+      replaceOpening: fund.toDeleteCount > 0,
+      symbolEmpty: false,
+    };
   }
   // A row without a suggested symbol lands unchecked by default (S0
   // prototype's convention) — the user opts in explicitly, since it would
@@ -82,6 +87,7 @@ function defaultFlagsFor(fund: FundPreviewRow): FundSelectionFlags {
   // the symbol (Finect code, CoinGecko id) arrives suggested and checked.
   return {
     included: fund.suggestedSymbol !== "",
+    replaceOpening: false,
     symbolEmpty: fund.suggestedSymbol === "",
   };
 }
@@ -189,13 +195,20 @@ export function ImportStatementPreview({
   }
 
   function defaultFlagsForIsin(): FundSelectionFlags {
-    return { included: false, symbolEmpty: false };
+    return { included: false, replaceOpening: false, symbolEmpty: false };
   }
 
   function setSymbolEmpty(isin: string, symbolEmpty: boolean) {
     setSelection((current) => ({
       ...current,
       [isin]: { ...(current[isin] ?? defaultFlagsForIsin()), symbolEmpty },
+    }));
+  }
+
+  function setReplaceOpening(isin: string, replaceOpening: boolean) {
+    setSelection((current) => ({
+      ...current,
+      [isin]: { ...(current[isin] ?? defaultFlagsForIsin()), replaceOpening },
     }));
   }
 
@@ -306,6 +319,12 @@ export function ImportStatementPreview({
                     const displayName = fundDisplayName(fund);
                     const unresolved =
                       fund.bucket === "new" && fund.lookup.status !== "found";
+                    const positionImpact =
+                      fund.bucket === "matched" &&
+                      !flags.replaceOpening &&
+                      fund.openingKeptPositionImpact
+                        ? fund.openingKeptPositionImpact
+                        : fund.positionImpact;
 
                     return (
                       <tr key={fund.isin}>
@@ -390,17 +409,17 @@ export function ImportStatementPreview({
                         <td>
                           <div className="positionImpact">
                             <p className="positionImpactLine">
-                              {formatUnits(fund.positionImpact.beforeUnits)} uds (
-                              {formatMoney(fund.positionImpact.beforeValueMinor)}) →{" "}
-                              {formatUnits(fund.positionImpact.afterUnits)} uds (
-                              {formatMoney(fund.positionImpact.afterValueMinor)})
+                              {formatUnits(positionImpact.beforeUnits)} uds (
+                              {formatMoney(positionImpact.beforeValueMinor)}) →{" "}
+                              {formatUnits(positionImpact.afterUnits)} uds (
+                              {formatMoney(positionImpact.afterValueMinor)})
                             </p>
-                            {fund.positionImpact.flags.length > 0 ? (
+                            {positionImpact.flags.length > 0 ? (
                               <ul
                                 aria-label="Avisos de posición"
                                 className="positionFlags"
                               >
-                                {fund.positionImpact.flags.map((flag) => (
+                                {positionImpact.flags.map((flag) => (
                                   <li className="positionFlag" key={flag}>
                                     {positionFlagLabel(flag)}
                                   </li>
@@ -422,7 +441,36 @@ export function ImportStatementPreview({
                                     "sobrescrita",
                                     "sobrescritas",
                                   )}
+                                  {fund.toDeleteCount > 0
+                                    ? ` · ${pluralize(
+                                        fund.toDeleteCount,
+                                        "apertura sustituida",
+                                        "aperturas sustituidas",
+                                      )}`
+                                    : ""}
                                 </p>
+                                {fund.toDeleteCount > 0 ? (
+                                  <label className="directionOptIn">
+                                    <input
+                                      name={`replaceOpeningSeen_${fund.isin}`}
+                                      type="hidden"
+                                      value="on"
+                                    />
+                                    <input
+                                      checked={flags.replaceOpening}
+                                      disabled={readOnly || !flags.included}
+                                      name={`replaceOpening_${fund.isin}`}
+                                      onChange={(event) =>
+                                        setReplaceOpening(
+                                          fund.isin,
+                                          event.currentTarget.checked,
+                                        )
+                                      }
+                                      type="checkbox"
+                                    />
+                                    Sustituir la apertura por el historial importado.
+                                  </label>
+                                ) : null}
                               </details>
                             ) : (
                               <span className="contextLabel">Activo nuevo</span>

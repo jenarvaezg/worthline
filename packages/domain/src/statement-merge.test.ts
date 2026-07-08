@@ -28,6 +28,7 @@ function op(
   executedAt: string,
   units = "1",
   price = "50",
+  source: InvestmentOperation["source"] = "manual",
 ): InvestmentOperation {
   return {
     assetId: "fund",
@@ -37,6 +38,7 @@ function op(
     id,
     kind: "buy",
     pricePerUnit: price as InvestmentOperation["pricePerUnit"],
+    source,
     units: units as InvestmentOperation["units"],
   };
 }
@@ -119,6 +121,17 @@ describe("planStatementMerge (ADR 0018, S2)", () => {
   test("unambiguous merges carry no anomalies", () => {
     const plan = planStatementMerge([buy("2024-03-01")], [op("op_apr", "2024-04-01")]);
     expect(plan.anomalies).toEqual([]);
+  });
+
+  test("replaces an opening operation with the imported history by default", () => {
+    const existing = [op("opening", "2026-06-15", "20", "50", "opening")];
+    const rows = [buy("2024-01-10", "10", "100"), buy("2024-02-10", "10", "100")];
+
+    const plan = planStatementMerge(rows, existing);
+
+    expect(plan.toDelete.map((operation) => operation.id)).toEqual(["opening"]);
+    expect(plan.toCreate.map((row) => row.dateKey)).toEqual(["2024-01-10", "2024-02-10"]);
+    expect(plan.untouched).toEqual([]);
   });
 });
 

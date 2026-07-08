@@ -5,6 +5,7 @@ import type {
   DecimalString,
   InvestmentOperation,
   OperationKind,
+  OperationSource,
 } from "@worthline/domain";
 import { asDateKey, createInvestmentOperation } from "@worthline/domain";
 import { asc, eq, sql } from "drizzle-orm";
@@ -44,6 +45,7 @@ export interface UpdateInvestmentOperationInput {
   pricePerUnit: DecimalString;
   currency: CurrencyCode;
   feesMinor: number;
+  source?: OperationSource;
 }
 
 export interface OperationsStore {
@@ -107,6 +109,7 @@ async function recordOperation(
       id: operation.id,
       kind: operation.kind,
       pricePerUnit: operation.pricePerUnit,
+      source: operation.source ?? "manual",
       units: operation.units,
     })
     .run();
@@ -139,6 +142,7 @@ async function deleteOperation(
       pricePerUnit: assetOperations.pricePerUnit,
       currency: assetOperations.currency,
       feesMinor: assetOperations.feesMinor,
+      source: assetOperations.source,
     })
     .from(assetOperations)
     .where(eq(assetOperations.id, operationId))
@@ -159,6 +163,7 @@ async function deleteOperation(
     kind: row.kind,
     operationId,
     pricePerUnit: row.pricePerUnit,
+    source: row.source,
     units: row.units,
   });
 
@@ -192,6 +197,7 @@ async function updateOperation(
       feesMinor: input.feesMinor,
       kind: input.kind,
       pricePerUnit: input.pricePerUnit,
+      source: input.source ?? "statement",
       units: input.units,
     })
     .where(eq(assetOperations.id, input.id))
@@ -204,6 +210,7 @@ async function updateOperation(
     kind: input.kind,
     operationId: input.id,
     pricePerUnit: input.pricePerUnit,
+    source: input.source ?? "statement",
     units: input.units,
   });
 

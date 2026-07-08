@@ -323,6 +323,7 @@ describe("importWorkspace", () => {
         id: "b-op1",
         kind: "buy",
         pricePerUnit: "100",
+        source: "manual",
         units: "2",
       },
     ]);

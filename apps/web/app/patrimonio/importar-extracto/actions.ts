@@ -29,6 +29,7 @@ import {
   isStatementBroker,
   latestOperationPrice,
   parseStatement,
+  planStatementMerge,
   resolveStatementImportBuckets,
   systemClock,
   multiplyToMinor,
@@ -121,7 +122,9 @@ export type FundPreviewRow = {
       assetId: string;
       existingName: string;
       toCreateCount: number;
+      toDeleteCount: number;
       toOverwriteCount: number;
+      openingKeptPositionImpact?: FundPositionImpact;
     }
   | {
       bucket: "new";
@@ -230,6 +233,7 @@ function rowToPreviewOperation(
     id,
     kind: row.kind,
     pricePerUnit: row.pricePerUnit,
+    source: "statement",
     units: row.units,
   };
 }
@@ -254,6 +258,7 @@ function derivePositionImpact(
       ? [
           ...existingOperations.filter(
             (operation) =>
+              !bucket.mergePlan.toDelete.some((deleted) => deleted.id === operation.id) &&
               !bucket.mergePlan.toOverwrite.some(
                 (overwrite) => overwrite.operationId === operation.id,
               ),
@@ -324,6 +329,19 @@ async function bucketToPreviewRow(
   const positionImpact = derivePositionImpact(bucket, existingOperations);
 
   if (bucket.bucket === "matched") {
+    const openingKeptPositionImpact =
+      bucket.mergePlan.toDelete.length > 0
+        ? derivePositionImpact(
+            {
+              ...bucket,
+              mergePlan: planStatementMerge(bucket.rows, [...existingOperations], {
+                replaceOpening: false,
+              }),
+            },
+            existingOperations,
+          )
+        : undefined;
+
     return {
       amountMinor,
       assetId: bucket.assetId,
@@ -331,9 +349,11 @@ async function bucketToPreviewRow(
       executedCount: bucket.rows.length,
       existingName: bucket.name,
       isin: bucket.isin,
+      ...(openingKeptPositionImpact ? { openingKeptPositionImpact } : {}),
       positionImpact,
       skippedCount: bucket.skipped.length,
       toCreateCount: bucket.mergePlan.toCreate.length,
+      toDeleteCount: bucket.mergePlan.toDelete.length,
       toOverwriteCount: bucket.mergePlan.toOverwrite.length,
     };
   }
@@ -414,6 +434,11 @@ function isinFormKey(prefix: string, isin: string): string {
   return `${prefix}_${isin}`;
 }
 
+function shouldReplaceOpening(formData: FormData, isin: string): boolean {
+  const seen = formData.get(isinFormKey("replaceOpeningSeen", isin)) === "on";
+  return !seen || formData.get(isinFormKey("replaceOpening", isin)) === "on";
+}
+
 /** Build the confirmed per-ISIN selection from the posted checkboxes/fields. */
 function selectionsFromForm(
   buckets: StatementImportBucket[],
@@ -470,6 +495,7 @@ function rowToCreateInput(assetId: string, row: ParsedStatementRow, id: string) 
     id,
     kind: row.kind,
     pricePerUnit: row.pricePerUnit,
+    source: "statement" as const,
     units: row.units,
   };
 }
@@ -512,7 +538,9 @@ export async function confirmImportStatementAction(
     }
 
     const investments = await readPortfolioInvestments(store);
-    const buckets = resolveStatementImportBuckets(read.value, investments);
+    const buckets = resolveStatementImportBuckets(read.value, investments, {
+      replaceOpening: (group) => shouldReplaceOpening(formData, group.isin),
+    });
 
     const conflict = findStatementTypeConflict(buckets);
     if (conflict) {
@@ -548,6 +576,7 @@ export async function confirmImportStatementAction(
               ),
             ),
           ),
+          deletes: fund.mergePlan.toDelete.map((operation) => operation.id),
           kind: "matched" as const,
           overwrites: fund.mergePlan.toOverwrite.map(({ operationId, row }) => ({
             currency: row.currency,
@@ -555,6 +584,7 @@ export async function confirmImportStatementAction(
             id: operationId,
             kind: row.kind,
             pricePerUnit: row.pricePerUnit,
+            source: "statement" as const,
             units: row.units,
           })),
         };

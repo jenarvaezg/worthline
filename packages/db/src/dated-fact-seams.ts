@@ -1198,6 +1198,7 @@ export interface DatedFactSeams {
     assetId: string;
     creates: CreateInvestmentOperationInput[];
     overwrites: UpdateInvestmentOperationInput[];
+    deletes?: string[];
     today?: string;
   }) => Promise<void>;
   applyStatementImportAndRipple: (params: {
@@ -1207,6 +1208,7 @@ export interface DatedFactSeams {
           assetId: string;
           creates: CreateInvestmentOperationInput[];
           overwrites: UpdateInvestmentOperationInput[];
+          deletes?: string[];
         }
       | {
           kind: "new";
@@ -1394,6 +1396,7 @@ export function createDatedFactSeams(
     recordOperationsAndRipple: async ({
       assetId,
       creates,
+      deletes = [],
       overwrites,
       today: todayOpt,
     }) => {
@@ -1409,6 +1412,10 @@ export function createDatedFactSeams(
         }
         for (const input of overwrites) {
           const result = await stores.operations.updateOperation(input);
+          if (result) operationDateKeys.push(result.executedAt.slice(0, 10));
+        }
+        for (const operationId of deletes) {
+          const result = await stores.operations.deleteOperation(operationId);
           if (result) operationDateKeys.push(result.executedAt.slice(0, 10));
         }
         const workspace = await ctx.getWorkspace();
@@ -1448,6 +1455,10 @@ export function createDatedFactSeams(
           if (fund.kind === "matched") {
             for (const input of fund.overwrites) {
               const result = await stores.operations.updateOperation(input);
+              if (result) noteOperationDate(assetId, result.executedAt.slice(0, 10));
+            }
+            for (const operationId of fund.deletes ?? []) {
+              const result = await stores.operations.deleteOperation(operationId);
               if (result) noteOperationDate(assetId, result.executedAt.slice(0, 10));
             }
           }

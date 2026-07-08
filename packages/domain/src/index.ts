@@ -88,6 +88,7 @@ export type {
   CreateInvestmentOperationInput,
   InvestmentOperation,
   OperationKind,
+  OperationSource,
   PositionSummary,
 } from "./investment-types";
 

@@ -200,7 +200,7 @@ async function recordOpeningOperation(
     return parsedOp.error;
   }
 
-  const safe = createInvestmentOperationSafe(parsedOp.command);
+  const safe = createInvestmentOperationSafe({ ...parsedOp.command, source: "opening" });
 
   if (!safe.ok) {
     return mapDomainViolation(safe.violations[0]);
