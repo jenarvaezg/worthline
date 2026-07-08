@@ -114,6 +114,8 @@ async function callTool(
 describe("POST /api/mcp — tenant isolation (a token reaches only its own workspace)", () => {
   const originalId = process.env.AUTH_GOOGLE_ID;
   const originalSecret = process.env.AUTH_GOOGLE_SECRET;
+  let urlA = "";
+  let urlB = "";
 
   beforeAll(async () => {
     process.env.AUTH_GOOGLE_ID = "test-google-id";
@@ -121,8 +123,8 @@ describe("POST /api/mcp — tenant isolation (a token reaches only its own works
 
     // File DBs (not :memory:) so the data survives withStore's close-after-use.
     const dir = mkdtempSync(join(tmpdir(), "wl-mcp-isolation-"));
-    const urlA = `file:${join(dir, "workspace-a.db")}`;
-    const urlB = `file:${join(dir, "workspace-b.db")}`;
+    urlA = `file:${join(dir, "workspace-a.db")}`;
+    urlB = `file:${join(dir, "workspace-b.db")}`;
     const urlEmpty = `file:${join(dir, "workspace-empty.db")}`;
 
     await seedWorkspace(urlA, NET_WORTH_A);
@@ -140,17 +142,22 @@ describe("POST /api/mcp — tenant isolation (a token reaches only its own works
     else process.env.AUTH_GOOGLE_SECRET = originalSecret;
   });
 
-  test("a workspace-A token reads A's data, never B's", { timeout: 30000 }, async () => {
-    const fromA = await callNetWorth(TOKEN_A);
-    expect(fromA).toBe(NET_WORTH_A);
-    expect(fromA).not.toBe(NET_WORTH_B);
-  });
+  // `verify-token` is fully mocked here to exercise routing + store selection only;
+  // JWT/control-plane resolution is covered in verify-token.test.ts.
+  test(
+    "isolates tenants by dbUrl even when tokens share the same workspaceId label",
+    { timeout: 30000 },
+    async () => {
+      mcpAuthByToken.set(TOKEN_A, authFor("ws-shared", urlA));
+      mcpAuthByToken.set(TOKEN_B, authFor("ws-shared", urlB));
 
-  test("a workspace-B token reads B's data, never A's", { timeout: 30000 }, async () => {
-    const fromB = await callNetWorth(TOKEN_B);
-    expect(fromB).toBe(NET_WORTH_B);
-    expect(fromB).not.toBe(NET_WORTH_A);
-  });
+      const fromA = await callNetWorth(TOKEN_A);
+      const fromB = await callNetWorth(TOKEN_B);
+
+      expect(fromA).toBe(NET_WORTH_A);
+      expect(fromB).toBe(NET_WORTH_B);
+    },
+  );
 
   test("a just-provisioned empty workspace returns an MCP tool error envelope", async () => {
     const message = (await callTool(TOKEN_EMPTY, "get_financial_context", {})) as {
