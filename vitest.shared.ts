@@ -1,6 +1,10 @@
 import { fileURLToPath } from "node:url";
 
+import { vitestCoverage } from "./scripts/vitest-coverage.ts";
+
 const zone = (dir: string) => fileURLToPath(new URL(dir, import.meta.url));
+
+export { vitestCoverage } from "./scripts/vitest-coverage.ts";
 
 export const sharedVitestConfig = {
   oxc: { jsx: { runtime: "automatic" as const } },
@@ -15,5 +19,8 @@ export const sharedVitestConfig = {
       { find: /^@scripts\//, replacement: `${zone("scripts")}/` },
     ],
   },
-  test: { environment: "node" as const },
+  test: {
+    environment: "node" as const,
+    coverage: vitestCoverage,
+  },
 };
