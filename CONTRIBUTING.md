@@ -16,7 +16,7 @@ outbound). Don't paste code you don't have the right to relicense under AGPL.
 
 ## Prerequisites
 
-- **Node.js >= 26** (see `engines` in `package.json` and `.node-version`)
+- **Node.js 26** (see `.node-version` for local/CI; `engines.node` is `26.x` for Vercel)
 - **Bun** 1.3+ (the repo pins a version via `packageManager`)
 
 ## Getting started
