@@ -213,15 +213,14 @@ export async function loadDashboard(
   });
   let pricingErrors = priceErrors;
 
-  // Persist refreshed prices back to the store
-  for (const price of priceCache) {
-    if (
-      initialCache.every(
-        (c) => c.assetId !== price.assetId || c.fetchedAt !== price.fetchedAt,
-      )
-    ) {
-      await store.operations.upsertPrice(price);
-    }
+  // Persist refreshed prices back to the store (one transaction when several changed).
+  const changedPrices = priceCache.filter((price) =>
+    initialCache.every(
+      (c) => c.assetId !== price.assetId || c.fetchedAt !== price.fetchedAt,
+    ),
+  );
+  if (changedPrices.length > 0) {
+    await store.operations.upsertPrices(changedPrices);
   }
 
   // ── 1b. Refresh stale coin-collection valuations (PRD #166) ───────────────

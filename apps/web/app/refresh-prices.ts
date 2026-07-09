@@ -14,8 +14,8 @@ export interface RefreshAndPersistInput {
     assets: InvestmentAssetRef[],
     nowIso: string,
   ) => Promise<RefreshStalePricesResult>;
-  /** Injected: persist a single refreshed price entry. */
-  upsertPrice: (price: AssetPrice) => void | Promise<void>;
+  /** Injected: persist refreshed price entries in one store round-trip. */
+  upsertPrices: (prices: AssetPrice[]) => void | Promise<void>;
   /** Injected: read the current price cache after persisting. */
   readCache: () => AssetPrice[] | Promise<AssetPrice[]>;
 }
@@ -57,8 +57,8 @@ export async function refreshAndPersistStalePrices(
       input.nowIso,
     );
 
-    for (const price of result.refreshed) {
-      await input.upsertPrice(price);
+    if (result.refreshed.length > 0) {
+      await input.upsertPrices(result.refreshed);
     }
 
     errors = result.failedSymbols;

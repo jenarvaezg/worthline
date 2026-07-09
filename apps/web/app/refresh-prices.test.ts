@@ -51,7 +51,7 @@ describe("refreshAndPersistStalePrices", () => {
     };
 
     const refreshStalePrices = vi.fn().mockResolvedValue(refreshResult);
-    const upsertPrice = vi.fn();
+    const upsertPrices = vi.fn();
     const readCache = vi.fn().mockReturnValue([price]);
 
     const input: RefreshAndPersistInput = {
@@ -59,7 +59,7 @@ describe("refreshAndPersistStalePrices", () => {
       assets: [asset],
       nowIso: "2026-06-09T10:00:00Z",
       refreshStalePrices,
-      upsertPrice,
+      upsertPrices,
       readCache,
     };
 
@@ -70,7 +70,7 @@ describe("refreshAndPersistStalePrices", () => {
       input.assets,
       input.nowIso,
     );
-    expect(upsertPrice).toHaveBeenCalledWith(price);
+    expect(upsertPrices).toHaveBeenCalledWith([price]);
     expect(readCache).toHaveBeenCalledOnce();
     expect(result.priceCache).toEqual([price]);
     expect(result.errors).toEqual([]);
@@ -86,7 +86,7 @@ describe("refreshAndPersistStalePrices", () => {
     };
 
     const refreshStalePrices = vi.fn().mockResolvedValue(refreshResult);
-    const upsertPrice = vi.fn();
+    const upsertPrices = vi.fn();
     const readCache = vi.fn().mockReturnValue([price]);
 
     const input: RefreshAndPersistInput = {
@@ -94,13 +94,13 @@ describe("refreshAndPersistStalePrices", () => {
       assets: [makeAssetRef("asset-1")],
       nowIso: "2026-06-09T10:00:00Z",
       refreshStalePrices,
-      upsertPrice,
+      upsertPrices,
       readCache,
     };
 
     const result = await refreshAndPersistStalePrices(input);
 
-    expect(upsertPrice).not.toHaveBeenCalled();
+    expect(upsertPrices).not.toHaveBeenCalled();
     expect(result.priceCache).toEqual([price]);
     expect(result.errors).toEqual([]);
   });
@@ -115,7 +115,7 @@ describe("refreshAndPersistStalePrices", () => {
     };
 
     const refreshStalePrices = vi.fn().mockResolvedValue(refreshResult);
-    const upsertPrice = vi.fn();
+    const upsertPrices = vi.fn();
     const readCache = vi.fn().mockReturnValue([failedPrice]);
 
     const input: RefreshAndPersistInput = {
@@ -123,13 +123,13 @@ describe("refreshAndPersistStalePrices", () => {
       assets: [makeAssetRef("asset-1")],
       nowIso: "2026-06-09T10:00:00Z",
       refreshStalePrices,
-      upsertPrice,
+      upsertPrices,
       readCache,
     };
 
     const result = await refreshAndPersistStalePrices(input);
 
-    expect(upsertPrice).toHaveBeenCalledWith(failedPrice);
+    expect(upsertPrices).toHaveBeenCalledWith([failedPrice]);
     expect(result.errors).toEqual(["TEST.WA"]);
     expect(result.priceCache).toEqual([failedPrice]);
   });
@@ -137,7 +137,7 @@ describe("refreshAndPersistStalePrices", () => {
   test("silently degrades when refreshStalePrices throws — returns current cache, errors list", async () => {
     const cachedPrice = makePrice("asset-1");
     const refreshStalePrices = vi.fn().mockRejectedValue(new Error("network error"));
-    const upsertPrice = vi.fn();
+    const upsertPrices = vi.fn();
     const readCache = vi.fn().mockReturnValue([cachedPrice]);
 
     const input: RefreshAndPersistInput = {
@@ -145,13 +145,13 @@ describe("refreshAndPersistStalePrices", () => {
       assets: [makeAssetRef("asset-1")],
       nowIso: "2026-06-09T10:00:00Z",
       refreshStalePrices,
-      upsertPrice,
+      upsertPrices,
       readCache,
     };
 
     const result = await refreshAndPersistStalePrices(input);
 
-    expect(upsertPrice).not.toHaveBeenCalled();
+    expect(upsertPrices).not.toHaveBeenCalled();
     // cache is read regardless so pages always get current state
     expect(readCache).toHaveBeenCalledOnce();
     expect(result.priceCache).toEqual([cachedPrice]);
@@ -159,7 +159,7 @@ describe("refreshAndPersistStalePrices", () => {
     expect(result.errors).toEqual(["network error"]);
   });
 
-  test("does not call upsertPrice when refreshed list is empty", async () => {
+  test("does not call upsertPrices when refreshed list is empty", async () => {
     const refreshResult: RefreshStalePricesResult = {
       refreshed: [],
       updated: 0,
@@ -167,7 +167,7 @@ describe("refreshAndPersistStalePrices", () => {
       failures: [],
     };
     const refreshStalePrices = vi.fn().mockResolvedValue(refreshResult);
-    const upsertPrice = vi.fn();
+    const upsertPrices = vi.fn();
     const readCache = vi.fn().mockReturnValue([]);
 
     const input: RefreshAndPersistInput = {
@@ -175,11 +175,11 @@ describe("refreshAndPersistStalePrices", () => {
       assets: [],
       nowIso: "2026-06-09T10:00:00Z",
       refreshStalePrices,
-      upsertPrice,
+      upsertPrices,
       readCache,
     };
 
     await refreshAndPersistStalePrices(input);
-    expect(upsertPrice).not.toHaveBeenCalled();
+    expect(upsertPrices).not.toHaveBeenCalled();
   });
 });
