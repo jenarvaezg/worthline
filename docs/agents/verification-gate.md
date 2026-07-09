@@ -19,6 +19,9 @@ per package under `.turbo/` (gitignored), keyed on input hashes. A change scoped
 to one package re-runs only that package and its dependents ("FULL TURBO" when
 nothing changed).
 
+**Remote cache:** CI/deploy set `VERCEL_TOKEN` (reused as `TURBO_TOKEN`) + `TURBO_TEAM` for Vercel Remote Cache
+(shared across jobs and runs). Setup: [`docs/agents/turbo-remote-cache.md`](docs/agents/turbo-remote-cache.md).
+
 Biome runs at the repo root (not per-package via Turbo).
 
 ## Why two gates?
@@ -30,5 +33,5 @@ deploy / pre-push correctness gate.
 
 ## Turborepo
 
-- Local caching only; remote cache is intentionally out of scope.
+- Remote cache via Vercel when `VERCEL_TOKEN` + `TURBO_TEAM` are configured (see [`turbo-remote-cache.md`](turbo-remote-cache.md)).
 - Task graph respects `@worthline/*` workspace boundaries.

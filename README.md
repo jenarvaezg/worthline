@@ -42,8 +42,7 @@ Run only tests related to changed files (useful while iterating):
 bun run test:related
 ```
 
-Turborepo caches tasks under `.turbo/` (gitignored). Remote caching is not
-configured; everything works locally with no external account.
+Turborepo caches tasks under `.turbo/` locally. **Remote cache** (Vercel, free on Hobby) is enabled in CI when `VERCEL_TOKEN` and `TURBO_TEAM` are set — see [`docs/agents/turbo-remote-cache.md`](docs/agents/turbo-remote-cache.md).
 
 ## Project Layout
 

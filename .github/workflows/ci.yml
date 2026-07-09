@@ -16,6 +16,9 @@ concurrency:
 env:
   NODE_VERSION: "26"
   BUN_VERSION: "1.3.14"
+  # Vercel Remote Cache — same token as deploy; team slug from `vercel teams ls`.
+  TURBO_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
 
 jobs:
   quality:
@@ -81,8 +84,10 @@ jobs:
       # Playwright serves the production build in CI (next start), so build the
       # web app first. The packages export TS source directly, so Next
       # transpiles them — no separate package build is needed.
+      # Turbo task so this job can reuse @worthline/web#build from the quality job via
+      # Vercel Remote Cache (same cache key as `turbo run build` in quality).
       - name: Build web app
-        run: bun run --filter @worthline/web build
+        run: bunx turbo run build --filter=@worthline/web
 
       - name: Run E2E tests
         run: bun run test:e2e

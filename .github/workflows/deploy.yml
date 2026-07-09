@@ -25,6 +25,8 @@ env:
   VERCEL_ORG_ID: team_rBm14I3tzrhWQiNobR4yiw5u
   VERCEL_PROJECT_ID: prj_UK60yed13fPmHGpj095Pb0NyIII1
   BUN_VERSION: "1.3.14"
+  TURBO_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
   # Empty string when the secret is unset, so steps can gate on it.
   HAVE_TOKEN: ${{ secrets.VERCEL_TOKEN != '' }}
 
@@ -50,7 +52,7 @@ jobs:
       # `vercel build` below covers it.
       - name: Verify production build on Node 24
         if: env.HAVE_TOKEN != 'true'
-        run: bun run --filter @worthline/web build
+        run: bunx turbo run build --filter=@worthline/web
 
       - name: Pull Vercel project config
         if: env.HAVE_TOKEN == 'true'
