@@ -53,6 +53,12 @@ While iterating you can narrow to affected tests with `bun run test:related`.
 
 More detail: [`docs/agents/verification-gate.md`](docs/agents/verification-gate.md).
 
+## Dependency updates (Renovate)
+
+[Renovate](https://docs.renovatebot.com/) manages dependency PRs (`renovate.json` at repo root). Profile **B** ([#810](https://github.com/jenarvaezg/worthline/issues/810)): `config:recommended`, grouped **next/react**, **automerge** for patch/pin/digest when CI is green; minor/major need review.
+
+Install the [Mend Renovate](https://github.com/apps/renovate) GitHub App on `jenarvaezg/worthline` once (org/repo settings) — the config file alone does not enable the bot.
+
 ## Project layout
 
 A monorepo of TypeScript workspaces (see the [README](README.md#project-layout)
