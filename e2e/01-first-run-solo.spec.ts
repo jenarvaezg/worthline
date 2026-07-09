@@ -31,7 +31,7 @@ test("first run solo: empezar → add wizard, dashboard checklist still reachabl
 
   // 4b. Individual mode: the scope selector is redundant, so it must not render —
   // household and person are the same scope here (#269). Same Shell as the dashboard.
-  await expect(page.getByRole("navigation", { name: "Selector de scope" })).toHaveCount(
+  await expect(page.getByRole("navigation", { name: "Selector de ámbito" })).toHaveCount(
     0,
   );
 

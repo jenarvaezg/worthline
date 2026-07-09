@@ -6167,7 +6167,8 @@ td.rowActions > * {
   padding: 2px;
 }
 
-.moversSeg button {
+.moversSeg button,
+.moversSeg a {
   background: transparent;
   border: 0;
   border-radius: 999px;
@@ -6176,9 +6177,12 @@ td.rowActions > * {
   font-size: 0.72rem;
   font-weight: 700;
   padding: 3px 11px;
+  text-decoration: none;
 }
 
-.moversSeg button[data-active="true"] {
+.moversSeg button[data-active="true"],
+.moversSeg a[data-active="true"],
+.moversSeg a.active {
   background: var(--ink);
   color: var(--paper-strong);
 }

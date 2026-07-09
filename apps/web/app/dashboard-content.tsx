@@ -3,7 +3,6 @@ import {
   DRILL_GROUP_BY_TIER,
   donutArcSegments,
   formatMoneyMinorPrivacy,
-  isLiquid,
   largestRemainderPercentages,
   LIQUIDITY_TIER_LABELS,
   moneySign,
@@ -14,10 +13,8 @@ import type {
   FireGlance,
   FramedDelta,
   FramedSnapshotDeltas,
-  LiquidityTier,
   NetWorthFraming,
   NetWorthPresentation,
-  NetWorthSnapshot,
 } from "@worthline/domain";
 import { createControlPlaneStore } from "@worthline/db";
 import { refreshStalePrices } from "@worthline/pricing";
@@ -38,8 +35,12 @@ import { compositionUrl } from "./composition-url";
 import { parseMode } from "./dashboard-matrix";
 import DonutDrill, { type DonutSegment } from "./donut-drill";
 import FramingPanel, { type FramingTab } from "./framing-panel";
-import HeroMovers from "./hero-movers";
-import type { HoldingMover, MoversData, MoversPeriod } from "./hero-movers";
+import HeroMovers, { type MoversPeriodTab } from "./hero-movers";
+import {
+  buildMoversDataByPeriod,
+  parseMoversPeriod,
+  type MoversDataByPeriod,
+} from "./movers-data";
 import PrivacyToggle from "./privacy-toggle";
 import { formatRatioPct, returnsTooltipLines } from "@web/_components/returns-format";
 import { runBinanceRefresh } from "./ajustes/binance-refresh";
@@ -48,6 +49,7 @@ import { refreshAndPersistStalePrices } from "./refresh-prices";
 import { readDemoContext } from "@web/demo/read-demo-context";
 import { perfEnd, perfStart } from "@web/perf-log";
 import { bootstrapHealthcheck, openStore } from "@web/store";
+import { MOVERS_PERIOD_VIEW_PARAM, writeViewParam } from "./view-state";
 
 const framingTabs = [
   { id: "total" as NetWorthFraming, label: "Patrimonio neto" },
@@ -115,192 +117,6 @@ function DeltaChip({
       {delta.pct !== null ? ` (${formatPct(delta.pct)})` : ""} {label}
     </span>
   );
-}
-
-const MOVERS_MAX_PER_COLUMN = 4;
-
-function moversMonthLabel(monthKey: string): string {
-  const [y, m] = monthKey.split("-").map(Number);
-  return new Intl.DateTimeFormat("es-ES", {
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(Date.UTC(y!, m! - 1, 1)));
-}
-
-interface MoversHoldingRow {
-  dateKey: string;
-  holdingId: string;
-  kind: "asset" | "liability";
-  label: string;
-  valueMinor: number;
-  liquidityTier: LiquidityTier | null;
-  securesHousing: boolean;
-}
-
-function moversIsLiquidHolding(meta: {
-  kind: "asset" | "liability";
-  tier: LiquidityTier | null;
-  securesHousing: boolean;
-}): boolean {
-  if (meta.kind === "asset") return meta.tier !== null && isLiquid(meta.tier);
-  if (meta.securesHousing) return false;
-  return meta.tier === null || isLiquid(meta.tier);
-}
-
-function moversContribMinor(row: MoversHoldingRow): number {
-  return row.kind === "liability" ? -row.valueMinor : row.valueMinor;
-}
-
-function moversPctFmt(pct: number): string {
-  const sign = pct > 0 ? "+" : pct < 0 ? "−" : "";
-  return `${sign}${Math.abs(pct).toFixed(1).replace(".", ",")} %`;
-}
-
-function moversBaseSnapshot(
-  snapshots: NetWorthSnapshot[],
-  period: MoversPeriod,
-): NetWorthSnapshot | undefined {
-  const latest = snapshots[snapshots.length - 1];
-  if (!latest) return undefined;
-  if (period === "year") {
-    const [y, m] = latest.monthKey.split("-");
-    const target = `${Number(y) - 1}-${m}`;
-    const candidates = snapshots.filter((s) => s.monthKey <= target);
-    return candidates[candidates.length - 1];
-  }
-  const candidates = snapshots.filter((s) => s.monthKey < latest.monthKey);
-  return candidates[candidates.length - 1];
-}
-
-interface MoverRaw {
-  label: string;
-  impactMinor: number;
-  pct: number | null;
-  tag: "nuevo" | "vendido" | null;
-}
-
-function buildMoversData(params: {
-  snapshots: NetWorthSnapshot[];
-  selectedView: NetWorthFraming;
-  period: MoversPeriod;
-  holdingRows: MoversHoldingRow[];
-  currency: string;
-  privacyMode: boolean;
-}): MoversData | null {
-  const { snapshots, selectedView, period, holdingRows, currency, privacyMode } = params;
-  const latest = snapshots[snapshots.length - 1];
-  if (!latest) return null;
-
-  const base = moversBaseSnapshot(snapshots, period);
-  const vsLabel = base
-    ? period === "year"
-      ? `vs ${moversMonthLabel(base.monthKey)} (YoY)`
-      : `vs cierre ${moversMonthLabel(base.monthKey)}`
-    : period === "year"
-      ? "Año anterior"
-      : "Cierre anterior";
-  if (!base) {
-    return { vsLabel, hasBase: false, up: [], down: [] };
-  }
-
-  type Agg = {
-    label: string;
-    kind: "asset" | "liability";
-    base: number;
-    cur: number;
-    tier: LiquidityTier | null;
-    securesHousing: boolean;
-    latestSeen: boolean;
-  };
-  const byHolding = new Map<string, Agg>();
-  for (const row of holdingRows) {
-    if (row.dateKey !== latest.dateKey && row.dateKey !== base.dateKey) continue;
-    const key = `${row.kind}:${row.holdingId}`;
-    const entry =
-      byHolding.get(key) ??
-      ({
-        label: row.label,
-        kind: row.kind,
-        base: 0,
-        cur: 0,
-        tier: row.liquidityTier,
-        securesHousing: row.securesHousing,
-        latestSeen: false,
-      } satisfies Agg);
-    entry.label = row.label;
-    const isLatest = row.dateKey === latest.dateKey;
-    if (isLatest) entry.cur += moversContribMinor(row);
-    else entry.base += moversContribMinor(row);
-    if (isLatest || !entry.latestSeen) {
-      entry.tier = row.liquidityTier;
-      entry.securesHousing = row.securesHousing;
-      if (isLatest) entry.latestSeen = true;
-    }
-    byHolding.set(key, entry);
-  }
-
-  const raw: MoverRaw[] = [];
-  for (const e of byHolding.values()) {
-    if (selectedView === "liquid" && !moversIsLiquidHolding(e)) continue;
-    const impactMinor = e.cur - e.base;
-    if (impactMinor === 0) continue;
-    raw.push({
-      label: e.label,
-      impactMinor,
-      pct: e.base !== 0 ? (impactMinor / Math.abs(e.base)) * 100 : null,
-      tag: e.base === 0 ? "nuevo" : e.cur === 0 ? "vendido" : null,
-    });
-  }
-
-  if (raw.length === 0) {
-    return { vsLabel, hasBase: true, up: [], down: [] };
-  }
-
-  const toMover = (r: MoverRaw): HoldingMover => {
-    const amount = formatMoneyMinorPrivacy(
-      { amountMinor: r.impactMinor, currency },
-      privacyMode,
-    );
-    return {
-      label: r.label,
-      changeFmt: `${r.impactMinor > 0 ? "+" : ""}${amount}`,
-      pctFmt: r.pct === null ? null : moversPctFmt(r.pct),
-      sign: r.impactMinor > 0 ? "pos" : r.impactMinor < 0 ? "neg" : "zero",
-      tag: r.tag,
-    };
-  };
-
-  const byImpactDesc = [...raw].sort((a, b) => b.impactMinor - a.impactMinor);
-
-  return {
-    vsLabel,
-    hasBase: true,
-    up: byImpactDesc
-      .filter((r) => r.impactMinor > 0)
-      .slice(0, MOVERS_MAX_PER_COLUMN)
-      .map(toMover),
-    down: byImpactDesc
-      .filter((r) => r.impactMinor < 0)
-      .reverse()
-      .slice(0, MOVERS_MAX_PER_COLUMN)
-      .map(toMover),
-  };
-}
-
-function parseMoversPeriod(raw: string | string[] | undefined): MoversPeriod {
-  const v = Array.isArray(raw) ? raw[0] : raw;
-  return v === "year" ? "year" : "month";
-}
-
-function selectMoversHoldingRows(
-  rows: MoversHoldingRow[],
-  snapshots: NetWorthSnapshot[],
-  period: MoversPeriod,
-): MoversHoldingRow[] {
-  const base = moversBaseSnapshot(snapshots, period);
-  if (!base) return [];
-  return rows.filter((row) => row.dateKey >= base.dateKey);
 }
 
 /**
@@ -387,8 +203,9 @@ function FireGlanceCard({
 function HeroFraming({
   hasHoldings,
   headlineDeltas,
-  movers,
+  moversByPeriod,
   moversPeriod,
+  moversPeriodTabs,
   presentation,
   privacyMode,
   returnTo,
@@ -396,8 +213,9 @@ function HeroFraming({
 }: {
   hasHoldings: boolean;
   headlineDeltas: FramedSnapshotDeltas;
-  movers: MoversData | null;
-  moversPeriod: MoversPeriod;
+  moversByPeriod: MoversDataByPeriod | null;
+  moversPeriod: ReturnType<typeof parseMoversPeriod>;
+  moversPeriodTabs: readonly MoversPeriodTab[];
   presentation: NetWorthPresentation | undefined;
   privacyMode: boolean;
   returnTo: string;
@@ -444,7 +262,13 @@ function HeroFraming({
         </div>
       ) : null}
 
-      {movers ? <HeroMovers data={movers} period={moversPeriod} /> : null}
+      {moversByPeriod ? (
+        <HeroMovers
+          dataByPeriod={moversByPeriod}
+          initialPeriod={moversPeriod}
+          periodTabs={moversPeriodTabs}
+        />
+      ) : null}
     </>
   );
 }
@@ -517,11 +341,6 @@ export default async function DashboardContent({
 
   const { fireGlance, onboarding, pyramid, snapshots } = state;
   const selectedRangeForView = state.activeCompositionRange;
-  const moversHoldingRows = selectMoversHoldingRows(
-    state.snapshotHoldingRows,
-    snapshots,
-    moversPeriod,
-  );
 
   const hasHoldings = state.assets.length + state.liabilities.length > 0;
 
@@ -547,23 +366,47 @@ export default async function DashboardContent({
       : emptyFramedDeltas,
   } as const;
   const moversByView = {
-    liquid: buildMoversData({
+    liquid: buildMoversDataByPeriod({
       snapshots,
       selectedView: "liquid",
-      period: moversPeriod,
-      holdingRows: moversHoldingRows,
+      holdingRows: state.snapshotHoldingRows,
       currency,
       privacyMode,
     }),
-    total: buildMoversData({
+    total: buildMoversDataByPeriod({
       snapshots,
       selectedView: "total",
-      period: moversPeriod,
-      holdingRows: moversHoldingRows,
+      holdingRows: state.snapshotHoldingRows,
       currency,
       privacyMode,
     }),
   } as const;
+  const currentSearch = (() => {
+    if (!searchParams) return "";
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(searchParams)) {
+      if (value === undefined) continue;
+      if (Array.isArray(value)) {
+        for (const entry of value) params.append(key, entry);
+      } else {
+        params.set(key, value);
+      }
+    }
+    const qs = params.toString();
+    return qs ? `?${qs}` : "";
+  })();
+  const moversPeriodTabs: MoversPeriodTab[] = (
+    [
+      { id: "month" as const, label: "Mes" },
+      { id: "year" as const, label: "Año" },
+    ] as const
+  ).map((tab) => {
+    const nextSearch = writeViewParam(currentSearch, MOVERS_PERIOD_VIEW_PARAM, tab.id);
+    return {
+      ...tab,
+      href: `/${nextSearch}`,
+    };
+  });
   const framingTabsWithHref: FramingTab[] = framingTabs.map((tab) => ({
     href: compositionUrl(
       tab.id,
@@ -605,8 +448,9 @@ export default async function DashboardContent({
             <HeroFraming
               hasHoldings={hasHoldings}
               headlineDeltas={deltasByView.liquid}
-              movers={moversByView.liquid}
+              moversByPeriod={moversByView.liquid}
               moversPeriod={moversPeriod}
+              moversPeriodTabs={moversPeriodTabs}
               presentation={presentationByView.liquid}
               privacyMode={privacyMode}
               returnTo={returnTo}
@@ -618,8 +462,9 @@ export default async function DashboardContent({
             <HeroFraming
               hasHoldings={hasHoldings}
               headlineDeltas={deltasByView.total}
-              movers={moversByView.total}
+              moversByPeriod={moversByView.total}
               moversPeriod={moversPeriod}
+              moversPeriodTabs={moversPeriodTabs}
               presentation={presentationByView.total}
               privacyMode={privacyMode}
               returnTo={returnTo}

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   FRAMING_VIEW_PARAM,
+  MOVERS_PERIOD_VIEW_PARAM,
   RANGE_VIEW_PARAM,
   readViewParam,
   writeViewParam,
@@ -88,6 +89,21 @@ describe("FRAMING_VIEW_PARAM", () => {
     expect(FRAMING_VIEW_PARAM.key).toBe("view");
     expect(FRAMING_VIEW_PARAM.fallback).toBe("total");
     expect([...FRAMING_VIEW_PARAM.allowed]).toEqual(["total", "liquid"]);
+  });
+});
+
+describe("MOVERS_PERIOD_VIEW_PARAM", () => {
+  test("models the movers period toggle: month (default) · year", () => {
+    expect(MOVERS_PERIOD_VIEW_PARAM.key).toBe("mvp");
+    expect(MOVERS_PERIOD_VIEW_PARAM.fallback).toBe("month");
+    expect([...MOVERS_PERIOD_VIEW_PARAM.allowed]).toEqual(["month", "year"]);
+  });
+
+  test("omits month from the URL and keeps year explicit", () => {
+    expect(readViewParam("?mvp=year", MOVERS_PERIOD_VIEW_PARAM)).toBe("year");
+    expect(readViewParam("", MOVERS_PERIOD_VIEW_PARAM)).toBe("month");
+    expect(writeViewParam("?mvp=year", MOVERS_PERIOD_VIEW_PARAM, "month")).toBe("");
+    expect(writeViewParam("", MOVERS_PERIOD_VIEW_PARAM, "year")).toBe("?mvp=year");
   });
 });
 

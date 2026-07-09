@@ -38,7 +38,7 @@ test("hogar onboarding: /empezar → Crear hogar → add wizard with household s
 
   // 6. The shared shell carries the household scope here too: the scope selector
   // shows the household scope + individual member scopes.
-  const scopeNav = page.locator("[aria-label='Selector de scope']");
+  const scopeNav = page.locator("[aria-label='Selector de ámbito']");
   await expect(scopeNav).toBeVisible();
   const scopeButtons = scopeNav.getByRole("button");
   // household scope + 3 individual members = 4 buttons

@@ -371,6 +371,7 @@ export default async function AnadirHoldingPage({
               </section>
 
               <OwnershipInputs
+                allowCustomSplit={selectedDrawer === "inmueble"}
                 members={activeMembers}
                 scopeMemberId={ownershipScopeMemberId}
                 values={values}
@@ -807,10 +808,13 @@ function OwnershipInputs({
   members,
   scopeMemberId,
   values,
+  allowCustomSplit,
 }: {
   members: Member[];
   scopeMemberId: string | undefined;
   values: Record<string, string>;
+  /** Custom splits below 100% are only honoured for real estate (#737). */
+  allowCustomSplit: boolean;
 }) {
   const scopeMember = members.find((m) => m.id === scopeMemberId) ?? members[0];
 
@@ -827,7 +831,11 @@ function OwnershipInputs({
     );
   }
 
-  const preset = values["ownershipPreset"];
+  const preset = allowCustomSplit
+    ? values["ownershipPreset"]
+    : values["ownershipPreset"] === "custom"
+      ? "even"
+      : values["ownershipPreset"];
 
   return (
     <fieldset className="ownershipGrid simpleOwnership">
@@ -851,33 +859,37 @@ function OwnershipInputs({
         />
         De los dos (mitad y mitad)
       </label>
-      <label className="ownerPreset">
-        <input
-          defaultChecked={preset === "custom"}
-          name="ownershipPreset"
-          type="radio"
-          value="custom"
-        />
-        Otro reparto…
-      </label>
-      <div className="ownerCustom">
-        {members.map((member, index) => (
-          <label key={member.id}>
-            {member.name}
-            <input
-              aria-label={`Porcentaje de ${member.name}`}
-              defaultValue={values[`owner_${member.id}`] ?? (index === 0 ? "50" : "50")}
-              inputMode="decimal"
-              name={`owner_${member.id}`}
-            />
-          </label>
-        ))}
-        <p className="simpleHint">
-          ¿Un inmueble a medias con alguien de fuera? Pon solo vuestra parte; el resto se
-          da por suyo. Solo se admite en inmuebles — el dinero y las inversiones suman al
-          100%.
-        </p>
-      </div>
+      {allowCustomSplit ? (
+        <label className="ownerPreset">
+          <input
+            defaultChecked={preset === "custom"}
+            name="ownershipPreset"
+            type="radio"
+            value="custom"
+          />
+          Otro reparto…
+        </label>
+      ) : null}
+      {allowCustomSplit ? (
+        <div className="ownerCustom">
+          {members.map((member, index) => (
+            <label key={member.id}>
+              {member.name}
+              <input
+                aria-label={`Porcentaje de ${member.name}`}
+                defaultValue={values[`owner_${member.id}`] ?? (index === 0 ? "50" : "50")}
+                inputMode="decimal"
+                name={`owner_${member.id}`}
+              />
+            </label>
+          ))}
+          <p className="simpleHint">
+            ¿Un inmueble a medias con alguien de fuera? Pon solo vuestra parte; el resto
+            se da por suyo. Solo se admite en inmuebles — el dinero y las inversiones
+            suman al 100%.
+          </p>
+        </div>
+      ) : null}
     </fieldset>
   );
 }

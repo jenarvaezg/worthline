@@ -44,7 +44,7 @@ import { test, expect } from "./fixtures";
  * workspace (multiple members) we click "Hogar" as before. */
 async function pinHouseholdScope(page: import("@playwright/test").Page): Promise<void> {
   await page.goto("/");
-  const scopeNav = page.getByRole("navigation", { name: "Selector de scope" });
+  const scopeNav = page.getByRole("navigation", { name: "Selector de ámbito" });
   if ((await scopeNav.count()) === 0) {
     return;
   }

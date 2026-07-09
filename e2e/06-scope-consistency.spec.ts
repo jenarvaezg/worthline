@@ -29,7 +29,7 @@ test("scope consistency: switch member scope → reconciled views → survives r
 }) => {
   await page.goto("/");
 
-  const scopeTabs = page.getByRole("navigation", { name: "Selector de scope" });
+  const scopeTabs = page.getByRole("navigation", { name: "Selector de ámbito" });
   await expect(scopeTabs).toBeVisible();
   const scopeButtons = scopeTabs.getByRole("button");
   const count = await scopeButtons.count();

@@ -227,6 +227,7 @@ function HoldingRow({
   privacyMode,
   optimisticSubmit,
   returns,
+  readOnly,
 }: {
   holding: UnifiedHolding;
   currency: Currency;
@@ -240,6 +241,7 @@ function HoldingRow({
   privacyMode: boolean;
   optimisticSubmit: OptimisticSubmit;
   returns: HoldingReturnsView | undefined;
+  readOnly: boolean;
 }) {
   const h = holding;
   const rowWarnings = isAsset
@@ -311,7 +313,7 @@ function HoldingRow({
               <input name="currentUrl" type="hidden" value={currentUrl} />
               <input name="code" type="hidden" value={ack.code} />
               <input name="entityId" type="hidden" value={h.id} />
-              <button className="balanceMenuAck" type="submit">
+              <button className="balanceMenuAck" disabled={readOnly} type="submit">
                 Es intencional
               </button>
             </form>
@@ -324,7 +326,9 @@ function HoldingRow({
             <input name="id" type="hidden" value={h.id} />
             <details className="confirmDelete balanceMenuDelete">
               <summary>Eliminar</summary>
-              <button type="submit">Confirmar</button>
+              <button disabled={readOnly} type="submit">
+                Confirmar
+              </button>
             </details>
           </form>
         </div>
@@ -356,6 +360,7 @@ function Pane({
   privacyMode,
   optimisticSubmit,
   returnsById,
+  readOnly,
 }: {
   title: string;
   total: number;
@@ -371,6 +376,7 @@ function Pane({
   privacyMode: boolean;
   optimisticSubmit: OptimisticSubmit;
   returnsById: ReturnsById;
+  readOnly: boolean;
 }) {
   const { denom, segments } = paneSegments(sections, isAsset);
   const showSubs = sections.length > 1;
@@ -436,6 +442,7 @@ function Pane({
                   nowIso={nowIso}
                   optimisticSubmit={optimisticSubmit}
                   privacyMode={privacyMode}
+                  readOnly={readOnly}
                   returns={returnsById.get(h.id)}
                   sectionDenom={secDenom}
                   showTierLabel={!showSubs}
@@ -464,6 +471,7 @@ function Pane({
               nowIso={nowIso}
               optimisticSubmit={optimisticSubmit}
               privacyMode={privacyMode}
+              readOnly={readOnly}
               returns={returnsById.get(h.id)}
               sectionDenom={1}
               showTierLabel={false}
@@ -483,6 +491,7 @@ function TrashRow({
   hardDeleteAction,
   currentUrl,
   optimisticSubmit,
+  readOnly,
 }: {
   id: string;
   name: string;
@@ -490,6 +499,7 @@ function TrashRow({
   hardDeleteAction: typeof hardDeleteAssetAction;
   currentUrl: string;
   optimisticSubmit: OptimisticSubmit;
+  readOnly: boolean;
 }) {
   return (
     <div className="balanceTrashRow">
@@ -501,7 +511,11 @@ function TrashRow({
         <form action={restoreAction}>
           <input name="currentUrl" type="hidden" value={currentUrl} />
           <input name="id" type="hidden" value={id} />
-          <PendingSubmit className="btnSmall" pendingLabel="Restaurando…">
+          <PendingSubmit
+            className="btnSmall"
+            disabled={readOnly}
+            pendingLabel="Restaurando…"
+          >
             Restaurar
           </PendingSubmit>
         </form>
@@ -513,7 +527,9 @@ function TrashRow({
           <input name="id" type="hidden" value={id} />
           <details className="confirmDelete">
             <summary>Eliminar definitivamente</summary>
-            <button type="submit">Confirmar borrado definitivo</button>
+            <button disabled={readOnly} type="submit">
+              Confirmar borrado definitivo
+            </button>
           </details>
         </form>
       </span>
@@ -601,9 +617,9 @@ export default function BalanceBoard({
 
   if (groups.length === 0) {
     return (
-      <section aria-label="Holdings" className="balanceBoard">
+      <section aria-label="Activos" className="balanceBoard">
         <p className="balanceEmpty">
-          Sin holdings todavía. <Link href="/patrimonio/anadir">Añadir holding →</Link>
+          Sin activos todavía. <Link href="/patrimonio/anadir">Añadir activo →</Link>
         </p>
       </section>
     );
@@ -628,6 +644,7 @@ export default function BalanceBoard({
         nowIso={nowIso}
         optimisticSubmit={optimisticSubmit}
         privacyMode={privacyMode}
+        readOnly={readOnly}
         returnsById={returns}
         sections={assetSections}
         title="Activos"
@@ -642,6 +659,7 @@ export default function BalanceBoard({
         nowIso={nowIso}
         optimisticSubmit={optimisticSubmit}
         privacyMode={privacyMode}
+        readOnly={readOnly}
         returnsById={returns}
         sections={debtSections}
         title="Pasivos"
@@ -689,6 +707,7 @@ export default function BalanceBoard({
                 key={item.id}
                 name={item.name}
                 optimisticSubmit={optimisticSubmit}
+                readOnly={readOnly}
                 restoreAction={restoreAssetAction}
               />
             ))}
@@ -700,6 +719,7 @@ export default function BalanceBoard({
                 key={item.id}
                 name={item.name}
                 optimisticSubmit={optimisticSubmit}
+                readOnly={readOnly}
                 restoreAction={restoreLiabilityAction}
               />
             ))}
@@ -714,7 +734,9 @@ export default function BalanceBoard({
             <input name="currentUrl" type="hidden" value={currentUrl} />
             <details className="confirmDelete">
               <summary>Vaciar papelera</summary>
-              <button type="submit">Confirmar vaciado de papelera</button>
+              <button disabled={readOnly} type="submit">
+                Confirmar vaciado de papelera
+              </button>
             </details>
           </form>
         ) : null}
