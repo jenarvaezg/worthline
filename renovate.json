@@ -1,0 +1,33 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "timezone": "Europe/Madrid",
+  "labels": ["dependencies"],
+  "rangeStrategy": "bump",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 5am on the first day of the month"]
+  },
+  "packageRules": [
+    {
+      "description": "Group Next.js + React (single review surface)",
+      "groupName": "next-react",
+      "matchPackageNames": ["/^next$/", "/^react(-dom)?$/", "/^@types/react(-dom)?$/"]
+    },
+    {
+      "description": "Profile B (#810): automerge patch/pin/digest when CI is green",
+      "matchUpdateTypes": ["patch", "pin", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "TypeScript 7 breaks Next build verification — hold 5.x until upstream",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<7"
+    },
+    {
+      "description": "Workspace packages are not published",
+      "matchPackageNames": ["/^@worthline//"],
+      "enabled": false
+    }
+  ]
+}
