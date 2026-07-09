@@ -18,6 +18,12 @@ import { migrate } from "./migrate";
 export interface TursoPort {
   /** Create a database and return its name and libSQL URL. */
   createDatabase(name: string): Promise<{ name: string; url: string }>;
+  /**
+   * Delete a database created by this port — best-effort cleanup of the
+   * loser's orphan after a first-login race (#733). Optional: without it the
+   * orphan database simply lingers, which was the pre-#733 status quo.
+   */
+  deleteDatabase?(name: string): Promise<void>;
 }
 
 export interface ProvisionDeps {
@@ -81,6 +87,54 @@ export async function provisionWorkspaceForUser(
     dbName: name,
     dbUrl: url,
   });
-  await controlPlane.recordGrant(user.id, workspace.id);
+  try {
+    await controlPlane.recordGrant(user.id, workspace.id);
+  } catch (error) {
+    if (!isOwnerGrantConflict(error)) {
+      throw error;
+    }
+    // Lost the first-login race (#733): a concurrent provision already owns a
+    // grant for this user (grants_one_owner_per_user). Clean up our orphan
+    // and hand back the winner's workspace so both logins converge. Each
+    // cleanup is independently best-effort: a dangling workspace row is the
+    // pre-#733 failure mode the admin surface tolerates (#697), and a
+    // lingering database only costs until an operator acts on the warning.
+    try {
+      await controlPlane.deleteWorkspace(workspace.id);
+    } catch (cleanupError) {
+      console.warn(
+        `provisioner: could not delete orphan workspace row ${workspace.id} after losing the first-login race`,
+        cleanupError,
+      );
+    }
+    if (turso.deleteDatabase) {
+      try {
+        await turso.deleteDatabase(name);
+      } catch (cleanupError) {
+        console.warn(
+          `provisioner: could not delete orphan database ${name} after losing the first-login race`,
+          cleanupError,
+        );
+      }
+    }
+    const [winner] = await controlPlane.listWorkspacesForUser(user.id);
+    if (!winner) {
+      throw error;
+    }
+    return winner;
+  }
   return workspace;
+}
+
+/**
+ * Only the grants_one_owner_per_user violation counts as "lost the race" —
+ * the message text is the most transport-stable signal (the local driver and
+ * remote hrana both embed SQLite's "UNIQUE constraint failed: grants.user_id").
+ * Anything else (FK violations, other tables) must propagate, not trigger
+ * cleanup of a legitimately created workspace.
+ */
+function isOwnerGrantConflict(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const text = `${error.message} ${String((error as { cause?: unknown }).cause ?? "")}`;
+  return /UNIQUE constraint failed: grants\.user_id/i.test(text);
 }

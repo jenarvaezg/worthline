@@ -1,5 +1,17 @@
-import { createInMemoryControlPlaneStore } from "@db/control-plane";
-import { describe, expect, test } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  createControlPlaneStore,
+  createInMemoryControlPlaneStore,
+} from "@db/control-plane";
+import { openLibsqlClient } from "@db/libsql-client";
+import { afterAll, describe, expect, test } from "vitest";
+
+const tempDirs: string[] = [];
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { force: true, recursive: true });
+});
 
 describe("control-plane store", () => {
   test("find-or-create returns a user for a new email", async () => {
@@ -238,6 +250,138 @@ describe("control-plane store", () => {
         { id: anaWs.id, ownerEmail: "ana@example.com" },
         { id: leoWs.id, ownerEmail: "leo@example.com" },
       ]);
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("a user cannot own two workspaces — a second owner grant is rejected (#733)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const ana = await cp.findOrCreateUser("ana@example.com");
+      const first = await cp.createWorkspace({
+        dbName: "wl-ana",
+        dbUrl: "libsql://wl-ana.turso.io",
+      });
+      const second = await cp.createWorkspace({
+        dbName: "wl-ana-2",
+        dbUrl: "libsql://wl-ana-2.turso.io",
+      });
+      await cp.recordGrant(ana.id, first.id);
+
+      await expect(cp.recordGrant(ana.id, second.id)).rejects.toThrow(/UNIQUE/i);
+      expect(await cp.listWorkspacesForUser(ana.id)).toHaveLength(1);
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("the one-owner rule does not cap non-owner roles (#733)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const ana = await cp.findOrCreateUser("ana@example.com");
+      const own = await cp.createWorkspace({
+        dbName: "wl-ana",
+        dbUrl: "libsql://wl-ana.turso.io",
+      });
+      const shared = await cp.createWorkspace({
+        dbName: "wl-shared",
+        dbUrl: "libsql://wl-shared.turso.io",
+      });
+      await cp.recordGrant(ana.id, own.id);
+
+      // A future sharing flow can still grant the same user other workspaces
+      // under non-owner roles.
+      await cp.recordGrant(ana.id, shared.id, "viewer");
+      expect(await cp.listWorkspacesForUser(ana.id)).toHaveLength(2);
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("delete-workspace removes the row — the provisioner's loser cleanup (#733)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const ws = await cp.createWorkspace({
+        dbName: "wl-orphan",
+        dbUrl: "libsql://wl-orphan.turso.io",
+      });
+      await cp.deleteWorkspace(ws.id);
+      expect(await cp.listAllWorkspaces()).toHaveLength(0);
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("startup heals pre-existing duplicate owner grants so the unique index can build (#733)", async () => {
+    // A control plane written before the grants_one_owner_per_user index
+    // existed: tables only, plus the exact duplicates the #733 race created.
+    const dir = mkdtempSync(join(tmpdir(), "worthline-cp-heal-"));
+    tempDirs.push(dir);
+    const url = `file:${join(dir, "control-plane.sqlite")}`;
+    const raw = openLibsqlClient({ url });
+    await raw.executeMultiple(`
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE workspaces (
+        id TEXT PRIMARY KEY,
+        db_name TEXT NOT NULL UNIQUE,
+        db_url TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE grants (
+        user_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'owner',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, workspace_id)
+      );
+      INSERT INTO users (id, email) VALUES ('u1', 'ana@example.com');
+      INSERT INTO workspaces (id, db_name, db_url) VALUES
+        ('w1', 'wl-a', 'libsql://wl-a.turso.io'),
+        ('w2', 'wl-b', 'libsql://wl-b.turso.io'),
+        ('w3', 'wl-c', 'libsql://wl-c.turso.io');
+      INSERT INTO grants (user_id, workspace_id, role, created_at) VALUES
+        ('u1', 'w1', 'owner', '2026-01-01 00:00:00'),
+        ('u1', 'w2', 'owner', '2026-01-01 00:00:00'),
+        ('u1', 'w3', 'owner', '2026-02-01 00:00:00');
+    `);
+    raw.close();
+
+    // Opening the store runs SCHEMA: the healing update must demote the
+    // duplicates (created_at, then rowid, breaks ties) and build the index.
+    const cp = await createControlPlaneStore({ url });
+    try {
+      expect((await cp.readGrant("u1", "w1"))?.role).toBe("owner");
+      expect((await cp.readGrant("u1", "w2"))?.role).toBe("orphaned-owner");
+      expect((await cp.readGrant("u1", "w3"))?.role).toBe("orphaned-owner");
+
+      // The index is live: a fresh owner grant for the same user is rejected.
+      const other = await cp.createWorkspace({
+        dbName: "wl-d",
+        dbUrl: "libsql://wl-d.turso.io",
+      });
+      await expect(cp.recordGrant("u1", other.id)).rejects.toThrow(/UNIQUE/i);
+
+      // Login resolution is unchanged — the oldest grant still wins.
+      const list = await cp.listWorkspacesForUser("u1");
+      expect(list[0]?.id).toBe("w1");
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("concurrent find-or-create calls for the same email converge on one user (#733)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const [a, b] = await Promise.all([
+        cp.findOrCreateUser("ana@example.com"),
+        cp.findOrCreateUser("ana@example.com"),
+      ]);
+      expect(b.id).toBe(a.id);
     } finally {
       cp.close();
     }

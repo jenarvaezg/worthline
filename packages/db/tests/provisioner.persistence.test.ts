@@ -22,14 +22,23 @@ afterAll(() => {
  * URL in a temp dir, so the provisioner runs the real migration against a real
  * libSQL database — no network, no Turso account.
  */
-function fakeTurso(dir: string): { port: TursoPort; created: string[] } {
+function fakeTurso(dir: string): {
+  port: TursoPort;
+  created: string[];
+  deleted: string[];
+} {
   const created: string[] = [];
+  const deleted: string[] = [];
   return {
     created,
+    deleted,
     port: {
       async createDatabase(name) {
         created.push(name);
         return { name, url: `file:${join(dir, `${name}.sqlite`)}` };
+      },
+      async deleteDatabase(name) {
+        deleted.push(name);
       },
     },
   };
@@ -104,6 +113,51 @@ describe("workspace provisioner", () => {
       expect(leo.dbName).not.toBe(ana.dbName);
       expect(leo.dbUrl).not.toBe(ana.dbUrl);
       expect(created).toHaveLength(2);
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("concurrent first logins for the same account converge on one workspace (#733)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    const { port, created, deleted } = fakeTurso(tempDir("worthline-provision-race-"));
+    try {
+      // Barrier inside the injected openAndMigrate: both provisions must pass
+      // the "already has a workspace?" check before either records its grant —
+      // the double-fire interleaving (two tabs / retried lambda).
+      let arrived = 0;
+      let release = () => {};
+      const bothPastTheCheck = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const deps = {
+        controlPlane: cp,
+        turso: port,
+        openAndMigrate: async () => {
+          arrived += 1;
+          if (arrived === 2) release();
+          await bothPastTheCheck;
+        },
+      };
+
+      const [first, second] = await Promise.all([
+        provisionWorkspaceForUser(deps, "ana@example.com"),
+        provisionWorkspaceForUser(deps, "ana@example.com"),
+      ]);
+
+      // Both logins land on the same workspace…
+      expect(second.id).toBe(first.id);
+
+      // …exactly one workspace + grant survive in the control plane…
+      const user = await cp.findOrCreateUser("ana@example.com");
+      expect(await cp.listWorkspacesForUser(user.id)).toHaveLength(1);
+      expect(await cp.listAllWorkspaces()).toHaveLength(1);
+
+      // …and the loser's database was cleaned up via the port.
+      expect(created).toHaveLength(2);
+      expect(deleted).toHaveLength(1);
+      expect(created).toContain(deleted[0]);
+      expect(deleted[0]).not.toBe(first.dbName);
     } finally {
       cp.close();
     }
