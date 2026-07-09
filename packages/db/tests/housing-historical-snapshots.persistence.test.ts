@@ -6,10 +6,11 @@
  * the snapshot at that date — valuing the housing asset from its curve — and
  * ripples the existing snapshots after it. Future anchors generate nothing.
  */
-import { describe, expect, test } from "vitest";
+
+import type { WorthlineStore } from "@db/index";
 
 import { captureDailySnapshotForWorkspace, createInMemoryStore } from "@db/index";
-import type { WorthlineStore } from "@db/index";
+import { describe, expect, test } from "vitest";
 
 const TODAY = "2026-06-12";
 

@@ -13,10 +13,10 @@
  *   CI=1 npx playwright test --config playwright.demo.config.ts
  */
 
-import { defineConfig, devices } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { defineConfig, devices } from "@playwright/test";
 
 const demoPort = Number(process.env.DEMO_PORT ?? 3004);
 const demoBaseUrl = `http://127.0.0.1:${demoPort}`;

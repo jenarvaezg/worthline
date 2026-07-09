@@ -1,9 +1,8 @@
-import NextAuth from "next-auth";
-import { NextResponse } from "next/server";
-
 import authConfig from "@web/auth.config";
 import { shouldRedirectToLogin } from "@web/auth-gate";
 import { DEMO_PERSONA_COOKIE_NAME } from "@web/demo/demo-context";
+import { NextResponse } from "next/server";
+import NextAuth from "next-auth";
 
 const { auth } = NextAuth(authConfig);
 

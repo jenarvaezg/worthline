@@ -1,4 +1,46 @@
+import OperationsEditor from "@web/_components/operations-editor";
+import {
+  buildHoldingBenchmarkComparison,
+  readBenchmarkPricesFromControlPlane,
+} from "@web/build-holding-benchmark";
+import { isDemoMode } from "@web/demo/write-guard";
+import HoldingBenchmarkComparisonCard from "@web/holding-benchmark-comparison-card";
+import {
+  PRIVACY_COOKIE_NAME,
+  parseFormError,
+  parsePrivacyCookie,
+  parseScopeCookie,
+  resolveOkMessage,
+  SCOPE_COOKIE_NAME,
+} from "@web/intake";
+import {
+  confirmPriceBackfillAction,
+  confirmStatementAction,
+  createPayoutAction,
+  createPayoutScheduleAction,
+  deleteOperationAction,
+  deletePayoutAction,
+  deletePayoutScheduleAction,
+  type PriceBackfillPreviewState,
+  previewPriceBackfillAction,
+  previewStatementAction,
+  recordOperationAction,
+  refreshPricesAction,
+  type StatementPreviewState,
+  saveExposureProfileAction,
+  updateInvestmentAction,
+  updatePayoutScheduleAction,
+} from "@web/inversiones/actions";
+import {
+  acknowledgeWarningAction,
+  deleteAssetAction,
+  deleteLiabilityAction,
+} from "@web/patrimonio/actions";
+import { PriceRefreshControl } from "@web/patrimonio/price-refresh-control";
+import { detailRefreshCaption } from "@web/price-refresh";
+import Shell from "@web/shell";
 import { bootstrapHealthcheck, withStore } from "@web/store";
+import type { CoinPosition, ExposureProfile, ValuationMethod } from "@worthline/domain";
 import {
   buildHoldingReturnsView,
   canHandEnterExposureProfile,
@@ -14,46 +56,9 @@ import {
   valuationMethodOfAsset,
   valuationMethodOfLiability,
 } from "@worthline/domain";
-import type { CoinPosition, ExposureProfile, ValuationMethod } from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-
-import OperationsEditor from "@web/_components/operations-editor";
-import { detailRefreshCaption } from "@web/price-refresh";
-import { isDemoMode } from "@web/demo/write-guard";
-import {
-  parseFormError,
-  parsePrivacyCookie,
-  parseScopeCookie,
-  resolveOkMessage,
-  PRIVACY_COOKIE_NAME,
-  SCOPE_COOKIE_NAME,
-} from "@web/intake";
-import {
-  confirmPriceBackfillAction,
-  confirmStatementAction,
-  createPayoutAction,
-  createPayoutScheduleAction,
-  deleteOperationAction,
-  deletePayoutAction,
-  deletePayoutScheduleAction,
-  previewPriceBackfillAction,
-  previewStatementAction,
-  type PriceBackfillPreviewState,
-  recordOperationAction,
-  refreshPricesAction,
-  saveExposureProfileAction,
-  type StatementPreviewState,
-  updateInvestmentAction,
-  updatePayoutScheduleAction,
-} from "@web/inversiones/actions";
-import Shell from "@web/shell";
-import {
-  acknowledgeWarningAction,
-  deleteAssetAction,
-  deleteLiabilityAction,
-} from "@web/patrimonio/actions";
 import { BinanceHoldingSection } from "./_surfaces/binance-holding-section";
 import { tokenPositionsOnRung } from "./_surfaces/binance-holding-view";
 import { CobrosSection } from "./_surfaces/cobros-section";
@@ -65,12 +70,6 @@ import { HousingValuationSection } from "./_surfaces/housing-valuation-section";
 import { PriceBackfillSection } from "./_surfaces/price-backfill-section";
 import { ReturnsPanel } from "./_surfaces/returns-panel";
 import { StatementUploadSection } from "./_surfaces/statement-upload-section";
-import { PriceRefreshControl } from "@web/patrimonio/price-refresh-control";
-import {
-  buildHoldingBenchmarkComparison,
-  readBenchmarkPricesFromControlPlane,
-} from "@web/build-holding-benchmark";
-import HoldingBenchmarkComparisonCard from "@web/holding-benchmark-comparison-card";
 
 export const dynamic = "force-dynamic";
 

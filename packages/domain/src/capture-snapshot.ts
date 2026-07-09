@@ -11,9 +11,6 @@
  * deterministic and testable in isolation. The caller persists the result.
  */
 
-import type { Liability, ManualAsset, Workspace } from "./workspace-types";
-import type { NetWorthSnapshot } from "./snapshot-types";
-import { captureValuedNetWorthSnapshot } from "./snapshot-types";
 import type { ScopeOption } from "./scope";
 import type {
   InvestmentCaptureDetail,
@@ -21,6 +18,9 @@ import type {
   SnapshotPositionInput,
 } from "./snapshot-holdings";
 import { findTodaySnapshotId } from "./snapshot-policy";
+import type { NetWorthSnapshot } from "./snapshot-types";
+import { captureValuedNetWorthSnapshot } from "./snapshot-types";
+import type { Liability, ManualAsset, Workspace } from "./workspace-types";
 
 /**
  * Everything the orchestration needs for one scope. `assets`, `liabilities`,

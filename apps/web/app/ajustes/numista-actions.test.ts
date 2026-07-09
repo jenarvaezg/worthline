@@ -6,8 +6,8 @@
  * cover the cookie-free actions: sync's guard and disconnect's cascade.
  */
 
-import { createInMemoryStore } from "@worthline/db";
 import type { WorthlineStore } from "@worthline/db";
+import { createInMemoryStore } from "@worthline/db";
 import { describe, expect, test, vi } from "vitest";
 
 vi.mock("next/headers", () => ({

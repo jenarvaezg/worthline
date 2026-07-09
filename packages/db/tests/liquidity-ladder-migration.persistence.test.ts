@@ -7,12 +7,12 @@
  * housing → illiquid) on both, while the snapshot's five frozen figures stay
  * byte-identical — re-tiering history must never alter a captured figure (ADR 0008).
  */
-import type { Client } from "@libsql/client";
-import { describe, expect, test } from "vitest";
 
 import { openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import { schemaSql } from "@db/schema-sql";
+import type { Client } from "@libsql/client";
+import { describe, expect, test } from "vitest";
 
 async function seedV11(): Promise<Client> {
   const client = openLibsqlClient(":memory:");

@@ -14,7 +14,7 @@
  * start date.
  */
 
-import { test, expect, openAdvancedSettings } from "./fixtures";
+import { expect, openAdvancedSettings, test } from "./fixtures";
 
 test("binance: connect (stubbed API) → market + term-locked holdings → token detail + history curve", async ({
   page,

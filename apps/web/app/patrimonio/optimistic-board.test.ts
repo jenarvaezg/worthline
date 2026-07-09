@@ -1,5 +1,5 @@
-import type { PortfolioGroup, UnifiedHolding } from "@worthline/domain";
 import type { TrashView } from "@worthline/db";
+import type { PortfolioGroup, UnifiedHolding } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import { applyBoardMutations, type BoardModel } from "./optimistic-board";

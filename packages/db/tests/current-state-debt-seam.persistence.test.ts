@@ -7,9 +7,13 @@
  * retry (the unique index on `amortization_plans.liability_id`); a rebaseline
  * without the balance sync leaves `currentBalanceMinor` stale.
  */
+
+import type {
+  AddBalanceRebaselineInput,
+  CreateAmortizationPlanInput,
+  WorthlineStore,
+} from "@worthline/db";
 import { createInMemoryStore } from "@worthline/db";
-import type { AddBalanceRebaselineInput, WorthlineStore } from "@worthline/db";
-import type { CreateAmortizationPlanInput } from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
 const TODAY = "2026-07-02";

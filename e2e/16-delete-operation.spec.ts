@@ -11,12 +11,12 @@
  */
 
 import {
-  test,
-  expect,
   addHolding,
-  holdingRow,
   delayServerActions,
+  expect,
+  holdingRow,
   openAdvancedSettings,
+  test,
 } from "./fixtures";
 
 test("record an operation, then delete it", async ({ page }) => {

@@ -17,17 +17,17 @@ import type { LiquidityTier } from "./classification";
 import type { DistributiveOmit, SourceAdapter, SourcePosition } from "./connected-source";
 import type { DecimalString } from "./decimal";
 import type { ExposureProfile } from "./exposure-lookthrough";
-import type { Payout, PayoutSchedule } from "./payouts";
+import type { FireScopeConfig } from "./fire";
 import type { ValuationMethod } from "./holding-valuation";
-import type { ValuationCadence } from "./valuation-cadence";
 import type { Instrument } from "./instrument-catalog";
+import type { InvestmentOperation } from "./investment-types";
 import type { CurrencyCode, MoneyMinor } from "./money";
+import type { Payout, PayoutSchedule } from "./payouts";
 import type { AssetPrice, InvestmentPriceProvider } from "./prices";
 import type { SnapshotHoldingRow } from "./snapshot-holdings";
-import type { WarningOverride } from "./warnings";
-import type { FireScopeConfig } from "./fire";
-import type { InvestmentOperation } from "./investment-types";
 import type { NetWorthSnapshot } from "./snapshot-types";
+import type { ValuationCadence } from "./valuation-cadence";
+import type { WarningOverride } from "./warnings";
 import type {
   AssetType,
   DebtModel,
@@ -297,10 +297,11 @@ export interface WorkspaceExportData {
 }
 
 /** The versioned export document — the on-disk JSON shape. */
-export interface WorkspaceExport extends Omit<
-  WorkspaceExportData,
-  "publicIds" | "exposureProfiles" | "payouts" | "payoutSchedules"
-> {
+export interface WorkspaceExport
+  extends Omit<
+    WorkspaceExportData,
+    "publicIds" | "exposureProfiles" | "payouts" | "payoutSchedules"
+  > {
   version: typeof EXPORT_VERSION;
   publicIds: ExportedPublicId[];
   exposureProfiles: ExposureProfile[];

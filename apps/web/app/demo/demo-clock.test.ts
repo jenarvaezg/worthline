@@ -1,6 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-
 import { demoAsOfDateKey, demoNowDate } from "@web/demo/demo-clock";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 describe("demo clock", () => {
   afterEach(() => {

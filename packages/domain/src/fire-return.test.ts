@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { TIER_REAL_RETURN_DEFAULTS, effectiveRealReturn } from "./fire-return";
+import { effectiveRealReturn, TIER_REAL_RETURN_DEFAULTS } from "./fire-return";
 
 // ── effectiveRealReturn ───────────────────────────────────────────────────────
 

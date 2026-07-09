@@ -9,10 +9,11 @@
  * plan-derived for amortizable, anchors for revolving/informal, and the stored
  * balance as the model-less fallback.
  */
-import { describe, expect, test } from "vitest";
+
+import type { WorthlineStore } from "@db/index";
 
 import { captureDailySnapshotForWorkspace, createInMemoryStore } from "@db/index";
-import type { WorthlineStore } from "@db/index";
+import { describe, expect, test } from "vitest";
 
 const TODAY = "2026-07-02";
 const NOW = `${TODAY}T21:00:00.000Z`;

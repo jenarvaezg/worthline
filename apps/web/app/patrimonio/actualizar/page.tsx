@@ -1,3 +1,14 @@
+import { isDemoMode } from "@web/demo/write-guard";
+import {
+  PRIVACY_COOKIE_NAME,
+  parseFormError,
+  parsePrivacyCookie,
+  parseScopeCookie,
+  resolveOkMessage,
+  SCOPE_COOKIE_NAME,
+} from "@web/intake";
+import { batchValueUpdateAction } from "@web/patrimonio/actions";
+import Shell from "@web/shell";
 import { bootstrapHealthcheck, withStore } from "@web/store";
 import {
   formatMoneyInput,
@@ -7,18 +18,6 @@ import {
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-
-import {
-  parseFormError,
-  parsePrivacyCookie,
-  parseScopeCookie,
-  resolveOkMessage,
-  PRIVACY_COOKIE_NAME,
-  SCOPE_COOKIE_NAME,
-} from "@web/intake";
-import { isDemoMode } from "@web/demo/write-guard";
-import Shell from "@web/shell";
-import { batchValueUpdateAction } from "@web/patrimonio/actions";
 
 import PuestaAlDiaForm, { type PuestaFieldRow } from "./puesta-al-dia-form";
 

@@ -17,16 +17,16 @@
  *  - a date still justified by ANOTHER operation keeps its snapshot;
  *  - the /historico bridge shows no phantom dip on the pruned date.
  */
-import { buildSnapshotId, deriveHoldingDeltas } from "@worthline/domain";
+
+import type { SourcePositionInput, WorthlineStore } from "@db/index";
+import { createInMemoryStore } from "@db/index";
 import type {
   CoinPosition,
   NetWorthSnapshot,
   SnapshotHoldingRow,
 } from "@worthline/domain";
+import { buildSnapshotId, deriveHoldingDeltas } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
-
-import { createInMemoryStore } from "@db/index";
-import type { SourcePositionInput, WorthlineStore } from "@db/index";
 
 const TODAY = "2026-06-12";
 

@@ -8,12 +8,12 @@
  * A fresh DB (schema-sql already carries the column) only bumps the version and
  * returns `ranV33Backfill === false` (nothing stale to correct).
  */
-import type { Client } from "@libsql/client";
-import { describe, expect, test } from "vitest";
 
 import { openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import { schemaSql } from "@db/schema-sql";
+import type { Client } from "@libsql/client";
+import { describe, expect, test } from "vitest";
 
 const hasColumn = async (client: Client, table: string): Promise<boolean> =>
   (

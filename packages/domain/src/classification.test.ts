@@ -1,5 +1,5 @@
-import type { Instrument, LiquidityTier } from "./classification";
 import { describe, expect, test } from "vitest";
+import type { Instrument, LiquidityTier } from "./classification";
 
 import { isHousingAsset, isLiquid, tierOfAsset } from "./classification";
 import {

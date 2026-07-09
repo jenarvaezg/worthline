@@ -1,4 +1,15 @@
 import type { AgentViewReadStore } from "@worthline/db";
+import type {
+  AssetClassResolution,
+  AssetClassReturns,
+  CurrencyCode,
+  ExposureCoverage,
+  Instrument,
+  InvestmentOperation,
+  MonthlyCloseSnapshotRow,
+  MonthlyCloseValue,
+  TwrCashflow,
+} from "@worthline/domain";
 import {
   allocateByBps,
   daysBetween,
@@ -11,17 +22,6 @@ import {
   timeWeightedReturn,
   xirr,
 } from "@worthline/domain";
-import type {
-  AssetClassResolution,
-  AssetClassReturns,
-  CurrencyCode,
-  ExposureCoverage,
-  Instrument,
-  InvestmentOperation,
-  MonthlyCloseSnapshotRow,
-  MonthlyCloseValue,
-  TwrCashflow,
-} from "@worthline/domain";
 
 import type {
   AgentViewAssetClassReturns,
@@ -29,8 +29,8 @@ import type {
   AgentViewExposureCoverage,
   AgentViewMoney,
   AgentViewMoneyWeightedReturn,
-  AgentViewReturns,
   AgentViewReturnQualitySignal,
+  AgentViewReturns,
   AgentViewSimpleReturn,
   AgentViewTimeWeightedReturn,
 } from "./contract";

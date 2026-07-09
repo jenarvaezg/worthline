@@ -7,12 +7,10 @@
  * and reports whether the capture replaces a same-day snapshot.
  */
 import { afterEach, describe, expect, test, vi } from "vitest";
-
+import { buildSnapshotId, captureSnapshotForScope } from "./capture-snapshot";
 import type { ManualAsset, NetWorthSnapshot, Workspace } from "./index";
 import { captureNetWorthSnapshot, createManualAsset, createWorkspace } from "./index";
 import type { ScopeOption } from "./scope";
-
-import { buildSnapshotId, captureSnapshotForScope } from "./capture-snapshot";
 
 const HOUSEHOLD: ScopeOption = { id: "household", label: "Hogar", type: "household" };
 

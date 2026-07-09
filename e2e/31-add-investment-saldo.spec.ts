@@ -10,7 +10,7 @@
  * Runs after journey 30 so the holdings it adds don't perturb earlier totals.
  */
 
-import { test, expect, holdingRow, openAdvancedSettings } from "./fixtures";
+import { expect, holdingRow, openAdvancedSettings, test } from "./fixtures";
 
 /** Open the investment drawer and select one of the 3 behavior groups. */
 async function openInvestmentGroup(

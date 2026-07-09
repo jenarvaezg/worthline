@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  amortizationPlanFromBalanceRebaseline,
   amortizableBalanceAtDate,
+  amortizationPlanFromBalanceRebaseline,
 } from "./amortization";
-import { debtBalanceAtDate, effectiveAmortizationPlan } from "./debt-balance";
 import type { DebtBalanceAtDateInput } from "./debt-balance";
+import { debtBalanceAtDate, effectiveAmortizationPlan } from "./debt-balance";
 
 /**
  * Pure debt-balance dispatcher (PRD #109, slice 8). The single "balance of a debt

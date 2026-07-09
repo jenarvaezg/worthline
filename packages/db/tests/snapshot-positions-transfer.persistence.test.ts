@@ -7,11 +7,12 @@
  * the import must re-insert them (it uses its own bulk path, not saveSnapshot).
  * Values + labels only — never secrets.
  */
-import { describe, expect, test } from "vitest";
+
+import type { WorthlineStore } from "@db/index";
 
 import { createInMemoryStore } from "@db/index";
 import type { NetWorthSnapshot } from "@worthline/domain";
-import type { WorthlineStore } from "@db/index";
+import { describe, expect, test } from "vitest";
 
 /**
  * A workspace whose single snapshot freezes one connected-source holding with a

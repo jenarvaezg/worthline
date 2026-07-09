@@ -442,31 +442,29 @@ describe("POST /api/mcp (demo mode)", () => {
     expect(payload.data.holdings).toBeDefined();
   });
 
-  test(
-    "explain_figure returns a real explanation for net_worth",
-    { timeout: 30000 },
-    async () => {
-      const response = await mcpRequest({
-        jsonrpc: "2.0",
-        id: 12,
-        method: "tools/call",
-        params: {
-          name: "explain_figure",
-          arguments: { figure: "net_worth" },
-        },
-      });
+  test("explain_figure returns a real explanation for net_worth", {
+    timeout: 30000,
+  }, async () => {
+    const response = await mcpRequest({
+      jsonrpc: "2.0",
+      id: 12,
+      method: "tools/call",
+      params: {
+        name: "explain_figure",
+        arguments: { figure: "net_worth" },
+      },
+    });
 
-      expect(response.status).toBe(200);
-      const body = (await parseSingleMcpMessage(response)) as {
-        result: { content: Array<{ text: string }> };
-      };
-      const payload = JSON.parse(body.result.content[0]?.text ?? "") as {
-        data: { figure: string; value: { amountMinor: number } };
-      };
-      expect(payload.data.figure).toBe("net_worth");
-      expect(payload.data.value.amountMinor).toBeGreaterThan(0);
-    },
-  );
+    expect(response.status).toBe(200);
+    const body = (await parseSingleMcpMessage(response)) as {
+      result: { content: Array<{ text: string }> };
+    };
+    const payload = JSON.parse(body.result.content[0]?.text ?? "") as {
+      data: { figure: string; value: { amountMinor: number } };
+    };
+    expect(payload.data.figure).toBe("net_worth");
+    expect(payload.data.value.amountMinor).toBeGreaterThan(0);
+  });
 
   test("get_snapshot_history returns real demo history", { timeout: 30000 }, async () => {
     const response = await mcpRequest({
@@ -488,28 +486,26 @@ describe("POST /api/mcp (demo mode)", () => {
     expect(payload.meta.limit).toBeGreaterThan(0);
   });
 
-  test(
-    "get_snapshot_history clamps an over-max limit like the HTTP contract",
-    { timeout: 30000 },
-    async () => {
-      const response = await mcpRequest({
-        jsonrpc: "2.0",
-        id: 15,
-        method: "tools/call",
-        params: { name: "get_snapshot_history", arguments: { limit: 9999 } },
-      });
+  test("get_snapshot_history clamps an over-max limit like the HTTP contract", {
+    timeout: 30000,
+  }, async () => {
+    const response = await mcpRequest({
+      jsonrpc: "2.0",
+      id: 15,
+      method: "tools/call",
+      params: { name: "get_snapshot_history", arguments: { limit: 9999 } },
+    });
 
-      expect(response.status).toBe(200);
-      const body = (await parseSingleMcpMessage(response)) as {
-        result: { isError?: boolean; content: Array<{ text: string }> };
-      };
-      const payload = JSON.parse(body.result.content[0]?.text ?? "") as {
-        meta: { limit: number };
-      };
-      expect(body.result.isError).not.toBe(true);
-      expect(payload.meta.limit).toBe(500);
-    },
-  );
+    expect(response.status).toBe(200);
+    const body = (await parseSingleMcpMessage(response)) as {
+      result: { isError?: boolean; content: Array<{ text: string }> };
+    };
+    const payload = JSON.parse(body.result.content[0]?.text ?? "") as {
+      meta: { limit: number };
+    };
+    expect(body.result.isError).not.toBe(true);
+    expect(payload.meta.limit).toBe(500);
+  });
 
   test("documented error envelopes set isError true", { timeout: 30000 }, async () => {
     const response = await mcpRequest({
@@ -528,25 +524,23 @@ describe("POST /api/mcp (demo mode)", () => {
     expect(payload.error.code).toBe("unprocessable_entity");
   });
 
-  test(
-    "get_fire_context returns real demo FIRE context",
-    { timeout: 30000 },
-    async () => {
-      const response = await mcpRequest({
-        jsonrpc: "2.0",
-        id: 14,
-        method: "tools/call",
-        params: { name: "get_fire_context", arguments: {} },
-      });
+  test("get_fire_context returns real demo FIRE context", {
+    timeout: 30000,
+  }, async () => {
+    const response = await mcpRequest({
+      jsonrpc: "2.0",
+      id: 14,
+      method: "tools/call",
+      params: { name: "get_fire_context", arguments: {} },
+    });
 
-      expect(response.status).toBe(200);
-      const body = (await parseSingleMcpMessage(response)) as {
-        result: { content: Array<{ text: string }> };
-      };
-      const payload = JSON.parse(body.result.content[0]?.text ?? "") as {
-        data: { status: string };
-      };
-      expect(typeof payload.data.status).toBe("string");
-    },
-  );
+    expect(response.status).toBe(200);
+    const body = (await parseSingleMcpMessage(response)) as {
+      result: { content: Array<{ text: string }> };
+    };
+    const payload = JSON.parse(body.result.content[0]?.text ?? "") as {
+      data: { status: string };
+    };
+    expect(typeof payload.data.status).toBe("string");
+  });
 });

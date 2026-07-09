@@ -1,11 +1,10 @@
 import { describe, expect, test } from "vitest";
-
-import { parseWorkspaceExport } from "./workspace-transfer-parse";
 import {
   serializeWorkspaceExport,
   type WorkspaceExport,
   type WorkspaceExportData,
 } from "./workspace-transfer";
+import { parseWorkspaceExport } from "./workspace-transfer-parse";
 
 /** A rich, internally consistent export fixture exercising every section. */
 function makeExportData(): WorkspaceExportData {
@@ -1067,8 +1066,8 @@ describe("parseWorkspaceExport — domain invariants", () => {
 
   test("a non-numeric revision newAnnualInterestRate is rejected (#155)", () => {
     const document = makeDocument((doc) => {
-      doc.liabilities[0]!.amortizationPlan!.interestRateRevisions[0]!.newAnnualInterestRate =
-        "abc";
+      doc.liabilities[0]!.amortizationPlan!
+        .interestRateRevisions[0]!.newAnnualInterestRate = "abc";
     });
     expectRejection(document, /decimal válido/);
   });

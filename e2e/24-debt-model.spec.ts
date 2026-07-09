@@ -14,7 +14,7 @@
  * /historico at their dates.
  */
 
-import { test, expect, addHolding, openAdvancedSettings } from "./fixtures";
+import { addHolding, expect, openAdvancedSettings, test } from "./fixtures";
 
 /** A YYYY-MM-DD a given number of whole years before today. */
 function yearsAgo(years: number): string {

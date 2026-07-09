@@ -3,7 +3,7 @@
 import type { CurrencyCode } from "@worthline/domain";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import Link from "next/link";
-import { useOptimistic, useTransition, type FormEvent } from "react";
+import { type FormEvent, useOptimistic, useTransition } from "react";
 
 import { applyValueEdits, parseValueEdits, type ValueEdit } from "./optimistic-values";
 

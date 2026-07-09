@@ -1,9 +1,8 @@
+import type { WorthlineStore } from "@db/index";
+import { createInMemoryStore } from "@db/index";
 import type { MoneyMinor, NetWorthSnapshot, WorkspaceExport } from "@worthline/domain";
 import { serializeWorkspaceExport } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
-
-import { createInMemoryStore } from "@db/index";
-import type { WorthlineStore } from "@db/index";
 
 const eur = (amountMinor: number): MoneyMinor => ({ amountMinor, currency: "EUR" });
 

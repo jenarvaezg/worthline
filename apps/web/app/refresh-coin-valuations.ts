@@ -1,6 +1,6 @@
+import type { ValuationFreshness } from "@worthline/db";
 import type { AssetPrice, CoinPosition, SourcePosition } from "@worthline/domain";
 import { isPriceStale } from "@worthline/domain";
-import type { ValuationFreshness } from "@worthline/db";
 import type { MetalKind, RevaluedPosition, RevaluePosition } from "@worthline/pricing";
 
 /**

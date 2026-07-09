@@ -15,16 +15,16 @@
  *   5. A `real_estate` asset still works (regression guard).
  */
 
-import { vi, describe, test, expect, afterEach } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
-import { valuationMethodOfAsset } from "@worthline/domain";
 import {
   addValuationAnchorAction,
   setAppreciationRateAction,
 } from "@web/patrimonio/actions";
+import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
+import { valuationMethodOfAsset } from "@worthline/domain";
 import { catchRedirect, errorMessageOf, fd } from "./helpers";
 
 const MEMBER_ID = "member_yo";

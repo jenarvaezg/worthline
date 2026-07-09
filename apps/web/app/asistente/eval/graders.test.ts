@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  type AssistantAnswer,
   citesEuros,
   citesInternalSource,
   declinesToInvent,
@@ -8,7 +9,6 @@ import {
   mentionsAll,
   mentionsAny,
   usedReadTool,
-  type AssistantAnswer,
 } from "./graders";
 
 function answer(over: Partial<AssistantAnswer> = {}): AssistantAnswer {

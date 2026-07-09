@@ -5,12 +5,11 @@
  * action — that the store is left untouched. Demo-ness is now a per-request fact
  * (the persona cookie resolved by the store seam), not a deploy-wide env flag.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
-
-import { createInMemoryStore } from "@worthline/db";
 
 import { DEMO_DISABLED_MESSAGE, guardDemoWrite, isDemoMode } from "@web/demo/write-guard";
 import { deleteAssetAction } from "@web/patrimonio/actions";
+import { createInMemoryStore } from "@worthline/db";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Drive the request state through the persona cookie the store seam reads.
 let mockPersonaCookie: string | undefined;

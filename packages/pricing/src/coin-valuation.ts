@@ -14,13 +14,13 @@
  * is stale* and the *assembly + decision* live here.
  */
 
-import { coinValue, PRICE_TTL_DAYS } from "@worthline/domain";
 import type { CoinValuation } from "@worthline/domain";
+import { coinValue, PRICE_TTL_DAYS } from "@worthline/domain";
 
 import type { MetalKind } from "./metal";
 import { metalValueMinor } from "./metal";
-import { numismaticEstimateMinor } from "./numista";
 import type { NumistaPriceEntry } from "./numista";
+import { numismaticEstimateMinor } from "./numista";
 
 const MS_PER_DAY = 86400000;
 

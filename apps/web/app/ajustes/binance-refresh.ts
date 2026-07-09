@@ -1,3 +1,8 @@
+import {
+  type BinanceSourceRef,
+  type RefreshBinanceSourcesResult,
+  refreshStaleBinanceSources,
+} from "@web/refresh-binance-sources";
 import type { WorthlineStore } from "@worthline/db";
 import {
   fetchCoinGeckoLogos,
@@ -5,12 +10,6 @@ import {
   getAllBalances,
   syncBinanceAccount,
 } from "@worthline/pricing";
-
-import {
-  refreshStaleBinanceSources,
-  type BinanceSourceRef,
-  type RefreshBinanceSourcesResult,
-} from "@web/refresh-binance-sources";
 import { readBinanceCredentials } from "./binance-helpers";
 
 /**

@@ -5,8 +5,8 @@ import {
   isStatementBroker,
   type StatementBrokerAdapter,
 } from "./statement-broker-adapter";
-import { plantillaAdapter } from "./statement-plantilla-adapter";
 import { parseStatement, parseStatementWithAdapter } from "./statement-parse";
+import { plantillaAdapter } from "./statement-plantilla-adapter";
 
 /**
  * Tests for the broker-adapter seam (issue #480). End-to-end plantilla parsing

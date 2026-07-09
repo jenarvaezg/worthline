@@ -1,22 +1,38 @@
 "use server";
 
-import { type WorthlineStore } from "@web/store";
 import {
   runActionWithStore,
   testArgFromActionArgs,
   testStoreFromActionArgs,
 } from "@web/action-store";
+import { guardDemoWrite } from "@web/demo/write-guard";
+import type { FormErrorContext } from "@web/intake";
 import {
-  EXPOSURE_GEOGRAPHY_BUCKETS,
-  createInvestmentOperationSafe,
-  defaultInvestmentPriceProvider,
-  detectSingleAssetBackfillCandidate,
-  isStatementBroker,
-  parseStatement,
-  planStatementMerge,
-  resolvePerHoldingStatementIsinGuard,
-  systemClock,
-} from "@worthline/domain";
+  createStableId,
+  errorRedirectUrl,
+  mapDomainViolation,
+  parseEntityId,
+  parseRouteOperationCommand,
+  parseUpdateInvestmentCommand,
+  preserveFields,
+  priceBackfillDoneRedirectUrl,
+  pricesRefreshedRedirectUrl,
+  statementLoadedRedirectUrl,
+  successRedirectUrl,
+} from "@web/intake";
+import {
+  buildPayoutResult,
+  buildPayoutScheduleResult,
+  type PayoutFields,
+  type PayoutScheduleFields,
+  toggleExclusion,
+} from "@web/patrimonio/[id]/editar/_surfaces/cobros-form";
+import {
+  buildExposureProfileResult,
+  type ExposureProfileFields,
+  isEmptyExposureFields,
+} from "@web/patrimonio/[id]/editar/_surfaces/exposure-profile-form";
+import { type WorthlineStore } from "@web/store";
 import type {
   Clock,
   ExposureGeographyBucket,
@@ -26,44 +42,26 @@ import type {
   PriceBackfillCandidate,
   StatementMergePlan,
 } from "@worthline/domain";
-
 import {
-  buildExposureProfileResult,
-  isEmptyExposureFields,
-  type ExposureProfileFields,
-} from "@web/patrimonio/[id]/editar/_surfaces/exposure-profile-form";
-import {
-  buildPayoutResult,
-  buildPayoutScheduleResult,
-  toggleExclusion,
-  type PayoutFields,
-  type PayoutScheduleFields,
-} from "@web/patrimonio/[id]/editar/_surfaces/cobros-form";
+  createInvestmentOperationSafe,
+  defaultInvestmentPriceProvider,
+  detectSingleAssetBackfillCandidate,
+  EXPOSURE_GEOGRAPHY_BUCKETS,
+  isStatementBroker,
+  parseStatement,
+  planStatementMerge,
+  resolvePerHoldingStatementIsinGuard,
+  systemClock,
+} from "@worthline/domain";
 import {
   coingeckoHistoricalSource,
   fetchAndCachePrice,
   fetchPriceNow,
-  refreshStalePrices,
   type HistoricalPriceSource,
   type PriceProvider,
+  refreshStalePrices,
 } from "@worthline/pricing";
 import { redirect } from "next/navigation";
-
-import type { FormErrorContext } from "@web/intake";
-import {
-  createStableId,
-  errorRedirectUrl,
-  mapDomainViolation,
-  parseEntityId,
-  parseRouteOperationCommand,
-  parseUpdateInvestmentCommand,
-  priceBackfillDoneRedirectUrl,
-  pricesRefreshedRedirectUrl,
-  preserveFields,
-  statementLoadedRedirectUrl,
-  successRedirectUrl,
-} from "@web/intake";
-import { guardDemoWrite } from "@web/demo/write-guard";
 
 // Field lists for error-preserve round-trips
 
@@ -442,8 +440,8 @@ export async function updateInvestmentAction(
   const nextProviderSymbol = parsed.command.providerSymbol;
   const priceConfigChanged = Boolean(
     existing &&
-    (existing.priceProvider !== nextPriceProvider ||
-      existing.providerSymbol !== nextProviderSymbol),
+      (existing.priceProvider !== nextPriceProvider ||
+        existing.providerSymbol !== nextProviderSymbol),
   );
   const validationError = await validateInvestmentProviderSymbol({
     assetId: routeAssetId,

@@ -1,7 +1,6 @@
+import { PRIVACY_COOKIE_NAME } from "@web/intake";
 import { type NextRequest } from "next/server";
 import { describe, expect, test, vi } from "vitest";
-
-import { PRIVACY_COOKIE_NAME } from "@web/intake";
 
 import { POST } from "./route";
 

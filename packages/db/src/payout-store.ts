@@ -1,7 +1,7 @@
 import type { Payout, PayoutCadence, PayoutSchedule } from "@worthline/domain";
 import { asc, eq } from "drizzle-orm";
 
-import { payouts, payoutSchedules } from "./schema";
+import { payoutSchedules, payouts } from "./schema";
 import type { StoreContext } from "./store-context";
 
 /**
@@ -137,8 +137,9 @@ async function readPayoutSchedules(
   holdingId?: string,
 ): Promise<PayoutSchedule[]> {
   const base = ctx.db.select().from(payoutSchedules);
-  const rows = await (
-    holdingId ? base.where(eq(payoutSchedules.holdingId, holdingId)) : base
+  const rows = await (holdingId
+    ? base.where(eq(payoutSchedules.holdingId, holdingId))
+    : base
   )
     .orderBy(asc(payoutSchedules.holdingId), asc(payoutSchedules.id))
     .all();

@@ -1,7 +1,6 @@
-import { describe, expect, test } from "vitest";
-
 import { DEMO_PERSONA_COOKIE_NAME } from "@web/demo/demo-context";
 import { SCOPE_COOKIE_NAME } from "@web/intake";
+import { describe, expect, test } from "vitest";
 
 import { POST } from "./route";
 

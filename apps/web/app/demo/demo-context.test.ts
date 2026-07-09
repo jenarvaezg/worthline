@@ -1,6 +1,5 @@
-import { describe, expect, it } from "vitest";
-
 import { DEMO_PERSONA_COOKIE_NAME, demoContextFromTarget } from "@web/demo/demo-context";
+import { describe, expect, it } from "vitest";
 
 describe("demoContextFromTarget", () => {
   it("is enabled for a demo target, carrying its persona and pinned clock", () => {

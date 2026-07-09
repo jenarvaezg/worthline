@@ -8,9 +8,8 @@
  * for each of the two clocks (metal spot daily; numismatic estimate 30-day).
  */
 import { describe, expect, it } from "vitest";
-
-import { COIN_VALUE_TTL_DAYS, coinValuation, isNumismaticStale } from "./coin-valuation";
 import type { CoinValuationInput } from "./coin-valuation";
+import { COIN_VALUE_TTL_DAYS, coinValuation, isNumismaticStale } from "./coin-valuation";
 
 const NOW = "2026-06-15T12:00:00.000Z";
 const STALE_NUMISMATIC = "2026-05-01T12:00:00.000Z"; // 45 days before NOW → past 30d

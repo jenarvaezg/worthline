@@ -11,16 +11,16 @@
  * actions passed down as props (exclude a derived month, delete a one-off).
  */
 
-import { useState } from "react";
-import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import type { CurrencyCode } from "@worthline/domain";
+import { formatMoneyMinorPrivacy } from "@worthline/domain";
+import { useState } from "react";
 
 import {
   availableYears,
+  type CobroRow,
   heatAlpha,
   rowsByMonth,
   sumMinor,
-  type CobroRow,
 } from "./cobros-view";
 
 type FormAction = (formData: FormData) => void | Promise<void>;

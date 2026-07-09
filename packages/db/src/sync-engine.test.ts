@@ -10,10 +10,9 @@
  */
 import type { NetWorthSnapshot } from "@worthline/domain";
 import { afterEach, describe, expect, it } from "vitest";
-
-import { createInMemoryStore } from "./index";
 import type { WorthlineStore } from "./index";
-import { syncPull, syncPush, SyncStaleError } from "./sync-engine";
+import { createInMemoryStore } from "./index";
+import { SyncStaleError, syncPull, syncPush } from "./sync-engine";
 
 const KEY = "test-secret-key";
 const SECRET = JSON.stringify({ apiKey: "REAL", apiSecret: "REALSECRET" });

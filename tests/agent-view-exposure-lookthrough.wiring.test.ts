@@ -1,12 +1,11 @@
-import { afterEach, describe, expect, test } from "vitest";
-import { NextRequest } from "next/server";
-
-import { createWorthlineStore } from "@worthline/db";
-import { lookThroughExposure } from "@worthline/domain";
-import type { ExposureLookthrough, ExposureProfile } from "@worthline/domain";
-import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
-import { GET as getFinancialContext } from "@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
 import { GET as getHolding } from "@web/api/v1/agent-view/holdings/[holdingId]/route";
+import { GET as getFinancialContext } from "@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
+import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
+import { createWorthlineStore } from "@worthline/db";
+import type { ExposureLookthrough, ExposureProfile } from "@worthline/domain";
+import { lookThroughExposure } from "@worthline/domain";
+import { NextRequest } from "next/server";
+import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
 
 const ORIGINAL_DB_PATH = process.env.WORTHLINE_DB_PATH;

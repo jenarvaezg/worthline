@@ -4,10 +4,10 @@
  * stored column drives), so an edit that does not re-derive the instrument would
  * silently diverge from the old type-based rule — the S2-class byte-identity trap.
  */
-import { isHousingAsset } from "@worthline/domain";
-import { describe, expect, test } from "vitest";
 
 import { createInMemoryStore } from "@db/index";
+import { isHousingAsset } from "@worthline/domain";
+import { describe, expect, test } from "vitest";
 
 const own = [{ memberId: "m1", shareBps: 10000 }];
 

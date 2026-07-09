@@ -21,15 +21,15 @@
  */
 
 import { rungForLiability, securesHousingAsset, tierOfAsset } from "./classification";
-import {
-  assembleRippleSnapshot,
-  debtCurveValuationInput,
-  resolveFrozenIdentity,
-} from "./historical-snapshot";
 import type {
   DebtBalanceCurveInputs,
   FrozenIdentityCapture,
   HousingCurveInputs,
+} from "./historical-snapshot";
+import {
+  assembleRippleSnapshot,
+  debtCurveValuationInput,
+  resolveFrozenIdentity,
 } from "./historical-snapshot";
 import { valueAt } from "./holding-valuation";
 import { resolveScopeMemberIds } from "./scope";

@@ -6,10 +6,11 @@
  * `current_value_minor` is only updated on edits, so a capture after a month
  * boundary must sample the housing curve instead of replaying that stale value.
  */
-import { describe, expect, test } from "vitest";
+
+import type { WorthlineStore } from "@db/index";
 
 import { captureDailySnapshotForWorkspace, createInMemoryStore } from "@db/index";
-import type { WorthlineStore } from "@db/index";
+import { describe, expect, test } from "vitest";
 
 const TODAY = "2026-07-02";
 const NOW = `${TODAY}T21:00:00.000Z`;

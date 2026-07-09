@@ -6,7 +6,7 @@
  * it, and hard-deletes it from the Miembros section of /ajustes.
  */
 
-import { test, expect } from "./fixtures";
+import { expect, test } from "./fixtures";
 
 const NAME = "Miembro Temporal E2E";
 

@@ -14,10 +14,11 @@
  * extending this ONE seam covers impersonation across the whole app with no
  * per-action change.
  */
-import { redirect } from "next/navigation";
+
+import { errorRedirectUrl } from "@web/intake";
 
 import { readStoreTarget } from "@web/read-store-target";
-import { errorRedirectUrl } from "@web/intake";
+import { redirect } from "next/navigation";
 
 export const DEMO_DISABLED_MESSAGE =
   "Acción deshabilitada en la demo — datos ficticios de solo lectura.";

@@ -1,7 +1,6 @@
-import { redirect } from "next/navigation";
-
 import { isPersonaId, PERSONA_IDS, PERSONA_META } from "@web/demo/persona";
 import { readStoreTarget } from "@web/read-store-target";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 

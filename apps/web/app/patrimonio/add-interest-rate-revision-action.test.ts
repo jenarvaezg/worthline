@@ -5,10 +5,10 @@
  * never let the raw SQL throw bubble as a 500. Mirrors the recalibrate action
  * harness (recalibrate-debt-balance-action.test.ts).
  */
-import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
-import { fixedClock, type Clock } from "@worthline/domain";
+import { type Clock, fixedClock } from "@worthline/domain";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { addEarlyRepaymentAction, addInterestRateRevisionAction } from "./actions";
 

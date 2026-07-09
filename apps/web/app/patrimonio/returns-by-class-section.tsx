@@ -1,7 +1,6 @@
+import { formatMeasurePct } from "@web/_components/returns-format";
 import type { AssetClassReturnsViewResult } from "@worthline/domain";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
-
-import { formatMeasurePct } from "@web/_components/returns-format";
 
 import { assetClassLabel, formatExposureWeight } from "./exposure-view";
 

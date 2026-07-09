@@ -14,9 +14,8 @@
  */
 
 import { createHmac } from "node:crypto";
-
-import { addUnits, compareUnits } from "@worthline/domain";
 import type { DecimalString } from "@worthline/domain";
+import { addUnits, compareUnits } from "@worthline/domain";
 
 /**
  * The Binance API origin. Defaults to the real host; overridable via

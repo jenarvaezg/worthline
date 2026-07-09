@@ -1,6 +1,5 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
-
 import type { WorthlineStore } from "@worthline/db";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 /**
  * Unit tests for the shared `_store?` action seam (issue #481). `withStore` is

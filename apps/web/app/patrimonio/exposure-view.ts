@@ -1,3 +1,4 @@
+import type { ExposureLens } from "@web/view-state";
 import type {
   ExposureAssetClassBucket,
   ExposureCoverage,
@@ -6,8 +7,6 @@ import type {
   ExposureLookthrough,
   MoneyMinor,
 } from "@worthline/domain";
-
-import type { ExposureLens } from "@web/view-state";
 
 /**
  * Pure among-state logic for the /patrimonio exposure section (PRD #539 S3, #543,

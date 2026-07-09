@@ -6,7 +6,7 @@
  * and is retractable.
  */
 
-import { test, expect, addHolding, openHoldingMenu } from "./fixtures";
+import { addHolding, expect, openHoldingMenu, test } from "./fixtures";
 
 test("warning lifecycle: zero asset → warning badge → override → listed in ajustes → retractable", async ({
   page,

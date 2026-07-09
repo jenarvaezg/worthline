@@ -1,12 +1,11 @@
-import type { CurrencyCode, MoneyMinor } from "./money";
-
-import { money } from "./money";
-import type { LiquidityTier } from "./liquidity-ladder";
-import type { Liability, ManualAsset, Workspace } from "./workspace-types";
-import { resolveScopeMemberIds } from "./scope";
-import { allocateScopedHolding } from "./scope-allocation";
 import { tierOfAsset } from "./classification";
 import { effectiveRealReturn } from "./fire-return";
+import type { LiquidityTier } from "./liquidity-ladder";
+import type { CurrencyCode, MoneyMinor } from "./money";
+import { money } from "./money";
+import { resolveScopeMemberIds } from "./scope";
+import { allocateScopedHolding } from "./scope-allocation";
+import type { Liability, ManualAsset, Workspace } from "./workspace-types";
 
 export interface FireScopeConfig {
   monthlySpendingMinor: number;

@@ -1,10 +1,4 @@
 import type { AgentViewReadStore } from "@worthline/db";
-import {
-  collectHoldingPayouts,
-  passiveIncomeTrailing,
-  resolveScopeMemberIds,
-  scopePassiveIncome,
-} from "@worthline/domain";
 import type {
   CurrencyCode,
   OwnershipShare,
@@ -12,6 +6,12 @@ import type {
   Payout,
   PayoutSchedule,
   Workspace,
+} from "@worthline/domain";
+import {
+  collectHoldingPayouts,
+  passiveIncomeTrailing,
+  resolveScopeMemberIds,
+  scopePassiveIncome,
 } from "@worthline/domain";
 
 import type {

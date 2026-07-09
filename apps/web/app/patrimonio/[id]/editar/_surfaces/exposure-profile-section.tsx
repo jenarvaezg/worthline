@@ -17,9 +17,8 @@
  */
 
 import { formatDecimalAsPercentField } from "@web/intake-primitives";
-import { listTrackedIndexLabels, type ExposureProfile } from "@worthline/domain";
-
 import { PendingSubmit } from "@web/pending-submit";
+import { type ExposureProfile, listTrackedIndexLabels } from "@worthline/domain";
 import {
   EXPOSURE_ASSET_CLASS_LABELS,
   EXPOSURE_GEOGRAPHY_LABELS,

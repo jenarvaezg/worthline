@@ -1,4 +1,3 @@
-import { AgentViewHttpError } from "./contract";
 import type {
   AgentViewConnectedSourceListEntry,
   AgentViewConnectedSourcePosition,
@@ -12,8 +11,11 @@ import type {
   AgentViewFigureName,
   AgentViewFinancialContext,
   AgentViewFireContext,
+  AgentViewFireProjection,
+  AgentViewGoal,
   AgentViewHoldingDetail,
   AgentViewIncludeHoldingRows,
+  AgentViewMemberProfile,
   AgentViewOperation,
   AgentViewOperationSort,
   AgentViewPriceFreshnessResult,
@@ -21,14 +23,12 @@ import type {
   AgentViewSnapshotEntry,
   AgentViewSnapshotGranularity,
   AgentViewSnapshotSort,
-  AgentViewFireProjection,
-  AgentViewGoal,
-  AgentViewMemberProfile,
   AgentViewSourceFreshnessResult,
   AgentViewTrashedHolding,
   AgentViewWarningOverride,
   AgentViewWorkspaceInfo,
 } from "./contract";
+import { AgentViewHttpError } from "./contract";
 import { FIGURE_NAMES } from "./figure-explanations";
 
 /**

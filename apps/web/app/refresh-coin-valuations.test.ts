@@ -9,9 +9,8 @@
  */
 import type { AssetPrice, CoinPosition } from "@worthline/domain";
 import { describe, expect, it, vi } from "vitest";
-
-import { refreshStaleCoinValuations } from "./refresh-coin-valuations";
 import type { CoinSourceRef } from "./refresh-coin-valuations";
+import { refreshStaleCoinValuations } from "./refresh-coin-valuations";
 
 const NOW = "2026-06-15T12:00:00.000Z";
 

@@ -9,12 +9,11 @@
  * no debt model keeps the last-known-value basis (no regression). Housing equity
  * in a past snapshot subtracts the REAL historical mortgage balance.
  */
-import { describe, expect, test } from "vitest";
 
-import { amortizableBalanceAtDate, debtBalanceAtDate } from "@worthline/domain";
-
-import { createInMemoryStore } from "@db/index";
 import type { WorthlineStore } from "@db/index";
+import { createInMemoryStore } from "@db/index";
+import { amortizableBalanceAtDate, debtBalanceAtDate } from "@worthline/domain";
+import { describe, expect, test } from "vitest";
 
 const TODAY = "2026-06-13";
 

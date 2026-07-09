@@ -1,25 +1,24 @@
-import { createControlPlaneStore, type AgentViewReadStore } from "@worthline/db";
-import { systemClock } from "@worthline/domain";
-
 import { readDemoContext } from "@web/demo/read-demo-context";
 import { withStore } from "@web/store";
+import { type AgentViewReadStore, createControlPlaneStore } from "@worthline/db";
+import { systemClock } from "@worthline/domain";
 
 import {
-  createAgentViewCatalog,
   type AgentViewBackend,
   type AgentViewCatalogTool,
+  createAgentViewCatalog,
 } from "./catalog";
-import {
-  successEnvelope,
-  type AgentViewDataQualityCategory,
-  type AgentViewDataQualitySeverity,
-  type AgentViewEnvelope,
-} from "./contract";
 import {
   buildHoldingConnectedSourcePositions,
   buildSourceConnectedSourcePositions,
 } from "./connected-source-positions";
 import { buildConnectedSourcesList, buildSourceFreshness } from "./connected-sources";
+import {
+  type AgentViewDataQualityCategory,
+  type AgentViewDataQualitySeverity,
+  type AgentViewEnvelope,
+  successEnvelope,
+} from "./contract";
 import { buildDataQuality } from "./data-quality";
 import { buildFigureExplanation, isFigureName } from "./figure-explanations";
 import { buildFinancialContext } from "./financial-context";
@@ -28,12 +27,12 @@ import { buildFireProjection } from "./fire-projection-context";
 import { buildGoals } from "./goals-context";
 import { buildHoldingDetail } from "./holding-detail";
 import { buildHoldingOperations } from "./holding-operations";
+import type { AgentViewMcpServerTool, AgentViewToolContext } from "./mcp-server";
 import { storeTargetFromMcpAuth } from "./mcp-store-target";
 import { buildPriceFreshness } from "./price-freshness";
-import type { AgentViewMcpServerTool, AgentViewToolContext } from "./mcp-server";
-import { STUB_NOTICE } from "./stub-catalog";
 import { listAgentViewScopes } from "./scopes";
 import { buildSnapshotHistory } from "./snapshot-history";
+import { STUB_NOTICE } from "./stub-catalog";
 import { buildTrashSummary } from "./trash-summary";
 import {
   buildMemberProfiles,

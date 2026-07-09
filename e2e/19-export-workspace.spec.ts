@@ -9,7 +9,7 @@
 
 import { readFileSync } from "node:fs";
 
-import { test, expect, addHolding } from "./fixtures";
+import { addHolding, expect, test } from "./fixtures";
 
 interface ExportDocument {
   version: number;

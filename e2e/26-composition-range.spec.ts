@@ -20,7 +20,7 @@
 import { createWorthlineStore } from "@worthline/db";
 import { captureValuedNetWorthSnapshot } from "@worthline/domain";
 
-import { test, expect } from "./fixtures";
+import { expect, test } from "./fixtures";
 
 async function seedMultiYearHistory(): Promise<void> {
   const databasePath = process.env.WORTHLINE_DB_PATH;

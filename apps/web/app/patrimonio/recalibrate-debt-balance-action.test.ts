@@ -11,13 +11,12 @@
  * pin the store seam itself; this exercises the ACTION path on top of it),
  * demo write-gating, and the audit trail entry.
  */
-import { afterEach, describe, expect, test, vi } from "vitest";
-
-import { createInMemoryStore } from "@worthline/db";
-import type { WorthlineStore } from "@worthline/db";
-import { fixedClock, type Clock } from "@worthline/domain";
 
 import { DEMO_DISABLED_MESSAGE } from "@web/demo/write-guard";
+import type { WorthlineStore } from "@worthline/db";
+import { createInMemoryStore } from "@worthline/db";
+import { type Clock, fixedClock } from "@worthline/domain";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { recalibrateDebtBalanceAction } from "./actions";
 
 // Drive demo-ness through the persona cookie the store seam reads (mirrors

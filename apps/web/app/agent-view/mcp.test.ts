@@ -1,18 +1,17 @@
 import { describe, expect, test } from "vitest";
-
-import { createAgentViewMcpToolCatalog } from "./mcp";
 import type {
   AgentViewConnectedSourceListEntry,
   AgentViewEnvelope,
-  AgentViewPriceFreshnessResult,
-  AgentViewScope,
   AgentViewFireProjection,
   AgentViewGoal,
   AgentViewMemberProfile,
+  AgentViewPriceFreshnessResult,
+  AgentViewScope,
   AgentViewSourceFreshnessResult,
   AgentViewWarningOverride,
   AgentViewWorkspaceInfo,
 } from "./contract";
+import { createAgentViewMcpToolCatalog } from "./mcp";
 
 describe("agent-view MCP tools", () => {
   test("list_scopes calls the HTTP API and returns the same response shape", async () => {

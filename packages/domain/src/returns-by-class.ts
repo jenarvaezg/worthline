@@ -1,15 +1,7 @@
 import type { AssetClassResolution, ExposureCoverage } from "./exposure-lookthrough";
 import type { InvestmentOperation } from "./investment-types";
-import { allocateByBps, money } from "./money";
 import type { CurrencyCode, MoneyMinor } from "./money";
-import {
-  operationCashflows,
-  operationTwrCashflows,
-  payoutCashflows,
-  simpleGainFromCashflows,
-  timeWeightedReturn,
-  xirr,
-} from "./returns";
+import { allocateByBps, money } from "./money";
 import type {
   DatedCashflow,
   DatedPayout,
@@ -18,6 +10,14 @@ import type {
   SimpleGain,
   TwrCashflow,
   TwrResult,
+} from "./returns";
+import {
+  operationCashflows,
+  operationTwrCashflows,
+  payoutCashflows,
+  simpleGainFromCashflows,
+  timeWeightedReturn,
+  xirr,
 } from "./returns";
 
 /**

@@ -8,10 +8,9 @@
  */
 
 import { describe, expect, it } from "vitest";
-
-import type { Goal } from "./goals";
 import type { FireScopeConfig } from "./fire";
 import { goalFireDelay } from "./goal-fire-delay";
+import type { Goal } from "./goals";
 
 // ── shared fixture helpers ──────────────────────────────────────────────────
 

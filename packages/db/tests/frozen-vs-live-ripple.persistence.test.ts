@@ -21,10 +21,11 @@
  * at a date/scope that had none. They encode the #242 acceptance criteria — some are
  * EXPECTED to FAIL until production is fixed (this is an investigation via tests).
  */
-import { describe, expect, test } from "vitest";
+
+import type { WorthlineStore } from "@db/index";
 
 import { createInMemoryStore } from "@db/index";
-import type { WorthlineStore } from "@db/index";
+import { describe, expect, test } from "vitest";
 
 const TODAY = "2026-06-16";
 

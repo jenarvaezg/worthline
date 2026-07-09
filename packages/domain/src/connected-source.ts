@@ -14,11 +14,11 @@
  * persists what this projection describes.
  */
 
-import { multiplyToMinor } from "./decimal";
 import type { DecimalString } from "./decimal";
+import { multiplyToMinor } from "./decimal";
 import type { Instrument } from "./instrument-catalog";
-import { LIQUIDITY_LADDER } from "./liquidity-ladder";
 import type { LiquidityTier } from "./liquidity-ladder";
+import { LIQUIDITY_LADDER } from "./liquidity-ladder";
 import type { CurrencyCode } from "./money";
 import type { SnapshotPositionInput } from "./snapshot-holdings";
 import type { OwnershipShare } from "./workspace-types";

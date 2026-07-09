@@ -9,14 +9,13 @@
  * prior sync's last-good price forward (matched by stable `externalId`).
  */
 import { describe, expect, test } from "vitest";
-
-import { carryForwardTokenUnitPrices } from "./connected-source";
 import type {
   CoinPosition,
   DistributiveOmit,
   SourcePosition,
   TokenPosition,
 } from "./connected-source";
+import { carryForwardTokenUnitPrices } from "./connected-source";
 
 /** The token's unit price, or null for a coin / a missing row — narrows the
  *  carry-forward result union so the assertions stay type-clean. */

@@ -19,7 +19,7 @@
 
 import { createWorthlineStore } from "@worthline/db";
 
-import { test, expect, addHolding, holdingRow } from "./fixtures";
+import { addHolding, expect, holdingRow, test } from "./fixtures";
 
 test("price refresh: board hover + detail caption show date + provider for a cached investment (#303)", async ({
   page,

@@ -8,9 +8,8 @@
  * injected, so the cap discipline and outage behaviour are tested without I/O.
  */
 import { describe, expect, it, vi } from "vitest";
-
-import { NUMISMATIC_TTL_DAYS, refreshCoinValuations } from "./numista-valuation";
 import type { RevaluePosition } from "./numista-valuation";
+import { NUMISMATIC_TTL_DAYS, refreshCoinValuations } from "./numista-valuation";
 
 const NOW = "2026-06-15T12:00:00.000Z";
 

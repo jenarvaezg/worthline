@@ -13,10 +13,10 @@
  * Returns null when config is degenerate (SWR or spending = 0) — caller hides the rail.
  */
 
-import type { CurrencyCode } from "./money";
 import type { FireScopeConfig } from "./fire";
 import { calculateFire } from "./fire";
-import { projectFire, fractionalFireYear } from "./fire-projection";
+import { fractionalFireYear, projectFire } from "./fire-projection";
+import type { CurrencyCode } from "./money";
 
 export type FireLevelKey = "coast" | "lean" | "barista" | "regular" | "fat";
 

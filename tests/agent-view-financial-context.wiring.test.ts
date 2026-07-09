@@ -1,12 +1,11 @@
-import { afterEach, describe, expect, test } from "vitest";
-import { NextRequest } from "next/server";
-
+import type { AgentViewApiClient } from "@web/agent-view/mcp";
+import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
+import { GET as getFinancialContext } from "@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
+import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
 import { createControlPlaneStore, createWorthlineStore } from "@worthline/db";
 import { debtBalanceAtDate, systemClock } from "@worthline/domain";
-import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
-import { GET as getFinancialContext } from "@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
-import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
-import type { AgentViewApiClient } from "@web/agent-view/mcp";
+import { NextRequest } from "next/server";
+import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
 
 const ORIGINAL_DB_PATH = process.env.WORTHLINE_DB_PATH;

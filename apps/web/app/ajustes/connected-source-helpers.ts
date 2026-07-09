@@ -1,6 +1,5 @@
-import { cookies } from "next/headers";
-
 import { localRedirectPath, parseScopeCookie, SCOPE_COOKIE_NAME } from "@web/intake";
+import { cookies } from "next/headers";
 
 export const BASE = "/ajustes";
 export const CONNECTED_SOURCE_PERSISTENCE_ERROR_MESSAGE =

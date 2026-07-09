@@ -1,3 +1,4 @@
+import { parsePercentToDecimal } from "@web/intake-primitives";
 import type { AmortizationPlanInput, DecimalString } from "@worthline/domain";
 import {
   deriveCurrentStateAmortizationPlan,
@@ -5,8 +6,6 @@ import {
   parseDecimalToMinorStrict,
   remainingMonthlyPayments,
 } from "@worthline/domain";
-
-import { parsePercentToDecimal } from "@web/intake-primitives";
 
 /**
  * Pure "alta por estado actual" derivation (ADR 0056, PRD #670 S2, #677).

@@ -5,8 +5,9 @@
  * dashboard. These assert the workspace shape AND the post-creation redirect
  * target.
  */
-import { createInMemoryStore } from "@worthline/db";
+
 import type { WorthlineStore } from "@worthline/db";
+import { createInMemoryStore } from "@worthline/db";
 import { describe, expect, test, vi } from "vitest";
 
 import { initHogarAction, initSoloAction } from "./actions";

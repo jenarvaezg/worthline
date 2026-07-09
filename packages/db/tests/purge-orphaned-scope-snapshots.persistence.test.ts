@@ -18,12 +18,12 @@
  *  - a household → individual collapse (live scopes shrink to just household)
  *    purges every per-member / per-group scope's snapshots, household survives.
  */
-import { listScopeOptions } from "@worthline/domain";
-import type { NetWorthSnapshot, SnapshotHoldingRow } from "@worthline/domain";
-import { describe, expect, test } from "vitest";
 
-import { createInMemoryStore } from "@db/index";
 import type { WorthlineStore } from "@db/index";
+import { createInMemoryStore } from "@db/index";
+import type { NetWorthSnapshot, SnapshotHoldingRow } from "@worthline/domain";
+import { listScopeOptions } from "@worthline/domain";
+import { describe, expect, test } from "vitest";
 
 async function saveScopeSnapshot(
   store: WorthlineStore,

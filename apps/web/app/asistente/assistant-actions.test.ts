@@ -3,13 +3,13 @@
  * model PROPOSES actions; the app renders only what validates against the typed
  * set, and only internal destinations — the model never supplies a raw URL.
  */
-import { describe, expect, it } from "vitest";
 
 import {
   parseExposureProfileProposal,
   parseQuickActions,
   sourceHref,
 } from "@web/asistente/assistant-actions";
+import { describe, expect, it } from "vitest";
 
 describe("parseQuickActions", () => {
   it("keeps the two typed actions and drops everything else", () => {

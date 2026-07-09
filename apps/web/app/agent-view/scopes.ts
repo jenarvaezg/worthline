@@ -1,6 +1,6 @@
 import type { AgentViewReadStore } from "@worthline/db";
-import { listScopeOptions, resolveScopeMemberIds } from "@worthline/domain";
 import type { ExportedPublicIdEntityType, Member } from "@worthline/domain";
+import { listScopeOptions, resolveScopeMemberIds } from "@worthline/domain";
 
 import {
   AgentViewHttpError,

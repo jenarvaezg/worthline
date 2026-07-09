@@ -13,8 +13,6 @@ import { z } from "zod";
 
 import { compareUnits } from "./decimal";
 import { createExposureProfile } from "./exposure-lookthrough";
-import type { OwnershipShare, Workspace } from "./workspace-types";
-import { checkOwnershipSplit } from "./workspace-types";
 import { assertSnapshotHoldingsReconcile } from "./snapshot-holdings";
 import type {
   ExportedAsset,
@@ -23,6 +21,8 @@ import type {
   WorkspaceExport,
 } from "./workspace-transfer";
 import { EXPORT_VERSION } from "./workspace-transfer";
+import type { OwnershipShare, Workspace } from "./workspace-types";
+import { checkOwnershipSplit } from "./workspace-types";
 
 export type ParseWorkspaceExportResult =
   | { ok: true; value: WorkspaceExport }

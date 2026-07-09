@@ -9,7 +9,7 @@
  * (/empezar).
  */
 
-import { test, expect } from "./fixtures";
+import { expect, test } from "./fixtures";
 
 test("danger zone: wrong phrase aborts, exact phrase resets to onboarding", async ({
   page,

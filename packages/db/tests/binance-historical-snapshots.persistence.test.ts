@@ -11,12 +11,11 @@
  * skipped — so re-syncing only adds newly-completed months and never rewrites a
  * past value. The current (partial) month is never materialized.
  */
-import { describe, expect, test } from "vitest";
 
-import type { BinanceHistoryCurve, DecimalString } from "@worthline/domain";
-
-import { createInMemoryStore } from "@db/index";
 import type { WorthlineStore } from "@db/index";
+import { createInMemoryStore } from "@db/index";
+import type { BinanceHistoryCurve, DecimalString } from "@worthline/domain";
+import { describe, expect, test } from "vitest";
 
 const TODAY = "2026-06-15";
 const MEMBER_ID = "mJ";

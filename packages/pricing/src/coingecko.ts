@@ -1,5 +1,5 @@
-import type { PriceProvider } from "./index";
 import { fetchHttpWithRetry } from "./fetch-with-retry";
+import type { PriceProvider } from "./index";
 
 /**
  * The CoinGecko API origin (including `/api/v3`). Defaults to the real host;

@@ -1,6 +1,6 @@
 import type {
-  IrrReason,
   GoalPriority,
+  IrrReason,
   PayoutCadence,
   PriceFreshnessState,
   RiskTolerance,

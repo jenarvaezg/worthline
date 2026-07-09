@@ -8,8 +8,8 @@
  * a net-worth line. Pure presentation math — numbers and strings only.
  */
 import { describe, expect, test } from "vitest";
-
-import type { DatedSnapshotHoldingRow } from "./drilldown";
+import type { LiquidityTier } from "./classification";
+import type { CompositionSeriesPoint } from "./composition-chart";
 import {
   availableCompositionRanges,
   buildCompositionChartGeometry,
@@ -20,8 +20,7 @@ import {
   rangeStartMonthKey,
   selectPeriodicSeries,
 } from "./composition-chart";
-import type { CompositionSeriesPoint } from "./composition-chart";
-import type { LiquidityTier } from "./classification";
+import type { DatedSnapshotHoldingRow } from "./drilldown";
 import type { SnapshotHoldingKind } from "./snapshot-holdings";
 
 function row(input: {

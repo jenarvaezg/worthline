@@ -1,6 +1,5 @@
-import { listScopeOptions } from "@worthline/domain";
-
 import type { WorthlineStore } from "@web/store";
+import { listScopeOptions } from "@worthline/domain";
 
 export const INVALID_SCOPE_MESSAGE = "No se encontró el scope seleccionado.";
 

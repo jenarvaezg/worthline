@@ -15,8 +15,6 @@
  * are deduped to stay within Numista's request cap (ADR 0017).
  */
 
-import type { CoinPosition } from "@worthline/domain";
-
 import {
   COIN_VALUE_TTL_DAYS,
   coinValuation,
@@ -25,13 +23,14 @@ import {
 import type { PriceProvider } from "@pricing/index";
 import type { MetalKind } from "@pricing/metal";
 import { parseComposition, STOOQ_METAL_SYMBOL } from "@pricing/metal";
-import { mapCollectedItem } from "@pricing/numista";
 import type {
   NumistaCollectedItem,
   NumistaPrices,
   NumistaTypeDetail,
 } from "@pricing/numista";
+import { mapCollectedItem } from "@pricing/numista";
 import { resolveProvider } from "@pricing/registry";
+import type { CoinPosition } from "@worthline/domain";
 
 /** A coin position ready to persist — the store assigns its id + sourceId. */
 export type PositionDraft = Omit<CoinPosition, "id" | "sourceId">;

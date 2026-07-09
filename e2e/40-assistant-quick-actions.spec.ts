@@ -9,7 +9,7 @@
  * render, `openInternalSource` navigates while the panel stays open, and
  * `runSuggestedAnalysis` seeds a follow-up in the same layer.
  */
-import { test, expect } from "./fixtures";
+import { expect, test } from "./fixtures";
 
 // The app registers a service worker under E2E; its fetch handler proxies
 // /api/chat to the network OUTSIDE page.route's reach. Block it so this

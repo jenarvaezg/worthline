@@ -1,12 +1,11 @@
+import { parseStatement } from "@worthline/domain";
 import { strToU8, zipSync } from "fflate";
 import { describe, expect, test } from "vitest";
 
-import { parseStatement } from "@worthline/domain";
-
 import {
   isSpreadsheet,
-  spreadsheetToDelimitedText,
   SpreadsheetReadError,
+  spreadsheetToDelimitedText,
 } from "./spreadsheet-text";
 
 /**

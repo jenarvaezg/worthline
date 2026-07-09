@@ -6,11 +6,11 @@
  * numismatic estimate (per grade), leaving max(metal, numismatic) to the domain.
  * Dependencies are injected so the orchestration is tested without the network.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { fetchMetalSpotEur, syncNumistaCollection } from "./numista-valuation";
-import type { SyncedCoin } from "./numista-valuation";
 import type { NumistaCollectedItem } from "@pricing/numista";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SyncedCoin } from "./numista-valuation";
+import { fetchMetalSpotEur, syncNumistaCollection } from "./numista-valuation";
 
 const NOW = "2026-06-15T12:00:00.000Z";
 

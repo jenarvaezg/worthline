@@ -15,7 +15,6 @@
  *   npm run eval:assistant                         # from repo root
  *   WORTHLINE_CHAT_MODEL=groq/other npm run eval:assistant   # compare a candidate
  */
-import { generateText, stepCountIs } from "ai";
 
 import { chatAsOf } from "@web/asistente/chat-clock";
 import { chatModelLabel, resolveChatModel } from "@web/asistente/chat-model";
@@ -23,6 +22,7 @@ import { createChatTools } from "@web/asistente/chat-tools";
 import { buildChatSystemPrompt } from "@web/asistente/system-prompt";
 import { withStore } from "@web/store";
 import type { StoreTarget } from "@web/store-resolver";
+import { generateText, stepCountIs } from "ai";
 
 import { GOLDEN_QUESTIONS } from "./golden";
 import type { AssistantAnswer } from "./graders";

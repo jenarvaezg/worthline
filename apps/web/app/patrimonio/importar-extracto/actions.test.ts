@@ -6,20 +6,19 @@
  * builds on).
  */
 import { readFileSync } from "node:fs";
-
+import type { WorthlineStore } from "@worthline/db";
 import { createInMemoryStore } from "@worthline/db";
 import { parseStatement } from "@worthline/domain";
 import { strToU8, zipSync } from "fflate";
-import type { WorthlineStore } from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
 import {
   confirmImportStatementAction,
-  previewImportStatementAction,
   type FundPreviewRow,
   type ImportStatementPreviewState,
   type IsinLookupResult,
   type IsinSymbolResolver,
+  previewImportStatementAction,
 } from "./actions";
 
 const IDLE: ImportStatementPreviewState = { status: "idle" };

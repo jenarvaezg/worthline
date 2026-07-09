@@ -7,8 +7,8 @@
  * `fetch` for the signed balances + CoinGecko price), and disconnect's cascade.
  */
 
-import { createInMemoryStore } from "@worthline/db";
 import type { WorthlineStore } from "@worthline/db";
+import { createInMemoryStore } from "@worthline/db";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("next/headers", () => ({

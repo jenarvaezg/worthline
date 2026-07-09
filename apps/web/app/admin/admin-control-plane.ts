@@ -4,7 +4,7 @@
  * `run`, and always closes it — unless a store is injected (tests), whose
  * lifecycle the caller owns instead.
  */
-import { createControlPlaneStore, type ControlPlaneStore } from "@worthline/db";
+import { type ControlPlaneStore, createControlPlaneStore } from "@worthline/db";
 
 function requireControlPlaneUrl(env: Record<string, string | undefined>): string {
   const url = env.WORTHLINE_CONTROL_PLANE_DB_URL;

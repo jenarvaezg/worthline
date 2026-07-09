@@ -1,9 +1,9 @@
-import type { ScreenSection } from "./screen-context";
 import type {
   ExposureProfileProposal,
   ExposureProfileProposalPreview,
   ExposureProfileProposalPreviewProfile,
 } from "./exposure-profile-proposals";
+import type { ScreenSection } from "./screen-context";
 
 /**
  * Typed read-only quick actions and internal-source destinations (#631, ADR

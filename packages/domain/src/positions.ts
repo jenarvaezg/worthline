@@ -1,6 +1,4 @@
-import type { CurrencyCode } from "./money";
 import type { DecimalString } from "./decimal";
-
 import {
   addUnits,
   averageUnitCost,
@@ -15,6 +13,7 @@ import type {
   InvestmentOperation,
   PositionSummary,
 } from "./investment-types";
+import type { CurrencyCode } from "./money";
 import { assertMinorInteger, money, subtractMoney } from "./money";
 
 /** Operations whose executedAt date falls on or before the target date. */

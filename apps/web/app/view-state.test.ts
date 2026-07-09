@@ -5,8 +5,8 @@ import {
   MOVERS_PERIOD_VIEW_PARAM,
   RANGE_VIEW_PARAM,
   readViewParam,
-  writeViewParam,
   type ViewParamSpec,
+  writeViewParam,
 } from "./view-state";
 
 /**

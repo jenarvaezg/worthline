@@ -1,13 +1,13 @@
 import type { PersonaId } from "@web/demo/persona";
 
 import {
+  type AssistantAnswer,
   citesEuros,
   citesInternalSource,
   declinesToInvent,
   isSpanish,
   mentionsAny,
   usedReadTool,
-  type AssistantAnswer,
 } from "./graders";
 
 /**

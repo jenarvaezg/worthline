@@ -1,6 +1,5 @@
-import { describe, expect, test } from "vitest";
-
 import { createInMemoryControlPlaneStore } from "@db/control-plane";
+import { describe, expect, test } from "vitest";
 
 describe("control-plane store", () => {
   test("find-or-create returns a user for a new email", async () => {

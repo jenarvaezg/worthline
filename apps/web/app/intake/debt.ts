@@ -1,3 +1,4 @@
+import { parseIsoDateField, parsePercentToDecimal } from "@web/intake-primitives";
 import type {
   AddBalanceAnchorInput,
   AddEarlyRepaymentInput,
@@ -11,8 +12,6 @@ import type {
   ValuationCadence,
 } from "@worthline/domain";
 import { parseDecimalStrict } from "@worthline/domain";
-
-import { parseIsoDateField, parsePercentToDecimal } from "@web/intake-primitives";
 import {
   createStableId,
   parseMoneyMinorField,

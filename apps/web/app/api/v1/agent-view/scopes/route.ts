@@ -1,7 +1,6 @@
+import { handleListScopes } from "@web/agent-view/http";
 import { withStore } from "@worthline/db";
 import type { NextRequest } from "next/server";
-
-import { handleListScopes } from "@web/agent-view/http";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

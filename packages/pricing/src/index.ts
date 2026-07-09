@@ -183,26 +183,42 @@ export async function fetchAndCachePrice(
   }
 }
 
-export { searchSymbols } from "./search";
-export type { SymbolCandidate } from "./search";
+export type {
+  BinanceAccountSnapshot,
+  BinanceCredentials,
+  BinanceRequestDeps,
+  BinanceWalletBalance,
+} from "./binance";
+export { getAccountSnapshots, getAllBalances } from "./binance";
+export type {
+  CoinGeckoHistoryResult,
+  ReconstructBinanceHistoryDeps,
+} from "./binance-history";
+export { fetchCoinGeckoHistoryEur, reconstructBinanceHistory } from "./binance-history";
+export { rungForWallet } from "./binance-rung";
+export { isBinanceFiatEur, resolveCoinGeckoId } from "./binance-symbols";
+export type { BinanceSyncDeps, TokenPositionDraft } from "./binance-sync";
 export {
-  fallbackChains,
-  fetchPriceNow,
-  fetchWithFallback,
-  providerRegistry,
-  resolveProvider,
-  runFallbackChain,
-} from "./registry";
-export type { FetchedPrice, RegisteredSource } from "./registry";
-export { refreshStalePrices } from "./refresh-stale-prices";
-export {
-  getCollectedItems,
-  getPrices,
-  getTypeDetail,
-  isTokenValid,
-  mapCollectedItem,
-  mintNumistaToken,
-} from "./numista";
+  fetchCoinGeckoLogos,
+  fetchCoinGeckoPriceEur,
+  syncBinanceAccount,
+} from "./binance-sync";
+export type {
+  CandidateValuation,
+  CoinValuationInput,
+  CoinValueResult,
+  NumismaticValuation,
+} from "./coin-valuation";
+export { COIN_VALUE_TTL_DAYS, coinValuation, isNumismaticStale } from "./coin-valuation";
+export type {
+  HistoricalPriceSeries,
+  HistoricalPriceSource,
+} from "./historical-price-source";
+export { coingeckoHistoricalSource, parsePriceCsv } from "./historical-price-source";
+export type { BenchmarkPricePoint } from "./ine-cpi";
+export { fetchSpanishCpi, INE_SPANISH_CPI_TABLE_ID } from "./ine-cpi";
+export type { MetalKind, MetalValueInput, ParsedComposition } from "./metal";
+export { metalValueMinor, parseComposition, STOOQ_METAL_SYMBOL } from "./metal";
 export type {
   CollectedItemDraft,
   NumistaCollectedItem,
@@ -212,59 +228,43 @@ export type {
   NumistaToken,
   NumistaTypeDetail,
 } from "./numista";
-export { metalValueMinor, parseComposition, STOOQ_METAL_SYMBOL } from "./metal";
-export type { MetalKind, MetalValueInput, ParsedComposition } from "./metal";
-export { COIN_VALUE_TTL_DAYS, coinValuation, isNumismaticStale } from "./coin-valuation";
-export type {
-  CandidateValuation,
-  CoinValuationInput,
-  CoinValueResult,
-  NumismaticValuation,
-} from "./coin-valuation";
 export {
-  NUMISMATIC_TTL_DAYS,
-  fetchMetalSpotEur,
-  refreshCoinValuations,
-  syncNumistaCollection,
-} from "./numista-valuation";
+  getCollectedItems,
+  getPrices,
+  getTypeDetail,
+  isTokenValid,
+  mapCollectedItem,
+  mintNumistaToken,
+} from "./numista";
 export type {
   NumistaSyncDeps,
   PositionDraft,
   RevalueDeps,
-  RevalueOptions,
   RevaluedPosition,
+  RevalueOptions,
   RevaluePosition,
 } from "./numista-valuation";
-export { getAccountSnapshots, getAllBalances } from "./binance";
-export type {
-  BinanceAccountSnapshot,
-  BinanceCredentials,
-  BinanceRequestDeps,
-  BinanceWalletBalance,
-} from "./binance";
-export { resolveCoinGeckoId, isBinanceFiatEur } from "./binance-symbols";
 export {
-  fetchCoinGeckoLogos,
-  fetchCoinGeckoPriceEur,
-  syncBinanceAccount,
-} from "./binance-sync";
-export type { BinanceSyncDeps, TokenPositionDraft } from "./binance-sync";
-export { fetchCoinGeckoHistoryEur, reconstructBinanceHistory } from "./binance-history";
-export type {
-  CoinGeckoHistoryResult,
-  ReconstructBinanceHistoryDeps,
-} from "./binance-history";
-export { rungForWallet } from "./binance-rung";
-export { coingeckoHistoricalSource, parsePriceCsv } from "./historical-price-source";
-export type {
-  HistoricalPriceSeries,
-  HistoricalPriceSource,
-} from "./historical-price-source";
+  fetchMetalSpotEur,
+  NUMISMATIC_TTL_DAYS,
+  refreshCoinValuations,
+  syncNumistaCollection,
+} from "./numista-valuation";
 export type {
   InvestmentAssetRef,
   RefreshOptions,
   RefreshStalePricesResult,
 } from "./refresh-stale-prices";
-export { fetchSpanishCpi, INE_SPANISH_CPI_TABLE_ID } from "./ine-cpi";
-export type { BenchmarkPricePoint } from "./ine-cpi";
+export { refreshStalePrices } from "./refresh-stale-prices";
+export type { FetchedPrice, RegisteredSource } from "./registry";
+export {
+  fallbackChains,
+  fetchPriceNow,
+  fetchWithFallback,
+  providerRegistry,
+  resolveProvider,
+  runFallbackChain,
+} from "./registry";
+export type { SymbolCandidate } from "./search";
+export { searchSymbols } from "./search";
 export { fetchStooqMonthlyBenchmark } from "./stooq-benchmark";

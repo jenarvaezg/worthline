@@ -9,6 +9,7 @@ import { describe, expect, test } from "vitest";
 import {
   amortizationPaymentDatesUpTo,
   buildSnapshotAtDate,
+  type DebtBalanceCurveInputs,
   globalHoldingValueAtDate,
   recalculateSnapshotForAsset,
   recalculateSnapshotForCoinAcquisition,
@@ -16,9 +17,7 @@ import {
   recalculateSnapshotForHousing,
   recalculateSnapshotForLiability,
   recalculateSnapshotForOwnership,
-  type DebtBalanceCurveInputs,
 } from "./historical-snapshot";
-import { lastKnownValueAtDate, type ManualValuePoint } from "./value-history";
 import type {
   InvestmentOperation,
   Liability,
@@ -35,6 +34,7 @@ import {
   createWorkspace,
   money,
 } from "./index";
+import { lastKnownValueAtDate, type ManualValuePoint } from "./value-history";
 
 function makeWorkspace(): Workspace {
   return createWorkspace({

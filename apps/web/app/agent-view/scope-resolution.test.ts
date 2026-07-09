@@ -1,9 +1,7 @@
-import { describe, expect, it } from "vitest";
-
-import { createInMemoryStore } from "@worthline/db";
-
 import { seedPersona } from "@web/demo/seed-persona";
 import { FAMILIA_SPEC } from "@web/demo/specs/familia";
+import { createInMemoryStore } from "@worthline/db";
+import { describe, expect, it } from "vitest";
 
 import { AgentViewHttpError } from "./contract";
 import {

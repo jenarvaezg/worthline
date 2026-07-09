@@ -6,11 +6,11 @@
  * file only asserts what `write-guard.ts` does with an already-impersonated
  * target: block writes, with the Spanish read-only message, store untouched.
  */
-import { describe, expect, it, vi } from "vitest";
-
-import { createInMemoryStore } from "@worthline/db";
 
 import type { StoreTarget } from "@web/store-resolver";
+
+import { createInMemoryStore } from "@worthline/db";
+import { describe, expect, it, vi } from "vitest";
 
 let mockTarget: StoreTarget = { kind: "local" };
 
@@ -19,8 +19,8 @@ vi.mock("@web/read-store-target", () => ({
 }));
 
 import {
-  IMPERSONATION_READONLY_MESSAGE,
   guardDemoWrite,
+  IMPERSONATION_READONLY_MESSAGE,
   isImpersonating,
 } from "@web/demo/write-guard";
 import { deleteAssetAction } from "@web/patrimonio/actions";

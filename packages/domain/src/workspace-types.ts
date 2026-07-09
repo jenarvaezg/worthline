@@ -1,9 +1,9 @@
-import type { CurrencyCode, MoneyMinor } from "./money";
-import { assertMinorInteger } from "./money";
-import type { LiquidityTier } from "./liquidity-tier";
+import type { DomainResult, DomainViolation } from "./domain-result";
 import type { Instrument } from "./instrument-catalog";
 import { defaultInstrumentForAssetType } from "./instrument-catalog";
-import type { DomainResult, DomainViolation } from "./domain-result";
+import type { LiquidityTier } from "./liquidity-tier";
+import type { CurrencyCode, MoneyMinor } from "./money";
+import { assertMinorInteger } from "./money";
 
 export type WorkspaceMode = "individual" | "household";
 

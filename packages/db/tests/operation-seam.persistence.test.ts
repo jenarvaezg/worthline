@@ -9,10 +9,11 @@
  * longer exist on the store surface (ADR 0020): every persist+ripple pair rides a
  * seam method, which wraps the standalone ripple logic behind a single transaction.
  */
-import { describe, expect, test } from "vitest";
+
+import type { WorthlineStore } from "@db/index";
 
 import { createInMemoryStore } from "@db/index";
-import type { WorthlineStore } from "@db/index";
+import { describe, expect, test } from "vitest";
 
 const TODAY = "2026-06-12";
 

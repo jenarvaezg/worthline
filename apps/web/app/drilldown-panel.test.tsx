@@ -1,5 +1,5 @@
-import { buildDebtsDrilldown, buildLiquidDrilldown } from "@worthline/domain";
 import type { DatedSnapshotHoldingRow, LiquidityTier } from "@worthline/domain";
+import { buildDebtsDrilldown, buildLiquidDrilldown } from "@worthline/domain";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 

@@ -14,12 +14,12 @@
  */
 
 import {
-  test,
-  expect,
   addHolding,
-  holdingRow,
   delayServerActions,
+  expect,
+  holdingRow,
   openAdvancedSettings,
+  test,
 } from "./fixtures";
 
 test("investment: create with manual price → buy operation → derived value visible", async ({

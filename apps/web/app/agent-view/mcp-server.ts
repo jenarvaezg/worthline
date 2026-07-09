@@ -4,13 +4,12 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-
-import type { AgentViewMcpInputSchema } from "./mcp";
 import {
+  type AgentViewErrorEnvelope,
   AgentViewHttpError,
   errorEnvelope,
-  type AgentViewErrorEnvelope,
 } from "./contract";
+import type { AgentViewMcpInputSchema } from "./mcp";
 
 /**
  * Per-invocation context handed to each tool. Carries the verified token's

@@ -5,7 +5,7 @@
  * one action and verifies both are gone.
  */
 
-import { test, expect, addHolding, deleteHolding } from "./fixtures";
+import { addHolding, deleteHolding, expect, test } from "./fixtures";
 
 async function createAndTrash(page: import("@playwright/test").Page, name: string) {
   await addHolding(page, {

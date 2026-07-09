@@ -7,10 +7,6 @@
  * two-step delete per row. Extracted from the monolithic editar page.
  */
 
-import type { ValuationAnchorRecord } from "@worthline/db";
-import { formatMoneyInput, formatMoneyMinorPrivacy } from "@worthline/domain";
-import type { ValuationCadence } from "@worthline/domain";
-
 import type { FormErrorContext } from "@web/intake";
 import {
   addValuationAnchorAction,
@@ -19,6 +15,9 @@ import {
   setHousingValuationCadenceAction,
   updateValuationAnchorAction,
 } from "@web/patrimonio/actions";
+import type { ValuationAnchorRecord } from "@worthline/db";
+import type { ValuationCadence } from "@worthline/domain";
+import { formatMoneyInput, formatMoneyMinorPrivacy } from "@worthline/domain";
 
 /** Render a stored decimal rate ("0.03") back as the percent the user typed ("3"). */
 function rateToPercentInput(rate: string | null): string {

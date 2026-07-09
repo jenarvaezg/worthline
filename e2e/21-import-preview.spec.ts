@@ -10,7 +10,7 @@
  * error and offers NO confirm button. This journey never confirms an import.
  */
 
-import { test, expect, addHolding, holdingRow } from "./fixtures";
+import { addHolding, expect, holdingRow, test } from "./fixtures";
 
 /** A valid version-2 export document with known per-section counts. */
 const previewDoc = {

@@ -22,10 +22,10 @@ Run the fast verification gate (inner-loop and default CI check):
 npm run verify
 ```
 
-`verify` runs `typecheck` + `test` + `lint` + `format` without invoking a full
-`next build`. Tasks are orchestrated by Turborepo, so unchanged packages are
-skipped across runs ("FULL TURBO" cache hit). Lint and format also use tool-level
-caches under `node_modules/.cache/`.
+`verify` runs `typecheck` + `biome ci` + `test` without invoking a full
+`next build`. Typecheck and test are orchestrated by Turborepo, so unchanged
+packages are skipped across runs ("FULL TURBO" cache hit). Biome (lint + format)
+runs at the repo root.
 
 Run the full production/deploy gate (pre-push / before deploy):
 

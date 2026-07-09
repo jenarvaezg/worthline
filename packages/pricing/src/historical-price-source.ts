@@ -19,9 +19,8 @@
  */
 
 import type { DecimalString } from "@worthline/domain";
-
-import { resolveCoinGeckoId } from "./binance-symbols";
 import { fetchCoinGeckoHistoryEur } from "./binance-history";
+import { resolveCoinGeckoId } from "./binance-symbols";
 
 /** A historical EUR price series plus the source that produced it. */
 export interface HistoricalPriceSeries {

@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  type FundSelectionState,
   pluralize,
   summarizeImportSelection,
-  type FundSelectionState,
 } from "./import-statement-summary";
 
 function fund(overrides: Partial<FundSelectionState> = {}): FundSelectionState {

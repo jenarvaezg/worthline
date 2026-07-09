@@ -1,6 +1,5 @@
-import { describe, expect, it } from "vitest";
-
 import type { StoreTarget } from "@web/store-resolver";
+import { describe, expect, it } from "vitest";
 
 import { CHAT_RATE_LIMITS, chatRatePlan, chatRateWindow } from "./rate-limit";
 

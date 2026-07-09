@@ -1,6 +1,5 @@
-import type { StoreTarget } from "@web/store-resolver";
-
 import { demoAsOfDateKey } from "@web/demo/demo-clock";
+import type { StoreTarget } from "@web/store-resolver";
 
 /**
  * The valuation date the chat tools read at (#629). Demo targets carry the

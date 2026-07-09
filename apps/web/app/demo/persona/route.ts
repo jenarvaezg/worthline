@@ -1,8 +1,7 @@
-import { NextResponse, type NextRequest } from "next/server";
-
 import { DEMO_PERSONA_COOKIE_NAME } from "@web/demo/demo-context";
 import { parsePersonaId } from "@web/demo/persona";
 import { SCOPE_COOKIE_NAME } from "@web/intake";
+import { type NextRequest, NextResponse } from "next/server";
 
 /**
  * Persona cookie route (PRD #297), mirroring `/scope/route.ts`. Sets the

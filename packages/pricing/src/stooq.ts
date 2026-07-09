@@ -1,5 +1,5 @@
-import { PRICE_FAILURE_REASONS, type PriceProvider } from "./index";
 import { fetchHttpWithRetry } from "./fetch-with-retry";
+import { PRICE_FAILURE_REASONS, type PriceProvider } from "./index";
 import { resolveProvider } from "./registry";
 
 /**

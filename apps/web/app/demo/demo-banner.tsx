@@ -1,7 +1,6 @@
-import Link from "next/link";
-
 import { PERSONA_META } from "@web/demo/persona";
 import { readDemoContext } from "@web/demo/read-demo-context";
+import Link from "next/link";
 
 /**
  * The slim, persistent "Demo · datos ficticios" strip (PRD #297). Rendered on

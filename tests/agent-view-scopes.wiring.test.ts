@@ -1,8 +1,7 @@
-import { afterEach, describe, expect, test } from "vitest";
-import { NextRequest } from "next/server";
-
-import { createWorthlineStore, openLibsqlClient } from "@worthline/db";
 import { GET } from "@web/api/v1/agent-view/scopes/route";
+import { createWorthlineStore, openLibsqlClient } from "@worthline/db";
+import { NextRequest } from "next/server";
+import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
 
 const ORIGINAL_DB_PATH = process.env.WORTHLINE_DB_PATH;

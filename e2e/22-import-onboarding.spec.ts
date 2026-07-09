@@ -13,7 +13,7 @@
  * onboarding. Absent sections import as empty — the papelera ends up vacía.
  */
 
-import { test, expect, holdingRow } from "./fixtures";
+import { expect, holdingRow, test } from "./fixtures";
 
 /**
  * A live-state-only version-2 export document, as an externally-prepared file

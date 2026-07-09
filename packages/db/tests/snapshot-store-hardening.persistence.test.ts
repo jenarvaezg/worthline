@@ -10,6 +10,9 @@
  *  3. The standalone backfill is atomic (rollback-on-throw) and the post-import
  *     gap-fill surfaces failure to the caller instead of only console.error.
  */
+
+import type { WorthlineStore } from "@db/index";
+import { createInMemoryStore } from "@db/index";
 import type {
   NetWorthSnapshot,
   SnapshotHoldingRow,
@@ -17,9 +20,6 @@ import type {
 } from "@worthline/domain";
 import { deriveMonthlyCloses, serializeWorkspaceExport } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
-
-import { createInMemoryStore } from "@db/index";
-import type { WorthlineStore } from "@db/index";
 
 const eur = (amountMinor: number): NetWorthSnapshot["debts"] => ({
   amountMinor,

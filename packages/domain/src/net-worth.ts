@@ -1,5 +1,3 @@
-import type { MoneyMinor } from "./money";
-import { addMoney, money, subtractMoney } from "./money";
 import type { LiquidityTier } from "./classification";
 import {
   housingAssetIdsOf,
@@ -10,6 +8,8 @@ import {
   tierOfAsset,
 } from "./classification";
 import { LIQUIDITY_LADDER } from "./liquidity-ladder";
+import type { MoneyMinor } from "./money";
+import { addMoney, money, subtractMoney } from "./money";
 import { resolveScopeMemberIds } from "./scope";
 import { allocateScopedHolding } from "./scope-allocation";
 import type { Liability, ManualAsset, Workspace } from "./workspace-types";

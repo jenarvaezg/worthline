@@ -9,11 +9,12 @@
  * "amortizable-revision" from the plan's startDate so existing snapshots are
  * re-valued against the now-planless curve (falls back to currentBalance).
  */
-import { describe, expect, test } from "vitest";
+
+import type { WorthlineStore } from "@worthline/db";
 
 import { createInMemoryStore } from "@worthline/db";
-import type { WorthlineStore } from "@worthline/db";
-import { fixedClock, type Clock } from "@worthline/domain";
+import { type Clock, fixedClock } from "@worthline/domain";
+import { describe, expect, test } from "vitest";
 
 import { deleteAmortizationPlanAction } from "./actions";
 

@@ -10,12 +10,11 @@
  * deeper edge matrix lives in `tests/price-backfill-seam.persistence.test.ts` and
  * the snapshot-hardening persistence suites.
  */
-import { describe, expect, it } from "vitest";
 
 import type { DecimalString } from "@worthline/domain";
-
-import { createInMemoryStore } from "./index";
+import { describe, expect, it } from "vitest";
 import type { WorthlineStore } from "./index";
+import { createInMemoryStore } from "./index";
 
 const TODAY = "2026-06-15";
 const MEMBER_ID = "mJ";

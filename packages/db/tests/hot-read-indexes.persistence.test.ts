@@ -17,14 +17,14 @@
  * unchanged (covered by the existing persistence/wiring suites) — only the query
  * plan changes.
  */
-import type { Client, InValue } from "@libsql/client";
+
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
-
 import { openLibsqlClient } from "@db/index";
 import { migrate } from "@db/migrate";
+import type { Client, InValue } from "@libsql/client";
+import { afterEach, describe, expect, test } from "vitest";
 
 const tempDirs: string[] = [];
 

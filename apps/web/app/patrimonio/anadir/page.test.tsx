@@ -7,8 +7,9 @@
  * multi-ISIN engine creates fund investments; the per-holding single-fund path
  * in that same pane (#176's "Cargar movimientos") is unchanged.
  */
-import { renderToStaticMarkup } from "react-dom/server";
+
 import type { ReactElement, ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 const calls = vi.hoisted(() => ({

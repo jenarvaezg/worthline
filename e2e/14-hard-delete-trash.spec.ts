@@ -6,7 +6,7 @@
  * restorable). The trash is the only doorway to a hard delete.
  */
 
-import { test, expect, addHolding, holdingRow, deleteHolding } from "./fixtures";
+import { addHolding, deleteHolding, expect, holdingRow, test } from "./fixtures";
 
 test("trash → eliminar definitivamente → gone for good", async ({ page }) => {
   // 1. Create a dedicated asset

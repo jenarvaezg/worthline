@@ -1,4 +1,14 @@
 import type { AgentViewReadStore, SnapshotHoldingRecord } from "@worthline/db";
+import type {
+  FireScopeConfig,
+  Liability,
+  LiquidityTierBreakdown,
+  ManualAsset,
+  MoneyMinor,
+  NetWorthSnapshot,
+  ScopeOption,
+  Workspace,
+} from "@worthline/domain";
 import {
   buildLiquidityBreakdown,
   calculateFireForScope,
@@ -13,19 +23,8 @@ import {
   securesHousingAsset,
   tierOfAsset,
 } from "@worthline/domain";
-import type {
-  FireScopeConfig,
-  Liability,
-  LiquidityTierBreakdown,
-  ManualAsset,
-  MoneyMinor,
-  NetWorthSnapshot,
-  ScopeOption,
-  Workspace,
-} from "@worthline/domain";
-
+import { deriveSourcePublicId } from "./connected-source-positions";
 import {
-  AgentViewHttpError,
   type AgentViewDataQualitySignal,
   type AgentViewFigureExcludedHolding,
   type AgentViewFigureExplanation,
@@ -34,6 +33,7 @@ import {
   type AgentViewFigureName,
   type AgentViewFigureSnapshotReference,
   type AgentViewFireAssumptions,
+  AgentViewHttpError,
   type AgentViewLiquidityRung,
   type AgentViewLiquidityTier,
   type AgentViewMoney,
@@ -41,7 +41,6 @@ import {
   type AgentViewScope,
 } from "./contract";
 import { buildDataQuality, MAX_DATA_QUALITY_LIMIT } from "./data-quality";
-import { deriveSourcePublicId } from "./connected-source-positions";
 import { ratioStringFromBps } from "./financial-context";
 import { goalReservationMinor } from "./fire-context";
 import {

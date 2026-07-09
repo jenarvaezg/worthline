@@ -1,8 +1,7 @@
+import { createInMemoryControlPlaneStore, createInMemoryStore } from "@db/index";
 import type { NetWorthSnapshot } from "@worthline/domain";
 import { compareGrowthToBenchmark } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
-
-import { createInMemoryControlPlaneStore, createInMemoryStore } from "@db/index";
 
 const eur = (amountMinor: number): NetWorthSnapshot["totalNetWorth"] => ({
   amountMinor,

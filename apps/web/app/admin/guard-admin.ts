@@ -12,10 +12,10 @@
  * fires uniformly. The response is byte-identical to any unknown URL: no
  * distinguishing "wrong user" from "route doesn't exist".
  */
-import { notFound } from "next/navigation";
 
 import { readSessionEmail } from "@web/read-store-target";
 import { normalizeAdminEmail } from "@web/store-resolver";
+import { notFound } from "next/navigation";
 
 export interface AdminContext {
   /** The confirmed admin's email — normalized (trim + lowercase) WORTHLINE_ADMIN_EMAIL. */

@@ -2,6 +2,9 @@ import type { LiquidityTier } from "./classification";
 import type { DecimalString } from "./decimal";
 import type { Instrument } from "./instrument-catalog";
 import type { InvestmentOperation, PositionSummary } from "./investment-types";
+import { deriveInvestmentValuation, selectInvestmentPrice } from "./investment-valuation";
+import { derivePosition } from "./positions";
+import { resolveScopeMemberIds } from "./scope";
 import type { InvestmentCaptureDetail } from "./snapshot-holdings";
 import type {
   AssetType,
@@ -10,9 +13,6 @@ import type {
   Workspace,
 } from "./workspace-types";
 import { createManualAsset } from "./workspace-types";
-import { deriveInvestmentValuation, selectInvestmentPrice } from "./investment-valuation";
-import { derivePosition } from "./positions";
-import { resolveScopeMemberIds } from "./scope";
 
 /**
  * Domain projection of raw asset reads (PRD #120 candidate 3, R10).

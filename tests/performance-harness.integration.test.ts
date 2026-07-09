@@ -33,10 +33,11 @@
  * regenerate the structural snapshot with `npm test -- -u`. Never raise a ceiling
  * to silence a regression without understanding why it slowed down.
  */
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+
+import { captureSnapshotForScope, listScopeOptions } from "@worthline/domain";
 
 import Database from "libsql";
-import { captureSnapshotForScope, listScopeOptions } from "@worthline/domain";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { cleanupTempDirs, createFileBackedStore } from "./helpers";
 import {
@@ -398,7 +399,7 @@ describe("dashboard load read shape — investment projection reuse (#208)", () 
 
   beforeEach(() => {
     fullOperationScans = 0;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: spy on better-sqlite3 prepare for scan counting
     Database.prototype.prepare = function (this: any, sql: string, ...rest: any[]) {
       const normalized = sql.toLowerCase();
       if (

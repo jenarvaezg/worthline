@@ -1,4 +1,12 @@
 import type { AgentViewReadStore } from "@worthline/db";
+import type {
+  FireResult,
+  FireScopeConfig,
+  GoalReservationInput,
+  ManualAsset,
+  MoneyMinor,
+  Workspace,
+} from "@worthline/domain";
 import {
   assignedHoldingsValueMinor,
   calculateFireForScope,
@@ -9,23 +17,15 @@ import {
   systemClock,
   totalGoalReservationMinor,
 } from "@worthline/domain";
-import type {
-  FireResult,
-  FireScopeConfig,
-  GoalReservationInput,
-  ManualAsset,
-  MoneyMinor,
-  Workspace,
-} from "@worthline/domain";
 
 import {
-  AgentViewHttpError,
   type AgentViewFireAssumptions,
   type AgentViewFireConfig,
   type AgentViewFireContext,
   type AgentViewFireExcludedAsset,
   type AgentViewFireResult,
   type AgentViewFireSummary,
+  AgentViewHttpError,
   type AgentViewMoney,
   type AgentViewScope,
 } from "./contract";

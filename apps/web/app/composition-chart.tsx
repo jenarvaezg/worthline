@@ -1,15 +1,15 @@
 "use client";
 
-import {
-  buildCompositionChartGeometry,
-  COMPOSITION_ASSET_BANDS,
-  formatMoneyMinorPrivacy,
-} from "@worthline/domain";
 import type {
   CompositionAssetBandId,
   CompositionHousingMode,
   CompositionSeriesPoint,
   DrilldownKey,
+} from "@worthline/domain";
+import {
+  buildCompositionChartGeometry,
+  COMPOSITION_ASSET_BANDS,
+  formatMoneyMinorPrivacy,
 } from "@worthline/domain";
 import { type MouseEvent, useMemo, useRef, useState } from "react";
 

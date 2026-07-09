@@ -10,9 +10,8 @@
  * integration suites.
  */
 import { describe, expect, it } from "vitest";
-
-import { createInMemoryStore } from "./index";
 import type { WorthlineStore } from "./index";
+import { createInMemoryStore } from "./index";
 
 const TODAY = "2026-06-15";
 const MEMBER_ID = "mJ";

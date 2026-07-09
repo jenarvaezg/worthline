@@ -25,8 +25,8 @@
  * preview (M5) reports the counts, the source, and the gaps before any write.
  */
 
-import { compareUnits, multiplyToMinor } from "./decimal";
 import type { DecimalString } from "./decimal";
+import { compareUnits, multiplyToMinor } from "./decimal";
 import type { InvestmentOperation } from "./investment-types";
 import { derivePosition, operationsUpTo } from "./positions";
 

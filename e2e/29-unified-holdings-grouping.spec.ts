@@ -10,12 +10,12 @@
  */
 
 import {
-  test,
-  expect,
   addHolding,
+  expect,
   holdingRow,
-  openHoldingMenu,
   openAdvancedSettings,
+  openHoldingMenu,
+  test,
 } from "./fixtures";
 
 test("unified list: investment row is actionable (not a ghost) + grouping by direction/rung/instrument", async ({

@@ -12,7 +12,7 @@
  * `.decompositionLegend` now lives only INSIDE the drill panel's stack section.
  */
 
-import { test, expect } from "./fixtures";
+import { expect, test } from "./fixtures";
 
 test("rest drilldown: band/legend link → stack panel → breadcrumb back", async ({
   page,

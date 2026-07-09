@@ -1,4 +1,5 @@
 import type {
+  AmortizationPlanInput,
   BalanceRebaselineInput,
   CreateLiabilityInput,
   DebtModel,
@@ -14,10 +15,9 @@ import {
   assertEventWithinTerm,
   createLiability,
   debtBalanceAtDate,
-  deriveCurrentStateAmortizationPlan,
   defaultInstrumentForLiability,
+  deriveCurrentStateAmortizationPlan,
 } from "@worthline/domain";
-import type { AmortizationPlanInput } from "@worthline/domain";
 import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
 
 import {

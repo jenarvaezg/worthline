@@ -14,7 +14,6 @@
  * Mirrors the prior-art real-store persistence suites
  * (snapshot-holdings.persistence, snapshot-policy.persistence, snapshots.persistence).
  */
-import { afterEach, describe, expect, test } from "vitest";
 
 import type { WorthlineStore } from "@worthline/db";
 import { captureDailySnapshotForWorkspace } from "@worthline/db";
@@ -24,6 +23,7 @@ import {
   deriveMonthlyCloses,
   listScopeOptions,
 } from "@worthline/domain";
+import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, createFileBackedStore } from "./helpers";
 
 afterEach(cleanupTempDirs);

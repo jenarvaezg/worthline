@@ -1,9 +1,4 @@
-import {
-  EXPOSURE_ASSET_CLASS_BUCKETS,
-  EXPOSURE_GEOGRAPHY_BUCKETS,
-  canHandEnterExposureProfile,
-  createExposureProfile,
-} from "@worthline/domain";
+import type { WorthlineStore } from "@web/store";
 import type {
   CreateExposureProfileInput,
   DecimalString,
@@ -13,8 +8,12 @@ import type {
   ExposureProfile,
   Instrument,
 } from "@worthline/domain";
-
-import type { WorthlineStore } from "@web/store";
+import {
+  canHandEnterExposureProfile,
+  createExposureProfile,
+  EXPOSURE_ASSET_CLASS_BUCKETS,
+  EXPOSURE_GEOGRAPHY_BUCKETS,
+} from "@worthline/domain";
 
 export type ExposureProfileProposalDraft = CreateExposureProfileInput & {
   breakdowns?: ExposureBreakdowns;

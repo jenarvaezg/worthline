@@ -1,4 +1,5 @@
 import type {
+  AssetProjectionContext,
   CreateManualAssetInput,
   DecimalString,
   HousingValuationAnchor,
@@ -16,8 +17,6 @@ import {
   valueHousingAtDate,
 } from "@worthline/domain";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
-
-import type { AssetProjectionContext } from "@worthline/domain";
 
 import {
   ensureAgentViewPublicIds,

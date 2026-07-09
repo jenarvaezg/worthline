@@ -1,7 +1,6 @@
-import { NextResponse } from "next/server";
-
 import { DEMO_PERSONA_COOKIE_NAME } from "@web/demo/demo-context";
 import { SCOPE_COOKIE_NAME } from "@web/intake";
+import { NextResponse } from "next/server";
 
 /**
  * Demo exit route (#464), the inverse of `/demo/persona`. POST clears the

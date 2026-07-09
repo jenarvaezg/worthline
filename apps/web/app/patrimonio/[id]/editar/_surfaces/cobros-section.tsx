@@ -13,13 +13,11 @@
  * monthly-spending figure; otherwise it is omitted rather than invented.
  */
 
-import { formatMoneyMinorPrivacy, passiveIncomeTrailing } from "@worthline/domain";
-import type { CurrencyCode, Payout, PayoutSchedule } from "@worthline/domain";
-
 import { PendingSubmit } from "@web/pending-submit";
-
-import { CobrosGrid } from "./cobros-grid";
+import type { CurrencyCode, Payout, PayoutSchedule } from "@worthline/domain";
+import { formatMoneyMinorPrivacy, passiveIncomeTrailing } from "@worthline/domain";
 import { PAYOUT_CADENCE_LABELS } from "./cobros-form";
+import { CobrosGrid } from "./cobros-grid";
 import { buildCobroRows } from "./cobros-view";
 
 type FormAction = (formData: FormData) => void | Promise<void>;

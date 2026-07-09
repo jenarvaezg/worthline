@@ -1,9 +1,9 @@
-import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
-import { beforeEach, describe, expect, test, vi } from "vitest";
-
-import { readStoreTarget } from "@web/read-store-target";
 import { buildFinancialContext } from "@web/agent-view/financial-context";
 import { listAgentViewScopes } from "@web/agent-view/scopes";
+
+import { readStoreTarget } from "@web/read-store-target";
+import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { confirmExposureProfileProposalAction } from "./exposure-profile-proposal-action";
 

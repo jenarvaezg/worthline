@@ -19,12 +19,12 @@
  * A second run is a no-op (idempotent), behind the `version < 18` guard, and a
  * fresh DB (already at the two-date shape) migrates cleanly without a start_date.
  */
-import type { Client } from "@libsql/client";
-import { describe, expect, test } from "vitest";
 
 import { createInMemoryStore, createStoreFromSqlite, openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import { schemaSql } from "@db/schema-sql";
+import type { Client } from "@libsql/client";
+import { describe, expect, test } from "vitest";
 
 /**
  * Build a genuinely pre-v18 database: rewrite the two-date columns in the runtime

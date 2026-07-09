@@ -15,7 +15,7 @@
  * a real document navigation would wipe it.
  */
 
-import { test, expect } from "./fixtures";
+import { expect, test } from "./fixtures";
 
 test("Exposure lens toggles client-side, mirrors the URL, no document reload", async ({
   page,

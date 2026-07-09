@@ -9,9 +9,8 @@
  * invented (the central guarantee of the issue).
  */
 import { describe, expect, it } from "vitest";
-
-import { planPriceBackfill } from "./price-backfill-plan";
 import type { InvestmentOperation } from "./investment-types";
+import { planPriceBackfill } from "./price-backfill-plan";
 
 function buy(executedAt: string, units: string, price: string): InvestmentOperation {
   return {

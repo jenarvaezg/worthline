@@ -11,12 +11,12 @@
  * A second run is a no-op (idempotent), and a fresh DB skips the ALTER (the column
  * already exists from schema-sql).
  */
-import type { Client } from "@libsql/client";
-import { describe, expect, test } from "vitest";
 
 import { createInMemoryStore, openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import { schemaSql } from "@db/schema-sql";
+import type { Client } from "@libsql/client";
+import { describe, expect, test } from "vitest";
 
 /** A pre-v35 DB at user_version 34: current schema minus the new position column,
  *  with one Binance source + one token position that predates the logo. */

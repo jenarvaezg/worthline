@@ -7,12 +7,12 @@
  */
 
 import {
-  test,
-  expect,
   addHolding,
+  delayServerActions,
+  expect,
   holdingRow,
   openHoldingMenu,
-  delayServerActions,
+  test,
 } from "./fixtures";
 
 test("delete → papelera → restore round-trip", async ({ page }) => {

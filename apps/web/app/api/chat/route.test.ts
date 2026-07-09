@@ -5,13 +5,8 @@
  * credential selection are seam-tested by mocking their modules — the same
  * conventions as api/mcp/route.test.ts.
  */
-import { simulateReadableStream } from "ai";
-import { MockLanguageModelV4 } from "ai/test";
+
 import type { LanguageModelV4StreamPart, LanguageModelV4Usage } from "@ai-sdk/provider";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-
-import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
-
 import { buildFinancialContext } from "@web/agent-view/financial-context";
 import { listAgentViewScopes } from "@web/agent-view/scopes";
 import { resolveChatModel } from "@web/asistente/chat-model";
@@ -19,6 +14,10 @@ import { countChatRequest } from "@web/asistente/rate-limit-store";
 import { seedPersona } from "@web/demo/seed-persona";
 import { JOVEN_SPEC } from "@web/demo/specs/joven";
 import { readStoreTarget } from "@web/read-store-target";
+import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
+import { simulateReadableStream } from "ai";
+import { MockLanguageModelV4 } from "ai/test";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { POST } from "./route";
 

@@ -19,11 +19,11 @@
  *      instrument the libSQL client by wrapping `execute`/`batch` and count the
  *      reads.
  */
+
+import type { WorthlineStore } from "@db/index";
+import { createStoreFromSqlite, openLibsqlClient } from "@db/index";
 import type { Client } from "@libsql/client";
 import { describe, expect, test } from "vitest";
-
-import { createStoreFromSqlite, openLibsqlClient } from "@db/index";
-import type { WorthlineStore } from "@db/index";
 
 const TODAY = "2026-06-12";
 

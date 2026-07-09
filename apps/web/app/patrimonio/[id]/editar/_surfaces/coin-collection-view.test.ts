@@ -14,9 +14,9 @@ import {
   coinNumistaUrl,
   coinYear,
   formatSharePct,
+  MIN_SHARE_PCT,
   metalCoinCount,
   metalIdentity,
-  MIN_SHARE_PCT,
 } from "./coin-collection-view";
 
 function position(overrides: Partial<CoinPosition> = {}): CoinPosition {

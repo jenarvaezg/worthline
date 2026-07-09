@@ -1,13 +1,11 @@
-import { cookies } from "next/headers";
-import { NextResponse, type NextRequest } from "next/server";
-
-import { listScopeOptions } from "@worthline/domain";
-
 import { readMatrixCells } from "@web/dashboard-cells";
 import { parseCellsParam } from "@web/dashboard-matrix";
 import { parseScopeCookie, SCOPE_COOKIE_NAME } from "@web/intake";
 import { readStoreTarget } from "@web/read-store-target";
 import { bootstrapHealthcheck, withStore } from "@web/store";
+import { listScopeOptions } from "@worthline/domain";
+import { cookies } from "next/headers";
+import { type NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

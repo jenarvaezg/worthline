@@ -1,13 +1,12 @@
 import type { AgentViewReadStore } from "@worthline/db";
-
-import {
-  type AgentViewConnectedSourceListEntry,
-  type AgentViewSourceFreshnessResult,
-} from "./contract";
 import {
   deriveSourcePublicId,
   resolveSourceByPublicId,
 } from "./connected-source-positions";
+import {
+  type AgentViewConnectedSourceListEntry,
+  type AgentViewSourceFreshnessResult,
+} from "./contract";
 import { publicIdMap, requirePublicId } from "./scope-resolution";
 
 /**
