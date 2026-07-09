@@ -8,19 +8,13 @@ import {
   AgentViewHttpError,
   errorEnvelope,
   successEnvelope,
-  type AgentViewConnectedSourcePositionGroupPage,
-  type AgentViewConnectedSourcePositionPage,
   type AgentViewDataQualityCategory,
-  type AgentViewDataQualityPage,
   type AgentViewDataQualitySeverity,
   type AgentViewErrorEnvelope,
   type AgentViewIncludeHoldingRows,
-  type AgentViewOperationPage,
   type AgentViewOperationSort,
   type AgentViewSnapshotGranularity,
-  type AgentViewSnapshotHistory,
   type AgentViewSnapshotSort,
-  type AgentViewTrashSummary,
 } from "./contract";
 import {
   buildHoldingConnectedSourcePositions,
@@ -53,6 +47,7 @@ import {
   MAX_SNAPSHOT_LIMIT,
 } from "./snapshot-history";
 import { buildTrashSummary, DEFAULT_TRASH_LIMIT, MAX_TRASH_LIMIT } from "./trash-summary";
+import { pagedHttpEnvelope, parsePositiveLimit } from "./pagination";
 import {
   buildMemberProfiles,
   buildWarningOverrides,
@@ -240,7 +235,10 @@ export async function handleGetSnapshotHistory(
       from: parseIsoDate(params.get("from"), "from"),
       granularity: parseGranularity(params.get("granularity")),
       includeHoldingRows: parseIncludeHoldingRows(params.get("includeHoldingRows")),
-      limit: parseSnapshotLimit(params.get("limit")),
+      limit: parsePositiveLimit(params.get("limit"), {
+        defaultLimit: DEFAULT_SNAPSHOT_LIMIT,
+        maxLimit: MAX_SNAPSHOT_LIMIT,
+      }),
       scopeId,
       sort: parseSort(params.get("sort")),
       to: parseIsoDate(params.get("to"), "to"),
@@ -250,7 +248,7 @@ export async function handleGetSnapshotHistory(
       buildSnapshotHistory(store.agentView, options),
     );
 
-    return json(snapshotEnvelope(request, history), 200);
+    return json(pagedHttpEnvelope(request, history.entries, history.meta), 200);
   } catch (error) {
     return toErrorResponse(error);
   }
@@ -284,7 +282,10 @@ export async function handleGetDataQuality(
     const params = new URL(request.url).searchParams;
     const options = {
       cursor: params.get("cursor") ?? undefined,
-      limit: parseDataQualityLimit(params.get("limit")),
+      limit: parsePositiveLimit(params.get("limit"), {
+        defaultLimit: DEFAULT_DATA_QUALITY_LIMIT,
+        maxLimit: MAX_DATA_QUALITY_LIMIT,
+      }),
       scopeId,
       ...(parseDataQualityCategory(params.get("category")) === undefined
         ? {}
@@ -298,7 +299,7 @@ export async function handleGetDataQuality(
       buildDataQuality(store.agentView, options),
     );
 
-    return json(dataQualityEnvelope(request, page), 200);
+    return json(pagedHttpEnvelope(request, page.signals, page.meta), 200);
   } catch (error) {
     return toErrorResponse(error);
   }
@@ -317,7 +318,10 @@ export async function handleGetTrashSummary(
     const params = new URL(request.url).searchParams;
     const options = {
       cursor: params.get("cursor") ?? undefined,
-      limit: parseTrashLimit(params.get("limit")),
+      limit: parsePositiveLimit(params.get("limit"), {
+        defaultLimit: DEFAULT_TRASH_LIMIT,
+        maxLimit: MAX_TRASH_LIMIT,
+      }),
       scopeId,
     };
 
@@ -325,7 +329,7 @@ export async function handleGetTrashSummary(
       buildTrashSummary(store.agentView, options),
     );
 
-    return json(trashSummaryEnvelope(request, summary), 200);
+    return json(pagedHttpEnvelope(request, summary.holdings, summary.meta), 200);
   } catch (error) {
     return toErrorResponse(error);
   }
@@ -515,7 +519,10 @@ export async function handleGetHoldingOperations(
       cursor: params.get("cursor") ?? undefined,
       from: parseIsoDate(params.get("from"), "from"),
       holdingId,
-      limit: parseOperationLimit(params.get("limit")),
+      limit: parsePositiveLimit(params.get("limit"), {
+        defaultLimit: DEFAULT_OPERATION_LIMIT,
+        maxLimit: MAX_OPERATION_LIMIT,
+      }),
       sort: parseOperationSort(params.get("sort")),
       to: parseIsoDate(params.get("to"), "to"),
     };
@@ -524,7 +531,7 @@ export async function handleGetHoldingOperations(
       buildHoldingOperations(store.agentView, options),
     );
 
-    return json(operationsEnvelope(request, page), 200);
+    return json(pagedHttpEnvelope(request, page.operations, page.meta), 200);
   } catch (error) {
     return toErrorResponse(error);
   }
@@ -544,14 +551,17 @@ export async function handleGetHoldingConnectedSourcePositions(
     const options = {
       cursor: params.get("cursor") ?? undefined,
       holdingId,
-      limit: parsePositionLimit(params.get("limit")),
+      limit: parsePositiveLimit(params.get("limit"), {
+        defaultLimit: DEFAULT_POSITION_LIMIT,
+        maxLimit: MAX_POSITION_LIMIT,
+      }),
     };
 
     const page = await runWithStore((store) =>
       buildHoldingConnectedSourcePositions(store.agentView, options),
     );
 
-    return json(holdingPositionsEnvelope(request, page), 200);
+    return json(pagedHttpEnvelope(request, page.positions, page.meta), 200);
   } catch (error) {
     return toErrorResponse(error);
   }
@@ -568,7 +578,10 @@ export async function handleGetSourcePositions(
     const params = new URL(request.url).searchParams;
     const options = {
       cursor: params.get("cursor") ?? undefined,
-      limit: parsePositionLimit(params.get("limit")),
+      limit: parsePositiveLimit(params.get("limit"), {
+        defaultLimit: DEFAULT_POSITION_LIMIT,
+        maxLimit: MAX_POSITION_LIMIT,
+      }),
       sourceId,
     };
 
@@ -576,141 +589,10 @@ export async function handleGetSourcePositions(
       buildSourceConnectedSourcePositions(store.agentView, options),
     );
 
-    return json(sourcePositionsEnvelope(request, page), 200);
+    return json(pagedHttpEnvelope(request, page.groups, page.meta), 200);
   } catch (error) {
     return toErrorResponse(error);
   }
-}
-
-/**
- * Envelope a snapshot page: the entries as `data`, the pagination facts as
- * `meta`, and `links.self` plus `links.next` (the same URL carrying the
- * `nextCursor`) when more pages remain.
- */
-function snapshotEnvelope(request: NextRequest, history: AgentViewSnapshotHistory) {
-  const self = new URL(request.url);
-  const links: Record<string, string> = { self: self.pathname + self.search };
-
-  if (history.meta.nextCursor !== undefined) {
-    const next = new URL(request.url);
-    next.searchParams.set("cursor", history.meta.nextCursor);
-    links.next = next.pathname + next.search;
-  }
-
-  return { data: history.entries, links, meta: history.meta };
-}
-
-/**
- * Envelope a data-quality page: the signals as `data`, the pagination facts as
- * `meta`, and `links.self` plus `links.next` (the same URL carrying the
- * `nextCursor`) when more pages remain — the same shape as a snapshot page.
- */
-function dataQualityEnvelope(request: NextRequest, page: AgentViewDataQualityPage) {
-  const self = new URL(request.url);
-  const links: Record<string, string> = { self: self.pathname + self.search };
-
-  if (page.meta.nextCursor !== undefined) {
-    const next = new URL(request.url);
-    next.searchParams.set("cursor", page.meta.nextCursor);
-    links.next = next.pathname + next.search;
-  }
-
-  return { data: page.signals, links, meta: page.meta };
-}
-
-/**
- * Envelope a trash-summary page: the trashed holdings as `data`, the pagination
- * facts as `meta`, and `links.self` plus `links.next` (the same URL carrying the
- * `nextCursor`) when more pages remain — the same shape as a snapshot page.
- */
-function trashSummaryEnvelope(request: NextRequest, summary: AgentViewTrashSummary) {
-  const self = new URL(request.url);
-  const links: Record<string, string> = { self: self.pathname + self.search };
-
-  if (summary.meta.nextCursor !== undefined) {
-    const next = new URL(request.url);
-    next.searchParams.set("cursor", summary.meta.nextCursor);
-    links.next = next.pathname + next.search;
-  }
-
-  return { data: summary.holdings, links, meta: summary.meta };
-}
-
-/**
- * Envelope an operations page: the rows as `data`, the pagination facts as
- * `meta`, and `links.self` plus `links.next` (the same URL carrying the
- * `nextCursor`) when more pages remain — the same shape as a snapshot page.
- */
-function operationsEnvelope(request: NextRequest, page: AgentViewOperationPage) {
-  const self = new URL(request.url);
-  const links: Record<string, string> = { self: self.pathname + self.search };
-
-  if (page.meta.nextCursor !== undefined) {
-    const next = new URL(request.url);
-    next.searchParams.set("cursor", page.meta.nextCursor);
-    links.next = next.pathname + next.search;
-  }
-
-  return { data: page.operations, links, meta: page.meta };
-}
-
-/**
- * Envelope a holding-scoped positions page: the positions as `data`, the
- * pagination facts as `meta`, and `links.self`/`links.next` — the same shape as
- * an operations page.
- */
-function holdingPositionsEnvelope(
-  request: NextRequest,
-  page: AgentViewConnectedSourcePositionPage,
-) {
-  const self = new URL(request.url);
-  const links: Record<string, string> = { self: self.pathname + self.search };
-
-  if (page.meta.nextCursor !== undefined) {
-    const next = new URL(request.url);
-    next.searchParams.set("cursor", page.meta.nextCursor);
-    links.next = next.pathname + next.search;
-  }
-
-  return { data: page.positions, links, meta: page.meta };
-}
-
-/**
- * Envelope a source-scoped positions page: the grouped positions as `data`, the
- * pagination facts as `meta`, and `links.self`/`links.next` when more remain.
- */
-function sourcePositionsEnvelope(
-  request: NextRequest,
-  page: AgentViewConnectedSourcePositionGroupPage,
-) {
-  const self = new URL(request.url);
-  const links: Record<string, string> = { self: self.pathname + self.search };
-
-  if (page.meta.nextCursor !== undefined) {
-    const next = new URL(request.url);
-    next.searchParams.set("cursor", page.meta.nextCursor);
-    links.next = next.pathname + next.search;
-  }
-
-  return { data: page.groups, links, meta: page.meta };
-}
-
-/** Parse the positions `limit`: positive integer, clamped to the documented max. */
-function parsePositionLimit(raw: string | null): number {
-  if (raw === null) {
-    return DEFAULT_POSITION_LIMIT;
-  }
-
-  if (!/^\d+$/.test(raw) || Number(raw) < 1) {
-    throw new AgentViewHttpError({
-      code: "bad_request",
-      details: { limit: raw },
-      message: "limit must be a positive integer.",
-      status: 400,
-    });
-  }
-
-  return Math.min(Number(raw), MAX_POSITION_LIMIT);
 }
 
 /** Parse `sort` for operations; defaults newest-first (`-date`). */
@@ -724,24 +606,6 @@ function parseOperationSort(raw: string | null): AgentViewOperationSort {
   }
 
   return raw;
-}
-
-/** Parse the operations `limit`: positive integer, clamped to the documented max. */
-function parseOperationLimit(raw: string | null): number {
-  if (raw === null) {
-    return DEFAULT_OPERATION_LIMIT;
-  }
-
-  if (!/^\d+$/.test(raw) || Number(raw) < 1) {
-    throw new AgentViewHttpError({
-      code: "bad_request",
-      details: { limit: raw },
-      message: "limit must be a positive integer.",
-      status: 400,
-    });
-  }
-
-  return Math.min(Number(raw), MAX_OPERATION_LIMIT);
 }
 
 function parseGranularity(raw: string | null): AgentViewSnapshotGranularity {
@@ -778,60 +642,6 @@ function parseIncludeHoldingRows(raw: string | null): AgentViewIncludeHoldingRow
   }
 
   return raw;
-}
-
-/** Parse `limit`: positive integer, clamped to the documented max (over-max clamps). */
-function parseSnapshotLimit(raw: string | null): number {
-  if (raw === null) {
-    return DEFAULT_SNAPSHOT_LIMIT;
-  }
-
-  if (!/^\d+$/.test(raw) || Number(raw) < 1) {
-    throw new AgentViewHttpError({
-      code: "bad_request",
-      details: { limit: raw },
-      message: "limit must be a positive integer.",
-      status: 400,
-    });
-  }
-
-  return Math.min(Number(raw), MAX_SNAPSHOT_LIMIT);
-}
-
-/** Parse the data-quality `limit`: positive integer, clamped to the documented max. */
-function parseDataQualityLimit(raw: string | null): number {
-  if (raw === null) {
-    return DEFAULT_DATA_QUALITY_LIMIT;
-  }
-
-  if (!/^\d+$/.test(raw) || Number(raw) < 1) {
-    throw new AgentViewHttpError({
-      code: "bad_request",
-      details: { limit: raw },
-      message: "limit must be a positive integer.",
-      status: 400,
-    });
-  }
-
-  return Math.min(Number(raw), MAX_DATA_QUALITY_LIMIT);
-}
-
-/** Parse the trash-summary `limit`: positive integer, clamped to the documented max. */
-function parseTrashLimit(raw: string | null): number {
-  if (raw === null) {
-    return DEFAULT_TRASH_LIMIT;
-  }
-
-  if (!/^\d+$/.test(raw) || Number(raw) < 1) {
-    throw new AgentViewHttpError({
-      code: "bad_request",
-      details: { limit: raw },
-      message: "limit must be a positive integer.",
-      status: 400,
-    });
-  }
-
-  return Math.min(Number(raw), MAX_TRASH_LIMIT);
 }
 
 /** Parse the data-quality `category` filter; an unknown value is a `400`. */
