@@ -33,10 +33,11 @@ portfolio:
    lookup turns `LU…` into a named, priced investment; when it resolves nothing,
    the name and provider symbol stay hand-editable and may be left empty.
 3. **An investment created without a provider symbol is an honest, flagged
-   state**: it values at its last operation's price and raises an overrideable
-   `MISSING_PROVIDER_SYMBOL` **warning** ("pending task" — set the symbol later;
-   override it for hand-quoted funds). The warning applies to any investment
-   without a symbol, not only imported ones.
+   state**: with no market price available, it values at **cost basis** — the
+   ADR 0006 fallback (`deriveInvestmentValuation`: `marketValue ?? costBasis`;
+   #183) — and raises an overrideable `MISSING_PROVIDER_SYMBOL` **warning**
+   ("pending task" — set the symbol later; override it for hand-quoted funds).
+   The warning applies to any investment without a symbol, not only imported ones.
 4. **Confirm applies the included funds all-or-nothing.** ADR 0018's atomicity
    moves from "the file" to "the confirmed selection": one unresolvable ISIN is
    excluded and resolved later instead of blocking the other 25. Within the
@@ -64,6 +65,10 @@ unchanged from ADR 0018.
   match/create/ignore preview; silent creation buries mistakes.
 - **All-or-nothing over the whole file.** Rejected: one unresolvable ISIN would
   hostage 25 resolvable funds; the selection is the honest atomic unit.
+- **Value at last operation's price when no symbol.** Rejected (#684): diverges
+  from the established ADR 0006 cost-basis fallback and would ripple through
+  `atCostBasis` and snapshot semantics; cost basis is already honest and the UI
+  does not over-promise market valuation.
 
 ## Consequences
 
