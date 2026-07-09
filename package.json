@@ -4,26 +4,26 @@
   "private": true,
   "license": "AGPL-3.0-only",
   "type": "module",
-  "packageManager": "npm@11.14.1",
+  "packageManager": "bun@1.3.14",
   "engines": {
-    "node": ">=24"
+    "node": ">=26"
   },
   "workspaces": ["apps/*", "packages/*", "tests"],
   "scripts": {
-    "dev": "npm run dev --workspace @worthline/web",
+    "dev": "bun run --filter @worthline/web dev",
     "build": "turbo run build",
-    "verify": "turbo run typecheck && biome ci && npm run test",
+    "verify": "turbo run typecheck && biome ci && bun run test",
     "lint": "biome ci",
     "test": "turbo run test --concurrency=1",
     "test:coverage": "turbo run test:coverage --concurrency=1",
     "test:globs": "tsx scripts/check-test-globs.ts",
     "test:related": "vitest related --run",
     "test:e2e": "playwright test",
-    "eval:assistant": "npm run eval:assistant --workspace @worthline/web",
-    "test:e2e:first-run": "npm run test:e2e:first-run:solo && npm run test:e2e:first-run:hogar",
+    "eval:assistant": "bun run --filter @worthline/web eval:assistant",
+    "test:e2e:first-run": "bun run test:e2e:first-run:solo && bun run test:e2e:first-run:hogar",
     "test:e2e:first-run:solo": "FIRST_RUN_SCENARIO=solo playwright test --config playwright.first-run.config.ts",
     "test:e2e:first-run:hogar": "FIRST_RUN_SCENARIO=hogar playwright test --config playwright.first-run.config.ts",
-    "test:e2e:demo": "npm run build --workspace @worthline/web && playwright test --config playwright.demo.config.ts",
+    "test:e2e:demo": "bun run --filter @worthline/web build && playwright test --config playwright.demo.config.ts",
     "test:watch": "vitest",
     "backfill:snapshots": "tsx scripts/backfill-historical-snapshots.ts",
     "sync:pull": "tsx scripts/sync-pull.ts",
@@ -46,12 +46,7 @@
     "lint-staged": "^17.0.7",
     "tsx": "latest",
     "turbo": "^2.9.18",
-    "typescript": "latest",
+    "typescript": "^5.9.3",
     "vitest": "latest"
-  },
-  "allowScripts": {
-    "esbuild": true,
-    "fsevents": true,
-    "sharp": true
   }
 }

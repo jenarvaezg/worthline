@@ -10,7 +10,7 @@
     }
   },
   "dependencies": {
-    "@worthline/domain": "*"
+    "@worthline/domain": "workspace:*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",

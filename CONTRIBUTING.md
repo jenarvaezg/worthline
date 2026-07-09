@@ -16,14 +16,14 @@ outbound). Don't paste code you don't have the right to relicense under AGPL.
 
 ## Prerequisites
 
-- **Node.js >= 24** (see `engines` in `package.json`)
-- **npm** (the repo pins a version via `packageManager`; just use the bundled npm)
+- **Node.js >= 26** (see `engines` in `package.json` and `.node-version`)
+- **Bun** 1.3+ (the repo pins a version via `packageManager`)
 
 ## Getting started
 
 ```bash
-npm install      # install workspace dependencies
-npm run dev      # run the local web app (apps/web) at http://localhost:3000
+bun install      # install workspace dependencies
+bun run dev      # run the local web app (apps/web) at http://localhost:3000
 ```
 
 By default the app stores data in a local SQLite file under
@@ -35,20 +35,20 @@ cloud. See the [README](README.md#local-data) for data-path and auth options.
 This is the single most important step. Every change must pass:
 
 ```bash
-npm run verify
+bun run verify
 ```
 
 `verify` runs `typecheck` → `biome ci` → `test` (Turborepo-cached for typecheck/test).
-Biome covers lint and format in one step. Run `npm run format` to auto-fix formatting locally.
+Biome covers lint and format in one step. Run `bun run format` to auto-fix formatting locally.
 
 For anything that touches `apps/web` routes or pages, also run the full gate:
 
 ```bash
-npm run build
+bun run build
 ```
 
 `next build` catches Next-generated route/page types that plain `tsc` does not.
-While iterating you can narrow to affected tests with `npm run test:related`.
+While iterating you can narrow to affected tests with `bun run test:related`.
 
 More detail: [`docs/agents/verification-gate.md`](docs/agents/verification-gate.md).
 
@@ -98,7 +98,7 @@ Types in use: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`.
 ## Pull requests
 
 1. Branch off `main` (e.g. `fix/123-short-description`).
-2. Make `npm run verify` pass locally (and `npm run build` for web changes).
+2. Make `bun run verify` pass locally (and `bun run build` for web changes).
 3. Open a PR against `main`. Link the issue it resolves with an English closing
    keyword — `Closes #123` (GitHub only auto-closes on English keywords).
 4. Keep PRs scoped to one logical change, and note in the description what
