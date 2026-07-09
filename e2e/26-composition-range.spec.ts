@@ -26,33 +26,46 @@ async function seedMultiYearHistory(): Promise<void> {
   const databasePath = process.env.WORTHLINE_DB_PATH;
   if (!databasePath) throw new Error("WORTHLINE_DB_PATH must be set for e2e");
 
-  const store = await createWorthlineStore({ databasePath });
-  try {
-    const workspace = await store.workspace.readWorkspace();
-    if (!workspace) return;
-    const existing = new Set(
-      (await store.snapshots.readSnapshots("household")).map((snapshot) => snapshot.id),
-    );
-    const assets = await store.assets.readAssets();
-    for (const dateKey of ["2020-06-15", "2022-06-15", "2024-06-15"]) {
-      const id = `snapshot_range_${dateKey}`;
-      if (existing.has(id)) continue;
-      const { holdings, snapshot } = captureValuedNetWorthSnapshot({
-        assets,
-        capturedAt: `${dateKey}T10:00:00.000Z`,
-        id,
-        scopeId: "household",
-        scopeLabel: "Hogar",
-        workspace,
-      });
-      await store.snapshots.saveSnapshot({ holdings, snapshot });
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const store = await createWorthlineStore({ databasePath });
+      try {
+        const workspace = await store.workspace.readWorkspace();
+        if (!workspace) return;
+        const existing = new Set(
+          (await store.snapshots.readSnapshots("household")).map(
+            (snapshot) => snapshot.id,
+          ),
+        );
+        const assets = await store.assets.readAssets();
+        for (const dateKey of ["2020-06-15", "2022-06-15", "2024-06-15"]) {
+          const id = `snapshot_range_${dateKey}`;
+          if (existing.has(id)) continue;
+          const { holdings, snapshot } = captureValuedNetWorthSnapshot({
+            assets,
+            capturedAt: `${dateKey}T10:00:00.000Z`,
+            id,
+            scopeId: "household",
+            scopeLabel: "Hogar",
+            workspace,
+          });
+          await store.snapshots.saveSnapshot({ holdings, snapshot });
+        }
+      } finally {
+        store.close();
+      }
+      return;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!/database is locked|SQLITE_BUSY/i.test(message) || attempt === 4) {
+        throw err;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
     }
-  } finally {
-    store.close();
   }
 }
 
-test.beforeEach(seedMultiYearHistory);
+test.beforeAll(seedMultiYearHistory);
 
 /** Pin the household scope, whose accumulated history spans the most years.
  * By the time this journey runs the serial workspace is individual (journey 19

@@ -5,8 +5,9 @@
  * custom percentages and the even-split preset. Both journeys require at
  * least 2 active members (from journey 2).
  *
- * 1. Custom split: fill 60/40 via real Playwright interactions, submit,
- *    verify the asset appears in the minority owner's scope.
+ * 1. Custom split: fill 60/40 on a property (only instrument that allows
+ *    custom ownership below 100%, #737) via real Playwright interactions,
+ *    submit, verify the asset appears in the minority owner's scope.
  * 2. Even-split preset: select "Repartir a partes iguales", submit,
  *    verify the asset is visible in both member scopes.
  */
@@ -16,21 +17,16 @@ import { test, expect } from "./fixtures";
 test("ownership: custom 60/40 split via real interactions, visible in minority scope", async ({
   page,
 }) => {
-  await page.goto("/patrimonio/anadir/avanzado");
+  await page.goto("/patrimonio/anadir/avanzado?instrument=property");
   await expect(page.getByRole("heading", { name: /Añadir holding/ })).toBeVisible();
-  await page.locator(`label.addHoldingChip:has(input[value="current_account"])`).click();
 
   const ownershipFieldset = page.getByRole("group", { name: "Propiedad" });
   await expect(ownershipFieldset).toBeVisible();
 
-  await page.locator('input[name="name_current_account"]').fill("Activo Split Test");
-  await page.locator('input[name="value_current_account"]').fill("5000");
+  await page.locator('input[name="name_property"]').fill("Activo Split Test");
+  await page.locator('input[name="acqDate_property"]').fill("2020-01-15");
+  await page.locator('input[name="acqValue_property"]').fill("500000");
 
-  // Open the "Personalizado" details and select the radio
-  // The <details> doesn't toggle properly via click due to label wrapping
-  await page.evaluate(() => {
-    document.querySelector(".ownerCustomDetails")?.setAttribute("open", "");
-  });
   await ownershipFieldset.getByRole("radio", { name: /Personalizado/ }).check();
 
   // Collect member scope buttons to identify the minority owner

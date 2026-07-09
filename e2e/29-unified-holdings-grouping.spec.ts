@@ -63,7 +63,7 @@ test("unified list: investment row is actionable (not a ghost) + grouping by dir
   // 6. Group by RUNG: the liquidity-ladder subsections render; "Mercado" holds the
   //    fund (a market-rung instrument). The grouping is the filter, server-rendered.
   await page.goto("/patrimonio?group=rung");
-  const grupoControls = page.getByRole("navigation", { name: "Agrupar holdings" });
+  const grupoControls = page.getByRole("navigation", { name: "Agrupar activos" });
   await expect(grupoControls.getByRole("link", { name: "Liquidez" })).toHaveAttribute(
     "aria-current",
     "true",
