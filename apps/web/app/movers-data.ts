@@ -1,3 +1,11 @@
+/**
+ * Pure view-model for the home hero movers (#749).
+ *
+ * The dashboard route passes snapshots, holding rows, framing, currency, and
+ * privacy state into `buildMoversDataByPeriod`; this module owns every mover
+ * business rule (base selection, liquid filtering, debt sign, tags, ranking).
+ */
+
 import {
   formatMoneyMinorPrivacy,
   isLiquid,
