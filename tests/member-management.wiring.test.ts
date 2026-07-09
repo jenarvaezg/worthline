@@ -245,6 +245,29 @@ describe("saveFireConfigAction wiring", () => {
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toMatch(/tasa/i);
   });
+
+  test("invalid scope id: error redirect and no orphan FIRE config", async () => {
+    await setupStore();
+
+    const url = await catchRedirect(() =>
+      saveFireConfigAction(
+        fd(
+          {
+            scopeId: "ghost_scope",
+            monthlySpending: "2000",
+            safeWithdrawalRate: "4",
+            expectedRealReturn: "5",
+          },
+          "/ajustes",
+        ),
+        store,
+      ),
+    );
+
+    expect(url).toContain("error=");
+    expect(decodeURIComponent(url.replace(/\+/g, " "))).toMatch(/scope/i);
+    expect((await store.readFireConfig()).ghost_scope).toBeUndefined();
+  });
 });
 
 // ======================================================= retractWarningOverride

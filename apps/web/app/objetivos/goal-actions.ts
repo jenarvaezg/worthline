@@ -1,6 +1,5 @@
 "use server";
 
-import { type WorthlineStore } from "@worthline/db";
 import type { GoalPriority } from "@worthline/domain";
 import { redirect } from "next/navigation";
 
@@ -13,7 +12,8 @@ import {
   preserveFields,
 } from "@web/intake";
 import { guardDemoWrite } from "@web/demo/write-guard";
-import { runActionWithStore } from "@web/action-store";
+import { runActionWithStore, testStoreFromActionArgs } from "@web/action-store";
+import { actionScopeExists, INVALID_SCOPE_MESSAGE } from "@web/action-scope";
 
 import { currentUrlOf } from "@web/ajustes/connected-source-helpers";
 
@@ -69,7 +69,32 @@ function parseGoalForm(formData: FormData): ParsedGoalForm {
   return { ok: true, name, scopeId, targetAmountMinor, deadline, priority, assetIds };
 }
 
-export async function createGoalAction(formData: FormData, _store?: WorthlineStore) {
+async function redirectIfInvalidScope(
+  formData: FormData,
+  scopeId: string,
+  formId: string,
+  anchor: string,
+  injectedStore?: ReturnType<typeof testStoreFromActionArgs>,
+): Promise<void> {
+  const exists = await runActionWithStore(
+    (worthlineStore) => actionScopeExists(worthlineStore, scopeId),
+    injectedStore,
+  );
+
+  if (!exists) {
+    redirect(
+      errorRedirectUrl(currentUrlOf(formData), {
+        message: INVALID_SCOPE_MESSAGE,
+        formId,
+        values: preserveGoalFields(formData),
+        anchor,
+      }),
+    );
+  }
+}
+
+export async function createGoalAction(formData: FormData, ..._testArgs: unknown[]) {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData));
   const parsed = parseGoalForm(formData);
 
@@ -83,6 +108,14 @@ export async function createGoalAction(formData: FormData, _store?: WorthlineSto
       }),
     );
   }
+
+  await redirectIfInvalidScope(
+    formData,
+    parsed.scopeId,
+    "goal",
+    "goalCreateForm",
+    _store,
+  );
 
   await runActionWithStore(
     (store) =>
@@ -100,7 +133,8 @@ export async function createGoalAction(formData: FormData, _store?: WorthlineSto
   redirect(appendParam(currentUrlOf(formData), "ok", "goal_saved"));
 }
 
-export async function updateGoalAction(formData: FormData, _store?: WorthlineStore) {
+export async function updateGoalAction(formData: FormData, ..._testArgs: unknown[]) {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData));
   const id = parseEntityId(formData);
   const parsed = parseGoalForm(formData);
@@ -125,6 +159,14 @@ export async function updateGoalAction(formData: FormData, _store?: WorthlineSto
     );
   }
 
+  await redirectIfInvalidScope(
+    formData,
+    parsed.scopeId,
+    `goal-${id}`,
+    `goalEdit-${id}`,
+    _store,
+  );
+
   await runActionWithStore(
     (store) =>
       store.goals.updateGoal({
@@ -141,7 +183,8 @@ export async function updateGoalAction(formData: FormData, _store?: WorthlineSto
   redirect(appendParam(currentUrlOf(formData), "ok", "goal_saved"));
 }
 
-export async function deleteGoalAction(formData: FormData, _store?: WorthlineStore) {
+export async function deleteGoalAction(formData: FormData, ..._testArgs: unknown[]) {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData));
   const id = parseEntityId(formData);
 

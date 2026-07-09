@@ -1,6 +1,5 @@
 "use server";
 
-import { type WorthlineStore } from "@worthline/db";
 import {
   parseWorkspaceExport,
   summarizeWorkspaceExport,
@@ -21,13 +20,25 @@ import {
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
 import { guardDemoWrite } from "@web/demo/write-guard";
-import { runActionWithStore } from "@web/action-store";
+import {
+  runActionWithStore,
+  testArgFromActionArgs,
+  testStoreFromActionArgs,
+} from "@web/action-store";
+import { actionScopeExists, INVALID_SCOPE_MESSAGE } from "@web/action-scope";
 
 import { currentUrlOf } from "./connected-source-helpers";
 
 // === Member actions ===
 
-export async function createMemberAction(formData: FormData, _store?: WorthlineStore) {
+function isClock(value: unknown): value is Clock {
+  return (
+    typeof value === "object" && value !== null && "now" in value && "today" in value
+  );
+}
+
+export async function createMemberAction(formData: FormData, ..._testArgs: unknown[]) {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData));
   const member = parseNewMember(formData, Date.now());
 
@@ -44,7 +55,8 @@ export async function createMemberAction(formData: FormData, _store?: WorthlineS
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
-export async function updateMemberAction(formData: FormData, _store?: WorthlineStore) {
+export async function updateMemberAction(formData: FormData, ..._testArgs: unknown[]) {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData));
   const id = parseEntityId(formData);
   const name = String(formData.get("name") ?? "").trim();
@@ -71,8 +83,9 @@ export async function updateMemberAction(formData: FormData, _store?: WorthlineS
  */
 export async function updateMemberProfileAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ) {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData));
   const id = parseEntityId(formData);
 
@@ -112,11 +125,9 @@ export async function updateMemberProfileAction(
   redirect(appendParam(currentUrlOf(formData), "ok", "saved"));
 }
 
-export async function disableMemberAction(
-  formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
-) {
+export async function disableMemberAction(formData: FormData, ..._testArgs: unknown[]) {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(currentUrlOf(formData));
   const id = parseEntityId(formData);
 
@@ -137,8 +148,9 @@ export async function disableMemberAction(
 
 export async function reactivateMemberAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ) {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData));
   const id = parseEntityId(formData);
 
@@ -156,8 +168,9 @@ export async function reactivateMemberAction(
 
 export async function hardDeleteMemberAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ) {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData));
   const id = parseEntityId(formData);
 
@@ -216,7 +229,8 @@ export async function hardDeleteMemberAction(
 /** The exact phrase the user must type to arm the full workspace reset. */
 const RESET_CONFIRMATION_PHRASE = "borrar todo";
 
-export async function resetWorkspaceAction(formData: FormData, _store?: WorthlineStore) {
+export async function resetWorkspaceAction(formData: FormData, ..._testArgs: unknown[]) {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData));
   const confirmation = String(formData.get("confirmation") ?? "").trim();
 
@@ -293,7 +307,8 @@ export async function previewImportAction(
  * with parseWorkspaceExport and, only when fully valid, atomically replace the
  * entire workspace with the file's contents.
  */
-export async function confirmImportAction(formData: FormData, _store?: WorthlineStore) {
+export async function confirmImportAction(formData: FormData, ..._testArgs: unknown[]) {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData));
   const file = formData.get("file");
 
@@ -376,7 +391,8 @@ export async function confirmImportAction(formData: FormData, _store?: Worthline
 
 // === FIRE config action ===
 
-export async function saveFireConfigAction(formData: FormData, _store?: WorthlineStore) {
+export async function saveFireConfigAction(formData: FormData, ..._testArgs: unknown[]) {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData));
   const scopeId = String(formData.get("scopeId") ?? "").trim() || "household";
   const result = parseFireConfigFormStrict(formData);
@@ -385,6 +401,19 @@ export async function saveFireConfigAction(formData: FormData, _store?: Worthlin
     redirect(
       errorRedirectUrl(currentUrlOf(formData), {
         message: result.error,
+        formId: "fire",
+      }),
+    );
+  }
+
+  const scopeExists = await runActionWithStore(async (store) => {
+    return actionScopeExists(store, scopeId);
+  }, _store);
+
+  if (!scopeExists) {
+    redirect(
+      errorRedirectUrl(currentUrlOf(formData), {
+        message: INVALID_SCOPE_MESSAGE,
         formId: "fire",
       }),
     );
@@ -401,8 +430,9 @@ export async function saveFireConfigAction(formData: FormData, _store?: Worthlin
 
 export async function retractWarningOverrideAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ) {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData));
   const code = String(formData.get("code") ?? "").trim();
   const entityId = String(formData.get("entityId") ?? "").trim();

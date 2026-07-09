@@ -20,7 +20,11 @@
  */
 
 import { type WorthlineStore } from "@web/store";
-import { runActionWithStore } from "@web/action-store";
+import {
+  runActionWithStore,
+  testArgFromActionArgs,
+  testStoreFromActionArgs,
+} from "@web/action-store";
 import {
   buildStatementImportPlan,
   defaultsFor,
@@ -84,6 +88,16 @@ export type IsinSymbolResolver = (
   isin: string,
   instrument?: Instrument,
 ) => Promise<IsinLookupResult>;
+
+function isClock(value: unknown): value is Clock {
+  return (
+    typeof value === "object" && value !== null && "now" in value && "today" in value
+  );
+}
+
+function isIsinSymbolResolver(value: unknown): value is IsinSymbolResolver {
+  return typeof value === "function";
+}
 
 function toLookupResult(candidates: SymbolCandidate[]): IsinLookupResult {
   const hit = candidates[0];
@@ -386,9 +400,11 @@ async function bucketToPreviewRow(
 export async function previewImportStatementAction(
   _prev: ImportStatementPreviewState,
   formData: FormData,
-  _store?: WorthlineStore,
-  _resolver: IsinSymbolResolver = defaultIsinSymbolResolver,
+  ..._testArgs: unknown[]
 ): Promise<ImportStatementPreviewState> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _resolver =
+    testArgFromActionArgs(_testArgs, isIsinSymbolResolver) ?? defaultIsinSymbolResolver;
   await guardDemoWrite(currentUrlOf(formData));
   const read = await readStatementFromForm(formData);
   if (!read.ok) {
@@ -509,9 +525,10 @@ function rowToCreateInput(assetId: string, row: ParsedStatementRow, id: string) 
  */
 export async function confirmImportStatementAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(currentUrlOf(formData));
   const returnUrl = currentUrlOf(formData);
   const errorUrl = (message: string) =>

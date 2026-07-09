@@ -1,7 +1,6 @@
 "use server";
 
-import { type WorthlineStore } from "@web/store";
-import { runActionWithStore } from "@web/action-store";
+import { runActionWithStore, testStoreFromActionArgs } from "@web/action-store";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -15,8 +14,9 @@ import { guardDemoWrite } from "@web/demo/write-guard";
 
 export async function initSoloAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite("/empezar");
   const currentUrl = "/empezar?path=solo";
   const result = parseEmpezarSolo(formData);
@@ -56,8 +56,9 @@ export async function initSoloAction(
 
 export async function initHogarAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite("/empezar");
   const currentUrl = "/empezar?path=hogar";
   const result = parseEmpezarHogar(formData);
