@@ -21,7 +21,7 @@ describe("deploy workflow", () => {
   test("lets Vercel use its configured app root instead of nesting apps/web twice", () => {
     for (const step of [
       "Pull Vercel project config",
-      "Build prebuilt output on Node 26",
+      "Build prebuilt output on Node 24",
       "Deploy prebuilt output to Vercel",
     ]) {
       expect(stepNamed(step)).not.toContain("working-directory: apps/web");
