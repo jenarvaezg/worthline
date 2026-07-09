@@ -101,10 +101,6 @@ function isHistoricalPriceSource(value: unknown): value is HistoricalPriceSource
   return typeof value === "object" && value !== null && "fetchSeriesEur" in value;
 }
 
-const DIRECTION_AMBIGUITY_ACK_FIELD = "confirmNoSalesOrRedemptions";
-const DIRECTION_AMBIGUITY_MESSAGE =
-  "Este archivo no distingue compras de ventas. Exporta el archivo COMPLETO de órdenes (con la columna «Tipo de operación»).";
-
 async function validateInvestmentProviderSymbol(input: {
   assetId: string;
   currency: string;
@@ -209,10 +205,8 @@ export type StatementPreviewState =
       skipped: number;
       /** Ambiguous same-date rows set aside, neither created nor overwritten (S4). */
       anomalies: number;
-      /** Rows detected as sells among those applied (S5; tipo column or sign). */
+      /** Rows detected as sells among those applied (S5). */
       sells: number;
-      /** False when the file shape can't distinguish buys from sells. */
-      directionResolved: boolean;
     };
 
 /** The Spanish error shown when the file's ISIN does not match the asset's (S4). */
@@ -241,9 +235,9 @@ function countSells(plan: StatementMergePlan): number {
 async function readStatementFromForm(
   formData: FormData,
 ): Promise<{ ok: false; message: string } | { ok: true; value: ParsedStatement }> {
-  const broker = String(formData.get("broker") ?? "").trim();
+  const broker = String(formData.get("broker") ?? "plantilla").trim();
   if (!isStatementBroker(broker)) {
-    return { message: "Selecciona un bróker compatible (MyInvestor).", ok: false };
+    return { message: "Selecciona un formato compatible (la plantilla).", ok: false };
   }
 
   const file = formData.get("file");
@@ -305,7 +299,6 @@ export async function previewStatementAction(
     return {
       anomalies: plan.anomalies.length,
       created: plan.toCreate.length,
-      directionResolved: read.value.directionResolved,
       overwritten: plan.toOverwrite.length,
       sells: countSells(plan),
       skipped: skipped.length,
@@ -322,8 +315,7 @@ export async function previewStatementAction(
  * untouched. Apply in one transaction, then run ONE batched historical-snapshot
  * ripple across the union of created + overwritten dates — never per operation
  * (the #158 O(N×snapshots) cliff). The ISIN guard blocks a wrong-file slip and
- * backfills an empty asset (S4); a negative-signed row loads as a sell (S5).
- * MyInvestor only for now; the holding's value still comes from its provider.
+ * backfills an empty asset (S4); sells load from the plantilla's Operación column.
  */
 export async function confirmStatementAction(
   routeAssetId: string,
@@ -341,13 +333,6 @@ export async function confirmStatementAction(
   if (!read.ok) {
     redirect(statementErrorUrl(read.message));
   }
-  if (
-    !read.value.directionResolved &&
-    formData.get(DIRECTION_AMBIGUITY_ACK_FIELD) !== "on"
-  ) {
-    redirect(statementErrorUrl(DIRECTION_AMBIGUITY_MESSAGE));
-  }
-
   const { rows, skipped } = read.value;
   const today = _clock.today();
   const seed = Date.now();

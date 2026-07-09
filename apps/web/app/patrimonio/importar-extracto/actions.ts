@@ -71,10 +71,6 @@ function currentUrlOf(formData: FormData): string {
   return (formData.get("currentUrl") as string) || "/patrimonio/importar-extracto";
 }
 
-const DIRECTION_AMBIGUITY_ACK_FIELD = "confirmNoSalesOrRedemptions";
-const DIRECTION_AMBIGUITY_MESSAGE =
-  "Este archivo no distingue compras de ventas. Exporta el archivo COMPLETO de órdenes (con la columna «Tipo de operación»).";
-
 // ── ISIN symbol lookup port ──────────────────────────────────────────────────
 
 /** The result of looking up a creation row's provider symbol by ISIN. */
@@ -169,20 +165,15 @@ export type ImportStatementPreviewState =
   | {
       status: "ready";
       funds: FundPreviewRow[];
-      /**
-       * False when the file shape can't distinguish buys from sells (MyInvestor's
-       * reduced export) — the preview warns so sells aren't confirmed as buys.
-       */
-      directionResolved: boolean;
     };
 
 async function readStatementFromForm(
   formData: FormData,
 ): Promise<{ ok: false; message: string } | { ok: true; value: ParsedStatement }> {
-  const broker = String(formData.get("broker") ?? "").trim();
+  const broker = String(formData.get("broker") ?? "plantilla").trim();
   if (!isStatementBroker(broker)) {
     return {
-      message: "Selecciona un formato compatible (MyInvestor o la plantilla).",
+      message: "Selecciona un formato compatible (la plantilla).",
       ok: false,
     };
   }
@@ -435,7 +426,7 @@ export async function previewImportStatementAction(
       ),
     );
 
-    return { directionResolved: read.value.directionResolved, funds, status: "ready" };
+    return { funds, status: "ready" };
   }, _store);
 }
 
@@ -472,8 +463,7 @@ function selectionsFromForm(
     }
 
     // The instrument comes from the re-derived bucket (the file's own rows),
-    // never from the client (#695); MyInvestor rows carry none → fund, the
-    // historical default. Its catalog defaults pick the provider and rung.
+    // never from the client (#695); rows without a declared type default to fund.
     const instrument = bucket.instrument ?? "fund";
     const defaults = defaultsFor(instrument);
 
@@ -538,13 +528,6 @@ export async function confirmImportStatementAction(
   if (!read.ok) {
     redirect(errorUrl(read.message));
   }
-  if (
-    !read.value.directionResolved &&
-    formData.get(DIRECTION_AMBIGUITY_ACK_FIELD) !== "on"
-  ) {
-    redirect(errorUrl(DIRECTION_AMBIGUITY_MESSAGE));
-  }
-
   const today = _clock.today();
   const seed = Date.now();
 

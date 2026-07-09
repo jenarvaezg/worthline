@@ -1,7 +1,7 @@
 /**
  * Account-sized end-to-end coverage for "Importar extracto" (PRD #669 S3,
- * #674, ADR 0055): a synthetic whole-account MyInvestor export (20 ISINs, 100
- * order lines — the shape of a real multi-fund broker export) driving the same
+ * #674, ADR 0055): a synthetic whole-account plantilla export (20 ISINs, 80
+ * operation lines — the shape of a real multi-fund broker export) driving the same
  * preview → confirm actions as `actions.test.ts`, via the `_store` injection
  * seam (a real in-memory store, not mocked). No Playwright spec exists for the
  * per-holding statement upload either (#176 — `inversiones/statement-actions.
@@ -48,7 +48,7 @@ afterEach(() => {
 const IDLE: ImportStatementPreviewState = { status: "idle" };
 
 // 20 synthetic WL-tagged ISINs (one country prefix each, so no two collide) ×
-// 5 rows = 100 order lines — the shape of ADR 0055's real case ("153 orders
+// 4 rows = 80 operation lines — the shape of ADR 0055's real case ("153 orders
 // across 26 ISINs") at fixture scale.
 const ISIN_COUNTRIES = [
   "ES",
@@ -80,24 +80,21 @@ const MATCHED_ISINS = ALL_ISINS.slice(0, 6);
 
 // Four monthly contributions (the 5th of each month, like a recurring buy
 // order) at a fixed price of 100/unit: amounts 100/200/300/400 EUR -> units
-// 1/2/3/4. A 5th row per ISIN is "En curso" (skipped, not an order that loads).
+// 1/2/3/4.
 const ORDER_DATES = ["05/01/2024", "05/02/2024", "05/03/2024", "05/04/2024"];
 const SNAPSHOT_DATE_KEYS = ["2024-01-05", "2024-02-05", "2024-03-05", "2024-04-05"];
-const PENDING_DATE = "05/05/2024";
 
 function accountCsvRows(): string[] {
-  return ALL_ISINS.flatMap((isin) => [
-    ...ORDER_DATES.map(
-      (date, i) => `${date};${isin};${(i + 1) * 100} EUR;${i + 1},0000;Finalizada`,
+  return ALL_ISINS.flatMap((isin) =>
+    ORDER_DATES.map(
+      (date, i) => `${date};Fondo;${isin};Compra;${i + 1},0000;${(i + 1) * 100};;`,
     ),
-    `${PENDING_DATE};${isin};500 EUR;5,0000;En curso`,
-  ]);
+  );
 }
 
-// CRLF, dd/mm/yyyy, comma-decimal units, `;`-delimited — the real MyInvestor
-// "Órdenes" export shape (ADR 0018/0055).
+// CRLF, dd/mm/yyyy, comma-decimal units, `;`-delimited — the Worthline plantilla.
 const ACCOUNT_CSV = [
-  "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
+  "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
   ...accountCsvRows(),
 ].join("\r\n");
 
@@ -126,15 +123,14 @@ const notFoundResolver: IsinSymbolResolver = async () => ({ status: "not_found" 
 
 function uploadForm(): FormData {
   const fd = new FormData();
-  fd.set("broker", "myinvestor");
+  fd.set("broker", "plantilla");
   fd.set("currentUrl", "/patrimonio/importar-extracto");
-  fd.set("file", new File([ACCOUNT_CSV], "ordenes.csv", { type: "text/csv" }));
+  fd.set("file", new File([ACCOUNT_CSV], "plantilla.csv", { type: "text/csv" }));
   return fd;
 }
 
 function confirmForm(): FormData {
   const fd = uploadForm();
-  fd.set("confirmNoSalesOrRedemptions", "on");
   for (const isin of ALL_ISINS) {
     fd.set(`include_${isin}`, "on");
   }
@@ -177,7 +173,7 @@ describe("account-sized statement import — full reconstruction (S3, #674)", ()
     expect(preview.funds.filter((f) => f.bucket === "new")).toHaveLength(14);
     for (const fund of preview.funds) {
       expect(fund.executedCount).toBe(4);
-      expect(fund.skippedCount).toBe(1);
+      expect(fund.skippedCount).toBe(0);
     }
 
     const digest = await confirmAccount(store);
@@ -192,7 +188,7 @@ describe("account-sized statement import — full reconstruction (S3, #674)", ()
       const meta = metas.find((m) => m.isin === isin);
       expect(meta).toBeDefined();
       const ops = await store.operations.readOperations(meta!.id);
-      expect(ops).toHaveLength(4); // the "En curso" row never loads
+      expect(ops).toHaveLength(4);
     }
 
     const snapshots = await store.snapshots.readSnapshots();
@@ -200,9 +196,6 @@ describe("account-sized statement import — full reconstruction (S3, #674)", ()
       SNAPSHOT_DATE_KEYS,
     );
 
-    // Every one of the 20 funds contributes identically (units 1/2/3/4 @ price
-    // 100/unit -> cumulative value 100/300/600/1000 EUR per fund); the batched
-    // ripple folds all 20 forward together, one snapshot per date.
     const grossAt = (dateKey: string) =>
       snapshots.find((s) => s.dateKey === dateKey)?.grossAssets.amountMinor;
     expect(grossAt("2024-01-05")).toBe(20 * 100_00);
@@ -230,13 +223,12 @@ describe("account-sized statement import — full reconstruction (S3, #674)", ()
     );
     const fingerprintBefore = await snapshotFingerprint(store);
 
-    // Re-upload the SAME file with the SAME selection.
     const digest = await confirmAccount(store);
     expect(digest).toContain("funds=20");
-    expect(digest).toContain("created=0"); // every ISIN now matches -> no new fund
+    expect(digest).toContain("created=0");
 
     const metasAfter = await store.assets.readInvestmentAssetsWithMeta();
-    expect(metasAfter).toHaveLength(20); // zero new holdings
+    expect(metasAfter).toHaveLength(20);
 
     const opsCountAfter = new Map(
       await Promise.all(
@@ -246,10 +238,10 @@ describe("account-sized statement import — full reconstruction (S3, #674)", ()
         ),
       ),
     );
-    expect(opsCountAfter).toEqual(opsCountBefore); // zero new operations per fund
+    expect(opsCountAfter).toEqual(opsCountBefore);
     expect([...opsCountAfter.values()].reduce((sum, n) => sum + n, 0)).toBe(80);
 
-    expect(await snapshotFingerprint(store)).toEqual(fingerprintBefore); // unchanged
+    expect(await snapshotFingerprint(store)).toEqual(fingerprintBefore);
 
     store.close();
   });
@@ -265,7 +257,6 @@ describe("demo write-gating (S3, #674 — PRD #669 story 17)", () => {
     const decoded = decodeURIComponent(digest.replace(/\+/g, " "));
     expect(decoded).toContain(DEMO_DISABLED_MESSAGE);
 
-    // The store is untouched: only the six seeded funds, no operations, no snapshots.
     const metas = await store.assets.readInvestmentAssetsWithMeta();
     expect(metas).toHaveLength(6);
     for (const meta of metas) {

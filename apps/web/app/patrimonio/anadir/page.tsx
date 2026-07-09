@@ -579,8 +579,8 @@ function InvestmentGroupPane({
       <div className="invModePane" data-mode="import">
         <p className="simpleHint">
           Crearemos la inversión vacía y te llevamos a <strong>Cargar movimientos</strong>{" "}
-          para subir el CSV de tu bróker (MyInvestor). Sus órdenes serán el histórico —
-          sin ninguna apertura inventada de hoy.
+          para subir la plantilla de Worthline. Sus operaciones serán el histórico — sin
+          ninguna apertura inventada de hoy.
         </p>
         {group.instrument === "fund" ? (
           <p className="simpleHint">

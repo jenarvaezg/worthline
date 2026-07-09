@@ -72,8 +72,7 @@ export interface ParsedStatement {
   rows: ParsedStatementRow[];
   skipped: SkippedStatementRow[];
   /**
-   * False when the file shape carries no explicit buy/sell signal (e.g.
-   * MyInvestor's reduced export, where every row loads as a buy) — the UI warns
+   * False when the file shape carries no explicit buy/sell signal — the UI warns
    * before confirm so a statement with sells isn't silently mis-imported.
    */
   directionResolved: boolean;

@@ -3,8 +3,8 @@
 /**
  * Statement upload — the "Cargar movimientos" surface (ADR 0018, S1 #174 → S3 #176).
  *
- * Sits under the operations editor on a `derived` investment. Pick the broker
- * (MyInvestor only for now) and a `.csv` export, then **preview before confirm**:
+ * Sits under the operations editor on a `derived` investment. Upload the Worthline
+ * plantilla (CSV) or a broker export converted to it, then **preview before confirm**:
  * the first submit parses + builds the merge plan and shows what will change
  * ("N nuevas · M sobrescritas · K omitidas") WITHOUT writing; only the confirm
  * button applies the merge and ripples history.
@@ -45,29 +45,20 @@ export function StatementUploadSection({
     previewAction,
     IDLE,
   );
-  // Picking a different file makes the last preview stale: hide it so a summary
-  // of file A never blesses a confirm that would load file B.
   const [fileChangedSincePreview, setFileChangedSincePreview] = useState(false);
-  const [directionAmbiguityAccepted, setDirectionAmbiguityAccepted] = useState(false);
 
   const shown = fileChangedSincePreview || isPreviewPending ? IDLE : preview;
-  const needsDirectionOptIn = shown.status === "summary" && !shown.directionResolved;
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     const submitter = (event.nativeEvent as SubmitEvent).submitter;
     const isPreview =
       submitter instanceof HTMLButtonElement && submitter.value === "preview";
 
-    if (!isPreview) {
-      // The confirm button carries no name/value — it goes through React's
-      // formAction={confirmAction} path.
-      return;
-    }
+    if (!isPreview) return;
 
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     setFileChangedSincePreview(false);
-    setDirectionAmbiguityAccepted(false);
     startTransition(() => dispatchPreview(formData));
   }
 
@@ -75,33 +66,33 @@ export function StatementUploadSection({
     <section aria-label="Cargar movimientos">
       <h3>Cargar movimientos</h3>
       <p className="contextLabel">
-        Sube el archivo de órdenes exportado por tu bróker para crear las operaciones de
-        esta inversión.
+        Sube la plantilla de Worthline (o un CSV con la misma forma) para crear las
+        operaciones de esta inversión.
       </p>
 
       <form className="stackForm inversionesForm" onSubmit={handleSubmit}>
         <input name="currentUrl" type="hidden" value={currentUrl} />
+        <input name="broker" type="hidden" value="plantilla" />
 
         <label>
-          Bróker
-          <select defaultValue="myinvestor" name="broker">
-            <option value="myinvestor">MyInvestor</option>
-          </select>
-        </label>
-
-        <label>
-          Archivo de órdenes (.csv)
+          Archivo de operaciones (.csv)
           <input
             accept=".csv,text/csv"
             name="file"
-            onChange={() => {
-              setFileChangedSincePreview(true);
-              setDirectionAmbiguityAccepted(false);
-            }}
+            onChange={() => setFileChangedSincePreview(true)}
             required
             type="file"
           />
         </label>
+
+        <p className="infoNote">
+          ¿Tu bróker no exporta bien?{" "}
+          <a download href="/plantilla-operaciones.csv">
+            Descarga la plantilla
+          </a>{" "}
+          y rellénala: una fila por operación (Compra o Venta, importes siempre en
+          positivo).
+        </p>
 
         <button disabled={isPreviewPending} name="intent" type="submit" value="preview">
           Ver cambios
@@ -129,9 +120,7 @@ export function StatementUploadSection({
               <li>
                 {count(shown.skipped, "movimiento omitido", "movimientos omitidos")}
               </li>
-              {shown.sells > 0 && shown.directionResolved ? (
-                // Only meaningful when the file carries the tipo column; under
-                // the sign-rule fallback it would contradict the warning below.
+              {shown.sells > 0 ? (
                 <li>{count(shown.sells, "venta detectada", "ventas detectadas")}</li>
               ) : null}
               {shown.anomalies > 0 ? (
@@ -145,26 +134,6 @@ export function StatementUploadSection({
               ) : null}
             </ul>
 
-            {!shown.directionResolved ? (
-              <>
-                <p className="warningBand" role="alert">
-                  Este archivo no distingue compras de ventas. Exporta el archivo COMPLETO
-                  de órdenes (con la columna «Tipo de operación»).
-                </p>
-                <label className="directionOptIn">
-                  <input
-                    checked={directionAmbiguityAccepted}
-                    name="confirmNoSalesOrRedemptions"
-                    onChange={(event) =>
-                      setDirectionAmbiguityAccepted(event.currentTarget.checked)
-                    }
-                    type="checkbox"
-                  />
-                  Confirmo que en este periodo no hice ninguna venta ni reembolso.
-                </label>
-              </>
-            ) : null}
-
             {shown.anomalies > 0 ? (
               <p className="contextLabel">
                 Hay fechas con más de una operación: no se sobrescriben para no tocar la
@@ -172,11 +141,7 @@ export function StatementUploadSection({
               </p>
             ) : null}
 
-            <button
-              disabled={needsDirectionOptIn && !directionAmbiguityAccepted}
-              formAction={confirmAction}
-              type="submit"
-            >
+            <button formAction={confirmAction} type="submit">
               Confirmar y cargar
             </button>
           </div>

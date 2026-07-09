@@ -8,17 +8,17 @@ import {
 import { parseStatement } from "./statement-parse";
 
 const MULTI_ISIN_FIXTURE = [
-  "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
-  "05/01/2026;ES00WL000001;1200 EUR;34,2857;Finalizada",
-  "05/02/2026;ES00WL000001;1200 EUR;33,9120;Finalizada",
-  "10/01/2026;LU00WL000002;600 EUR;12,3456;Finalizada",
-  "10/02/2026;LU00WL000002;600 EUR;12,4011;Finalizada",
-  "15/01/2026;IE00WL000003;900 EUR;21,0000;Finalizada",
-  "15/02/2026;IE00WL000003;900 EUR;20,7500;En curso",
+  "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
+  "05/01/2026;Fondo;ES00WL000001;Compra;34,2857;1200;;",
+  "05/02/2026;Fondo;ES00WL000001;Compra;33,9120;1200;;",
+  "10/01/2026;Fondo;LU00WL000002;Compra;12,3456;600;;",
+  "10/02/2026;Fondo;LU00WL000002;Compra;12,4011;600;;",
+  "15/01/2026;Fondo;IE00WL000003;Compra;21,0000;900;;",
+  "15/02/2026;Fondo;IE00WL000003;Compra;20,7500;900;;",
 ].join("\r\n");
 
 function parsedMultiIsin() {
-  const result = parseStatement(MULTI_ISIN_FIXTURE, "myinvestor");
+  const result = parseStatement(MULTI_ISIN_FIXTURE, "plantilla");
   if (!result.ok) throw new Error(result.errors.join(" | "));
   return result.value;
 }
@@ -61,7 +61,7 @@ describe("multi-ISIN statement import plan (ADR 0055)", () => {
     ).toEqual([
       { bucket: "matched", isin: "ES00WL000001", rows: 2, skipped: 0 },
       { bucket: "new", isin: "LU00WL000002", rows: 2, skipped: 0 },
-      { bucket: "new", isin: "IE00WL000003", rows: 1, skipped: 1 },
+      { bucket: "new", isin: "IE00WL000003", rows: 2, skipped: 0 },
     ]);
     const matched = buckets[0];
     expect(matched?.bucket).toBe("matched");

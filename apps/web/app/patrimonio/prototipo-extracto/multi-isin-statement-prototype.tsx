@@ -34,18 +34,16 @@ interface FundPreview extends FundConfig {
   units: number;
 }
 
-const SYNTHETIC_MYINVESTOR_FILE = [
-  "Fecha de la orden;ISIN;Importe estimado;Numero de participaciones;Estado",
-  "05/01/2026;ES00WL000001;1200,00;34,2857;Ejecutada",
-  "05/02/2026;ES00WL000001;1200,00;33,9120;Ejecutada",
-  "05/03/2026;ES00WL000001;1200,00;33,5012;Pendiente",
-  "10/01/2026;LU00WL000002;600,00;12,3456;Ejecutada",
-  "10/02/2026;LU00WL000002;600,00;12,4011;Ejecutada",
-  "15/01/2026;IE00WL000003;900,00;21,0000;Ejecutada",
-  "15/02/2026;IE00WL000003;900,00;20,7500;Ejecutada",
-  "20/01/2026;FR00WL000004;300,00;6,0000;Ejecutada",
-  "20/02/2026;FR00WL000004;300,00;6,0600;Rechazada",
-  "25/01/2026;NL00WL000005;450,00;9,0100;Ejecutada",
+const SYNTHETIC_PLANTILLA_FILE = [
+  "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
+  "05/01/2026;Fondo;ES00WL000001;Compra;34,2857;1200;;",
+  "05/02/2026;Fondo;ES00WL000001;Compra;33,9120;1200;;",
+  "10/01/2026;Fondo;LU00WL000002;Compra;12,3456;600;;",
+  "10/02/2026;Fondo;LU00WL000002;Compra;12,4011;600;;",
+  "15/01/2026;Fondo;IE00WL000003;Compra;21,0000;900;;",
+  "15/02/2026;Fondo;IE00WL000003;Compra;20,7500;900;;",
+  "20/01/2026;Fondo;FR00WL000004;Compra;6,0000;300;;",
+  "25/01/2026;Fondo;NL00WL000005;Compra;9,0100;450;;",
 ].join("\r\n");
 
 const FUND_ORDER = [
@@ -64,7 +62,6 @@ const FUND_CONFIG: Record<(typeof FUND_ORDER)[number], FundConfig> = {
     mergeFacts: [
       "05/01/2026 ya existe: el extracto sobrescribe importe y participaciones.",
       "05/02/2026 no existe: se añade como nueva operación.",
-      "05/03/2026 queda fuera porque el estado es Pendiente.",
     ],
     name: "Fondo Aurora Global FI",
     reason: "ISIN encontrado en una inversión existente.",
@@ -104,7 +101,6 @@ const FUND_CONFIG: Record<(typeof FUND_ORDER)[number], FundConfig> = {
       "La búsqueda FAKE no encuentra nombre ni símbolo.",
       "Puede dejarse excluido y confirmar el resto.",
       "Si se incluye sin símbolo, nacería con aviso MISSING_PROVIDER_SYMBOL.",
-      "20/02/2026 queda fuera porque el estado es Rechazada.",
     ],
     name: "",
     reason: "Lookup sin resolver; no bloquea los demás fondos.",
@@ -137,8 +133,8 @@ const BUCKET_TONES: Record<Bucket, string> = {
   new: "created",
 };
 
-const FIXTURE_LINES = SYNTHETIC_MYINVESTOR_FILE.split("\r\n");
-const FUNDS = buildFundPreviews(parseSyntheticFile(SYNTHETIC_MYINVESTOR_FILE));
+const FIXTURE_LINES = SYNTHETIC_PLANTILLA_FILE.split("\r\n");
+const FUNDS = buildFundPreviews(parseSyntheticFile(SYNTHETIC_PLANTILLA_FILE));
 
 const INITIAL_INCLUDED = Object.fromEntries(
   FUNDS.map((fund) => [fund.isin, fund.includeByDefault]),
@@ -154,23 +150,20 @@ function parseSyntheticFile(file: string): StatementRow[] {
   return lines.map((line) => {
     const parts = line.split(";");
 
-    if (parts.length !== 5) {
+    if (parts.length < 6) {
       throw new Error("Fixture sintética de extracto con columnas inválidas");
     }
 
-    const [date, isin, amount, units, status] = parts as [
-      string,
-      string,
-      string,
-      string,
-      string,
-    ];
+    const date = parts[0] ?? "";
+    const isin = parts[2] ?? "";
+    const units = parts[4] ?? "";
+    const amount = parts[5] ?? "";
 
     return {
       amountMinor: Math.round(parseDecimal(amount) * 100),
       date,
       isin,
-      status,
+      status: "Ejecutada",
       units: parseDecimal(units),
     };
   });
@@ -272,7 +265,7 @@ export default function MultiIsinStatementPrototype() {
 
       <section className={styles.heroGrid} aria-labelledby="prototype-title">
         <div className={styles.heroPanel}>
-          <p className={styles.eyebrow}>Fichero sintético · MyInvestor Órdenes</p>
+          <p className={styles.eyebrow}>Fichero sintético · Plantilla Worthline</p>
           <h2 id="prototype-title">Un solo extracto, cinco ISINs, una decisión.</h2>
           <p>
             La pantalla agrupa el fichero por ISIN, separa lo que encaja con cartera, lo

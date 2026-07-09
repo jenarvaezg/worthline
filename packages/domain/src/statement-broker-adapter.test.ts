@@ -5,27 +5,25 @@ import {
   isStatementBroker,
   type StatementBrokerAdapter,
 } from "./statement-broker-adapter";
-import { myinvestorAdapter } from "./statement-myinvestor-adapter";
+import { plantillaAdapter } from "./statement-plantilla-adapter";
 import { parseStatement, parseStatementWithAdapter } from "./statement-parse";
 
 /**
- * Tests for the broker-adapter seam (issue #480). The MyInvestor end-to-end
- * sample lives in statement-parse.test.ts (kept as the behavior anchor); here we
- * pin the three new seams: the registry, the generic dispatcher driven by a FAKE
- * adapter (so the core's row attribution / all-or-nothing is tested independent
- * of any real broker), and the MyInvestor adapter's column + row parsing in
- * isolation.
+ * Tests for the broker-adapter seam (issue #480). End-to-end plantilla parsing
+ * lives in statement-plantilla.test.ts; here we pin the registry and the
+ * generic dispatcher driven by a FAKE adapter (so the core's row attribution /
+ * all-or-nothing is tested independent of any real broker).
  */
 
 describe("statement broker registry", () => {
   test("recognizes a configured broker id", () => {
-    expect(isStatementBroker("myinvestor")).toBe(true);
-    expect(getStatementBrokerAdapter("myinvestor")).toBe(myinvestorAdapter);
+    expect(isStatementBroker("plantilla")).toBe(true);
+    expect(getStatementBrokerAdapter("plantilla")).toBe(plantillaAdapter);
   });
 
   test("rejects an unconfigured broker id", () => {
-    expect(isStatementBroker("revolut")).toBe(false);
-    expect(getStatementBrokerAdapter("revolut")).toBeUndefined();
+    expect(isStatementBroker("myinvestor")).toBe(false);
+    expect(getStatementBrokerAdapter("myinvestor")).toBeUndefined();
   });
 
   test("parseStatement fails with the Spanish message for an unknown broker", () => {
@@ -157,88 +155,5 @@ describe("parseStatementWithAdapter — generic core (fake adapter)", () => {
     if (!result.ok) throw new Error("expected ok");
     expect(result.value.isin).toBeNull();
     expect(result.value.rows).toHaveLength(2);
-  });
-});
-
-describe("myinvestorAdapter — column resolution", () => {
-  test("resolves the documented columns case-insensitively", () => {
-    const header = myinvestorAdapter.splitRow(
-      "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
-    );
-    const resolved = myinvestorAdapter.resolveColumns(header);
-    expect(resolved.ok).toBe(true);
-  });
-
-  test("a missing required column is a MyInvestor-format error", () => {
-    const header = myinvestorAdapter.splitRow(
-      "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones",
-    );
-    const resolved = myinvestorAdapter.resolveColumns(header);
-    expect(resolved.ok).toBe(false);
-    if (resolved.ok) throw new Error("expected failure");
-    expect(resolved.errors[0]).toContain("formato de MyInvestor");
-    expect(resolved.errors[0]).toContain("Estado");
-  });
-});
-
-describe("myinvestorAdapter — row parsing", () => {
-  const COLUMNS = (() => {
-    const resolved = myinvestorAdapter.resolveColumns(
-      myinvestorAdapter.splitRow(
-        "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
-      ),
-    );
-    if (!resolved.ok) throw new Error("fixture header must resolve");
-    return resolved.columns;
-  })();
-
-  function parse(line: string, lineNumber = 2) {
-    return myinvestorAdapter.parseRow({
-      cells: myinvestorAdapter.splitRow(line),
-      columns: COLUMNS,
-      lineNumber,
-    });
-  }
-
-  test("a Finalizada buy loads with ISO date, EUR-stripped amount, and reads its ISIN", () => {
-    const result = parse("15/01/2024;IE00BYX5NX33;250 EUR;10;Finalizada");
-    expect(result.isin).toBe("IE00BYX5NX33");
-    expect(result.outcome.kind).toBe("row");
-    if (result.outcome.kind !== "row") throw new Error("expected row");
-    expect(result.outcome.row.kind).toBe("buy");
-    expect(result.outcome.row.dateKey).toBe("2024-01-15");
-    expect(result.outcome.row.units).toBe("10");
-    expect(result.outcome.row.pricePerUnit).toBe("25");
-  });
-
-  test("a non-Finalizada row is skipped (not an error) and still reports its ISIN", () => {
-    const result = parse("15/01/2024;IE00BYX5NX33;250 EUR;10;En curso");
-    expect(result.isin).toBe("IE00BYX5NX33");
-    expect(result.outcome.kind).toBe("skipped");
-    if (result.outcome.kind !== "skipped") throw new Error("expected skipped");
-    expect(result.outcome.skipped.estado).toBe("En curso");
-  });
-
-  test("a negative amount marks a sell, stored absolute", () => {
-    const result = parse("15/01/2024;IE00BYX5NX33;-250 EUR;10;Finalizada");
-    if (result.outcome.kind !== "row") throw new Error("expected row");
-    expect(result.outcome.row.kind).toBe("sell");
-    expect(result.outcome.row.units).toBe("10");
-    expect(result.outcome.row.pricePerUnit).toBe("25");
-  });
-
-  test("negative units also mark a sell, stored absolute", () => {
-    const result = parse("15/01/2024;IE00BYX5NX33;250 EUR;-7,226;Finalizada");
-    if (result.outcome.kind !== "row") throw new Error("expected row");
-    expect(result.outcome.row.kind).toBe("sell");
-    expect(result.outcome.row.units).toBe("7.226");
-  });
-
-  test("a malformed Finalizada row is a row-level error citing the line and Finalizada", () => {
-    const result = parse("32/13/2024;IE00BYX5NX33;100 EUR;7,000;Finalizada", 5);
-    expect(result.outcome.kind).toBe("error");
-    if (result.outcome.kind !== "error") throw new Error("expected error");
-    expect(result.outcome.error).toContain("fila 5");
-    expect(result.outcome.error).toContain("Finalizada");
   });
 });

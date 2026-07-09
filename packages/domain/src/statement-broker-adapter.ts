@@ -1,21 +1,18 @@
 /**
  * The broker-adapter seam for statement parsing (ADR 0018, issue #480).
  *
- * `parseStatement` used to hardcode MyInvestor's column labels, date format,
- * amount stripping and sell rule inline behind a `broker !== "myinvestor"` guard.
- * This splits that hypothetical seam into a real one: a {@link StatementBrokerAdapter}
- * captures everything broker-specific (delimiter, column mapping + header
- * validation, row parsing incl. date/amount/units/sell detection), a registry maps
- * broker ids to adapter instances, and the generic core (`parseStatementWithAdapter`
- * in `./statement-parse`) keeps the broker-agnostic rules: row ISIN attribution,
- * all-or-nothing aborts, and the empty-file / unknown-broker errors.
+ * A {@link StatementBrokerAdapter} captures everything format-specific (delimiter,
+ * column mapping + header validation, row parsing incl. date/amount/units/sell
+ * detection), a registry maps format ids to adapter instances, and the generic
+ * core (`parseStatementWithAdapter` in `./statement-parse`) keeps the
+ * format-agnostic rules: row ISIN attribution, all-or-nothing aborts, and the
+ * empty-file / unknown-format errors.
  *
- * Adding a broker is now a new adapter file + one registry entry, never a new
+ * Adding a format is now a new adapter file + one registry entry, never a new
  * branch in the parser.
  */
 
 import type { ParsedStatementRow, SkippedStatementRow } from "./statement-parse";
-import { myinvestorAdapter } from "./statement-myinvestor-adapter";
 import { plantillaAdapter } from "./statement-plantilla-adapter";
 
 type ParsedStatementRowDraft = Omit<ParsedStatementRow, "isin">;
@@ -37,20 +34,20 @@ export interface StatementRowResult {
   outcome: StatementRowOutcome;
 }
 
-/** Header validation result: a broker-specific column index, or Spanish errors. */
+/** Header validation result: a format-specific column index, or Spanish errors. */
 export type ColumnResolution<C> =
   | { ok: true; columns: C }
   | { ok: false; errors: [string, ...string[]] };
 
 /**
- * Per-broker statement behavior. `C` is the broker's resolved column index, produced
+ * Per-format statement behavior. `C` is the format's resolved column index, produced
  * by {@link resolveColumns} and threaded back into {@link parseRow} by the core.
  * Methods (not arrow properties) are deliberate: their parameter bivariance lets a
- * concrete `StatementBrokerAdapter<MyInvestorColumns>` live in a registry typed as
+ * concrete `StatementBrokerAdapter<PlantillaColumns>` live in a registry typed as
  * `StatementBrokerAdapter<unknown>`.
  */
 export interface StatementBrokerAdapter<C = unknown> {
-  /** Split one raw line into cells (the delimiter is broker-specific). */
+  /** Split one raw line into cells (the delimiter is format-specific). */
   splitRow(line: string): string[];
   /** Validate the header row into a column index, or fail with Spanish errors. */
   resolveColumns(header: string[]): ColumnResolution<C>;
@@ -62,33 +59,31 @@ export interface StatementBrokerAdapter<C = unknown> {
   }): StatementRowResult;
   /**
    * Whether the resolved header carries an explicit buy/sell signal. Omit when
-   * the broker's rows are always directional (the common case — signed amounts);
-   * return false when the file shape can't distinguish sells (e.g. MyInvestor's
-   * reduced export), so the UI can warn before anything is confirmed.
+   * the format's rows are always directional (the common case — signed amounts);
+   * return false when the file shape can't distinguish sells, so the UI can warn
+   * before anything is confirmed.
    */
   directionResolved?(columns: C): boolean;
 }
 
 /**
- * The formats with a configured reader: real broker exports plus `plantilla`,
- * Worthline's own universal statement format (#695). A new entry extends this
- * union.
+ * The formats with a configured reader. Worthline's plantilla (#695) is the
+ * universal statement format; a new entry extends this union.
  */
-export type StatementBroker = "myinvestor" | "plantilla";
+export type StatementBroker = "plantilla";
 
 /**
- * The broker → adapter registry. Typed as a total `Record<StatementBroker, …>` so a
+ * The format → adapter registry. Typed as a total `Record<StatementBroker, …>` so a
  * new entry in the {@link StatementBroker} union without an adapter is a type error.
  */
 const STATEMENT_BROKER_ADAPTERS: Record<
   StatementBroker,
   StatementBrokerAdapter<unknown>
 > = {
-  myinvestor: myinvestorAdapter,
   plantilla: plantillaAdapter,
 };
 
-/** Whether `value` is a broker id the registry can parse (narrows the type). */
+/** Whether `value` is a format id the registry can parse (narrows the type). */
 export function isStatementBroker(value: string): value is StatementBroker {
   return value in STATEMENT_BROKER_ADAPTERS;
 }
