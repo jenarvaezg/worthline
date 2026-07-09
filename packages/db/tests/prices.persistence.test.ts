@@ -107,6 +107,41 @@ describe("price cache persistence", () => {
     store.close();
   });
 
+  test("upsertPrices batch round-trips multiple assets", async () => {
+    const store = await createTestStore();
+    await seedWorkspaceAndAsset(store, "asset_1");
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset_2",
+      name: "Second Asset",
+      ownership: [{ memberId: "m1", shareBps: 10000 }],
+    });
+
+    await store.operations.upsertPrices([
+      {
+        assetId: "asset_1",
+        currency: "EUR",
+        fetchedAt: "2026-06-08T10:00:00Z",
+        freshnessState: "fresh",
+        price: "100.00",
+        source: "stooq",
+      },
+      {
+        assetId: "asset_2",
+        currency: "EUR",
+        fetchedAt: "2026-06-08T11:00:00Z",
+        freshnessState: "fresh",
+        price: "200.00",
+        source: "yahoo",
+      },
+    ]);
+
+    expect((await store.operations.readPriceCache("asset_1"))!.price).toBe("100.00");
+    expect((await store.operations.readPriceCache("asset_2"))!.price).toBe("200.00");
+
+    store.close();
+  });
+
   test("clearPriceCache removes an asset's cached price", async () => {
     const store = await createTestStore();
     await seedWorkspaceAndAsset(store, "asset_1");
