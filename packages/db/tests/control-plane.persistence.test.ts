@@ -242,4 +242,75 @@ describe("control-plane store", () => {
       cp.close();
     }
   });
+
+  test("a user cannot own two workspaces — a second owner grant is rejected (#733)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const ana = await cp.findOrCreateUser("ana@example.com");
+      const first = await cp.createWorkspace({
+        dbName: "wl-ana",
+        dbUrl: "libsql://wl-ana.turso.io",
+      });
+      const second = await cp.createWorkspace({
+        dbName: "wl-ana-2",
+        dbUrl: "libsql://wl-ana-2.turso.io",
+      });
+      await cp.recordGrant(ana.id, first.id);
+
+      await expect(cp.recordGrant(ana.id, second.id)).rejects.toThrow(/UNIQUE/i);
+      expect(await cp.listWorkspacesForUser(ana.id)).toHaveLength(1);
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("the one-owner rule does not cap non-owner roles (#733)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const ana = await cp.findOrCreateUser("ana@example.com");
+      const own = await cp.createWorkspace({
+        dbName: "wl-ana",
+        dbUrl: "libsql://wl-ana.turso.io",
+      });
+      const shared = await cp.createWorkspace({
+        dbName: "wl-shared",
+        dbUrl: "libsql://wl-shared.turso.io",
+      });
+      await cp.recordGrant(ana.id, own.id);
+
+      // A future sharing flow can still grant the same user other workspaces
+      // under non-owner roles.
+      await cp.recordGrant(ana.id, shared.id, "viewer");
+      expect(await cp.listWorkspacesForUser(ana.id)).toHaveLength(2);
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("delete-workspace removes the row — the provisioner's loser cleanup (#733)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const ws = await cp.createWorkspace({
+        dbName: "wl-orphan",
+        dbUrl: "libsql://wl-orphan.turso.io",
+      });
+      await cp.deleteWorkspace(ws.id);
+      expect(await cp.listAllWorkspaces()).toHaveLength(0);
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("concurrent find-or-create calls for the same email converge on one user (#733)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const [a, b] = await Promise.all([
+        cp.findOrCreateUser("ana@example.com"),
+        cp.findOrCreateUser("ana@example.com"),
+      ]);
+      expect(b.id).toBe(a.id);
+    } finally {
+      cp.close();
+    }
+  });
 });

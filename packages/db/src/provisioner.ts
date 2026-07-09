@@ -18,6 +18,12 @@ import { migrate } from "./migrate";
 export interface TursoPort {
   /** Create a database and return its name and libSQL URL. */
   createDatabase(name: string): Promise<{ name: string; url: string }>;
+  /**
+   * Delete a database created by this port — best-effort cleanup of the
+   * loser's orphan after a first-login race (#733). Optional: without it the
+   * orphan database simply lingers, which was the pre-#733 status quo.
+   */
+  deleteDatabase?(name: string): Promise<void>;
 }
 
 export interface ProvisionDeps {
@@ -81,6 +87,37 @@ export async function provisionWorkspaceForUser(
     dbName: name,
     dbUrl: url,
   });
-  await controlPlane.recordGrant(user.id, workspace.id);
+  try {
+    await controlPlane.recordGrant(user.id, workspace.id);
+  } catch (error) {
+    if (!isUniqueConstraintError(error)) {
+      throw error;
+    }
+    // Lost the first-login race (#733): a concurrent provision already owns a
+    // grant for this user (grants_one_owner_per_user). Clean up our orphan
+    // and hand back the winner's workspace so both logins converge.
+    try {
+      await controlPlane.deleteWorkspace(workspace.id);
+      await turso.deleteDatabase?.(name);
+    } catch {
+      // Best-effort: a dangling workspace row / database is the pre-#733
+      // failure mode and the admin surface tolerates it (#697).
+    }
+    const [winner] = await controlPlane.listWorkspacesForUser(user.id);
+    if (!winner) {
+      throw error;
+    }
+    return winner;
+  }
   return workspace;
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = (error as { code?: unknown }).code;
+  return (
+    (typeof code === "string" && code.startsWith("SQLITE_CONSTRAINT")) ||
+    /UNIQUE constraint failed/i.test(error.message) ||
+    /UNIQUE constraint failed/i.test(String((error as { cause?: unknown }).cause ?? ""))
+  );
 }

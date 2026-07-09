@@ -27,5 +27,10 @@ export function createTursoPort(config: TursoPortConfig): TursoPort {
       );
       return { name: db.name, url: `libsql://${db.hostname}` };
     },
+    async deleteDatabase(name) {
+      const { createClient } = await import("@tursodatabase/api");
+      const client = createClient({ org: config.org, token: config.token });
+      await client.databases.delete(name);
+    },
   };
 }

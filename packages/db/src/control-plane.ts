@@ -61,6 +61,12 @@ export interface ControlPlaneStore {
     dbName: string;
     dbUrl: string;
   }): Promise<ControlPlaneWorkspace>;
+  /**
+   * Remove a workspace row. The provisioner's loser-side cleanup after losing
+   * the first-login race (#733) — the loser never got a grant, so only the
+   * workspace row exists.
+   */
+  deleteWorkspace(workspaceId: string): Promise<void>;
   /** Grant a user access to a workspace (default role `owner`). */
   recordGrant(
     userId: string,
@@ -146,6 +152,11 @@ CREATE TABLE IF NOT EXISTS grants (
   FOREIGN KEY (user_id) REFERENCES users(id),
   FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
 );
+-- One owned workspace per user (#733): the database-level arbiter for the
+-- provisioner's check-then-create race. Partial so a future sharing flow can
+-- still grant the same user other workspaces under non-owner roles.
+CREATE UNIQUE INDEX IF NOT EXISTS grants_one_owner_per_user
+  ON grants(user_id) WHERE role = 'owner';
 CREATE TABLE IF NOT EXISTS daily_capture_runs (
   date_key TEXT PRIMARY KEY,
   finalized_at TEXT NOT NULL,
@@ -243,14 +254,16 @@ async function buildControlPlaneStore(
       if (existing.rows.length > 0) {
         return toUser(existing.rows[0]!);
       }
-      const id = newId();
+      // ON CONFLICT: two concurrent first logins may both pass the select
+      // above (#733); whichever insert lands second becomes a no-op and both
+      // resolve to the same row via the re-select by email.
       await client.execute({
-        sql: "INSERT INTO users (id, email) VALUES (?, ?)",
-        args: [id, email],
+        sql: "INSERT INTO users (id, email) VALUES (?, ?) ON CONFLICT(email) DO NOTHING",
+        args: [newId(), email],
       });
       const created = await client.execute({
-        sql: "SELECT id, email, created_at FROM users WHERE id = ?",
-        args: [id],
+        sql: "SELECT id, email, created_at FROM users WHERE email = ?",
+        args: [email],
       });
       return toUser(created.rows[0]!);
     },
@@ -272,6 +285,12 @@ async function buildControlPlaneStore(
         args: [id],
       });
       return toWorkspace(created.rows[0]!);
+    },
+    async deleteWorkspace(workspaceId) {
+      await client.execute({
+        sql: "DELETE FROM workspaces WHERE id = ?",
+        args: [workspaceId],
+      });
     },
     async recordGrant(userId, workspaceId, role = "owner") {
       await client.execute({
