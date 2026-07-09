@@ -7,8 +7,8 @@
   Does **not** run `next build`.
 - `bun run lint` — `biome ci` (lint + format check).
 - `bun run format` — `biome format --write .` (fix formatting locally).
-- `bun run build` — full production gate, including `apps/web`'s `next build`.
-  Use before deploy / as a pre-push gate.
+- `bun run build` — full production gate, including `apps/web`'s `bun --bun next build`.
+  Use before deploy / as a pre-push gate. Vercel Functions stay on Node 24 — see [`bun-runtime.md`](bun-runtime.md).
 - `bun run test:related` — run only the tests related to changed files.
   Useful when iterating on a single change.
 
