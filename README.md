@@ -33,8 +33,8 @@ Run the full production/deploy gate (pre-push / before deploy):
 bun run build
 ```
 
-This still triggers `apps/web`'s `next build`, which catches Next-generated
-route/page types that plain `tsc` does not see.
+This still triggers `apps/web`'s `bun --bun next build`, which catches Next-generated
+route/page types that plain `tsc` does not see. See [`docs/agents/bun-runtime.md`](docs/agents/bun-runtime.md).
 
 Run only tests related to changed files (useful while iterating):
 

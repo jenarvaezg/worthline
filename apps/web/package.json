@@ -32,12 +32,12 @@
     "typescript": "^5.9.3"
   },
   "scripts": {
-    "build": "bun ../../scripts/link-web-typescript-deps.ts && next build",
-    "dev": "next dev --hostname 127.0.0.1",
+    "build": "bun ../../scripts/link-web-typescript-deps.ts && bun --bun next build",
+    "dev": "bun --bun next dev --hostname 127.0.0.1",
     "eval:assistant": "tsx --env-file-if-exists=.env.local app/asistente/eval/run.ts",
     "test": "vitest run --config vitest.config.ts",
     "test:coverage": "vitest run --config vitest.config.ts --coverage",
-    "start": "next start --hostname 127.0.0.1",
+    "start": "bun --bun next start --hostname 127.0.0.1",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }
