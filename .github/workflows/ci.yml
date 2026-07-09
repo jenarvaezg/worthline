@@ -21,8 +21,8 @@ env:
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
 
 jobs:
-  quality:
-    name: Typecheck · Biome · Unit · Build
+  fast-checks:
+    name: Fast checks (typecheck · lint · globs)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -63,8 +63,58 @@ jobs:
       - name: Test glob integrity
         run: bun run test:globs
 
+  unit-tests:
+    name: Unit tests (coverage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache Turbo
+        uses: actions/cache@v5
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('bun.lock', 'turbo.json') }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
       - name: Unit tests with coverage (vitest)
         run: bun run test:coverage
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache Turbo
+        uses: actions/cache@v5
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('bun.lock', 'turbo.json') }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
 
       - name: Build
         run: bun run build

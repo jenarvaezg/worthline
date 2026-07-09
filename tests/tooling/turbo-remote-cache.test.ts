@@ -15,10 +15,14 @@ const deployWorkflow = readFileSync(
 );
 
 describe("Turbo Remote Cache in CI workflows", () => {
-  test("ci.yml wires Vercel remote cache env and routes e2e build through turbo", () => {
+  test("ci.yml wires Vercel remote cache env and routes the build job through turbo", () => {
     expect(ciWorkflow).toContain("TURBO_TOKEN: ${{ secrets.VERCEL_TOKEN }}");
     expect(ciWorkflow).toContain("TURBO_TEAM: ${{ vars.TURBO_TEAM }}");
-    expect(ciWorkflow).toContain("bunx turbo run build --filter=@worthline/web");
+    expect(ciWorkflow).toMatch(/^\s+build:/m);
+    expect(ciWorkflow).toContain("run: bun run build");
+    // e2e-setup builds Next directly so `.next` is always materialized for upload (#800).
+    expect(ciWorkflow).toContain("run: bun run --filter @worthline/web build");
+    expect(ciWorkflow).not.toContain("bunx turbo run build --filter=@worthline/web");
   });
 
   test("deploy.yml wires Vercel remote cache env", () => {
