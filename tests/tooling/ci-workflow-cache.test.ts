@@ -20,13 +20,22 @@ function jobBlock(jobKey: string): string {
 }
 
 describe("CI workflow local caches (#799)", () => {
-  test("quality job caches Turbo and Biome with lockfile-driven keys", () => {
-    const quality = jobBlock("quality");
+  test("fast-checks job caches Turbo and Biome with lockfile-driven keys", () => {
+    const fastChecks = jobBlock("fast-checks");
 
-    expect(quality).toContain("path: .turbo");
-    expect(quality).toContain("hashFiles('bun.lock', 'turbo.json')");
-    expect(quality).toContain("path: ~/.cache/biome");
-    expect(quality).toContain("hashFiles('bun.lock', 'biome.json')");
+    expect(fastChecks).toContain("path: .turbo");
+    expect(fastChecks).toContain("hashFiles('bun.lock', 'turbo.json')");
+    expect(fastChecks).toContain("path: ~/.cache/biome");
+    expect(fastChecks).toContain("hashFiles('bun.lock', 'biome.json')");
+  });
+
+  test("unit-tests and build jobs cache Turbo only", () => {
+    for (const jobKey of ["unit-tests", "build"] as const) {
+      const job = jobBlock(jobKey);
+      expect(job).toContain("path: .turbo");
+      expect(job).toContain("hashFiles('bun.lock', 'turbo.json')");
+      expect(job).not.toContain("path: ~/.cache/biome");
+    }
   });
 
   test("e2e job caches Turbo for the production build step", () => {
