@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+# Strip AI tool co-author trailers injected by Cursor/Claude agents.
+sed -i '' \
+  -e '/cursoragent@cursor\.com/d' \
+  -e '/noreply@anthropic\.com/d' \
+  -e '/^Made-with: Cursor/d' \
+  "$1"
