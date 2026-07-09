@@ -90,18 +90,32 @@ export async function provisionWorkspaceForUser(
   try {
     await controlPlane.recordGrant(user.id, workspace.id);
   } catch (error) {
-    if (!isUniqueConstraintError(error)) {
+    if (!isOwnerGrantConflict(error)) {
       throw error;
     }
     // Lost the first-login race (#733): a concurrent provision already owns a
     // grant for this user (grants_one_owner_per_user). Clean up our orphan
-    // and hand back the winner's workspace so both logins converge.
+    // and hand back the winner's workspace so both logins converge. Each
+    // cleanup is independently best-effort: a dangling workspace row is the
+    // pre-#733 failure mode the admin surface tolerates (#697), and a
+    // lingering database only costs until an operator acts on the warning.
     try {
       await controlPlane.deleteWorkspace(workspace.id);
-      await turso.deleteDatabase?.(name);
-    } catch {
-      // Best-effort: a dangling workspace row / database is the pre-#733
-      // failure mode and the admin surface tolerates it (#697).
+    } catch (cleanupError) {
+      console.warn(
+        `provisioner: could not delete orphan workspace row ${workspace.id} after losing the first-login race`,
+        cleanupError,
+      );
+    }
+    if (turso.deleteDatabase) {
+      try {
+        await turso.deleteDatabase(name);
+      } catch (cleanupError) {
+        console.warn(
+          `provisioner: could not delete orphan database ${name} after losing the first-login race`,
+          cleanupError,
+        );
+      }
     }
     const [winner] = await controlPlane.listWorkspacesForUser(user.id);
     if (!winner) {
@@ -112,12 +126,15 @@ export async function provisionWorkspaceForUser(
   return workspace;
 }
 
-function isUniqueConstraintError(error: unknown): boolean {
+/**
+ * Only the grants_one_owner_per_user violation counts as "lost the race" —
+ * the message text is the most transport-stable signal (the local driver and
+ * remote hrana both embed SQLite's "UNIQUE constraint failed: grants.user_id").
+ * Anything else (FK violations, other tables) must propagate, not trigger
+ * cleanup of a legitimately created workspace.
+ */
+function isOwnerGrantConflict(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
-  const code = (error as { code?: unknown }).code;
-  return (
-    (typeof code === "string" && code.startsWith("SQLITE_CONSTRAINT")) ||
-    /UNIQUE constraint failed/i.test(error.message) ||
-    /UNIQUE constraint failed/i.test(String((error as { cause?: unknown }).cause ?? ""))
-  );
+  const text = `${error.message} ${String((error as { cause?: unknown }).cause ?? "")}`;
+  return /UNIQUE constraint failed: grants\.user_id/i.test(text);
 }

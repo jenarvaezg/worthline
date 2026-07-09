@@ -152,6 +152,17 @@ CREATE TABLE IF NOT EXISTS grants (
   FOREIGN KEY (user_id) REFERENCES users(id),
   FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
 );
+-- Self-healing for pre-#733 duplicates: demote every owner grant that has an
+-- older sibling for the same user (rowid breaks created_at ties), so the
+-- unique index below can always be created on an existing database. Matches
+-- prior behavior — later logins already picked the oldest grant.
+UPDATE grants SET role = 'orphaned-owner'
+WHERE role = 'owner' AND EXISTS (
+  SELECT 1 FROM grants older
+  WHERE older.user_id = grants.user_id AND older.role = 'owner'
+    AND (older.created_at < grants.created_at
+      OR (older.created_at = grants.created_at AND older.rowid < grants.rowid))
+);
 -- One owned workspace per user (#733): the database-level arbiter for the
 -- provisioner's check-then-create race. Partial so a future sharing flow can
 -- still grant the same user other workspaces under non-owner roles.
