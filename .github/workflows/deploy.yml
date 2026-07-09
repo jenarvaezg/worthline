@@ -1,11 +1,16 @@
-name: Deploy (Vercel prebuilt, Node 26)
+name: Deploy (Vercel prebuilt, Node 24)
 
 # Why prebuilt: Vercel's native build sandbox still cannot complete the Next 16
 # production build. A real non-prebuilt preview deploy on 2026-06-25, after the
 # libSQL/Turso migration removed better-sqlite3, reached "Compiled successfully"
 # and then exited 1 immediately after "Skipping validation of types" with no
 # actionable diagnostic. We therefore build the prebuilt output on a clean Node
-# 26 runner and ship it with `vercel deploy --prebuilt`.
+# 24 runner and ship it with `vercel deploy --prebuilt`.
+#
+# Node 24 (not 26): Vercel's supported runtimes top out at 24.x today — see
+# https://vercel.com/docs/functions/runtimes/node-js/node-js-versions
+# CI and local dev stay on Node 26 via `.node-version`; `engines.node` is 24.x
+# so `vercel build` picks a supported production runtime.
 
 on:
   push:
@@ -35,15 +40,15 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: "26"
+          node-version: "24"
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Token-free viability check. Confirms the production build works on Node 26
+      # Token-free viability check. Confirms the production build works on Node 24
       # / x64 linux. Runs only when we can't deploy yet; once VERCEL_TOKEN is set,
       # `vercel build` below covers it.
-      - name: Verify production build on Node 26
+      - name: Verify production build on Node 24
         if: env.HAVE_TOKEN != 'true'
         run: bun run --filter @worthline/web build
 
@@ -51,7 +56,7 @@ jobs:
         if: env.HAVE_TOKEN == 'true'
         run: bunx vercel pull --yes --environment=production --token="${{ secrets.VERCEL_TOKEN }}"
 
-      - name: Build prebuilt output on Node 26
+      - name: Build prebuilt output on Node 24
         if: env.HAVE_TOKEN == 'true'
         run: bunx vercel build --prod --token="${{ secrets.VERCEL_TOKEN }}"
 

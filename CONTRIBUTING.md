@@ -16,7 +16,8 @@ outbound). Don't paste code you don't have the right to relicense under AGPL.
 
 ## Prerequisites
 
-- **Node.js 26** (see `.node-version` for local/CI; `engines.node` is `26.x` for Vercel)
+- **Node.js 26** for local dev and CI (see `.node-version`)
+- **Node.js 24.x** in `engines.node` — Vercel's supported runtime cap; deploy builds on Node 24
 - **Bun** 1.3+ (the repo pins a version via `packageManager`)
 
 ## Getting started
