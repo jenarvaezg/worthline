@@ -146,14 +146,33 @@ export function parseGroupParam(value: string | string[] | undefined): Portfolio
     : "direction";
 }
 
-/** Set or replace a query param on a (possibly relative) URL string. */
+export function isLocalRedirectPath(value: string): boolean {
+  return value.startsWith("/") && !value.startsWith("//") && !value.includes("\\");
+}
+
+export function localRedirectPath(
+  value: string | null | undefined,
+  fallback = "/",
+): string {
+  const raw = String(value ?? "").trim();
+
+  return isLocalRedirectPath(raw) ? raw : fallback;
+}
+
+/** Set or replace a query param on a local URL string. */
 export function appendParam(url: string, key: string, value: string): string {
-  const [path, query = ""] = url.split("?");
+  const safeUrl = localRedirectPath(url);
+  const hashIndex = safeUrl.indexOf("#");
+  const beforeHash = hashIndex === -1 ? safeUrl : safeUrl.slice(0, hashIndex);
+  const hash = hashIndex === -1 ? "" : safeUrl.slice(hashIndex);
+  const [path, query = ""] = beforeHash.split("?");
   const params = new URLSearchParams(query);
   params.set(key, value);
   const qs = params.toString();
 
-  return qs ? `${path ?? "/"}?${qs}` : (path ?? "/");
+  const next = qs ? `${path ?? "/"}?${qs}` : (path ?? "/");
+
+  return `${next}${hash}`;
 }
 
 /** One-shot post-redirect feedback params — never carried forward in currentUrl. */

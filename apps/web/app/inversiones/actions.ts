@@ -1,7 +1,11 @@
 "use server";
 
 import { type WorthlineStore } from "@web/store";
-import { runActionWithStore } from "@web/action-store";
+import {
+  runActionWithStore,
+  testArgFromActionArgs,
+  testStoreFromActionArgs,
+} from "@web/action-store";
 import {
   EXPOSURE_GEOGRAPHY_BUCKETS,
   createInvestmentOperationSafe,
@@ -83,6 +87,20 @@ function currentUrlOf(formData: FormData, fallback = "/patrimonio"): string {
   return (formData.get("currentUrl") as string) || fallback;
 }
 
+function isClock(value: unknown): value is Clock {
+  return (
+    typeof value === "object" && value !== null && "now" in value && "today" in value
+  );
+}
+
+function isPriceProvider(value: unknown): value is PriceProvider {
+  return typeof value === "object" && value !== null && "fetchPrice" in value;
+}
+
+function isHistoricalPriceSource(value: unknown): value is HistoricalPriceSource {
+  return typeof value === "object" && value !== null && "fetchSeriesEur" in value;
+}
+
 const DIRECTION_AMBIGUITY_ACK_FIELD = "confirmNoSalesOrRedemptions";
 const DIRECTION_AMBIGUITY_MESSAGE =
   "Este archivo no distingue compras de ventas. Exporta el archivo COMPLETO de órdenes (con la columna «Tipo de operación»).";
@@ -139,9 +157,10 @@ function providerLabel(provider: InvestmentPriceProvider): string {
 export async function recordOperationAction(
   routeAssetId: string,
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ) {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const operationErrorUrl = (message: string) =>
@@ -257,8 +276,9 @@ export async function previewStatementAction(
   routeAssetId: string,
   _prev: StatementPreviewState,
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<StatementPreviewState> {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const read = await readStatementFromForm(formData);
   if (!read.ok) {
@@ -308,9 +328,10 @@ export async function previewStatementAction(
 export async function confirmStatementAction(
   routeAssetId: string,
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ) {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const statementErrorUrl = (message: string) =>
@@ -406,9 +427,10 @@ export async function confirmStatementAction(
 export async function updateInvestmentAction(
   routeAssetId: string,
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ) {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const editErrorUrl = (message: string) =>
@@ -463,8 +485,9 @@ export async function updateInvestmentAction(
 export async function deleteOperationAction(
   routeAssetId: string,
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ) {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const operationId = parseEntityId(formData, "operationId");
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
@@ -563,10 +586,13 @@ export async function previewPriceBackfillAction(
   routeAssetId: string,
   _prev: PriceBackfillPreviewState,
   formData: FormData,
-  _store?: WorthlineStore,
-  _source: HistoricalPriceSource = coingeckoHistoricalSource,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<PriceBackfillPreviewState> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _source =
+    testArgFromActionArgs(_testArgs, isHistoricalPriceSource) ??
+    coingeckoHistoricalSource;
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const today = _clock.today();
 
@@ -614,10 +640,13 @@ export async function previewPriceBackfillAction(
 export async function confirmPriceBackfillAction(
   routeAssetId: string,
   formData: FormData,
-  _store?: WorthlineStore,
-  _source: HistoricalPriceSource = coingeckoHistoricalSource,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ) {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _source =
+    testArgFromActionArgs(_testArgs, isHistoricalPriceSource) ??
+    coingeckoHistoricalSource;
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const today = _clock.today();
@@ -669,8 +698,9 @@ export async function confirmPriceBackfillAction(
 export async function saveExposureProfileAction(
   routeAssetId: string,
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ) {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   // A distinct formId so the error renders AT the exposure section, not on the
@@ -765,8 +795,9 @@ function parsePayoutScheduleFieldsFromForm(formData: FormData): PayoutScheduleFi
 export async function createPayoutAction(
   routeAssetId: string,
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ) {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
 
@@ -785,8 +816,9 @@ export async function createPayoutAction(
 export async function deletePayoutAction(
   routeAssetId: string,
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ) {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const payoutId = parseEntityId(formData, "payoutId");
@@ -802,8 +834,9 @@ export async function deletePayoutAction(
 export async function createPayoutScheduleAction(
   routeAssetId: string,
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ) {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
 
@@ -829,8 +862,9 @@ export async function createPayoutScheduleAction(
 export async function updatePayoutScheduleAction(
   routeAssetId: string,
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ) {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const scheduleId = parseEntityId(formData, "scheduleId");
@@ -869,8 +903,9 @@ export async function updatePayoutScheduleAction(
 export async function deletePayoutScheduleAction(
   routeAssetId: string,
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ) {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const scheduleId = parseEntityId(formData, "scheduleId");
@@ -886,12 +921,10 @@ export async function deletePayoutScheduleAction(
   redirect(successRedirectUrl(returnUrl, "payout_schedule_deleted"));
 }
 
-export async function refreshPricesAction(
-  formData: FormData,
-  _store?: WorthlineStore,
-  _provider?: PriceProvider,
-  _clock: Clock = systemClock(),
-) {
+export async function refreshPricesAction(formData: FormData, ..._testArgs: unknown[]) {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _provider = testArgFromActionArgs(_testArgs, isPriceProvider);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(currentUrlOf(formData, "/patrimonio"));
   const returnUrl = currentUrlOf(formData, "/patrimonio");
   const nowIso = _clock.now();

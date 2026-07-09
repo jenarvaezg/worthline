@@ -1,6 +1,5 @@
 "use server";
 
-import { type WorthlineStore } from "@worthline/db";
 import type { CoinPosition } from "@worthline/domain";
 import {
   fetchMetalSpotEur,
@@ -14,10 +13,16 @@ import {
 } from "@worthline/pricing";
 import { redirect } from "next/navigation";
 
-import { runActionWithStore } from "@web/action-store";
+import { runActionWithStore, testStoreFromActionArgs } from "@web/action-store";
 import { appendParam, errorRedirectUrl, parseEntityId } from "@web/intake";
 import { guardDemoWrite } from "@web/demo/write-guard";
-import { currentUrlOf, scopeMemberId } from "./connected-source-helpers";
+import {
+  CONNECTED_SOURCE_PERSISTENCE_ERROR_MESSAGE,
+  connectedSourceProviderErrorMessage,
+  currentUrlOf,
+  scopeMemberId,
+} from "./connected-source-helpers";
+import { enforceConnectedSourceSyncThrottle } from "./connected-source-sync-throttle-guard";
 import {
   normalizeApiKey,
   parseNumistaToken,
@@ -39,8 +44,9 @@ const NUMISTA_LABEL = "Colección Numista";
 
 export async function connectNumistaAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite("/ajustes");
   const returnUrl = currentUrlOf(formData);
   const apiKey = normalizeApiKey(formData.get("apiKey"));
@@ -101,8 +107,9 @@ export async function connectNumistaAction(
 
 export async function syncNumistaAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   const returnUrl = currentUrlOf(formData);
   await guardDemoWrite(returnUrl);
   const sourceId = parseEntityId(formData, "sourceId");
@@ -144,19 +151,38 @@ export async function syncNumistaAction(
   const nowMs = now.getTime();
   const nowIso = now.toISOString();
 
-  try {
-    let token = parseNumistaToken(source.tokenJson);
+  await enforceConnectedSourceSyncThrottle(returnUrl);
 
-    if (!token || !isTokenValid(token, nowMs)) {
+  let token = parseNumistaToken(source.tokenJson);
+
+  if (!token || !isTokenValid(token, nowMs)) {
+    try {
       token = await mintNumistaToken(creds, nowMs);
+    } catch {
+      redirect(
+        errorRedirectUrl(returnUrl, {
+          message: connectedSourceProviderErrorMessage("Numista"),
+        }),
+      );
+    }
+
+    try {
       await runActionWithStore(
         (store) => store.connectedSources.saveToken(sourceId, JSON.stringify(token)),
         _store,
       );
+    } catch {
+      redirect(
+        errorRedirectUrl(returnUrl, {
+          message: CONNECTED_SOURCE_PERSISTENCE_ERROR_MESSAGE,
+        }),
+      );
     }
+  }
 
-    const bound = token;
-    const existingCoins = (
+  let existingCoins;
+  try {
+    existingCoins = (
       await runActionWithStore(
         (store) => store.connectedSources.readPositions(sourceId),
         _store,
@@ -176,8 +202,26 @@ export async function syncNumistaAction(
         numismaticValueMinor: coin.numismaticValueMinor,
         numismaticFetchedAt: coin.numismaticFetchedAt,
       }));
+  } catch {
+    redirect(
+      errorRedirectUrl(returnUrl, {
+        message: CONNECTED_SOURCE_PERSISTENCE_ERROR_MESSAGE,
+      }),
+    );
+  }
 
-    const drafts = await syncNumistaCollection(
+  let drafts;
+  try {
+    if (!token || !isTokenValid(token, nowMs)) {
+      redirect(
+        errorRedirectUrl(returnUrl, {
+          message: connectedSourceProviderErrorMessage("Numista"),
+        }),
+      );
+    }
+    const bound = token;
+
+    drafts = await syncNumistaCollection(
       {
         listItems: () => getCollectedItems(creds, bound.accessToken, bound.userId),
         typeDetail: (typeId) => getTypeDetail(creds, typeId),
@@ -190,7 +234,15 @@ export async function syncNumistaAction(
       nowIso,
       existingCoins,
     );
+  } catch {
+    redirect(
+      errorRedirectUrl(returnUrl, {
+        message: connectedSourceProviderErrorMessage("Numista"),
+      }),
+    );
+  }
 
+  try {
     await runActionWithStore(
       (store) =>
         store.syncConnectedSource({ positions: drafts, sourceId, syncedAt: nowIso }),
@@ -199,8 +251,7 @@ export async function syncNumistaAction(
   } catch {
     redirect(
       errorRedirectUrl(returnUrl, {
-        message:
-          "No se pudo sincronizar con Numista. Revisa la clave de API y la conexión.",
+        message: CONNECTED_SOURCE_PERSISTENCE_ERROR_MESSAGE,
       }),
     );
   }
@@ -210,8 +261,9 @@ export async function syncNumistaAction(
 
 export async function disconnectNumistaAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   const returnUrl = currentUrlOf(formData);
   await guardDemoWrite(returnUrl);
   const sourceId = parseEntityId(formData, "sourceId");

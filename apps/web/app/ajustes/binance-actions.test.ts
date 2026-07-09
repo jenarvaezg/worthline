@@ -500,4 +500,62 @@ describe("syncBinanceAction", () => {
     expect(digest).toContain("error=");
     expect(await store.connectedSources.readPositions(sourceId)).toHaveLength(1);
   });
+
+  test("a persistence failure is not reported as a Binance credential error", async () => {
+    const store = await createInMemoryStore();
+    const { sourceId } = await seedWithSource(store);
+    const failingStore = new Proxy(store, {
+      get(target, prop, receiver) {
+        if (prop === "syncConnectedSource") {
+          return async () => {
+            throw new Error("database unavailable");
+          };
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+
+    const fetchStub = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("/api/v3/account")) {
+        return {
+          ok: true,
+          json: async () => ({ balances: [{ asset: "BTC", free: "0.5", locked: "0" }] }),
+        } as unknown as Response;
+      }
+      if (url.includes("/sapi/v1/asset/get-funding-asset")) {
+        return { ok: true, json: async () => [] } as unknown as Response;
+      }
+      if (url.includes("/sapi/v1/simple-earn/flexible/position")) {
+        return {
+          ok: true,
+          json: async () => ({ rows: [], total: 0 }),
+        } as unknown as Response;
+      }
+      if (url.includes("/sapi/v1/simple-earn/locked/position")) {
+        return {
+          ok: true,
+          json: async () => ({ rows: [], total: 0 }),
+        } as unknown as Response;
+      }
+      if (url.includes("api.coingecko.com")) {
+        return {
+          ok: true,
+          json: async () => ({ bitcoin: { eur: 50_000 } }),
+        } as unknown as Response;
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchStub);
+
+    const digest = await runAction(
+      syncBinanceAction,
+      form({ currentUrl: "/ajustes", sourceId }),
+      failingStore,
+    );
+    const decoded = decodeURIComponent(digest.replace(/\+/g, " "));
+
+    expect(decoded).toContain("No se pudo guardar");
+    expect(decoded).not.toContain("clave de API");
+  });
 });
