@@ -83,16 +83,17 @@ jobs:
 
       # Playwright serves the production build in CI (next start), so build the
       # web app once here. Child jobs restore this artifact instead of rebuilding.
-      # Turbo task so this job can reuse @worthline/web#build from the quality job via
-      # Vercel Remote Cache (same cache key as `turbo run build` in quality).
+      # Run Next directly — a Turbo remote-cache hit can skip writing `.next` to
+      # disk, which leaves the upload step with nothing to publish.
       - name: Build web app
-        run: bunx turbo run build --filter=@worthline/web
+        run: bun run --filter @worthline/web build
 
       - name: Upload web build
         uses: actions/upload-artifact@v7
         with:
           name: e2e-web-build
           path: apps/web/.next
+          include-hidden-files: true
           retention-days: 1
 
   e2e-main:
