@@ -21,6 +21,28 @@ env:
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
 
 jobs:
+  # Detect docs-only PRs so heavy jobs can skip. Safe to omit from full CI:
+  #   docs/**  — ADRs, agent docs, design system, interaction patterns, …
+  #   *.md     — root markdown only (README, CONTEXT, AGENTS, CLAUDE, …)
+  # Any other path (including .github/workflows, packages/, apps/, tests/) runs
+  # the full graph. Mixed docs+code PRs always match `code` and run everything.
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**'
+              - '!docs/**'
+              - '!*.md'
+
   fast-checks:
     name: Fast checks (typecheck · lint · globs)
     runs-on: ubuntu-latest
@@ -65,6 +87,8 @@ jobs:
 
   unit-tests:
     name: Unit tests (coverage)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -93,6 +117,8 @@ jobs:
 
   build:
     name: Build
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -121,6 +147,8 @@ jobs:
 
   e2e-setup:
     name: E2E setup
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     env:
       # Auth.js boots in proxy.ts on every request; edge middleware inlines
