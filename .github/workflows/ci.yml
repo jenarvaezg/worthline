@@ -16,8 +16,8 @@ concurrency:
 env:
   NODE_VERSION: "26"
   BUN_VERSION: "1.3.14"
-  # Vercel Remote Cache (free on Hobby). Without these, Turbo falls back to local cache only.
-  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  # Vercel Remote Cache — same token as deploy; team slug from `vercel teams ls`.
+  TURBO_TOKEN: ${{ secrets.VERCEL_TOKEN }}
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
 
 jobs:

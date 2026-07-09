@@ -7,16 +7,16 @@ CI and deploy share Turborepo task outputs via [Vercel Remote Cache](https://tur
 
 ## One-time GitHub setup
 
-1. **Create a Vercel token**  
-   [Vercel → Account/Team Settings → Tokens](https://vercel.com/account/tokens)  
-   Scope: access to the team that owns the worthline project.
+1. **`VERCEL_TOKEN`** (already configured for deploy) — Turbo reuses this secret; no separate `TURBO_TOKEN` needed.
 
-2. **Repository secret** `TURBO_TOKEN`  
-   GitHub → `jenarvaezg/worthline` → Settings → Secrets and variables → Actions → New repository secret.
+2. **Repository variable** `TURBO_TEAM`  
+   GitHub → Settings → Secrets and variables → Actions → Variables.  
+   Value: team **slug** from `vercel teams ls` (first column), e.g. `jenarvaezgs-projects` — not `VERCEL_ORG_ID` (`team_…`).
 
-3. **Repository variable** `TURBO_TEAM`  
-   Same page → Variables → New repository variable.  
-   Value: your **team slug** from the Vercel URL (`vercel.com/<slug>/…`), not the `team_…` id. For a personal account, use your username.
+   ```bash
+   vercel teams ls
+   gh variable set TURBO_TEAM --body "<slug>" -R jenarvaezg/worthline
+   ```
 
 ## Local development (optional)
 
@@ -26,7 +26,7 @@ Share the same remote cache from your machine:
 bunx turbo login
 ```
 
-Or export the same `TURBO_TOKEN` and `TURBO_TEAM` before running `bun run build` / `verify`.
+Or export `VERCEL_TOKEN` (or `TURBO_TOKEN` with the same value) and `TURBO_TEAM` before running `bun run build` / `verify`.
 
 ## Verifying in CI
 
