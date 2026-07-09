@@ -1,7 +1,6 @@
+import type { BenchmarkComparison } from "@worthline/domain";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
-
-import type { BenchmarkComparison } from "@worthline/domain";
 
 import BenchmarkComparisonCard from "./benchmark-comparison-card";
 

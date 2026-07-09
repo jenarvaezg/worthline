@@ -9,24 +9,7 @@
  * two-step. Extracted from the monolithic editar page.
  */
 
-import type {
-  AmortizationPlanRecord,
-  BalanceAnchorRecord,
-  EarlyRepaymentRecord,
-  InterestRateRevisionRecord,
-} from "@worthline/db";
-import {
-  daysBetween,
-  firstCuota,
-  formatMoneyInput,
-  formatMoneyMinorPrivacy,
-  maskMoneyString,
-} from "@worthline/domain";
-import type { DebtModel, EarlyRepaymentMode, ValuationCadence } from "@worthline/domain";
-
 import type { FormErrorContext } from "@web/intake";
-import { CurrentStateDebtFields } from "@web/patrimonio/current-state-debt-fields";
-import { PlanDateFields } from "./plan-date-fields";
 import {
   addBalanceAnchorAction,
   addEarlyRepaymentAction,
@@ -44,6 +27,22 @@ import {
   updateEarlyRepaymentAction,
   updateInterestRateRevisionAction,
 } from "@web/patrimonio/actions";
+import { CurrentStateDebtFields } from "@web/patrimonio/current-state-debt-fields";
+import type {
+  AmortizationPlanRecord,
+  BalanceAnchorRecord,
+  EarlyRepaymentRecord,
+  InterestRateRevisionRecord,
+} from "@worthline/db";
+import type { DebtModel, EarlyRepaymentMode, ValuationCadence } from "@worthline/domain";
+import {
+  daysBetween,
+  firstCuota,
+  formatMoneyInput,
+  formatMoneyMinorPrivacy,
+  maskMoneyString,
+} from "@worthline/domain";
+import { PlanDateFields } from "./plan-date-fields";
 
 /** Render a stored decimal rate ("0.025") back as the percent the user typed ("2.5"). */
 function rateToPercent(rate: string): string {

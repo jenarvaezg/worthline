@@ -14,11 +14,11 @@
  *      scope (a small constant), independent of how many operation dates the load
  *      carries — proving one rebuild, not one-per-operation.
  */
+
+import type { WorthlineStore } from "@db/index";
+import { createStoreFromSqlite, openLibsqlClient } from "@db/index";
 import type { Client, InStatement } from "@libsql/client";
 import { describe, expect, test } from "vitest";
-
-import { createStoreFromSqlite, openLibsqlClient } from "@db/index";
-import type { WorthlineStore } from "@db/index";
 
 const TODAY = "2026-06-12";
 

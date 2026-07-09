@@ -1,14 +1,14 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  cellKey,
   COMPOSITION_MODES,
+  cellKey,
   crossOf,
   MAX_REQUESTED_CELLS,
+  type MatrixCoord,
   missingCells,
   parseCellsParam,
   parseMode,
-  type MatrixCoord,
 } from "./dashboard-matrix";
 
 /**

@@ -11,7 +11,7 @@
  * historical snapshot that appears in /historico at that date.
  */
 
-import { test, expect, addHolding, openAdvancedSettings } from "./fixtures";
+import { addHolding, expect, openAdvancedSettings, test } from "./fixtures";
 
 /** Today as YYYY-MM-DD — the native `max` the future-date guards advertise. */
 const today = new Date().toISOString().slice(0, 10);

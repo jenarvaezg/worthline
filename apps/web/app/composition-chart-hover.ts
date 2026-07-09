@@ -5,11 +5,11 @@
  * environment while the client component holds only the thin mouse wiring.
  */
 
-import { LIQUIDITY_TIER_LABELS } from "@worthline/domain";
 import type {
   CompositionAssetBandId,
   CompositionPeriodGeometry,
 } from "@worthline/domain";
+import { LIQUIDITY_TIER_LABELS } from "@worthline/domain";
 
 export const COMPOSITION_BAND_LABELS: Record<CompositionAssetBandId, string> =
   LIQUIDITY_TIER_LABELS;

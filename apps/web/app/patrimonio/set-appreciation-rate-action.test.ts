@@ -12,8 +12,9 @@
  * recomputes. The negative case asserts a snapshot pinned by an interpolating
  * appraisal segment is left untouched (the rate does not value it).
  */
-import { createInMemoryStore } from "@worthline/db";
+
 import type { WorthlineStore } from "@worthline/db";
+import { createInMemoryStore } from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
 import { setAppreciationRateAction } from "./actions";

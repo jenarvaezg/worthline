@@ -1,6 +1,5 @@
-import { describe, expect, test } from "vitest";
-
 import type { ExposureDimensionResult, ExposureLookthrough } from "@worthline/domain";
+import { describe, expect, test } from "vitest";
 
 import {
   assetClassLabel,

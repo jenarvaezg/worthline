@@ -1,7 +1,6 @@
-import { redirect } from "next/navigation";
-
 import { errorRedirectUrl } from "@web/intake";
 import { readSessionEmail, readStoreTarget } from "@web/read-store-target";
+import { redirect } from "next/navigation";
 
 import {
   connectedSourceSyncPlan,

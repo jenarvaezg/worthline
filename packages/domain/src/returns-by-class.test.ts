@@ -4,7 +4,7 @@ import type { AssetClassResolution } from "./exposure-lookthrough";
 import type { InvestmentOperation, OperationKind } from "./investment-types";
 import type { MonthlyCloseValue } from "./returns";
 import { portfolioIrr, portfolioSimpleGain } from "./returns";
-import { UNCLASSIFIED_ASSET_CLASS_KEY, returnsByAssetClass } from "./returns-by-class";
+import { returnsByAssetClass, UNCLASSIFIED_ASSET_CLASS_KEY } from "./returns-by-class";
 
 function op(
   kind: OperationKind,

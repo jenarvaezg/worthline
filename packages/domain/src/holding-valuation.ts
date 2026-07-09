@@ -16,18 +16,18 @@ import type {
   EarlyRepayment,
   InterestRateRevision,
 } from "./amortization";
-import { debtBalanceAtDate } from "./debt-balance";
 import type { DebtBalanceAnchor } from "./debt-balance";
-import { compareUnits } from "./decimal";
+import { debtBalanceAtDate } from "./debt-balance";
 import type { DecimalString } from "./decimal";
-import { valueHousingAtDate } from "./housing-valuation";
+import { compareUnits } from "./decimal";
 import type { HousingValuationAnchor } from "./housing-valuation";
+import { valueHousingAtDate } from "./housing-valuation";
 import type { InvestmentOperation } from "./investment-types";
 import type { CurrencyCode } from "./money";
 import { derivePosition, latestOperationPrice, operationsUpTo } from "./positions";
 import type { ValuationCadence } from "./valuation-cadence";
-import { lastKnownValueAtDate } from "./value-history";
 import type { ManualValuePoint } from "./value-history";
+import { lastKnownValueAtDate } from "./value-history";
 import type { AssetType, DebtModel } from "./workspace-types";
 
 /** How a holding's value/balance is computed (ADR 0014). */

@@ -1,16 +1,15 @@
 import { describe, expect, test } from "vitest";
-
+import type { FireScopeConfig } from "./index";
 import {
   createManualAsset,
   createWorkspace,
+  goalFireDelay,
   goalFundedRatioBps,
   goalReservedMinor,
-  goalFireDelay,
   largestRemainderPercentages,
   prepareDashboardState,
   prepareObjetivosState,
 } from "./index";
-import type { FireScopeConfig } from "./index";
 
 const workspace = createWorkspace({
   members: [{ id: "member_jose", name: "Jose" }],

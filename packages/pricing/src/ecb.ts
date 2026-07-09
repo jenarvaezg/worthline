@@ -1,5 +1,5 @@
-import type { PriceProvider } from "./index";
 import { fetchHttpWithRetry } from "./fetch-with-retry";
+import type { PriceProvider } from "./index";
 
 export const ecbProvider: PriceProvider = {
   name: "ecb",

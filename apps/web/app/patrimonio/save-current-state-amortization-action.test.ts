@@ -9,9 +9,10 @@
  * declared balance, and that the fact set is exactly the `startsAtBaseline`
  * re-baseline + plan pair the domain composition test proves equivalent to.
  */
-import { createInMemoryStore } from "@worthline/db";
+
 import type { WorthlineStore } from "@worthline/db";
-import { calculateNetWorth, fixedClock, type Clock } from "@worthline/domain";
+import { createInMemoryStore } from "@worthline/db";
+import { type Clock, calculateNetWorth, fixedClock } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import { saveCurrentStateAmortizationAction } from "./actions";

@@ -13,11 +13,11 @@
  * memoizes one seeded store per request, so the seed cost is paid once per page
  * load however many times the store is opened.
  */
-import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
 
 import type { PersonaId } from "@web/demo/persona";
 import { seedPersona } from "@web/demo/seed-persona";
 import { specForPersona } from "@web/demo/specs";
+import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
 
 /**
  * Create a fresh in-memory store seeded with `persona`'s workspace, with its

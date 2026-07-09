@@ -1,79 +1,68 @@
-import type { FireScopeConfig } from "@worthline/domain";
 import type { Client } from "@libsql/client";
+import type { FireScopeConfig } from "@worthline/domain";
 import { and, asc, eq, isNotNull } from "drizzle-orm";
-
-import { openLibsqlClient } from "./libsql-client";
-
-import { appSettings, assets, auditLog, liabilities, warningOverrides } from "./schema";
-import { createAssetStore } from "./asset-store";
 import { createAgentViewReadStore } from "./agent-view-read-store";
-import { createConnectedSourceStore } from "./connected-source-store";
-import { migrate, type MigrateResult } from "./migrate";
+import { createAssetStore } from "./asset-store";
 import { createConnectedSourceSeams } from "./connected-source-seams";
-import {
-  createSnapshotOrchestrator,
-  gapFillHistoricalSnapshots,
-} from "./snapshot-orchestrator";
-import { applyPostMigrateReripples, createDatedFactSeams } from "./dated-fact-seams";
+import { createConnectedSourceStore } from "./connected-source-store";
 import {
   migrateTarget,
   openDatabaseTarget,
   resolveDatabaseTarget,
 } from "./database-target";
+import { applyPostMigrateReripples, createDatedFactSeams } from "./dated-fact-seams";
+import { openLibsqlClient } from "./libsql-client";
+import { type MigrateResult, migrate } from "./migrate";
+import { appSettings, assets, auditLog, liabilities, warningOverrides } from "./schema";
+import {
+  createSnapshotOrchestrator,
+  gapFillHistoricalSnapshots,
+} from "./snapshot-orchestrator";
 
-export { SCHEMA_VERSION } from "./migrate";
-export { openLibsqlClient } from "./libsql-client";
+export { captureDailySnapshotForWorkspace } from "./capture-daily-snapshot";
 export {
-  ENCRYPTION_KEY_ENV,
-  makeSecretCrypto,
-  openSecret,
-  sealSecret,
-  type SecretCrypto,
-} from "./crypto";
-export {
-  fingerprintExport,
-  syncPull,
-  syncPush,
-  SyncStaleError,
-  type PullResult,
-  type PushResult,
-  type SyncDeps,
-} from "./sync-engine";
-export {
-  createControlPlaneStore,
-  createInMemoryControlPlaneStore,
+  type BenchmarkPrice,
+  type ControlPlaneGrant,
   type ControlPlaneStore,
   type ControlPlaneStoreOptions,
   type ControlPlaneUser,
   type ControlPlaneWorkspace,
   type ControlPlaneWorkspaceWithOwner,
-  type ControlPlaneGrant,
-  type BenchmarkPrice,
+  createControlPlaneStore,
+  createInMemoryControlPlaneStore,
 } from "./control-plane";
 export {
-  provisionWorkspaceForUser,
-  type TursoPort,
-  type ProvisionDeps,
-} from "./provisioner";
+  ENCRYPTION_KEY_ENV,
+  makeSecretCrypto,
+  openSecret,
+  type SecretCrypto,
+  sealSecret,
+} from "./crypto";
 export {
-  runBootstrapHealthcheck,
   resolveDatabasePath,
   resolveDatabaseTarget,
   resolveDataDir,
+  runBootstrapHealthcheck,
 } from "./database-target";
-export { captureDailySnapshotForWorkspace } from "./capture-daily-snapshot";
-export { runDailyCapture } from "./run-daily-capture";
+export { openLibsqlClient } from "./libsql-client";
+export { SCHEMA_VERSION } from "./migrate";
+export {
+  type ProvisionDeps,
+  provisionWorkspaceForUser,
+  type TursoPort,
+} from "./provisioner";
 export type {
-  DailyCaptureFailure,
   DailyCaptureBenchmarkFailure,
   DailyCaptureBenchmarkPrice,
   DailyCaptureBenchmarkSeries,
+  DailyCaptureFailure,
   DailyCaptureFetchedPrice,
   DailyCapturePricePair,
   DailyCaptureWorkspace,
   RunDailyCaptureDeps,
   RunDailyCaptureResult,
 } from "./run-daily-capture";
+export { runDailyCapture } from "./run-daily-capture";
 export type {
   AuditLogEntry,
   BootstrapHealthcheckOptions,
@@ -83,20 +72,37 @@ export type {
   WorthlineStore,
   WorthlineStoreOptions,
 } from "./store-types";
-import { createLiabilityStore } from "./liability-store";
-import { createGoalStore } from "./goal-store";
+export {
+  fingerprintExport,
+  type PullResult,
+  type PushResult,
+  type SyncDeps,
+  SyncStaleError,
+  syncPull,
+  syncPush,
+} from "./sync-engine";
+
 import { createExposureProfileStore } from "./exposure-profile-store";
-import { createPayoutStore } from "./payout-store";
+import { createGoalStore } from "./goal-store";
+import { createLiabilityStore } from "./liability-store";
 import { createOperationsStore } from "./operations-store";
+import { createPayoutStore } from "./payout-store";
 import { createSnapshotStore } from "./snapshot-store";
 import {
   createStoreContext,
   hardDeleteAssetTx,
   hardDeleteLiabilityTx,
 } from "./store-context";
-import { createWorkspaceStore, readWorkspace } from "./workspace-store";
 import type { WorthlineStore, WorthlineStoreOptions } from "./store-types";
+import { createWorkspaceStore, readWorkspace } from "./workspace-store";
 
+export type {
+  AgentViewConnectedSource,
+  AgentViewPriceFreshness,
+  AgentViewReadStore,
+  AgentViewSourceFreshness,
+  AgentViewTrashedHolding,
+} from "./agent-view-read-store";
 export type {
   AddValuationAnchorInput,
   AssetStore,
@@ -108,6 +114,14 @@ export type {
   UpdateValuationAnchorInput,
   ValuationAnchorRecord,
 } from "./asset-store";
+export type {
+  ConnectedSourceRow,
+  ConnectedSourceStore,
+  ConnectSourceInput,
+  PositionValuationUpdate,
+  SourcePositionInput,
+  ValuationFreshness,
+} from "./connected-source-store";
 export type {
   AddBalanceAnchorInput,
   AddBalanceRebaselineInput,
@@ -127,21 +141,6 @@ export type {
   UpdateInterestRateRevisionInput,
   UpdateLiabilityInput,
 } from "./liability-store";
-export type {
-  AgentViewConnectedSource,
-  AgentViewPriceFreshness,
-  AgentViewReadStore,
-  AgentViewSourceFreshness,
-  AgentViewTrashedHolding,
-} from "./agent-view-read-store";
-export type {
-  ConnectSourceInput,
-  ConnectedSourceRow,
-  ConnectedSourceStore,
-  PositionValuationUpdate,
-  SourcePositionInput,
-  ValuationFreshness,
-} from "./connected-source-store";
 export type {
   OperationsStore,
   UpdateInvestmentOperationInput,

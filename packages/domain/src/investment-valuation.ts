@@ -1,7 +1,7 @@
 import type { DecimalString } from "./decimal";
 import type { InvestmentOperation } from "./investment-types";
-import type { ManualAsset } from "./workspace-types";
 import { derivePosition } from "./positions";
+import type { ManualAsset } from "./workspace-types";
 
 /**
  * Guard: throws a domain error if `asset` is of type "investment".

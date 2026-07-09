@@ -1,13 +1,12 @@
-import type { Metadata, Viewport } from "next";
-import localFont from "next/font/local";
-import { Suspense } from "react";
-
+import ServiceWorkerRegister from "@web/_components/sw-register";
 import ImpersonationBanner from "@web/admin/impersonation-banner";
 import AssistantMount from "@web/asistente/assistant-mount";
 import DemoBanner from "@web/demo/demo-banner";
 import { isDemoMode, isImpersonating } from "@web/demo/write-guard";
 import FormSubmitScrollKeeper from "@web/form-submit-scroll-keeper";
-import ServiceWorkerRegister from "@web/_components/sw-register";
+import type { Metadata, Viewport } from "next";
+import localFont from "next/font/local";
+import { Suspense } from "react";
 
 import "./globals.css";
 

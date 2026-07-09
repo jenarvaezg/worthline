@@ -1,6 +1,5 @@
-import type { DecimalString } from "@worthline/domain";
+import type { DecimalString, Member, OwnershipShare } from "@worthline/domain";
 import { parseDecimalStrict, parseDecimalToMinorStrict } from "@worthline/domain";
-import type { Member, OwnershipShare } from "@worthline/domain";
 
 /**
  * The intake field-validator primitives: the small, shared building blocks every

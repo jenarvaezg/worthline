@@ -7,7 +7,7 @@
  * standalone /inversiones section; investments now live in /patrimonio.)
  */
 
-import { test, expect } from "./fixtures";
+import { expect, test } from "./fixtures";
 
 function parseEuroMinor(text: string | null): number {
   expect(text).toBeTruthy();

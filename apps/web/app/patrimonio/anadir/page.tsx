@@ -1,35 +1,38 @@
-import { bootstrapHealthcheck, withStore } from "@web/store";
-import { calculateNetWorth, defaultsFor, listScopeOptions } from "@worthline/domain";
-import { formatMoneyMinorPrivacy } from "@worthline/domain";
-import type { Instrument, Member } from "@worthline/domain";
-import { fetchPriceNow } from "@worthline/pricing";
-import type { RegisteredSource } from "@worthline/pricing";
-import type { CSSProperties, ReactNode } from "react";
-import { cookies } from "next/headers";
-import Link from "next/link";
-import { redirect } from "next/navigation";
-
 import {
+  PRIVACY_COOKIE_NAME,
   parseFormError,
   parsePrivacyCookie,
   parseScopeCookie,
-  PRIVACY_COOKIE_NAME,
   resolveOkMessage,
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
-import { createHoldingAction } from "@web/patrimonio/create-holding-action";
-import { CurrentStateDebtFields } from "@web/patrimonio/current-state-debt-fields";
-import { PendingSubmit } from "@web/pending-submit";
-import Shell from "@web/shell";
+import { InvestmentCapture } from "@web/patrimonio/anadir/investment-capture";
 import {
   addHoldingFieldValue,
   buildSymbolSearchCurrentParams,
   firstNonEmptyParam,
   selectedInstrumentFromAddHoldingState,
 } from "@web/patrimonio/anadir/search-state";
-import SymbolSearch from "@web/patrimonio/anadir/symbol-search";
-import { InvestmentCapture } from "@web/patrimonio/anadir/investment-capture";
 import { AddSuccessPanel } from "@web/patrimonio/anadir/success-panel";
+import SymbolSearch from "@web/patrimonio/anadir/symbol-search";
+import { createHoldingAction } from "@web/patrimonio/create-holding-action";
+import { CurrentStateDebtFields } from "@web/patrimonio/current-state-debt-fields";
+import { PendingSubmit } from "@web/pending-submit";
+import Shell from "@web/shell";
+import { bootstrapHealthcheck, withStore } from "@web/store";
+import type { Instrument, Member } from "@worthline/domain";
+import {
+  calculateNetWorth,
+  defaultsFor,
+  formatMoneyMinorPrivacy,
+  listScopeOptions,
+} from "@worthline/domain";
+import type { RegisteredSource } from "@worthline/pricing";
+import { fetchPriceNow } from "@worthline/pricing";
+import { cookies } from "next/headers";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import type { CSSProperties, ReactNode } from "react";
 
 export const dynamic = "force-dynamic";
 

@@ -17,17 +17,16 @@
  * lists are native `<details>`, sync/disconnect are form POSTs.
  */
 
+import DisconnectNumistaFold from "@web/ajustes/disconnect-numista-fold";
+import { syncNumistaAction } from "@web/ajustes/numista-actions";
+import { formatLastSync } from "@web/ajustes/numista-helpers";
+import { PendingSubmit } from "@web/pending-submit";
+import type { CoinPosition, PriceFreshnessState } from "@worthline/domain";
 import {
   coinValue,
   formatMoneyMinorPrivacy,
   groupPositionsByMetal,
 } from "@worthline/domain";
-import type { CoinPosition, PriceFreshnessState } from "@worthline/domain";
-
-import DisconnectNumistaFold from "@web/ajustes/disconnect-numista-fold";
-import { syncNumistaAction } from "@web/ajustes/numista-actions";
-import { formatLastSync } from "@web/ajustes/numista-helpers";
-import { PendingSubmit } from "@web/pending-submit";
 import {
   basisTag,
   buildCoinCollectionView,
@@ -171,7 +170,7 @@ export function CoinCollectionSection({
                             {position.obverseThumbUrl ? (
                               // A remote Numista CDN photo, server-rendered (ADR 0009); no
                               // next/image optimizer for an external, list-scale thumb.
-                              // eslint-disable-next-line @next/next/no-img-element
+                              // biome-ignore lint/performance/noImgElement: external coin thumb URL
                               <img
                                 alt=""
                                 className="coinThumbImg"

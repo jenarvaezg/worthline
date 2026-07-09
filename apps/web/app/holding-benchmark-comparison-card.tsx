@@ -1,9 +1,8 @@
+import { formatRatioPct } from "@web/_components/returns-format";
 import type {
   HoldingBenchmarkComparisonResult,
   HoldingBenchmarkUnavailableReason,
 } from "@worthline/domain";
-
-import { formatRatioPct } from "@web/_components/returns-format";
 
 function formatPpPerYear(rate: number): string {
   const pp = rate * 100;

@@ -4,18 +4,17 @@
  * dashboard computes — and cannot write because it only ever sees the
  * read store. Seeded like seed-persona.test.ts (in-memory store, familia).
  */
-import { describe, expect, it } from "vitest";
 
-import { createInMemoryStore } from "@worthline/db";
-import { formatMoneyMinor } from "@worthline/domain";
-
-import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { buildFinancialContext } from "@web/agent-view/financial-context";
+import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { listAgentViewScopes } from "@web/agent-view/scopes";
 import { createChatTools } from "@web/asistente/chat-tools";
 import { seedPersona } from "@web/demo/seed-persona";
 import { FAMILIA_SPEC } from "@web/demo/specs/familia";
 import type { AgentViewReadStore } from "@worthline/db";
+import { createInMemoryStore } from "@worthline/db";
+import { formatMoneyMinor } from "@worthline/domain";
+import { describe, expect, it } from "vitest";
 
 const AS_OF = "2026-06-19";
 const SEED_TIMEOUT_MS = 15_000;

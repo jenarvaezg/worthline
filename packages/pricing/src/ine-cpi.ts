@@ -16,10 +16,7 @@ interface IneSeries {
 }
 
 export async function fetchSpanishCpi(
-  options: {
-    tableId?: string;
-    fetchImpl?: typeof fetch;
-  } = {},
+  options: { tableId?: string; fetchImpl?: typeof fetch } = {},
 ): Promise<BenchmarkPricePoint[]> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const tableId = options.tableId ?? INE_SPANISH_CPI_TABLE_ID;

@@ -20,12 +20,12 @@
  * The product figures the actions compute are unchanged — only HOW the earliest
  * date is read changes (the action-seam suites cover the figures end to end).
  */
+
+import type { WorthlineStore } from "@db/index";
+import { createInMemoryStore, createStoreFromSqlite, openLibsqlClient } from "@db/index";
+import { migrate } from "@db/migrate";
 import type { Client, InValue } from "@libsql/client";
 import { describe, expect, test } from "vitest";
-
-import { createInMemoryStore, createStoreFromSqlite, openLibsqlClient } from "@db/index";
-import type { WorthlineStore } from "@db/index";
-import { migrate } from "@db/migrate";
 
 const TODAY = "2026-06-12";
 

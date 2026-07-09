@@ -3,15 +3,14 @@
  * shared builder and asserts the observable read model — the features the persona
  * is meant to showcase.
  */
-import { describe, expect, it } from "vitest";
-
-import { createInMemoryStore } from "@worthline/db";
-import type { WorthlineStore } from "@worthline/db";
 
 import { seedPersona } from "@web/demo/seed-persona";
-import { JOVEN_SPEC } from "@web/demo/specs/joven";
 import { INVERSOR_SPEC } from "@web/demo/specs/inversor";
-import { loadDashboard, type LoadDashboardInput } from "@web/load-dashboard";
+import { JOVEN_SPEC } from "@web/demo/specs/joven";
+import { type LoadDashboardInput, loadDashboard } from "@web/load-dashboard";
+import type { WorthlineStore } from "@worthline/db";
+import { createInMemoryStore } from "@worthline/db";
+import { describe, expect, it } from "vitest";
 
 const AS_OF = "2026-06-19";
 const NOW_ISO = `${AS_OF}T12:00:00.000Z`;

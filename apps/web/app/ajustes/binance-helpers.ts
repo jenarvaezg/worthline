@@ -8,8 +8,8 @@
  * re-exported from numista-helpers.
  */
 
-import { groupPositionsByToken, isTokenDustValue } from "@worthline/domain";
 import type { SourcePosition, TokenPosition } from "@worthline/domain";
+import { groupPositionsByToken, isTokenDustValue } from "@worthline/domain";
 import type { BinanceCredentials } from "@worthline/pricing";
 
 export { formatLastSync, resolveConnectingOwnership } from "./numista-helpers";

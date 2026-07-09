@@ -1,7 +1,6 @@
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
-import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
-
 import { createControlPlaneStore } from "@worthline/db";
+import { createRemoteJWKSet, type JWTVerifyGetKey, jwtVerify } from "jose";
 
 /**
  * Resolve a bearer token presented to the agent-view MCP endpoint into the MCP

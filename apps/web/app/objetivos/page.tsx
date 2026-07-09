@@ -1,3 +1,17 @@
+import FireProjectionCard from "@web/fire-projection-card";
+import {
+  buildCurrentUrlFor,
+  PRIVACY_COOKIE_NAME,
+  parseFormError,
+  parsePrivacyCookie,
+  parseScopeCookie,
+  resolveOkMessage,
+  SCOPE_COOKIE_NAME,
+} from "@web/intake";
+import { formatDecimalAsPercentField } from "@web/intake-primitives";
+import { PendingSubmit } from "@web/pending-submit";
+import Shell from "@web/shell";
+import { bootstrapHealthcheck, withStore } from "@web/store";
 import type { FireLevel, PassiveIncomeLens } from "@worthline/domain";
 import {
   collectHoldingPayouts,
@@ -10,21 +24,6 @@ import {
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-
-import {
-  buildCurrentUrlFor,
-  parseFormError,
-  parsePrivacyCookie,
-  parseScopeCookie,
-  resolveOkMessage,
-  PRIVACY_COOKIE_NAME,
-  SCOPE_COOKIE_NAME,
-} from "@web/intake";
-import { formatDecimalAsPercentField } from "@web/intake-primitives";
-import { bootstrapHealthcheck, withStore } from "@web/store";
-import { PendingSubmit } from "@web/pending-submit";
-import Shell from "@web/shell";
-import FireProjectionCard from "@web/fire-projection-card";
 
 import { createGoalAction, deleteGoalAction, updateGoalAction } from "./goal-actions";
 

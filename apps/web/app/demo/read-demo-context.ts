@@ -4,7 +4,7 @@
  * into the {@link DemoContext} via the pure {@link demoContextFromTarget}. Kept
  * apart from the pure projection so the latter stays a `next/headers`-free unit.
  */
-import { demoContextFromTarget, type DemoContext } from "@web/demo/demo-context";
+import { type DemoContext, demoContextFromTarget } from "@web/demo/demo-context";
 import { readStoreTarget } from "@web/read-store-target";
 
 export async function readDemoContext(): Promise<DemoContext> {

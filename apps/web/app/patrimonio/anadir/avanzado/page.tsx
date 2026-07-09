@@ -1,20 +1,9 @@
-import { bootstrapHealthcheck, withStore } from "@web/store";
-import { defaultsFor, LIQUIDITY_TIER_LABELS, listScopeOptions } from "@worthline/domain";
-import type { Instrument, Member, ValuationMethod } from "@worthline/domain";
-import { cookies } from "next/headers";
-import type { CSSProperties } from "react";
-import Link from "next/link";
-import { redirect } from "next/navigation";
-
 import {
   parseFormError,
   parseScopeCookie,
   resolveOkMessage,
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
-import Shell from "@web/shell";
-import { createHoldingAction } from "@web/patrimonio/create-holding-action";
-import { PendingSubmit } from "@web/pending-submit";
 import {
   addHoldingFieldValue,
   buildSymbolSearchCurrentParams,
@@ -22,6 +11,16 @@ import {
   selectedInstrumentFromAddHoldingState,
 } from "@web/patrimonio/anadir/search-state";
 import SymbolSearch from "@web/patrimonio/anadir/symbol-search";
+import { createHoldingAction } from "@web/patrimonio/create-holding-action";
+import { PendingSubmit } from "@web/pending-submit";
+import Shell from "@web/shell";
+import { bootstrapHealthcheck, withStore } from "@web/store";
+import type { Instrument, Member, ValuationMethod } from "@worthline/domain";
+import { defaultsFor, LIQUIDITY_TIER_LABELS, listScopeOptions } from "@worthline/domain";
+import { cookies } from "next/headers";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import type { CSSProperties } from "react";
 
 export const dynamic = "force-dynamic";
 

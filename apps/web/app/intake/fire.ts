@@ -1,7 +1,6 @@
+import { parseMoneyMinor } from "@web/intake-primitives";
 import type { FireScopeConfig } from "@worthline/domain";
 import { parseDecimalStrict } from "@worthline/domain";
-
-import { parseMoneyMinor } from "@web/intake-primitives";
 import type { StrictParseResult } from "./shared";
 
 /**

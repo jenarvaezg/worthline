@@ -1,12 +1,11 @@
-import type { Member, OwnershipShare } from "@worthline/domain";
-import { parseDecimal } from "@worthline/domain";
-
 import {
   type OwnershipPreset,
   parseMoneyMinor,
   resolveOwnershipSplit,
   type ShortfallCompletion,
 } from "@web/intake-primitives";
+import type { Member, OwnershipShare } from "@worthline/domain";
+import { parseDecimal } from "@worthline/domain";
 
 /**
  * Shared parse helpers composed by every per-instrument parser family

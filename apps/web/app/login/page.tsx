@@ -1,6 +1,5 @@
-import Link from "next/link";
-
 import { signIn } from "@web/auth";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 

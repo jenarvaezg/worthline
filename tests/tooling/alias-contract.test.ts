@@ -1,14 +1,13 @@
-import { describe, expect, it } from "vitest";
-
+import { SCHEMA_VERSION } from "@db/migrate";
+import { money } from "@domain/money";
+import { metalValueMinor } from "@pricing/metal";
 // Zone-alias contract tracer (#355). Each import below crosses the alias
 // boundary defined in tsconfig.base.json / vitest.config.ts / tsconfig.e2e.json.
 // If any alias stops resolving, the corresponding import throws at module load
 // and the suite fails — making this file the empirical guard for the contract.
 import { fd } from "@tests/helpers";
-import { metalValueMinor } from "@pricing/metal";
-import { money } from "@domain/money";
-import { SCHEMA_VERSION } from "@db/migrate";
 import { loadDashboard } from "@web/load-dashboard";
+import { describe, expect, it } from "vitest";
 
 describe("zone alias contract (#355)", () => {
   it("resolves @domain/* to packages/domain/src", () => {

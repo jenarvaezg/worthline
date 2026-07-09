@@ -1,7 +1,6 @@
 import Big from "big.js";
-
-import type { DecimalString } from "./decimal";
 import { daysBetween } from "./dates";
+import type { DecimalString } from "./decimal";
 import {
   cadenceOrDefault,
   sampleDateForCadence,

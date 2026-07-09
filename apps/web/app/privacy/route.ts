@@ -1,7 +1,6 @@
-import { cookies } from "next/headers";
-import { NextResponse, type NextRequest } from "next/server";
-
 import { PRIVACY_COOKIE_NAME } from "@web/intake";
+import { cookies } from "next/headers";
+import { type NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const formData = await request.formData();

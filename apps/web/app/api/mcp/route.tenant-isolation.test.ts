@@ -1,10 +1,8 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
-import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-
 import { createWorthlineStore } from "@worthline/db";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 
 // A pure token-authenticated MCP request: no persona cookie, no Auth.js session.
 vi.mock("next/headers", () => ({
@@ -144,20 +142,18 @@ describe("POST /api/mcp — tenant isolation (a token reaches only its own works
 
   // `verify-token` is fully mocked here to exercise routing + store selection only;
   // JWT/control-plane resolution is covered in verify-token.test.ts.
-  test(
-    "isolates tenants by dbUrl even when tokens share the same workspaceId label",
-    { timeout: 30000 },
-    async () => {
-      mcpAuthByToken.set(TOKEN_A, authFor("ws-shared", urlA));
-      mcpAuthByToken.set(TOKEN_B, authFor("ws-shared", urlB));
+  test("isolates tenants by dbUrl even when tokens share the same workspaceId label", {
+    timeout: 30000,
+  }, async () => {
+    mcpAuthByToken.set(TOKEN_A, authFor("ws-shared", urlA));
+    mcpAuthByToken.set(TOKEN_B, authFor("ws-shared", urlB));
 
-      const fromA = await callNetWorth(TOKEN_A);
-      const fromB = await callNetWorth(TOKEN_B);
+    const fromA = await callNetWorth(TOKEN_A);
+    const fromB = await callNetWorth(TOKEN_B);
 
-      expect(fromA).toBe(NET_WORTH_A);
-      expect(fromB).toBe(NET_WORTH_B);
-    },
-  );
+    expect(fromA).toBe(NET_WORTH_A);
+    expect(fromB).toBe(NET_WORTH_B);
+  });
 
   test("a just-provisioned empty workspace returns an MCP tool error envelope", async () => {
     const message = (await callTool(TOKEN_EMPTY, "get_financial_context", {})) as {

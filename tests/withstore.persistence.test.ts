@@ -1,7 +1,6 @@
+import { type WorthlineStore, withStore } from "@worthline/db";
 import { afterEach, describe, expect, test } from "vitest";
-
-import { withStore, type WorthlineStore } from "@worthline/db";
-import { tempDatabasePath, cleanupTempDirs } from "./helpers";
+import { cleanupTempDirs, tempDatabasePath } from "./helpers";
 
 afterEach(cleanupTempDirs);
 

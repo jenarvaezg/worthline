@@ -13,12 +13,12 @@
  * positions-drift lesson) still converges instead of throwing. A second run is a
  * no-op (idempotent, behind the version guard), and a fresh DB skips the rebuild.
  */
-import type { Client } from "@libsql/client";
-import { describe, expect, test } from "vitest";
 
 import { createInMemoryStore, openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import { schemaSql } from "@db/schema-sql";
+import type { Client } from "@libsql/client";
+import { describe, expect, test } from "vitest";
 
 /** The pre-v25 `positions` DDL: coin-only, NOT NULL coin columns, no `kind`/tokens. */
 const LEGACY_POSITIONS = `CREATE TABLE positions (

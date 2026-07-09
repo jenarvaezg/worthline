@@ -8,8 +8,9 @@
  * seam with a real in-memory store, an injected historical source stub, and a
  * fixed clock (no network, deterministic dates).
  */
-import { createInMemoryStore } from "@worthline/db";
+
 import type { WorthlineStore } from "@worthline/db";
+import { createInMemoryStore } from "@worthline/db";
 import { fixedClock } from "@worthline/domain";
 import type { HistoricalPriceSource } from "@worthline/pricing";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";

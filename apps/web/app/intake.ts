@@ -26,23 +26,17 @@ import { PORTFOLIO_GROUP_KEYS } from "@worthline/domain";
 // === #241 barrel: re-export the per-instrument parser families ===
 
 export {
-  parseAppreciationRateStrict,
   type AppreciationRateResult,
+  type HousingCreationData,
+  parseAppreciationRateStrict,
   parseAssetCommandStrict,
   parseValuationAnchorStrict,
-  type HousingCreationData,
 } from "./intake/asset";
 export {
-  type CreateInvestmentAssetInput,
-  parseInvestmentAssetCommandStrict,
-  parseRouteOperationCommand,
-  parseUpdateInvestmentCommand,
-} from "./intake/investment";
-export {
+  type DebtModelResult,
   parseAmortizationPlanStrict,
   parseBalanceAnchorStrict,
   parseDebtModelStrict,
-  type DebtModelResult,
   parseEarlyRepaymentStrict,
   parseInterestRateRevisionStrict,
   parseLiabilityCommand,
@@ -51,14 +45,11 @@ export {
 } from "./intake/debt";
 export { parseFireConfigFormStrict } from "./intake/fire";
 export {
-  parseEmpezarHogar,
-  parseEmpezarSolo,
-  parseNewMember,
-  parseValueUpdatePass,
-  type ValueUpdateCommand,
-  parseWorkspaceInit,
-  type WorkspaceInitCommand,
-} from "./intake/workspace";
+  type CreateInvestmentAssetInput,
+  parseInvestmentAssetCommandStrict,
+  parseRouteOperationCommand,
+  parseUpdateInvestmentCommand,
+} from "./intake/investment";
 export {
   createStableId,
   parseEntityId,
@@ -66,6 +57,15 @@ export {
   parseOwnership,
   type StrictParseResult,
 } from "./intake/shared";
+export {
+  parseEmpezarHogar,
+  parseEmpezarSolo,
+  parseNewMember,
+  parseValueUpdatePass,
+  parseWorkspaceInit,
+  type ValueUpdateCommand,
+  type WorkspaceInitCommand,
+} from "./intake/workspace";
 
 // Re-export the intake primitives so existing consumers that import them from
 // `./intake` keep working (stage 1 of #241: extract + route through primitives).

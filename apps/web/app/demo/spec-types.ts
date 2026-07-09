@@ -7,6 +7,8 @@
  * Money is integer minor units; rates/prices/units are decimal strings; ownership
  * shares are basis points (10_000 = 100%).
  */
+
+import type { PersonaId } from "@web/demo/persona";
 import type { SourcePositionInput } from "@worthline/db";
 import type {
   CurrencyCode,
@@ -18,8 +20,6 @@ import type {
   SourceAdapter,
   WorkspaceMode,
 } from "@worthline/domain";
-
-import type { PersonaId } from "@web/demo/persona";
 
 /** A date expressed as an offset before the pinned "now". Zero/empty = today. */
 export interface RelativeDate {

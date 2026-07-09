@@ -8,7 +8,7 @@
  * assert that projection behaviour, not how the value is stored.
  */
 import { describe, expect, test } from "vitest";
-
+import type { CoinPosition, ConnectedSource, TokenPosition } from "./connected-source";
 import {
   coinCollectionValueAtDate,
   coinPositionSnapshotInput,
@@ -22,7 +22,6 @@ import {
   projectConnectedSource,
   tokenSymbolSnapshotInputs,
 } from "./connected-source";
-import type { CoinPosition, ConnectedSource, TokenPosition } from "./connected-source";
 import { defaultsFor } from "./instrument-catalog";
 
 const source: ConnectedSource = {

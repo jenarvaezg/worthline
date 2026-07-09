@@ -14,8 +14,8 @@
  * detection is testable without the network or a store, and never reads a clock.
  */
 
-import type { InvestmentPriceProvider } from "./prices";
 import type { InvestmentOperation } from "./investment-types";
+import type { InvestmentPriceProvider } from "./prices";
 
 /** The investment-asset metadata detection reads (one row per investment). */
 export interface PriceBackfillCandidateAsset {

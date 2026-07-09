@@ -20,7 +20,7 @@ import {
   type SaveSnapshotInput,
   type SnapshotStore,
 } from "./snapshot-store";
-import { type StoreContext, readAllOperations } from "./store-context";
+import { readAllOperations, type StoreContext } from "./store-context";
 
 /**
  * Historical-price backfill ripple (#380, ADR 0033). The explicit, auditable

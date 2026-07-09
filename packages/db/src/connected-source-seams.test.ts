@@ -9,12 +9,11 @@
  * the deeper edge matrix lives in the `tests/*.persistence.test.ts` integration
  * suites.
  */
-import { describe, expect, it } from "vitest";
 
 import type { BinanceHistoryCurve, CoinPosition, DecimalString } from "@worthline/domain";
-
-import { createInMemoryStore } from "./index";
+import { describe, expect, it } from "vitest";
 import type { SourcePositionInput, WorthlineStore } from "./index";
+import { createInMemoryStore } from "./index";
 
 const TODAY = "2026-06-15";
 const MEMBER_ID = "mJ";

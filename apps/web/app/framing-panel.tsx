@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
-
 import type { NetWorthFraming } from "@worthline/domain";
+import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
 
 import {
   FRAMING_VIEW_PARAM,

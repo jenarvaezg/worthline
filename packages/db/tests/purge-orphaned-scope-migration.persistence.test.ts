@@ -16,12 +16,12 @@
  * Frozen holding rows of pruned snapshots go too; `user_version` reaches
  * SCHEMA_VERSION; a second run is a no-op behind the `version < 30` guard.
  */
-import type { Client } from "@libsql/client";
-import { describe, expect, test } from "vitest";
 
 import { openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import { schemaSql } from "@db/schema-sql";
+import type { Client } from "@libsql/client";
+import { describe, expect, test } from "vitest";
 
 function seedSnapshot(scopeId: string, suffix: string): string {
   return `

@@ -27,8 +27,8 @@ import { useMemo, useState } from "react";
 
 import {
   CURRENT_STATE_DEBT_FIELD_NAMES,
-  deriveCurrentStateDebt,
   type CurrentStateInputMode,
+  deriveCurrentStateDebt,
 } from "./current-state-debt";
 
 /** Keyed by the field's own `name` attribute — the same shape `preserveFields`

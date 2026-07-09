@@ -1,6 +1,5 @@
-import type { InferSelectModel } from "drizzle-orm";
-
 import { assetOperations, snapshots } from "@db/schema";
+import type { InferSelectModel } from "drizzle-orm";
 
 type OperationRow = InferSelectModel<typeof assetOperations>;
 type SnapshotRow = InferSelectModel<typeof snapshots>;

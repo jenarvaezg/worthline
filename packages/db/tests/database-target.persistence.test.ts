@@ -1,9 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
-
 import { resolveDatabaseTarget, withStore } from "@db/index";
+import { afterEach, describe, expect, test } from "vitest";
 
 const tempDirs: string[] = [];
 

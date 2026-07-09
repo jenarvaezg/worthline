@@ -1,7 +1,6 @@
+import { createInMemoryControlPlaneStore, createInMemoryStore } from "@db/index";
 import { holdingBenchmarkComparison, type InvestmentOperation } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
-
-import { createInMemoryControlPlaneStore, createInMemoryStore } from "@db/index";
 
 function op(
   kind: "buy" | "sell",

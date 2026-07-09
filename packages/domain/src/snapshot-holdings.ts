@@ -22,9 +22,9 @@ import {
   tierOfAsset,
 } from "./classification";
 import type { DecimalString } from "./decimal";
-import type { Liability, ManualAsset, Workspace } from "./workspace-types";
 import { resolveScopeMemberIds } from "./scope";
 import { allocateScopedHolding } from "./scope-allocation";
+import type { Liability, ManualAsset, Workspace } from "./workspace-types";
 
 export type SnapshotHoldingKind = "asset" | "liability";
 

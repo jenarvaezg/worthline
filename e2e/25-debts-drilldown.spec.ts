@@ -34,7 +34,7 @@
  * `.decompositionLegend` now lives only INSIDE the drill panel's stack section.
  */
 
-import { test, expect } from "./fixtures";
+import { expect, test } from "./fixtures";
 
 /** Pin the Hogar (household) scope — it aggregates every member's liabilities.
  * By the time this journey runs the serial workspace is individual (journey 19

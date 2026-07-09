@@ -1,3 +1,8 @@
+import {
+  type CoinSourceRef,
+  type RefreshCoinValuationsResult,
+  refreshStaleCoinValuations,
+} from "@web/refresh-coin-valuations";
 import type { WorthlineStore } from "@worthline/db";
 import {
   fetchMetalSpotEur,
@@ -6,12 +11,6 @@ import {
   mintNumistaToken,
   refreshCoinValuations,
 } from "@worthline/pricing";
-
-import {
-  refreshStaleCoinValuations,
-  type CoinSourceRef,
-  type RefreshCoinValuationsResult,
-} from "@web/refresh-coin-valuations";
 import { parseNumistaToken, readApiKey } from "./numista-helpers";
 
 /**

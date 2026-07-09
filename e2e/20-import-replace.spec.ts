@@ -11,7 +11,7 @@
  * while leaving the workspace untouched.
  */
 
-import { test, expect, addHolding, holdingRow } from "./fixtures";
+import { addHolding, expect, holdingRow, test } from "./fixtures";
 
 /** A valid version-2 export document, built inline (plain object literal). */
 const importedDoc = {

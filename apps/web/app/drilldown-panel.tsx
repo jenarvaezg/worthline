@@ -1,5 +1,5 @@
-import { formatMoneyMinorPrivacy, LIQUIDITY_TIER_LABELS } from "@worthline/domain";
 import type { DrilldownKey, DrilldownState, LiquidityTier } from "@worthline/domain";
+import { formatMoneyMinorPrivacy, LIQUIDITY_TIER_LABELS } from "@worthline/domain";
 import type { MouseEvent } from "react";
 
 /**

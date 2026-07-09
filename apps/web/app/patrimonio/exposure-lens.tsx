@@ -1,14 +1,13 @@
 "use client";
 
-import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
-
 import {
   EXPOSURE_LENS_VIEW_PARAM,
+  type ExposureLens,
   readViewParam,
   VIEW_STATE_CHANGE_EVENT,
   writeViewParam,
-  type ExposureLens,
 } from "@web/view-state";
+import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
 
 /**
  * The exposure geography lens as a client island (PRD #539 S3, #543, ADR 0036).

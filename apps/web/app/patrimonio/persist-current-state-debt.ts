@@ -1,6 +1,5 @@
-import type { WorthlineStore } from "@worthline/db";
-
 import { createStableId } from "@web/intake";
+import type { WorthlineStore } from "@worthline/db";
 
 import type {
   CurrentStateDebtDerived,

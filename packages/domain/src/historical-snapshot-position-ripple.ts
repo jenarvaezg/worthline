@@ -13,8 +13,8 @@
  */
 
 import { tierOfAsset } from "./classification";
-import { assembleRippleSnapshot, resolveFrozenIdentity } from "./historical-snapshot";
 import type { FrozenIdentityCapture } from "./historical-snapshot";
+import { assembleRippleSnapshot, resolveFrozenIdentity } from "./historical-snapshot";
 import { resolveScopeMemberIds } from "./scope";
 import { allocateScopedHolding } from "./scope-allocation";
 import type { SnapshotHoldingRow } from "./snapshot-holdings";

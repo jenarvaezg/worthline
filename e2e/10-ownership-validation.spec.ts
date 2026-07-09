@@ -12,7 +12,7 @@
  *    verify the asset is visible in both member scopes.
  */
 
-import { test, expect } from "./fixtures";
+import { expect, test } from "./fixtures";
 
 test("ownership: custom 60/40 split via real interactions, visible in minority scope", async ({
   page,

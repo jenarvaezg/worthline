@@ -1,16 +1,15 @@
+import {
+  buildCurrentUrl,
+  PRIVACY_COOKIE_NAME,
+  parsePrivacyCookie,
+  parseScopeCookie,
+  SCOPE_COOKIE_NAME,
+} from "@web/intake";
+import Shell from "@web/shell";
 import { bootstrapHealthcheck, withStore } from "@web/store";
 import { listScopeOptions } from "@worthline/domain";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-
-import {
-  buildCurrentUrl,
-  parsePrivacyCookie,
-  parseScopeCookie,
-  PRIVACY_COOKIE_NAME,
-  SCOPE_COOKIE_NAME,
-} from "@web/intake";
-import Shell from "@web/shell";
 import { buildHistoricoRows, HistoricoTable } from "./historico-table";
 
 export const dynamic = "force-dynamic";

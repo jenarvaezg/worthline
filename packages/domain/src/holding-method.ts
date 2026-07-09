@@ -10,8 +10,8 @@
  */
 
 import { instrumentOfAsset } from "./classification";
-import { defaultValuationMethodForDebtModel } from "./holding-valuation";
 import type { ValuationMethod } from "./holding-valuation";
+import { defaultValuationMethodForDebtModel } from "./holding-valuation";
 import { defaultsFor } from "./instrument-catalog";
 import type { DebtModel, ManualAsset } from "./workspace-types";
 

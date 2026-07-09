@@ -6,21 +6,21 @@
  * re-rolls the holding's value from its positions (never hand-set), token round
  * trips, and the v19 migration creates the two tables.
  */
+
+import type { WorthlineStore } from "@db/index";
+import { createInMemoryStore, openLibsqlClient } from "@db/index";
+import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import {
-  isValueUpdateEligible,
-  parseWorkspaceExport,
-  valuationMethodOfAsset,
   type BinanceHistoryCurve,
   type CoinPosition,
   type DecimalString,
+  isValueUpdateEligible,
   type ManualAsset,
+  parseWorkspaceExport,
   type SourcePosition,
+  valuationMethodOfAsset,
 } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
-
-import { createInMemoryStore, openLibsqlClient } from "@db/index";
-import type { WorthlineStore } from "@db/index";
-import { migrate, SCHEMA_VERSION } from "@db/migrate";
 
 const asCoin = (p: SourcePosition): CoinPosition => {
   if (p.kind !== "coin") throw new Error("expected coin");

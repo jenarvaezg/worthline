@@ -9,12 +9,11 @@
  * tests exercise the seam directly at the store with an injected `today`,
  * mirroring `operation-seam.persistence.test.ts`.
  */
-import { describe, expect, test } from "vitest";
 
-import { multiplyToMinor } from "@worthline/domain";
-
-import { createInMemoryStore } from "@db/index";
 import type { WorthlineStore } from "@db/index";
+import { createInMemoryStore } from "@db/index";
+import { multiplyToMinor } from "@worthline/domain";
+import { describe, expect, test } from "vitest";
 
 const TODAY = "2026-03-15";
 

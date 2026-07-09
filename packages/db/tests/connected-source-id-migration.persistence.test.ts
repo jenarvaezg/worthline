@@ -13,12 +13,12 @@
  * A second run is a no-op (idempotent), and a fresh DB skips the ALTER (the column
  * already exists from schema-sql) but still backfills correctly.
  */
-import type { Client } from "@libsql/client";
-import { describe, expect, test } from "vitest";
 
 import { createInMemoryStore, openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import { schemaSql } from "@db/schema-sql";
+import type { Client } from "@libsql/client";
+import { describe, expect, test } from "vitest";
 
 /** A pre-v26 DB at user_version 25: current schema minus the new asset column. */
 async function seedV25(): Promise<Client> {

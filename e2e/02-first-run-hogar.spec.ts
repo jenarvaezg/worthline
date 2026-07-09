@@ -9,7 +9,7 @@
  * so /empezar is reachable (no redirect to /).
  */
 
-import { test, expect } from "./fixtures";
+import { expect, test } from "./fixtures";
 
 test("hogar onboarding: /empezar → Crear hogar → add wizard with household scope", async ({
   page,

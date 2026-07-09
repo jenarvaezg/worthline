@@ -7,10 +7,11 @@
  * - Compute dashboard state via prepareDashboardState
  * - Pricing failures degrade to last-known values with an explicit signal
  */
-import { describe, expect, test, vi } from "vitest";
+
+import type { SourcePositionInput, WorthlineStore } from "@worthline/db";
 
 import { createInMemoryStore } from "@worthline/db";
-import type { SourcePositionInput, WorthlineStore } from "@worthline/db";
+import { describe, expect, test, vi } from "vitest";
 
 import type { LoadDashboardInput } from "./load-dashboard";
 import { loadDashboard } from "./load-dashboard";

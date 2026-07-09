@@ -5,11 +5,12 @@
  * untouched) in the read-only demo. Mirrors the set-valuation-cadence (debt) and
  * set-appreciation-rate action test shape.
  */
-import { afterEach, describe, expect, test, vi } from "vitest";
+
+import type { WorthlineStore } from "@worthline/db";
 
 import { createInMemoryStore } from "@worthline/db";
-import type { WorthlineStore } from "@worthline/db";
-import { fixedClock, type Clock } from "@worthline/domain";
+import { type Clock, fixedClock } from "@worthline/domain";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { setHousingValuationCadenceAction } from "./actions";
 

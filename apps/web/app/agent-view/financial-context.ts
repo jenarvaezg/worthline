@@ -1,15 +1,4 @@
 import type { AgentViewReadStore } from "@worthline/db";
-import {
-  buildLiquidityBreakdown,
-  calculateNetWorth,
-  compareGrowthToBenchmark,
-  deriveMonthlyCloses,
-  defaultsFor,
-  listScopeOptions,
-  lookThroughExposure,
-  projectPortfolio,
-  resolveAssetClassBreakdown,
-} from "@worthline/domain";
 import type {
   AssetClassResolution,
   ExposureAllocationSlice,
@@ -22,14 +11,24 @@ import type {
   LiquidityTierBreakdown,
   ManualAsset,
   MoneyMinor,
+  NetWorthSummary,
   RowOwnership,
   ScopeOption,
-  NetWorthSummary,
   Workspace,
 } from "@worthline/domain";
-
 import {
-  AgentViewHttpError,
+  buildLiquidityBreakdown,
+  calculateNetWorth,
+  compareGrowthToBenchmark,
+  defaultsFor,
+  deriveMonthlyCloses,
+  listScopeOptions,
+  lookThroughExposure,
+  projectPortfolio,
+  resolveAssetClassBreakdown,
+} from "@worthline/domain";
+import { deriveSourcePublicId, toFreshnessSummary } from "./connected-source-positions";
+import {
   type AgentViewAllocationSlice,
   type AgentViewConnectedSourceSummary,
   type AgentViewExposure,
@@ -38,15 +37,15 @@ import {
   type AgentViewFinancialContext,
   type AgentViewFinancialSummary,
   type AgentViewHoldingDirection,
-  type AgentViewHoldingsBlock,
   type AgentViewHoldingSummary,
+  type AgentViewHoldingsBlock,
+  AgentViewHttpError,
   type AgentViewLiquidityRung,
   type AgentViewMoney,
   type AgentViewOperationSummary,
   type AgentViewOwnershipShare,
   type AgentViewVsInflation,
 } from "./contract";
-import { deriveSourcePublicId, toFreshnessSummary } from "./connected-source-positions";
 import { buildDataQualitySummary } from "./data-quality";
 import { buildFireSummary } from "./fire-context";
 import { summarizeOperations } from "./operation-summary";

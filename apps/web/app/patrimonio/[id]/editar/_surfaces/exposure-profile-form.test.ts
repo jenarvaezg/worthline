@@ -11,10 +11,10 @@ import { describe, expect, test } from "vitest";
 
 import {
   buildExposureProfileResult,
+  type ExposureProfileFields,
   geographyRemainderPercent,
   isEmptyExposureFields,
   parseExposureProfileFields,
-  type ExposureProfileFields,
 } from "./exposure-profile-form";
 
 /** A blank field map (every input empty) — the "clear" submission. */

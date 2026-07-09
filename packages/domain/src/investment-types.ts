@@ -1,5 +1,5 @@
-import type { CurrencyCode, MoneyMinor } from "./money";
 import type { DecimalString } from "./decimal";
+import type { CurrencyCode, MoneyMinor } from "./money";
 
 export type OperationKind = "buy" | "sell";
 export type OperationSource = "manual" | "opening" | "statement" | "connected";

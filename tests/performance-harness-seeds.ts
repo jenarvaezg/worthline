@@ -22,9 +22,9 @@
  *  - a full historical backfill so ≈ 2 months of daily snapshots plus the
  *    per-cuota mortgage snapshots already exist in the DB before measuring
  */
-import { listScopeOptions } from "@worthline/domain";
 
 import type { WorthlineStore } from "@worthline/db";
+import { listScopeOptions } from "@worthline/domain";
 
 /** Anchor "today" for the seed. Fixed so the generated history is identical every run. */
 export const SEED_TODAY = "2026-06-15";

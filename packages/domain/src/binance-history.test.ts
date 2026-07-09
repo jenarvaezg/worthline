@@ -8,13 +8,12 @@
  * the completed-month-end enumeration that excludes the current partial month.
  */
 import { describe, expect, it } from "vitest";
-
+import type { BinanceHistoryCurve } from "./binance-history";
 import {
   binanceCurveStartDate,
   binanceValueAtDate,
   completedMonthEndDates,
 } from "./binance-history";
-import type { BinanceHistoryCurve } from "./binance-history";
 
 /** Tiny curve builder so the tests read as data, not Map ceremony. */
 function curve(input: {

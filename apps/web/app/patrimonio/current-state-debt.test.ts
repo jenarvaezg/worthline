@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  deriveCurrentStateDebt,
   type CurrentStateDebtRawInput,
+  deriveCurrentStateDebt,
 } from "./current-state-debt";
 
 /**

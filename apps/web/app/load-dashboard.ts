@@ -20,9 +20,15 @@ import type {
   AssetPrice,
   BenchmarkComparisonResult,
   CompositionRange,
+  CompositionSeriesPoint,
+  DashboardState,
+  DatedPayout,
   DatedSnapshotHoldingRow,
   DrilldownKey,
   DrilldownState,
+  FramedSnapshotDeltas,
+  HoldingReturnsView,
+  LocalPersistenceStatus,
   NetWorthFraming,
 } from "@worthline/domain";
 import {
@@ -38,17 +44,9 @@ import {
   prepareDashboardState,
   rangeStartMonthKey,
 } from "@worthline/domain";
-import type {
-  CompositionSeriesPoint,
-  DashboardState,
-  DatedPayout,
-  FramedSnapshotDeltas,
-  HoldingReturnsView,
-  LocalPersistenceStatus,
-} from "@worthline/domain";
 
 import { buildMatrixCells, type MatrixCellPayload } from "./dashboard-cells";
-import { cellKey, crossOf, parseMode, type MatrixCoord } from "./dashboard-matrix";
+import { cellKey, crossOf, type MatrixCoord, parseMode } from "./dashboard-matrix";
 
 const SPANISH_CPI_SERIES_ID = "ipc-es";
 

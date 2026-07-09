@@ -1,5 +1,5 @@
-import type { LocalPersistenceStatus } from "./persistence";
 import type { NetWorthSummary } from "./net-worth";
+import type { LocalPersistenceStatus } from "./persistence";
 
 export interface DashboardShell {
   productName: "worthline";

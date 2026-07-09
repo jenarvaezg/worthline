@@ -7,13 +7,12 @@
  * dates — the behaviour the scattered type-based branches used to provide.
  */
 import { describe, expect, test } from "vitest";
-
+import type { HoldingValuationInput } from "./holding-valuation";
 import {
   defaultValuationMethodForAssetType,
   defaultValuationMethodForDebtModel,
   valueAt,
 } from "./holding-valuation";
-import type { HoldingValuationInput } from "./holding-valuation";
 import type { InvestmentOperation } from "./investment-types";
 
 describe("defaultValuationMethodForAssetType — backfill mapping (#148)", () => {

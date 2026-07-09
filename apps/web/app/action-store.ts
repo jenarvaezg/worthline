@@ -1,4 +1,4 @@
-import { withStore, type WorthlineStore } from "@web/store";
+import { type WorthlineStore, withStore } from "@web/store";
 
 /**
  * The shared `_store?` action seam (issue #481).

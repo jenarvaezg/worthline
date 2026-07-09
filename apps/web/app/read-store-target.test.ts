@@ -7,11 +7,11 @@
  * a pure function. Here we only assert the lookup itself: present/absent
  * cookie, control plane not configured, and an unknown workspace id.
  */
-import { describe, expect, test } from "vitest";
-
-import { createInMemoryControlPlaneStore } from "@worthline/db";
 
 import { lookupImpersonationTarget } from "@web/read-store-target";
+
+import { createInMemoryControlPlaneStore } from "@worthline/db";
+import { describe, expect, test } from "vitest";
 
 describe("lookupImpersonationTarget", () => {
   test("resolves the workspace's dbUrl and owner email for a known workspace id", async () => {

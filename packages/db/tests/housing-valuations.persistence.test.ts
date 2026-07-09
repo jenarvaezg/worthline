@@ -5,12 +5,11 @@
  * the annual-appreciation-rate setter, and the value-at-date method that reads
  * the anchors + rate and delegates to the pure domain curve.
  */
-import { describe, expect, test } from "vitest";
 
-import { valueHousingAtDate } from "@worthline/domain";
-
-import { createInMemoryStore } from "@db/index";
 import type { WorthlineStore } from "@db/index";
+import { createInMemoryStore } from "@db/index";
+import { valueHousingAtDate } from "@worthline/domain";
+import { describe, expect, test } from "vitest";
 
 const TODAY = "2026-06-13";
 

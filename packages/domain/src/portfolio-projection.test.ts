@@ -7,10 +7,10 @@ import {
   createWorkspace,
 } from "./index";
 import {
-  projectPortfolio,
   type PortfolioProjectionInput,
   type ProjectedAssetRow,
   type ProjectedLiabilityRow,
+  projectPortfolio,
 } from "./portfolio-projection";
 
 // ── fixtures ────────────────────────────────────────────────────────────────

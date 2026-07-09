@@ -6,12 +6,11 @@
  * (so the `packages/db` port wiring is exercised too). A payout touches no figure
  * (ADR 0054), so seeding one perturbs no other seeded assertion.
  */
-import { describe, expect, it } from "vitest";
-
-import { createInMemoryStore } from "@worthline/db";
 
 import { seedPersona } from "@web/demo/seed-persona";
 import { FAMILIA_SPEC } from "@web/demo/specs/familia";
+import { createInMemoryStore } from "@worthline/db";
+import { describe, expect, it } from "vitest";
 
 import { buildFinancialContext } from "./financial-context";
 import { buildHoldingDetail } from "./holding-detail";

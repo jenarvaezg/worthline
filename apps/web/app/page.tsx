@@ -1,22 +1,21 @@
-import { cookies } from "next/headers";
-import { Suspense } from "react";
-import { redirect } from "next/navigation";
+import { perfEnd, perfStart } from "@web/perf-log";
+import { requireStoreTarget } from "@web/read-store-target";
+import { bootstrapHealthcheck, openStore } from "@web/store";
 import { collectWarnings, listScopeOptions } from "@worthline/domain";
-
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { Suspense } from "react";
+import DashboardContent from "./dashboard-content";
+import DashboardSkeleton from "./dashboard-skeleton";
 import {
   buildCurrentUrl,
-  parsePrivacyCookie,
-  parseScopeParam,
-  parseScopeCookie,
   PRIVACY_COOKIE_NAME,
+  parsePrivacyCookie,
+  parseScopeCookie,
+  parseScopeParam,
   SCOPE_COOKIE_NAME,
 } from "./intake";
 import Shell from "./shell";
-import { perfEnd, perfStart } from "@web/perf-log";
-import { bootstrapHealthcheck, openStore } from "@web/store";
-import { requireStoreTarget } from "@web/read-store-target";
-import DashboardContent from "./dashboard-content";
-import DashboardSkeleton from "./dashboard-skeleton";
 
 export const dynamic = "force-dynamic";
 

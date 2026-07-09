@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
-
-import { valueHousingAtDate } from "./housing-valuation";
 import type { HousingValuationAnchor } from "./housing-valuation";
+import { valueHousingAtDate } from "./housing-valuation";
 
 /**
  * Pure housing-valuation curve (PRD #108, slice 4).

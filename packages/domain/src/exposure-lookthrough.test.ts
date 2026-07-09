@@ -1,11 +1,10 @@
 import { describe, expect, test } from "vitest";
-
-import { calculateNetWorth, createManualAsset, createWorkspace } from "./index";
 import {
   createExposureProfile,
-  lookThroughExposure,
   type ExposureProfile,
+  lookThroughExposure,
 } from "./exposure-lookthrough";
+import { calculateNetWorth, createManualAsset, createWorkspace } from "./index";
 
 describe("lookThroughExposure", () => {
   test("value-weights seeded single-region and multi-region profiles", () => {

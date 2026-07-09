@@ -10,12 +10,12 @@
  * snapshot's five frozen figures stay byte-identical (this migration touches no
  * figure), and user_version reaches SCHEMA_VERSION.
  */
-import type { Client } from "@libsql/client";
-import { describe, expect, test } from "vitest";
 
 import { openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import { schemaSql } from "@db/schema-sql";
+import type { Client } from "@libsql/client";
+import { describe, expect, test } from "vitest";
 
 async function seedV13(): Promise<Client> {
   const client = openLibsqlClient(":memory:");

@@ -1,10 +1,9 @@
 "use server";
 
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
-
 import { guardAdmin } from "@web/admin/guard-admin";
 import { IMPERSONATE_COOKIE_NAME } from "@web/admin/impersonate-cookie";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 /** Bounded lifetime (mirrors the persona cookie): a forgotten impersonation
  * session must decay rather than silently linger. */

@@ -1,8 +1,7 @@
-import type { Client, InStatement, ResultSet } from "@libsql/client";
-import { describe, expect, test } from "vitest";
-
 import { openLibsqlClient } from "@db/libsql-client";
 import { migrate, readSchemaVersion, SCHEMA_VERSION } from "@db/migrate";
+import type { Client, InStatement, ResultSet } from "@libsql/client";
+import { describe, expect, test } from "vitest";
 
 function result(rows: ResultSet["rows"] = []): ResultSet {
   return {

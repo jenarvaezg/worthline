@@ -13,9 +13,9 @@ import { describe, expect, test } from "vitest";
 import {
   buildPayoutResult,
   buildPayoutScheduleResult,
-  toggleExclusion,
   type PayoutFields,
   type PayoutScheduleFields,
+  toggleExclusion,
 } from "./cobros-form";
 
 function payoutFields(over: Partial<PayoutFields> = {}): PayoutFields {

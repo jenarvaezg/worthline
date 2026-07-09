@@ -1,7 +1,6 @@
+import { parseIsoDateField } from "@web/intake-primitives";
 import type { DecimalString, EffectiveAmortizationPlan } from "@worthline/domain";
 import { addMonths, parseDecimalToMinorStrict } from "@worthline/domain";
-
-import { parseIsoDateField } from "@web/intake-primitives";
 
 /**
  * Pure "recalibrar con saldo real" derivation (ADR 0056, PRD #670 S3, #678).

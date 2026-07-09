@@ -5,10 +5,11 @@
  * of amortization plans and rate revisions, and the balance-at-date method that
  * reads the plan + revisions and delegates to the pure domain curve.
  */
-import { describe, expect, test } from "vitest";
+
+import type { WorthlineStore } from "@db/index";
 
 import { createInMemoryStore } from "@db/index";
-import type { WorthlineStore } from "@db/index";
+import { describe, expect, test } from "vitest";
 
 async function seed(store: WorthlineStore): Promise<void> {
   await store.workspace.initializeWorkspace({

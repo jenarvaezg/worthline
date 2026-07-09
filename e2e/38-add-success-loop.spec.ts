@@ -8,7 +8,7 @@
  * normal copy, not the first-run welcome).
  */
 
-import { test, expect, holdingRow } from "./fixtures";
+import { expect, holdingRow, test } from "./fixtures";
 
 async function addCash(
   page: import("@playwright/test").Page,

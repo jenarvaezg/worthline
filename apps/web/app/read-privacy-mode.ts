@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { cache } from "react";
 
-import { parsePrivacyCookie, PRIVACY_COOKIE_NAME } from "./intake";
+import { PRIVACY_COOKIE_NAME, parsePrivacyCookie } from "./intake";
 
 /**
  * Request-scoped privacy mode reader. Lets server components and surfaces read

@@ -1,8 +1,7 @@
-import { describe, expect, test } from "vitest";
+import { listAdminWorkspaces } from "@web/admin/list-workspaces";
 
 import { createInMemoryControlPlaneStore } from "@worthline/db";
-
-import { listAdminWorkspaces } from "@web/admin/list-workspaces";
+import { describe, expect, test } from "vitest";
 
 describe("listAdminWorkspaces", () => {
   test("lists every workspace with its owner's email, oldest first", async () => {

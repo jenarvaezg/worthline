@@ -6,13 +6,12 @@
  * uses it — not the old `config.expectedRealReturn` directly.
  */
 import { describe, expect, it } from "vitest";
-
-import type { ManualAsset, Workspace } from "./index";
 import { calculateFireForScope } from "./fire";
-import { TIER_REAL_RETURN_DEFAULTS } from "./fire-return";
 import { fireLevels } from "./fire-levels";
-import { goalFireDelay } from "./goal-fire-delay";
 import { projectFire } from "./fire-projection";
+import { TIER_REAL_RETURN_DEFAULTS } from "./fire-return";
+import { goalFireDelay } from "./goal-fire-delay";
+import type { ManualAsset, Workspace } from "./index";
 
 const workspace: Workspace = {
   baseCurrency: "EUR",

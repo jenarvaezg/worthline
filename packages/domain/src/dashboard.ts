@@ -1,13 +1,17 @@
-import type { AssetPrice } from "./prices";
-import type { LocalPersistenceStatus } from "./persistence";
+import type { DashboardShell } from "./dashboard-shell";
+import { createDashboardShell } from "./dashboard-shell";
 import type { FireScopeConfig } from "./fire";
 import {
   calculateFireForScope,
   fireReservationHorizon,
   isFireEligibleAsset,
 } from "./fire";
+import type { FireLevel } from "./fire-levels";
+import { fireLevels } from "./fire-levels";
 import type { FireProjection } from "./fire-projection";
 import { projectFire } from "./fire-projection";
+import type { GoalFireDelay } from "./goal-fire-delay";
+import { goalFireDelay } from "./goal-fire-delay";
 import type { Goal } from "./goals";
 import {
   assignedHoldingsValueMinor,
@@ -15,14 +19,7 @@ import {
   goalReservedMinor,
   totalGoalReservationMinor,
 } from "./goals";
-import type { GoalFireDelay } from "./goal-fire-delay";
-import { goalFireDelay } from "./goal-fire-delay";
-import type { FireLevel } from "./fire-levels";
-import { fireLevels } from "./fire-levels";
-import type { Liability, ManualAsset, Member, Workspace } from "./workspace-types";
 import type { PositionSummary } from "./investment-types";
-import type { ScopeOption } from "./scope";
-import { resolveScopeMemberIds } from "./scope";
 import type {
   LiquidityTierBreakdown,
   NetWorthFraming,
@@ -30,12 +27,15 @@ import type {
   NetWorthSummary,
 } from "./net-worth";
 import { buildLiquidityBreakdown, calculateNetWorth, presentNetWorth } from "./net-worth";
+import type { LocalPersistenceStatus } from "./persistence";
+import type { AssetPrice } from "./prices";
+import type { ScopeOption } from "./scope";
+import { resolveScopeMemberIds } from "./scope";
 import type { NetWorthSnapshot, SnapshotDeltas } from "./snapshot-types";
 import { calculateSnapshotDeltas } from "./snapshot-types";
 import type { DomainWarning, WarningOverride } from "./warnings";
 import { collectWarnings } from "./warnings";
-import type { DashboardShell } from "./dashboard-shell";
-import { createDashboardShell } from "./dashboard-shell";
+import type { Liability, ManualAsset, Member, Workspace } from "./workspace-types";
 
 export type { LocalPersistenceStatus };
 

@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, test } from "vitest";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
+import { afterEach, describe, expect, test } from "vitest";
 
 import { storeTargetFromMcpAuth } from "./mcp-store-target";
 

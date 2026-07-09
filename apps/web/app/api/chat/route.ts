@@ -1,13 +1,3 @@
-import {
-  convertToModelMessages,
-  createUIMessageStreamResponse,
-  isStepCount,
-  streamText,
-  toUIMessageStream,
-  type UIMessage,
-} from "ai";
-import { NextResponse } from "next/server";
-
 import { chatAsOf } from "@web/asistente/chat-clock";
 import { resolveChatModel } from "@web/asistente/chat-model";
 import { createChatTools } from "@web/asistente/chat-tools";
@@ -17,6 +7,15 @@ import { isScreenContext, type ScreenContext } from "@web/asistente/screen-conte
 import { buildChatSystemPrompt } from "@web/asistente/system-prompt";
 import { readStoreTarget } from "@web/read-store-target";
 import { withStore } from "@web/store";
+import {
+  convertToModelMessages,
+  createUIMessageStreamResponse,
+  isStepCount,
+  streamText,
+  toUIMessageStream,
+  type UIMessage,
+} from "ai";
+import { NextResponse } from "next/server";
 
 /**
  * The assistant's chat route (#629) — the spine of PRD #627. Streams model

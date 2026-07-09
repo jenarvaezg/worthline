@@ -8,15 +8,15 @@
  * the selected instrument's fields (the others POST as hidden inputs and are
  * ignored). These tests assert the resulting store state + the success redirect.
  */
-import { createInMemoryStore } from "@worthline/db";
+
 import type { WorthlineStore } from "@worthline/db";
+import { createInMemoryStore } from "@worthline/db";
 import {
   defaultInstrumentForLiability,
+  fixedClock,
   valuationMethodOfLiability,
 } from "@worthline/domain";
 import { describe, expect, test, vi } from "vitest";
-
-import { fixedClock } from "@worthline/domain";
 
 import { createHoldingAction } from "./create-holding-action";
 

@@ -19,13 +19,12 @@
  * tile/list/tag treatment) so the two connected sources read identically.
  */
 
-import { formatMoneyMinorPrivacy } from "@worthline/domain";
-import type { TokenPosition } from "@worthline/domain";
-
 import { syncBinanceAction } from "@web/ajustes/binance-actions";
 import { formatLastSync } from "@web/ajustes/binance-helpers";
 import DisconnectBinanceFold from "@web/ajustes/disconnect-binance-fold";
 import { PendingSubmit } from "@web/pending-submit";
+import type { TokenPosition } from "@worthline/domain";
+import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import {
   buildBinanceHoldingView,
   formatBinanceSince,
@@ -111,7 +110,7 @@ export function BinanceHoldingSection({
                     // A remote CoinGecko logo, server-rendered (ADR 0009); no
                     // next/image optimizer for an external, list-scale thumb — the
                     // same treatment as the Numista coin gallery (#482).
-                    // eslint-disable-next-line @next/next/no-img-element
+                    // biome-ignore lint/performance/noImgElement: external exchange icon URL
                     <img
                       alt=""
                       className="coinThumbImg"

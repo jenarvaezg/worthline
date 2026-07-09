@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  type AgentViewBackend,
   connectedSourcePositionsSelectorError,
   createAgentViewCatalog,
-  type AgentViewBackend,
 } from "./catalog";
 import type { AgentViewEnvelope, AgentViewScope } from "./contract";
 

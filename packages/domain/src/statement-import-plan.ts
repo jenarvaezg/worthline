@@ -6,18 +6,18 @@
  * the user's include/ignore decisions without touching persistence.
  */
 
+import type { LiquidityTier } from "./classification";
 import type { DecimalString } from "./decimal";
 import type { Instrument, InstrumentPriceProvider } from "./instrument-catalog";
 import type { InvestmentOperation } from "./investment-types";
-import type { LiquidityTier } from "./classification";
 import type { CurrencyCode } from "./money";
-import type { OwnershipShare } from "./workspace-types";
 import { planStatementMerge, type StatementMergePlan } from "./statement-merge";
 import type {
   ParsedStatement,
   ParsedStatementRow,
   SkippedStatementRow,
 } from "./statement-parse";
+import type { OwnershipShare } from "./workspace-types";
 
 export interface StatementPortfolioInvestment {
   assetId: string;

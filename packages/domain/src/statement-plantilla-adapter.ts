@@ -27,8 +27,8 @@
  * design. Direction is always resolved (`directionResolved: true`).
  */
 
-import { compareUnits, divideUnits, multiplyToMinor, normalizeDecimal } from "./decimal";
 import type { DecimalString } from "./decimal";
+import { compareUnits, divideUnits, multiplyToMinor, normalizeDecimal } from "./decimal";
 import type { Instrument } from "./instrument-catalog";
 import type { OperationKind } from "./investment-types";
 import type { CurrencyCode } from "./money";

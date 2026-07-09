@@ -10,7 +10,7 @@
  * appreciating, amortized, anchored) must still render/edit from the detail page.
  */
 
-import { test, expect, addHolding, holdingRow, openAdvancedSettings } from "./fixtures";
+import { addHolding, expect, holdingRow, openAdvancedSettings, test } from "./fixtures";
 
 const today = new Date().toISOString().slice(0, 10);
 

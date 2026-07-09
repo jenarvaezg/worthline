@@ -1,7 +1,6 @@
+import { formatMeasurePct, formatRatioPct } from "@web/_components/returns-format";
 import type { HoldingReturnsView } from "@worthline/domain";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
-
-import { formatMeasurePct, formatRatioPct } from "@web/_components/returns-format";
 
 /**
  * The holding ficha's returns surface (#551, ADR 0040): the three present-time

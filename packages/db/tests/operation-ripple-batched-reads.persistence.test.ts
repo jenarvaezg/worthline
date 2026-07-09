@@ -16,11 +16,11 @@
  *      proportional to the number of rippled snapshots. We instrument the libSQL
  *      client with a counting proxy and count the reads.
  */
+
+import type { WorthlineStore } from "@db/index";
+import { createStoreFromSqlite, openLibsqlClient } from "@db/index";
 import type { Client, InStatement } from "@libsql/client";
 import { describe, expect, test } from "vitest";
-
-import { createStoreFromSqlite, openLibsqlClient } from "@db/index";
-import type { WorthlineStore } from "@db/index";
 
 const TODAY = "2026-06-12";
 

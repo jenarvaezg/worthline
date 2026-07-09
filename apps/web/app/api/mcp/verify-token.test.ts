@@ -1,14 +1,14 @@
+import { generateKeyPair, SignJWT } from "jose";
 import { afterEach, describe, expect, test } from "vitest";
-import { SignJWT, generateKeyPair } from "jose";
 
 import {
   acceptedAudiences,
   createJwtVerifier,
   createVerifyMcpToken,
   MCP_READ_SCOPE,
+  type McpWorkspaceRef,
   selectSingleMcpWorkspace,
   verifyMcpToken,
-  type McpWorkspaceRef,
 } from "./verify-token";
 
 const ALG = "ES256";

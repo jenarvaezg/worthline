@@ -7,13 +7,12 @@
  * scattered across the codebase (provider-by-tier, the forced real_estate→housing).
  */
 import { describe, expect, test } from "vitest";
-
+import type { Instrument, InstrumentDefaults } from "./instrument-catalog";
 import {
   defaultInstrumentForAssetType,
   defaultInstrumentForLiability,
   defaultsFor,
 } from "./instrument-catalog";
-import type { Instrument, InstrumentDefaults } from "./instrument-catalog";
 
 describe("defaultsFor — instrument defaults (#149)", () => {
   test("a property is illiquid and appreciates", () => {
@@ -152,12 +151,11 @@ describe("defaultsFor — covers every instrument (#149 AC)", () => {
     coin_collection: { rung: "illiquid", valuationMethod: "derived" },
   };
 
-  test.each(Object.keys(EXPECTED) as Instrument[])(
-    "%s resolves to its catalog defaults",
-    (instrument) => {
-      expect(defaultsFor(instrument)).toEqual(EXPECTED[instrument]);
-    },
-  );
+  test.each(
+    Object.keys(EXPECTED) as Instrument[],
+  )("%s resolves to its catalog defaults", (instrument) => {
+    expect(defaultsFor(instrument)).toEqual(EXPECTED[instrument]);
+  });
 });
 
 describe("defaultInstrumentForAssetType — backfill from the legacy AssetType (#149)", () => {

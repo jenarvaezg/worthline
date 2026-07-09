@@ -1,5 +1,5 @@
-import type { PortfolioGroup } from "@worthline/domain";
 import type { TrashView } from "@worthline/db";
+import type { PortfolioGroup } from "@worthline/domain";
 
 /**
  * Pure optimistic-merge for the /patrimonio balance board (#521, S5 of #485,

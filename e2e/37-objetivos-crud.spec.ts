@@ -8,7 +8,7 @@
  * Also asserts /ajustes no longer shows the goals CRUD section and has a link
  * to /objetivos instead.
  */
-import { test, expect } from "./fixtures";
+import { expect, test } from "./fixtures";
 
 test("/objetivos: create, edit, delete a goal — CRUD lives here, not in /ajustes", async ({
   page,

@@ -5,9 +5,9 @@
  * libSQL database, and each call yields an INDEPENDENT database — so a viewer's
  * involuntary writes never leak from one request's store into the next.
  */
-import { describe, expect, it } from "vitest";
 
 import { getDemoStore, seedDemoStore } from "@web/demo/store-provider";
+import { describe, expect, it } from "vitest";
 
 const AS_OF = "2026-06-19";
 const DEMO_STORE_TEST_TIMEOUT_MS = 15_000;

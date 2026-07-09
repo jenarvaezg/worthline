@@ -23,17 +23,16 @@
  * skipped (§10).
  */
 
-import { formatMoneyMinorPrivacy, maskMoneyString } from "@worthline/domain";
-import type { InvestmentOperation, PriceFreshnessState } from "@worthline/domain";
-import { useOptimistic, useTransition, type FormEvent } from "react";
-
-import { priceFreshnessLabel } from "@web/intake";
 import type { FormErrorContext } from "@web/intake";
+import { priceFreshnessLabel } from "@web/intake";
+import type { InvestmentOperation, PriceFreshnessState } from "@worthline/domain";
+import { formatMoneyMinorPrivacy, maskMoneyString } from "@worthline/domain";
+import { type FormEvent, useOptimistic, useTransition } from "react";
 
 import {
   applyOperationMutations,
-  parseOperationDraft,
   type OperationMutation,
+  parseOperationDraft,
 } from "./optimistic-operations";
 
 export interface OperationsEditorContext {

@@ -1,8 +1,8 @@
 import {
   createExposureProfile,
-  lookThroughExposure,
   type ExposureLookthroughHolding,
   type ExposureProfile,
+  lookThroughExposure,
 } from "@worthline/domain";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";

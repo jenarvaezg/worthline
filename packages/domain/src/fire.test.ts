@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-
-import type { Liability, ManualAsset, Workspace } from "./index";
 import { calculateFire, calculateFireForScope } from "./fire";
 import { TIER_REAL_RETURN_DEFAULTS } from "./fire-return";
+import type { Liability, ManualAsset, Workspace } from "./index";
 
 const workspace: Workspace = {
   baseCurrency: "EUR",

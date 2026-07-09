@@ -12,7 +12,7 @@
  *   is DROPPED from the cards entirely; its history still lives in the aggregate
  */
 import { describe, expect, test } from "vitest";
-
+import type { LiquidityTier } from "./classification";
 import type { DatedSnapshotHoldingRow } from "./drilldown";
 import {
   buildDebtsDrilldown,
@@ -27,7 +27,6 @@ import {
   LIQUID_DRILL_TIERS,
   REST_DRILL_TIERS,
 } from "./drilldown";
-import type { LiquidityTier } from "./classification";
 import type { SnapshotHoldingKind } from "./snapshot-holdings";
 
 function row(input: {

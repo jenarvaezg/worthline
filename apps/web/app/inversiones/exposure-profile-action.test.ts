@@ -7,10 +7,10 @@
  * Prior art: inversiones/statement-actions.test.ts.
  */
 
-import { createInMemoryStore } from "@worthline/db";
 import type { WorthlineStore } from "@worthline/db";
-import { lookThroughExposure } from "@worthline/domain";
+import { createInMemoryStore } from "@worthline/db";
 import type { ExposureLookthroughHolding, ExposureProfile } from "@worthline/domain";
+import { lookThroughExposure } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import { saveExposureProfileAction } from "./actions";

@@ -11,17 +11,16 @@
  * file the page composes. Server-rendered, no client JS (ADR 0009).
  */
 
-import type { InvestmentAssetFull } from "@worthline/db";
-import { formatMoneyInput, formatMoneyMinorPrivacy } from "@worthline/domain";
-import type { Liability, ManualAsset, Member, ValuationMethod } from "@worthline/domain";
-import Link from "next/link";
-
 import {
   editAssetAction,
   updateAssetValuationAction,
   updateLiabilityBalanceAction,
 } from "@web/patrimonio/actions";
 import { PendingSubmit } from "@web/pending-submit";
+import type { InvestmentAssetFull } from "@worthline/db";
+import type { Liability, ManualAsset, Member, ValuationMethod } from "@worthline/domain";
+import { formatMoneyInput, formatMoneyMinorPrivacy } from "@worthline/domain";
+import Link from "next/link";
 
 type FormAction = (formData: FormData) => void | Promise<void>;
 

@@ -5,7 +5,7 @@
  * Adds a second asset here so there are two values to update in one batch.
  */
 
-import { test, expect, addHolding, delayServerActions } from "./fixtures";
+import { addHolding, delayServerActions, expect, test } from "./fixtures";
 
 function parseEuroMinor(text: string | null): number {
   expect(text).toBeTruthy();

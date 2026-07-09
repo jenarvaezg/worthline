@@ -3,8 +3,10 @@
 ## Scripts
 
 - `npm run verify` — fast inner-loop and default CI gate.
-  Runs `typecheck` → `test` → `lint` → `format`.
+  Runs `typecheck` → `biome ci` → `test`.
   Does **not** run `next build`.
+- `npm run lint` — `biome ci` (lint + format check).
+- `npm run format` — `biome format --write .` (fix formatting locally).
 - `npm run build` — full production gate, including `apps/web`'s `next build`.
   Use before deploy / as a pre-push gate.
 - `npm run test:related` — run only the tests related to changed files.
@@ -12,17 +14,12 @@
 
 ## Caching
 
-Tasks are orchestrated by Turborepo. `typecheck`, `test`, `lint`, and `build`
-are cached per package under `.turbo/` (gitignored), keyed on input hashes. A
-change scoped to one package re-runs only that package and its dependents
-("FULL TURBO" when nothing changed).
+Tasks are orchestrated by Turborepo. `typecheck`, `test`, and `build` are cached
+per package under `.turbo/` (gitignored), keyed on input hashes. A change scoped
+to one package re-runs only that package and its dependents ("FULL TURBO" when
+nothing changed).
 
-`lint` and `format` also use tool-level file caches:
-
-- ESLint: `--cache --cache-location node_modules/.cache/eslint`
-- Prettier: `--cache --cache-location=node_modules/.cache/prettier/.prettier-cache`
-
-Cache artifacts live under `node_modules/.cache/` and are gitignored.
+Biome runs at the repo root (not per-package via Turbo).
 
 ## Why two gates?
 

@@ -1,12 +1,11 @@
-import { describe, expect, it } from "vitest";
-
 import {
   DEFAULT_PERSONA,
+  isPersonaId,
   PERSONA_IDS,
   PERSONA_META,
-  isPersonaId,
   parsePersonaId,
 } from "@web/demo/persona";
+import { describe, expect, it } from "vitest";
 
 describe("persona vocabulary", () => {
   it("lists the three demo personas", () => {

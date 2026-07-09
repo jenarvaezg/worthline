@@ -18,7 +18,6 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
     "db:generate": "drizzle-kit generate",
-    "lint": "eslint src --max-warnings=0 --cache --cache-location node_modules/.cache/eslint",
     "test": "vitest run --config vitest.config.ts",
     "test:coverage": "vitest run --config vitest.config.ts --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit"

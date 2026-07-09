@@ -7,7 +7,7 @@
  * onboarding checklist remain reachable, with a valid scope cookie.
  */
 
-import { test, expect } from "./fixtures";
+import { expect, test } from "./fixtures";
 
 test("first run solo: empezar → add wizard, dashboard checklist still reachable", async ({
   page,

@@ -7,10 +7,11 @@
  * gap-fills operation dates that have no snapshot in the file without ever
  * recalculating the snapshots the file carried.
  */
-import { describe, expect, test } from "vitest";
+
+import type { WorthlineStore } from "@db/index";
 
 import { createInMemoryStore } from "@db/index";
-import type { WorthlineStore } from "@db/index";
+import { describe, expect, test } from "vitest";
 
 const TODAY = "2026-06-12";
 

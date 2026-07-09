@@ -18,7 +18,7 @@ env:
 
 jobs:
   quality:
-    name: Typecheck · Lint · Format · Unit · Build
+    name: Typecheck · Biome · Unit · Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -34,11 +34,8 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Lint
+      - name: Biome (lint + format)
         run: npm run lint
-
-      - name: Format check
-        run: npm run format
 
       - name: Test glob integrity
         run: npm run test:globs

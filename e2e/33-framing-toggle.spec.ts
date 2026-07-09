@@ -14,7 +14,7 @@
  * because the liquid figure also surfaces as a breakdown stat in the total view.
  */
 
-import { test, expect } from "./fixtures";
+import { expect, test } from "./fixtures";
 
 test("Vista toggle switches framing client-side, mirrors the URL, no document reload", async ({
   page,

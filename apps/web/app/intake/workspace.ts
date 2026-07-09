@@ -1,6 +1,5 @@
-import type { Member } from "@worthline/domain";
-
 import { parseMoneyMinor } from "@web/intake-primitives";
+import type { Member } from "@worthline/domain";
 import { createStableId, type StrictParseResult } from "./shared";
 
 /**

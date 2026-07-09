@@ -5,9 +5,9 @@ import { useFormStatus } from "react-dom";
 
 import type { FundPreviewRow, ImportStatementPreviewState } from "./actions";
 import {
+  type FundSelectionState,
   pluralize,
   summarizeImportSelection,
-  type FundSelectionState,
 } from "./import-statement-summary";
 
 /**

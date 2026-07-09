@@ -1,4 +1,11 @@
+import { buildHoldingBenchmarkComparison } from "@web/build-holding-benchmark";
 import type { AgentViewReadStore } from "@worthline/db";
+import type {
+  ExposureProfile,
+  Instrument,
+  RowOwnership,
+  Workspace,
+} from "@worthline/domain";
 import {
   canHandEnterExposureProfile,
   collectWarnings,
@@ -8,19 +15,11 @@ import {
   projectPortfolio,
   systemClock,
 } from "@worthline/domain";
-import type {
-  ExposureProfile,
-  Instrument,
-  RowOwnership,
-  Workspace,
-} from "@worthline/domain";
-
-import { buildHoldingBenchmarkComparison } from "@web/build-holding-benchmark";
 import {
-  AgentViewHttpError,
   type AgentViewExposureProfile,
   type AgentViewHoldingDetail,
   type AgentViewHoldingSourceSummary,
+  AgentViewHttpError,
   type AgentViewMoney,
   type AgentViewOwnershipShare,
   type AgentViewVsBenchmark,
@@ -29,17 +28,17 @@ import type { AgentViewBenchmarkPrice } from "./financial-context";
 import { ratioStringFromBps } from "./financial-context";
 import {
   assetHoldingFacts,
-  liabilityHoldingFacts,
   type HoldingFacts,
+  liabilityHoldingFacts,
 } from "./holding-facts";
 import { summarizeOperations } from "./operation-summary";
 import { buildHoldingPayouts } from "./payouts";
+import { buildHoldingReturns } from "./returns";
 import {
   publicIdMap,
   requirePublicId,
   resolveInternalHoldingId,
 } from "./scope-resolution";
-import { buildHoldingReturns } from "./returns";
 
 export interface BuildHoldingDetailOptions {
   readBenchmarkPrices?: (seriesId: string) => Promise<AgentViewBenchmarkPrice[]>;

@@ -1,7 +1,6 @@
 import type { AssetPrice, InvestmentPriceProvider } from "@worthline/domain";
-
-import { captureDailySnapshotForWorkspace } from "./capture-daily-snapshot";
 import type { InvestmentAssetMeta } from "./asset-store";
+import { captureDailySnapshotForWorkspace } from "./capture-daily-snapshot";
 import type { WorthlineStore } from "./store-types";
 
 /** A workspace the cron must capture — its id and per-workspace database URL. */

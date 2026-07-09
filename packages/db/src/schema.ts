@@ -1,15 +1,16 @@
-import type { LiquidityTier } from "@worthline/domain";
 import type {
   AssetType,
   DateKey,
   DebtModel,
-  ExportedPublicIdEntityType,
   EarlyRepaymentMode,
+  ExportedPublicIdEntityType,
+  ExposureProfileSource,
+  GoalPriority,
+  Instant,
   Instrument,
   InvestmentPriceProvider,
-  Instant,
   LiabilityType,
-  GoalPriority,
+  LiquidityTier,
   OperationKind,
   OperationSource,
   PayoutCadence,
@@ -18,7 +19,6 @@ import type {
   RiskTolerance,
   SnapshotHoldingKind,
   SourceAdapter,
-  ExposureProfileSource,
   ValuationCadence,
   ValuationMethod,
   WorkspaceMode,
@@ -35,10 +35,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
-const timestamp = (name: string) =>
-  text(name)
-    .notNull()
-    .default(sql`CURRENT_TIMESTAMP`);
+const timestamp = (name: string) => text(name).notNull().default(sql`CURRENT_TIMESTAMP`);
 
 export const appSettings = sqliteTable("app_settings", {
   key: text("key").primaryKey(),

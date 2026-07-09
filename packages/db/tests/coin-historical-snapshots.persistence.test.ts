@@ -9,12 +9,11 @@
  * historical-snapshots persistence style (recordBuy seeds the past snapshots the
  * coins then ripple into).
  */
-import { describe, expect, test } from "vitest";
 
-import type { CoinPosition } from "@worthline/domain";
-
-import { createInMemoryStore } from "@db/index";
 import type { SourcePositionInput, WorthlineStore } from "@db/index";
+import { createInMemoryStore } from "@db/index";
+import type { CoinPosition } from "@worthline/domain";
+import { describe, expect, test } from "vitest";
 
 const TODAY = "2026-06-15";
 const MEMBER_ID = "mJ";

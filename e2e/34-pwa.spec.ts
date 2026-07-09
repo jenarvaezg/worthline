@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 test.describe("PWA: manifest & service worker", () => {
   test("Slice 1: manifest is served and has PWA fields", async ({ request }) => {

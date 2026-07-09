@@ -5,12 +5,12 @@ import { money } from "./money";
 import type { IrrResult, SimpleGain, TwrResult } from "./returns";
 import {
   APPRECIATING_CAVEAT,
-  MARKET_CAVEAT,
-  MARKET_PAYOUTS_CAVEAT,
   buildHoldingReturnsView,
   buildPortfolioReturnsView,
   CLASS_ATTRIBUTION_CAVEAT,
   investmentReturnsById,
+  MARKET_CAVEAT,
+  MARKET_PAYOUTS_CAVEAT,
   portfolioReturnsView,
   returnsByAssetClassView,
   returnsKindForInstrument,

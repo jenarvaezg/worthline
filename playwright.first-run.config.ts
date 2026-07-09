@@ -11,10 +11,10 @@
  *   npm run test:e2e:first-run
  */
 
-import { defineConfig, devices } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { defineConfig, devices } from "@playwright/test";
 
 type FirstRunScenario = "solo" | "hogar";
 

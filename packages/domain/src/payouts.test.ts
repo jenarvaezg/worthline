@@ -3,9 +3,9 @@ import { describe, expect, test } from "vitest";
 import {
   collectHoldingPayouts,
   deriveScheduleOccurrences,
-  passiveIncomeTrailing,
   type Payout,
   type PayoutSchedule,
+  passiveIncomeTrailing,
 } from "./payouts";
 
 /**

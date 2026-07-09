@@ -1,7 +1,6 @@
-import NextAuth from "next-auth";
-
 import config from "@web/auth.config";
 import { provisionWorkspaceForEmail } from "@web/provisioning";
+import NextAuth from "next-auth";
 
 /**
  * Full (Node-runtime) Auth.js config (ADR 0030). The edge-safe half lives in

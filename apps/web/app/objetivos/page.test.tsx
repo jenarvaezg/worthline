@@ -1,5 +1,5 @@
-import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactElement, ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
 
 const calls = vi.hoisted(() => {

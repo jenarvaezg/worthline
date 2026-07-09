@@ -8,16 +8,15 @@
  * Pure detection — every input is passed in, nothing reads the clock or the db.
  */
 import { describe, expect, it } from "vitest";
-
-import {
-  detectPriceBackfillCandidates,
-  detectSingleAssetBackfillCandidate,
-} from "./price-backfill-detection";
+import type { InvestmentOperation } from "./investment-types";
 import type {
   PriceBackfillCandidateAsset,
   PriceBackfillSnapshotRow,
 } from "./price-backfill-detection";
-import type { InvestmentOperation } from "./investment-types";
+import {
+  detectPriceBackfillCandidates,
+  detectSingleAssetBackfillCandidate,
+} from "./price-backfill-detection";
 
 function btc(
   overrides: {

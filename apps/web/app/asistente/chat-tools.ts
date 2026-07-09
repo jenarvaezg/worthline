@@ -1,26 +1,3 @@
-import { jsonSchema, tool, type ToolSet } from "ai";
-
-import type { AgentViewReadStore } from "@worthline/db";
-import { formatMoneyMinor } from "@worthline/domain";
-
-import {
-  parseQuickActions,
-  sourceHref,
-  type QuickAction,
-} from "@web/asistente/assistant-actions";
-import {
-  AGENT_FILL_EXPOSURE_POLICY,
-  buildExposureProfileProposal,
-  listExposureProfileFillTargets,
-} from "@web/asistente/exposure-profile-proposals";
-import type { ScreenSection } from "@web/asistente/screen-context";
-import { resolveInternalHoldingId } from "@web/agent-view/scope-resolution";
-
-import {
-  AgentViewHttpError,
-  errorEnvelope,
-  type AgentViewFinancialContext,
-} from "@web/agent-view/contract";
 import {
   buildHoldingConnectedSourcePositions,
   buildSourceConnectedSourcePositions,
@@ -31,6 +8,11 @@ import {
   buildConnectedSourcesList,
   buildSourceFreshness,
 } from "@web/agent-view/connected-sources";
+import {
+  type AgentViewFinancialContext,
+  AgentViewHttpError,
+  errorEnvelope,
+} from "@web/agent-view/contract";
 import {
   buildDataQuality,
   DEFAULT_DATA_QUALITY_LIMIT,
@@ -51,6 +33,7 @@ import {
   MAX_OPERATION_LIMIT,
 } from "@web/agent-view/holding-operations";
 import { buildPriceFreshness } from "@web/agent-view/price-freshness";
+import { resolveInternalHoldingId } from "@web/agent-view/scope-resolution";
 import { listAgentViewScopes } from "@web/agent-view/scopes";
 import {
   buildSnapshotHistory,
@@ -67,6 +50,20 @@ import {
   buildWarningOverrides,
   buildWorkspaceInfo,
 } from "@web/agent-view/workspace-context";
+import {
+  parseQuickActions,
+  type QuickAction,
+  sourceHref,
+} from "@web/asistente/assistant-actions";
+import {
+  AGENT_FILL_EXPOSURE_POLICY,
+  buildExposureProfileProposal,
+  listExposureProfileFillTargets,
+} from "@web/asistente/exposure-profile-proposals";
+import type { ScreenSection } from "@web/asistente/screen-context";
+import type { AgentViewReadStore } from "@worthline/db";
+import { formatMoneyMinor } from "@worthline/domain";
+import { jsonSchema, type ToolSet, tool } from "ai";
 
 /**
  * The assistant's chat tools (#629/#630, ADR 0047): thin conversational

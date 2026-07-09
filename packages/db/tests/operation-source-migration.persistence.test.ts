@@ -1,8 +1,7 @@
-import type { Client } from "@libsql/client";
-import { describe, expect, test } from "vitest";
-
 import { openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
+import type { Client } from "@libsql/client";
+import { describe, expect, test } from "vitest";
 
 async function seedV42(): Promise<Client> {
   const client = openLibsqlClient(":memory:");

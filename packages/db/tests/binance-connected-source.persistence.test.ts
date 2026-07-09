@@ -8,10 +8,11 @@
  * case) but stays a position. These assert external behaviour — projected
  * holding, value, persisted positions — not internal wiring.
  */
-import { describe, expect, test } from "vitest";
+
+import type { SourcePositionInput, WorthlineStore } from "@db/index";
 
 import { createInMemoryStore } from "@db/index";
-import type { SourcePositionInput, WorthlineStore } from "@db/index";
+import { describe, expect, test } from "vitest";
 
 const MEMBER_ID = "mJ";
 

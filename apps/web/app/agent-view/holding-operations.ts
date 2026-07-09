@@ -1,6 +1,6 @@
 import type { AgentViewReadStore } from "@worthline/db";
-import { multiplyToMinor } from "@worthline/domain";
 import type { InvestmentOperation } from "@worthline/domain";
+import { multiplyToMinor } from "@worthline/domain";
 
 import {
   AgentViewHttpError,

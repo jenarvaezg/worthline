@@ -1,7 +1,6 @@
+import type { HoldingBenchmarkComparison } from "@worthline/domain";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
-
-import type { HoldingBenchmarkComparison } from "@worthline/domain";
 
 import HoldingBenchmarkComparisonCard from "./holding-benchmark-comparison-card";
 

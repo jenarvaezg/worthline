@@ -1,6 +1,6 @@
 import type { AgentViewReadStore } from "@worthline/db";
-import { projectFire } from "@worthline/domain";
 import type { FireScenario } from "@worthline/domain";
+import { projectFire } from "@worthline/domain";
 
 import type {
   AgentViewFireProjection,

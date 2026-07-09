@@ -8,7 +8,7 @@
  * the conversation, keyboard close returning focus to the trigger, the context
  * live region, and the mobile drawer.
  */
-import { test, expect } from "./fixtures";
+import { expect, test } from "./fixtures";
 
 // The E2E service worker proxies /api/chat past page.route; block it so this
 // journey's canned stream is delivered by the interception below.

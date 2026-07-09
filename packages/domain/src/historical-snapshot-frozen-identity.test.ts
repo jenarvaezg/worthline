@@ -7,9 +7,9 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  resolveFrozenIdentity,
   type FrozenIdentityCapture,
   type ResolvedFrozenIdentity,
+  resolveFrozenIdentity,
 } from "./historical-snapshot";
 
 /** A capture carrying its tier in `liquidityTier` so tests can assert which one won. */

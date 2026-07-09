@@ -11,10 +11,10 @@
  * `execToleratingMissingTable` narrows the tolerance to exactly the intended case:
  * swallow "no such table", surface everything else.
  */
-import { describe, expect, test } from "vitest";
 
 import { openLibsqlClient } from "@db/index";
 import { execToleratingMissingTable } from "@db/migrate";
+import { describe, expect, test } from "vitest";
 
 describe("execToleratingMissingTable (migration DDL/DML guard)", () => {
   test("creates the index when the table and columns exist", async () => {

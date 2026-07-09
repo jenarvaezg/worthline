@@ -1,4 +1,29 @@
+import { isDemoMode } from "@web/demo/write-guard";
+import {
+  appendParam,
+  buildCurrentUrlFor,
+  PRIVACY_COOKIE_NAME,
+  parseFormError,
+  parseGroupParam,
+  parsePrivacyCookie,
+  parseScopeCookie,
+  parseScopeParam,
+  resolveOkMessage,
+  SCOPE_COOKIE_NAME,
+} from "@web/intake";
+import { refreshPricesAction } from "@web/inversiones/actions";
+import Shell from "@web/shell";
 import { bootstrapHealthcheck, withStore } from "@web/store";
+import { EXPOSURE_LENS_VIEW_PARAM, readViewParam } from "@web/view-state";
+import type {
+  AssetClassResolution,
+  DatedPayout,
+  ExposureLookthroughHolding,
+  ExposureProfile,
+  Instrument,
+  PortfolioGroupKey,
+  PriceRefreshMeta,
+} from "@worthline/domain";
 import {
   collectHoldingPayouts,
   collectWarnings,
@@ -13,35 +38,9 @@ import {
   returnsByAssetClassView,
   systemClock,
 } from "@worthline/domain";
-import type {
-  AssetClassResolution,
-  DatedPayout,
-  ExposureLookthroughHolding,
-  ExposureProfile,
-  Instrument,
-  PortfolioGroupKey,
-  PriceRefreshMeta,
-} from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-
-import {
-  appendParam,
-  buildCurrentUrlFor,
-  parseFormError,
-  parseGroupParam,
-  parsePrivacyCookie,
-  parseScopeParam,
-  parseScopeCookie,
-  resolveOkMessage,
-  PRIVACY_COOKIE_NAME,
-  SCOPE_COOKIE_NAME,
-} from "@web/intake";
-import { refreshPricesAction } from "@web/inversiones/actions";
-import { isDemoMode } from "@web/demo/write-guard";
-import Shell from "@web/shell";
-import { EXPOSURE_LENS_VIEW_PARAM, readViewParam } from "@web/view-state";
 import BalanceBoard from "./balance-board";
 import ExposureSection from "./exposure-section";
 import PatrimonioGroupControls from "./group-controls";

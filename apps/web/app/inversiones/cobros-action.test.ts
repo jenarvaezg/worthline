@@ -7,8 +7,8 @@
  * Prior art: inversiones/exposure-profile-action.test.ts.
  */
 
-import { createInMemoryStore } from "@worthline/db";
 import type { WorthlineStore } from "@worthline/db";
+import { createInMemoryStore } from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
 import {

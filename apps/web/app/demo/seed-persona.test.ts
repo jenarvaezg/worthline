@@ -9,15 +9,14 @@
  * Prior art: e2e/global-setup.ts and tests/performance-harness-seeds.ts seed
  * through the same seams; load-dashboard.test.ts shows the read harness.
  */
-import { describe, expect, it } from "vitest";
-
-import { createInMemoryStore } from "@worthline/db";
-import type { WorthlineStore } from "@worthline/db";
-import { amortizableBalanceAtDate, valueHousingAtDate } from "@worthline/domain";
 
 import { resolveRelativeDate, seedPersona } from "@web/demo/seed-persona";
 import { FAMILIA_SPEC } from "@web/demo/specs/familia";
-import { loadDashboard, type LoadDashboardInput } from "@web/load-dashboard";
+import { type LoadDashboardInput, loadDashboard } from "@web/load-dashboard";
+import type { WorthlineStore } from "@worthline/db";
+import { createInMemoryStore } from "@worthline/db";
+import { amortizableBalanceAtDate, valueHousingAtDate } from "@worthline/domain";
+import { describe, expect, it } from "vitest";
 
 const AS_OF = "2026-06-19";
 const NOW_ISO = `${AS_OF}T12:00:00.000Z`;

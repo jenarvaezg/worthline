@@ -1,11 +1,11 @@
-import { describe, expect, test } from "vitest";
-
-import { createInMemoryStore } from "@worthline/db";
 import type { WorthlineStore } from "@worthline/db";
 
+import { createInMemoryStore } from "@worthline/db";
+import { describe, expect, test } from "vitest";
+
 import { readMatrixCells } from "./dashboard-cells";
-import { loadDashboard } from "./load-dashboard";
 import type { LoadDashboardInput } from "./load-dashboard";
+import { loadDashboard } from "./load-dashboard";
 
 /**
  * The side-effect-free matrix reader (S4 #520, ADR 0038): builds chart-series

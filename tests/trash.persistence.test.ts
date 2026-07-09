@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest";
 
-import { createFileBackedStore, cleanupTempDirs } from "./helpers";
+import { cleanupTempDirs, createFileBackedStore } from "./helpers";
 
 afterEach(cleanupTempDirs);
 

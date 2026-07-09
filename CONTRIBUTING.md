@@ -38,10 +38,8 @@ This is the single most important step. Every change must pass:
 npm run verify
 ```
 
-`verify` runs `typecheck` → `test` → `lint` → `format` (Turborepo-cached, so
-re-runs are fast). **`format` is a separate gate from `lint`** — code that lints
-clean can still fail `prettier --check`. Run `npm run format -- --write` (or your
-editor's Prettier integration) to fix formatting before committing.
+`verify` runs `typecheck` → `biome ci` → `test` (Turborepo-cached for typecheck/test).
+Biome covers lint and format in one step. Run `npm run format` to auto-fix formatting locally.
 
 For anything that touches `apps/web` routes or pages, also run the full gate:
 

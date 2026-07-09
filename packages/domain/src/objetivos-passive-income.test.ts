@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-
-import type { DatedAmount } from "./payouts";
 import { scopePassiveIncome } from "./objetivos-passive-income";
+import type { DatedAmount } from "./payouts";
 import type { OwnershipShare } from "./workspace-types";
 
 const FULL: OwnershipShare[] = [{ memberId: "m_jose", shareBps: 10_000 }];

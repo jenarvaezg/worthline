@@ -14,7 +14,7 @@
  * `pushState` (interaction-patterns §2–§3, #737).
  */
 
-import { useEffect, useState, type MouseEvent } from "react";
+import { type MouseEvent, useEffect, useState } from "react";
 
 import type {
   HoldingMover,

@@ -9,8 +9,8 @@
  * unit-testable without React (interaction-patterns §7).
  */
 
-import { deriveScheduleOccurrences } from "@worthline/domain";
 import type { Payout, PayoutSchedule } from "@worthline/domain";
+import { deriveScheduleOccurrences } from "@worthline/domain";
 
 /** A payout row ready to render — a recorded one-off or a derived occurrence. */
 export interface CobroRow {

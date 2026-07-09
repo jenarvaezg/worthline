@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-
+import type {
+  AmortizationPlanInput,
+  EarlyRepayment,
+  InterestRateRevision,
+} from "./amortization";
 import {
   amortizableBalanceAtDate,
   assertEventWithinTerm,
@@ -7,11 +11,6 @@ import {
   firstCuota,
   remainingMonthlyPayments,
   suggestFirstPaymentDate,
-} from "./amortization";
-import type {
-  AmortizationPlanInput,
-  EarlyRepayment,
-  InterestRateRevision,
 } from "./amortization";
 
 /**

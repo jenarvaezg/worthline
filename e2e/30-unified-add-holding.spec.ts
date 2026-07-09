@@ -8,7 +8,7 @@
  * holdings it adds don't perturb earlier journeys' totals.
  */
 
-import { test, expect, holdingRow } from "./fixtures";
+import { expect, holdingRow, test } from "./fixtures";
 
 /** Pick an instrument by clicking its gallery chip (the radio is visually hidden). */
 async function pickInstrument(page: import("@playwright/test").Page, instrument: string) {

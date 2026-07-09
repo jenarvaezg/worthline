@@ -12,10 +12,10 @@
  *   npm run test:e2e
  */
 
-import { defineConfig, devices } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { defineConfig, devices } from "@playwright/test";
 
 // One temporary DB file for the WHOLE run — discarded when the OS cleans up the
 // temp dir. Never touches the developer's real data. Playwright re-imports this

@@ -5,15 +5,15 @@
  * value a coin gets on sync is byte-identical to the melt value it gets on revalue,
  * given the same detail + spot. Also asserts request-budget dedup and TTL.
  */
-import { describe, expect, it, vi } from "vitest";
 
+import type { NumistaCollectedItem } from "@pricing/numista";
+import { describe, expect, it, vi } from "vitest";
+import type { RevaluePosition } from "./numista-valuation";
 import {
   NUMISMATIC_TTL_DAYS,
   refreshCoinValuations,
   syncNumistaCollection,
 } from "./numista-valuation";
-import type { RevaluePosition } from "./numista-valuation";
-import type { NumistaCollectedItem } from "@pricing/numista";
 
 const NOW = "2026-06-15T12:00:00.000Z";
 

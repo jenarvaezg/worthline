@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, test } from "vitest";
+import { createGoalAction } from "@web/objetivos/goal-actions";
 
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
-import { createGoalAction } from "@web/objetivos/goal-actions";
+import { afterEach, describe, expect, test } from "vitest";
 import { catchRedirect, fd } from "./helpers";
 
 let store: WorthlineStore;

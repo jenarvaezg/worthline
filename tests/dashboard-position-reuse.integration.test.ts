@@ -22,7 +22,6 @@
  *   - READ SHAPE: a full dashboard-style load reads the operations table once,
  *     not once per readPositions() call.
  */
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import type { Client } from "@libsql/client";
 import type { WorthlineStore } from "@worthline/db";
@@ -33,6 +32,7 @@ import {
 } from "@worthline/db";
 import type { InvestmentCaptureDetail } from "@worthline/domain";
 import { captureSnapshotForScope, listScopeOptions } from "@worthline/domain";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { cleanupTempDirs } from "./helpers";
 
@@ -158,7 +158,7 @@ describe("dashboard position-projection reuse — read shape (#208)", () => {
   async function createCountingStore(): Promise<WorthlineStore> {
     const client = openLibsqlClient(":memory:");
     const originalExecute = client.execute.bind(client);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: spy on libsql execute for scan counting
     client.execute = ((stmt: any, ...rest: any[]) => {
       const sql = typeof stmt === "string" ? stmt : stmt?.sql;
       if (typeof sql === "string") {
@@ -170,7 +170,7 @@ describe("dashboard position-projection reuse — read shape (#208)", () => {
           fullOperationScans += 1;
         }
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // biome-ignore lint/suspicious/noExplicitAny: forward to original execute
       return (originalExecute as any)(stmt, ...rest);
     }) as Client["execute"];
     return createStoreFromSqlite(client);

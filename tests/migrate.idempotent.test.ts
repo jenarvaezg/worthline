@@ -1,11 +1,11 @@
-import type { Client } from "@libsql/client";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { schemaSql } from "@db/schema-sql";
+import type { Client } from "@libsql/client";
 
 import { openLibsqlClient, SCHEMA_VERSION, withStore } from "@worthline/db";
-import { schemaSql } from "@db/schema-sql";
+import { afterEach, describe, expect, test } from "vitest";
 
 const tempDirs: string[] = [];
 

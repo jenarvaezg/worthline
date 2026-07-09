@@ -1,8 +1,7 @@
 import type { Implementation } from "@modelcontextprotocol/sdk/types.js";
-import { createMcpHandler, withMcpAuth } from "mcp-handler";
-
 import { createAgentViewInternalMcpToolCatalog } from "@web/agent-view/internal-catalog";
 import { createAgentViewMcpServer } from "@web/agent-view/mcp-server";
+import { createMcpHandler, withMcpAuth } from "mcp-handler";
 
 import { verifyMcpToken } from "./verify-token";
 

@@ -1,5 +1,8 @@
 "use client";
 
+import { formatRatioPct, returnsTooltipLines } from "@web/_components/returns-format";
+import { PendingSubmit } from "@web/pending-submit";
+import { boardRefreshHover } from "@web/price-refresh";
 import type { TrashView } from "@worthline/db";
 import type {
   DomainWarning,
@@ -9,11 +12,7 @@ import type {
 } from "@worthline/domain";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import Link from "next/link";
-import { useOptimistic, useTransition, type FormEvent } from "react";
-
-import { boardRefreshHover } from "@web/price-refresh";
-import { PendingSubmit } from "@web/pending-submit";
-import { formatRatioPct, returnsTooltipLines } from "@web/_components/returns-format";
+import { type FormEvent, useOptimistic, useTransition } from "react";
 
 import {
   acknowledgeWarningAction,

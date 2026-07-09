@@ -27,24 +27,24 @@ import type {
   InterestRateRevision,
 } from "./amortization";
 import { addMonths } from "./amortization";
-import { isHousingAsset } from "./classification";
 import type { LiquidityTier } from "./classification";
-import { coinCollectionValueAtDate } from "./connected-source";
+import { isHousingAsset } from "./classification";
 import type { CoinPosition } from "./connected-source";
+import { coinCollectionValueAtDate } from "./connected-source";
 import type { DebtBalanceAnchor } from "./debt-balance";
 import type { DecimalString } from "./decimal";
-import { valueAt } from "./holding-valuation";
 import type { HoldingValuationInput } from "./holding-valuation";
+import { valueAt } from "./holding-valuation";
 import type { HousingValuationAnchor } from "./housing-valuation";
 import type { InvestmentOperation } from "./investment-types";
-import type { ValuationCadence } from "./valuation-cadence";
-import type { DebtModel, Liability, ManualAsset, Workspace } from "./workspace-types";
-import type { NetWorthSnapshot, ValuedNetWorthSnapshot } from "./snapshot-types";
-import { captureValuedNetWorthSnapshot, createNetWorthSnapshot } from "./snapshot-types";
-import { assertSnapshotHoldingsReconcile, deriveRowAxes } from "./snapshot-holdings";
 import { money } from "./money";
 import type { InvestmentCaptureDetail, SnapshotHoldingRow } from "./snapshot-holdings";
+import { assertSnapshotHoldingsReconcile, deriveRowAxes } from "./snapshot-holdings";
+import type { NetWorthSnapshot, ValuedNetWorthSnapshot } from "./snapshot-types";
+import { captureValuedNetWorthSnapshot, createNetWorthSnapshot } from "./snapshot-types";
+import type { ValuationCadence } from "./valuation-cadence";
 import type { ManualValuePoint } from "./value-history";
+import type { DebtModel, Liability, ManualAsset, Workspace } from "./workspace-types";
 
 /**
  * The curve inputs of one real-estate asset (PRD #108): its valuation anchors,
@@ -774,6 +774,15 @@ export function globalHoldingValueAtDate(
   return valueAt(valuationInput, targetDate).valueMinor;
 }
 
+export type {
+  RecalculateHousingSnapshotInput,
+  RecalculateLiabilitySnapshotInput,
+} from "./historical-snapshot-anchor-ripple";
+export {
+  recalculateSnapshotForHousing,
+  recalculateSnapshotForLiability,
+} from "./historical-snapshot-anchor-ripple";
+export type { RecalculateSnapshotInput } from "./historical-snapshot-operation-ripple";
 /**
  * Re-export the trigger modules' recalc functions and their input types from the
  * core (ADR 0028, #320 + #321). Splitting them into their own modules keeps the
@@ -784,25 +793,16 @@ export function globalHoldingValueAtDate(
  * modules. The barrel and the relative-path importers resolve unchanged.
  */
 export { recalculateSnapshotForAsset } from "./historical-snapshot-operation-ripple";
-export type { RecalculateSnapshotInput } from "./historical-snapshot-operation-ripple";
-export {
-  recalculateSnapshotForCoinAcquisition,
-  recalculateSnapshotForConnectedValue,
-} from "./historical-snapshot-position-ripple";
+export type {
+  OwnershipRippleHolding,
+  RecalculateOwnershipSnapshotInput,
+} from "./historical-snapshot-ownership-ripple";
+export { recalculateSnapshotForOwnership } from "./historical-snapshot-ownership-ripple";
 export type {
   RecalculateCoinAcquisitionSnapshotInput,
   RecalculateConnectedValueSnapshotInput,
 } from "./historical-snapshot-position-ripple";
 export {
-  recalculateSnapshotForHousing,
-  recalculateSnapshotForLiability,
-} from "./historical-snapshot-anchor-ripple";
-export type {
-  RecalculateHousingSnapshotInput,
-  RecalculateLiabilitySnapshotInput,
-} from "./historical-snapshot-anchor-ripple";
-export { recalculateSnapshotForOwnership } from "./historical-snapshot-ownership-ripple";
-export type {
-  OwnershipRippleHolding,
-  RecalculateOwnershipSnapshotInput,
-} from "./historical-snapshot-ownership-ripple";
+  recalculateSnapshotForCoinAcquisition,
+  recalculateSnapshotForConnectedValue,
+} from "./historical-snapshot-position-ripple";

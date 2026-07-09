@@ -1,6 +1,5 @@
-import { divideUnits, type DecimalString } from "@worthline/domain";
-
 import { normalizeNonNegativeDecimalString } from "@web/intake-primitives";
+import { type DecimalString, divideUnits } from "@worthline/domain";
 
 /**
  * The "saldo de hoy" → participaciones derivation (#597, PRD #593 S2): a user who

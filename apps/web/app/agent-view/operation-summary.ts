@@ -1,5 +1,5 @@
-import { addUnits, multiplyToMinor } from "@worthline/domain";
 import type { InvestmentOperation } from "@worthline/domain";
+import { addUnits, multiplyToMinor } from "@worthline/domain";
 
 import type { AgentViewMoney, AgentViewOperationSummary } from "./contract";
 

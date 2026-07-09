@@ -10,12 +10,11 @@
  * event flat. Changing the cadence re-ripples the affected snapshots; informal
  * debts are unaffected.
  */
-import { describe, expect, test } from "vitest";
 
-import { amortizableBalanceAtDate, debtBalanceAtDate } from "@worthline/domain";
-
-import { createInMemoryStore } from "@db/index";
 import type { WorthlineStore } from "@db/index";
+import { createInMemoryStore } from "@db/index";
+import { amortizableBalanceAtDate, debtBalanceAtDate } from "@worthline/domain";
+import { describe, expect, test } from "vitest";
 
 const TODAY = "2026-06-13";
 

@@ -10,8 +10,9 @@
  * catalog-seam refactor (#308) — dropping the inline derived-id deny-list —
  * preserves behaviour byte-for-byte.
  */
-import { createInMemoryStore } from "@worthline/db";
+
 import type { WorthlineStore } from "@worthline/db";
+import { createInMemoryStore } from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
 import { batchValueUpdateAction } from "./actions";

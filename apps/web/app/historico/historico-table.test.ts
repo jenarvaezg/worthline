@@ -5,13 +5,13 @@
  * carries its per-coin movers — the second drilldown level — derived from the two
  * days' frozen position rows.
  */
-import type { NetWorthSnapshot, SnapshotPositionRow } from "@worthline/domain";
-import type { SnapshotHoldingRecord } from "@worthline/db";
-import { describe, expect, test } from "vitest";
 
-import { buildHistoricoRows, HistoricoTable } from "./historico-table";
-import { renderToStaticMarkup } from "react-dom/server";
+import type { SnapshotHoldingRecord } from "@worthline/db";
+import type { NetWorthSnapshot, SnapshotPositionRow } from "@worthline/domain";
 import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, test } from "vitest";
+import { buildHistoricoRows, HistoricoTable } from "./historico-table";
 
 function snapshot(dateKey: string, totalMinor: number): NetWorthSnapshot {
   const money = (amountMinor: number) => ({ amountMinor, currency: "EUR" });

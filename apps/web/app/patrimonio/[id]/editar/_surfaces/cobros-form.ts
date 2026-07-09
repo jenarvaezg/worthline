@@ -9,8 +9,8 @@
  * the section component and the server actions are thin glue over this.
  */
 
-import { parseDecimalToMinor } from "@worthline/domain";
 import type { PayoutCadence } from "@worthline/domain";
+import { parseDecimalToMinor } from "@worthline/domain";
 
 /** The cadences in render order, with their Spanish labels. */
 export const PAYOUT_CADENCE_LABELS: ReadonlyArray<{

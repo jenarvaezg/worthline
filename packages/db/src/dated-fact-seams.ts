@@ -10,8 +10,8 @@ import type {
   Workspace,
 } from "@worthline/domain";
 import {
-  amortizationPlanFromBalanceRebaseline,
   amortizationPaymentDatesUpTo,
+  amortizationPlanFromBalanceRebaseline,
   buildSnapshotAtDate,
   globalHoldingValueAtDate,
   historicalCapturedAt,
@@ -34,10 +34,18 @@ import {
   type UpdateValuationAnchorInput,
 } from "./asset-store";
 import {
+  BACKFILL_SNAPSHOT_ID_PREFIX,
+  buildHistoricalSnapshotDeps,
+  groupFrozenHoldingsByDate,
+  type HistoricalSnapshotDeps,
+  readFrozenIdentityCaptures,
+  readInvestmentIdentity,
+} from "./historical-snapshot-deps";
+import {
   type AddBalanceAnchorInput,
+  type AddBalanceRebaselineInput,
   type AddEarlyRepaymentInput,
   type AddInterestRateRevisionInput,
-  type AddBalanceRebaselineInput,
   type CreateAmortizationPlanInput,
   type LiabilityStore,
   type UpdateAmortizationPlanInput,
@@ -47,27 +55,11 @@ import {
   type UpdateInterestRateRevisionInput,
   type UpdateLiabilityInput,
 } from "./liability-store";
+import type { MigrateResult } from "./migrate";
 import {
   type OperationsStore,
   type UpdateInvestmentOperationInput,
 } from "./operations-store";
-import {
-  BACKFILL_SNAPSHOT_ID_PREFIX,
-  buildHistoricalSnapshotDeps,
-  groupFrozenHoldingsByDate,
-  readFrozenIdentityCaptures,
-  readInvestmentIdentity,
-  type HistoricalSnapshotDeps,
-} from "./historical-snapshot-deps";
-import type { MigrateResult } from "./migrate";
-import {
-  readSnapshotHoldings,
-  readSnapshots,
-  type SaveSnapshotInput,
-  type SnapshotHoldingRecord,
-  type SnapshotStore,
-} from "./snapshot-store";
-import { type StoreContext, type StoreDb, readAllOperations } from "./store-context";
 import {
   amortizationPlans,
   assetOperations,
@@ -82,6 +74,14 @@ import {
   positions,
   snapshots,
 } from "./schema";
+import {
+  readSnapshotHoldings,
+  readSnapshots,
+  type SaveSnapshotInput,
+  type SnapshotHoldingRecord,
+  type SnapshotStore,
+} from "./snapshot-store";
+import { readAllOperations, type StoreContext, type StoreDb } from "./store-context";
 import type { CreateHousingHoldingCommand } from "./store-types";
 
 // ── Historical snapshots (ADR 0012, PRD #107) ────────────────────────────────

@@ -10,21 +10,20 @@
  * thin glue over this.
  */
 
-import {
-  EXPOSURE_ASSET_CLASS_BUCKETS,
-  EXPOSURE_GEOGRAPHY_BUCKETS,
-  createExposureProfile,
-} from "@worthline/domain";
+import { parsePercentToDecimal } from "@web/intake";
 import type {
-  DecimalString,
   CreateExposureProfileInput,
+  DecimalString,
   ExposureAssetClassBucket,
   ExposureBreakdowns,
   ExposureGeographyBucket,
   ExposureProfile,
 } from "@worthline/domain";
-
-import { parsePercentToDecimal } from "@web/intake";
+import {
+  createExposureProfile,
+  EXPOSURE_ASSET_CLASS_BUCKETS,
+  EXPOSURE_GEOGRAPHY_BUCKETS,
+} from "@worthline/domain";
 
 /** The raw string map lifted straight off the form (percents 0–100, es-ES ok). */
 export interface ExposureProfileFields {

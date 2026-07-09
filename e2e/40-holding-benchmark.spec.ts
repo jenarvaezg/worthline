@@ -6,7 +6,7 @@
  * honestly; with no tracked index assigned the card is omitted entirely.
  */
 
-import { test, expect, addHolding, holdingRow, openAdvancedSettings } from "./fixtures";
+import { addHolding, expect, holdingRow, openAdvancedSettings, test } from "./fixtures";
 
 test("holding ficha shows vs-benchmark card when tracked index is assigned", async ({
   page,

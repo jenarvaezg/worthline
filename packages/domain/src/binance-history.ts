@@ -14,8 +14,8 @@
  * 0, never an error (the same contract the live sync uses for unmapped tokens).
  */
 
-import { multiplyToMinor } from "./decimal";
 import type { DecimalString } from "./decimal";
+import { multiplyToMinor } from "./decimal";
 
 /**
  * The reconstructed inputs to the monthly value history. Both maps are keyed by

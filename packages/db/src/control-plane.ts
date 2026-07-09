@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Client } from "@libsql/client";
 
-import { openLibsqlClient, type LibsqlUrlTarget } from "./libsql-client";
+import { type LibsqlUrlTarget, openLibsqlClient } from "./libsql-client";
 
 /**
  * The control plane (ADR 0030). A single small libSQL database — separate from

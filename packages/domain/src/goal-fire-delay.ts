@@ -23,10 +23,10 @@
  * "menos de 1 mes" in that case (months === 0 && kind === "delays").
  */
 
-import type { Goal } from "./goals";
 import type { FireScopeConfig } from "./fire";
 import { fireReservationHorizon } from "./fire";
-import { projectFire, DEFAULT_MAX_YEARS, fractionalFireYear } from "./fire-projection";
+import { DEFAULT_MAX_YEARS, fractionalFireYear, projectFire } from "./fire-projection";
+import type { Goal } from "./goals";
 
 export type GoalFireDelay = { kind: "delays"; months: number } | { kind: "no_effect" };
 

@@ -12,13 +12,13 @@
  * storage/snapshots/reconciliation, only its row and the count are suppressed.
  */
 
-import { addUnits, groupPositionsByToken, isTokenDustValue } from "@worthline/domain";
 import type {
   LiquidityTier,
   SourcePosition,
   TokenPosition,
   TokenValuationBasis,
 } from "@worthline/domain";
+import { addUnits, groupPositionsByToken, isTokenDustValue } from "@worthline/domain";
 
 /**
  * The source's TOKEN positions on ONE liquidity rung — the detail page shows only

@@ -3,15 +3,15 @@ import type {
   AgentViewReadStore,
   AgentViewSourceFreshness,
 } from "@worthline/db";
-import { coinValue, positionValue } from "@worthline/domain";
 import type { CoinPosition, SourcePosition, TokenPosition } from "@worthline/domain";
+import { coinValue, positionValue } from "@worthline/domain";
 
 import {
-  AgentViewHttpError,
   type AgentViewConnectedSourcePosition,
   type AgentViewConnectedSourcePositionGroup,
   type AgentViewConnectedSourcePositionGroupPage,
   type AgentViewConnectedSourcePositionPage,
+  AgentViewHttpError,
   type AgentViewLiquidityTier,
   type AgentViewObjectReference,
   type AgentViewPositionValuationBasis,

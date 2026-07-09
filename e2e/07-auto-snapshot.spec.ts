@@ -6,7 +6,7 @@
  * and only snapshot of the month). The Evolución panel renders on /.
  */
 
-import { test, expect } from "./fixtures";
+import { expect, test } from "./fixtures";
 
 test("auto-snapshot: / load captures snapshot → historico shows entry", async ({
   page,

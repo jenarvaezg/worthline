@@ -11,11 +11,11 @@
  * Ownership` dispatches to the housing curve ripple instead (the valuation
  * ripple already re-weights from the asset's new split).
  */
+
+import type { WorthlineStore } from "@db/index";
+import { createInMemoryStore } from "@db/index";
 import { allocateScopedHolding } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
-
-import { createInMemoryStore } from "@db/index";
-import type { WorthlineStore } from "@db/index";
 
 const TODAY = "2026-06-13";
 const PAST_DATES = ["2026-01-15", "2026-02-15", "2026-03-15", "2026-04-15", "2026-05-15"];

@@ -1,13 +1,8 @@
-import {
-  deriveFramedSnapshotDeltas,
-  DRILL_GROUP_BY_TIER,
-  donutArcSegments,
-  formatMoneyMinorPrivacy,
-  largestRemainderPercentages,
-  LIQUIDITY_TIER_LABELS,
-  moneySign,
-  presentNetWorth,
-} from "@worthline/domain";
+import { formatRatioPct, returnsTooltipLines } from "@web/_components/returns-format";
+import { readDemoContext } from "@web/demo/read-demo-context";
+import { perfEnd, perfStart } from "@web/perf-log";
+import { bootstrapHealthcheck, openStore } from "@web/store";
+import { createControlPlaneStore } from "@worthline/db";
 import type {
   DrilldownKey,
   FireGlance,
@@ -16,19 +11,21 @@ import type {
   NetWorthFraming,
   NetWorthPresentation,
 } from "@worthline/domain";
-import { createControlPlaneStore } from "@worthline/db";
+import {
+  DRILL_GROUP_BY_TIER,
+  deriveFramedSnapshotDeltas,
+  donutArcSegments,
+  formatMoneyMinorPrivacy,
+  LIQUIDITY_TIER_LABELS,
+  largestRemainderPercentages,
+  moneySign,
+  presentNetWorth,
+} from "@worthline/domain";
 import { refreshStalePrices } from "@worthline/pricing";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-
-import {
-  parseDrillParam,
-  parseRangeParam,
-  parseViewParam,
-  parseViviendaParam,
-} from "./intake";
-import { loadDashboard } from "./load-dashboard";
-import type { RefreshPricesResult } from "./load-dashboard";
+import { runBinanceRefresh } from "./ajustes/binance-refresh";
+import { runNumistaCoinRefresh } from "./ajustes/numista-coin-refresh";
 import BenchmarkComparisonCard from "./benchmark-comparison-card";
 import CompositionPanel from "./composition-panel";
 import { compositionUrl } from "./composition-url";
@@ -37,18 +34,20 @@ import DonutDrill, { type DonutSegment } from "./donut-drill";
 import FramingPanel, { type FramingTab } from "./framing-panel";
 import HeroMovers, { type MoversPeriodTab } from "./hero-movers";
 import {
+  parseDrillParam,
+  parseRangeParam,
+  parseViewParam,
+  parseViviendaParam,
+} from "./intake";
+import type { RefreshPricesResult } from "./load-dashboard";
+import { loadDashboard } from "./load-dashboard";
+import {
   buildMoversDataByPeriod,
-  parseMoversPeriod,
   type MoversDataByPeriod,
+  parseMoversPeriod,
 } from "./movers-data";
 import PrivacyToggle from "./privacy-toggle";
-import { formatRatioPct, returnsTooltipLines } from "@web/_components/returns-format";
-import { runBinanceRefresh } from "./ajustes/binance-refresh";
-import { runNumistaCoinRefresh } from "./ajustes/numista-coin-refresh";
 import { refreshAndPersistStalePrices } from "./refresh-prices";
-import { readDemoContext } from "@web/demo/read-demo-context";
-import { perfEnd, perfStart } from "@web/perf-log";
-import { bootstrapHealthcheck, openStore } from "@web/store";
 import { MOVERS_PERIOD_VIEW_PARAM, writeViewParam } from "./view-state";
 
 const framingTabs = [

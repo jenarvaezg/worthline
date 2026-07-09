@@ -19,9 +19,6 @@
     "test:coverage": {
       "dependsOn": ["^typecheck"],
       "outputs": ["coverage/**"]
-    },
-    "lint": {
-      "outputs": []
     }
   }
 }

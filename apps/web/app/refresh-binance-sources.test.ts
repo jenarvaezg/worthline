@@ -11,9 +11,8 @@
 import type { AssetPrice } from "@worthline/domain";
 import type { TokenPositionDraft } from "@worthline/pricing";
 import { describe, expect, it, vi } from "vitest";
-
-import { refreshStaleBinanceSources } from "./refresh-binance-sources";
 import type { BinanceSourceRef } from "./refresh-binance-sources";
+import { refreshStaleBinanceSources } from "./refresh-binance-sources";
 
 const NOW = "2026-06-16T12:00:00.000Z";
 const TWO_DAYS_AGO = "2026-06-14T12:00:00.000Z";

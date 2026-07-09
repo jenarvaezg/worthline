@@ -1,34 +1,33 @@
-import { NextResponse, type NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
-
 import { createControlPlaneStore, type WorthlineStore } from "@worthline/db";
 import { systemClock } from "@worthline/domain";
-
-import {
-  AgentViewHttpError,
-  errorEnvelope,
-  successEnvelope,
-  type AgentViewDataQualityCategory,
-  type AgentViewDataQualitySeverity,
-  type AgentViewErrorEnvelope,
-  type AgentViewIncludeHoldingRows,
-  type AgentViewOperationSort,
-  type AgentViewSnapshotGranularity,
-  type AgentViewSnapshotSort,
-} from "./contract";
+import { type NextRequest, NextResponse } from "next/server";
 import {
   buildHoldingConnectedSourcePositions,
   buildSourceConnectedSourcePositions,
   DEFAULT_POSITION_LIMIT,
   MAX_POSITION_LIMIT,
 } from "./connected-source-positions";
+import { buildConnectedSourcesList, buildSourceFreshness } from "./connected-sources";
+import {
+  type AgentViewDataQualityCategory,
+  type AgentViewDataQualitySeverity,
+  type AgentViewErrorEnvelope,
+  AgentViewHttpError,
+  type AgentViewIncludeHoldingRows,
+  type AgentViewOperationSort,
+  type AgentViewSnapshotGranularity,
+  type AgentViewSnapshotSort,
+  errorEnvelope,
+  successEnvelope,
+} from "./contract";
 import {
   buildDataQuality,
   DEFAULT_DATA_QUALITY_LIMIT,
   MAX_DATA_QUALITY_LIMIT,
 } from "./data-quality";
-import { buildFinancialContext } from "./financial-context";
 import { buildFigureExplanation, isFigureName } from "./figure-explanations";
+import { buildFinancialContext } from "./financial-context";
 import { buildFireContext } from "./fire-context";
 import { buildFireProjection } from "./fire-projection-context";
 import { buildGoals } from "./goals-context";
@@ -38,7 +37,7 @@ import {
   DEFAULT_OPERATION_LIMIT,
   MAX_OPERATION_LIMIT,
 } from "./holding-operations";
-import { buildConnectedSourcesList, buildSourceFreshness } from "./connected-sources";
+import { pagedHttpEnvelope, parsePositiveLimit } from "./pagination";
 import { buildPriceFreshness } from "./price-freshness";
 import { listAgentViewScopes } from "./scopes";
 import {
@@ -47,7 +46,6 @@ import {
   MAX_SNAPSHOT_LIMIT,
 } from "./snapshot-history";
 import { buildTrashSummary, DEFAULT_TRASH_LIMIT, MAX_TRASH_LIMIT } from "./trash-summary";
-import { pagedHttpEnvelope, parsePositiveLimit } from "./pagination";
 import {
   buildMemberProfiles,
   buildWarningOverrides,

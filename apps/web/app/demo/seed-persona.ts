@@ -11,9 +11,6 @@
  * Prior art: tests/performance-harness-seeds.ts and e2e/global-setup.ts seed
  * through these same seams.
  */
-import type { WorthlineStore } from "@worthline/db";
-import type { BinanceHistoryCurve, CurrencyCode, DecimalString } from "@worthline/domain";
-import { amortizableBalanceAtDate, valueHousingAtDate } from "@worthline/domain";
 
 import type {
   BinanceHistoryMonthSpec,
@@ -25,6 +22,9 @@ import type {
   PersonaSpec,
   RelativeDate,
 } from "@web/demo/spec-types";
+import type { WorthlineStore } from "@worthline/db";
+import type { BinanceHistoryCurve, CurrencyCode, DecimalString } from "@worthline/domain";
+import { amortizableBalanceAtDate, valueHousingAtDate } from "@worthline/domain";
 
 const DEFAULT_CURRENCY: CurrencyCode = "EUR";
 

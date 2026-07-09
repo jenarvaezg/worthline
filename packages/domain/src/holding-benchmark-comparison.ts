@@ -1,17 +1,17 @@
-import type { InvestmentOperation } from "./investment-types";
 import {
-  compareGrowthToBenchmark,
-  type BenchmarkComparison,
-  type BenchmarkComparisonResult,
-  type GrowthSeriesPoint,
-} from "./benchmark-comparison";
-import {
+  type BenchmarkVariant,
   benchmarkCatalogEntryBySeriesId,
   benchmarkCoverageNote,
   resolveBenchmarkSeriesId,
-  type BenchmarkVariant,
 } from "./benchmark-catalog";
+import {
+  type BenchmarkComparison,
+  type BenchmarkComparisonResult,
+  compareGrowthToBenchmark,
+  type GrowthSeriesPoint,
+} from "./benchmark-comparison";
 import { daysBetween } from "./dates";
+import type { InvestmentOperation } from "./investment-types";
 import type { MonthlyCloseValue } from "./returns";
 import { operationTwrCashflows } from "./returns";
 

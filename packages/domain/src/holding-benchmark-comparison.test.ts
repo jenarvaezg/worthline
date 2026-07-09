@@ -1,11 +1,10 @@
 import { describe, expect, test } from "vitest";
-
-import type { InvestmentOperation } from "./investment-types";
 import {
   compareHoldingToBenchmark,
   holdingBenchmarkComparison,
   holdingTwrIndexSeries,
 } from "./holding-benchmark-comparison";
+import type { InvestmentOperation } from "./investment-types";
 
 function op(
   kind: "buy" | "sell",

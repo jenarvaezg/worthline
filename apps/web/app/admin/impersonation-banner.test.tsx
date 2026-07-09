@@ -1,7 +1,6 @@
+import type { StoreTarget } from "@web/store-resolver";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
-
-import type { StoreTarget } from "@web/store-resolver";
 
 let mockTarget: StoreTarget = { kind: "local" };
 

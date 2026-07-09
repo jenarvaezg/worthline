@@ -13,12 +13,12 @@
  * unique index on (snapshot_id, parent_holding_id, position_key). A second run is a
  * no-op (idempotent), and a fresh DB already carries the table from schema-sql.
  */
-import type { Client } from "@libsql/client";
-import { describe, expect, test } from "vitest";
 
 import { createInMemoryStore, openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import { schemaSql } from "@db/schema-sql";
+import type { Client } from "@libsql/client";
+import { describe, expect, test } from "vitest";
 
 /** A pre-v34 DB at user_version 33: current schema minus the new child table. */
 async function seedV33(): Promise<Client> {

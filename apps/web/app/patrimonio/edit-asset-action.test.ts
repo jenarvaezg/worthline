@@ -7,8 +7,9 @@
  * These tests drive the action against a real in-memory store seeded with a
  * backdated mortgage whose amortization plan backfilled monthly snapshots.
  */
-import { createInMemoryStore } from "@worthline/db";
+
 import type { WorthlineStore } from "@worthline/db";
+import { createInMemoryStore } from "@worthline/db";
 import { allocateScopedHolding } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 

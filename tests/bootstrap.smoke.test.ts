@@ -1,10 +1,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
-
 import { runBootstrapHealthcheck } from "@worthline/db";
 import { createDashboardShell } from "@worthline/domain";
+import { afterEach, describe, expect, test } from "vitest";
 
 const tempDirs: string[] = [];
 

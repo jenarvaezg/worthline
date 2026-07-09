@@ -4,9 +4,9 @@ import { describe, expect, test } from "vitest";
 import {
   buildMoversData,
   buildMoversDataByPeriod,
+  type MoversHoldingRow,
   moversBaseSnapshot,
   parseMoversPeriod,
-  type MoversHoldingRow,
 } from "./movers-data";
 
 function snap(monthKey: string, dateKey: string): NetWorthSnapshot {

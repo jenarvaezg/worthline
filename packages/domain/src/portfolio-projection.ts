@@ -19,11 +19,11 @@ import { instrumentOfAsset, rungForLiability, tierOfAsset } from "./classificati
 import { defaultInstrumentForLiability } from "./instrument-catalog";
 import { LIQUIDITY_TIER_LABELS } from "./liquidity-ladder";
 import type { MoneyMinor } from "./money";
-import type { PriceSource } from "./prices";
 import { money } from "./money";
-import { allocateScopedHolding } from "./scope-allocation";
+import type { PriceSource } from "./prices";
 import type { ScopeOption } from "./scope";
 import { resolveScopeMemberIds } from "./scope";
+import { allocateScopedHolding } from "./scope-allocation";
 import type {
   Liability,
   ManualAsset,

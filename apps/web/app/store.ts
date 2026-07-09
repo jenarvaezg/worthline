@@ -9,15 +9,15 @@
  * Every read page and read route opens its store through here, so the behavior
  * lives in one seam rather than scattered across pages.
  */
+
+import { demoAsOfDateKey, demoNowDate } from "@web/demo/demo-clock";
+import { getDemoStore } from "@web/demo/store-provider";
 import {
   createWorthlineStore,
   runBootstrapHealthcheck,
   type WorthlineStore,
 } from "@worthline/db";
 import type { LocalPersistenceStatus } from "@worthline/domain";
-
-import { demoAsOfDateKey, demoNowDate } from "@web/demo/demo-clock";
-import { getDemoStore } from "@web/demo/store-provider";
 
 import { perfEnd, perfStart } from "./perf-log";
 import { readStoreTarget } from "./read-store-target";

@@ -5,10 +5,10 @@
  * The dashboard page (/) delegates to this via loadDashboard, which refreshes
  * prices before capturing the daily snapshot (#153 collapsed /inversiones).
  */
-import { describe, expect, test, vi } from "vitest";
 
 import type { AssetPrice } from "@worthline/domain";
 import type { InvestmentAssetRef, RefreshStalePricesResult } from "@worthline/pricing";
+import { describe, expect, test, vi } from "vitest";
 
 import type { RefreshAndPersistInput } from "./refresh-prices";
 import { refreshAndPersistStalePrices } from "./refresh-prices";

@@ -1,32 +1,31 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type MouseEvent,
-  type ReactNode,
-} from "react";
-
 import type {
   CompositionHousingMode,
   CompositionRange,
   DrilldownKey,
   NetWorthFraming,
 } from "@worthline/domain";
+import {
+  type MouseEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import CompositionChart from "./composition-chart";
+import { compositionUrl } from "./composition-url";
 import type { MatrixCellPayload } from "./dashboard-cells";
 import {
+  type CompositionMode,
   cellKey,
   crossOf,
+  type MatrixCoord,
   missingCells,
   parseMode,
-  type CompositionMode,
-  type MatrixCoord,
 } from "./dashboard-matrix";
-import { compositionUrl } from "./composition-url";
 import DrilldownPanel from "./drilldown-panel";
 import {
   FRAMING_VIEW_PARAM,
@@ -211,11 +210,11 @@ export default function CompositionPanel({
   // Prefetch the initial cell's cross on mount so the very first click is instant
   // even for cells the server did not ship (it ships the cross, so this is a
   // no-op in the common case).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only prefetch
   useEffect(() => {
     prefetchCross({ mode: initialMode, range: initialRange });
     // Mount only: prefetchCross is stable and the initial coords are fixed —
     // adding deps would re-fire redundant prefetches on every toggle.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // A cache miss for the cell we must render now (rapid moves / cold prefetch /
@@ -224,11 +223,11 @@ export default function CompositionPanel({
   // the async cache update re-renders.
   const currentKey = cellKey({ mode, range });
   const currentCell = cache[currentKey];
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fetch only when cell key or cache entry changes
   useEffect(() => {
     if (!currentCell) {
       void fetchCells([{ mode, range }]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentKey, currentCell]);
 
   /** The single state transition: mirror to the URL, set state, prefetch next. */

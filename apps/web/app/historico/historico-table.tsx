@@ -9,6 +9,7 @@
  * view assembly + presentation over the frozen holding rows (ADR 0008).
  */
 
+import type { SnapshotHoldingRecord } from "@worthline/db";
 import type {
   HoldingDelta,
   LiquidityTier,
@@ -23,7 +24,6 @@ import {
   formatMoneyMinorPrivacy,
   moneySign,
 } from "@worthline/domain";
-import type { SnapshotHoldingRecord } from "@worthline/db";
 
 /**
  * A per-holding mover, optionally carrying its per-position movers (ADR 0035) —
@@ -144,7 +144,7 @@ function PositionMovers({
                 {p.imageUrl ? (
                   // A remote Numista CDN thumb, server-rendered (ADR 0009); no
                   // next/image optimizer for an external, list-scale image.
-                  // eslint-disable-next-line @next/next/no-img-element
+                  // biome-ignore lint/performance/noImgElement: remote Numista CDN thumb (ADR 0009)
                   <img
                     alt=""
                     className="coinThumbImg"

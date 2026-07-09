@@ -1,4 +1,4 @@
-import { parsePersonaId, type PersonaId } from "@web/demo/persona";
+import { type PersonaId, parsePersonaId } from "@web/demo/persona";
 
 export type StoreTarget =
   | {
