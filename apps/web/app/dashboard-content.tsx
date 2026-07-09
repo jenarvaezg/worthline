@@ -495,7 +495,7 @@ export default async function DashboardContent({
               assets,
               nowIso,
               refreshStalePrices,
-              upsertPrice: (price) => store.operations.upsertPrice(price),
+              upsertPrices: (prices) => store.operations.upsertPrices(prices),
               readCache: () => store.operations.readAllPriceCacheEntries(),
             });
           },

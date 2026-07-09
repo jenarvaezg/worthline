@@ -70,6 +70,8 @@ export interface OperationsStore {
     liabilityCommands: ValueUpdateCommand[],
   ) => Promise<void>;
   upsertPrice: (price: AssetPrice) => Promise<void>;
+  /** Persist many price-cache rows in one transaction (fewer Turso round-trips). */
+  upsertPrices: (prices: AssetPrice[]) => Promise<void>;
   clearPriceCache: (assetId: string) => Promise<number>;
   readPriceCache: (assetId: string) => Promise<AssetPrice | null>;
   readAllPriceCacheEntries: () => Promise<AssetPrice[]>;
@@ -85,6 +87,7 @@ export function createOperationsStore(ctx: StoreContext): OperationsStore {
     batchApplyAllValueUpdates: (assetCommands, liabilityCommands) =>
       batchApplyAllValueUpdates(ctx, assetCommands, liabilityCommands),
     upsertPrice: (price) => upsertPrice(ctx, price),
+    upsertPrices: (prices) => upsertPrices(ctx, prices),
     clearPriceCache: (assetId) => clearPriceCache(ctx, assetId),
     readPriceCache: (assetId) => readPriceCache(ctx, assetId),
     readAllPriceCacheEntries: () => readAllPriceCacheEntries(ctx),
@@ -285,37 +288,51 @@ async function batchApplyAllValueUpdates(
   });
 }
 
-async function upsertPrice(ctx: StoreContext, price: AssetPrice): Promise<void> {
+function priceCacheRowValues(price: AssetPrice, updatedAt: string) {
+  return {
+    assetId: price.assetId,
+    currency: price.currency,
+    fetchedAt: price.fetchedAt,
+    freshnessState: price.freshnessState,
+    price: price.price,
+    priceDate: price.priceDate ?? null,
+    source: price.source,
+    staleReason: price.staleReason ?? null,
+    updatedAt,
+  };
+}
+
+async function upsertPrices(ctx: StoreContext, prices: AssetPrice[]): Promise<void> {
+  if (prices.length === 0) return;
+
   const db = ctx.db;
   const now = new Date().toISOString();
 
-  await db
-    .insert(assetPriceCache)
-    .values({
-      assetId: price.assetId,
-      currency: price.currency,
-      fetchedAt: price.fetchedAt,
-      freshnessState: price.freshnessState,
-      price: price.price,
-      priceDate: price.priceDate ?? null,
-      source: price.source,
-      staleReason: price.staleReason ?? null,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: assetPriceCache.assetId,
-      set: {
-        currency: price.currency,
-        fetchedAt: price.fetchedAt,
-        freshnessState: price.freshnessState,
-        price: price.price,
-        priceDate: price.priceDate ?? null,
-        source: price.source,
-        staleReason: price.staleReason ?? null,
-        updatedAt: now,
-      },
-    })
-    .run();
+  await ctx.transaction(async () => {
+    for (const price of prices) {
+      await db
+        .insert(assetPriceCache)
+        .values(priceCacheRowValues(price, now))
+        .onConflictDoUpdate({
+          target: assetPriceCache.assetId,
+          set: {
+            currency: price.currency,
+            fetchedAt: price.fetchedAt,
+            freshnessState: price.freshnessState,
+            price: price.price,
+            priceDate: price.priceDate ?? null,
+            source: price.source,
+            staleReason: price.staleReason ?? null,
+            updatedAt: now,
+          },
+        })
+        .run();
+    }
+  });
+}
+
+async function upsertPrice(ctx: StoreContext, price: AssetPrice): Promise<void> {
+  await upsertPrices(ctx, [price]);
 }
 
 async function clearPriceCache(ctx: StoreContext, assetId: string): Promise<number> {

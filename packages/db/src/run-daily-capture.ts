@@ -152,13 +152,14 @@ export async function runDailyCapture(
 
   for (const plan of plans) {
     try {
+      const pricesToUpsert = [];
       for (const asset of plan.assets) {
         if (!asset.providerSymbol) continue;
         const fetched = fetchedByPair.get(
           pricePairKey(asset.priceProvider, asset.providerSymbol),
         );
         if (!fetched || fetched.freshnessState === "failed") continue;
-        await plan.store.operations.upsertPrice({
+        pricesToUpsert.push({
           assetId: asset.id,
           currency: fetched.currency,
           fetchedAt: fetched.fetchedAt,
@@ -168,6 +169,9 @@ export async function runDailyCapture(
           ...(fetched.priceDate ? { priceDate: fetched.priceDate } : {}),
           ...(fetched.staleReason ? { staleReason: fetched.staleReason } : {}),
         });
+      }
+      if (pricesToUpsert.length > 0) {
+        await plan.store.operations.upsertPrices(pricesToUpsert);
       }
       await captureDailySnapshotForWorkspace(plan.store, deps.now);
       captured += 1;

@@ -985,8 +985,11 @@ export async function refreshPricesAction(formData: FormData, ..._testArgs: unkn
       force: true,
     });
 
-    for (const price of result.refreshed) {
-      await runActionWithStore((store) => store.operations.upsertPrice(price), _store);
+    if (result.refreshed.length > 0) {
+      await runActionWithStore(
+        (store) => store.operations.upsertPrices(result.refreshed),
+        _store,
+      );
     }
 
     return {
