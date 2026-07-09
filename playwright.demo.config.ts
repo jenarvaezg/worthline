@@ -55,6 +55,10 @@ export default defineConfig({
     reuseExistingServer: false,
     env: {
       WORTHLINE_DATA_DIR: demoDataDir,
+      // Force local no-auth mode; see playwright.config.ts for rationale.
+      AUTH_GOOGLE_ID: "",
+      AUTH_GOOGLE_SECRET: "",
+      AUTH_SECRET: "worthline-e2e-test-secret-not-for-production",
       NEXT_PUBLIC_ENABLE_SW: "1",
     },
     timeout: 60_000,

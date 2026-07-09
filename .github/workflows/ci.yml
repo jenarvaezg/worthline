@@ -35,6 +35,22 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      - name: Cache Turbo
+        uses: actions/cache@v5
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('bun.lock', 'turbo.json') }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
+      - name: Cache Biome
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/biome
+          key: biome-${{ runner.os }}-${{ hashFiles('bun.lock', 'biome.json') }}
+          restore-keys: |
+            biome-${{ runner.os }}-
+
       - name: Install deps
         run: bun install --frozen-lockfile
 
@@ -56,6 +72,11 @@ jobs:
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
+    env:
+      # Auth.js boots in proxy.ts on every request; edge middleware inlines
+      # AUTH_SECRET at build time, so it must be present for `next build` and
+      # `next start`, not only in Playwright webServer env.
+      AUTH_SECRET: worthline-e2e-ci-secret-not-for-production
     steps:
       - uses: actions/checkout@v6
 
@@ -66,6 +87,14 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache Turbo
+        uses: actions/cache@v5
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('bun.lock', 'turbo.json') }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
 
       - name: Install deps
         run: bun install --frozen-lockfile
