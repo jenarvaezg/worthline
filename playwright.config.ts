@@ -104,8 +104,8 @@ export default defineConfig({
       // don't collide with the developer's default :3000 server. In CI we serve
       // the production build (precompiled routes → deterministic latency).
       command: isCI
-        ? `npm run start --workspace @worthline/web -- --port ${e2ePort}`
-        : `npm run dev --workspace @worthline/web -- --port ${e2ePort}`,
+        ? `bun run --filter @worthline/web start -- --port ${e2ePort}`
+        : `bun run --filter @worthline/web dev -- --port ${e2ePort}`,
       url: e2eBaseUrl,
       reuseExistingServer: false,
       env: {

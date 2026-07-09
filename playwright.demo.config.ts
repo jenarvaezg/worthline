@@ -50,7 +50,7 @@ export default defineConfig({
   },
   projects: [{ name: "demo", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: `npm run start --workspace @worthline/web -- --port ${demoPort}`,
+    command: `bun run --filter @worthline/web start -- --port ${demoPort}`,
     url: demoBaseUrl,
     reuseExistingServer: false,
     env: {

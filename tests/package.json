@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@worthline/db": "*",
-    "@worthline/domain": "*",
-    "@worthline/pricing": "*",
-    "@worthline/web": "*"
+    "@worthline/db": "workspace:*",
+    "@worthline/domain": "workspace:*",
+    "@worthline/pricing": "workspace:*",
+    "@worthline/web": "workspace:*"
   },
   "scripts": {
     "test": "vitest run --config vitest.config.ts",

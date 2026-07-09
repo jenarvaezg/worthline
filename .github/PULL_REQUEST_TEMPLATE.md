@@ -20,8 +20,8 @@ Closes #<!-- issue number; use an English keyword so GitHub auto-closes it -->
 
 <!-- Tick what you actually ran. The gate must be green before review. -->
 
-- [ ] `npm run verify` passes (typecheck + Biome + test)
-- [ ] `npm run build` passes — required if this touches `apps/web` routes/pages
+- [ ] `bun run verify` passes (typecheck + Biome + test)
+- [ ] `bun run build` passes — required if this touches `apps/web` routes/pages
 - [ ] Tests added or updated for the behavior changed (suite stays green)
 
 ## Conventions

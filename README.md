@@ -4,22 +4,22 @@ Local-first net worth dashboard for personal and household tracking.
 
 ## Commands
 
-Install dependencies:
+Install dependencies (requires [Bun](https://bun.sh) 1.3+ and Node.js 26+):
 
 ```bash
-npm install
+bun install
 ```
 
 Run the local web app:
 
 ```bash
-npm run dev
+bun run dev
 ```
 
 Run the fast verification gate (inner-loop and default CI check):
 
 ```bash
-npm run verify
+bun run verify
 ```
 
 `verify` runs `typecheck` + `biome ci` + `test` without invoking a full
@@ -30,7 +30,7 @@ runs at the repo root.
 Run the full production/deploy gate (pre-push / before deploy):
 
 ```bash
-npm run build
+bun run build
 ```
 
 This still triggers `apps/web`'s `next build`, which catches Next-generated
@@ -39,7 +39,7 @@ route/page types that plain `tsc` does not see.
 Run only tests related to changed files (useful while iterating):
 
 ```bash
-npm run test:related
+bun run test:related
 ```
 
 Turborepo caches tasks under `.turbo/` (gitignored). Remote caching is not
@@ -67,13 +67,13 @@ By default the app stores SQLite data under:
 The directory is ignored by git. Override it with either:
 
 ```bash
-WORTHLINE_DATA_DIR=/path/to/private/data npm run dev
+WORTHLINE_DATA_DIR=/path/to/private/data bun run dev
 ```
 
 or:
 
 ```bash
-WORTHLINE_DB_PATH=/path/to/worthline.sqlite npm run dev
+WORTHLINE_DB_PATH=/path/to/worthline.sqlite bun run dev
 ```
 
 ## Authentication (optional)
@@ -104,7 +104,7 @@ are required for the bootstrap slice.
 ## Contributing
 
 Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) — the
-short version is: run `npm run verify` before you push, follow Conventional
+short version is: run `bun run verify` before you push, follow Conventional
 Commits, and respect the design-system and interaction-pattern docs for any UI
 change.
 

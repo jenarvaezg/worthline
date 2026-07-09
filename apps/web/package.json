@@ -4,16 +4,16 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=24"
+    "node": ">=26"
   },
   "dependencies": {
     "@ai-sdk/groq": "^4.0.5",
     "@ai-sdk/react": "^4.0.15",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@tursodatabase/api": "^2.0.4",
-    "@worthline/db": "*",
-    "@worthline/domain": "*",
-    "@worthline/pricing": "*",
+    "@worthline/db": "workspace:*",
+    "@worthline/domain": "workspace:*",
+    "@worthline/pricing": "workspace:*",
     "ai": "^7.0.14",
     "fflate": "^0.8.3",
     "jose": "^6.2.3",
@@ -24,11 +24,15 @@
     "react-dom": "latest"
   },
   "devDependencies": {
+    "@ai-sdk/provider": "^4.0.2",
+    "@auth/core": "^0.41.0",
+    "@types/node": "latest",
     "@types/react": "latest",
-    "@types/react-dom": "latest"
+    "@types/react-dom": "latest",
+    "typescript": "^5.9.3"
   },
   "scripts": {
-    "build": "next build",
+    "build": "bun ../../scripts/link-web-typescript-deps.ts && next build",
     "dev": "next dev --hostname 127.0.0.1",
     "eval:assistant": "tsx --env-file-if-exists=.env.local app/asistente/eval/run.ts",
     "test": "vitest run --config vitest.config.ts",

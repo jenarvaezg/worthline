@@ -61,7 +61,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `npm run dev --workspace @worthline/web -- --port ${firstRunPort}`,
+    command: `bun run --filter @worthline/web dev -- --port ${firstRunPort}`,
     url: firstRunBaseUrl,
     reuseExistingServer: false,
     env: {

@@ -1,0 +1,3 @@
+[install]
+linker = "hoisted"
+trustedDependencies = ["esbuild", "fsevents", "sharp", "unrs-resolver"]
