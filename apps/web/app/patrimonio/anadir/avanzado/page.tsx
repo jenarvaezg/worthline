@@ -278,6 +278,7 @@ export default async function AnadirHoldingPage({
 
               <div className="addHoldingFooter">
                 <OwnershipInputs
+                  allowCustomSplit={selectedInstrument === "property"}
                   members={activeMembers}
                   scopeMemberId={ownershipScopeMemberId}
                   values={values}
@@ -550,17 +551,23 @@ function OwnershipInputs({
   members,
   scopeMemberId,
   values,
+  allowCustomSplit,
 }: {
   members: Member[];
   scopeMemberId: string | undefined;
   values: Record<string, string>;
+  allowCustomSplit: boolean;
 }) {
   if (members.length <= 1) {
     return null;
   }
 
   const scopeMember = members.find((m) => m.id === scopeMemberId) ?? members[0]!;
-  const preset = values["ownershipPreset"];
+  const preset = allowCustomSplit
+    ? values["ownershipPreset"]
+    : values["ownershipPreset"] === "custom"
+      ? "even"
+      : values["ownershipPreset"];
 
   return (
     <fieldset className="ownershipGrid">
@@ -584,28 +591,32 @@ function OwnershipInputs({
         />
         Repartir a partes iguales
       </label>
-      <label className="ownerPreset">
-        <input
-          defaultChecked={preset === "custom"}
-          name="ownershipPreset"
-          type="radio"
-          value="custom"
-        />
-        Personalizado
-      </label>
-      <div className="ownerCustom">
-        {members.map((member, index) => (
-          <label key={member.id}>
-            {member.name}
-            <input
-              defaultValue={values[`owner_${member.id}`] ?? (index === 0 ? "100" : "0")}
-              inputMode="decimal"
-              name={`owner_${member.id}`}
-              aria-label={`Porcentaje de ${member.name}`}
-            />
-          </label>
-        ))}
-      </div>
+      {allowCustomSplit ? (
+        <label className="ownerPreset">
+          <input
+            defaultChecked={preset === "custom"}
+            name="ownershipPreset"
+            type="radio"
+            value="custom"
+          />
+          Personalizado
+        </label>
+      ) : null}
+      {allowCustomSplit ? (
+        <div className="ownerCustom">
+          {members.map((member, index) => (
+            <label key={member.id}>
+              {member.name}
+              <input
+                defaultValue={values[`owner_${member.id}`] ?? (index === 0 ? "100" : "0")}
+                inputMode="decimal"
+                name={`owner_${member.id}`}
+                aria-label={`Porcentaje de ${member.name}`}
+              />
+            </label>
+          ))}
+        </div>
+      ) : null}
     </fieldset>
   );
 }

@@ -100,7 +100,7 @@ export default function Shell({
       {/* ── Scope bar (hidden for single-member workspaces) ─────────── */}
       {scopes.length > 1 ? (
         <div className="tabsBar">
-          <nav aria-label="Selector de scope" className="scopeTabs">
+          <nav aria-label="Selector de ámbito" className="scopeTabs">
             {scopes.map((scope) => (
               <form action="/scope" key={scope.id} method="post">
                 <input name="returnTo" type="hidden" value={currentPageUrl} />
@@ -126,7 +126,7 @@ export default function Shell({
             <div className="warningItem" key={`${w.entityId}-${w.code}`}>
               <span>⚠ {w.message}</span>
               <a href={`/patrimonio/${w.entityId}/editar`} className="warningLink">
-                Ver holding
+                Ver activo
               </a>
             </div>
           ))}

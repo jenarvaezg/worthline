@@ -45,11 +45,13 @@ function Field({
   currency,
   privacyMode,
   optimisticValueMinor,
+  readOnly,
 }: {
   row: PuestaFieldRow;
   currency: CurrencyCode;
   privacyMode: boolean;
   optimisticValueMinor: number;
+  readOnly: boolean;
 }) {
   return (
     <div className="puestaRow">
@@ -60,6 +62,7 @@ function Field({
       <div className="puestaInput">
         <input
           defaultValue={row.defaultInput}
+          disabled={readOnly}
           id={`val_${row.id}`}
           inputMode="decimal"
           name={`val_${row.id}`}
@@ -145,6 +148,7 @@ export default function PuestaAlDiaForm({
               key={row.id}
               optimisticValueMinor={valueOf(row)}
               privacyMode={privacyMode}
+              readOnly={readOnly}
               row={row}
             />
           ))}
@@ -160,6 +164,7 @@ export default function PuestaAlDiaForm({
               key={row.id}
               optimisticValueMinor={valueOf(row)}
               privacyMode={privacyMode}
+              readOnly={readOnly}
               row={row}
             />
           ))}
@@ -167,7 +172,9 @@ export default function PuestaAlDiaForm({
       ) : null}
 
       <div className="puestaFooter">
-        <button type="submit">Guardar todo</button>
+        <button disabled={readOnly} type="submit">
+          Guardar todo
+        </button>
         <Link href="/patrimonio">Cancelar</Link>
       </div>
     </form>

@@ -34,7 +34,7 @@ test("ownership: custom 60/40 split via real interactions, visible in minority s
   await ownershipFieldset.getByRole("radio", { name: /Personalizado/ }).check();
 
   // Collect member scope buttons to identify the minority owner
-  const scopeNav = page.locator("[aria-label='Selector de scope']");
+  const scopeNav = page.locator("[aria-label='Selector de ámbito']");
   const scopeButtons = scopeNav.getByRole("button");
   const scopeCount = await scopeButtons.count();
   expect(scopeCount).toBeGreaterThanOrEqual(2);
@@ -95,7 +95,7 @@ test("ownership: even-split preset makes asset visible in both member scopes", a
   await expect(page.locator(`#${assetId}`)).toBeVisible();
 
   // Switch to first individual member's scope — asset must be visible
-  const scopeNav = page.locator("[aria-label='Selector de scope']");
+  const scopeNav = page.locator("[aria-label='Selector de ámbito']");
   const scopeButtons = scopeNav.getByRole("button");
   const scopeCount = await scopeButtons.count();
   expect(scopeCount).toBeGreaterThanOrEqual(2);

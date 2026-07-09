@@ -25,7 +25,7 @@ export default function PatrimonioGroupControls({
   hrefFor: (group: PortfolioGroupKey) => string;
 }) {
   return (
-    <nav className="rangeTabs" aria-label="Agrupar holdings">
+    <nav className="rangeTabs" aria-label="Agrupar activos">
       {GROUP_ORDER.map((group) => {
         const isActive = group === selected;
 

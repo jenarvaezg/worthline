@@ -274,7 +274,7 @@ describe("BalanceBoard (#271)", () => {
   });
 
   test("renders an empty state when there are no holdings", () => {
-    expect(render({ groups: [] })).toContain("Sin holdings");
+    expect(render({ groups: [] })).toContain("Sin activos");
   });
 });
 

@@ -17,6 +17,7 @@ export function PendingSubmit({
   children,
   pendingLabel,
   className,
+  disabled = false,
 }: {
   children: ReactNode;
   /**
@@ -26,10 +27,17 @@ export function PendingSubmit({
    */
   pendingLabel?: string;
   className?: string;
+  /** Extra disable gate (e.g. demo read-only, §10). */
+  disabled?: boolean;
 }) {
   const { pending } = useFormStatus();
   return (
-    <button aria-busy={pending} className={className} disabled={pending} type="submit">
+    <button
+      aria-busy={pending}
+      className={className}
+      disabled={pending || disabled}
+      type="submit"
+    >
       {pending ? (pendingLabel ?? children) : children}
     </button>
   );

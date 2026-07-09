@@ -565,7 +565,7 @@ export default async function ObjetivosPage({
                               </label>
                             ))}
                           </span>
-                          <span className="memberProfileLabel">Holdings asignados</span>
+                          <span className="memberProfileLabel">Activos asignados</span>
                           <span className="chipChoice">
                             {assets.map((asset) => (
                               <label key={asset.id}>
@@ -698,7 +698,7 @@ export default async function ObjetivosPage({
                           </label>
                         ))}
                       </span>
-                      <span className="memberProfileLabel">Holdings asignados</span>
+                      <span className="memberProfileLabel">Activos asignados</span>
                       <span className="chipChoice">
                         {assets.map((asset) => (
                           <label key={asset.id}>

@@ -111,3 +111,12 @@ export const EXPOSURE_LENS_VIEW_PARAM: ViewParamSpec<ExposureLens> = {
   allowed: ["all", "equity"],
   fallback: "all",
 };
+
+/** The hero movers period toggle (#737): Mes (default) · Año (YoY). */
+export type MoversPeriod = "month" | "year";
+
+export const MOVERS_PERIOD_VIEW_PARAM: ViewParamSpec<MoversPeriod> = {
+  key: "mvp",
+  allowed: ["month", "year"],
+  fallback: "month",
+};
