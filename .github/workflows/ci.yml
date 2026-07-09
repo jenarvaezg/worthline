@@ -119,8 +119,8 @@ jobs:
       - name: Build
         run: bun run build
 
-  e2e:
-    name: E2E (Playwright)
+  e2e-setup:
+    name: E2E setup
     runs-on: ubuntu-latest
     env:
       # Auth.js boots in proxy.ts on every request; edge middleware inlines
@@ -161,21 +161,57 @@ jobs:
         run: bunx playwright install --with-deps chromium
 
       # Playwright serves the production build in CI (next start), so build the
-      # web app first. The packages export TS source directly, so Next
-      # transpiles them — no separate package build is needed.
-      # Turbo task so this job can reuse @worthline/web#build from the build job via
-      # Vercel Remote Cache (same cache key as `turbo run build` in build).
+      # web app once here. Child jobs restore this artifact instead of rebuilding.
+      # Run Next directly — a Turbo remote-cache hit can skip writing `.next` to
+      # disk, which leaves the upload step with nothing to publish.
       - name: Build web app
-        run: bunx turbo run build --filter=@worthline/web
+        run: bun run --filter @worthline/web build
+
+      - name: Upload web build
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-web-build
+          path: apps/web/.next
+          include-hidden-files: true
+          retention-days: 1
+
+  e2e-main:
+    name: E2E (main suite)
+    needs: e2e-setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: bunx playwright install --with-deps chromium
+
+      - name: Download web build
+        uses: actions/download-artifact@v8
+        with:
+          name: e2e-web-build
+          path: apps/web/.next
 
       - name: Run E2E tests
         run: bun run test:e2e
-
-      - name: Run first-run onboarding E2E (solo + hogar)
-        run: bun run test:e2e:first-run
-
-      - name: Run demo E2E
-        run: bun run test:e2e:demo
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
@@ -185,6 +221,38 @@ jobs:
           path: playwright-report/
           retention-days: 14
 
+  e2e-first-run:
+    name: E2E (first-run)
+    needs: e2e-setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run first-run onboarding E2E (solo + hogar)
+        run: bun run test:e2e:first-run
+
       - name: Upload first-run Playwright reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
@@ -192,6 +260,45 @@ jobs:
           name: playwright-report-first-run
           path: playwright-report-first-run-*/
           retention-days: 14
+
+  e2e-demo:
+    name: E2E (demo)
+    needs: e2e-setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: bunx playwright install --with-deps chromium
+
+      - name: Download web build
+        uses: actions/download-artifact@v8
+        with:
+          name: e2e-web-build
+          path: apps/web/.next
+
+      # Skip the redundant build in `test:e2e:demo` — setup already produced `.next`.
+      - name: Run demo E2E
+        run: bunx playwright test --config playwright.demo.config.ts
 
       - name: Upload demo Playwright report
         if: ${{ !cancelled() }}

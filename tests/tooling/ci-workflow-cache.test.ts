@@ -38,11 +38,11 @@ describe("CI workflow local caches (#799)", () => {
     }
   });
 
-  test("e2e job caches Turbo for the production build step", () => {
-    const e2e = jobBlock("e2e");
+  test("e2e-setup job caches Turbo for the production build step", () => {
+    const e2eSetup = jobBlock("e2e-setup");
 
-    expect(e2e).toContain("path: .turbo");
-    expect(e2e).toContain("hashFiles('bun.lock', 'turbo.json')");
-    expect(e2e).not.toContain("path: ~/.cache/biome");
+    expect(e2eSetup).toContain("path: .turbo");
+    expect(e2eSetup).toContain("hashFiles('bun.lock', 'turbo.json')");
+    expect(e2eSetup).not.toContain("path: ~/.cache/biome");
   });
 });
