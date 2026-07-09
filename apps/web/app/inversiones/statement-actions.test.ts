@@ -2,7 +2,7 @@
  * Integration test for the statement upload action (ADR 0018, #174) via the
  * `_store` injection seam. The action is scoped to the route asset id (no scope
  * cookie / next/headers dependency), so it runs fully here: parse the uploaded
- * MyInvestor CSV → create operations → one batched ripple → redirect with a
+ * plantilla CSV → create operations → one batched ripple → redirect with a
  * summary. Prior art: ajustes/numista-actions.test.ts.
  */
 import { createInMemoryStore } from "@worthline/db";
@@ -17,34 +17,26 @@ import {
 
 const IDLE: StatementPreviewState = { status: "idle" };
 
-// 2024 dates so every order is unambiguously in the past regardless of wall
-// clock, making the generated snapshot band deterministic. Eight `Finalizada`
-// rows load as buys; one `En curso` and one `Rechazada` are skipped.
+const HEADER =
+  "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre";
+
 const CSV = [
-  "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
-  "01/02/2024;IE00BYX5NX33;100 EUR;7,226;Finalizada",
-  "01/03/2024;IE00BYX5NX33;100 EUR;7,180;Finalizada",
-  "01/04/2024;IE00BYX5NX33;100 EUR;7,050;Finalizada",
-  "01/05/2024;IE00BYX5NX33;559 EUR;39,120;Finalizada",
-  "01/06/2024;IE00BYX5NX33;100 EUR;6,900;Finalizada",
-  "01/07/2024;IE00BYX5NX33;100 EUR;6,800;Finalizada",
-  "01/08/2024;IE00BYX5NX33;100 EUR;6,700;Finalizada",
-  "01/09/2024;IE00BYX5NX33;1418.15 EUR;95,400;Finalizada",
-  "01/10/2024;IE00BYX5NX33;100 EUR;6,500;En curso",
-  "01/11/2024;IE00BYX5NX33;100 EUR;6,400;Rechazada",
+  HEADER,
+  "01/02/2024;Fondo;IE00BYX5NX33;Compra;7,226;100;;",
+  "01/03/2024;Fondo;IE00BYX5NX33;Compra;7,180;100;;",
+  "01/04/2024;Fondo;IE00BYX5NX33;Compra;7,050;100;;",
+  "01/05/2024;Fondo;IE00BYX5NX33;Compra;39,120;559;;",
+  "01/06/2024;Fondo;IE00BYX5NX33;Compra;6,900;100;;",
+  "01/07/2024;Fondo;IE00BYX5NX33;Compra;6,800;100;;",
+  "01/08/2024;Fondo;IE00BYX5NX33;Compra;6,700;100;;",
+  "01/09/2024;Fondo;IE00BYX5NX33;Compra;95,400;1418,15;;",
 ].join("\n");
 
-function uploadForm(csv: string, broker = "myinvestor"): FormData {
+function uploadForm(csv: string, broker = "plantilla"): FormData {
   const fd = new FormData();
   fd.set("broker", broker);
   fd.set("currentUrl", "/patrimonio/fund/editar");
-  fd.set("file", new File([csv], "ordenes.csv", { type: "text/csv" }));
-  return fd;
-}
-
-function noSalesForm(csv: string, broker = "myinvestor"): FormData {
-  const fd = uploadForm(csv, broker);
-  fd.set("confirmNoSalesOrRedemptions", "on");
+  fd.set("file", new File([csv], "plantilla.csv", { type: "text/csv" }));
   return fd;
 }
 
@@ -89,26 +81,15 @@ function preview(
 }
 
 describe("confirmStatementAction (#174)", () => {
-  test("rejects a reduced MyInvestor export unless the user confirms there were no sells", async () => {
+  test("creates 8 buy operations from the plantilla rows", async () => {
     const store = await createInMemoryStore();
     await seedFund(store);
 
     const digest = await run(uploadForm(CSV), store);
 
-    expect(digest).toContain("error=");
-    expect(digest).toContain("Este+archivo+no+distingue+compras+de+ventas");
-    expect(await store.operations.readOperations("fund")).toHaveLength(0);
-  });
-
-  test("creates 8 buy operations from the Finalizada rows and skips the other 2", async () => {
-    const store = await createInMemoryStore();
-    await seedFund(store);
-
-    const digest = await run(noSalesForm(CSV), store);
-
     expect(digest).toContain("ok=statement_loaded");
     expect(digest).toContain("created=8");
-    expect(digest).toContain("skipped=2");
+    expect(digest).toContain("skipped=0");
 
     const ops = await store.operations.readOperations("fund");
     expect(ops).toHaveLength(8);
@@ -117,7 +98,6 @@ describe("confirmStatementAction (#174)", () => {
       expect(op.currency).toBe("EUR");
       expect(op.feesMinor).toBe(0);
     }
-    // Dates map to the eight Finalizada rows.
     expect(ops.map((op) => op.executedAt).sort()).toEqual([
       "2024-02-01",
       "2024-03-01",
@@ -134,7 +114,7 @@ describe("confirmStatementAction (#174)", () => {
     const store = await createInMemoryStore();
     await seedFund(store);
 
-    await run(noSalesForm(CSV), store);
+    await run(uploadForm(CSV), store);
 
     const dates = (await store.snapshots.readSnapshots("household"))
       .map((s) => s.dateKey)
@@ -156,7 +136,7 @@ describe("confirmStatementAction (#174)", () => {
     await seedFund(store);
 
     const fd = new FormData();
-    fd.set("broker", "myinvestor");
+    fd.set("broker", "plantilla");
     fd.set("currentUrl", "/patrimonio/fund/editar");
     fd.set("file", new File([], "empty.csv", { type: "text/csv" }));
 
@@ -165,14 +145,14 @@ describe("confirmStatementAction (#174)", () => {
     expect(await store.operations.readOperations("fund")).toHaveLength(0);
   });
 
-  test("a malformed Finalizada row aborts the whole load (nothing written)", async () => {
+  test("a malformed row aborts the whole load (nothing written)", async () => {
     const store = await createInMemoryStore();
     await seedFund(store);
 
     const bad = [
-      "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
-      "01/02/2024;IE00BYX5NX33;100 EUR;7,226;Finalizada",
-      "99/99/2024;IE00BYX5NX33;100 EUR;7,000;Finalizada",
+      HEADER,
+      "01/02/2024;Fondo;IE00BYX5NX33;Compra;7,226;100;;",
+      "99/99/2024;Fondo;IE00BYX5NX33;Compra;7,000;100;;",
     ].join("\n");
 
     const digest = await run(uploadForm(bad), store);
@@ -186,33 +166,21 @@ describe("confirmStatementAction — merge by date (#175)", () => {
     const store = await createInMemoryStore();
     await seedFund(store);
 
-    await run(noSalesForm(CSV), store);
+    await run(uploadForm(CSV), store);
     expect(await store.operations.readOperations("fund")).toHaveLength(8);
 
-    // The second identical load overwrites all 8 by date — no duplicates.
-    const digest = await run(noSalesForm(CSV), store);
+    const digest = await run(uploadForm(CSV), store);
 
     expect(digest).toContain("created=0");
     expect(digest).toContain("overwritten=8");
     const ops = await store.operations.readOperations("fund");
     expect(ops).toHaveLength(8);
-    expect(ops.map((op) => op.executedAt).sort()).toEqual([
-      "2024-02-01",
-      "2024-03-01",
-      "2024-04-01",
-      "2024-05-01",
-      "2024-06-01",
-      "2024-07-01",
-      "2024-08-01",
-      "2024-09-01",
-    ]);
   });
 
   test("overwrite replaces a hand-edited operation's value for the matched date", async () => {
     const store = await createInMemoryStore();
     await seedFund(store);
 
-    // A hand-typed approximation on a date the file also covers (01/03/2024).
     await store.operations.recordOperation({
       assetId: "fund",
       currency: "EUR",
@@ -223,16 +191,14 @@ describe("confirmStatementAction — merge by date (#175)", () => {
       units: "999",
     });
 
-    const digest = await run(noSalesForm(CSV), store);
+    const digest = await run(uploadForm(CSV), store);
 
-    // 7 created (the other Finalizada dates) + the 01/03 match overwritten.
     expect(digest).toContain("created=7");
     expect(digest).toContain("overwritten=1");
 
     const ops = await store.operations.readOperations("fund");
     expect(ops).toHaveLength(8);
     const march = ops.find((op) => op.executedAt === "2024-03-01")!;
-    // The id is the match key and survives; the value is the file's, not 999.
     expect(march.id).toBe("op_handtyped");
     expect(march.units).toBe("7.18");
   });
@@ -241,7 +207,6 @@ describe("confirmStatementAction — merge by date (#175)", () => {
     const store = await createInMemoryStore();
     await seedFund(store);
 
-    // An operation the broker file never mentions (15/01/2024).
     await store.operations.recordOperation({
       assetId: "fund",
       currency: "EUR",
@@ -252,10 +217,9 @@ describe("confirmStatementAction — merge by date (#175)", () => {
       units: "5",
     });
 
-    await run(noSalesForm(CSV), store);
+    await run(uploadForm(CSV), store);
 
     const ops = await store.operations.readOperations("fund");
-    // 8 from the file + the 1 untouched manual operation = 9, none deleted.
     expect(ops).toHaveLength(9);
     expect(ops.find((op) => op.id === "op_manual")).toBeDefined();
   });
@@ -272,8 +236,7 @@ describe("previewStatementAction — preview before confirm (#176)", () => {
     if (state.status !== "summary") throw new Error("expected summary");
     expect(state.created).toBe(8);
     expect(state.overwritten).toBe(0);
-    expect(state.skipped).toBe(2);
-    // The whole point of a preview: no operations and no snapshots are written.
+    expect(state.skipped).toBe(0);
     expect(await store.operations.readOperations("fund")).toHaveLength(0);
     expect(await store.snapshots.readSnapshots("household")).toHaveLength(0);
   });
@@ -296,7 +259,6 @@ describe("previewStatementAction — preview before confirm (#176)", () => {
     if (state.status !== "summary") throw new Error("expected summary");
     expect(state.created).toBe(7);
     expect(state.overwritten).toBe(1);
-    // Still untouched: the preview did not apply the overwrite.
     expect(
       (await store.operations.readOperations("fund")).find((o) => o.id === "op_existing")!
         .units,
@@ -307,10 +269,7 @@ describe("previewStatementAction — preview before confirm (#176)", () => {
     const store = await createInMemoryStore();
     await seedFund(store);
 
-    const bad = [
-      "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
-      "99/99/2024;IE00BYX5NX33;100 EUR;7,000;Finalizada",
-    ].join("\n");
+    const bad = [HEADER, "99/99/2024;Fondo;IE00BYX5NX33;Compra;7,000;100;;"].join("\n");
 
     const state = await preview(uploadForm(bad), store);
     expect(state.status).toBe("error");
@@ -320,10 +279,7 @@ describe("previewStatementAction — preview before confirm (#176)", () => {
     const store = await createInMemoryStore();
     await seedFund(store);
 
-    const bad = [
-      "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
-      "99/99/2024;IE00BYX5NX33;100 EUR;7,000;Finalizada",
-    ].join("\n");
+    const bad = [HEADER, "99/99/2024;Fondo;IE00BYX5NX33;Compra;7,000;100;;"].join("\n");
 
     const digest = await run(uploadForm(bad), store);
     expect(digest).toContain("error=");
@@ -349,18 +305,14 @@ describe("statement ISIN guard + anomalies (#178)", () => {
   }
 
   function csvForIsin(isin: string): string {
-    return [
-      "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
-      `01/02/2024;${isin};100 EUR;7,226;Finalizada`,
-    ].join("\n");
+    return [HEADER, `01/02/2024;Fondo;${isin};Compra;7,226;100;;`].join("\n");
   }
 
   test("a file whose ISIN differs from the asset's blocks confirm and writes nothing", async () => {
     const store = await createInMemoryStore();
     await seedFundWithIsin(store, "LU0000000000");
 
-    // CSV carries IE00BYX5NX33 — a different fund.
-    const digest = await run(noSalesForm(CSV), store);
+    const digest = await run(uploadForm(CSV), store);
     expect(digest).toContain("error=");
     expect(await store.operations.readOperations("fund")).toHaveLength(0);
   });
@@ -375,16 +327,14 @@ describe("statement ISIN guard + anomalies (#178)", () => {
 
   test("an asset with no ISIN is backfilled, and a later upload is guarded by it", async () => {
     const store = await createInMemoryStore();
-    await seedFund(store); // no ISIN
+    await seedFund(store);
 
-    await run(noSalesForm(CSV), store);
-    // The asset's ISIN is now the file's.
+    await run(uploadForm(CSV), store);
     expect((await store.assets.readInvestmentAssetById("fund"))?.isin).toBe(
       "IE00BYX5NX33",
     );
 
-    // A subsequent upload of a DIFFERENT ISIN is now blocked by the backfill.
-    const digest = await run(noSalesForm(csvForIsin("LU0000000000")), store);
+    const digest = await run(uploadForm(csvForIsin("LU0000000000")), store);
     expect(digest).toContain("error=");
   });
 
@@ -393,9 +343,9 @@ describe("statement ISIN guard + anomalies (#178)", () => {
     await seedFund(store);
 
     const mixed = [
-      "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
-      "01/02/2024;IE00BYX5NX33;100 EUR;7,226;Finalizada",
-      "01/03/2024;LU0000000000;100 EUR;7,180;Finalizada",
+      HEADER,
+      "01/02/2024;Fondo;IE00BYX5NX33;Compra;7,226;100;;",
+      "01/03/2024;Fondo;LU0000000000;Compra;7,180;100;;",
     ].join("\n");
 
     const digest = await run(uploadForm(mixed), store);
@@ -407,31 +357,25 @@ describe("statement ISIN guard + anomalies (#178)", () => {
     const store = await createInMemoryStore();
     await seedFund(store);
 
-    // The file repeats 01/02/2024 — ambiguous, so it is flagged, not created.
     const dup = [
-      "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
-      "01/02/2024;IE00BYX5NX33;100 EUR;7,226;Finalizada",
-      "01/02/2024;IE00BYX5NX33;200 EUR;14,000;Finalizada",
-      "01/03/2024;IE00BYX5NX33;100 EUR;7,180;Finalizada",
+      HEADER,
+      "01/02/2024;Fondo;IE00BYX5NX33;Compra;7,226;100;;",
+      "01/02/2024;Fondo;IE00BYX5NX33;Compra;14,000;200;;",
+      "01/03/2024;Fondo;IE00BYX5NX33;Compra;7,180;100;;",
     ].join("\n");
 
     const state = await preview(uploadForm(dup), store);
     if (state.status !== "summary") throw new Error("expected summary");
     expect(state.anomalies).toBe(1);
-    expect(state.created).toBe(1); // only 01/03 is unambiguous
+    expect(state.created).toBe(1);
   });
 });
 
 describe("statement sells (#179)", () => {
   const WITH_SELL = [
-    "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado",
-    "01/02/2024;IE00BYX5NX33;100 EUR;7,226;Finalizada",
-    "01/03/2024;IE00BYX5NX33;-50 EUR;3,000;Finalizada",
-  ].join("\n");
-  const WITH_SELL_FULL = [
-    "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado;Tipo de operación",
-    "01/02/2024;IE00BYX5NX33;100 EUR;7,226;Finalizada;Suscripción Fondos de Inversión",
-    "01/03/2024;IE00BYX5NX33;50 EUR;3,000;Finalizada;Reembolso Fondos de Inversión",
+    HEADER,
+    "01/02/2024;Fondo;IE00BYX5NX33;Compra;7,226;100;;",
+    "01/03/2024;Fondo;IE00BYX5NX33;Venta;3;50;;",
   ].join("\n");
 
   test("preview calls out detected sells distinctly", async () => {
@@ -444,16 +388,16 @@ describe("statement sells (#179)", () => {
     expect(state.created).toBe(2);
   });
 
-  test("confirm stores a sell operation (negative row) with absolute units", async () => {
+  test("confirm stores a sell operation with absolute units", async () => {
     const store = await createInMemoryStore();
     await seedFund(store);
 
-    await run(uploadForm(WITH_SELL_FULL), store);
+    await run(uploadForm(WITH_SELL), store);
 
     const ops = await store.operations.readOperations("fund");
     const sell = ops.find((op) => op.kind === "sell");
     expect(sell).toBeDefined();
     expect(sell!.executedAt).toBe("2024-03-01");
-    expect(sell!.units).toBe("3"); // absolute, trailing-zero noise collapsed
+    expect(sell!.units).toBe("3");
   });
 });

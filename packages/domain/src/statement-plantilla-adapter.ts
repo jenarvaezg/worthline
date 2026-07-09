@@ -1,8 +1,7 @@
 /**
  * The Worthline plantilla adapter (#695) — our own universal statement format,
- * the meeting point for every broker whose exports are unusable (MyInvestor's
- * reduced orders file can't express sells; Inversis ships HTML disguised as
- * .xls). One file can mix asset types: funds, ETFs, stocks, indexes, pension
+ * the meeting point for broker exports that are unusable as-is (Inversis ships
+ * HTML disguised as .xls). One file can mix asset types: funds, ETFs, stocks, indexes, pension
  * plans and crypto, each row declaring its own `Tipo de activo`.
  *
  * Shape (`;`-delimited, quote-aware for Excel es-ES output):

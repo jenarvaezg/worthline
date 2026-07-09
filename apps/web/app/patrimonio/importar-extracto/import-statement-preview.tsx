@@ -81,10 +81,6 @@ function defaultFlagsFor(fund: FundPreviewRow): FundSelectionFlags {
       symbolEmpty: false,
     };
   }
-  // A row without a suggested symbol lands unchecked by default (S0
-  // prototype's convention) — the user opts in explicitly, since it would
-  // create with MISSING_PROVIDER_SYMBOL raised. A plantilla identifier that IS
-  // the symbol (Finect code, CoinGecko id) arrives suggested and checked.
   return {
     included: fund.suggestedSymbol !== "",
     replaceOpening: false,
@@ -92,13 +88,6 @@ function defaultFlagsFor(fund: FundPreviewRow): FundSelectionFlags {
   };
 }
 
-/**
- * The confirm button with in-flight feedback (mirrors PendingSubmit, which
- * doesn't take a formAction). Applying a large import creates funds, records
- * every operation and ripples snapshot history — seconds, not millis — and a
- * server-action POST gives NO native feedback, so without this the click reads
- * as dead and users re-click, queuing duplicate imports.
- */
 function ConfirmSubmit({
   confirmAction,
   disabled,
@@ -139,18 +128,12 @@ export function ImportStatementPreview({
     previewAction,
     IDLE,
   );
-  // A newly-picked file makes the last preview stale — hide it, like #176.
   const [fileChangedSincePreview, setFileChangedSincePreview] = useState(false);
   const [selection, setSelection] = useState<Record<string, FundSelectionFlags>>({});
-  const [directionAmbiguityAccepted, setDirectionAmbiguityAccepted] = useState(false);
-  // The funds array a new preview last seeded `selection` from — adjusting state
-  // during render (not in an effect) when it changes, per React's recommended
-  // "storing information from previous renders" pattern.
   const [seededFunds, setSeededFunds] = useState<FundPreviewRow[] | null>(null);
 
   const shown = fileChangedSincePreview || isPreviewPending ? IDLE : preview;
   const funds = shown.status === "ready" ? shown.funds : [];
-  const needsDirectionOptIn = shown.status === "ready" && !shown.directionResolved;
 
   if (shown.status === "ready" && shown.funds !== seededFunds) {
     setSeededFunds(shown.funds);
@@ -175,12 +158,11 @@ export function ImportStatementPreview({
     const isPreview =
       submitter instanceof HTMLButtonElement && submitter.value === "preview";
 
-    if (!isPreview) return; // confirm goes through formAction={confirmAction}
+    if (!isPreview) return;
 
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     setFileChangedSincePreview(false);
-    setDirectionAmbiguityAccepted(false);
     startTransition(() => dispatchPreview(formData));
   }
 
@@ -215,39 +197,27 @@ export function ImportStatementPreview({
   return (
     <section aria-label="Importar extracto">
       <p className="infoNote">
-        Sube el archivo de órdenes de tu bróker o la plantilla de Worthline: se agrupa por
-        identificador y se reparte por toda la cartera — encaja con lo que ya tienes,
-        ofrece crear lo que no, y puedes dejar fuera lo que no quieras seguir.
+        Sube la plantilla de Worthline (CSV o Excel): se agrupa por identificador y se
+        reparte por toda la cartera — encaja con lo que ya tienes, ofrece crear lo que no,
+        y puedes dejar fuera lo que no quieras seguir.
       </p>
 
       <form className="stackForm inversionesForm" onSubmit={handleSubmit}>
         <input name="currentUrl" type="hidden" value={currentUrl} />
+        <input name="broker" type="hidden" value="plantilla" />
 
         <label>
-          Formato
-          <select defaultValue="myinvestor" disabled={readOnly} name="broker">
-            <option value="myinvestor">MyInvestor (órdenes)</option>
-            <option value="plantilla">Plantilla Worthline (CSV o Excel)</option>
-          </select>
-        </label>
-
-        <label>
-          Archivo de órdenes (.csv o .xlsx)
+          Archivo de operaciones (.csv o .xlsx)
           <input
             accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             disabled={readOnly}
             name="file"
-            onChange={() => {
-              setFileChangedSincePreview(true);
-              setDirectionAmbiguityAccepted(false);
-            }}
+            onChange={() => setFileChangedSincePreview(true)}
             required
             type="file"
           />
         </label>
 
-        {/* Body prose, not a label: .contextLabel is uppercase by design and
-            four shouting lines read like a ransom note. */}
         <p className="infoNote">
           ¿Tu bróker no exporta, o exporta mal?{" "}
           <a download href="/plantilla-operaciones.csv">
@@ -277,25 +247,6 @@ export function ImportStatementPreview({
 
         {shown.status === "ready" ? (
           <div className="importPreview">
-            {!shown.directionResolved ? (
-              <>
-                <p className="warningBand" role="alert">
-                  Este archivo no distingue compras de ventas. Exporta el archivo COMPLETO
-                  de órdenes (con la columna «Tipo de operación»).
-                </p>
-                <label className="directionOptIn">
-                  <input
-                    checked={directionAmbiguityAccepted}
-                    name="confirmNoSalesOrRedemptions"
-                    onChange={(event) =>
-                      setDirectionAmbiguityAccepted(event.currentTarget.checked)
-                    }
-                    type="checkbox"
-                  />
-                  Confirmo que en este periodo no hice ninguna venta ni reembolso.
-                </label>
-              </>
-            ) : null}
             <div className="tableScroll">
               <table>
                 <caption>
@@ -514,11 +465,7 @@ export function ImportStatementPreview({
 
             <ConfirmSubmit
               confirmAction={confirmAction}
-              disabled={
-                readOnly ||
-                summary.fundCount === 0 ||
-                (needsDirectionOptIn && !directionAmbiguityAccepted)
-              }
+              disabled={readOnly || summary.fundCount === 0}
               label={`Confirmar ${pluralize(summary.fundCount, "activo", "activos")}`}
             />
           </div>
