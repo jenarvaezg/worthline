@@ -18,6 +18,17 @@ function stepNamed(name: string): string {
 }
 
 describe("deploy workflow", () => {
+  test("caches dependencies for faster successive deploys", () => {
+    const setupNode = workflow.slice(
+      workflow.indexOf("- uses: actions/setup-node@v6"),
+      workflow.indexOf("- name: Cache Bun dependencies"),
+    );
+    expect(setupNode).toContain("cache: npm");
+    expect(setupNode).toContain("cache-dependency-path: bun.lock");
+    expect(workflow).toContain("~/.bun/install/cache");
+    expect(workflow).toContain("hashFiles('bun.lock')");
+  });
+
   test("lets Vercel use its configured app root instead of nesting apps/web twice", () => {
     for (const step of [
       "Pull Vercel project config",
