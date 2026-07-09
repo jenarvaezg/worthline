@@ -1,7 +1,11 @@
 "use server";
 
 import { type WorthlineStore } from "@web/store";
-import { runActionWithStore } from "@web/action-store";
+import {
+  runActionWithStore,
+  testArgFromActionArgs,
+  testStoreFromActionArgs,
+} from "@web/action-store";
 import {
   checkOwnershipSplit,
   createInvestmentOperationSafe,
@@ -50,6 +54,12 @@ const ADVANCED_ADD_URL = "/patrimonio/anadir/avanzado";
 
 function parseReturnUrl(value: FormDataEntryValue | null): string {
   return String(value ?? "") === ADVANCED_ADD_URL ? ADVANCED_ADD_URL : ADD_URL;
+}
+
+function isClock(value: unknown): value is Clock {
+  return (
+    typeof value === "object" && value !== null && "now" in value && "today" in value
+  );
 }
 
 type SimpleDrawer = "dinero" | "inmueble" | "bien" | "deuda" | "inversion";
@@ -358,9 +368,10 @@ function scopedLiabilityForm(
 
 export async function createHoldingAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   const today = _clock.today();
   const returnUrl = parseReturnUrl(formData.get("returnTo"));
   await guardDemoWrite(returnUrl);

@@ -1,18 +1,25 @@
 "use server";
 
-import { runActionWithStore } from "@web/action-store";
+import {
+  runActionWithStore,
+  testArgFromActionArgs,
+  testStoreFromActionArgs,
+} from "@web/action-store";
 import {
   DEMO_DISABLED_MESSAGE,
   IMPERSONATION_READONLY_MESSAGE,
 } from "@web/demo/write-guard";
 import { readStoreTarget } from "@web/read-store-target";
-import type { WorthlineStore } from "@web/store";
 
 import {
   agentStampedProfile,
   parseExposureProfileProposalDrafts,
   readEligibleExposureProfileKeys,
 } from "./exposure-profile-proposals";
+
+function isString(value: unknown): value is string {
+  return typeof value === "string";
+}
 
 export type ExposureProfileProposalConfirmResult =
   | { status: "applied"; applied: number }
@@ -21,9 +28,11 @@ export type ExposureProfileProposalConfirmResult =
 
 export async function confirmExposureProfileProposalAction(
   rawDrafts: unknown,
-  _store?: WorthlineStore,
-  _declaredAt = new Date().toISOString(),
+  ..._testArgs: unknown[]
 ): Promise<ExposureProfileProposalConfirmResult> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _declaredAt =
+    testArgFromActionArgs(_testArgs, isString) ?? new Date().toISOString();
   const target = await readStoreTarget();
   if (target.kind === "demo") {
     return { status: "blocked", message: DEMO_DISABLED_MESSAGE };

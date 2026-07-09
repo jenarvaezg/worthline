@@ -1,6 +1,5 @@
 "use server";
 
-import { type WorthlineStore } from "@worthline/db";
 import {
   fetchCoinGeckoHistoryEur,
   fetchCoinGeckoLogos,
@@ -12,7 +11,7 @@ import {
 } from "@worthline/pricing";
 import { redirect } from "next/navigation";
 
-import { runActionWithStore } from "@web/action-store";
+import { runActionWithStore, testStoreFromActionArgs } from "@web/action-store";
 import { appendParam, errorRedirectUrl, parseEntityId } from "@web/intake";
 import { guardDemoWrite } from "@web/demo/write-guard";
 import {
@@ -21,7 +20,13 @@ import {
   resolveConnectingOwnership,
   serializeBinanceCredentials,
 } from "./binance-helpers";
-import { currentUrlOf, scopeMemberId } from "./connected-source-helpers";
+import {
+  CONNECTED_SOURCE_PERSISTENCE_ERROR_MESSAGE,
+  connectedSourceProviderErrorMessage,
+  currentUrlOf,
+  scopeMemberId,
+} from "./connected-source-helpers";
+import { enforceConnectedSourceSyncThrottle } from "./connected-source-sync-throttle-guard";
 
 /**
  * Server actions for the Binance connected source (PRD #245, ADR 0021). ADR 0043
@@ -38,8 +43,9 @@ const BINANCE_LABEL = "Binance";
 
 export async function connectBinanceAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite("/ajustes");
   const returnUrl = currentUrlOf(formData);
   const creds = parseBinanceCredentials(
@@ -100,8 +106,9 @@ export async function connectBinanceAction(
 
 export async function syncBinanceAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   const returnUrl = currentUrlOf(formData);
   await guardDemoWrite(returnUrl);
   const sourceId = parseEntityId(formData, "sourceId");
@@ -142,13 +149,24 @@ export async function syncBinanceAction(
   const nowMs = now.getTime();
   const nowIso = now.toISOString();
 
+  await enforceConnectedSourceSyncThrottle(returnUrl);
+
+  let drafts;
   try {
-    const drafts = await syncBinanceAccount({
+    drafts = await syncBinanceAccount({
       listBalances: () => getAllBalances(creds, { nowMs }),
       priceEur: (id) => fetchCoinGeckoPriceEur(id, nowIso),
       logoUrls: fetchCoinGeckoLogos,
     });
+  } catch {
+    redirect(
+      errorRedirectUrl(returnUrl, {
+        message: connectedSourceProviderErrorMessage("Binance"),
+      }),
+    );
+  }
 
+  try {
     await runActionWithStore(
       (store) =>
         store.syncConnectedSource({ positions: drafts, sourceId, syncedAt: nowIso }),
@@ -163,32 +181,31 @@ export async function syncBinanceAction(
         }),
       _store,
     );
-
-    try {
-      const curve = await reconstructBinanceHistory({
-        accountSnapshots: () => getAccountSnapshots(creds, { nowMs }),
-        historicalPriceEur: (id, from, to) =>
-          fetchCoinGeckoHistoryEur(
-            id,
-            Date.parse(from),
-            Date.parse(`${to}T23:59:59Z`),
-            nowIso,
-          ).then((r) => r.pricesByDate),
-      });
-      await runActionWithStore(
-        (store) => store.applyBinanceHistoryAndRipple({ sourceId, curve }),
-        _store,
-      );
-    } catch {
-      // History is best-effort; the positions sync already committed.
-    }
   } catch {
     redirect(
       errorRedirectUrl(returnUrl, {
-        message:
-          "No se pudo sincronizar con Binance. Revisa la clave de API y la conexión.",
+        message: CONNECTED_SOURCE_PERSISTENCE_ERROR_MESSAGE,
       }),
     );
+  }
+
+  try {
+    const curve = await reconstructBinanceHistory({
+      accountSnapshots: () => getAccountSnapshots(creds, { nowMs }),
+      historicalPriceEur: (id, from, to) =>
+        fetchCoinGeckoHistoryEur(
+          id,
+          Date.parse(from),
+          Date.parse(`${to}T23:59:59Z`),
+          nowIso,
+        ).then((r) => r.pricesByDate),
+    });
+    await runActionWithStore(
+      (store) => store.applyBinanceHistoryAndRipple({ sourceId, curve }),
+      _store,
+    );
+  } catch {
+    // History is best-effort; the positions sync already committed.
   }
 
   redirect(appendParam(returnUrl, "ok", "binance_synced"));
@@ -196,8 +213,9 @@ export async function syncBinanceAction(
 
 export async function disconnectBinanceAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   const returnUrl = currentUrlOf(formData);
   await guardDemoWrite(returnUrl);
   const sourceId = parseEntityId(formData, "sourceId");

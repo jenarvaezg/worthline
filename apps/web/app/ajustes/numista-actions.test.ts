@@ -223,6 +223,20 @@ describe("disconnectNumistaAction", () => {
 });
 
 describe("syncNumistaAction", () => {
+  test("falls back to a local redirect when currentUrl is absolute", async () => {
+    const store = await createInMemoryStore();
+    await seedWithSource(store);
+
+    const digest = await runAction(
+      syncNumistaAction,
+      form({ currentUrl: "https://evil.example/steal", sourceId: "missing" }),
+      store,
+    );
+
+    expect(digest).toContain(";replace;/ajustes?error=");
+    expect(digest).not.toContain("evil.example");
+  });
+
   test("errors (without wiping positions) when the source id is unknown", async () => {
     const store = await createInMemoryStore();
     const { sourceId } = await seedWithSource(store);

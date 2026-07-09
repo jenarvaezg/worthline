@@ -1,7 +1,12 @@
 "use server";
 
 import { type WorthlineStore } from "@web/store";
-import { runActionWithStore, runDatedFactAction } from "@web/action-store";
+import {
+  runActionWithStore,
+  runDatedFactAction,
+  testArgFromActionArgs,
+  testStoreFromActionArgs,
+} from "@web/action-store";
 import {
   assertNotInvestmentAsset,
   checkOwnershipSplit,
@@ -65,11 +70,18 @@ function baseUrl(formData: FormData): string {
   return (formData.get("currentUrl") as string) || "/patrimonio";
 }
 
+function isClock(value: unknown): value is Clock {
+  return (
+    typeof value === "object" && value !== null && "now" in value && "today" in value
+  );
+}
+
 export async function deleteAssetAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
 
@@ -99,9 +111,10 @@ export async function deleteAssetAction(
 
 export async function deleteLiabilityAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
 
@@ -131,8 +144,9 @@ export async function deleteLiabilityAction(
 
 export async function hardDeleteAssetAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
 
@@ -162,8 +176,9 @@ export async function hardDeleteAssetAction(
 
 export async function hardDeleteLiabilityAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
 
@@ -193,8 +208,9 @@ export async function hardDeleteLiabilityAction(
 
 export async function emptyTrashAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(baseUrl(formData));
 
   await runActionWithStore((store) => store.emptyTrash(), _store);
@@ -204,8 +220,9 @@ export async function emptyTrashAction(
 
 export async function restoreAssetAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
 
@@ -235,8 +252,9 @@ export async function restoreAssetAction(
 
 export async function restoreLiabilityAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
 
@@ -266,8 +284,9 @@ export async function restoreLiabilityAction(
 
 export async function acknowledgeWarningAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(baseUrl(formData));
   const code = String(formData.get("code") ?? "").trim();
   const entityId = parseEntityId(formData, "entityId");
@@ -286,8 +305,9 @@ export async function acknowledgeWarningAction(
 
 export async function updateAssetValuationAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const currentValue = parseMoneyMinorField(formData, "currentValue");
@@ -347,8 +367,9 @@ export async function updateAssetValuationAction(
 
 export async function updateLiabilityBalanceAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const balance = parseMoneyMinorField(formData, "balance");
@@ -380,8 +401,9 @@ export async function updateLiabilityBalanceAction(
 
 export async function batchValueUpdateAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(baseUrl(formData));
 
   const result = await runActionWithStore(async (store) => {
@@ -463,8 +485,9 @@ export async function batchValueUpdateAction(
 
 export async function editAssetAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const isLiability = formData.get("isLiability") === "true";
@@ -630,8 +653,9 @@ async function findAsset(store: WorthlineStore, id: string) {
 
 export async function setAppreciationRateAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
 
@@ -685,9 +709,10 @@ export async function setAppreciationRateAction(
 
 export async function addValuationAnchorAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
 
@@ -742,9 +767,10 @@ export async function addValuationAnchorAction(
 
 export async function updateValuationAnchorAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");
@@ -818,9 +844,10 @@ export async function updateValuationAnchorAction(
 
 export async function deleteValuationAnchorAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");
@@ -898,8 +925,9 @@ async function findLiability(store: WorthlineStore, id: string) {
 
 export async function setDebtModelAction(
   formData: FormData,
-  _store?: WorthlineStore,
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
 
@@ -941,9 +969,10 @@ export async function setDebtModelAction(
 
 export async function setValuationCadenceAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
 
@@ -987,9 +1016,10 @@ export async function setValuationCadenceAction(
 
 export async function setHousingValuationCadenceAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
 
@@ -1084,9 +1114,10 @@ type DebtModelGuard = "amortizable" | "anchorable";
  */
 export async function saveCurrentStateAmortizationAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
 
@@ -1186,9 +1217,10 @@ export async function saveCurrentStateAmortizationAction(
  */
 export async function recalibrateDebtBalanceAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
 
@@ -1297,9 +1329,10 @@ export async function recalibrateDebtBalanceAction(
 
 export async function saveAmortizationPlanAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
 
@@ -1369,9 +1402,10 @@ export async function saveAmortizationPlanAction(
 
 export async function deleteAmortizationPlanAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
@@ -1422,9 +1456,10 @@ export async function deleteAmortizationPlanAction(
 
 export async function addInterestRateRevisionAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
@@ -1478,9 +1513,10 @@ export async function addInterestRateRevisionAction(
 
 export async function updateInterestRateRevisionAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
@@ -1550,9 +1586,10 @@ export async function updateInterestRateRevisionAction(
 
 export async function deleteInterestRateRevisionAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const revisionId = parseEntityId(formData, "revisionId");
@@ -1600,9 +1637,10 @@ export async function deleteInterestRateRevisionAction(
 
 export async function addEarlyRepaymentAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
@@ -1654,9 +1692,10 @@ export async function addEarlyRepaymentAction(
 
 export async function updateEarlyRepaymentAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const planId = parseEntityId(formData, "planId");
@@ -1727,9 +1766,10 @@ export async function updateEarlyRepaymentAction(
 
 export async function deleteEarlyRepaymentAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const repaymentId = parseEntityId(formData, "repaymentId");
@@ -1777,9 +1817,10 @@ export async function deleteEarlyRepaymentAction(
 
 export async function addBalanceAnchorAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
 
@@ -1829,9 +1870,10 @@ export async function addBalanceAnchorAction(
 
 export async function updateBalanceAnchorAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");
@@ -1900,9 +1942,10 @@ export async function updateBalanceAnchorAction(
 
 export async function deleteBalanceAnchorAction(
   formData: FormData,
-  _store?: WorthlineStore,
-  _clock: Clock = systemClock(),
+  ..._testArgs: unknown[]
 ): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(baseUrl(formData));
   const id = parseEntityId(formData);
   const anchorId = parseEntityId(formData, "anchorId");

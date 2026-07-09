@@ -21,6 +21,43 @@ export function runActionWithStore<T>(
   return injectedStore ? Promise.resolve(fn(injectedStore)) : withStore(fn);
 }
 
+export function testStoreFromActionArgs(
+  args: IArguments | readonly unknown[],
+): WorthlineStore | undefined {
+  return testArgFromActionArgs(args, isWorthlineStoreLike);
+}
+
+export function testArgFromActionArgs<T>(
+  args: IArguments | readonly unknown[],
+  predicate: (value: unknown) => value is T,
+): T | undefined {
+  if (!isTestRuntime()) {
+    return undefined;
+  }
+
+  for (const value of Array.from(args)) {
+    if (predicate(value)) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function isTestRuntime(): boolean {
+  return process.env.NODE_ENV === "test" || process.env.VITEST === "true";
+}
+
+function isWorthlineStoreLike(value: unknown): value is WorthlineStore {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "workspace" in value &&
+    "assets" in value &&
+    "close" in value
+  );
+}
+
 /**
  * Friendly message for re-submitting a dated fact on a date that already has one
  * (a UNIQUE-index collision). Generic across dated-fact kinds — revisions,

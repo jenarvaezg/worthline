@@ -109,6 +109,12 @@ export interface ControlPlaneStore {
    * returned count against its limit, so the counter needs no policy.
    */
   recordChatRequest(rateKey: string, windowKey: string): Promise<number>;
+  /**
+   * Count one user-triggered connected-source sync for (rateKey, windowKey).
+   * Same increment-then-check contract as chat usage, but kept in a separate
+   * table so chat and sync quotas cannot interfere.
+   */
+  recordConnectedSourceSync(rateKey: string, windowKey: string): Promise<number>;
   close(): void;
 }
 
@@ -146,6 +152,13 @@ CREATE TABLE IF NOT EXISTS daily_capture_runs (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS chat_usage (
+  rate_key TEXT NOT NULL,
+  window_key TEXT NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (rate_key, window_key)
+);
+CREATE TABLE IF NOT EXISTS connected_source_sync_usage (
   rate_key TEXT NOT NULL,
   window_key TEXT NOT NULL,
   count INTEGER NOT NULL DEFAULT 0,
@@ -356,6 +369,18 @@ async function buildControlPlaneStore(
       // add a sweep if the table ever matters.
       const result = await client.execute({
         sql: `INSERT INTO chat_usage (rate_key, window_key, count)
+              VALUES (?, ?, 1)
+              ON CONFLICT(rate_key, window_key) DO UPDATE SET
+                count = count + 1,
+                updated_at = CURRENT_TIMESTAMP
+              RETURNING count`,
+        args: [rateKey, windowKey],
+      });
+      return Number(result.rows[0]?.["count"] ?? 1);
+    },
+    async recordConnectedSourceSync(rateKey, windowKey) {
+      const result = await client.execute({
+        sql: `INSERT INTO connected_source_sync_usage (rate_key, window_key, count)
               VALUES (?, ?, 1)
               ON CONFLICT(rate_key, window_key) DO UPDATE SET
                 count = count + 1,

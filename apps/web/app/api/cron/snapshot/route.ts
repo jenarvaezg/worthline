@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "node:crypto";
+
 import { runDailyCapture } from "@worthline/db";
 
 import { buildDailyCaptureDeps } from "./daily-capture-deps";
@@ -18,7 +20,26 @@ export const maxDuration = 60;
 function authorized(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
-  return req.headers.get("authorization") === `Bearer ${secret}`;
+  const suppliedToken = bearerToken(req.headers.get("authorization"));
+  return Boolean(suppliedToken && tokenMatches(suppliedToken, secret));
+}
+
+function bearerToken(header: string | null): string | null {
+  const parts = header?.split(" ") ?? [];
+  const [scheme, token] = parts;
+
+  if (parts.length !== 2 || scheme?.toLowerCase() !== "bearer" || !token) {
+    return null;
+  }
+
+  return token;
+}
+
+function tokenMatches(suppliedToken: string, expectedToken: string): boolean {
+  const supplied = Buffer.from(suppliedToken);
+  const expected = Buffer.from(expectedToken);
+
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
 }
 
 async function handler(req: Request): Promise<Response> {
