@@ -56,6 +56,22 @@ jobs:
         if: env.HAVE_TOKEN == 'true'
         run: bunx vercel pull --yes --environment=production --token="${{ secrets.VERCEL_TOKEN }}"
 
+      # Dashboard may still override install to `npm install --include=dev` from the
+      # npm era; npm cannot resolve our `workspace:*` deps. Force Bun after pull.
+      - name: Align Vercel install command with Bun
+        if: env.HAVE_TOKEN == 'true'
+        run: |
+          if [ -f .vercel/project.json ]; then
+            node --input-type=module -e "
+              import { readFileSync, writeFileSync } from 'node:fs';
+              const path = '.vercel/project.json';
+              const project = JSON.parse(readFileSync(path, 'utf8'));
+              project.settings ??= {};
+              project.settings.installCommand = 'bun install --frozen-lockfile';
+              writeFileSync(path, JSON.stringify(project, null, 2));
+            "
+          fi
+
       - name: Build prebuilt output on Node 24
         if: env.HAVE_TOKEN == 'true'
         run: bunx vercel build --prod --token="${{ secrets.VERCEL_TOKEN }}"
