@@ -37,6 +37,9 @@ jobs:
       - uses: dorny/paths-filter@v3
         id: filter
         with:
+          # Default quantifier is `some`: `**` matches everything and negations
+          # are ignored. `every` makes exclusions like !docs/** take effect.
+          predicate-quantifier: every
           filters: |
             code:
               - '**'
