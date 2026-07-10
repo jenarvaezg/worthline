@@ -16,6 +16,7 @@ import type {
   UpdateValuationAnchorInput,
 } from "./asset-store";
 import type { ConnectedSourceStore, SourcePositionInput } from "./connected-source-store";
+import type { ContributionPlanStore } from "./contribution-plan-store";
 import type { ExposureProfileStore } from "./exposure-profile-store";
 import type { GoalStore } from "./goal-store";
 import type {
@@ -116,6 +117,8 @@ export interface WorthlineStore {
   /** Hand-entered exposure profiles keyed by security identity (PRD #539, ADR 0039). */
   exposureProfiles: ExposureProfileStore;
   payouts: PayoutStore;
+  /** Planned contributions per scope (ADR 0041, PRD #553 S1). */
+  contributionPlan: ContributionPlanStore;
   /** Narrow read-only port for the external agent-view API. */
   agentView: AgentViewReadStore;
 

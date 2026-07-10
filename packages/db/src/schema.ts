@@ -784,6 +784,24 @@ export const snapshotPositionHoldings = sqliteTable(
   ],
 );
 
+/** A scope's planned contributions (ADR 0041, PRD #553 S1). Forecast metadata only. */
+export const plannedContributions = sqliteTable(
+  "planned_contributions",
+  {
+    id: text("id").primaryKey(),
+    scopeId: text("scope_id").notNull(),
+    destinationHoldingId: text("destination_holding_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    amountJson: text("amount_json").notNull(),
+    cadenceJson: text("cadence_json").notNull(),
+    startDate: text("start_date").notNull(),
+    endDate: text("end_date"),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [index("planned_contributions_scope_idx").on(table.scopeId, table.id)],
+);
+
 /** Intermediate financial goals (PRD #421, #424). */
 export const goals = sqliteTable("goals", {
   id: text("id").primaryKey(),

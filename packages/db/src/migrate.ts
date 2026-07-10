@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 44;
+export const SCHEMA_VERSION = 45;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1400,6 +1400,24 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       );
     } catch {}
     await writeSchemaVersion(client, 44);
+  }
+
+  if (version < 45) {
+    await client.executeMultiple(
+      `CREATE TABLE IF NOT EXISTS planned_contributions (
+        id TEXT PRIMARY KEY NOT NULL,
+        scope_id TEXT NOT NULL,
+        destination_holding_id TEXT NOT NULL,
+        amount_json TEXT NOT NULL,
+        cadence_json TEXT NOT NULL,
+        start_date TEXT NOT NULL,
+        end_date TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        FOREIGN KEY (destination_holding_id) REFERENCES assets(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS planned_contributions_scope_idx ON planned_contributions(scope_id, id);`,
+    );
+    await writeSchemaVersion(client, 45);
   }
 
   return { ranV18Backfill, ranV33Backfill };

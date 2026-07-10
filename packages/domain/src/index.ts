@@ -133,6 +133,21 @@ export {
   tokenSymbolSnapshotInputs,
 } from "./connected-source";
 export type {
+  ContributionCadence,
+  ContributionOccurrence,
+  ContributionPlan,
+  IsoWeekday,
+  PlannedContribution,
+  PlannedContributionAmount,
+} from "./contribution-plan";
+export {
+  contributionOccurrenceId,
+  derivedMonthlySavingsCapacity,
+  expandContributionPlan,
+  expandPlannedContribution,
+  resolveMonthlySavingsCapacityForFire,
+} from "./contribution-plan";
+export type {
   DashboardState,
   FireGlance,
   LocalPersistenceStatus,

@@ -13,6 +13,8 @@
  * Returns null when config is degenerate (SWR or spending = 0) — caller hides the rail.
  */
 
+import type { ContributionPlan } from "./contribution-plan";
+import { resolveMonthlySavingsCapacityForFire } from "./contribution-plan";
 import type { FireScopeConfig } from "./fire";
 import { calculateFire } from "./fire";
 import { fractionalFireYear, projectFire } from "./fire-projection";
@@ -43,6 +45,11 @@ export interface FireLevelsInput {
    * `config.expectedRealReturn ?? 0.05` when omitted (backward-compat).
    */
   resolvedRealReturn?: number;
+  /** Scope contribution plan for derived monthly savings (ADR 0041). */
+  contributionPlan?: ContributionPlan | null;
+  /** ISO YYYY-MM-DD for active-contribution filtering. */
+  today?: string;
+  unitPriceMajorByHoldingId?: Record<string, string>;
 }
 
 const LEAN_DEFAULT = 0.7;
@@ -83,7 +90,12 @@ export function fireLevels(input: FireLevelsInput): FireLevel[] | null {
 
   // Single projection run with fireNumberMinor = fatAmount so the trajectory is
   // tall enough to cross every level. All four levels interpolate on this trajectory.
-  const monthlyContribution = config.monthlySavingsCapacityMinor ?? 0;
+  const monthlyContribution = resolveMonthlySavingsCapacityForFire(
+    input.contributionPlan,
+    config,
+    input.today ?? new Date().toISOString().slice(0, 10),
+    input.unitPriceMajorByHoldingId,
+  );
   const projection = projectFire({
     startingEligibleMinor: eligibleMinor,
     monthlyContributionMinor: monthlyContribution,
