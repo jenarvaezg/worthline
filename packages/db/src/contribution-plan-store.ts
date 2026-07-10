@@ -4,6 +4,11 @@ import type {
   PlannedContribution,
   PlannedContributionAmount,
 } from "@worthline/domain";
+import {
+  assertContributionCadence,
+  assertPlannedContributionInput,
+  parsePlannedContributionAmount,
+} from "@worthline/domain";
 import { asc, eq } from "drizzle-orm";
 
 import { plannedContributions } from "./schema";
@@ -55,12 +60,42 @@ export function createContributionPlanStore(ctx: StoreContext): ContributionPlan
 
 type Row = typeof plannedContributions.$inferSelect;
 
+function parseCadenceJson(raw: string): ContributionCadence {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("Planned contribution cadence must be valid JSON.");
+  }
+  if (typeof parsed !== "object" || parsed === null || !("kind" in parsed)) {
+    throw new Error("Planned contribution cadence is invalid.");
+  }
+  const cadence = parsed as ContributionCadence;
+  assertContributionCadence(cadence);
+  return cadence;
+}
+
 function rowToContribution(row: Row): PlannedContribution {
+  let amountRaw: unknown;
+  try {
+    amountRaw = JSON.parse(row.amountJson);
+  } catch {
+    throw new Error(`Planned contribution "${row.id}" has invalid amount JSON.`);
+  }
+  const amount = parsePlannedContributionAmount(amountRaw);
+  const cadence = parseCadenceJson(row.cadenceJson);
+  assertPlannedContributionInput({
+    destinationHoldingId: row.destinationHoldingId,
+    amount,
+    cadence,
+    startDate: row.startDate,
+    endDate: row.endDate,
+  });
   return {
     id: row.id,
     destinationHoldingId: row.destinationHoldingId,
-    amount: JSON.parse(row.amountJson) as PlannedContributionAmount,
-    cadence: JSON.parse(row.cadenceJson) as ContributionCadence,
+    amount,
+    cadence,
     startDate: row.startDate,
     ...(row.endDate != null ? { endDate: row.endDate } : {}),
   };
@@ -83,10 +118,22 @@ async function readContributionPlan(
   };
 }
 
+async function readContributionRow(
+  ctx: StoreContext,
+  id: string,
+): Promise<Row | undefined> {
+  return ctx.db
+    .select()
+    .from(plannedContributions)
+    .where(eq(plannedContributions.id, id))
+    .get();
+}
+
 async function createPlannedContribution(
   ctx: StoreContext,
   input: CreatePlannedContributionInput,
 ): Promise<PlannedContribution> {
+  assertPlannedContributionInput(input);
   const id = ctx.newId();
   const endDate = input.endDate ?? null;
   await ctx.db
@@ -117,6 +164,24 @@ async function updatePlannedContribution(
   id: string,
   patch: UpdatePlannedContributionPatch,
 ): Promise<void> {
+  const existing = await readContributionRow(ctx, id);
+  if (!existing) {
+    throw new Error(`Planned contribution "${id}" not found.`);
+  }
+
+  const current = rowToContribution(existing);
+  const next = {
+    destinationHoldingId: patch.destinationHoldingId ?? current.destinationHoldingId,
+    amount: patch.amount ?? current.amount,
+    cadence: patch.cadence ?? current.cadence,
+    startDate: patch.startDate ?? current.startDate,
+    endDate: patch.endDate === undefined ? current.endDate : (patch.endDate ?? undefined),
+  };
+  assertPlannedContributionInput({
+    ...next,
+    endDate: next.endDate ?? null,
+  });
+
   const set: Partial<typeof plannedContributions.$inferInsert> = {};
   if (patch.destinationHoldingId !== undefined) {
     set.destinationHoldingId = patch.destinationHoldingId;

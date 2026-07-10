@@ -250,6 +250,7 @@ async function buildStore(
     readPayoutSchedules: payoutStore.readPayoutSchedules,
     readPayoutSchedulesForHolding: payoutStore.readPayoutSchedulesForHolding,
     readContributionPlan: contributionPlanStore.readContributionPlan,
+    readAllPriceCacheEntries: () => operationsStore.readAllPriceCacheEntries(),
     readSnapshotHoldings: snapshotStore.readSnapshotHoldings,
     readSnapshots: (scopeId) => snapshotStore.readSnapshots(scopeId),
     readSourcePositions: connectedSourceStore.readPositions,

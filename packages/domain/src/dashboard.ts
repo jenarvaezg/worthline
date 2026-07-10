@@ -31,6 +31,7 @@ import type {
 import { buildLiquidityBreakdown, calculateNetWorth, presentNetWorth } from "./net-worth";
 import type { LocalPersistenceStatus } from "./persistence";
 import type { AssetPrice } from "./prices";
+import { unitPriceMajorByHoldingId } from "./prices";
 import type { ScopeOption } from "./scope";
 import { resolveScopeMemberIds } from "./scope";
 import type { NetWorthSnapshot, SnapshotDeltas } from "./snapshot-types";
@@ -182,9 +183,7 @@ export function prepareDashboardState(input: {
 }): DashboardState {
   const { workspace, assets, liabilities, selectedScope, persistence } = input;
   const today = input.today ?? new Date().toISOString().slice(0, 10);
-  const unitPriceMajorByHoldingId = Object.fromEntries(
-    input.priceCache.map((entry) => [entry.assetId, entry.price]),
-  );
+  const unitPrices = unitPriceMajorByHoldingId(input.priceCache);
 
   const summary =
     workspace && selectedScope
@@ -249,8 +248,8 @@ export function prepareDashboardState(input: {
             input.contributionPlan,
             fireScopeConfig,
             today,
-            unitPriceMajorByHoldingId,
-          ),
+            unitPrices,
+          ).capacityMinor,
           expectedRealReturn:
             fireResult.realReturnUsed ?? fireScopeConfig.expectedRealReturn ?? 0.05,
           fireNumberMinor: fireResult.fireNumber.amountMinor,
@@ -405,9 +404,7 @@ export function prepareObjetivosState(
       : new Set();
 
   const now = input.today ?? new Date().toISOString().slice(0, 10);
-  const unitPriceMajorByHoldingId = Object.fromEntries(
-    input.priceCache.map((entry) => [entry.assetId, entry.price]),
-  );
+  const unitPrices = unitPriceMajorByHoldingId(input.priceCache);
   const fireHorizon = dash.fireScopeConfig
     ? fireReservationHorizon(dash.fireScopeConfig, now)
     : undefined;
@@ -464,8 +461,8 @@ export function prepareObjetivosState(
             ...(input.contributionPlan
               ? { contributionPlan: input.contributionPlan }
               : {}),
-            ...(Object.keys(unitPriceMajorByHoldingId).length > 0
-              ? { unitPriceMajorByHoldingId }
+            ...(Object.keys(unitPrices).length > 0
+              ? { unitPriceMajorByHoldingId: unitPrices }
               : {}),
             // N3 (#515): thread the single resolved rate so goalFireDelay is
             // coherent with coast + projection + fireLevels.
@@ -488,8 +485,8 @@ export function prepareObjetivosState(
           currency: dash.workspace.baseCurrency,
           today: now,
           ...(input.contributionPlan ? { contributionPlan: input.contributionPlan } : {}),
-          ...(Object.keys(unitPriceMajorByHoldingId).length > 0
-            ? { unitPriceMajorByHoldingId }
+          ...(Object.keys(unitPrices).length > 0
+            ? { unitPriceMajorByHoldingId: unitPrices }
             : {}),
           ...(dash.fireResult.realReturnUsed !== undefined
             ? { resolvedRealReturn: dash.fireResult.realReturnUsed }

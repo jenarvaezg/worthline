@@ -34,7 +34,7 @@ describe("contribution plan CRUD", () => {
     const money = await store.contributionPlan.createPlannedContribution({
       scopeId: "default",
       destinationHoldingId: "h1",
-      amount: { mode: "money", valueMinor: 250_000 },
+      amount: { mode: "money", value: 250_000 },
       cadence: { kind: "monthly", dayOfMonth: 1 },
       startDate: "2025-01-01",
     });
@@ -53,7 +53,7 @@ describe("contribution plan CRUD", () => {
         {
           id: money.id,
           destinationHoldingId: "h1",
-          amount: { mode: "money", valueMinor: 250_000 },
+          amount: { mode: "money", value: 250_000 },
           cadence: { kind: "monthly", dayOfMonth: 1 },
           startDate: "2025-01-01",
         },
@@ -74,20 +74,20 @@ describe("contribution plan CRUD", () => {
     const created = await store.contributionPlan.createPlannedContribution({
       scopeId: "default",
       destinationHoldingId: "h1",
-      amount: { mode: "money", valueMinor: 100_000 },
+      amount: { mode: "money", value: 100_000 },
       cadence: { kind: "monthly", dayOfMonth: 15 },
       startDate: "2025-02-01",
     });
 
     await store.contributionPlan.updatePlannedContribution(created.id, {
-      amount: { mode: "money", valueMinor: 150_000 },
+      amount: { mode: "money", value: 150_000 },
       endDate: "2025-06-30",
     });
 
     const updated = await store.contributionPlan.readContributionPlan("default");
     expect(updated.contributions[0]).toEqual({
       ...created,
-      amount: { mode: "money", valueMinor: 150_000 },
+      amount: { mode: "money", value: 150_000 },
       endDate: "2025-06-30",
     });
 
@@ -96,5 +96,52 @@ describe("contribution plan CRUD", () => {
       scopeId: "default",
       contributions: [],
     });
+  });
+
+  it("rejects negative money amounts", async () => {
+    const store = await freshStore();
+    await expect(
+      store.contributionPlan.createPlannedContribution({
+        scopeId: "default",
+        destinationHoldingId: "h1",
+        amount: { mode: "money", value: -100 },
+        cadence: { kind: "monthly", dayOfMonth: 1 },
+        startDate: "2025-01-01",
+      }),
+    ).rejects.toThrow(/positive integer minor-unit amount/);
+  });
+
+  it("rejects invalid dates and endDate before startDate", async () => {
+    const store = await freshStore();
+    await expect(
+      store.contributionPlan.createPlannedContribution({
+        scopeId: "default",
+        destinationHoldingId: "h1",
+        amount: { mode: "money", value: 100_000 },
+        cadence: { kind: "monthly", dayOfMonth: 1 },
+        startDate: "not-a-date",
+      }),
+    ).rejects.toThrow(/YYYY-MM-DD/);
+
+    await expect(
+      store.contributionPlan.createPlannedContribution({
+        scopeId: "default",
+        destinationHoldingId: "h1",
+        amount: { mode: "money", value: 100_000 },
+        cadence: { kind: "monthly", dayOfMonth: 32 },
+        startDate: "2025-01-01",
+      }),
+    ).rejects.toThrow(/dayOfMonth must be between 1 and 31/);
+
+    await expect(
+      store.contributionPlan.createPlannedContribution({
+        scopeId: "default",
+        destinationHoldingId: "h1",
+        amount: { mode: "money", value: 100_000 },
+        cadence: { kind: "monthly", dayOfMonth: 1 },
+        startDate: "2025-06-01",
+        endDate: "2025-01-01",
+      }),
+    ).rejects.toThrow(/End date must be on or after start date/);
   });
 });

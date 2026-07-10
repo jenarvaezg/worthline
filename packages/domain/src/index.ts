@@ -137,14 +137,20 @@ export type {
   ContributionOccurrence,
   ContributionPlan,
   IsoWeekday,
+  MonthlySavingsCapacityResolution,
+  MonthlySavingsCapacitySource,
   PlannedContribution,
   PlannedContributionAmount,
 } from "./contribution-plan";
 export {
+  activeUnitContributionsMissingPrices,
+  assertContributionCadence,
+  assertPlannedContributionInput,
   contributionOccurrenceId,
   derivedMonthlySavingsCapacity,
   expandContributionPlan,
   expandPlannedContribution,
+  parsePlannedContributionAmount,
   resolveMonthlySavingsCapacityForFire,
 } from "./contribution-plan";
 export type {
@@ -476,6 +482,7 @@ export {
   isPriceStale,
   PRICE_TTL_DAYS,
   selectStalePrices,
+  unitPriceMajorByHoldingId,
 } from "./prices";
 export type {
   DatedCashflow,

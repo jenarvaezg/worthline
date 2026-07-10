@@ -1,6 +1,10 @@
 import type { AgentViewReadStore } from "@worthline/db";
 import type { FireScenario } from "@worthline/domain";
-import { projectFire, resolveMonthlySavingsCapacityForFire } from "@worthline/domain";
+import {
+  projectFire,
+  resolveMonthlySavingsCapacityForFire,
+  unitPriceMajorByHoldingId,
+} from "@worthline/domain";
 
 import type {
   AgentViewFireProjection,
@@ -36,12 +40,14 @@ export async function buildFireProjection(
   const currency = fire.currency;
   const internalScopeId = await resolveInternalScopeId(store, publicScopeId);
   const contributionPlan = await store.readContributionPlan(internalScopeId);
+  const priceCache = await store.readAllPriceCacheEntries();
   const today = new Date().toISOString().slice(0, 10);
   const monthlyContributionMinor = resolveMonthlySavingsCapacityForFire(
     contributionPlan,
     config,
     today,
-  );
+    unitPriceMajorByHoldingId(priceCache),
+  ).capacityMinor;
 
   // N3 (#515): use result.realReturnUsed (the single resolved rate) — not
   // config.expectedRealReturn directly — so projection is coherent with coast.

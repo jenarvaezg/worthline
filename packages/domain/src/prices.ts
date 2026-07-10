@@ -12,6 +12,13 @@ export type PriceSource =
 export type InvestmentPriceProvider = "yahoo" | "stooq" | "finect" | "coingecko";
 export type PriceFreshnessState = "fresh" | "stale" | "failed" | "manual";
 
+/** Major-unit price per holding id — used to convert units contributions to money. */
+export function unitPriceMajorByHoldingId(
+  priceCache: readonly AssetPrice[],
+): Record<string, string> {
+  return Object.fromEntries(priceCache.map((entry) => [entry.assetId, entry.price]));
+}
+
 export interface AssetPrice {
   assetId: string;
   currency: string;

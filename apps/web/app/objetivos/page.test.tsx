@@ -60,6 +60,11 @@ const calls = vi.hoisted(() => {
     ]),
     readPayoutSchedules: vi.fn(async () => []),
     readWarningOverrides: vi.fn(async () => []),
+    readContributionPlan: vi.fn(async () => ({
+      scopeId: "household",
+      contributions: [],
+    })),
+    readAllPriceCacheEntries: vi.fn(async () => []),
     readWorkspace: vi.fn(async () => ({
       baseCurrency: "EUR",
       groups: [],
@@ -69,7 +74,9 @@ const calls = vi.hoisted(() => {
     withStore: vi.fn(async (run: (store: unknown) => unknown) =>
       run({
         assets: { readAssets: calls.readAssets },
+        contributionPlan: { readContributionPlan: calls.readContributionPlan },
         goals: { readGoals: calls.readGoals },
+        operations: { readAllPriceCacheEntries: calls.readAllPriceCacheEntries },
         payouts: {
           readPayouts: calls.readPayouts,
           readPayoutSchedules: calls.readPayoutSchedules,

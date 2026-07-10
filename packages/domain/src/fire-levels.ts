@@ -95,7 +95,7 @@ export function fireLevels(input: FireLevelsInput): FireLevel[] | null {
     config,
     input.today ?? new Date().toISOString().slice(0, 10),
     input.unitPriceMajorByHoldingId,
-  );
+  ).capacityMinor;
   const projection = projectFire({
     startingEligibleMinor: eligibleMinor,
     monthlyContributionMinor: monthlyContribution,

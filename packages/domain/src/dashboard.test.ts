@@ -108,6 +108,68 @@ describe("fireGlance in prepareDashboardState", () => {
 
   const scope = { id: "household", label: "Hogar", type: "household" as const };
 
+  test("uses the contribution plan's derived monthly savings for FIRE projection", () => {
+    const state = prepareDashboardState({
+      assets: [investmentAsset],
+      contributionPlan: {
+        scopeId: "household",
+        contributions: [
+          {
+            id: "contrib_1",
+            destinationHoldingId: "asset_inv",
+            amount: { mode: "money", value: 500_000 },
+            cadence: { kind: "monthly", dayOfMonth: 1 },
+            startDate: "2026-01-01",
+          },
+        ],
+      },
+      fireConfig: {
+        household: {
+          ...fireConfig,
+          monthlySavingsCapacityMinor: 100_000,
+        },
+      },
+      liabilities: [],
+      persistence,
+      positions: [],
+      priceCache: [],
+      scopes: [scope],
+      selectedScope: scope,
+      selectedView: "liquid",
+      snapshots: [],
+      today: "2026-06-25",
+      workspace,
+    });
+
+    const manualOnly = prepareDashboardState({
+      assets: [investmentAsset],
+      fireConfig: {
+        household: {
+          ...fireConfig,
+          monthlySavingsCapacityMinor: 100_000,
+        },
+      },
+      liabilities: [],
+      persistence,
+      positions: [],
+      priceCache: [],
+      scopes: [scope],
+      selectedScope: scope,
+      selectedView: "liquid",
+      snapshots: [],
+      today: "2026-06-25",
+      workspace,
+    });
+
+    const planBase = state.fireProjection!.scenarios.find((s) => s.label === "base")!;
+    const manualBase = manualOnly.fireProjection!.scenarios.find(
+      (s) => s.label === "base",
+    )!;
+    expect(planBase.totalContributedMinor).toBeGreaterThan(
+      manualBase.totalContributedMinor,
+    );
+  });
+
   test("returns populated fireGlance when FIRE is configured", () => {
     const state = prepareDashboardState({
       assets: [investmentAsset],

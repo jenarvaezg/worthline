@@ -14,7 +14,7 @@ function contribution(overrides: Partial<PlannedContribution> = {}): PlannedCont
   return {
     id: "c1",
     destinationHoldingId: "h1",
-    amount: { mode: "money", valueMinor: 100_000 },
+    amount: { mode: "money", value: 100_000 },
     cadence: { kind: "monthly", dayOfMonth: 1 },
     startDate: "2025-01-01",
     ...overrides,
@@ -44,10 +44,27 @@ describe("expandContributionPlan", () => {
       "2025-06-01",
     ]);
     expect(
-      occurrences.every(
-        (o) => o.amount.mode === "money" && o.amount.valueMinor === 100_000,
-      ),
+      occurrences.every((o) => o.amount.mode === "money" && o.amount.value === 100_000),
     ).toBe(true);
+  });
+
+  it("returns to day 31 after a short February anchor", () => {
+    const occurrences = expandContributionPlan(
+      plan([
+        contribution({
+          startDate: "2025-02-01",
+          cadence: { kind: "monthly", dayOfMonth: 31 },
+        }),
+      ]),
+      "2025-02-01",
+      "2025-05-31",
+    );
+    expect(occurrences.map((o) => o.plannedDate)).toEqual([
+      "2025-02-28",
+      "2025-03-31",
+      "2025-04-30",
+      "2025-05-31",
+    ]);
   });
 
   it("yields the right Mondays for a weekly-on-Monday contribution", () => {
@@ -99,13 +116,13 @@ describe("expandContributionPlan", () => {
       plan([
         contribution({
           id: "money",
-          amount: { mode: "money", valueMinor: 50_000 },
+          amount: { mode: "money", value: 50_000 },
         }),
       ]),
       "2025-01-01",
       "2025-01-31",
     );
-    expect(money[0]!.amount).toEqual({ mode: "money", valueMinor: 50_000 });
+    expect(money[0]!.amount).toEqual({ mode: "money", value: 50_000 });
 
     const units = expandContributionPlan(
       plan([
@@ -131,7 +148,7 @@ describe("expandContributionPlan", () => {
       contributionId: "c1",
       destinationHoldingId: "h1",
       plannedDate: "2025-01-01",
-      amount: { mode: "money", valueMinor: 100_000 },
+      amount: { mode: "money", value: 100_000 },
     });
     expect(occurrence).not.toHaveProperty("operationId");
   });
@@ -143,12 +160,12 @@ describe("derivedMonthlySavingsCapacity", () => {
       plan([
         contribution({
           id: "monthly",
-          amount: { mode: "money", valueMinor: 300_000 },
+          amount: { mode: "money", value: 300_000 },
           cadence: { kind: "monthly", dayOfMonth: 1 },
         }),
         contribution({
           id: "weekly",
-          amount: { mode: "money", valueMinor: 100_000 },
+          amount: { mode: "money", value: 100_000 },
           cadence: { kind: "weekly", weekday: 1 },
           startDate: "2025-01-06",
         }),
@@ -178,12 +195,25 @@ describe("derivedMonthlySavingsCapacity", () => {
     expect(capacity).toBe(200_000);
   });
 
+  it("returns null when an active units contribution lacks a unit price", () => {
+    const capacity = derivedMonthlySavingsCapacity(
+      plan([
+        contribution({
+          amount: { mode: "units", value: "2" },
+          cadence: { kind: "monthly", dayOfMonth: 1 },
+        }),
+      ]),
+      "2025-06-01",
+    );
+    expect(capacity).toBeNull();
+  });
+
   it("ignores contributions that ended before today", () => {
     const capacity = derivedMonthlySavingsCapacity(
       plan([
         contribution({
           endDate: "2025-01-31",
-          amount: { mode: "money", valueMinor: 500_000 },
+          amount: { mode: "money", value: 500_000 },
         }),
       ]),
       "2025-06-01",
@@ -202,19 +232,42 @@ describe("resolveMonthlySavingsCapacityForFire", () => {
   it("reads the derived plan total when contributions exist", () => {
     expect(
       resolveMonthlySavingsCapacityForFire(
-        plan([contribution({ amount: { mode: "money", valueMinor: 400_000 } })]),
+        plan([contribution({ amount: { mode: "money", value: 400_000 } })]),
         baseConfig,
         "2025-06-01",
       ),
-    ).toBe(400_000);
+    ).toEqual({ capacityMinor: 400_000, source: "plan_derived" });
   });
 
   it("matches the old scalar behaviour when only the manual value is set", () => {
-    expect(resolveMonthlySavingsCapacityForFire(null, baseConfig, "2025-06-01")).toBe(
-      150_000,
-    );
-    expect(resolveMonthlySavingsCapacityForFire(plan([]), baseConfig, "2025-06-01")).toBe(
-      150_000,
-    );
+    expect(resolveMonthlySavingsCapacityForFire(null, baseConfig, "2025-06-01")).toEqual({
+      capacityMinor: 150_000,
+      source: "manual_fallback",
+    });
+    expect(
+      resolveMonthlySavingsCapacityForFire(plan([]), baseConfig, "2025-06-01"),
+    ).toEqual({
+      capacityMinor: 150_000,
+      source: "manual_fallback",
+    });
+  });
+
+  it("falls back to the manual scalar and reports missing prices for unit rows", () => {
+    expect(
+      resolveMonthlySavingsCapacityForFire(
+        plan([
+          contribution({
+            amount: { mode: "units", value: "1" },
+            cadence: { kind: "monthly", dayOfMonth: 1 },
+          }),
+        ]),
+        baseConfig,
+        "2025-06-01",
+      ),
+    ).toEqual({
+      capacityMinor: 150_000,
+      source: "incomplete_unit_pricing",
+      missingUnitPriceHoldingIds: ["h1"],
+    });
   });
 });

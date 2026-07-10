@@ -103,7 +103,7 @@ export function goalFireDelay(input: GoalFireDelayInput): GoalFireDelay {
     config,
     now,
     input.unitPriceMajorByHoldingId,
-  );
+  ).capacityMinor;
   // N3 (#515): use resolvedRealReturn from the caller (fireResult.realReturnUsed)
   // so this projection is coherent with coast + the main projection chart.
   const rateToUse = resolvedRealReturn ?? config.expectedRealReturn ?? 0.05;

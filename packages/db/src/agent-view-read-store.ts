@@ -1,4 +1,5 @@
 import type {
+  AssetPrice,
   ContributionPlan,
   DebtModel,
   ExportedPublicId,
@@ -207,6 +208,8 @@ export interface AgentViewReadStore {
   readPayoutSchedulesForHolding: (holdingId: string) => Promise<PayoutSchedule[]>;
   /** A scope's planned contributions (ADR 0041, PRD #553 S1). Forecast metadata only. */
   readContributionPlan: (scopeId: string) => Promise<ContributionPlan>;
+  /** Cached investment unit prices for contribution-plan money conversion. */
+  readAllPriceCacheEntries: () => Promise<AssetPrice[]>;
 }
 
 export interface AgentViewReadStoreDeps {
@@ -250,6 +253,7 @@ export interface AgentViewReadStoreDeps {
   readPayoutSchedules: () => Promise<PayoutSchedule[]>;
   readPayoutSchedulesForHolding: (holdingId: string) => Promise<PayoutSchedule[]>;
   readContributionPlan: (scopeId: string) => Promise<ContributionPlan>;
+  readAllPriceCacheEntries: () => Promise<AssetPrice[]>;
 }
 
 export function createAgentViewReadStore(
@@ -325,6 +329,7 @@ export function createAgentViewReadStore(
     readPayoutSchedulesForHolding: (holdingId) =>
       deps.readPayoutSchedulesForHolding(holdingId),
     readContributionPlan: (scopeId) => deps.readContributionPlan(scopeId),
+    readAllPriceCacheEntries: () => deps.readAllPriceCacheEntries(),
   };
 }
 
