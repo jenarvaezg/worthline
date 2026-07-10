@@ -7,9 +7,11 @@ import {
 } from "@web/intake";
 import Shell from "@web/shell";
 import { bootstrapHealthcheck, withStore } from "@web/store";
-import { listScopeOptions } from "@worthline/domain";
+import { listScopeOptions, valuationMethodOfAsset } from "@worthline/domain";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { buildHistoricoBreakdownView } from "./build-historico-breakdown";
+import HistoricoBreakdown from "./historico-breakdown";
 import { buildHistoricoRows, HistoricoTable } from "./historico-table";
 
 export const dynamic = "force-dynamic";
@@ -36,25 +38,97 @@ export default async function HistoricoPage({
 
     const scopes = listScopeOptions(workspace);
     const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
-    const snapshots = selectedScope
-      ? await store.snapshots.readSnapshots(selectedScope.id)
-      : [];
-    // Frozen per-holding rows (ADR 0008) drive the per-day breakdown of movers.
-    const holdingRecords = selectedScope
-      ? await store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id })
-      : [];
+    const today = new Date().toISOString().slice(0, 10);
 
-    return { scopes, selectedScope, snapshots, holdingRecords };
+    const [
+      snapshots,
+      holdingRecords,
+      assets,
+      liabilities,
+      payoutRecords,
+      payoutSchedules,
+    ] = await Promise.all([
+      selectedScope
+        ? store.snapshots.readSnapshots(selectedScope.id)
+        : Promise.resolve([]),
+      selectedScope
+        ? store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id })
+        : Promise.resolve([]),
+      store.assets.readAssets(),
+      store.liabilities.readLiabilities(),
+      store.payouts.readPayouts(),
+      store.payouts.readPayoutSchedules(),
+    ]);
+
+    const derivedAssetIds = assets
+      .filter((asset) => valuationMethodOfAsset(asset) === "derived")
+      .map((asset) => asset.id);
+    const operationEntries = await Promise.all(
+      derivedAssetIds.map(
+        async (assetId) =>
+          [assetId, await store.operations.readOperations(assetId)] as const,
+      ),
+    );
+
+    const debtModelEntries = await Promise.all(
+      liabilities.map(
+        async (liability) =>
+          [liability.id, await store.liabilities.readDebtModel(liability.id)] as const,
+      ),
+    );
+
+    return {
+      scopes,
+      selectedScope,
+      snapshots,
+      holdingRecords,
+      assets,
+      liabilities,
+      debtModelByLiabilityId: new Map(debtModelEntries),
+      operationsByHoldingId: new Map(operationEntries),
+      payoutRecords,
+      payoutSchedules,
+      today,
+      workspace,
+    };
   });
 
   if (!storeData) {
     redirect("/empezar");
   }
 
-  const { scopes, selectedScope, snapshots, holdingRecords } = storeData;
+  const {
+    scopes,
+    selectedScope,
+    snapshots,
+    holdingRecords,
+    assets,
+    liabilities,
+    debtModelByLiabilityId,
+    operationsByHoldingId,
+    payoutRecords,
+    payoutSchedules,
+    today,
+    workspace,
+  } = storeData;
 
-  const today = new Date().toISOString().slice(0, 10);
   const rows = buildHistoricoRows(snapshots, holdingRecords, today);
+  const breakdown =
+    selectedScope === undefined
+      ? { geometry: null, periods: [], showsPayoutBand: false }
+      : buildHistoricoBreakdownView({
+          assets,
+          holdingRecords,
+          debtModelByLiabilityId,
+          liabilities,
+          operationsByHoldingId,
+          payoutRecords,
+          payoutSchedules,
+          scopeId: selectedScope.id,
+          snapshots,
+          today,
+          workspace,
+        });
 
   return (
     <Shell
@@ -80,7 +154,10 @@ export default async function HistoricoPage({
             captura. Vuelve mañana para ver tu primera comparativa.
           </p>
         ) : (
-          <HistoricoTable privacyMode={privacyMode} rows={rows} />
+          <>
+            <HistoricoBreakdown breakdown={breakdown} />
+            <HistoricoTable privacyMode={privacyMode} rows={rows} />
+          </>
         )}
       </section>
     </Shell>

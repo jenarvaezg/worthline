@@ -195,6 +195,18 @@ export type {
   StackedSeriesInput,
 } from "./decomposition-chart";
 export { buildStackedChartGeometry } from "./decomposition-chart";
+export type {
+  BuildMonthlyCloseBreakdownInput,
+  DeltaBreakdownBandId,
+  DeltaBreakdownBands,
+  DeltaBreakdownPeriod,
+  DeltaBreakdownWindowInput,
+} from "./delta-breakdown";
+export {
+  buildMonthlyCloseBreakdownSeries,
+  computeDeltaBreakdownWindow,
+  periodShowsPayoutBand,
+} from "./delta-breakdown";
 export type { DomainResult, DomainViolation } from "./domain-result";
 export type { DonutArcSegment, DonutGeometry } from "./donut";
 export { donutArcSegments } from "./donut";
