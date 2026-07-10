@@ -378,6 +378,19 @@ CREATE TABLE \`goals\` (
 	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE \`planned_contributions\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`scope_id\` text NOT NULL,
+	\`destination_holding_id\` text NOT NULL,
+	\`amount_json\` text NOT NULL,
+	\`cadence_json\` text NOT NULL,
+	\`start_date\` text NOT NULL,
+	\`end_date\` text,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`destination_holding_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX \`planned_contributions_scope_idx\` ON \`planned_contributions\` (\`scope_id\`,\`id\`);--> statement-breakpoint
 CREATE TABLE \`goal_holdings\` (
 	\`goal_id\` text NOT NULL,
 	\`asset_id\` text NOT NULL,

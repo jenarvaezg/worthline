@@ -1519,3 +1519,60 @@ describe("loadDashboard — initial matrix cross", () => {
     store.close();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Contribution plan → FIRE projection (ADR 0041, #555)
+// ---------------------------------------------------------------------------
+
+describe("loadDashboard — contribution plan for FIRE", () => {
+  test("uses the persisted plan's derived monthly savings instead of the manual scalar", async () => {
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
+
+    await store.saveFireConfig("household", {
+      monthlySpendingMinor: 2_000_000,
+      safeWithdrawalRate: 0.04,
+      monthlySavingsCapacityMinor: 100_000,
+      expectedRealReturn: 0.05,
+    });
+
+    const manualOnly = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+    const manualBase = manualOnly.fireProjection!.scenarios.find(
+      (s) => s.label === "base",
+    )!;
+
+    await store.contributionPlan.createPlannedContribution({
+      scopeId: "household",
+      destinationHoldingId: "asset_cash",
+      amount: { mode: "money", value: 500_000 },
+      cadence: { kind: "monthly", dayOfMonth: 1 },
+      startDate: "2026-01-01",
+    });
+
+    const withPlan = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+    const planBase = withPlan.fireProjection!.scenarios.find((s) => s.label === "base")!;
+
+    expect(planBase.totalContributedMinor).toBeGreaterThan(
+      manualBase.totalContributedMinor,
+    );
+
+    store.close();
+  });
+});

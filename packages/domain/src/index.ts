@@ -133,6 +133,27 @@ export {
   tokenSymbolSnapshotInputs,
 } from "./connected-source";
 export type {
+  ContributionCadence,
+  ContributionOccurrence,
+  ContributionPlan,
+  IsoWeekday,
+  MonthlySavingsCapacityResolution,
+  MonthlySavingsCapacitySource,
+  PlannedContribution,
+  PlannedContributionAmount,
+} from "./contribution-plan";
+export {
+  activeUnitContributionsMissingPrices,
+  assertContributionCadence,
+  assertPlannedContributionInput,
+  contributionOccurrenceId,
+  derivedMonthlySavingsCapacity,
+  expandContributionPlan,
+  expandPlannedContribution,
+  parsePlannedContributionAmount,
+  resolveMonthlySavingsCapacityForFire,
+} from "./contribution-plan";
+export type {
   DashboardState,
   FireGlance,
   LocalPersistenceStatus,
@@ -461,6 +482,7 @@ export {
   isPriceStale,
   PRICE_TTL_DAYS,
   selectStalePrices,
+  unitPriceMajorByHoldingId,
 } from "./prices";
 export type {
   DatedCashflow,

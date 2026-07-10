@@ -23,6 +23,8 @@
  * "menos de 1 mes" in that case (months === 0 && kind === "delays").
  */
 
+import type { ContributionPlan } from "./contribution-plan";
+import { resolveMonthlySavingsCapacityForFire } from "./contribution-plan";
 import type { FireScopeConfig } from "./fire";
 import { fireReservationHorizon } from "./fire";
 import { DEFAULT_MAX_YEARS, fractionalFireYear, projectFire } from "./fire-projection";
@@ -53,6 +55,9 @@ export interface GoalFireDelayInput {
    * `config.expectedRealReturn ?? 0.05` when omitted (backward-compat).
    */
   resolvedRealReturn?: number;
+  /** Scope contribution plan for derived monthly savings (ADR 0041). */
+  contributionPlan?: ContributionPlan | null;
+  unitPriceMajorByHoldingId?: Record<string, string>;
 }
 
 export function goalFireDelay(input: GoalFireDelayInput): GoalFireDelay {
@@ -93,7 +98,12 @@ export function goalFireDelay(input: GoalFireDelayInput): GoalFireDelay {
   const fireNumberMinor = Math.round(
     (config.monthlySpendingMinor * 12) / config.safeWithdrawalRate,
   );
-  const monthlyContribution = config.monthlySavingsCapacityMinor ?? 0;
+  const monthlyContribution = resolveMonthlySavingsCapacityForFire(
+    input.contributionPlan,
+    config,
+    now,
+    input.unitPriceMajorByHoldingId,
+  ).capacityMinor;
   // N3 (#515): use resolvedRealReturn from the caller (fireResult.realReturnUsed)
   // so this projection is coherent with coast + the main projection chart.
   const rateToUse = resolvedRealReturn ?? config.expectedRealReturn ?? 0.05;

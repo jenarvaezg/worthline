@@ -339,11 +339,14 @@ export async function loadDashboard(
   // TX-safety: these reads run after any saveSnapshot() above has committed its
   // own transaction, so no interactive tx is open here. ctx.getWorkspace() is
   // promise-memoized (Step 0), making concurrent internal calls safe.
-  const [overrides, fireConfig, goals] = await Promise.all([
+  const [overrides, fireConfig, goals, contributionPlan] = await Promise.all([
     store.readWarningOverrides(),
     store.readFireConfig(),
     // Goals for the selected scope (#426): reserve capital against FIRE eligibility.
     selectedScope ? store.goals.readGoals(selectedScope.id) : Promise.resolve([]),
+    selectedScope
+      ? store.contributionPlan.readContributionPlan(selectedScope.id)
+      : Promise.resolve(null),
   ]);
 
   // The ranges worth offering: bounded ranges only when the history exceeds
@@ -474,6 +477,7 @@ export async function loadDashboard(
   // ── 5. Compute dashboard state ────────────────────────────────────────────
   const state = prepareDashboardState({
     assets,
+    contributionPlan,
     fireConfig,
     goals,
     liabilities,

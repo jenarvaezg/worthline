@@ -172,6 +172,8 @@ export default async function ObjetivosPage({
       overrides,
       payoutRecords,
       payoutSchedules,
+      contributionPlan,
+      priceCache,
     ] = await Promise.all([
       store.snapshots.readCurveValuedHoldingsAtDate(today, projectionContext),
       selectedScope ? store.goals.readGoals(selectedScope.id) : Promise.resolve([]),
@@ -179,6 +181,10 @@ export default async function ObjetivosPage({
       store.readWarningOverrides(),
       store.payouts.readPayouts(),
       store.payouts.readPayoutSchedules(),
+      selectedScope
+        ? store.contributionPlan.readContributionPlan(selectedScope.id)
+        : Promise.resolve(null),
+      store.operations.readAllPriceCacheEntries(),
     ]);
 
     // Recorded payouts up to today, keyed by holding — the single source S1
@@ -196,6 +202,8 @@ export default async function ObjetivosPage({
       overrides,
       payoutsByHolding,
       today,
+      contributionPlan,
+      priceCache,
     };
   });
 
@@ -215,6 +223,8 @@ export default async function ObjetivosPage({
     overrides,
     payoutsByHolding,
     today,
+    contributionPlan,
+    priceCache,
   } = storeData;
 
   const {
@@ -227,12 +237,13 @@ export default async function ObjetivosPage({
     fireLevelRail,
   } = prepareObjetivosState({
     assets,
+    contributionPlan,
     fireConfig,
     goals,
     liabilities,
     persistence,
     positions: [],
-    priceCache: [],
+    priceCache,
     scopes,
     selectedScope,
     selectedView: "liquid",

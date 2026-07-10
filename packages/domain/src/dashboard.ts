@@ -1,3 +1,5 @@
+import type { ContributionPlan } from "./contribution-plan";
+import { resolveMonthlySavingsCapacityForFire } from "./contribution-plan";
 import type { DashboardShell } from "./dashboard-shell";
 import { createDashboardShell } from "./dashboard-shell";
 import type { FireScopeConfig } from "./fire";
@@ -29,6 +31,7 @@ import type {
 import { buildLiquidityBreakdown, calculateNetWorth, presentNetWorth } from "./net-worth";
 import type { LocalPersistenceStatus } from "./persistence";
 import type { AssetPrice } from "./prices";
+import { unitPriceMajorByHoldingId } from "./prices";
 import type { ScopeOption } from "./scope";
 import { resolveScopeMemberIds } from "./scope";
 import type { NetWorthSnapshot, SnapshotDeltas } from "./snapshot-types";
@@ -175,8 +178,12 @@ export function prepareDashboardState(input: {
   goals?: Goal[];
   /** Today (YYYY-MM-DD), for the goal-reservation horizon; defaults to the system date. */
   today?: string;
+  /** Scope contribution plan (ADR 0041); drives derived monthly savings for FIRE. */
+  contributionPlan?: ContributionPlan | null;
 }): DashboardState {
   const { workspace, assets, liabilities, selectedScope, persistence } = input;
+  const today = input.today ?? new Date().toISOString().slice(0, 10);
+  const unitPrices = unitPriceMajorByHoldingId(input.priceCache);
 
   const summary =
     workspace && selectedScope
@@ -237,7 +244,12 @@ export function prepareDashboardState(input: {
     fireScopeConfig && fireResult
       ? projectFire({
           startingEligibleMinor: fireResult.eligibleAssets.amountMinor,
-          monthlyContributionMinor: fireScopeConfig.monthlySavingsCapacityMinor ?? 0,
+          monthlyContributionMinor: resolveMonthlySavingsCapacityForFire(
+            input.contributionPlan,
+            fireScopeConfig,
+            today,
+            unitPrices,
+          ).capacityMinor,
           expectedRealReturn:
             fireResult.realReturnUsed ?? fireScopeConfig.expectedRealReturn ?? 0.05,
           fireNumberMinor: fireResult.fireNumber.amountMinor,
@@ -278,7 +290,6 @@ export function prepareDashboardState(input: {
 
   const activeMembers = workspace?.members.filter((member) => !member.disabledAt) ?? [];
   const investmentAssets = assets.filter((asset) => asset.type === "investment");
-  const today = new Date().toISOString().slice(0, 10);
   const warnings = collectWarnings(assets, input.overrides ?? []);
   const onboarding = deriveOnboardingProgress({
     activeMemberCount: activeMembers.length,
@@ -393,6 +404,7 @@ export function prepareObjetivosState(
       : new Set();
 
   const now = input.today ?? new Date().toISOString().slice(0, 10);
+  const unitPrices = unitPriceMajorByHoldingId(input.priceCache);
   const fireHorizon = dash.fireScopeConfig
     ? fireReservationHorizon(dash.fireScopeConfig, now)
     : undefined;
@@ -446,6 +458,12 @@ export function prepareObjetivosState(
             thisGoalReservationMinor: goalReservationMap.get(goal.id) ?? 0,
             config: dash.fireScopeConfig,
             now,
+            ...(input.contributionPlan
+              ? { contributionPlan: input.contributionPlan }
+              : {}),
+            ...(Object.keys(unitPrices).length > 0
+              ? { unitPriceMajorByHoldingId: unitPrices }
+              : {}),
             // N3 (#515): thread the single resolved rate so goalFireDelay is
             // coherent with coast + projection + fireLevels.
             ...(dash.fireResult?.realReturnUsed !== undefined
@@ -465,6 +483,11 @@ export function prepareObjetivosState(
           config: dash.fireScopeConfig,
           eligibleMinor: dash.fireResult.eligibleAssets.amountMinor,
           currency: dash.workspace.baseCurrency,
+          today: now,
+          ...(input.contributionPlan ? { contributionPlan: input.contributionPlan } : {}),
+          ...(Object.keys(unitPrices).length > 0
+            ? { unitPriceMajorByHoldingId: unitPrices }
+            : {}),
           ...(dash.fireResult.realReturnUsed !== undefined
             ? { resolvedRealReturn: dash.fireResult.realReturnUsed }
             : {}),
