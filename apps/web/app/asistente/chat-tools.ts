@@ -37,6 +37,7 @@ import {
   listExposureProfileFillTargets,
 } from "@web/asistente/exposure-profile-proposals";
 import type { ScreenSection } from "@web/asistente/screen-context";
+import { buildStatementImportProposal } from "@web/asistente/statement-import-proposals";
 import type { AgentViewReadStore } from "@worthline/db";
 import { formatMoneyMinor } from "@worthline/domain";
 import { jsonSchema, type ToolSet, tool } from "ai";
@@ -278,6 +279,44 @@ const EXPOSURE_PROFILE_PROPOSAL_SCHEMA = jsonSchema<{
       },
     },
   },
+  additionalProperties: false,
+});
+
+const STATEMENT_IMPORT_PROPOSAL_SCHEMA = jsonSchema<{
+  broker?: string;
+  rawText?: string;
+  selections?: Array<{
+    action?: "include" | "ignore";
+    isin?: string;
+    newFund?: { name?: string; symbol?: string };
+  }>;
+}>({
+  type: "object",
+  properties: {
+    broker: { type: "string" },
+    rawText: { type: "string" },
+    selections: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          action: { enum: ["include", "ignore"], type: "string" },
+          isin: { type: "string" },
+          newFund: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              symbol: { type: "string" },
+            },
+            additionalProperties: false,
+          },
+        },
+        required: ["action", "isin"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["rawText"],
   additionalProperties: false,
 });
 
@@ -885,6 +924,24 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
             store.agentView,
             args.drafts ?? [],
           );
+          return built.ok ? built.proposal : { error: built.error };
+        }),
+    }),
+
+    propose_statement_import: tool({
+      description:
+        "Prepara una propuesta de importación de extracto de inversión (plantilla CSV). " +
+        "No escribe nada: pasa el texto del extracto tal cual (sin calcular números) y " +
+        "devuelve un preview determinista con fondos matched/new e impacto de posición. " +
+        "El usuario confirma en la app; la confirmación re-parsea y sella source: agent.",
+      inputSchema: STATEMENT_IMPORT_PROPOSAL_SCHEMA,
+      execute: (args) =>
+        input.runWithStore(async (store) => {
+          const built = await buildStatementImportProposal(store.agentView, {
+            broker: args.broker ?? "plantilla",
+            rawText: args.rawText ?? "",
+            selections: args.selections,
+          });
           return built.ok ? built.proposal : { error: built.error };
         }),
     }),

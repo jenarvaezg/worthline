@@ -2,7 +2,7 @@ import type { DecimalString } from "./decimal";
 import type { CurrencyCode, MoneyMinor } from "./money";
 
 export type OperationKind = "buy" | "sell";
-export type OperationSource = "manual" | "opening" | "statement" | "connected";
+export type OperationSource = "manual" | "opening" | "statement" | "connected" | "agent";
 
 /** A single buy or sell against a unit-based (investment) asset. */
 export interface InvestmentOperation {

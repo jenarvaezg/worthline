@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import {
   parseExposureProfileProposal,
   parseQuickActions,
+  parseStatementImportProposal,
   type QuickAction,
 } from "./assistant-actions";
 import { confirmExposureProfileProposalAction } from "./exposure-profile-proposal-action";
@@ -16,6 +17,8 @@ import type {
   ExposureProfileProposalPreviewProfile,
 } from "./exposure-profile-proposals";
 import { deriveScreenContext, type ScreenSection } from "./screen-context";
+import { confirmStatementImportProposalAction } from "./statement-import-proposal-action";
+import type { StatementImportProposal } from "./statement-import-proposals";
 import { suggestedPrompts } from "./suggested-prompts";
 
 /** Human-readable section names for screen-reader context announcements (#633). */
@@ -73,6 +76,86 @@ function profileSummary(profile: ExposureProfileProposalPreviewProfile): string 
   ].filter((bit): bit is string => bit !== null);
 
   return bits.length > 0 ? bits.join(" · ") : "Sin datos";
+}
+
+function formatMoneyMinor(amountMinor: number): string {
+  return new Intl.NumberFormat("es-ES", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0,
+  }).format(amountMinor / 100);
+}
+
+function StatementProposalCard({ proposal }: { proposal: StatementImportProposal }) {
+  const [rejected, setRejected] = useState(false);
+  const [result, setResult] = useState<Awaited<
+    ReturnType<typeof confirmStatementImportProposalAction>
+  > | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  if (rejected) return null;
+
+  function confirm() {
+    startTransition(async () => {
+      setResult(await confirmStatementImportProposalAction(proposal.draft));
+    });
+  }
+
+  return (
+    <div className="assistantProposal">
+      <p>Propuesta de importación de extracto</p>
+      <ul>
+        {proposal.funds.map((fund) => (
+          <li key={fund.isin}>
+            <strong>
+              {fund.bucket === "matched"
+                ? fund.existingName
+                : fund.suggestedName || fund.isin}
+            </strong>
+            <span>
+              {fund.bucket === "matched" ? "Existente" : "Nuevo"} · {fund.executedCount}{" "}
+              movimientos
+            </span>
+            <span>
+              Posición: {fund.positionImpact.beforeUnits} →{" "}
+              {fund.positionImpact.afterUnits} (
+              {formatMoneyMinor(fund.positionImpact.beforeValueMinor)} →{" "}
+              {formatMoneyMinor(fund.positionImpact.afterValueMinor)})
+            </span>
+            {fund.positionImpact.flags.length > 0 ? (
+              <span>Avisos: {fund.positionImpact.flags.join(", ")}</span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {result ? (
+        <p className={result.status === "applied" ? "assistantOk" : "assistantError"}>
+          {result.status === "applied"
+            ? `Importación aplicada (${result.included} fondos, ${result.created} nuevos).`
+            : result.status === "blocked"
+              ? result.message
+              : result.message}
+        </p>
+      ) : null}
+      <div className="assistantProposalActions">
+        <button
+          disabled={pending || result?.status === "applied"}
+          onClick={confirm}
+          type="button"
+        >
+          Confirmar
+        </button>
+        <button
+          className="secondary"
+          disabled={pending || result?.status === "applied"}
+          onClick={() => setRejected(true)}
+          type="button"
+        >
+          Descartar
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function ExposureProposalCard({ proposal }: { proposal: ExposureProfileProposal }) {
@@ -293,6 +376,15 @@ export default function AssistantLayer() {
                   const proposal = parseExposureProfileProposal(part.output);
                   return proposal ? (
                     <ExposureProposalCard
+                      key={`${message.id}-${i}`}
+                      proposal={proposal}
+                    />
+                  ) : null;
+                }
+                if (name === "propose_statement_import" && "output" in part) {
+                  const proposal = parseStatementImportProposal(part.output);
+                  return proposal ? (
+                    <StatementProposalCard
                       key={`${message.id}-${i}`}
                       proposal={proposal}
                     />
