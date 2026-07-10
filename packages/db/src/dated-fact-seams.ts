@@ -1327,6 +1327,17 @@ export interface DatedFactSeams {
     rebaseline: AddBalanceRebaselineInput;
     today?: string;
   }) => Promise<void>;
+  /**
+   * Balance-history import seam (ADR 0056, #696): persist a chain of balance
+   * re-baselines (`startsAtBaseline: false`) AND run ONE ripple from the
+   * earliest checkpoint, atomically. Never N ripples — the batched debt seam
+   * #764 S7 consumes. Returns how many rows were inserted (0 when empty).
+   */
+  importBalanceHistoryAndRipple: (params: {
+    liabilityId: string;
+    rebaselines: AddBalanceRebaselineInput[];
+    today?: string;
+  }) => Promise<number>;
   addBalanceRebaselineAndRipple: (
     input: AddBalanceRebaselineInput,
     opts?: { today?: string },
@@ -2152,6 +2163,38 @@ export function createDatedFactSeams(
           },
         );
       });
+    },
+    importBalanceHistoryAndRipple: async ({
+      liabilityId,
+      rebaselines,
+      today: todayOpt,
+    }) => {
+      if (rebaselines.length === 0) return 0;
+      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
+      await ctx.transaction(async () => {
+        for (const rebaseline of rebaselines) {
+          await stores.liabilities.addBalanceRebaseline(rebaseline);
+        }
+        const workspace = await ctx.getWorkspace();
+        if (!workspace) return;
+        const fromDateKey = rebaselines.reduce(
+          (earliest, rebaseline) =>
+            rebaseline.baselineDate < earliest ? rebaseline.baselineDate : earliest,
+          rebaselines[0]!.baselineDate,
+        );
+        await rippleHistoricalSnapshotsForDebt(
+          ctx,
+          workspace,
+          stores.snapshots.saveSnapshot,
+          {
+            fromDateKey,
+            kind: "amortizable-rebaseline",
+            liabilityId,
+            today,
+          },
+        );
+      });
+      return rebaselines.length;
     },
     addBalanceRebaselineAndRipple: async (input, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);

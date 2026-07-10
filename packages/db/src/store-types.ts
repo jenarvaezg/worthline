@@ -485,6 +485,17 @@ export interface WorthlineStore {
     rebaseline: AddBalanceRebaselineInput;
     today?: string;
   }) => Promise<void>;
+  /**
+   * Balance-history import seam (ADR 0056, #696): persist a chain of balance
+   * re-baselines (`startsAtBaseline: false`) AND run ONE ripple from the
+   * earliest checkpoint, atomically. Never N ripples — the batched debt seam
+   * #764 S7 consumes. Returns how many rows were inserted (0 when empty).
+   */
+  importBalanceHistoryAndRipple: (params: {
+    liabilityId: string;
+    rebaselines: AddBalanceRebaselineInput[];
+    today?: string;
+  }) => Promise<number>;
   addBalanceRebaselineAndRipple: (
     input: AddBalanceRebaselineInput,
     opts?: { today?: string },

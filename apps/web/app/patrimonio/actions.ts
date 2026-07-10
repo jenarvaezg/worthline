@@ -43,6 +43,15 @@ import {
   CURRENT_STATE_DEBT_FIELD_NAMES,
   deriveCurrentStateDebt,
 } from "./current-state-debt";
+import {
+  type BalanceHistoryRowInput,
+  composeBalanceHistoryRebaselines,
+  previewBalanceHistoryImport,
+} from "./import-balance-history";
+import {
+  persistBalanceHistoryImport,
+  readBalanceHistoryDebtContext,
+} from "./persist-balance-history-import";
 import { persistCurrentStateAmortization } from "./persist-current-state-debt";
 import {
   deriveRecalibrationRebaseline,
@@ -1324,6 +1333,69 @@ export async function recalibrateDebtBalanceAction(
   }
 
   redirect(successRedirectUrl(editUrl(id), "debt_recalibrated", id));
+}
+
+/**
+ * Import a balance-history series as a chain of re-baselines (ADR 0056, #696).
+ * Consumed by #764 S5 — no UI of its own. Rows arrive as JSON in `rows`;
+ * preview/validation runs in the pure module, confirm rides
+ * `importBalanceHistoryAndRipple` for ONE atomic ripple from the oldest checkpoint.
+ */
+export async function importBalanceHistoryAction(
+  formData: FormData,
+  ..._testArgs: unknown[]
+): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
+  await guardDemoWrite(baseUrl(formData));
+  const id = parseEntityId(formData);
+
+  if (!id) {
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador de deuda no encontrado.",
+      }),
+    );
+  }
+
+  const today = _clock.today();
+  let rows: BalanceHistoryRowInput[];
+  try {
+    rows = JSON.parse(String(formData.get("rows") ?? "[]")) as BalanceHistoryRowInput[];
+    if (!Array.isArray(rows)) throw new Error("not an array");
+  } catch {
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        message: "La serie de saldos no es válida.",
+      }),
+    );
+  }
+
+  const result = await runDatedFactAction(async (store) => {
+    const guard = await requireDebtModel(store, id, "amortizable");
+    if (!guard.ok) return guard;
+
+    const ctx = await readBalanceHistoryDebtContext(store, id, today);
+    const preview = previewBalanceHistoryImport(rows, ctx);
+    const composed = composeBalanceHistoryRebaselines(preview, ctx);
+
+    if (composed.length === 0) {
+      return { error: "No hay saldos válidos que importar.", ok: false as const };
+    }
+
+    await persistBalanceHistoryImport(store, id, composed, today);
+    return { created: composed.length, ok: true as const };
+  }, _store);
+
+  if (!result.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        message: result.error!,
+      }),
+    );
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "balance_history_imported", id));
 }
 
 export async function saveAmortizationPlanAction(
