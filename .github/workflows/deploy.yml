@@ -25,6 +25,17 @@ env:
   VERCEL_ORG_ID: team_rBm14I3tzrhWQiNobR4yiw5u
   VERCEL_PROJECT_ID: prj_UK60yed13fPmHGpj095Pb0NyIII1
   BUN_VERSION: "1.3.14"
+  # Pin the Vercel CLI. 55.0.0 wraps the Next 16 proxy (apps/web/proxy.ts,
+  # which always runs on the Node.js runtime) as a Node serverless function
+  # whose CJS launcher require()s the emitted `.next/server/middleware.js`.
+  # That file is CommonJS, but apps/web/package.json is `"type": "module"`
+  # (required by the Turbopack build — the app source is ESM), so Node treats
+  # it as ESM and require() throws ERR_REQUIRE_ESM → MIDDLEWARE_INVOCATION_FAILED
+  # (500 on every route). 54.21.1 is the last CLI that packages the proxy in a
+  # loadable form — the last-good deploy (#822) used it; the first broken one
+  # (#823) only differed by CLI 55.0.0, same source. Bump only once the CLI-55
+  # + type:module interaction is resolved.
+  VERCEL_CLI: "vercel@54.21.1"
   TURBO_TOKEN: ${{ secrets.VERCEL_TOKEN }}
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
   # Empty string when the secret is unset, so steps can gate on it.
@@ -66,7 +77,7 @@ jobs:
 
       - name: Pull Vercel project config
         if: env.HAVE_TOKEN == 'true'
-        run: bunx vercel pull --yes --environment=production --token="${{ secrets.VERCEL_TOKEN }}"
+        run: bunx ${VERCEL_CLI} pull --yes --environment=production --token="${{ secrets.VERCEL_TOKEN }}"
 
       # Dashboard may still override install to `npm install --include=dev` from the
       # npm era; npm cannot resolve our `workspace:*` deps. Force Bun after pull.
@@ -86,8 +97,8 @@ jobs:
 
       - name: Build prebuilt output on Node 24
         if: env.HAVE_TOKEN == 'true'
-        run: bunx vercel build --prod --token="${{ secrets.VERCEL_TOKEN }}"
+        run: bunx ${VERCEL_CLI} build --prod --token="${{ secrets.VERCEL_TOKEN }}"
 
       - name: Deploy prebuilt output to Vercel
         if: env.HAVE_TOKEN == 'true'
-        run: bunx vercel deploy --prebuilt --prod --token="${{ secrets.VERCEL_TOKEN }}"
+        run: bunx ${VERCEL_CLI} deploy --prebuilt --prod --token="${{ secrets.VERCEL_TOKEN }}"
