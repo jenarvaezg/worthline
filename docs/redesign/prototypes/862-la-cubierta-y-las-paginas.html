@@ -704,7 +704,6 @@
   let typed = false, typeTimer = null;
   function typeChat() {
     const a = document.getElementById("chatAnswer");
-    const foot = document.getElementById("chatFoot");
     const full = a.dataset.text;
     if (typed || body.dataset.motion !== "on" || reduced) { finishChat(); return; }
     typed = true;
