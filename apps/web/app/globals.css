@@ -2640,6 +2640,77 @@ code {
   padding: 24px;
 }
 
+.historicoBreakdownPanel {
+  border-bottom: 1px solid var(--hairline);
+  padding: 20px 24px 24px;
+}
+
+.historicoBreakdownEmpty {
+  padding: 0 24px 24px;
+}
+
+.historicoBreakdownLegend {
+  margin-top: 8px;
+}
+
+.historicoBreakdownLegendItem--market i {
+  background: var(--tier-market);
+}
+
+.historicoBreakdownLegendItem--payouts i {
+  background: var(--gold);
+}
+
+.historicoBreakdownLegendItem--netSavings i {
+  background: var(--blue);
+}
+
+.historicoBreakdownChart {
+  display: block;
+  height: 180px;
+  margin-top: 8px;
+  width: 100%;
+}
+
+.historicoBreakdownBand {
+  fill-opacity: 0.82;
+}
+
+.historicoBreakdownBand--market {
+  fill: var(--tier-market);
+}
+
+.historicoBreakdownBand--payouts {
+  fill: var(--gold);
+}
+
+.historicoBreakdownBand--netSavings {
+  fill: var(--blue);
+}
+
+.historicoBreakdownTotalLine {
+  stroke: var(--ink);
+}
+
+.historicoBreakdownLine--market {
+  stroke: var(--tier-market);
+}
+
+.historicoBreakdownLine--payouts {
+  stroke: var(--gold);
+}
+
+.historicoBreakdownLine--netSavings {
+  stroke: var(--blue);
+}
+
+.historicoBreakdownLimits {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin: 12px 0 0;
+}
+
 .historicoTable {
   border-collapse: collapse;
   width: 100%;

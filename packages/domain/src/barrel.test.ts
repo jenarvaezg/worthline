@@ -137,6 +137,9 @@ const KEY_EXPORTS = [
   "amortizableBalanceAtDate",
   // debt-balance
   "debtBalanceAtDate",
+  // delta-breakdown (#653 S1/S2)
+  "computeDeltaBreakdownWindow",
+  "buildMonthlyCloseBreakdownSeries",
   // dates
   "daysBetween",
   // payouts
