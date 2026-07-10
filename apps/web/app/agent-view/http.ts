@@ -1,56 +1,36 @@
 import { timingSafeEqual } from "node:crypto";
-import { createControlPlaneStore, type WorthlineStore } from "@worthline/db";
-import { systemClock } from "@worthline/domain";
+import { type WorthlineStore } from "@worthline/db";
 import { type NextRequest, NextResponse } from "next/server";
+
 import {
-  buildHoldingConnectedSourcePositions,
-  buildSourceConnectedSourcePositions,
-  DEFAULT_POSITION_LIMIT,
-  MAX_POSITION_LIMIT,
-} from "./connected-source-positions";
-import { buildConnectedSourcesList, buildSourceFreshness } from "./connected-sources";
+  createAgentViewCatalog,
+  type GetConnectedSourcePositionsInput,
+  type GetDataQualityInput,
+  type GetOperationsInput,
+  type GetSnapshotHistoryInput,
+  type GetTrashSummaryInput,
+} from "./catalog";
+import { DEFAULT_POSITION_LIMIT, MAX_POSITION_LIMIT } from "./connected-source-positions";
 import {
   type AgentViewDataQualityCategory,
   type AgentViewDataQualitySeverity,
+  type AgentViewEnvelope,
   type AgentViewErrorEnvelope,
   AgentViewHttpError,
   type AgentViewIncludeHoldingRows,
   type AgentViewOperationSort,
+  type AgentViewPaginationMeta,
   type AgentViewSnapshotGranularity,
   type AgentViewSnapshotSort,
   errorEnvelope,
-  successEnvelope,
 } from "./contract";
-import {
-  buildDataQuality,
-  DEFAULT_DATA_QUALITY_LIMIT,
-  MAX_DATA_QUALITY_LIMIT,
-} from "./data-quality";
-import { buildFigureExplanation, isFigureName } from "./figure-explanations";
-import { buildFinancialContext } from "./financial-context";
-import { buildFireContext } from "./fire-context";
-import { buildFireProjection } from "./fire-projection-context";
-import { buildGoals } from "./goals-context";
-import { buildHoldingDetail } from "./holding-detail";
-import {
-  buildHoldingOperations,
-  DEFAULT_OPERATION_LIMIT,
-  MAX_OPERATION_LIMIT,
-} from "./holding-operations";
+import { DEFAULT_DATA_QUALITY_LIMIT, MAX_DATA_QUALITY_LIMIT } from "./data-quality";
+import { isFigureName } from "./figure-explanations";
+import { DEFAULT_OPERATION_LIMIT, MAX_OPERATION_LIMIT } from "./holding-operations";
 import { pagedHttpEnvelope, parsePositiveLimit } from "./pagination";
-import { buildPriceFreshness } from "./price-freshness";
-import { listAgentViewScopes } from "./scopes";
-import {
-  buildSnapshotHistory,
-  DEFAULT_SNAPSHOT_LIMIT,
-  MAX_SNAPSHOT_LIMIT,
-} from "./snapshot-history";
-import { buildTrashSummary, DEFAULT_TRASH_LIMIT, MAX_TRASH_LIMIT } from "./trash-summary";
-import {
-  buildMemberProfiles,
-  buildWarningOverrides,
-  buildWorkspaceInfo,
-} from "./workspace-context";
+import { isAgentViewErrorEnvelope, runCatalogRead } from "./read-backend";
+import { DEFAULT_SNAPSHOT_LIMIT, MAX_SNAPSHOT_LIMIT } from "./snapshot-history";
+import { DEFAULT_TRASH_LIMIT, MAX_TRASH_LIMIT } from "./trash-summary";
 
 type StoreRunner = <T>(run: (store: WorthlineStore) => T | Promise<T>) => Promise<T>;
 
@@ -58,22 +38,7 @@ const NO_STORE_HEADERS = {
   "Cache-Control": "no-store",
 };
 
-async function readBenchmarkPricesFromControlPlane(seriesId: string) {
-  const url = process.env.WORTHLINE_CONTROL_PLANE_DB_URL;
-  if (!url) return [];
-
-  const controlPlane = await createControlPlaneStore({
-    url,
-    ...(process.env.WORTHLINE_DB_AUTH_TOKEN
-      ? { authToken: process.env.WORTHLINE_DB_AUTH_TOKEN }
-      : {}),
-  });
-  try {
-    return await controlPlane.readBenchmarkPrices(seriesId);
-  } finally {
-    controlPlane.close();
-  }
-}
+const catalog = createAgentViewCatalog();
 
 export async function handleListScopes(
   request: NextRequest,
@@ -82,11 +47,8 @@ export async function handleListScopes(
   try {
     guardAgentViewRequest(request, []);
 
-    return json(
-      successEnvelope(
-        await runWithStore((store) => listAgentViewScopes(store.agentView)),
-      ),
-      200,
+    return await runWithStore((store) =>
+      catalogJson(runCatalogRead(catalog.list_scopes, {}, store.agentView)),
     );
   } catch (error) {
     return toErrorResponse(error);
@@ -101,23 +63,21 @@ export async function handleGetFinancialContext(
   try {
     guardAgentViewRequest(request, ["holdingLimit"]);
 
-    const asOf = systemClock().today();
     const holdingLimit = parseHoldingLimit(
       new URL(request.url).searchParams.get("holdingLimit"),
     );
 
-    return json(
-      successEnvelope(
-        await runWithStore((store) =>
-          buildFinancialContext(store.agentView, {
-            asOf,
-            holdingLimit,
-            readBenchmarkPrices: readBenchmarkPricesFromControlPlane,
+    return await runWithStore((store) =>
+      catalogJson(
+        runCatalogRead(
+          catalog.get_financial_context,
+          {
             scopeId,
-          }),
+            ...(holdingLimit === undefined ? {} : { holdingLimit }),
+          },
+          store.agentView,
         ),
       ),
-      200,
     );
   } catch (error) {
     return toErrorResponse(error);
@@ -147,11 +107,8 @@ export async function handleGetFireContext(
       });
     }
 
-    return json(
-      successEnvelope(
-        await runWithStore((store) => buildFireContext(store.agentView, { scopeId })),
-      ),
-      200,
+    return await runWithStore((store) =>
+      catalogJson(runCatalogRead(catalog.get_fire_context, { scopeId }, store.agentView)),
     );
   } catch (error) {
     return toErrorResponse(error);
@@ -186,23 +143,22 @@ export async function handleExplainFigure(
     }
 
     const params = new URL(request.url).searchParams;
-    const asOf = systemClock().today();
     const holdingId = params.get("holdingId") ?? undefined;
     const date = parseIsoDate(params.get("date"), "date");
 
-    return json(
-      successEnvelope(
-        await runWithStore((store) =>
-          buildFigureExplanation(store.agentView, {
-            asOf,
+    return await runWithStore((store) =>
+      catalogJson(
+        runCatalogRead(
+          catalog.explain_figure,
+          {
             figure,
-            holdingId,
             scopeId,
+            ...(holdingId === undefined ? {} : { holdingId }),
             ...(date === undefined ? {} : { date }),
-          }),
+          },
+          store.agentView,
         ),
       ),
-      200,
     );
   } catch (error) {
     return toErrorResponse(error);
@@ -228,25 +184,30 @@ export async function handleGetSnapshotHistory(
     guardAgentViewRequest(request, SNAPSHOT_QUERY_PARAMS);
 
     const params = new URL(request.url).searchParams;
-    const options = {
-      cursor: params.get("cursor") ?? undefined,
-      from: parseIsoDate(params.get("from"), "from"),
+    const input: GetSnapshotHistoryInput = {
+      scopeId,
       granularity: parseGranularity(params.get("granularity")),
       includeHoldingRows: parseIncludeHoldingRows(params.get("includeHoldingRows")),
       limit: parsePositiveLimit(params.get("limit"), {
         defaultLimit: DEFAULT_SNAPSHOT_LIMIT,
         maxLimit: MAX_SNAPSHOT_LIMIT,
       }),
-      scopeId,
       sort: parseSort(params.get("sort")),
-      to: parseIsoDate(params.get("to"), "to"),
+      ...(params.get("cursor") ? { cursor: params.get("cursor")! } : {}),
+      ...(parseIsoDate(params.get("from"), "from")
+        ? { from: parseIsoDate(params.get("from"), "from")! }
+        : {}),
+      ...(parseIsoDate(params.get("to"), "to")
+        ? { to: parseIsoDate(params.get("to"), "to")! }
+        : {}),
     };
 
-    const history = await runWithStore((store) =>
-      buildSnapshotHistory(store.agentView, options),
+    return await runWithStore((store) =>
+      catalogPagedJson(
+        request,
+        runCatalogRead(catalog.get_snapshot_history, input, store.agentView),
+      ),
     );
-
-    return json(pagedHttpEnvelope(request, history.entries, history.meta), 200);
   } catch (error) {
     return toErrorResponse(error);
   }
@@ -278,26 +239,25 @@ export async function handleGetDataQuality(
     guardAgentViewRequest(request, DATA_QUALITY_QUERY_PARAMS);
 
     const params = new URL(request.url).searchParams;
-    const options = {
-      cursor: params.get("cursor") ?? undefined,
+    const category = parseDataQualityCategory(params.get("category"));
+    const severity = parseDataQualitySeverity(params.get("severity"));
+    const input: GetDataQualityInput = {
+      scopeId,
       limit: parsePositiveLimit(params.get("limit"), {
         defaultLimit: DEFAULT_DATA_QUALITY_LIMIT,
         maxLimit: MAX_DATA_QUALITY_LIMIT,
       }),
-      scopeId,
-      ...(parseDataQualityCategory(params.get("category")) === undefined
-        ? {}
-        : { category: parseDataQualityCategory(params.get("category")) }),
-      ...(parseDataQualitySeverity(params.get("severity")) === undefined
-        ? {}
-        : { severity: parseDataQualitySeverity(params.get("severity")) }),
+      ...(category === undefined ? {} : { category }),
+      ...(severity === undefined ? {} : { severity }),
+      ...(params.get("cursor") ? { cursor: params.get("cursor")! } : {}),
     };
 
-    const page = await runWithStore((store) =>
-      buildDataQuality(store.agentView, options),
+    return await runWithStore((store) =>
+      catalogPagedJson(
+        request,
+        runCatalogRead(catalog.get_data_quality, input, store.agentView),
+      ),
     );
-
-    return json(pagedHttpEnvelope(request, page.signals, page.meta), 200);
   } catch (error) {
     return toErrorResponse(error);
   }
@@ -314,20 +274,21 @@ export async function handleGetTrashSummary(
     guardAgentViewRequest(request, TRASH_QUERY_PARAMS);
 
     const params = new URL(request.url).searchParams;
-    const options = {
-      cursor: params.get("cursor") ?? undefined,
+    const input: GetTrashSummaryInput = {
+      scopeId,
       limit: parsePositiveLimit(params.get("limit"), {
         defaultLimit: DEFAULT_TRASH_LIMIT,
         maxLimit: MAX_TRASH_LIMIT,
       }),
-      scopeId,
+      ...(params.get("cursor") ? { cursor: params.get("cursor")! } : {}),
     };
 
-    const summary = await runWithStore((store) =>
-      buildTrashSummary(store.agentView, options),
+    return await runWithStore((store) =>
+      catalogPagedJson(
+        request,
+        runCatalogRead(catalog.get_trash_summary, input, store.agentView),
+      ),
     );
-
-    return json(pagedHttpEnvelope(request, summary.holdings, summary.meta), 200);
   } catch (error) {
     return toErrorResponse(error);
   }
@@ -341,15 +302,10 @@ export async function handleGetHoldingDetail(
   try {
     guardAgentViewRequest(request, []);
 
-    return json(
-      successEnvelope(
-        await runWithStore((store) =>
-          buildHoldingDetail(store.agentView, holdingId, {
-            readBenchmarkPrices: readBenchmarkPricesFromControlPlane,
-          }),
-        ),
+    return await runWithStore((store) =>
+      catalogJson(
+        runCatalogRead(catalog.get_holding_detail, { holdingId }, store.agentView),
       ),
-      200,
     );
   } catch (error) {
     return toErrorResponse(error);
@@ -364,11 +320,10 @@ export async function handleGetPriceFreshness(
   try {
     guardAgentViewRequest(request, []);
 
-    return json(
-      successEnvelope(
-        await runWithStore((store) => buildPriceFreshness(store.agentView, holdingId)),
+    return await runWithStore((store) =>
+      catalogJson(
+        runCatalogRead(catalog.get_price_freshness, { holdingId }, store.agentView),
       ),
-      200,
     );
   } catch (error) {
     return toErrorResponse(error);
@@ -382,11 +337,8 @@ export async function handleListConnectedSources(
   try {
     guardAgentViewRequest(request, []);
 
-    return json(
-      successEnvelope(
-        await runWithStore((store) => buildConnectedSourcesList(store.agentView)),
-      ),
-      200,
+    return await runWithStore((store) =>
+      catalogJson(runCatalogRead(catalog.list_connected_sources, {}, store.agentView)),
     );
   } catch (error) {
     return toErrorResponse(error);
@@ -401,11 +353,10 @@ export async function handleGetSourceFreshness(
   try {
     guardAgentViewRequest(request, []);
 
-    return json(
-      successEnvelope(
-        await runWithStore((store) => buildSourceFreshness(store.agentView, sourceId)),
+    return await runWithStore((store) =>
+      catalogJson(
+        runCatalogRead(catalog.get_source_freshness, { sourceId }, store.agentView),
       ),
-      200,
     );
   } catch (error) {
     return toErrorResponse(error);
@@ -419,9 +370,8 @@ export async function handleGetWorkspace(
   try {
     guardAgentViewRequest(request, []);
 
-    return json(
-      successEnvelope(await runWithStore((store) => buildWorkspaceInfo(store.agentView))),
-      200,
+    return await runWithStore((store) =>
+      catalogJson(runCatalogRead(catalog.get_workspace, {}, store.agentView)),
     );
   } catch (error) {
     return toErrorResponse(error);
@@ -435,11 +385,8 @@ export async function handleGetWarningOverrides(
   try {
     guardAgentViewRequest(request, []);
 
-    return json(
-      successEnvelope(
-        await runWithStore((store) => buildWarningOverrides(store.agentView)),
-      ),
-      200,
+    return await runWithStore((store) =>
+      catalogJson(runCatalogRead(catalog.get_warning_overrides, {}, store.agentView)),
     );
   } catch (error) {
     return toErrorResponse(error);
@@ -453,11 +400,8 @@ export async function handleGetMemberProfiles(
   try {
     guardAgentViewRequest(request, []);
 
-    return json(
-      successEnvelope(
-        await runWithStore((store) => buildMemberProfiles(store.agentView)),
-      ),
-      200,
+    return await runWithStore((store) =>
+      catalogJson(runCatalogRead(catalog.get_member_profile, {}, store.agentView)),
     );
   } catch (error) {
     return toErrorResponse(error);
@@ -472,11 +416,8 @@ export async function handleListGoals(
   try {
     guardAgentViewRequest(request, []);
 
-    return json(
-      successEnvelope(
-        await runWithStore((store) => buildGoals(store.agentView, scopeId)),
-      ),
-      200,
+    return await runWithStore((store) =>
+      catalogJson(runCatalogRead(catalog.list_goals, { scopeId }, store.agentView)),
     );
   } catch (error) {
     return toErrorResponse(error);
@@ -491,11 +432,10 @@ export async function handleGetFireProjection(
   try {
     guardAgentViewRequest(request, []);
 
-    return json(
-      successEnvelope(
-        await runWithStore((store) => buildFireProjection(store.agentView, scopeId)),
+    return await runWithStore((store) =>
+      catalogJson(
+        runCatalogRead(catalog.get_fire_projection, { scopeId }, store.agentView),
       ),
-      200,
     );
   } catch (error) {
     return toErrorResponse(error);
@@ -513,23 +453,26 @@ export async function handleGetHoldingOperations(
     guardAgentViewRequest(request, OPERATION_QUERY_PARAMS);
 
     const params = new URL(request.url).searchParams;
-    const options = {
-      cursor: params.get("cursor") ?? undefined,
-      from: parseIsoDate(params.get("from"), "from"),
+    const from = parseIsoDate(params.get("from"), "from");
+    const to = parseIsoDate(params.get("to"), "to");
+    const input: GetOperationsInput = {
       holdingId,
       limit: parsePositiveLimit(params.get("limit"), {
         defaultLimit: DEFAULT_OPERATION_LIMIT,
         maxLimit: MAX_OPERATION_LIMIT,
       }),
       sort: parseOperationSort(params.get("sort")),
-      to: parseIsoDate(params.get("to"), "to"),
+      ...(params.get("cursor") ? { cursor: params.get("cursor")! } : {}),
+      ...(from === undefined ? {} : { from }),
+      ...(to === undefined ? {} : { to }),
     };
 
-    const page = await runWithStore((store) =>
-      buildHoldingOperations(store.agentView, options),
+    return await runWithStore((store) =>
+      catalogPagedJson(
+        request,
+        runCatalogRead(catalog.get_operations, input, store.agentView),
+      ),
     );
-
-    return json(pagedHttpEnvelope(request, page.operations, page.meta), 200);
   } catch (error) {
     return toErrorResponse(error);
   }
@@ -546,20 +489,21 @@ export async function handleGetHoldingConnectedSourcePositions(
     guardAgentViewRequest(request, POSITION_QUERY_PARAMS);
 
     const params = new URL(request.url).searchParams;
-    const options = {
-      cursor: params.get("cursor") ?? undefined,
+    const input: GetConnectedSourcePositionsInput = {
       holdingId,
       limit: parsePositiveLimit(params.get("limit"), {
         defaultLimit: DEFAULT_POSITION_LIMIT,
         maxLimit: MAX_POSITION_LIMIT,
       }),
+      ...(params.get("cursor") ? { cursor: params.get("cursor")! } : {}),
     };
 
-    const page = await runWithStore((store) =>
-      buildHoldingConnectedSourcePositions(store.agentView, options),
+    return await runWithStore((store) =>
+      catalogPagedJson(
+        request,
+        runCatalogRead(catalog.get_connected_source_positions, input, store.agentView),
+      ),
     );
-
-    return json(pagedHttpEnvelope(request, page.positions, page.meta), 200);
   } catch (error) {
     return toErrorResponse(error);
   }
@@ -574,22 +518,69 @@ export async function handleGetSourcePositions(
     guardAgentViewRequest(request, POSITION_QUERY_PARAMS);
 
     const params = new URL(request.url).searchParams;
-    const options = {
-      cursor: params.get("cursor") ?? undefined,
+    const input: GetConnectedSourcePositionsInput = {
+      sourceId,
       limit: parsePositiveLimit(params.get("limit"), {
         defaultLimit: DEFAULT_POSITION_LIMIT,
         maxLimit: MAX_POSITION_LIMIT,
       }),
-      sourceId,
+      ...(params.get("cursor") ? { cursor: params.get("cursor")! } : {}),
     };
 
-    const page = await runWithStore((store) =>
-      buildSourceConnectedSourcePositions(store.agentView, options),
+    return await runWithStore((store) =>
+      catalogPagedJson(
+        request,
+        runCatalogRead(catalog.get_connected_source_positions, input, store.agentView),
+      ),
     );
-
-    return json(pagedHttpEnvelope(request, page.groups, page.meta), 200);
   } catch (error) {
     return toErrorResponse(error);
+  }
+}
+
+async function catalogJson(
+  resultPromise: Promise<AgentViewEnvelope<unknown> | AgentViewErrorEnvelope>,
+): Promise<NextResponse> {
+  const result = await resultPromise;
+  if (isAgentViewErrorEnvelope(result)) {
+    return json(result, catalogErrorStatus(result.error.code));
+  }
+  return json(result, 200);
+}
+
+async function catalogPagedJson(
+  request: NextRequest,
+  resultPromise: Promise<AgentViewEnvelope<unknown> | AgentViewErrorEnvelope>,
+): Promise<NextResponse> {
+  const result = await resultPromise;
+  if (isAgentViewErrorEnvelope(result)) {
+    return json(result, catalogErrorStatus(result.error.code));
+  }
+  return json(
+    pagedHttpEnvelope(
+      request,
+      result.data,
+      result.meta as unknown as AgentViewPaginationMeta,
+    ),
+    200,
+  );
+}
+
+function catalogErrorStatus(code: AgentViewErrorEnvelope["error"]["code"]): number {
+  switch (code) {
+    case "bad_request":
+      return 400;
+    case "unauthorized":
+      return 401;
+    case "forbidden":
+      return 403;
+    case "not_found":
+    case "empty_workspace":
+      return 404;
+    case "unprocessable_entity":
+      return 422;
+    default:
+      return 500;
   }
 }
 

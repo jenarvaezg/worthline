@@ -37,10 +37,10 @@ import { FIGURE_NAMES } from "./figure-explanations";
  * WHAT it reads against an {@link AgentViewBackend} port; the two adapters —
  * the HTTP API client (`mcp.ts`) and the internal read store
  * (`internal-catalog.ts`) — supply HOW. Default-scope resolution and the
- * connected-source-positions XOR selector live here once, so both MCP adapters
- * share that behavior. The in-app assistant deliberately owns a separate chat
- * catalog (ADR 0047) that wraps the same agent-view builders with
- * conversation-specific trimming and money formatting.
+ * connected-source-positions XOR selector live here once, so HTTP, MCP, and chat
+ * adapters share that behavior. The in-app assistant keeps a separate chat
+ * catalog (ADR 0047) for conversation-specific trimming and money formatting,
+ * but dispatches reads through this same backend seam (#747).
  */
 
 /** A hand-written JSON Schema for a tool's input (per ADR 0023 and #398 — no Zod). */

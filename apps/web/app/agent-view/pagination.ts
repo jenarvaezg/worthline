@@ -7,6 +7,37 @@ export interface ParsePositiveLimitOptions {
   maxLimit: number;
 }
 
+export interface ClampPositiveLimitOptions {
+  defaultLimit: number;
+  maxLimit: number;
+  /** `default` silently substitutes the default limit; `reject` throws on invalid input. */
+  onInvalid?: "default" | "reject";
+}
+
+/** Clamp a numeric page size to the documented `[1, max]` contract. */
+export function clampPositiveLimit(
+  limit: number | undefined,
+  options: ClampPositiveLimitOptions,
+): number {
+  if (limit === undefined) {
+    return options.defaultLimit;
+  }
+
+  if (!Number.isInteger(limit) || limit < 1) {
+    if (options.onInvalid === "reject") {
+      throw new AgentViewHttpError({
+        code: "bad_request",
+        details: { limit },
+        message: "limit must be a positive integer.",
+        status: 400,
+      });
+    }
+    return options.defaultLimit;
+  }
+
+  return Math.min(limit, options.maxLimit);
+}
+
 /** Parse a query `limit`: positive integer, clamped to the documented max. */
 export function parsePositiveLimit(
   raw: string | null,
