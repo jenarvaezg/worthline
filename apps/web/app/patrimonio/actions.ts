@@ -39,10 +39,20 @@ import {
   systemClock,
 } from "@worthline/domain";
 import { redirect } from "next/navigation";
+import { readAmortizableDebtCurveContext } from "./amortizable-debt-curve-context";
 import {
   CURRENT_STATE_DEBT_FIELD_NAMES,
   deriveCurrentStateDebt,
 } from "./current-state-debt";
+import {
+  BALANCE_HISTORY_MESSAGES,
+  parseBalanceHistoryRows,
+  planBalanceHistoryImport,
+} from "./import-balance-history";
+import {
+  persistBalanceHistoryImport,
+  readBalanceHistoryDebtContext,
+} from "./persist-balance-history-import";
 import { persistCurrentStateAmortization } from "./persist-current-state-debt";
 import {
   deriveRecalibrationRebaseline,
@@ -1262,24 +1272,18 @@ export async function recalibrateDebtBalanceAction(
     // `startsAtBaseline` fact alone governs the curve) — that debt still has a
     // valid schedule to recalibrate, so requiring a plan row would falsely
     // reject it. Revisions hang off `planId`, so they only exist with a plan.
-    const [plan, rebaselines] = await Promise.all([
-      store.liabilities.readAmortizationPlan(id),
-      store.liabilities.readBalanceRebaselines(id),
-    ]);
-    const revisions = plan
-      ? await store.liabilities.readInterestRateRevisions(plan.id)
-      : [];
+    const curve = await readAmortizableDebtCurveContext(store, id);
 
     const effective = effectiveAmortizationPlan({
-      balanceRebaselines: rebaselines,
-      ...(plan
+      balanceRebaselines: curve.balanceRebaselines,
+      ...(curve.plan
         ? {
             plan: {
-              annualInterestRate: plan.annualInterestRate,
-              disbursementDate: plan.disbursementDate,
-              firstPaymentDate: plan.firstPaymentDate,
-              initialCapitalMinor: plan.initialCapitalMinor,
-              termMonths: plan.termMonths,
+              annualInterestRate: curve.plan.annualInterestRate,
+              disbursementDate: curve.plan.disbursementDate,
+              firstPaymentDate: curve.plan.firstPaymentDate,
+              initialCapitalMinor: curve.plan.initialCapitalMinor,
+              termMonths: curve.plan.termMonths,
             },
           }
         : {}),
@@ -1289,7 +1293,7 @@ export async function recalibrateDebtBalanceAction(
     const derived = deriveRecalibrationRebaseline({
       balanceDate: validated.balanceDate,
       effective,
-      revisions,
+      revisions: curve.revisions,
     });
 
     if (!derived.ok) {
@@ -1324,6 +1328,79 @@ export async function recalibrateDebtBalanceAction(
   }
 
   redirect(successRedirectUrl(editUrl(id), "debt_recalibrated", id));
+}
+
+/**
+ * Import a balance-history series as a chain of re-baselines (ADR 0056, #696).
+ * Consumed by #764 S5 — no UI of its own. Rows arrive as JSON in `rows`;
+ * preview/validation runs in the pure module, confirm rides
+ * `importBalanceHistoryAndRipple` for ONE atomic ripple from the oldest checkpoint.
+ */
+export async function importBalanceHistoryAction(
+  formData: FormData,
+  ..._testArgs: unknown[]
+): Promise<never> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
+  await guardDemoWrite(baseUrl(formData));
+  const id = parseEntityId(formData);
+
+  if (!id) {
+    redirect(
+      errorRedirectUrl("/patrimonio", {
+        message: "Identificador de deuda no encontrado.",
+      }),
+    );
+  }
+
+  const today = _clock.today();
+  let rawRows: unknown;
+  try {
+    rawRows = JSON.parse(String(formData.get("rows") ?? "[]"));
+  } catch {
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        message: BALANCE_HISTORY_MESSAGES.invalidSeries,
+      }),
+    );
+  }
+  const parsedRows = parseBalanceHistoryRows(rawRows);
+  if (!parsedRows.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        message: parsedRows.error,
+      }),
+    );
+  }
+
+  const result = await runDatedFactAction(async (store) => {
+    const guard = await requireDebtModel(store, id, "amortizable");
+    if (!guard.ok) return guard;
+
+    const ctx = await readBalanceHistoryDebtContext(store, id, today);
+    const plan = planBalanceHistoryImport(parsedRows.rows, ctx);
+    const skipped = plan.previews.filter((row) => row.status === "skipped").length;
+
+    if (plan.composed.length === 0) {
+      if (skipped > 0 && skipped === plan.previews.length) {
+        return { created: 0, ok: true as const, skipped };
+      }
+      return { error: "No hay saldos válidos que importar.", ok: false as const };
+    }
+
+    const created = await persistBalanceHistoryImport(store, id, plan.composed, today);
+    return { created, ok: true as const, skipped };
+  }, _store);
+
+  if (!result.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        message: result.error!,
+      }),
+    );
+  }
+
+  redirect(successRedirectUrl(editUrl(id), "balance_history_imported", id));
 }
 
 export async function saveAmortizationPlanAction(

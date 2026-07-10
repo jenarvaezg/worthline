@@ -505,6 +505,7 @@ export function okMessage(key: string | undefined): string | null {
     balance_anchor_added: "Saldo registrado.",
     balance_anchor_deleted: "Saldo eliminado.",
     balance_anchor_saved: "Saldo actualizado.",
+    balance_history_imported: "Historial de saldos importado.",
     binance_connected: "Cuenta de Binance conectada.",
     binance_disconnected: "Cuenta de Binance desconectada.",
     binance_frozen: "Cuenta de Binance convertida en activo manual.",

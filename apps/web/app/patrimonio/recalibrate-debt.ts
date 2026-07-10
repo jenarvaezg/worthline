@@ -27,6 +27,10 @@ export const RECALIBRATE_DEBT_FIELD_NAMES = [
   "rbBalanceDate",
 ] as const;
 
+/** Shared pre-origin guard message (#678, #696). */
+export const PRE_ORIGIN_BALANCE_DATE_MESSAGE =
+  "La fecha del saldo no puede ser anterior al inicio de esta deuda.";
+
 export interface RecalibrateDebtRawInput {
   /** Saldo real, es-ES money string (e.g. "118.000,00"). */
   outstandingBalance: string;
@@ -144,7 +148,7 @@ export function deriveRecalibrationRebaseline(input: {
   }
   if ("startsAfterTarget" in input.effective) {
     return {
-      error: "La fecha del saldo no puede ser anterior al inicio de esta deuda.",
+      error: PRE_ORIGIN_BALANCE_DATE_MESSAGE,
       ok: false,
     };
   }
@@ -159,7 +163,7 @@ export function deriveRecalibrationRebaseline(input: {
   // rewrites what came before.
   if (input.balanceDate < effectiveFrom) {
     return {
-      error: "La fecha del saldo no puede ser anterior al inicio de esta deuda.",
+      error: PRE_ORIGIN_BALANCE_DATE_MESSAGE,
       ok: false,
     };
   }
