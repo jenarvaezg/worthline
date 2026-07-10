@@ -77,6 +77,7 @@ describe("ci workflow", () => {
   test("changes job detects code vs docs-only paths (#803)", () => {
     const job = jobNamed("changes");
     expect(job).toContain("dorny/paths-filter@v3");
+    expect(job).toContain("predicate-quantifier: every");
     expect(job).toContain("outputs:");
     expect(job).toContain("code: ${{ steps.filter.outputs.code }}");
     expect(job).toContain("!docs/**");
