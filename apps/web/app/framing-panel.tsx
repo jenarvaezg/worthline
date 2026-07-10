@@ -1,14 +1,10 @@
 "use client";
 
 import type { NetWorthFraming } from "@worthline/domain";
-import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect } from "react";
 
-import {
-  FRAMING_VIEW_PARAM,
-  readViewParam,
-  VIEW_STATE_CHANGE_EVENT,
-  writeViewParam,
-} from "./view-state";
+import { useUrlViewParam } from "./url-view-state";
+import { FRAMING_VIEW_PARAM, writeViewParam } from "./view-state";
 
 /**
  * The Vista framing toggle as a client island (#518, ADR 0036, Phase 0 S2).
@@ -77,64 +73,12 @@ export default function FramingPanel({
   total: ReactNode;
   liquid: ReactNode;
 }) {
-  const [view, setView] = useState<NetWorthFraming>(initialView);
-
-  // Re-read the framing the URL carries on Back/Forward (popstate) and on a
-  // bfcache restore (pageshow with `persisted`) — neither re-runs SSR, so the
-  // island reconciles with the URL itself. Both call setState from an event
-  // callback (not synchronously in the effect body), the supported pattern.
-  useEffect(() => {
-    const syncFromUrl = () =>
-      setView(readViewParam(window.location.search, FRAMING_VIEW_PARAM));
-    const onPageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) {
-        syncFromUrl();
-      }
-    };
-    window.addEventListener("popstate", syncFromUrl);
-    window.addEventListener("pageshow", onPageShow);
-    // A sibling island (e.g. the range island, #519) may push a URL change that
-    // does not touch `view`; re-reading on its nudge is a no-op then, but keeps
-    // this island reconciled if a future island ever writes `view` too.
-    window.addEventListener(VIEW_STATE_CHANGE_EVENT, syncFromUrl);
-    return () => {
-      window.removeEventListener("popstate", syncFromUrl);
-      window.removeEventListener("pageshow", onPageShow);
-      window.removeEventListener(VIEW_STATE_CHANGE_EVENT, syncFromUrl);
-    };
-  }, []);
+  const [view, , select] = useUrlViewParam(FRAMING_VIEW_PARAM, initialView);
 
   // Keep the page's other view-bearing server links in sync with the live framing.
   useEffect(() => {
     syncSiblingViewLinks(view);
   }, [view]);
-
-  const select = (next: NetWorthFraming) => (event: MouseEvent<HTMLAnchorElement>) => {
-    // Let modified clicks (new tab/window) and non-primary buttons navigate.
-    if (
-      event.button !== 0 ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.altKey
-    ) {
-      return;
-    }
-    event.preventDefault();
-    if (next === readViewParam(window.location.search, FRAMING_VIEW_PARAM)) {
-      return;
-    }
-    const nextSearch = writeViewParam(window.location.search, FRAMING_VIEW_PARAM, next);
-    window.history.pushState(
-      null,
-      "",
-      `${window.location.pathname}${nextSearch}${window.location.hash}`,
-    );
-    setView(next);
-    // Nudge sibling islands (e.g. the range island) to re-read `view` from the
-    // URL — `pushState` fires no event they could otherwise observe (§3).
-    window.dispatchEvent(new Event(VIEW_STATE_CHANGE_EVENT));
-  };
 
   const activeLabel = tabs.find((tab) => tab.id === view)?.label ?? "";
 

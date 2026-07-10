@@ -14,7 +14,7 @@
  * `pushState` (interaction-patterns §2–§3, #737).
  */
 
-import { type MouseEvent, useEffect, useState } from "react";
+import { type MouseEvent } from "react";
 
 import type {
   HoldingMover,
@@ -22,12 +22,8 @@ import type {
   MoversDataByPeriod,
   MoversPeriod,
 } from "./movers-data";
-import {
-  MOVERS_PERIOD_VIEW_PARAM,
-  readViewParam,
-  VIEW_STATE_CHANGE_EVENT,
-  writeViewParam,
-} from "./view-state";
+import { useUrlViewParam } from "./url-view-state";
+import { MOVERS_PERIOD_VIEW_PARAM } from "./view-state";
 
 export type { HoldingMover, MoversData, MoversPeriod };
 
@@ -144,53 +140,7 @@ export default function HeroMovers({
   initialPeriod: MoversPeriod;
   periodTabs: readonly MoversPeriodTab[];
 }) {
-  const [period, setPeriod] = useState<MoversPeriod>(initialPeriod);
-
-  useEffect(() => {
-    const syncFromUrl = () =>
-      setPeriod(readViewParam(window.location.search, MOVERS_PERIOD_VIEW_PARAM));
-    const onPageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) {
-        syncFromUrl();
-      }
-    };
-    window.addEventListener("popstate", syncFromUrl);
-    window.addEventListener("pageshow", onPageShow);
-    window.addEventListener(VIEW_STATE_CHANGE_EVENT, syncFromUrl);
-    return () => {
-      window.removeEventListener("popstate", syncFromUrl);
-      window.removeEventListener("pageshow", onPageShow);
-      window.removeEventListener(VIEW_STATE_CHANGE_EVENT, syncFromUrl);
-    };
-  }, []);
-
-  const select = (next: MoversPeriod) => (event: MouseEvent<HTMLAnchorElement>) => {
-    if (
-      event.button !== 0 ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.altKey
-    ) {
-      return;
-    }
-    event.preventDefault();
-    if (next === readViewParam(window.location.search, MOVERS_PERIOD_VIEW_PARAM)) {
-      return;
-    }
-    const nextSearch = writeViewParam(
-      window.location.search,
-      MOVERS_PERIOD_VIEW_PARAM,
-      next,
-    );
-    window.history.pushState(
-      null,
-      "",
-      `${window.location.pathname}${nextSearch}${window.location.hash}`,
-    );
-    setPeriod(next);
-    window.dispatchEvent(new Event(VIEW_STATE_CHANGE_EVENT));
-  };
+  const [period, , select] = useUrlViewParam(MOVERS_PERIOD_VIEW_PARAM, initialPeriod);
 
   const data = dataByPeriod[period];
   const activeLabel = periodTabs.find((tab) => tab.id === period)?.label ?? "";

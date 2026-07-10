@@ -6,14 +6,16 @@ import type {
   DrilldownKey,
   NetWorthFraming,
 } from "@worthline/domain";
-import { type MouseEvent, useCallback, useEffect, useState } from "react";
+import { type MouseEvent, useCallback, useState } from "react";
 
 import { compositionUrl } from "./composition-url";
+import { pushMirroredUrl, useViewStateSync } from "./url-view-state";
 import {
   FRAMING_VIEW_PARAM,
-  RANGE_VIEW_PARAM,
+  isPlainAnchorClick,
+  readHousingModeFromSearch,
+  readRangeFromUrl,
   readViewParam,
-  VIEW_STATE_CHANGE_EVENT,
 } from "./view-state";
 
 /**
@@ -62,57 +64,27 @@ export default function DonutDrill({
   const [range, setRange] = useState<CompositionRange>(initialRange);
   const [housingMode, setHousingMode] =
     useState<CompositionHousingMode>(initialHousingMode);
-  const readRangeFromUrl = useCallback((): CompositionRange => {
-    const params = new URLSearchParams(window.location.search);
-    return params.has(RANGE_VIEW_PARAM.key)
-      ? readViewParam(window.location.search, RANGE_VIEW_PARAM)
-      : initialRange;
+
+  const syncFromUrl = useCallback(() => {
+    const search = window.location.search;
+    setView(readViewParam(search, FRAMING_VIEW_PARAM));
+    setRange(readRangeFromUrl(search, initialRange));
+    setHousingMode(readHousingModeFromSearch(search));
   }, [initialRange]);
 
-  // Track the live view-state so the fallback hrefs stay correct after a sibling
-  // island toggles framing/range/vivienda (pushState fires no native event).
-  useEffect(() => {
-    const syncFromUrl = () => {
-      const search = window.location.search;
-      setView(readViewParam(search, FRAMING_VIEW_PARAM));
-      setRange(readRangeFromUrl());
-      setHousingMode(
-        new URLSearchParams(search).get("vivienda") === "oculta" ? "hidden" : "net",
-      );
-    };
-    const onPageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) syncFromUrl();
-    };
-    window.addEventListener("popstate", syncFromUrl);
-    window.addEventListener("pageshow", onPageShow);
-    window.addEventListener(VIEW_STATE_CHANGE_EVENT, syncFromUrl);
-    return () => {
-      window.removeEventListener("popstate", syncFromUrl);
-      window.removeEventListener("pageshow", onPageShow);
-      window.removeEventListener(VIEW_STATE_CHANGE_EVENT, syncFromUrl);
-    };
-  }, [readRangeFromUrl]);
+  useViewStateSync(syncFromUrl);
 
   const openDrill = (key: DrilldownKey) => (event: MouseEvent<HTMLAnchorElement>) => {
-    if (
-      event.button !== 0 ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.altKey
-    ) {
+    if (!isPlainAnchorClick(event)) {
       return; // modified click → let the href navigate
     }
     event.preventDefault();
-    const liveView = readViewParam(window.location.search, FRAMING_VIEW_PARAM);
-    const liveRange = readRangeFromUrl();
-    const liveHousing: CompositionHousingMode =
-      new URLSearchParams(window.location.search).get("vivienda") === "oculta"
-        ? "hidden"
-        : "net";
+    const search = window.location.search;
+    const liveView = readViewParam(search, FRAMING_VIEW_PARAM);
+    const liveRange = readRangeFromUrl(search, initialRange);
+    const liveHousing = readHousingModeFromSearch(search);
     const href = compositionUrl(liveView, key, liveRange, liveHousing, false);
-    window.history.pushState(null, "", `${href}#composicion`);
-    window.dispatchEvent(new Event(VIEW_STATE_CHANGE_EVENT));
+    pushMirroredUrl(`${href}#composicion`);
     // The drill renders in the composition panel below; bring it into view.
     document
       .getElementById("composicion")
