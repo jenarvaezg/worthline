@@ -27,11 +27,13 @@ import {
   parseMode,
 } from "./dashboard-matrix";
 import DrilldownPanel from "./drilldown-panel";
+import { pushMirroredUrl, useViewStateSync } from "./url-view-state";
 import {
   FRAMING_VIEW_PARAM,
-  RANGE_VIEW_PARAM,
+  isPlainAnchorClick,
+  readHousingModeFromSearch,
+  readRangeFromUrl,
   readViewParam,
-  VIEW_STATE_CHANGE_EVENT,
 } from "./view-state";
 
 /**
@@ -76,17 +78,6 @@ const MODE_ANNOUNCE: Record<CompositionMode, string> = {
   debts: "desglose de las deudas",
 };
 
-/** True for a plain left-click we should intercept (not new-tab / middle-click). */
-function isPlainClick(event: MouseEvent): boolean {
-  return (
-    event.button === 0 &&
-    !event.metaKey &&
-    !event.ctrlKey &&
-    !event.shiftKey &&
-    !event.altKey
-  );
-}
-
 export default function CompositionPanel({
   currency,
   historicoLink,
@@ -119,12 +110,6 @@ export default function CompositionPanel({
   // it, but a framing toggle since render must be honoured).
   const [view, setView] = useState<NetWorthFraming>(initialView);
   const [cache, setCache] = useState<Record<string, MatrixCellPayload>>(initialCells);
-  const readRangeFromUrl = useCallback((): CompositionRange => {
-    const params = new URLSearchParams(window.location.search);
-    return params.has(RANGE_VIEW_PARAM.key)
-      ? readViewParam(window.location.search, RANGE_VIEW_PARAM)
-      : initialRange;
-  }, [initialRange]);
   // Mirror the cache into a ref (updated in an effect, never during render) so
   // the prefetch closure reads the freshest keys after rapid moves.
   const cacheRef = useRef(cache);
@@ -176,36 +161,21 @@ export default function CompositionPanel({
     [fetchCells, initialRange, offeredRanges],
   );
 
-  // Reconcile with the URL on Back/Forward (popstate), bfcache restore
-  // (pageshow.persisted), and a sibling island's push (VIEW_STATE_CHANGE_EVENT).
-  useEffect(() => {
-    const syncFromUrl = () => {
-      const search = window.location.search;
-      const params = new URLSearchParams(search);
-      const urlMode = parseMode(params.get("drill"));
-      const urlRange = readRangeFromUrl();
-      const urlHousing: CompositionHousingMode =
-        params.get("vivienda") === "oculta" ? "hidden" : "net";
-      setMode(urlMode);
-      setRange(urlRange);
-      setView(readViewParam(search, FRAMING_VIEW_PARAM));
-      setHousingMode(urlHousing);
-      prefetchCross({ mode: urlMode, range: urlRange });
-    };
-    const onPageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) {
-        syncFromUrl();
-      }
-    };
-    window.addEventListener("popstate", syncFromUrl);
-    window.addEventListener("pageshow", onPageShow);
-    window.addEventListener(VIEW_STATE_CHANGE_EVENT, syncFromUrl);
-    return () => {
-      window.removeEventListener("popstate", syncFromUrl);
-      window.removeEventListener("pageshow", onPageShow);
-      window.removeEventListener(VIEW_STATE_CHANGE_EVENT, syncFromUrl);
-    };
-  }, [prefetchCross, readRangeFromUrl]);
+  // Reconcile with the URL on Back/Forward, bfcache restore, and sibling writes.
+  const syncFromUrl = useCallback(() => {
+    const search = window.location.search;
+    const params = new URLSearchParams(search);
+    const urlMode = parseMode(params.get("drill"));
+    const urlRange = readRangeFromUrl(search, initialRange);
+    const urlHousing = readHousingModeFromSearch(search);
+    setMode(urlMode);
+    setRange(urlRange);
+    setView(readViewParam(search, FRAMING_VIEW_PARAM));
+    setHousingMode(urlHousing);
+    prefetchCross({ mode: urlMode, range: urlRange });
+  }, [initialRange, prefetchCross]);
+
+  useViewStateSync(syncFromUrl);
 
   // Prefetch the initial cell's cross on mount so the very first click is instant
   // even for cells the server did not ship (it ships the cross, so this is a
@@ -248,12 +218,7 @@ export default function CompositionPanel({
         nextHousing,
         false,
       );
-      window.history.pushState(
-        null,
-        "",
-        `${href}${window.location.hash || "#composicion"}`,
-      );
-      window.dispatchEvent(new Event(VIEW_STATE_CHANGE_EVENT));
+      pushMirroredUrl(`${href}${window.location.hash || "#composicion"}`);
       setView(liveView);
       setMode(nextMode);
       setRange(nextRange);
@@ -265,7 +230,7 @@ export default function CompositionPanel({
 
   const selectRange =
     (next: CompositionRange) => (event: MouseEvent<HTMLAnchorElement>) => {
-      if (!isPlainClick(event)) {
+      if (!isPlainAnchorClick(event)) {
         return; // modified click (new tab/window) → let the href navigate
       }
       event.preventDefault();

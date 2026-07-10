@@ -2,8 +2,11 @@ import { describe, expect, test } from "vitest";
 
 import {
   FRAMING_VIEW_PARAM,
+  isPlainAnchorClick,
   MOVERS_PERIOD_VIEW_PARAM,
   RANGE_VIEW_PARAM,
+  readHousingModeFromSearch,
+  readRangeFromUrl,
   readViewParam,
   type ViewParamSpec,
   writeViewParam,
@@ -124,5 +127,53 @@ describe("RANGE_VIEW_PARAM", () => {
     expect(writeViewParam("?view=liquid&range=1y", RANGE_VIEW_PARAM, "all")).toBe(
       "?view=liquid",
     );
+  });
+});
+
+describe("isPlainAnchorClick", () => {
+  test("accepts a plain left-click", () => {
+    expect(
+      isPlainAnchorClick({
+        button: 0,
+        metaKey: false,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+      }),
+    ).toBe(true);
+  });
+
+  test("rejects modified and non-primary clicks", () => {
+    const plain = {
+      button: 0,
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+    };
+    expect(isPlainAnchorClick({ ...plain, button: 1 })).toBe(false);
+    expect(isPlainAnchorClick({ ...plain, metaKey: true })).toBe(false);
+    expect(isPlainAnchorClick({ ...plain, ctrlKey: true })).toBe(false);
+    expect(isPlainAnchorClick({ ...plain, shiftKey: true })).toBe(false);
+    expect(isPlainAnchorClick({ ...plain, altKey: true })).toBe(false);
+  });
+});
+
+describe("readRangeFromUrl", () => {
+  test("uses the explicit range param when present", () => {
+    expect(readRangeFromUrl("?range=3y", "1y")).toBe("3y");
+  });
+
+  test("falls back to the server default when range is absent", () => {
+    expect(readRangeFromUrl("?view=liquid", "1y")).toBe("1y");
+    expect(readRangeFromUrl("", "5y")).toBe("5y");
+  });
+});
+
+describe("readHousingModeFromSearch", () => {
+  test("reads hidden only for vivienda=oculta", () => {
+    expect(readHousingModeFromSearch("?vivienda=oculta")).toBe("hidden");
+    expect(readHousingModeFromSearch("?vivienda=net")).toBe("net");
+    expect(readHousingModeFromSearch("")).toBe("net");
   });
 });

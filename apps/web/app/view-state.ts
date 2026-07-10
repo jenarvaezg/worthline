@@ -1,4 +1,8 @@
-import type { CompositionRange, NetWorthFraming } from "@worthline/domain";
+import type {
+  CompositionHousingMode,
+  CompositionRange,
+  NetWorthFraming,
+} from "@worthline/domain";
 import { COMPOSITION_RANGES } from "@worthline/domain";
 
 /**
@@ -120,3 +124,46 @@ export const MOVERS_PERIOD_VIEW_PARAM: ViewParamSpec<MoversPeriod> = {
   allowed: ["month", "year"],
   fallback: "month",
 };
+
+/** Minimal anchor-click shape for the plain-left-click guard (testable in node). */
+export interface AnchorClickLike {
+  button: number;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+}
+
+/**
+ * True for a plain left-click an island should intercept. Modified clicks
+ * (new tab/window) and non-primary buttons navigate via the real `href`.
+ */
+export function isPlainAnchorClick(event: AnchorClickLike): boolean {
+  return (
+    event.button === 0 &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.shiftKey &&
+    !event.altKey
+  );
+}
+
+/**
+ * Read the composition range from the URL. When `range` is absent, the server
+ * may have chosen a bounded default that differs from the spec fallback (`all`),
+ * so callers pass the request-time default from SSR.
+ */
+export function readRangeFromUrl(
+  search: string,
+  serverDefault: CompositionRange,
+): CompositionRange {
+  const params = toParams(search);
+  return params.has(RANGE_VIEW_PARAM.key)
+    ? readViewParam(search, RANGE_VIEW_PARAM)
+    : serverDefault;
+}
+
+/** Read `vivienda=` from a query string — mirrors `parseViviendaParam` on the client. */
+export function readHousingModeFromSearch(search: string): CompositionHousingMode {
+  return toParams(search).get("vivienda") === "oculta" ? "hidden" : "net";
+}

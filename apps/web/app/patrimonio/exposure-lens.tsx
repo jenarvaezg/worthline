@@ -1,13 +1,8 @@
 "use client";
 
-import {
-  EXPOSURE_LENS_VIEW_PARAM,
-  type ExposureLens,
-  readViewParam,
-  VIEW_STATE_CHANGE_EVENT,
-  writeViewParam,
-} from "@web/view-state";
-import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
+import { useUrlViewParam } from "@web/url-view-state";
+import { EXPOSURE_LENS_VIEW_PARAM, type ExposureLens } from "@web/view-state";
+import { type ReactNode } from "react";
 
 /**
  * The exposure geography lens as a client island (PRD #539 S3, #543, ADR 0036).
@@ -45,59 +40,7 @@ export default function ExposureLensPanel({
   all: ReactNode;
   equity: ReactNode;
 }) {
-  const [lens, setLens] = useState<ExposureLens>(initialLens);
-
-  // Re-read the lens the URL carries on Back/Forward (popstate) and on a bfcache
-  // restore (pageshow.persisted) — neither re-runs SSR, so the island reconciles
-  // with the URL itself. Also listen to a sibling island's push nudge (§3).
-  useEffect(() => {
-    const syncFromUrl = () =>
-      setLens(readViewParam(window.location.search, EXPOSURE_LENS_VIEW_PARAM));
-    const onPageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) {
-        syncFromUrl();
-      }
-    };
-    window.addEventListener("popstate", syncFromUrl);
-    window.addEventListener("pageshow", onPageShow);
-    window.addEventListener(VIEW_STATE_CHANGE_EVENT, syncFromUrl);
-    return () => {
-      window.removeEventListener("popstate", syncFromUrl);
-      window.removeEventListener("pageshow", onPageShow);
-      window.removeEventListener(VIEW_STATE_CHANGE_EVENT, syncFromUrl);
-    };
-  }, []);
-
-  const select = (next: ExposureLens) => (event: MouseEvent<HTMLAnchorElement>) => {
-    // Let modified clicks (new tab/window) and non-primary buttons navigate.
-    if (
-      event.button !== 0 ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.altKey
-    ) {
-      return;
-    }
-    event.preventDefault();
-    if (next === readViewParam(window.location.search, EXPOSURE_LENS_VIEW_PARAM)) {
-      return;
-    }
-    const nextSearch = writeViewParam(
-      window.location.search,
-      EXPOSURE_LENS_VIEW_PARAM,
-      next,
-    );
-    window.history.pushState(
-      null,
-      "",
-      `${window.location.pathname}${nextSearch}${window.location.hash}`,
-    );
-    setLens(next);
-    // Nudge sibling islands to re-read from the URL — `pushState` fires no event
-    // they could otherwise observe (§3).
-    window.dispatchEvent(new Event(VIEW_STATE_CHANGE_EVENT));
-  };
+  const [lens, , select] = useUrlViewParam(EXPOSURE_LENS_VIEW_PARAM, initialLens);
 
   const activeLabel = tabs.find((tab) => tab.id === lens)?.label ?? "";
 
