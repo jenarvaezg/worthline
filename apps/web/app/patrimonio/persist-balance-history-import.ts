@@ -1,7 +1,7 @@
 import { createStableId } from "@web/intake";
 import type { AddBalanceRebaselineInput, WorthlineStore } from "@worthline/db";
-import type { AmortizationPlanInput } from "@worthline/domain";
 
+import { readAmortizableDebtCurveContext } from "./amortizable-debt-curve-context";
 import type {
   BalanceHistoryDebtContext,
   ComposedBalanceHistoryRebaseline,
@@ -15,31 +15,12 @@ export async function readBalanceHistoryDebtContext(
   liabilityId: string,
   today: string,
 ): Promise<BalanceHistoryDebtContext> {
-  const [plan, rebaselines, liabilities] = await Promise.all([
-    store.liabilities.readAmortizationPlan(liabilityId),
-    store.liabilities.readBalanceRebaselines(liabilityId),
-    store.liabilities.readLiabilities(),
-  ]);
-  const liability = liabilities.find((row) => row.id === liabilityId);
-  const revisions = plan
-    ? await store.liabilities.readInterestRateRevisions(plan.id)
-    : [];
-
-  const planInput: AmortizationPlanInput | undefined = plan
-    ? {
-        annualInterestRate: plan.annualInterestRate,
-        disbursementDate: plan.disbursementDate,
-        firstPaymentDate: plan.firstPaymentDate,
-        initialCapitalMinor: plan.initialCapitalMinor,
-        termMonths: plan.termMonths,
-      }
-    : undefined;
-
+  const reads = await readAmortizableDebtCurveContext(store, liabilityId);
   return {
-    balanceRebaselines: rebaselines,
-    currentBalanceMinor: liability?.currentBalance.amountMinor ?? 0,
-    ...(planInput ? { plan: planInput } : {}),
-    revisions,
+    balanceRebaselines: reads.balanceRebaselines,
+    currentBalanceMinor: reads.currentBalanceMinor,
+    ...(reads.plan ? { plan: reads.plan } : {}),
+    revisions: reads.revisions,
     today,
   };
 }
@@ -54,9 +35,9 @@ export async function persistBalanceHistoryImport(
   liabilityId: string,
   composed: readonly ComposedBalanceHistoryRebaseline[],
   today: string,
-): Promise<{ created: number; skipped: number }> {
+): Promise<number> {
   if (composed.length === 0) {
-    return { created: 0, skipped: 0 };
+    return 0;
   }
 
   const rebaselines: AddBalanceRebaselineInput[] = composed.map((row) => ({
@@ -70,11 +51,9 @@ export async function persistBalanceHistoryImport(
     startsAtBaseline: false,
   }));
 
-  const created = await store.importBalanceHistoryAndRipple({
+  return store.importBalanceHistoryAndRipple({
     liabilityId,
     rebaselines,
     today,
   });
-
-  return { created, skipped: 0 };
 }

@@ -4,6 +4,8 @@ import {
   BALANCE_HISTORY_MESSAGES,
   type BalanceHistoryDebtContext,
   composeBalanceHistoryRebaselines,
+  parseBalanceHistoryRows,
+  planBalanceHistoryImport,
   previewBalanceHistoryImport,
 } from "./import-balance-history";
 
@@ -67,7 +69,7 @@ describe("previewBalanceHistoryImport — per-row validation and drift (#696)", 
       PLAN_CTX,
     );
     expect(preview[0]?.status).toBe("excluded");
-    expect(preview[0]?.reason).toContain("anterior al inicio");
+    expect(preview[0]?.reason).toBe(BALANCE_HISTORY_MESSAGES.preOrigin);
   });
 
   test("skips idempotent rows that already exist with the same balance", () => {
@@ -129,20 +131,35 @@ describe("previewBalanceHistoryImport — per-row validation and drift (#696)", 
     ).toBe("excluded");
   });
 
-  test("chains drift: the second row composes off the first accepted row", () => {
-    const preview = previewBalanceHistoryImport(
+  test("chains composition: the second row composes off the first accepted row", () => {
+    const plan = planBalanceHistoryImport(
       [
         { balanceMinor: 145_000_00, date: "2026-04-15" },
         { balanceMinor: 140_000_00, date: "2026-06-15" },
       ],
       PLAN_CTX,
     );
-    expect(preview.filter((row) => row.status === "accepted")).toHaveLength(2);
-    const composed = composeBalanceHistoryRebaselines(preview, PLAN_CTX);
-    expect(composed).toHaveLength(2);
-    expect(composed[0]?.baselineDate).toBe("2026-04-15");
-    expect(composed[1]?.baselineDate).toBe("2026-06-15");
-    expect(composed[1]?.endDate).toBe(composed[0]?.endDate);
+    expect(plan.previews.filter((row) => row.status === "accepted")).toHaveLength(2);
+    expect(plan.composed).toHaveLength(2);
+    expect(plan.composed[0]?.baselineDate).toBe("2026-04-15");
+    expect(plan.composed[1]?.baselineDate).toBe("2026-06-15");
+    expect(plan.composed[1]?.endDate).toBe(plan.composed[0]?.endDate);
+  });
+
+  test("drift is computed vs the vigente curve, not prior batch rows", () => {
+    const single = previewBalanceHistoryImport(
+      [{ balanceMinor: 140_000_00, date: "2026-06-15" }],
+      PLAN_CTX,
+    )[0]!;
+    const batch = planBalanceHistoryImport(
+      [
+        { balanceMinor: 145_000_00, date: "2026-04-15" },
+        { balanceMinor: 140_000_00, date: "2026-06-15" },
+      ],
+      PLAN_CTX,
+    );
+    const secondInBatch = batch.previews.find((row) => row.date === "2026-06-15")!;
+    expect(secondInBatch.driftMinor).toBe(single.driftMinor);
   });
 });
 
@@ -167,5 +184,27 @@ describe("composeBalanceHistoryRebaselines", () => {
     );
     const composed = composeBalanceHistoryRebaselines(preview, PLAN_CTX);
     expect(composed[0]?.annualInterestRate).toBe("0.025");
+  });
+});
+
+describe("parseBalanceHistoryRows", () => {
+  test("rejects non-integer balanceMinor values", () => {
+    const result = parseBalanceHistoryRows([
+      { balanceMinor: "140000", date: "2026-06-15" },
+    ]);
+    expect(result).toEqual({
+      error: BALANCE_HISTORY_MESSAGES.invalidSeries,
+      ok: false,
+    });
+  });
+
+  test("accepts a well-formed series", () => {
+    const result = parseBalanceHistoryRows([
+      { annualRate: "0.03", balanceMinor: 140_000_00, date: "2026-06-15" },
+    ]);
+    expect(result).toEqual({
+      ok: true,
+      rows: [{ annualRate: "0.03", balanceMinor: 140_000_00, date: "2026-06-15" }],
+    });
   });
 });

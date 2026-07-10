@@ -110,6 +110,50 @@ describe("importBalanceHistoryAction — batched import boundary (#696)", () => 
     store.close();
   });
 
+  test("re-applying the same series is a no-op at the action boundary", async () => {
+    const store = await seedAmortizableMortgage();
+
+    await runAction(
+      form({
+        id: "mortgage",
+        rows: JSON.stringify([{ balanceMinor: 140_000_00, date: "2026-06-15" }]),
+      }),
+      store,
+      CLOCK,
+    );
+    expect(await store.liabilities.readBalanceRebaselines("mortgage")).toHaveLength(1);
+
+    const url = await runAction(
+      form({
+        id: "mortgage",
+        rows: JSON.stringify([{ balanceMinor: 140_000_00, date: "2026-06-15" }]),
+      }),
+      store,
+      CLOCK,
+    );
+    expect(url).toContain("balance_history_imported");
+    expect(await store.liabilities.readBalanceRebaselines("mortgage")).toHaveLength(1);
+
+    store.close();
+  });
+
+  test("rejects malformed row payloads before touching the store", async () => {
+    const store = await seedAmortizableMortgage();
+
+    const url = await runAction(
+      form({
+        id: "mortgage",
+        rows: JSON.stringify([{ balanceMinor: "140000", date: "2026-06-15" }]),
+      }),
+      store,
+      CLOCK,
+    );
+    expect(url).toContain("error=");
+    expect(await store.liabilities.readBalanceRebaselines("mortgage")).toHaveLength(0);
+
+    store.close();
+  });
+
   test("demo write-guard blocks the import without touching the store", async () => {
     mockPersonaCookie = "demo";
     const store = await seedAmortizableMortgage();

@@ -2,10 +2,12 @@
  * Deterministic seam for importing balance history as a chain of re-baselines
  * (ADR 0056, #696). Consumed by #764 S5 assistant — no UI of its own.
  *
- * Validates each row, computes drift vs the curve at that date, and composes
- * the chained re-baselines the store seam persists atomically with ONE ripple.
+ * Validates each row, computes drift vs the vigente curve at that date, and
+ * composes the chained re-baselines the store seam persists atomically with
+ * ONE ripple.
  */
 
+import { ISO_DATE } from "@web/intake-primitives";
 import type {
   AmortizationPlanInput,
   BalanceRebaselineInput,
@@ -15,10 +17,9 @@ import { debtBalanceAtDate, effectiveAmortizationPlan } from "@worthline/domain"
 
 import {
   deriveRecalibrationRebaseline,
+  PRE_ORIGIN_BALANCE_DATE_MESSAGE,
   type RecalibrationRevision,
 } from "./recalibrate-debt";
-
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface BalanceHistoryRowInput {
   /** Fecha del saldo, YYYY-MM-DD. */
@@ -49,12 +50,14 @@ export interface BalanceHistoryDebtContext {
   today: string;
 }
 
-export interface ComposedBalanceHistoryRebaseline {
-  baselineDate: string;
-  outstandingBalanceMinor: number;
-  annualInterestRate: DecimalString;
-  endDate: string;
-  nextPaymentDate: string;
+export type ComposedBalanceHistoryRebaseline = Omit<
+  BalanceRebaselineInput,
+  "startsAtBaseline"
+>;
+
+export interface BalanceHistoryImportPlan {
+  previews: BalanceHistoryRowPreview[];
+  composed: ComposedBalanceHistoryRebaseline[];
 }
 
 /** Spanish messages reusable by the #764 assistant preview surface. */
@@ -63,14 +66,71 @@ export const BALANCE_HISTORY_MESSAGES = {
   duplicateInBatch: "Fecha duplicada en la serie.",
   futureDate: "La fecha del saldo no puede ser futura.",
   invalidDate: "La fecha del saldo no es válida.",
+  invalidSeries: "La serie de saldos no es válida.",
   nonPositiveBalance: "Introduce un saldo real mayor que 0 €.",
-  preOrigin: "La fecha del saldo no puede ser anterior al inicio de esta deuda.",
+  preOrigin: PRE_ORIGIN_BALANCE_DATE_MESSAGE,
 } as const;
+
+export type ParseBalanceHistoryRowsResult =
+  | { ok: true; rows: BalanceHistoryRowInput[] }
+  | { ok: false; error: string };
+
+const DECIMAL_STRING = /^-?\d+(\.\d+)?$/;
 
 function isValidIsoDate(date: string): boolean {
   if (!ISO_DATE.test(date)) return false;
   const parsed = new Date(`${date}T00:00:00.000Z`);
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date;
+}
+
+/**
+ * Validate external row payloads at the action boundary — every element must
+ * carry a real ISO date and a positive integer balanceMinor.
+ */
+export function parseBalanceHistoryRows(raw: unknown): ParseBalanceHistoryRowsResult {
+  if (!Array.isArray(raw)) {
+    return { error: BALANCE_HISTORY_MESSAGES.invalidSeries, ok: false };
+  }
+
+  const rows: BalanceHistoryRowInput[] = [];
+  for (const element of raw) {
+    if (element === null || typeof element !== "object") {
+      return { error: BALANCE_HISTORY_MESSAGES.invalidSeries, ok: false };
+    }
+
+    const record = element as Record<string, unknown>;
+    if (typeof record.date !== "string") {
+      return { error: BALANCE_HISTORY_MESSAGES.invalidSeries, ok: false };
+    }
+
+    const balanceMinor = record.balanceMinor;
+    if (
+      typeof balanceMinor !== "number" ||
+      !Number.isInteger(balanceMinor) ||
+      balanceMinor <= 0
+    ) {
+      return { error: BALANCE_HISTORY_MESSAGES.invalidSeries, ok: false };
+    }
+
+    let annualRate: DecimalString | undefined;
+    if (record.annualRate !== undefined) {
+      if (
+        typeof record.annualRate !== "string" ||
+        !DECIMAL_STRING.test(record.annualRate)
+      ) {
+        return { error: BALANCE_HISTORY_MESSAGES.invalidSeries, ok: false };
+      }
+      annualRate = record.annualRate;
+    }
+
+    rows.push({
+      balanceMinor,
+      date: record.date,
+      ...(annualRate !== undefined ? { annualRate } : {}),
+    });
+  }
+
+  return { ok: true, rows };
 }
 
 function validateRowBasics(
@@ -113,13 +173,9 @@ function effectiveAt(
   });
 }
 
-function modelledBalanceAt(
-  ctx: BalanceHistoryDebtContext,
-  targetDate: string,
-  extraRebaselines: readonly BalanceRebaselineInput[],
-): number {
+function vigenteBalanceAt(ctx: BalanceHistoryDebtContext, targetDate: string): number {
   return debtBalanceAtDate({
-    balanceRebaselines: [...ctx.balanceRebaselines, ...extraRebaselines],
+    balanceRebaselines: ctx.balanceRebaselines,
     currentBalanceMinor: ctx.currentBalanceMinor,
     debtModel: "amortizable",
     ...(ctx.plan ? { plan: ctx.plan } : {}),
@@ -128,18 +184,25 @@ function modelledBalanceAt(
   });
 }
 
+function derivationReason(error: string): string {
+  return error === PRE_ORIGIN_BALANCE_DATE_MESSAGE
+    ? BALANCE_HISTORY_MESSAGES.preOrigin
+    : error;
+}
+
 /**
- * Validate and preview every row: exclusion reasons in Spanish, drift per row
- * vs the curve that includes prior accepted rows in the batch (chained).
+ * Single pass: preview every row (drift vs the vigente curve) and compose the
+ * chained re-baselines accepted rows will persist.
  */
-export function previewBalanceHistoryImport(
+export function planBalanceHistoryImport(
   rows: readonly BalanceHistoryRowInput[],
   ctx: BalanceHistoryDebtContext,
-): BalanceHistoryRowPreview[] {
+): BalanceHistoryImportPlan {
   const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
   const previews: BalanceHistoryRowPreview[] = [];
+  const composed: ComposedBalanceHistoryRebaseline[] = [];
   const seenDates = new Set<string>();
-  const acceptedInBatch: BalanceRebaselineInput[] = [];
+  const chainRebaselines: BalanceRebaselineInput[] = [...ctx.balanceRebaselines];
 
   for (const row of sorted) {
     const basics = validateRowBasics(row, ctx.today);
@@ -187,12 +250,7 @@ export function previewBalanceHistoryImport(
       continue;
     }
 
-    const effective = effectiveAt(
-      ctx,
-      [...ctx.balanceRebaselines, ...acceptedInBatch],
-      row.date,
-    );
-
+    const effective = effectiveAt(ctx, chainRebaselines, row.date);
     const derived = deriveRecalibrationRebaseline({
       balanceDate: row.date,
       effective,
@@ -203,15 +261,23 @@ export function previewBalanceHistoryImport(
       previews.push(
         previewRow(row, {
           driftMinor: null,
-          reason: derived.error,
+          reason: derivationReason(derived.error),
           status: "excluded",
         }),
       );
       continue;
     }
 
-    const modelled = modelledBalanceAt(ctx, row.date, acceptedInBatch);
-    const driftMinor = row.balanceMinor - modelled;
+    const driftMinor = row.balanceMinor - vigenteBalanceAt(ctx, row.date);
+
+    const next: ComposedBalanceHistoryRebaseline = {
+      annualInterestRate: row.annualRate ?? derived.annualInterestRate,
+      baselineDate: row.date,
+      endDate: derived.endDate,
+      nextPaymentDate: derived.nextPaymentDate,
+      outstandingBalanceMinor: row.balanceMinor,
+    };
+    composed.push(next);
 
     previews.push(
       previewRow(row, {
@@ -220,54 +286,39 @@ export function previewBalanceHistoryImport(
       }),
     );
 
-    acceptedInBatch.push({
-      annualInterestRate: row.annualRate ?? derived.annualInterestRate,
-      baselineDate: row.date,
-      endDate: derived.endDate,
-      nextPaymentDate: derived.nextPaymentDate,
-      outstandingBalanceMinor: row.balanceMinor,
+    chainRebaselines.push({
+      ...next,
       startsAtBaseline: false,
     });
   }
 
-  return previews;
+  return { composed, previews };
 }
 
-/** Compose the persisted re-baseline chain from accepted preview rows. */
+/** Preview-only view of {@link planBalanceHistoryImport}. */
+export function previewBalanceHistoryImport(
+  rows: readonly BalanceHistoryRowInput[],
+  ctx: BalanceHistoryDebtContext,
+): BalanceHistoryRowPreview[] {
+  return planBalanceHistoryImport(rows, ctx).previews;
+}
+
+/** Compose-only view — prefer {@link planBalanceHistoryImport} to avoid a second pass. */
 export function composeBalanceHistoryRebaselines(
   previews: readonly BalanceHistoryRowPreview[],
   ctx: BalanceHistoryDebtContext,
 ): ComposedBalanceHistoryRebaseline[] {
-  const accepted = previews.filter((p) => p.status === "accepted");
-  const sorted = [...accepted].sort((a, b) => a.date.localeCompare(b.date));
-  const result: ComposedBalanceHistoryRebaseline[] = [];
-  const chainRebaselines: BalanceRebaselineInput[] = [...ctx.balanceRebaselines];
-
-  for (const row of sorted) {
-    const effective = effectiveAt(ctx, chainRebaselines, row.date);
-
-    const derived = deriveRecalibrationRebaseline({
-      balanceDate: row.date,
-      effective,
-      revisions: ctx.revisions,
-    });
-
-    if (!derived.ok) continue;
-
-    const composed: ComposedBalanceHistoryRebaseline = {
-      annualInterestRate: row.annualRate ?? derived.annualInterestRate,
-      baselineDate: row.date,
-      endDate: derived.endDate,
-      nextPaymentDate: derived.nextPaymentDate,
-      outstandingBalanceMinor: row.balanceMinor,
-    };
-    result.push(composed);
-
-    chainRebaselines.push({
-      ...composed,
-      startsAtBaseline: false,
-    });
-  }
-
-  return result;
+  const acceptedDates = new Set(
+    previews.filter((row) => row.status === "accepted").map((row) => row.date),
+  );
+  return planBalanceHistoryImport(
+    previews
+      .filter((row) => acceptedDates.has(row.date))
+      .map((row) => ({
+        balanceMinor: row.balanceMinor,
+        date: row.date,
+        ...(row.annualRate !== undefined ? { annualRate: row.annualRate } : {}),
+      })),
+    ctx,
+  ).composed;
 }

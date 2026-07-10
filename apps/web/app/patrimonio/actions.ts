@@ -39,14 +39,15 @@ import {
   systemClock,
 } from "@worthline/domain";
 import { redirect } from "next/navigation";
+import { readAmortizableDebtCurveContext } from "./amortizable-debt-curve-context";
 import {
   CURRENT_STATE_DEBT_FIELD_NAMES,
   deriveCurrentStateDebt,
 } from "./current-state-debt";
 import {
-  type BalanceHistoryRowInput,
-  composeBalanceHistoryRebaselines,
-  previewBalanceHistoryImport,
+  BALANCE_HISTORY_MESSAGES,
+  parseBalanceHistoryRows,
+  planBalanceHistoryImport,
 } from "./import-balance-history";
 import {
   persistBalanceHistoryImport,
@@ -1271,24 +1272,18 @@ export async function recalibrateDebtBalanceAction(
     // `startsAtBaseline` fact alone governs the curve) — that debt still has a
     // valid schedule to recalibrate, so requiring a plan row would falsely
     // reject it. Revisions hang off `planId`, so they only exist with a plan.
-    const [plan, rebaselines] = await Promise.all([
-      store.liabilities.readAmortizationPlan(id),
-      store.liabilities.readBalanceRebaselines(id),
-    ]);
-    const revisions = plan
-      ? await store.liabilities.readInterestRateRevisions(plan.id)
-      : [];
+    const curve = await readAmortizableDebtCurveContext(store, id);
 
     const effective = effectiveAmortizationPlan({
-      balanceRebaselines: rebaselines,
-      ...(plan
+      balanceRebaselines: curve.balanceRebaselines,
+      ...(curve.plan
         ? {
             plan: {
-              annualInterestRate: plan.annualInterestRate,
-              disbursementDate: plan.disbursementDate,
-              firstPaymentDate: plan.firstPaymentDate,
-              initialCapitalMinor: plan.initialCapitalMinor,
-              termMonths: plan.termMonths,
+              annualInterestRate: curve.plan.annualInterestRate,
+              disbursementDate: curve.plan.disbursementDate,
+              firstPaymentDate: curve.plan.firstPaymentDate,
+              initialCapitalMinor: curve.plan.initialCapitalMinor,
+              termMonths: curve.plan.termMonths,
             },
           }
         : {}),
@@ -1298,7 +1293,7 @@ export async function recalibrateDebtBalanceAction(
     const derived = deriveRecalibrationRebaseline({
       balanceDate: validated.balanceDate,
       effective,
-      revisions,
+      revisions: curve.revisions,
     });
 
     if (!derived.ok) {
@@ -1359,14 +1354,21 @@ export async function importBalanceHistoryAction(
   }
 
   const today = _clock.today();
-  let rows: BalanceHistoryRowInput[];
+  let rawRows: unknown;
   try {
-    rows = JSON.parse(String(formData.get("rows") ?? "[]")) as BalanceHistoryRowInput[];
-    if (!Array.isArray(rows)) throw new Error("not an array");
+    rawRows = JSON.parse(String(formData.get("rows") ?? "[]"));
   } catch {
     redirect(
       errorRedirectUrl(editUrl(id), {
-        message: "La serie de saldos no es válida.",
+        message: BALANCE_HISTORY_MESSAGES.invalidSeries,
+      }),
+    );
+  }
+  const parsedRows = parseBalanceHistoryRows(rawRows);
+  if (!parsedRows.ok) {
+    redirect(
+      errorRedirectUrl(editUrl(id), {
+        message: parsedRows.error,
       }),
     );
   }
@@ -1376,15 +1378,18 @@ export async function importBalanceHistoryAction(
     if (!guard.ok) return guard;
 
     const ctx = await readBalanceHistoryDebtContext(store, id, today);
-    const preview = previewBalanceHistoryImport(rows, ctx);
-    const composed = composeBalanceHistoryRebaselines(preview, ctx);
+    const plan = planBalanceHistoryImport(parsedRows.rows, ctx);
+    const skipped = plan.previews.filter((row) => row.status === "skipped").length;
 
-    if (composed.length === 0) {
+    if (plan.composed.length === 0) {
+      if (skipped > 0 && skipped === plan.previews.length) {
+        return { created: 0, ok: true as const, skipped };
+      }
       return { error: "No hay saldos válidos que importar.", ok: false as const };
     }
 
-    await persistBalanceHistoryImport(store, id, composed, today);
-    return { created: composed.length, ok: true as const };
+    const created = await persistBalanceHistoryImport(store, id, plan.composed, today);
+    return { created, ok: true as const, skipped };
   }, _store);
 
   if (!result.ok) {
