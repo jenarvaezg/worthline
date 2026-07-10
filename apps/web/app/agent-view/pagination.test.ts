@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { describe, expect, test } from "vitest";
 
 import { AgentViewHttpError } from "./contract";
-import { pagedHttpEnvelope, parsePositiveLimit } from "./pagination";
+import { clampPositiveLimit, pagedHttpEnvelope, parsePositiveLimit } from "./pagination";
 
 describe("parsePositiveLimit", () => {
   const options = { defaultLimit: 100, maxLimit: 500 };
@@ -38,6 +38,22 @@ describe("parsePositiveLimit", () => {
   test("preserves each endpoint default and maximum", () => {
     expect(parsePositiveLimit(null, { defaultLimit: 25, maxLimit: 100 })).toBe(25);
     expect(parsePositiveLimit("150", { defaultLimit: 25, maxLimit: 100 })).toBe(100);
+  });
+});
+
+describe("clampPositiveLimit", () => {
+  const options = { defaultLimit: 100, maxLimit: 500 };
+
+  test("defaults invalid limits when onInvalid is default", () => {
+    expect(clampPositiveLimit(undefined, options)).toBe(100);
+    expect(clampPositiveLimit(0, options)).toBe(100);
+    expect(clampPositiveLimit(9999, options)).toBe(500);
+  });
+
+  test("rejects invalid limits when onInvalid is reject", () => {
+    expect(() => clampPositiveLimit(0, { ...options, onInvalid: "reject" })).toThrow(
+      AgentViewHttpError,
+    );
   });
 });
 

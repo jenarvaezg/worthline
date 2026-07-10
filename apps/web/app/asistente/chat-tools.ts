@@ -1,55 +1,31 @@
+import { createAgentViewCatalog } from "@web/agent-view/catalog";
 import {
-  buildHoldingConnectedSourcePositions,
-  buildSourceConnectedSourcePositions,
   DEFAULT_POSITION_LIMIT,
   MAX_POSITION_LIMIT,
 } from "@web/agent-view/connected-source-positions";
-import {
-  buildConnectedSourcesList,
-  buildSourceFreshness,
-} from "@web/agent-view/connected-sources";
 import {
   type AgentViewFinancialContext,
   AgentViewHttpError,
   errorEnvelope,
 } from "@web/agent-view/contract";
 import {
-  buildDataQuality,
   DEFAULT_DATA_QUALITY_LIMIT,
   MAX_DATA_QUALITY_LIMIT,
 } from "@web/agent-view/data-quality";
+import { isFigureName } from "@web/agent-view/figure-explanations";
 import {
-  buildFigureExplanation,
-  isFigureName,
-} from "@web/agent-view/figure-explanations";
-import { buildFinancialContext } from "@web/agent-view/financial-context";
-import { buildFireContext } from "@web/agent-view/fire-context";
-import { buildFireProjection } from "@web/agent-view/fire-projection-context";
-import { buildGoals } from "@web/agent-view/goals-context";
-import { buildHoldingDetail } from "@web/agent-view/holding-detail";
-import {
-  buildHoldingOperations,
   DEFAULT_OPERATION_LIMIT,
   MAX_OPERATION_LIMIT,
 } from "@web/agent-view/holding-operations";
-import { buildPriceFreshness } from "@web/agent-view/price-freshness";
+import { clampPositiveLimit } from "@web/agent-view/pagination";
+import { isAgentViewErrorEnvelope, runCatalogRead } from "@web/agent-view/read-backend";
 import { resolveInternalHoldingId } from "@web/agent-view/scope-resolution";
 import { listAgentViewScopes } from "@web/agent-view/scopes";
 import {
-  buildSnapshotHistory,
   DEFAULT_SNAPSHOT_LIMIT,
   MAX_SNAPSHOT_LIMIT,
 } from "@web/agent-view/snapshot-history";
-import {
-  buildTrashSummary,
-  DEFAULT_TRASH_LIMIT,
-  MAX_TRASH_LIMIT,
-} from "@web/agent-view/trash-summary";
-import {
-  buildMemberProfiles,
-  buildWarningOverrides,
-  buildWorkspaceInfo,
-} from "@web/agent-view/workspace-context";
+import { DEFAULT_TRASH_LIMIT, MAX_TRASH_LIMIT } from "@web/agent-view/trash-summary";
 import {
   parseQuickActions,
   type QuickAction,
@@ -67,9 +43,9 @@ import { jsonSchema, type ToolSet, tool } from "ai";
 
 /**
  * The assistant's chat tools (#629/#630, ADR 0047): thin conversational
- * wrappers over the agent-view builders, called here in-process against the
+ * wrappers over the agent-view read catalog, called in-process against the
  * read store. This is intentionally a separate chat catalog, not the MCP
- * catalog: tool names stay in parity where the assistant needs the same lens,
+ * transport: tool names stay in parity where the assistant needs the same lens,
  * while chat-specific payload trimming and money formatting stay local to this
  * boundary. Calculation logic stays in agent-view; the model never defines its
  * own net-worth formula, only summarizes/compares what these reads return.
@@ -103,6 +79,8 @@ const CHAT_HOLDING_LIMIT = 10;
 
 /** The empty-workspace answer for scope-defaulting tools (ADR 0048). */
 const EMPTY_WORKSPACE = { error: "empty_workspace" } as const;
+
+const catalog = createAgentViewCatalog();
 
 /**
  * Recursively replace every agent-view money object (`{amountMinor, currency}`,
@@ -157,20 +135,6 @@ async function resolveScopeId(
   if (scopeId !== undefined) return scopeId;
   const scopes = await listAgentViewScopes(store.agentView);
   return (scopes.find((s) => s.isDefault) ?? scopes[0])?.id ?? null;
-}
-
-/** Validate and clamp a model-supplied page size to the HTTP/MCP contract. */
-function clampLimit(limit: number | undefined, fallback: number, max: number): number {
-  if (limit === undefined) return fallback;
-  if (!Number.isInteger(limit) || limit < 1) {
-    throw new AgentViewHttpError({
-      code: "bad_request",
-      details: { limit },
-      message: "limit must be a positive integer.",
-      status: 400,
-    });
-  }
-  return Math.min(limit, max);
 }
 
 /** One action the model proposed via `suggest_actions`, before validation. */
@@ -318,7 +282,12 @@ const EXPOSURE_PROFILE_PROPOSAL_SCHEMA = jsonSchema<{
 });
 
 export function createChatTools(input: ChatToolsInput): ToolSet {
-  const { asOf } = input;
+  const catalogOptions = { asOf: input.asOf };
+  const catalogRead = <Input, Output>(
+    tool: Parameters<typeof runCatalogRead<Input, Output>>[0],
+    catalogInput: Input,
+    agentView: AgentViewReadStore,
+  ) => runCatalogRead(tool, catalogInput, agentView, catalogOptions);
 
   return {
     get_financial_context: tool({
@@ -332,13 +301,13 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         chatRead(input, async (store) => {
           const scopeId = await resolveScopeId(store, args.scopeId);
           if (!scopeId) return EMPTY_WORKSPACE;
-          return toChatFinancialContext(
-            await buildFinancialContext(store.agentView, {
-              scopeId,
-              asOf,
-              holdingLimit: CHAT_HOLDING_LIMIT,
-            }),
+          const result = await catalogRead(
+            catalog.get_financial_context,
+            { scopeId, holdingLimit: CHAT_HOLDING_LIMIT },
+            store.agentView,
           );
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return toChatFinancialContext(result.data);
         }),
     }),
 
@@ -347,7 +316,12 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "Lista los scopes disponibles (hogar, miembros, grupos) con su id `wl_scp_…`, " +
         "para consultar otros scopes además del que mira el usuario.",
       inputSchema: EMPTY_SCHEMA,
-      execute: () => chatRead(input, (store) => listAgentViewScopes(store.agentView)),
+      execute: () =>
+        chatRead(input, async (store) => {
+          const result = await catalogRead(catalog.list_scopes, {}, store.agentView);
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return result.data;
+        }),
     }),
 
     explain_figure: tool({
@@ -375,21 +349,27 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
       execute: (args) =>
         chatRead(input, async (store) => {
           if (!isFigureName(args.figure)) {
-            throw new AgentViewHttpError({
-              code: "bad_request",
-              message: `Unknown figure: ${args.figure}.`,
-              status: 400,
-            });
+            return {
+              error: {
+                code: "bad_request",
+                message: `Unknown figure: ${args.figure}.`,
+              },
+            };
           }
           const scopeId = await resolveScopeId(store, args.scopeId);
           if (!scopeId) return EMPTY_WORKSPACE;
-          return buildFigureExplanation(store.agentView, {
-            scopeId,
-            figure: args.figure,
-            asOf,
-            ...(args.holdingId === undefined ? {} : { holdingId: args.holdingId }),
-            ...(args.date === undefined ? {} : { date: args.date }),
-          });
+          const result = await catalogRead(
+            catalog.explain_figure,
+            {
+              figure: args.figure,
+              scopeId,
+              ...(args.holdingId === undefined ? {} : { holdingId: args.holdingId }),
+              ...(args.date === undefined ? {} : { date: args.date }),
+            },
+            store.agentView,
+          );
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return result.data;
         }),
     }),
 
@@ -403,7 +383,13 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         chatRead(input, async (store) => {
           const scopeId = await resolveScopeId(store, args.scopeId);
           if (!scopeId) return EMPTY_WORKSPACE;
-          return buildFireContext(store.agentView, { scopeId });
+          const result = await catalogRead(
+            catalog.get_fire_context,
+            { scopeId },
+            store.agentView,
+          );
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return result.data;
         }),
     }),
 
@@ -417,7 +403,13 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         chatRead(input, async (store) => {
           const scopeId = await resolveScopeId(store, args.scopeId);
           if (!scopeId) return EMPTY_WORKSPACE;
-          return buildFireProjection(store.agentView, scopeId);
+          const result = await catalogRead(
+            catalog.get_fire_projection,
+            { scopeId },
+            store.agentView,
+          );
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return result.data;
         }),
     }),
 
@@ -431,7 +423,13 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         chatRead(input, async (store) => {
           const scopeId = await resolveScopeId(store, args.scopeId);
           if (!scopeId) return EMPTY_WORKSPACE;
-          return buildGoals(store.agentView, scopeId);
+          const result = await catalogRead(
+            catalog.list_goals,
+            { scopeId },
+            store.agentView,
+          );
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return result.data;
         }),
     }),
 
@@ -466,16 +464,27 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         chatRead(input, async (store) => {
           const scopeId = await resolveScopeId(store, args.scopeId);
           if (!scopeId) return EMPTY_WORKSPACE;
-          return buildSnapshotHistory(store.agentView, {
-            scopeId,
-            granularity: args.granularity ?? "monthly-close",
-            sort: args.sort ?? "date",
-            limit: clampLimit(args.limit, DEFAULT_SNAPSHOT_LIMIT, MAX_SNAPSHOT_LIMIT),
-            includeHoldingRows: args.includeHoldingRows ?? "none",
-            ...(args.from === undefined ? {} : { from: args.from }),
-            ...(args.to === undefined ? {} : { to: args.to }),
-            ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
+          const limit = clampPositiveLimit(args.limit, {
+            defaultLimit: DEFAULT_SNAPSHOT_LIMIT,
+            maxLimit: MAX_SNAPSHOT_LIMIT,
+            onInvalid: "reject",
           });
+          const result = await catalogRead(
+            catalog.get_snapshot_history,
+            {
+              scopeId,
+              granularity: args.granularity ?? "monthly-close",
+              sort: args.sort ?? "date",
+              limit,
+              includeHoldingRows: args.includeHoldingRows ?? "none",
+              ...(args.from === undefined ? {} : { from: args.from }),
+              ...(args.to === undefined ? {} : { to: args.to }),
+              ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
+            },
+            store.agentView,
+          );
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return { entries: result.data, meta: result.meta };
         }),
     }),
 
@@ -515,17 +524,26 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         chatRead(input, async (store) => {
           const scopeId = await resolveScopeId(store, args.scopeId);
           if (!scopeId) return EMPTY_WORKSPACE;
-          return buildDataQuality(store.agentView, {
-            scopeId,
-            limit: clampLimit(
-              args.limit,
-              DEFAULT_DATA_QUALITY_LIMIT,
-              MAX_DATA_QUALITY_LIMIT,
-            ),
-            ...(args.category === undefined ? {} : { category: args.category as never }),
-            ...(args.severity === undefined ? {} : { severity: args.severity }),
-            ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
+          const limit = clampPositiveLimit(args.limit, {
+            defaultLimit: DEFAULT_DATA_QUALITY_LIMIT,
+            maxLimit: MAX_DATA_QUALITY_LIMIT,
+            onInvalid: "reject",
           });
+          const result = await catalogRead(
+            catalog.get_data_quality,
+            {
+              scopeId,
+              limit,
+              ...(args.category === undefined
+                ? {}
+                : { category: args.category as never }),
+              ...(args.severity === undefined ? {} : { severity: args.severity }),
+              ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
+            },
+            store.agentView,
+          );
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return { signals: result.data, meta: result.meta };
         }),
     }),
 
@@ -546,11 +564,22 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         chatRead(input, async (store) => {
           const scopeId = await resolveScopeId(store, args.scopeId);
           if (!scopeId) return EMPTY_WORKSPACE;
-          return buildTrashSummary(store.agentView, {
-            scopeId,
-            limit: clampLimit(args.limit, DEFAULT_TRASH_LIMIT, MAX_TRASH_LIMIT),
-            ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
+          const limit = clampPositiveLimit(args.limit, {
+            defaultLimit: DEFAULT_TRASH_LIMIT,
+            maxLimit: MAX_TRASH_LIMIT,
+            onInvalid: "reject",
           });
+          const result = await catalogRead(
+            catalog.get_trash_summary,
+            {
+              scopeId,
+              limit,
+              ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
+            },
+            store.agentView,
+          );
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return { holdings: result.data, meta: result.meta };
         }),
     }),
 
@@ -561,7 +590,15 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "y avisos de calidad. Los hechos ausentes se marcan, nunca se inventan.",
       inputSchema: HOLDING_ID_SCHEMA,
       execute: (args) =>
-        chatRead(input, (store) => buildHoldingDetail(store.agentView, args.holdingId)),
+        chatRead(input, async (store) => {
+          const result = await catalogRead(
+            catalog.get_holding_detail,
+            { holdingId: args.holdingId },
+            store.agentView,
+          );
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return result.data;
+        }),
     }),
 
     get_operations: tool({
@@ -589,16 +626,27 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         additionalProperties: false,
       }),
       execute: (args) =>
-        chatRead(input, (store) =>
-          buildHoldingOperations(store.agentView, {
-            holdingId: args.holdingId,
-            sort: args.sort ?? "-date",
-            limit: clampLimit(args.limit, DEFAULT_OPERATION_LIMIT, MAX_OPERATION_LIMIT),
-            ...(args.from === undefined ? {} : { from: args.from }),
-            ...(args.to === undefined ? {} : { to: args.to }),
-            ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
-          }),
-        ),
+        chatRead(input, async (store) => {
+          const limit = clampPositiveLimit(args.limit, {
+            defaultLimit: DEFAULT_OPERATION_LIMIT,
+            maxLimit: MAX_OPERATION_LIMIT,
+            onInvalid: "reject",
+          });
+          const result = await catalogRead(
+            catalog.get_operations,
+            {
+              holdingId: args.holdingId,
+              sort: args.sort ?? "-date",
+              limit,
+              ...(args.from === undefined ? {} : { from: args.from }),
+              ...(args.to === undefined ? {} : { to: args.to }),
+              ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
+            },
+            store.agentView,
+          );
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return { operations: result.data, meta: result.meta };
+        }),
     }),
 
     get_price_freshness: tool({
@@ -608,7 +656,15 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "`freshness: null` si no hay cotización en caché, nunca un valor inventado.",
       inputSchema: HOLDING_ID_SCHEMA,
       execute: (args) =>
-        chatRead(input, (store) => buildPriceFreshness(store.agentView, args.holdingId)),
+        chatRead(input, async (store) => {
+          const result = await catalogRead(
+            catalog.get_price_freshness,
+            { holdingId: args.holdingId },
+            store.agentView,
+          );
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return result.data;
+        }),
     }),
 
     list_connected_sources: tool({
@@ -617,7 +673,15 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "sincronización y las posiciones `wl_hld_…` que materializa. Sin credenciales.",
       inputSchema: EMPTY_SCHEMA,
       execute: () =>
-        chatRead(input, (store) => buildConnectedSourcesList(store.agentView)),
+        chatRead(input, async (store) => {
+          const result = await catalogRead(
+            catalog.list_connected_sources,
+            {},
+            store.agentView,
+          );
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return result.data;
+        }),
     }),
 
     get_source_freshness: tool({
@@ -631,7 +695,15 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         additionalProperties: false,
       }),
       execute: (args) =>
-        chatRead(input, (store) => buildSourceFreshness(store.agentView, args.sourceId)),
+        chatRead(input, async (store) => {
+          const result = await catalogRead(
+            catalog.get_source_freshness,
+            { sourceId: args.sourceId },
+            store.agentView,
+          );
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return result.data;
+        }),
     }),
 
     get_connected_source_positions: tool({
@@ -654,35 +726,27 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         additionalProperties: false,
       }),
       execute: (args) =>
-        chatRead(input, (store) => {
-          const hasHolding = args.holdingId !== undefined;
-          const hasSource = args.sourceId !== undefined;
-          if (hasHolding === hasSource) {
-            // XOR selector (PRD #328, #339): both or neither is a documented 422.
-            throw new AgentViewHttpError({
-              code: "unprocessable_entity",
-              message:
-                "Supply exactly one of holdingId or sourceId for connected-source positions.",
-              status: 422,
-            });
-          }
-          const limit = clampLimit(
-            args.limit,
-            DEFAULT_POSITION_LIMIT,
-            MAX_POSITION_LIMIT,
-          );
-          if (hasHolding) {
-            return buildHoldingConnectedSourcePositions(store.agentView, {
-              holdingId: args.holdingId!,
+        chatRead(input, async (store) => {
+          const limit = clampPositiveLimit(args.limit, {
+            defaultLimit: DEFAULT_POSITION_LIMIT,
+            maxLimit: MAX_POSITION_LIMIT,
+            onInvalid: "reject",
+          });
+          const result = await catalogRead(
+            catalog.get_connected_source_positions,
+            {
+              ...(args.holdingId === undefined ? {} : { holdingId: args.holdingId }),
+              ...(args.sourceId === undefined ? {} : { sourceId: args.sourceId }),
               limit,
               ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
-            });
+            },
+            store.agentView,
+          );
+          if (isAgentViewErrorEnvelope(result)) return result;
+          if (args.holdingId !== undefined) {
+            return { positions: result.data, meta: result.meta };
           }
-          return buildSourceConnectedSourcePositions(store.agentView, {
-            sourceId: args.sourceId!,
-            limit,
-            ...(args.cursor === undefined ? {} : { cursor: args.cursor }),
-          });
+          return { groups: result.data, meta: result.meta };
         }),
     }),
 
@@ -691,7 +755,12 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "Ajustes del workspace: modo (individual u hogar) y moneda base, para que las " +
         "respuestas se ajusten al workspace en vez de asumir hogar/EUR.",
       inputSchema: EMPTY_SCHEMA,
-      execute: () => chatRead(input, (store) => buildWorkspaceInfo(store.agentView)),
+      execute: () =>
+        chatRead(input, async (store) => {
+          const result = await catalogRead(catalog.get_workspace, {}, store.agentView);
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return result.data;
+        }),
     }),
 
     get_warning_overrides: tool({
@@ -699,7 +768,16 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "Avisos silenciados: el código del aviso y la posición `wl_hld_…` cuyo aviso se " +
         "reconoció, para explicar qué se silenció y dónde.",
       inputSchema: EMPTY_SCHEMA,
-      execute: () => chatRead(input, (store) => buildWarningOverrides(store.agentView)),
+      execute: () =>
+        chatRead(input, async (store) => {
+          const result = await catalogRead(
+            catalog.get_warning_overrides,
+            {},
+            store.agentView,
+          );
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return result.data;
+        }),
     }),
 
     get_member_profile: tool({
@@ -707,7 +785,16 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "Perfil de cada miembro activo: id `wl_mbr_…`, nombre, año de nacimiento (edad de " +
         "referencia FIRE), país fiscal y tolerancia al riesgo. Para personalizar el consejo.",
       inputSchema: EMPTY_SCHEMA,
-      execute: () => chatRead(input, (store) => buildMemberProfiles(store.agentView)),
+      execute: () =>
+        chatRead(input, async (store) => {
+          const result = await catalogRead(
+            catalog.get_member_profile,
+            {},
+            store.agentView,
+          );
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return result.data;
+        }),
     }),
 
     suggest_actions: tool({
