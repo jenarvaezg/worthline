@@ -26,4 +26,16 @@ describe("warning overrides persistence", () => {
     expect(await reopened.readWarningOverrides()).toEqual([]);
     reopened.close();
   });
+
+  test("acknowledges overrideable signal kinds with the same persisted shape", async () => {
+    const path = tempDatabasePath("worthline-overrides-signal-");
+    const store = await createWorthlineStore({ databasePath: path });
+
+    await store.acknowledgeWarning("STALE_MANUAL_VALUE", "asset_cash");
+
+    expect(await store.readWarningOverrides()).toEqual([
+      { code: "STALE_MANUAL_VALUE", entityId: "asset_cash" },
+    ]);
+    store.close();
+  });
 });

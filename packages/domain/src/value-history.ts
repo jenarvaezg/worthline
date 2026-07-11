@@ -27,3 +27,22 @@ export function lastKnownValueAtDate(
   }
   return resolved;
 }
+
+/** The latest declared-value date in history, or `createdAtIso` as fallback. */
+export function lastManualValueUpdateDateKey(
+  history: readonly ManualValuePoint[] | undefined,
+  createdAtIso: string | undefined,
+): string | undefined {
+  if (history !== undefined && history.length > 0) {
+    return history.reduce(
+      (latest, point) => (point.dateKey > latest ? point.dateKey : latest),
+      history[0]!.dateKey,
+    );
+  }
+
+  if (createdAtIso === undefined || createdAtIso.length < 10) {
+    return undefined;
+  }
+
+  return createdAtIso.slice(0, 10);
+}

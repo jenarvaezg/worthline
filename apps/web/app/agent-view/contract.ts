@@ -454,6 +454,8 @@ export interface AgentViewFireSummary {
 /**
  * The data-quality taxonomy a signal falls under (PRD #328, #341):
  *  - `warning`: a domain warning (`collectWarnings`), blocking or overrideable.
+ *  - `manual_value_freshness`: a stored holding whose manual value is older than
+ *    the fixed threshold (90 days in v1).
  *  - `price_freshness`: a priced asset's stale/failed/missing price quote.
  *  - `source_freshness`: a connected source's stale/failed last sync.
  *  - `missing_configuration`: a scope/holding missing the config it needs (FIRE
@@ -463,6 +465,7 @@ export interface AgentViewFireSummary {
  */
 export type AgentViewDataQualityCategory =
   | "warning"
+  | "manual_value_freshness"
   | "price_freshness"
   | "source_freshness"
   | "missing_configuration"

@@ -15,7 +15,8 @@ import { asc, eq } from "drizzle-orm";
 
 import { mapPositionRow } from "./connected-source-store";
 import { readDebtBalanceInputs, readHousingCurveInputs } from "./curve-valued-holdings";
-import { assetOwnerships, assets, auditLog, connectedSources, positions } from "./schema";
+import { readManualValueHistory } from "./manual-value-history";
+import { assetOwnerships, assets, connectedSources, positions } from "./schema";
 import { readSnapshotHoldings, type SnapshotHoldingRecord } from "./snapshot-store";
 import {
   readAllOperations,
@@ -157,49 +158,6 @@ async function readCoinPositionsByAsset(
     byAsset.set(assetId, list);
   }
   return byAsset;
-}
-
-/**
- * Reconstruct the audit history of manual values/balances, keyed by holding id.
- *
- * The "last known value" basis for cash/housing/debts in a historical snapshot
- * (PRD #107): each `update_valuation` / `update_balance` audit entry is a dated
- * value point. The entry's `created_at` date is when the value became known.
- */
-async function readManualValueHistory(
-  db: StoreDb,
-): Promise<Map<string, ManualValuePoint[]>> {
-  const rows = await db.select().from(auditLog).orderBy(asc(auditLog.createdAt)).all();
-
-  const history = new Map<string, ManualValuePoint[]>();
-
-  for (const row of rows) {
-    if (row.action !== "update_valuation" && row.action !== "update_balance") {
-      continue;
-    }
-
-    let details: Record<string, unknown>;
-    try {
-      details = JSON.parse(row.detailsJson) as Record<string, unknown>;
-    } catch {
-      continue; // a single malformed audit row must not abort the whole ripple
-    }
-    const value =
-      row.action === "update_valuation"
-        ? details["currentValueMinor"]
-        : details["balanceMinor"];
-
-    if (typeof value !== "number") continue;
-
-    const dateKey = (row.createdAt ?? "").slice(0, 10);
-    if (!dateKey) continue;
-
-    const points = history.get(row.entityId) ?? [];
-    points.push({ dateKey, valueMinor: value });
-    history.set(row.entityId, points);
-  }
-
-  return history;
 }
 
 /**

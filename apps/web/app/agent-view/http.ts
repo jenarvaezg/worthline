@@ -217,6 +217,7 @@ const DATA_QUALITY_QUERY_PARAMS = ["category", "severity", "limit", "cursor"];
 
 const DATA_QUALITY_CATEGORIES: readonly AgentViewDataQualityCategory[] = [
   "warning",
+  "manual_value_freshness",
   "price_freshness",
   "source_freshness",
   "missing_configuration",
