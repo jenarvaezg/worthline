@@ -1,7 +1,8 @@
 import { perfEnd, perfStart } from "@web/perf-log";
 import { requireStoreTarget } from "@web/read-store-target";
-import { bootstrapHealthcheck, openStore } from "@web/store";
-import { collectWarnings, listScopeOptions } from "@worthline/domain";
+import { getRequestStore } from "@web/request-store";
+import { bootstrapHealthcheck } from "@web/store";
+import { listScopeOptions } from "@worthline/domain";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
@@ -38,37 +39,22 @@ export default async function DashboardPage({
   // Load only the lightweight data needed to render the shell immediately.
   // The heavy dashboard body streams in via Suspense below.
   const perfStartedAt = perfStart();
-  const store = await openStore(target);
-  let shellData;
-  try {
-    const workspace = await store.workspace.readWorkspace();
-    if (!workspace) {
-      redirect("/empezar");
-    }
-    const scopes = listScopeOptions(workspace);
-    const selectedScope = scopes.find((s) => s.id === scopeId) ?? scopes[0];
-    const [assets, overrides] = await Promise.all([
-      store.assets.readAssets(),
-      store.readWarningOverrides(),
-    ]);
-    const warnings = collectWarnings(assets, overrides);
-    shellData = {
-      persistence: {
-        displayPath: persistence.displayPath,
-        checkedAt: persistence.checkedAt,
-      },
-      scopes,
-      selectedScopeId: selectedScope?.id,
-      warnings: warnings.map((w) => ({
-        code: w.code,
-        entityId: w.entityId,
-        message: w.message,
-      })),
-    };
-  } finally {
-    store.close();
-    perfEnd("home-shell", perfStartedAt);
+  const store = await getRequestStore();
+  const workspace = await store.workspace.readWorkspace();
+  if (!workspace) {
+    redirect("/empezar");
   }
+  const scopes = listScopeOptions(workspace);
+  const selectedScope = scopes.find((s) => s.id === scopeId) ?? scopes[0];
+  const shellData = {
+    persistence: {
+      displayPath: persistence.displayPath,
+      checkedAt: persistence.checkedAt,
+    },
+    scopes,
+    selectedScopeId: selectedScope?.id,
+  };
+  perfEnd("home-shell", perfStartedAt);
 
   return (
     <Shell
@@ -77,7 +63,7 @@ export default async function DashboardPage({
       persistence={shellData.persistence}
       scopes={shellData.scopes}
       selectedScopeId={shellData.selectedScopeId}
-      warnings={shellData.warnings}
+      warnings={[]}
     >
       <Suspense fallback={<DashboardSkeleton />}>
         <DashboardContent

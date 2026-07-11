@@ -1,7 +1,8 @@
 import { formatRatioPct, returnsTooltipLines } from "@web/_components/returns-format";
 import { readDemoContext } from "@web/demo/read-demo-context";
 import { perfEnd, perfStart } from "@web/perf-log";
-import { bootstrapHealthcheck, openStore } from "@web/store";
+import { getRequestStore } from "@web/request-store";
+import { bootstrapHealthcheck } from "@web/store";
 import { createControlPlaneStore } from "@worthline/db";
 import type {
   DrilldownKey,
@@ -55,6 +56,7 @@ import {
 import PrivacyToggle from "./privacy-toggle";
 import { refreshAndPersistStalePrices } from "./refresh-prices";
 import { MOVERS_PERIOD_VIEW_PARAM, writeViewParam } from "./view-state";
+import WarningsBand from "./warnings-band";
 
 const framingTabs = [
   { id: "total" as NetWorthFraming, label: "Patrimonio neto" },
@@ -326,42 +328,37 @@ export default async function DashboardContent({
   const today = now.slice(0, 10);
 
   const perfStartedAt = perfStart();
-  const store = await openStore();
-  let state;
-  try {
-    state = await loadDashboard({
-      store,
-      persistence,
-      scopeId,
-      selectedView,
-      drill: selectedDrill,
-      today,
-      now,
-      ...(selectedRange === undefined ? {} : { range: selectedRange }),
-      readBenchmarkPrices: readBenchmarkPricesFromControlPlane,
-      refreshPrices: demo.enabled
-        ? async (): Promise<RefreshPricesResult> => ({ priceCache: [], errors: [] })
-        : async ({ cacheEntries, assets, nowIso }): Promise<RefreshPricesResult> => {
-            return refreshAndPersistStalePrices({
-              cacheEntries,
-              assets,
-              nowIso,
-              refreshStalePrices,
-              upsertPrices: (prices) => store.operations.upsertPrices(prices),
-              readCache: () => store.operations.readAllPriceCacheEntries(),
-            });
-          },
-      ...(demo.enabled
-        ? {}
-        : {
-            refreshCoinValuations: () => runNumistaCoinRefresh(store, now),
-            refreshBinanceSources: () => runBinanceRefresh(store, now),
-          }),
-    });
-  } finally {
-    store.close();
-    perfEnd("dashboard", perfStartedAt);
-  }
+  const store = await getRequestStore();
+  const state = await loadDashboard({
+    store,
+    persistence,
+    scopeId,
+    selectedView,
+    drill: selectedDrill,
+    today,
+    now,
+    ...(selectedRange === undefined ? {} : { range: selectedRange }),
+    readBenchmarkPrices: readBenchmarkPricesFromControlPlane,
+    refreshPrices: demo.enabled
+      ? async (): Promise<RefreshPricesResult> => ({ priceCache: [], errors: [] })
+      : async ({ cacheEntries, assets, nowIso }): Promise<RefreshPricesResult> => {
+          return refreshAndPersistStalePrices({
+            cacheEntries,
+            assets,
+            nowIso,
+            refreshStalePrices,
+            upsertPrices: (prices) => store.operations.upsertPrices(prices),
+            readCache: () => store.operations.readAllPriceCacheEntries(),
+          });
+        },
+    ...(demo.enabled
+      ? {}
+      : {
+          refreshCoinValuations: () => runNumistaCoinRefresh(store, now),
+          refreshBinanceSources: () => runBinanceRefresh(store, now),
+        }),
+  });
+  perfEnd("dashboard", perfStartedAt);
 
   if (state.needsOnboarding) {
     redirect("/empezar");
@@ -473,196 +470,205 @@ export default async function DashboardContent({
   });
 
   return (
-    <div className="dashGrid">
-      <section className="summaryBand heroPanel" aria-label="Resumen patrimonial">
-        <FramingPanel
-          initialView={selectedView}
-          liquid={
-            <HeroFraming
-              hasHoldings={hasHoldings}
-              headlineDeltas={deltasByView.liquid}
-              monthly={heroBreakdown?.monthly ?? null}
-              moversByPeriod={moversByView.liquid}
-              moversPeriod={moversPeriod}
-              moversPeriodTabs={moversPeriodTabs}
-              presentation={presentationByView.liquid}
-              privacyMode={privacyMode}
-              returnTo={returnTo}
-              showDeltas={Boolean(state.deltas)}
-              weekly={heroBreakdown?.weekly ?? null}
-            />
-          }
-          tabs={framingTabsWithHref}
-          total={
-            <HeroFraming
-              hasHoldings={hasHoldings}
-              headlineDeltas={deltasByView.total}
-              monthly={heroBreakdown?.monthly ?? null}
-              moversByPeriod={moversByView.total}
-              moversPeriod={moversPeriod}
-              moversPeriodTabs={moversPeriodTabs}
-              presentation={presentationByView.total}
-              privacyMode={privacyMode}
-              returnTo={returnTo}
-              showDeltas={Boolean(state.deltas)}
-              weekly={heroBreakdown?.weekly ?? null}
-            />
-          }
-        />
-        {/* Portfolio returns line (#551, ADR 0040): one small line INSIDE the hero
+    <>
+      <WarningsBand
+        warnings={state.warnings.map((w) => ({
+          code: w.code,
+          entityId: w.entityId,
+          message: w.message,
+        }))}
+      />
+      <div className="dashGrid">
+        <section className="summaryBand heroPanel" aria-label="Resumen patrimonial">
+          <FramingPanel
+            initialView={selectedView}
+            liquid={
+              <HeroFraming
+                hasHoldings={hasHoldings}
+                headlineDeltas={deltasByView.liquid}
+                monthly={heroBreakdown?.monthly ?? null}
+                moversByPeriod={moversByView.liquid}
+                moversPeriod={moversPeriod}
+                moversPeriodTabs={moversPeriodTabs}
+                presentation={presentationByView.liquid}
+                privacyMode={privacyMode}
+                returnTo={returnTo}
+                showDeltas={Boolean(state.deltas)}
+                weekly={heroBreakdown?.weekly ?? null}
+              />
+            }
+            tabs={framingTabsWithHref}
+            total={
+              <HeroFraming
+                hasHoldings={hasHoldings}
+                headlineDeltas={deltasByView.total}
+                monthly={heroBreakdown?.monthly ?? null}
+                moversByPeriod={moversByView.total}
+                moversPeriod={moversPeriod}
+                moversPeriodTabs={moversPeriodTabs}
+                presentation={presentationByView.total}
+                privacyMode={privacyMode}
+                returnTo={returnTo}
+                showDeltas={Boolean(state.deltas)}
+                weekly={heroBreakdown?.weekly ?? null}
+              />
+            }
+          />
+          {/* Portfolio returns line (#551, ADR 0040): one small line INSIDE the hero
             cell — never a new dashGrid child (that broke the layout in #562). The
             hover explains the three measures + honest caveats. */}
-        {hasHoldings &&
-        state.portfolioReturns &&
-        state.portfolioReturns.totalReturnRatio !== null ? (
-          <p
-            className="heroReturns returnsHint"
-            tabIndex={0}
-            aria-label={`Rentabilidad: ${returnsTooltipLines(state.portfolioReturns).join(". ")}`}
-          >
-            Rentabilidad{" "}
-            <strong
-              className={state.portfolioReturns.totalReturnRatio >= 0 ? "pos" : "neg"}
+          {hasHoldings &&
+          state.portfolioReturns &&
+          state.portfolioReturns.totalReturnRatio !== null ? (
+            <p
+              className="heroReturns returnsHint"
+              tabIndex={0}
+              aria-label={`Rentabilidad: ${returnsTooltipLines(state.portfolioReturns).join(". ")}`}
             >
-              {formatRatioPct(state.portfolioReturns.totalReturnRatio)}
-            </strong>
-            {state.portfolioReturns.irr?.rate != null
-              ? ` · IRR ${formatRatioPct(state.portfolioReturns.irr.rate)} anual`
-              : null}
-            <span className="returnsHintBody" role="tooltip">
-              {returnsTooltipLines(state.portfolioReturns).map((line) => (
-                <span key={line}>{line}</span>
-              ))}
-            </span>
-          </p>
-        ) : null}
-      </section>
-
-      {!hasHoldings ? (
-        <section className="emptyDashCta" aria-label="Empieza tu patrimonio">
-          <p>Aún no has añadido nada. Empieza por lo primero.</p>
-          <Link className="primaryAction" href="/patrimonio/anadir">
-            Añade algo →
-          </Link>
+              Rentabilidad{" "}
+              <strong
+                className={state.portfolioReturns.totalReturnRatio >= 0 ? "pos" : "neg"}
+              >
+                {formatRatioPct(state.portfolioReturns.totalReturnRatio)}
+              </strong>
+              {state.portfolioReturns.irr?.rate != null
+                ? ` · IRR ${formatRatioPct(state.portfolioReturns.irr.rate)} anual`
+                : null}
+              <span className="returnsHintBody" role="tooltip">
+                {returnsTooltipLines(state.portfolioReturns).map((line) => (
+                  <span key={line}>{line}</span>
+                ))}
+              </span>
+            </p>
+          ) : null}
         </section>
-      ) : null}
 
-      <section className="liquidityPanel" aria-label="Liquidez por capa">
-        <div className="panelHeader">
-          <h2>Liquidez</h2>
-          <span>Por capa · % del bruto</span>
-        </div>
-        <DonutDrill
-          geometry={TIER_DONUT_GEOMETRY}
-          initialHousingMode={selectedHousingMode}
-          initialRange={selectedRangeForView}
-          initialView={selectedView}
-          segments={donutSegmentsForIsland}
-        />
-        <div className="pyramid">
-          {pyramid.map((tier, idx) => {
-            const pct = tierPercents[idx] ?? 0;
-            return (
-              <details className={`tier ${tier.tier}`} key={tier.tier}>
-                <summary>
-                  <span className="tierName">{LIQUIDITY_TIER_LABELS[tier.tier]}</span>
-                  <b className={moneySign(tier.netValue) === "neg" ? "neg" : undefined}>
-                    {formatMoneyMinorPrivacy(tier.netValue, privacyMode)}
-                  </b>
-                  <span className="tierShare">{pct}%</span>
-                  <span className="tierBar" aria-hidden="true">
-                    <i style={{ width: `${pct}%` }} />
-                  </span>
-                </summary>
-                <div className="tierDetails">
-                  <span>
-                    Bruto {formatMoneyMinorPrivacy(tier.grossAssets, privacyMode)}
-                  </span>
-                  <span>Deuda {formatMoneyMinorPrivacy(tier.debts, privacyMode)}</span>
-                  {tier.assets.map((asset) => (
-                    <small key={asset.id}>+ {asset.name}</small>
-                  ))}
-                  {tier.liabilities.map((liability) => (
-                    <small key={liability.id}>- {liability.name}</small>
-                  ))}
-                </div>
-              </details>
-            );
-          })}
-        </div>
-      </section>
+        {!hasHoldings ? (
+          <section className="emptyDashCta" aria-label="Empieza tu patrimonio">
+            <p>Aún no has añadido nada. Empieza por lo primero.</p>
+            <Link className="primaryAction" href="/patrimonio/anadir">
+              Añade algo →
+            </Link>
+          </section>
+        ) : null}
 
-      <section
-        className="historyPanel"
-        id="composicion"
-        aria-label="Evolución del patrimonio"
-      >
-        {/* The whole composition surface (range pills + chart ⇄ drilldown) is one
+        <section className="liquidityPanel" aria-label="Liquidez por capa">
+          <div className="panelHeader">
+            <h2>Liquidez</h2>
+            <span>Por capa · % del bruto</span>
+          </div>
+          <DonutDrill
+            geometry={TIER_DONUT_GEOMETRY}
+            initialHousingMode={selectedHousingMode}
+            initialRange={selectedRangeForView}
+            initialView={selectedView}
+            segments={donutSegmentsForIsland}
+          />
+          <div className="pyramid">
+            {pyramid.map((tier, idx) => {
+              const pct = tierPercents[idx] ?? 0;
+              return (
+                <details className={`tier ${tier.tier}`} key={tier.tier}>
+                  <summary>
+                    <span className="tierName">{LIQUIDITY_TIER_LABELS[tier.tier]}</span>
+                    <b className={moneySign(tier.netValue) === "neg" ? "neg" : undefined}>
+                      {formatMoneyMinorPrivacy(tier.netValue, privacyMode)}
+                    </b>
+                    <span className="tierShare">{pct}%</span>
+                    <span className="tierBar" aria-hidden="true">
+                      <i style={{ width: `${pct}%` }} />
+                    </span>
+                  </summary>
+                  <div className="tierDetails">
+                    <span>
+                      Bruto {formatMoneyMinorPrivacy(tier.grossAssets, privacyMode)}
+                    </span>
+                    <span>Deuda {formatMoneyMinorPrivacy(tier.debts, privacyMode)}</span>
+                    {tier.assets.map((asset) => (
+                      <small key={asset.id}>+ {asset.name}</small>
+                    ))}
+                    {tier.liabilities.map((liability) => (
+                      <small key={liability.id}>- {liability.name}</small>
+                    ))}
+                  </div>
+                </details>
+              );
+            })}
+          </div>
+        </section>
+
+        <section
+          className="historyPanel"
+          id="composicion"
+          aria-label="Evolución del patrimonio"
+        >
+          {/* The whole composition surface (range pills + chart ⇄ drilldown) is one
             client island over the matrix (S4 #520): opening/closing a drill and
             changing the range are instant, no round-trip (interaction-patterns
             §2). The server shipped the initial cross; the island prefetches the
             next from /api/dashboard/cells. */}
-        <CompositionPanel
-          currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
-          historicoLink={
-            <Link className="panelAction" href="/historico" scroll={false}>
-              Ver histórico →
-            </Link>
-          }
-          initialCells={state.matrixCells}
-          initialHousingMode={selectedHousingMode}
-          initialMode={parseMode(selectedDrill)}
-          initialRange={selectedRangeForView}
-          initialView={selectedView}
-          offeredRanges={state.compositionRanges}
-          privacyMode={privacyMode}
-        />
-        <BenchmarkComparisonCard result={state.benchmarkComparison} />
-      </section>
-
-      <section className="firePanel" aria-label="FIRE">
-        <div className="panelHeader">
-          <h2>FIRE</h2>
-          <span>Independencia financiera</span>
-        </div>
-        {fireGlance ? (
-          <FireGlanceCard
-            currency={currency}
-            glance={fireGlance}
+          <CompositionPanel
+            currency={snapshots[0]?.totalNetWorth.currency ?? "EUR"}
+            historicoLink={
+              <Link className="panelAction" href="/historico" scroll={false}>
+                Ver histórico →
+              </Link>
+            }
+            initialCells={state.matrixCells}
+            initialHousingMode={selectedHousingMode}
+            initialMode={parseMode(selectedDrill)}
+            initialRange={selectedRangeForView}
+            initialView={selectedView}
+            offeredRanges={state.compositionRanges}
             privacyMode={privacyMode}
           />
-        ) : (
-          <div className="fireEmpty">
-            <p className="fireEmptyHint">
-              Configura tu número FIRE para ver tu progreso hacia la independencia
-              financiera.
-            </p>
-            <Link className="panelAction" href="/ajustes">
-              Configurar → Ajustes
-            </Link>
-          </div>
-        )}
-      </section>
-
-      {anyStepPending ? (
-        <section className="onboardingChecklist" aria-label="Primeros pasos">
-          <div className="panelHeader">
-            <h2>Primeros pasos</h2>
-            <span>Empieza aquí</span>
-          </div>
-          <ol>
-            {onboarding.map((step) => (
-              <li className={step.done ? "done" : undefined} key={step.id}>
-                {step.done ? (
-                  <span>✓ {step.label}</span>
-                ) : (
-                  <Link href={ONBOARDING_LINKS[step.id] ?? "/"}>○ {step.label}</Link>
-                )}
-              </li>
-            ))}
-          </ol>
+          <BenchmarkComparisonCard result={state.benchmarkComparison} />
         </section>
-      ) : null}
-    </div>
+
+        <section className="firePanel" aria-label="FIRE">
+          <div className="panelHeader">
+            <h2>FIRE</h2>
+            <span>Independencia financiera</span>
+          </div>
+          {fireGlance ? (
+            <FireGlanceCard
+              currency={currency}
+              glance={fireGlance}
+              privacyMode={privacyMode}
+            />
+          ) : (
+            <div className="fireEmpty">
+              <p className="fireEmptyHint">
+                Configura tu número FIRE para ver tu progreso hacia la independencia
+                financiera.
+              </p>
+              <Link className="panelAction" href="/ajustes">
+                Configurar → Ajustes
+              </Link>
+            </div>
+          )}
+        </section>
+
+        {anyStepPending ? (
+          <section className="onboardingChecklist" aria-label="Primeros pasos">
+            <div className="panelHeader">
+              <h2>Primeros pasos</h2>
+              <span>Empieza aquí</span>
+            </div>
+            <ol>
+              {onboarding.map((step) => (
+                <li className={step.done ? "done" : undefined} key={step.id}>
+                  {step.done ? (
+                    <span>✓ {step.label}</span>
+                  ) : (
+                    <Link href={ONBOARDING_LINKS[step.id] ?? "/"}>○ {step.label}</Link>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </section>
+        ) : null}
+      </div>
+    </>
   );
 }

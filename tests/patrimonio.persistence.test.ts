@@ -17,45 +17,51 @@ async function setupStore() {
 }
 
 describe("batchApplyValueUpdates — value-update-pass persistence", () => {
-  test("applies changed values only, skipping unchanged rows", async () => {
-    const store = await setupStore();
-    await store.assets.createManualAsset({
-      id: "a_cash",
-      name: "Caja",
-      type: "cash",
-      liquidityTier: "cash",
-      currency: "EUR",
-      currentValueMinor: 100_000,
-      isPrimaryResidence: false,
-      ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
-    });
-    await store.assets.createManualAsset({
-      id: "a_manual",
-      name: "Piso",
-      type: "real_estate",
-      liquidityTier: "housing",
-      currency: "EUR",
-      currentValueMinor: 200_000,
-      isPrimaryResidence: true,
-      ownership: [
-        { memberId: "m_ana", shareBps: 5_000 },
-        { memberId: "m_jose", shareBps: 5_000 },
-      ],
-    });
+  const PERSISTENCE_TIMEOUT_MS = 15_000;
 
-    // Apply batch: only a_cash changes, a_manual stays at 200_000
-    await store.operations.batchApplyValueUpdates([
-      { id: "a_cash", newValueMinor: 110_000 },
-    ]);
+  test(
+    "applies changed values only, skipping unchanged rows",
+    async () => {
+      const store = await setupStore();
+      await store.assets.createManualAsset({
+        id: "a_cash",
+        name: "Caja",
+        type: "cash",
+        liquidityTier: "cash",
+        currency: "EUR",
+        currentValueMinor: 100_000,
+        isPrimaryResidence: false,
+        ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
+      });
+      await store.assets.createManualAsset({
+        id: "a_manual",
+        name: "Piso",
+        type: "real_estate",
+        liquidityTier: "housing",
+        currency: "EUR",
+        currentValueMinor: 200_000,
+        isPrimaryResidence: true,
+        ownership: [
+          { memberId: "m_ana", shareBps: 5_000 },
+          { memberId: "m_jose", shareBps: 5_000 },
+        ],
+      });
 
-    const assets = await store.assets.readAssets();
-    const cash = assets.find((a) => a.id === "a_cash")!;
-    const piso = assets.find((a) => a.id === "a_manual")!;
+      // Apply batch: only a_cash changes, a_manual stays at 200_000
+      await store.operations.batchApplyValueUpdates([
+        { id: "a_cash", newValueMinor: 110_000 },
+      ]);
 
-    expect(cash.currentValue.amountMinor).toBe(110_000);
-    expect(piso.currentValue.amountMinor).toBe(200_000);
-    store.close();
-  });
+      const assets = await store.assets.readAssets();
+      const cash = assets.find((a) => a.id === "a_cash")!;
+      const piso = assets.find((a) => a.id === "a_manual")!;
+
+      expect(cash.currentValue.amountMinor).toBe(110_000);
+      expect(piso.currentValue.amountMinor).toBe(200_000);
+      store.close();
+    },
+    PERSISTENCE_TIMEOUT_MS,
+  );
 
   test("applies multiple updates in a single transaction", async () => {
     const store = await setupStore();

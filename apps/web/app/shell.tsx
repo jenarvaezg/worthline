@@ -3,6 +3,7 @@ import type { ScopeOption } from "@worthline/domain";
 import { PendingSubmit } from "./pending-submit";
 import SignOutButton from "./sign-out-button";
 import ViewTransitionLink from "./view-transition-link";
+import WarningsBand, { type Warning } from "./warnings-band";
 
 /**
  * App shell — the topnav, scope bar, warnings rail, and persistence footer
@@ -26,11 +27,7 @@ const NAV_SECTIONS: Array<{ id: AppSection; label: string; href: string }> = [
   { id: "ajustes", label: "Ajustes", href: "/ajustes" },
 ];
 
-export interface Warning {
-  entityId: string;
-  message: string;
-  code: string;
-}
+export type { Warning };
 
 export interface PersistenceInfo {
   displayPath: string;
@@ -117,21 +114,7 @@ export default function Shell({
       ) : null}
 
       {/* ── Warnings rail ───────────────────────────────────────────── */}
-      {warnings.length > 0 ? (
-        <div className="warningBand" role="alert" aria-label="Avisos">
-          <span className="warningCount">
-            {warnings.length} {warnings.length === 1 ? "aviso" : "avisos"}
-          </span>
-          {warnings.map((w) => (
-            <div className="warningItem" key={`${w.entityId}-${w.code}`}>
-              <span>⚠ {w.message}</span>
-              <a href={`/patrimonio/${w.entityId}/editar`} className="warningLink">
-                Ver activo
-              </a>
-            </div>
-          ))}
-        </div>
-      ) : null}
+      <WarningsBand warnings={warnings} />
 
       {/* ── Page content ────────────────────────────────────────────── */}
       {children}
