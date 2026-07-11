@@ -13,7 +13,7 @@ import { type NextRequest, NextResponse } from "next/server";
  */
 function selectPersona(raw: string | null): NextResponse {
   const persona = parsePersonaId(raw);
-  // A RELATIVE Location ("/") so the browser resolves it against the host it is
+  // A RELATIVE Location ("/app") so the browser resolves it against the host it is
   // already on. An absolute redirect can switch host (127.0.0.1 ⇄ localhost, or a
   // proxy origin), and the freshly-set cookie — scoped to the request host —
   // would not be sent to the new host, silently dropping the persona switch.
