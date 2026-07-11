@@ -169,6 +169,25 @@ export {
 } from "./dashboard";
 export type { DashboardShell } from "./dashboard-shell";
 export { createDashboardShell } from "./dashboard-shell";
+export type {
+  CollectDataQualitySignalsInput,
+  DataQualityAffectedObject,
+  DataQualityAffectedRef,
+  DataQualityCategory,
+  DataQualityConnectedSource,
+  DataQualityPriceFreshness,
+  DataQualityScopeContext,
+  DataQualitySeverity,
+  DataQualitySignal,
+  DataQualitySourceFreshness,
+} from "./data-quality-signals";
+export {
+  collectDataQualitySignals,
+  compareDataQualitySignals,
+  DATA_QUALITY_CATEGORY_ORDER,
+  dataQualitySignalSortKey,
+  SPARSE_SNAPSHOT_THRESHOLD,
+} from "./data-quality-signals";
 export type { DateKey, Instant } from "./dates";
 export { asDateKey, asInstant, daysBetween, MS_PER_DAY } from "./dates";
 export type {

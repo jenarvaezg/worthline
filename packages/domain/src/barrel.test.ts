@@ -140,6 +140,9 @@ const KEY_EXPORTS = [
   // delta-breakdown (#653 S1/S2)
   "computeDeltaBreakdownWindow",
   "buildMonthlyCloseBreakdownSeries",
+  // data-quality-signals (#654 S1)
+  "collectDataQualitySignals",
+  "compareDataQualitySignals",
   // dates
   "daysBetween",
   // payouts
