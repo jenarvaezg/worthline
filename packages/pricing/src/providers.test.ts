@@ -480,7 +480,7 @@ describe("yahooProvider", () => {
     );
 
     expect(result.freshnessState).toBe("failed");
-    expect(result.staleReason).toBe("El proveedor no devolvió cotización");
+    expect(result.staleReason).toBe("Yahoo: sin cotización; Stooq: sin cotización");
   });
 
   it("falls back to Stooq when the Yahoo request throws", async () => {

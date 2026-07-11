@@ -39,6 +39,49 @@ export const PRICE_FAILURE_REASONS = {
     `La divisa del proveedor (${providerCurrency}) no coincide con la del activo (${assetCurrency})`,
 } as const;
 
+/** User-facing provider labels in refresh failure banners (issue #925). */
+export const PROVIDER_FAILURE_LABELS: Partial<Record<PriceSource, string>> = {
+  yahoo: "Yahoo",
+  stooq: "Stooq",
+  coingecko: "CoinGecko",
+  finect: "Finect",
+  ecb: "ECB",
+};
+
+/** Shorten a provider failure reason for multi-provider refresh banners. */
+export function shortenProviderFailureReason(reason: string): string {
+  const httpMatch = reason.match(/error \((\d+)\)/);
+  if (httpMatch) return `error (${httpMatch[1]})`;
+  if (reason === PRICE_FAILURE_REASONS.noQuote) return "sin cotización";
+  if (reason === PRICE_FAILURE_REASONS.symbolNotFound) return "símbolo no encontrado";
+  return reason;
+}
+
+export function describeProviderChainFailure(
+  source: PriceSource,
+  result: PriceProviderResult | PriceProviderFailure | null,
+): string {
+  const label = PROVIDER_FAILURE_LABELS[source] ?? source;
+  if (result === null) {
+    return `${label}: sin cotización`;
+  }
+  if (isProviderFailure(result)) {
+    return `${label}: ${shortenProviderFailureReason(result.reason)}`;
+  }
+  return `${label}: sin cotización`;
+}
+
+export function formatFallbackChainFailure(
+  attempts: ReadonlyArray<{
+    source: PriceSource;
+    result: PriceProviderResult | PriceProviderFailure | null;
+  }>,
+): string {
+  return attempts
+    .map((step) => describeProviderChainFailure(step.source, step.result))
+    .join("; ");
+}
+
 /**
  * A price provider behind the multi-provider seam (ADR 0011). A provider only
  * knows how to fetch from its own source; routing and fallback are decided by
@@ -83,11 +126,9 @@ export function isTransientFetchFailure(
   if (result === null) return true;
   if (!isProviderFailure(result)) return false;
 
-  if (result.reason === PRICE_FAILURE_REASONS.symbolNotFound) return false;
-  if (result.reason === PRICE_FAILURE_REASONS.noQuote) return false;
-  if (result.reason.startsWith("La divisa del proveedor")) return false;
+  if (isPermanentFetchFailureReason(reason)) return false;
 
-  const httpMatch = result.reason.match(/error \((\d+)\)/);
+  const httpMatch = reason.match(/error \((\d+)\)/);
   if (httpMatch) {
     const status = Number(httpMatch[1]);
     if (status === 404) return false;
@@ -95,6 +136,17 @@ export function isTransientFetchFailure(
   }
 
   return reason !== PRICE_FAILURE_REASONS.symbolNotFound;
+}
+
+function isPermanentFetchFailureReason(reason: string): boolean {
+  if (reason === PRICE_FAILURE_REASONS.symbolNotFound) return true;
+  if (reason === PRICE_FAILURE_REASONS.noQuote) return true;
+  if (reason.startsWith("La divisa del proveedor")) return true;
+  if (reason.includes("símbolo no encontrado")) return true;
+  if (reason.includes(": sin cotización")) return true;
+  // A composite chain reason names every provider that missed (issue #925).
+  if (reason.includes(";")) return true;
+  return false;
 }
 
 export async function fetchAndCachePrice(

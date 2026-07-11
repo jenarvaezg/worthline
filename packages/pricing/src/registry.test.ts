@@ -68,21 +68,27 @@ describe("runFallbackChain", () => {
     expect(result).toEqual({ price: "4.25", currency: "EUR", source: "stooq" });
   });
 
-  it("returns the LAST failure/null verbatim when every link fails", async () => {
+  it("returns a chain failure reason naming every provider when every link fails", async () => {
     const primary = fakeProvider("yahoo", null);
-    const fallback = fakeProvider("stooq", { failed: true, reason: "no quote" });
+    const fallback = fakeProvider("stooq", {
+      failed: true,
+      reason: "El proveedor respondió con un error (404)",
+    });
 
     const result = await runFallbackChain(primary, [fallback], baseCtx);
 
-    expect(result).toEqual({ failed: true, reason: "no quote" });
+    expect(result).toEqual({
+      failed: true,
+      reason: "Yahoo: sin cotización; Stooq: error (404)",
+    });
   });
 
-  it("a primary with NO declared fallback that fails stays failed", async () => {
+  it("a primary with NO declared fallback that fails names the provider", async () => {
     const primary = fakeProvider("finect", { failed: true, reason: "not found" });
 
     const result = await runFallbackChain(primary, [], baseCtx);
 
-    expect(result).toEqual({ failed: true, reason: "not found" });
+    expect(result).toEqual({ failed: true, reason: "Finect: not found" });
   });
 
   it("respects a custom chain ORDER (reordering is a data change, not a body edit)", async () => {
