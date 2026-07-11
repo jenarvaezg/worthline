@@ -391,6 +391,26 @@ CREATE TABLE \`planned_contributions\` (
 );
 --> statement-breakpoint
 CREATE INDEX \`planned_contributions_scope_idx\` ON \`planned_contributions\` (\`scope_id\`,\`id\`);--> statement-breakpoint
+CREATE TABLE \`contribution_occurrence_reconciliations\` (
+	\`occurrence_id\` text PRIMARY KEY NOT NULL,
+	\`contribution_id\` text NOT NULL,
+	\`state\` text NOT NULL,
+	\`stored_execution_minor\` integer,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`contribution_id\`) REFERENCES \`planned_contributions\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX \`contribution_reconciliations_contribution_idx\` ON \`contribution_occurrence_reconciliations\` (\`contribution_id\`,\`occurrence_id\`);--> statement-breakpoint
+CREATE TABLE \`contribution_occurrence_operations\` (
+	\`occurrence_id\` text NOT NULL,
+	\`operation_id\` text NOT NULL,
+	PRIMARY KEY(\`occurrence_id\`, \`operation_id\`),
+	FOREIGN KEY (\`occurrence_id\`) REFERENCES \`contribution_occurrence_reconciliations\`(\`occurrence_id\`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (\`operation_id\`) REFERENCES \`asset_operations\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX \`contribution_occurrence_operation_unique\` ON \`contribution_occurrence_operations\` (\`operation_id\`);--> statement-breakpoint
 CREATE TABLE \`goal_holdings\` (
 	\`goal_id\` text NOT NULL,
 	\`asset_id\` text NOT NULL,

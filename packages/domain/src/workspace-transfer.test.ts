@@ -411,6 +411,8 @@ describe("summarizeWorkspaceExport", () => {
       exposureProfiles: 1,
       payouts: 1,
       payoutSchedules: 1,
+      contributionPlans: 0,
+      contributionReconciliations: 0,
     });
   });
 
@@ -446,6 +448,8 @@ describe("summarizeWorkspaceExport", () => {
       exposureProfiles: 0,
       payouts: 0,
       payoutSchedules: 0,
+      contributionPlans: 0,
+      contributionReconciliations: 0,
     });
   });
 });

@@ -1,5 +1,6 @@
 import type {
   AssetType,
+  ContributionOccurrenceState,
   DateKey,
   DebtModel,
   EarlyRepaymentMode,
@@ -800,6 +801,46 @@ export const plannedContributions = sqliteTable(
     createdAt: timestamp("created_at"),
   },
   (table) => [index("planned_contributions_scope_idx").on(table.scopeId, table.id)],
+);
+
+/** Explicit plan→actual closure metadata; occurrences themselves remain derived. */
+export const contributionOccurrenceReconciliations = sqliteTable(
+  "contribution_occurrence_reconciliations",
+  {
+    occurrenceId: text("occurrence_id").primaryKey(),
+    contributionId: text("contribution_id")
+      .notNull()
+      .references(() => plannedContributions.id, { onDelete: "cascade" }),
+    state: text("state").$type<ContributionOccurrenceState>().notNull(),
+    storedExecutionMinor: integer("stored_execution_minor"),
+    createdAt: timestamp("created_at"),
+    updatedAt: timestamp("updated_at"),
+  },
+  (table) => [
+    index("contribution_reconciliations_contribution_idx").on(
+      table.contributionId,
+      table.occurrenceId,
+    ),
+  ],
+);
+
+/** One occurrence may have many executions; one execution may close at most one occurrence. */
+export const contributionOccurrenceOperations = sqliteTable(
+  "contribution_occurrence_operations",
+  {
+    occurrenceId: text("occurrence_id")
+      .notNull()
+      .references(() => contributionOccurrenceReconciliations.occurrenceId, {
+        onDelete: "cascade",
+      }),
+    operationId: text("operation_id")
+      .notNull()
+      .references(() => assetOperations.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.occurrenceId, table.operationId] }),
+    uniqueIndex("contribution_occurrence_operation_unique").on(table.operationId),
+  ],
 );
 
 /** Intermediate financial goals (PRD #421, #424). */

@@ -145,3 +145,194 @@ describe("contribution plan CRUD", () => {
     ).rejects.toThrow(/End date must be on or after start date/);
   });
 });
+
+describe("contribution occurrence reconciliation", () => {
+  it("links several buys to one occurrence while an operation belongs to at most one", async () => {
+    const store = await freshStore();
+    const contribution = await store.contributionPlan.createPlannedContribution({
+      scopeId: "default",
+      destinationHoldingId: "h1",
+      amount: { mode: "money", value: 100_000 },
+      cadence: { kind: "monthly", dayOfMonth: 1 },
+      startDate: "2025-01-01",
+    });
+    for (const id of ["op-1", "op-2"]) {
+      await store.recordOperationAndRipple(
+        {
+          id,
+          assetId: "h1",
+          kind: "buy",
+          executedAt: "2025-01-02",
+          units: "1",
+          pricePerUnit: "500",
+          currency: "EUR",
+          feesMinor: 100,
+        },
+        { today: "2025-01-02" },
+      );
+    }
+    const occurrenceId = `${contribution.id}:2025-01-01`;
+    await store.contributionPlan.linkOperation({
+      contributionId: contribution.id,
+      occurrenceId,
+      operationId: "op-1",
+    });
+    await store.contributionPlan.linkOperation({
+      contributionId: contribution.id,
+      occurrenceId,
+      operationId: "op-2",
+    });
+    await store.contributionPlan.setOccurrenceState({
+      contributionId: contribution.id,
+      occurrenceId,
+      state: "open",
+    });
+
+    expect(await store.contributionPlan.readReconciliations("default")).toEqual([
+      { occurrenceId, state: "open", operationIds: ["op-1", "op-2"] },
+    ]);
+
+    const otherOccurrence = `${contribution.id}:2025-02-01`;
+    await expect(
+      store.contributionPlan.linkOperation({
+        contributionId: contribution.id,
+        occurrenceId: otherOccurrence,
+        operationId: "op-1",
+      }),
+    ).rejects.toThrow(/already linked/i);
+  });
+
+  it("supports fulfilled, skipped, and stored-value execution without writing truth itself", async () => {
+    const store = await freshStore();
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 100_000,
+      id: "cash",
+      liquidityTier: "cash",
+      name: "Cash",
+      ownership: [{ memberId: "m1", shareBps: 10_000 }],
+      type: "cash",
+    });
+    const contribution = await store.contributionPlan.createPlannedContribution({
+      scopeId: "default",
+      destinationHoldingId: "cash",
+      amount: { mode: "money", value: 100_000 },
+      cadence: { kind: "monthly", dayOfMonth: 1 },
+      startDate: "2025-01-01",
+    });
+    const fulfilled = `${contribution.id}:2025-01-01`;
+    const skipped = `${contribution.id}:2025-02-01`;
+    await store.contributionPlan.setOccurrenceState({
+      contributionId: contribution.id,
+      occurrenceId: fulfilled,
+      state: "fulfilled",
+      storedExecutionMinor: 95_000,
+    });
+    await store.contributionPlan.setOccurrenceState({
+      contributionId: contribution.id,
+      occurrenceId: skipped,
+      state: "skipped",
+    });
+
+    expect(await store.contributionPlan.readReconciliations("default")).toEqual([
+      {
+        occurrenceId: fulfilled,
+        state: "fulfilled",
+        operationIds: [],
+        storedExecutionMinor: 95_000,
+      },
+      { occurrenceId: skipped, state: "skipped", operationIds: [] },
+    ]);
+  });
+
+  it("rejects a syntactically valid date that the cadence never generates", async () => {
+    const store = await freshStore();
+    const contribution = await store.contributionPlan.createPlannedContribution({
+      scopeId: "default",
+      destinationHoldingId: "h1",
+      amount: { mode: "money", value: 100_000 },
+      cadence: { kind: "monthly", dayOfMonth: 1 },
+      startDate: "2025-01-01",
+    });
+    await expect(
+      store.contributionPlan.setOccurrenceState({
+        contributionId: contribution.id,
+        occurrenceId: `${contribution.id}:2025-01-02`,
+        state: "skipped",
+      }),
+    ).rejects.toThrow(/cadence/i);
+  });
+
+  it("rejects the stored-value path for a derived destination", async () => {
+    const store = await freshStore();
+    const contribution = await store.contributionPlan.createPlannedContribution({
+      scopeId: "default",
+      destinationHoldingId: "h1",
+      amount: { mode: "money", value: 100_000 },
+      cadence: { kind: "monthly", dayOfMonth: 1 },
+      startDate: "2025-01-01",
+    });
+    await expect(
+      store.applyStoredContributionValue({
+        contributionId: contribution.id,
+        occurrenceId: `${contribution.id}:2025-01-01`,
+        assetId: "h1",
+        newValueMinor: 200_000,
+        executedMinor: 100_000,
+      }),
+    ).rejects.toThrow(/stored-value/i);
+  });
+
+  it("round-trips plan declarations, closures, and links through workspace export", async () => {
+    const store = await freshStore();
+    const contribution = await store.contributionPlan.createPlannedContribution({
+      scopeId: "default",
+      destinationHoldingId: "h1",
+      amount: { mode: "money", value: 100_000 },
+      cadence: { kind: "monthly", dayOfMonth: 1 },
+      startDate: "2025-01-01",
+    });
+    await store.recordOperationAndRipple(
+      {
+        id: "exported-op",
+        assetId: "h1",
+        kind: "buy",
+        executedAt: "2025-01-02",
+        units: "1",
+        pricePerUnit: "1000",
+        currency: "EUR",
+      },
+      { today: "2025-01-02" },
+    );
+    const occurrenceId = `${contribution.id}:2025-01-01`;
+    await store.contributionPlan.linkOperation({
+      contributionId: contribution.id,
+      occurrenceId,
+      operationId: "exported-op",
+    });
+    await store.contributionPlan.setOccurrenceState({
+      contributionId: contribution.id,
+      occurrenceId,
+      state: "fulfilled",
+    });
+
+    const exported = await store.workspace.exportWorkspace();
+    expect(exported.contributionPlans[0]?.contributions[0]?.id).toBe(contribution.id);
+    expect(exported.contributionReconciliations).toEqual([
+      {
+        contributionId: contribution.id,
+        occurrenceId,
+        state: "fulfilled",
+        operationIds: ["exported-op"],
+      },
+    ]);
+
+    await store.workspace.importWorkspace(exported);
+    expect(await store.contributionPlan.readContributionPlan("default")).toEqual(
+      exported.contributionPlans[0],
+    );
+    expect(await store.contributionPlan.readReconciliations("default")).toEqual([
+      { occurrenceId, state: "fulfilled", operationIds: ["exported-op"] },
+    ]);
+  });
+});

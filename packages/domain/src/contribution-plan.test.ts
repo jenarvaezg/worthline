@@ -6,6 +6,7 @@ import {
   derivedMonthlySavingsCapacity,
   expandContributionPlan,
   type PlannedContribution,
+  projectContributionReconciliation,
   resolveMonthlySavingsCapacityForFire,
 } from "./contribution-plan";
 import type { FireScopeConfig } from "./fire";
@@ -151,6 +152,131 @@ describe("expandContributionPlan", () => {
       amount: { mode: "money", value: 100_000 },
     });
     expect(occurrence).not.toHaveProperty("operationId");
+  });
+});
+
+describe("projectContributionReconciliation", () => {
+  it("keeps future pending and past partial occurrences visible, with money progress including fees", () => {
+    const input = plan([contribution()]);
+    const projected = projectContributionReconciliation({
+      plan: input,
+      fromDate: "2025-01-01",
+      toDate: "2025-03-31",
+      today: "2025-02-15",
+      reconciliations: [
+        {
+          occurrenceId: contributionOccurrenceId("c1", "2025-01-01"),
+          state: "open",
+          operationIds: ["op-1", "op-2"],
+        },
+        {
+          occurrenceId: contributionOccurrenceId("c1", "2025-02-01"),
+          state: "fulfilled",
+          operationIds: ["op-3"],
+        },
+      ],
+      operations: [
+        {
+          id: "op-1",
+          assetId: "h1",
+          kind: "buy",
+          executedAt: "2025-01-03",
+          units: "2",
+          pricePerUnit: "200",
+          currency: "EUR",
+          feesMinor: 100,
+        },
+        {
+          id: "op-2",
+          assetId: "h1",
+          kind: "buy",
+          executedAt: "2025-01-07",
+          units: "3",
+          pricePerUnit: "200",
+          currency: "EUR",
+          feesMinor: 200,
+        },
+        {
+          id: "op-3",
+          assetId: "h1",
+          kind: "buy",
+          executedAt: "2025-02-04",
+          units: "5",
+          pricePerUnit: "200",
+          currency: "EUR",
+          feesMinor: 0,
+        },
+      ],
+    });
+
+    expect(projected.pending.map((item) => item.occurrence.plannedDate)).toEqual([
+      "2025-01-01",
+      "2025-03-01",
+    ]);
+    expect(projected.pending[0]).toMatchObject({
+      state: "partial",
+      backlog: true,
+      summary: {
+        mode: "money",
+        plannedMinor: 100_000,
+        executedMinor: 100_300,
+        deltaMinor: 300,
+      },
+    });
+    expect(projected.pending[1]).toMatchObject({ state: "pending", backlog: false });
+  });
+
+  it("uses units as the primary delta while retaining actual cash", () => {
+    const projected = projectContributionReconciliation({
+      plan: plan([contribution({ amount: { mode: "units", value: "5" } })]),
+      fromDate: "2025-01-01",
+      toDate: "2025-01-31",
+      today: "2025-01-15",
+      reconciliations: [
+        {
+          occurrenceId: contributionOccurrenceId("c1", "2025-01-01"),
+          state: "open",
+          operationIds: ["op"],
+        },
+      ],
+      operations: [
+        {
+          id: "op",
+          assetId: "h1",
+          kind: "buy",
+          executedAt: "2025-01-02",
+          units: "4.5",
+          pricePerUnit: "100",
+          currency: "EUR",
+          feesMinor: 250,
+        },
+      ],
+    });
+
+    expect(projected.pending[0]!.summary).toEqual({
+      mode: "units",
+      plannedUnits: "5",
+      executedUnits: "4.5",
+      deltaUnits: "-0.5",
+      actualCashMinor: 45_250,
+    });
+  });
+
+  it("removes skipped occurrences from pending without inventing execution", () => {
+    const occurrenceId = contributionOccurrenceId("c1", "2025-01-01");
+    const projected = projectContributionReconciliation({
+      plan: plan([contribution()]),
+      fromDate: "2025-01-01",
+      toDate: "2025-01-31",
+      today: "2025-01-15",
+      reconciliations: [{ occurrenceId, state: "skipped", operationIds: [] }],
+      operations: [],
+    });
+    expect(projected.pending).toEqual([]);
+    expect(projected.closed[0]).toMatchObject({
+      state: "skipped",
+      summary: { executedMinor: 0 },
+    });
   });
 });
 

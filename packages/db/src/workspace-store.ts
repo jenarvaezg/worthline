@@ -52,6 +52,8 @@ import {
   assets,
   assetValuations,
   connectedSources,
+  contributionOccurrenceOperations,
+  contributionOccurrenceReconciliations,
   earlyRepayments,
   exposureProfiles,
   interestRateRevisions,
@@ -65,6 +67,7 @@ import {
   members,
   payoutSchedules,
   payouts,
+  plannedContributions,
   positions,
   snapshotHoldings,
   snapshotPositionHoldings,
@@ -126,6 +129,8 @@ export interface WorkspaceStoreDeps {
 const WORKSPACE_TABLES = [
   "snapshot_holdings",
   "snapshots",
+  "contribution_occurrence_operations",
+  "contribution_occurrence_reconciliations",
   "asset_operations",
   "asset_price_cache",
   // Connected sources project into an asset, with positions beneath the source —
@@ -145,6 +150,7 @@ const WORKSPACE_TABLES = [
   "audit_log",
   "payouts",
   "payout_schedules",
+  "planned_contributions",
   "liabilities",
   "assets",
   "member_group_members",
@@ -901,6 +907,51 @@ async function importWorkspace(
         .run();
     }
 
+    const exportedContributions = doc.contributionPlans.flatMap((plan) =>
+      plan.contributions.map((contribution) => ({
+        ...contribution,
+        scopeId: plan.scopeId,
+      })),
+    );
+    if (exportedContributions.length > 0) {
+      await db
+        .insert(plannedContributions)
+        .values(
+          exportedContributions.map((contribution) => ({
+            id: contribution.id,
+            scopeId: contribution.scopeId,
+            destinationHoldingId: contribution.destinationHoldingId,
+            amountJson: JSON.stringify(contribution.amount),
+            cadenceJson: JSON.stringify(contribution.cadence),
+            startDate: contribution.startDate,
+            endDate: contribution.endDate ?? null,
+          })),
+        )
+        .run();
+    }
+    if (doc.contributionReconciliations.length > 0) {
+      await db
+        .insert(contributionOccurrenceReconciliations)
+        .values(
+          doc.contributionReconciliations.map((reconciliation) => ({
+            occurrenceId: reconciliation.occurrenceId,
+            contributionId: reconciliation.contributionId,
+            state: reconciliation.state,
+            storedExecutionMinor: reconciliation.storedExecutionMinor ?? null,
+          })),
+        )
+        .run();
+      const links = doc.contributionReconciliations.flatMap((reconciliation) =>
+        reconciliation.operationIds.map((operationId) => ({
+          occurrenceId: reconciliation.occurrenceId,
+          operationId,
+        })),
+      );
+      if (links.length > 0) {
+        await db.insert(contributionOccurrenceOperations).values(links).run();
+      }
+    }
+
     if (doc.warningOverrides.length > 0) {
       await db
         .insert(warningOverrides)
@@ -1392,6 +1443,73 @@ async function buildWorkspaceExport(
     .orderBy(asc(payoutSchedules.holdingId), asc(payoutSchedules.id))
     .all();
 
+  const contributionRows = await db
+    .select()
+    .from(plannedContributions)
+    .orderBy(
+      asc(plannedContributions.scopeId),
+      asc(plannedContributions.startDate),
+      asc(plannedContributions.id),
+    )
+    .all();
+  const reconciliationRows = await db
+    .select({
+      contributionId: contributionOccurrenceReconciliations.contributionId,
+      occurrenceId: contributionOccurrenceReconciliations.occurrenceId,
+      state: contributionOccurrenceReconciliations.state,
+      storedExecutionMinor: contributionOccurrenceReconciliations.storedExecutionMinor,
+      operationId: contributionOccurrenceOperations.operationId,
+    })
+    .from(contributionOccurrenceReconciliations)
+    .leftJoin(
+      contributionOccurrenceOperations,
+      eq(
+        contributionOccurrenceOperations.occurrenceId,
+        contributionOccurrenceReconciliations.occurrenceId,
+      ),
+    )
+    .orderBy(
+      asc(contributionOccurrenceReconciliations.occurrenceId),
+      asc(contributionOccurrenceOperations.operationId),
+    )
+    .all();
+  const reconciliationById = new Map<
+    string,
+    WorkspaceExport["contributionReconciliations"][number]
+  >();
+  for (const row of reconciliationRows) {
+    const current = reconciliationById.get(row.occurrenceId) ?? {
+      contributionId: row.contributionId,
+      occurrenceId: row.occurrenceId,
+      state: row.state,
+      operationIds: [],
+      ...(row.storedExecutionMinor === null
+        ? {}
+        : { storedExecutionMinor: row.storedExecutionMinor }),
+    };
+    if (row.operationId !== null) current.operationIds.push(row.operationId);
+    reconciliationById.set(row.occurrenceId, current);
+  }
+  const contributionsByScope = new Map<
+    string,
+    WorkspaceExport["contributionPlans"][number]
+  >();
+  for (const row of contributionRows) {
+    const plan = contributionsByScope.get(row.scopeId) ?? {
+      scopeId: row.scopeId,
+      contributions: [],
+    };
+    plan.contributions.push({
+      id: row.id,
+      destinationHoldingId: row.destinationHoldingId,
+      amount: JSON.parse(row.amountJson),
+      cadence: JSON.parse(row.cadenceJson),
+      startDate: row.startDate,
+      ...(row.endDate === null ? {} : { endDate: row.endDate }),
+    });
+    contributionsByScope.set(row.scopeId, plan);
+  }
+
   return serializeWorkspaceExport({
     workspace: { baseCurrency: workspace.baseCurrency, mode: workspace.mode },
     members: workspace.members,
@@ -1422,6 +1540,8 @@ async function buildWorkspaceExport(
       endISO: row.endDate,
       exclusions: JSON.parse(row.exclusionsJson) as string[],
     })),
+    contributionPlans: [...contributionsByScope.values()],
+    contributionReconciliations: [...reconciliationById.values()],
     assets: assetRows.filter((row) => row.deletedAt === null).map(toExportedAsset),
     liabilities: liabilityRows
       .filter((row) => row.deletedAt === null)

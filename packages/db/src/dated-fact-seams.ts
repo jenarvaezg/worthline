@@ -33,6 +33,7 @@ import {
   type UpdateAssetInput,
   type UpdateValuationAnchorInput,
 } from "./asset-store";
+import type { ContributionPlanStore } from "./contribution-plan-store";
 import {
   BACKFILL_SNAPSHOT_ID_PREFIX,
   buildHistoricalSnapshotDeps,
@@ -1190,6 +1191,19 @@ function ownershipChanged(before: OwnershipShare[], after: OwnershipShare[]): bo
  * the bodies itself; the 25 method signatures stay declared on `WorthlineStore`.
  */
 export interface DatedFactSeams {
+  createAndLinkContributionOperation: (params: {
+    contributionId: string;
+    occurrenceId: string;
+    operation: CreateInvestmentOperationInput;
+    today?: string;
+  }) => Promise<void>;
+  applyStoredContributionValue: (params: {
+    contributionId: string;
+    occurrenceId: string;
+    assetId: string;
+    newValueMinor: number;
+    executedMinor: number;
+  }) => Promise<void>;
   recordOperationAndRipple: (
     input: CreateInvestmentOperationInput,
     opts?: { today?: string },
@@ -1384,9 +1398,47 @@ export function createDatedFactSeams(
     liabilities: LiabilityStore;
     snapshots: SnapshotStore;
     operations: OperationsStore;
+    contributionPlan: ContributionPlanStore;
   },
 ): DatedFactSeams {
   return {
+    createAndLinkContributionOperation: async (params) => {
+      const today = params.today ?? new Date().toISOString().slice(0, 10);
+      await ctx.transaction(async () => {
+        await stores.operations.recordOperation(params.operation);
+        const workspace = await ctx.getWorkspace();
+        if (workspace) {
+          await rippleHistoricalSnapshots(ctx, workspace, stores.snapshots.saveSnapshot, {
+            assetId: params.operation.assetId,
+            mode: "record",
+            operationDateKey: params.operation.executedAt.slice(0, 10),
+            today,
+          });
+        }
+        await stores.contributionPlan.linkOperation({
+          contributionId: params.contributionId,
+          occurrenceId: params.occurrenceId,
+          operationId: params.operation.id,
+        });
+      });
+    },
+    applyStoredContributionValue: async (params) => {
+      await ctx.transaction(async () => {
+        await stores.contributionPlan.assertStoredDestination(
+          params.contributionId,
+          params.assetId,
+        );
+        await stores.operations.batchApplyValueUpdates([
+          { id: params.assetId, newValueMinor: params.newValueMinor },
+        ]);
+        await stores.contributionPlan.setOccurrenceState({
+          contributionId: params.contributionId,
+          occurrenceId: params.occurrenceId,
+          state: "fulfilled",
+          storedExecutionMinor: params.executedMinor,
+        });
+      });
+    },
     recordOperationAndRipple: async (input, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       // One transaction so the persist + ripple commit or roll back together —

@@ -62,6 +62,142 @@
   --ease-linear: linear;
 }
 
+/* Contribution plan reconciliation (#556): forecast stays visually secondary to truth. */
+.contributionMap {
+  position: relative;
+}
+.contributionColumns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 12rem;
+  gap: 1.5rem;
+}
+.contributionColumns > aside {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-left: 1px solid var(--line-soft);
+}
+.contributionColumns > aside strong {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+}
+.contributionPendingList {
+  display: grid;
+  gap: 0.75rem;
+}
+.contributionPendingRow {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--line-soft);
+}
+.contributionPendingRow > div {
+  display: grid;
+  gap: 0.2rem;
+}
+.contributionPendingRow span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.contributionPendingRow button {
+  color: var(--blue);
+  font-weight: 650;
+}
+.contributionDrawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  z-index: 80;
+  width: min(34rem, 100vw);
+  overflow-y: auto;
+  padding: 2rem;
+  background: var(--panel);
+  border-left: 1px solid var(--line-strong);
+  box-shadow: var(--shadow);
+}
+.contributionDrawer:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: -3px;
+}
+.contributionDrawerClose {
+  float: right;
+  color: var(--muted);
+  font-size: 2rem;
+  line-height: 1;
+}
+.contributionProgress {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+}
+.contributionProgress div {
+  padding: 0.75rem;
+  background: var(--paper-strong);
+}
+.contributionProgress dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.contributionProgress dd {
+  margin: 0.35rem 0 0;
+  font-weight: 700;
+}
+.contributionExisting {
+  margin: 1.5rem 0;
+}
+.contributionExisting form + form {
+  margin-top: 0.75rem;
+}
+.contributionPlanEditor {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 1rem;
+}
+.contributionPlanEditor > summary {
+  color: var(--blue);
+  cursor: pointer;
+  font-weight: 700;
+}
+.contributionPlanRule {
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.contributionPlanForm {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+  margin-top: 1rem;
+}
+.contributionPlanForm label {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+@media (max-width: 720px) {
+  .contributionColumns {
+    grid-template-columns: 1fr;
+  }
+  .contributionColumns > aside {
+    border-top: 1px solid var(--line-soft);
+    border-left: 0;
+  }
+  .contributionPendingRow {
+    grid-template-columns: 1fr auto;
+  }
+  .contributionPendingRow button {
+    grid-column: 1 / -1;
+  }
+  .contributionProgress {
+    grid-template-columns: 1fr;
+  }
+}
+
 * {
   box-sizing: border-box;
 }

@@ -6,8 +6,9 @@
  * (S2) and the what-if (S4). Reconciliation / fulfillment storage lives in S2.
  */
 
-import { multiplyToMinor } from "./decimal";
+import { addUnits, multiplyToMinor, subtractUnits } from "./decimal";
 import type { FireScopeConfig } from "./fire";
+import type { InvestmentOperation } from "./investment-types";
 
 /** ISO weekday: 1 = Monday … 7 = Sunday. */
 export type IsoWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
@@ -44,6 +45,45 @@ export interface ContributionOccurrence {
   destinationHoldingId: string;
   plannedDate: string;
   amount: PlannedContributionAmount;
+}
+
+/** Persisted closure: `partial` is derived from open + at least one execution. */
+export type ContributionOccurrenceState = "open" | "fulfilled" | "skipped";
+
+export interface ContributionOccurrenceReconciliation {
+  occurrenceId: string;
+  state: ContributionOccurrenceState;
+  operationIds: string[];
+  /** Cash/stored-value truth is recorded through the normal value-update path. */
+  storedExecutionMinor?: number;
+}
+
+export type ContributionProgressSummary =
+  | {
+      mode: "money";
+      plannedMinor: number;
+      executedMinor: number;
+      deltaMinor: number;
+    }
+  | {
+      mode: "units";
+      plannedUnits: string;
+      executedUnits: string;
+      deltaUnits: string;
+      actualCashMinor: number;
+    };
+
+export interface ProjectedContributionOccurrence {
+  occurrence: ContributionOccurrence;
+  state: "pending" | "partial" | "fulfilled" | "skipped";
+  backlog: boolean;
+  operationIds: string[];
+  summary: ContributionProgressSummary;
+}
+
+export interface ContributionReconciliationProjection {
+  pending: ProjectedContributionOccurrence[];
+  closed: ProjectedContributionOccurrence[];
 }
 
 export type MonthlySavingsCapacitySource =
@@ -200,6 +240,82 @@ export function expandContributionPlan(
     .sort(
       (a, b) => a.plannedDate.localeCompare(b.plannedDate) || a.id.localeCompare(b.id),
     );
+}
+
+/**
+ * Join forecast occurrences to explicit reconciliation truth. This is a read-only
+ * projection: it never guesses links and never changes operations, holdings, or snapshots.
+ */
+export function projectContributionReconciliation(input: {
+  plan: ContributionPlan;
+  fromDate: string;
+  toDate: string;
+  today: string;
+  reconciliations: ContributionOccurrenceReconciliation[];
+  operations: InvestmentOperation[];
+}): ContributionReconciliationProjection {
+  const reconciliationByOccurrence = new Map(
+    input.reconciliations.map((item) => [item.occurrenceId, item]),
+  );
+  const operationById = new Map(input.operations.map((item) => [item.id, item]));
+  const projected = expandContributionPlan(input.plan, input.fromDate, input.toDate).map(
+    (occurrence): ProjectedContributionOccurrence => {
+      const reconciliation = reconciliationByOccurrence.get(occurrence.id);
+      const operations = (reconciliation?.operationIds ?? [])
+        .map((id) => operationById.get(id))
+        .filter((operation): operation is InvestmentOperation => operation !== undefined);
+      const executedMinor =
+        operations.reduce(
+          (sum, operation) =>
+            sum +
+            multiplyToMinor(operation.units, operation.pricePerUnit) +
+            operation.feesMinor,
+          0,
+        ) + (reconciliation?.storedExecutionMinor ?? 0);
+      let summary: ContributionProgressSummary;
+      if (occurrence.amount.mode === "money") {
+        summary = {
+          mode: "money",
+          plannedMinor: occurrence.amount.value,
+          executedMinor,
+          deltaMinor: executedMinor - occurrence.amount.value,
+        };
+      } else {
+        const executedUnits = operations.reduce(
+          (sum, operation) => addUnits(sum, operation.units),
+          "0",
+        );
+        summary = {
+          mode: "units",
+          plannedUnits: occurrence.amount.value,
+          executedUnits,
+          deltaUnits: subtractUnits(executedUnits, occurrence.amount.value),
+          actualCashMinor: executedMinor,
+        };
+      }
+      return {
+        occurrence,
+        state:
+          reconciliation?.state === "open"
+            ? operations.length > 0 || reconciliation.storedExecutionMinor !== undefined
+              ? "partial"
+              : "pending"
+            : (reconciliation?.state ?? "pending"),
+        backlog: occurrence.plannedDate < input.today,
+        operationIds: reconciliation?.operationIds ?? [],
+        summary,
+      };
+    },
+  );
+
+  return {
+    pending: projected.filter(
+      (item) => item.state === "pending" || item.state === "partial",
+    ),
+    closed: projected.filter(
+      (item) => item.state === "fulfilled" || item.state === "skipped",
+    ),
+  };
 }
 
 function cadenceMonthlyFactor(cadence: ContributionCadence): number {

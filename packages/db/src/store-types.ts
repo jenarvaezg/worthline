@@ -100,6 +100,19 @@ export interface CreateHousingHoldingCommand {
  * machinery). All per-domain work goes through `store.<domain>.<method>`.
  */
 export interface WorthlineStore {
+  createAndLinkContributionOperation: (params: {
+    contributionId: string;
+    occurrenceId: string;
+    operation: CreateInvestmentOperationInput;
+    today?: string;
+  }) => Promise<void>;
+  applyStoredContributionValue: (params: {
+    contributionId: string;
+    occurrenceId: string;
+    assetId: string;
+    newValueMinor: number;
+    executedMinor: number;
+  }) => Promise<void>;
   /** Focused snapshot & position store (Slice R1). */
   snapshots: SnapshotStore;
   /** Focused asset store (Slice R2). */
