@@ -133,6 +133,11 @@ export {
   tokenSymbolSnapshotInputs,
 } from "./connected-source";
 export type {
+  MonthlyAllocationDestination,
+  MonthlyContributionAllocation,
+} from "./contribution-allocation";
+export { computeMonthlyContributionAllocation } from "./contribution-allocation";
+export type {
   ContributionCadence,
   ContributionOccurrence,
   ContributionOccurrenceReconciliation,

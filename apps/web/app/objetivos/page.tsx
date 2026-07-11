@@ -15,16 +15,24 @@ import { bootstrapHealthcheck, withStore } from "@web/store";
 import type { FireLevel, PassiveIncomeLens } from "@worthline/domain";
 import {
   collectHoldingPayouts,
+  computeMonthlyContributionAllocation,
   formatMoneyMinorPrivacy,
   listScopeOptions,
   prepareObjetivosState,
   projectContributionReconciliation,
   resolveScopeMemberIds,
   scopePassiveIncome,
+  unitPriceMajorByHoldingId,
 } from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ContributionAllocation } from "./contribution-allocation";
+import {
+  ALLOCATION_MONTH_PARAM,
+  allocationMonthKeys,
+  parseAllocationMonthParam,
+} from "./contribution-allocation-view";
 import { ContributionReconciliation } from "./contribution-reconciliation";
 import { createGoalAction, deleteGoalAction, updateGoalAction } from "./goal-actions";
 
@@ -272,6 +280,30 @@ export default async function ObjetivosPage({
 
   const currency = workspace.baseCurrency;
 
+  // Monthly allocation view (#557): the plan's capital split for a window of
+  // months, every month server-rendered once; the island toggles client-side.
+  const allocationWindow = allocationMonthKeys(today);
+  const allocationDefaultMonth = allocationWindow[1] ?? today.slice(0, 7);
+  const allocationInitialMonth = parseAllocationMonthParam(
+    resolvedSearchParams[ALLOCATION_MONTH_PARAM],
+    allocationWindow,
+    allocationDefaultMonth,
+  );
+  const unitPrices = unitPriceMajorByHoldingId(priceCache);
+  const monthlyAllocations =
+    contributionPlan && contributionPlan.contributions.length > 0
+      ? allocationWindow.map((monthKey) =>
+          computeMonthlyContributionAllocation({
+            plan: contributionPlan,
+            monthKey,
+            today,
+            unitPriceMajorByHoldingId: unitPrices,
+            reconciliations: contributionReconciliations,
+            operations: contributionOperations,
+          }),
+        )
+      : null;
+
   const contributionProjection = contributionPlan
     ? projectContributionReconciliation({
         plan: contributionPlan,
@@ -510,6 +542,19 @@ export default async function ObjetivosPage({
             </Link>
           </div>
         </section>
+
+        {monthlyAllocations ? (
+          <ContributionAllocation
+            currency={currency}
+            defaultMonthKey={allocationDefaultMonth}
+            holdings={Object.fromEntries(
+              assets.map((asset) => [asset.id, { name: asset.name, type: asset.type }]),
+            )}
+            initialMonthKey={allocationInitialMonth}
+            months={monthlyAllocations}
+            privacyMode={privacyMode}
+          />
+        ) : null}
 
         {contributionPlan && contributionProjection ? (
           <ContributionReconciliation

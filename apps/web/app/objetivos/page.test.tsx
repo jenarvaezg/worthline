@@ -1,4 +1,5 @@
 import type { ContributionPlan } from "@worthline/domain";
+import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, test, vi } from "vitest";
@@ -140,6 +141,10 @@ vi.mock("@web/fire-projection-card", () => ({
   default: () => <div />,
 }));
 
+import {
+  allocationMonthKeys,
+  formatAllocationMonthLabel,
+} from "./contribution-allocation-view";
 import ObjetivosPage from "./page";
 
 beforeEach(() => {
@@ -177,6 +182,57 @@ describe("ObjetivosPage contribution reconciliation (#556)", () => {
     expect(html).toContain("prevista");
     expect(html).toContain("Registrar la realidad");
     expect(html).toContain("Aplicar actualización de saldo");
+  });
+});
+
+describe("ObjetivosPage monthly allocation view (#557)", () => {
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const monthWindow = allocationMonthKeys(todayISO);
+  const currentMonthLabel = formatAllocationMonthLabel(monthWindow[1] ?? "");
+
+  const planWithMonthlyCash = (): ContributionPlan => ({
+    scopeId: "household",
+    contributions: [
+      {
+        id: "plan-cash",
+        destinationHoldingId: "asset_cash",
+        amount: { mode: "money", value: 100_000 },
+        cadence: { kind: "monthly", dayOfMonth: 1 },
+        startDate: "2026-01-01",
+      },
+    ],
+  });
+
+  test("renders the current month's split across destinations by default", async () => {
+    calls.readContributionPlan.mockResolvedValueOnce(planWithMonthlyCash());
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("Reparto mensual");
+    expect(html).toContain(`Previsto · ${currentMonthLabel}`);
+    expect(html).toContain("Caja");
+    expect(html).toContain(
+      formatMoneyMinorPrivacy({ amountMinor: 100_000, currency: "EUR" }, false),
+    );
+    // Current month is the pressed tab in the server-rendered markup.
+    expect(html).toContain(`aria-pressed="true" type="button">${currentMonthLabel}`);
+  });
+
+  test("deep-links a month of the window via ?mes=", async () => {
+    calls.readContributionPlan.mockResolvedValueOnce(planWithMonthlyCash());
+    const nextMonth = monthWindow[2] ?? "";
+
+    const html = await renderedHtml({ mes: nextMonth });
+
+    expect(html).toContain(
+      `aria-pressed="true" type="button">${formatAllocationMonthLabel(nextMonth)}`,
+    );
+  });
+
+  test("stays hidden when the plan has no contributions", async () => {
+    const html = await renderedHtml();
+
+    expect(html).not.toContain("Reparto mensual");
   });
 });
 
