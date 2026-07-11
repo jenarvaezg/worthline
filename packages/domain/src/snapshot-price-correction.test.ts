@@ -16,12 +16,15 @@ const OP = {
   units: "5",
 };
 
+const TODAY = "2026-07-11";
+
 describe("planSnapshotPriceCorrection (#926)", () => {
   test("plans an update when a snapshot exists on the date", () => {
     const result = planSnapshotPriceCorrection({
       dateKey: "2026-07-09",
       existingSnapshotDates: new Set(["2026-07-09"]),
       operations: [OP],
+      today: TODAY,
       unitPriceRaw: "12.5",
     });
 
@@ -42,6 +45,7 @@ describe("planSnapshotPriceCorrection (#926)", () => {
       dateKey: "2026-07-09",
       existingSnapshotDates: new Set(["2026-07-01"]),
       operations: [OP],
+      today: TODAY,
       unitPriceRaw: "12.5",
     });
 
@@ -56,6 +60,7 @@ describe("planSnapshotPriceCorrection (#926)", () => {
       dateKey: "2026-06-01",
       existingSnapshotDates: new Set(),
       operations: [OP],
+      today: TODAY,
       unitPriceRaw: "12.5",
     });
 
@@ -69,6 +74,7 @@ describe("planSnapshotPriceCorrection (#926)", () => {
         dateKey: "bad",
         existingSnapshotDates: new Set(),
         operations: [OP],
+        today: TODAY,
         unitPriceRaw: "12.5",
       }),
     ).toEqual({ ok: false, reason: "invalid_date" });
@@ -78,8 +84,32 @@ describe("planSnapshotPriceCorrection (#926)", () => {
         dateKey: "2026-07-09",
         existingSnapshotDates: new Set(),
         operations: [OP],
+        today: TODAY,
         unitPriceRaw: "-1",
       }),
     ).toEqual({ ok: false, reason: "invalid_price" });
+  });
+
+  test("rejects a future date server-side (the form's max attribute is advisory only)", () => {
+    expect(
+      planSnapshotPriceCorrection({
+        dateKey: "2026-07-12",
+        existingSnapshotDates: new Set(),
+        operations: [OP],
+        today: TODAY,
+        unitPriceRaw: "12.5",
+      }),
+    ).toEqual({ ok: false, reason: "future_date" });
+    expect(snapshotPriceCorrectionErrorMessage("future_date")).toContain("futura");
+
+    // Today itself is a valid correction target.
+    const todayResult = planSnapshotPriceCorrection({
+      dateKey: TODAY,
+      existingSnapshotDates: new Set(),
+      operations: [OP],
+      today: TODAY,
+      unitPriceRaw: "12.5",
+    });
+    expect(todayResult.ok).toBe(true);
   });
 });

@@ -208,6 +208,35 @@ describe("refreshStalePrices provider routing", () => {
     expect(result.failedSymbols).toEqual([]);
   });
 
+  test("preserves the prior good price when BOTH legs of the Yahoo→Stooq chain fail transiently (#925 AC)", async () => {
+    // Every request times out: Yahoo degrades to null, Stooq's throw carries the
+    // transient reason. The composite chain failure must classify by the leg —
+    // not by re-parsing the joined reason string — so the good price survives.
+    vi.mocked(fetch).mockRejectedValue(new Error("timeout"));
+
+    const prior = { ...stalePrice("asset-etf"), source: "yahoo" as const };
+    const result = await refreshStalePrices(
+      [prior],
+      [
+        {
+          id: "asset-etf",
+          currency: "EUR",
+          liquidityTier: "market",
+          priceProvider: "yahoo",
+          providerSymbol: "GBSE.MI",
+        },
+      ],
+      "2026-06-09T10:00:00Z",
+    );
+
+    expect(result.updated).toBe(0);
+    expect(result.refreshed[0]).toMatchObject({
+      assetId: "asset-etf",
+      price: "100",
+      freshnessState: "stale",
+    });
+  });
+
   test("explicit price provider overrides the liquidity-tier default", async () => {
     const csv =
       "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2026-06-09,16:00:00,4.10,4.30,4.05,4.25,1234";

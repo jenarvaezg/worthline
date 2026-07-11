@@ -14,6 +14,7 @@ import { derivePosition, operationsUpTo } from "./positions";
 
 export type SnapshotPriceCorrectionRejectReason =
   | "invalid_date"
+  | "future_date"
   | "invalid_price"
   | "no_operations"
   | "no_position";
@@ -23,6 +24,8 @@ export interface PlanSnapshotPriceCorrectionInput {
   dateKey: string;
   unitPriceRaw: string;
   existingSnapshotDates: ReadonlySet<string>;
+  /** "Today" as YYYY-MM-DD — corrections are past-only, never future snapshots. */
+  today: string;
 }
 
 export interface SnapshotPriceCorrectionPoint {
@@ -45,6 +48,13 @@ export function planSnapshotPriceCorrection(
   const dateKey = input.dateKey.trim();
   if (!DATE_KEY_RE.test(dateKey)) {
     return { ok: false, reason: "invalid_date" };
+  }
+
+  // Server-side bound — the form's `max` attribute is advisory only. A
+  // future-dated row would surface as a month's close in derived series
+  // (`deriveMonthlyCloses`) before the month exists.
+  if (dateKey > input.today) {
+    return { ok: false, reason: "future_date" };
   }
 
   const unitPriceRaw = input.unitPriceRaw.trim();
@@ -88,6 +98,8 @@ export function snapshotPriceCorrectionErrorMessage(
   switch (reason) {
     case "invalid_date":
       return "La fecha no es válida (usa AAAA-MM-DD).";
+    case "future_date":
+      return "La fecha no puede ser futura.";
     case "invalid_price":
       return "El precio por unidad debe ser un número positivo.";
     case "no_operations":

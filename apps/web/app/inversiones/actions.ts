@@ -717,6 +717,7 @@ async function planCorrectionFromForm(
   store: WorthlineStore,
   assetId: string,
   formData: FormData,
+  today: string,
 ) {
   const context = await readSnapshotPriceCorrectionContext(store, assetId);
   if (!context) return { kind: "not_eligible" as const };
@@ -735,6 +736,7 @@ async function planCorrectionFromForm(
     dateKey,
     existingSnapshotDates,
     operations: context.operations,
+    today,
     unitPriceRaw,
   });
   if (!plan.ok) {
@@ -759,10 +761,11 @@ export async function previewSnapshotPriceCorrectionAction(
   ..._testArgs: unknown[]
 ): Promise<SnapshotPriceCorrectionPreviewState> {
   const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
 
   const planned = await runActionWithStore(
-    (store) => planCorrectionFromForm(store, routeAssetId, formData),
+    (store) => planCorrectionFromForm(store, routeAssetId, formData, _clock.today()),
     _store,
   );
   if (planned.kind === "not_eligible") return { status: "not_eligible" };
@@ -801,11 +804,12 @@ export async function confirmSnapshotPriceCorrectionAction(
   ..._testArgs: unknown[]
 ) {
   const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
 
   const planned = await runActionWithStore(
-    (store) => planCorrectionFromForm(store, routeAssetId, formData),
+    (store) => planCorrectionFromForm(store, routeAssetId, formData, _clock.today()),
     _store,
   );
   if (planned.kind === "not_eligible") {

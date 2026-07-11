@@ -1380,25 +1380,45 @@ export interface AgentViewPlannedContribution {
     | { kind: "annual" };
   startDate: string;
   endDate?: string;
+  /** True when the contribution is in force today (started and not ended). */
+  active: boolean;
 }
 
-/** One destination's share of a month's planned capital allocation (forecast). */
+/**
+ * One destination's share of a month's planned capital allocation (forecast),
+ * contrasted with the money explicitly confirmed against that month's
+ * occurrences (S2). `plannedAmount` is null when a units occurrence lacks a
+ * price — reported via `plannedUnits`, never guessed.
+ */
 export interface AgentViewMonthlyAllocationSlice {
   destinationHolding: string;
-  plannedAmount: AgentViewMoney;
-  /** Share of the month's total planned allocation, as a `0..1` decimal string. */
+  plannedAmount: AgentViewMoney | null;
+  /** Units-mode planned total for the month, for honest display when unpriced. */
+  plannedUnits?: string;
+  /** Money confirmed against this month's occurrences via explicit links. */
+  executed: AgentViewMoney;
+  occurrenceCount: number;
+  /** Occurrences already closed (fulfilled or skipped). */
+  closedCount: number;
+  /** Share of the month's priceable planned total, as a `0..1` decimal string. */
   shareOfMonth: string;
 }
 
 /**
  * Where planned capital goes in one calendar month (ADR 0041, PRD #553 S3/S5).
- * Derived from the contribution plan — forecast only, never confirmed truth.
+ * Derived from the same seam the /objetivos view reads
+ * (`computeMonthlyContributionAllocation`) — forecast only, never confirmed
+ * truth. `totalPlanned` sums only priceable slices; unpriced destinations are
+ * listed in `missingUnitPriceHoldings` rather than silently dropped.
  */
 export interface AgentViewMonthlyAllocation {
   object: "monthly_allocation";
   /** `YYYY-MM` month key. */
   month: string;
   totalPlanned: AgentViewMoney;
+  totalExecuted: AgentViewMoney;
+  /** Destinations (`wl_hld_…`) whose units contributions lack a unit price. */
+  missingUnitPriceHoldings: string[];
   slices: AgentViewMonthlyAllocationSlice[];
 }
 
@@ -1436,6 +1456,8 @@ export interface AgentViewContributionOccurrence {
 /** Pending/backlog reconciliation status for the contribution plan (forecast vs truth). */
 export interface AgentViewContributionReconciliation {
   object: "contribution_reconciliation";
+  /** The projected window: earliest plan start → `reconciliationWindowDays` ahead. */
+  window: { from: string; to: string };
   pending: AgentViewContributionOccurrence[];
   backlog: AgentViewContributionOccurrence[];
   closed: AgentViewContributionOccurrence[];
