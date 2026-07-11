@@ -7210,6 +7210,12 @@ td.rowActions > * {
   overflow-y: auto;
   padding: 16px;
 }
+.assistantThirdPartyNotice {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
 .assistantHint p {
   margin: 0 0 14px;
   color: var(--muted);

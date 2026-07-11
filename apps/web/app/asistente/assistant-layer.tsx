@@ -5,13 +5,14 @@ import { DEMO_DISABLED_MESSAGE } from "@web/demo/write-guard-messages";
 import { formatMoneyMinor } from "@worthline/domain";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
   parseExposureProfileProposal,
   parseQuickActions,
   parseStatementImportProposal,
   type QuickAction,
 } from "./assistant-actions";
+import AssistantMessages from "./assistant-messages";
 import { confirmExposureProfileProposalAction } from "./exposure-profile-proposal-action";
 import type {
   ExposureProfileProposal,
@@ -302,10 +303,10 @@ export default function AssistantLayer({
     view: {},
   });
 
-  function close() {
+  const close = useCallback(() => {
     closingRef.current = true;
     setOpen(false);
-  }
+  }, []);
 
   function seed(text: string) {
     if (busy) return;
@@ -330,9 +331,10 @@ export default function AssistantLayer({
     }
   }, [open]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll when the conversation grows or settles
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
-  }, [messages]);
+  }, [messages.length, status, error]);
 
   useEffect(() => {
     if (!open) return;
@@ -341,7 +343,7 @@ export default function AssistantLayer({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  }, [close, open]);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -382,11 +384,15 @@ export default function AssistantLayer({
         </button>
       </header>
 
-      <div className="assistantMessages">
+      <AssistantMessages>
         {messages.length === 0 ? (
           <div className="assistantHint">
             <p>Pregunta sobre tu patrimonio: cifras, deudas, liquidez, exposición…</p>
-            <div aria-label="Preguntas sugeridas" className="assistantPrompts">
+            <div
+              aria-label="Preguntas sugeridas"
+              className="assistantPrompts"
+              role="group"
+            >
               {prompts.map((p) => (
                 <button
                   className="assistantChip"
@@ -449,10 +455,10 @@ export default function AssistantLayer({
           </p>
         ) : null}
         <div ref={endRef} />
-      </div>
+      </AssistantMessages>
 
       {quickActions.length > 0 ? (
-        <div aria-label="Acciones sugeridas" className="assistantActions">
+        <div aria-label="Acciones sugeridas" className="assistantActions" role="group">
           {quickActions.map((action, i) => (
             <button
               className={`assistantChip ${action.type}`}
