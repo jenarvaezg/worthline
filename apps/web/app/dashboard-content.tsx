@@ -32,6 +32,12 @@ import { compositionUrl } from "./composition-url";
 import { parseMode } from "./dashboard-matrix";
 import DonutDrill, { type DonutSegment } from "./donut-drill";
 import FramingPanel, { type FramingTab } from "./framing-panel";
+import { HeroMonthlyMicroBand, HeroWeeklyBlock } from "./hero-breakdown";
+import {
+  type FormattedHeroMonthly,
+  type FormattedHeroWeekly,
+  formatHeroBreakdown,
+} from "./hero-breakdown-data";
 import HeroMovers, { type MoversPeriodTab } from "./hero-movers";
 import {
   parseDrillParam,
@@ -193,15 +199,22 @@ function FireGlanceCard({
 }
 
 /**
- * The view-dependent slice of the hero (#518, S2): headline figure, delta chips,
- * hero stats and movers for ONE framing. The server renders it for BOTH framings
- * and hands both to <FramingPanel>, which shows the active one and toggles
- * client-side with no round-trip. The framing-independent chrome (the donut, the
- * composition chart, FIRE) stays outside, rendered once.
+ * The hero "sheet" (#661, variant B «la hoja con margen»): a main column
+ * (headline, delta chips, the monthly "Origen del cambio" micro-band, hero stats)
+ * beside a margin column (the "Esta semana" block, the movers as margin
+ * annotations, and the link to /historico). Server-rendered for BOTH framings and
+ * handed to <FramingPanel>, which shows the active one and toggles client-side
+ * with no round-trip (#518). The framing-independent chrome (donut, composition,
+ * FIRE) stays outside, rendered once.
+ *
+ * The monthly micro-band and "Esta semana" are whole-patrimony (framing-
+ * independent) — the same split /historico shows — so both framings receive the
+ * identical `monthly`/`weekly`; only headline, chips, stats and movers reframe.
  */
 function HeroFraming({
   hasHoldings,
   headlineDeltas,
+  monthly,
   moversByPeriod,
   moversPeriod,
   moversPeriodTabs,
@@ -209,9 +222,11 @@ function HeroFraming({
   privacyMode,
   returnTo,
   showDeltas,
+  weekly,
 }: {
   hasHoldings: boolean;
   headlineDeltas: FramedSnapshotDeltas;
+  monthly: FormattedHeroMonthly | null;
   moversByPeriod: MoversDataByPeriod | null;
   moversPeriod: ReturnType<typeof parseMoversPeriod>;
   moversPeriodTabs: readonly MoversPeriodTab[];
@@ -219,56 +234,70 @@ function HeroFraming({
   privacyMode: boolean;
   returnTo: string;
   showDeltas: boolean;
+  weekly: FormattedHeroWeekly | null;
 }) {
+  const hasMargin = Boolean(weekly || moversByPeriod);
   return (
-    <>
-      {presentation ? (
-        <div className="headline">
-          <span>{presentation.headlineLabel}</span>
-          <strong className={hasHoldings ? undefined : "emptyFigure"}>
-            {formatMoneyMinorPrivacy(presentation.headline, privacyMode)}
-            {!hasHoldings ? <small>sin datos aún</small> : null}
-          </strong>
-          <PrivacyToggle privacyMode={privacyMode} returnTo={returnTo} />
-        </div>
-      ) : null}
+    <div className={hasMargin ? "heroSheet" : "heroSheet heroSheet--noMargin"}>
+      <div className="heroSheetMain">
+        {presentation ? (
+          <div className="headline">
+            <span>{presentation.headlineLabel}</span>
+            <strong className={hasHoldings ? undefined : "emptyFigure"}>
+              {formatMoneyMinorPrivacy(presentation.headline, privacyMode)}
+              {!hasHoldings ? <small>sin datos aún</small> : null}
+            </strong>
+            <PrivacyToggle privacyMode={privacyMode} returnTo={returnTo} />
+          </div>
+        ) : null}
 
-      {showDeltas ? (
-        <div className="deltaChips" aria-label="Cambios de snapshots">
-          <DeltaChip
-            delta={headlineDeltas.sincePrevious}
-            label="vs anterior"
-            privacyMode={privacyMode}
-          />
-          <DeltaChip
-            delta={headlineDeltas.sinceMonthlyClose}
-            label="vs cierre mensual"
-            privacyMode={privacyMode}
-          />
-        </div>
-      ) : null}
+        {showDeltas ? (
+          <div className="deltaChips" aria-label="Cambios de snapshots">
+            <DeltaChip
+              delta={headlineDeltas.sincePrevious}
+              label="vs anterior"
+              privacyMode={privacyMode}
+            />
+            <DeltaChip
+              delta={headlineDeltas.sinceMonthlyClose}
+              label="vs cierre mensual"
+              privacyMode={privacyMode}
+            />
+          </div>
+        ) : null}
 
-      {presentation ? (
-        <div className="heroStats">
-          {presentation.breakdown.map((item) => (
-            <div className="heroStat" key={item.id}>
-              <span>{item.label}</span>
-              <b className={hasHoldings ? undefined : "emptyFigure"}>
-                {formatMoneyMinorPrivacy(item.value, privacyMode)}
-              </b>
-            </div>
-          ))}
-        </div>
-      ) : null}
+        {monthly ? <HeroMonthlyMicroBand monthly={monthly} /> : null}
 
-      {moversByPeriod ? (
-        <HeroMovers
-          dataByPeriod={moversByPeriod}
-          initialPeriod={moversPeriod}
-          periodTabs={moversPeriodTabs}
-        />
+        {presentation ? (
+          <div className="heroStats">
+            {presentation.breakdown.map((item) => (
+              <div className="heroStat" key={item.id}>
+                <span>{item.label}</span>
+                <b className={hasHoldings ? undefined : "emptyFigure"}>
+                  {formatMoneyMinorPrivacy(item.value, privacyMode)}
+                </b>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      {hasMargin ? (
+        <aside className="heroMargin" aria-label="Cambio reciente y qué lo movió">
+          {weekly ? <HeroWeeklyBlock weekly={weekly} /> : null}
+          {moversByPeriod ? (
+            <HeroMovers
+              dataByPeriod={moversByPeriod}
+              initialPeriod={moversPeriod}
+              periodTabs={moversPeriodTabs}
+            />
+          ) : null}
+          <Link className="heroMarginLink" href="/historico" scroll={false}>
+            Origen completo en el histórico →
+          </Link>
+        </aside>
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -352,6 +381,11 @@ export default async function DashboardContent({
     total: state.summary ? presentNetWorth(state.summary, "total") : undefined,
   } as const;
   const currency = presentationByView.total?.headline.currency ?? "EUR";
+  // The hero "Origen del cambio" figures (#661): whole-patrimony, so formatted
+  // once and shared by both framings (only headline/chips/stats/movers reframe).
+  const heroBreakdown = state.heroBreakdown
+    ? formatHeroBreakdown(state.heroBreakdown, currency, privacyMode)
+    : null;
   const emptyFramedDeltas: FramedSnapshotDeltas = {
     sinceMonthlyClose: null,
     sincePrevious: null,
@@ -447,6 +481,7 @@ export default async function DashboardContent({
             <HeroFraming
               hasHoldings={hasHoldings}
               headlineDeltas={deltasByView.liquid}
+              monthly={heroBreakdown?.monthly ?? null}
               moversByPeriod={moversByView.liquid}
               moversPeriod={moversPeriod}
               moversPeriodTabs={moversPeriodTabs}
@@ -454,6 +489,7 @@ export default async function DashboardContent({
               privacyMode={privacyMode}
               returnTo={returnTo}
               showDeltas={Boolean(state.deltas)}
+              weekly={heroBreakdown?.weekly ?? null}
             />
           }
           tabs={framingTabsWithHref}
@@ -461,6 +497,7 @@ export default async function DashboardContent({
             <HeroFraming
               hasHoldings={hasHoldings}
               headlineDeltas={deltasByView.total}
+              monthly={heroBreakdown?.monthly ?? null}
               moversByPeriod={moversByView.total}
               moversPeriod={moversPeriod}
               moversPeriodTabs={moversPeriodTabs}
@@ -468,6 +505,7 @@ export default async function DashboardContent({
               privacyMode={privacyMode}
               returnTo={returnTo}
               showDeltas={Boolean(state.deltas)}
+              weekly={heroBreakdown?.weekly ?? null}
             />
           }
         />

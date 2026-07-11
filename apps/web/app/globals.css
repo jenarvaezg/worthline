@@ -4807,11 +4807,12 @@ td.rowActions > * {
   color: var(--muted);
 }
 
-/* Breakdown stats — green-tinted mini-cards under the hero figure. */
+/* Breakdown stats — green-tinted mini-cards under the hero figure. Auto-fit so
+   they wrap cleanly in the hero sheet's narrower main column (#661). */
 .heroStats {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   margin-top: 16px;
 }
 
@@ -6485,6 +6486,259 @@ td.rowActions > * {
 @media (max-width: 640px) {
   .moversSplitCols {
     grid-template-columns: 1fr;
+  }
+}
+
+.moversTag.deuda {
+  background: rgba(36, 81, 119, 0.1);
+  color: var(--blue);
+}
+
+/* ── Hero sheet «la hoja con margen» (#661, PRD #653 S3) ───────────────────
+   The hero cell becomes a ledger sheet: a main column (figure · chips · the
+   monthly «Origen del cambio» micro-band · stats) beside a hairline-ruled margin
+   («Esta semana» · movers as annotations · link to /historico). On narrow
+   screens the margin collapses below the stats. */
+.heroSheet {
+  display: grid;
+  gap: 28px;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+}
+
+.heroSheet--noMargin {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.heroSheetMain {
+  min-width: 0;
+}
+
+.heroMargin {
+  border-left: 1px solid var(--hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+  padding-left: 24px;
+}
+
+.heroMarginLink {
+  color: var(--blue);
+  font-size: 0.8rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.heroMarginLink:hover {
+  text-decoration: underline;
+}
+
+/* Monthly micro-band — the split sits right under the delta chips. */
+.heroMicroBand {
+  margin-top: 14px;
+}
+
+.heroMicroBandHead {
+  align-items: baseline;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.heroMicroBandTitle {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.heroMicroBandTotal {
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+/* The thin stacked band: magnitude-proportional segments, canon /historico hues
+   (--tier-market / --gold / --blue). Signs live on the legend, not the bar. */
+.heroBandTrack {
+  background: var(--hairline);
+  border-radius: 999px;
+  display: flex;
+  gap: 2px;
+  height: 8px;
+  margin: 8px 0;
+  overflow: hidden;
+}
+
+.heroBandSeg {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+}
+
+.heroBandSeg--market {
+  background: var(--tier-market);
+}
+
+.heroBandSeg--payouts {
+  background: var(--gold);
+}
+
+.heroBandSeg--netSavings {
+  background: var(--blue);
+}
+
+.heroBandLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.heroBandLegendItem {
+  align-items: center;
+  display: flex;
+  font-size: 0.76rem;
+  gap: 6px;
+}
+
+.heroBandLegendItem i {
+  border-radius: 2px;
+  flex: 0 0 auto;
+  height: 9px;
+  width: 9px;
+}
+
+.heroBandLegendItem--market i {
+  background: var(--tier-market);
+}
+
+.heroBandLegendItem--payouts i {
+  background: var(--gold);
+}
+
+.heroBandLegendItem--netSavings i {
+  background: var(--blue);
+}
+
+.heroBandLegendLabel {
+  color: var(--muted);
+}
+
+.heroBandLegendAmount {
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+/* «Esta semana» — the margin's lead entry. */
+.estaSemana {
+  border-bottom: 1px solid var(--hairline);
+  padding-bottom: 16px;
+}
+
+.estaSemanaHead {
+  align-items: baseline;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.estaSemanaTitle {
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.estaSemanaTotal {
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.estaSemanaRange {
+  color: var(--muted);
+  display: block;
+  font-size: 0.72rem;
+  margin-top: 2px;
+}
+
+.estaSemana .heroBandLegend {
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+/* Movers in the margin: one stacked column with dotted leaders (annotation feel),
+   the percentages dropped to keep each line to a single € figure. */
+.moversLeader {
+  display: none;
+}
+
+.heroMargin .movers {
+  margin-top: 0;
+}
+
+.heroMargin .moversSplitCols {
+  gap: 14px;
+  grid-template-columns: 1fr;
+}
+
+.heroMargin .moversHead {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.heroMargin .moversHolding {
+  align-items: baseline;
+  column-gap: 6px;
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.heroMargin .moversHoldingName {
+  flex: 0 1 auto;
+}
+
+.heroMargin .moversLeader {
+  align-self: stretch;
+  border-bottom: 1px dotted var(--line);
+  display: block;
+  flex: 1 1 12px;
+  min-width: 12px;
+  transform: translateY(-3px);
+}
+
+.heroMargin .moversHoldingVal {
+  flex: 0 0 auto;
+}
+
+.heroMargin .moversHoldingPct {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .heroSheet {
+    gap: 20px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .heroMargin {
+    border-left: 0;
+    border-top: 1px solid var(--hairline);
+    padding-left: 0;
+    padding-top: 20px;
+  }
+
+  .estaSemana .heroBandLegend {
+    flex-direction: row;
   }
 }
 
