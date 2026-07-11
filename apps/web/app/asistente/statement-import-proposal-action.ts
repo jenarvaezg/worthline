@@ -33,7 +33,6 @@ import {
 
 import {
   parseStatementImportProposalDraft,
-  type StatementImportProposalDraft,
   selectionsFromPreviewFunds,
 } from "./statement-import-proposals";
 
@@ -190,5 +189,3 @@ export async function confirmStatementImportProposalAction(
     };
   }, _store);
 }
-
-export type { StatementImportProposalDraft };
