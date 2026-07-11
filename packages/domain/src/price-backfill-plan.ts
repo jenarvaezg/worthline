@@ -7,8 +7,10 @@
  * point per month-start (the 1st) from the first-operation month through today,
  * but ONLY for a month the position actually existed (units > 0 ≤ that date,
  * folded via `derivePosition`). A priced month becomes a `create`/`update` point
- * valued at `units × price`; a month with a position but NO price becomes a GAP —
- * never a fabricated point. A month before the first operation, or after the
+ * valued at `units × price`, taking the month's FIRST available price within a
+ * one-week window after the 1st (exchange sources only quote trading days — see
+ * `monthStartPrice`); a month with a position but NO price becomes a GAP — never
+ * a fabricated point. A month before the first operation, or after the
  * position was fully sold, is skipped entirely (neither point nor gap).
  *
  * INTENTIONAL RESTATEMENT (ADR 0033): an `update` point is emitted for EVERY
@@ -94,6 +96,42 @@ function monthlyDateKeys(firstOperationDate: string, today: string): string[] {
   return dates;
 }
 
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * How many days into a month the plan searches for that month's first available
+ * price. Exchange-quoted sources (Yahoo) only price TRADING days — the 1st is
+ * often a weekend or holiday (January 1st always is), so an exact-day-1 lookup
+ * would report a gap for a month the source prices perfectly well. A week covers
+ * any weekend + holiday run without reaching into mid-month prices.
+ */
+const MONTH_START_PRICE_WINDOW_DAYS = 7;
+
+/**
+ * The month's first available price on or after its 1st, within the window,
+ * never past `today` and never crossing into the next month. The point still
+ * lands on the month-start dateKey — this is the month's opening close, not an
+ * invented day-1 price; a month with no price inside the window stays a gap.
+ */
+function monthStartPrice(
+  pricesByDate: ReadonlyMap<string, DecimalString>,
+  monthStartKey: string,
+  today: string,
+): DecimalString | undefined {
+  const startMs = Date.parse(`${monthStartKey}T00:00:00.000Z`);
+  if (!Number.isFinite(startMs)) return undefined;
+
+  for (let offset = 0; offset < MONTH_START_PRICE_WINDOW_DAYS; offset += 1) {
+    const dateKey = new Date(startMs + offset * MS_PER_DAY).toISOString().slice(0, 10);
+    if (dateKey.slice(0, 7) !== monthStartKey.slice(0, 7)) break;
+    if (dateKey > today) break;
+
+    const price = pricesByDate.get(dateKey);
+    if (price !== undefined) return price;
+  }
+  return undefined;
+}
+
 export function planPriceBackfill(input: PlanPriceBackfillInput): PriceBackfillPlan {
   const points: PriceBackfillPoint[] = [];
   const gaps: string[] = [];
@@ -118,7 +156,7 @@ export function planPriceBackfill(input: PlanPriceBackfillInput): PriceBackfillP
     const position = derivePosition(opsUpTo, { assetId, currency });
     if (compareUnits(position.currentUnits, "0") === 0) continue;
 
-    const unitPriceDecimal = input.pricesByDate.get(dateKey);
+    const unitPriceDecimal = monthStartPrice(input.pricesByDate, dateKey, input.today);
     if (unitPriceDecimal === undefined) {
       // A position existed but the source had no price → a gap, never invented.
       gaps.push(dateKey);

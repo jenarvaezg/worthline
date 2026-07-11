@@ -97,6 +97,54 @@ describe("planPriceBackfill (#380)", () => {
     expect(plan.gaps).toEqual(["2026-03-01"]);
   });
 
+  it("prices a month whose 1st is a non-trading day with the month's FIRST available close (exchange sources only quote trading days)", () => {
+    const plan = planPriceBackfill({
+      operations: [buy("2026-01-15", "1", "30000")],
+      existingSnapshotDates: new Set(),
+      pricesByDate: new Map([
+        // Feb 1st 2026 is a Sunday; the first close lands on Tuesday the 3rd.
+        ["2026-02-03", "40000"],
+      ]),
+      source: "yahoo",
+      today: "2026-02-10",
+    });
+
+    expect(plan.gaps).toEqual([]);
+    expect(plan.points).toEqual([
+      {
+        action: "create",
+        dateKey: "2026-02-01",
+        units: "1",
+        unitPriceDecimal: "40000",
+        valueMinor: 40000 * 100,
+      },
+    ]);
+  });
+
+  it("the month-start window never reaches past a week, into the next month, or beyond today", () => {
+    const beyondWindow = planPriceBackfill({
+      operations: [buy("2026-01-15", "1", "30000")],
+      existingSnapshotDates: new Set(),
+      // Mid-month only: not the month's opening close → the month stays a gap.
+      pricesByDate: new Map([["2026-02-15", "40000"]]),
+      source: "yahoo",
+      today: "2026-02-20",
+    });
+    expect(beyondWindow.points).toEqual([]);
+    expect(beyondWindow.gaps).toContain("2026-02-01");
+
+    const beyondToday = planPriceBackfill({
+      operations: [buy("2026-01-15", "1", "30000")],
+      existingSnapshotDates: new Set(),
+      // The price exists AFTER today — the plan must not read the future.
+      pricesByDate: new Map([["2026-03-05", "50000"]]),
+      source: "yahoo",
+      today: "2026-03-03",
+    });
+    expect(beyondToday.points.map((p) => p.dateKey)).toEqual([]);
+    expect(beyondToday.gaps).toContain("2026-03-01");
+  });
+
   it("skips months before the first operation entirely (neither point nor gap)", () => {
     const plan = planPriceBackfill({
       operations: [buy("2026-03-10", "1", "30000")],
