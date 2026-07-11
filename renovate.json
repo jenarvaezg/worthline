@@ -20,9 +20,9 @@
       "automerge": true
     },
     {
-      "description": "TypeScript 7 breaks Next build verification — hold 5.x until upstream",
-      "matchPackageNames": ["typescript"],
-      "allowedVersions": "<7"
+      "description": "Group TypeScript stack (tsc + Next.js native shim)",
+      "groupName": "typescript",
+      "matchPackageNames": ["typescript", "@typescript/native-preview"]
     },
     {
       "description": "Workspace packages are not published",
