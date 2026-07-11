@@ -308,10 +308,7 @@ export type {
   FireGrowthAssumption,
   FirePlanProjectionInput,
 } from "./fire-plan-projection";
-export {
-  projectFireWithContributionPlan,
-  resolveHoldingAnnualReturnForProjection,
-} from "./fire-plan-projection";
+export { projectFireWithContributionPlan } from "./fire-plan-projection";
 export type {
   FireProjection,
   FireProjectionInput,
@@ -584,6 +581,7 @@ export {
   MARKET_CAVEAT,
   MARKET_PAYOUTS_CAVEAT,
   portfolioReturnsView,
+  resolveHoldingAnnualReturnForProjection,
   returnsByAssetClassView,
   returnsKindForInstrument,
 } from "./returns-display";

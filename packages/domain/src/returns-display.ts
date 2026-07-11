@@ -133,6 +133,29 @@ function marketView(
   };
 }
 
+/**
+ * One holding's annual return for forward projection (#558 what-if): prefers the
+ * #547 display measures in TWR → IRR → CAGR order, then the caller's assumed rate.
+ */
+export function resolveHoldingAnnualReturnForProjection(
+  view: HoldingReturnsView | null | undefined,
+  assumedAnnualReturn: number,
+): number {
+  if (view === null || view === undefined) {
+    return assumedAnnualReturn;
+  }
+  if (view.twr?.annualizedRate !== null && view.twr?.annualizedRate !== undefined) {
+    return view.twr.annualizedRate;
+  }
+  if (view.irr?.rate !== null && view.irr?.rate !== undefined) {
+    return view.irr.rate;
+  }
+  if (view.annualized && view.cagr !== null) {
+    return view.cagr;
+  }
+  return assumedAnnualReturn;
+}
+
 /** Inputs for one holding's display model: instrument + already-computed measures. */
 export interface HoldingReturnsViewInput {
   instrument: Instrument;

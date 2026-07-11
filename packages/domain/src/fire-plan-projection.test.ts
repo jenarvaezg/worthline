@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { ContributionPlan, PlannedContribution } from "./contribution-plan";
-import {
-  projectFireWithContributionPlan,
-  resolveHoldingAnnualReturnForProjection,
-} from "./fire-plan-projection";
+import { projectFireWithContributionPlan } from "./fire-plan-projection";
 import { projectFire } from "./fire-projection";
 import type { HoldingReturnsView } from "./returns-display";
+import { resolveHoldingAnnualReturnForProjection } from "./returns-display";
 
 function contribution(overrides: Partial<PlannedContribution> = {}): PlannedContribution {
   return {
@@ -177,7 +175,7 @@ describe("projectFireWithContributionPlan", () => {
     expect(fallbackBase.trajectory).toEqual(explicitBase.trajectory);
   });
 
-  it("returns three scenarios with ±1.5% shifts off the base return", () => {
+  it("returns three flat scenarios with zero appreciation in every branch", () => {
     const projection = projectFireWithContributionPlan({
       ...BASE,
       growthAssumption: "flat",
@@ -190,6 +188,38 @@ describe("projectFireWithContributionPlan", () => {
       "base",
       "pessimistic",
     ]);
-    expect(projection.scenarios.map((s) => s.annualReturn)).toEqual([0.015, 0, -0.015]);
+    expect(projection.scenarios.map((s) => s.annualReturn)).toEqual([0, 0, 0]);
+    const [opt, base, pes] = projection.scenarios;
+    expect(opt!.trajectory).toEqual(base!.trajectory);
+    expect(pes!.trajectory).toEqual(base!.trajectory);
+  });
+
+  it("uses per-holding historical growth for an empty plan with a starting split", () => {
+    const cashHeavy = projectFireWithContributionPlan({
+      ...BASE,
+      startingEligibleMinor: 1_000_000,
+      growthAssumption: "historical",
+      assumedAnnualReturn: 0.02,
+      holdingAnnualReturnById: { h1: 0.02, h2: 0.12 },
+      startingEligibleByHoldingId: { h1: 900_000, h2: 100_000 },
+      plan: plan([]),
+      fireNumberMinor: 5_000_000,
+      maxYears: 10,
+    });
+    const growthHeavy = projectFireWithContributionPlan({
+      ...BASE,
+      startingEligibleMinor: 1_000_000,
+      growthAssumption: "historical",
+      assumedAnnualReturn: 0.02,
+      holdingAnnualReturnById: { h1: 0.02, h2: 0.12 },
+      startingEligibleByHoldingId: { h1: 100_000, h2: 900_000 },
+      plan: plan([]),
+      fireNumberMinor: 5_000_000,
+      maxYears: 10,
+    });
+
+    const cashBase = cashHeavy.scenarios.find((s) => s.label === "base")!;
+    const growthBase = growthHeavy.scenarios.find((s) => s.label === "base")!;
+    expect(growthBase.finalEligibleMinor).toBeGreaterThan(cashBase.finalEligibleMinor);
   });
 });

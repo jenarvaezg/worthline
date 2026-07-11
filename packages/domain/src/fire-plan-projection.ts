@@ -19,13 +19,15 @@ import {
   type FireTrajectoryPoint,
   projectFire,
 } from "./fire-projection";
-import type { HoldingReturnsView } from "./returns-display";
 
 /** Returns shifted from the base by ±1.5 % (PRD #421) — same as `projectFire`. */
 const RETURN_SHIFT = 0.015;
 
-/** Synthetic bucket for starting eligible when no per-holding split is supplied. */
-const STARTING_BUCKET_ID = "__starting__";
+/**
+ * Synthetic bucket for aggregate starting eligible when no per-holding split is
+ * supplied. Namespaced to avoid colliding with real holding ids.
+ */
+const STARTING_BUCKET_ID = "@worthline/starting-eligible";
 
 export type FireGrowthAssumption = "flat" | "historical";
 
@@ -45,29 +47,6 @@ export interface FirePlanProjectionInput {
   unitPriceMajorByHoldingId?: Record<string, string>;
   currentAge?: number;
   maxYears?: number;
-}
-
-/**
- * Resolves one holding's annual return for the what-if historical branch:
- * TWR annualized rate → IRR → CAGR → assumed fallback (#547, ADR 0041).
- */
-export function resolveHoldingAnnualReturnForProjection(
-  view: HoldingReturnsView | null | undefined,
-  assumedAnnualReturn: number,
-): number {
-  if (view === null || view === undefined) {
-    return assumedAnnualReturn;
-  }
-  if (view.twr?.annualizedRate !== null && view.twr?.annualizedRate !== undefined) {
-    return view.twr.annualizedRate;
-  }
-  if (view.irr?.rate !== null && view.irr?.rate !== undefined) {
-    return view.irr.rate;
-  }
-  if (view.annualized && view.cagr !== null) {
-    return view.cagr;
-  }
-  return assumedAnnualReturn;
 }
 
 function parseISO(iso: string): Date {
@@ -103,7 +82,7 @@ function bucketGrowthRate(holdingId: string, input: FirePlanProjectionInput): nu
     return 0;
   }
   if (holdingId === STARTING_BUCKET_ID) {
-    return input.expectedRealReturn;
+    return input.assumedAnnualReturn;
   }
   return input.holdingAnnualReturnById?.[holdingId] ?? input.assumedAnnualReturn;
 }
@@ -138,10 +117,7 @@ function contributionsByProjectionYear(
     }
     const holdingBuckets = byYear.get(year) ?? new Map<string, number>();
     const current = holdingBuckets.get(occurrence.destinationHoldingId) ?? 0;
-    holdingBuckets.set(
-      occurrence.destinationHoldingId,
-      current + (occurrence.moneyMinor ?? 0),
-    );
+    holdingBuckets.set(occurrence.destinationHoldingId, current + occurrence.moneyMinor);
     byYear.set(year, holdingBuckets);
   }
   return byYear;
@@ -182,8 +158,9 @@ function growBuckets(
   input: FirePlanProjectionInput,
   scenarioShift: number,
 ): void {
+  const effectiveShift = input.growthAssumption === "flat" ? 0 : scenarioShift;
   for (const [holdingId, amount] of [...buckets.entries()]) {
-    const rate = bucketGrowthRate(holdingId, input) + scenarioShift;
+    const rate = bucketGrowthRate(holdingId, input) + effectiveShift;
     buckets.set(holdingId, amount * (1 + rate));
   }
 }
@@ -216,17 +193,18 @@ function projectPlanScenario(
   const trajectory: FireTrajectoryPoint[] = [
     { year: 0, eligibleMinor: Math.round(totalBucketMinor(buckets)) },
   ];
-  let yearsToFire: number | null = trajectory[0]!.eligibleMinor >= target ? 0 : null;
+  let capital = totalBucketMinor(buckets);
+  let yearsToFire: number | null = capital >= target ? 0 : null;
   let totalContributedMinor = 0;
 
   if (yearsToFire === null) {
     for (let year = 1; year <= maxYears; year += 1) {
       growBuckets(buckets, input, scenarioShift);
       totalContributedMinor += addContributions(buckets, contributionsByYear.get(year));
-      const eligibleMinor = Math.round(totalBucketMinor(buckets));
-      trajectory.push({ year, eligibleMinor });
+      capital = totalBucketMinor(buckets);
+      trajectory.push({ year, eligibleMinor: Math.round(capital) });
 
-      if (eligibleMinor >= target) {
+      if (capital >= target) {
         yearsToFire = year;
         break;
       }
@@ -234,6 +212,8 @@ function projectPlanScenario(
   }
 
   const baseReturn = input.growthAssumption === "flat" ? 0 : input.expectedRealReturn;
+  const reportedReturn =
+    input.growthAssumption === "flat" ? 0 : baseReturn + scenarioShift;
   const ageAtFire =
     yearsToFire !== null && input.currentAge !== undefined
       ? input.currentAge + yearsToFire
@@ -241,7 +221,7 @@ function projectPlanScenario(
 
   return {
     label,
-    annualReturn: baseReturn + scenarioShift,
+    annualReturn: reportedReturn,
     yearsToFire,
     ageAtFire,
     finalEligibleMinor: trajectory.at(-1)!.eligibleMinor,
@@ -250,10 +230,35 @@ function projectPlanScenario(
   };
 }
 
+function projectPlanScenarios(
+  input: FirePlanProjectionInput,
+  contributionsByYear: Map<number, Map<string, number>>,
+): FireScenario[] {
+  if (input.growthAssumption === "flat") {
+    const scenario = projectPlanScenario("base", 0, input, contributionsByYear);
+    return [
+      { ...scenario, label: "optimistic" },
+      scenario,
+      { ...scenario, label: "pessimistic" },
+    ];
+  }
+
+  return [
+    projectPlanScenario("optimistic", RETURN_SHIFT, input, contributionsByYear),
+    projectPlanScenario("base", 0, input, contributionsByYear),
+    projectPlanScenario("pessimistic", -RETURN_SHIFT, input, contributionsByYear),
+  ];
+}
+
+function hasPerHoldingStartingSplit(input: FirePlanProjectionInput): boolean {
+  const split = input.startingEligibleByHoldingId;
+  return split !== undefined && Object.keys(split).length > 0;
+}
+
 /**
  * Projects FIRE under a contribution plan's time-varying stream and a
  * growth-assumption toggle. When the plan is a constant monthly equivalent and
- * historical growth resolves every bucket to `expectedRealReturn`, the base
+ * historical growth resolves every bucket to `assumedAnnualReturn`, the base
  * scenario matches `projectFire`.
  */
 export function projectFireWithContributionPlan(
@@ -262,6 +267,13 @@ export function projectFireWithContributionPlan(
   const maxYears = input.maxYears ?? DEFAULT_MAX_YEARS;
 
   if (input.plan.contributions.length === 0) {
+    if (input.growthAssumption === "historical" && hasPerHoldingStartingSplit(input)) {
+      return {
+        fireNumberMinor: input.fireNumberMinor,
+        scenarios: projectPlanScenarios(input, new Map()),
+      };
+    }
+
     return projectFire({
       startingEligibleMinor: input.startingEligibleMinor,
       monthlyContributionMinor: 0,
@@ -287,10 +299,6 @@ export function projectFireWithContributionPlan(
 
   return {
     fireNumberMinor: input.fireNumberMinor,
-    scenarios: [
-      projectPlanScenario("optimistic", RETURN_SHIFT, input, contributionsByYear),
-      projectPlanScenario("base", 0, input, contributionsByYear),
-      projectPlanScenario("pessimistic", -RETURN_SHIFT, input, contributionsByYear),
-    ],
+    scenarios: projectPlanScenarios(input, contributionsByYear),
   };
 }
