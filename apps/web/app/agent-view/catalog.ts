@@ -2,6 +2,7 @@ import type {
   AgentViewConnectedSourceListEntry,
   AgentViewConnectedSourcePosition,
   AgentViewConnectedSourcePositionGroup,
+  AgentViewContributionPlan,
   AgentViewDataQualityCategory,
   AgentViewDataQualitySeverity,
   AgentViewDataQualitySignal,
@@ -71,6 +72,13 @@ export interface ListGoalsInput {
 export interface GetFireProjectionInput {
   /** Public scope ID; defaults to the household scope when omitted. */
   scopeId?: string;
+}
+
+export interface GetContributionPlanInput {
+  /** Public scope ID; defaults to the household scope when omitted. */
+  scopeId?: string;
+  /** What-if growth toggle: `historical` (default) or `flat`. */
+  growthAssumption?: "flat" | "historical";
 }
 
 export interface ExplainFigureInput {
@@ -243,6 +251,10 @@ export interface AgentViewBackend {
   memberProfiles(): Promise<AgentViewEnvelope<AgentViewMemberProfile[]>>;
   goals(scopeId: string): Promise<AgentViewEnvelope<AgentViewGoal[]>>;
   fireProjection(scopeId: string): Promise<AgentViewEnvelope<AgentViewFireProjection>>;
+  contributionPlan(
+    scopeId: string,
+    params: { growthAssumption?: "flat" | "historical" },
+  ): Promise<AgentViewEnvelope<AgentViewContributionPlan>>;
 }
 
 /** One catalog tool: its metadata plus a backend-parametrized read. */
@@ -322,6 +334,10 @@ export interface AgentViewCatalog {
   get_fire_projection: AgentViewCatalogTool<
     GetFireProjectionInput,
     AgentViewEnvelope<AgentViewFireProjection>
+  >;
+  get_contribution_plan: AgentViewCatalogTool<
+    GetContributionPlanInput,
+    AgentViewEnvelope<AgentViewContributionPlan>
   >;
 }
 
@@ -680,6 +696,28 @@ export function createAgentViewCatalog(): AgentViewCatalog {
       run: async (input, backend) => {
         const scopeId = await resolveScopeId(input.scopeId, backend);
         return backend.fireProjection(scopeId);
+      },
+    },
+    get_contribution_plan: {
+      description:
+        "Get a scope's contribution plan (defaults to the household scope): the recurring planned contributions (destination holding, money or units amount, cadence, start/end), the forecast monthly allocation (where capital goes each month, units priced at the current cached price — an unpriced line is flagged incomplete, never guessed), the pending/backlog occurrences (forecast-but-unconfirmed; backlog = past-due and still open), and the what-if FIRE trajectory under the plan with its growth assumption (historical = per-holding measured returns falling back to the assumed rate; flat = contributions only, zero growth). The ENTIRE response is a forecast layer (ADR 0041): it never enters net worth or snapshots, and nothing in it is confirmed truth — confirmed money lives in operations and snapshots. Reconciliation is manual and explicit; this read never links, closes, or auto-matches an occurrence. Reads are side-effect-free.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          growthAssumption: { enum: ["flat", "historical"], type: "string" },
+          scopeId: { type: "string" },
+        },
+        type: "object",
+      },
+      name: "get_contribution_plan",
+      run: async (input, backend) => {
+        const scopeId = await resolveScopeId(input.scopeId, backend);
+        return backend.contributionPlan(
+          scopeId,
+          input.growthAssumption === undefined
+            ? {}
+            : { growthAssumption: input.growthAssumption },
+        );
       },
     },
   };

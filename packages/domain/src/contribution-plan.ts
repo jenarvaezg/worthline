@@ -242,6 +242,26 @@ export function expandContributionPlan(
     );
 }
 
+/** How far past today the pending projection looks by default. */
+export const PENDING_WINDOW_FORWARD_DAYS = 90;
+
+/**
+ * The window the pending/backlog projection covers: from the plan's earliest
+ * start date (today for an empty plan) to `forwardDays` past today. Shared by
+ * every pending surface (/objetivos, agent view) so they never drift.
+ */
+export function contributionPendingWindow(
+  plan: ContributionPlan,
+  todayISO: string,
+  forwardDays = PENDING_WINDOW_FORWARD_DAYS,
+): { from: string; to: string } {
+  const to = new Date(parse(todayISO).getTime() + forwardDays * 86_400_000);
+  return {
+    from: plan.contributions.map((row) => row.startDate).sort()[0] ?? todayISO,
+    to: toISO(to),
+  };
+}
+
 /**
  * Join forecast occurrences to explicit reconciliation truth. This is a read-only
  * projection: it never guesses links and never changes operations, holdings, or snapshots.
@@ -354,6 +374,67 @@ function monthlyEquivalentMinor(
   );
   if (perOccurrence === null) return null;
   return Math.round(perOccurrence * cadenceMonthlyFactor(contribution.cadence));
+}
+
+/** One destination's slice of the monthly allocation view (ADR 0041, PRD #553 S3/S5). */
+export interface MonthlyAllocationLine {
+  destinationHoldingId: string;
+  /** Monthly-equivalent minor units of the destination's PRICED contributions. */
+  monthlyMinor: number;
+  /** True when an active units contribution lacks a price — the line is a lower bound. */
+  incomplete: boolean;
+}
+
+export interface MonthlyAllocationView {
+  /** Largest monthly amount first; ties break on destination id. */
+  lines: MonthlyAllocationLine[];
+  /** Sum of the priced lines — a lower bound when any line is incomplete. */
+  totalMinor: number;
+  missingUnitPriceHoldingIds: string[];
+}
+
+/**
+ * The "where does capital go each month" split (ADR 0041): active contributions
+ * grouped by destination at their monthly equivalent, units priced at the current
+ * unit price. An unpriced units contribution never invents a figure — its line is
+ * flagged `incomplete` and the holding is reported in `missingUnitPriceHoldingIds`.
+ */
+export function deriveMonthlyAllocation(
+  plan: ContributionPlan,
+  todayISO: string,
+  unitPriceMajorByHoldingId?: Record<string, string>,
+): MonthlyAllocationView {
+  const byDestination = new Map<string, MonthlyAllocationLine>();
+  for (const contribution of plan.contributions) {
+    if (!isActiveOn(contribution, todayISO)) continue;
+    const line = byDestination.get(contribution.destinationHoldingId) ?? {
+      destinationHoldingId: contribution.destinationHoldingId,
+      incomplete: false,
+      monthlyMinor: 0,
+    };
+    const monthly = monthlyEquivalentMinor(contribution, unitPriceMajorByHoldingId);
+    if (monthly === null) {
+      line.incomplete = true;
+    } else {
+      line.monthlyMinor += monthly;
+    }
+    byDestination.set(contribution.destinationHoldingId, line);
+  }
+
+  const lines = [...byDestination.values()].sort(
+    (a, b) =>
+      b.monthlyMinor - a.monthlyMinor ||
+      a.destinationHoldingId.localeCompare(b.destinationHoldingId),
+  );
+  return {
+    lines,
+    missingUnitPriceHoldingIds: activeUnitContributionsMissingPrices(
+      plan,
+      todayISO,
+      unitPriceMajorByHoldingId,
+    ),
+    totalMinor: lines.reduce((sum, line) => sum + line.monthlyMinor, 0),
+  };
 }
 
 export function activeUnitContributionsMissingPrices(

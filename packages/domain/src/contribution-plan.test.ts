@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   type ContributionPlan,
   contributionOccurrenceId,
+  contributionPendingWindow,
   derivedMonthlySavingsCapacity,
+  deriveMonthlyAllocation,
   expandContributionPlan,
   type PlannedContribution,
   projectContributionReconciliation,
@@ -394,6 +396,134 @@ describe("resolveMonthlySavingsCapacityForFire", () => {
       capacityMinor: 150_000,
       source: "incomplete_unit_pricing",
       missingUnitPriceHoldingIds: ["h1"],
+    });
+  });
+});
+
+describe("contributionPendingWindow", () => {
+  it("spans from the earliest plan start to 90 days past today", () => {
+    const window = contributionPendingWindow(
+      plan([
+        contribution({ id: "c1", startDate: "2025-03-15" }),
+        contribution({ id: "c2", startDate: "2025-01-10" }),
+      ]),
+      "2025-06-15",
+    );
+    expect(window).toEqual({ from: "2025-01-10", to: "2025-09-13" });
+  });
+
+  it("falls back to today for an empty plan", () => {
+    expect(contributionPendingWindow(plan([]), "2025-06-15")).toEqual({
+      from: "2025-06-15",
+      to: "2025-09-13",
+    });
+  });
+});
+
+describe("deriveMonthlyAllocation", () => {
+  it("splits active contributions by destination in monthly equivalents", () => {
+    const view = deriveMonthlyAllocation(
+      plan([
+        contribution({ id: "c1", destinationHoldingId: "h1" }),
+        contribution({
+          id: "c2",
+          destinationHoldingId: "h2",
+          amount: { mode: "money", value: 300_000 },
+          cadence: { kind: "quarterly" },
+        }),
+        contribution({
+          id: "c3",
+          destinationHoldingId: "h1",
+          amount: { mode: "money", value: 120_000 },
+          cadence: { kind: "annual" },
+        }),
+      ]),
+      "2025-06-15",
+    );
+
+    expect(view).toEqual({
+      lines: [
+        { destinationHoldingId: "h1", monthlyMinor: 110_000, incomplete: false },
+        { destinationHoldingId: "h2", monthlyMinor: 100_000, incomplete: false },
+      ],
+      totalMinor: 210_000,
+      missingUnitPriceHoldingIds: [],
+    });
+  });
+
+  it("prices unit contributions at the current unit price", () => {
+    const view = deriveMonthlyAllocation(
+      plan([
+        contribution({
+          id: "c1",
+          destinationHoldingId: "h1",
+          amount: { mode: "units", value: "2.5" },
+          cadence: { kind: "monthly", dayOfMonth: 1 },
+        }),
+      ]),
+      "2025-06-15",
+      { h1: "100.40" },
+    );
+
+    expect(view.lines).toEqual([
+      { destinationHoldingId: "h1", monthlyMinor: 25_100, incomplete: false },
+    ]);
+    expect(view.totalMinor).toBe(25_100);
+  });
+
+  it("flags an unpriced units line as incomplete without inventing a figure", () => {
+    const view = deriveMonthlyAllocation(
+      plan([
+        contribution({ id: "c1", destinationHoldingId: "h1" }),
+        contribution({
+          id: "c2",
+          destinationHoldingId: "h1",
+          amount: { mode: "units", value: "1" },
+        }),
+        contribution({
+          id: "c3",
+          destinationHoldingId: "h2",
+          amount: { mode: "units", value: "3" },
+        }),
+      ]),
+      "2025-06-15",
+    );
+
+    expect(view).toEqual({
+      lines: [
+        { destinationHoldingId: "h1", monthlyMinor: 100_000, incomplete: true },
+        { destinationHoldingId: "h2", monthlyMinor: 0, incomplete: true },
+      ],
+      totalMinor: 100_000,
+      missingUnitPriceHoldingIds: ["h1", "h2"],
+    });
+  });
+
+  it("skips contributions that are not active today", () => {
+    const view = deriveMonthlyAllocation(
+      plan([
+        contribution({ id: "c1", destinationHoldingId: "h1", startDate: "2026-01-01" }),
+        contribution({
+          id: "c2",
+          destinationHoldingId: "h2",
+          endDate: "2025-05-31",
+        }),
+        contribution({ id: "c3", destinationHoldingId: "h3" }),
+      ]),
+      "2025-06-15",
+    );
+
+    expect(view.lines).toEqual([
+      { destinationHoldingId: "h3", monthlyMinor: 100_000, incomplete: false },
+    ]);
+    expect(view.totalMinor).toBe(100_000);
+  });
+
+  it("returns an empty view for an empty plan", () => {
+    expect(deriveMonthlyAllocation(plan([]), "2025-06-15")).toEqual({
+      lines: [],
+      totalMinor: 0,
+      missingUnitPriceHoldingIds: [],
     });
   });
 });

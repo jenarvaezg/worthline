@@ -68,11 +68,17 @@ export async function buildFireProjection(
       amountMinor: monthlyContributionMinor,
       currency,
     },
-    scenarios: projection.scenarios.map((scenario) => toScenario(scenario, currency)),
+    scenarios: projection.scenarios.map((scenario) =>
+      toAgentViewFireScenario(scenario, currency),
+    ),
   };
 }
 
-function toScenario(scenario: FireScenario, currency: string): AgentViewFireScenario {
+/** Map a domain FIRE scenario to the agent-view shape (shared with the plan what-if, #559). */
+export function toAgentViewFireScenario(
+  scenario: FireScenario,
+  currency: string,
+): AgentViewFireScenario {
   const money = (amountMinor: number): AgentViewMoney => ({ amountMinor, currency });
 
   return {

@@ -1361,6 +1361,162 @@ export interface AgentViewFireProjection {
 }
 
 /**
+ * A planned contribution's cadence (ADR 0041, PRD #553): weekly on an ISO
+ * weekday (1 = Monday … 7 = Sunday), monthly on a day of month (clamped to
+ * short months), quarterly, or annual — the latter two stepping from the
+ * contribution's start date.
+ */
+export type AgentViewContributionCadence =
+  | { kind: "weekly"; weekday: number }
+  | { kind: "monthly"; dayOfMonth: number }
+  | { kind: "quarterly" }
+  | { kind: "annual" };
+
+/**
+ * A planned amount: money in the workspace currency, or instrument units (a
+ * decimal string) valued at the destination's current unit price when one is
+ * cached — never at an invented price.
+ */
+export type AgentViewContributionAmount =
+  | { mode: "money"; money: AgentViewMoney }
+  | { mode: "units"; units: string };
+
+/**
+ * One recurring planned contribution (ADR 0041, PRD #553 S5). Pure forecast
+ * metadata — it never enters net worth, a snapshot, or any figure the net-worth
+ * math reads. `id` is an opaque, stable derived id (`wl_pcn_…`) like an
+ * operation's — no registry write (ADR 0023).
+ */
+export interface AgentViewPlannedContribution {
+  object: "planned_contribution";
+  id: string;
+  /** The destination holding (`wl_hld_…`) the contribution buys into. */
+  destinationHolding: string;
+  amount: AgentViewContributionAmount;
+  cadence: AgentViewContributionCadence;
+  /** ISO date (YYYY-MM-DD). */
+  startDate: string;
+  /** ISO date (YYYY-MM-DD); open-ended when absent. */
+  endDate?: string;
+  /** True when the contribution is in force today (started and not ended). */
+  active: boolean;
+}
+
+/** One destination's slice of the forecast monthly split (ADR 0041). */
+export interface AgentViewMonthlyAllocationLine {
+  destinationHolding: string;
+  /** Monthly-equivalent forecast of the destination's PRICED contributions. */
+  monthly: AgentViewMoney;
+  /** True when an active units contribution lacks a price — a lower bound, never a guess. */
+  incomplete: boolean;
+}
+
+/**
+ * Where forecast capital goes each month (ADR 0041): active contributions
+ * grouped by destination at their monthly equivalent (weekly ×52/12, quarterly
+ * ÷3, annual ÷12), units priced at the current cached unit price. Forecast
+ * only — this split is an intention, not money that moved.
+ */
+export interface AgentViewMonthlyAllocation {
+  /** Sum of the priced lines; a lower bound when any line is incomplete. */
+  total: AgentViewMoney;
+  /** Largest monthly amount first. */
+  lines: AgentViewMonthlyAllocationLine[];
+  /** Destinations (`wl_hld_…`) whose active units contributions lack a unit price. */
+  missingUnitPriceHoldings: string[];
+}
+
+/**
+ * Progress of one occurrence against explicitly linked truth: money plans
+ * compare planned vs executed cash; units plans compare planned vs executed
+ * units with the executed cash alongside. Executed figures come only from
+ * operations the user linked — never from a guessed match.
+ */
+export type AgentViewContributionProgress =
+  | {
+      mode: "money";
+      planned: AgentViewMoney;
+      executed: AgentViewMoney;
+      delta: AgentViewMoney;
+    }
+  | {
+      mode: "units";
+      plannedUnits: string;
+      executedUnits: string;
+      deltaUnits: string;
+      executedCash: AgentViewMoney;
+    };
+
+/**
+ * One forecast occurrence that is still unconfirmed (ADR 0041, PRD #553 S2/S5):
+ * `pending` has no linked truth; `partial` has some. `backlog` marks a
+ * past-due occurrence the user has not closed — a visible reminder, never an
+ * auto-match. `id` is an opaque derived id (`wl_pco_…`); `operations` carries
+ * the same `wl_op_…` ids `get_operations` returns.
+ */
+export interface AgentViewContributionPendingOccurrence {
+  object: "contribution_occurrence";
+  id: string;
+  /** The plan row (`wl_pcn_…`) this occurrence was expanded from. */
+  contribution: string;
+  destinationHolding: string;
+  /** ISO date (YYYY-MM-DD) the contribution was planned for. */
+  plannedDate: string;
+  state: "pending" | "partial";
+  /** Past-due and still unconfirmed. */
+  backlog: boolean;
+  progress: AgentViewContributionProgress;
+  /** Linked operations (`wl_op_…`). */
+  operations: string[];
+}
+
+/**
+ * The what-if trajectory under the plan (ADR 0041, PRD #553 S4/S5): `projectFire`
+ * extended with the plan's time-varying occurrence stream and a growth toggle —
+ * `flat` (contributions only, zero appreciation) vs `historical` (per-holding
+ * measured returns where available, else `assumedAnnualReturn`). A pure forecast
+ * over the FIRE config; `unconfigured` (empty scenarios) without one.
+ */
+export interface AgentViewContributionWhatIf {
+  status: AgentViewFireStatus;
+  growthAssumption: "flat" | "historical";
+  /** Fallback annual return as a decimal string; present only when configured. */
+  assumedAnnualReturn?: string;
+  /** Present only when configured. */
+  fireNumber?: AgentViewMoney;
+  /** `[optimistic, base, pessimistic]` when configured; empty when not. */
+  scenarios: AgentViewFireScenario[];
+}
+
+/**
+ * A scope's contribution plan as `get_contribution_plan` exposes it (ADR 0041,
+ * PRD #553 S5): the recurring plan rows, the forecast monthly allocation, the
+ * unconfirmed pending/backlog occurrences, and the what-if trajectory. The
+ * entire object is a FORECAST layer — reading it touches no figure, and no
+ * figure in it is confirmed truth; confirmed money remains on operations and
+ * snapshots. Reconciliation is manual and explicit: this surface never links,
+ * closes, or matches an occurrence.
+ */
+export interface AgentViewContributionPlan {
+  object: "contribution_plan";
+  /**
+   * In-band marker (ADR 0041): every figure in this response is forecast —
+   * never confirmed truth, which lives on operations and snapshots.
+   */
+  basis: "forecast";
+  scope: AgentViewScope;
+  /** `empty` when the scope has no plan rows — no figures invented. */
+  status: "empty" | "configured";
+  contributions: AgentViewPlannedContribution[];
+  monthlyAllocation: AgentViewMonthlyAllocation;
+  /** The window `pending` covers: earliest plan start → ~90 days ahead. */
+  pendingWindow: { from: string; to: string };
+  /** Forecast-but-unconfirmed occurrences (pending/partial), oldest first. */
+  pending: AgentViewContributionPendingOccurrence[];
+  whatIf: AgentViewContributionWhatIf;
+}
+
+/**
  * An acknowledged overrideable warning as `get_warning_overrides` exposes it
  * (#467, PRD #417 S3): the warning code and the public holding ID (`wl_hld_…`)
  * whose warning was silenced, so the assistant can explain which warning was

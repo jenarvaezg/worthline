@@ -1,5 +1,6 @@
 import type {
   AssetPrice,
+  ContributionOccurrenceReconciliation,
   ContributionPlan,
   DebtModel,
   ExportedPublicId,
@@ -208,6 +209,14 @@ export interface AgentViewReadStore {
   readPayoutSchedulesForHolding: (holdingId: string) => Promise<PayoutSchedule[]>;
   /** A scope's planned contributions (ADR 0041, PRD #553 S1). Forecast metadata only. */
   readContributionPlan: (scopeId: string) => Promise<ContributionPlan>;
+  /**
+   * A scope's explicit contribution reconciliations (ADR 0041, PRD #553 S2). A
+   * pure read — the pending/backlog projection joins these to forecast
+   * occurrences in domain code; the agent view never links or closes one.
+   */
+  readContributionReconciliations: (
+    scopeId: string,
+  ) => Promise<ContributionOccurrenceReconciliation[]>;
   /** Cached investment unit prices for contribution-plan money conversion. */
   readAllPriceCacheEntries: () => Promise<AssetPrice[]>;
 }
@@ -253,6 +262,9 @@ export interface AgentViewReadStoreDeps {
   readPayoutSchedules: () => Promise<PayoutSchedule[]>;
   readPayoutSchedulesForHolding: (holdingId: string) => Promise<PayoutSchedule[]>;
   readContributionPlan: (scopeId: string) => Promise<ContributionPlan>;
+  readContributionReconciliations: (
+    scopeId: string,
+  ) => Promise<ContributionOccurrenceReconciliation[]>;
   readAllPriceCacheEntries: () => Promise<AssetPrice[]>;
 }
 
@@ -329,6 +341,8 @@ export function createAgentViewReadStore(
     readPayoutSchedulesForHolding: (holdingId) =>
       deps.readPayoutSchedulesForHolding(holdingId),
     readContributionPlan: (scopeId) => deps.readContributionPlan(scopeId),
+    readContributionReconciliations: (scopeId) =>
+      deps.readContributionReconciliations(scopeId),
     readAllPriceCacheEntries: () => deps.readAllPriceCacheEntries(),
   };
 }

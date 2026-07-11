@@ -14,6 +14,7 @@ import {
   type AgentViewErrorEnvelope,
   successEnvelope,
 } from "./contract";
+import { buildContributionPlan } from "./contribution-plan-context";
 import { buildDataQuality } from "./data-quality";
 import { buildFigureExplanation, isFigureName } from "./figure-explanations";
 import { buildFinancialContext } from "./financial-context";
@@ -190,6 +191,8 @@ export function createReadStoreBackend(
     goals: async (scopeId) => successEnvelope(await buildGoals(agentView, scopeId)),
     fireProjection: async (scopeId) =>
       successEnvelope(await buildFireProjection(agentView, scopeId)),
+    contributionPlan: async (scopeId, params) =>
+      successEnvelope(await buildContributionPlan(agentView, scopeId, params)),
   };
 }
 

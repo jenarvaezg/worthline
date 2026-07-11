@@ -442,6 +442,35 @@ export async function handleGetFireProjection(
   }
 }
 
+export async function handleGetContributionPlan(
+  request: NextRequest,
+  scopeId: string,
+  runWithStore: StoreRunner,
+): Promise<NextResponse> {
+  try {
+    guardAgentViewRequest(request, ["growthAssumption"]);
+
+    const growthAssumption = parseGrowthAssumption(
+      new URL(request.url).searchParams.get("growthAssumption"),
+    );
+
+    return await runWithStore((store) =>
+      catalogJson(
+        runCatalogRead(
+          catalog.get_contribution_plan,
+          {
+            scopeId,
+            ...(growthAssumption === undefined ? {} : { growthAssumption }),
+          },
+          store.agentView,
+        ),
+      ),
+    );
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
 const OPERATION_QUERY_PARAMS = ["from", "to", "sort", "limit", "cursor"];
 
 export async function handleGetHoldingOperations(
@@ -592,6 +621,18 @@ function parseOperationSort(raw: string | null): AgentViewOperationSort {
 
   if (raw !== "date" && raw !== "-date") {
     throw enumError("sort", raw);
+  }
+
+  return raw;
+}
+
+function parseGrowthAssumption(raw: string | null): "flat" | "historical" | undefined {
+  if (raw === null) {
+    return undefined;
+  }
+
+  if (raw !== "flat" && raw !== "historical") {
+    throw enumError("growthAssumption", raw);
   }
 
   return raw;

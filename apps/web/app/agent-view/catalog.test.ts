@@ -73,6 +73,7 @@ function recordingBackend(overrides: Partial<AgentViewBackend> = {}): {
     memberProfiles: record("memberProfiles"),
     goals: record("goals"),
     fireProjection: record("fireProjection"),
+    contributionPlan: record("contributionPlan"),
     ...overrides,
   };
 
@@ -80,7 +81,7 @@ function recordingBackend(overrides: Partial<AgentViewBackend> = {}): {
 }
 
 describe("agent-view catalog · single source of truth (#576)", () => {
-  test("exposes exactly the 18 agent-view tools, each with matching metadata", () => {
+  test("exposes exactly the 19 agent-view tools, each with matching metadata", () => {
     const catalog = createAgentViewCatalog();
     const names = Object.values(catalog)
       .map((tool) => tool.name)
@@ -90,6 +91,7 @@ describe("agent-view catalog · single source of truth (#576)", () => {
       [
         "explain_figure",
         "get_connected_source_positions",
+        "get_contribution_plan",
         "get_data_quality",
         "get_financial_context",
         "get_fire_context",
@@ -127,6 +129,19 @@ describe("agent-view catalog · single source of truth (#576)", () => {
     expect(catalog.get_fire_context.description).toContain("goal reservations");
     expect(catalog.get_fire_projection.description).toContain(
       "goal-reservation-adjusted",
+    );
+  });
+
+  test("get_contribution_plan labels the whole response as forecast, never truth (ADR 0041)", () => {
+    const catalog = createAgentViewCatalog();
+
+    expect(catalog.get_contribution_plan.description).toContain("forecast layer");
+    expect(catalog.get_contribution_plan.description).toContain(
+      "never enters net worth or snapshots",
+    );
+    expect(catalog.get_contribution_plan.description).toContain("auto-match");
+    expect(catalog.get_contribution_plan.inputSchema.properties).toHaveProperty(
+      "growthAssumption",
     );
   });
 });
@@ -175,6 +190,23 @@ describe("agent-view catalog · scope defaulting", () => {
     await expect(catalog.get_financial_context.run({}, backend)).rejects.toThrow(
       /no agent-view scopes/i,
     );
+  });
+
+  test("defaults get_contribution_plan to the household scope and forwards the growth toggle", async () => {
+    const catalog = createAgentViewCatalog();
+    const { backend, calls } = recordingBackend();
+
+    await catalog.get_contribution_plan.run({}, backend);
+    await catalog.get_contribution_plan.run(
+      { growthAssumption: "flat", scopeId: "wl_scp_member" },
+      backend,
+    );
+
+    expect(calls[1]).toEqual({ method: "contributionPlan", args: ["wl_scp_home", {}] });
+    expect(calls[2]).toEqual({
+      method: "contributionPlan",
+      args: ["wl_scp_member", { growthAssumption: "flat" }],
+    });
   });
 
   test("strips scopeId before handing pagination params to the backend", async () => {

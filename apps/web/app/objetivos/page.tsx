@@ -15,6 +15,7 @@ import { bootstrapHealthcheck, withStore } from "@web/store";
 import type { FireLevel, PassiveIncomeLens } from "@worthline/domain";
 import {
   collectHoldingPayouts,
+  contributionPendingWindow,
   formatMoneyMinorPrivacy,
   listScopeOptions,
   prepareObjetivosState,
@@ -272,19 +273,20 @@ export default async function ObjetivosPage({
 
   const currency = workspace.baseCurrency;
 
-  const contributionProjection = contributionPlan
-    ? projectContributionReconciliation({
-        plan: contributionPlan,
-        fromDate:
-          contributionPlan.contributions.map((item) => item.startDate).sort()[0] ?? today,
-        toDate: new Date(Date.parse(`${today}T00:00:00Z`) + 90 * 86_400_000)
-          .toISOString()
-          .slice(0, 10),
-        today,
-        reconciliations: contributionReconciliations,
-        operations: contributionOperations,
-      })
+  const pendingWindow = contributionPlan
+    ? contributionPendingWindow(contributionPlan, today)
     : null;
+  const contributionProjection =
+    contributionPlan && pendingWindow
+      ? projectContributionReconciliation({
+          plan: contributionPlan,
+          fromDate: pendingWindow.from,
+          toDate: pendingWindow.to,
+          today,
+          reconciliations: contributionReconciliations,
+          operations: contributionOperations,
+        })
+      : null;
 
   // Passive-income lens (#658): the selected scope's trailing-12m payouts,
   // weighted by ownership, against declared spending. Server-rendered figures;
