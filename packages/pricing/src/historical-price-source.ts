@@ -10,6 +10,8 @@
  *    existing range fetch (`fetchCoinGeckoHistoryEur` — never throws, empty on a
  *    miss, demo-key aware). An unmapped ticker resolves to no id → an empty
  *    series, never a fabricated price.
+ *  - `yahooHistoricalSource`: daily closes from Yahoo's chart API over a
+ *    millisecond range, converted to EUR with the same rules as live Yahoo pricing.
  *  - `parsePriceCsv`: the user-controlled long-range fallback — a `date,price`
  *    CSV parsed into the same map. Blank/malformed rows are skipped (gaps stay
  *    gaps); it never invents a price for a date the CSV omits.

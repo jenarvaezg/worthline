@@ -268,3 +268,4 @@ export {
 export type { SymbolCandidate } from "./search";
 export { searchSymbols } from "./search";
 export { fetchStooqMonthlyBenchmark } from "./stooq-benchmark";
+export { fetchYahooHistoryEur, yahooHistoricalSource } from "./yahoo-historical";
