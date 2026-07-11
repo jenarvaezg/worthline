@@ -1,18 +1,19 @@
 import type { AgentViewReadStore } from "@worthline/db";
 import type {
-  ContributionOccurrence,
   ContributionPlan,
   FireGrowthAssumption,
   FireScenario,
   ManualAsset,
+  MonthlyContributionAllocation,
   PlannedContribution,
   PlannedContributionAmount,
   ProjectedContributionOccurrence,
 } from "@worthline/domain";
 import {
+  computeMonthlyContributionAllocation,
   contributionOccurrenceMoneyMinor,
-  expandContributionPlan,
   instrumentOfAsset,
+  isContributionMonthKey,
   projectContributionReconciliation,
   projectFireWithContributionPlan,
   resolveHoldingAnnualReturnForProjection,
@@ -68,6 +69,14 @@ export async function buildContributionPlanContext(
 ): Promise<AgentViewContributionPlanContext> {
   const today = options.asOf ?? systemClock().today();
   const month = options.month ?? today.slice(0, 7);
+  if (!isContributionMonthKey(month)) {
+    throw new AgentViewHttpError({
+      code: "bad_request",
+      details: { month },
+      message: "month must be a YYYY-MM calendar month.",
+      status: 400,
+    });
+  }
   const growthAssumption = options.growthAssumption ?? "historical";
   const reconciliationWindowDays =
     options.reconciliationWindowDays ?? DEFAULT_RECONCILIATION_WINDOW_DAYS;
@@ -119,7 +128,7 @@ export async function buildContributionPlanContext(
     truthNote: TRUTH_NOTE,
     status: plan.contributions.length === 0 ? "empty" : "configured",
     contributions: plan.contributions.map((contribution) =>
-      toPlannedContribution(contribution, holdingPublicIds, currency, unitPrices),
+      toPlannedContribution(contribution, holdingPublicIds, currency, unitPrices, today),
     ),
     monthlySavingsCapacity: {
       amount: moneyOf(monthlyCapacity.capacityMinor, currency),
@@ -132,14 +141,25 @@ export async function buildContributionPlanContext(
             ),
           }),
     },
-    monthlyAllocation: buildMonthlyAllocation(
-      plan,
-      month,
+    monthlyAllocation: toMonthlyAllocation(
+      computeMonthlyContributionAllocation({
+        monthKey: month,
+        operations,
+        plan,
+        reconciliations,
+        today,
+        unitPriceMajorByHoldingId: unitPrices,
+      }),
+      holdingPublicIds,
+      currency,
+    ),
+    reconciliation: toReconciliation(
+      projection,
+      { from: reconciliationFromDate, to: reconciliationToDate },
       holdingPublicIds,
       currency,
       unitPrices,
     ),
-    reconciliation: toReconciliation(projection, holdingPublicIds, currency, unitPrices),
     whatIf: await buildWhatIf({
       store,
       plan,
@@ -187,6 +207,7 @@ function toPlannedContribution(
   holdingPublicIds: Map<string, string>,
   currency: string,
   unitPrices: Record<string, string>,
+  today: string,
 ): AgentViewPlannedContribution {
   return {
     object: "planned_contribution",
@@ -204,6 +225,9 @@ function toPlannedContribution(
     cadence: contribution.cadence,
     startDate: contribution.startDate,
     ...(contribution.endDate === undefined ? {} : { endDate: contribution.endDate }),
+    active:
+      contribution.startDate <= today &&
+      (contribution.endDate === undefined || contribution.endDate >= today),
   };
 }
 
@@ -227,44 +251,49 @@ function toAmount(
   };
 }
 
-function buildMonthlyAllocation(
-  plan: ContributionPlan,
-  month: string,
+/**
+ * Map the shared monthly-allocation seam (`computeMonthlyContributionAllocation`,
+ * PRD #553 S3 — the same derivation /objetivos renders) to the agent-view shape.
+ * Unpriced destinations keep a null planned amount plus their planned units and
+ * are listed in `missingUnitPriceHoldings` — never silently dropped or guessed.
+ */
+function toMonthlyAllocation(
+  allocation: MonthlyContributionAllocation,
   holdingPublicIds: Map<string, string>,
   currency: string,
-  unitPrices: Record<string, string>,
 ): AgentViewMonthlyAllocation {
-  const { from, to } = monthBounds(month);
-  const occurrences = expandContributionPlan(plan, from, to);
-  const byHolding = new Map<string, number>();
-
-  for (const occurrence of occurrences) {
-    const moneyMinor = occurrenceMoneyMinor(occurrence, unitPrices);
-    if (moneyMinor === null) {
-      continue;
-    }
-    byHolding.set(
-      occurrence.destinationHoldingId,
-      (byHolding.get(occurrence.destinationHoldingId) ?? 0) + moneyMinor,
-    );
-  }
-
-  const totalPlanned = [...byHolding.values()].reduce((sum, value) => sum + value, 0);
-  const slices: AgentViewMonthlyAllocationSlice[] = [...byHolding.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([holdingId, amountMinor]) => ({
-      destinationHolding: requirePublicId(holdingPublicIds, holdingId),
-      plannedAmount: moneyOf(amountMinor, currency),
+  const slices: AgentViewMonthlyAllocationSlice[] = allocation.destinations.map(
+    (destination) => ({
+      destinationHolding: requirePublicId(holdingPublicIds, destination.holdingId),
+      plannedAmount:
+        destination.plannedMinor === null
+          ? null
+          : moneyOf(destination.plannedMinor, currency),
+      ...(destination.plannedUnits === null
+        ? {}
+        : { plannedUnits: destination.plannedUnits }),
+      executed: moneyOf(destination.executedMinor, currency),
+      occurrenceCount: destination.occurrenceCount,
+      closedCount: destination.closedCount,
       shareOfMonth:
-        totalPlanned === 0
+        destination.plannedMinor === null || allocation.totalPlannedMinor === 0
           ? "0"
-          : ratioStringFromBps(Math.round((amountMinor / totalPlanned) * 10_000)),
-    }));
+          : ratioStringFromBps(
+              Math.round(
+                (destination.plannedMinor / allocation.totalPlannedMinor) * 10_000,
+              ),
+            ),
+    }),
+  );
 
   return {
     object: "monthly_allocation",
-    month,
-    totalPlanned: moneyOf(totalPlanned, currency),
+    month: allocation.monthKey,
+    totalPlanned: moneyOf(allocation.totalPlannedMinor, currency),
+    totalExecuted: moneyOf(allocation.totalExecutedMinor, currency),
+    missingUnitPriceHoldings: allocation.unpricedHoldingIds.map((holdingId) =>
+      requirePublicId(holdingPublicIds, holdingId),
+    ),
     slices,
   };
 }
@@ -274,6 +303,7 @@ function toReconciliation(
     pending: ProjectedContributionOccurrence[];
     closed: ProjectedContributionOccurrence[];
   },
+  window: { from: string; to: string },
   holdingPublicIds: Map<string, string>,
   currency: string,
   unitPrices: Record<string, string>,
@@ -283,6 +313,7 @@ function toReconciliation(
   );
   return {
     object: "contribution_reconciliation",
+    window,
     pending,
     backlog: pending.filter((item) => item.backlog),
     closed: projection.closed.map((item) =>
@@ -521,26 +552,9 @@ async function readInvestmentOperations(
   ).flat();
 }
 
-function occurrenceMoneyMinor(
-  occurrence: ContributionOccurrence,
-  unitPrices: Record<string, string>,
-): number | null {
-  return contributionOccurrenceMoneyMinor(occurrence, unitPrices);
-}
-
 function earliestPlanDate(plan: ContributionPlan, today: string): string {
   const starts = plan.contributions.map((item) => item.startDate).sort();
   return starts[0] ?? today;
-}
-
-function monthBounds(month: string): { from: string; to: string } {
-  const [yearRaw, monthRaw] = month.split("-");
-  const year = Number(yearRaw);
-  const mon = Number(monthRaw);
-  const from = `${month}-01`;
-  const lastDay = new Date(Date.UTC(year, mon, 0)).getUTCDate();
-  const to = `${month}-${String(lastDay).padStart(2, "0")}`;
-  return { from, to };
 }
 
 function addDays(iso: string, days: number): string {

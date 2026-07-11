@@ -704,12 +704,17 @@ export function createAgentViewCatalog(): AgentViewCatalog {
     },
     get_contribution_plan: {
       description:
-        "Get a scope's contribution plan (defaults to the household scope): the recurring planned contributions (destination, amount in money or units, cadence, start/end), the monthly capital allocation split for a calendar month, pending/backlog reconciliation status, and a FIRE what-if trajectory under the plan with the chosen growth assumption (flat = no appreciation; historical = each holding's own return from #547, falling back to the FIRE config rate). The entire response is forecast metadata — planned contributions never enter net worth or snapshots. Confirmed buys and value updates remain truth via get_operations. Reads are side-effect-free.",
+        "Get a scope's contribution plan (defaults to the household scope): the recurring planned contributions (destination, amount in money or units, cadence, start/end, whether active today), the monthly capital allocation split for a calendar month (planned per destination contrasted with the money explicitly confirmed against that month's occurrences; a units destination with no cached price reports its planned units and is listed in missingUnitPriceHoldings — never a guessed figure), pending/backlog reconciliation status over an echoed window, and a FIRE what-if trajectory under the plan with the chosen growth assumption (flat = no appreciation; historical = each holding's own return from #547, falling back to the FIRE config rate). The entire response is forecast metadata — planned contributions never enter net worth or snapshots. Confirmed buys and value updates remain truth via get_operations. Reads are side-effect-free.",
       inputSchema: {
         additionalProperties: false,
         properties: {
           growthAssumption: { enum: ["flat", "historical"], type: "string" },
-          month: { type: "string" },
+          month: {
+            description:
+              "YYYY-MM calendar month for the allocation view; defaults to the current month. A malformed month is a 400.",
+            pattern: "^\\d{4}-\\d{2}$",
+            type: "string",
+          },
           reconciliationWindowDays: {
             description:
               "Positive integer days forward for reconciliation; values above 366 are clamped to 366.",
