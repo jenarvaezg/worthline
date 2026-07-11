@@ -34,6 +34,9 @@ export function valuationMethodOfAsset(asset: ManualAsset): ValuationMethod {
  * read, so the two never drift.
  */
 export function isValueUpdateEligible(asset: ManualAsset): boolean {
+  if (asset.connectedSourceId != null) {
+    return false;
+  }
   return valuationMethodOfAsset(asset) !== "derived";
 }
 

@@ -18,7 +18,9 @@ import {
   createWorkspace,
 } from "./index";
 import {
+  assertNotConnectedValuation,
   assertNotInvestmentAsset,
+  checkManualValuationViolation,
   deriveInvestmentValuation,
   selectInvestmentPrice,
 } from "./investment-valuation";
@@ -175,6 +177,94 @@ describe("assertNotInvestmentAsset — rejects manual valuation for investments"
     });
 
     expect(() => assertNotInvestmentAsset(home)).not.toThrow();
+  });
+});
+
+describe("assertNotConnectedValuation — rejects manual valuation for connected holdings", () => {
+  test("throws when the asset is materialized from a connected source", () => {
+    const workspace = makeWorkspace();
+    const connected = createManualAsset(workspace, {
+      connectedSourceId: "source_binance",
+      currency: "EUR",
+      currentValueMinor: 10_000,
+      id: "asset_crypto",
+      instrument: "crypto",
+      liquidityTier: "market",
+      name: "Binance",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "manual",
+    });
+
+    expect(() => assertNotConnectedValuation(connected)).toThrow("connected");
+  });
+
+  test("does not throw for a hand-maintained asset", () => {
+    const workspace = makeWorkspace();
+    const manualAsset = createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 5_000,
+      id: "asset_cash",
+      liquidityTier: "cash",
+      name: "Cuenta corriente",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "cash",
+    });
+
+    expect(() => assertNotConnectedValuation(manualAsset)).not.toThrow();
+  });
+});
+
+describe("checkManualValuationViolation — stable domain codes", () => {
+  test("returns investment code before connected code when both would apply", () => {
+    const workspace = makeWorkspace();
+    const both = createManualAsset(workspace, {
+      connectedSourceId: "source_1",
+      currency: "EUR",
+      currentValueMinor: 1_000,
+      id: "asset_both",
+      liquidityTier: "market",
+      name: "Weird",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "investment",
+    });
+
+    expect(checkManualValuationViolation(both)).toEqual({
+      code: "investment_manual_valuation_rejected",
+    });
+  });
+
+  test("returns connected code for a connected manual holding", () => {
+    const workspace = makeWorkspace();
+    const connected = createManualAsset(workspace, {
+      connectedSourceId: "source_numista",
+      currency: "EUR",
+      currentValueMinor: 1_000,
+      id: "asset_coins",
+      instrument: "coin_collection",
+      liquidityTier: "illiquid",
+      name: "Numista",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "manual",
+    });
+
+    expect(checkManualValuationViolation(connected)).toEqual({
+      code: "connected_manual_valuation_rejected",
+    });
+  });
+
+  test("returns null for an eligible manual holding", () => {
+    const workspace = makeWorkspace();
+    const cash = createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 1_000,
+      id: "asset_cash",
+      liquidityTier: "cash",
+      name: "Cash",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "cash",
+    });
+
+    expect(checkManualValuationViolation(cash)).toBeNull();
   });
 });
 

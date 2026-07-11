@@ -19,6 +19,10 @@ import {
   liabilities,
 } from "./schema";
 import { type StoreContext, toOperation } from "./store-context";
+import {
+  assertAssetAllowsOperationWrite,
+  assertAssetAllowsStoredValuationWrite,
+} from "./valuation-guard";
 
 /** One confirmed value change from a value-update pass. */
 export interface ValueUpdateCommand {
@@ -105,6 +109,8 @@ async function recordOperation(
   ctx: StoreContext,
   input: CreateInvestmentOperationInput,
 ): Promise<void> {
+  await assertAssetAllowsOperationWrite(ctx, input.assetId);
+
   const operation = createInvestmentOperation(input);
 
   // fees_minor has a DB default of 0; the domain constructor always supplies it,
@@ -237,6 +243,8 @@ async function updateOperation(
     return null;
   }
 
+  await assertAssetAllowsOperationWrite(ctx, row.assetId);
+
   await db
     .update(assetOperations)
     .set({
@@ -276,6 +284,7 @@ async function batchApplyValueUpdates(
       if (!Number.isInteger(cmd.newValueMinor)) {
         throw new Error("Money must be stored as integer minor units.");
       }
+      await assertAssetAllowsStoredValuationWrite(ctx, cmd.id);
       await db
         .update(assets)
         .set({ currentValueMinor: cmd.newValueMinor, updatedAt: sql`CURRENT_TIMESTAMP` })
@@ -307,6 +316,7 @@ async function batchApplyAllValueUpdates(
 
   await ctx.transaction(async () => {
     for (const cmd of assetCommands) {
+      await assertAssetAllowsStoredValuationWrite(ctx, cmd.id);
       await db
         .update(assets)
         .set({ currentValueMinor: cmd.newValueMinor, updatedAt: sql`CURRENT_TIMESTAMP` })

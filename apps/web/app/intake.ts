@@ -579,6 +579,8 @@ export function mapDomainViolation(violation: DomainViolation): string {
       return "Las comisiones no son válidas.";
     case "investment_manual_valuation_rejected":
       return "El valor de una inversión es siempre calculado — registra una operación o actualiza el precio.";
+    case "connected_manual_valuation_rejected":
+      return "El valor de un activo conectado se actualiza al sincronizar — no puedes fijarlo a mano.";
     case "value_update_investment_holding":
       return "Las inversiones no se pueden actualizar en la puesta al día — su valor es siempre calculado.";
     case "duplicate_primary_residence":

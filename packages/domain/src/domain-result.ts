@@ -11,6 +11,7 @@ export type DomainViolation =
   | { code: "operation_price_negative" }
   | { code: "operation_fees_negative" }
   | { code: "investment_manual_valuation_rejected" }
+  | { code: "connected_manual_valuation_rejected" }
   | { code: "value_update_investment_holding" }
   | { code: "duplicate_primary_residence"; existingName: string };
 
