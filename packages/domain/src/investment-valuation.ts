@@ -1,4 +1,5 @@
 import type { DecimalString } from "./decimal";
+import type { DomainViolation } from "./domain-result";
 import type { InvestmentOperation } from "./investment-types";
 import { derivePosition } from "./positions";
 import type { ManualAsset } from "./workspace-types";
@@ -18,6 +19,44 @@ export function assertNotInvestmentAsset(asset: ManualAsset): void {
         "Record an operation or update the price instead.",
     );
   }
+}
+
+/**
+ * Guard: throws a domain error if `asset` is materialized from a connected source.
+ *
+ * Call this at the top of any code path that would manually set an asset's
+ * stored value — a connected holding's value is always re-rolled by its source
+ * sync and must never be edited by hand (#883, #945).
+ */
+export function assertNotConnectedValuation(asset: ManualAsset): void {
+  if (asset.connectedSourceId != null) {
+    throw new Error(
+      `Cannot manually set the valuation of connected asset "${asset.name}" (id: ${asset.id}). ` +
+        "A connected holding's value is always derived from its source sync.",
+    );
+  }
+}
+
+/**
+ * Non-throwing check for manual valuation guards. Returns the first violation
+ * that would block a hand-set value/operation/anchor, or null when allowed.
+ */
+export function checkManualValuationViolation(
+  asset: ManualAsset,
+): DomainViolation | null {
+  if (asset.type === "investment") {
+    return { code: "investment_manual_valuation_rejected" };
+  }
+  if (asset.connectedSourceId != null) {
+    return { code: "connected_manual_valuation_rejected" };
+  }
+  return null;
+}
+
+/** Assert every manual-valuation guard passes; throws on the first violation. */
+export function assertManualValuationAllowed(asset: ManualAsset): void {
+  assertNotInvestmentAsset(asset);
+  assertNotConnectedValuation(asset);
 }
 
 /** The price source selected by the price-selection rule. */

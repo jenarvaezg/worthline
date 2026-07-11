@@ -91,6 +91,18 @@ describe("isValueUpdateEligible — who appears in the manual value-update pass 
     );
     expect(isValueUpdateEligible(asset({ instrument: "coin_collection" }))).toBe(false);
   });
+
+  test("connected holdings are excluded even when typed manual (ADR 0016/#945)", () => {
+    expect(
+      isValueUpdateEligible(
+        asset({
+          connectedSourceId: "source_binance",
+          instrument: "crypto",
+          type: "manual",
+        }),
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("valuationMethodOfLiability (#152)", () => {

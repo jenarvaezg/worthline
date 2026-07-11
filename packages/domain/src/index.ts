@@ -435,7 +435,10 @@ export type {
   SelectedInvestmentPrice,
 } from "./investment-valuation";
 export {
+  assertManualValuationAllowed,
+  assertNotConnectedValuation,
   assertNotInvestmentAsset,
+  checkManualValuationViolation,
   deriveInvestmentValuation,
   selectInvestmentPrice,
 } from "./investment-valuation";

@@ -29,8 +29,8 @@ import {
 } from "@web/intake";
 import { type WorthlineStore } from "@web/store";
 import {
-  assertNotInvestmentAsset,
   type Clock,
+  checkManualValuationViolation,
   checkOwnershipSplit,
   checkSinglePrimaryResidence,
   effectiveAmortizationPlan,
@@ -344,18 +344,15 @@ export async function updateAssetValuationAction(
     _store,
   );
 
-  // Domain guard (ADR 0006): an investment's value is always derived and must
-  // never be hand-edited. Enforced here, at the caller, before the store write
-  // (PRD #120 candidate 3). assertNotInvestmentAsset throws on an investment; we
-  // map that to a user-facing Spanish message rather than letting it surface.
+  // Domain guard (ADR 0006, #883/#945): derived and connected holdings must never
+  // be hand-edited. Enforced here before the store write (PRD #120 candidate 3).
   if (asset) {
-    try {
-      assertNotInvestmentAsset(asset);
-    } catch {
+    const violation = checkManualValuationViolation(asset);
+    if (violation) {
       redirect(
         errorRedirectUrl(`/patrimonio/${id}/editar`, {
           formId: "edit",
-          message: mapDomainViolation({ code: "investment_manual_valuation_rejected" }),
+          message: mapDomainViolation(violation),
           values: preserveFields(formData, ["currentValue"]),
         }),
       );
@@ -430,9 +427,12 @@ export async function batchValueUpdateAction(
       if (!key.startsWith("val_")) continue;
       const asset = assetsById.get(key.slice(4));
       if (asset && !isValueUpdateEligible(asset)) {
+        const violation = checkManualValuationViolation(asset) ?? {
+          code: "value_update_investment_holding" as const,
+        };
         return {
           ok: false,
-          error: mapDomainViolation({ code: "value_update_investment_holding" }),
+          error: mapDomainViolation(violation),
         };
       }
     }

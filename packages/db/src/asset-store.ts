@@ -24,6 +24,7 @@ import {
 } from "./agent-view-public-ids";
 import { assetOwnerships, assets, assetValuations, investmentAssets } from "./schema";
 import { hardDeleteAssetTx, readAssets, type StoreContext } from "./store-context";
+import { assertAssetAllowsStoredValuationWrite } from "./valuation-guard";
 
 export interface CreateInvestmentAssetInput {
   id: string;
@@ -247,6 +248,8 @@ async function addValuationAnchor(
   }
   assertValuationDate(input.valuationDate);
 
+  await assertAssetAllowsStoredValuationWrite(ctx, input.assetId);
+
   await ctx.db
     .insert(assetValuations)
     .values({
@@ -352,6 +355,8 @@ async function updateValuationAnchor(
 
   if (!existing) return 0;
 
+  await assertAssetAllowsStoredValuationWrite(ctx, existing.assetId);
+
   const fields: Partial<typeof assetValuations.$inferInsert> = {};
   if (input.valueMinor !== undefined) fields.valueMinor = input.valueMinor;
   if (input.valuationDate !== undefined) fields.valuationDate = input.valuationDate;
@@ -387,6 +392,8 @@ async function setAnnualAppreciationRate(
     );
   }
 
+  await assertAssetAllowsStoredValuationWrite(ctx, assetId);
+
   await ctx.db
     .update(assets)
     .set({ annualAppreciationRate: rate, updatedAt: sql`CURRENT_TIMESTAMP` })
@@ -414,6 +421,8 @@ async function setValuationCadence(
   assetId: string,
   cadence: ValuationCadence | null,
 ): Promise<void> {
+  await assertAssetAllowsStoredValuationWrite(ctx, assetId);
+
   await ctx.db
     .update(assets)
     .set({ valuationCadence: cadence, updatedAt: sql`CURRENT_TIMESTAMP` })
@@ -786,9 +795,8 @@ async function updateAssetValuation(
     throw new Error("Money must be stored as integer minor units.");
   }
 
-  // The "investments are never valued by hand" invariant (ADR 0006) is enforced
-  // by the caller via assertNotInvestmentAsset before it reaches the store
-  // (PRD #120 candidate 3 — domain invariants live outside the store layer).
+  await assertAssetAllowsStoredValuationWrite(ctx, assetId);
+
   await db
     .update(assets)
     .set({ currentValueMinor, updatedAt: sql`CURRENT_TIMESTAMP` })
