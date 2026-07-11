@@ -17,6 +17,7 @@ import {
   preserveFields,
   priceBackfillDoneRedirectUrl,
   pricesRefreshedRedirectUrl,
+  snapshotPriceCorrectionDoneRedirectUrl,
   statementLoadedRedirectUrl,
   successRedirectUrl,
 } from "@web/intake";
@@ -49,8 +50,10 @@ import {
   EXPOSURE_GEOGRAPHY_BUCKETS,
   isStatementBroker,
   parseStatement,
+  planSnapshotPriceCorrection,
   planStatementMerge,
   resolvePerHoldingStatementIsinGuard,
+  snapshotPriceCorrectionErrorMessage,
   systemClock,
 } from "@worthline/domain";
 import {
@@ -666,6 +669,167 @@ export async function confirmPriceBackfillAction(
   );
 
   redirect(priceBackfillDoneRedirectUrl(returnUrl, result.source));
+}
+
+// ── Single-date snapshot price correction (#926) ─────────────────────────────
+
+/** Preview state for correcting one daily snapshot's unit price. */
+export type SnapshotPriceCorrectionPreviewState =
+  | { status: "idle" }
+  | { status: "error"; message: string }
+  | { status: "not_eligible" }
+  | {
+      status: "summary";
+      dateKey: string;
+      unitPrice: string;
+      units: string;
+      valueMinor: number;
+      create: number;
+      update: number;
+    };
+
+async function readSnapshotPriceCorrectionContext(
+  store: WorthlineStore,
+  assetId: string,
+): Promise<{
+  operations: Awaited<ReturnType<WorthlineStore["operations"]["readOperations"]>>;
+} | null> {
+  const investment = await store.assets.readInvestmentAssetById(assetId);
+  if (!investment) return null;
+
+  const operations = await store.operations.readOperations(assetId);
+  if (operations.length === 0) return null;
+
+  return { operations };
+}
+
+function parseSnapshotPriceCorrectionForm(formData: FormData): {
+  dateKey: string;
+  unitPriceRaw: string;
+} {
+  return {
+    dateKey: String(formData.get("dateKey") ?? "").trim(),
+    unitPriceRaw: String(formData.get("unitPrice") ?? "").trim(),
+  };
+}
+
+async function planCorrectionFromForm(
+  store: WorthlineStore,
+  assetId: string,
+  formData: FormData,
+) {
+  const context = await readSnapshotPriceCorrectionContext(store, assetId);
+  if (!context) return { kind: "not_eligible" as const };
+
+  const { dateKey, unitPriceRaw } = parseSnapshotPriceCorrectionForm(formData);
+  const existingSnapshotDates = new Set(
+    (
+      await store.snapshots.readSnapshotHoldings({
+        holdingId: assetId,
+        kind: "asset",
+      })
+    ).map((row) => row.dateKey),
+  );
+
+  const plan = planSnapshotPriceCorrection({
+    dateKey,
+    existingSnapshotDates,
+    operations: context.operations,
+    unitPriceRaw,
+  });
+  if (!plan.ok) {
+    return {
+      kind: "error" as const,
+      message: snapshotPriceCorrectionErrorMessage(plan.reason),
+    };
+  }
+
+  return { kind: "plan" as const, point: plan.point };
+}
+
+/**
+ * Single-date snapshot price correction preview (#926). Validates the chosen date
+ * and unit price, then runs the apply seam in dry-run mode — returning the
+ * create/update counts and the valued row WITHOUT writing anything.
+ */
+export async function previewSnapshotPriceCorrectionAction(
+  routeAssetId: string,
+  _prev: SnapshotPriceCorrectionPreviewState,
+  formData: FormData,
+  ..._testArgs: unknown[]
+): Promise<SnapshotPriceCorrectionPreviewState> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+
+  const planned = await runActionWithStore(
+    (store) => planCorrectionFromForm(store, routeAssetId, formData),
+    _store,
+  );
+  if (planned.kind === "not_eligible") return { status: "not_eligible" };
+  if (planned.kind === "error") return { status: "error", message: planned.message };
+
+  const result = await runActionWithStore(
+    (store) =>
+      store.correctInvestmentSnapshotUnitPrice({
+        assetId: routeAssetId,
+        dateKey: planned.point.dateKey,
+        dryRun: true,
+        unitPriceDecimal: planned.point.unitPriceDecimal,
+      }),
+    _store,
+  );
+
+  return {
+    create: result.created,
+    dateKey: planned.point.dateKey,
+    status: "summary",
+    unitPrice: planned.point.unitPriceDecimal,
+    units: planned.point.units,
+    update: result.updated,
+    valueMinor: planned.point.valueMinor,
+  };
+}
+
+/**
+ * Single-date snapshot price correction confirm (#926). Re-validates the form
+ * (never trusting the preview), applies the correction through the atomic store
+ * seam, and redirects with the corrected date.
+ */
+export async function confirmSnapshotPriceCorrectionAction(
+  routeAssetId: string,
+  formData: FormData,
+  ..._testArgs: unknown[]
+) {
+  const _store = testStoreFromActionArgs(_testArgs);
+  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+
+  const planned = await runActionWithStore(
+    (store) => planCorrectionFromForm(store, routeAssetId, formData),
+    _store,
+  );
+  if (planned.kind === "not_eligible") {
+    redirect(
+      errorRedirectUrl(returnUrl, {
+        message: "Esta inversión no admite corrección de snapshot.",
+      }),
+    );
+  }
+  if (planned.kind === "error") {
+    redirect(errorRedirectUrl(returnUrl, { message: planned.message }));
+  }
+
+  await runActionWithStore(
+    (store) =>
+      store.correctInvestmentSnapshotUnitPrice({
+        assetId: routeAssetId,
+        dateKey: planned.point.dateKey,
+        unitPriceDecimal: planned.point.unitPriceDecimal,
+      }),
+    _store,
+  );
+
+  redirect(snapshotPriceCorrectionDoneRedirectUrl(returnUrl, planned.point.dateKey));
 }
 
 // ── Exposure profile hand-entry (PRD #539 S1, #541) ──────────────────────────

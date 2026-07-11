@@ -395,6 +395,18 @@ export function priceBackfillDoneRedirectUrl(currentUrl: string, source: string)
   );
 }
 
+/** Success redirect for a single-date snapshot price correction (#926). */
+export function snapshotPriceCorrectionDoneRedirectUrl(
+  currentUrl: string,
+  dateKey: string,
+): string {
+  return appendParam(
+    appendParam(currentUrl, "ok", "snapshot_price_corrected"),
+    "date",
+    dateKey,
+  );
+}
+
 /** Decode the `failed` param back into symbol/reason pairs. */
 function parseFailures(raw: string | undefined): PriceRefreshFailure[] {
   if (!raw) return [];
@@ -462,6 +474,11 @@ export function resolveOkMessage(
     // banner — not just the preview — carries the audit trail (#380, criterion 8).
     const source = normalizeParam(searchParams?.["source"]);
     return source ? `Histórico de precios rellenado desde ${source}.` : okMessage(key);
+  }
+
+  if (key === "snapshot_price_corrected") {
+    const dateKey = normalizeParam(searchParams?.["date"]);
+    return dateKey ? `Snapshot del ${dateKey} corregido.` : okMessage(key);
   }
 
   if (key !== "prices_refreshed") {
@@ -536,6 +553,7 @@ export function okMessage(key: string | undefined): string | null {
     plan_deleted: "Plan de amortización eliminado.",
     plan_saved: "Plan de amortización guardado.",
     price_backfill_done: "Histórico de precios rellenado.",
+    snapshot_price_corrected: "Snapshot corregido.",
     prices_refreshed: "Precios actualizados.",
     repayment_added: "Amortización anticipada registrada.",
     repayment_deleted: "Amortización anticipada eliminada.",
