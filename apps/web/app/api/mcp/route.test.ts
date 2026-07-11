@@ -133,7 +133,7 @@ describe("POST /api/mcp (non-demo mode)", () => {
     });
   });
 
-  test("lists the 18 agent-view tools with their catalog schemas", async () => {
+  test("lists the 19 agent-view tools with their catalog schemas", async () => {
     const response = await mcpRequest({
       jsonrpc: "2.0",
       id: 2,
@@ -154,7 +154,7 @@ describe("POST /api/mcp (non-demo mode)", () => {
     };
     const tools = body.result.tools;
 
-    expect(tools).toHaveLength(18);
+    expect(tools).toHaveLength(19);
     expect(tools.map((tool) => tool.name).sort()).toEqual(
       [
         "list_scopes",
@@ -168,6 +168,7 @@ describe("POST /api/mcp (non-demo mode)", () => {
         "get_price_freshness",
         "get_operations",
         "get_connected_source_positions",
+        "get_contribution_plan",
         "list_connected_sources",
         "get_source_freshness",
         "get_workspace",

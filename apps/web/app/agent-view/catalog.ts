@@ -2,6 +2,7 @@ import type {
   AgentViewConnectedSourceListEntry,
   AgentViewConnectedSourcePosition,
   AgentViewConnectedSourcePositionGroup,
+  AgentViewContributionPlanContext,
   AgentViewDataQualityCategory,
   AgentViewDataQualitySeverity,
   AgentViewDataQualitySignal,
@@ -71,6 +72,17 @@ export interface ListGoalsInput {
 export interface GetFireProjectionInput {
   /** Public scope ID; defaults to the household scope when omitted. */
   scopeId?: string;
+}
+
+export interface GetContributionPlanInput {
+  /** Public scope ID; defaults to the household scope when omitted. */
+  scopeId?: string;
+  /** `YYYY-MM` month for the allocation view; defaults to the current UTC month. */
+  month?: string;
+  /** Growth assumption for the what-if trajectory. */
+  growthAssumption?: "flat" | "historical";
+  /** Days forward from today for the reconciliation window (default 90). */
+  reconciliationWindowDays?: number;
 }
 
 export interface ExplainFigureInput {
@@ -243,6 +255,10 @@ export interface AgentViewBackend {
   memberProfiles(): Promise<AgentViewEnvelope<AgentViewMemberProfile[]>>;
   goals(scopeId: string): Promise<AgentViewEnvelope<AgentViewGoal[]>>;
   fireProjection(scopeId: string): Promise<AgentViewEnvelope<AgentViewFireProjection>>;
+  contributionPlan(
+    scopeId: string,
+    params: Omit<GetContributionPlanInput, "scopeId">,
+  ): Promise<AgentViewEnvelope<AgentViewContributionPlanContext>>;
 }
 
 /** One catalog tool: its metadata plus a backend-parametrized read. */
@@ -322,6 +338,10 @@ export interface AgentViewCatalog {
   get_fire_projection: AgentViewCatalogTool<
     GetFireProjectionInput,
     AgentViewEnvelope<AgentViewFireProjection>
+  >;
+  get_contribution_plan: AgentViewCatalogTool<
+    GetContributionPlanInput,
+    AgentViewEnvelope<AgentViewContributionPlanContext>
   >;
 }
 
@@ -680,6 +700,31 @@ export function createAgentViewCatalog(): AgentViewCatalog {
       run: async (input, backend) => {
         const scopeId = await resolveScopeId(input.scopeId, backend);
         return backend.fireProjection(scopeId);
+      },
+    },
+    get_contribution_plan: {
+      description:
+        "Get a scope's contribution plan (defaults to the household scope): the recurring planned contributions (destination, amount in money or units, cadence, start/end), the monthly capital allocation split for a calendar month, pending/backlog reconciliation status, and a FIRE what-if trajectory under the plan with the chosen growth assumption (flat = no appreciation; historical = each holding's own return from #547, falling back to the FIRE config rate). The entire response is forecast metadata — planned contributions never enter net worth or snapshots. Confirmed buys and value updates remain truth via get_operations. Reads are side-effect-free.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          growthAssumption: { enum: ["flat", "historical"], type: "string" },
+          month: { type: "string" },
+          reconciliationWindowDays: {
+            description:
+              "Positive integer days forward for reconciliation; values above 366 are clamped to 366.",
+            minimum: 1,
+            type: "integer",
+          },
+          scopeId: { type: "string" },
+        },
+        type: "object",
+      },
+      name: "get_contribution_plan",
+      run: async (input, backend) => {
+        const { scopeId, ...rest } = input;
+        const resolved = await resolveScopeId(scopeId, backend);
+        return backend.contributionPlan(resolved, rest);
       },
     },
   };

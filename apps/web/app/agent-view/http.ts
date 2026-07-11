@@ -5,6 +5,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import {
   createAgentViewCatalog,
   type GetConnectedSourcePositionsInput,
+  type GetContributionPlanInput,
   type GetDataQualityInput,
   type GetOperationsInput,
   type GetSnapshotHistoryInput,
@@ -441,6 +442,54 @@ export async function handleGetFireProjection(
   } catch (error) {
     return toErrorResponse(error);
   }
+}
+
+export async function handleGetContributionPlan(
+  request: NextRequest,
+  scopeId: string,
+  runWithStore: StoreRunner,
+): Promise<NextResponse> {
+  try {
+    guardAgentViewRequest(request, [
+      "month",
+      "growthAssumption",
+      "reconciliationWindowDays",
+    ]);
+
+    const params = new URL(request.url).searchParams;
+    const input: GetContributionPlanInput = { scopeId };
+    const month = params.get("month");
+    if (month) {
+      input.month = month;
+    }
+    const growthAssumption = params.get("growthAssumption");
+    if (growthAssumption) {
+      input.growthAssumption = parseGrowthAssumption(growthAssumption);
+    }
+    if (params.get("reconciliationWindowDays")) {
+      input.reconciliationWindowDays = parsePositiveLimit(
+        params.get("reconciliationWindowDays"),
+        { defaultLimit: 90, maxLimit: 366 },
+      );
+    }
+
+    return await runWithStore((store) =>
+      catalogJson(runCatalogRead(catalog.get_contribution_plan, input, store.agentView)),
+    );
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+function parseGrowthAssumption(value: string): "flat" | "historical" {
+  if (value === "flat" || value === "historical") {
+    return value;
+  }
+  throw new AgentViewHttpError({
+    code: "bad_request",
+    message: 'growthAssumption must be "flat" or "historical".',
+    status: 400,
+  });
 }
 
 const OPERATION_QUERY_PARAMS = ["from", "to", "sort", "limit", "cursor"];

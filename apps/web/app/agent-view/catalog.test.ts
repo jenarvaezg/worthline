@@ -73,6 +73,7 @@ function recordingBackend(overrides: Partial<AgentViewBackend> = {}): {
     memberProfiles: record("memberProfiles"),
     goals: record("goals"),
     fireProjection: record("fireProjection"),
+    contributionPlan: record("contributionPlan"),
     ...overrides,
   };
 
@@ -80,7 +81,7 @@ function recordingBackend(overrides: Partial<AgentViewBackend> = {}): {
 }
 
 describe("agent-view catalog · single source of truth (#576)", () => {
-  test("exposes exactly the 18 agent-view tools, each with matching metadata", () => {
+  test("exposes exactly the 19 agent-view tools, each with matching metadata", () => {
     const catalog = createAgentViewCatalog();
     const names = Object.values(catalog)
       .map((tool) => tool.name)
@@ -90,6 +91,7 @@ describe("agent-view catalog · single source of truth (#576)", () => {
       [
         "explain_figure",
         "get_connected_source_positions",
+        "get_contribution_plan",
         "get_data_quality",
         "get_financial_context",
         "get_fire_context",
@@ -128,6 +130,7 @@ describe("agent-view catalog · single source of truth (#576)", () => {
     expect(catalog.get_fire_projection.description).toContain(
       "goal-reservation-adjusted",
     );
+    expect(catalog.get_contribution_plan.description).toContain("forecast metadata");
   });
 });
 

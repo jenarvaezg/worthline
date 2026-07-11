@@ -1363,6 +1363,123 @@ export interface AgentViewFireProjection {
   scenarios: AgentViewFireScenario[];
 }
 
+/** A recurring planned contribution as forecast metadata (ADR 0041, PRD #553 S5). */
+export interface AgentViewPlannedContribution {
+  object: "planned_contribution";
+  /** Opaque stable id (`wl_cpc_…`). */
+  id: string;
+  /** Destination holding public id (`wl_hld_…`). */
+  destinationHolding: string;
+  amount:
+    | { mode: "money"; value: AgentViewMoney }
+    | { mode: "units"; value: string; estimatedValue?: AgentViewMoney };
+  cadence:
+    | { kind: "weekly"; weekday: number }
+    | { kind: "monthly"; dayOfMonth: number }
+    | { kind: "quarterly" }
+    | { kind: "annual" };
+  startDate: string;
+  endDate?: string;
+}
+
+/** One destination's share of a month's planned capital allocation (forecast). */
+export interface AgentViewMonthlyAllocationSlice {
+  destinationHolding: string;
+  plannedAmount: AgentViewMoney;
+  /** Share of the month's total planned allocation, as a `0..1` decimal string. */
+  shareOfMonth: string;
+}
+
+/**
+ * Where planned capital goes in one calendar month (ADR 0041, PRD #553 S3/S5).
+ * Derived from the contribution plan — forecast only, never confirmed truth.
+ */
+export interface AgentViewMonthlyAllocation {
+  object: "monthly_allocation";
+  /** `YYYY-MM` month key. */
+  month: string;
+  totalPlanned: AgentViewMoney;
+  slices: AgentViewMonthlyAllocationSlice[];
+}
+
+/** One forecast occurrence with its reconciliation status (ADR 0041, PRD #553 S2/S5). */
+export interface AgentViewContributionOccurrence {
+  object: "contribution_occurrence";
+  id: string;
+  plannedContributionId: string;
+  destinationHolding: string;
+  plannedDate: string;
+  amount:
+    | { mode: "money"; value: AgentViewMoney }
+    | { mode: "units"; value: string; estimatedValue?: AgentViewMoney };
+  state: "pending" | "partial" | "fulfilled" | "skipped";
+  /** True when the planned date is before today and still open. */
+  backlog: boolean;
+  /** Public operation ids (`wl_op_…`) explicitly linked to this occurrence. */
+  linkedOperations: string[];
+  progress:
+    | {
+        mode: "money";
+        planned: AgentViewMoney;
+        executed: AgentViewMoney;
+        delta: AgentViewMoney;
+      }
+    | {
+        mode: "units";
+        plannedUnits: string;
+        executedUnits: string;
+        deltaUnits: string;
+        actualCash: AgentViewMoney;
+      };
+}
+
+/** Pending/backlog reconciliation status for the contribution plan (forecast vs truth). */
+export interface AgentViewContributionReconciliation {
+  object: "contribution_reconciliation";
+  pending: AgentViewContributionOccurrence[];
+  backlog: AgentViewContributionOccurrence[];
+  closed: AgentViewContributionOccurrence[];
+}
+
+/**
+ * FIRE what-if under the contribution plan (ADR 0041, PRD #553 S4/S5): time-varying
+ * planned contributions plus a growth assumption toggle. Forecast only — confirmed
+ * operations remain truth via `get_operations`.
+ */
+export interface AgentViewContributionWhatIf {
+  object: "contribution_what_if";
+  growthAssumption: "flat" | "historical";
+  /** Fallback annual return used when a holding lacks #547 history. */
+  assumedAnnualReturn: string;
+  status: AgentViewFireStatus;
+  fireNumber?: AgentViewMoney;
+  scenarios: AgentViewFireScenario[];
+}
+
+/**
+ * A scope's contribution plan as `get_contribution_plan` exposes it (ADR 0041,
+ * PRD #553 S5): the recurring plan, monthly allocation, pending/backlog status,
+ * and what-if trajectory. The entire surface is forecast metadata — it never
+ * enters net worth or snapshots. Confirmed movements remain truth via operations.
+ */
+export interface AgentViewContributionPlanContext {
+  object: "contribution_plan_context";
+  scope: AgentViewScope;
+  /** Always true — labels the entire response as forecast, not executed truth. */
+  forecast: true;
+  truthNote: string;
+  status: "empty" | "configured";
+  contributions: AgentViewPlannedContribution[];
+  monthlySavingsCapacity: {
+    amount: AgentViewMoney;
+    source: "plan_derived" | "manual_fallback" | "incomplete_unit_pricing";
+    missingUnitPriceHoldings?: string[];
+  };
+  monthlyAllocation: AgentViewMonthlyAllocation;
+  reconciliation: AgentViewContributionReconciliation;
+  whatIf: AgentViewContributionWhatIf;
+}
+
 /**
  * An acknowledged overrideable warning as `get_warning_overrides` exposes it
  * (#467, PRD #417 S3): the warning code and the public holding ID (`wl_hld_…`)

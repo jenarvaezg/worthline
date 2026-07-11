@@ -427,6 +427,49 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         }),
     }),
 
+    get_contribution_plan: tool({
+      description:
+        "Lee el plan de aportaciones del scope: contribuciones recurrentes, reparto " +
+        "mensual previsto, pendientes/backlog de reconciliación y proyección what-if " +
+        "bajo el plan (growthAssumption flat|historical). Toda la respuesta es previsión, " +
+        "no verdad ejecutada; las operaciones confirmadas siguen en get_operations.",
+      inputSchema: jsonSchema<{
+        scopeId?: string;
+        month?: string;
+        growthAssumption?: "flat" | "historical";
+        reconciliationWindowDays?: number;
+      }>({
+        type: "object",
+        properties: {
+          scopeId: { type: "string" },
+          month: { type: "string" },
+          growthAssumption: { enum: ["flat", "historical"], type: "string" },
+          reconciliationWindowDays: { maximum: 366, minimum: 1, type: "integer" },
+        },
+      }),
+      execute: (args) =>
+        chatRead(input, async (store) => {
+          const scopeId = await resolveScopeId(store, args.scopeId);
+          if (!scopeId) return EMPTY_WORKSPACE;
+          const result = await catalogRead(
+            catalog.get_contribution_plan,
+            {
+              scopeId,
+              ...(args.month === undefined ? {} : { month: args.month }),
+              ...(args.growthAssumption === undefined
+                ? {}
+                : { growthAssumption: args.growthAssumption }),
+              ...(args.reconciliationWindowDays === undefined
+                ? {}
+                : { reconciliationWindowDays: args.reconciliationWindowDays }),
+            },
+            store.agentView,
+          );
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return result.data;
+        }),
+    }),
+
     list_goals: tool({
       description:
         "Lista los objetivos intermedios del scope: importe objetivo, fecha, prioridad, " +
