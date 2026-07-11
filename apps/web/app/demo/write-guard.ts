@@ -19,11 +19,12 @@ import { errorRedirectUrl } from "@web/intake";
 
 import { readStoreTarget } from "@web/read-store-target";
 import { redirect } from "next/navigation";
-
-export {
+import {
   DEMO_DISABLED_MESSAGE,
   IMPERSONATION_READONLY_MESSAGE,
 } from "./write-guard-messages";
+
+export { DEMO_DISABLED_MESSAGE, IMPERSONATION_READONLY_MESSAGE };
 
 /** Whether this request is the read-only demo (a logged-out persona). */
 export async function isDemoMode(): Promise<boolean> {
