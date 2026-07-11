@@ -19,12 +19,12 @@ import { errorRedirectUrl } from "@web/intake";
 
 import { readStoreTarget } from "@web/read-store-target";
 import { redirect } from "next/navigation";
+import {
+  DEMO_DISABLED_MESSAGE,
+  IMPERSONATION_READONLY_MESSAGE,
+} from "./write-guard-messages";
 
-export const DEMO_DISABLED_MESSAGE =
-  "Acción deshabilitada en la demo — datos ficticios de solo lectura.";
-
-export const IMPERSONATION_READONLY_MESSAGE =
-  "Impersonación de solo lectura — los datos del usuario no se tocan.";
+export { DEMO_DISABLED_MESSAGE, IMPERSONATION_READONLY_MESSAGE };
 
 /** Whether this request is the read-only demo (a logged-out persona). */
 export async function isDemoMode(): Promise<boolean> {

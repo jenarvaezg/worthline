@@ -20,6 +20,7 @@
  */
 
 import {
+  isClock,
   runActionWithStore,
   testArgFromActionArgs,
   testStoreFromActionArgs,
@@ -32,39 +33,48 @@ import {
   successRedirectUrl,
 } from "@web/intake";
 import { type WorthlineStore } from "@web/store";
-import type {
-  Clock,
-  Instrument,
-  InvestmentOperation,
-  InvestmentPriceProvider,
-  OwnershipShare,
-  ParsedStatement,
-  ParsedStatementRow,
-  StatementFundSelection,
-  StatementImportBucket,
-  StatementPortfolioInvestment,
-} from "@worthline/domain";
+import type { Instrument, InvestmentPriceProvider } from "@worthline/domain";
 import {
   buildStatementImportPlan,
+  type Clock,
   defaultsFor,
-  derivePosition,
   findStatementTypeConflict,
   isIsinShaped,
   isStatementBroker,
-  latestOperationPrice,
-  multiplyToMinor,
-  parseStatement,
-  planStatementMerge,
+  type OwnershipShare,
+  type ParsedStatement,
+  type ParsedStatementRow,
   resolveStatementImportBuckets,
+  type StatementFundSelection,
+  type StatementImportBucket,
   systemClock,
 } from "@worthline/domain";
-import { type SymbolCandidate, searchSymbols } from "@worthline/pricing";
 import { redirect } from "next/navigation";
 import {
   isSpreadsheet,
   SpreadsheetReadError,
   spreadsheetToDelimitedText,
 } from "./spreadsheet-text";
+import {
+  buildStatementImportPreview,
+  defaultIsinSymbolResolver,
+  type FundPreviewRow,
+  type IsinLookupResult,
+  type IsinSymbolResolver,
+  isIsinSymbolResolver,
+  readPortfolioInvestments,
+  readStatementFromText,
+  statementImportPreviewReadPort,
+  typeConflictMessage,
+} from "./statement-import-preview";
+
+export type {
+  FundPositionImpact,
+  FundPreviewRow,
+  IsinLookupResult,
+  IsinSymbolResolver,
+  PositionImpactFlag,
+} from "./statement-import-preview";
 
 function currentUrlOf(formData: FormData): string {
   return (formData.get("currentUrl") as string) || "/patrimonio/importar-extracto";
@@ -72,91 +82,7 @@ function currentUrlOf(formData: FormData): string {
 
 // ── ISIN symbol lookup port ──────────────────────────────────────────────────
 
-/** The result of looking up a creation row's provider symbol by ISIN. */
-export type IsinLookupResult =
-  | { status: "found"; name: string; symbol: string; provider: InvestmentPriceProvider }
-  | { status: "not_found" }
-  | { status: "error" };
-
-/** Injected port (tests use a fake — found / not-found / error, never live Yahoo). */
-export type IsinSymbolResolver = (
-  isin: string,
-  instrument?: Instrument,
-) => Promise<IsinLookupResult>;
-
-function isClock(value: unknown): value is Clock {
-  return (
-    typeof value === "object" && value !== null && "now" in value && "today" in value
-  );
-}
-
-function isIsinSymbolResolver(value: unknown): value is IsinSymbolResolver {
-  return typeof value === "function";
-}
-
-function toLookupResult(candidates: SymbolCandidate[]): IsinLookupResult {
-  const hit = candidates[0];
-  if (!hit) return { status: "not_found" };
-  return { name: hit.name, provider: hit.provider, status: "found", symbol: hit.symbol };
-}
-
-/**
- * The real resolver: the wizard's group-scoped search (#593), keyed on the
- * identifier and routed by the bucket's instrument — Yahoo for listed
- * instruments (the historical default), Finect for plans, CoinGecko for crypto.
- */
-async function defaultIsinSymbolResolver(
-  isin: string,
-  instrument?: Instrument,
-): Promise<IsinLookupResult> {
-  try {
-    return toLookupResult(await searchSymbols(isin, instrument ?? "fund"));
-  } catch {
-    return { status: "error" };
-  }
-}
-
 // ── Preview ───────────────────────────────────────────────────────────────
-
-/** One fund's preview row — the serializable shape the client table renders. */
-export type FundPreviewRow = {
-  isin: string;
-  executedCount: number;
-  skippedCount: number;
-  amountMinor: number;
-  positionImpact: FundPositionImpact;
-} & (
-  | {
-      bucket: "matched";
-      assetId: string;
-      existingName: string;
-      toCreateCount: number;
-      toDeleteCount: number;
-      toOverwriteCount: number;
-      openingKeptPositionImpact?: FundPositionImpact;
-    }
-  | {
-      bucket: "new";
-      lookup: IsinLookupResult;
-      /**
-       * Creation prefills (#695): the lookup wins; a plantilla row's own Nombre
-       * backs the name up, and a non-ISIN identifier (Finect code, CoinGecko
-       * id) IS the provider symbol, so it self-suggests.
-       */
-      suggestedName: string;
-      suggestedSymbol: string;
-    }
-);
-
-export type PositionImpactFlag = "nearly_doubles" | "oversell" | "near_zero";
-
-export interface FundPositionImpact {
-  beforeUnits: string;
-  beforeValueMinor: number;
-  afterUnits: string;
-  afterValueMinor: number;
-  flags: PositionImpactFlag[];
-}
 
 export type ImportStatementPreviewState =
   | { status: "idle" }
@@ -201,185 +127,12 @@ async function readStatementFromForm(
     throw error;
   }
 
-  const parsed = parseStatement(text, broker);
+  const parsed = readStatementFromText(text, broker);
   if (!parsed.ok) {
-    return { message: parsed.errors[0], ok: false };
-  }
-
-  if (parsed.value.rows.length === 0) {
-    return {
-      message: "El archivo no contiene movimientos finalizados que cargar.",
-      ok: false,
-    };
+    return { message: parsed.message, ok: false };
   }
 
   return { ok: true, value: parsed.value };
-}
-
-/** Sum a fund group's executed rows into a minor-unit amount (units × price). */
-function rowsAmountMinor(rows: readonly ParsedStatementRow[]): number {
-  return rows.reduce((sum, row) => {
-    const amountMinor = multiplyToMinor(row.units, row.pricePerUnit);
-    return row.kind === "sell" ? sum - amountMinor : sum + amountMinor;
-  }, 0);
-}
-
-function rowToPreviewOperation(
-  assetId: string,
-  row: ParsedStatementRow,
-  id: string,
-): InvestmentOperation {
-  return {
-    assetId,
-    currency: row.currency,
-    executedAt: row.dateKey,
-    feesMinor: row.feesMinor,
-    id,
-    kind: row.kind,
-    pricePerUnit: row.pricePerUnit,
-    source: "statement",
-    units: row.units,
-  };
-}
-
-function isNearlyDouble(beforeValueMinor: number, afterValueMinor: number): boolean {
-  return (
-    beforeValueMinor > 0 &&
-    afterValueMinor * 10 >= beforeValueMinor * 19 &&
-    afterValueMinor * 10 <= beforeValueMinor * 21
-  );
-}
-
-function derivePositionImpact(
-  bucket: StatementImportBucket,
-  existingOperations: readonly InvestmentOperation[],
-): FundPositionImpact {
-  const assetId = bucket.bucket === "matched" ? bucket.assetId : bucket.isin;
-  const currency = existingOperations[0]?.currency ?? bucket.rows[0]?.currency ?? "EUR";
-  const beforeOperations = [...existingOperations];
-  const afterOperations =
-    bucket.bucket === "matched"
-      ? [
-          ...existingOperations.filter(
-            (operation) =>
-              !bucket.mergePlan.toDelete.some((deleted) => deleted.id === operation.id) &&
-              !bucket.mergePlan.toOverwrite.some(
-                (overwrite) => overwrite.operationId === operation.id,
-              ),
-          ),
-          ...bucket.mergePlan.toOverwrite.map((overwrite) =>
-            rowToPreviewOperation(assetId, overwrite.row, overwrite.operationId),
-          ),
-          ...bucket.mergePlan.toCreate.map((row, index) =>
-            rowToPreviewOperation(assetId, row, `preview_create_${index}`),
-          ),
-        ]
-      : bucket.rows.map((row, index) =>
-          rowToPreviewOperation(assetId, row, `preview_create_${index}`),
-        );
-  const currentPricePerUnit =
-    latestOperationPrice(afterOperations) ?? latestOperationPrice(beforeOperations);
-  const options = currentPricePerUnit
-    ? { assetId, currency, currentPricePerUnit }
-    : { assetId, currency };
-  const before = derivePosition(beforeOperations, options);
-  const after = derivePosition(afterOperations, options);
-  const beforeValueMinor =
-    before.marketValue?.amountMinor ?? before.costBasis.amountMinor;
-  const afterValueMinor = after.marketValue?.amountMinor ?? after.costBasis.amountMinor;
-  const flags: PositionImpactFlag[] = [];
-
-  if (isNearlyDouble(beforeValueMinor, afterValueMinor)) flags.push("nearly_doubles");
-  if (after.warnings.length > 0) flags.push("oversell");
-  if (beforeValueMinor > 0 && afterValueMinor === 0) flags.push("near_zero");
-
-  return {
-    afterUnits: after.currentUnits,
-    afterValueMinor,
-    beforeUnits: before.currentUnits,
-    beforeValueMinor,
-    flags,
-  };
-}
-
-/**
- * Read every current investment with a matching key — ISIN or provider symbol
- * (how the plantilla identifies plans and crypto, #695) — plus its operations,
- * for bucket resolution.
- */
-async function readPortfolioInvestments(
-  store: WorthlineStore,
-): Promise<StatementPortfolioInvestment[]> {
-  const metas = await store.assets.readInvestmentAssetsWithMeta();
-  return Promise.all(
-    metas
-      .filter((meta) => meta.isin || meta.providerSymbol)
-      .map(async (meta) => ({
-        assetId: meta.id,
-        isin: meta.isin ?? null,
-        name: meta.name,
-        operations: await store.operations.readOperations(meta.id),
-        providerSymbol: meta.providerSymbol ?? null,
-      })),
-  );
-}
-
-async function bucketToPreviewRow(
-  bucket: StatementImportBucket,
-  resolver: IsinSymbolResolver,
-  existingOperations: readonly InvestmentOperation[] = [],
-): Promise<FundPreviewRow> {
-  const amountMinor = rowsAmountMinor(bucket.rows);
-  const positionImpact = derivePositionImpact(bucket, existingOperations);
-
-  if (bucket.bucket === "matched") {
-    const openingKeptPositionImpact =
-      bucket.mergePlan.toDelete.length > 0
-        ? derivePositionImpact(
-            {
-              ...bucket,
-              mergePlan: planStatementMerge(bucket.rows, [...existingOperations], {
-                replaceOpening: false,
-              }),
-            },
-            existingOperations,
-          )
-        : undefined;
-
-    return {
-      amountMinor,
-      assetId: bucket.assetId,
-      bucket: "matched",
-      executedCount: bucket.rows.length,
-      existingName: bucket.name,
-      isin: bucket.isin,
-      ...(openingKeptPositionImpact ? { openingKeptPositionImpact } : {}),
-      positionImpact,
-      skippedCount: bucket.skipped.length,
-      toCreateCount: bucket.mergePlan.toCreate.length,
-      toDeleteCount: bucket.mergePlan.toDelete.length,
-      toOverwriteCount: bucket.mergePlan.toOverwrite.length,
-    };
-  }
-
-  const lookup = await resolver(bucket.isin, bucket.instrument);
-  return {
-    amountMinor,
-    bucket: "new",
-    executedCount: bucket.rows.length,
-    isin: bucket.isin,
-    lookup,
-    positionImpact,
-    skippedCount: bucket.skipped.length,
-    suggestedName: lookup.status === "found" ? lookup.name : (bucket.name ?? ""),
-    // A non-ISIN identifier (Finect code, CoinGecko id) IS the provider symbol.
-    suggestedSymbol:
-      lookup.status === "found"
-        ? lookup.symbol
-        : isIsinShaped(bucket.isin)
-          ? ""
-          : bucket.isin,
-  };
 }
 
 /**
@@ -402,36 +155,17 @@ export async function previewImportStatementAction(
   }
 
   return runActionWithStore(async (store) => {
-    const investments = await readPortfolioInvestments(store);
-    const buckets = resolveStatementImportBuckets(read.value, investments);
-    const operationsByAssetId = new Map(
-      investments.map((investment) => [investment.assetId, investment.operations]),
+    const preview = await buildStatementImportPreview(
+      statementImportPreviewReadPort(store),
+      read.value,
+      _resolver,
     );
-
-    const conflict = findStatementTypeConflict(buckets);
-    if (conflict) {
-      return { message: typeConflictMessage(conflict), status: "error" };
+    if (!preview.ok) {
+      return { message: preview.message, status: "error" };
     }
 
-    const funds = await Promise.all(
-      buckets.map((bucket) =>
-        bucketToPreviewRow(
-          bucket,
-          _resolver,
-          bucket.bucket === "matched"
-            ? (operationsByAssetId.get(bucket.assetId) ?? [])
-            : [],
-        ),
-      ),
-    );
-
-    return { funds, status: "ready" };
+    return { funds: preview.funds, status: "ready" };
   }, _store);
-}
-
-/** One identifier = one asset type; a mixed declaration aborts before any write. */
-function typeConflictMessage(identifier: string): string {
-  return `El identificador ${identifier} aparece con dos tipos de activo distintos — revisa el archivo. No se ha cargado nada.`;
 }
 
 // ── Confirm ───────────────────────────────────────────────────────────────
@@ -536,7 +270,9 @@ export async function confirmImportStatementAction(
       return { error: "Workspace no inicializado." } as const;
     }
 
-    const investments = await readPortfolioInvestments(store);
+    const investments = await readPortfolioInvestments(
+      statementImportPreviewReadPort(store),
+    );
     const buckets = resolveStatementImportBuckets(read.value, investments, {
       replaceOpening: (group) => shouldReplaceOpening(formData, group.isin),
     });

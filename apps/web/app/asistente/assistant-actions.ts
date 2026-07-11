@@ -4,6 +4,8 @@ import type {
   ExposureProfileProposalPreviewProfile,
 } from "./exposure-profile-proposals";
 import type { ScreenSection } from "./screen-context";
+import type { StatementImportProposal } from "./statement-import-proposals";
+import { parseStatementImportProposalDraft } from "./statement-import-proposals";
 
 /**
  * Typed read-only quick actions and internal-source destinations (#631, ADR
@@ -158,6 +160,29 @@ export function parseExposureProfileProposal(
     proposalType: "exposure_profiles",
     drafts: raw["drafts"] as ExposureProfileProposal["drafts"],
     previews: raw["previews"],
+  };
+}
+
+function isFundPreviewRow(value: unknown): boolean {
+  if (!isRecord(value) || typeof value["isin"] !== "string") return false;
+  if (typeof value["executedCount"] !== "number") return false;
+  if (!isRecord(value["positionImpact"])) return false;
+  return value["bucket"] === "matched" || value["bucket"] === "new";
+}
+
+export function parseStatementImportProposal(
+  raw: unknown,
+): StatementImportProposal | null {
+  if (!isRecord(raw) || raw["proposalType"] !== "statement_import") return null;
+  if (!Array.isArray(raw["funds"]) || !raw["funds"].every(isFundPreviewRow)) return null;
+
+  const parsed = parseStatementImportProposalDraft(raw["draft"]);
+  if (!parsed.ok) return null;
+
+  return {
+    proposalType: "statement_import",
+    draft: parsed.draft,
+    funds: raw["funds"] as StatementImportProposal["funds"],
   };
 }
 

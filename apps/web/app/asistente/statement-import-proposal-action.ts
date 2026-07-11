@@ -1,0 +1,191 @@
+"use server";
+
+import {
+  isClock,
+  runActionWithStore,
+  testArgFromActionArgs,
+  testStoreFromActionArgs,
+} from "@web/action-store";
+import {
+  DEMO_DISABLED_MESSAGE,
+  IMPERSONATION_READONLY_MESSAGE,
+} from "@web/demo/write-guard";
+import { createStableId, resolveOwnershipSplit } from "@web/intake";
+import {
+  buildStatementImportPreview,
+  defaultIsinSymbolResolver,
+  isIsinSymbolResolver,
+  readPortfolioInvestments,
+  readStatementFromText,
+  statementImportPreviewReadPort,
+  typeConflictMessage,
+} from "@web/patrimonio/importar-extracto/statement-import-preview";
+import { readStoreTarget } from "@web/read-store-target";
+import {
+  buildStatementImportPlan,
+  defaultsFor,
+  findStatementTypeConflict,
+  isIsinShaped,
+  type ParsedStatementRow,
+  resolveStatementImportBuckets,
+  systemClock,
+} from "@worthline/domain";
+
+import {
+  parseStatementImportProposalDraft,
+  selectionsFromPreviewFunds,
+} from "./statement-import-proposals";
+
+function rowToCreateInput(
+  assetId: string,
+  row: ParsedStatementRow,
+  id: string,
+  source: "agent",
+) {
+  return {
+    assetId,
+    currency: row.currency,
+    executedAt: row.dateKey,
+    feesMinor: row.feesMinor,
+    id,
+    kind: row.kind,
+    pricePerUnit: row.pricePerUnit,
+    source,
+    units: row.units,
+  };
+}
+
+export type StatementImportProposalConfirmResult =
+  | { status: "applied"; included: number; created: number }
+  | { status: "blocked"; message: string }
+  | { status: "error"; message: string };
+
+export async function confirmStatementImportProposalAction(
+  rawDraft: unknown,
+  ..._testArgs: unknown[]
+): Promise<StatementImportProposalConfirmResult> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
+  const _resolver =
+    testArgFromActionArgs(_testArgs, isIsinSymbolResolver) ?? defaultIsinSymbolResolver;
+  const target = await readStoreTarget();
+  if (target.kind === "demo") {
+    return { status: "blocked", message: DEMO_DISABLED_MESSAGE };
+  }
+  if (target.kind === "authenticated" && target.impersonatedEmail !== undefined) {
+    return { status: "blocked", message: IMPERSONATION_READONLY_MESSAGE };
+  }
+
+  const parsed = parseStatementImportProposalDraft(rawDraft);
+  if (!parsed.ok) {
+    return { status: "error", message: parsed.error };
+  }
+
+  const read = readStatementFromText(parsed.draft.rawText, parsed.draft.broker);
+  if (!read.ok) {
+    return { status: "error", message: read.message };
+  }
+
+  const today = _clock.today();
+  const seed = Date.now();
+
+  return runActionWithStore(async (store) => {
+    const readPort = statementImportPreviewReadPort(store);
+    const preview = await buildStatementImportPreview(readPort, read.value, _resolver);
+    if (!preview.ok) {
+      return { status: "error", message: preview.message };
+    }
+
+    const investments = await readPortfolioInvestments(readPort);
+    const buckets = resolveStatementImportBuckets(read.value, investments);
+    const conflict = findStatementTypeConflict(buckets);
+    if (conflict) {
+      return { status: "error", message: typeConflictMessage(conflict) };
+    }
+
+    const workspace = await store.workspace.readWorkspace();
+    if (!workspace) {
+      return { status: "error", message: "Workspace no inicializado." };
+    }
+
+    const activeMembers = workspace.members.filter((member) => !member.disabledAt);
+    const ownership = resolveOwnershipSplit({
+      activeMembers,
+      preset: "scope",
+      shortfall: "complete-to-full-ownership",
+    });
+
+    const selections = selectionsFromPreviewFunds(
+      buckets,
+      preview.funds,
+      ownership,
+      seed,
+    );
+    const plan = buildStatementImportPlan(buckets, selections);
+
+    const funds = plan.included.map((fund, index) => {
+      const opSeed = `${seed}_${index}`;
+
+      if (fund.kind === "matched") {
+        return {
+          assetId: fund.assetId,
+          creates: fund.mergePlan.toCreate.map((row, j) =>
+            rowToCreateInput(
+              fund.assetId,
+              row,
+              createStableId(
+                "op",
+                `${fund.assetId}_${row.dateKey}`,
+                seed + index * 1000 + j,
+              ),
+              "agent",
+            ),
+          ),
+          deletes: fund.mergePlan.toDelete.map((operation) => operation.id),
+          kind: "matched" as const,
+          overwrites: fund.mergePlan.toOverwrite.map(({ operationId, row }) => ({
+            currency: row.currency,
+            feesMinor: row.feesMinor,
+            id: operationId,
+            kind: row.kind,
+            pricePerUnit: row.pricePerUnit,
+            source: "agent" as const,
+            units: row.units,
+          })),
+        };
+      }
+
+      return {
+        asset: {
+          currency: fund.creation.currency,
+          id: fund.creation.assetId,
+          ...(isIsinShaped(fund.isin) ? { isin: fund.isin } : {}),
+          name: fund.creation.name,
+          ownership: fund.creation.ownership,
+          ...(fund.creation.instrument ? { instrument: fund.creation.instrument } : {}),
+          ...(fund.creation.liquidityTier
+            ? { liquidityTier: fund.creation.liquidityTier }
+            : {}),
+          ...(fund.creation.priceProvider
+            ? { priceProvider: fund.creation.priceProvider }
+            : {}),
+          ...(fund.creation.providerSymbol
+            ? { providerSymbol: fund.creation.providerSymbol }
+            : {}),
+        },
+        creates: fund.rows.map((row, j) =>
+          rowToCreateInput(fund.creation.assetId, row, `create_${opSeed}_${j}`, "agent"),
+        ),
+        kind: "new" as const,
+      };
+    });
+
+    await store.applyStatementImportAndRipple({ funds, today });
+
+    return {
+      created: plan.included.filter((fund) => fund.kind === "new").length,
+      included: plan.included.length,
+      status: "applied",
+    };
+  }, _store);
+}

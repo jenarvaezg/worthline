@@ -1,4 +1,5 @@
 import { type WorthlineStore, withStore } from "@web/store";
+import type { Clock } from "@worthline/domain";
 
 /**
  * The shared `_store?` action seam (issue #481).
@@ -19,6 +20,13 @@ export function runActionWithStore<T>(
   injectedStore?: WorthlineStore,
 ): Promise<T> {
   return injectedStore ? Promise.resolve(fn(injectedStore)) : withStore(fn);
+}
+
+/** Test-injection guard for server actions that accept an optional Clock seam. */
+export function isClock(value: unknown): value is Clock {
+  return (
+    typeof value === "object" && value !== null && "now" in value && "today" in value
+  );
 }
 
 export function testStoreFromActionArgs(
