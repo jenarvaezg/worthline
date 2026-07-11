@@ -119,21 +119,53 @@ describe("computeDeltaBreakdownWindow", () => {
     expect(bands.marketMinor + bands.payoutsMinor + bands.netSavingsMinor).toBe(800_00);
   });
 
-  test("modeled holding attributes full value change to market", () => {
+  test.each([
+    ["appreciating", "asset_rent"],
+    ["amortized", "liab_mortgage"],
+    ["anchored", "liab_card"],
+  ] as const)("modeled (%s) holding attributes full value change to market", (method, holdingId) => {
+    const methodMap = new Map(methods);
+    methodMap.set(holdingId, method);
+
     const bands = computeDeltaBreakdownWindow({
       aggregateDeltaMinor: 300_00,
-      currentRows: [row("asset_rent", 200_300_00)],
+      currentRows: [row(holdingId, 200_300_00)],
       operationsByHoldingId: new Map(),
-      ownershipByHoldingId: fullOwnership,
+      ownershipByHoldingId: new Map([
+        ...fullOwnership,
+        [holdingId, [{ memberId: "member_a", shareBps: 10_000 }]],
+      ]),
       payoutsByHolding: new Map(),
-      previousRows: [row("asset_rent", 200_000_00)],
+      previousRows: [row(holdingId, 200_000_00)],
       scopeMemberIds: householdScope,
-      valuationMethodByHoldingId: methods,
+      valuationMethodByHoldingId: methodMap,
       windowEndInclusive: "2026-02-28",
       windowStartExclusive: "2026-01-31",
     });
 
     expect(bands.marketMinor).toBe(300_00);
+    expect(bands.netSavingsMinor).toBe(0);
+  });
+
+  test("liability balance decrease counts as positive market when modeled", () => {
+    const methodMap = new Map<string, ValuationMethod>([["liab_mortgage", "amortized"]]);
+
+    const bands = computeDeltaBreakdownWindow({
+      aggregateDeltaMinor: 1_000_00,
+      currentRows: [row("liab_mortgage", 99_000_00, "liability")],
+      operationsByHoldingId: new Map(),
+      ownershipByHoldingId: new Map([
+        ["liab_mortgage", [{ memberId: "member_a", shareBps: 10_000 }]],
+      ]),
+      payoutsByHolding: new Map(),
+      previousRows: [row("liab_mortgage", 100_000_00, "liability")],
+      scopeMemberIds: householdScope,
+      valuationMethodByHoldingId: methodMap,
+      windowEndInclusive: "2026-02-28",
+      windowStartExclusive: "2026-01-31",
+    });
+
+    expect(bands.marketMinor).toBe(1_000_00);
     expect(bands.netSavingsMinor).toBe(0);
   });
 

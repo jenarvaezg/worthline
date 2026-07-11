@@ -167,6 +167,39 @@ describe("buildHistoricoBreakdownView", () => {
       "netSavings",
     ]);
   });
+
+  test("chart geometry omits gap months and only plots computable closes", () => {
+    const jan = snapshot("2026-01-31", 100_000_00);
+    const feb = snapshot("2026-02-28", 101_000_00);
+    const mar = snapshot("2026-03-31", 102_000_00);
+    const apr = snapshot("2026-04-30", 103_000_00);
+    const may = snapshot("2026-05-31", 104_000_00);
+
+    const view = buildHistoricoBreakdownView({
+      assets: [cashAsset(workspace, "asset_cash")],
+      holdingRecords: [
+        holdingRow(jan.id, jan.dateKey, "asset_cash", 100_000_00),
+        // February close has no frozen rows — gaps on both windows that touch it.
+        holdingRow(mar.id, mar.dateKey, "asset_cash", 102_000_00),
+        holdingRow(apr.id, apr.dateKey, "asset_cash", 103_000_00),
+        holdingRow(may.id, may.dateKey, "asset_cash", 104_000_00),
+      ],
+      liabilities: [],
+      debtModelByLiabilityId: new Map(),
+      operationsByHoldingId: new Map(),
+      payoutRecords: [],
+      payoutSchedules: [],
+      scopeId: "household",
+      snapshots: [jan, feb, mar, apr, may],
+      today: "2026-06-10",
+      workspace,
+    });
+
+    expect(view.periods.filter((period) => period.bands === null)).toHaveLength(2);
+    expect(view.periods.filter((period) => period.bands !== null)).toHaveLength(2);
+    // Only the two computable windows after the gap feed the stacked chart.
+    expect(view.geometry?.bands[0]?.bars).toHaveLength(2);
+  });
 });
 
 describe("HistoricoBreakdown render", () => {
@@ -245,5 +278,7 @@ describe("HistoricoBreakdown render", () => {
     expect(html).not.toContain("Cobros");
     expect(html).toContain("Mercado");
     expect(html).toContain("Ahorro neto");
+    expect(html).toContain("historicoBreakdownLimits");
+    expect(html).toContain("El ahorro neto es el residual");
   });
 });
