@@ -31,6 +31,29 @@ Use the `gh` CLI for issue tracker operations.
   gh issue list --label agent-lite --state open
   ```
 
+## Wayfinder maps
+
+Wayfinder maps (`wayfinder:map` + child tickets labeled `wayfinder:research`,
+`wayfinder:prototype`, `wayfinder:grilling`, `wayfinder:task`) track **decisions,
+never implementation**. Implementation always leaves the map as separate
+`ready-for-agent` issues or a compiled PRD issue — the map is the planning
+artifact, the `ready-for-agent` queue is the execution artifact.
+
+Conventions:
+
+- **Every map is born with an explicit terminal handoff ticket** — the ticket
+  whose closure means "the map is done and execution is specified". For
+  product-shaped maps that ticket compiles a PRD issue (e.g. "Compilar y
+  presentar el PRD"); for backlog-of-fixes maps where decisions are orthogonal,
+  per-decision `ready-for-agent` emissions are fine, but the terminal ticket
+  still exists so the map has an unambiguous finish line.
+- **Close the map when its last decision closes**, with a handoff comment that
+  links every emitted execution issue/PRD and lists deferred threads. A map with
+  all decisions resolved and no closing comment is a smell.
+- Decision tickets record their outcome on close ("Decisión: X. Implementación:
+  #N" or "cerrado sin ticket porque Y") so the map's decision log stays readable
+  without re-opening threads.
+
 ## When a skill says "publish to the issue tracker"
 
 Create a GitHub issue in `jenarvaezg/worthline`.
