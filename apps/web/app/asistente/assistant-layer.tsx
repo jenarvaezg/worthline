@@ -12,6 +12,7 @@ import {
   parseStatementImportProposal,
   type QuickAction,
 } from "./assistant-actions";
+import AssistantMessages from "./assistant-messages";
 import { confirmExposureProfileProposalAction } from "./exposure-profile-proposal-action";
 import type {
   ExposureProfileProposal,
@@ -382,7 +383,7 @@ export default function AssistantLayer({
         </button>
       </header>
 
-      <div className="assistantMessages">
+      <AssistantMessages>
         {messages.length === 0 ? (
           <div className="assistantHint">
             <p>Pregunta sobre tu patrimonio: cifras, deudas, liquidez, exposición…</p>
@@ -449,7 +450,7 @@ export default function AssistantLayer({
           </p>
         ) : null}
         <div ref={endRef} />
-      </div>
+      </AssistantMessages>
 
       {quickActions.length > 0 ? (
         <div aria-label="Acciones sugeridas" className="assistantActions">
