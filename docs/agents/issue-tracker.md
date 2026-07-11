@@ -47,9 +47,22 @@ Conventions:
   presentar el PRD"); for backlog-of-fixes maps where decisions are orthogonal,
   per-decision `ready-for-agent` emissions are fine, but the terminal ticket
   still exists so the map has an unambiguous finish line.
-- **Close the map when its last decision closes**, with a handoff comment that
-  links every emitted execution issue/PRD and lists deferred threads. A map with
-  all decisions resolved and no closing comment is a smell.
+- **Close the map when its last decision closes** — always, regardless of shape.
+  A map is a *planning* artifact; keeping it open through execution pollutes the
+  wayfinder frontier (open unblocked children read as decisions to resolve, but
+  execution tickets are not decisions). What differs by shape is **where the
+  execution umbrella lives after the map closes**:
+  - **Product-shaped map** (one coherent deliverable, interdependent slices, an
+    acceptance gate): the terminal ticket **compiles a PRD issue**; the emitted
+    `ready-for-agent` slices are **re-parented under the PRD** (sub-issues API,
+    `replace_parent=true`), and the PRD is the umbrella that stays open until the
+    work ships. Close the map. (Example: map #825 → PRD #915, slices #906–#913.)
+  - **Backlog-of-fixes map** (orthogonal decisions): the per-decision
+    `ready-for-agent` tickets are self-sufficient; no PRD. Close the map. (Example:
+    map #783 → loose tickets #895/#896/#901/#903.)
+  Always close with a handoff comment that links the PRD (or every emitted
+  execution issue) and lists deferred threads. A map with all decisions resolved
+  and no closing comment is a smell.
 - Decision tickets record their outcome on close ("Decisión: X. Implementación:
   #N" or "cerrado sin ticket porque Y") so the map's decision log stays readable
   without re-opening threads.
