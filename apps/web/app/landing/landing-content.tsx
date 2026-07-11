@@ -1,0 +1,663 @@
+import styles from "./landing.module.css";
+
+/**
+ * Landing pública «Evoluciona tu Excel» (#951, PRD #877): las 9 secciones del
+ * content outline (#860) con el copy aprobado, en el registro visual de
+ * cubierta de «La cubierta y las páginas» (#862). La sección 2 del outline
+ * (la prueba visual) vive absorbida en la hoja encartada del hero — decisión
+ * de la crítica adversaria de #862.
+ *
+ * Íntegra sin JS: todo se sirve en su estado final. La hoja del hero es la
+ * maqueta aprobada (aritmética reconciliada: bruto 439.814 = 9 % efectivo +
+ * 30 % mercado + 6 % depósitos + 55 % vivienda; neto 291.604 = bruto −
+ * 148.210) hasta que S4 (#952) la sustituya por la hoja SSG de la persona
+ * demo. La isla de sesión y la orquestación de animaciones llegan en S5
+ * (#953); aquí el masthead ofrece la entrada sin sesión.
+ */
+
+function DemoLink({ label = "Velo en la demo" }: { label?: string }) {
+  return (
+    <a className={styles.demolink} href="/demo">
+      {label} <span className={styles.arr}>→</span>
+    </a>
+  );
+}
+
+function Ctas() {
+  return (
+    <div className={styles.ctas}>
+      <a className={`${styles.btn} ${styles.btnPaper}`} href="/login?returnTo=/app">
+        Empezar con mis datos
+      </a>
+      <a className={`${styles.btn} ${styles.btnOutline}`} href="/demo">
+        Explorar la demo
+      </a>
+    </div>
+  );
+}
+
+function Cover() {
+  return (
+    <div className={styles.cover} id="top">
+      <div className={styles.grain} aria-hidden="true" />
+      <div className={styles.spine} aria-hidden="true">
+        <span>worthline · libro mayor de tu patrimonio · mmxxvi</span>
+      </div>
+      <div className={`${styles.ghost} ${styles.num}`} aria-hidden="true">
+        291.604,37
+      </div>
+      <div className={styles.wrap}>
+        <header className={styles.masthead}>
+          <a className={styles.wordmark} href="#top">
+            worthline
+          </a>
+          <span className={styles.spacer} />
+          <a href="/demo">Explorar la demo</a>
+          <a className={styles.session} href="/login">
+            Entrar
+          </a>
+        </header>
+
+        <div className={styles.coverGrid}>
+          <div>
+            <p className={styles.eyebrow}>El libro mayor de tu patrimonio</p>
+            <h1>
+              Evoluciona tu Excel<span className={styles.dot}>.</span>
+            </h1>
+            <p className={styles.lede}>
+              Todo tu patrimonio — activos, deudas, retornos reales, FIRE — por fin{" "}
+              <strong>en una sola imagen</strong>. Cerrada, auditable y tuya.
+            </p>
+            <Ctas />
+          </div>
+
+          <HeroSheet />
+        </div>
+
+        <p className={styles.scrollCue}>
+          <a href="#paginas">▾ Abre el libro</a>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** Sección 2 del outline: la prueba visual, encartada en la cubierta. */
+function HeroSheet() {
+  const composition = [
+    { label: "Efectivo 9 %", tone: "var(--tier-cash)", width: "9%" },
+    { label: "Mercado 30 %", tone: "var(--tier-market)", width: "30%" },
+    { label: "Depósitos 6 %", tone: "var(--tier-term)", width: "6%" },
+  ];
+
+  return (
+    <figure className={styles.sheetFigure}>
+      <span className={styles.marginalia} aria-hidden="true">
+        cerrado a 30 de junio — nada se recalcula
+      </span>
+      <div className={styles.sheet}>
+        <div className={styles.sheetTop}>
+          <div className={styles.heroFigure}>
+            <span className={styles.label}>Neto total</span>
+            <span className={styles.figWrap}>
+              <span className={styles.num}>291.604 €</span>
+              <span className={styles.dblrule} />
+            </span>
+          </div>
+          <div className={styles.sheetRight}>
+            <span className={styles.folio}>Folio 06 / 2026</span>
+            <br />
+            <span className={`${styles.delta} ${styles.num}`}>+3.212 € este mes</span>
+          </div>
+        </div>
+
+        <div className={styles.sparkWrap}>
+          <div className={styles.cap}>
+            <span>Últimos 12 cierres</span>
+            <span className={styles.num}>jul 25 → jun 26</span>
+          </div>
+          <svg
+            className={styles.spark}
+            viewBox="0 0 300 46"
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            <polyline
+              points="0,38 25,36 50,37 75,32 100,30 125,31 150,26 175,27 200,22 225,23 250,17 275,14 297,9"
+              fill="none"
+              stroke="var(--ink)"
+              strokeWidth="1.7"
+              vectorEffect="non-scaling-stroke"
+            />
+            <circle cx="297" cy="9" r="3" fill="var(--ink)" />
+          </svg>
+        </div>
+
+        <div
+          className={styles.compBar}
+          role="img"
+          aria-label="Composición del bruto: efectivo 9 %, mercado 30 %, depósitos 6 %, vivienda 55 %"
+        >
+          {composition.map((seg) => (
+            <span
+              key={seg.label}
+              className={styles.seg}
+              style={{ width: seg.width, background: seg.tone }}
+            />
+          ))}
+          <span className={`${styles.seg} ${styles.housing}`} style={{ width: "55%" }} />
+        </div>
+        <div className={styles.compLegend}>
+          {composition.map((seg) => (
+            <span key={seg.label}>
+              <i style={{ background: seg.tone }} />
+              {seg.label}
+            </span>
+          ))}
+          <span>
+            <i className={styles.housingSwatch} />
+            Vivienda 55 %
+          </span>
+        </div>
+
+        <div className={styles.sheetRows}>
+          <div className={styles.r}>
+            <span>
+              MSCI World <span className={styles.num}>· 412 part.</span>
+            </span>
+            <span className={styles.num}>
+              99.180 € <span className={styles.up}>+2,1 %</span>
+            </span>
+          </div>
+          <div className={styles.r}>
+            <span>Bitcoin</span>
+            <span className={styles.num}>
+              31.505 € <span className={styles.up}>+6,4 %</span>
+            </span>
+          </div>
+          <div className={styles.r}>
+            <span>Vivienda · Madrid</span>
+            <span className={styles.num}>240.000 €</span>
+          </div>
+          <div className={`${styles.r} ${styles.debit}`}>
+            <span>Hipoteca</span>
+            <span className={styles.num}>−148.210 €</span>
+          </div>
+        </div>
+        <div className={styles.sheetFoot}>
+          <span>Maqueta — captura real de la demo pendiente</span>
+          <DemoLink />
+        </div>
+      </div>
+    </figure>
+  );
+}
+
+/** Sección 3: la correspondencia hoja→producto, respetuosa con el Excel. */
+function Transition() {
+  const ledger = [
+    {
+      what: "Posiciones con precio y retorno real",
+      how: "IRR y TWR por posición, no una resta a ojo",
+      device: <span className={`${styles.num} ${styles.up}`}>+11,2 %</span>,
+    },
+    {
+      what: "Deudas con su cuadro y proyección",
+      how: "amortización modelada, no celdas que envejecen",
+      device: <span className={styles.num}>−148.210 €</span>,
+    },
+    {
+      what: "Un motor que calcula — y explica — cada cifra",
+      how: "pulsa una cifra y pregunta de dónde sale",
+      device: null,
+    },
+    {
+      what: "Histórico cerrado, mes a mes",
+      how: "congelado y auditable: nada se recalcula a tus espaldas",
+      device: <span className={styles.miniDbl} aria-hidden="true" />,
+    },
+    {
+      what: "Precios y fuentes que se actualizan solos",
+      how: "mercado y cripto, con cadencia honesta",
+      device: null,
+    },
+  ];
+
+  return (
+    <section className={styles.entry}>
+      <div className={styles.entryHead}>
+        <span className={styles.label}>La transición</span>
+        <span className={styles.folio}>Asiento Nº 01</span>
+      </div>
+      <h2>De tu hoja… a worthline</h2>
+      <p className={styles.intro}>
+        Tu Excel era el enfoque correcto: <strong>una verdad tuya, fila a fila</strong>.
+        Esto es el siguiente peldaño de la misma idea — sin fórmulas que mantener.
+      </p>
+
+      <div className={styles.diptych}>
+        <div>
+          <div
+            className={styles.xls}
+            role="img"
+            aria-label="Fragmento de tu hoja de cálculo, con una fórmula rota rodeada a pluma"
+          >
+            <table>
+              <tbody>
+                <tr>
+                  <th style={{ width: "1.6rem" }} />
+                  <th>A</th>
+                  <th>B</th>
+                  <th>C</th>
+                </tr>
+                <tr>
+                  <td>4</td>
+                  <td>MSCI World</td>
+                  <td className={styles.num}>412</td>
+                  <td className={styles.formula}>=B4*C4</td>
+                </tr>
+                <tr>
+                  <td>5</td>
+                  <td>Bitcoin</td>
+                  <td className={styles.num}>0,412</td>
+                  <td className={styles.num}>31.505</td>
+                </tr>
+                <tr>
+                  <td>6</td>
+                  <td>Piso Madrid</td>
+                  <td className={styles.num}>?</td>
+                  <td className={styles.err}>
+                    #¡REF!
+                    <svg
+                      className={styles.penCircle}
+                      width="86"
+                      height="40"
+                      aria-hidden="true"
+                    >
+                      <ellipse cx="43" cy="20" rx="38" ry="15" />
+                    </svg>
+                  </td>
+                </tr>
+                <tr>
+                  <td>7</td>
+                  <td>Hipoteca</td>
+                  <td className={styles.num}>-148.210</td>
+                  <td className={styles.formula}>=HOY()-D2</td>
+                </tr>
+              </tbody>
+            </table>
+            <div className={styles.tabs}>
+              <span>Cartera</span>
+              <span>Deudas</span>
+              <span className={styles.tabOn}>v2-final-FINAL</span>
+            </div>
+          </div>
+          <span className={styles.penNote} aria-hidden="true">
+            ¿te suena?
+          </span>
+        </div>
+        <div className={styles.bridge} aria-hidden="true">
+          →
+        </div>
+        <div className={styles.ledgerSide}>
+          {ledger.map((row) => (
+            <div key={row.what} className={styles.lr}>
+              <span className={styles.what}>
+                {row.what}
+                <small>{row.how}</small>
+              </span>
+              {row.device}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** Sección 4: las cuatro pruebas de profundidad inversora, con el mismo peso. */
+function Proofs() {
+  return (
+    <section className={styles.entry}>
+      <div className={styles.entryHead}>
+        <span className={styles.label}>Profundidad inversora</span>
+        <span className={styles.folio}>Asiento Nº 02</span>
+      </div>
+      <h2>¿Está funcionando de verdad tu cartera?</h2>
+      <p className={styles.intro}>
+        Cuatro respuestas que una hoja de cálculo solo puede aproximar.
+      </p>
+      <div className={styles.quad}>
+        <div className={styles.proof}>
+          <h3>Retornos reales</h3>
+          <p>
+            IRR y TWR por posición y cartera — la respuesta que tu Excel aproximaba con
+            una resta.
+          </p>
+          <div className={styles.viz}>
+            <div className={styles.fig}>
+              <span className={styles.label}>MSCI World · 3A</span>
+              <span className={styles.num}>TWR +11,2 % · IRR +9,8 %</span>
+            </div>
+            <svg
+              className={styles.spark}
+              viewBox="0 0 300 44"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <polyline
+                points="0,36 25,34 50,30 75,31 100,26 125,27 150,22 175,24 200,18 225,19 250,14 275,12 297,8"
+                fill="none"
+                stroke="var(--ink)"
+                strokeWidth="1.6"
+                vectorEffect="non-scaling-stroke"
+              />
+              <circle cx="297" cy="8" r="3" fill="var(--ink)" />
+            </svg>
+            <p className={styles.vizLink}>
+              <DemoLink />
+            </p>
+          </div>
+        </div>
+        <div className={styles.proof}>
+          <h3>Cobros</h3>
+          <p>
+            Dividendos, intereses y rentas como registros de atribución — nunca inventados
+            como cifra.
+          </p>
+          <div className={`${styles.viz} ${styles.payrows}`}>
+            <div className={styles.r}>
+              <span>Dividendos 2025</span>
+              <span className={styles.num}>1.212 €</span>
+            </div>
+            <div className={styles.r}>
+              <span>Intereses</span>
+              <span className={styles.num}>635 €</span>
+            </div>
+            <div className={`${styles.r} ${styles.total}`}>
+              <span>Total cobrado</span>
+              <span className={styles.num}>1.847 €</span>
+            </div>
+            <p className={styles.vizLink}>
+              <DemoLink />
+            </p>
+          </div>
+        </div>
+        <div className={styles.proof}>
+          <h3>Exposición real</h3>
+          <p>
+            Look-through de fondos: qué geografías y divisas pesan de verdad en tu
+            cartera.
+          </p>
+          <div className={styles.viz}>
+            <div
+              className={styles.expoBar}
+              role="img"
+              aria-label="EEUU 54 %, Europa 31 %, emergentes 8 %, otros 7 %"
+            >
+              <span
+                className={styles.seg}
+                style={{ width: "54%", background: "var(--tier-market)" }}
+              />
+              <span
+                className={styles.seg}
+                style={{ width: "31%", background: "var(--tier-term)" }}
+              />
+              <span
+                className={styles.seg}
+                style={{ width: "8%", background: "var(--tier-illiquid)" }}
+              />
+              <span
+                className={styles.seg}
+                style={{ width: "7%", background: "var(--line-soft)" }}
+              />
+            </div>
+            <div className={styles.expoLegend}>
+              <span>EEUU 54 %</span>
+              <span>Europa 31 %</span>
+              <span>Emergentes 8 %</span>
+              <span>Otros 7 %</span>
+            </div>
+            <p className={styles.vizLink}>
+              <DemoLink />
+            </p>
+          </div>
+        </div>
+        <div className={styles.proof}>
+          <h3>FIRE y objetivos</h3>
+          <p>
+            Proyección con tus números reales y objetivos con fecha — no una calculadora
+            genérica.
+          </p>
+          <div className={styles.viz}>
+            <div
+              className={styles.track}
+              role="img"
+              aria-label="Progreso hacia la independencia: 31 por ciento"
+            >
+              {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map((at) => (
+                <span
+                  key={at}
+                  className={
+                    at % 50 === 0 ? `${styles.tick} ${styles.tickMajor}` : styles.tick
+                  }
+                  style={{ left: `${at}%` }}
+                />
+              ))}
+              <span className={styles.marker} style={{ left: "31%" }} />
+            </div>
+            <div className={styles.readout}>
+              <span>
+                hoy: <span className={styles.num}>31 %</span>
+              </span>
+              <span>
+                independencia: <span className={styles.num}>2041</span>
+              </span>
+            </div>
+            <p className={styles.vizLink}>
+              <DemoLink />
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** Sección 5: la mecánica de actualizar, en lenguaje shipped-only. */
+function Maintenance() {
+  const steps = [
+    {
+      k: "03.1",
+      title: "Importa tu extracto",
+      body: "Tu extracto CSV/Excel → preview de lo que va a entrar → tú confirmas. Nada entra solo.",
+    },
+    {
+      k: "03.2",
+      title: "Fuentes conectadas",
+      body: "Binance y Numista se sincronizan con un clic; cada posición sabe de dónde viene.",
+    },
+    {
+      k: "03.3",
+      title: "Precios solos",
+      body: "Mercado y cripto se actualizan con cadencia honesta — y te dicen cuándo fue la última vez.",
+    },
+    {
+      k: "03.4",
+      title: "Alta guiada",
+      body: "Lo que no viene de un fichero se añade paso a paso, sin fórmulas.",
+    },
+  ];
+
+  return (
+    <section className={styles.entry}>
+      <div className={styles.entryHead}>
+        <span className={styles.label}>Mantenimiento</span>
+        <span className={styles.folio}>Asiento Nº 03</span>
+      </div>
+      <h2>Actualizar deja de ser un trabajo</h2>
+      <div className={styles.steps}>
+        {steps.map((step) => (
+          <div key={step.k} className={styles.s}>
+            <span className={`${styles.k} ${styles.num}`}>{step.k}</span>
+            <h3>{step.title}</h3>
+            <p>{step.body}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** Sección 6: control y trazabilidad — la propiedad manda. */
+function Control() {
+  return (
+    <section className={styles.entry}>
+      <div className={styles.entryHead}>
+        <span className={styles.label}>Confianza</span>
+        <span className={styles.folio}>Asiento Nº 04</span>
+      </div>
+      <h2>Tus cifras, cerradas y tuyas.</h2>
+      <div className={styles.controlGrid}>
+        <div className={styles.cg}>
+          <h3>
+            Cada mes se cierra <span className={styles.miniDbl} aria-hidden="true" />
+          </h3>
+          <p>
+            Y se congela. Nada se recalcula a tus espaldas; toda corrección queda
+            auditada.
+          </p>
+        </div>
+        <div className={styles.cg}>
+          <h3>Tus datos salen contigo</h3>
+          <p>Export completo en JSON, y tu espacio vive en su propia base de datos.</p>
+        </div>
+        <div className={styles.cg}>
+          <h3>Sin conectar tu banco. A propósito.</h3>
+          <p>
+            Tus credenciales bancarias no viven aquí — tú decides qué entra, con preview.
+          </p>
+        </div>
+      </div>
+      <span className={styles.penName}>
+        — la doble subraya significa «total», como en el papel
+      </span>
+    </section>
+  );
+}
+
+/** Sección 7: la IA contenida — el asistente solo lee. */
+function Assistant() {
+  return (
+    <section className={styles.entry}>
+      <div className={styles.entryHead}>
+        <span className={styles.label}>Asistente</span>
+        <span className={styles.folio}>Asiento Nº 05</span>
+      </div>
+      <h2>Habla con tu patrimonio. Y que te responda con la cifra exacta.</h2>
+      <div className={styles.chatWrap}>
+        <div className={styles.chatSheet}>
+          <p className={styles.who}>Tú</p>
+          <p className={styles.q}>¿Cuánto cobré en dividendos en 2025?</p>
+          <p className={styles.who}>worthline</p>
+          <p className={styles.a}>
+            En 2025 cobraste <strong className={styles.num}>1.847 €</strong>:{" "}
+            <span className={styles.num}>1.212 €</span> en dividendos y{" "}
+            <span className={styles.num}>635 €</span> en intereses.<sup>1</sup>
+          </p>
+          <p className={styles.chatFoot}>
+            <sup>1</sup> Fuente: tus registros de cobros ·{" "}
+            <span className={styles.num}>14</span> apuntes
+          </p>
+          <p className={styles.mockNote}>Maqueta — captura real del chat pendiente</p>
+        </div>
+        <div className={styles.chatAside}>
+          <p>
+            El asistente <strong>solo lee</strong>: responde con tus datos reales y cita
+            de dónde sale cada cifra. <strong>Jamás escribe ni «estima» nada.</strong>
+          </p>
+          <p className={styles.chatAsideLink}>
+            <DemoLink label="Pruébalo en la demo" />
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** Secciones 8 y 9: la franja MCP y la contracubierta, un lienzo continuo. */
+function Bookend() {
+  return (
+    <div className={styles.bookend}>
+      <div className={styles.advanced}>
+        <div className={styles.grain} aria-hidden="true" />
+        <div className={styles.wrap}>
+          <div>
+            <p className={styles.eyebrow}>Para usuarios avanzados</p>
+            <h2>Tu patrimonio, leíble por tu agente.</h2>
+            <p>
+              Conecta Claude — o cualquier cliente MCP — a tus datos con OAuth: contexto
+              financiero, histórico, retornos, cobros, calidad de datos.
+            </p>
+            <p className={styles.motto}>
+              Lectura completa. Escritura: ninguna, <em>de momento</em>.
+            </p>
+          </div>
+          {/* Texto real, no role="img": las cifras del ejemplo son parte del
+              mensaje y deben llegar también al lector de pantalla. */}
+          <div className={styles.code}>
+            <b>mcp</b> › get_financial_context
+            <br />
+            {'{ scope: "familia", asOf: "2026-06-30" }'}
+            <br />→ neto: <b className={styles.num}>291.604 €</b> · líquido:{" "}
+            <b className={styles.num}>96.410 €</b>
+            <br />→ fuente: cierre congelado 06/2026
+            <br />
+            <span className={styles.cm}>{"// write_*: todavía no"}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className={styles.backcover}>
+        <h2>
+          Tu Excel ya hizo su trabajo<span className={styles.dot}>.</span>
+        </h2>
+        <p>
+          Trae tu foto de hoy en unos minutos — sin fórmulas, con preview en cada paso. Y
+          si un día quieres irte, tus datos salen contigo en un JSON.
+        </p>
+        <Ctas />
+        {/* Pie legal (Privacidad · Condiciones, crítica #862) pendiente de que
+            existan las páginas legales — entra con el checklist del estreno (S6). */}
+        <div className={styles.colophon}>
+          <span className={styles.gl}>worthline · mmxxvi</span>
+          <span>El libro mayor de tu patrimonio</span>
+          <span>Hecho en español</span>
+          <span>
+            <a className={styles.demolink} href="/demo">
+              Demo
+            </a>
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function LandingContent() {
+  return (
+    <div className={styles.landing}>
+      <Cover />
+      <main className={styles.pages} id="paginas">
+        <div className={styles.wrap}>
+          <Transition />
+          <Proofs />
+          <Maintenance />
+          <Control />
+          <Assistant />
+        </div>
+        <Bookend />
+      </main>
+    </div>
+  );
+}
