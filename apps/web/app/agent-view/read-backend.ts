@@ -14,6 +14,7 @@ import {
   type AgentViewErrorEnvelope,
   successEnvelope,
 } from "./contract";
+import { buildContributionPlanContext } from "./contribution-plan-context";
 import { buildDataQuality } from "./data-quality";
 import { buildFigureExplanation, isFigureName } from "./figure-explanations";
 import { buildFinancialContext } from "./financial-context";
@@ -190,7 +191,32 @@ export function createReadStoreBackend(
     goals: async (scopeId) => successEnvelope(await buildGoals(agentView, scopeId)),
     fireProjection: async (scopeId) =>
       successEnvelope(await buildFireProjection(agentView, scopeId)),
+    contributionPlan: async (scopeId, params) =>
+      successEnvelope(
+        await buildContributionPlanContext(agentView, {
+          scopeId,
+          asOf,
+          ...(params.month === undefined ? {} : { month: params.month }),
+          ...(params.growthAssumption === undefined
+            ? {}
+            : { growthAssumption: params.growthAssumption }),
+          ...(params.reconciliationWindowDays === undefined
+            ? {}
+            : {
+                reconciliationWindowDays: clampReconciliationWindow(
+                  params.reconciliationWindowDays,
+                ),
+              }),
+        }),
+      ),
   };
+}
+
+function clampReconciliationWindow(days: number): number {
+  if (!Number.isFinite(days) || days < 1) {
+    return 90;
+  }
+  return Math.min(Math.floor(days), 366);
 }
 
 /** Run one catalog tool against a read-store backend. */

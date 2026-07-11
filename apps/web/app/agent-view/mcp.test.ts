@@ -279,4 +279,31 @@ describe("agent-view MCP tools", () => {
     ).resolves.toEqual(response);
     expect(calls).toEqual(["/api/v1/agent-view/scopes/wl_scp_abc123/fire-projection"]);
   });
+
+  test("get_contribution_plan hits the scoped contribution-plan path", async () => {
+    const response: AgentViewEnvelope<{ object: string }> = {
+      data: {
+        object: "contribution_plan_context",
+      },
+    };
+    const calls: string[] = [];
+    const catalog = createAgentViewMcpToolCatalog({
+      get: async <T>(path: string): Promise<T> => {
+        calls.push(path);
+        return response as T;
+      },
+    });
+
+    await expect(
+      catalog.get_contribution_plan.invoke({
+        scopeId: "wl_scp_abc123",
+        month: "2026-07",
+        growthAssumption: "historical",
+        reconciliationWindowDays: 60,
+      }),
+    ).resolves.toEqual(response);
+    expect(calls).toEqual([
+      "/api/v1/agent-view/scopes/wl_scp_abc123/contribution-plan?month=2026-07&growthAssumption=historical&reconciliationWindowDays=60",
+    ]);
+  });
 });

@@ -3,6 +3,7 @@ import {
   type AgentViewCatalog,
   type AgentViewCatalogTool,
   createAgentViewCatalog,
+  type GetContributionPlanInput,
   type GetDataQualityInput,
   type GetOperationsInput,
   type GetSnapshotHistoryInput,
@@ -14,6 +15,7 @@ export type {
   ExplainFigureInput,
   GetConnectedSourcePositionsInput,
   GetConnectedSourcePositionsOutput,
+  GetContributionPlanInput,
   GetDataQualityInput,
   GetFinancialContextInput,
   GetFireContextInput,
@@ -164,6 +166,14 @@ export function createAgentViewApiBackend(client: AgentViewApiClient): AgentView
     memberProfiles: () => client.get(MEMBERS_PATH),
     goals: (scopeId) => client.get(`${scope(scopeId)}/goals`),
     fireProjection: (scopeId) => client.get(`${scope(scopeId)}/fire-projection`),
+    contributionPlan: (scopeId, params: Omit<GetContributionPlanInput, "scopeId">) =>
+      client.get(
+        `${scope(scopeId)}/contribution-plan${queryString([
+          ["month", params.month],
+          ["growthAssumption", params.growthAssumption],
+          ["reconciliationWindowDays", params.reconciliationWindowDays],
+        ])}`,
+      ),
   };
 }
 
