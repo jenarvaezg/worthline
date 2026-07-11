@@ -1,7 +1,7 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DEMO_DISABLED_MESSAGE } from "@web/demo/write-guard";
+import { DEMO_DISABLED_MESSAGE } from "@web/demo/write-guard-messages";
 import { formatMoneyMinor } from "@worthline/domain";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { usePathname, useRouter } from "next/navigation";
