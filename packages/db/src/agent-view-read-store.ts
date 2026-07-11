@@ -9,6 +9,7 @@ import type {
   InvestmentOperation,
   Liability,
   ManualAsset,
+  ManualValuePoint,
   NetWorthSnapshot,
   Payout,
   PayoutSchedule,
@@ -30,6 +31,7 @@ import type {
   EarlyRepaymentRecord,
   InterestRateRevisionRecord,
 } from "./liability-store";
+import { readManualValueHistory } from "./manual-value-history";
 import { assetOwnerships, assets, liabilities, liabilityOwnerships } from "./schema";
 import type { SnapshotHoldingQuery, SnapshotHoldingRecord } from "./snapshot-store";
 import type { StoreContext, StoreDb } from "./store-context";
@@ -173,6 +175,10 @@ export interface AgentViewReadStore {
    * so it can label them, and NEVER writes a new override.
    */
   readWarningOverrides: () => Promise<WarningOverride[]>;
+  /** Manual value audit history keyed by asset id (PRD #654 S2). */
+  readManualValueHistory: () => Promise<ReadonlyMap<string, readonly ManualValuePoint[]>>;
+  /** Asset creation timestamps keyed by asset id — stale-manual fallback. */
+  readAssetCreatedAtById: () => Promise<ReadonlyMap<string, string>>;
   /**
    * Trashed (soft-deleted) holdings with the stored facts a trash listing needs
    * (#342). A pure read over `assets`/`liabilities` WHERE `deleted_at IS NOT NULL`
@@ -320,6 +326,18 @@ export function createAgentViewReadStore(
       };
     },
     readWarningOverrides: () => deps.readWarningOverrides(),
+    readManualValueHistory: async () => readManualValueHistory(ctx.db),
+    readAssetCreatedAtById: async () => {
+      const rows = await ctx.db
+        .select({ createdAt: assets.createdAt, id: assets.id })
+        .from(assets)
+        .all();
+      return new Map(
+        rows
+          .filter((row) => row.createdAt !== null)
+          .map((row) => [row.id, row.createdAt as string]),
+      );
+    },
     readTrashedHoldings: () => readTrashedHoldings(ctx.db),
     readExposureProfiles: () => deps.readExposureProfiles(),
     readInvestmentAssetsWithMeta: () => deps.readInvestmentAssetsWithMeta(),

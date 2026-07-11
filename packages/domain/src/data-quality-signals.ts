@@ -9,11 +9,14 @@
 
 import type { SourcePosition } from "./connected-source";
 import { coinValue } from "./connected-source";
+import { daysBetween } from "./dates";
 import type { FireScopeConfig } from "./fire";
+import { valuationMethodOfAsset } from "./holding-method";
 import { projectPortfolio } from "./portfolio-projection";
 import type { PriceFreshnessState } from "./prices";
 import type { ScopeOption } from "./scope";
 import type { NetWorthSnapshot } from "./snapshot-types";
+import { lastManualValueUpdateDateKey, type ManualValuePoint } from "./value-history";
 import {
   collectWarnings,
   type DomainWarning,
@@ -24,6 +27,7 @@ import type { DebtModel, Liability, ManualAsset, Workspace } from "./workspace-t
 
 export type DataQualityCategory =
   | "warning"
+  | "manual_value_freshness"
   | "price_freshness"
   | "source_freshness"
   | "missing_configuration"
@@ -96,6 +100,32 @@ export interface CollectDataQualitySignalsInput {
   sourceFreshnessBySourceId: ReadonlyMap<string, DataQualitySourceFreshness | null>;
   debtModelByLiabilityId: ReadonlyMap<string, DebtModel | null>;
   positionsBySourceId: ReadonlyMap<string, readonly SourcePosition[]>;
+  /** Manual value audit history keyed by asset id. */
+  manualValueHistoryByAssetId: ReadonlyMap<string, readonly ManualValuePoint[]>;
+  /** Asset creation timestamps (ISO), keyed by asset id — stale-manual fallback. */
+  assetCreatedAtById: ReadonlyMap<string, string>;
+  /** Calendar day the collection runs against (`YYYY-MM-DD`). */
+  asOfDateKey: string;
+}
+
+/** Fixed v1 threshold for stale manual values (PRD #654 S2). */
+export const STALE_MANUAL_VALUE_THRESHOLD_DAYS = 90;
+
+/** Machine code for a stored holding without a recent manual value update. */
+export const STALE_MANUAL_VALUE_CODE = "STALE_MANUAL_VALUE";
+
+/**
+ * Signal kinds the user may acknowledge as intentional via the persisted
+ * `{code, entityId}` override shape (warnings + selected signal kinds).
+ */
+export const OVERRIDEABLE_SIGNAL_CODES = new Set<string>([
+  "ZERO_VALUE_ASSET",
+  "MISSING_PROVIDER_SYMBOL",
+  STALE_MANUAL_VALUE_CODE,
+]);
+
+export function isOverrideableSignalCode(code: string): boolean {
+  return OVERRIDEABLE_SIGNAL_CODES.has(code);
 }
 
 /** Few-snapshots threshold below which history coverage is flagged sparse (#341). */
@@ -104,6 +134,7 @@ export const SPARSE_SNAPSHOT_THRESHOLD = 3;
 /** Stable category order for the secondary sort key (PRD #328). */
 export const DATA_QUALITY_CATEGORY_ORDER: readonly DataQualityCategory[] = [
   "warning",
+  "manual_value_freshness",
   "price_freshness",
   "source_freshness",
   "missing_configuration",
@@ -134,6 +165,14 @@ export function collectDataQualitySignals(
 
   return [
     ...warningSignals(input.assets, input.warningOverrides, ownedAssetIds),
+    ...staleManualValueSignals(
+      input.assets,
+      ownedAssetIds,
+      input.manualValueHistoryByAssetId,
+      input.assetCreatedAtById,
+      input.asOfDateKey,
+      input.warningOverrides,
+    ),
     ...priceFreshnessSignals(input.assets, ownedAssetIds, input.priceFreshnessByAssetId),
     ...sourceFreshnessSignals(
       input.connectedSources,
@@ -223,11 +262,13 @@ function warningToSignal(
   overridden: Set<string>,
   assets: readonly ManualAsset[],
 ): DataQualitySignal {
-  const isOverridden = overridden.has(`${warning.code}:${warning.entityId}`);
-  const label =
-    warning.severity === "overrideable" && isOverridden
-      ? `${warning.message} (marcado como intencional)`
-      : warning.message;
+  const label = signalLabelWithOverride(
+    warning.message,
+    warning.code,
+    warning.entityId,
+    overridden,
+    warning.severity === "overrideable",
+  );
 
   return {
     affected: {
@@ -247,6 +288,76 @@ function warningToSignal(
 
 function warningSeverity(severity: WarningSeverity): DataQualitySeverity {
   return severity === "blocking" ? "high" : "medium";
+}
+
+function staleManualValueSignals(
+  assets: readonly ManualAsset[],
+  ownedAssetIds: Set<string>,
+  manualValueHistoryByAssetId: ReadonlyMap<string, readonly ManualValuePoint[]>,
+  assetCreatedAtById: ReadonlyMap<string, string>,
+  asOfDateKey: string,
+  warningOverrides: readonly WarningOverride[],
+): DataQualitySignal[] {
+  const overridden = new Set(
+    warningOverrides.map((override) => `${override.code}:${override.entityId}`),
+  );
+  const signals: DataQualitySignal[] = [];
+
+  for (const asset of assets) {
+    if (!ownedAssetIds.has(asset.id) || valuationMethodOfAsset(asset) !== "stored") {
+      continue;
+    }
+
+    const lastUpdateDateKey = lastManualValueUpdateDateKey(
+      manualValueHistoryByAssetId.get(asset.id),
+      assetCreatedAtById.get(asset.id),
+    );
+    if (lastUpdateDateKey === undefined) {
+      continue;
+    }
+
+    if (daysBetween(lastUpdateDateKey, asOfDateKey) < STALE_MANUAL_VALUE_THRESHOLD_DAYS) {
+      continue;
+    }
+
+    const baseLabel = `El valor manual de "${asset.name}" lleva más de ${STALE_MANUAL_VALUE_THRESHOLD_DAYS} días sin actualizarse.`;
+    signals.push({
+      affected: { id: asset.id, label: asset.name, object: "holding" },
+      category: "manual_value_freshness",
+      code: STALE_MANUAL_VALUE_CODE,
+      fixable: true,
+      label: signalLabelWithOverride(
+        baseLabel,
+        STALE_MANUAL_VALUE_CODE,
+        asset.id,
+        overridden,
+        true,
+      ),
+      naturalKey: signalNaturalKey(
+        "manual_value_freshness",
+        STALE_MANUAL_VALUE_CODE,
+        asset.id,
+      ),
+      observedDate: lastUpdateDateKey,
+      severity: "medium",
+    });
+  }
+
+  return signals;
+}
+
+function signalLabelWithOverride(
+  baseLabel: string,
+  code: string,
+  entityId: string,
+  overridden: Set<string>,
+  overrideable: boolean,
+): string {
+  if (!overrideable || !overridden.has(`${code}:${entityId}`)) {
+    return baseLabel;
+  }
+
+  return `${baseLabel} (marcado como intencional)`;
 }
 
 function priceFreshnessSignals(
