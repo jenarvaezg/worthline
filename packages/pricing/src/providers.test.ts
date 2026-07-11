@@ -226,6 +226,70 @@ describe("yahooProvider", () => {
     expect(result).toBeNull();
   });
 
+  it("uses dated Yahoo metadata when the price series is empty", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        chart: {
+          result: [
+            {
+              meta: {
+                currency: "EUR",
+                regularMarketPrice: 21.436,
+                regularMarketTime: Math.floor(
+                  Date.parse("2026-07-10T19:55:16.000Z") / 1000,
+                ),
+              },
+              indicators: { quote: [{}], adjclose: [{}] },
+            },
+          ],
+        },
+      }),
+    } as Response);
+
+    const result = await yahooProvider.fetchPrice({
+      ...baseCtx,
+      nowIso: "2026-07-11T10:00:00.000Z",
+      symbol: "JE00B8DFY052.SG",
+    });
+
+    expect(result).toEqual({
+      price: "21.436",
+      currency: "EUR",
+      priceDate: "2026-07-10",
+    });
+  });
+
+  it("rejects stale dated Yahoo metadata when the price series is empty", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        chart: {
+          result: [
+            {
+              meta: {
+                currency: "EUR",
+                regularMarketPrice: 21.436,
+                regularMarketTime: Math.floor(
+                  Date.parse("2026-06-01T16:00:00.000Z") / 1000,
+                ),
+              },
+              indicators: { quote: [{}], adjclose: [{}] },
+            },
+          ],
+        },
+      }),
+    } as Response);
+
+    const result = await yahooProvider.fetchPrice({
+      ...baseCtx,
+      nowIso: "2026-07-11T10:00:00.000Z",
+      symbol: "JE00B8DFY052.SG",
+    });
+
+    expect(result).toBeNull();
+  });
+
   it("prefers the latest valid chart close over stale Yahoo metadata", async () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,

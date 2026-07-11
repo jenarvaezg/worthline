@@ -8,6 +8,7 @@ interface YahooChartResponse {
       meta?: {
         currency?: string;
         regularMarketPrice?: number;
+        regularMarketTime?: number;
       };
       timestamp?: number[];
       indicators?: {
@@ -51,13 +52,10 @@ export const yahooProvider: PriceProvider = {
       const data = (await res.json()) as YahooChartResponse;
       const result = data.chart?.result?.[0];
       const meta = result?.meta;
-      const seriesPrice = latestSeriesPrice(result);
-      if (isStaleYahooMarketDate(seriesPrice?.priceDate, ctx.nowIso)) return null;
+      const quote = latestSeriesPrice(result) ?? datedMetaPrice(meta);
+      if (isStaleYahooMarketDate(quote?.priceDate, ctx.nowIso)) return null;
 
-      // Undated meta fallback cannot be judged for staleness — reject it so a
-      // dead listing is not recorded as fresh (issue #730).
-      const price = seriesPrice?.price ?? null;
-
+      const price = quote?.price ?? null;
       if (price == null || !Number.isFinite(price)) return null;
 
       const currency = meta?.currency ?? ctx.currency;
@@ -71,7 +69,7 @@ export const yahooProvider: PriceProvider = {
         ? {
             price: priceInEur,
             currency: "EUR",
-            ...(seriesPrice?.priceDate ? { priceDate: seriesPrice.priceDate } : {}),
+            ...(quote?.priceDate ? { priceDate: quote.priceDate } : {}),
           }
         : null;
     } catch {
@@ -108,6 +106,25 @@ function latestSeriesPrice(
   }
 
   return null;
+}
+
+/**
+ * When Yahoo returns meta-only quotes (common for thin exchange listings such as
+ * Stuttgart mutual funds), `regularMarketTime` supplies the as-of date so the
+ * quote can be freshness-checked. Undated meta is still rejected (issue #730).
+ */
+function datedMetaPrice(
+  meta: YahooChartResult["meta"] | undefined,
+): { price: number; priceDate: string } | null {
+  const price = meta?.regularMarketPrice;
+  const marketTime = meta?.regularMarketTime;
+  if (price == null || !Number.isFinite(price) || price <= 0) return null;
+  if (marketTime == null || !Number.isFinite(marketTime) || marketTime <= 0) return null;
+
+  return {
+    price,
+    priceDate: new Date(marketTime * 1000).toISOString().slice(0, 10),
+  };
 }
 
 function isStaleYahooMarketDate(priceDate: string | undefined, nowIso: string): boolean {
