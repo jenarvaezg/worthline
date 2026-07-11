@@ -56,8 +56,10 @@ import {
 } from "@worthline/domain";
 
 import { type MatrixCellPayload, readMatrixCells } from "./dashboard-cells";
+import { collectDashboardDataQualitySignals } from "./dashboard-data-quality";
 import { cellKey, crossOf, type MatrixCoord, parseMode } from "./dashboard-matrix";
 import { buildHeroBreakdownData, type HeroBreakdownData } from "./hero-breakdown-data";
+import { type HeroHealthView, selectHeroHealth } from "./hero-data-health";
 
 const SPANISH_CPI_SERIES_ID = "ipc-es";
 
@@ -208,6 +210,12 @@ export interface LoadDashboardResult extends DashboardState {
    * there is no scope; each half is null when its window is not yet computable.
    */
   heroBreakdown: HeroBreakdownData | null;
+  /**
+   * The home hero's ephemeral data-health alert (#665, PRD #654 S3): the shared
+   * data-quality engine reduced to the highest-severity actionable signals, with
+   * fix-surface links. `impact: "clean"` renders nothing. Always present.
+   */
+  heroHealth: HeroHealthView;
 }
 
 export async function loadDashboard(
@@ -517,6 +525,28 @@ export async function loadDashboard(
       )
     : {};
 
+  // ── 4e. Data-health signals for the hero alert (#665, PRD #654 S3) ────────
+  // The shared data-quality engine feeds the home hero's ephemeral alert zone,
+  // reusing the data already read above (assets, liabilities, snapshots, price
+  // cache, overrides, FIRE config, windowed rows) plus a few connected-source
+  // and manual-value reads — so the human and the agent read one inventory.
+  const dataQualitySignals = selectedScope
+    ? await collectDashboardDataQualitySignals({
+        agentView: store.agentView,
+        asOfDateKey: dateKey,
+        assets,
+        fireConfigByScopeId: fireConfig,
+        holdingRows,
+        liabilities,
+        overrides,
+        priceCache,
+        scope: selectedScope,
+        snapshots,
+        workspace,
+      })
+    : [];
+  const heroHealth = selectHeroHealth(dataQualitySignals, overrides);
+
   // ── 5. Compute dashboard state ────────────────────────────────────────────
   const state = prepareDashboardState({
     assets,
@@ -553,6 +583,7 @@ export async function loadDashboard(
     drilldown,
     headlineDeltas,
     heroBreakdown,
+    heroHealth,
     matrixCells,
     needsOnboarding: false,
     portfolioReturns,
@@ -599,6 +630,7 @@ function buildEmptyResult(
     drilldown: null,
     headlineDeltas: { sinceMonthlyClose: null, sincePrevious: null },
     heroBreakdown: null,
+    heroHealth: { alerts: [], hiddenCount: 0, impact: "clean" },
     matrixCells: {},
     needsOnboarding: true,
     portfolioReturns: null,

@@ -200,7 +200,6 @@ export default async function AnadirHoldingPage({
       persistence={persistence}
       scopes={scopes}
       selectedScopeId={selectedScope?.id}
-      warnings={[]}
     >
       <style>{revealCss}</style>
 

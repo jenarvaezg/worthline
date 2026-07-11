@@ -1576,3 +1576,76 @@ describe("loadDashboard — contribution plan for FIRE", () => {
     store.close();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Home hero data-health alert (#665, PRD #654 S3)
+// ---------------------------------------------------------------------------
+
+describe("loadDashboard — hero data-health alert", () => {
+  const loadInput = (store: WorthlineStore) => ({
+    store,
+    persistence: makePersistence(),
+    scopeId: undefined,
+    selectedView: "total" as const,
+    today: "2026-07-02",
+    now: "2026-07-02T10:00:00.000Z",
+    refreshPrices: noOpRefresh,
+  });
+
+  test("is clean when the data is healthy", async () => {
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
+
+    const result = await loadDashboard(loadInput(store));
+
+    expect(result.heroHealth.impact).toBe("clean");
+    expect(result.heroHealth.alerts).toHaveLength(0);
+
+    store.close();
+  });
+
+  test("surfaces a zero-value holding as a warning linking to its fix surface", async () => {
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 0,
+      id: "asset_zero",
+      liquidityTier: "cash",
+      name: "Cuenta vacía",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "cash",
+    });
+
+    const result = await loadDashboard(loadInput(store));
+
+    expect(result.heroHealth.impact).toBe("warning");
+    expect(result.heroHealth.alerts).toHaveLength(1);
+    expect(result.heroHealth.alerts[0]?.href).toBe("/patrimonio/asset_zero/editar");
+
+    store.close();
+  });
+
+  test("a valid override silences the signal — the alert goes clean", async () => {
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 0,
+      id: "asset_zero",
+      liquidityTier: "cash",
+      name: "Cuenta vacía",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "cash",
+    });
+    await store.acknowledgeWarning("ZERO_VALUE_ASSET", "asset_zero");
+
+    const result = await loadDashboard(loadInput(store));
+
+    expect(result.heroHealth.impact).toBe("clean");
+    expect(result.heroHealth.alerts).toHaveLength(0);
+
+    store.close();
+  });
+});

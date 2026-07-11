@@ -14,7 +14,6 @@ import { PendingSubmit } from "@web/pending-submit";
 import Shell from "@web/shell";
 import { bootstrapHealthcheck, withStore } from "@web/store";
 import {
-  collectWarnings,
   formatMoneyMinorPrivacy,
   listScopeOptions,
   suggestMonthlySavingsCapacity,
@@ -141,7 +140,6 @@ export default async function AjustesPage({
       savingsSuggestion,
       scopes,
       selectedScope,
-      warnings: collectWarnings(allAssets, overrides),
       workspace,
     };
   });
@@ -162,7 +160,6 @@ export default async function AjustesPage({
     numistaSource,
     binanceSource,
     savingsSuggestion,
-    warnings,
   } = storeData;
   const fireScopeConfig = selectedScope ? fireConfig[selectedScope.id] : undefined;
 
@@ -178,11 +175,6 @@ export default async function AjustesPage({
       persistence={persistenceInfo}
       scopes={scopes}
       selectedScopeId={selectedScope?.id}
-      warnings={warnings.map((w) => ({
-        code: w.code,
-        entityId: w.entityId,
-        message: w.message,
-      }))}
     >
       {formError && !formError.formId ? (
         <p className="errorBand" role="alert">

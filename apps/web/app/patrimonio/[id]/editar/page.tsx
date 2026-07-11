@@ -542,7 +542,6 @@ export default async function EditarPage({
       persistence={persistence}
       scopes={scopes}
       selectedScopeId={selectedScope?.id}
-      warnings={[]}
     >
       {formOk ? (
         <p className="successBand" role="status">

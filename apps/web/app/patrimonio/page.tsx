@@ -329,11 +329,6 @@ export default async function PatrimonioPage({
       persistence={persistence}
       scopes={scopes}
       selectedScopeId={selectedScope?.id}
-      warnings={warnings.map((w) => ({
-        code: w.code,
-        entityId: w.entityId,
-        message: w.message,
-      }))}
     >
       {formError && !formError.formId ? (
         <p className="errorBand" role="alert">

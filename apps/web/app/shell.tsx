@@ -3,12 +3,11 @@ import type { ScopeOption } from "@worthline/domain";
 import { PendingSubmit } from "./pending-submit";
 import SignOutButton from "./sign-out-button";
 import ViewTransitionLink from "./view-transition-link";
-import WarningsBand, { type Warning } from "./warnings-band";
 
 /**
- * App shell — the topnav, scope bar, warnings rail, and persistence footer
- * that every page renders through. Each page instantiates this directly
- * (not via a layout) so it can pass the active section as a prop.
+ * App shell — the topnav, scope bar, and persistence footer that every page
+ * renders through. Each page instantiates this directly (not via a layout) so
+ * it can pass the active section as a prop.
  *
  * Server-rendered shell: scope switching is a POST that sets a cookie, then
  * redirects back; active-link state is a prop, not router state. The only client
@@ -27,8 +26,6 @@ const NAV_SECTIONS: Array<{ id: AppSection; label: string; href: string }> = [
   { id: "ajustes", label: "Ajustes", href: "/ajustes" },
 ];
 
-export type { Warning };
-
 export interface PersistenceInfo {
   displayPath: string;
   checkedAt: string;
@@ -41,8 +38,6 @@ export interface ShellProps {
   scopes: ScopeOption[];
   /** Currently selected scope ID — used to highlight the active scope tab. */
   selectedScopeId: string | undefined;
-  /** Warnings to display in the rail. */
-  warnings: Warning[];
   /** Persistence info shown in the footer. */
   persistence: PersistenceInfo;
   /** The URL of the current page, forwarded to the scope POST action. */
@@ -55,7 +50,6 @@ export default function Shell({
   activeSection,
   scopes,
   selectedScopeId,
-  warnings,
   persistence,
   currentPageUrl,
   children,
@@ -112,9 +106,6 @@ export default function Shell({
           </nav>
         </div>
       ) : null}
-
-      {/* ── Warnings rail ───────────────────────────────────────────── */}
-      <WarningsBand warnings={warnings} />
 
       {/* ── Page content ────────────────────────────────────────────── */}
       {children}

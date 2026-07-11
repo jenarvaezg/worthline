@@ -140,7 +140,6 @@ export default async function HistoricoPage({
       }}
       scopes={scopes}
       selectedScopeId={selectedScope?.id}
-      warnings={[]}
     >
       <section className="historicoPanel" aria-label="Histórico de snapshots">
         <div className="panelHeader">

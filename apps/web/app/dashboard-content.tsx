@@ -39,6 +39,8 @@ import {
   type FormattedHeroWeekly,
   formatHeroBreakdown,
 } from "./hero-breakdown-data";
+import type { HeroHealthView } from "./hero-data-health";
+import HeroDataHealthAlert from "./hero-data-health-alert";
 import HeroMovers, { type MoversPeriodTab } from "./hero-movers";
 import {
   parseDrillParam,
@@ -56,7 +58,6 @@ import {
 import PrivacyToggle from "./privacy-toggle";
 import { refreshAndPersistStalePrices } from "./refresh-prices";
 import { MOVERS_PERIOD_VIEW_PARAM, writeViewParam } from "./view-state";
-import WarningsBand from "./warnings-band";
 
 const framingTabs = [
   { id: "total" as NetWorthFraming, label: "Patrimonio neto" },
@@ -216,6 +217,7 @@ function FireGlanceCard({
 function HeroFraming({
   hasHoldings,
   headlineDeltas,
+  health,
   monthly,
   moversByPeriod,
   moversPeriod,
@@ -228,6 +230,7 @@ function HeroFraming({
 }: {
   hasHoldings: boolean;
   headlineDeltas: FramedSnapshotDeltas;
+  health: HeroHealthView;
   monthly: FormattedHeroMonthly | null;
   moversByPeriod: MoversDataByPeriod | null;
   moversPeriod: ReturnType<typeof parseMoversPeriod>;
@@ -267,6 +270,8 @@ function HeroFraming({
             />
           </div>
         ) : null}
+
+        <HeroDataHealthAlert health={health} />
 
         {monthly ? <HeroMonthlyMicroBand monthly={monthly} /> : null}
 
@@ -471,13 +476,6 @@ export default async function DashboardContent({
 
   return (
     <>
-      <WarningsBand
-        warnings={state.warnings.map((w) => ({
-          code: w.code,
-          entityId: w.entityId,
-          message: w.message,
-        }))}
-      />
       <div className="dashGrid">
         <section className="summaryBand heroPanel" aria-label="Resumen patrimonial">
           <FramingPanel
@@ -486,6 +484,7 @@ export default async function DashboardContent({
               <HeroFraming
                 hasHoldings={hasHoldings}
                 headlineDeltas={deltasByView.liquid}
+                health={state.heroHealth}
                 monthly={heroBreakdown?.monthly ?? null}
                 moversByPeriod={moversByView.liquid}
                 moversPeriod={moversPeriod}
@@ -502,6 +501,7 @@ export default async function DashboardContent({
               <HeroFraming
                 hasHoldings={hasHoldings}
                 headlineDeltas={deltasByView.total}
+                health={state.heroHealth}
                 monthly={heroBreakdown?.monthly ?? null}
                 moversByPeriod={moversByView.total}
                 moversPeriod={moversPeriod}
