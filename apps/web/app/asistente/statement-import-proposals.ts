@@ -1,27 +1,24 @@
+import { createStableId } from "@web/intake";
 import {
   buildStatementImportPreview,
   defaultIsinSymbolResolver,
   type FundPreviewRow,
+  type IsinSymbolResolver,
   parseStatementBroker,
   readStatementFromText,
   type StatementImportPreviewReadPort,
 } from "@web/patrimonio/importar-extracto/statement-import-preview";
-import type { StatementBroker, StatementFundSelection } from "@worthline/domain";
-
-export interface StatementImportNewFundDraft {
-  isin: string;
-  name: string;
-  symbol?: string;
-}
-
-export type StatementImportSelectionDraft =
-  | { action: "ignore"; isin: string }
-  | { action: "include"; isin: string; newFund?: StatementImportNewFundDraft };
+import type {
+  OwnershipShare,
+  StatementBroker,
+  StatementFundSelection,
+  StatementImportBucket,
+} from "@worthline/domain";
+import { defaultsFor, type InvestmentPriceProvider } from "@worthline/domain";
 
 export interface StatementImportProposalDraft {
   broker: StatementBroker;
   rawText: string;
-  selections?: StatementImportSelectionDraft[];
 }
 
 export interface StatementImportProposal {
@@ -42,34 +39,6 @@ const MAX_RAW_TEXT_CHARS = 500_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function parseSelection(raw: unknown): StatementImportSelectionDraft | null {
-  if (!isRecord(raw) || typeof raw["isin"] !== "string" || raw["isin"].trim() === "") {
-    return null;
-  }
-  const isin = raw["isin"].trim();
-  if (raw["action"] === "ignore") return { action: "ignore", isin };
-  if (raw["action"] !== "include") return null;
-
-  const newFundRaw = raw["newFund"];
-  if (newFundRaw === undefined) return { action: "include", isin };
-  if (!isRecord(newFundRaw) || typeof newFundRaw["name"] !== "string") return null;
-
-  const name = newFundRaw["name"].trim();
-  if (name === "") return null;
-  const symbol =
-    typeof newFundRaw["symbol"] === "string" ? newFundRaw["symbol"].trim() : undefined;
-
-  return {
-    action: "include",
-    isin,
-    newFund: {
-      isin,
-      name,
-      ...(symbol ? { symbol } : {}),
-    },
-  };
 }
 
 export function parseStatementImportProposalDraft(
@@ -97,33 +66,16 @@ export function parseStatementImportProposalDraft(
     return { ok: false, error: read.message };
   }
 
-  const selections: StatementImportSelectionDraft[] = [];
-  if (raw["selections"] !== undefined) {
-    if (!Array.isArray(raw["selections"])) {
-      return { ok: false, error: "Las selecciones del extracto no son válidas." };
-    }
-    for (const item of raw["selections"]) {
-      const selection = parseSelection(item);
-      if (selection === null) {
-        return { ok: false, error: "Las selecciones del extracto no son válidas." };
-      }
-      selections.push(selection);
-    }
-  }
-
   return {
     ok: true,
-    draft: {
-      broker,
-      rawText,
-      ...(selections.length > 0 ? { selections } : {}),
-    },
+    draft: { broker, rawText },
   };
 }
 
 export async function buildStatementImportProposal(
   store: StatementImportPreviewReadPort,
   rawDraft: unknown,
+  resolver: IsinSymbolResolver = defaultIsinSymbolResolver,
 ): Promise<StatementImportProposalBuildResult> {
   const parsed = parseStatementImportProposalDraft(rawDraft);
   if (!parsed.ok) return parsed;
@@ -131,11 +83,7 @@ export async function buildStatementImportProposal(
   const read = readStatementFromText(parsed.draft.rawText, parsed.draft.broker);
   if (!read.ok) return { ok: false, error: read.message };
 
-  const preview = await buildStatementImportPreview(
-    store,
-    read.value,
-    defaultIsinSymbolResolver,
-  );
+  const preview = await buildStatementImportPreview(store, read.value, resolver);
   if (!preview.ok) return { ok: false, error: preview.message };
 
   return {
@@ -148,44 +96,48 @@ export async function buildStatementImportProposal(
   };
 }
 
-export function defaultStatementImportSelections(
-  funds: FundPreviewRow[],
-): StatementImportSelectionDraft[] {
-  return funds.map((fund) => ({ action: "include", isin: fund.isin }));
-}
+/** Pilot (#766): include every fund shown in the preview — no per-fund LLM selection. */
+export function selectionsFromPreviewFunds(
+  buckets: StatementImportBucket[],
+  previewFunds: FundPreviewRow[],
+  ownership: OwnershipShare[],
+  seed: number,
+): StatementFundSelection[] {
+  const previewByIsin = new Map(previewFunds.map((fund) => [fund.isin, fund]));
 
-export function selectionsFromDraft(
-  funds: FundPreviewRow[],
-  draft: StatementImportProposalDraft,
-): StatementImportSelectionDraft[] {
-  if (!draft.selections || draft.selections.length === 0) {
-    return defaultStatementImportSelections(funds);
-  }
+  return buckets.map((bucket, index) => {
+    if (bucket.bucket === "matched") {
+      return { action: "include", isin: bucket.isin } as const;
+    }
 
-  const knownIsins = new Set(funds.map((fund) => fund.isin));
-  const byIsin = new Map(
-    draft.selections.map((selection) => [selection.isin, selection]),
-  );
+    const preview = previewByIsin.get(bucket.isin);
+    const instrument = bucket.instrument ?? "fund";
+    const defaults = defaultsFor(instrument);
+    const name =
+      (preview?.bucket === "new" ? preview.suggestedName : undefined) ||
+      bucket.name ||
+      bucket.isin;
+    const symbol = preview?.bucket === "new" ? (preview.suggestedSymbol ?? "") : "";
 
-  return funds
-    .map((fund) => {
-      const selection = byIsin.get(fund.isin);
-      if (!selection) return { action: "include" as const, isin: fund.isin };
-      if (selection.action === "ignore") return selection;
-      if (fund.bucket === "new" && selection.newFund === undefined) {
-        return {
-          action: "include" as const,
-          isin: fund.isin,
-          newFund: {
-            isin: fund.isin,
-            name: fund.suggestedName || fund.isin,
-            ...(fund.suggestedSymbol ? { symbol: fund.suggestedSymbol } : {}),
-          },
-        };
-      }
-      return selection;
-    })
-    .filter((selection) => knownIsins.has(selection.isin));
+    return {
+      action: "include",
+      creation: {
+        assetId: createStableId("asset", name, seed + index),
+        currency: "EUR",
+        instrument,
+        liquidityTier: defaults.rung,
+        name,
+        ownership,
+        ...(symbol
+          ? {
+              priceProvider: defaults.priceProvider as InvestmentPriceProvider,
+              providerSymbol: symbol,
+            }
+          : {}),
+      },
+      isin: bucket.isin,
+    } as const;
+  });
 }
 
 export type { StatementFundSelection };

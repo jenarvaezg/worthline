@@ -1,10 +1,11 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
+import { DEMO_DISABLED_MESSAGE } from "@web/demo/write-guard";
+import { formatMoneyMinor } from "@worthline/domain";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
-
 import {
   parseExposureProfileProposal,
   parseQuickActions,
@@ -78,15 +79,41 @@ function profileSummary(profile: ExposureProfileProposalPreviewProfile): string 
   return bits.length > 0 ? bits.join(" · ") : "Sin datos";
 }
 
-function formatMoneyMinor(amountMinor: number): string {
-  return new Intl.NumberFormat("es-ES", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 0,
-  }).format(amountMinor / 100);
+function formatPositionMoney(amountMinor: number): string {
+  return formatMoneyMinor({ amountMinor, currency: "EUR" });
 }
 
-function StatementProposalCard({ proposal }: { proposal: StatementImportProposal }) {
+function ProposalMutationStatus({
+  pending,
+  result,
+}: {
+  pending: boolean;
+  result: { status: string } | null;
+}) {
+  return (
+    <p aria-live="polite" className="srOnly" role="status">
+      {pending ? "Guardando…" : result?.status === "applied" ? "Guardado." : ""}
+    </p>
+  );
+}
+
+function proposalResultMessage(
+  result: { status: string; message?: string; included?: number; created?: number },
+  appliedMessage: string,
+): string {
+  if (result.status === "applied") return appliedMessage;
+  return result.message ?? "No se pudo aplicar la propuesta.";
+}
+
+function StatementProposalCard({
+  mutationsDisabled,
+  mutationsDisabledMessage,
+  proposal,
+}: {
+  mutationsDisabled: boolean;
+  mutationsDisabledMessage: string;
+  proposal: StatementImportProposal;
+}) {
   const [rejected, setRejected] = useState(false);
   const [result, setResult] = useState<Awaited<
     ReturnType<typeof confirmStatementImportProposalAction>
@@ -94,6 +121,9 @@ function StatementProposalCard({ proposal }: { proposal: StatementImportProposal
   const [pending, startTransition] = useTransition();
 
   if (rejected) return null;
+
+  const blockedMessage = mutationsDisabled ? mutationsDisabledMessage : null;
+  const confirmDisabled = pending || result?.status === "applied" || mutationsDisabled;
 
   function confirm() {
     startTransition(async () => {
@@ -103,6 +133,7 @@ function StatementProposalCard({ proposal }: { proposal: StatementImportProposal
 
   return (
     <div className="assistantProposal">
+      <ProposalMutationStatus pending={pending} result={result} />
       <p>Propuesta de importación de extracto</p>
       <ul>
         {proposal.funds.map((fund) => (
@@ -119,8 +150,8 @@ function StatementProposalCard({ proposal }: { proposal: StatementImportProposal
             <span>
               Posición: {fund.positionImpact.beforeUnits} →{" "}
               {fund.positionImpact.afterUnits} (
-              {formatMoneyMinor(fund.positionImpact.beforeValueMinor)} →{" "}
-              {formatMoneyMinor(fund.positionImpact.afterValueMinor)})
+              {formatPositionMoney(fund.positionImpact.beforeValueMinor)} →{" "}
+              {formatPositionMoney(fund.positionImpact.afterValueMinor)})
             </span>
             {fund.positionImpact.flags.length > 0 ? (
               <span>Avisos: {fund.positionImpact.flags.join(", ")}</span>
@@ -132,22 +163,18 @@ function StatementProposalCard({ proposal }: { proposal: StatementImportProposal
         <p className={result.status === "applied" ? "assistantOk" : "assistantError"}>
           {result.status === "applied"
             ? `Importación aplicada (${result.included} fondos, ${result.created} nuevos).`
-            : result.status === "blocked"
-              ? result.message
-              : result.message}
+            : proposalResultMessage(result, "")}
         </p>
+      ) : blockedMessage ? (
+        <p className="assistantError">{blockedMessage}</p>
       ) : null}
       <div className="assistantProposalActions">
-        <button
-          disabled={pending || result?.status === "applied"}
-          onClick={confirm}
-          type="button"
-        >
+        <button disabled={confirmDisabled} onClick={confirm} type="button">
           Confirmar
         </button>
         <button
           className="secondary"
-          disabled={pending || result?.status === "applied"}
+          disabled={confirmDisabled}
           onClick={() => setRejected(true)}
           type="button"
         >
@@ -158,7 +185,15 @@ function StatementProposalCard({ proposal }: { proposal: StatementImportProposal
   );
 }
 
-function ExposureProposalCard({ proposal }: { proposal: ExposureProfileProposal }) {
+function ExposureProposalCard({
+  mutationsDisabled,
+  mutationsDisabledMessage,
+  proposal,
+}: {
+  mutationsDisabled: boolean;
+  mutationsDisabledMessage: string;
+  proposal: ExposureProfileProposal;
+}) {
   const [rejected, setRejected] = useState(false);
   const [result, setResult] = useState<Awaited<
     ReturnType<typeof confirmExposureProfileProposalAction>
@@ -166,6 +201,9 @@ function ExposureProposalCard({ proposal }: { proposal: ExposureProfileProposal 
   const [pending, startTransition] = useTransition();
 
   if (rejected) return null;
+
+  const blockedMessage = mutationsDisabled ? mutationsDisabledMessage : null;
+  const confirmDisabled = pending || result?.status === "applied" || mutationsDisabled;
 
   function confirm() {
     startTransition(async () => {
@@ -175,6 +213,7 @@ function ExposureProposalCard({ proposal }: { proposal: ExposureProfileProposal 
 
   return (
     <div className="assistantProposal">
+      <ProposalMutationStatus pending={pending} result={result} />
       <p>Propuesta de exposición</p>
       <ul>
         {proposal.previews.map((preview) => (
@@ -187,24 +226,18 @@ function ExposureProposalCard({ proposal }: { proposal: ExposureProfileProposal 
       </ul>
       {result ? (
         <p className={result.status === "applied" ? "assistantOk" : "assistantError"}>
-          {result.status === "applied"
-            ? "Propuesta aplicada."
-            : result.status === "blocked"
-              ? result.message
-              : result.message}
+          {proposalResultMessage(result, "Propuesta aplicada.")}
         </p>
+      ) : blockedMessage ? (
+        <p className="assistantError">{blockedMessage}</p>
       ) : null}
       <div className="assistantProposalActions">
-        <button
-          disabled={pending || result?.status === "applied"}
-          onClick={confirm}
-          type="button"
-        >
+        <button disabled={confirmDisabled} onClick={confirm} type="button">
           Confirmar
         </button>
         <button
           className="secondary"
-          disabled={pending || result?.status === "applied"}
+          disabled={confirmDisabled}
           onClick={() => setRejected(true)}
           type="button"
         >
@@ -238,7 +271,13 @@ const transport = new DefaultChatTransport({
   }),
 });
 
-export default function AssistantLayer() {
+export default function AssistantLayer({
+  mutationsDisabled = false,
+  mutationsDisabledMessage = DEMO_DISABLED_MESSAGE,
+}: {
+  mutationsDisabled?: boolean;
+  mutationsDisabledMessage?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const { messages, sendMessage, status, error } = useChat({ transport });
@@ -377,6 +416,8 @@ export default function AssistantLayer() {
                   return proposal ? (
                     <ExposureProposalCard
                       key={`${message.id}-${i}`}
+                      mutationsDisabled={mutationsDisabled}
+                      mutationsDisabledMessage={mutationsDisabledMessage}
                       proposal={proposal}
                     />
                   ) : null;
@@ -386,6 +427,8 @@ export default function AssistantLayer() {
                   return proposal ? (
                     <StatementProposalCard
                       key={`${message.id}-${i}`}
+                      mutationsDisabled={mutationsDisabled}
+                      mutationsDisabledMessage={mutationsDisabledMessage}
                       proposal={proposal}
                     />
                   ) : null;

@@ -40,6 +40,10 @@ export type IsinSymbolResolver = (
   instrument?: Instrument,
 ) => Promise<IsinLookupResult>;
 
+export function isIsinSymbolResolver(value: unknown): value is IsinSymbolResolver {
+  return typeof value === "function";
+}
+
 function toLookupResult(candidates: SymbolCandidate[]): IsinLookupResult {
   const hit = candidates[0];
   if (!hit) return { status: "not_found" };

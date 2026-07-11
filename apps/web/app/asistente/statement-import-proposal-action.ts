@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  isClock,
   runActionWithStore,
   testArgFromActionArgs,
   testStoreFromActionArgs,
@@ -12,6 +13,8 @@ import {
 import { createStableId, resolveOwnershipSplit } from "@web/intake";
 import {
   buildStatementImportPreview,
+  defaultIsinSymbolResolver,
+  isIsinSymbolResolver,
   readPortfolioInvestments,
   readStatementFromText,
   statementImportPreviewReadPort,
@@ -20,31 +23,19 @@ import {
 import { readStoreTarget } from "@web/read-store-target";
 import {
   buildStatementImportPlan,
-  type Clock,
   defaultsFor,
   findStatementTypeConflict,
-  type InvestmentPriceProvider,
   isIsinShaped,
-  type OwnershipShare,
   type ParsedStatementRow,
   resolveStatementImportBuckets,
-  type StatementFundSelection,
-  type StatementImportBucket,
   systemClock,
 } from "@worthline/domain";
 
 import {
   parseStatementImportProposalDraft,
   type StatementImportProposalDraft,
-  type StatementImportSelectionDraft,
-  selectionsFromDraft,
+  selectionsFromPreviewFunds,
 } from "./statement-import-proposals";
-
-function isClock(value: unknown): value is Clock {
-  return (
-    typeof value === "object" && value !== null && "now" in value && "today" in value
-  );
-}
 
 function rowToCreateInput(
   assetId: string,
@@ -65,53 +56,6 @@ function rowToCreateInput(
   };
 }
 
-function selectionsToDomain(
-  buckets: StatementImportBucket[],
-  selectionDrafts: StatementImportSelectionDraft[],
-  ownership: OwnershipShare[],
-  seed: number,
-): StatementFundSelection[] {
-  const byIsin = new Map(selectionDrafts.map((selection) => [selection.isin, selection]));
-
-  return buckets.map((bucket, index) => {
-    const draft = byIsin.get(bucket.isin);
-    const included = draft?.action !== "ignore";
-
-    if (!included) {
-      return { action: "ignore", isin: bucket.isin } as const;
-    }
-
-    if (bucket.bucket === "matched") {
-      return { action: "include", isin: bucket.isin } as const;
-    }
-
-    const instrument = bucket.instrument ?? "fund";
-    const defaults = defaultsFor(instrument);
-    const newFund = draft?.newFund;
-    const name = newFund?.name.trim() || bucket.name || bucket.isin;
-    const symbol = newFund?.symbol?.trim() ?? "";
-
-    return {
-      action: "include",
-      creation: {
-        assetId: createStableId("asset", name, seed + index),
-        currency: "EUR",
-        instrument,
-        liquidityTier: defaults.rung,
-        name,
-        ownership,
-        ...(symbol
-          ? {
-              priceProvider: defaults.priceProvider as InvestmentPriceProvider,
-              providerSymbol: symbol,
-            }
-          : {}),
-      },
-      isin: bucket.isin,
-    } as const;
-  });
-}
-
 export type StatementImportProposalConfirmResult =
   | { status: "applied"; included: number; created: number }
   | { status: "blocked"; message: string }
@@ -123,6 +67,8 @@ export async function confirmStatementImportProposalAction(
 ): Promise<StatementImportProposalConfirmResult> {
   const _store = testStoreFromActionArgs(_testArgs);
   const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
+  const _resolver =
+    testArgFromActionArgs(_testArgs, isIsinSymbolResolver) ?? defaultIsinSymbolResolver;
   const target = await readStoreTarget();
   if (target.kind === "demo") {
     return { status: "blocked", message: DEMO_DISABLED_MESSAGE };
@@ -145,19 +91,13 @@ export async function confirmStatementImportProposalAction(
   const seed = Date.now();
 
   return runActionWithStore(async (store) => {
-    const preview = await buildStatementImportPreview(
-      statementImportPreviewReadPort(store),
-      read.value,
-      async () => ({ status: "not_found" }),
-    );
+    const readPort = statementImportPreviewReadPort(store);
+    const preview = await buildStatementImportPreview(readPort, read.value, _resolver);
     if (!preview.ok) {
       return { status: "error", message: preview.message };
     }
 
-    const selectionDrafts = selectionsFromDraft(preview.funds, parsed.draft);
-    const investments = await readPortfolioInvestments(
-      statementImportPreviewReadPort(store),
-    );
+    const investments = await readPortfolioInvestments(readPort);
     const buckets = resolveStatementImportBuckets(read.value, investments);
     const conflict = findStatementTypeConflict(buckets);
     if (conflict) {
@@ -176,7 +116,12 @@ export async function confirmStatementImportProposalAction(
       shortfall: "complete-to-full-ownership",
     });
 
-    const selections = selectionsToDomain(buckets, selectionDrafts, ownership, seed);
+    const selections = selectionsFromPreviewFunds(
+      buckets,
+      preview.funds,
+      ownership,
+      seed,
+    );
     const plan = buildStatementImportPlan(buckets, selections);
 
     const funds = plan.included.map((fund, index) => {

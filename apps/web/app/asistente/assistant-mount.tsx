@@ -1,3 +1,7 @@
+import {
+  DEMO_DISABLED_MESSAGE,
+  IMPERSONATION_READONLY_MESSAGE,
+} from "@web/demo/write-guard";
 import { readStoreTarget } from "@web/read-store-target";
 
 import AssistantLayer from "./assistant-layer";
@@ -14,5 +18,16 @@ export default async function AssistantMount() {
     return null;
   }
 
-  return <AssistantLayer />;
+  const mutationsDisabled =
+    target.kind === "demo" ||
+    (target.kind === "authenticated" && target.impersonatedEmail !== undefined);
+
+  return (
+    <AssistantLayer
+      mutationsDisabled={mutationsDisabled}
+      mutationsDisabledMessage={
+        target.kind === "demo" ? DEMO_DISABLED_MESSAGE : IMPERSONATION_READONLY_MESSAGE
+      }
+    />
+  );
 }

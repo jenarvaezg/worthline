@@ -20,6 +20,7 @@
  */
 
 import {
+  isClock,
   runActionWithStore,
   testArgFromActionArgs,
   testStoreFromActionArgs,
@@ -60,6 +61,7 @@ import {
   type FundPreviewRow,
   type IsinLookupResult,
   type IsinSymbolResolver,
+  isIsinSymbolResolver,
   readPortfolioInvestments,
   readStatementFromText,
   statementImportPreviewReadPort,
@@ -79,16 +81,6 @@ function currentUrlOf(formData: FormData): string {
 }
 
 // ── ISIN symbol lookup port ──────────────────────────────────────────────────
-
-function isClock(value: unknown): value is Clock {
-  return (
-    typeof value === "object" && value !== null && "now" in value && "today" in value
-  );
-}
-
-function isIsinSymbolResolver(value: unknown): value is IsinSymbolResolver {
-  return typeof value === "function";
-}
 
 // ── Preview ───────────────────────────────────────────────────────────────
 

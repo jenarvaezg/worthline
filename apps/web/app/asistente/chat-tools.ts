@@ -285,36 +285,11 @@ const EXPOSURE_PROFILE_PROPOSAL_SCHEMA = jsonSchema<{
 const STATEMENT_IMPORT_PROPOSAL_SCHEMA = jsonSchema<{
   broker?: string;
   rawText?: string;
-  selections?: Array<{
-    action?: "include" | "ignore";
-    isin?: string;
-    newFund?: { name?: string; symbol?: string };
-  }>;
 }>({
   type: "object",
   properties: {
     broker: { type: "string" },
     rawText: { type: "string" },
-    selections: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          action: { enum: ["include", "ignore"], type: "string" },
-          isin: { type: "string" },
-          newFund: {
-            type: "object",
-            properties: {
-              name: { type: "string" },
-              symbol: { type: "string" },
-            },
-            additionalProperties: false,
-          },
-        },
-        required: ["action", "isin"],
-        additionalProperties: false,
-      },
-    },
   },
   required: ["rawText"],
   additionalProperties: false,
@@ -940,7 +915,6 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
           const built = await buildStatementImportProposal(store.agentView, {
             broker: args.broker ?? "plantilla",
             rawText: args.rawText ?? "",
-            selections: args.selections,
           });
           return built.ok ? built.proposal : { error: built.error };
         }),

@@ -5,6 +5,7 @@ import type {
 } from "./exposure-profile-proposals";
 import type { ScreenSection } from "./screen-context";
 import type { StatementImportProposal } from "./statement-import-proposals";
+import { parseStatementImportProposalDraft } from "./statement-import-proposals";
 
 /**
  * Typed read-only quick actions and internal-source destinations (#631, ADR
@@ -173,14 +174,14 @@ export function parseStatementImportProposal(
   raw: unknown,
 ): StatementImportProposal | null {
   if (!isRecord(raw) || raw["proposalType"] !== "statement_import") return null;
-  if (!isRecord(raw["draft"])) return null;
   if (!Array.isArray(raw["funds"]) || !raw["funds"].every(isFundPreviewRow)) return null;
-  if (typeof raw["draft"]["rawText"] !== "string") return null;
-  if (typeof raw["draft"]["broker"] !== "string") return null;
+
+  const parsed = parseStatementImportProposalDraft(raw["draft"]);
+  if (!parsed.ok) return null;
 
   return {
     proposalType: "statement_import",
-    draft: raw["draft"] as unknown as StatementImportProposal["draft"],
+    draft: parsed.draft,
     funds: raw["funds"] as StatementImportProposal["funds"],
   };
 }
