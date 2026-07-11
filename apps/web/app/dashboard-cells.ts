@@ -137,17 +137,28 @@ export async function readMatrixInputs(
  * Read + build the requested cells for a scope. `scopeId === undefined` (no
  * scope) yields an empty map. The single entry point for both the page's
  * initial cross and the route's prefetch.
+ *
+ * When `prefetchedInputs` is supplied (the page path, which already read
+ * snapshots + holding rows — often bounded to the eager ranges — and drill
+ * ids during `loadDashboard`), the store is not re-read. The route omits it
+ * and reads the full history on demand.
  */
 export async function readMatrixCells(
   store: WorthlineStore,
   scopeId: string | undefined,
   coords: readonly MatrixCoord[],
   today: string,
+  prefetchedInputs?: MatrixInputs,
 ): Promise<Record<string, MatrixCellPayload>> {
   if (!scopeId || coords.length === 0) {
     return {};
   }
-  const needDrillData = coords.some((coord) => coord.mode !== "chart");
-  const inputs = await readMatrixInputs(store, scopeId, needDrillData);
+  const inputs =
+    prefetchedInputs ??
+    (await readMatrixInputs(
+      store,
+      scopeId,
+      coords.some((coord) => coord.mode !== "chart"),
+    ));
   return buildMatrixCells(coords, inputs, today);
 }
