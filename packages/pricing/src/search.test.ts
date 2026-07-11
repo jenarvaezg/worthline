@@ -77,6 +77,90 @@ describe("searchYahooSymbols", () => {
 
     expect(await searchYahooSymbols("anything")).toEqual([]);
   });
+
+  it("prefers a Yahoo listing with chart data over a thin meta-only listing (#924)", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          quotes: [
+            {
+              symbol: "JE00B8DFY052.SG",
+              shortname: "WisdomTree Physical Gold - EUR ",
+              exchDisp: "Stuttgart",
+              quoteType: "MUTUALFUND",
+            },
+            {
+              symbol: "GBSE.MI",
+              longname: "WISDOMTREE PHYSICAL GOLD EUR DA",
+              exchDisp: "Milan",
+              quoteType: "ETF",
+            },
+          ],
+        }),
+      } as Response)
+      .mockImplementation(async (input) => {
+        const url = String(input);
+        if (url.includes("JE00B8DFY052.SG")) {
+          return {
+            ok: true,
+            json: async () => ({
+              chart: {
+                result: [
+                  {
+                    meta: { currency: "EUR", regularMarketPrice: 21.436 },
+                    indicators: { quote: [{}], adjclose: [{}] },
+                  },
+                ],
+              },
+            }),
+          } as Response;
+        }
+        if (url.includes("GBSE.MI")) {
+          return {
+            ok: true,
+            json: async () => ({
+              chart: {
+                result: [
+                  {
+                    meta: { currency: "EUR" },
+                    timestamp: [1_783_713_600],
+                    indicators: { quote: [{ close: [21.465] }] },
+                  },
+                ],
+              },
+            }),
+          } as Response;
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      });
+
+    const result = await searchYahooSymbols("JE00B8DFY052");
+
+    expect(result.map((candidate) => candidate.symbol)).toEqual([
+      "GBSE.MI",
+      "JE00B8DFY052.SG",
+    ]);
+    expect(result[0]?.isin).toBe("JE00B8DFY052");
+  });
+
+  it("keeps Yahoo search order when chart probes fail", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          quotes: [
+            { symbol: "THIN.MC", shortname: "Thin", quoteType: "ETF" },
+            { symbol: "RICH.MC", shortname: "Rich", quoteType: "ETF" },
+          ],
+        }),
+      } as Response)
+      .mockRejectedValue(new Error("probe failed"));
+
+    const result = await searchYahooSymbols("IE00TEST");
+
+    expect(result.map((candidate) => candidate.symbol)).toEqual(["THIN.MC", "RICH.MC"]);
+  });
 });
 
 describe("searchCoinGeckoSymbols", () => {
