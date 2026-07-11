@@ -30,3 +30,6 @@ transcript.txt
 
 # Vercel CLI local artifacts
 .vercel
+
+# Agent worktrees (linked checkouts; each carries its own biome.json)
+.worktrees/
