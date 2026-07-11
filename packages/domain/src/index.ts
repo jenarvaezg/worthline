@@ -623,6 +623,16 @@ export {
   findTodaySnapshotId,
 } from "./snapshot-policy";
 export type {
+  PlanSnapshotPriceCorrectionInput,
+  PlanSnapshotPriceCorrectionResult,
+  SnapshotPriceCorrectionPoint,
+  SnapshotPriceCorrectionRejectReason,
+} from "./snapshot-price-correction";
+export {
+  planSnapshotPriceCorrection,
+  snapshotPriceCorrectionErrorMessage,
+} from "./snapshot-price-correction";
+export type {
   CreateNetWorthSnapshotInput,
   FramedDelta,
   FramedSnapshotDeltas,

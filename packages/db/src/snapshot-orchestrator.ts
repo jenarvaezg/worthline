@@ -284,6 +284,18 @@ export interface SnapshotOrchestrator {
     today?: string;
     dryRun?: boolean;
   }) => Promise<{ created: number; updated: number; gaps: string[]; source: string }>;
+  /**
+   * Single-date snapshot unit-price correction (#926): freeze one historical unit
+   * price onto ONE date across every scope, using `overrideUnitPrice` on that day
+   * only. Explicit and auditable — never a refresh side effect. Pass `dryRun: true`
+   * for the preview's per-scope create/update counts.
+   */
+  correctInvestmentSnapshotUnitPrice: (params: {
+    assetId: string;
+    dateKey: string;
+    unitPriceDecimal: DecimalString;
+    dryRun?: boolean;
+  }) => Promise<{ created: number; updated: number; dateKey: string }>;
 }
 
 export function createSnapshotOrchestrator(
@@ -359,5 +371,30 @@ export function createSnapshotOrchestrator(
         return { created, gaps: plan.gaps, source: plan.source, updated };
       });
     },
+    correctInvestmentSnapshotUnitPrice: ({
+      assetId,
+      dateKey,
+      unitPriceDecimal,
+      dryRun = false,
+    }) =>
+      ctx.transaction(async () => {
+        const workspace = await ctx.getWorkspace();
+        if (!workspace) {
+          return { created: 0, dateKey, updated: 0 };
+        }
+
+        const { created, updated } = await rippleHistoricalSnapshotsForPriceBackfill(
+          ctx,
+          workspace,
+          stores.snapshots.saveSnapshot,
+          {
+            assetId,
+            dryRun,
+            points: [{ dateKey, unitPriceDecimal }],
+          },
+        );
+
+        return { created, dateKey, updated };
+      }),
   };
 }

@@ -15,6 +15,7 @@ import {
 } from "@web/intake";
 import {
   confirmPriceBackfillAction,
+  confirmSnapshotPriceCorrectionAction,
   confirmStatementAction,
   createPayoutAction,
   createPayoutScheduleAction,
@@ -23,9 +24,11 @@ import {
   deletePayoutScheduleAction,
   type PriceBackfillPreviewState,
   previewPriceBackfillAction,
+  previewSnapshotPriceCorrectionAction,
   previewStatementAction,
   recordOperationAction,
   refreshPricesAction,
+  type SnapshotPriceCorrectionPreviewState,
   type StatementPreviewState,
   saveExposureProfileAction,
   updateInvestmentAction,
@@ -69,6 +72,7 @@ import { AssetEditForm, LiabilityEditForm } from "./_surfaces/holding-forms";
 import { HousingValuationSection } from "./_surfaces/housing-valuation-section";
 import { PriceBackfillSection } from "./_surfaces/price-backfill-section";
 import { ReturnsPanel } from "./_surfaces/returns-panel";
+import { SnapshotPriceCorrectionSection } from "./_surfaces/snapshot-price-correction-section";
 import { StatementUploadSection } from "./_surfaces/statement-upload-section";
 
 export const dynamic = "force-dynamic";
@@ -223,6 +227,8 @@ export default async function EditarPage({
             snapshotRows: twrSnapshotRows,
           }) !== null
         : false;
+    const isSnapshotCorrectionEligible =
+      isDerived && investment !== null && operations.length > 0;
     const twrMonthlyCloses = monthlyCloseValuesFromSnapshotRows(twrSnapshotRows);
 
     // Exposure profile hand-entry (PRD #539 S1, #541): a hand-enterable
@@ -308,6 +314,7 @@ export default async function EditarPage({
       exposureProfileKey,
       housingValuationCadence,
       isBackfillCandidate,
+      isSnapshotCorrectionEligible,
       isBinanceHolding,
       isCoinCollection,
       investment,
@@ -355,6 +362,7 @@ export default async function EditarPage({
     exposureProfileKey,
     housingValuationCadence,
     isBackfillCandidate,
+    isSnapshotCorrectionEligible,
     isBinanceHolding,
     isCoinCollection,
     investment,
@@ -430,6 +438,19 @@ export default async function EditarPage({
   async function boundConfirmPriceBackfillAction(formData: FormData) {
     "use server";
     await confirmPriceBackfillAction(id, formData);
+  }
+
+  async function boundPreviewSnapshotPriceCorrectionAction(
+    prev: SnapshotPriceCorrectionPreviewState,
+    formData: FormData,
+  ) {
+    "use server";
+    return previewSnapshotPriceCorrectionAction(id, prev, formData);
+  }
+
+  async function boundConfirmSnapshotPriceCorrectionAction(formData: FormData) {
+    "use server";
+    await confirmSnapshotPriceCorrectionAction(id, formData);
   }
 
   async function boundUpdateInvestmentAction(formData: FormData) {
@@ -710,6 +731,21 @@ export default async function EditarPage({
                 confirmAction={boundConfirmPriceBackfillAction}
                 currentUrl={currentUrl}
                 previewAction={boundPreviewPriceBackfillAction}
+              />
+            ) : null}
+
+            {/* derived + operations: correct one daily snapshot's unit price (#926) */}
+            {asset &&
+            method === "derived" &&
+            !isCoinCollection &&
+            !isBinanceHolding &&
+            isSnapshotCorrectionEligible ? (
+              <SnapshotPriceCorrectionSection
+                confirmAction={boundConfirmSnapshotPriceCorrectionAction}
+                currentUrl={currentUrl}
+                previewAction={boundPreviewSnapshotPriceCorrectionAction}
+                today={today}
+                {...(priceCache?.price ? { defaultUnitPrice: priceCache.price } : {})}
               />
             ) : null}
 

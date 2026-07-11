@@ -221,6 +221,17 @@ export interface WorthlineStore {
     dryRun?: boolean;
   }) => Promise<{ created: number; updated: number; gaps: string[]; source: string }>;
   /**
+   * Single-date snapshot unit-price correction (#926): freeze one historical unit
+   * price onto ONE date across every scope. Explicit and auditable — never a
+   * refresh side effect. `dryRun: true` counts creates/updates without writing.
+   */
+  correctInvestmentSnapshotUnitPrice: (params: {
+    assetId: string;
+    dateKey: string;
+    unitPriceDecimal: DecimalString;
+    dryRun?: boolean;
+  }) => Promise<{ created: number; updated: number; dateKey: string }>;
+  /**
    * Operation dated-fact seam (ADR 0020): delete ONE investment operation AND
    * ripple the snapshots dated ≥ its date, atomically in a single transaction.
    * The asset id and from-date are derived behind the seam from the deleted row
