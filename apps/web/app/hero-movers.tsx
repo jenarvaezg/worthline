@@ -100,8 +100,10 @@ function HoldingLine({ m }: { m: HoldingMover }) {
     <div className="moversHolding">
       <span className="moversHoldingName">
         {m.label}
+        {m.isDebt ? <span className="moversTag deuda">deuda</span> : null}
         <Tag tag={m.tag} />
       </span>
+      <span aria-hidden="true" className="moversLeader" />
       <b className={`moversHoldingVal ${m.sign}`}>{m.changeFmt}</b>
       <span className={`moversHoldingPct ${m.sign}`}>{m.pctFmt ?? ""}</span>
     </div>
@@ -150,7 +152,7 @@ export default function HeroMovers({
       <div className="moversHead">
         <div className="moversTitle">
           <h3>
-            Qué movió tu patrimonio
+            Qué lo movió
             <MoversHelp text={SIGN_HELP} />
           </h3>
           <small>{data.vsLabel}</small>
