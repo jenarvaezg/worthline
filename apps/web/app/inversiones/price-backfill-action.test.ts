@@ -197,6 +197,75 @@ describe("previewPriceBackfillAction (#380)", () => {
     expect(state.status).toBe("not_eligible");
     store.close();
   });
+
+  test("routes Yahoo investments to the Yahoo historical source by default", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "gold",
+      liquidityTier: "market",
+      name: "WisdomTree Physical Gold",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      priceProvider: "yahoo",
+      providerSymbol: "GBSE.MI",
+    });
+    await store.recordOperationAndRipple(
+      {
+        assetId: "gold",
+        currency: "EUR",
+        executedAt: "2026-01-10",
+        feesMinor: 0,
+        id: "op_jan",
+        kind: "buy",
+        pricePerUnit: "18",
+        units: "100",
+      },
+      { today: "2026-03-15" },
+    );
+
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        chart: {
+          result: [
+            {
+              meta: { currency: "EUR" },
+              timestamp: [Math.floor(Date.parse("2026-02-01T00:00:00.000Z") / 1000)],
+              indicators: {
+                quote: [{ close: [21.5] }],
+              },
+            },
+          ],
+        },
+      }),
+    } as Response);
+
+    const fd = new FormData();
+    fd.set("currentUrl", "/patrimonio/gold/editar");
+
+    const state = await previewPriceBackfillAction(
+      "gold",
+      { status: "idle" },
+      fd,
+      store,
+      fixedClock(NOW),
+    );
+
+    expect(state.status).toBe("summary");
+    if (state.status !== "summary") throw new Error("expected summary");
+    expect(state.source).toBe("yahoo");
+    expect(state.create + state.update).toBeGreaterThanOrEqual(1);
+    expect(String(vi.mocked(fetch).mock.calls[0]![0])).toContain(
+      "/v8/finance/chart/GBSE.MI",
+    );
+    store.close();
+    vi.unstubAllGlobals();
+  });
 });
 
 describe("confirmPriceBackfillAction (#380)", () => {

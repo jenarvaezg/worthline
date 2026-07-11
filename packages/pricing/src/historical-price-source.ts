@@ -20,9 +20,10 @@
  * source cannot price is simply absent from the map, so the plan records a gap.
  */
 
-import type { DecimalString } from "@worthline/domain";
+import type { DecimalString, InvestmentPriceProvider } from "@worthline/domain";
 import { fetchCoinGeckoHistoryEur } from "./binance-history";
 import { resolveCoinGeckoId } from "./binance-symbols";
+import { yahooHistoricalSource } from "./yahoo-historical";
 
 /** A historical EUR price series plus the source that produced it. */
 export interface HistoricalPriceSeries {
@@ -79,6 +80,31 @@ export const coingeckoHistoricalSource: HistoricalPriceSource = {
     return { pricesByDate, source: "coingecko", ...(fetchError ? { fetchError } : {}) };
   },
 };
+
+/**
+ * Resolve an investment's configured price provider to its historical source
+ * (#923). Yahoo and CoinGecko fetch real series; providers without a long-range
+ * API yet degrade to an empty map (gaps stay gaps, never invented).
+ */
+export function resolveHistoricalPriceSource(
+  priceProvider: InvestmentPriceProvider,
+): HistoricalPriceSource {
+  switch (priceProvider) {
+    case "yahoo":
+      return yahooHistoricalSource;
+    case "coingecko":
+      return coingeckoHistoricalSource;
+    case "stooq":
+    case "finect":
+      return emptyHistoricalSource(priceProvider);
+  }
+}
+
+function emptyHistoricalSource(source: string): HistoricalPriceSource {
+  return {
+    fetchSeriesEur: async () => ({ pricesByDate: new Map(), source }),
+  };
+}
 
 /** True when `value` is a YYYY-MM-DD date key. */
 function isDateKey(value: string): boolean {

@@ -214,7 +214,11 @@ export type {
   HistoricalPriceSeries,
   HistoricalPriceSource,
 } from "./historical-price-source";
-export { coingeckoHistoricalSource, parsePriceCsv } from "./historical-price-source";
+export {
+  coingeckoHistoricalSource,
+  parsePriceCsv,
+  resolveHistoricalPriceSource,
+} from "./historical-price-source";
 export type { BenchmarkPricePoint } from "./ine-cpi";
 export { fetchSpanishCpi, INE_SPANISH_CPI_TABLE_ID } from "./ine-cpi";
 export type { MetalKind, MetalValueInput, ParsedComposition } from "./metal";
