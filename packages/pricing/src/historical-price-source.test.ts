@@ -10,7 +10,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { coingeckoHistoricalSource, parsePriceCsv } from "./historical-price-source";
+import {
+  coingeckoHistoricalSource,
+  parsePriceCsv,
+  resolveHistoricalPriceSource,
+} from "./historical-price-source";
 import { yahooHistoricalSource } from "./yahoo-historical";
 
 describe("coingeckoHistoricalSource (#380)", () => {
@@ -73,6 +77,27 @@ describe("coingeckoHistoricalSource (#380)", () => {
     vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 429 } as Response);
     const result = await coingeckoHistoricalSource.fetchSeriesEur("BTC", 0, 1);
     expect(result.pricesByDate.size).toBe(0);
+  });
+});
+
+describe("resolveHistoricalPriceSource (#923)", () => {
+  it("maps yahoo and coingecko to their historical sources", () => {
+    expect(resolveHistoricalPriceSource("yahoo")).toBe(yahooHistoricalSource);
+    expect(resolveHistoricalPriceSource("coingecko")).toBe(coingeckoHistoricalSource);
+  });
+
+  it("degrades stooq and finect to an empty series without throwing", async () => {
+    const stooq = resolveHistoricalPriceSource("stooq");
+    const finect = resolveHistoricalPriceSource("finect");
+
+    await expect(stooq.fetchSeriesEur("SAN.MC", 0, 1)).resolves.toEqual({
+      pricesByDate: new Map(),
+      source: "stooq",
+    });
+    await expect(finect.fetchSeriesEur("N5394", 0, 1)).resolves.toEqual({
+      pricesByDate: new Map(),
+      source: "finect",
+    });
   });
 });
 

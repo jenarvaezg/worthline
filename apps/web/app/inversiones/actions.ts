@@ -54,12 +54,12 @@ import {
   systemClock,
 } from "@worthline/domain";
 import {
-  coingeckoHistoricalSource,
   fetchAndCachePrice,
   fetchPriceNow,
   type HistoricalPriceSource,
   type PriceProvider,
   refreshStalePrices,
+  resolveHistoricalPriceSource,
 } from "@worthline/pricing";
 import { redirect } from "next/navigation";
 
@@ -572,9 +572,6 @@ export async function previewPriceBackfillAction(
   ..._testArgs: unknown[]
 ): Promise<PriceBackfillPreviewState> {
   const _store = testStoreFromActionArgs(_testArgs);
-  const _source =
-    testArgFromActionArgs(_testArgs, isHistoricalPriceSource) ??
-    coingeckoHistoricalSource;
   const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const today = _clock.today();
@@ -584,6 +581,10 @@ export async function previewPriceBackfillAction(
     _store,
   );
   if (!candidate) return { status: "not_eligible" };
+
+  const _source =
+    testArgFromActionArgs(_testArgs, isHistoricalPriceSource) ??
+    resolveHistoricalPriceSource(candidate.priceProvider);
 
   const series = await _source.fetchSeriesEur(
     candidate.providerSymbol,
@@ -626,9 +627,6 @@ export async function confirmPriceBackfillAction(
   ..._testArgs: unknown[]
 ) {
   const _store = testStoreFromActionArgs(_testArgs);
-  const _source =
-    testArgFromActionArgs(_testArgs, isHistoricalPriceSource) ??
-    coingeckoHistoricalSource;
   const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
@@ -645,6 +643,10 @@ export async function confirmPriceBackfillAction(
       }),
     );
   }
+
+  const _source =
+    testArgFromActionArgs(_testArgs, isHistoricalPriceSource) ??
+    resolveHistoricalPriceSource(candidate.priceProvider);
 
   const series = await _source.fetchSeriesEur(
     candidate.providerSymbol,
