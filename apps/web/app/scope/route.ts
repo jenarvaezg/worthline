@@ -1,12 +1,12 @@
 import { appendParam, SCOPE_COOKIE_NAME } from "@web/intake";
+import { parseReturnTo } from "@web/return-to";
 import { type NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const formData = await request.formData();
   const scopeId = String(formData.get("scopeId") ?? "").trim();
   const rawReturnTo = String(formData.get("returnTo") ?? "").trim();
-  const returnTo =
-    rawReturnTo.startsWith("/") && !rawReturnTo.startsWith("//") ? rawReturnTo : "/";
+  const returnTo = parseReturnTo(rawReturnTo);
 
   const scopedReturnTo = scopeId ? appendParam(returnTo, "scope", scopeId) : returnTo;
   const response = NextResponse.redirect(new URL(scopedReturnTo, request.url), {

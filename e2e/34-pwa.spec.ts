@@ -8,7 +8,7 @@ test.describe("PWA: manifest & service worker", () => {
     const manifest = await response.json();
     expect(manifest.name).toBe("worthline");
     expect(manifest.short_name).toBe("worthline");
-    expect(manifest.start_url).toBe("/");
+    expect(manifest.start_url).toBe("/app");
     expect(manifest.display).toBe("standalone");
     expect(manifest.theme_color).toBe("#006f5f"); // --green token
     expect(manifest.background_color).toBe("#eef2ef"); // --paper token
@@ -20,7 +20,7 @@ test.describe("PWA: manifest & service worker", () => {
   });
 
   test("Slice 2b: service worker is registered in browser", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/app");
 
     // Wait for service worker to register and be active
     const isRegistered = await page.evaluate(async () => {

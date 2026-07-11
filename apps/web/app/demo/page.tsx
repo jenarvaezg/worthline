@@ -20,7 +20,7 @@ export default async function DemoLanding({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   if ((await readStoreTarget()).kind === "authenticated") {
-    redirect("/");
+    redirect("/app");
   }
 
   const resolved = await searchParams;

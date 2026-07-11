@@ -21,7 +21,7 @@ test("export workspace: bootstrap via UI → Exportar downloads the JSON documen
   page,
 }) => {
   // 1. Spec 18 wiped the DB → the app redirects to onboarding.
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page).toHaveURL(/empezar/);
 
   // 2. Complete the solo onboarding (same interactions as journey 01).

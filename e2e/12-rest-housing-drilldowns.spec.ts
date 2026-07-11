@@ -18,7 +18,7 @@ test("rest drilldown: band/legend link → stack panel → breadcrumb back", asy
   page,
 }) => {
   // 1. Home renders.
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
 
   // 2. The composition legend's rest-group entries (the "A plazo" and "Ilíquido"
@@ -50,7 +50,7 @@ test("housing drilldown: straight to per-property multiples, no stack", async ({
 }) => {
   // 1. Home renders; the housing legend entry links to the drill when the
   //    decomposition chart is drawn.
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
 
   const legendLink = page.locator('.compositionLegend a[href*="drill=housing"]');

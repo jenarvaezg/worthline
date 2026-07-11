@@ -25,7 +25,7 @@ export default function NotFound() {
         <p className="emptyLine">
           Vuelve al resumen para seguir navegando por worthline.
         </p>
-        <Link className="actionLink" href="/">
+        <Link className="actionLink" href="/app">
           Volver al resumen
         </Link>
       </section>

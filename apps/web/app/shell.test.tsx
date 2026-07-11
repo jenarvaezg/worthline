@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 // ViewTransitionLink reads the live pathname; stub it for a static render.
-vi.mock("next/navigation", () => ({ usePathname: () => "/" }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));
 // SignOutButton is an async server component (awaits the request store), which
 // renderToStaticMarkup cannot resolve; stub it — it is irrelevant to the band.
 vi.mock("./sign-out-button", () => ({ default: () => null }));
@@ -24,7 +24,7 @@ describe("Shell", () => {
     const html = renderToStaticMarkup(
       <Shell
         activeSection="resumen"
-        currentPageUrl="/"
+        currentPageUrl="/app"
         persistence={persistence}
         scopes={[]}
         selectedScopeId={undefined}

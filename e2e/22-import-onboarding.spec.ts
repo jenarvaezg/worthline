@@ -104,7 +104,7 @@ test("fresh install imports a live-state-only file from /empezar and lands on th
   // ── Confirm: lands on the populated dashboard, not back in onboarding ────
   await importSection.getByRole("button", { name: "Importar y reemplazar" }).click();
 
-  await expect(page).toHaveURL("/");
+  await expect(page).toHaveURL("/app");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("worthline");
 
   // The dashboard shows the imported holdings: expand the Caja tier in the

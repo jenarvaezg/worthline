@@ -74,7 +74,7 @@ test.beforeAll(seedMultiYearHistory);
  * the only, active, default scope carrying that history. The click is a no-op
  * then; in a household workspace (multiple members) we click "Hogar" as before. */
 async function pinHouseholdScope(page: import("@playwright/test").Page): Promise<void> {
-  await page.goto("/");
+  await page.goto("/app");
   const scopeNav = page.getByRole("navigation", { name: "Selector de ámbito" });
   if ((await scopeNav.count()) === 0) {
     return;

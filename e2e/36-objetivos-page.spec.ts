@@ -13,7 +13,7 @@ test("/objetivos: FIRE hero + goals section render, nav active", async ({ page }
   // Choose the familia persona (has FIRE configured) via its deep-link — a single
   // awaited navigation, not a submit-button click that races the seed+redirect.
   await page.goto("/demo?persona=familia");
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/app$/);
 
   // 1. «Ver objetivos →» link on the home FIRE glance card points to /objetivos.
   const verLink = page.getByRole("link", { name: /Ver objetivos/ });
@@ -38,8 +38,8 @@ test("/objetivos: FIRE hero + goals section render, nav active", async ({ page }
 
   // 6. Navigate back to home (still the familia persona) and use the top-nav
   // "Objetivos" entry directly.
-  await page.goto("/");
-  await expect(page).toHaveURL(/\/$/);
+  await page.goto("/app");
+  await expect(page).toHaveURL(/\/app$/);
 
   await page
     .getByRole("navigation", { name: "Secciones principales" })
@@ -53,7 +53,7 @@ test("/objetivos: Niveles FIRE rail renders Coast/Lean/Regular/Fat labels", asyn
   page,
 }) => {
   await page.goto("/demo?persona=familia");
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/app$/);
   await page.goto("/objetivos");
 
   const rail = page.getByRole("region", { name: "Niveles FIRE" });

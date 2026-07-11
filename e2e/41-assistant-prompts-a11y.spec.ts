@@ -42,7 +42,7 @@ test("assistant: screen-aware prompts seed the conversation", async ({ page }) =
   });
 
   // Default fallback set on the home (resumen).
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByRole("button", { name: "Abrir asistente" }).click();
   const panel = page.getByRole("dialog", { name: "Asistente financiero" });
   await expect(panel).toBeVisible();
@@ -86,7 +86,7 @@ test("assistant: keyboard close returns focus to the trigger + context is announ
 
 test("assistant: opens as a drawer on a mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByRole("button", { name: "Abrir asistente" }).click();
   const panel = page.getByRole("dialog", { name: "Asistente financiero" });
   await expect(panel).toBeVisible();

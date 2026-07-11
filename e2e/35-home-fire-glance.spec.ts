@@ -12,7 +12,7 @@ test("home FIRE glance: compact card renders, detail removed", async ({ page }) 
   // Choose the familia persona — it has a configured FIRE target.
   await page.goto("/demo");
   await page.getByRole("button", { name: /Familia/ }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/app$/);
 
   const firePanel = page.getByRole("region", { name: "FIRE" });
   await expect(firePanel).toBeVisible();

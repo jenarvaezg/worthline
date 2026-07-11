@@ -19,7 +19,7 @@ import { expect, test } from "./fixtures";
 test("Vista toggle switches framing client-side, mirrors the URL, no document reload", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/app");
 
   const hero = page.getByRole("region", { name: "Resumen patrimonial" });
   const tabs = hero.getByRole("navigation", { name: "Vista de patrimonio" });
@@ -81,7 +81,7 @@ test("Vista deep-link renders the liquid framing server-side", async ({ page }) 
 });
 
 test("Vista toggle is keyboard-operable (§8)", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app");
 
   const liquido = page
     .getByRole("region", { name: "Resumen patrimonial" })

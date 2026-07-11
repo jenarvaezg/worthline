@@ -36,7 +36,7 @@ export default async function EmpezarPage({ searchParams }: EmpezarPageProps) {
   const workspace = await withStore((store) => store.workspace.readWorkspace());
 
   if (workspace) {
-    redirect("/");
+    redirect("/app");
   }
 
   const params = await searchParams;

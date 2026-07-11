@@ -73,7 +73,9 @@ const VIEW_KEYS = ["view", "range", "exp", "hide"];
 export function deriveScreenContext(pathname: string, search: string): ScreenContext {
   const seg = pathname.split("/").filter(Boolean);
   const section: ScreenSection =
-    seg.length === 0 ? "resumen" : (SECTIONS.find((s) => s === seg[0]) ?? "otra");
+    seg.length === 0 || (seg.length === 1 && seg[0] === "app")
+      ? "resumen"
+      : (SECTIONS.find((s) => s === seg[0]) ?? "otra");
 
   const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
   const view: Record<string, string> = {};

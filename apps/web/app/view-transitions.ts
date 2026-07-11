@@ -20,7 +20,7 @@
  */
 
 /** The top-level section paths — used to classify navigation direction. */
-const TOP_SECTIONS = ["/", "/patrimonio", "/historico", "/ajustes"] as const;
+const TOP_SECTIONS = ["/app", "/patrimonio", "/historico", "/ajustes"] as const;
 
 export type TopSection = (typeof TOP_SECTIONS)[number];
 
@@ -43,14 +43,14 @@ export interface TransitionClassification {
  * Sub-paths (e.g. `/patrimonio/abc/editar`) inherit the section's index.
  */
 function sectionIndex(pathname: string): number {
-  // Exact match first (covers `/`).
+  // Exact match first (covers `/app`).
   const exact = TOP_SECTIONS.indexOf(pathname as TopSection);
   if (exact !== -1) return exact;
 
-  // Prefix match for sub-paths (longest prefix wins, so /patrimonio before /).
+  // Prefix match for sub-paths (longest prefix wins).
   const sorted = [...TOP_SECTIONS].sort((a, b) => b.length - a.length);
   for (const section of sorted) {
-    if (section !== "/" && pathname.startsWith(section)) {
+    if (pathname.startsWith(section)) {
       return TOP_SECTIONS.indexOf(section);
     }
   }

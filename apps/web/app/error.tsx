@@ -38,7 +38,7 @@ export default function ErrorPage({ unstable_retry }: ErrorPageProps) {
           >
             Reintentar
           </button>
-          <Link className="actionLink" href="/">
+          <Link className="actionLink" href="/app">
             Volver al resumen
           </Link>
         </div>

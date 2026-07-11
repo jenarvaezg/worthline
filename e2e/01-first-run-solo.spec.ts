@@ -13,7 +13,7 @@ test("first run solo: empezar → add wizard, dashboard checklist still reachabl
   page,
 }) => {
   // 1. Fresh DB → app redirects to /empezar
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page).toHaveURL(/empezar/);
 
   // 2. The solo card is visible
@@ -36,7 +36,7 @@ test("first run solo: empezar → add wizard, dashboard checklist still reachabl
   );
 
   // 5. The dashboard is still reachable and shows the onboarding checklist (steps pending).
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("worthline");
   await expect(page.getByRole("region", { name: "Primeros pasos" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Primeros pasos" })).toBeVisible();

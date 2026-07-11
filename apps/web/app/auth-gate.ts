@@ -48,9 +48,10 @@ export function shouldRedirectToLogin(input: {
   ) {
     return false;
   }
-  // The sign-in route, the public demo entry, and Auth.js's own endpoints must
-  // stay reachable for a logged-out visitor.
+  // The provisional root (`/` → `/app`, #949), sign-in route, public demo entry,
+  // and Auth.js endpoints must stay reachable for a logged-out visitor.
   if (
+    pathname === "/" ||
     pathname.startsWith("/api/auth") ||
     pathname === "/demo" ||
     pathname.startsWith("/demo/") ||

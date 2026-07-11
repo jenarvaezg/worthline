@@ -1,6 +1,7 @@
 import authConfig from "@web/auth.config";
 import { shouldRedirectToLogin } from "@web/auth-gate";
 import { DEMO_PERSONA_COOKIE_NAME } from "@web/demo/demo-context";
+import { buildLoginRedirectUrl } from "@web/return-to";
 import { NextResponse } from "next/server";
 import NextAuth from "next-auth";
 
@@ -22,7 +23,9 @@ export default auth((req) => {
       pathname: req.nextUrl.pathname,
     })
   ) {
-    return NextResponse.redirect(new URL("/login", req.nextUrl.origin));
+    return NextResponse.redirect(
+      buildLoginRedirectUrl(req.nextUrl.origin, req.nextUrl.pathname, req.nextUrl.search),
+    );
   }
 
   return undefined;

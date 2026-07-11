@@ -48,7 +48,7 @@ const MAX_PROMPT = 280;
 
 /** Product routes per section; `otra` has no single destination. */
 const SECTION_ROUTE: Record<ScreenSection, string | null> = {
-  resumen: "/",
+  resumen: "/app",
   patrimonio: "/patrimonio",
   historico: "/historico",
   objetivos: "/objetivos",

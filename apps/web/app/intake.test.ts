@@ -428,7 +428,7 @@ describe("buildCurrentUrl", () => {
   test("keeps navigation params like scope, view and fireEdit", () => {
     expect(
       buildCurrentUrl({ scope: "member_ana", view: "liquid", fireEdit: "true" }),
-    ).toBe("/?scope=member_ana&view=liquid&fireEdit=true");
+    ).toBe("/app?scope=member_ana&view=liquid&fireEdit=true");
   });
 
   test("strips one-shot feedback params so banners never persist", () => {
@@ -443,12 +443,12 @@ describe("buildCurrentUrl", () => {
         v_currentValue: "abc",
         v_name: "Caja",
       }),
-    ).toBe("/?scope=household");
+    ).toBe("/app?scope=household");
   });
 
-  test("returns the root when nothing survives stripping", () => {
-    expect(buildCurrentUrl({ ok: "saved", v_name: "x" })).toBe("/");
-    expect(buildCurrentUrl(undefined)).toBe("/");
+  test("returns the dashboard path when nothing survives stripping", () => {
+    expect(buildCurrentUrl({ ok: "saved", v_name: "x" })).toBe("/app");
+    expect(buildCurrentUrl(undefined)).toBe("/app");
   });
 });
 

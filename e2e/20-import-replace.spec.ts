@@ -36,7 +36,7 @@ test("import replaces the whole workspace; an invalid file changes nothing", asy
   page,
 }) => {
   // ── Self-sufficient setup: onboard via the real UI when the DB is fresh ──
-  await page.goto("/");
+  await page.goto("/app");
 
   if (page.url().includes("/empezar")) {
     await expect(page.getByRole("heading", { name: "Empezar solo" })).toBeVisible();
@@ -73,7 +73,7 @@ test("import replaces the whole workspace; an invalid file changes nothing", asy
   await dangerZone.getByRole("button", { name: "Importar y reemplazar" }).click();
 
   // Lands on the dashboard — never onboarding.
-  await expect(page).toHaveURL("/");
+  await expect(page).toHaveURL("/app");
 
   // The imported asset replaced the pre-existing one.
   await page.goto("/patrimonio");

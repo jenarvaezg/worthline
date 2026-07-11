@@ -32,7 +32,7 @@ export async function impersonateWorkspaceAction(formData: FormData): Promise<ne
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
   });
-  redirect("/");
+  redirect("/app");
 }
 
 /** Stop impersonating: clear the cookie and return to /admin. Guarded like every admin action. */

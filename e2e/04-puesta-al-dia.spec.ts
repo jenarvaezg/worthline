@@ -36,7 +36,7 @@ test("puesta al dia: batch update two assets → values persist → headline cha
 
   // 2. Note the headline before update
   //    (500€ seed + 5000€ test 03 + 3000€ just created = 8500€)
-  await page.goto("/");
+  await page.goto("/app");
   const headlineBeforeMinor = parseEuroMinor(
     await page
       .getByRole("region", { name: "Resumen patrimonial" })
@@ -86,7 +86,7 @@ test("puesta al dia: batch update two assets → values persist → headline cha
 
   // 7. Back on /, headline should show the exact updated net worth
   //    (500€ seed + 8000€ + 4000€ = 12500€)
-  await page.goto("/");
+  await page.goto("/app");
   const headlineAfterMinor = parseEuroMinor(
     await page
       .getByRole("region", { name: "Resumen patrimonial" })
@@ -103,7 +103,7 @@ test("puesta al dia: batch update two assets → values persist → headline cha
   await expect(page.getByLabel("Valor de Fondo Monetario en EUR")).toHaveValue("4000,00");
 
   // 9. Liquidity section renders the tier donut with at least one segment
-  await page.goto("/");
+  await page.goto("/app");
   const liquidityRegion = page.getByRole("region", { name: "Liquidez por capa" });
   await expect(liquidityRegion.locator(".tierDonut")).toBeVisible();
   expect(

@@ -27,7 +27,7 @@ function parseEuroMinor(text: string | null): number {
 test("scope consistency: switch member scope → reconciled views → survives reload", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/app");
 
   const scopeTabs = page.getByRole("navigation", { name: "Selector de ámbito" });
   await expect(scopeTabs).toBeVisible();
@@ -80,7 +80,7 @@ test("scope consistency: switch member scope → reconciled views → survives r
   await expect(page.getByRole("heading", { name: "Patrimonio" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Activos" })).toBeVisible();
 
-  await page.goto("/");
+  await page.goto("/app");
   await page.reload();
   await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
   await expect(

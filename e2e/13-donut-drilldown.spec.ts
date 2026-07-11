@@ -20,7 +20,7 @@ const DRILL_BY_TIER: Record<string, string> = {
 };
 
 test("every donut segment links to its tier's drill group", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
 
   // Whatever segments the data produces, each one's destination must match

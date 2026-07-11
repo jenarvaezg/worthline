@@ -19,7 +19,7 @@ import ViewTransitionLink from "./view-transition-link";
 export type AppSection = "resumen" | "patrimonio" | "historico" | "objetivos" | "ajustes";
 
 const NAV_SECTIONS: Array<{ id: AppSection; label: string; href: string }> = [
-  { id: "resumen", label: "Resumen", href: "/" },
+  { id: "resumen", label: "Resumen", href: "/app" },
   { id: "patrimonio", label: "Patrimonio", href: "/patrimonio" },
   { id: "historico", label: "Histórico", href: "/historico" },
   { id: "objetivos", label: "Objetivos", href: "/objetivos" },

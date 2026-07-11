@@ -386,7 +386,7 @@ export async function confirmImportAction(formData: FormData, ..._testArgs: unkn
   }
 
   // A valid import always yields a workspace — land on the dashboard.
-  redirect("/");
+  redirect("/app");
 }
 
 // === FIRE config action ===
