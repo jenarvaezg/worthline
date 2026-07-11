@@ -124,7 +124,7 @@ test("debts drilldown: the selected Vista survives entering and leaving", async 
   page,
 }) => {
   // Enter the debts drill under the liquid Vista directly (bookmarkable URL).
-  await page.goto("/?view=liquid&drill=debts");
+  await page.goto("/app?view=liquid&drill=debts");
   await expect(page.locator(".drillPanel")).toBeVisible();
   await expect(page.locator(".drillHeader h3")).toHaveText("Deudas · obligaciones");
 

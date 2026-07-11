@@ -105,7 +105,7 @@ test("liquid drilldown: the selected Vista survives entering and leaving", async
   page,
 }) => {
   // Enter the drill under the liquid Vista directly (bookmarkable URL).
-  await page.goto("/?view=liquid&drill=liquid");
+  await page.goto("/app?view=liquid&drill=liquid");
   await expect(page.locator(".drillPanel")).toBeVisible();
 
   // The breadcrumb preserves the Vista.

@@ -177,7 +177,7 @@ test("range param: composes with a drill and round-trips through the breadcrumb"
   // through the breadcrumb, so leaving the drill keeps the chosen window.
   // (The debts drill needs a liability with balance > 0 — journey 25 created
   // one in the household scope earlier in this serial run.)
-  await page.goto("/?drill=debts&range=3y");
+  await page.goto("/app?drill=debts&range=3y");
   await expect(page.locator(".drillPanel")).toBeVisible();
   await expect(page.locator(".drillHeader h3")).toHaveText("Deudas · obligaciones");
 

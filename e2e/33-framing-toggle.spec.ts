@@ -69,7 +69,7 @@ test("Vista toggle switches framing client-side, mirrors the URL, no document re
 });
 
 test("Vista deep-link renders the liquid framing server-side", async ({ page }) => {
-  await page.goto("/?view=liquid");
+  await page.goto("/app?view=liquid");
 
   const hero = page.getByRole("region", { name: "Resumen patrimonial" });
   await expect(hero.locator(".headline")).toContainText("Neto liquido");

@@ -14,6 +14,16 @@ test.describe("route migration — no-auth mode", () => {
     expect(response.headers().location).toBe("/app");
   });
 
+  test("/ preserves query params through the provisional redirect", async ({
+    request,
+  }) => {
+    const response = await request.get("/?view=liquid&drill=liquid", {
+      maxRedirects: 0,
+    });
+    expect(response.status()).toBe(307);
+    expect(response.headers().location).toBe("/app?view=liquid&drill=liquid");
+  });
+
   test("dashboard renders at /app", async ({ page }) => {
     await page.goto("/app");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("worthline");

@@ -6,6 +6,7 @@ import type {
 } from "@worthline/domain";
 
 import { appendParam } from "./intake";
+import { DEFAULT_APP_PATH } from "./return-to";
 
 /**
  * The canonical composition-panel URL (#144, ADR 0036): the four view-state
@@ -24,7 +25,7 @@ export function compositionUrl(
   housingMode: CompositionHousingMode,
   anchor = true,
 ): string {
-  let url = "/";
+  let url = DEFAULT_APP_PATH;
   if (view === "liquid") url = appendParam(url, "view", "liquid");
   if (drill) url = appendParam(url, "drill", drill);
   url = appendParam(url, "range", range);
