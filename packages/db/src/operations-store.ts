@@ -10,7 +10,14 @@ import type {
 import { asDateKey, createInvestmentOperation } from "@worthline/domain";
 import { asc, eq, sql } from "drizzle-orm";
 
-import { assetOperations, assetPriceCache, assets, liabilities } from "./schema";
+import {
+  assetOperations,
+  assetPriceCache,
+  assets,
+  contributionOccurrenceOperations,
+  contributionOccurrenceReconciliations,
+  liabilities,
+} from "./schema";
 import { type StoreContext, toOperation } from "./store-context";
 
 /** One confirmed value change from a value-update pass. */
@@ -155,7 +162,44 @@ async function deleteOperation(
     return null;
   }
 
+  const reconciliation = await db
+    .select({
+      occurrenceId: contributionOccurrenceOperations.occurrenceId,
+      state: contributionOccurrenceReconciliations.state,
+    })
+    .from(contributionOccurrenceOperations)
+    .innerJoin(
+      contributionOccurrenceReconciliations,
+      eq(
+        contributionOccurrenceReconciliations.occurrenceId,
+        contributionOccurrenceOperations.occurrenceId,
+      ),
+    )
+    .where(eq(contributionOccurrenceOperations.operationId, operationId))
+    .get();
+
   await db.delete(assetOperations).where(eq(assetOperations.id, operationId)).run();
+  if (reconciliation?.state === "fulfilled") {
+    const remaining = await db
+      .select({ id: contributionOccurrenceOperations.operationId })
+      .from(contributionOccurrenceOperations)
+      .where(
+        eq(contributionOccurrenceOperations.occurrenceId, reconciliation.occurrenceId),
+      )
+      .get();
+    if (!remaining) {
+      await db
+        .update(contributionOccurrenceReconciliations)
+        .set({ state: "open", updatedAt: sql`CURRENT_TIMESTAMP` })
+        .where(
+          eq(
+            contributionOccurrenceReconciliations.occurrenceId,
+            reconciliation.occurrenceId,
+          ),
+        )
+        .run();
+    }
+  }
 
   // Audit against the owning asset so the deletion shows in its history;
   // the full operation is recorded, making manual re-entry a de facto undo.

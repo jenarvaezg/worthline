@@ -38,7 +38,7 @@ describe("schema migration v45 (planned_contributions)", () => {
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(45);
+    expect(SCHEMA_VERSION).toBe(46);
   });
 
   test("fresh schemaSql includes planned_contributions", async () => {
@@ -51,5 +51,46 @@ describe("schema migration v45 (planned_contributions)", () => {
         (await client.execute("PRAGMA table_info(planned_contributions)")).rows,
       ),
     ).toContain("amount_json");
+  });
+});
+
+describe("schema migration v46 (contribution reconciliation)", () => {
+  test("creates explicit closure and one-operation-only link tables", async () => {
+    const client = await seedV44();
+    await migrate(client);
+
+    expect(
+      columnNames(
+        (
+          await client.execute(
+            "PRAGMA table_info(contribution_occurrence_reconciliations)",
+          )
+        ).rows,
+      ),
+    ).toEqual([
+      "occurrence_id",
+      "contribution_id",
+      "state",
+      "stored_execution_minor",
+      "created_at",
+      "updated_at",
+    ]);
+    expect(
+      columnNames(
+        (await client.execute("PRAGMA table_info(contribution_occurrence_operations)"))
+          .rows,
+      ),
+    ).toEqual(["occurrence_id", "operation_id"]);
+    const indexes = (
+      await client.execute("PRAGMA index_list(contribution_occurrence_operations)")
+    ).rows as unknown as Array<{ name: string; unique: number }>;
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "contribution_occurrence_operation_unique",
+          unique: 1,
+        }),
+      ]),
+    );
   });
 });

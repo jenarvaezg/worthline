@@ -18,13 +18,14 @@ import {
   formatMoneyMinorPrivacy,
   listScopeOptions,
   prepareObjetivosState,
+  projectContributionReconciliation,
   resolveScopeMemberIds,
   scopePassiveIncome,
 } from "@worthline/domain";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-
+import { ContributionReconciliation } from "./contribution-reconciliation";
 import { createGoalAction, deleteGoalAction, updateGoalAction } from "./goal-actions";
 
 export const dynamic = "force-dynamic";
@@ -173,6 +174,7 @@ export default async function ObjetivosPage({
       payoutRecords,
       payoutSchedules,
       contributionPlan,
+      contributionReconciliations,
       priceCache,
     ] = await Promise.all([
       store.snapshots.readCurveValuedHoldingsAtDate(today, projectionContext),
@@ -184,8 +186,19 @@ export default async function ObjetivosPage({
       selectedScope
         ? store.contributionPlan.readContributionPlan(selectedScope.id)
         : Promise.resolve(null),
+      selectedScope
+        ? store.contributionPlan.readReconciliations(selectedScope.id)
+        : Promise.resolve([]),
       store.operations.readAllPriceCacheEntries(),
     ]);
+
+    const contributionOperations = (
+      await Promise.all(
+        assets
+          .filter((asset) => asset.type === "investment")
+          .map((asset) => store.operations.readOperations(asset.id)),
+      )
+    ).flat();
 
     // Recorded payouts up to today, keyed by holding — the single source S1
     // owns, so this surface never re-derives a schedule.
@@ -203,6 +216,8 @@ export default async function ObjetivosPage({
       payoutsByHolding,
       today,
       contributionPlan,
+      contributionReconciliations,
+      contributionOperations,
       priceCache,
     };
   });
@@ -224,6 +239,8 @@ export default async function ObjetivosPage({
     payoutsByHolding,
     today,
     contributionPlan,
+    contributionReconciliations,
+    contributionOperations,
     priceCache,
   } = storeData;
 
@@ -254,6 +271,20 @@ export default async function ObjetivosPage({
   });
 
   const currency = workspace.baseCurrency;
+
+  const contributionProjection = contributionPlan
+    ? projectContributionReconciliation({
+        plan: contributionPlan,
+        fromDate:
+          contributionPlan.contributions.map((item) => item.startDate).sort()[0] ?? today,
+        toDate: new Date(Date.parse(`${today}T00:00:00Z`) + 90 * 86_400_000)
+          .toISOString()
+          .slice(0, 10),
+        today,
+        reconciliations: contributionReconciliations,
+        operations: contributionOperations,
+      })
+    : null;
 
   // Passive-income lens (#658): the selected scope's trailing-12m payouts,
   // weighted by ownership, against declared spending. Server-rendered figures;
@@ -479,6 +510,23 @@ export default async function ObjetivosPage({
             </Link>
           </div>
         </section>
+
+        {contributionPlan && contributionProjection ? (
+          <ContributionReconciliation
+            assets={assets}
+            currency={currency}
+            currentUrl={currentUrl}
+            operations={contributionOperations}
+            plan={contributionPlan}
+            projection={contributionProjection}
+            suggestedPriceByHoldingId={Object.fromEntries(
+              priceCache.map((entry) => [entry.assetId, entry.price]),
+            )}
+            {...(typeof resolvedSearchParams.reconcile === "string"
+              ? { selectedOccurrenceId: resolvedSearchParams.reconcile }
+              : {})}
+          />
+        ) : null}
 
         {/* ── Renta pasiva lens (#658) ──────────────────────────────── */}
         {passiveIncome ? (

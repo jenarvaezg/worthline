@@ -15,6 +15,7 @@
 import type { EarlyRepaymentMode } from "./amortization";
 import type { LiquidityTier } from "./classification";
 import type { DistributiveOmit, SourceAdapter, SourcePosition } from "./connected-source";
+import type { ContributionOccurrenceState, ContributionPlan } from "./contribution-plan";
 import type { DecimalString } from "./decimal";
 import type { ExposureProfile } from "./exposure-lookthrough";
 import type { FireScopeConfig } from "./fire";
@@ -264,6 +265,14 @@ export interface ExportedTrash {
   liabilities: ExportedLiability[];
 }
 
+export interface ExportedContributionReconciliation {
+  contributionId: string;
+  occurrenceId: string;
+  state: ContributionOccurrenceState;
+  operationIds: string[];
+  storedExecutionMinor?: number;
+}
+
 /** Every section of the document, without the version stamp. */
 export interface WorkspaceExportData {
   workspace: ExportedWorkspaceConfig;
@@ -294,19 +303,29 @@ export interface WorkspaceExportData {
    */
   payouts?: Payout[];
   payoutSchedules?: PayoutSchedule[];
+  /** Forecast declarations plus explicit plan→actual attribution metadata (ADR 0041). */
+  contributionPlans?: ContributionPlan[];
+  contributionReconciliations?: ExportedContributionReconciliation[];
 }
 
 /** The versioned export document — the on-disk JSON shape. */
 export interface WorkspaceExport
   extends Omit<
     WorkspaceExportData,
-    "publicIds" | "exposureProfiles" | "payouts" | "payoutSchedules"
+    | "publicIds"
+    | "exposureProfiles"
+    | "payouts"
+    | "payoutSchedules"
+    | "contributionPlans"
+    | "contributionReconciliations"
   > {
   version: typeof EXPORT_VERSION;
   publicIds: ExportedPublicId[];
   exposureProfiles: ExposureProfile[];
   payouts: Payout[];
   payoutSchedules: PayoutSchedule[];
+  contributionPlans: ContributionPlan[];
+  contributionReconciliations: ExportedContributionReconciliation[];
 }
 
 /**
@@ -329,6 +348,8 @@ export interface WorkspaceExportSummary {
   exposureProfiles: number;
   payouts: number;
   payoutSchedules: number;
+  contributionPlans: number;
+  contributionReconciliations: number;
 }
 
 /** Count every section of an (already validated) export document. */
@@ -349,6 +370,8 @@ export function summarizeWorkspaceExport(doc: WorkspaceExport): WorkspaceExportS
     exposureProfiles: doc.exposureProfiles.length,
     payouts: doc.payouts.length,
     payoutSchedules: doc.payoutSchedules.length,
+    contributionPlans: doc.contributionPlans.length,
+    contributionReconciliations: doc.contributionReconciliations.length,
   };
 }
 
@@ -372,5 +395,7 @@ export function serializeWorkspaceExport(data: WorkspaceExportData): WorkspaceEx
     exposureProfiles: data.exposureProfiles ?? [],
     payouts: data.payouts ?? [],
     payoutSchedules: data.payoutSchedules ?? [],
+    contributionPlans: data.contributionPlans ?? [],
+    contributionReconciliations: data.contributionReconciliations ?? [],
   };
 }

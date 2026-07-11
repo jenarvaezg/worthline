@@ -433,6 +433,7 @@ async function buildStore(
       liabilities: liabilityStore,
       snapshots: snapshotStore,
       operations: operationsStore,
+      contributionPlan: contributionPlanStore,
     }),
   };
 

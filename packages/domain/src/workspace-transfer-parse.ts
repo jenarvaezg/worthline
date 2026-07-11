@@ -395,6 +395,36 @@ const payoutScheduleSchema = z.object({
   exclusions: z.array(nonEmptyString).default([]),
 });
 
+const plannedContributionSchema = z.object({
+  id: nonEmptyString,
+  destinationHoldingId: nonEmptyString,
+  amount: z.discriminatedUnion("mode", [
+    z.object({ mode: z.literal("money"), value: z.number().int().positive() }),
+    z.object({ mode: z.literal("units"), value: nonEmptyString }),
+  ]),
+  cadence: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("weekly"), weekday: z.number().int().min(1).max(7) }),
+    z.object({ kind: z.literal("monthly"), dayOfMonth: z.number().int().min(1).max(31) }),
+    z.object({ kind: z.literal("quarterly") }),
+    z.object({ kind: z.literal("annual") }),
+  ]),
+  startDate: nonEmptyString,
+  endDate: nonEmptyString.optional(),
+});
+
+const contributionPlanSchema = z.object({
+  scopeId: nonEmptyString,
+  contributions: z.array(plannedContributionSchema),
+});
+
+const contributionReconciliationSchema = z.object({
+  contributionId: nonEmptyString,
+  occurrenceId: nonEmptyString,
+  state: z.enum(["open", "fulfilled", "skipped"]),
+  operationIds: z.array(nonEmptyString),
+  storedExecutionMinor: z.number().int().nonnegative().optional(),
+});
+
 const documentSchema = z.object({
   version: z.literal(EXPORT_VERSION),
   workspace: z.object({
@@ -421,6 +451,8 @@ const documentSchema = z.object({
   exposureProfiles: z.array(exposureProfileSchema).default([]),
   payouts: z.array(payoutSchema).default([]),
   payoutSchedules: z.array(payoutScheduleSchema).default([]),
+  contributionPlans: z.array(contributionPlanSchema).default([]),
+  contributionReconciliations: z.array(contributionReconciliationSchema).default([]),
 });
 
 // ── Entry point ──────────────────────────────────────────────────────────────

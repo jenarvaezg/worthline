@@ -135,12 +135,17 @@ export {
 export type {
   ContributionCadence,
   ContributionOccurrence,
+  ContributionOccurrenceReconciliation,
+  ContributionOccurrenceState,
   ContributionPlan,
+  ContributionProgressSummary,
+  ContributionReconciliationProjection,
   IsoWeekday,
   MonthlySavingsCapacityResolution,
   MonthlySavingsCapacitySource,
   PlannedContribution,
   PlannedContributionAmount,
+  ProjectedContributionOccurrence,
 } from "./contribution-plan";
 export {
   activeUnitContributionsMissingPrices,
@@ -151,6 +156,7 @@ export {
   expandContributionPlan,
   expandPlannedContribution,
   parsePlannedContributionAmount,
+  projectContributionReconciliation,
   resolveMonthlySavingsCapacityForFire,
 } from "./contribution-plan";
 export type {

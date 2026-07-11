@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 45;
+export const SCHEMA_VERSION = 46;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1418,6 +1418,29 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       CREATE INDEX IF NOT EXISTS planned_contributions_scope_idx ON planned_contributions(scope_id, id);`,
     );
     await writeSchemaVersion(client, 45);
+  }
+
+  if (version < 46) {
+    await client.executeMultiple(
+      `CREATE TABLE IF NOT EXISTS contribution_occurrence_reconciliations (
+        occurrence_id TEXT PRIMARY KEY NOT NULL,
+        contribution_id TEXT NOT NULL REFERENCES planned_contributions(id) ON DELETE CASCADE,
+        state TEXT NOT NULL,
+        stored_execution_minor INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS contribution_reconciliations_contribution_idx
+        ON contribution_occurrence_reconciliations(contribution_id, occurrence_id);
+      CREATE TABLE IF NOT EXISTS contribution_occurrence_operations (
+        occurrence_id TEXT NOT NULL REFERENCES contribution_occurrence_reconciliations(occurrence_id) ON DELETE CASCADE,
+        operation_id TEXT NOT NULL REFERENCES asset_operations(id) ON DELETE CASCADE,
+        PRIMARY KEY (occurrence_id, operation_id)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS contribution_occurrence_operation_unique
+        ON contribution_occurrence_operations(operation_id);`,
+    );
+    await writeSchemaVersion(client, 46);
   }
 
   return { ranV18Backfill, ranV33Backfill };

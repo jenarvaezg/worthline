@@ -76,6 +76,8 @@ describe("previewImportAction wiring", () => {
         exposureProfiles: 0,
         payouts: 0,
         payoutSchedules: 0,
+        contributionPlans: 0,
+        contributionReconciliations: 0,
       },
     });
   });

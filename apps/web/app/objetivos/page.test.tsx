@@ -1,6 +1,7 @@
+import type { ContributionPlan } from "@worthline/domain";
 import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const calls = vi.hoisted(() => {
   const projectionContext = {};
@@ -60,10 +61,14 @@ const calls = vi.hoisted(() => {
     ]),
     readPayoutSchedules: vi.fn(async () => []),
     readWarningOverrides: vi.fn(async () => []),
-    readContributionPlan: vi.fn(async () => ({
-      scopeId: "household",
-      contributions: [],
-    })),
+    readContributionPlan: vi.fn(
+      async (): Promise<ContributionPlan> => ({
+        scopeId: "household",
+        contributions: [],
+      }),
+    ),
+    readContributionReconciliations: vi.fn(async () => []),
+    readOperations: vi.fn(async () => []),
     readAllPriceCacheEntries: vi.fn(async () => []),
     readWorkspace: vi.fn(async () => ({
       baseCurrency: "EUR",
@@ -74,9 +79,15 @@ const calls = vi.hoisted(() => {
     withStore: vi.fn(async (run: (store: unknown) => unknown) =>
       run({
         assets: { readAssets: calls.readAssets },
-        contributionPlan: { readContributionPlan: calls.readContributionPlan },
+        contributionPlan: {
+          readContributionPlan: calls.readContributionPlan,
+          readReconciliations: calls.readContributionReconciliations,
+        },
         goals: { readGoals: calls.readGoals },
-        operations: { readAllPriceCacheEntries: calls.readAllPriceCacheEntries },
+        operations: {
+          readAllPriceCacheEntries: calls.readAllPriceCacheEntries,
+          readOperations: calls.readOperations,
+        },
         payouts: {
           readPayouts: calls.readPayouts,
           readPayoutSchedules: calls.readPayoutSchedules,
@@ -131,12 +142,43 @@ vi.mock("@web/fire-projection-card", () => ({
 
 import ObjetivosPage from "./page";
 
-async function renderedHtml(): Promise<string> {
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+async function renderedHtml(
+  searchParams: Record<string, string | string[] | undefined> = {},
+): Promise<string> {
   const element = (await ObjetivosPage({
-    searchParams: Promise.resolve({}),
+    searchParams: Promise.resolve(searchParams),
   })) as ReactElement;
   return renderToStaticMarkup(element);
 }
+
+describe("ObjetivosPage contribution reconciliation (#556)", () => {
+  test("keeps backlog and future occurrences visible and opens the focused drawer", async () => {
+    calls.readContributionPlan.mockResolvedValueOnce({
+      scopeId: "household",
+      contributions: [
+        {
+          id: "plan-cash",
+          destinationHoldingId: "asset_cash",
+          amount: { mode: "money", value: 100_000 },
+          cadence: { kind: "monthly", dayOfMonth: 1 },
+          startDate: "2026-06-01",
+        },
+      ],
+    });
+
+    const html = await renderedHtml({ reconcile: "plan-cash:2026-07-01" });
+
+    expect(html).toContain("Mapa de capital");
+    expect(html).toContain("atrasada");
+    expect(html).toContain("prevista");
+    expect(html).toContain("Registrar la realidad");
+    expect(html).toContain("Aplicar actualización de saldo");
+  });
+});
 
 describe("ObjetivosPage FIRE wiring", () => {
   test("uses the same curve-valued ledger as the dashboard for FIRE figures", async () => {
