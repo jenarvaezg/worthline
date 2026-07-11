@@ -12,7 +12,13 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const webNm = join(repoRoot, "apps/web/node_modules");
 const rootNm = join(repoRoot, "node_modules");
 
-const packages = ["typescript", "@types/node", "@types/react", "@types/react-dom"];
+const packages = [
+  "typescript",
+  "@typescript/native-preview",
+  "@types/node",
+  "@types/react",
+  "@types/react-dom",
+];
 
 function relink(pkg: string) {
   const source = join(rootNm, pkg);

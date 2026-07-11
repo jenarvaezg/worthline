@@ -29,7 +29,8 @@
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "typescript": "^5.9.3"
+    "@typescript/native-preview": "^7.0.0-dev.20260707.2",
+    "typescript": "^7.0.2"
   },
   "scripts": {
     "build": "bun ../../scripts/link-web-typescript-deps.ts && bun --bun next build",

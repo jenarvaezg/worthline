@@ -23,6 +23,6 @@ describe("renovate.json", () => {
     expect(renovate.extends).toContain("config:recommended");
     expect(renovate.packageRules.some((r) => r.groupName === "next-react")).toBe(true);
     expect(renovate.packageRules.some((r) => r.automerge === true)).toBe(true);
-    expect(renovate.packageRules.some((r) => r.allowedVersions === "<7")).toBe(true);
+    expect(renovate.packageRules.some((r) => r.groupName === "typescript")).toBe(true);
   });
 });

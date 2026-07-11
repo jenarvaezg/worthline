@@ -72,6 +72,24 @@ for the full list):
 Imports across workspaces use zone aliases (`@web/`, `@domain/`, `@db/`,
 `@pricing/`). Keep the domain package pure: no I/O, no framework imports.
 
+## TypeScript 7
+
+The monorepo type-checks with **TypeScript 7** (`tsc` via `bun run typecheck`).
+Lint and format run through **Biome**, which does not depend on TypeScript's
+programmatic API — no side-by-side TS 6 install is needed.
+
+For a faster editor experience (diagnostics, completions, find-all-references),
+enable the native TypeScript 7 language server:
+
+- **VS Code / Cursor:** install the [TypeScript 7 Language Server](https://marketplace.visualstudio.com/items?itemName=TypeScriptTeam.native-preview) extension, or run **Enable TypeScript 7 Language Server** from the command palette.
+- **CLI:** `bun run typecheck` and `bunx tsc --version` should report 7.x.
+
+**Next.js build:** TS 7 no longer ships `lib/typescript.js`, which Next.js still
+probes for. `apps/web` pins `@typescript/native-preview` so `bun run build` skips
+that check until Next upstream catches up ([#776](https://github.com/jenarvaezg/worthline/issues/776)).
+Type-checking during build remains off; use `bun run typecheck` + `bun run build` as
+documented in the verification gate.
+
 ## Coding conventions
 
 - **TypeScript everywhere.** No new JavaScript source files.
