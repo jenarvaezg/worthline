@@ -5,10 +5,9 @@
  */
 
 import type { AssetType, MonthlyAllocationDestination } from "@worthline/domain";
+import { isContributionMonthKey } from "@worthline/domain";
 
 export const ALLOCATION_MONTH_PARAM = "mes";
-
-const MONTH_KEY = /^\d{4}-\d{2}$/;
 
 function shiftMonthKey(todayISO: string, offset: number): string {
   const [year, month] = todayISO.slice(0, 7).split("-").map(Number);
@@ -29,7 +28,7 @@ export function parseAllocationMonthParam(
   monthKeys: string[],
   defaultKey: string,
 ): string {
-  if (typeof value !== "string" || !MONTH_KEY.test(value)) return defaultKey;
+  if (typeof value !== "string" || !isContributionMonthKey(value)) return defaultKey;
   return monthKeys.includes(value) ? value : defaultKey;
 }
 

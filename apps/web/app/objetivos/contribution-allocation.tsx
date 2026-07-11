@@ -73,7 +73,7 @@ export function ContributionAllocation({
   return (
     <section className="firePanel contributionAllocation" aria-label="Reparto mensual">
       <div className="panelHeader">
-        <h3>Reparto mensual</h3>
+        <h3>Plan de aportaciones · Reparto mensual</h3>
         <span>a dónde va tu capital según el plan</span>
       </div>
 
@@ -136,6 +136,9 @@ export function ContributionAllocation({
                   <span className="contributionAllocationMeta">
                     {destination.occurrenceCount}{" "}
                     {destination.occurrenceCount === 1 ? "aportación" : "aportaciones"}
+                    {destination.closedCount > 0
+                      ? ` · ${destination.closedCount} de ${destination.occurrenceCount} ${destination.closedCount === 1 ? "conciliada" : "conciliadas"}`
+                      : ""}
                     {destination.executedMinor > 0
                       ? ` · confirmado ${fmt(destination.executedMinor)}`
                       : ""}

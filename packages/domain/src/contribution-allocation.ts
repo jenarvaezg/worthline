@@ -49,6 +49,11 @@ export interface MonthlyContributionAllocation {
 
 const MONTH_KEY = /^\d{4}-\d{2}$/;
 
+/** True when the value is a YYYY-MM calendar month key. */
+export function isContributionMonthKey(value: string): boolean {
+  return MONTH_KEY.test(value);
+}
+
 function monthBounds(monthKey: string): { fromDate: string; toDate: string } {
   const [year, month] = monthKey.split("-").map(Number);
   const lastDay = new Date(Date.UTC(year ?? 1970, month ?? 1, 0)).getUTCDate();
@@ -70,7 +75,7 @@ export function computeMonthlyContributionAllocation(input: {
   reconciliations?: ContributionOccurrenceReconciliation[];
   operations?: InvestmentOperation[];
 }): MonthlyContributionAllocation {
-  if (!MONTH_KEY.test(input.monthKey)) {
+  if (!isContributionMonthKey(input.monthKey)) {
     throw new Error(`Month key must be in YYYY-MM format, got "${input.monthKey}".`);
   }
   const { fromDate, toDate } = monthBounds(input.monthKey);

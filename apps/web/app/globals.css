@@ -68,7 +68,7 @@
   gap: 0.25rem;
   margin-bottom: 1rem;
   padding: 0.2rem;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
 }
 .contributionAllocationMonths button {
@@ -92,7 +92,7 @@
 }
 .contributionAllocationTotal strong {
   font-family: var(--font-mono);
-  font-size: 1.35rem;
+  font-size: 1.5rem;
   font-variant-numeric: tabular-nums;
 }
 .contributionAllocationList {
@@ -123,13 +123,14 @@
 .contributionAllocationBar {
   height: 6px;
   overflow: hidden;
-  background: var(--paper-strong);
+  background: rgba(23, 32, 30, 0.07);
   border-radius: 3px;
 }
 .contributionAllocationBar i {
   display: block;
   height: 100%;
-  background: var(--tier-market);
+  /* Share-of-plan composition, not a liquidity tier or a delta — neutral ink. */
+  background: color-mix(in srgb, var(--ink) 60%, transparent);
   border-radius: 3px;
 }
 .contributionAllocationMeta {

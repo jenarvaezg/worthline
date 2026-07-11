@@ -136,7 +136,10 @@ export type {
   MonthlyAllocationDestination,
   MonthlyContributionAllocation,
 } from "./contribution-allocation";
-export { computeMonthlyContributionAllocation } from "./contribution-allocation";
+export {
+  computeMonthlyContributionAllocation,
+  isContributionMonthKey,
+} from "./contribution-allocation";
 export type {
   ContributionCadence,
   ContributionOccurrence,
