@@ -2,21 +2,18 @@ import type {
   ContributionPlan,
   ExposureDriftPoint,
   ExposureDriftProjection,
-  ExposureLookthroughHolding,
-  ExposureProfile,
   FireGrowthAssumption,
   HoldingReturnsView,
-  Instrument,
   Liability,
   ManualAsset,
   ScopeOption,
   Workspace,
 } from "@worthline/domain";
 import {
-  instrumentOfAsset,
+  assembleExposureDriftHoldings,
+  type ExposureProfile,
+  holdingAnnualReturnByIdForProjection,
   projectExposureDrift,
-  projectPortfolio,
-  resolveHoldingAnnualReturnForProjection,
 } from "@worthline/domain";
 
 export interface BuildExposureDriftInput {
@@ -39,70 +36,26 @@ export interface BuildExposureDriftInput {
   maxYears?: number;
 }
 
-function toAnnualReturn(
-  returns: HoldingReturnsView | null,
-  assumedAnnualReturn: number,
-): number {
-  return resolveHoldingAnnualReturnForProjection(returns, assumedAnnualReturn);
-}
-
 /** Assemble scope-weighted holdings and project exposure drift under the plan. */
 export function buildExposureDriftProjection(
   input: BuildExposureDriftInput,
 ): ExposureDriftProjection {
-  const portfolio = projectPortfolio({
+  const { holdings, profiles } = assembleExposureDriftHoldings({
+    baseCurrency: input.workspace.baseCurrency,
     workspace: input.workspace,
     scope: input.scope,
     assets: input.assets,
     liabilities: input.liabilities,
+    investmentMeta: input.investmentMeta,
+    exposureProfiles: input.exposureProfiles,
+    plan: input.contributionPlan,
   });
-  const metaByAssetId = new Map(input.investmentMeta.map((row) => [row.id, row]));
-  const profileMap = new Map(
-    input.exposureProfiles.map((profile) => [profile.key, profile]),
-  );
-  const assetById = new Map(input.assets.map((asset) => [asset.id, asset]));
 
-  const holdings: ExposureLookthroughHolding[] = portfolio.sections[0].rows.map(
-    (row) => ({
-      currency: input.workspace.baseCurrency,
-      geography: null,
-      id: row.id,
-      instrument: row.instrument as Instrument,
-      isin: metaByAssetId.get(row.id)?.isin ?? null,
-      providerSymbol: metaByAssetId.get(row.id)?.providerSymbol ?? null,
-      valueMinor: row.valueMinor,
-    }),
-  );
-
-  for (const contribution of input.contributionPlan.contributions) {
-    if (holdings.some((holding) => holding.id === contribution.destinationHoldingId)) {
-      continue;
-    }
-    const asset = assetById.get(contribution.destinationHoldingId);
-    if (!asset) {
-      continue;
-    }
-    const meta = metaByAssetId.get(asset.id);
-    holdings.push({
-      currency: input.workspace.baseCurrency,
-      geography: null,
-      id: asset.id,
-      instrument: instrumentOfAsset(asset),
-      isin: meta?.isin ?? null,
-      providerSymbol: meta?.providerSymbol ?? null,
-      valueMinor: 0,
-    });
-  }
-
-  const holdingAnnualReturnById = Object.fromEntries(
-    holdings.map((holding) => [
-      holding.id,
-      toAnnualReturn(
-        input.holdingReturnsById.get(holding.id) ?? null,
-        input.assumedAnnualReturn,
-      ),
-    ]),
-  );
+  const holdingAnnualReturnById = holdingAnnualReturnByIdForProjection({
+    holdingIds: holdings.map((holding) => holding.id),
+    returnsById: input.holdingReturnsById,
+    assumedAnnualReturn: input.assumedAnnualReturn,
+  });
 
   return projectExposureDrift({
     todayISO: input.today,
@@ -113,7 +66,7 @@ export function buildExposureDriftProjection(
     holdingAnnualReturnById,
     unitPriceMajorByHoldingId: input.unitPrices,
     holdings,
-    profiles: profileMap,
+    profiles,
     ...(input.maxYears === undefined ? {} : { maxYears: input.maxYears }),
   });
 }

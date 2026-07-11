@@ -3,11 +3,8 @@ import type {
   ContributionPlan,
   ExposureAllocationSlice,
   ExposureDimensionResult,
-  ExposureLookthroughHolding,
-  ExposureProfile,
   FireGrowthAssumption,
   FireScenario,
-  Instrument,
   ManualAsset,
   MonthlyContributionAllocation,
   PlannedContribution,
@@ -15,6 +12,7 @@ import type {
   ProjectedContributionOccurrence,
 } from "@worthline/domain";
 import {
+  assembleExposureDriftHoldings,
   computeMonthlyContributionAllocation,
   contributionOccurrenceMoneyMinor,
   instrumentOfAsset,
@@ -23,7 +21,6 @@ import {
   projectContributionReconciliation,
   projectExposureDrift,
   projectFireWithContributionPlan,
-  projectPortfolio,
   resolveHoldingAnnualReturnForProjection,
   resolveMonthlySavingsCapacityForFire,
   systemClock,
@@ -646,47 +643,16 @@ async function buildExposureDrift(input: {
     input.store.readInvestmentAssetsWithMeta(),
     input.store.readExposureProfiles(),
   ]);
-  const portfolio = projectPortfolio({
+  const { holdings, profiles: profileMap } = assembleExposureDriftHoldings({
+    baseCurrency: input.workspace.baseCurrency,
     workspace: input.workspace,
     scope: scopeOption,
     assets: input.assets,
     liabilities,
+    investmentMeta,
+    exposureProfiles,
+    plan: input.plan,
   });
-  const metaByAssetId = new Map(investmentMeta.map((row) => [row.id, row]));
-  const profileMap = new Map<string, ExposureProfile>(
-    exposureProfiles.map((profile) => [profile.key, profile]),
-  );
-  const holdings: ExposureLookthroughHolding[] = portfolio.sections[0].rows.map(
-    (row) => ({
-      currency: input.currency as ExposureLookthroughHolding["currency"],
-      geography: null,
-      id: row.id,
-      instrument: row.instrument as Instrument,
-      isin: metaByAssetId.get(row.id)?.isin ?? null,
-      providerSymbol: metaByAssetId.get(row.id)?.providerSymbol ?? null,
-      valueMinor: row.valueMinor,
-    }),
-  );
-
-  for (const contribution of input.plan.contributions) {
-    if (holdings.some((holding) => holding.id === contribution.destinationHoldingId)) {
-      continue;
-    }
-    const asset = input.assetById.get(contribution.destinationHoldingId);
-    if (!asset) {
-      continue;
-    }
-    const meta = metaByAssetId.get(asset.id);
-    holdings.push({
-      currency: input.currency as ExposureLookthroughHolding["currency"],
-      geography: null,
-      id: asset.id,
-      instrument: instrumentOfAsset(asset),
-      isin: meta?.isin ?? null,
-      providerSymbol: meta?.providerSymbol ?? null,
-      valueMinor: 0,
-    });
-  }
 
   const holdingAnnualReturnById = await resolveHoldingAnnualReturns({
     store: input.store,
@@ -704,7 +670,7 @@ async function buildExposureDrift(input: {
   );
   const projection = projectExposureDrift({
     todayISO: input.today,
-    baseCurrency: input.currency as ExposureLookthroughHolding["currency"],
+    baseCurrency: input.workspace.baseCurrency,
     plan: input.plan,
     growthAssumption: input.growthAssumption,
     assumedAnnualReturn: input.assumedAnnualReturn,

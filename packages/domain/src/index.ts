@@ -286,11 +286,18 @@ export {
   timeProportionalXs,
 } from "./evolution-chart";
 export type {
+  AssembleExposureDriftHoldingsInput,
+  AssembleExposureDriftHoldingsResult,
+  ExposureDriftHoldingMeta,
   ExposureDriftPoint,
   ExposureDriftProjection,
   ExposureDriftProjectionInput,
 } from "./exposure-drift-projection";
-export { projectExposureDrift } from "./exposure-drift-projection";
+export {
+  assembleExposureDriftHoldings,
+  holdingAnnualReturnByIdForProjection,
+  projectExposureDrift,
+} from "./exposure-drift-projection";
 export type {
   AssetClassResolution,
   CreateExposureProfileInput,

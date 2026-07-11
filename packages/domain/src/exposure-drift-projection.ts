@@ -5,6 +5,7 @@
  * simulated per-holding values and S4's time-varying contribution stream.
  */
 
+import { instrumentOfAsset } from "./classification";
 import type { ContributionPlan } from "./contribution-plan";
 import {
   type ExposureDimensionResult,
@@ -18,7 +19,108 @@ import {
   type FireGrowthAssumption,
 } from "./fire-plan-projection";
 import { DEFAULT_MAX_YEARS } from "./fire-projection";
+import type { Instrument } from "./instrument-catalog";
 import type { CurrencyCode, MoneyMinor } from "./money";
+import { projectPortfolio } from "./portfolio-projection";
+import type { HoldingReturnsView } from "./returns-display";
+import { resolveHoldingAnnualReturnForProjection } from "./returns-display";
+import type { ScopeOption } from "./scope";
+import type { Liability, ManualAsset, Workspace } from "./workspace-types";
+
+export interface ExposureDriftHoldingMeta {
+  id: string;
+  isin?: string | null;
+  providerSymbol?: string | null;
+}
+
+export interface AssembleExposureDriftHoldingsInput {
+  baseCurrency: CurrencyCode;
+  workspace: Workspace;
+  scope: ScopeOption;
+  assets: ManualAsset[];
+  liabilities: Liability[];
+  investmentMeta: readonly ExposureDriftHoldingMeta[];
+  exposureProfiles: readonly ExposureProfile[];
+  plan: ContributionPlan;
+}
+
+export interface AssembleExposureDriftHoldingsResult {
+  holdings: ExposureLookthroughHolding[];
+  profiles: Map<string, ExposureProfile>;
+}
+
+/**
+ * Shared seam for exposure-drift what-if (#560, #946): scope-weighted holdings
+ * from today's portfolio plus zero-value plan destinations, keyed exposure
+ * profiles — consumed by /objetivos and the agent-view MCP surface before
+ * `projectExposureDrift`.
+ */
+export function assembleExposureDriftHoldings(
+  input: AssembleExposureDriftHoldingsInput,
+): AssembleExposureDriftHoldingsResult {
+  const portfolio = projectPortfolio({
+    workspace: input.workspace,
+    scope: input.scope,
+    assets: input.assets,
+    liabilities: input.liabilities,
+  });
+  const metaByAssetId = new Map(input.investmentMeta.map((row) => [row.id, row]));
+  const profileMap = new Map(
+    input.exposureProfiles.map((profile) => [profile.key, profile]),
+  );
+  const assetById = new Map(input.assets.map((asset) => [asset.id, asset]));
+
+  const holdings: ExposureLookthroughHolding[] = portfolio.sections[0].rows.map(
+    (row) => ({
+      currency: input.baseCurrency,
+      geography: null,
+      id: row.id,
+      instrument: row.instrument as Instrument,
+      isin: metaByAssetId.get(row.id)?.isin ?? null,
+      providerSymbol: metaByAssetId.get(row.id)?.providerSymbol ?? null,
+      valueMinor: row.valueMinor,
+    }),
+  );
+
+  for (const contribution of input.plan.contributions) {
+    if (holdings.some((holding) => holding.id === contribution.destinationHoldingId)) {
+      continue;
+    }
+    const asset = assetById.get(contribution.destinationHoldingId);
+    if (!asset) {
+      continue;
+    }
+    const meta = metaByAssetId.get(asset.id);
+    holdings.push({
+      currency: input.baseCurrency,
+      geography: null,
+      id: asset.id,
+      instrument: instrumentOfAsset(asset),
+      isin: meta?.isin ?? null,
+      providerSymbol: meta?.providerSymbol ?? null,
+      valueMinor: 0,
+    });
+  }
+
+  return { holdings, profiles: profileMap };
+}
+
+/** Map per-holding display returns to the annual rates `projectExposureDrift` uses. */
+export function holdingAnnualReturnByIdForProjection(input: {
+  holdingIds: readonly string[];
+  returnsById: ReadonlyMap<string, HoldingReturnsView | null | undefined>;
+  assumedAnnualReturn: number;
+}): Record<string, number> {
+  return Object.fromEntries(
+    input.holdingIds.map((holdingId) => [
+      holdingId,
+      resolveHoldingAnnualReturnForProjection(
+        input.returnsById.get(holdingId),
+        input.assumedAnnualReturn,
+      ),
+    ]),
+  );
+}
 
 export interface ExposureDriftPoint {
   year: number;
