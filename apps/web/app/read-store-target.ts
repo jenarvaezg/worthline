@@ -1,5 +1,6 @@
 import { IMPERSONATE_COOKIE_NAME } from "@web/admin/impersonate-cookie";
 import { DEMO_PERSONA_COOKIE_NAME } from "@web/demo/demo-context";
+import { DEFAULT_APP_PATH } from "@web/return-to";
 import { type ControlPlaneStore, createControlPlaneStore } from "@worthline/db";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -130,7 +131,7 @@ export async function requireStoreTarget(): Promise<
 > {
   const target = await readStoreTarget();
   if (target.kind === "unauthenticated") {
-    redirect("/login");
+    redirect(`/login?returnTo=${encodeURIComponent(DEFAULT_APP_PATH)}`);
   }
   return target;
 }

@@ -9,6 +9,6 @@ describe("not found page", () => {
 
     expect(html).toContain("worthline");
     expect(html).toContain("No encontramos esta página");
-    expect(html).toContain('href="/"');
+    expect(html).toContain('href="/app"');
   });
 });

@@ -70,7 +70,7 @@ describe("sourceHref", () => {
     expect(sourceHref({ kind: "section", section: "patrimonio" })).toBe("/patrimonio");
     expect(sourceHref({ kind: "section", section: "historico" })).toBe("/historico");
     expect(sourceHref({ kind: "section", section: "objetivos" })).toBe("/objetivos");
-    expect(sourceHref({ kind: "section", section: "resumen" })).toBe("/");
+    expect(sourceHref({ kind: "section", section: "resumen" })).toBe("/app");
   });
 
   it("maps a figure to the surface that owns it", () => {

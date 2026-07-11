@@ -64,7 +64,7 @@ test("assistant: click a source navigates and the panel stays open", async ({ pa
     });
   });
 
-  await page.goto("/");
+  await page.goto("/app");
 
   // Open the layer, ask, and see the streamed answer.
   await page.getByRole("button", { name: "Abrir asistente" }).click();

@@ -226,7 +226,7 @@ export function buildCurrentUrl(
 
   const queryString = params.toString();
 
-  return queryString ? `/?${queryString}` : "/";
+  return queryString ? `/app?${queryString}` : "/app";
 }
 
 /** A validation failure tied to the form that produced it, with the typed input. */

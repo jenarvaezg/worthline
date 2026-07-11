@@ -53,7 +53,7 @@ test("import preview: summary + data-loss warning for a valid file; inline error
   page,
 }) => {
   // ── Self-sufficient setup: onboard via the real UI when the DB is fresh ──
-  await page.goto("/");
+  await page.goto("/app");
 
   if (page.url().includes("/empezar")) {
     await expect(page.getByRole("heading", { name: "Empezar solo" })).toBeVisible();

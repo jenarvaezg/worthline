@@ -12,7 +12,7 @@ test("auto-snapshot: / load captures snapshot → historico shows entry", async 
   page,
 }) => {
   // 1. Load / — snapshot is captured automatically on every page load
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
 
   // 2. Navigate to /historico — must show at least one entry
@@ -40,7 +40,7 @@ test("auto-snapshot: / load captures snapshot → historico shows entry", async 
   //    there are ≥2 period points (the seeded prior-month snapshot + today's
   //    auto-capture guarantee this) or the `.compositionEmpty` placeholder
   //    otherwise. Either proves the panel rendered without a hydration error.
-  await page.goto("/");
+  await page.goto("/app");
   await expect(
     page.getByRole("region", { name: "Evolución del patrimonio" }),
   ).toBeVisible();

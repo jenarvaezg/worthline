@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import { deriveScreenContext, isScreenContext } from "./screen-context";
 
 describe("deriveScreenContext", () => {
-  it("maps the dashboard root to resumen", () => {
-    expect(deriveScreenContext("/", "")).toEqual({
-      route: "/",
+  it("maps the dashboard to resumen", () => {
+    expect(deriveScreenContext("/app", "")).toEqual({
+      route: "/app",
       section: "resumen",
       holdingId: null,
       view: {},
@@ -19,7 +19,7 @@ describe("deriveScreenContext", () => {
   });
 
   it("captures only known URL-mirrored view params", () => {
-    const ctx = deriveScreenContext("/", "?view=liquid&range=3y&utm_source=x");
+    const ctx = deriveScreenContext("/app", "?view=liquid&range=3y&utm_source=x");
     expect(ctx.view).toEqual({ view: "liquid", range: "3y" });
   });
 

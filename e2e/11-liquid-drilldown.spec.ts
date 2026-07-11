@@ -17,7 +17,7 @@ test("liquid drilldown: band/legend link → drill panel → breadcrumb back", a
   page,
 }) => {
   // 1. Home renders.
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
 
   // 2. The composition legend's "Líquido" entry (cash, the first band, drills to
@@ -70,7 +70,7 @@ test("topnav navigation does not cause a full document reload (VT cross-fade, #5
   page,
 }) => {
   // Navigate to home and tag the live document with a sentinel.
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
 
   await page.evaluate(() => {
@@ -105,7 +105,7 @@ test("liquid drilldown: the selected Vista survives entering and leaving", async
   page,
 }) => {
   // Enter the drill under the liquid Vista directly (bookmarkable URL).
-  await page.goto("/?view=liquid&drill=liquid");
+  await page.goto("/app?view=liquid&drill=liquid");
   await expect(page.locator(".drillPanel")).toBeVisible();
 
   // The breadcrumb preserves the Vista.

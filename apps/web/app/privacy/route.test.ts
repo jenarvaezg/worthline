@@ -50,6 +50,6 @@ describe("POST /privacy", () => {
     const response = await privacyRequest("https://evil.example.com/");
 
     expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe("http://localhost:3000/");
+    expect(response.headers.get("location")).toBe("http://localhost:3000/app");
   });
 });

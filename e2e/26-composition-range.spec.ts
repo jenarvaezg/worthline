@@ -74,7 +74,7 @@ test.beforeAll(seedMultiYearHistory);
  * the only, active, default scope carrying that history. The click is a no-op
  * then; in a household workspace (multiple members) we click "Hogar" as before. */
 async function pinHouseholdScope(page: import("@playwright/test").Page): Promise<void> {
-  await page.goto("/");
+  await page.goto("/app");
   const scopeNav = page.getByRole("navigation", { name: "Selector de ámbito" });
   if ((await scopeNav.count()) === 0) {
     return;
@@ -177,7 +177,7 @@ test("range param: composes with a drill and round-trips through the breadcrumb"
   // through the breadcrumb, so leaving the drill keeps the chosen window.
   // (The debts drill needs a liability with balance > 0 — journey 25 created
   // one in the household scope earlier in this serial run.)
-  await page.goto("/?drill=debts&range=3y");
+  await page.goto("/app?drill=debts&range=3y");
   await expect(page.locator(".drillPanel")).toBeVisible();
   await expect(page.locator(".drillHeader h3")).toHaveText("Deudas · obligaciones");
 

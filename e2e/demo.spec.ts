@@ -29,7 +29,7 @@ test("demo: warm navigation reuses the seeded workspace (no reseed per request)"
   await page.goto("/demo");
   const coldStart = Date.now();
   await page.getByRole("button", { name: /Familia/ }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/app$/);
   await expect(headline).toBeVisible();
   expect(await headline.innerText()).not.toMatch(/sin datos/i);
   const coldMs = Date.now() - coldStart;
@@ -58,7 +58,7 @@ test("demo: landing → familia → blocked edit → switch persona", async ({ p
 
   // 2. Choose familia → land in the app with fictional figures + the demo banner.
   await page.getByRole("button", { name: /Familia/ }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/app$/);
   const banner = page.getByRole("note", { name: "Modo demostración" });
   await expect(banner).toContainText("datos ficticios");
   await expect(banner).toContainText("Familia");
@@ -80,7 +80,7 @@ test("demo: landing → familia → blocked edit → switch persona", async ({ p
   await page.getByRole("link", { name: /cambiar persona/ }).click();
   await expect(page).toHaveURL(/\/demo$/);
   await page.getByRole("button", { name: /Inversor/ }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/app$/);
   await expect(banner).toContainText("Inversor");
   // A different persona ⇒ a different headline net worth.
   const inversorNetWorth = await page.locator(".headline strong").first().innerText();

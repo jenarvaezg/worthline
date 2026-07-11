@@ -23,6 +23,16 @@ describe("shouldRedirectToLogin", () => {
     ).toBe(false);
   });
 
+  test("redirects an unauthenticated request to a gated page", () => {
+    expect(
+      shouldRedirectToLogin({
+        authConfigured: true,
+        hasSession: false,
+        pathname: "/app",
+      }),
+    ).toBe(true);
+  });
+
   test("redirects an unauthenticated request to a real page", () => {
     expect(
       shouldRedirectToLogin({
@@ -33,8 +43,9 @@ describe("shouldRedirectToLogin", () => {
     ).toBe(true);
   });
 
-  test("never redirects the public paths (/login, /landing, /demo, /api/auth/*, /mcp-icon.svg)", () => {
+  test("never redirects the public paths (/login, /, /landing, /demo, /api/auth/*, /mcp-icon.svg)", () => {
     for (const pathname of [
+      "/",
       "/login",
       "/landing",
       "/demo",

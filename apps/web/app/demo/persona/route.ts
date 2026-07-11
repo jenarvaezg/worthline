@@ -17,7 +17,7 @@ function selectPersona(raw: string | null): NextResponse {
   // already on. An absolute redirect can switch host (127.0.0.1 ⇄ localhost, or a
   // proxy origin), and the freshly-set cookie — scoped to the request host —
   // would not be sent to the new host, silently dropping the persona switch.
-  const response = new NextResponse(null, { status: 303, headers: { Location: "/" } });
+  const response = new NextResponse(null, { status: 303, headers: { Location: "/app" } });
   response.cookies.set(DEMO_PERSONA_COOKIE_NAME, persona, {
     httpOnly: true,
     // Bounded lifetime (ADR 0030): the cookie is what flips a logged-out request

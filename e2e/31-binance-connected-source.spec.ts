@@ -65,6 +65,6 @@ test("binance: connect (stubbed API) → market + term-locked holdings → token
   await expect(page.getByRole("region", { name: "Cuenta Binance" })).toContainText("ETH");
 
   // 6. The dashboard renders, populated, with no hydration/console errors (fixture).
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
 });

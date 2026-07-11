@@ -34,7 +34,7 @@ test("warning lifecycle: zero asset → warning badge → override → listed in
   //    longer appear on the home. The zero-value holding still surfaces as a board
   //    badge (step 2 above) and, when it is the top signal, in the hero's
   //    data-health alert — attention lives in one place, not a rail on every page.
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByRole("alert", { name: "Avisos" })).toHaveCount(0);
 
   // 4. Back on /patrimonio, open the row's ⋯ menu and find the "Es intencional"

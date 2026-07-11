@@ -65,7 +65,7 @@ describe("POST /scope", () => {
     );
 
     expect(response.headers.get("location")).toBe(
-      "http://worthline.local/?scope=member_ana",
+      "http://worthline.local/app?scope=member_ana",
     );
   });
 });

@@ -66,7 +66,11 @@ export default defineConfig({
   globalSetup: "./e2e/global-setup.ts",
   testDir: "./e2e",
   // first-run and demo specs have their own configs (different server env).
-  testIgnore: [/first-run.*\.spec\.ts/, /demo\.spec\.ts/],
+  testIgnore: [
+    /first-run.*\.spec\.ts/,
+    /demo\.spec\.ts/,
+    /route-migration-auth\.spec\.ts/,
+  ],
   // Serial: one worker, no parallelism. All tests share the same server + DB.
   workers: 1,
   fullyParallel: false,

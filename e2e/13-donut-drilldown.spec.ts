@@ -20,7 +20,7 @@ const DRILL_BY_TIER: Record<string, string> = {
 };
 
 test("every donut segment links to its tier's drill group", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
 
   // Whatever segments the data produces, each one's destination must match
@@ -53,7 +53,7 @@ test("donut segment click lands in the drill view, preserving the Vista", async 
   page,
 }) => {
   // Enter under the liquid Vista so preservation is observable.
-  await page.goto("/?view=liquid");
+  await page.goto("/app?view=liquid");
   await expect(page.getByRole("heading", { name: "worthline" })).toBeVisible();
 
   const segmentLink = page.locator(".tierDonut a").first();
@@ -71,7 +71,7 @@ test("donut segment click lands in the drill view, preserving the Vista", async 
     await page.goto(href!);
   } else {
     // No holdings yet ⇒ no donut. The drill URL is still bookmarkable.
-    await page.goto("/?view=liquid&drill=liquid");
+    await page.goto("/app?view=liquid&drill=liquid");
   }
 
   // We land in the drill view with the Vista intact.

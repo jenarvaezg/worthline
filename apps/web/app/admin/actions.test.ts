@@ -91,7 +91,7 @@ describe("impersonateWorkspaceAction", () => {
     fd.set("workspaceId", "ws-target");
 
     const digest = await redirectOf(() => impersonateWorkspaceAction(fd));
-    expect(digest).toContain("/;"); // NEXT_REDIRECT digest embeds the destination
+    expect(digest).toContain("/app;"); // NEXT_REDIRECT digest embeds the destination
 
     const cookie = cookieJar.get(IMPERSONATE_COOKIE_NAME);
     expect(cookie?.value).toBe("ws-target");

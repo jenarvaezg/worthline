@@ -16,7 +16,7 @@ describe("classifyTransition", () => {
   // ── Same pathname → not eligible ──────────────────────────────────────────
 
   test("same pathname is not eligible", () => {
-    const result = classifyTransition("/", "/");
+    const result = classifyTransition("/app", "/app");
     expect(result.eligible).toBe(false);
     expect(result.transitionTypes).toEqual([]);
   });
@@ -29,25 +29,25 @@ describe("classifyTransition", () => {
   // ── Top-level section navigation → directional slide ─────────────────────
 
   test("/ → /patrimonio is a forward slide (index 0 → 1)", () => {
-    const result: TransitionClassification = classifyTransition("/", "/patrimonio");
+    const result: TransitionClassification = classifyTransition("/app", "/patrimonio");
     expect(result.eligible).toBe(true);
     expect(result.transitionTypes).toEqual(["slide-forward"]);
   });
 
   test("/ → /historico is a forward slide (index 0 → 2)", () => {
-    expect(classifyTransition("/", "/historico").transitionTypes).toEqual([
+    expect(classifyTransition("/app", "/historico").transitionTypes).toEqual([
       "slide-forward",
     ]);
   });
 
   test("/ → /ajustes is a forward slide (index 0 → 3)", () => {
-    expect(classifyTransition("/", "/ajustes").transitionTypes).toEqual([
+    expect(classifyTransition("/app", "/ajustes").transitionTypes).toEqual([
       "slide-forward",
     ]);
   });
 
   test("/historico → / is a backward slide (index 2 → 0)", () => {
-    const result = classifyTransition("/historico", "/");
+    const result = classifyTransition("/historico", "/app");
     expect(result.eligible).toBe(true);
     expect(result.transitionTypes).toEqual(["slide-back"]);
   });
@@ -73,27 +73,27 @@ describe("classifyTransition", () => {
   });
 
   test("/ → /patrimonio/abc sub-path is a forward slide", () => {
-    expect(classifyTransition("/", "/patrimonio/abc").transitionTypes).toEqual([
+    expect(classifyTransition("/app", "/patrimonio/abc").transitionTypes).toEqual([
       "slide-forward",
     ]);
   });
 
   test("deep /ajustes sub-path → / is a backward slide", () => {
-    expect(classifyTransition("/ajustes/conectar/numista", "/").transitionTypes).toEqual([
-      "slide-back",
-    ]);
+    expect(
+      classifyTransition("/ajustes/conectar/numista", "/app").transitionTypes,
+    ).toEqual(["slide-back"]);
   });
 
   // ── Cross-surface navigation → cross-fade ─────────────────────────────────
 
   test("unknown path → top section yields cross-fade", () => {
-    const result = classifyTransition("/api/unknown", "/");
+    const result = classifyTransition("/api/unknown", "/app");
     expect(result.eligible).toBe(true);
     expect(result.transitionTypes).toEqual(["cross-fade"]);
   });
 
   test("top section → unknown path yields cross-fade", () => {
-    const result = classifyTransition("/", "/some-other-page");
+    const result = classifyTransition("/app", "/some-other-page");
     expect(result.eligible).toBe(true);
     expect(result.transitionTypes).toEqual(["cross-fade"]);
   });
@@ -108,9 +108,9 @@ describe("classifyTransition", () => {
 
   test("eligible navigations always carry at least one transitionType", () => {
     const cases = [
-      classifyTransition("/", "/patrimonio"),
-      classifyTransition("/historico", "/"),
-      classifyTransition("/", "/some-page"),
+      classifyTransition("/app", "/patrimonio"),
+      classifyTransition("/historico", "/app"),
+      classifyTransition("/app", "/some-page"),
     ];
     for (const result of cases) {
       expect(result.eligible).toBe(true);

@@ -43,7 +43,7 @@ import { expect, test } from "./fixtures";
  * the only, active, default scope. The click is a no-op then; in a household
  * workspace (multiple members) we click "Hogar" as before. */
 async function pinHouseholdScope(page: import("@playwright/test").Page): Promise<void> {
-  await page.goto("/");
+  await page.goto("/app");
   const scopeNav = page.getByRole("navigation", { name: "Selector de ámbito" });
   if ((await scopeNav.count()) === 0) {
     return;
@@ -124,7 +124,7 @@ test("debts drilldown: the selected Vista survives entering and leaving", async 
   page,
 }) => {
   // Enter the debts drill under the liquid Vista directly (bookmarkable URL).
-  await page.goto("/?view=liquid&drill=debts");
+  await page.goto("/app?view=liquid&drill=debts");
   await expect(page.locator(".drillPanel")).toBeVisible();
   await expect(page.locator(".drillHeader h3")).toHaveText("Deudas · obligaciones");
 

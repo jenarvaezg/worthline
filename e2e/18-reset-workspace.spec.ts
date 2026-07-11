@@ -45,6 +45,6 @@ test("danger zone: wrong phrase aborts, exact phrase resets to onboarding", asyn
 
   // 3. The reset workspace really is empty — visiting the dashboard also lands
   //    on onboarding instead of showing prior data.
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page).toHaveURL(/\/empezar/);
 });
