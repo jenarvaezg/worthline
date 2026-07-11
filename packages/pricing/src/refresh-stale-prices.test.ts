@@ -177,7 +177,7 @@ describe("refreshStalePrices provider routing", () => {
     expect(result.updated).toBe(0);
     expect(result.failedSymbols).toEqual(["N5394"]);
     expect(result.failures).toEqual([
-      { symbol: "N5394", reason: "Símbolo no encontrado en el proveedor" },
+      { symbol: "N5394", reason: "Finect: símbolo no encontrado" },
     ]);
   });
 
@@ -403,7 +403,7 @@ describe("refreshStalePrices concurrency bounding (issue #202)", () => {
     );
     expect(result.failures).toHaveLength(expectedFailures.length);
     for (const failure of result.failures) {
-      expect(failure.reason).toBe("El proveedor no devolvió cotización");
+      expect(failure.reason).toBe("Stooq: sin cotización");
     }
     // Never throws: a normal result is returned even with failures interleaved.
     expect(result.refreshed.every((p) => p.assetId.startsWith("p"))).toBe(true);

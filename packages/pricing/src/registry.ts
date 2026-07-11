@@ -15,6 +15,7 @@ import { coingeckoProvider } from "./coingecko";
 import { ecbProvider } from "./ecb";
 import { finectProvider } from "./finect";
 import {
+  formatFallbackChainFailure,
   isProviderFailure,
   type PriceProvider,
   type PriceProviderContext,
@@ -138,26 +139,33 @@ export function unwrapFetched(
 /**
  * Try `primary`, then walk `fallbacks` in order, returning the FIRST success.
  * A rescuing fallback stamps `source` to whoever actually delivered the price
- * (so a Stooq rescue records `"stooq"`). When every link fails, the LAST
- * failure/null is returned verbatim so its reason surfaces to the caller.
+ * (so a Stooq rescue records `"stooq"`). When every link fails, a composite
+ * reason names each provider's miss (issue #925).
  */
 export async function runFallbackChain(
   primary: PriceProvider,
   fallbacks: readonly PriceProvider[],
   ctx: PriceProviderContext,
 ): Promise<PriceProviderResult | PriceProviderFailure | null> {
+  const attempts: Array<{
+    source: PriceSource;
+    result: PriceProviderResult | PriceProviderFailure | null;
+  }> = [];
+
   let last = await safeFetch(primary, ctx);
+  attempts.push({ source: primary.name, result: last });
   if (isUsable(last)) return last;
 
   for (const provider of fallbacks) {
     const result = await safeFetch(provider, ctx);
+    attempts.push({ source: provider.name, result });
     if (isUsable(result)) {
       return { ...result, source: provider.name };
     }
     last = result;
   }
 
-  return last;
+  return { failed: true, reason: formatFallbackChainFailure(attempts) };
 }
 
 /**

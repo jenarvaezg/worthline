@@ -537,6 +537,22 @@ describe("prices refresh feedback", () => {
     );
   });
 
+  test("resolveOkMessage reports chain provider failures in the refresh banner", () => {
+    const url = pricesRefreshedRedirectUrl("/", {
+      failures: [
+        {
+          symbol: "JE00B8DFY052.SG",
+          reason: "Yahoo: sin cotización; Stooq: error (404)",
+        },
+      ],
+      updated: 7,
+    });
+
+    expect(resolveOkMessage(searchParamsOf(url))).toBe(
+      "Precios actualizados: 7. Con error: JE00B8DFY052.SG (Yahoo: sin cotización; Stooq: error (404)).",
+    );
+  });
+
   test("resolveOkMessage reports the count and each failed symbol with its reason", () => {
     const url = pricesRefreshedRedirectUrl("/", {
       failures: [{ symbol: "ACME", reason: "Símbolo no encontrado en el proveedor" }],
