@@ -55,7 +55,7 @@ import {
   valuationMethodOfLiability,
 } from "@worthline/domain";
 
-import { buildMatrixCells, type MatrixCellPayload } from "./dashboard-cells";
+import { type MatrixCellPayload, readMatrixCells } from "./dashboard-cells";
 import { cellKey, crossOf, type MatrixCoord, parseMode } from "./dashboard-matrix";
 import { buildHeroBreakdownData, type HeroBreakdownData } from "./hero-breakdown-data";
 
@@ -508,10 +508,12 @@ export async function loadDashboard(
     shipByKey.set(cellKey(coord), coord);
   }
   const matrixCells = selectedScope
-    ? buildMatrixCells(
+    ? await readMatrixCells(
+        store,
+        selectedScope.id,
         [...shipByKey.values()],
-        { snapshots, holdingRows, currentHoldingIds, trashedHoldingIds },
         input.today,
+        { snapshots, holdingRows, currentHoldingIds, trashedHoldingIds },
       )
     : {};
 

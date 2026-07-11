@@ -4,6 +4,7 @@ import { createInMemoryStore } from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
 import { readMatrixCells } from "./dashboard-cells";
+import { parseCellsParam } from "./dashboard-matrix";
 import type { LoadDashboardInput } from "./load-dashboard";
 import { loadDashboard } from "./load-dashboard";
 
@@ -136,6 +137,58 @@ describe("readMatrixCells", () => {
       ),
     ).toEqual({});
     expect(await readMatrixCells(store, "household", [], "2026-06-10")).toEqual({});
+
+    store.close();
+  });
+
+  test("prefetched inputs reproduce loadDashboard matrixCells (shared seam)", async () => {
+    const store = await createInMemoryStore();
+    const { scopeId } = await seedScope(store);
+
+    const page = await loadDashboard({
+      store,
+      persistence: {
+        status: "ok",
+        checkKey: "k",
+        checkedAt: "2026-06-10T10:00:00.000Z",
+        checkValue: "v",
+        databasePath: "/tmp/x.sqlite",
+        displayPath: ".local/x.sqlite",
+      },
+      scopeId,
+      selectedView: "total",
+      today: "2026-06-10",
+      now: "2026-06-10T10:00:00.000Z",
+      refreshPrices: noOpRefresh,
+    });
+
+    const parsed = parseCellsParam(Object.keys(page.matrixCells).join(","));
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+
+    const [snapshots, assets, liabilities, trash] = await Promise.all([
+      store.snapshots.readSnapshots(scopeId),
+      store.assets.readAssets(),
+      store.liabilities.readLiabilities(),
+      store.readTrash(),
+    ]);
+
+    const cells = await readMatrixCells(store, scopeId, parsed.coords, "2026-06-10", {
+      snapshots,
+      holdingRows: page.snapshotHoldingRows,
+      currentHoldingIds: [
+        ...assets.map((asset) => asset.id),
+        ...liabilities.map((liability) => liability.id),
+      ],
+      trashedHoldingIds: [
+        ...trash.assets.map((asset) => asset.id),
+        ...trash.liabilities.map((liability) => liability.id),
+      ],
+    });
+
+    expect(cells).toEqual(page.matrixCells);
 
     store.close();
   });
