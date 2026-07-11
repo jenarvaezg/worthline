@@ -35,6 +35,11 @@ const firstRunDbPath = join(firstRunDbDir, "test.sqlite");
 const firstRunPort = Number(process.env.FIRST_RUN_PORT ?? defaultFirstRunPort);
 const firstRunBaseUrl = `http://127.0.0.1:${firstRunPort}`;
 
+// In CI we serve the production build (next start) like the main E2E suite.
+// `next dev` compiles /patrimonio/anadir on demand; on a cold hogar server that
+// compile can exceed Playwright's default 5s expect timeout after onboarding.
+const isCI = !!process.env.CI;
+
 export default defineConfig({
   testDir: "./e2e",
   testMatch: firstRunSpec,
@@ -50,8 +55,8 @@ export default defineConfig({
   ],
   use: {
     baseURL: firstRunBaseUrl,
-    actionTimeout: 10_000,
-    navigationTimeout: 15_000,
+    actionTimeout: isCI ? 20_000 : 10_000,
+    navigationTimeout: isCI ? 30_000 : 15_000,
     trace: "on-first-retry",
   },
   projects: [
@@ -61,7 +66,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `bun run --filter @worthline/web dev -- --port ${firstRunPort}`,
+    command: isCI
+      ? `bun run --filter @worthline/web start -- --port ${firstRunPort}`
+      : `bun run --filter @worthline/web dev -- --port ${firstRunPort}`,
     url: firstRunBaseUrl,
     reuseExistingServer: false,
     env: {

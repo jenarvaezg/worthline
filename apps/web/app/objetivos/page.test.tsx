@@ -5,7 +5,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const calls = vi.hoisted(() => {
-  const projectionContext = {};
+  const projectionContext = {
+    cachedPriceByAsset: new Map(),
+    manualPriceByAsset: new Map(),
+    operationsByAsset: new Map(),
+  };
   const assets = [
     {
       id: "asset_home",
@@ -71,6 +75,9 @@ const calls = vi.hoisted(() => {
     readContributionReconciliations: vi.fn(async () => []),
     readOperations: vi.fn(async () => []),
     readAllPriceCacheEntries: vi.fn(async () => []),
+    readInvestmentAssetsWithMeta: vi.fn(async () => []),
+    readExposureProfiles: vi.fn(async () => []),
+    readSnapshotHoldings: vi.fn(async () => []),
     readWorkspace: vi.fn(async () => ({
       baseCurrency: "EUR",
       groups: [],
@@ -79,10 +86,16 @@ const calls = vi.hoisted(() => {
     })),
     withStore: vi.fn(async (run: (store: unknown) => unknown) =>
       run({
-        assets: { readAssets: calls.readAssets },
+        assets: {
+          readAssets: calls.readAssets,
+          readInvestmentAssetsWithMeta: calls.readInvestmentAssetsWithMeta,
+        },
         contributionPlan: {
           readContributionPlan: calls.readContributionPlan,
           readReconciliations: calls.readContributionReconciliations,
+        },
+        exposureProfiles: {
+          readExposureProfiles: calls.readExposureProfiles,
         },
         goals: { readGoals: calls.readGoals },
         operations: {
@@ -98,6 +111,7 @@ const calls = vi.hoisted(() => {
         snapshots: {
           buildProjectionContext: calls.buildProjectionContext,
           readCurveValuedHoldingsAtDate: calls.readCurveValuedHoldingsAtDate,
+          readSnapshotHoldings: calls.readSnapshotHoldings,
         },
         workspace: { readWorkspace: calls.readWorkspace },
       }),
@@ -139,6 +153,10 @@ vi.mock("@web/pending-submit", () => ({
 
 vi.mock("@web/fire-projection-card", () => ({
   default: () => <div />,
+}));
+
+vi.mock("./exposure-drift-section", () => ({
+  ExposureDriftSection: () => <div data-testid="exposure-drift" />,
 }));
 
 import {

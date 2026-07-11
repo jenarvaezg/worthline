@@ -1478,6 +1478,27 @@ export interface AgentViewContributionWhatIf {
   scenarios: AgentViewFireScenario[];
 }
 
+/** One year of projected look-through exposure under the contribution plan (#560). */
+export interface AgentViewExposureDriftPoint {
+  year: number;
+  grossAssets: AgentViewMoney;
+  byGeography: AgentViewExposureDimension;
+  byAssetClass: AgentViewExposureDimension;
+}
+
+/**
+ * Exposure-drift what-if under the contribution plan (ADR 0041, #560): how
+ * geography and asset-class composition shift as planned contributions land.
+ * Forecast only — same growth assumption as `whatIf`.
+ */
+export interface AgentViewExposureDrift {
+  object: "exposure_drift";
+  growthAssumption: "flat" | "historical";
+  assumedAnnualReturn: string;
+  status: "configured" | "empty";
+  trajectory: AgentViewExposureDriftPoint[];
+}
+
 /**
  * A scope's contribution plan as `get_contribution_plan` exposes it (ADR 0041,
  * PRD #553 S5): the recurring plan, monthly allocation, pending/backlog status,
@@ -1500,6 +1521,7 @@ export interface AgentViewContributionPlanContext {
   monthlyAllocation: AgentViewMonthlyAllocation;
   reconciliation: AgentViewContributionReconciliation;
   whatIf: AgentViewContributionWhatIf;
+  exposureDrift: AgentViewExposureDrift;
 }
 
 /**

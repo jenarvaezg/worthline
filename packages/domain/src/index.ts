@@ -286,6 +286,12 @@ export {
   timeProportionalXs,
 } from "./evolution-chart";
 export type {
+  ExposureDriftPoint,
+  ExposureDriftProjection,
+  ExposureDriftProjectionInput,
+} from "./exposure-drift-projection";
+export { projectExposureDrift } from "./exposure-drift-projection";
+export type {
   AssetClassResolution,
   CreateExposureProfileInput,
   ExposureAllocationSlice,
@@ -326,7 +332,10 @@ export type {
   FireGrowthAssumption,
   FirePlanProjectionInput,
 } from "./fire-plan-projection";
-export { projectFireWithContributionPlan } from "./fire-plan-projection";
+export {
+  contributionMoneyByProjectionYear,
+  projectFireWithContributionPlan,
+} from "./fire-plan-projection";
 export type {
   FireProjection,
   FireProjectionInput,

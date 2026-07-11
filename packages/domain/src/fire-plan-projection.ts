@@ -145,6 +145,26 @@ function expandOccurrencesWithMoney(
   return priced;
 }
 
+/**
+ * Shared contribution-stream seam: expand a plan into priced money bucketed by
+ * 1-based projection year and destination holding. Both this FIRE what-if and
+ * the exposure-drift what-if (#560) grow per-holding buckets over the same
+ * stream, so the expansion + year-bucketing lives here once. Unpriced units
+ * occurrences (no destination price) are dropped, as in `projectFire*`.
+ */
+export function contributionMoneyByProjectionYear(
+  plan: ContributionPlan,
+  todayISO: string,
+  maxYears: number,
+  unitPriceMajorByHoldingId?: Record<string, string>,
+): Map<number, Map<string, number>> {
+  return contributionsByProjectionYear(
+    expandOccurrencesWithMoney(plan, todayISO, maxYears, unitPriceMajorByHoldingId),
+    todayISO,
+    maxYears,
+  );
+}
+
 function totalBucketMinor(buckets: Map<string, number>): number {
   let total = 0;
   for (const amount of buckets.values()) {
@@ -285,16 +305,11 @@ export function projectFireWithContributionPlan(
     });
   }
 
-  const pricedOccurrences = expandOccurrencesWithMoney(
+  const contributionsByYear = contributionMoneyByProjectionYear(
     input.plan,
     input.todayISO,
     maxYears,
     input.unitPriceMajorByHoldingId,
-  );
-  const contributionsByYear = contributionsByProjectionYear(
-    pricedOccurrences,
-    input.todayISO,
-    maxYears,
   );
 
   return {
