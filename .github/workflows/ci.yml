@@ -281,6 +281,12 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: bunx playwright install --with-deps chromium
 
+      - name: Download web build
+        uses: actions/download-artifact@v8
+        with:
+          name: e2e-web-build
+          path: apps/web/.next
+
       - name: Run first-run onboarding E2E (solo + hogar)
         run: bun run test:e2e:first-run
 

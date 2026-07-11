@@ -103,4 +103,12 @@ describe("ci workflow", () => {
       expect(job).not.toContain("needs.changes.outputs.code");
     }
   });
+
+  test("e2e child jobs restore the prebuilt web app from e2e-setup", () => {
+    for (const name of ["e2e-main", "e2e-first-run", "e2e-demo"] as const) {
+      const job = jobNamed(name);
+      expect(job).toContain("name: e2e-web-build");
+      expect(job).toContain("path: apps/web/.next");
+    }
+  });
 });
