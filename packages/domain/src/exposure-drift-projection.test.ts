@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import type { ContributionPlan, PlannedContribution } from "./contribution-plan";
-import { projectExposureDrift } from "./exposure-drift-projection";
+import {
+  assembleExposureDriftHoldings,
+  holdingAnnualReturnByIdForProjection,
+  projectExposureDrift,
+} from "./exposure-drift-projection";
 import {
   createExposureProfile,
   type ExposureLookthroughHolding,
   type ExposureProfile,
 } from "./exposure-lookthrough";
+import { createManualAsset, createWorkspace } from "./workspace-types";
 
 function contribution(overrides: Partial<PlannedContribution> = {}): PlannedContribution {
   return {
@@ -229,5 +234,172 @@ describe("projectExposureDrift", () => {
     expect(
       year5.geography.slices.find((slice) => slice.key === "europe_developed")?.weight,
     ).toBe("1");
+  });
+});
+
+describe("assembleExposureDriftHoldings", () => {
+  const workspace = createWorkspace({
+    members: [
+      { id: "member_ana", name: "Ana" },
+      { id: "member_jose", name: "Jose" },
+    ],
+    mode: "household",
+  });
+  const scope = { id: "member_ana", label: "Ana", type: "member" as const };
+  const listedHolding = createManualAsset(workspace, {
+    currency: "EUR",
+    currentValueMinor: 500_000,
+    id: "h_listed",
+    liquidityTier: "market",
+    name: "ETF Europa",
+    ownership: [{ memberId: "member_ana", shareBps: 10_000 }],
+    type: "investment",
+  });
+  const outOfScopeDestination = createManualAsset(workspace, {
+    currency: "EUR",
+    currentValueMinor: 0,
+    id: "h_plan_only",
+    liquidityTier: "market",
+    name: "ETF US",
+    ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    type: "investment",
+  });
+  const inScopeDestination = createManualAsset(workspace, {
+    currency: "EUR",
+    currentValueMinor: 0,
+    id: "h_plan_only",
+    liquidityTier: "market",
+    name: "ETF US in scope",
+    ownership: [{ memberId: "member_ana", shareBps: 10_000 }],
+    type: "investment",
+  });
+  const europeProfile = createExposureProfile({
+    key: "IE00EU",
+    breakdowns: {
+      assetClass: { equity: "1" },
+      currency: { EUR: "1" },
+      geography: { europe_developed: "1" },
+    },
+  });
+
+  it("maps scoped portfolio rows and appends zero-value plan destinations", () => {
+    const contributionPlan: ContributionPlan = {
+      scopeId: "member_ana",
+      contributions: [
+        {
+          id: "c1",
+          destinationHoldingId: "h_plan_only",
+          amount: { mode: "money", value: 100_00 },
+          cadence: { kind: "monthly", dayOfMonth: 1 },
+          startDate: "2026-01-01",
+        },
+      ],
+    };
+
+    const { holdings, profiles } = assembleExposureDriftHoldings({
+      baseCurrency: "EUR",
+      workspace,
+      scope,
+      assets: [listedHolding, outOfScopeDestination],
+      liabilities: [],
+      investmentMeta: [
+        { id: "h_listed", isin: "IE00EU", providerSymbol: "EUNL.DE" },
+        { id: "h_plan_only", isin: "IE00US", providerSymbol: "CSPX.L" },
+      ],
+      exposureProfiles: [europeProfile],
+      plan: contributionPlan,
+    });
+
+    expect(holdings).toEqual([
+      {
+        currency: "EUR",
+        geography: null,
+        id: "h_listed",
+        instrument: "fund",
+        isin: "IE00EU",
+        providerSymbol: "EUNL.DE",
+        valueMinor: 500_000,
+      },
+      {
+        currency: "EUR",
+        geography: null,
+        id: "h_plan_only",
+        instrument: "fund",
+        isin: "IE00US",
+        providerSymbol: "CSPX.L",
+        valueMinor: 0,
+      },
+    ]);
+    expect(profiles.get("IE00EU")).toEqual(europeProfile);
+  });
+
+  it("does not duplicate holdings already present in the portfolio", () => {
+    const contributionPlan: ContributionPlan = {
+      scopeId: "member_ana",
+      contributions: [
+        {
+          id: "c1",
+          destinationHoldingId: "h_listed",
+          amount: { mode: "money", value: 100_00 },
+          cadence: { kind: "monthly", dayOfMonth: 1 },
+          startDate: "2026-01-01",
+        },
+      ],
+    };
+
+    const { holdings } = assembleExposureDriftHoldings({
+      baseCurrency: "EUR",
+      workspace,
+      scope,
+      assets: [listedHolding, inScopeDestination],
+      liabilities: [],
+      investmentMeta: [],
+      exposureProfiles: [],
+      plan: contributionPlan,
+    });
+
+    expect(holdings.map((holding) => holding.id)).toEqual(["h_listed", "h_plan_only"]);
+  });
+});
+
+describe("holdingAnnualReturnByIdForProjection", () => {
+  it("resolves each holding through the shared projection return order", () => {
+    const returnsById = new Map([
+      [
+        "h1",
+        {
+          kind: "market" as const,
+          totalGain: { amountMinor: 1, currency: "EUR" },
+          totalReturnRatio: 0.1,
+          annualized: true,
+          cagr: 0.04,
+          irr: { rate: 0.06, reason: null },
+          twr: {
+            rate: 0.07,
+            annualizedRate: 0.08,
+            annualized: true,
+            startDate: "2025-01-01",
+            endDate: "2026-01-01",
+            spanDays: 365,
+            reason: null,
+          },
+          realizedPnl: null,
+          unrealizedPnl: null,
+          caveats: [],
+        },
+      ],
+      ["h2", null],
+    ]);
+
+    expect(
+      holdingAnnualReturnByIdForProjection({
+        holdingIds: ["h1", "h2"],
+        returnsById,
+        assumedAnnualReturn: 0.05,
+      }),
+    ).toEqual({
+      h1: 0.08,
+      h2: 0.05,
+    });
   });
 });
