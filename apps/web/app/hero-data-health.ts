@@ -158,8 +158,10 @@ function fixSurface(signal: DataQualitySignal): { href: string; label: string } 
     case "manual_value_freshness":
       return { href: "/patrimonio/actualizar", label: "Actualizar valor" };
     case "price_freshness":
+      // The holding's edit surface — there is no standalone `/patrimonio/[id]`
+      // detail route; editing is where its price provider/value is fixed.
       return affected
-        ? { href: `/patrimonio/${affected.id}`, label: "Ver activo" }
+        ? { href: `/patrimonio/${affected.id}/editar`, label: "Ver activo" }
         : null;
     case "source_freshness":
     case "projection_gap":

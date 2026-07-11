@@ -30,9 +30,12 @@ test("warning lifecycle: zero asset → warning badge → override → listed in
   await expect(assetRow).toBeVisible();
   await expect(assetRow.locator(".warningBadge")).toBeVisible();
 
-  // 3. Shell rail links to the row — verify at least one warning link is present
+  // 3. The global shell warning band was retired (#665, PRD #654 S3): it must no
+  //    longer appear on the home. The zero-value holding still surfaces as a board
+  //    badge (step 2 above) and, when it is the top signal, in the hero's
+  //    data-health alert — attention lives in one place, not a rail on every page.
   await page.goto("/");
-  await expect(page.getByRole("alert", { name: "Avisos" })).toBeVisible();
+  await expect(page.getByRole("alert", { name: "Avisos" })).toHaveCount(0);
 
   // 4. Back on /patrimonio, open the row's ⋯ menu and find the "Es intencional"
   //    button inside the specific row (#271 moved the action into the popover).

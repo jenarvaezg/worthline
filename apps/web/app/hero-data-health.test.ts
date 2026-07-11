@@ -42,7 +42,7 @@ describe("selectHeroHealth", () => {
     );
     expect(view.impact).toBe("error");
     expect(view.alerts).toHaveLength(1);
-    expect(view.alerts[0]?.href).toBe("/patrimonio/h1");
+    expect(view.alerts[0]?.href).toBe("/patrimonio/h1/editar");
   });
 
   it("is a warning when only medium/low signals are present", () => {
@@ -171,7 +171,7 @@ describe("selectHeroHealth", () => {
           severity: "medium",
           affected: { id: "h1", label: "A", object: "holding" },
         },
-        "/patrimonio/h1",
+        "/patrimonio/h1/editar",
       ],
       [
         {

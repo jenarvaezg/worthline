@@ -34,7 +34,14 @@ export default function HeroDataHealthAlert({ health }: { health: HeroHealthView
           <li className="heroHealthItem" key={alert.key}>
             <span className="heroHealthMsg">{alert.message}</span>
             {alert.href && alert.fixLabel ? (
-              <Link className="heroHealthFix" href={alert.href} scroll={false}>
+              // Fix targets are action links, not hot navigation — no eager
+              // prefetch (also keeps the alert off the prefetch path entirely).
+              <Link
+                className="heroHealthFix"
+                href={alert.href}
+                prefetch={false}
+                scroll={false}
+              >
                 {alert.fixLabel} →
               </Link>
             ) : null}
