@@ -96,6 +96,29 @@ describe("previewSnapshotPriceCorrectionAction (#926)", () => {
     });
     store.close();
   });
+
+  test("rejects a future date server-side even though the form input caps at today", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const clock = {
+      now: () => "2026-07-15T10:00:00.000Z",
+      today: () => "2026-07-15",
+    };
+
+    const state = await previewSnapshotPriceCorrectionAction(
+      "gold",
+      { status: "idle" },
+      correctionForm("2026-07-20", "12.5"),
+      store,
+      clock,
+    );
+
+    expect(state).toEqual({
+      message: "La fecha no puede ser futura.",
+      status: "error",
+    });
+    store.close();
+  });
 });
 
 describe("confirmSnapshotPriceCorrectionAction (#926)", () => {

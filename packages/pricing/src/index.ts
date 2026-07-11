@@ -28,6 +28,14 @@ export interface PriceProviderResult {
 export interface PriceProviderFailure {
   failed: true;
   reason: string;
+  /**
+   * Set by `runFallbackChain` when the failure is a composite of several
+   * providers: true when at least one leg failed transiently (the price may come
+   * back, so a prior good cache row is preserved as stale). The formatted
+   * composite `reason` cannot be re-parsed for this — each leg must be classified
+   * on its OWN reason (issue #925 follow-up).
+   */
+  transient?: boolean;
 }
 
 /** Standard, localized failure reasons shared across HTML/web providers. */
@@ -126,6 +134,11 @@ export function isTransientFetchFailure(
   if (result === null) return true;
   if (!isProviderFailure(result)) return false;
 
+  // A composite chain failure carries per-leg classification; the joined reason
+  // string mixes providers and MUST NOT be re-parsed (a transient 503 leg would
+  // read as permanent).
+  if (typeof result.transient === "boolean") return result.transient;
+
   if (isPermanentFetchFailureReason(reason)) return false;
 
   const httpMatch = reason.match(/error \((\d+)\)/);
@@ -144,8 +157,6 @@ function isPermanentFetchFailureReason(reason: string): boolean {
   if (reason.startsWith("La divisa del proveedor")) return true;
   if (reason.includes("símbolo no encontrado")) return true;
   if (reason.includes(": sin cotización")) return true;
-  // A composite chain reason names every provider that missed (issue #925).
-  if (reason.includes(";")) return true;
   return false;
 }
 

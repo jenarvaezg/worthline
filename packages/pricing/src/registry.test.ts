@@ -77,9 +77,31 @@ describe("runFallbackChain", () => {
 
     const result = await runFallbackChain(primary, [fallback], baseCtx);
 
+    // A 404 on the closing leg is a permanent miss: transient=false so the
+    // cache layer records a failed row instead of preserving a stale price.
     expect(result).toEqual({
       failed: true,
       reason: "Yahoo: sin cotización; Stooq: error (404)",
+      transient: false,
+    });
+  });
+
+  it("classifies a double transient outage (both legs 503) as transient — the composite reason string must not be re-parsed", async () => {
+    const primary = fakeProvider("yahoo", {
+      failed: true,
+      reason: "El proveedor respondió con un error (503)",
+    });
+    const fallback = fakeProvider("stooq", {
+      failed: true,
+      reason: "El proveedor respondió con un error (503)",
+    });
+
+    const result = await runFallbackChain(primary, [fallback], baseCtx);
+
+    expect(result).toEqual({
+      failed: true,
+      reason: "Yahoo: error (503); Stooq: error (503)",
+      transient: true,
     });
   });
 
@@ -88,7 +110,11 @@ describe("runFallbackChain", () => {
 
     const result = await runFallbackChain(primary, [], baseCtx);
 
-    expect(result).toEqual({ failed: true, reason: "Finect: not found" });
+    expect(result).toEqual({
+      failed: true,
+      reason: "Finect: not found",
+      transient: true,
+    });
   });
 
   it("respects a custom chain ORDER (reordering is a data change, not a body edit)", async () => {

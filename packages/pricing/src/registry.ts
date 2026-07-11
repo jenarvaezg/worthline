@@ -17,6 +17,7 @@ import { finectProvider } from "./finect";
 import {
   formatFallbackChainFailure,
   isProviderFailure,
+  isTransientFetchFailure,
   type PriceProvider,
   type PriceProviderContext,
   type PriceProviderFailure,
@@ -140,7 +141,13 @@ export function unwrapFetched(
  * Try `primary`, then walk `fallbacks` in order, returning the FIRST success.
  * A rescuing fallback stamps `source` to whoever actually delivered the price
  * (so a Stooq rescue records `"stooq"`). When every link fails, a composite
- * reason names each provider's miss (issue #925).
+ * reason names each provider's miss (issue #925), and `transient` carries the
+ * LAST leg's own classification — the joined reason string is display-only and
+ * must never be re-parsed for permanence (a transient 503 leg would read as
+ * permanent, zeroing a good cached price on a double outage). Classifying by the
+ * last leg preserves the pre-#925 stale-preservation behaviour exactly: before
+ * the composite reason existed, the chain returned the last failure/null
+ * verbatim and the cache layer classified that.
  */
 export async function runFallbackChain(
   primary: PriceProvider,
@@ -165,7 +172,15 @@ export async function runFallbackChain(
     last = result;
   }
 
-  return { failed: true, reason: formatFallbackChainFailure(attempts) };
+  const lastAttempt = attempts[attempts.length - 1]!;
+  return {
+    failed: true,
+    reason: formatFallbackChainFailure(attempts),
+    transient: isTransientFetchFailure(
+      lastAttempt.result,
+      isProviderFailure(lastAttempt.result) ? lastAttempt.result.reason : "",
+    ),
+  };
 }
 
 /**

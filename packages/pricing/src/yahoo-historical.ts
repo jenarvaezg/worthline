@@ -7,10 +7,10 @@
 
 import type { DecimalString } from "@worthline/domain";
 
+import { fetchEcbDailyRatesEur } from "./ecb";
 import { fetchHttpWithRetry, HttpTransientError } from "./fetch-with-retry";
 import type { HistoricalPriceSeries } from "./historical-price-source";
-import type { PriceProviderContext } from "./index";
-import { convertYahooPriceToEur, decimalFromNumber } from "./yahoo";
+import { decimalFromNumber } from "./yahoo";
 
 interface YahooChartResponse {
   chart?: {
@@ -41,6 +41,13 @@ const YAHOO_CHART_URL = "https://query2.finance.yahoo.com/v8/finance/chart/";
 /** Two-year chunks keep each chart request bounded on long backfills. */
 const YAHOO_HISTORICAL_CHUNK_MS = 730 * 86_400_000;
 const MS_PER_SECOND = 1000;
+const MS_PER_DAY = 86_400_000;
+/**
+ * How far back a close's date may reach for an ECB rate. ECB only publishes
+ * business days, so a weekend/holiday close carries the previous rate forward;
+ * beyond a week the rate is considered missing and the date stays absent.
+ */
+const FX_CARRY_FORWARD_DAYS = 7;
 
 export interface YahooHistoryResult {
   pricesByDate: ReadonlyMap<string, DecimalString>;
@@ -73,14 +80,7 @@ export async function fetchYahooHistoryEur(
     return { pricesByDate: new Map() };
   }
 
-  const ctx: PriceProviderContext = {
-    assetId: "",
-    symbol,
-    currency: "EUR",
-    nowIso: nowIso ?? new Date().toISOString(),
-  };
-
-  const pricesByDate = new Map<string, DecimalString>();
+  const rawPoints: Array<{ dateKey: string; price: number; currency: string }> = [];
   let fetchError: string | undefined;
   let anyChunkSucceeded = false;
 
@@ -95,21 +95,81 @@ export async function fetchYahooHistoryEur(
     anyChunkSucceeded = true;
     const quoteCurrency = chunkResult.currency ?? "EUR";
     for (const point of chunkResult.points) {
-      const priceInEur = await convertYahooPriceToEur(
-        decimalFromNumber(point.price),
-        quoteCurrency,
-        ctx,
-      );
-      if (priceInEur) {
-        pricesByDate.set(point.dateKey, priceInEur);
-      }
+      rawPoints.push({ ...point, currency: quoteCurrency });
     }
   }
 
-  return {
-    pricesByDate,
-    ...(fetchError && !anyChunkSucceeded ? { fetchError } : {}),
-  };
+  const pricesByDate = await convertPointsToEur(rawPoints, rangeStart, rangeEnd);
+
+  if (fetchError && !anyChunkSucceeded) {
+    return { pricesByDate, fetchError };
+  }
+  if (rawPoints.length > 0 && pricesByDate.size === 0) {
+    // Yahoo delivered closes but no historical FX rate covered any of them.
+    return { pricesByDate, fetchError: "ECB no devolvió tipos de cambio históricos" };
+  }
+  return { pricesByDate };
+}
+
+/**
+ * Convert raw Yahoo closes to EUR using the ECB rate OF EACH CLOSE'S DATE —
+ * never today's rate (a multi-year backfill converted at the current rate would
+ * freeze systematically wrong values into snapshots). Rates are fetched once per
+ * quote currency over the whole range; a date with no rate within the
+ * carry-forward window stays absent, never invented.
+ */
+async function convertPointsToEur(
+  rawPoints: ReadonlyArray<{ dateKey: string; price: number; currency: string }>,
+  rangeStart: number,
+  rangeEnd: number,
+): Promise<Map<string, DecimalString>> {
+  const pricesByDate = new Map<string, DecimalString>();
+  const currencies = [...new Set(rawPoints.map((point) => point.currency))].filter(
+    (currency) => currency !== "EUR",
+  );
+
+  const ratesByCurrency = new Map<string, ReadonlyMap<string, number>>();
+  for (const currency of currencies) {
+    ratesByCurrency.set(
+      currency,
+      await fetchEcbDailyRatesEur(
+        currency,
+        rangeStart - FX_CARRY_FORWARD_DAYS * MS_PER_DAY,
+        rangeEnd,
+      ),
+    );
+  }
+
+  for (const point of rawPoints) {
+    if (point.currency === "EUR") {
+      pricesByDate.set(point.dateKey, decimalFromNumber(point.price));
+      continue;
+    }
+    const rate = rateOnOrBefore(ratesByCurrency.get(point.currency), point.dateKey);
+    if (rate === null) continue;
+    const converted = point.price * rate;
+    if (!Number.isFinite(converted) || converted <= 0) continue;
+    pricesByDate.set(point.dateKey, decimalFromNumber(converted));
+  }
+
+  return pricesByDate;
+}
+
+/** The rate on `dateKey`, or carried forward from the previous business day. */
+function rateOnOrBefore(
+  rates: ReadonlyMap<string, number> | undefined,
+  dateKey: string,
+): number | null {
+  if (!rates) return null;
+  const dateMs = Date.parse(`${dateKey}T00:00:00.000Z`);
+  if (!Number.isFinite(dateMs)) return null;
+
+  for (let daysBack = 0; daysBack <= FX_CARRY_FORWARD_DAYS; daysBack += 1) {
+    const key = new Date(dateMs - daysBack * MS_PER_DAY).toISOString().slice(0, 10);
+    const rate = rates.get(key);
+    if (rate !== undefined) return rate;
+  }
+  return null;
 }
 
 export const yahooHistoricalSource = {

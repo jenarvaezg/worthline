@@ -189,7 +189,7 @@ describe("yahooHistoricalSource (#922)", () => {
     expect(result.source).toBe("yahoo");
   });
 
-  it("converts non-EUR Yahoo closes to EUR through ECB rates", async () => {
+  it("converts each non-EUR close with the ECB rate OF ITS DATE, never today's", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce({
         ok: true,
@@ -198,9 +198,12 @@ describe("yahooHistoricalSource (#922)", () => {
             result: [
               {
                 meta: { currency: "USD" },
-                timestamp: [Math.floor(Date.parse("2024-01-15T12:00:00Z") / 1000)],
+                timestamp: [
+                  Math.floor(Date.parse("2024-01-15T12:00:00Z") / 1000),
+                  Math.floor(Date.parse("2024-01-16T12:00:00Z") / 1000),
+                ],
                 indicators: {
-                  quote: [{ close: [100] }],
+                  quote: [{ close: [100, 100] }],
                 },
               },
             ],
@@ -214,11 +217,16 @@ describe("yahooHistoricalSource (#922)", () => {
             {
               series: {
                 "0:0:0:0:0": {
-                  observations: { "0": [1.25] },
+                  observations: { "0": [1.25], "1": [1.6] },
                 },
               },
             },
           ],
+          structure: {
+            dimensions: {
+              observation: [{ values: [{ id: "2024-01-15" }, { id: "2024-01-16" }] }],
+            },
+          },
         }),
       } as Response);
 
@@ -228,7 +236,89 @@ describe("yahooHistoricalSource (#922)", () => {
       Date.parse("2024-01-31T00:00:00Z"),
     );
 
-    expect(result.pricesByDate).toEqual(new Map([["2024-01-15", "80"]]));
+    // ONE ranged ECB request, not one per point — and the same 100 USD close
+    // converts differently on each date because the rate is the date's own.
+    const ecbCalls = vi
+      .mocked(fetch)
+      .mock.calls.filter(([url]) => String(url).includes("data-api.ecb.europa.eu"));
+    expect(ecbCalls).toHaveLength(1);
+    expect(String(ecbCalls[0]![0])).toContain("startPeriod=");
+    expect(result.pricesByDate).toEqual(
+      new Map([
+        ["2024-01-15", "80"],
+        ["2024-01-16", "62.5"],
+      ]),
+    );
+  });
+
+  it("carries the previous business day's ECB rate over a weekend close, but drops a date with no rate in the window", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          chart: {
+            result: [
+              {
+                meta: { currency: "USD" },
+                timestamp: [
+                  // Saturday (carries Friday 2024-01-12's rate) and a date far
+                  // beyond the carry-forward window (stays absent).
+                  Math.floor(Date.parse("2024-01-13T12:00:00Z") / 1000),
+                  Math.floor(Date.parse("2024-01-30T12:00:00Z") / 1000),
+                ],
+                indicators: {
+                  quote: [{ close: [100, 100] }],
+                },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          dataSets: [{ series: { "0:0:0:0:0": { observations: { "0": [1.25] } } } }],
+          structure: {
+            dimensions: { observation: [{ values: [{ id: "2024-01-12" }] }] },
+          },
+        }),
+      } as Response);
+
+    const result = await yahooHistoricalSource.fetchSeriesEur(
+      "AAPL",
+      Date.parse("2024-01-01T00:00:00Z"),
+      Date.parse("2024-01-31T00:00:00Z"),
+    );
+
+    expect(result.pricesByDate).toEqual(new Map([["2024-01-13", "80"]]));
+  });
+
+  it("degrades to an empty series with fetchError when ECB returns no historical rates for a non-EUR series", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          chart: {
+            result: [
+              {
+                meta: { currency: "USD" },
+                timestamp: [Math.floor(Date.parse("2024-01-15T12:00:00Z") / 1000)],
+                indicators: { quote: [{ close: [100] }] },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({ ok: false, status: 404 } as Response);
+
+    const result = await yahooHistoricalSource.fetchSeriesEur(
+      "AAPL",
+      Date.parse("2024-01-01T00:00:00Z"),
+      Date.parse("2024-01-31T00:00:00Z"),
+    );
+
+    expect(result.pricesByDate.size).toBe(0);
+    expect(result.fetchError).toBe("ECB no devolvió tipos de cambio históricos");
   });
 
   it("degrades a provider outage to an empty series with fetchError (never throws)", async () => {
