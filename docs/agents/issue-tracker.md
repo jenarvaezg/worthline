@@ -18,12 +18,27 @@ Use the `gh` CLI for issue tracker operations.
 
 - **`ready-for-agent`** — fully specified and ready for an AFK agent.
 - **`ready-for-human`** — requires human implementation.
-- **`agent-lite`** — a *subset* of `ready-for-agent`: bounded, backend-only tasks
-  (logic / engine / storage / API, **no visual frontend**) that are safe to hand to
-  a **weaker or cheaper** model. Apply it on top of `ready-for-agent`, never alone.
-  Reach for it when a ticket has a closed spec, deps already merged, existing tests
-  as a safety net, and no design decisions left open. Prefer *not* to add it to
-  novel/high-context work, wholesale refactors, or anything with a UI surface.
+- **`agent-lite`** — a *subset* of `ready-for-agent`: bounded tasks with **no design
+  surface** that are safe to hand to a **weaker or cheaper** model. Apply it on top of
+  `ready-for-agent`, never alone. Reach for it when a ticket has a closed spec, deps
+  already merged, existing tests as a safety net, and no design decisions left open.
+
+  The gate is **design judgment, not the `apps/web` folder**. Backend work
+  (logic / engine / storage / API) qualifies, but so does frontend *plumbing* that
+  produces no pixels to compose: routing/redirect changes, `manifest.json`/config,
+  file moves, wiring an existing component into a new route. What disqualifies is a
+  **UI that has to be composed** — layout, visual hierarchy, motion, anything where
+  "does it look right?" is part of acceptance.
+
+  One caveat that is *not* about design: some plumbing is
+  **correctness- or security-sensitive** (open-redirect guards, auth/anti-loop,
+  money math). A weak model can pass a happy-path test while shipping a silent bug
+  there. Still fine to label `agent-lite`, but only if the test net covers the
+  hostile cases, and note the review focus on the ticket
+  (e.g. *"foco de revisión = validación de `returnTo` y anti-loop; el resto es mecánico"*).
+
+  Prefer *not* to add it to novel/high-context work, wholesale refactors, or anything
+  with a UI surface to compose.
 
   ```sh
   gh issue edit <N> --add-label ready-for-agent,agent-lite
