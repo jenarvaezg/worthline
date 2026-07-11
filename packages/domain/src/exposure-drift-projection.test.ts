@@ -200,4 +200,34 @@ describe("projectExposureDrift", () => {
 
     expect(projection.trajectory).toEqual([]);
   });
+
+  it("excludes contributions to a destination outside the holdings set instead of distorting weights", () => {
+    const holdings: ExposureLookthroughHolding[] = [
+      holding({ id: "h_eu", isin: "IE00EU", valueMinor: 1_000_000 }),
+    ];
+
+    const projection = projectExposureDrift({
+      ...BASE,
+      growthAssumption: "flat",
+      plan: plan([contribution({ id: "c_ghost", destinationHoldingId: "h_ghost" })]),
+      holdings,
+      profiles: profiles([["IE00EU", europeProfile]]),
+    });
+
+    // A plan destination that is not a known holding cannot be looked through:
+    // its money is excluded from both the look-through and the gross denominator,
+    // so coverage always sums to gross and the known weights stay honest.
+    for (const point of projection.trajectory) {
+      const coverageSum =
+        point.geography.coverage.classified.amountMinor +
+        point.geography.coverage.notApplicable.amountMinor +
+        point.geography.coverage.unknown.amountMinor;
+      expect(coverageSum).toBe(point.grossAssets.amountMinor);
+    }
+    const year5 = projection.trajectory[5]!;
+    expect(year5.grossAssets.amountMinor).toBe(1_000_000);
+    expect(
+      year5.geography.slices.find((slice) => slice.key === "europe_developed")?.weight,
+    ).toBe("1");
+  });
 });

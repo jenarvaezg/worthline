@@ -5,12 +5,7 @@
  * simulated per-holding values and S4's time-varying contribution stream.
  */
 
-import {
-  type ContributionOccurrence,
-  type ContributionPlan,
-  contributionOccurrenceMoneyMinor,
-  expandContributionPlan,
-} from "./contribution-plan";
+import type { ContributionPlan } from "./contribution-plan";
 import {
   type ExposureDimensionResult,
   type ExposureLookthrough,
@@ -18,7 +13,10 @@ import {
   type ExposureProfile,
   lookThroughExposure,
 } from "./exposure-lookthrough";
-import type { FireGrowthAssumption } from "./fire-plan-projection";
+import {
+  contributionMoneyByProjectionYear,
+  type FireGrowthAssumption,
+} from "./fire-plan-projection";
 import { DEFAULT_MAX_YEARS } from "./fire-projection";
 import type { CurrencyCode, MoneyMinor } from "./money";
 
@@ -47,33 +45,6 @@ export interface ExposureDriftProjectionInput {
   maxYears?: number;
 }
 
-function parseISO(iso: string): Date {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1));
-}
-
-function addYears(iso: string, years: number): string {
-  const date = parseISO(iso);
-  date.setUTCFullYear(date.getUTCFullYear() + years);
-  return date.toISOString().slice(0, 10);
-}
-
-function monthsBetween(fromISO: string, toISO: string): number {
-  const from = parseISO(fromISO);
-  const to = parseISO(toISO);
-  return (
-    (to.getUTCFullYear() - from.getUTCFullYear()) * 12 +
-    (to.getUTCMonth() - from.getUTCMonth())
-  );
-}
-
-function projectionYearForDate(todayISO: string, plannedDate: string): number {
-  if (plannedDate < todayISO) {
-    return -1;
-  }
-  return Math.floor(monthsBetween(todayISO, plannedDate) / 12) + 1;
-}
-
 function bucketGrowthRate(
   holdingId: string,
   input: ExposureDriftProjectionInput,
@@ -82,47 +53,6 @@ function bucketGrowthRate(
     return 0;
   }
   return input.holdingAnnualReturnById?.[holdingId] ?? input.assumedAnnualReturn;
-}
-
-function expandOccurrencesWithMoney(
-  plan: ContributionPlan,
-  todayISO: string,
-  maxYears: number,
-  unitPriceMajorByHoldingId?: Record<string, string>,
-): Array<ContributionOccurrence & { moneyMinor: number }> {
-  const toDate = addYears(todayISO, maxYears);
-  const occurrences = expandContributionPlan(plan, todayISO, toDate);
-  const priced: Array<ContributionOccurrence & { moneyMinor: number }> = [];
-  for (const occurrence of occurrences) {
-    const moneyMinor = contributionOccurrenceMoneyMinor(
-      occurrence,
-      unitPriceMajorByHoldingId,
-    );
-    if (moneyMinor === null) {
-      continue;
-    }
-    priced.push({ ...occurrence, moneyMinor });
-  }
-  return priced;
-}
-
-function contributionsByProjectionYear(
-  occurrences: Array<ContributionOccurrence & { moneyMinor: number }>,
-  todayISO: string,
-  maxYears: number,
-): Map<number, Map<string, number>> {
-  const byYear = new Map<number, Map<string, number>>();
-  for (const occurrence of occurrences) {
-    const year = projectionYearForDate(todayISO, occurrence.plannedDate);
-    if (year < 1 || year > maxYears) {
-      continue;
-    }
-    const holdingBuckets = byYear.get(year) ?? new Map<string, number>();
-    const current = holdingBuckets.get(occurrence.destinationHoldingId) ?? 0;
-    holdingBuckets.set(occurrence.destinationHoldingId, current + occurrence.moneyMinor);
-    byYear.set(year, holdingBuckets);
-  }
-  return byYear;
 }
 
 function initialBuckets(
@@ -135,14 +65,6 @@ function initialBuckets(
     }
   }
   return buckets;
-}
-
-function totalBucketMinor(buckets: Map<string, number>): number {
-  let total = 0;
-  for (const amount of buckets.values()) {
-    total += amount;
-  }
-  return total;
 }
 
 function growBuckets(
@@ -173,15 +95,21 @@ function lookthroughAtBuckets(
   input: ExposureDriftProjectionInput,
 ): ExposureLookthrough {
   const holdings: ExposureLookthroughHolding[] = [];
+  let grossMinor = 0;
   for (const [holdingId, valueMinor] of buckets.entries()) {
     const meta = metaById.get(holdingId);
     if (!meta || valueMinor <= 0) {
       continue;
     }
     holdings.push({ ...meta, valueMinor });
+    grossMinor += valueMinor;
   }
 
-  const grossMinor = totalBucketMinor(buckets);
+  // Gross equals exactly what is looked through, so the three-way coverage
+  // always sums to gross. A bucket without resolvable meta (e.g. a plan
+  // destination that is no longer a holding) is excluded from both holdings and
+  // gross — never silently inflating the denominator while vanishing from
+  // coverage.
   return lookThroughExposure({
     baseCurrency: input.baseCurrency,
     grossAssets: { amountMinor: grossMinor, currency: input.baseCurrency },
@@ -225,16 +153,11 @@ export function projectExposureDrift(
   }
 
   const buckets = initialBuckets(input.holdings);
-  const pricedOccurrences = expandOccurrencesWithMoney(
+  const contributionsByYear = contributionMoneyByProjectionYear(
     input.plan,
     input.todayISO,
     maxYears,
     input.unitPriceMajorByHoldingId,
-  );
-  const contributionsByYear = contributionsByProjectionYear(
-    pricedOccurrences,
-    input.todayISO,
-    maxYears,
   );
 
   const trajectory: ExposureDriftPoint[] = [

@@ -332,7 +332,10 @@ export type {
   FireGrowthAssumption,
   FirePlanProjectionInput,
 } from "./fire-plan-projection";
-export { projectFireWithContributionPlan } from "./fire-plan-projection";
+export {
+  contributionMoneyByProjectionYear,
+  projectFireWithContributionPlan,
+} from "./fire-plan-projection";
 export type {
   FireProjection,
   FireProjectionInput,
