@@ -167,6 +167,8 @@ async function collectScopeSignals(
   const fireConfigByScopeId = await store.readFireConfig();
   const warningOverrides = await store.readWarningOverrides();
   const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
+  const manualValueHistoryByAssetId = await store.readManualValueHistory();
+  const assetCreatedAtById = await store.readAssetCreatedAtById();
 
   const priceFreshnessByAssetId = new Map(
     await Promise.all(
@@ -208,11 +210,14 @@ async function collectScopeSignals(
   );
 
   const domainSignals = collectDataQualitySignals({
+    asOfDateKey: new Date().toISOString().slice(0, 10),
+    assetCreatedAtById,
     assets,
     connectedSources,
     debtModelByLiabilityId,
     fireConfigByScopeId,
     liabilities,
+    manualValueHistoryByAssetId,
     positionsBySourceId,
     priceFreshnessByAssetId,
     scope: {

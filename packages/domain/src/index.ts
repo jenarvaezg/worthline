@@ -193,7 +193,11 @@ export {
   compareDataQualitySignals,
   DATA_QUALITY_CATEGORY_ORDER,
   dataQualitySignalSortKey,
+  isOverrideableSignalCode,
+  OVERRIDEABLE_SIGNAL_CODES,
   SPARSE_SNAPSHOT_THRESHOLD,
+  STALE_MANUAL_VALUE_CODE,
+  STALE_MANUAL_VALUE_THRESHOLD_DAYS,
 } from "./data-quality-signals";
 export type { DateKey, Instant } from "./dates";
 export { asDateKey, asInstant, daysBetween, MS_PER_DAY } from "./dates";
@@ -684,7 +688,7 @@ export {
   sampleDateForCadence,
 } from "./valuation-cadence";
 export type { ManualValuePoint } from "./value-history";
-export { lastKnownValueAtDate } from "./value-history";
+export { lastKnownValueAtDate, lastManualValueUpdateDateKey } from "./value-history";
 export type { DomainWarning, WarningOverride, WarningSeverity } from "./warnings";
 export { collectWarnings } from "./warnings";
 export type {

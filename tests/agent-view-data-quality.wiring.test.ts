@@ -134,9 +134,24 @@ const routeClient: AgentViewApiClient = {
   },
 };
 
+async function backdateAssetCreatedAt(
+  databasePath: string,
+  assetId: string,
+  iso: string,
+): Promise<void> {
+  const { createClient } = await import("@libsql/client");
+  const client = createClient({ url: `file:${databasePath}` });
+  await client.execute({
+    args: [iso, assetId],
+    sql: "UPDATE assets SET created_at = ? WHERE id = ?",
+  });
+  client.close();
+}
+
 /**
  * Seed a household that triggers every category at least once:
  *  - warning: a zero-value stored asset (ZERO_VALUE_ASSET, overrideable).
+ *  - manual_value_freshness: a stored cash holding with no value update in 90+ days.
  *  - price_freshness: a stale-priced and a failed-priced asset.
  *  - source_freshness: a connected source with a stale last sync.
  *  - missing_configuration: no FIRE config + a mortgage with no debt model.
@@ -165,6 +180,22 @@ async function seedAllCategories(prefix = "worthline-agent-view-dq-"): Promise<s
     ownership: owner,
     type: "manual",
   });
+
+  // manual_value_freshness: a cash account created long ago, never value-updated.
+  await store.assets.createManualAsset({
+    currency: "EUR",
+    currentValueMinor: 2_500_00,
+    id: "asset_stale_cash",
+    liquidityTier: "market",
+    name: "Cuenta olvidada",
+    ownership: owner,
+    type: "cash",
+  });
+  await backdateAssetCreatedAt(
+    databasePath,
+    "asset_stale_cash",
+    "2025-01-01T00:00:00.000Z",
+  );
 
   // price_freshness: two priced assets, one stale, one failed.
   await store.assets.createManualAsset({
@@ -284,6 +315,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
     expect(categories).toEqual(
       new Set([
         "warning",
+        "manual_value_freshness",
         "price_freshness",
         "source_freshness",
         "missing_configuration",
@@ -429,6 +461,59 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
     expect(gapSignals[0]!.affected?.object).toBe("connected_source");
   });
 
+  test("represents a stale manual value for a stored holding", async () => {
+    await seedAllCategories();
+    const scopeId = await householdScopeId();
+
+    const manualSignals = (
+      await signals(scopeId, "?category=manual_value_freshness")
+    ).filter((s) => s.category === "manual_value_freshness");
+
+    const stale = manualSignals.find((s) => s.affected?.label === "Cuenta olvidada")!;
+    expect(stale.code).toBe("STALE_MANUAL_VALUE");
+    expect(stale.severity).toBe("medium");
+    expect(stale.fixable).toBe(true);
+    expect(stale.observedDate).toBe("2025-01-01");
+    expect(stale.affected?.id).toMatch(/^wl_hld_/);
+  });
+
+  test("labels an acknowledged stale-manual signal without removing it", async () => {
+    const databasePath = tempDatabasePath("worthline-agent-view-dq-stale-override-");
+    process.env.WORTHLINE_DB_PATH = databasePath;
+    process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
+
+    const store = await createWorthlineStore({ databasePath });
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "member_jose", name: "Jose" }],
+      mode: "individual",
+    });
+    const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 2_500_00,
+      id: "asset_stale_cash",
+      liquidityTier: "market",
+      name: "Cuenta olvidada",
+      ownership: owner,
+      type: "cash",
+    });
+    await backdateAssetCreatedAt(
+      databasePath,
+      "asset_stale_cash",
+      "2025-01-01T00:00:00.000Z",
+    );
+    await store.acknowledgeWarning("STALE_MANUAL_VALUE", "asset_stale_cash");
+    store.close();
+
+    const scopeId = await householdScopeId();
+    const staleSignals = (
+      await signals(scopeId, "?category=manual_value_freshness")
+    ).filter((s) => s.code === "STALE_MANUAL_VALUE");
+
+    expect(staleSignals).toHaveLength(1);
+    expect(staleSignals[0]!.label).toContain("marcado como intencional");
+  });
+
   test("filters by severity", async () => {
     await seedAllCategories();
     const scopeId = await householdScopeId();
@@ -446,11 +531,12 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
     const severityRank = { high: 0, medium: 1, low: 2 } as const;
     const categoryRank: Record<string, number> = {
       warning: 0,
-      price_freshness: 1,
-      source_freshness: 2,
-      missing_configuration: 3,
-      history_coverage: 4,
-      projection_gap: 5,
+      manual_value_freshness: 1,
+      price_freshness: 2,
+      source_freshness: 3,
+      missing_configuration: 4,
+      history_coverage: 5,
+      projection_gap: 6,
     };
 
     for (let i = 1; i < all.length; i += 1) {
@@ -593,6 +679,7 @@ describe("main financial context data-quality summary (#341)", () => {
     expect(Object.keys(summary.countsByCategory).sort()).toEqual(
       [
         "history_coverage",
+        "manual_value_freshness",
         "missing_configuration",
         "price_freshness",
         "projection_gap",
