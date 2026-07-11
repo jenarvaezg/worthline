@@ -22,14 +22,21 @@ import type {
   CompositionRange,
   CompositionSeriesPoint,
   DashboardState,
+  DatedAmount,
   DatedPayout,
   DatedSnapshotHoldingRow,
   DrilldownKey,
   DrilldownState,
   FramedSnapshotDeltas,
   HoldingReturnsView,
+  InvestmentOperation,
+  Liability,
   LocalPersistenceStatus,
+  ManualAsset,
   NetWorthFraming,
+  NetWorthSnapshot,
+  OwnershipShare,
+  ValuationMethod,
 } from "@worthline/domain";
 import {
   availableCompositionRanges,
@@ -43,10 +50,14 @@ import {
   portfolioReturnsView,
   prepareDashboardState,
   rangeStartMonthKey,
+  resolveScopeMemberIds,
+  valuationMethodOfAsset,
+  valuationMethodOfLiability,
 } from "@worthline/domain";
 
 import { buildMatrixCells, type MatrixCellPayload } from "./dashboard-cells";
 import { cellKey, crossOf, type MatrixCoord, parseMode } from "./dashboard-matrix";
+import { buildHeroBreakdownData, type HeroBreakdownData } from "./hero-breakdown-data";
 
 const SPANISH_CPI_SERIES_ID = "ipc-es";
 
@@ -188,6 +199,15 @@ export interface LoadDashboardResult extends DashboardState {
   headlineDeltas: FramedSnapshotDeltas;
   /** Net worth vs CPI over the same active window as the Evolución chart. */
   benchmarkComparison: BenchmarkComparisonResult;
+  /**
+   * The hero "Origen del cambio" figures (#661, PRD #653 S3): the newest monthly
+   * close's market/payouts/net-savings split (the micro-band under the delta
+   * chips) plus the ~7-day "Esta semana" window, both straight from the S1 delta
+   * engine — the same functions /historico uses, so the home never re-derives the
+   * split. Whole-patrimony (framing-independent), mirroring /historico. Null when
+   * there is no scope; each half is null when its window is not yet computable.
+   */
+  heroBreakdown: HeroBreakdownData | null;
 }
 
 export async function loadDashboard(
@@ -316,13 +336,14 @@ export async function loadDashboard(
     store.payouts.readPayouts(),
     store.payouts.readPayoutSchedules(),
   ]);
+  // Recorded payouts up to today, keyed by holding — shared by the return engine
+  // (mapped to DatedPayout below) and the hero delta breakdown (used as-is).
+  const holdingPayouts = collectHoldingPayouts(payoutRecords, payoutSchedules, dateKey);
   const payoutsByAsset = new Map<string, DatedPayout[]>(
-    [...collectHoldingPayouts(payoutRecords, payoutSchedules, dateKey)].map(
-      ([assetId, rows]) => [
-        assetId,
-        rows.map((row) => ({ amountMinor: row.amountMinor, date: row.dateISO })),
-      ],
-    ),
+    [...holdingPayouts].map(([assetId, rows]) => [
+      assetId,
+      rows.map((row) => ({ amountMinor: row.amountMinor, date: row.dateISO })),
+    ]),
   );
   const portfolioReturns = portfolioReturnsView({
     cachedPriceByAsset: projectionContext.cachedPriceByAsset,
@@ -392,6 +413,26 @@ export async function loadDashboard(
   const windowedRows = rangeCutoff
     ? holdingRows.filter((row) => row.dateKey.slice(0, 7) >= rangeCutoff)
     : holdingRows;
+
+  // ── 4a′. Hero "Origen del cambio" (#661, PRD #653 S3) ─────────────────────
+  // The newest monthly-close split + the "Esta semana" window, straight from the
+  // S1 delta engine (the same functions /historico uses, so the home never
+  // re-derives the split). Skipped entirely below two snapshots — neither window
+  // is computable then — so the extra debt-model reads stay off the common fast
+  // path of a young or empty scope (#783).
+  const heroBreakdown =
+    selectedScope && snapshots.length >= 2
+      ? await computeHeroBreakdown(store, {
+          assets,
+          holdingRows,
+          liabilities,
+          operationsByHoldingId: projectionContext.operationsByAsset,
+          payoutsByHolding: holdingPayouts,
+          scopeMemberIds: new Set(resolveScopeMemberIds(workspace, selectedScope.id)),
+          snapshots,
+          today: input.today,
+        })
+      : null;
 
   // ── 4b. Composition chart (#142, #144) — windowed net-worth composition ──
   // The selected range windows the series; density then adapts to the span.
@@ -509,6 +550,7 @@ export async function loadDashboard(
     compositionSeriesByRange,
     drilldown,
     headlineDeltas,
+    heroBreakdown,
     matrixCells,
     needsOnboarding: false,
     portfolioReturns,
@@ -554,12 +596,81 @@ function buildEmptyResult(
     compositionSeriesByRange: {},
     drilldown: null,
     headlineDeltas: { sinceMonthlyClose: null, sincePrevious: null },
+    heroBreakdown: null,
     matrixCells: {},
     needsOnboarding: true,
     portfolioReturns: null,
     pricingErrors,
     snapshotHoldingRows: [],
   };
+}
+
+/**
+ * Assemble the delta-engine inputs from the scope's holdings and run the hero
+ * "Origen del cambio" breakdown (#661). Kept out of the main flow because it
+ * alone needs the per-liability debt models (to tell modelled balances → market
+ * from stored ones → net savings); the caller gates it so those reads only fire
+ * once a breakdown is computable.
+ */
+async function computeHeroBreakdown(
+  store: WorthlineStore,
+  input: {
+    snapshots: readonly NetWorthSnapshot[];
+    holdingRows: readonly DatedSnapshotHoldingRow[];
+    assets: readonly ManualAsset[];
+    liabilities: readonly Liability[];
+    operationsByHoldingId: ReadonlyMap<string, readonly InvestmentOperation[]>;
+    payoutsByHolding: ReadonlyMap<string, readonly DatedAmount[]>;
+    scopeMemberIds: ReadonlySet<string>;
+    today: string;
+  },
+): Promise<HeroBreakdownData> {
+  const debtModels = await Promise.all(
+    input.liabilities.map((liability) => store.liabilities.readDebtModel(liability.id)),
+  );
+  const valuationMethodByHoldingId = new Map<string, ValuationMethod>();
+  for (const asset of input.assets) {
+    valuationMethodByHoldingId.set(asset.id, valuationMethodOfAsset(asset));
+  }
+  input.liabilities.forEach((liability, index) => {
+    valuationMethodByHoldingId.set(
+      liability.id,
+      valuationMethodOfLiability(debtModels[index] ?? null),
+    );
+  });
+  const ownershipByHoldingId = new Map<string, readonly OwnershipShare[]>();
+  for (const asset of input.assets) {
+    ownershipByHoldingId.set(asset.id, asset.ownership);
+  }
+  for (const liability of input.liabilities) {
+    ownershipByHoldingId.set(liability.id, liability.ownership);
+  }
+  // Frozen rows keyed by snapshot id (a scope's dateKey is unique per snapshot, so
+  // a single pass by dateKey suffices). Rows outside the read window leave that
+  // snapshot absent and the engine renders the affected period as a gap.
+  const rowsByDateKey = new Map<string, DatedSnapshotHoldingRow[]>();
+  for (const row of input.holdingRows) {
+    const bucket = rowsByDateKey.get(row.dateKey);
+    if (bucket) bucket.push(row);
+    else rowsByDateKey.set(row.dateKey, [row]);
+  }
+  const holdingRowsBySnapshotId = new Map<string, DatedSnapshotHoldingRow[]>();
+  for (const captured of input.snapshots) {
+    const rows = rowsByDateKey.get(captured.dateKey);
+    if (rows) {
+      holdingRowsBySnapshotId.set(captured.id, rows);
+    }
+  }
+  return buildHeroBreakdownData({
+    holdingRowsBySnapshotId,
+    operationsByHoldingId: input.operationsByHoldingId,
+    ownershipByHoldingId,
+    payoutsByHolding: input.payoutsByHolding,
+    scopeMemberIds: input.scopeMemberIds,
+    snapshots: input.snapshots,
+    today: input.today,
+    valuationMethodByHoldingId,
+  });
 }
 
 async function buildBenchmarkComparison(input: {

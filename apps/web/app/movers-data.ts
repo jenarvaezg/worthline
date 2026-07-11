@@ -28,6 +28,8 @@ export interface HoldingMover {
   sign: "pos" | "neg" | "zero";
   /** "nuevo" (added since) / "vendido" (gone since), else null. */
   tag: "nuevo" | "vendido" | null;
+  /** Liability holding — marks the row so the green-on-paydown sign reads clearly. */
+  isDebt: boolean;
 }
 
 export interface MoversData {
@@ -119,6 +121,7 @@ interface MoverRaw {
   impactMinor: number;
   pct: number | null;
   tag: "nuevo" | "vendido" | null;
+  isDebt: boolean;
 }
 
 export function buildMoversData(params: {
@@ -189,6 +192,7 @@ export function buildMoversData(params: {
     raw.push({
       label: e.label,
       impactMinor,
+      isDebt: e.kind === "liability",
       pct: e.base !== 0 ? (impactMinor / Math.abs(e.base)) * 100 : null,
       tag: e.base === 0 ? "nuevo" : e.cur === 0 ? "vendido" : null,
     });
@@ -206,6 +210,7 @@ export function buildMoversData(params: {
     return {
       label: r.label,
       changeFmt: `${r.impactMinor > 0 ? "+" : ""}${amount}`,
+      isDebt: r.isDebt,
       pctFmt: r.pct === null ? null : moversPctFmt(r.pct),
       sign: r.impactMinor > 0 ? "pos" : r.impactMinor < 0 ? "neg" : "zero",
       tag: r.tag,
