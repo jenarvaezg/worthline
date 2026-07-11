@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { coingeckoHistoricalSource, parsePriceCsv } from "./historical-price-source";
+import { yahooHistoricalSource } from "./yahoo-historical";
 
 describe("coingeckoHistoricalSource (#380)", () => {
   beforeEach(() => {
@@ -72,6 +73,145 @@ describe("coingeckoHistoricalSource (#380)", () => {
     vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 429 } as Response);
     const result = await coingeckoHistoricalSource.fetchSeriesEur("BTC", 0, 1);
     expect(result.pricesByDate.size).toBe(0);
+  });
+});
+
+describe("yahooHistoricalSource (#922)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("fetches daily EUR closes for a symbol with chart data", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        chart: {
+          result: [
+            {
+              meta: { currency: "EUR" },
+              timestamp: [
+                Math.floor(Date.parse("2026-06-09T00:00:00.000Z") / 1000),
+                Math.floor(Date.parse("2026-07-01T00:00:00.000Z") / 1000),
+              ],
+              indicators: {
+                quote: [{ close: [20.5, 21.436] }],
+              },
+            },
+          ],
+        },
+      }),
+    } as Response);
+
+    const result = await yahooHistoricalSource.fetchSeriesEur(
+      "GBSE.MI",
+      Date.parse("2026-06-01T00:00:00.000Z"),
+      Date.parse("2026-07-10T00:00:00.000Z"),
+    );
+
+    expect(String(vi.mocked(fetch).mock.calls[0]![0])).toContain(
+      "/v8/finance/chart/GBSE.MI",
+    );
+    expect(result.source).toBe("yahoo");
+    expect(result.pricesByDate).toEqual(
+      new Map([
+        ["2026-06-09", "20.5"],
+        ["2026-07-01", "21.436"],
+      ]),
+    );
+  });
+
+  it("adds a dated meta quote when the chart series is empty but regularMarketTime is in range", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        chart: {
+          result: [
+            {
+              meta: {
+                currency: "EUR",
+                regularMarketPrice: 21.436,
+                regularMarketTime: Math.floor(
+                  Date.parse("2026-07-10T19:55:16.000Z") / 1000,
+                ),
+              },
+              indicators: { quote: [{}], adjclose: [{}] },
+            },
+          ],
+        },
+      }),
+    } as Response);
+
+    const result = await yahooHistoricalSource.fetchSeriesEur(
+      "JE00B8DFY052.SG",
+      Date.parse("2026-07-01T00:00:00.000Z"),
+      Date.parse("2026-07-11T00:00:00.000Z"),
+    );
+
+    expect(result.pricesByDate).toEqual(new Map([["2026-07-10", "21.436"]]));
+  });
+
+  it("returns an empty series when Yahoo has no chart result", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ chart: { result: null } }),
+    } as Response);
+
+    const result = await yahooHistoricalSource.fetchSeriesEur("NOPE.MC", 0, 1);
+    expect(result.pricesByDate.size).toBe(0);
+    expect(result.source).toBe("yahoo");
+  });
+
+  it("converts non-EUR Yahoo closes to EUR through ECB rates", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          chart: {
+            result: [
+              {
+                meta: { currency: "USD" },
+                timestamp: [Math.floor(Date.parse("2024-01-15T12:00:00Z") / 1000)],
+                indicators: {
+                  quote: [{ close: [100] }],
+                },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          dataSets: [
+            {
+              series: {
+                "0:0:0:0:0": {
+                  observations: { "0": [1.25] },
+                },
+              },
+            },
+          ],
+        }),
+      } as Response);
+
+    const result = await yahooHistoricalSource.fetchSeriesEur(
+      "AAPL",
+      Date.parse("2024-01-01T00:00:00Z"),
+      Date.parse("2024-01-31T00:00:00Z"),
+    );
+
+    expect(result.pricesByDate).toEqual(new Map([["2024-01-15", "80"]]));
+  });
+
+  it("degrades a provider outage to an empty series with fetchError (never throws)", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 404 } as Response);
+
+    const result = await yahooHistoricalSource.fetchSeriesEur("GBSE.MI", 0, 1);
+    expect(result.pricesByDate.size).toBe(0);
+    expect(result.fetchError).toBe("Yahoo respondió con un error (404)");
   });
 });
 

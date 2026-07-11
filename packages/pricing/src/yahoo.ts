@@ -78,7 +78,7 @@ export const yahooProvider: PriceProvider = {
   },
 };
 
-function decimalFromNumber(value: number): string {
+export function decimalFromNumber(value: number): string {
   return String(Math.round((value + Number.EPSILON) * 100000000) / 100000000);
 }
 
@@ -138,7 +138,7 @@ function isStaleYahooMarketDate(priceDate: string | undefined, nowIso: string): 
   return now - marketDate > YAHOO_STALE_MARKET_DATE_DAYS * MS_PER_DAY;
 }
 
-async function convertYahooPriceToEur(
+export async function convertYahooPriceToEur(
   price: string,
   currency: string,
   ctx: Parameters<PriceProvider["fetchPrice"]>[0],
