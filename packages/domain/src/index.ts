@@ -147,6 +147,7 @@ export {
   assertContributionCadence,
   assertPlannedContributionInput,
   contributionOccurrenceId,
+  contributionOccurrenceMoneyMinor,
   derivedMonthlySavingsCapacity,
   expandContributionPlan,
   expandPlannedContribution,
@@ -303,6 +304,14 @@ export {
 } from "./fire";
 export type { FireLevel, FireLevelKey, FireLevelsInput } from "./fire-levels";
 export { fireLevels } from "./fire-levels";
+export type {
+  FireGrowthAssumption,
+  FirePlanProjectionInput,
+} from "./fire-plan-projection";
+export {
+  projectFireWithContributionPlan,
+  resolveHoldingAnnualReturnForProjection,
+} from "./fire-plan-projection";
 export type {
   FireProjection,
   FireProjectionInput,

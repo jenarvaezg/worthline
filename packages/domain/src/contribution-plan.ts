@@ -227,6 +227,19 @@ function occurrenceMoneyMinor(
   return multiplyToMinor(contribution.amount.value, price);
 }
 
+/** Minor units for one forecast occurrence (money or units × price). */
+export function contributionOccurrenceMoneyMinor(
+  occurrence: Pick<ContributionOccurrence, "destinationHoldingId" | "amount">,
+  unitPriceMajorByHoldingId?: Record<string, string>,
+): number | null {
+  if (occurrence.amount.mode === "money") {
+    return occurrence.amount.value;
+  }
+  const price = unitPriceMajorByHoldingId?.[occurrence.destinationHoldingId];
+  if (price === undefined) return null;
+  return multiplyToMinor(occurrence.amount.value, price);
+}
+
 function monthlyEquivalentMinor(
   contribution: PlannedContribution,
   unitPriceMajorByHoldingId?: Record<string, string>,
