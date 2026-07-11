@@ -704,7 +704,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
     },
     get_contribution_plan: {
       description:
-        "Get a scope's contribution plan (defaults to the household scope): the recurring planned contributions (destination, amount in money or units, cadence, start/end), the monthly capital allocation split for a calendar month, pending/backlog reconciliation status, and a FIRE what-if trajectory under the plan with the chosen growth assumption (flat = no appreciation; historical = each holding's own return from #547, falling back to the FIRE config rate). The entire response is forecast metadata — planned contributions never enter net worth or snapshots. Confirmed buys and value updates remain truth via get_operations. Reads are side-effect-free.",
+        "Get a scope's contribution plan (defaults to the household scope): the recurring planned contributions (destination, amount in money or units, cadence, start/end), the monthly capital allocation split for a calendar month, pending/backlog reconciliation status, a FIRE what-if trajectory under the plan with the chosen growth assumption (flat = no appreciation; historical = each holding's own return from #547, falling back to the FIRE config rate), and an exposure-drift what-if projecting geography/asset-class composition forward with the same coverage honesty as get_financial_context. The entire response is forecast metadata — planned contributions never enter net worth or snapshots. Confirmed buys and value updates remain truth via get_operations. Reads are side-effect-free.",
       inputSchema: {
         additionalProperties: false,
         properties: {

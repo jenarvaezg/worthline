@@ -286,6 +286,12 @@ export {
   timeProportionalXs,
 } from "./evolution-chart";
 export type {
+  ExposureDriftPoint,
+  ExposureDriftProjection,
+  ExposureDriftProjectionInput,
+} from "./exposure-drift-projection";
+export { projectExposureDrift } from "./exposure-drift-projection";
+export type {
   AssetClassResolution,
   CreateExposureProfileInput,
   ExposureAllocationSlice,

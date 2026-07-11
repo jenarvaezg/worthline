@@ -2,8 +2,13 @@ import type { AgentViewReadStore } from "@worthline/db";
 import type {
   ContributionOccurrence,
   ContributionPlan,
+  ExposureAllocationSlice,
+  ExposureDimensionResult,
+  ExposureLookthroughHolding,
+  ExposureProfile,
   FireGrowthAssumption,
   FireScenario,
+  Instrument,
   ManualAsset,
   PlannedContribution,
   PlannedContributionAmount,
@@ -13,8 +18,11 @@ import {
   contributionOccurrenceMoneyMinor,
   expandContributionPlan,
   instrumentOfAsset,
+  listScopeOptions,
   projectContributionReconciliation,
+  projectExposureDrift,
   projectFireWithContributionPlan,
+  projectPortfolio,
   resolveHoldingAnnualReturnForProjection,
   resolveMonthlySavingsCapacityForFire,
   systemClock,
@@ -26,6 +34,9 @@ import {
   type AgentViewContributionPlanContext,
   type AgentViewContributionReconciliation,
   type AgentViewContributionWhatIf,
+  type AgentViewExposureDimension,
+  type AgentViewExposureDrift,
+  type AgentViewExposureDriftPoint,
   type AgentViewFireScenario,
   AgentViewHttpError,
   type AgentViewMoney,
@@ -112,6 +123,48 @@ export async function buildContributionPlanContext(
 
   const { fire } = await resolveFire(store, options.scopeId);
 
+  const whatIf = await buildWhatIf({
+    store,
+    plan,
+    growthAssumption,
+    fireConfigured: fire.config !== undefined && fire.result !== undefined,
+    ...(fire.result === undefined
+      ? {}
+      : {
+          fireNumberMinor: fire.result.fireNumber.amountMinor,
+          startingEligibleMinor: fire.result.eligibleAssets.amountMinor,
+          expectedRealReturn:
+            fire.result.realReturnUsed ?? fire.config?.expectedRealReturn ?? 0.05,
+        }),
+    ...(fire.config?.currentAge === undefined
+      ? {}
+      : { currentAge: fire.config.currentAge }),
+    assetById,
+    internalScopeId,
+    today,
+    currency,
+    unitPrices,
+  });
+
+  const baseYearsToFire = whatIf.scenarios.find(
+    (scenario) => scenario.label === "base",
+  )?.yearsToFire;
+  const exposureDrift = await buildExposureDrift({
+    store,
+    plan,
+    growthAssumption,
+    assumedAnnualReturn:
+      fire.result?.realReturnUsed ?? fire.config?.expectedRealReturn ?? 0.05,
+    workspace,
+    internalScopeId,
+    assets,
+    assetById,
+    today,
+    currency,
+    unitPrices,
+    ...(baseYearsToFire === undefined ? {} : { horizonYears: baseYearsToFire }),
+  });
+
   return {
     object: "contribution_plan_context",
     scope,
@@ -140,28 +193,8 @@ export async function buildContributionPlanContext(
       unitPrices,
     ),
     reconciliation: toReconciliation(projection, holdingPublicIds, currency, unitPrices),
-    whatIf: await buildWhatIf({
-      store,
-      plan,
-      growthAssumption,
-      fireConfigured: fire.config !== undefined && fire.result !== undefined,
-      ...(fire.result === undefined
-        ? {}
-        : {
-            fireNumberMinor: fire.result.fireNumber.amountMinor,
-            startingEligibleMinor: fire.result.eligibleAssets.amountMinor,
-            expectedRealReturn:
-              fire.result.realReturnUsed ?? fire.config?.expectedRealReturn ?? 0.05,
-          }),
-      ...(fire.config?.currentAge === undefined
-        ? {}
-        : { currentAge: fire.config.currentAge }),
-      assetById,
-      internalScopeId,
-      today,
-      currency,
-      unitPrices,
-    }),
+    whatIf,
+    exposureDrift,
   };
 }
 
@@ -404,15 +437,16 @@ async function buildWhatIf(input: {
 
 async function resolveHoldingAnnualReturns(input: {
   store: AgentViewReadStore;
-  plan: ContributionPlan;
+  plan?: ContributionPlan;
   assetById: Map<string, ManualAsset>;
   internalScopeId: string;
   today: string;
   currency: string;
   assumedAnnualReturn: number;
+  holdingIds?: string[];
 }): Promise<Record<string, number>> {
-  const destinationIds = [
-    ...new Set(input.plan.contributions.map((item) => item.destinationHoldingId)),
+  const destinationIds = input.holdingIds ?? [
+    ...new Set(input.plan?.contributions.map((item) => item.destinationHoldingId) ?? []),
   ];
   const byId: Record<string, number> = {};
 
@@ -551,4 +585,176 @@ function addDays(iso: string, days: number): string {
 
 function moneyOf(amountMinor: number, currency: string): AgentViewMoney {
   return { amountMinor, currency };
+}
+
+const DEFAULT_EXPOSURE_DRIFT_HORIZON_YEARS = 20;
+
+async function buildExposureDrift(input: {
+  store: AgentViewReadStore;
+  plan: ContributionPlan;
+  growthAssumption: FireGrowthAssumption;
+  assumedAnnualReturn: number;
+  workspace: Awaited<ReturnType<AgentViewReadStore["readWorkspace"]>>;
+  internalScopeId: string;
+  assets: ManualAsset[];
+  assetById: Map<string, ManualAsset>;
+  today: string;
+  currency: string;
+  unitPrices: Record<string, string>;
+  horizonYears?: number | null;
+}): Promise<AgentViewExposureDrift> {
+  if (!input.workspace || input.plan.contributions.length === 0) {
+    return {
+      object: "exposure_drift",
+      growthAssumption: input.growthAssumption,
+      assumedAnnualReturn: input.assumedAnnualReturn.toString(),
+      status: "empty",
+      trajectory: [],
+    };
+  }
+
+  const scopeOption =
+    listScopeOptions(input.workspace).find(
+      (scope) => scope.id === input.internalScopeId,
+    ) ?? listScopeOptions(input.workspace)[0];
+  if (!scopeOption) {
+    return {
+      object: "exposure_drift",
+      growthAssumption: input.growthAssumption,
+      assumedAnnualReturn: input.assumedAnnualReturn.toString(),
+      status: "empty",
+      trajectory: [],
+    };
+  }
+
+  const [liabilities, investmentMeta, exposureProfiles] = await Promise.all([
+    input.store.readLiabilities(),
+    input.store.readInvestmentAssetsWithMeta(),
+    input.store.readExposureProfiles(),
+  ]);
+  const portfolio = projectPortfolio({
+    workspace: input.workspace,
+    scope: scopeOption,
+    assets: input.assets,
+    liabilities,
+  });
+  const metaByAssetId = new Map(investmentMeta.map((row) => [row.id, row]));
+  const profileMap = new Map<string, ExposureProfile>(
+    exposureProfiles.map((profile) => [profile.key, profile]),
+  );
+  const holdings: ExposureLookthroughHolding[] = portfolio.sections[0].rows.map(
+    (row) => ({
+      currency: input.currency as ExposureLookthroughHolding["currency"],
+      geography: null,
+      id: row.id,
+      instrument: row.instrument as Instrument,
+      isin: metaByAssetId.get(row.id)?.isin ?? null,
+      providerSymbol: metaByAssetId.get(row.id)?.providerSymbol ?? null,
+      valueMinor: row.valueMinor,
+    }),
+  );
+
+  for (const contribution of input.plan.contributions) {
+    if (holdings.some((holding) => holding.id === contribution.destinationHoldingId)) {
+      continue;
+    }
+    const asset = input.assetById.get(contribution.destinationHoldingId);
+    if (!asset) {
+      continue;
+    }
+    const meta = metaByAssetId.get(asset.id);
+    holdings.push({
+      currency: input.currency as ExposureLookthroughHolding["currency"],
+      geography: null,
+      id: asset.id,
+      instrument: instrumentOfAsset(asset),
+      isin: meta?.isin ?? null,
+      providerSymbol: meta?.providerSymbol ?? null,
+      valueMinor: 0,
+    });
+  }
+
+  const holdingAnnualReturnById = await resolveHoldingAnnualReturns({
+    store: input.store,
+    plan: input.plan,
+    assetById: input.assetById,
+    holdingIds: holdings.map((holding) => holding.id),
+    internalScopeId: input.internalScopeId,
+    today: input.today,
+    currency: input.currency,
+    assumedAnnualReturn: input.assumedAnnualReturn,
+  });
+  const maxYears = Math.min(
+    60,
+    Math.max(1, input.horizonYears ?? DEFAULT_EXPOSURE_DRIFT_HORIZON_YEARS),
+  );
+  const projection = projectExposureDrift({
+    todayISO: input.today,
+    baseCurrency: input.currency as ExposureLookthroughHolding["currency"],
+    plan: input.plan,
+    growthAssumption: input.growthAssumption,
+    assumedAnnualReturn: input.assumedAnnualReturn,
+    holdingAnnualReturnById,
+    unitPriceMajorByHoldingId: input.unitPrices,
+    holdings,
+    profiles: profileMap,
+    maxYears,
+  });
+
+  return {
+    object: "exposure_drift",
+    growthAssumption: input.growthAssumption,
+    assumedAnnualReturn: input.assumedAnnualReturn.toString(),
+    status: holdings.length === 0 ? "empty" : "configured",
+    trajectory: projection.trajectory.map((point) =>
+      toExposureDriftPoint(point, input.currency),
+    ),
+  };
+}
+
+function toExposureDriftPoint(
+  point: {
+    year: number;
+    grossAssets: { amountMinor: number; currency: string };
+    geography: ExposureDimensionResult;
+    assetClass: ExposureDimensionResult;
+  },
+  currency: string,
+): AgentViewExposureDriftPoint {
+  return {
+    year: point.year,
+    grossAssets: moneyOf(point.grossAssets.amountMinor, currency),
+    byGeography: toExposureDimension(point.geography),
+    byAssetClass: toExposureDimension(point.assetClass),
+  };
+}
+
+function toExposureDimension(
+  dimension: ExposureDimensionResult,
+): AgentViewExposureDimension {
+  return {
+    coverage: {
+      classified: moneyOf(
+        dimension.coverage.classified.amountMinor,
+        dimension.coverage.classified.currency,
+      ),
+      notApplicable: moneyOf(
+        dimension.coverage.notApplicable.amountMinor,
+        dimension.coverage.notApplicable.currency,
+      ),
+      unknown: moneyOf(
+        dimension.coverage.unknown.amountMinor,
+        dimension.coverage.unknown.currency,
+      ),
+    },
+    slices: dimension.slices.map(toExposureSlice),
+  };
+}
+
+function toExposureSlice(slice: ExposureAllocationSlice) {
+  return {
+    key: slice.key,
+    value: moneyOf(slice.value.amountMinor, slice.value.currency),
+    weight: slice.weight,
+  };
 }

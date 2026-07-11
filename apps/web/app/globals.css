@@ -151,6 +151,68 @@
   font-size: 0.78rem;
 }
 
+.exposureDriftControls {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-top: 0.75rem;
+}
+
+.exposureDriftToggle {
+  display: inline-flex;
+  gap: 0.35rem;
+}
+
+.exposureDriftToggle button {
+  background: transparent;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 0.35rem 0.65rem;
+}
+
+.exposureDriftToggle button.active {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.exposureDriftYearSelect {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.78rem;
+  gap: 0.25rem;
+}
+
+.exposureDriftNote {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin: 0.75rem 0 0;
+}
+
+.exposureDriftSlices {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.exposureDriftSlice {
+  display: grid;
+  gap: 0.2rem;
+  grid-template-columns: 1fr auto;
+}
+
+.exposureDriftSlice strong {
+  font-family: var(--font-mono);
+}
+
+.exposureDriftCoverage {
+  margin-top: 1rem;
+}
+
 /* Contribution plan reconciliation (#556): forecast stays visually secondary to truth. */
 .contributionMap {
   position: relative;

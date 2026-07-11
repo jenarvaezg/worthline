@@ -12,12 +12,15 @@ import { formatDecimalAsPercentField } from "@web/intake-primitives";
 import { PendingSubmit } from "@web/pending-submit";
 import Shell from "@web/shell";
 import { bootstrapHealthcheck, withStore } from "@web/store";
-import type { FireLevel, PassiveIncomeLens } from "@worthline/domain";
+import type { FireLevel, HoldingReturnsView, PassiveIncomeLens } from "@worthline/domain";
 import {
   collectHoldingPayouts,
   computeMonthlyContributionAllocation,
   formatMoneyMinorPrivacy,
+  instrumentOfAsset,
+  investmentReturnsById,
   listScopeOptions,
+  monthlyCloseValuesFromSnapshotRows,
   prepareObjetivosState,
   projectContributionReconciliation,
   resolveScopeMemberIds,
@@ -27,6 +30,10 @@ import {
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import {
+  buildExposureDriftProjection,
+  exposureDriftTrajectories,
+} from "./build-exposure-drift";
 import { ContributionAllocation } from "./contribution-allocation";
 import {
   ALLOCATION_MONTH_PARAM,
@@ -34,6 +41,8 @@ import {
   parseAllocationMonthParam,
 } from "./contribution-allocation-view";
 import { ContributionReconciliation } from "./contribution-reconciliation";
+import { ExposureDriftSection } from "./exposure-drift-section";
+import { parseExposureDriftGrowth, parseExposureDriftYear } from "./exposure-drift-view";
 import { createGoalAction, deleteGoalAction, updateGoalAction } from "./goal-actions";
 
 export const dynamic = "force-dynamic";
@@ -184,6 +193,9 @@ export default async function ObjetivosPage({
       contributionPlan,
       contributionReconciliations,
       priceCache,
+      investmentMeta,
+      exposureProfiles,
+      returnSnapshotRows,
     ] = await Promise.all([
       store.snapshots.readCurveValuedHoldingsAtDate(today, projectionContext),
       selectedScope ? store.goals.readGoals(selectedScope.id) : Promise.resolve([]),
@@ -198,6 +210,12 @@ export default async function ObjetivosPage({
         ? store.contributionPlan.readReconciliations(selectedScope.id)
         : Promise.resolve([]),
       store.operations.readAllPriceCacheEntries(),
+      store.assets.readInvestmentAssetsWithMeta(),
+      store.exposureProfiles.readExposureProfiles(),
+      store.snapshots.readSnapshotHoldings({
+        kind: "asset",
+        scopeId: selectedScope?.id ?? "household",
+      }),
     ]);
 
     const contributionOperations = (
@@ -227,6 +245,10 @@ export default async function ObjetivosPage({
       contributionReconciliations,
       contributionOperations,
       priceCache,
+      projectionContext,
+      investmentMeta,
+      exposureProfiles,
+      returnSnapshotRows,
     };
   });
 
@@ -250,6 +272,10 @@ export default async function ObjetivosPage({
     contributionReconciliations,
     contributionOperations,
     priceCache,
+    projectionContext,
+    investmentMeta,
+    exposureProfiles,
+    returnSnapshotRows,
   } = storeData;
 
   const {
@@ -330,6 +356,100 @@ export default async function ObjetivosPage({
         todayISO: today,
       })
     : null;
+
+  const assumedAnnualReturn =
+    fireResult?.realReturnUsed ?? fireScopeConfig?.expectedRealReturn ?? 0.05;
+  const exposureDriftHorizon =
+    fireProjection?.scenarios.find((scenario) => scenario.label === "base")
+      ?.yearsToFire ?? 20;
+  const instrumentByAsset = new Map(
+    assets.map((asset) => [asset.id, instrumentOfAsset(asset)]),
+  );
+  const snapshotRowsByAsset = new Map<string, typeof returnSnapshotRows>();
+  for (const row of returnSnapshotRows) {
+    if (!projectionContext.operationsByAsset.has(row.holdingId)) {
+      continue;
+    }
+    const rows = snapshotRowsByAsset.get(row.holdingId);
+    if (rows) {
+      rows.push(row);
+    } else {
+      snapshotRowsByAsset.set(row.holdingId, [row]);
+    }
+  }
+  const monthlyClosesByAsset = new Map(
+    [...snapshotRowsByAsset].map(([assetId, rows]) => [
+      assetId,
+      monthlyCloseValuesFromSnapshotRows(rows),
+    ]),
+  );
+  const payoutsByAsset = new Map(
+    [...payoutsByHolding].map(([assetId, rows]) => [
+      assetId,
+      rows.map((row) => ({ amountMinor: row.amountMinor, date: row.dateISO })),
+    ]),
+  );
+  const investmentReturns = investmentReturnsById({
+    cachedPriceByAsset: projectionContext.cachedPriceByAsset,
+    currency: workspace.baseCurrency,
+    instrumentByAsset,
+    manualPriceByAsset: projectionContext.manualPriceByAsset,
+    monthlyClosesByAsset,
+    operationsByAsset: projectionContext.operationsByAsset,
+    payoutsByAsset,
+    valuationDate: today,
+  });
+  const holdingReturnsById = new Map<string, HoldingReturnsView | null>(
+    [...investmentReturns].map(([assetId, view]) => [assetId, view]),
+  );
+  const exposureDriftTrajectoriesData =
+    contributionPlan && selectedScope && contributionPlan.contributions.length > 0
+      ? exposureDriftTrajectories({
+          flat: buildExposureDriftProjection({
+            workspace,
+            scope: selectedScope,
+            assets,
+            liabilities,
+            investmentMeta,
+            exposureProfiles,
+            contributionPlan,
+            growthAssumption: "flat",
+            assumedAnnualReturn,
+            holdingReturnsById,
+            unitPrices,
+            today,
+            maxYears: exposureDriftHorizon,
+          }).trajectory,
+          historical: buildExposureDriftProjection({
+            workspace,
+            scope: selectedScope,
+            assets,
+            liabilities,
+            investmentMeta,
+            exposureProfiles,
+            contributionPlan,
+            growthAssumption: "historical",
+            assumedAnnualReturn,
+            holdingReturnsById,
+            unitPrices,
+            today,
+            maxYears: exposureDriftHorizon,
+          }).trajectory,
+        })
+      : null;
+  const exposureDriftInitialGrowth = parseExposureDriftGrowth(
+    typeof resolvedSearchParams.driftGrowth === "string"
+      ? resolvedSearchParams.driftGrowth
+      : undefined,
+  );
+  const exposureDriftInitialYear = exposureDriftTrajectoriesData
+    ? parseExposureDriftYear(
+        typeof resolvedSearchParams.driftYear === "string"
+          ? resolvedSearchParams.driftYear
+          : undefined,
+        exposureDriftTrajectoriesData[exposureDriftInitialGrowth],
+      )
+    : 0;
 
   return (
     <Shell
@@ -553,6 +673,16 @@ export default async function ObjetivosPage({
             initialMonthKey={allocationInitialMonth}
             months={monthlyAllocations}
             privacyMode={privacyMode}
+          />
+        ) : null}
+
+        {exposureDriftTrajectoriesData ? (
+          <ExposureDriftSection
+            currency={currency}
+            initialGrowth={exposureDriftInitialGrowth}
+            initialYear={exposureDriftInitialYear}
+            privacyMode={privacyMode}
+            trajectories={exposureDriftTrajectoriesData}
           />
         ) : null}
 

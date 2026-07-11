@@ -113,6 +113,10 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/contribution-plan", () => {
     expect(body.data.whatIf.growthAssumption).toBe("flat");
     expect(body.data.whatIf.status).toBe("configured");
     expect(body.data.whatIf.scenarios).toHaveLength(3);
+    expect(body.data.exposureDrift.object).toBe("exposure_drift");
+    expect(body.data.exposureDrift.growthAssumption).toBe("flat");
+    expect(body.data.exposureDrift.trajectory.length).toBeGreaterThan(0);
+    expect(body.data.exposureDrift.trajectory[0].byGeography.coverage).toBeDefined();
   });
 
   test("an empty plan still labels the response as forecast-only", async () => {
@@ -138,5 +142,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/contribution-plan", () => {
     expect(body.data.status).toBe("empty");
     expect(body.data.contributions).toEqual([]);
     expect(body.data.whatIf.status).toBe("unconfigured");
+    expect(body.data.exposureDrift.status).toBe("empty");
+    expect(body.data.exposureDrift.trajectory).toEqual([]);
   });
 });
