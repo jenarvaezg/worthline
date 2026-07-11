@@ -334,25 +334,29 @@ describe("performance harness (integration, #200)", () => {
 });
 
 describe("performance budgets (large-workspace baseline, #203)", () => {
-  test("the seeded workspace matches the documented large-workspace baseline", async () => {
-    // AC: the benchmark documents the seeded workspace dimensions used as the
-    // large-workspace baseline. We assert the LIVE seed equals the recorded
-    // SEED_DIMENSIONS so the budgets are always anchored to a known scale — a
-    // seed change is a deliberate re-baseline, not a silent drift.
-    const store = await createFileBackedStore("worthline-perf-budget-");
-    await seedPerformanceWorkspace(store);
-    const dimensions = await measureSeedDimensions(store);
-    store.close();
+  test(
+    "the seeded workspace matches the documented large-workspace baseline",
+    async () => {
+      // AC: the benchmark documents the seeded workspace dimensions used as the
+      // large-workspace baseline. We assert the LIVE seed equals the recorded
+      // SEED_DIMENSIONS so the budgets are always anchored to a known scale — a
+      // seed change is a deliberate re-baseline, not a silent drift.
+      const store = await createFileBackedStore("worthline-perf-budget-");
+      await seedPerformanceWorkspace(store);
+      const dimensions = await measureSeedDimensions(store);
+      store.close();
 
-    expect(dimensions).toEqual(SEED_DIMENSIONS);
+      expect(dimensions).toEqual(SEED_DIMENSIONS);
 
-    // Sanity floor: the baseline must stay genuinely "large" so the budgets
-    // measure meaningful work. Hundreds of frozen holding rows is the property
-    // the audit cared about; guard it explicitly rather than trusting the seed.
-    expect(SEED_DIMENSIONS.householdHoldingRows).toBeGreaterThan(1_000);
-    expect(SEED_DIMENSIONS.totalHoldingRows).toBeGreaterThan(2_000);
-    expect(SEED_DIMENSIONS.totalSnapshots).toBeGreaterThan(200);
-  });
+      // Sanity floor: the baseline must stay genuinely "large" so the budgets
+      // measure meaningful work. Hundreds of frozen holding rows is the property
+      // the audit cared about; guard it explicitly rather than trusting the seed.
+      expect(SEED_DIMENSIONS.householdHoldingRows).toBeGreaterThan(1_000);
+      expect(SEED_DIMENSIONS.totalHoldingRows).toBeGreaterThan(2_000);
+      expect(SEED_DIMENSIONS.totalSnapshots).toBeGreaterThan(200);
+    },
+    HARNESS_TIMEOUT_MS,
+  );
 
   test("every audit-flagged hot path has a conservative budget", () => {
     // AC: dashboard load, snapshot holding reads, position reads, and historical
@@ -416,73 +420,81 @@ describe("dashboard load read shape — investment projection reuse (#208)", () 
     Database.prototype.prepare = originalPrepare;
   });
 
-  test("the dashboard capture loop reads the operations table once for the whole load", async () => {
-    const store = await createFileBackedStore("worthline-perf-readshape-");
-    await seedPerformanceWorkspace(store);
+  test(
+    "the dashboard capture loop reads the operations table once for the whole load",
+    async () => {
+      const store = await createFileBackedStore("worthline-perf-readshape-");
+      await seedPerformanceWorkspace(store);
 
-    const workspace = (await store.workspace.readWorkspace())!;
-    const assets = await store.assets.readAssets();
-    const liabilities = await store.liabilities.readLiabilities();
-    const scopes = listScopeOptions(workspace);
-    const selectedScope = scopes[0]!;
+      const workspace = (await store.workspace.readWorkspace())!;
+      const assets = await store.assets.readAssets();
+      const liabilities = await store.liabilities.readLiabilities();
+      const scopes = listScopeOptions(workspace);
+      const selectedScope = scopes[0]!;
 
-    // Reset after seeding + the read-once assets/liabilities reads above, so only
-    // the position-projection reuse seam below is measured.
-    fullOperationScans = 0;
+      // Reset after seeding + the read-once assets/liabilities reads above, so only
+      // the position-projection reuse seam below is measured.
+      fullOperationScans = 0;
 
-    const { details: investmentDetails, positions } =
-      await store.snapshots.readScopedPositionsWithDetails(selectedScope.id);
+      const { details: investmentDetails, positions } =
+        await store.snapshots.readScopedPositionsWithDetails(selectedScope.id);
 
-    for (const scope of scopes) {
-      const capture = captureSnapshotForScope({
-        assets,
-        capturedAt: `${SEED_TODAY}T10:00:00.000Z`,
-        existingSnapshots: await store.snapshots.readSnapshots(scope.id),
-        investmentDetails,
-        liabilities,
-        scope,
-        workspace,
-      });
-      if (capture) {
-        await store.snapshots.saveSnapshot({
-          holdings: capture.holdings,
-          replace: capture.replace,
-          snapshot: capture.snapshot,
+      for (const scope of scopes) {
+        const capture = captureSnapshotForScope({
+          assets,
+          capturedAt: `${SEED_TODAY}T10:00:00.000Z`,
+          existingSnapshots: await store.snapshots.readSnapshots(scope.id),
+          investmentDetails,
+          liabilities,
+          scope,
+          workspace,
         });
+        if (capture) {
+          await store.snapshots.saveSnapshot({
+            holdings: capture.holdings,
+            replace: capture.replace,
+            snapshot: capture.snapshot,
+          });
+        }
       }
-    }
 
-    // Both the unscoped capture details and the selected scope's positions came
-    // from a single context build — one full operations scan, not the two the
-    // old unscoped-then-scoped readPositions() pair performed.
-    expect(positions.length).toBeGreaterThan(0);
-    expect(fullOperationScans).toBe(1);
+      // Both the unscoped capture details and the selected scope's positions came
+      // from a single context build — one full operations scan, not the two the
+      // old unscoped-then-scoped readPositions() pair performed.
+      expect(positions.length).toBeGreaterThan(0);
+      expect(fullOperationScans).toBe(1);
 
-    store.close();
-  });
+      store.close();
+    },
+    HARNESS_TIMEOUT_MS,
+  );
 
-  test("a shared projection context reads the operations table once across assets + positions (#566)", async () => {
-    const store = await createFileBackedStore("worthline-perf-dedup-");
-    await seedPerformanceWorkspace(store);
+  test(
+    "a shared projection context reads the operations table once across assets + positions (#566)",
+    async () => {
+      const store = await createFileBackedStore("worthline-perf-dedup-");
+      await seedPerformanceWorkspace(store);
 
-    const workspace = (await store.workspace.readWorkspace())!;
-    const selectedScope = listScopeOptions(workspace)[0]!;
+      const workspace = (await store.workspace.readWorkspace())!;
+      const selectedScope = listScopeOptions(workspace)[0]!;
 
-    // load-dashboard builds the projection context ONCE and passes it to both
-    // readAssets and readScopedPositionsWithDetails (dedup #566). The shared
-    // context scans asset_operations exactly once; drop the context-passing and
-    // each call rebuilds it, pushing the count above one and failing this test.
-    fullOperationScans = 0;
-    const projectionContext = await store.snapshots.buildProjectionContext();
-    await store.assets.readAssets(projectionContext);
-    const { positions } = await store.snapshots.readScopedPositionsWithDetails(
-      selectedScope.id,
-      projectionContext,
-    );
+      // load-dashboard builds the projection context ONCE and passes it to both
+      // readAssets and readScopedPositionsWithDetails (dedup #566). The shared
+      // context scans asset_operations exactly once; drop the context-passing and
+      // each call rebuilds it, pushing the count above one and failing this test.
+      fullOperationScans = 0;
+      const projectionContext = await store.snapshots.buildProjectionContext();
+      await store.assets.readAssets(projectionContext);
+      const { positions } = await store.snapshots.readScopedPositionsWithDetails(
+        selectedScope.id,
+        projectionContext,
+      );
 
-    expect(positions.length).toBeGreaterThan(0);
-    expect(fullOperationScans).toBe(1);
+      expect(positions.length).toBeGreaterThan(0);
+      expect(fullOperationScans).toBe(1);
 
-    store.close();
-  });
+      store.close();
+    },
+    HARNESS_TIMEOUT_MS,
+  );
 });
