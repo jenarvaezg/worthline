@@ -14,6 +14,12 @@ test.describe("PWA: manifest & service worker", () => {
     expect(manifest.background_color).toBe("#eef2ef"); // --paper token
   });
 
+  test("Slice 1b: legacy start_url / still opens the dashboard", async ({ page }) => {
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/app/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("worthline");
+  });
+
   test("Slice 2a: sw.js is served", async ({ request }) => {
     const response = await request.get("/sw.js");
     expect(response.status()).toBe(200);

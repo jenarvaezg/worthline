@@ -33,4 +33,17 @@ test.describe("route migration — no-auth mode", () => {
     const manifest = await (await request.get("/manifest.json")).json();
     expect(manifest.start_url).toBe("/app");
   });
+
+  test("legacy PWA start_url (/) opens the dashboard via redirect", async ({ page }) => {
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/app/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("worthline");
+  });
+
+  test("demo persona seed lands on /app", async ({ page }) => {
+    await page.goto("/demo/persona?persona=familia");
+    await expect(page).toHaveURL(/\/app/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("worthline");
+    await expect(page.getByRole("note", { name: "Modo demostración" })).toBeVisible();
+  });
 });
