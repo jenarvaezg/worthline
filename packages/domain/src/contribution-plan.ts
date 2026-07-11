@@ -331,23 +331,27 @@ function cadenceMonthlyFactor(cadence: ContributionCadence): number {
   }
 }
 
-function occurrenceMoneyMinor(
-  contribution: PlannedContribution,
+/** Minor units for one forecast occurrence (money or units × price). */
+export function contributionOccurrenceMoneyMinor(
+  occurrence: Pick<ContributionOccurrence, "destinationHoldingId" | "amount">,
   unitPriceMajorByHoldingId?: Record<string, string>,
 ): number | null {
-  if (contribution.amount.mode === "money") {
-    return contribution.amount.value;
+  if (occurrence.amount.mode === "money") {
+    return occurrence.amount.value;
   }
-  const price = unitPriceMajorByHoldingId?.[contribution.destinationHoldingId];
+  const price = unitPriceMajorByHoldingId?.[occurrence.destinationHoldingId];
   if (price === undefined) return null;
-  return multiplyToMinor(contribution.amount.value, price);
+  return multiplyToMinor(occurrence.amount.value, price);
 }
 
 function monthlyEquivalentMinor(
   contribution: PlannedContribution,
   unitPriceMajorByHoldingId?: Record<string, string>,
 ): number | null {
-  const perOccurrence = occurrenceMoneyMinor(contribution, unitPriceMajorByHoldingId);
+  const perOccurrence = contributionOccurrenceMoneyMinor(
+    contribution,
+    unitPriceMajorByHoldingId,
+  );
   if (perOccurrence === null) return null;
   return Math.round(perOccurrence * cadenceMonthlyFactor(contribution.cadence));
 }
