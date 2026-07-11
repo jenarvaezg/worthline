@@ -283,7 +283,6 @@ export default async function ObjetivosPage({
     fireResult,
     fireScopeConfig,
     coastTickFraction,
-    warnings,
     goals: goalsView,
     fireLevelRail,
   } = prepareObjetivosState({
@@ -461,11 +460,6 @@ export default async function ObjetivosPage({
       }}
       scopes={scopes}
       selectedScopeId={selectedScope?.id}
-      warnings={warnings.map((w) => ({
-        code: w.code,
-        entityId: w.entityId,
-        message: w.message,
-      }))}
     >
       <div className="objetivosPage">
         <header className="objetivosHeader">

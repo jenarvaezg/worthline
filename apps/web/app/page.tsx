@@ -63,7 +63,6 @@ export default async function DashboardPage({
       persistence={shellData.persistence}
       scopes={shellData.scopes}
       selectedScopeId={shellData.selectedScopeId}
-      warnings={[]}
     >
       <Suspense fallback={<DashboardSkeleton />}>
         <DashboardContent

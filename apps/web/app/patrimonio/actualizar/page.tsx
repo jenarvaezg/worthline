@@ -111,7 +111,6 @@ export default async function PuestaAlDiaPage({
       persistence={persistence}
       scopes={scopes}
       selectedScopeId={selectedScope?.id}
-      warnings={[]}
     >
       {formError ? (
         <p className="errorBand" role="alert">

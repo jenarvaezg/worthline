@@ -726,27 +726,13 @@ textarea {
   color: var(--paper-strong);
 }
 
-/* Warnings rail — compact count + item list. */
-.warningCount {
-  color: var(--gold);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
+/* Per-holding warning item — the edit page's in-situ warnings list. */
 .warningItem {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 4px;
-}
-
-.warningLink {
-  color: #92400e;
-  font-size: 0.78rem;
-  font-weight: 700;
 }
 
 .brand {
@@ -864,6 +850,87 @@ h3 {
   color: var(--green);
   /* Confirmation rise-in: discreet fade + small lift, once on appear (#639). */
   animation: wl-rise-in var(--dur-base) var(--ease-out) both;
+}
+
+/* Home hero data-health alert (#665, PRD #654 S3): an ephemeral block inside the
+   hero, after the delta chips and before the breakdown stats. Error = red and
+   action-forward; warning = quieter gold. Absent entirely when clean, so it
+   leaves no residual space (the component returns null). */
+.heroHealthAlert {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 4px;
+  padding: 12px 14px;
+}
+
+.heroHealthAlert--error {
+  background: rgba(185, 68, 47, 0.1);
+  border-color: var(--red);
+  /* One-shot shake — draws the eye without nagging (#639), matching .errorBand. */
+  animation: wl-shake var(--dur-base) var(--ease-standard);
+}
+
+.heroHealthAlert--warning {
+  background: rgba(179, 131, 31, 0.12);
+  border-color: var(--gold);
+}
+
+.heroHealthLead {
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.heroHealthAlert--error .heroHealthLead {
+  color: var(--red);
+}
+
+.heroHealthAlert--warning .heroHealthLead {
+  color: var(--gold);
+}
+
+.heroHealthList {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.heroHealthItem {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.heroHealthMsg {
+  color: var(--paper-strong);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.heroHealthFix {
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+.heroHealthAlert--error .heroHealthFix {
+  color: var(--red);
+}
+
+.heroHealthAlert--warning .heroHealthFix {
+  color: var(--gold);
+}
+
+.heroHealthMore {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 600;
 }
 
 /* Validation error rendered beside the form that failed — same square,

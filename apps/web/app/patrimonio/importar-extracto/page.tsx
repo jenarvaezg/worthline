@@ -8,7 +8,7 @@ import {
 } from "@web/intake";
 import Shell from "@web/shell";
 import { bootstrapHealthcheck, withStore } from "@web/store";
-import { collectWarnings, listScopeOptions } from "@worthline/domain";
+import { listScopeOptions } from "@worthline/domain";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { confirmImportStatementAction, previewImportStatementAction } from "./actions";
@@ -45,17 +45,15 @@ export default async function ImportarExtractoPage({
 
     const scopes = listScopeOptions(workspace);
     const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
-    const assets = await store.assets.readAssets();
-    const overrides = await store.readWarningOverrides();
 
-    return { scopes, selectedScope, warnings: collectWarnings(assets, overrides) };
+    return { scopes, selectedScope };
   });
 
   if (!storeData) {
     redirect("/empezar");
   }
 
-  const { scopes, selectedScope, warnings } = storeData;
+  const { scopes, selectedScope } = storeData;
 
   return (
     <Shell
@@ -64,7 +62,6 @@ export default async function ImportarExtractoPage({
       persistence={persistence}
       scopes={scopes}
       selectedScopeId={selectedScope?.id}
-      warnings={warnings}
     >
       {formError ? (
         <p className="errorBand" role="alert">
