@@ -5,6 +5,7 @@ import { createAgentViewReadStore } from "./agent-view-read-store";
 import { createAssetStore } from "./asset-store";
 import { createAssistantProposalStore } from "./assistant-proposal-store";
 import { createCommandHost } from "./commands/host";
+import { executeImportBalanceHistoryCommand } from "./commands/import-balance-history";
 import { createConnectedSourceSeams } from "./connected-source-seams";
 import { createConnectedSourceStore } from "./connected-source-store";
 import {
@@ -383,6 +384,30 @@ async function buildStore(
           );
         }
         await store.applyStatementImportAndRipple(params);
+        await assistantProposalStore.markApplied(proposalId);
+      }),
+    applyAssistantBalanceHistoryProposalAndRipple: async ({
+      proposalId,
+      liabilityId,
+      rebaselines,
+      today,
+    }) =>
+      ctx.transaction(async () => {
+        const proposal = await assistantProposalStore.read(proposalId);
+        if (!proposal || proposal.kind !== "balance_history_import") {
+          throw new Error(`Assistant proposal "${proposalId}" is not a debt history.`);
+        }
+        if (proposal.status !== "draft") {
+          throw new Error(
+            `Assistant proposal "${proposalId}" is already resolved as ${proposal.status}.`,
+          );
+        }
+        const result = await executeImportBalanceHistoryCommand(store, {
+          liabilityId,
+          rebaselines,
+          today,
+        });
+        if (!result.ok) throw new Error(result.error);
         await assistantProposalStore.markApplied(proposalId);
       }),
     command: commandHost,

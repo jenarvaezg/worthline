@@ -318,6 +318,7 @@ CREATE TABLE \`liability_balance_rebaselines\` (
 	\`monthly_payment_minor\` integer NOT NULL,
 	\`input_mode\` text NOT NULL,
 	\`starts_at_baseline\` integer DEFAULT 0 NOT NULL,
+	\`source\` text DEFAULT 'manual' NOT NULL,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	FOREIGN KEY (\`liability_id\`) REFERENCES \`liabilities\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );

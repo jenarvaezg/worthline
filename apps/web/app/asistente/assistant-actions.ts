@@ -1,3 +1,7 @@
+import {
+  type BalanceHistoryProposal,
+  parseBalanceHistoryProposalDraft,
+} from "./balance-history-proposal-contract";
 import type {
   ExposureProfileProposal,
   ExposureProfileProposalPreview,
@@ -184,6 +188,26 @@ export function parseStatementImportProposal(
     draft: parsed.draft,
     funds: raw["funds"] as StatementImportProposal["funds"],
   };
+}
+
+export function parseBalanceHistoryProposal(raw: unknown): BalanceHistoryProposal | null {
+  if (!isRecord(raw) || raw.proposalType !== "balance_history_import") return null;
+  const draft = parseBalanceHistoryProposalDraft(raw.draft);
+  if (!draft.ok || !isRecord(raw.liability) || typeof raw.liability.id !== "string")
+    return null;
+  if (
+    !Array.isArray(raw.points) ||
+    !Array.isArray(raw.curve) ||
+    !isRecord(raw.reconciliation)
+  )
+    return null;
+  if (
+    typeof raw.reconciliation.expectedMinor !== "number" ||
+    typeof raw.reconciliation.resultingMinor !== "number" ||
+    typeof raw.reconciliation.matches !== "boolean"
+  )
+    return null;
+  return raw as unknown as BalanceHistoryProposal;
 }
 
 /** Resolve a cited internal source to its product route, or null if it has none. */

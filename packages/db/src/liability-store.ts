@@ -179,6 +179,7 @@ export interface AddBalanceRebaselineInput {
   annualInterestRate?: DecimalString;
   monthlyPaymentMinor?: number;
   startsAtBaseline?: boolean;
+  source?: "manual" | "agent";
 }
 
 /** A stored current-state balance re-baseline as read back from the store. */
@@ -188,6 +189,7 @@ export interface BalanceRebaselineRecord extends BalanceRebaselineInput {
   monthlyPaymentMinor: number;
   inputMode: BalanceRebaselineInputMode;
   startsAtBaseline: boolean;
+  source: "manual" | "agent";
 }
 
 /** Fields that can be patched on an existing balance re-baseline. */
@@ -1059,6 +1061,7 @@ async function addBalanceRebaseline(
       nextPaymentDate: input.nextPaymentDate,
       outstandingBalanceMinor: input.outstandingBalanceMinor,
       startsAtBaseline: input.startsAtBaseline ?? false,
+      source: input.source ?? "manual",
     })
     .run();
 
@@ -1093,6 +1096,7 @@ async function readBalanceRebaselines(
     nextPaymentDate: row.nextPaymentDate,
     outstandingBalanceMinor: row.outstandingBalanceMinor,
     startsAtBaseline: row.startsAtBaseline,
+    source: row.source,
   }));
 }
 

@@ -37,6 +37,6 @@ describe("assistant proposals migration", () => {
       "provenance",
       "created_at",
     ]);
-    expect(await readSchemaVersion(client)).toBe(47);
+    expect(await readSchemaVersion(client)).toBe(48);
   });
 });

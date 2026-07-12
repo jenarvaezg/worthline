@@ -22,7 +22,12 @@ export interface StatementOperationFact {
   row: ParsedStatementRow;
 }
 
-export type AssistantProposalFact = StatementOperationFact;
+export interface DebtBalanceObservationFact {
+  kind: "debt_balance_observation";
+  row: { liabilityId: string; date: string; balanceMinor: number; annualRate?: string };
+}
+
+export type AssistantProposalFact = StatementOperationFact | DebtBalanceObservationFact;
 
 export interface AssistantProposalDocument {
   id: string;
@@ -70,7 +75,7 @@ async function createProposal(
   ctx: StoreContext,
   input: { kind: AssistantProposalKind },
 ): Promise<AssistantProposal> {
-  if (input.kind !== "statement_import") {
+  if (input.kind !== "statement_import" && input.kind !== "balance_history_import") {
     throw new Error(`Unsupported assistant proposal kind: ${String(input.kind)}`);
   }
   const now = new Date().toISOString();
@@ -88,6 +93,17 @@ async function createProposal(
 function normalizeFact(
   fact: ParsedStatementRow | AssistantProposalFact,
 ): AssistantProposalFact {
+  if (fact.kind === "debt_balance_observation" && "row" in fact) {
+    return {
+      kind: fact.kind,
+      row: {
+        balanceMinor: fact.row.balanceMinor,
+        date: fact.row.date,
+        liabilityId: fact.row.liabilityId,
+        ...(fact.row.annualRate === undefined ? {} : { annualRate: fact.row.annualRate }),
+      },
+    };
+  }
   const row =
     fact.kind === "statement_operation" && "row" in fact
       ? fact.row
@@ -201,8 +217,17 @@ async function readProposal(
         sha256: document.sha256,
       },
       facts: facts.map((fact) => {
-        if (fact.kind !== "statement_operation") {
+        if (
+          fact.kind !== "statement_operation" &&
+          fact.kind !== "debt_balance_observation"
+        ) {
           throw new Error(`Unsupported assistant proposal fact kind: ${fact.kind}`);
+        }
+        if (fact.kind === "debt_balance_observation") {
+          return {
+            kind: fact.kind,
+            row: JSON.parse(fact.payloadJson) as DebtBalanceObservationFact["row"],
+          };
         }
         return {
           kind: "statement_operation",

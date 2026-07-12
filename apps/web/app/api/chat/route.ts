@@ -162,6 +162,7 @@ export async function POST(request: Request): Promise<Response> {
           run({
             agentView: store.agentView,
             assistantProposals: store.assistantProposals,
+            liabilities: store.liabilities,
           }),
         target,
       ),
