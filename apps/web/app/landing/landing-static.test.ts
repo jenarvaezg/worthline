@@ -7,9 +7,9 @@ import { describe, expect, test } from "vitest";
 /**
  * Static invariant of the public landing (#951, gate of PRD #877): the route
  * prerenders at build time and serves as pure static HTML — no per-visit
- * cookie reads, no DB access, no client components. This test is the CI
- * tripwire: any import that would drag the route into dynamic rendering
- * fails here instead of shipping.
+ * cookie reads or DB access. #953 permits exactly one progressive client island
+ * for session presentation and motion orchestration; this tripwire keeps that
+ * exception narrow instead of letting the route drift into dynamic rendering.
  */
 
 const landingDir = dirname(fileURLToPath(import.meta.url));
@@ -20,7 +20,6 @@ const sources = readdirSync(landingDir)
 
 /** Anything that reads the request or a store makes the route dynamic. */
 const FORBIDDEN = [
-  "use client",
   "force-dynamic",
   "next/headers",
   "@worthline/db",
@@ -38,7 +37,7 @@ describe("landing static invariant (#951)", () => {
     expect(page!.text).toContain('export const dynamic = "force-static"');
   });
 
-  test("no landing source can read cookies, a store, or go client-side", () => {
+  test("no landing source can read cookies, a store, or opt into dynamic rendering", () => {
     expect(sources.length).toBeGreaterThan(0);
 
     for (const { name, text } of sources) {
@@ -48,5 +47,11 @@ describe("landing static invariant (#951)", () => {
         );
       }
     }
+  });
+
+  test("allows exactly the single progressive landing experience island", () => {
+    const clientSources = sources.filter(({ text }) => text.includes('"use client"'));
+
+    expect(clientSources.map(({ name }) => name)).toEqual(["landing-experience.tsx"]);
   });
 });

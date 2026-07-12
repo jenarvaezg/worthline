@@ -1,5 +1,8 @@
+import type { CSSProperties } from "react";
+
 import { heroSheetData } from "./hero-sheet/build-hero-sheet";
 import styles from "./landing.module.css";
+import LandingExperience from "./landing-experience";
 
 /**
  * Landing pública «Evoluciona tu Excel» (#951, PRD #877): las 9 secciones del
@@ -14,8 +17,8 @@ import styles from "./landing.module.css";
  * cuadra (bruto − deuda = neto) por construcción, no a mano. Ver
  * `./hero-sheet/build-hero-sheet` para por qué eso no rompe la invariante
  * estática (siembra en memoria solo en build, cero lecturas de DB por visita).
- * La isla de sesión y la orquestación de animaciones llegan en S5 (#953); aquí
- * el masthead ofrece la entrada sin sesión.
+ * S5 (#953) añade una única isla progresiva en el masthead: resuelve la sesión
+ * en cliente y orquesta este mismo DOM; sin JS permanece íntegro y ofrece Entrar.
  */
 
 function DemoLink({ label = "Velo en la demo" }: { label?: string }) {
@@ -26,9 +29,14 @@ function DemoLink({ label = "Velo en la demo" }: { label?: string }) {
   );
 }
 
-function Ctas() {
+function Ctas({ coverStage }: { coverStage?: number } = {}) {
   return (
-    <div className={styles.ctas}>
+    <div
+      className={
+        coverStage === undefined ? styles.ctas : `${styles.ctas} ${styles.stage}`
+      }
+      data-cover-stage={coverStage}
+    >
       <a className={`${styles.btn} ${styles.btnPaper}`} href="/login?returnTo=/app">
         Empezar con mis datos
       </a>
@@ -50,34 +58,40 @@ function Cover() {
         {heroSheetData.netGhost}
       </div>
       <div className={styles.wrap}>
-        <header className={styles.masthead}>
+        <header className={`${styles.masthead} ${styles.stage}`} data-cover-stage="0">
           <a className={styles.wordmark} href="#top">
             worthline
           </a>
           <span className={styles.spacer} />
           <a href="/demo">Explorar la demo</a>
-          <a className={styles.session} href="/login">
-            Entrar
-          </a>
+          <LandingExperience
+            netFinal={heroSheetData.netLabel}
+            netTarget={Math.round(heroSheetData.netMinor / 100)}
+            sessionClassName={styles.session}
+            sessionPlaceholderClassName={styles.sessionPlaceholder}
+            sessionSlotClassName={styles.sessionSlot}
+          />
         </header>
 
         <div className={styles.coverGrid}>
           <div>
-            <p className={styles.eyebrow}>El libro mayor de tu patrimonio</p>
-            <h1>
+            <p className={`${styles.eyebrow} ${styles.stage}`} data-cover-stage="1">
+              El libro mayor de tu patrimonio
+            </p>
+            <h1 className={styles.stage} data-cover-stage="2">
               Evoluciona tu Excel<span className={styles.dot}>.</span>
             </h1>
-            <p className={styles.lede}>
+            <p className={`${styles.lede} ${styles.stage}`} data-cover-stage="3">
               Todo tu patrimonio — activos, deudas, retornos reales, FIRE — por fin{" "}
               <strong>en una sola imagen</strong>. Cerrada, auditable y tuya.
             </p>
-            <Ctas />
+            <Ctas coverStage={4} />
           </div>
 
           <HeroSheet />
         </div>
 
-        <p className={styles.scrollCue}>
+        <p className={`${styles.scrollCue} ${styles.stage}`} data-cover-stage="6">
           <a href="#paginas">▾ Abre el libro</a>
         </p>
       </div>
@@ -97,7 +111,7 @@ function HeroSheet() {
     .join(", ")}`;
 
   return (
-    <figure className={styles.sheetFigure}>
+    <figure className={`${styles.sheetFigure} ${styles.stage}`} data-cover-stage="5">
       <span className={styles.marginalia} aria-hidden="true">
         {heroSheetData.closedLabel} — nada se recalcula
       </span>
@@ -105,9 +119,11 @@ function HeroSheet() {
         <div className={styles.sheetTop}>
           <div className={styles.heroFigure}>
             <span className={styles.label}>Neto total</span>
-            <span className={styles.figWrap}>
-              <span className={styles.num}>{heroSheetData.netLabel}</span>
-              <span className={styles.dblrule} />
+            <span className={styles.figWrap} data-net-final={heroSheetData.netLabel}>
+              <span className={styles.num} data-net-figure="">
+                {heroSheetData.netLabel}
+              </span>
+              <span className={styles.dblrule} data-net-rule="" />
             </span>
           </div>
           <div className={styles.sheetRight}>
@@ -124,24 +140,36 @@ function HeroSheet() {
             <span>Últimos 12 cierres</span>
             <span className={styles.num}>{heroSheetData.sparkCaption}</span>
           </div>
-          <svg
-            className={styles.spark}
-            viewBox="0 0 300 46"
-            preserveAspectRatio="none"
-            aria-hidden="true"
-          >
-            <polyline
-              points={sparkline.points}
-              fill="none"
-              stroke="var(--ink)"
-              strokeWidth="1.7"
-              vectorEffect="non-scaling-stroke"
-            />
-            <circle cx={sparkline.last.x} cy={sparkline.last.y} r="3" fill="var(--ink)" />
-          </svg>
+          <div className={styles.sparkClip} data-net-spark="">
+            <svg
+              className={styles.spark}
+              viewBox="0 0 300 46"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <polyline
+                points={sparkline.points}
+                fill="none"
+                stroke="var(--ink)"
+                strokeWidth="1.7"
+                vectorEffect="non-scaling-stroke"
+              />
+              <circle
+                cx={sparkline.last.x}
+                cy={sparkline.last.y}
+                r="3"
+                fill="var(--ink)"
+              />
+            </svg>
+          </div>
         </div>
 
-        <div className={styles.compBar} role="img" aria-label={compLabel}>
+        <div
+          className={styles.compBar}
+          data-comp-bar=""
+          role="img"
+          aria-label={compLabel}
+        >
           {composition.map((seg) => (
             <span
               key={seg.tier}
@@ -220,7 +248,7 @@ function Transition() {
   ];
 
   return (
-    <section className={styles.entry}>
+    <section className={styles.entry} data-reveal-seat="">
       <div className={styles.entryHead}>
         <span className={styles.label}>La transición</span>
         <span className={styles.folio}>Asiento Nº 01</span>
@@ -232,7 +260,7 @@ function Transition() {
       </p>
 
       <div className={styles.diptych}>
-        <div>
+        <div className={styles.reveal} data-reveal="">
           <div
             className={styles.xls}
             role="img"
@@ -263,15 +291,18 @@ function Transition() {
                   <td>Piso Madrid</td>
                   <td className={styles.num}>?</td>
                   <td className={styles.err}>
-                    #¡REF!
-                    <svg
-                      className={styles.penCircle}
-                      width="86"
-                      height="40"
-                      aria-hidden="true"
-                    >
-                      <ellipse cx="43" cy="20" rx="38" ry="15" />
-                    </svg>
+                    <span className={styles.refError} data-ref-text="">
+                      #¡REF!
+                      <svg
+                        className={styles.penCircle}
+                        data-pen-circle=""
+                        width="86"
+                        height="40"
+                        aria-hidden="true"
+                      >
+                        <ellipse pathLength="1" cx="43" cy="20" rx="38" ry="15" />
+                      </svg>
+                    </span>
                   </td>
                 </tr>
                 <tr>
@@ -288,7 +319,7 @@ function Transition() {
               <span className={styles.tabOn}>v2-final-FINAL</span>
             </div>
           </div>
-          <span className={styles.penNote} aria-hidden="true">
+          <span className={styles.penNote} data-pen-note="" aria-hidden="true">
             ¿te suena?
           </span>
         </div>
@@ -296,8 +327,13 @@ function Transition() {
           →
         </div>
         <div className={styles.ledgerSide}>
-          {ledger.map((row) => (
-            <div key={row.what} className={styles.lr}>
+          {ledger.map((row, index) => (
+            <div
+              key={row.what}
+              className={`${styles.lr} ${styles.reveal}`}
+              data-reveal=""
+              style={{ "--reveal-delay": `${0.05 + index * 0.1}s` } as CSSProperties}
+            >
               <span className={styles.what}>
                 {row.what}
                 <small>{row.how}</small>
@@ -314,7 +350,7 @@ function Transition() {
 /** Sección 4: las cuatro pruebas de profundidad inversora, con el mismo peso. */
 function Proofs() {
   return (
-    <section className={styles.entry}>
+    <section className={styles.entry} data-reveal-seat="">
       <div className={styles.entryHead}>
         <span className={styles.label}>Profundidad inversora</span>
         <span className={styles.folio}>Asiento Nº 02</span>
@@ -324,7 +360,7 @@ function Proofs() {
         Cuatro respuestas que una hoja de cálculo solo puede aproximar.
       </p>
       <div className={styles.quad}>
-        <div className={styles.proof}>
+        <div className={`${styles.proof} ${styles.reveal}`} data-reveal="">
           <h3>Retornos reales</h3>
           <p>
             IRR y TWR por posición y cartera — la respuesta que tu Excel aproximaba con
@@ -337,6 +373,7 @@ function Proofs() {
             </div>
             <svg
               className={styles.spark}
+              data-draw=""
               viewBox="0 0 300 44"
               preserveAspectRatio="none"
               aria-hidden="true"
@@ -355,7 +392,11 @@ function Proofs() {
             </p>
           </div>
         </div>
-        <div className={styles.proof}>
+        <div
+          className={`${styles.proof} ${styles.reveal}`}
+          data-reveal=""
+          style={{ "--reveal-delay": "0.1s" } as CSSProperties}
+        >
           <h3>Cobros</h3>
           <p>
             Dividendos, intereses y rentas como registros de atribución — nunca inventados
@@ -379,7 +420,11 @@ function Proofs() {
             </p>
           </div>
         </div>
-        <div className={styles.proof}>
+        <div
+          className={`${styles.proof} ${styles.reveal}`}
+          data-reveal=""
+          style={{ "--reveal-delay": "0.15s" } as CSSProperties}
+        >
           <h3>Exposición real</h3>
           <p>
             Look-through de fondos: qué geografías y divisas pesan de verdad en tu
@@ -388,6 +433,7 @@ function Proofs() {
           <div className={styles.viz}>
             <div
               className={styles.expoBar}
+              data-draw=""
               role="img"
               aria-label="EEUU 54 %, Europa 31 %, emergentes 8 %, otros 7 %"
             >
@@ -419,7 +465,11 @@ function Proofs() {
             </p>
           </div>
         </div>
-        <div className={styles.proof}>
+        <div
+          className={`${styles.proof} ${styles.reveal}`}
+          data-reveal=""
+          style={{ "--reveal-delay": "0.2s" } as CSSProperties}
+        >
           <h3>FIRE y objetivos</h3>
           <p>
             Proyección con tus números reales y objetivos con fecha — no una calculadora
@@ -428,6 +478,7 @@ function Proofs() {
           <div className={styles.viz}>
             <div
               className={styles.track}
+              data-draw=""
               role="img"
               aria-label="Progreso hacia la independencia: 31 por ciento"
             >
@@ -486,15 +537,20 @@ function Maintenance() {
   ];
 
   return (
-    <section className={styles.entry}>
+    <section className={styles.entry} data-reveal-seat="">
       <div className={styles.entryHead}>
         <span className={styles.label}>Mantenimiento</span>
         <span className={styles.folio}>Asiento Nº 03</span>
       </div>
       <h2>Actualizar deja de ser un trabajo</h2>
       <div className={styles.steps}>
-        {steps.map((step) => (
-          <div key={step.k} className={styles.s}>
+        {steps.map((step, index) => (
+          <div
+            key={step.k}
+            className={`${styles.s} ${styles.reveal}`}
+            data-reveal=""
+            style={{ "--reveal-delay": `${index * 0.08}s` } as CSSProperties}
+          >
             <span className={`${styles.k} ${styles.num}`}>{step.k}</span>
             <h3>{step.title}</h3>
             <p>{step.body}</p>
@@ -508,14 +564,14 @@ function Maintenance() {
 /** Sección 6: control y trazabilidad — la propiedad manda. */
 function Control() {
   return (
-    <section className={styles.entry}>
+    <section className={styles.entry} data-reveal-seat="">
       <div className={styles.entryHead}>
         <span className={styles.label}>Confianza</span>
         <span className={styles.folio}>Asiento Nº 04</span>
       </div>
       <h2>Tus cifras, cerradas y tuyas.</h2>
       <div className={styles.controlGrid}>
-        <div className={styles.cg}>
+        <div className={`${styles.cg} ${styles.reveal}`} data-reveal="">
           <h3>
             Cada mes se cierra <span className={styles.miniDbl} aria-hidden="true" />
           </h3>
@@ -524,11 +580,19 @@ function Control() {
             auditada.
           </p>
         </div>
-        <div className={styles.cg}>
+        <div
+          className={`${styles.cg} ${styles.reveal}`}
+          data-reveal=""
+          style={{ "--reveal-delay": "0.1s" } as CSSProperties}
+        >
           <h3>Tus datos salen contigo</h3>
           <p>Export completo en JSON, y tu espacio vive en su propia base de datos.</p>
         </div>
-        <div className={styles.cg}>
+        <div
+          className={`${styles.cg} ${styles.reveal}`}
+          data-reveal=""
+          style={{ "--reveal-delay": "0.2s" } as CSSProperties}
+        >
           <h3>Sin conectar tu banco. A propósito.</h3>
           <p>
             Tus credenciales bancarias no viven aquí — tú decides qué entra, con preview.
@@ -545,23 +609,28 @@ function Control() {
 /** Sección 7: la IA contenida — el asistente solo lee. */
 function Assistant() {
   return (
-    <section className={styles.entry}>
+    <section className={styles.entry} data-reveal-seat="">
       <div className={styles.entryHead}>
         <span className={styles.label}>Asistente</span>
         <span className={styles.folio}>Asiento Nº 05</span>
       </div>
       <h2>Habla con tu patrimonio. Y que te responda con la cifra exacta.</h2>
       <div className={styles.chatWrap}>
-        <div className={styles.chatSheet}>
+        <div className={`${styles.chatSheet} ${styles.reveal}`} data-reveal="">
           <p className={styles.who}>Tú</p>
           <p className={styles.q}>¿Cuánto cobré en dividendos en 2025?</p>
           <p className={styles.who}>worthline</p>
-          <p className={styles.a}>
+          <p className={`${styles.a} ${styles.srOnly}`} data-chat-semantic="">
             En 2025 cobraste <strong className={styles.num}>1.847 €</strong>:{" "}
             <span className={styles.num}>1.212 €</span> en dividendos y{" "}
             <span className={styles.num}>635 €</span> en intereses.<sup>1</sup>
           </p>
-          <p className={styles.chatFoot}>
+          <p className={styles.a} data-chat-visual="" aria-hidden="true">
+            En 2025 cobraste <strong className={styles.num}>1.847 €</strong>:{" "}
+            <span className={styles.num}>1.212 €</span> en dividendos y{" "}
+            <span className={styles.num}>635 €</span> en intereses.<sup>1</sup>
+          </p>
+          <p className={styles.chatFoot} data-chat-foot="">
             <sup>1</sup> Fuente: tus registros de cobros ·{" "}
             <span className={styles.num}>14</span> apuntes
           </p>
@@ -642,7 +711,7 @@ function Bookend() {
 
 export default function LandingContent() {
   return (
-    <div className={styles.landing}>
+    <div className={styles.landing} data-landing-root="" data-motion="pending">
       <Cover />
       <main className={styles.pages} id="paginas">
         <div className={styles.wrap}>

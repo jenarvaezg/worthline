@@ -39,7 +39,7 @@ test("landing: the 9 sections read fully with JavaScript disabled", async ({ pag
   }
 
   // La respuesta del chat está completa en el DOM, no tecleada por JS.
-  await expect(page.getByText("En 2025 cobraste")).toBeAttached();
+  await expect(page.locator("[data-chat-visual]")).toContainText("En 2025 cobraste");
 
   // Coreografía de CTAs: empezar (hero + cierre) y demo.
   await expect(page.getByRole("link", { name: "Empezar con mis datos" })).toHaveCount(2);
@@ -47,4 +47,22 @@ test("landing: the 9 sections read fully with JavaScript disabled", async ({ pag
     "href",
     "/login",
   );
+});
+
+test("landing: the no-JS masthead fits at 375px with one visible Entrar", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("/landing");
+
+  const masthead = page.locator("header").first();
+  const entry = masthead.getByRole("link", { name: "Entrar", exact: true });
+  await expect(entry).toHaveCount(1);
+  await expect(entry).toBeVisible();
+  expect(
+    await page.evaluate(() => ({
+      innerWidth: window.innerWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    })),
+  ).toEqual({ innerWidth: 375, scrollWidth: 375 });
 });

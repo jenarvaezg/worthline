@@ -60,11 +60,14 @@ describe("landing content (#951)", () => {
     // Cada prueba/captura lleva su enlace discreto a la demo.
     expect(html).toContain("Velo en la demo");
     expect(html.match(/href="\/demo"/g)?.length ?? 0).toBeGreaterThanOrEqual(7);
+    expect(html).toMatch(/class="[^"]*stage[^"]*" data-cover-stage="4"/);
   });
 
-  test("masthead offers the logged-out entry (session island lands in S5)", () => {
+  test("masthead reserves a neutral session slot and keeps a no-JS Entrar fallback", () => {
+    expect(html).toContain("<noscript>");
     expect(html).toContain('href="/login"');
     expect(html).toContain("Entrar");
+    expect(html.match(/Ir a mi panel/g)).toHaveLength(1);
   });
 
   test("keeps the claims discipline of the outline", () => {
@@ -97,5 +100,7 @@ describe("landing content (#951)", () => {
   test("is whole without JS: no script tags, no event handlers", () => {
     expect(html).not.toContain("<script");
     expect(html).not.toMatch(/ on[a-z]+=/);
+    expect(html).toContain("En 2025 cobraste");
+    expect(html).toContain('aria-hidden="true"');
   });
 });

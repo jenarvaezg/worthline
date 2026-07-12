@@ -1,7 +1,8 @@
 /* Landing pública «Evoluciona tu Excel» (#951) — registro de cubierta de la
    dirección aprobada «La cubierta y las páginas» (#862). El libro físico:
    cubierta de tinta con lomo y grano, páginas pautadas, contracubierta.
-   Solo estilos ESTÁTICOS: la orquestación de animaciones llega en S5 (#953).
+   #953 suma una única isla progresiva: el HTML sigue completo y estos estados
+   solo se activan bajo data-motion="on" en cuanto se monta la isla.
 
    Tokens de cubierta locales a la landing (contrato #828): «Libro mayor»
    (#906) los consolidará en globals.css; hasta entonces viven aquí para no
@@ -263,6 +264,82 @@
   border-color: var(--gilt);
 }
 
+.sessionSlot {
+  display: inline-grid;
+  justify-items: end;
+  align-items: baseline;
+  white-space: nowrap;
+}
+
+.sessionSlot > * {
+  grid-area: 1 / 1;
+}
+
+.sessionPlaceholder {
+  visibility: hidden;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+/* Con scripting y movimiento normal, el primer frame ya es el frame cero de
+   la coreografía. Sin JS o con reduced-motion, `pending` queda final y legible. */
+@media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
+  .landing[data-motion="pending"] .stage {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+
+  .landing[data-motion="pending"] .dblrule,
+  .landing[data-motion="pending"] .compBar .seg,
+  .landing[data-motion="pending"] .expoBar .seg {
+    transform: scaleX(0);
+  }
+
+  .landing[data-motion="pending"] .sparkClip,
+  .landing[data-motion="pending"] .proof .spark[data-draw] {
+    clip-path: inset(-4px 100% -4px 0);
+  }
+
+  .landing[data-motion="pending"] .entry::before {
+    transform: scaleX(0);
+    transform-origin: left;
+  }
+
+  .landing[data-motion="pending"] .reveal {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  .landing[data-motion="pending"] .penCircle ellipse {
+    stroke-dashoffset: 1;
+  }
+
+  .landing[data-motion="pending"] .penNote,
+  .landing[data-motion="pending"] .chatFoot {
+    opacity: 0;
+  }
+
+  .landing[data-motion="pending"] .track .marker {
+    left: 0 !important;
+    opacity: 0;
+  }
+}
+
+/* El servidor entrega el estado final. Solo la preferencia de movimiento
+   normal arma la coreografía; así el fallback sin JS nunca queda oculto. */
+.landing[data-motion="on"] .stage {
+  opacity: 0;
+  transform: translateY(14px);
+}
+
+.landing[data-motion="on"] .stage:global(.on) {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 0.38s ease,
+    transform 0.38s ease;
+}
+
 .coverGrid {
   display: grid;
   grid-template-columns: minmax(21rem, 5fr) minmax(0, 6fr);
@@ -361,10 +438,24 @@
 }
 
 .figWrap {
-  display: inline-block;
+  display: inline-grid;
+  grid-template-rows: auto 5px;
+}
+
+/* Reserva desde el primer frame el ancho del cierre final. El contador ocupa
+   la misma celda de grid y nunca empuja el folio ni hace respirar la regla. */
+.figWrap::before {
+  content: attr(data-net-final);
+  grid-area: 1 / 1;
+  visibility: hidden;
+  font-family: var(--font-numeric);
+  font-size: clamp(2rem, 3.6vw, 2.7rem);
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .heroFigure .num {
+  grid-area: 1 / 1;
   font-size: clamp(2rem, 3.6vw, 2.7rem);
   font-weight: 700;
   letter-spacing: -0.01em;
@@ -372,12 +463,23 @@
 
 /* la doble subraya = «total», dos reglas de 1px con hueco (crítica #862) */
 .dblrule {
+  grid-area: 2 / 1;
   display: block;
   height: 5px;
   border-top: 1px solid var(--ink);
   border-bottom: 1px solid var(--ink);
   margin-top: 5px;
   width: 100%;
+  transform-origin: left;
+}
+
+.landing[data-motion="on"] .dblrule {
+  transform: scaleX(0);
+}
+
+.landing[data-motion="on"] .dblrule:global(.on) {
+  transform: scaleX(1);
+  transition: transform 0.3s ease 0.05s;
 }
 
 .sheetRight {
@@ -410,6 +512,19 @@
   display: block;
 }
 
+.sparkClip {
+  overflow: visible;
+}
+
+.landing[data-motion="on"] .sparkClip {
+  clip-path: inset(-4px 100% -4px 0);
+}
+
+.landing[data-motion="on"] .sparkClip:global(.on) {
+  clip-path: inset(-4px 0% -4px 0);
+  transition: clip-path 0.65s ease;
+}
+
 .compBar {
   display: flex;
   height: 14px;
@@ -420,6 +535,32 @@
 
 .compBar .seg {
   height: 100%;
+  transform-origin: left;
+}
+
+.landing[data-motion="on"] .compBar .seg {
+  transform: scaleX(0);
+}
+
+.landing[data-motion="on"] .compBar:global(.on) .seg {
+  transform: scaleX(1);
+  transition: transform 0.3s ease;
+}
+
+.landing[data-motion="on"] .compBar:global(.on) .seg:nth-child(2) {
+  transition-delay: 0.06s;
+}
+
+.landing[data-motion="on"] .compBar:global(.on) .seg:nth-child(3) {
+  transition-delay: 0.12s;
+}
+
+.landing[data-motion="on"] .compBar:global(.on) .seg:nth-child(4) {
+  transition-delay: 0.18s;
+}
+
+.landing[data-motion="on"] .compBar:global(.on) .seg:nth-child(5) {
+  transition-delay: 0.24s;
 }
 
 /* vivienda rayada: mismo par de tintas en barra y leyenda; el paso de la raya
@@ -566,6 +707,16 @@
   border-top: var(--rule-heavy);
 }
 
+.landing[data-motion="on"] .entry::before {
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.landing[data-motion="on"] .entry:global(.seen)::before {
+  transform: scaleX(1);
+  transition: transform 0.7s ease;
+}
+
 .entry:first-child::before {
   display: none;
 }
@@ -604,6 +755,19 @@
 .intro strong {
   color: var(--ink);
   font-weight: 650;
+}
+
+.landing[data-motion="on"] .reveal {
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.landing[data-motion="on"] .reveal:global(.seen) {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 0.55s ease var(--reveal-delay, 0s),
+    transform 0.55s ease var(--reveal-delay, 0s);
 }
 
 /* --- díptico hoja → worthline --- */
@@ -684,6 +848,11 @@
 }
 
 /* la pluma rodea el #¡REF!, anclada a su propia celda (sin JS) */
+.refError {
+  position: relative;
+  display: inline-block;
+}
+
 .penCircle {
   position: absolute;
   left: 50%;
@@ -698,6 +867,19 @@
   stroke: var(--pen);
   stroke-width: 1.6;
   stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  transform: rotate(-3deg);
+  transform-origin: center;
+}
+
+.landing[data-motion="on"] .penCircle ellipse {
+  stroke-dashoffset: 1;
+}
+
+.landing[data-motion="on"] .penCircle:global(.on) ellipse {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 0.8s ease 0.5s;
 }
 
 .penNote {
@@ -710,6 +892,15 @@
   font-size: 0.92rem;
   transform: rotate(-1deg);
   white-space: nowrap;
+}
+
+.landing[data-motion="on"] .penNote {
+  opacity: 0;
+}
+
+.landing[data-motion="on"] .penNote:global(.on) {
+  opacity: 1;
+  transition: opacity 0.5s ease 1.2s;
 }
 
 .ledgerSide {
@@ -865,6 +1056,37 @@
 
 .expoBar .seg {
   height: 100%;
+  transform-origin: left;
+}
+
+.landing[data-motion="on"] .expoBar .seg {
+  transform: scaleX(0);
+}
+
+.landing[data-motion="on"] .expoBar:global(.on) .seg {
+  transform: scaleX(1);
+  transition: transform 0.65s ease;
+}
+
+.landing[data-motion="on"] .expoBar:global(.on) .seg:nth-child(2) {
+  transition-delay: 0.1s;
+}
+
+.landing[data-motion="on"] .expoBar:global(.on) .seg:nth-child(3) {
+  transition-delay: 0.2s;
+}
+
+.landing[data-motion="on"] .expoBar:global(.on) .seg:nth-child(4) {
+  transition-delay: 0.28s;
+}
+
+.landing[data-motion="on"] .proof .spark[data-draw] {
+  clip-path: inset(-4px 100% -4px 0);
+}
+
+.landing[data-motion="on"] .proof .spark[data-draw]:global(.on) {
+  clip-path: inset(-4px 0% -4px 0);
+  transition: clip-path 1.1s ease;
 }
 
 .expoLegend {
@@ -912,6 +1134,19 @@
   border-right: 5px solid transparent;
   border-top: 7px solid var(--ink);
   transform: translateX(-5px);
+}
+
+.landing[data-motion="on"] .track .marker {
+  left: 0 !important;
+  opacity: 0;
+}
+
+.landing[data-motion="on"] .track:global(.on) .marker {
+  left: 31% !important;
+  opacity: 1;
+  transition:
+    left 0.9s ease,
+    opacity 0.2s ease;
 }
 
 .readout {
@@ -1010,6 +1245,18 @@
   padding: 1.25rem 1.45rem;
 }
 
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .who {
   font-size: 0.66rem;
   letter-spacing: 0.1em;
@@ -1035,6 +1282,30 @@
   padding-top: 0.5rem;
   font-size: 0.78rem;
   color: var(--muted);
+}
+
+.landing[data-motion="on"] .chatFoot {
+  opacity: 0;
+}
+
+.landing[data-motion="on"] .chatFoot:global(.on) {
+  opacity: 1;
+  transition: opacity 0.4s ease;
+}
+
+.landing [data-chat-caret] {
+  display: inline-block;
+  width: 1px;
+  height: 1em;
+  background: var(--ink);
+  vertical-align: -0.15em;
+  animation: landingCaretBlink 0.9s steps(1) infinite;
+}
+
+@keyframes landingCaretBlink {
+  50% {
+    opacity: 0;
+  }
 }
 
 .chatFoot .num {
@@ -1250,13 +1521,66 @@
   }
 }
 
+@media (max-width: 32rem) {
+  .masthead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.7rem 1rem;
+    align-items: baseline;
+    padding-top: 1.7rem;
+  }
+
+  .masthead .spacer {
+    display: none;
+  }
+
+  .masthead > a:not(.wordmark) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: start;
+  }
+
+  .sessionSlot {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
 /* El movimiento es un lujo, no un requisito (interaction-patterns §5): sin
    preferencia de movimiento, ni siquiera los matices de hover se mueven. */
 @media (prefers-reduced-motion: reduce) {
   .landing *,
   .landing *::before,
   .landing *::after {
+    animation: none !important;
     transition: none !important;
+  }
+
+  .stage,
+  .dblrule,
+  .compBar .seg,
+  .expoBar .seg,
+  .reveal,
+  .entry::before,
+  .penCircle ellipse,
+  .penNote,
+  .chatFoot,
+  .marker {
+    opacity: 1 !important;
+    transform: none !important;
+    stroke-dashoffset: 0 !important;
+  }
+
+  .sparkClip {
+    clip-path: none !important;
+  }
+
+  .landing [data-chat-caret] {
+    display: none !important;
+  }
+
+  .proof .spark[data-draw] {
+    clip-path: none !important;
   }
 
   .demolink:hover .arr {
