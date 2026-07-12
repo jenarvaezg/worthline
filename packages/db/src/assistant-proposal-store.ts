@@ -27,7 +27,15 @@ export interface DebtBalanceObservationFact {
   row: { liabilityId: string; date: string; balanceMinor: number; annualRate?: string };
 }
 
-export type AssistantProposalFact = StatementOperationFact | DebtBalanceObservationFact;
+export interface PropertyValuationAnchorFact {
+  kind: "property_valuation_anchor";
+  row: { assetId: string; valuationDate: string; valueMinor: number };
+}
+
+export type AssistantProposalFact =
+  | StatementOperationFact
+  | DebtBalanceObservationFact
+  | PropertyValuationAnchorFact;
 
 export interface AssistantProposalDocument {
   id: string;
@@ -75,7 +83,11 @@ async function createProposal(
   ctx: StoreContext,
   input: { kind: AssistantProposalKind },
 ): Promise<AssistantProposal> {
-  if (input.kind !== "statement_import" && input.kind !== "balance_history_import") {
+  if (
+    input.kind !== "statement_import" &&
+    input.kind !== "balance_history_import" &&
+    input.kind !== "property_valuation_anchor"
+  ) {
     throw new Error(`Unsupported assistant proposal kind: ${String(input.kind)}`);
   }
   const now = new Date().toISOString();
@@ -93,6 +105,16 @@ async function createProposal(
 function normalizeFact(
   fact: ParsedStatementRow | AssistantProposalFact,
 ): AssistantProposalFact {
+  if (fact.kind === "property_valuation_anchor" && "row" in fact) {
+    return {
+      kind: fact.kind,
+      row: {
+        assetId: fact.row.assetId,
+        valuationDate: fact.row.valuationDate,
+        valueMinor: fact.row.valueMinor,
+      },
+    };
+  }
   if (fact.kind === "debt_balance_observation" && "row" in fact) {
     return {
       kind: fact.kind,
@@ -219,7 +241,8 @@ async function readProposal(
       facts: facts.map((fact) => {
         if (
           fact.kind !== "statement_operation" &&
-          fact.kind !== "debt_balance_observation"
+          fact.kind !== "debt_balance_observation" &&
+          fact.kind !== "property_valuation_anchor"
         ) {
           throw new Error(`Unsupported assistant proposal fact kind: ${fact.kind}`);
         }
@@ -227,6 +250,12 @@ async function readProposal(
           return {
             kind: fact.kind,
             row: JSON.parse(fact.payloadJson) as DebtBalanceObservationFact["row"],
+          };
+        }
+        if (fact.kind === "property_valuation_anchor") {
+          return {
+            kind: fact.kind,
+            row: JSON.parse(fact.payloadJson) as PropertyValuationAnchorFact["row"],
           };
         }
         return {

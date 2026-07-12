@@ -185,6 +185,7 @@ export type {
   AssistantProposalDocumentRef,
   AssistantProposalFact,
   AssistantProposalStore,
+  PropertyValuationAnchorFact,
   StatementOperationFact,
 } from "./assistant-proposal-store";
 export type {
@@ -408,6 +409,26 @@ async function buildStore(
           today,
         });
         if (!result.ok) throw new Error(result.error);
+        await assistantProposalStore.markApplied(proposalId);
+      }),
+    applyAssistantPropertyValuationProposalAndRipple: async ({
+      proposalId,
+      anchor,
+      today,
+    }) =>
+      ctx.transaction(async () => {
+        const proposal = await assistantProposalStore.read(proposalId);
+        if (!proposal || proposal.kind !== "property_valuation_anchor") {
+          throw new Error(
+            `Assistant proposal "${proposalId}" is not a property valuation.`,
+          );
+        }
+        if (proposal.status !== "draft") {
+          throw new Error(
+            `Assistant proposal "${proposalId}" is already resolved as ${proposal.status}.`,
+          );
+        }
+        await store.addValuationAnchorAndRipple(anchor, { today });
         await assistantProposalStore.markApplied(proposalId);
       }),
     command: commandHost,

@@ -194,6 +194,7 @@ export const assetValuations = sqliteTable(
     valueMinor: integer("value_minor").notNull(),
     valuationDate: text("valuation_date").notNull(),
     adjustsPriorCurve: integer("adjusts_prior_curve").notNull(),
+    source: text("source").$type<"manual" | "agent">().notNull().default("manual"),
     createdAt: timestamp("created_at"),
   },
   (table) => [
@@ -870,7 +871,10 @@ export const goalHoldings = sqliteTable(
   (table) => [primaryKey({ columns: [table.goalId, table.assetId] })],
 );
 
-export type AssistantProposalKind = "statement_import" | "balance_history_import";
+export type AssistantProposalKind =
+  | "statement_import"
+  | "balance_history_import"
+  | "property_valuation_anchor";
 export type AssistantProposalStatus = "draft" | "applied" | "discarded";
 export type AssistantDocumentProvenance = "agent" | "user";
 
