@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
+import { heroSheetData } from "./hero-sheet/build-hero-sheet";
 import LandingContent from "./landing-content";
 
 /**
@@ -77,12 +78,20 @@ describe("landing content (#951)", () => {
     expect(html).not.toMatch(/adjunto|ingesta/i);
   });
 
-  test("the mock sheet arithmetic stays reconciled (bruto − deuda = neto)", () => {
-    // La maqueta aprobada: neto 291.604 = bruto 439.814 − hipoteca 148.210.
-    expect(html).toContain("291.604");
-    expect(html).toContain("−148.210");
-    // Y se declara maqueta hasta que S4 traiga la hoja SSG real.
-    expect(html).toContain("Maqueta");
+  test("the SSG hero sheet renders real, reconciled demo figures (bruto − deuda = neto)", () => {
+    // Ya no es maqueta (S4, #952): las cifras vienen de la persona demo,
+    // resueltas en build y cuadradas por el motor.
+    expect(heroSheetData.grossMinor - heroSheetData.debtsMinor).toBe(
+      heroSheetData.netMinor,
+    );
+    // El neto real y la fila de deuda con la línea del debe llegan al HTML.
+    expect(html).toContain(heroSheetData.netLabel);
+    const debit = heroSheetData.rows.find((row) => row.debit);
+    expect(debit).toBeDefined();
+    expect(html).toContain(debit!.value);
+    // La copia honesta reemplaza al viejo sello «Maqueta».
+    expect(html).not.toContain("Maqueta — captura real de la demo");
+    expect(html).toContain("Persona demo «Familia»");
   });
 
   test("is whole without JS: no script tags, no event handlers", () => {
