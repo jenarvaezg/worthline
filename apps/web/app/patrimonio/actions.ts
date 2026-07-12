@@ -34,12 +34,14 @@ import {
   executeRecordHousingValuationCommand,
   executeSetAnnualAppreciationRateCommand,
   executeSetHousingValuationCadenceCommand,
+  executeUpdateAssetOwnershipSplitCommand,
+  executeUpdateLiabilityOwnershipSplitCommand,
   executeUpdateValuationAnchorCommand,
+  type OwnershipSplitCommandResult,
 } from "@worthline/db";
 import {
   type Clock,
   checkManualValuationViolation,
-  checkOwnershipSplit,
   checkSinglePrimaryResidence,
   effectiveAmortizationPlan,
   isHousingAsset,
@@ -91,6 +93,18 @@ function isClock(value: unknown): value is Clock {
   return (
     typeof value === "object" && value !== null && "now" in value && "today" in value
   );
+}
+
+function mapOwnershipSplitCommandResult(
+  result: OwnershipSplitCommandResult,
+): { ok: true } | { ok: false; error: string } {
+  if (result.ok) {
+    return { ok: true };
+  }
+  if ("violation" in result) {
+    return { ok: false, error: mapDomainViolation(result.violation) };
+  }
+  return { ok: false, error: result.error };
 }
 
 export async function deleteAssetAction(
@@ -565,24 +579,21 @@ export async function editAssetAction(
       const ownership = parseOwnership(formData, workspace.members, {
         completeShortfall: !allowKnownPartial,
       });
-      const splitViolation = checkOwnershipSplit(workspace, ownership, {
+
+      const commandResult = await executeUpdateLiabilityOwnershipSplitCommand(store, {
+        liabilityId: id,
         allowKnownPartial,
+        patch: {
+          name,
+          type: liabilityType,
+          associatedAssetId,
+          ownership,
+        },
       });
-
-      if (splitViolation) {
-        return { ok: false, error: mapDomainViolation(splitViolation) };
+      const splitResult = mapOwnershipSplitCommandResult(commandResult);
+      if (!splitResult.ok) {
+        return splitResult;
       }
-
-      // #172 / ADR 0020: an ownership-split change is a retroactive parameter
-      // edit that ripples per-member snapshot history; a rename (same split) does
-      // not. The ownership seam folds the persist + the conditional scope-axis
-      // ripple into one atomic call, capturing the previous split behind the seam.
-      await store.updateLiabilityAndRippleOwnership(id, {
-        name,
-        type: liabilityType,
-        associatedAssetId,
-        ownership,
-      });
 
       return { ok: true };
     }, _store);
@@ -608,13 +619,6 @@ export async function editAssetAction(
     const ownership = parseOwnership(formData, workspace.members, {
       completeShortfall: type !== "real_estate",
     });
-    const splitViolation = checkOwnershipSplit(workspace, ownership, {
-      allowKnownPartial: type === "real_estate",
-    });
-
-    if (splitViolation) {
-      return { ok: false, error: mapDomainViolation(splitViolation) };
-    }
 
     if (isPrimaryResidence) {
       const primaryViolation = checkSinglePrimaryResidence(
@@ -627,18 +631,21 @@ export async function editAssetAction(
       }
     }
 
-    // #172 / ADR 0020: an ownership-split change ripples per-member snapshot
-    // history. The ownership seam folds the persist + the conditional scope-axis
-    // ripple into one atomic call; for a real_estate asset it dispatches to the
-    // housing curve ripple, which already re-weights every affected snapshot from
-    // the asset's new split. The previous split is captured behind the seam.
-    await store.updateAssetAndRippleOwnership(id, {
-      name,
-      type,
-      liquidityTier,
-      isPrimaryResidence,
-      ownership,
+    const commandResult = await executeUpdateAssetOwnershipSplitCommand(store, {
+      assetId: id,
+      allowKnownPartial: type === "real_estate",
+      patch: {
+        name,
+        type,
+        liquidityTier,
+        isPrimaryResidence,
+        ownership,
+      },
     });
+    const splitResult = mapOwnershipSplitCommandResult(commandResult);
+    if (!splitResult.ok) {
+      return splitResult;
+    }
 
     return { ok: true };
   }, _store);
