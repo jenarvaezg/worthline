@@ -18,6 +18,28 @@ const row: ParsedStatementRow = {
 };
 
 describe("assistant proposal store", () => {
+  it("round-trips typed debt observations without raw document contents", async () => {
+    const store = await createInMemoryStore();
+    const proposal = await store.assistantProposals.create({
+      kind: "balance_history_import",
+    });
+    await store.assistantProposals.appendDocument(proposal.id, {
+      document: { name: "cuadro.pdf", provenance: "agent", sha256: "d".repeat(64) },
+      facts: [
+        {
+          kind: "debt_balance_observation",
+          row: { balanceMinor: 140_000_00, date: "2026-06-15", liabilityId: "mortgage" },
+        },
+      ],
+    });
+    const stored = await store.assistantProposals.read(proposal.id);
+    expect(stored).toMatchObject({
+      kind: "balance_history_import",
+      documents: [{ facts: [{ kind: "debt_balance_observation" }] }],
+    });
+    expect(JSON.stringify(stored)).not.toContain("rawText");
+    store.close();
+  });
   it("accumulates parsed facts and document references in one persisted draft", async () => {
     const store = await createInMemoryStore();
     const proposal = await store.assistantProposals.create({ kind: "statement_import" });

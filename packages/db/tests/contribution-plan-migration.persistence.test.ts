@@ -38,7 +38,7 @@ describe("schema migration v45 (planned_contributions)", () => {
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(47);
+    expect(SCHEMA_VERSION).toBe(48);
   });
 
   test("fresh schemaSql includes planned_contributions", async () => {

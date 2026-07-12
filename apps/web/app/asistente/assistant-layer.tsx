@@ -14,12 +14,16 @@ import {
   useTransition,
 } from "react";
 import {
+  parseBalanceHistoryProposal,
   parseExposureProfileProposal,
   parseQuickActions,
   parseStatementImportProposal,
   type QuickAction,
 } from "./assistant-actions";
 import AssistantMessages from "./assistant-messages";
+import { confirmBalanceHistoryProposalAction } from "./balance-history-proposal-action";
+import type { BalanceHistoryProposal } from "./balance-history-proposals";
+import { balanceCurvePolyline } from "./balance-history-proposals";
 import { confirmExposureProfileProposalAction } from "./exposure-profile-proposal-action";
 import type {
   ExposureProfileProposal,
@@ -233,6 +237,93 @@ function StatementProposalCard({
           Descartar
         </button>
       </div>
+    </div>
+  );
+}
+
+function BalanceHistoryProposalCard({
+  mutationsDisabled,
+  mutationsDisabledMessage,
+  proposal,
+}: {
+  mutationsDisabled: boolean;
+  mutationsDisabledMessage: string;
+  proposal: BalanceHistoryProposal;
+}) {
+  const [result, setResult] = useState<Awaited<
+    ReturnType<typeof confirmBalanceHistoryProposalAction>
+  > | null>(null);
+  const [pending, startTransition] = useTransition();
+  const confirmDisabled =
+    pending ||
+    mutationsDisabled ||
+    !proposal.reconciliation.matches ||
+    result?.status === "applied";
+  return (
+    <div className="assistantProposal">
+      <ProposalMutationStatus pending={pending} result={result} />
+      <p>Propuesta de historial de deuda</p>
+      <strong>{proposal.liability.name}</strong>
+      <svg
+        aria-label="Curva resultante del saldo de la deuda"
+        role="img"
+        viewBox="0 0 100 100"
+      >
+        <polyline
+          fill="none"
+          points={balanceCurvePolyline(proposal.curve)}
+          stroke="currentColor"
+          strokeWidth="2"
+          vectorEffect="non-scaling-stroke"
+        />
+      </svg>
+      <ul>
+        {proposal.points.map((point) => (
+          <li key={point.date}>
+            <span>{point.date}</span>{" "}
+            <span>{formatPositionMoney(point.balanceMinor)}</span>
+            <span>
+              {point.status === "accepted"
+                ? "Incluido"
+                : point.status === "skipped"
+                  ? "Ya existente"
+                  : `Excluido: ${point.reason ?? "saldo no aplicable"}`}
+              {point.driftMinor === null
+                ? ""
+                : ` · Desvío ${formatPositionMoney(point.driftMinor)}`}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p>
+        Reconciliación: {formatPositionMoney(proposal.reconciliation.resultingMinor)} /{" "}
+        {formatPositionMoney(proposal.reconciliation.expectedMinor)} ·{" "}
+        {proposal.reconciliation.matches ? "Cuadra exactamente" : "No cuadra"}
+      </p>
+      {result ? (
+        <p
+          aria-live="polite"
+          className={result.status === "applied" ? "assistantOk" : "assistantError"}
+          role="status"
+        >
+          {result.status === "applied"
+            ? `Historial aplicado (${result.created} saldos).`
+            : result.message}
+        </p>
+      ) : mutationsDisabled ? (
+        <p className="assistantError">{mutationsDisabledMessage}</p>
+      ) : null}
+      <button
+        disabled={confirmDisabled}
+        onClick={() =>
+          startTransition(async () =>
+            setResult(await confirmBalanceHistoryProposalAction(proposal.draft)),
+          )
+        }
+        type="button"
+      >
+        {pending ? "Guardando…" : "Confirmar"}
+      </button>
     </div>
   );
 }
@@ -483,6 +574,17 @@ export default function AssistantLayer({
                   const proposal = parseStatementImportProposal(part.output);
                   return proposal ? (
                     <StatementProposalCard
+                      key={`${message.id}-${i}`}
+                      mutationsDisabled={mutationsDisabled}
+                      mutationsDisabledMessage={mutationsDisabledMessage}
+                      proposal={proposal}
+                    />
+                  ) : null;
+                }
+                if (name === "propose_balance_history_import" && "output" in part) {
+                  const proposal = parseBalanceHistoryProposal(part.output);
+                  return proposal ? (
+                    <BalanceHistoryProposalCard
                       key={`${message.id}-${i}`}
                       mutationsDisabled={mutationsDisabled}
                       mutationsDisabledMessage={mutationsDisabledMessage}

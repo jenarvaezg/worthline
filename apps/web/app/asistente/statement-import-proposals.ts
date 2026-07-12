@@ -81,7 +81,11 @@ export function parseStatementImportProposalDraft(
 function parsedStatementFromDocuments(
   documents: AssistantProposal["documents"],
 ): ParsedStatement {
-  const rows = documents.flatMap((document) => document.facts.map((fact) => fact.row));
+  const rows = documents.flatMap((document) =>
+    document.facts
+      .filter((fact) => fact.kind === "statement_operation")
+      .map((fact) => fact.row),
+  );
   const isins = Array.from(
     new Set(
       rows

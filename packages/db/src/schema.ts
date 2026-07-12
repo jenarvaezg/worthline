@@ -463,6 +463,7 @@ export const liabilityBalanceRebaselines = sqliteTable(
     startsAtBaseline: integer("starts_at_baseline", { mode: "boolean" })
       .default(false)
       .notNull(),
+    source: text("source").$type<"manual" | "agent">().notNull().default("manual"),
     createdAt: timestamp("created_at"),
   },
   (table) => [
@@ -869,7 +870,7 @@ export const goalHoldings = sqliteTable(
   (table) => [primaryKey({ columns: [table.goalId, table.assetId] })],
 );
 
-export type AssistantProposalKind = "statement_import";
+export type AssistantProposalKind = "statement_import" | "balance_history_import";
 export type AssistantProposalStatus = "draft" | "applied" | "discarded";
 export type AssistantDocumentProvenance = "agent" | "user";
 

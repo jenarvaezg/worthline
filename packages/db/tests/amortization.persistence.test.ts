@@ -227,6 +227,7 @@ describe("balance re-baselines — CRUD", () => {
         monthlyPaymentMinor: 50_000_00,
         nextPaymentDate: "2026-08-31",
         outstandingBalanceMinor: 100_000_00,
+        source: "manual",
         startsAtBaseline: true,
       },
     ]);

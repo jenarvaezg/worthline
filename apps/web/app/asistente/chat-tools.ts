@@ -31,6 +31,7 @@ import {
   type QuickAction,
   sourceHref,
 } from "@web/asistente/assistant-actions";
+import { buildBalanceHistoryProposal } from "@web/asistente/balance-history-proposals";
 import {
   AGENT_FILL_EXPOSURE_POLICY,
   buildExposureProfileProposal,
@@ -38,7 +39,11 @@ import {
 } from "@web/asistente/exposure-profile-proposals";
 import type { ScreenSection } from "@web/asistente/screen-context";
 import { buildStatementImportProposal } from "@web/asistente/statement-import-proposals";
-import type { AgentViewReadStore, AssistantProposalStore } from "@worthline/db";
+import type {
+  AgentViewReadStore,
+  AssistantProposalStore,
+  LiabilityStore,
+} from "@worthline/db";
 import { formatMoneyMinor } from "@worthline/domain";
 import { jsonSchema, type ToolSet, tool } from "ai";
 
@@ -69,6 +74,7 @@ import { jsonSchema, type ToolSet, tool } from "ai";
 export interface ChatReadStore {
   agentView: AgentViewReadStore;
   assistantProposals?: AssistantProposalStore;
+  liabilities?: LiabilityStore;
 }
 
 export interface ChatToolsInput {
@@ -299,6 +305,33 @@ const STATEMENT_IMPORT_PROPOSAL_SCHEMA = jsonSchema<{
     rawText: { type: "string" },
   },
   required: ["rawText"],
+  additionalProperties: false,
+});
+
+const BALANCE_HISTORY_PROPOSAL_SCHEMA = jsonSchema<{
+  liabilityId?: string;
+  documentName?: string;
+  rows?: Array<{ date: string; balanceMinor: number; annualRate?: string }>;
+}>({
+  type: "object",
+  properties: {
+    liabilityId: { type: "string" },
+    documentName: { type: "string" },
+    rows: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          date: { type: "string" },
+          balanceMinor: { type: "number" },
+          annualRate: { type: "string" },
+        },
+        required: ["date", "balanceMinor"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["liabilityId", "rows"],
   additionalProperties: false,
 });
 
@@ -979,6 +1012,32 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
               ...(args.proposalId === undefined ? {} : { proposalId: args.proposalId }),
               rawText: args.rawText ?? "",
             },
+          );
+          return built.ok ? built.proposal : { error: built.error };
+        }),
+    }),
+    propose_balance_history_import: tool({
+      description:
+        "Prepara una propuesta para una deuda amortizable inequívoca a partir de saldos observados en un cuadro de amortización; liabilityId es el public holding id wl_hld_… obtenido de las tools de lectura. " +
+        "No infieras capital, plazo ni cuota: envía solo fecha, saldo en céntimos y, si consta, tipo anual. " +
+        "La app calcula la curva y exige reconciliación exacta con el saldo actual antes de confirmar.",
+      inputSchema: BALANCE_HISTORY_PROPOSAL_SCHEMA,
+      execute: (args) =>
+        input.runWithStore(async (store) => {
+          if (!store.assistantProposals || !store.liabilities) {
+            return { error: "proposal_persistence_unavailable" };
+          }
+          const liabilityId = await resolveInternalHoldingId(
+            store.agentView,
+            args.liabilityId ?? "",
+          );
+          const built = await buildBalanceHistoryProposal(
+            {
+              assistantProposals: store.assistantProposals,
+              liabilities: store.liabilities,
+            },
+            { ...args, liabilityId },
+            input.asOf,
           );
           return built.ok ? built.proposal : { error: built.error };
         }),

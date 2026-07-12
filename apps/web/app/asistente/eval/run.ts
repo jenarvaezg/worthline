@@ -60,6 +60,7 @@ async function askAssistant(
             run({
               agentView: store.agentView,
               assistantProposals: store.assistantProposals,
+              liabilities: store.liabilities,
             }),
           persona,
         ),
