@@ -95,12 +95,14 @@ export interface AddValuationAnchorInput {
   valuationDate: string;
   /** True for a market appraisal (total truth), false for an improvement. */
   adjustsPriorCurve: boolean;
+  source?: "manual" | "agent";
 }
 
 /** A stored housing valuation anchor as read back from the store. */
 export interface ValuationAnchorRecord extends HousingValuationAnchor {
   id: string;
   assetId: string;
+  source: "manual" | "agent";
 }
 
 /** Fields that can be patched on an existing housing valuation anchor. */
@@ -256,6 +258,7 @@ async function addValuationAnchor(
       adjustsPriorCurve: input.adjustsPriorCurve ? 1 : 0,
       assetId: input.assetId,
       id: input.id,
+      source: input.source ?? "manual",
       valuationDate: input.valuationDate,
       valueMinor: input.valueMinor,
     })
@@ -284,6 +287,7 @@ async function readValuationAnchors(
     adjustsPriorCurve: row.adjustsPriorCurve === 1,
     assetId: row.assetId,
     id: row.id,
+    source: row.source,
     valuationDate: row.valuationDate,
     valueMinor: row.valueMinor,
   }));
@@ -305,6 +309,7 @@ async function readValuationAnchorById(
     adjustsPriorCurve: row.adjustsPriorCurve === 1,
     assetId: row.assetId,
     id: row.id,
+    source: row.source,
     valuationDate: row.valuationDate,
     valueMinor: row.valueMinor,
   };

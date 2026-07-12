@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 48;
+export const SCHEMA_VERSION = 49;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1494,6 +1494,20 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       if (!String(error).includes("no such table")) throw error;
     }
     await writeSchemaVersion(client, 48);
+  }
+
+  if (version < 49) {
+    try {
+      const columns = await client.execute("PRAGMA table_info(asset_valuations)");
+      if (columns.rows.length > 0 && !columns.rows.some((row) => row.name === "source")) {
+        await client.execute(
+          "ALTER TABLE asset_valuations ADD COLUMN source TEXT DEFAULT 'manual' NOT NULL",
+        );
+      }
+    } catch (error) {
+      if (!String(error).includes("no such table")) throw error;
+    }
+    await writeSchemaVersion(client, 49);
   }
 
   return { ranV18Backfill, ranV33Backfill };

@@ -7,6 +7,8 @@ import type {
   ExposureProfileProposalPreview,
   ExposureProfileProposalPreviewProfile,
 } from "./exposure-profile-proposals";
+import type { PropertyValuationProposal } from "./property-valuation-proposal-contract";
+import { parsePropertyValuationProposalDraft } from "./property-valuation-proposal-contract";
 import type { ScreenSection } from "./screen-context";
 import type { StatementImportProposal } from "./statement-import-proposals";
 import { parseStatementImportProposalDraft } from "./statement-import-proposals";
@@ -208,6 +210,31 @@ export function parseBalanceHistoryProposal(raw: unknown): BalanceHistoryProposa
   )
     return null;
   return raw as unknown as BalanceHistoryProposal;
+}
+
+export function parsePropertyValuationProposal(
+  raw: unknown,
+): PropertyValuationProposal | null {
+  if (!isRecord(raw) || raw.proposalType !== "property_valuation_anchor") return null;
+  const draft = parsePropertyValuationProposalDraft(raw.draft);
+  if (
+    !draft.ok ||
+    !isRecord(raw.property) ||
+    !isRecord(raw.anchor) ||
+    !isRecord(raw.trust)
+  )
+    return null;
+  if (
+    typeof raw.property.id !== "string" ||
+    typeof raw.property.name !== "string" ||
+    typeof raw.anchor.valuationDate !== "string" ||
+    typeof raw.anchor.valueMinor !== "number" ||
+    raw.trust.tier !== "unverified" ||
+    raw.trust.requiresReview !== true ||
+    !Array.isArray(raw.curve)
+  )
+    return null;
+  return raw as unknown as PropertyValuationProposal;
 }
 
 /** Resolve a cited internal source to its product route, or null if it has none. */

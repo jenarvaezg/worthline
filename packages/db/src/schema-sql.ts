@@ -257,6 +257,7 @@ CREATE TABLE \`asset_valuations\` (
 	\`value_minor\` integer NOT NULL,
 	\`valuation_date\` text NOT NULL,
 	\`adjusts_prior_curve\` integer NOT NULL,
+	\`source\` text DEFAULT 'manual' NOT NULL,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );

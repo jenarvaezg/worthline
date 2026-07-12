@@ -215,6 +215,12 @@ export interface WorthlineStore {
     rebaselines: AddBalanceRebaselineInput[];
     today: string;
   }) => Promise<void>;
+  /** Apply one durable property valuation proposal and resolve it atomically. */
+  applyAssistantPropertyValuationProposalAndRipple: (params: {
+    proposalId: string;
+    anchor: AddValuationAnchorInput;
+    today: string;
+  }) => Promise<void>;
   /**
    * Historical-price backfill seam (#380, ADR 0033): freeze a provider's
    * historical unit prices onto ONE investment's monthly snapshots, atomically in
