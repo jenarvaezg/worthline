@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { DEFAULT_ADMISSION_THRESHOLD } from "./admission";
 import { ADMISSION_EVIDENCE } from "./admission-evidence";
 
 describe("committed admission evidence", () => {
@@ -9,7 +10,9 @@ describe("committed admission evidence", () => {
     expect(admitted.map((entry) => entry.provider)).toEqual(["google", "cerebras"]);
     for (const entry of admitted) {
       expect(entry.run.complete).toBe(true);
-      expect(entry.run.passed / entry.run.total).toBeGreaterThanOrEqual(0.6);
+      expect(entry.run.passed / entry.run.total).toBeGreaterThanOrEqual(
+        DEFAULT_ADMISSION_THRESHOLD,
+      );
     }
   });
 

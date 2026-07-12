@@ -47,15 +47,12 @@ describe("parseEvalArgs", () => {
 describe("candidatePolicy", () => {
   it("paces multi-step turns for each provider's free-tier request limit", () => {
     expect(candidatePolicy("google")).toEqual({
-      envKey: "GOOGLE_GENERATIVE_AI_API_KEY",
       delayBetweenQuestionsMs: 20_000,
     });
     expect(candidatePolicy("cerebras")).toEqual({
-      envKey: "CEREBRAS_API_KEY",
       delayBetweenQuestionsMs: 55_000,
     });
     expect(candidatePolicy("groq")).toEqual({
-      envKey: "GROQ_API_KEY",
       delayBetweenQuestionsMs: 8_000,
     });
   });

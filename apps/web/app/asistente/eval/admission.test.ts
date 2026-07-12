@@ -4,6 +4,7 @@ import {
   buildAdmissionReport,
   DEFAULT_ADMISSION_THRESHOLD,
   decideAdmission,
+  decideSummarizedAdmission,
 } from "./admission";
 
 const EXPECTED_QUESTIONS = ["one", "two"];
@@ -80,6 +81,20 @@ describe("decideAdmission", () => {
     });
 
     expect(verdict).toMatchObject({ admitted: false, complete: true, ratio: 0 });
+  });
+});
+
+describe("decideSummarizedAdmission", () => {
+  it("uses the same canonical default threshold as full admission", () => {
+    const total = 1_000;
+    const atThreshold = Math.ceil(DEFAULT_ADMISSION_THRESHOLD * total);
+
+    expect(
+      decideSummarizedAdmission({ complete: true, passed: atThreshold, total }),
+    ).toMatchObject({ admitted: true, threshold: DEFAULT_ADMISSION_THRESHOLD });
+    expect(
+      decideSummarizedAdmission({ complete: true, passed: atThreshold - 1, total }),
+    ).toMatchObject({ admitted: false, threshold: DEFAULT_ADMISSION_THRESHOLD });
   });
 });
 

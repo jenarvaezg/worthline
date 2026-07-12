@@ -1,30 +1,17 @@
-import { createGroq } from "@ai-sdk/groq";
-import { gateway, type LanguageModel } from "ai";
+import type { LanguageModel } from "ai";
+
+import { resolveFirstAllowedProviderModel } from "./provider-model";
 
 /**
- * Shared-baseline model resolution (ADR 0050): Vercel AI Gateway when its key
- * is present (hosted — GROQ_API_KEY lives there as BYOK, spend ceiling
- * included), direct Groq via env credential otherwise (local dev, no gateway
- * dependency). Same `model` binding either way; no visible model selector —
- * the id is a server-side constant, env-overridable only.
+ * Shared-baseline model resolution (ADR 0061): the first credential-backed
+ * entry in the committed, validated provider pool. No visible model selector;
+ * environment config may only reorder the admitted entries.
  */
 
-const DEFAULT_CHAT_MODEL = "groq/llama-3.3-70b-versatile";
-
-export function resolveChatModel(): LanguageModel | null {
-  const modelId = process.env["WORTHLINE_CHAT_MODEL"] ?? DEFAULT_CHAT_MODEL;
-
-  if (process.env["AI_GATEWAY_API_KEY"]) {
-    return gateway(modelId);
-  }
-
-  const groqKey = process.env["GROQ_API_KEY"];
-  if (groqKey) {
-    const groq = createGroq({ apiKey: groqKey });
-    return groq(modelId.replace(/^groq\//, ""));
-  }
-
-  return null; // no shared credential — the route answers 503, never guesses
+export function resolveChatModel(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): LanguageModel | null {
+  return resolveFirstAllowedProviderModel(env)?.model ?? null;
 }
 
 /**
@@ -32,9 +19,8 @@ export function resolveChatModel(): LanguageModel | null {
  * (#668) names exactly what it measured and runs stay comparable. Null mirrors
  * `resolveChatModel`: no credential, nothing to evaluate.
  */
-export function chatModelLabel(): string | null {
-  const modelId = process.env["WORTHLINE_CHAT_MODEL"] ?? DEFAULT_CHAT_MODEL;
-  if (process.env["AI_GATEWAY_API_KEY"]) return `gateway · ${modelId}`;
-  if (process.env["GROQ_API_KEY"]) return `groq · ${modelId.replace(/^groq\//, "")}`;
-  return null;
+export function chatModelLabel(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string | null {
+  return resolveFirstAllowedProviderModel(env)?.label ?? null;
 }

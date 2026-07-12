@@ -44,16 +44,32 @@ export interface AdmissionReport {
   summary: Omit<AdmissionVerdict, "complete">;
 }
 
-export function decideAdmission(input: {
-  expectedQuestionIds: readonly string[];
-  questionResults: readonly QuestionScore[];
+export function decideSummarizedAdmission(input: {
+  complete: boolean;
+  passed: number;
+  total: number;
   threshold?: number;
 }): AdmissionVerdict {
   const threshold = input.threshold ?? DEFAULT_ADMISSION_THRESHOLD;
   if (threshold < 0 || threshold > 1) {
     throw new RangeError("Admission threshold must be between 0 and 1.");
   }
+  const ratio = input.total === 0 ? 0 : input.passed / input.total;
+  return {
+    admitted: input.complete && input.total > 0 && ratio >= threshold,
+    complete: input.complete,
+    passed: input.passed,
+    total: input.total,
+    ratio,
+    threshold,
+  };
+}
 
+export function decideAdmission(input: {
+  expectedQuestionIds: readonly string[];
+  questionResults: readonly QuestionScore[];
+  threshold?: number;
+}): AdmissionVerdict {
   const expectedIds = new Set(input.expectedQuestionIds);
   const resultIds = new Set(input.questionResults.map((result) => result.id));
   const complete =
@@ -62,16 +78,12 @@ export function decideAdmission(input: {
     [...expectedIds].every((id) => resultIds.has(id));
   const passed = input.questionResults.reduce((sum, result) => sum + result.passed, 0);
   const total = input.questionResults.reduce((sum, result) => sum + result.total, 0);
-  const ratio = total === 0 ? 0 : passed / total;
-
-  return {
-    admitted: complete && total > 0 && ratio >= threshold,
+  return decideSummarizedAdmission({
     complete,
     passed,
     total,
-    ratio,
-    threshold,
-  };
+    ...(input.threshold === undefined ? {} : { threshold: input.threshold }),
+  });
 }
 
 export function buildAdmissionReport(input: {
