@@ -1,8 +1,8 @@
+import { type AssistantProvider, PROVIDERS } from "@web/asistente/provider-pool";
+
 import { DEFAULT_ADMISSION_THRESHOLD } from "./admission";
 
-export const EVAL_PROVIDERS = ["google", "cerebras", "groq"] as const;
-
-export type EvalProvider = (typeof EVAL_PROVIDERS)[number];
+export type EvalProvider = AssistantProvider;
 
 export interface EvalArgs {
   provider: EvalProvider;
@@ -11,16 +11,10 @@ export interface EvalArgs {
   output?: string;
 }
 
-const POLICIES: Record<
-  EvalProvider,
-  { envKey: string; delayBetweenQuestionsMs: number }
-> = {
-  google: {
-    envKey: "GOOGLE_GENERATIVE_AI_API_KEY",
-    delayBetweenQuestionsMs: 20_000,
-  },
-  cerebras: { envKey: "CEREBRAS_API_KEY", delayBetweenQuestionsMs: 55_000 },
-  groq: { envKey: "GROQ_API_KEY", delayBetweenQuestionsMs: 8_000 },
+const POLICIES: Record<EvalProvider, { delayBetweenQuestionsMs: number }> = {
+  google: { delayBetweenQuestionsMs: 20_000 },
+  cerebras: { delayBetweenQuestionsMs: 55_000 },
+  groq: { delayBetweenQuestionsMs: 8_000 },
 };
 
 export function candidatePolicy(provider: EvalProvider) {
@@ -36,7 +30,7 @@ function valueAfter(argv: readonly string[], flag: string): string | undefined {
 }
 
 function isEvalProvider(value: string): value is EvalProvider {
-  return EVAL_PROVIDERS.some((provider) => provider === value);
+  return PROVIDERS.some((provider) => provider === value);
 }
 
 export function parseEvalArgs(argv: readonly string[]): EvalArgs {

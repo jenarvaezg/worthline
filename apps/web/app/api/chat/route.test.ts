@@ -165,6 +165,7 @@ describe("POST /api/chat", () => {
     const response = await POST(chatRequest({ messages: [userMessage("hola")] }));
 
     expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "assistant_unavailable" });
   });
 
   it("rejects malformed bodies before doing any work", async () => {

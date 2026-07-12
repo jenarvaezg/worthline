@@ -63,3 +63,21 @@ rule.
 
 Re-run and refresh a normal admission mark whenever its model or the system
 prompt changes, or when provider behavior materially degrades.
+
+## Production pool
+
+`provider-pool.ts` owns the production allowlist and ordering policy;
+`provider-model.ts` is the shared chat/eval resolution seam for candidate,
+provider credential, SDK model, and label. The default priority is Google,
+Cerebras, then Groq in every environment, including demo.
+`WORTHLINE_CHAT_PROVIDER_ORDER` accepts a comma-separated reordering of those
+provider IDs (for example `groq,google,cerebras`); unknown IDs, duplicate IDs,
+and the former arbitrary `WORTHLINE_CHAT_MODEL` setting cannot introduce a
+model. Entries without their declared provider credential are omitted, and no
+entries means the chat returns `assistant_unavailable` with status 503.
+
+The runner deliberately remains able to resolve an explicit pre-admission
+candidate. Production calls the stricter allowlisted path through that same
+resolver, so a model can be evaluated before its reviewed evidence is
+committed without making the admission process circular. The revalidation
+events and the one Groq exception are recorded in ADR 0061.

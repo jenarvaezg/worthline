@@ -10,13 +10,13 @@
 import { writeFile } from "node:fs/promises";
 import { chatAsOf } from "@web/asistente/chat-clock";
 import { createChatTools } from "@web/asistente/chat-tools";
+import { resolveProviderModel } from "@web/asistente/provider-model";
 import { buildChatSystemPrompt } from "@web/asistente/system-prompt";
 import { withStore } from "@web/store";
 import type { StoreTarget } from "@web/store-resolver";
 import { generateText, type LanguageModel, stepCountIs } from "ai";
 
 import { type AdmissionQuestionResult, buildAdmissionReport } from "./admission";
-import { createEvalModel } from "./candidate";
 import {
   candidatePolicy,
   parseEvalArgs,
@@ -79,14 +79,14 @@ function errorMessage(error: unknown): string {
 async function main(): Promise<void> {
   const args = parseEvalArgs(process.argv.slice(2));
   const policy = candidatePolicy(args.provider);
-  const apiKey = process.env[policy.envKey];
-  if (!apiKey) throw new Error(`${policy.envKey} is required for ${args.provider}.`);
-  const model = createEvalModel(args.provider, args.model, apiKey);
+  const resolved = resolveProviderModel({ provider: args.provider, modelId: args.model });
+  if (!resolved) {
+    throw new Error(`Provider credential is required for ${args.provider}.`);
+  }
+  const model = resolved.model;
   const startedAt = new Date().toISOString();
 
-  console.error(
-    `\nAssistant eval · ${args.provider} · ${args.model} · now=${EVAL_NOW.slice(0, 10)}`,
-  );
+  console.error(`\nAssistant eval · ${resolved.label} · now=${EVAL_NOW.slice(0, 10)}`);
   console.error("─".repeat(64));
 
   const questionResults: AdmissionQuestionResult[] = [];
