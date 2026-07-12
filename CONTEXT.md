@@ -567,6 +567,17 @@ and one that **spans liquidity rungs**.
 _Avoid_: integration, account (overloaded — see **scope**), import (a one-shot
 full-workspace replace, not a live mirror).
 
+**Connector ingestion port**:
+The shared, staged boundary through which an external feed presents stable,
+normalized facts for preview, reconciliation, confirmation, and atomic application.
+It covers both live **connected sources** and file-based statement feeds without
+making their authentication, history, valuation, consent, or disconnect lifecycles
+the same. A connector reports capabilities explicitly; it never writes the workspace
+or receives its repositories. The application owns authorization, deduplication,
+the **sync** run, audit, and commit. UI label: none (architecture term).
+_Avoid_: connector SDK (suggests a shared full lifecycle), integration (too broad),
+adapter registry (an implementation mechanism, not the boundary).
+
 **Position**:
 A single line a **connected source** mirrors — what you hold, where it lives.
 For Numista a position is a coin you own (its catalogue id, **grade**, and how
